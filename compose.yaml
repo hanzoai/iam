@@ -1,4 +1,3 @@
-version: '3.1'
 services:
   iam:
     restart: always
@@ -9,35 +8,13 @@ services:
     entrypoint: /bin/sh -c './server --createDatabase=true'
     ports:
       - "8000:8000"
-    extra_hosts:
-      - "iam.hanzo.ai:host-gateway"
     depends_on:
-      - iam-db
+      - db
     environment:
       RUNNING_IN_DOCKER: "true"
     volumes:
       - ./conf:/conf/
-    labels:
-      - "traefik.enable=true"
-      # Middleware to set proper HTTPS detection
-      - "traefik.http.middlewares.well-known.headers.customrequestheaders.X-Forwarded-Proto=https"
-      # Define your IAM-specific CSP middleware (if opting for file-based dynamic, adjust accordingly)
-      - "traefik.http.middlewares.iam-csp.headers.customResponseHeaders.Content-Security-Policy=connect-src 'self' https://iam.hanzo.ai http://iam.hanzo.ai;"
-      # HTTP router for IAM
-      - "traefik.http.routers.iam-http.rule=Host(`iam.hanzo.ai`)"
-      - "traefik.http.routers.iam-http.entrypoints=web"
-      - "traefik.http.routers.iam-http.middlewares=well-known,iam-csp,redirect-to-https"
-      # HTTPS router for IAM
-      - "traefik.http.routers.iam-https.rule=Host(`iam.hanzo.ai`)"
-      - "traefik.http.routers.iam-https.entrypoints=websecure"
-      - "traefik.http.routers.iam-https.middlewares=well-known,iam-csp"
-      - "traefik.http.routers.iam-https.tls.certresolver=letsencrypt"
-      # Use a target service name that's clear and scoped to this service
-      - "traefik.http.services.iam-zitadel.loadbalancer.server.port=8080"
-    networks:
-      - hanzo-network
-
-  iam-db:
+  db:
     restart: always
     image: mysql:8.0.25
     platform: linux/amd64
@@ -47,15 +24,3 @@ services:
       MYSQL_ROOT_PASSWORD: 123456
     volumes:
       - /usr/local/docker/mysql:/var/lib/mysql
-    networks:
-      - hanzo-network
-
-volumes:
-  data:
-    name: data-prod
-  redis-data:
-    driver: local
-
-networks:
-  hanzo-network:
-    external: true
