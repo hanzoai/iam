@@ -51,7 +51,7 @@ services:
       - hanzo-network
 volumes:
   iam-mysql:
-    name: iam-mysql
+    name: iam-mysql-prod
   iam-redis:
     driver: local
 networks:
