@@ -16,6 +16,8 @@ services:
       RUNNING_IN_DOCKER: "true"
     volumes:
       - /etc/hanzo/compose/iam-prod-c0gkof/files/app.conf:/conf/app.conf
+    tmpfs:
+      - /tmp:exec,mode=1777
     labels:
       - "traefik.enable=true"
       - "traefik.http.middlewares.well-known.headers.customrequestheaders.X-Forwarded-Proto=https"
