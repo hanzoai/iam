@@ -16,7 +16,10 @@ services:
       RUNNING_IN_DOCKER: "true"
     volumes:
       - /etc/hanzo/compose/iam-prod-c0gkof/files/app.conf:/conf/app.conf
-      - iam-tmp:/tmp
+      - type: tmpfs  # Use tmpfs instead of a persistent volume
+        target: /tmp
+        tmpfs:
+          mode: 1777
     labels:
       - "traefik.enable=true"
       - "traefik.http.middlewares.well-known.headers.customrequestheaders.X-Forwarded-Proto=https"
@@ -52,8 +55,6 @@ volumes:
   iam-mysql:
     name: iam-mysql
   iam-redis:
-    driver: local
-  iam-tmp:
     driver: local
 networks:
   hanzo-network:
