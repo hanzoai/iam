@@ -9,6 +9,7 @@ services:
     entrypoint: /bin/sh -c './server --createDatabase=true'
     extra_hosts:
       - "iam.hanzo.ai:host-gateway"
+      - "172.17.0.1:host-gateway"
     depends_on:
       - db
     environment:
