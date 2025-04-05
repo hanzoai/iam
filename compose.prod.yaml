@@ -10,7 +10,7 @@ services:
     extra_hosts:
       - "iam.hanzo.ai:host-gateway"
     depends_on:
-      - iam-db
+      - db
     environment:
       RUNNING_IN_DOCKER: "true"
     volumes:
@@ -35,7 +35,7 @@ services:
     networks:
       - hanzo-network
 
-  iam-db:
+  db:
     restart: always
     image: mysql:8.0.25
     platform: linux/amd64
