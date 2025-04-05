@@ -38,20 +38,20 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: 123456
     volumes:
-      - /usr/local/docker/mysql:/var/lib/mysql
+      - iam-mysql:/var/lib/mysql
     networks:
       - hanzo-network
   redis:
     restart: always
-    image: redis:6-alpine
+    image: redis:7-alpine
     volumes:
-      - redis-data:/data
+      - iam-redis:/data
     networks:
       - hanzo-network
 volumes:
-  data:
-    name: data-prod
-  redis-data:
+  iam-mysql:
+    name: iam-mysql
+  iam-redis:
     driver: local
   iam-tmp:
     driver: local
