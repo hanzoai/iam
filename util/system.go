@@ -27,7 +27,6 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/mem"
 )
@@ -85,7 +84,7 @@ func GetSystemInfo() (*SystemInfo, error) {
 // GetVersionInfo get git current commit and repo release version
 func GetVersionInfo() (*VersionInfo, error) {
 	res := &VersionInfo{
-		Version:      "",
+		Version:      "unknown",
 		CommitId:     "",
 		CommitOffset: -1,
 	}
@@ -94,59 +93,50 @@ func GetVersionInfo() (*VersionInfo, error) {
 	rootPath := path.Dir(path.Dir(filename))
 	r, err := git.PlainOpen(rootPath)
 	if err != nil {
-		return res, err
+		return res, nil
 	}
 	ref, err := r.Head()
 	if err != nil {
-		return res, err
+		return res, nil
 	}
+	res.CommitId = ref.Hash().String()
+
 	tags, err := r.Tags()
 	if err != nil {
-		return res, err
+		return res, nil
 	}
 	tagMap := make(map[plumbing.Hash]string)
 	err = tags.ForEach(func(t *plumbing.Reference) error {
-		// This technique should work for both lightweight and annotated tags.
 		revHash, err := r.ResolveRevision(plumbing.Revision(t.Name()))
 		if err != nil {
-			return err
+			return nil // skip this tag
 		}
 		tagMap[*revHash] = t.Name().Short()
 		return nil
 	})
 	if err != nil {
-		return res, err
+		return res, nil
 	}
 
 	cIter, err := r.Log(&git.LogOptions{From: ref.Hash()})
 	if err != nil {
-		return res, err
+		return res, nil
 	}
 
-	commitOffset := 0
-	version := ""
-	// iterates over the commits
-	err = cIter.ForEach(func(c *object.Commit) error {
-		tag, ok := tagMap[c.Hash]
-		if ok {
-			if version == "" {
-				version = tag
-			}
+	offset := 0
+	for {
+		c, err := cIter.Next()
+		if err != nil {
+			break
 		}
-		if version == "" {
-			commitOffset++
+		if version, ok := tagMap[c.Hash]; ok && res.Version == "unknown" {
+			res.Version = version
+			break
 		}
-		return nil
-	})
-	if err != nil {
-		return res, err
+		offset++
 	}
 
-	res = &VersionInfo{
-		Version:      version,
-		CommitId:     ref.Hash().String(),
-		CommitOffset: commitOffset,
-	}
+	res.CommitOffset = offset
 	return res, nil
 }
 
