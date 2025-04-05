@@ -15,7 +15,7 @@ services:
     environment:
       RUNNING_IN_DOCKER: "true"
     volumes:
-      - ./conf:/conf/
+      - /etc/hanzo/compose/iam-prod-c0gkof/files/app.conf:/conf/app.conf
       - iam-tmp:/tmp
     labels:
       - "traefik.enable=true"
