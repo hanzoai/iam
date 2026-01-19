@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/hanzoai/iam/object"
 	"github.com/elimity-com/scim"
 	"github.com/elimity-com/scim/errors"
+	"github.com/hanzoai/iam/object"
 )
 
 type UserResourceHandler struct{}

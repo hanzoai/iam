@@ -18,11 +18,11 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
 	"github.com/elimity-com/scim"
 	"github.com/elimity-com/scim/optional"
 	"github.com/elimity-com/scim/schema"
+	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/util"
 )
 
 type AnyMap map[string]interface{}

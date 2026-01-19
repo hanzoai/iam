@@ -20,9 +20,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 type Claims struct {

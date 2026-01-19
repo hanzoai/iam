@@ -416,7 +416,6 @@ func (c *ApiController) RevokeToken() {
 		token.Application,
 		expiresAt,
 	)
-
 	if err != nil {
 		// Log the error but still return success per RFC 7009
 		c.ResponseOk()
