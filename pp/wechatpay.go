@@ -19,9 +19,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hanzoai/iam/util"
 	"github.com/go-pay/gopay"
 	"github.com/go-pay/gopay/wechat/v3"
+	"github.com/hanzoai/iam/util"
 )
 
 type WechatPayNotifyResponse struct {

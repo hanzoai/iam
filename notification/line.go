@@ -15,9 +15,9 @@
 package notification
 
 import (
-	"github.com/hanzoai/iam/proxy"
 	notify "github.com/casdoor/notify2"
 	"github.com/casdoor/notify2/service/line"
+	"github.com/hanzoai/iam/proxy"
 )
 
 func NewLineProvider(channelSecret string, accessToken string, receiver string) (*notify.Notify, error) {

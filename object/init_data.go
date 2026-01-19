@@ -15,9 +15,9 @@
 package object
 
 import (
+	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 )
 
 type InitData struct {

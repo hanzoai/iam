@@ -21,9 +21,9 @@ import (
 	"net"
 	"strings"
 
+	"github.com/go-jose/go-jose/v4"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	"github.com/go-jose/go-jose/v4"
 )
 
 type OidcDiscovery struct {

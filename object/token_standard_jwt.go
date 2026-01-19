@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/iam/util"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/hanzoai/iam/util"
 )
 
 type ClaimsStandard struct {

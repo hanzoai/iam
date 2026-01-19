@@ -20,8 +20,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/hanzoai/iam/util"
 	goldap "github.com/go-ldap/ldap/v3"
+	"github.com/hanzoai/iam/util"
 )
 
 // convertGUIDToString converts a binary GUID byte array to a standard UUID string format

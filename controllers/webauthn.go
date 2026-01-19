@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/hanzoai/iam/form"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
-	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
 )
 
 // WebAuthnSignupBegin

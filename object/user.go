@@ -23,12 +23,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/faceId"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/proxy"
 	"github.com/hanzoai/iam/util"
-	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/xorm-io/builder"
 	"github.com/xorm-io/core"
 )
