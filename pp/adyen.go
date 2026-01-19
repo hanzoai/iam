@@ -21,7 +21,7 @@ import (
 	"github.com/adyen/adyen-go-api-library/v11/src/adyen"
 	"github.com/adyen/adyen-go-api-library/v11/src/checkout"
 	"github.com/adyen/adyen-go-api-library/v11/src/common"
-	"github.com/casdoor/casdoor/conf"
+	"github.com/hanzoai/iam/conf"
 )
 
 type AdyenPaymentProvider struct {

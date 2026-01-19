@@ -17,8 +17,8 @@ package object
 import (
 	"regexp"
 
-	"github.com/casdoor/casdoor/cred"
-	"github.com/casdoor/casdoor/i18n"
+	"github.com/hanzoai/iam/cred"
+	"github.com/hanzoai/iam/i18n"
 )
 
 type ValidatorFunc func(password string, lang string) string

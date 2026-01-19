@@ -25,8 +25,8 @@ package routers
 
 import (
 	"github.com/beego/beego/v2/server/web"
-	"github.com/casdoor/casdoor/controllers"
-	"github.com/casdoor/casdoor/mcp"
+	"github.com/hanzoai/iam/controllers"
+	"github.com/hanzoai/iam/mcp"
 )
 
 func InitAPI() {

@@ -21,8 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casdoor/casdoor/notification"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/notification"
+	"github.com/hanzoai/iam/util"
 	notify "github.com/casdoor/notify2"
 )
 

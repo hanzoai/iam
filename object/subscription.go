@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/casdoor/casdoor/pp"
+	"github.com/hanzoai/iam/pp"
 
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/util"
 	"github.com/xorm-io/core"
 )
 

@@ -21,9 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/casdoor/casdoor/i18n"
-	"github.com/casdoor/casdoor/idp"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam/idp"
+	"github.com/hanzoai/iam/util"
 	"github.com/google/uuid"
 	"github.com/xorm-io/core"
 )

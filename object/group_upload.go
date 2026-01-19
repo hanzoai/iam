@@ -15,7 +15,7 @@
 package object
 
 import (
-	"github.com/casdoor/casdoor/xlsx"
+	"github.com/hanzoai/iam/xlsx"
 )
 
 func getGroupMap(owner string) (map[string]*Group, error) {

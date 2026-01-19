@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/casdoor/casdoor/form"
-	"github.com/casdoor/casdoor/object"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/form"
+	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/util"
 )
 
 const (
@@ -333,7 +333,7 @@ func (c *ApiController) Logout() {
 	user := c.GetSessionUsername()
 
 	if accessToken == "" && redirectUri == "" {
-		// TODO https://github.com/casdoor/casdoor/pull/1494#discussion_r1095675265
+		// TODO https://github.com/hanzoai/iam/pull/1494#discussion_r1095675265
 		if user == "" {
 			c.ResponseOk()
 			return
@@ -362,7 +362,7 @@ func (c *ApiController) Logout() {
 		c.ResponseOk(user, application.HomepageUrl)
 		return
 	} else {
-		// "post_logout_redirect_uri" has been made optional, see: https://github.com/casdoor/casdoor/issues/2151
+		// "post_logout_redirect_uri" has been made optional, see: https://github.com/hanzoai/iam/issues/2151
 		// if redirectUri == "" {
 		// 	c.ResponseError(c.T("general:Missing parameter") + ": post_logout_redirect_uri")
 		// 	return
@@ -392,7 +392,7 @@ func (c *ApiController) Logout() {
 
 		c.ClearUserSession()
 		c.ClearTokenSession()
-		// TODO https://github.com/casdoor/casdoor/pull/1494#discussion_r1095675265
+		// TODO https://github.com/hanzoai/iam/pull/1494#discussion_r1095675265
 		owner, username, err := util.GetOwnerAndNameFromIdWithError(user)
 		if err != nil {
 			c.ResponseError(err.Error())
