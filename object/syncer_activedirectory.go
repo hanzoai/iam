@@ -147,9 +147,23 @@ func (p *ActiveDirectorySyncerProvider) getLdapConn() (*goldap.Conn, error) {
 
 	// Check if SSL is enabled (port 636 typically indicates LDAPS)
 	if port == 636 {
+		// Use SslMode to control certificate verification
+		// "skip-verify" or "disable" disables verification (not recommended for production)
+		// Any other value (including empty) enables full certificate verification
+		skipVerify := p.Syncer.SslMode == "skip-verify" || p.Syncer.SslMode == "disable"
 		tlsConfig := &tls.Config{
-			InsecureSkipVerify: true, // TODO: Make this configurable
+			ServerName:         host,
+			InsecureSkipVerify: skipVerify,
 		}
+
+		// If a certificate is provided, load it for custom CA verification
+		if p.Syncer.Cert != "" && !skipVerify {
+			certPool, err := util.LoadCACertPool(p.Syncer.Cert)
+			if err == nil && certPool != nil {
+				tlsConfig.RootCAs = certPool
+			}
+		}
+
 		conn, err = goldap.DialTLS("tcp", fmt.Sprintf("%s:%d", host, port), tlsConfig)
 	} else {
 		conn, err = goldap.Dial("tcp", fmt.Sprintf("%s:%d", host, port))
