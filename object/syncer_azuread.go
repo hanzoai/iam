@@ -23,7 +23,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/util"
 )
 
 // AzureAdSyncerProvider implements SyncerProvider for Azure AD API-based syncers

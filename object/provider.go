@@ -20,11 +20,11 @@ import (
 	"strings"
 
 	"github.com/beego/beego/v2/server/web/context"
-	"github.com/casdoor/casdoor/i18n"
-	"github.com/casdoor/casdoor/idp"
-	"github.com/casdoor/casdoor/idv"
-	"github.com/casdoor/casdoor/pp"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam/idp"
+	"github.com/hanzoai/iam/idv"
+	"github.com/hanzoai/iam/pp"
+	"github.com/hanzoai/iam/util"
 	"github.com/xorm-io/core"
 )
 

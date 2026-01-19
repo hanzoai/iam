@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/beego/beego/v2/server/web"
-	"github.com/casdoor/casdoor/proxy"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/proxy"
+	"github.com/hanzoai/iam/util"
 )
 
 const (

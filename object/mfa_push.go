@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/casdoor/casdoor/notification"
+	"github.com/hanzoai/iam/notification"
 	"github.com/google/uuid"
 )
 

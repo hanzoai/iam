@@ -17,7 +17,7 @@ package object
 import (
 	"fmt"
 
-	"github.com/casdoor/casdoor/i18n"
+	"github.com/hanzoai/iam/i18n"
 )
 
 func validateBalanceForTransaction(transaction *Transaction, amount float64, lang string) error {

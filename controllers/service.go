@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casdoor/casdoor/object"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/util"
 )
 
 type EmailForm struct {
