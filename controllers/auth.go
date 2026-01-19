@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/beego/beego/v2/server/web"
+	"github.com/google/uuid"
 	"github.com/hanzoai/iam/captcha"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/form"
@@ -37,7 +38,6 @@ import (
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/proxy"
 	"github.com/hanzoai/iam/util"
-	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 )
 

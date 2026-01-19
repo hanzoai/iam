@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hanzoai/iam/notification"
 	"github.com/google/uuid"
+	"github.com/hanzoai/iam/notification"
 )
 
 type PushMfa struct {

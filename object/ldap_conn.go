@@ -22,10 +22,10 @@ import (
 	"fmt"
 	"strings"
 
+	goldap "github.com/go-ldap/ldap/v3"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/util"
-	goldap "github.com/go-ldap/ldap/v3"
 	"github.com/thanhpk/randstr"
 	"golang.org/x/text/encoding/unicode"
 )

@@ -17,9 +17,9 @@ package controllers
 import (
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
-	"github.com/google/uuid"
 )
 
 // MfaSetupInitiate
