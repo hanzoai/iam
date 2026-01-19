@@ -46,7 +46,7 @@ jobs:
       - run: yarn install && CI=false yarn run build
         working-directory: ./web
       - name: Upload build artifacts
-        if: github.repository == 'hanzoai/iam' && github.event_name == 'push'
+        if: github.repository == 'hanzoai/iam-v2' && github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build-${{ github.run_id }}
@@ -159,7 +159,7 @@ jobs:
     permissions:
       contents: write
       issues: write
-    if: github.repository == 'hanzoai/iam' && github.event_name == 'push'
+    if: github.repository == 'hanzoai/iam-v2' && github.event_name == 'push'
     needs: [ frontend, backend, linter, e2e ]
     outputs:
       new-release-published: ${{ steps.semantic.outputs.new_release_published }}
@@ -180,7 +180,7 @@ jobs:
     permissions:
       contents: write
       issues: write
-    if: github.repository == 'hanzoai/iam' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
+    if: github.repository == 'hanzoai/iam-v2' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
     needs: [ tag-release ]
     steps:
       - name: Checkout
@@ -226,7 +226,7 @@ jobs:
       contents: write
       issues: write
       packages: write
-    if: github.repository == 'hanzoai/iam' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
+    if: github.repository == 'hanzoai/iam-v2' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
     needs: [ tag-release ]
     steps:
       - name: Checkout
