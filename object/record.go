@@ -21,8 +21,8 @@ import (
 	"strings"
 
 	"github.com/beego/beego/v2/server/web/context"
-	"github.com/casdoor/casdoor/conf"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam/util"
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 )
 

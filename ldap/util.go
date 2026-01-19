@@ -19,8 +19,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/casdoor/casdoor/object"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/util"
 	"github.com/lor00x/goldap/message"
 
 	ldap "github.com/casdoor/ldapserver"

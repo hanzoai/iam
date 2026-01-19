@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/casdoor/casdoor/form"
-	"github.com/casdoor/casdoor/object"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/form"
+	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/util"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 )

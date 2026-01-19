@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/casdoor/casdoor/object"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/util"
 	"github.com/elimity-com/scim"
 	"github.com/elimity-com/scim/optional"
 	"github.com/elimity-com/scim/schema"

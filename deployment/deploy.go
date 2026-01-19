@@ -20,9 +20,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/casdoor/casdoor/object"
-	"github.com/casdoor/casdoor/storage"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/storage"
+	"github.com/hanzoai/iam/util"
 	"github.com/casdoor/oss"
 )
 

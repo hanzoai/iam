@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/PaddleHQ/paddle-go-sdk"
-	"github.com/casdoor/casdoor/conf"
+	"github.com/hanzoai/iam/conf"
 )
 
 type PaddlePaymentProvider struct {

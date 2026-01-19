@@ -15,7 +15,7 @@
 package controllers
 
 import (
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/util"
 )
 
 // GetSystemInfo

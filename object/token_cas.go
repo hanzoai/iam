@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-	"github.com/casdoor/casdoor/i18n"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam/util"
 	dsig "github.com/russellhaering/goxmldsig"
 )
 

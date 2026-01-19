@@ -24,11 +24,11 @@ import (
 	"strings"
 
 	"github.com/beego/beego/v2/server/web/context"
-	"github.com/casdoor/casdoor/conf"
-	"github.com/casdoor/casdoor/i18n"
-	"github.com/casdoor/casdoor/mcp"
-	"github.com/casdoor/casdoor/object"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam/mcp"
+	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/util"
 )
 
 type Response struct {

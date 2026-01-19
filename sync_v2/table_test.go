@@ -21,7 +21,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/util"
 )
 
 type TestUser struct {

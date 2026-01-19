@@ -15,8 +15,8 @@
 package object
 
 import (
-	"github.com/casdoor/casdoor/cred"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/cred"
+	"github.com/hanzoai/iam/util"
 )
 
 func calculateHash(user *User) (string, error) {
