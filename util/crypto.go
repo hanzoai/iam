@@ -18,8 +18,13 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
+	"fmt"
+	"os"
+	"strings"
 )
 
 func GetHmacSha1(keyStr, value string) string {
@@ -36,4 +41,54 @@ func GetHmacSha256(key string, data string) string {
 	mac.Write([]byte(data))
 
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// LoadCACertPool loads a CA certificate pool from either a file path or a PEM-encoded string.
+// The cert parameter can be:
+// - A file path to a PEM-encoded certificate file
+// - A PEM-encoded certificate string (starts with "-----BEGIN")
+// Returns nil pool and nil error if the cert is empty.
+func LoadCACertPool(cert string) (*x509.CertPool, error) {
+	if cert == "" {
+		return nil, nil
+	}
+
+	var pemData []byte
+	var err error
+
+	// Check if cert is a PEM string or a file path
+	if strings.HasPrefix(strings.TrimSpace(cert), "-----BEGIN") {
+		pemData = []byte(cert)
+	} else {
+		// Try to load from file
+		pemData, err = os.ReadFile(cert)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read certificate file: %w", err)
+		}
+	}
+
+	// Parse the PEM data
+	pool := x509.NewCertPool()
+	for len(pemData) > 0 {
+		var block *pem.Block
+		block, pemData = pem.Decode(pemData)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse certificate: %w", err)
+		}
+		pool.AddCert(cert)
+	}
+
+	if len(pool.Subjects()) == 0 {
+		return nil, fmt.Errorf("no valid certificates found in PEM data")
+	}
+
+	return pool, nil
 }
