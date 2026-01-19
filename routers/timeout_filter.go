@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/beego/beego/v2/server/web/context"
-	"github.com/casdoor/casdoor/conf"
+	"github.com/hanzoai/iam/conf"
 )
 
 var (

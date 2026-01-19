@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/casdoor/casdoor/i18n"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam/util"
 )
 
 func checkPasswordExpired(user *User, lang string) error {

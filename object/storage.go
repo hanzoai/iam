@@ -22,10 +22,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/casdoor/casdoor/conf"
-	"github.com/casdoor/casdoor/i18n"
-	"github.com/casdoor/casdoor/storage"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam/storage"
+	"github.com/hanzoai/iam/util"
 	"github.com/casdoor/oss"
 )
 

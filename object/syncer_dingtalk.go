@@ -24,7 +24,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/util"
 )
 
 // DingtalkSyncerProvider implements SyncerProvider for DingTalk API-based syncers

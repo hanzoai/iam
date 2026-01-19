@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/beego/beego/v2/core/utils/pagination"
-	"github.com/casdoor/casdoor/object"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/util"
 )
 
 // GetTokens

@@ -22,9 +22,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casdoor/casdoor/conf"
-	"github.com/casdoor/casdoor/i18n"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam/util"
 	goldap "github.com/go-ldap/ldap/v3"
 	"github.com/thanhpk/randstr"
 	"golang.org/x/text/encoding/unicode"

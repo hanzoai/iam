@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/beego/beego/v2/server/web/context"
-	"github.com/casdoor/casdoor/object"
+	"github.com/hanzoai/iam/object"
 )
 
 type OrganizationThemeCookie struct {

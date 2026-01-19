@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/util"
 	"github.com/xorm-io/core"
 )
 

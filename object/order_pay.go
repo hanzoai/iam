@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casdoor/casdoor/idp"
-	"github.com/casdoor/casdoor/pp"
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/idp"
+	"github.com/hanzoai/iam/pp"
+	"github.com/hanzoai/iam/util"
 )
 
 func PlaceOrder(owner string, reqProductInfos []ProductInfo, user *User, pricingName string, planName string) (*Order, error) {

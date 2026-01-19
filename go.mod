@@ -1,4 +1,4 @@
-module github.com/casdoor/casdoor
+module github.com/hanzoai/iam
 
 go 1.23.0
 

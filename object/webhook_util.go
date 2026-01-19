@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/util"
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 )
 
