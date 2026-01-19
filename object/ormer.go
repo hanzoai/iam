@@ -374,6 +374,11 @@ func (a *Ormer) createTable() {
 		panic(err)
 	}
 
+	err = a.Engine.Sync2(new(RevokedToken))
+	if err != nil {
+		panic(err)
+	}
+
 	err = a.Engine.Sync2(new(Product))
 	if err != nil {
 		panic(err)

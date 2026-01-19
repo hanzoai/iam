@@ -10,7 +10,7 @@ COPY ./web .
 RUN NODE_OPTIONS="--max-old-space-size=4096" yarn run build
 
 FROM --platform=$BUILDPLATFORM golang:1.23.12 AS BACK
-WORKDIR /go/src/casdoor
+WORKDIR /go/src/hanzo-iam
 
 # Copy only go.mod and go.sum first for dependency caching
 COPY go.mod go.sum ./
@@ -23,8 +23,8 @@ RUN ./build.sh
 RUN go test -v -run TestGetVersionInfo ./util/system_test.go ./util/system.go > version_info.txt
 
 FROM alpine:latest AS STANDARD
-LABEL MAINTAINER="https://casdoor.org/"
-ARG USER=casdoor
+LABEL MAINTAINER="https://hanzo.ai/"
+ARG USER=hanzo
 ARG TARGETOS
 ARG TARGETARCH
 ENV BUILDX_ARCH="${TARGETOS:-linux}_${TARGETARCH:-amd64}"
@@ -43,10 +43,10 @@ RUN adduser -D $USER -u 1000 \
 
 USER 1000
 WORKDIR /
-COPY --from=BACK --chown=$USER:$USER /go/src/casdoor/server_${BUILDX_ARCH} ./server
-COPY --from=BACK --chown=$USER:$USER /go/src/casdoor/swagger ./swagger
-COPY --from=BACK --chown=$USER:$USER /go/src/casdoor/conf/app.conf ./conf/app.conf
-COPY --from=BACK --chown=$USER:$USER /go/src/casdoor/version_info.txt ./go/src/casdoor/version_info.txt
+COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/server_${BUILDX_ARCH} ./server
+COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/swagger ./swagger
+COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/conf/app.conf ./conf/app.conf
+COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/version_info.txt ./go/src/hanzo-iam/version_info.txt
 COPY --from=FRONT --chown=$USER:$USER /web/build ./web/build
 
 ENTRYPOINT ["/server"]
@@ -61,7 +61,7 @@ RUN apt update \
 
 
 FROM db AS ALLINONE
-LABEL MAINTAINER="https://casdoor.org/"
+LABEL MAINTAINER="https://hanzo.ai/"
 ARG TARGETOS
 ARG TARGETARCH
 ENV BUILDX_ARCH="${TARGETOS:-linux}_${TARGETARCH:-amd64}"
@@ -70,11 +70,11 @@ RUN apt update
 RUN apt install -y ca-certificates && update-ca-certificates
 
 WORKDIR /
-COPY --from=BACK /go/src/casdoor/server_${BUILDX_ARCH} ./server
-COPY --from=BACK /go/src/casdoor/swagger ./swagger
-COPY --from=BACK /go/src/casdoor/docker-entrypoint.sh /docker-entrypoint.sh
-COPY --from=BACK /go/src/casdoor/conf/app.conf ./conf/app.conf
-COPY --from=BACK /go/src/casdoor/version_info.txt ./go/src/casdoor/version_info.txt
+COPY --from=BACK /go/src/hanzo-iam/server_${BUILDX_ARCH} ./server
+COPY --from=BACK /go/src/hanzo-iam/swagger ./swagger
+COPY --from=BACK /go/src/hanzo-iam/docker-entrypoint.sh /docker-entrypoint.sh
+COPY --from=BACK /go/src/hanzo-iam/conf/app.conf ./conf/app.conf
+COPY --from=BACK /go/src/hanzo-iam/version_info.txt ./go/src/hanzo-iam/version_info.txt
 COPY --from=FRONT /web/build ./web/build
 
 ENTRYPOINT ["/bin/bash"]
