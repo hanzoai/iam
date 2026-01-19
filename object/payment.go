@@ -255,8 +255,23 @@ func NotifyPayment(body []byte, owner string, paymentName string, lang string) (
 		return nil, err
 	}
 
+	// Get user for email notification (needed regardless of payment state)
+	user, err := getUser(payment.Owner, payment.User)
+	if err != nil {
+		return nil, err
+	}
+
+	// Send payment notification email (for paid, failed, or cancelled)
+	if payment.State == pp.PaymentStatePaid || payment.State == pp.PaymentStateError || payment.State == pp.PaymentStateCanceled {
+		// Non-blocking: log errors but don't fail the payment notification
+		if emailErr := SendPaymentNotificationEmail(payment, order, user, lang); emailErr != nil {
+			// Log but don't fail - email is best-effort
+			fmt.Printf("Warning: failed to send payment notification email: %v\n", emailErr)
+		}
+	}
+
 	if payment.State == pp.PaymentStatePaid {
-		// Get provider, product and user for transaction creation
+		// Get provider, product for transaction creation
 		provider, err := getProvider(payment.Owner, payment.Provider)
 		if err != nil {
 			return nil, err
@@ -278,10 +293,6 @@ func NotifyPayment(body []byte, owner string, paymentName string, lang string) (
 			}
 		}
 
-		user, err := getUser(payment.Owner, payment.User)
-		if err != nil {
-			return nil, err
-		}
 		if user == nil {
 			return nil, fmt.Errorf("the user: %s does not exist", payment.User)
 		}
@@ -402,4 +413,170 @@ func InvoicePayment(payment *Payment) (string, error) {
 
 func (payment *Payment) GetId() string {
 	return fmt.Sprintf("%s/%s", payment.Owner, payment.Name)
+}
+
+// SendPaymentNotificationEmail sends a notification email when a payment is completed
+func SendPaymentNotificationEmail(payment *Payment, order *Order, user *User, lang string) error {
+	if user == nil || payment == nil {
+		return nil
+	}
+
+	// Determine recipient email - prefer PersonEmail, fallback to user's email
+	recipientEmail := payment.PersonEmail
+	if recipientEmail == "" {
+		recipientEmail = user.Email
+	}
+	if recipientEmail == "" {
+		return nil // No email to send to
+	}
+
+	// Get the application to find the email provider
+	application, err := GetApplicationByUser(user)
+	if err != nil {
+		return fmt.Errorf("failed to get application: %w", err)
+	}
+	if application == nil {
+		return nil // No application, skip notification
+	}
+
+	// Find an email provider in the application
+	var emailProvider *Provider
+	for _, providerItem := range application.Providers {
+		if providerItem.Provider == nil {
+			continue
+		}
+		if providerItem.Provider.Category == "Email" {
+			emailProvider = providerItem.Provider
+			break
+		}
+	}
+
+	if emailProvider == nil {
+		return nil // No email provider configured, skip silently
+	}
+
+	// Build the email content
+	displayName := user.DisplayName
+	if displayName == "" {
+		displayName = user.Name
+	}
+	if payment.PersonName != "" {
+		displayName = payment.PersonName
+	}
+
+	var productsDescription string
+	if len(order.ProductInfos) > 0 {
+		var productNames []string
+		for _, p := range order.ProductInfos {
+			productNames = append(productNames, p.Name)
+		}
+		productsDescription = fmt.Sprintf("Products: %s\n", joinStrings(productNames, ", "))
+	} else if payment.ProductsDisplayName != "" {
+		productsDescription = fmt.Sprintf("Products: %s\n", payment.ProductsDisplayName)
+	}
+
+	var emailTitle, emailContent string
+
+	switch payment.State {
+	case pp.PaymentStatePaid:
+		emailTitle = fmt.Sprintf("Payment Confirmation - Order %s", order.Name)
+		emailContent = fmt.Sprintf(`Dear %s,
+
+Thank you for your payment!
+
+Your payment has been successfully processed.
+
+Order Details:
+- Order ID: %s
+- Payment ID: %s
+%s- Amount: %s %.2f
+- Payment Date: %s
+
+If you have any questions about your order, please contact our support team.
+
+Best regards,
+%s`,
+			displayName,
+			order.Name,
+			payment.Name,
+			productsDescription,
+			payment.Currency,
+			payment.Price,
+			util.GetCurrentTime(),
+			application.DisplayName,
+		)
+
+	case pp.PaymentStateError:
+		emailTitle = fmt.Sprintf("Payment Failed - Order %s", order.Name)
+		emailContent = fmt.Sprintf(`Dear %s,
+
+We're sorry, but your payment could not be processed.
+
+Order Details:
+- Order ID: %s
+- Payment ID: %s
+%s- Amount: %s %.2f
+- Error: %s
+
+Please try again or contact our support team if you need assistance.
+
+Best regards,
+%s`,
+			displayName,
+			order.Name,
+			payment.Name,
+			productsDescription,
+			payment.Currency,
+			payment.Price,
+			payment.Message,
+			application.DisplayName,
+		)
+
+	case pp.PaymentStateCanceled:
+		emailTitle = fmt.Sprintf("Payment Cancelled - Order %s", order.Name)
+		emailContent = fmt.Sprintf(`Dear %s,
+
+Your payment has been cancelled.
+
+Order Details:
+- Order ID: %s
+- Payment ID: %s
+%s- Amount: %s %.2f
+
+If you did not cancel this payment or have any questions, please contact our support team.
+
+Best regards,
+%s`,
+			displayName,
+			order.Name,
+			payment.Name,
+			productsDescription,
+			payment.Currency,
+			payment.Price,
+			application.DisplayName,
+		)
+
+	default:
+		return nil // Don't send email for other states
+	}
+
+	// Send the email
+	err = SendEmail(emailProvider, emailTitle, emailContent, []string{recipientEmail}, application.DisplayName)
+	if err != nil {
+		return fmt.Errorf("failed to send payment notification email: %w", err)
+	}
+
+	return nil
+}
+
+// joinStrings joins strings with a separator (helper function)
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
+	}
+	return result
 }

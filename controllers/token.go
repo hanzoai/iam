@@ -326,6 +326,109 @@ func (c *ApiController) ResponseTokenError(errorMsg string) {
 	c.ServeJSON()
 }
 
+// RevokeToken
+// @Title RevokeToken
+// @Tag Token API
+// @Description Revoke an OAuth 2.0 token (access_token or refresh_token).
+// Implements RFC 7009 - OAuth 2.0 Token Revocation.
+// This endpoint supports both Basic Authorization and form-encoded client credentials.
+//
+// @Param token formData string true "The token to revoke"
+// @Param token_type_hint formData string false "Hint about the token type: access_token or refresh_token"
+// @Param client_id formData string false "OAuth client ID (if not using Basic Auth)"
+// @Param client_secret formData string false "OAuth client secret (if not using Basic Auth)"
+// @Success 200 {object} object.Response Success (RFC 7009 requires 200 even for invalid tokens)
+// @Success 401 {object} object.TokenError Invalid client credentials
+// @router /login/oauth/revoke [post]
+func (c *ApiController) RevokeToken() {
+	tokenValue := c.Ctx.Input.Query("token")
+	tokenTypeHint := c.Ctx.Input.Query("token_type_hint")
+
+	clientId, clientSecret, ok := c.Ctx.Request.BasicAuth()
+	if !ok {
+		clientId = c.Ctx.Input.Query("client_id")
+		clientSecret = c.Ctx.Input.Query("client_secret")
+		if clientId == "" || clientSecret == "" {
+			c.ResponseTokenError(object.InvalidRequest)
+			return
+		}
+	}
+
+	// Validate client credentials
+	application, err := object.GetApplicationByClientId(clientId)
+	if err != nil {
+		c.ResponseTokenError(err.Error())
+		return
+	}
+
+	if application == nil || application.ClientSecret != clientSecret {
+		c.ResponseTokenError(c.T("token:Invalid application or wrong clientSecret"))
+		return
+	}
+
+	// RFC 7009: If the token is empty, respond with success
+	if tokenValue == "" {
+		c.ResponseOk()
+		return
+	}
+
+	// Try to find the token by the hint, or try both types
+	var token *object.Token
+	var foundTokenType string
+
+	if tokenTypeHint == "refresh_token" || tokenTypeHint == "refresh-token" {
+		token, err = object.GetTokenByRefreshToken(tokenValue)
+		foundTokenType = "refresh_token"
+	} else {
+		// Default to access_token, but try both
+		token, err = object.GetTokenByAccessToken(tokenValue)
+		foundTokenType = "access_token"
+		if err == nil && token == nil {
+			token, err = object.GetTokenByRefreshToken(tokenValue)
+			foundTokenType = "refresh_token"
+		}
+	}
+
+	if err != nil {
+		// RFC 7009: Return success even on errors to prevent token scanning
+		c.ResponseOk()
+		return
+	}
+
+	// RFC 7009: The authorization server responds with HTTP 200 even if the
+	// token was invalid or already revoked
+	if token == nil {
+		c.ResponseOk()
+		return
+	}
+
+	// Calculate expiration time
+	createdTime, _ := time.Parse(time.RFC3339, token.CreatedTime)
+	expiresAt := createdTime.Add(time.Duration(token.ExpiresIn) * time.Second)
+
+	// Revoke the token
+	err = object.RevokeToken(
+		tokenValue,
+		foundTokenType,
+		"", // revokedBy - could be extracted from client ID
+		clientId,
+		token.Owner,
+		token.Application,
+		expiresAt,
+	)
+
+	if err != nil {
+		// Log the error but still return success per RFC 7009
+		c.ResponseOk()
+		return
+	}
+
+	// Also delete the token from the active tokens table
+	_, _ = object.DeleteToken(token)
+
+	c.ResponseOk()
+}
+
 // IntrospectToken
 // @Title IntrospectToken
 // @Tag Login API
@@ -391,12 +494,20 @@ func (c *ApiController) IntrospectToken() {
 
 	var introspectionResponse object.IntrospectionResponse
 
+	// Check if token has been revoked (RFC 7009)
+	revoked, err := object.IsTokenRevoked(tokenValue)
+	if err != nil {
+		c.ResponseTokenError(err.Error())
+		return
+	}
+	if revoked {
+		respondWithInactiveToken()
+		return
+	}
+
 	if application.TokenFormat == "JWT-Standard" {
 		jwtToken, err := object.ParseStandardJwtTokenByApplication(tokenValue, application)
 		if err != nil {
-			// and token revoked case. but we not implement
-			// TODO: 2022-03-03 add token revoked check, when we implemented the Token Revocation(rfc7009) Specs.
-			// refs: https://tools.ietf.org/html/rfc7009
 			respondWithInactiveToken()
 			return
 		}
@@ -418,9 +529,6 @@ func (c *ApiController) IntrospectToken() {
 	} else {
 		jwtToken, err := object.ParseJwtTokenByApplication(tokenValue, application)
 		if err != nil {
-			// and token revoked case. but we not implement
-			// TODO: 2022-03-03 add token revoked check, when we implemented the Token Revocation(rfc7009) Specs.
-			// refs: https://tools.ietf.org/html/rfc7009
 			respondWithInactiveToken()
 			return
 		}
