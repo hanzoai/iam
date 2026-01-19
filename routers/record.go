@@ -18,9 +18,9 @@ import (
 	"fmt"
 
 	"github.com/beego/beego/v2/server/web/context"
+	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
-	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 )
 
 func getUser(ctx *context.Context) (username string) {

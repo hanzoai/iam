@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	"github.com/go-webauthn/webauthn/webauthn"
 )
 
 func InitDb() {

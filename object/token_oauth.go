@@ -21,10 +21,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/idp"
 	"github.com/hanzoai/iam/util"
-	"github.com/google/uuid"
 	"github.com/xorm-io/core"
 )
 
