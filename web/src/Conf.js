@@ -24,8 +24,8 @@ export const DefaultLanguage = "en";
 
 export const InitThemeAlgorithm = true;
 export const ThemeDefault = {
-  themeType: "default",
-  colorPrimary: "#5734d3",
+  themeType: "dark",
+  colorPrimary: "#FF6B35",
   borderRadius: 6,
   isCompact: false,
 };
@@ -33,7 +33,7 @@ export const ThemeDefault = {
 export const CustomFooter = null;
 
 // Blank or null to hide Ai Assistant button
-export const AiAssistantUrl = "https://ai.casbin.com";
+export const AiAssistantUrl = "https://ai.hanzo.ai";
 
 // Maximum number of navbar items before switching from flat to grouped menu
 export const MaxItemsForFlatMenu = 7;

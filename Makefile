@@ -1,11 +1,11 @@
 
 # Image URL to use all building/pushing image targets
-REGISTRY ?= casbin
-IMG ?= casdoor
+REGISTRY ?= ghcr.io/hanzoai
+IMG ?= iam
 IMG_TAG ?=$(shell git --no-pager log -1 --format="%ad" --date=format:"%Y%m%d")-$(shell git describe --tags --always --dirty --abbrev=6)
-NAMESPACE ?= casdoor
-APP ?= casdoor
-HOST ?= test.com
+NAMESPACE ?= hanzo
+APP ?= iam
+HOST ?= hanzo.id
 
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -114,3 +114,48 @@ dry-run: ## Dry run for helm install
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	helm delete ${APP} -n ${NAMESPACE}
+
+##@ Docker Compose Development
+
+.PHONY: dev
+dev: ## Start local development environment
+	docker compose -f compose.dev.yml up --build
+
+.PHONY: dev-down
+dev-down: ## Stop local development environment
+	docker compose -f compose.dev.yml down
+
+.PHONY: dev-logs
+dev-logs: ## View local development logs
+	docker compose -f compose.dev.yml logs -f
+
+.PHONY: staging
+staging: ## Start staging environment
+	docker compose -f compose.staging.yml up -d
+
+.PHONY: staging-down
+staging-down: ## Stop staging environment
+	docker compose -f compose.staging.yml down
+
+.PHONY: prod
+prod: ## Start production environment
+	docker compose -f compose.production.yml up -d
+
+.PHONY: prod-down
+prod-down: ## Stop production environment
+	docker compose -f compose.production.yml down
+
+##@ Image Management
+
+.PHONY: build-staging
+build-staging: ## Build and push staging image
+	docker build -t ${REGISTRY}/${IMG}:staging --target STANDARD .
+	docker push ${REGISTRY}/${IMG}:staging
+
+.PHONY: build-prod
+build-prod: ## Build and push production image
+	docker build -t ${REGISTRY}/${IMG}:latest --target STANDARD .
+	docker push ${REGISTRY}/${IMG}:latest
+
+.PHONY: build-all
+build-all: build-staging build-prod ## Build and push all images
