@@ -1,0 +1,29 @@
+{
+  "name": "@hanzo/iam",
+  "version": "1.0.0",
+  "description": "Hanzo IAM - Multi-tenant Identity and Access Management",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report",
+    "deploy:staging": "./scripts/deploy-do.sh staging",
+    "deploy:production": "./scripts/deploy-do.sh production"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hanzoai/iam.git"
+  },
+  "author": "Hanzo AI <engineering@hanzo.ai>",
+  "license": "Apache-2.0"
+}

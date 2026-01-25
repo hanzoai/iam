@@ -1,0 +1,124 @@
+# Hanzo IAM Multi-Tenant Docker Compose
+# Production deployment for Digital Ocean
+#
+# Services:
+# - iam-backend: Casdoor/Hanzo IAM backend (Go)
+# - caddy: Reverse proxy with SSL for multi-domain routing
+# - postgres: PostgreSQL database
+# - redis: Session/cache storage
+
+services:
+  iam-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/hanzoai/iam:latest
+    restart: unless-stopped
+    environment:
+      # Database
+      - DATABASE_URL=postgres://${POSTGRES_USER:-hanzo}:${POSTGRES_PASSWORD:-hanzo}@postgres:5432/${POSTGRES_DB:-iam}?sslmode=disable
+
+      # Redis
+      - REDIS_URL=redis://redis:6379
+
+      # IAM Config
+      - CASDOOR_ORIGIN=${CASDOOR_ORIGIN:-https://iam.hanzo.ai}
+      - CASDOOR_APP_NAME=iam
+
+      # Multi-tenant
+      - ENABLE_MULTI_TENANT=true
+      - ALLOWED_ORIGINS=hanzo.id,zoo.id,lux.id,pars.id,iam.hanzo.ai
+
+      # Security
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    volumes:
+      - ./init_data.json:/app/init_data.json:ro
+      - iam_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - iam-network
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - iam-backend
+    networks:
+      - iam-network
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-hanzo}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-hanzo}
+      - POSTGRES_DB=${POSTGRES_DB:-iam}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hanzo} -d ${POSTGRES_DB:-iam}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    networks:
+      - iam-network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - iam-network
+
+volumes:
+  iam_data:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  redis_data:
+
+networks:
+  iam-network:
+    driver: bridge
