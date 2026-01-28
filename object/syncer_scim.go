@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/util"
 )
 
 // SCIMSyncerProvider implements SyncerProvider for SCIM 2.0 API-based syncers
