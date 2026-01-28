@@ -61,6 +61,8 @@ func getBuiltInAccountItems() []*AccountItem {
 		{Name: "Country code", Visible: true, ViewRule: "Public", ModifyRule: "Admin"},
 		{Name: "Country/Region", Visible: true, ViewRule: "Public", ModifyRule: "Self"},
 		{Name: "Location", Visible: true, ViewRule: "Public", ModifyRule: "Self"},
+		{Name: "Address", Visible: true, ViewRule: "Public", ModifyRule: "Self"},
+		{Name: "Addresses", Visible: true, ViewRule: "Public", ModifyRule: "Self"},
 		{Name: "Affiliation", Visible: true, ViewRule: "Public", ModifyRule: "Self"},
 		{Name: "Title", Visible: true, ViewRule: "Public", ModifyRule: "Self"},
 		{Name: "ID card type", Visible: true, ViewRule: "Public", ModifyRule: "Self"},
@@ -296,26 +298,47 @@ func initBuiltInLdap() {
 }
 
 func initBuiltInProvider() {
-	provider, err := GetProvider(util.GetId("admin", "provider_captcha_default"))
-	if err != nil {
-		panic(err)
+	providers := []*Provider{
+		{
+			Owner:       "admin",
+			Name:        "provider_captcha_default",
+			CreatedTime: util.GetCurrentTime(),
+			DisplayName: "Captcha Default",
+			Category:    "Captcha",
+			Type:        "Default",
+		},
+		{
+			Owner:       "admin",
+			Name:        "provider_balance",
+			CreatedTime: util.GetCurrentTime(),
+			DisplayName: "Balance",
+			Category:    "Payment",
+			Type:        "Balance",
+		},
+		{
+			Owner:       "admin",
+			Name:        "provider_payment_dummy",
+			CreatedTime: util.GetCurrentTime(),
+			DisplayName: "Dummy Payment",
+			Category:    "Payment",
+			Type:        "Dummy",
+		},
 	}
 
-	if provider != nil {
-		return
-	}
+	for _, provider := range providers {
+		existingProvider, err := GetProvider(util.GetId("admin", provider.Name))
+		if err != nil {
+			panic(err)
+		}
 
-	provider = &Provider{
-		Owner:       "admin",
-		Name:        "provider_captcha_default",
-		CreatedTime: util.GetCurrentTime(),
-		DisplayName: "Captcha Default",
-		Category:    "Captcha",
-		Type:        "Default",
-	}
-	_, err = AddProvider(provider)
-	if err != nil {
-		panic(err)
+		if existingProvider != nil {
+			continue
+		}
+
+		_, err = AddProvider(provider)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 

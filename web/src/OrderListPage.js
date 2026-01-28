@@ -139,14 +139,6 @@ class OrderListPage extends BaseListPage {
         },
       },
       {
-        title: i18next.t("general:Display name"),
-        dataIndex: "displayName",
-        key: "displayName",
-        width: "170px",
-        sorter: true,
-        ...this.getColumnSearchProps("displayName"),
-      },
-      {
         title: i18next.t("order:Products"),
         dataIndex: "products",
         key: "products",
@@ -186,20 +178,23 @@ class OrderListPage extends BaseListPage {
         },
       },
       {
-        title: i18next.t("order:Payment"),
-        dataIndex: "payment",
-        key: "payment",
-        width: "140px",
+        title: i18next.t("order:Price"),
+        dataIndex: "price",
+        key: "price",
+        width: "160px",
         sorter: true,
-        ...this.getColumnSearchProps("payment"),
+        ...this.getColumnSearchProps("price"),
         render: (text, record, index) => {
-          if (text === "") {
-            return "(empty)";
-          }
-          return (
-            <Link to={`/payments/${record.owner}/${text}`}>
-              {text}
+          const price = (record.price || 0).toFixed(2);
+          const currency = record.currency || "USD";
+          const priceDisplay = Setting.getPriceDisplay(price, currency);
+
+          return record.payment ? (
+            <Link to={`/payments/${record.owner}/${record.payment}`}>
+              {priceDisplay}
             </Link>
+          ) : (
+            <span>{priceDisplay}</span>
           );
         },
       },
@@ -256,25 +251,26 @@ class OrderListPage extends BaseListPage {
         title: i18next.t("general:Action"),
         dataIndex: "",
         key: "op",
-        width: "300px",
+        width: "320px",
         fixed: (Setting.isMobile()) ? "false" : "right",
         render: (text, record, index) => {
           const isAdmin = Setting.isLocalAdminUser(this.props.account);
           return (
             <div style={{display: "flex", flexWrap: "wrap", gap: "8px"}}>
-              <Button onClick={() => this.props.history.push(`/orders/${record.owner}/${record.name}/pay`)} disabled={record.state !== "Created"}>
-                {i18next.t("order:Pay")}
+              <Button onClick={() => this.props.history.push(`/orders/${record.owner}/${record.name}/pay`)}>
+                {record.state === "Created" ? i18next.t("order:Pay") : i18next.t("general:Detail")}
               </Button>
               <Button danger onClick={() => this.cancelOrder(record)} disabled={record.state !== "Created" || !isAdmin}>
                 {i18next.t("general:Cancel")}
               </Button>
               <Button type="primary" onClick={() => this.props.history.push({pathname: `/orders/${record.owner}/${record.name}`, mode: isAdmin ? "edit" : "view"})}>{isAdmin ? i18next.t("general:Edit") : i18next.t("general:View")}</Button>
-              <PopconfirmModal
-                disabled={!isAdmin}
-                title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
-                onConfirm={() => this.deleteOrder(index)}
-              >
-              </PopconfirmModal>
+              {isAdmin && (
+                <PopconfirmModal
+                  title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
+                  onConfirm={() => this.deleteOrder(index)}
+                >
+                </PopconfirmModal>
+              )}
             </div>
           );
         },
