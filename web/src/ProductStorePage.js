@@ -29,7 +29,7 @@ class ProductStorePage extends React.Component {
     this.state = {
       products: [],
       loading: true,
-      isAddingToCart: false,
+      addingToCartProducts: [],
     };
   }
 
@@ -60,11 +60,11 @@ class ProductStorePage extends React.Component {
   }
 
   addToCart(product) {
-    if (this.state.isAddingToCart) {
+    if (this.state.addingToCartProducts.includes(product.name)) {
       return;
     }
 
-    this.setState({isAddingToCart: true});
+    this.setState(prevState => ({addingToCartProducts: [...prevState.addingToCartProducts, product.name]}));
 
     const userOwner = this.props.account.owner;
     const userName = this.props.account.name;
@@ -77,10 +77,9 @@ class ProductStorePage extends React.Component {
 
           if (cart.length > 0) {
             const firstItem = cart[0];
-
             if (firstItem.currency && product.currency && firstItem.currency !== product.currency) {
               Setting.showMessage("error", i18next.t("product:The currency of the product you are adding is different from the currency of the items in the cart"));
-              this.setState({isAddingToCart: false});
+              this.setState(prevState => ({addingToCartProducts: prevState.addingToCartProducts.filter(name => name !== product.name)}));
               return;
             }
           }
@@ -92,13 +91,11 @@ class ProductStorePage extends React.Component {
           } else {
             const newCartProductInfo = {
               name: product.name,
-              displayName: product.displayName,
-              image: product.image,
-              detail: product.detail,
               price: product.price,
               currency: product.currency,
+              pricingName: "",
+              planName: "",
               quantity: 1,
-              isRecharge: product.isRecharge || false,
             };
             cart.push(newCartProductInfo);
           }
@@ -116,16 +113,16 @@ class ProductStorePage extends React.Component {
               Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
             })
             .finally(() => {
-              this.setState({isAddingToCart: false});
+              this.setState(prevState => ({addingToCartProducts: prevState.addingToCartProducts.filter(name => name !== product.name)}));
             });
         } else {
           Setting.showMessage("error", res.msg);
-          this.setState({isAddingToCart: false});
+          this.setState(prevState => ({addingToCartProducts: prevState.addingToCartProducts.filter(name => name !== product.name)}));
         }
       })
       .catch(error => {
         Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-        this.setState({isAddingToCart: false});
+        this.setState(prevState => ({addingToCartProducts: prevState.addingToCartProducts.filter(name => name !== product.name)}));
       });
   }
 
@@ -134,8 +131,7 @@ class ProductStorePage extends React.Component {
   }
 
   renderProductCard(product) {
-    const isSubscription = product.tag === "Subscription";
-
+    const isAdding = this.state.addingToCartProducts.includes(product.name);
     return (
       <Col xs={24} sm={12} md={8} lg={6} key={`${product.owner}/${product.name}`} style={{marginBottom: "20px"}}>
         <Card
@@ -163,7 +159,7 @@ class ProductStorePage extends React.Component {
               >
                 {i18next.t("product:Buy")}
               </Button>
-              {!product.isRecharge && !isSubscription && (
+              {!product.isRecharge && (
                 <Button
                   key="add"
                   type="primary"
@@ -171,8 +167,8 @@ class ProductStorePage extends React.Component {
                     e.stopPropagation();
                     this.addToCart(product);
                   }}
-                  disabled={this.state.isAddingToCart}
-                  loading={this.state.isAddingToCart}
+                  disabled={isAdding}
+                  loading={isAdding}
                 >
                   {i18next.t("product:Add to cart")}
                 </Button>

@@ -22,7 +22,6 @@ import * as Setting from "./Setting";
 class OrderPayPage extends React.Component {
   constructor(props) {
     super(props);
-    const params = new URLSearchParams(window.location.search);
     this.state = {
       owner: props?.match?.params?.organizationName ?? props?.match?.params?.owner ?? null,
       orderName: props?.match?.params?.orderName ?? null,
@@ -31,7 +30,7 @@ class OrderPayPage extends React.Component {
       productInfos: [],
       paymentEnv: "",
       isProcessingPayment: false,
-      isViewMode: params.get("view") === "true",
+      isViewMode: false,
     };
   }
 
@@ -61,6 +60,7 @@ class OrderPayPage extends React.Component {
       this.setState({
         order: res.data,
         productInfos: res.data?.productInfos,
+        isViewMode: res.data?.state !== "Created",
       }, () => {
         this.getProduct();
       });
@@ -90,11 +90,12 @@ class OrderPayPage extends React.Component {
   }
 
   getPrice(order) {
-    return `${Setting.getCurrencySymbol(order?.currency)}${order?.price} (${Setting.getCurrencyText(order)})`;
+    return `${Setting.getCurrencySymbol(order?.currency)}${order?.price} (${Setting.getCurrencyText(order?.currency)})`;
   }
 
   getProductPrice(product) {
-    return `${Setting.getCurrencySymbol(this.state.order?.currency)}${product.price} (${Setting.getCurrencyText(this.state.order)})`;
+    const price = product.price * (product.quantity ?? 1);
+    return `${Setting.getCurrencySymbol(this.state.order?.currency)}${price.toFixed(2)} (${Setting.getCurrencyText(this.state.order?.currency)})`;
   }
 
   // Call Wechat Pay via jsapi
@@ -180,6 +181,7 @@ class OrderPayPage extends React.Component {
   getPayButton(provider, onClick) {
     const providerTypeMap = {
       "Dummy": i18next.t("product:Dummy"),
+      "Balance": i18next.t("user:Balance"),
       "Alipay": i18next.t("product:Alipay"),
       "WeChat Pay": i18next.t("product:WeChat Pay"),
       "PayPal": i18next.t("product:PayPal"),
@@ -217,25 +219,48 @@ class OrderPayPage extends React.Component {
   }
 
   renderProduct(product) {
+    const isSubscriptionOrder = product.pricingName && product.planName;
+
     return (
-      <React.Fragment key={product.name}>
-        <Descriptions.Item label={i18next.t("general:Name")} span={3}>
-          <span style={{fontSize: 20}}>
-            {Setting.getLanguageText(product?.displayName)}
-          </span>
-        </Descriptions.Item>
-        <Descriptions.Item label={i18next.t("product:Image")} span={3}>
-          <img src={product?.image} alt={Setting.getLanguageText(product?.displayName)} height={90} style={{marginBottom: "20px"}} />
-        </Descriptions.Item>
-        <Descriptions.Item label={i18next.t("product:Price")} span={3}>
-          <span style={{fontSize: 18, fontWeight: "bold"}}>
-            {this.getProductPrice(product)}
-          </span>
-        </Descriptions.Item>
-        <Descriptions.Item label={i18next.t("product:Detail")} span={3}>
-          <span style={{fontSize: 16}}>{Setting.getLanguageText(product?.detail)}</span>
-        </Descriptions.Item>
-      </React.Fragment>
+      <div key={product.name} style={{marginBottom: "20px", border: "1px solid #f0f0f0", borderRadius: "2px", padding: "1px"}}>
+        <Descriptions bordered column={2} size="middle" labelStyle={{width: "150px"}}>
+          <Descriptions.Item label={i18next.t("general:Name")} span={2}>
+            <span style={{fontSize: 20, fontWeight: "500"}}>
+              {Setting.getLanguageText(product?.displayName)}
+            </span>
+          </Descriptions.Item>
+          <Descriptions.Item label={i18next.t("product:Image")} span={2}>
+            <img src={product?.image} alt={Setting.getLanguageText(product?.displayName)} height={90} style={{objectFit: "contain"}} />
+          </Descriptions.Item>
+
+          <Descriptions.Item label={i18next.t("product:Price")} span={1}>
+            <span style={{fontSize: 18, fontWeight: "bold"}}>
+              {this.getProductPrice(product)}
+            </span>
+          </Descriptions.Item>
+          <Descriptions.Item label={i18next.t("product:Quantity")} span={1}>
+            <span style={{fontSize: 18}}>
+              {product.quantity ?? 1}
+            </span>
+          </Descriptions.Item>
+
+          {product?.detail && (
+            <Descriptions.Item label={i18next.t("product:Detail")} span={2}>
+              <span style={{fontSize: 16}}>{Setting.getLanguageText(product?.detail)}</span>
+            </Descriptions.Item>
+          )}
+          {isSubscriptionOrder && (
+            <>
+              <Descriptions.Item label={i18next.t("subscription:Subscription plan")} span={1}>
+                <span style={{fontSize: 16}}>{Setting.getLanguageText(product?.planName)}</span>
+              </Descriptions.Item>
+              <Descriptions.Item label={i18next.t("subscription:Subscription pricing")} span={1}>
+                <span style={{fontSize: 16}}>{Setting.getLanguageText(product?.pricingName)}</span>
+              </Descriptions.Item>
+            </>
+          )}
+        </Descriptions>
+      </div>
     );
   }
 
@@ -246,19 +271,17 @@ class OrderPayPage extends React.Component {
       return null;
     }
 
-    const isSubscriptionOrder = order.pricingName && order.planName;
-
     return (
       <div className="login-content">
         <Spin spinning={this.state.isProcessingPayment} size="large" tip={i18next.t("product:Processing payment...")} style={{paddingTop: "10%"}} >
           <div style={{marginBottom: "20px"}}>
-            <Descriptions title={<span style={Setting.isMobile() ? {fontSize: 18} : {fontSize: 24}}>{i18next.t("order:Order Information")}</span>} bordered column={3}>
-              <Descriptions.Item label={i18next.t("order:Order ID")} span={3}>
+            <Descriptions title={<span style={Setting.isMobile() ? {fontSize: 18} : {fontSize: 24}}>{i18next.t("general:Order")}</span>} bordered column={3}>
+              <Descriptions.Item label={i18next.t("general:ID")} span={3}>
                 <span style={{fontSize: 16}}>
                   {order.name}
                 </span>
               </Descriptions.Item>
-              <Descriptions.Item label={i18next.t("order:Order Status")}>
+              <Descriptions.Item label={i18next.t("general:Status")}>
                 <span style={{fontSize: 16}}>
                   {order.state}
                 </span>
@@ -277,26 +300,14 @@ class OrderPayPage extends React.Component {
           </div>
 
           <div style={{marginBottom: "20px"}}>
-            <Descriptions title={<span style={Setting.isMobile() ? {fontSize: 18} : {fontSize: 24}}>{i18next.t("product:Product Information")}</span>} bordered column={3}>
-              {productInfos.map(product => this.renderProduct(product))}
-            </Descriptions>
+            <div style={{fontSize: Setting.isMobile() ? 18 : 24, fontWeight: "bold", marginBottom: "16px", color: "rgba(0, 0, 0, 0.85)"}}>
+              {i18next.t("product:Information")}
+            </div>
+            {productInfos.map(product => this.renderProduct(product))}
           </div>
 
-          {isSubscriptionOrder && (
-            <div style={{marginBottom: "20px"}}>
-              <Descriptions title={<span style={Setting.isMobile() ? {fontSize: 18} : {fontSize: 24}}>{i18next.t("subscription:Subscription Information")}</span>} bordered column={3}>
-                <Descriptions.Item label={i18next.t("general:Plan")} span={3}>
-                  <span style={{fontSize: 16}}>{order.planName}</span>
-                </Descriptions.Item>
-                <Descriptions.Item label={i18next.t("general:Pricing")} span={3}>
-                  <span style={{fontSize: 16}}>{order.pricingName}</span>
-                </Descriptions.Item>
-              </Descriptions>
-            </div>
-          )}
-
           <div>
-            <Descriptions title={<span style={Setting.isMobile() ? {fontSize: 18} : {fontSize: 24}}>{i18next.t("payment:Payment Information")}</span>} bordered column={3}>
+            <Descriptions title={<span style={Setting.isMobile() ? {fontSize: 18} : {fontSize: 24}}>{i18next.t("order:Payment")}</span>} bordered column={3}>
               <Descriptions.Item label={i18next.t("product:Price")} span={3}>
                 <span style={{fontSize: 28, color: "red", fontWeight: "bold"}}>
                   {this.getPrice(order)}
