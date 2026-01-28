@@ -77,6 +77,7 @@ type Provider struct {
 
 	ProviderUrl string `xorm:"varchar(200)" json:"providerUrl"`
 	EnableProxy bool   `json:"enableProxy"`
+	EnablePkce  bool   `json:"enablePkce"`
 }
 
 func GetMaskedProvider(provider *Provider, isMaskEnabled bool) *Provider {
@@ -125,6 +126,16 @@ func GetGlobalProviderCount(field, value string) (int64, error) {
 func GetProviders(owner string) ([]*Provider, error) {
 	providers := []*Provider{}
 	err := ormer.Engine.Where("owner = ? or owner = ? ", "admin", owner).Desc("created_time").Find(&providers, &Provider{})
+	if err != nil {
+		return providers, err
+	}
+
+	return providers, nil
+}
+
+func GetProvidersByCategory(owner string, category string) ([]*Provider, error) {
+	providers := []*Provider{}
+	err := ormer.Engine.Where("(owner = ? or owner = ?) and category = ?", "admin", owner, category).Desc("created_time").Find(&providers, &Provider{})
 	if err != nil {
 		return providers, err
 	}
