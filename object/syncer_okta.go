@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/util"
 )
 
 // OktaSyncerProvider implements SyncerProvider for Okta API-based syncers
