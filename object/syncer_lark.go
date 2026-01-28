@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/casdoor/casdoor/util"
+	"github.com/hanzoai/iam/util"
 )
 
 // LarkSyncerProvider implements SyncerProvider for Lark API-based syncers
