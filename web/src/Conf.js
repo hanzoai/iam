@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import React from "react";
+
 export const DefaultApplication = "app-built-in";
 
 export const CasvisorUrl = "";
@@ -25,12 +27,17 @@ export const DefaultLanguage = "en";
 export const InitThemeAlgorithm = true;
 export const ThemeDefault = {
   themeType: "dark",
-  colorPrimary: "#FF6B35",
+  colorPrimary: "#fd4444",
   borderRadius: 6,
   isCompact: false,
 };
 
-export const CustomFooter = null;
+// Custom footer for Hanzo branding
+export const CustomFooter = (
+  <span style={{color: "#a3a3a3", fontSize: "14px"}}>
+    Powered by <a href="https://hanzo.ai" target="_blank" rel="noreferrer" style={{color: "#fd4444", fontWeight: 500}}>Hanzo AI</a>
+  </span>
+);
 
 // Blank or null to hide Ai Assistant button
 export const AiAssistantUrl = "https://ai.hanzo.ai";

@@ -9,12 +9,29 @@
       "favicon": "https://cdn.hanzo.ai/img/favicon.png",
       "passwordType": "argon2id",
       "passwordSalt": "",
-      "passwordOptions": ["AtLeast8"],
-      "countryCodes": ["US", "CN", "JP", "DE", "GB", "FR", "CA", "AU"],
+      "passwordOptions": [
+        "AtLeast8"
+      ],
+      "countryCodes": [
+        "US",
+        "CN",
+        "JP",
+        "DE",
+        "GB",
+        "FR",
+        "CA",
+        "AU"
+      ],
       "defaultAvatar": "https://cdn.hanzo.ai/img/default-avatar.png",
       "defaultApplication": "app-hanzo",
-      "tags": ["production"],
-      "languages": ["en", "zh", "ja"],
+      "tags": [
+        "production"
+      ],
+      "languages": [
+        "en",
+        "zh",
+        "ja"
+      ],
       "themeData": {
         "themeType": "dark",
         "colorPrimary": "#fd4444",
@@ -28,27 +45,132 @@
       "isProfilePublic": false,
       "mfaItems": [],
       "accountItems": [
-        {"name": "Organization", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "ID", "visible": true, "viewRule": "Public", "modifyRule": "Immutable"},
-        {"name": "Name", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Display name", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Avatar", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "User type", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Password", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Email", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Phone", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Country/Region", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Location", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Is admin", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Is forbidden", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Is deleted", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Signup application", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Balance", "visible": true, "viewRule": "Self", "modifyRule": "Admin"},
-        {"name": "Score", "visible": true, "viewRule": "Self", "modifyRule": "Admin"},
-        {"name": "3rd-party logins", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Properties", "visible": false, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "WebAuthn credentials", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Managed accounts", "visible": true, "viewRule": "Self", "modifyRule": "Self"}
+        {
+          "name": "Organization",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "ID",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Immutable"
+        },
+        {
+          "name": "Name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Display name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Avatar",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "User type",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Password",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Email",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Phone",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Country/Region",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Location",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Is admin",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is forbidden",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is deleted",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Signup application",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Balance",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Score",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "3rd-party logins",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Properties",
+          "visible": false,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "WebAuthn credentials",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Managed accounts",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        }
       ]
     },
     {
@@ -60,12 +182,29 @@
       "favicon": "https://cdn.zoo.ngo/img/favicon.png",
       "passwordType": "argon2id",
       "passwordSalt": "",
-      "passwordOptions": ["AtLeast8"],
-      "countryCodes": ["US", "CN", "JP", "DE", "GB", "FR", "CA", "AU"],
+      "passwordOptions": [
+        "AtLeast8"
+      ],
+      "countryCodes": [
+        "US",
+        "CN",
+        "JP",
+        "DE",
+        "GB",
+        "FR",
+        "CA",
+        "AU"
+      ],
       "defaultAvatar": "https://cdn.zoo.ngo/img/default-avatar.png",
       "defaultApplication": "app-zoo",
-      "tags": ["production"],
-      "languages": ["en", "zh", "ja"],
+      "tags": [
+        "production"
+      ],
+      "languages": [
+        "en",
+        "zh",
+        "ja"
+      ],
       "themeData": {
         "themeType": "dark",
         "colorPrimary": "#10b981",
@@ -79,27 +218,132 @@
       "isProfilePublic": false,
       "mfaItems": [],
       "accountItems": [
-        {"name": "Organization", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "ID", "visible": true, "viewRule": "Public", "modifyRule": "Immutable"},
-        {"name": "Name", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Display name", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Avatar", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "User type", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Password", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Email", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Phone", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Country/Region", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Location", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Is admin", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Is forbidden", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Is deleted", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Signup application", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Balance", "visible": true, "viewRule": "Self", "modifyRule": "Admin"},
-        {"name": "Score", "visible": true, "viewRule": "Self", "modifyRule": "Admin"},
-        {"name": "3rd-party logins", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Properties", "visible": false, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "WebAuthn credentials", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Managed accounts", "visible": true, "viewRule": "Self", "modifyRule": "Self"}
+        {
+          "name": "Organization",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "ID",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Immutable"
+        },
+        {
+          "name": "Name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Display name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Avatar",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "User type",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Password",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Email",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Phone",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Country/Region",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Location",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Is admin",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is forbidden",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is deleted",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Signup application",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Balance",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Score",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "3rd-party logins",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Properties",
+          "visible": false,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "WebAuthn credentials",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Managed accounts",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        }
       ]
     },
     {
@@ -111,12 +355,29 @@
       "favicon": "https://cdn.lux.network/img/favicon.png",
       "passwordType": "argon2id",
       "passwordSalt": "",
-      "passwordOptions": ["AtLeast8"],
-      "countryCodes": ["US", "CN", "JP", "DE", "GB", "FR", "CA", "AU"],
+      "passwordOptions": [
+        "AtLeast8"
+      ],
+      "countryCodes": [
+        "US",
+        "CN",
+        "JP",
+        "DE",
+        "GB",
+        "FR",
+        "CA",
+        "AU"
+      ],
       "defaultAvatar": "https://cdn.lux.network/img/default-avatar.png",
       "defaultApplication": "app-lux",
-      "tags": ["production"],
-      "languages": ["en", "zh", "ja"],
+      "tags": [
+        "production"
+      ],
+      "languages": [
+        "en",
+        "zh",
+        "ja"
+      ],
       "themeData": {
         "themeType": "dark",
         "colorPrimary": "#8b5cf6",
@@ -130,27 +391,132 @@
       "isProfilePublic": false,
       "mfaItems": [],
       "accountItems": [
-        {"name": "Organization", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "ID", "visible": true, "viewRule": "Public", "modifyRule": "Immutable"},
-        {"name": "Name", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Display name", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Avatar", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "User type", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Password", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Email", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Phone", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Country/Region", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Location", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Is admin", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Is forbidden", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Is deleted", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Signup application", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Balance", "visible": true, "viewRule": "Self", "modifyRule": "Admin"},
-        {"name": "Score", "visible": true, "viewRule": "Self", "modifyRule": "Admin"},
-        {"name": "3rd-party logins", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Properties", "visible": false, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "WebAuthn credentials", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Managed accounts", "visible": true, "viewRule": "Self", "modifyRule": "Self"}
+        {
+          "name": "Organization",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "ID",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Immutable"
+        },
+        {
+          "name": "Name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Display name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Avatar",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "User type",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Password",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Email",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Phone",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Country/Region",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Location",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Is admin",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is forbidden",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is deleted",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Signup application",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Balance",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Score",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "3rd-party logins",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Properties",
+          "visible": false,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "WebAuthn credentials",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Managed accounts",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        }
       ]
     },
     {
@@ -162,12 +528,30 @@
       "favicon": "https://cdn.pars.ai/img/favicon.png",
       "passwordType": "argon2id",
       "passwordSalt": "",
-      "passwordOptions": ["AtLeast8"],
-      "countryCodes": ["US", "CN", "JP", "DE", "GB", "FR", "CA", "AU", "IR"],
+      "passwordOptions": [
+        "AtLeast8"
+      ],
+      "countryCodes": [
+        "US",
+        "CN",
+        "JP",
+        "DE",
+        "GB",
+        "FR",
+        "CA",
+        "AU",
+        "IR"
+      ],
       "defaultAvatar": "https://cdn.pars.ai/img/default-avatar.png",
       "defaultApplication": "app-pars",
-      "tags": ["production"],
-      "languages": ["en", "fa", "zh"],
+      "tags": [
+        "production"
+      ],
+      "languages": [
+        "en",
+        "fa",
+        "zh"
+      ],
       "themeData": {
         "themeType": "dark",
         "colorPrimary": "#3b82f6",
@@ -181,27 +565,132 @@
       "isProfilePublic": false,
       "mfaItems": [],
       "accountItems": [
-        {"name": "Organization", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "ID", "visible": true, "viewRule": "Public", "modifyRule": "Immutable"},
-        {"name": "Name", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Display name", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Avatar", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "User type", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Password", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Email", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Phone", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Country/Region", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Location", "visible": true, "viewRule": "Public", "modifyRule": "Self"},
-        {"name": "Is admin", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Is forbidden", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Is deleted", "visible": true, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "Signup application", "visible": true, "viewRule": "Public", "modifyRule": "Admin"},
-        {"name": "Balance", "visible": true, "viewRule": "Self", "modifyRule": "Admin"},
-        {"name": "Score", "visible": true, "viewRule": "Self", "modifyRule": "Admin"},
-        {"name": "3rd-party logins", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Properties", "visible": false, "viewRule": "Admin", "modifyRule": "Admin"},
-        {"name": "WebAuthn credentials", "visible": true, "viewRule": "Self", "modifyRule": "Self"},
-        {"name": "Managed accounts", "visible": true, "viewRule": "Self", "modifyRule": "Self"}
+        {
+          "name": "Organization",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "ID",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Immutable"
+        },
+        {
+          "name": "Name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Display name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Avatar",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "User type",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Password",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Email",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Phone",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Country/Region",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Location",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Is admin",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is forbidden",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is deleted",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Signup application",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Balance",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Score",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "3rd-party logins",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Properties",
+          "visible": false,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "WebAuthn credentials",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Managed accounts",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        }
       ]
     }
   ],
@@ -228,7 +717,7 @@
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
       "clientId": "hanzo-app-client-id",
-      "clientSecret": "hanzo-app-client-secret",
+      "clientSecret": "3c7c4d9817bf0993681f6da2605e07ba5949da87a32862ed",
       "redirectUris": [
         "https://hanzo.ai/callback",
         "https://hanzo.app/callback",
@@ -284,7 +773,7 @@
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
       "clientId": "hanzo-cloud-client-id",
-      "clientSecret": "hanzo-cloud-client-secret",
+      "clientSecret": "3c7c4d9817bf0993681f6da2605e07ba5949da87a32862ed",
       "redirectUris": [
         "https://cloud.hanzo.ai/callback",
         "https://stg.cloud.hanzo.ai/callback",
@@ -336,7 +825,7 @@
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
       "clientId": "hanzo-commerce-client-id",
-      "clientSecret": "hanzo-commerce-client-secret",
+      "clientSecret": "3c7c4d9817bf0993681f6da2605e07ba5949da87a32862ed",
       "redirectUris": [
         "https://commerce.hanzo.ai/callback",
         "http://localhost:8090/callback"
@@ -387,11 +876,12 @@
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
       "clientId": "hanzo-console-client-id",
-      "clientSecret": "hanzo-console-client-secret",
+      "clientSecret": "3c7c4d9817bf0993681f6da2605e07ba5949da87a32862ed",
       "redirectUris": [
         "https://console.hanzo.ai/api/auth/callback/custom",
         "https://stg.console.hanzo.ai/api/auth/callback/custom",
-        "http://localhost:3000/api/auth/callback/custom"
+        "http://localhost:3000/api/auth/callback/custom",
+        "http://localhost:3091/api/auth/callback/custom"
       ],
       "tokenFormat": "JWT",
       "tokenFields": [],
@@ -439,7 +929,7 @@
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
       "clientId": "zoo-app-client-id",
-      "clientSecret": "zoo-app-client-secret",
+      "clientSecret": "8a00c223d58fe175cfe8db7c2ee59b8525abcda47215da40",
       "redirectUris": [
         "https://zoo.ngo/callback",
         "https://app.zoo.ngo/callback",
@@ -492,7 +982,7 @@
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
       "clientId": "lux-app-client-id",
-      "clientSecret": "lux-app-client-secret",
+      "clientSecret": "2b750cdf20da2c666140d08a0be2e68c007cf430e9ac7f0b",
       "redirectUris": [
         "https://lux.network/callback",
         "https://lux.id/callback",
@@ -547,7 +1037,7 @@
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
       "clientId": "pars-app-client-id",
-      "clientSecret": "pars-app-client-secret",
+      "clientSecret": "38d12a872690f5d83781c2c7307973f9eaf876f6a4942a04",
       "redirectUris": [
         "https://pars.ai/callback",
         "https://pars.id/callback",
@@ -577,6 +1067,110 @@
       "formOffset": 2,
       "formSideHtml": "",
       "formBackgroundUrl": "https://cdn.pars.ai/img/auth-bg.jpg"
+    },
+    {
+      "owner": "admin",
+      "name": "app-hanzobot",
+      "createdTime": "2024-01-01T00:00:00Z",
+      "displayName": "HanzoBot",
+      "logo": "https://cdn.hanzo.ai/img/bot-logo.svg",
+      "homepageUrl": "https://bot.hanzo.ai",
+      "description": "Hanzo AI Bot Platform - Multi-tenant bot gateway",
+      "organization": "hanzo",
+      "cert": "cert-hanzo",
+      "enablePassword": false,
+      "enableSignUp": false,
+      "enableSigninSession": true,
+      "enableAutoSignin": false,
+      "enableCodeSignin": true,
+      "enableSamlCompress": false,
+      "enableSamlC14n10": false,
+      "enableWebAuthn": false,
+      "enableLinkWithEmail": false,
+      "orgChoiceMode": "None",
+      "samlReplyUrl": "",
+      "clientId": "hanzobot-client-id",
+      "clientSecret": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4",
+      "redirectUris": [
+        "https://bot.hanzo.ai/auth/callback",
+        "http://localhost:18789/auth/callback"
+      ],
+      "tokenFormat": "JWT",
+      "tokenFields": [],
+      "expireInHours": 168,
+      "refreshExpireInHours": 720,
+      "signupUrl": "",
+      "signinUrl": "",
+      "forgetUrl": "",
+      "affiliationUrl": "",
+      "termsOfUse": "https://hanzo.ai/terms",
+      "signupHtml": "",
+      "signinHtml": "",
+      "themeData": {
+        "themeType": "dark",
+        "colorPrimary": "#fd4444",
+        "borderRadius": 6,
+        "isCompact": false,
+        "isEnabled": true
+      },
+      "formCss": "",
+      "formCssMobile": "",
+      "formOffset": 2,
+      "formSideHtml": "",
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg"
+    },
+    {
+      "owner": "hanzo",
+      "name": "app-platform",
+      "createdTime": "2024-01-01T00:00:00Z",
+      "displayName": "Hanzo Platform",
+      "logo": "",
+      "homepageUrl": "https://platform.hanzo.ai",
+      "description": "Hanzo PaaS Deployment Platform",
+      "organization": "hanzo",
+      "cert": "cert-hanzo",
+      "enablePassword": true,
+      "enableSignUp": true,
+      "enableSigninSession": true,
+      "enableAutoSignin": false,
+      "enableCodeSignin": true,
+      "enableSamlCompress": false,
+      "enableSamlC14n10": false,
+      "enableWebAuthn": true,
+      "enableLinkWithEmail": false,
+      "orgChoiceMode": "None",
+      "samlReplyUrl": "",
+      "clientId": "hanzo-platform-client-id",
+      "clientSecret": "a4b5c6d7e8f90123456789abcdef0123456789abcdef01",
+      "redirectUris": [
+        "https://platform.hanzo.ai/api/auth/callback/hanzo",
+        "https://stg.platform.hanzo.ai/api/auth/callback/hanzo",
+        "http://localhost:3002/api/auth/callback/hanzo",
+        "http://localhost:3000/api/auth/callback/hanzo"
+      ],
+      "tokenFormat": "JWT",
+      "tokenFields": [],
+      "expireInHours": 168,
+      "refreshExpireInHours": 720,
+      "signupUrl": "",
+      "signinUrl": "",
+      "forgetUrl": "",
+      "affiliationUrl": "",
+      "termsOfUse": "https://hanzo.ai/terms",
+      "signupHtml": "",
+      "signinHtml": "",
+      "themeData": {
+        "themeType": "dark",
+        "colorPrimary": "#fd4444",
+        "borderRadius": 6,
+        "isCompact": false,
+        "isEnabled": true
+      },
+      "formCss": "",
+      "formCssMobile": "",
+      "formOffset": 2,
+      "formSideHtml": "",
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg"
     }
   ],
   "users": [
@@ -704,9 +1298,9 @@
       "mfaEmailEnabled": false,
       "ldap": "",
       "properties": {},
-      "roles": ["admin"],
-      "permissions": ["*"],
-      "groups": ["admins"],
+      "roles": [],
+      "permissions": [],
+      "groups": [],
       "lastSigninWrongTime": "",
       "signinWrongTimes": 0,
       "managedAccounts": null
