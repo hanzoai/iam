@@ -17,8 +17,8 @@ package controllers
 import (
 	"errors"
 
-	"github.com/hanzoai/iam/util"
 	"github.com/go-git/go-git/v5"
+	"github.com/hanzoai/iam/util"
 )
 
 // GetSystemInfo
