@@ -1,5 +1,5 @@
 # Hanzo IAM Production Deployment
-# Deploy to hanzo.id on Digital Ocean
+# Multi-tenant IAM serving: hanzo.id, lux.id, zoo.id, pars.id
 
 services:
   iam:
@@ -9,18 +9,33 @@ services:
       - "8000:8000"
     environment:
       RUNNING_IN_DOCKER: "true"
-      IAM_DB_HOST: ${IAM_DB_HOST}
+      IAM_DB_HOST: ${IAM_DB_HOST:-postgres}
       IAM_DB_PASSWORD: ${IAM_DB_PASSWORD}
       IAM_REDIS_HOST: ${IAM_REDIS_HOST:-redis}
+      IAM_RADIUS_SECRET: ${IAM_RADIUS_SECRET:-secret}
     volumes:
-      - ./conf/app.prod.conf:/conf/app.conf:ro
-      - ./init_data.json:/init_data.json:ro
+      - ./conf/app.prod.conf:/app/conf/app.conf:ro
+      - ./init_data.json:/app/init_data.json:ro
       - iam_logs:/logs
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.iam.rule=Host(`hanzo.id`)"
-      - "traefik.http.routers.iam.entrypoints=websecure"
-      - "traefik.http.routers.iam.tls.certresolver=letsencrypt"
+      # Hanzo ID - main IAM
+      - "traefik.http.routers.iam-hanzo.rule=Host(`hanzo.id`)"
+      - "traefik.http.routers.iam-hanzo.entrypoints=websecure"
+      - "traefik.http.routers.iam-hanzo.tls.certresolver=letsencrypt"
+      # Lux ID - Lux Network users
+      - "traefik.http.routers.iam-lux.rule=Host(`lux.id`)"
+      - "traefik.http.routers.iam-lux.entrypoints=websecure"
+      - "traefik.http.routers.iam-lux.tls.certresolver=letsencrypt"
+      # Zoo ID - Zoo Labs users
+      - "traefik.http.routers.iam-zoo.rule=Host(`zoo.id`)"
+      - "traefik.http.routers.iam-zoo.entrypoints=websecure"
+      - "traefik.http.routers.iam-zoo.tls.certresolver=letsencrypt"
+      # Pars ID - Pars Network users
+      - "traefik.http.routers.iam-pars.rule=Host(`pars.id`)"
+      - "traefik.http.routers.iam-pars.entrypoints=websecure"
+      - "traefik.http.routers.iam-pars.tls.certresolver=letsencrypt"
+      # Load balancer config
       - "traefik.http.services.iam.loadbalancer.server.port=8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
@@ -28,6 +43,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
@@ -39,7 +59,7 @@ services:
     volumes:
       - iam_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hanzo"]
+      test: ["CMD-SHELL", "pg_isready -U hanzo -d hanzo_iam"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -61,15 +81,18 @@ services:
     restart: unless-stopped
     command:
       - "--api.insecure=false"
+      - "--api.dashboard=false"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.letsencrypt.acme.email=admin@hanzo.ai"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=INFO"
     ports:
       - "80:80"
       - "443:443"
