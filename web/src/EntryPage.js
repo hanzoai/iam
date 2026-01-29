@@ -35,6 +35,7 @@ import QrCodePage from "./QrCodePage";
 import CaptchaPage from "./CaptchaPage";
 import CustomHead from "./basic/CustomHead";
 import * as Util from "./auth/Util";
+import HanzoShowcase from "./HanzoShowcase";
 
 class EntryPage extends React.Component {
   constructor(props) {
@@ -105,38 +106,56 @@ class EntryPage extends React.Component {
 
     const isDarkMode = this.props.themeAlgorithm.includes("dark");
 
+    // Check if this is a login or signup page (show showcase)
+    const currentPath = window.location.pathname;
+    const isAuthPage = currentPath.includes("/login") || currentPath.includes("/signup") || currentPath.includes("/forget");
+    const showShowcase = isAuthPage && !Setting.isMobile() && !Setting.inIframe();
+
     return (
       <React.Fragment>
         <CustomHead headerHtml={this.state.application?.headerHtml} />
-        <div className={`${isDarkMode ? "loginBackgroundDark" : "loginBackground"}`}
-          style={{backgroundImage: Setting.inIframe() ? null : (Setting.isMobile() ? `url(${this.state.application?.formBackgroundUrlMobile})` : `url(${this.state.application?.formBackgroundUrl})`)}}>
-          <Spin size="large" spinning={this.state.application === undefined && this.state.pricing === undefined} tip={i18next.t("login:Loading")}
-            style={{width: "100%", margin: "0 auto", position: "absolute"}} />
-          <Switch>
-            <Route exact path="/signup" render={(props) => this.renderHomeIfLoggedIn(<SignupPage {...this.props} application={this.state.application} applicationName={authConfig.appName} onUpdateApplication={onUpdateApplication} {...props} />)} />
-            <Route exact path="/signup/:applicationName" render={(props) => this.renderHomeIfLoggedIn(<SignupPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
-            <Route exact path="/login" render={(props) => this.renderHomeIfLoggedIn(<SelfLoginPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
-            <Route exact path="/login/:owner" render={(props) => this.renderHomeIfLoggedIn(<SelfLoginPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
-            <Route exact path="/signup/oauth/authorize" render={(props) => <SignupPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />} />
-            <Route exact path="/login/oauth/authorize" render={(props) => <LoginPage {...this.props} application={this.state.application} type={"code"} mode={"signin"} onUpdateApplication={onUpdateApplication} {...props} />} />
-            <Route exact path="/login/oauth/device/:userCode" render={(props) => <LoginPage {...this.props} application={this.state.application} type={"device"} mode={"signin"} onUpdateApplication={onUpdateApplication} {...props} />} />
-            <Route exact path="/login/saml/authorize/:owner/:applicationName" render={(props) => <LoginPage {...this.props} application={this.state.application} type={"saml"} mode={"signin"} onUpdateApplication={onUpdateApplication} {...props} />} />
-            <Route exact path="/forget" render={(props) => <SelfForgetPage {...this.props} account={this.props.account} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />} />
-            <Route exact path="/forget/:applicationName" render={(props) => <ForgetPage {...this.props} account={this.props.account} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />} />
-            <Route exact path="/prompt" render={(props) => this.renderLoginIfNotLoggedIn(<PromptPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
-            <Route exact path="/prompt/:applicationName" render={(props) => this.renderLoginIfNotLoggedIn(<PromptPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
-            <Route exact path="/result" render={(props) => this.renderHomeIfLoggedIn(<ResultPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
-            <Route exact path="/result/:applicationName" render={(props) => this.renderHomeIfLoggedIn(<ResultPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
-            <Route exact path="/cas/:owner/:casApplicationName/logout" render={(props) => this.renderHomeIfLoggedIn(<CasLogout {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
-            <Route exact path="/cas/:owner/:casApplicationName/login" render={(props) => {return (<LoginPage {...this.props} application={this.state.application} type={"cas"} mode={"signin"} onUpdateApplication={onUpdateApplication} {...props} />);}} />
-            <Route exact path="/select-plan/:owner/:pricingName" render={(props) => <PricingPage {...this.props} pricing={this.state.pricing} onUpdatePricing={onUpdatePricing} {...props} />} />
-            <Route exact path="/buy-plan/:owner/:pricingName" render={(props) => <ProductBuyPage {...this.props} pricing={this.state.pricing} onUpdatePricing={onUpdatePricing} {...props} />} />
-            <Route exact path="/buy-plan/:owner/:pricingName/result" render={(props) => <PaymentResultPage {...this.props} pricing={this.state.pricing} onUpdatePricing={onUpdatePricing} {...props} />} />
-            <Route exact path="/qrcode/:owner/:paymentName" render={(props) => <QrCodePage {...this.props} onUpdateApplication={onUpdateApplication} {...props} />} />
-            <Route exact path="/captcha" render={(props) => <CaptchaPage {...props} />} />
-          </Switch>
-        </div>
+        <div className="split-login-container">
+          {/* Left side - Login Form */}
+          <div className={`split-login-form ${isDarkMode ? "loginBackgroundDark" : "loginBackground"}`}
+            style={{
+              flex: showShowcase ? "0 0 50%" : "1",
+              maxWidth: showShowcase ? "50%" : "100%",
+              backgroundImage: Setting.inIframe() ? null : (Setting.isMobile() ? `url(${this.state.application?.formBackgroundUrlMobile})` : `url(${this.state.application?.formBackgroundUrl})`),
+            }}>
+            <Spin size="large" spinning={this.state.application === undefined && this.state.pricing === undefined} tip={i18next.t("login:Loading")}
+              style={{width: "100%", margin: "0 auto", position: "absolute"}} />
+            <Switch>
+              <Route exact path="/signup" render={(props) => this.renderHomeIfLoggedIn(<SignupPage {...this.props} application={this.state.application} applicationName={authConfig.appName} onUpdateApplication={onUpdateApplication} {...props} />)} />
+              <Route exact path="/signup/:applicationName" render={(props) => this.renderHomeIfLoggedIn(<SignupPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
+              <Route exact path="/login" render={(props) => this.renderHomeIfLoggedIn(<SelfLoginPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
+              <Route exact path="/login/:owner" render={(props) => this.renderHomeIfLoggedIn(<SelfLoginPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
+              <Route exact path="/signup/oauth/authorize" render={(props) => <SignupPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />} />
+              <Route exact path="/login/oauth/authorize" render={(props) => <LoginPage {...this.props} application={this.state.application} type={"code"} mode={"signin"} onUpdateApplication={onUpdateApplication} {...props} />} />
+              <Route exact path="/login/oauth/device/:userCode" render={(props) => <LoginPage {...this.props} application={this.state.application} type={"device"} mode={"signin"} onUpdateApplication={onUpdateApplication} {...props} />} />
+              <Route exact path="/login/saml/authorize/:owner/:applicationName" render={(props) => <LoginPage {...this.props} application={this.state.application} type={"saml"} mode={"signin"} onUpdateApplication={onUpdateApplication} {...props} />} />
+              <Route exact path="/forget" render={(props) => <SelfForgetPage {...this.props} account={this.props.account} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />} />
+              <Route exact path="/forget/:applicationName" render={(props) => <ForgetPage {...this.props} account={this.props.account} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />} />
+              <Route exact path="/prompt" render={(props) => this.renderLoginIfNotLoggedIn(<PromptPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
+              <Route exact path="/prompt/:applicationName" render={(props) => this.renderLoginIfNotLoggedIn(<PromptPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
+              <Route exact path="/result" render={(props) => this.renderHomeIfLoggedIn(<ResultPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
+              <Route exact path="/result/:applicationName" render={(props) => this.renderHomeIfLoggedIn(<ResultPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
+              <Route exact path="/cas/:owner/:casApplicationName/logout" render={(props) => this.renderHomeIfLoggedIn(<CasLogout {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />
+              <Route exact path="/cas/:owner/:casApplicationName/login" render={(props) => {return (<LoginPage {...this.props} application={this.state.application} type={"cas"} mode={"signin"} onUpdateApplication={onUpdateApplication} {...props} />);}} />
+              <Route exact path="/select-plan/:owner/:pricingName" render={(props) => <PricingPage {...this.props} pricing={this.state.pricing} onUpdatePricing={onUpdatePricing} {...props} />} />
+              <Route exact path="/buy-plan/:owner/:pricingName" render={(props) => <ProductBuyPage {...this.props} pricing={this.state.pricing} onUpdatePricing={onUpdatePricing} {...props} />} />
+              <Route exact path="/buy-plan/:owner/:pricingName/result" render={(props) => <PaymentResultPage {...this.props} pricing={this.state.pricing} onUpdatePricing={onUpdatePricing} {...props} />} />
+              <Route exact path="/qrcode/:owner/:paymentName" render={(props) => <QrCodePage {...this.props} onUpdateApplication={onUpdateApplication} {...props} />} />
+              <Route exact path="/captcha" render={(props) => <CaptchaPage {...props} />} />
+            </Switch>
+          </div>
 
+          {/* Right side - Hanzo Showcase (only on desktop for auth pages) */}
+          {showShowcase && (
+            <div className="split-login-showcase">
+              <HanzoShowcase />
+            </div>
+          )}
+        </div>
       </React.Fragment>
     );
   }
