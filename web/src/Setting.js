@@ -219,8 +219,8 @@ export const OtherProviderInfo = {
       logo: `${StaticBaseUrl}/img/social_synology.png`,
       url: "https://www.synology.com/en-global/dsm/feature/file_sharing",
     },
-    "Casdoor": {
-      logo: `${StaticBaseUrl}/img/casdoor.png`,
+    "Hanzo": {
+      logo: `${StaticBaseUrl}/img/hanzo-storage.png`,
       url: "https://hanzo.ai/docs/provider/storage/overview",
     },
     "CUCloud OSS": {
@@ -1207,7 +1207,7 @@ export function getProviderTypeOptions(category) {
         {id: "ADFS", name: "ADFS"},
         {id: "Baidu", name: "Baidu"},
         {id: "Alipay", name: "Alipay"},
-        {id: "Casdoor", name: "Casdoor"},
+        {id: "Hanzo", name: "Hanzo IAM"},
         {id: "Infoflow", name: "Infoflow"},
         {id: "Apple", name: "Apple"},
         {id: "AzureAD", name: "Azure AD"},
@@ -1324,7 +1324,7 @@ export function getProviderTypeOptions(category) {
         {id: "Qiniu Cloud Kodo", name: "Qiniu Cloud Kodo"},
         {id: "Google Cloud Storage", name: "Google Cloud Storage"},
         {id: "Synology", name: "Synology"},
-        {id: "Casdoor", name: "Casdoor"},
+        {id: "Hanzo", name: "Hanzo IAM"},
         {id: "CUCloud OSS", name: "CUCloud OSS"},
       ]
     );
