@@ -1,0 +1,25 @@
+{
+  "short_name": "Hanzo IAM",
+  "name": "Hanzo Identity & Access Management",
+  "icons": [
+    {
+      "src": "/img/hanzo-favicon.png",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/img/hanzo-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/img/hanzo-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#ffffff"
+}
