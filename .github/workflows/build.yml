@@ -264,6 +264,7 @@ jobs:
           target: STANDARD
           platforms: linux/amd64,linux/arm64
           push: true
+          provenance: false
           tags: ghcr.io/hanzoai/iam:${{ needs.tag-release.outputs.new-release-version }},ghcr.io/hanzoai/iam:latest
 
       - name: Push All In One Version to GHCR
@@ -273,4 +274,5 @@ jobs:
           target: ALLINONE
           platforms: linux/amd64,linux/arm64
           push: true
+          provenance: false
           tags: ghcr.io/hanzoai/iam-allinone:${{ needs.tag-release.outputs.new-release-version }},ghcr.io/hanzoai/iam-allinone:latest
