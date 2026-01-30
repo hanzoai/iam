@@ -100,11 +100,12 @@ func GetVersionInfo() (*VersionInfo, error) {
 	}
 	ref, err := r.Head()
 	if err != nil {
-		return GetBuiltInVersionInfo(), err
+		// Graceful fallback for shallow clones or incomplete repos
+		return GetBuiltInVersionInfo(), nil
 	}
 	tags, err := r.Tags()
 	if err != nil {
-		return GetBuiltInVersionInfo(), err
+		return GetBuiltInVersionInfo(), nil
 	}
 	tagMap := make(map[plumbing.Hash]string)
 	err = tags.ForEach(func(t *plumbing.Reference) error {
@@ -117,12 +118,13 @@ func GetVersionInfo() (*VersionInfo, error) {
 		return nil
 	})
 	if err != nil {
-		return GetBuiltInVersionInfo(), err
+		// Graceful fallback when tag resolution fails (common in shallow clones)
+		return GetBuiltInVersionInfo(), nil
 	}
 
 	cIter, err := r.Log(&git.LogOptions{From: ref.Hash()})
 	if err != nil {
-		return GetBuiltInVersionInfo(), err
+		return GetBuiltInVersionInfo(), nil
 	}
 
 	commitOffset := 0
@@ -141,7 +143,7 @@ func GetVersionInfo() (*VersionInfo, error) {
 		return nil
 	})
 	if err != nil {
-		return GetBuiltInVersionInfo(), err
+		return GetBuiltInVersionInfo(), nil
 	}
 
 	return &VersionInfo{
