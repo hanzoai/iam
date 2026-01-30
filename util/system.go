@@ -1,4 +1,4 @@
-// Copyright 2022 The Casdoor Authors. All Rights Reserved.
+// Copyright 2022-2025 Hanzo AI Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -89,26 +89,22 @@ func GetSystemInfo() (*SystemInfo, error) {
 }
 
 // GetVersionInfo get git current commit and repo release version
+// Falls back to built-in values when .git is not available (e.g., in Docker)
 func GetVersionInfo() (*VersionInfo, error) {
-	res := &VersionInfo{
-		Version:      "",
-		CommitId:     "",
-		CommitOffset: -1,
-	}
-
 	_, filename, _, _ := runtime.Caller(0)
 	rootPath := path.Dir(path.Dir(filename))
 	r, err := git.PlainOpen(rootPath)
 	if err != nil {
-		return res, err
+		// Fall back to built-in values when .git directory is not available
+		return GetBuiltInVersionInfo(), nil
 	}
 	ref, err := r.Head()
 	if err != nil {
-		return res, err
+		return GetBuiltInVersionInfo(), err
 	}
 	tags, err := r.Tags()
 	if err != nil {
-		return res, err
+		return GetBuiltInVersionInfo(), err
 	}
 	tagMap := make(map[plumbing.Hash]string)
 	err = tags.ForEach(func(t *plumbing.Reference) error {
@@ -121,12 +117,12 @@ func GetVersionInfo() (*VersionInfo, error) {
 		return nil
 	})
 	if err != nil {
-		return res, err
+		return GetBuiltInVersionInfo(), err
 	}
 
 	cIter, err := r.Log(&git.LogOptions{From: ref.Hash()})
 	if err != nil {
-		return res, err
+		return GetBuiltInVersionInfo(), err
 	}
 
 	commitOffset := 0
@@ -145,15 +141,14 @@ func GetVersionInfo() (*VersionInfo, error) {
 		return nil
 	})
 	if err != nil {
-		return res, err
+		return GetBuiltInVersionInfo(), err
 	}
 
-	res = &VersionInfo{
+	return &VersionInfo{
 		Version:      version,
 		CommitId:     ref.Hash().String(),
 		CommitOffset: commitOffset,
-	}
-	return res, nil
+	}, nil
 }
 
 func GetBuiltInVersionInfo() *VersionInfo {
