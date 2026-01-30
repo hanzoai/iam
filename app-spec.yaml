@@ -7,7 +7,7 @@ services:
       branch: main
       deploy_on_push: true
     dockerfile_path: Dockerfile.doapp
-    instance_size_slug: professional-xs
+    instance_size_slug: professional-l
     instance_count: 1
     http_port: 8000
     health_check:
@@ -21,7 +21,7 @@ services:
       - key: RUNNING_IN_DOCKER
         value: "true"
         scope: RUN_AND_BUILD_TIME
-      - key: IAM_DATABASE_URL
+      - key: dataSourceName
         value: "${IAM_DB_CONNECTION_STRING}"
         scope: RUN_TIME
         type: SECRET
