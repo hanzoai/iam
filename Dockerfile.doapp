@@ -44,7 +44,7 @@ WORKDIR /app
 # Copy binary
 COPY --from=backend --chown=hanzo:hanzo /hanzo-iam ./server
 COPY --from=backend --chown=hanzo:hanzo /go/src/hanzo-iam/swagger ./swagger
-COPY --from=backend --chown=hanzo:hanzo /go/src/hanzo-iam/conf/app.conf ./conf/app.conf
+COPY --from=backend --chown=hanzo:hanzo /go/src/hanzo-iam/conf/app.prod.conf ./conf/app.conf
 COPY --from=backend --chown=hanzo:hanzo /go/src/hanzo-iam/init_data.json ./init_data.json
 
 # Copy frontend
