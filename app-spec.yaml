@@ -6,7 +6,7 @@ services:
       repo: hanzoai/iam
       branch: main
       deploy_on_push: true
-    dockerfile_path: Dockerfile.prebuilt
+    dockerfile_path: Dockerfile.doapp
     instance_size_slug: professional-xs
     instance_count: 1
     http_port: 8000
@@ -21,63 +21,10 @@ services:
       - key: RUNNING_IN_DOCKER
         value: "true"
         scope: RUN_AND_BUILD_TIME
-      - key: runmode
-        value: "prod"
-        scope: RUN_AND_BUILD_TIME
-      - key: driverName
-        value: "postgres"
-        scope: RUN_AND_BUILD_TIME
-      - key: dataSourceName
-        value: "user=${db.USERNAME} password=${db.PASSWORD} host=${db.HOSTNAME} port=${db.PORT} sslmode=require dbname=${db.DATABASE}"
+      - key: IAM_DATABASE_URL
+        value: "${IAM_DB_CONNECTION_STRING}"
         scope: RUN_TIME
-      - key: dbName
-        value: "${db.DATABASE}"
-        scope: RUN_TIME
-      - key: redisEndpoint
-        value: ""
-        scope: RUN_TIME
-      - key: origin
-        value: "https://hanzo.id"
-        scope: RUN_AND_BUILD_TIME
-      - key: originFrontend
-        value: "https://hanzo.id"
-        scope: RUN_AND_BUILD_TIME
-      - key: staticBaseUrl
-        value: "https://cdn.hanzo.ai"
-        scope: RUN_AND_BUILD_TIME
-      - key: verificationCodeTimeout
-        value: "10"
-        scope: RUN_AND_BUILD_TIME
-      - key: initScore
-        value: "0"
-        scope: RUN_AND_BUILD_TIME
-      - key: logPostOnly
-        value: "true"
-        scope: RUN_AND_BUILD_TIME
-      - key: isUsernameLowered
-        value: "false"
-        scope: RUN_AND_BUILD_TIME
-      - key: isDemoMode
-        value: "false"
-        scope: RUN_AND_BUILD_TIME
-      - key: batchSize
-        value: "100"
-        scope: RUN_AND_BUILD_TIME
-      - key: enableErrorMask
-        value: "true"
-        scope: RUN_AND_BUILD_TIME
-      - key: enableGzip
-        value: "true"
-        scope: RUN_AND_BUILD_TIME
-
-databases:
-  - name: db
-    engine: PG
-    version: "16"
-    production: true
-    cluster_name: hanzo-iam-db
-    db_name: hanzo_iam
-    db_user: hanzo
+        type: SECRET
 
 domains:
   - domain: hanzo.id
