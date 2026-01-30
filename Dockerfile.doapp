@@ -50,12 +50,7 @@ COPY --from=backend --chown=hanzo:hanzo /go/src/hanzo-iam/init_data.json ./init_
 # Copy frontend
 COPY --from=frontend --chown=hanzo:hanzo /web/build ./web/build
 
-# Run as root for debugging
-# USER hanzo
-
-# Set memory limit for Go runtime
-ENV GOMEMLIMIT=4GiB
-ENV GOGC=100
+USER hanzo
 
 ENTRYPOINT ["/app/server"]
 EXPOSE 8000
