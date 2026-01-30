@@ -37,7 +37,7 @@ RUN apk add --no-cache \
     tzdata \
     curl \
     && addgroup -S hanzo && adduser -S hanzo -G hanzo \
-    && mkdir -p /logs && chown hanzo:hanzo /logs
+    && mkdir -p /logs /app/tmp && chown -R hanzo:hanzo /logs /app
 
 WORKDIR /app
 
