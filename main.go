@@ -20,7 +20,8 @@ import (
 
 	"github.com/beego/beego/v2/core/logs"
 	"github.com/beego/beego/v2/server/web"
-	_ "github.com/beego/beego/v2/server/web/session/redis"
+	// Redis session provider disabled for cloud deployments
+	// _ "github.com/beego/beego/v2/server/web/session/redis"
 	"github.com/hanzoai/iam/authz"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/controllers"
