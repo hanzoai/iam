@@ -75,6 +75,10 @@ func GetConfigInt64(key string) (int64, error) {
 }
 
 func GetConfigDataSourceName() string {
+	// First check for explicit IAM_DATABASE_URL env var (used in cloud deployments)
+	if dsn := os.Getenv("IAM_DATABASE_URL"); dsn != "" {
+		return ReplaceDataSourceNameByDocker(dsn)
+	}
 	dataSourceName := GetConfigString("dataSourceName")
 	return ReplaceDataSourceNameByDocker(dataSourceName)
 }
