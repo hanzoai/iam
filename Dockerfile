@@ -51,21 +51,8 @@ COPY --from=FRONT --chown=$USER:$USER /web/build ./web/build
 ENTRYPOINT ["/server"]
 
 
-<<<<<<< HEAD
-FROM debian:latest AS db
-RUN apt update \
-    && apt install -y \
-        mariadb-server \
-        mariadb-client \
-    && rm -rf /var/lib/apt/lists/*
-
-
-FROM db AS ALLINONE
-LABEL MAINTAINER="https://hanzo.ai/"
-=======
 FROM debian:latest AS ALLINONE
-LABEL MAINTAINER="https://iam.hanzo.ai/"
->>>>>>> upstream/master
+LABEL MAINTAINER="https://hanzo.ai/"
 ARG TARGETOS
 ARG TARGETARCH
 ENV BUILDX_ARCH="${TARGETOS:-linux}_${TARGETARCH:-amd64}"
