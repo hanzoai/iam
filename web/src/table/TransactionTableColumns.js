@@ -177,7 +177,7 @@ export function getTransactionTableColumns(options = {}) {
   });
 
   columns.push({
-    title: i18next.t("provider:Type"),
+    title: i18next.t("general:Type"),
     dataIndex: "type",
     key: "type",
     width: "140px",
@@ -272,10 +272,10 @@ export function getTransactionTableColumns(options = {}) {
   });
 
   columns.push({
-    title: i18next.t("transaction:Amount"),
+    title: i18next.t("product:Amount"),
     dataIndex: "amount",
     key: "amount",
-    width: "160px",
+    width: "180px",
     sorter: getSorter("amount"),
     ...(getColumnSearchProps ? getColumnSearchProps("amount") : {}),
     fixed: (Setting.isMobile()) ? "false" : "right",

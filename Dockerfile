@@ -51,6 +51,7 @@ COPY --from=FRONT --chown=$USER:$USER /web/build ./web/build
 ENTRYPOINT ["/server"]
 
 
+<<<<<<< HEAD
 FROM debian:latest AS db
 RUN apt update \
     && apt install -y \
@@ -61,12 +62,16 @@ RUN apt update \
 
 FROM db AS ALLINONE
 LABEL MAINTAINER="https://hanzo.ai/"
+=======
+FROM debian:latest AS ALLINONE
+LABEL MAINTAINER="https://casdoor.org/"
+>>>>>>> upstream/master
 ARG TARGETOS
 ARG TARGETARCH
 ENV BUILDX_ARCH="${TARGETOS:-linux}_${TARGETARCH:-amd64}"
 
 RUN apt update
-RUN apt install -y ca-certificates && update-ca-certificates
+RUN apt install -y ca-certificates lsof && update-ca-certificates
 
 WORKDIR /
 COPY --from=BACK /go/src/hanzo-iam/server_${BUILDX_ARCH} ./server
