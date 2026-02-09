@@ -18,7 +18,7 @@ import * as ModelBackend from "./backend/ModelBackend";
 import * as OrganizationBackend from "./backend/OrganizationBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
-import ModelEditor from "./HanzoEditor";
+import ModelEditor from "./CasbinEditor";
 
 const {Option} = Select;
 
