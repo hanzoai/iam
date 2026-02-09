@@ -88,7 +88,7 @@ func getSubject(ctx *context.Context) (string, string) {
 		return "anonymous", "anonymous"
 	}
 
-	// username == "built-in/admin"
+	// username == "hanzo/z"
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(username)
 	if err != nil {
 		panic(err)
