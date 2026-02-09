@@ -80,7 +80,7 @@ func getOriginFromHostInternal(host string) (string, string) {
 	}
 
 	isDev := conf.GetConfigString("runmode") == "dev"
-	// "door.casdoor.com"
+	// "door.iam.com"
 	protocol := "https://"
 	if !strings.Contains(host, ".") {
 		// "localhost:8000" or "computer-name:80"

@@ -54,7 +54,7 @@ Example JSON user resource
             "value": "cbvdho@example.com"
         }
     ],
-    "profileUrl": "https://door.casdoor.com/users/build-in/scim_test_user2",
+    "profileUrl": "https://door.iam.com/users/build-in/scim_test_user2",
     "userName": "scim_test_user2",
     "userType": "normal-user",
     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {

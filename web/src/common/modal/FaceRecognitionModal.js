@@ -41,7 +41,7 @@ const FaceRecognitionModal = (props) => {
 
     const loadModels = async() => {
       // const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
-      const MODEL_URL = `${Setting.StaticBaseUrl}/casdoor/models`;
+      const MODEL_URL = `${Setting.StaticBaseUrl}/iam/models`;
 
       Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),

@@ -43,8 +43,8 @@ func InitCasvisorConfig() {
 	casvisorEndpoint := application.HomepageUrl
 	clientId := application.ClientId
 	clientSecret := application.ClientSecret
-	casdoorOrganization := application.Organization
-	casdoorApplication := application.Name
+	iamOrganization := application.Organization
+	iamApplication := application.Name
 
-	casvisorsdk.InitConfig(casvisorEndpoint, clientId, clientSecret, casdoorOrganization, casdoorApplication)
+	casvisorsdk.InitConfig(casvisorEndpoint, clientId, clientSecret, iamOrganization, iamApplication)
 }

@@ -402,7 +402,7 @@
       "table": "",
       "tableColumns": [
         {
-          "casdoorName": "",
+          "iamName": "",
           "isHashed": true,
           "name": "",
           "type": "",
