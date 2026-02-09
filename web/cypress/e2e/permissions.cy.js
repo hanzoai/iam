@@ -6,7 +6,7 @@ describe('Test permissions', () => {
         cy.visit("http://localhost:7001");
         cy.visit("http://localhost:7001/permissions");
         cy.url().should("eq", "http://localhost:7001/permissions");
-        cy.visit("http://localhost:7001/permissions/built-in/permission-hanzo");
-        cy.url().should("eq", "http://localhost:7001/permissions/built-in/permission-hanzo");
+        cy.visit("http://localhost:7001/permissions/hanzo/permission-hanzo");
+        cy.url().should("eq", "http://localhost:7001/permissions/hanzo/permission-hanzo");
     });
 })
