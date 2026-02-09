@@ -45,7 +45,7 @@ USER 1000
 WORKDIR /
 COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/server_${BUILDX_ARCH} ./server
 COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/swagger ./swagger
-COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/conf/app.conf ./conf/app.conf
+COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/conf/app.prod.conf ./conf/app.conf
 COPY --from=FRONT --chown=$USER:$USER /web/build ./web/build
 
 ENTRYPOINT ["/server"]
@@ -64,7 +64,7 @@ WORKDIR /
 COPY --from=BACK /go/src/hanzo-iam/server_${BUILDX_ARCH} ./server
 COPY --from=BACK /go/src/hanzo-iam/swagger ./swagger
 COPY --from=BACK /go/src/hanzo-iam/docker-entrypoint.sh /docker-entrypoint.sh
-COPY --from=BACK /go/src/hanzo-iam/conf/app.conf ./conf/app.conf
+COPY --from=BACK /go/src/hanzo-iam/conf/app.prod.conf ./conf/app.conf
 COPY --from=FRONT /web/build ./web/build
 
 ENTRYPOINT ["/bin/bash"]
