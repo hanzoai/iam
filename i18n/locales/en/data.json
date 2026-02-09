@@ -112,8 +112,11 @@
     "Only admin user can specify user": "Only admin user can specify user",
     "Please login first": "Please login first",
     "The LDAP: %s does not exist": "The LDAP: %s does not exist",
+<<<<<<< HEAD
     "The application: %s does not exist": "The application: %s does not exist",
     "The organization: %s does not exist": "The organization: %s does not exist",
+=======
+>>>>>>> upstream/master
     "The organization: %s should have one application at least": "The organization: %s should have one application at least",
     "The syncer: %s does not exist": "The syncer: %s does not exist",
     "The user: %s doesn't exist": "The user: %s doesn't exist",
@@ -155,7 +158,10 @@
     "Invalid application id": "Invalid application id",
     "No ID Verification provider configured": "No ID Verification provider configured",
     "Provider is not an ID Verification provider": "Provider is not an ID Verification provider",
+<<<<<<< HEAD
     "The provider: %s does not exist": "The provider: %s does not exist",
+=======
+>>>>>>> upstream/master
     "the provider: %s does not exist": "the provider: %s does not exist"
   },
   "resource": {
@@ -213,6 +219,7 @@
   "verification": {
     "Invalid captcha provider.": "Invalid captcha provider.",
     "Phone number is invalid in your region %s": "Phone number is invalid in your region %s",
+    "The forgot password feature is disabled": "The forgot password feature is disabled",
     "The verification code has already been used!": "The verification code has already been used!",
     "The verification code has not been sent yet!": "The verification code has not been sent yet!",
     "Turing test failed.": "Turing test failed.",
