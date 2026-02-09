@@ -22,7 +22,7 @@ services:
         value: "true"
         scope: RUN_AND_BUILD_TIME
       - key: dataSourceName
-        value: "user=hanzo password=AVNS_rSFKxvlWMMBqLXMXLgP host=hanzo-iam-db-do-user-27607246-0.i.db.ondigitalocean.com port=25060 sslmode=require dbname=hanzo_iam"
+        value: "user=hanzo password=${DB_PASSWORD} host=${DB_HOST} port=25060 sslmode=require dbname=hanzo_iam"
         scope: RUN_TIME
         type: SECRET
 
