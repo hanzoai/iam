@@ -32,6 +32,7 @@ type AccountItem struct {
 	ViewRule   string `json:"viewRule"`
 	ModifyRule string `json:"modifyRule"`
 	Regex      string `json:"regex"`
+	Tab        string `json:"tab"`
 }
 
 type ThemeData struct {
@@ -88,6 +89,7 @@ type Organization struct {
 
 	MfaItems           []*MfaItem     `xorm:"varchar(300)" json:"mfaItems"`
 	MfaRememberInHours int            `json:"mfaRememberInHours"`
+	AccountMenu        string         `xorm:"varchar(20)" json:"accountMenu"`
 	AccountItems       []*AccountItem `xorm:"mediumtext" json:"accountItems"`
 
 	OrgBalance      float64 `json:"orgBalance"`
