@@ -115,7 +115,7 @@ const sideTemplate = `<style>
   }
 </style>
 <div class="left-model">
-  <span class="side-logo"> <img src="${Setting.StaticBaseUrl}/img/casdoor-logo_1185x256.png" alt="Hanzo IAM" style="width: 120px">
+  <span class="side-logo"> <img src="${Setting.StaticBaseUrl}/img/iam-logo_1185x256.png" alt="Hanzo IAM" style="width: 120px">
     <span>SSO</span>
   </span>
   <div class="img">
@@ -1387,7 +1387,7 @@ class ApplicationEditPage extends React.Component {
     if (this.state.application.isShared) {
       clientId += `-org-${this.props.account.owner}`;
     }
-    const signInUrl = `/login/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=read&state=casdoor`;
+    const signInUrl = `/login/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=read&state=iam`;
     const maskStyle = {position: "absolute", top: "0px", left: "0px", zIndex: 10, height: "97%", width: "100%", background: "rgba(0,0,0,0.4)"};
     if (!Setting.isPasswordEnabled(this.state.application)) {
       signUpUrl = signInUrl.replace("/login/oauth/authorize", "/signup/oauth/authorize");

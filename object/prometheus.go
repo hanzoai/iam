@@ -44,28 +44,28 @@ type HistogramVecInfo struct {
 
 var (
 	ApiThroughput = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "casdoor_api_throughput",
+		Name: "iam_api_throughput",
 		Help: "The throughput of each api access",
 	}, []string{"path", "method"})
 
 	ApiLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "casdoor_api_latency",
+		Name: "iam_api_latency",
 		Help: "API processing latency in milliseconds",
 	}, []string{"path", "method"})
 
 	CpuUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "casdoor_cpu_usage",
+		Name: "iam_cpu_usage",
 		Help: "Casdoor cpu usage",
 	}, []string{"cpuNum"})
 
 	MemoryUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "casdoor_memory_usage",
+		Name: "iam_memory_usage",
 		Help: "Casdoor memory usage in Byte",
 	}, []string{"type"})
 
 	TotalThroughput = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "casdoor_total_throughput",
-		Help: "The total throughput of casdoor",
+		Name: "iam_total_throughput",
+		Help: "The total throughput of iam",
 	})
 )
 
@@ -86,11 +86,11 @@ func GetPrometheusInfo() (*PrometheusInfo, error) {
 	}
 	for _, metricFamily := range metricFamilies {
 		switch metricFamily.GetName() {
-		case "casdoor_api_throughput":
+		case "iam_api_throughput":
 			res.ApiThroughput = getGaugeVecInfo(metricFamily)
-		case "casdoor_api_latency":
+		case "iam_api_latency":
 			res.ApiLatency = getHistogramVecInfo(metricFamily)
-		case "casdoor_total_throughput":
+		case "iam_total_throughput":
 			res.TotalThroughput = metricFamily.GetMetric()[0].GetGauge().GetValue()
 		}
 	}
