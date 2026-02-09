@@ -13,7 +13,10 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Form, Input, InputNumber, List, Result, Row, Select, Space, Spin, Switch, Tag, Tooltip} from "antd";
+import {
+  Button, Card, Col, Form, Input, InputNumber, Layout, List,
+  Menu, Result, Row, Select, Space, Spin, Switch, Tabs, Tag, Tooltip
+} from "antd";
 import {withRouter} from "react-router-dom";
 import {TotpMfaType} from "./auth/MfaSetupPage";
 import * as GroupBackend from "./backend/GroupBackend";
@@ -46,6 +49,8 @@ import MfaAccountTable from "./table/MfaAccountTable";
 import MfaTable from "./table/MfaTable";
 import TransactionTable from "./table/TransactionTable";
 import * as TransactionBackend from "./backend/TransactionBackend";
+import {Content, Header} from "antd/es/layout/layout";
+import Sider from "antd/es/layout/Sider";
 
 const {Option} = Select;
 
@@ -67,6 +72,8 @@ class UserEditPage extends React.Component {
       idCardInfo: ["ID card front", "ID card back", "ID card with person"],
       openFaceRecognitionModal: false,
       transactions: [],
+      activeMenuKey: window.location.hash?.slice(1) || "",
+      menuMode: "Horizontal",
     };
   }
 
@@ -175,6 +182,7 @@ class UserEditPage extends React.Component {
         }
 
         this.setState({
+          menuMode: res.data?.organizationObj?.accountMenu ?? "Horizontal",
           application: res.data,
         });
       });
@@ -618,7 +626,7 @@ class UserEditPage extends React.Component {
       return (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Title"), i18next.t("user:Title - Tooltip"))} :
+            {Setting.getLabel(i18next.t("general:Title"), i18next.t("general:Title - Tooltip"))} :
           </Col>
           <Col span={22} >
             <Input value={this.state.user.title} onChange={e => {
@@ -678,7 +686,7 @@ class UserEditPage extends React.Component {
       return (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Real name"), i18next.t("user:Real name - Tooltip"))} :
+            {Setting.getLabel(i18next.t("application:Real name"), i18next.t("user:Real name - Tooltip"))} :
           </Col>
           <Col span={22} >
             <Input value={this.state.user.realName} disabled={disabled} onChange={e => {
@@ -736,7 +744,7 @@ class UserEditPage extends React.Component {
       return (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Tag"), i18next.t("user:Tag - Tooltip"))} :
+            {Setting.getLabel(i18next.t("user:Tag"), i18next.t("product:Tag - Tooltip"))} :
           </Col>
           <Col span={22} >
             {
@@ -827,7 +835,7 @@ class UserEditPage extends React.Component {
       return (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Balance credit"), i18next.t("user:Balance credit - Tooltip"))} :
+            {Setting.getLabel(i18next.t("organization:Balance credit"), i18next.t("organization:Balance credit - Tooltip"))} :
           </Col>
           <Col span={22} >
             <InputNumber value={this.state.user.balanceCredit ?? 0} onChange={value => {
@@ -840,7 +848,7 @@ class UserEditPage extends React.Component {
       return (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Balance currency"), i18next.t("user:Balance currency - Tooltip"))} :
+            {Setting.getLabel(i18next.t("organization:Balance currency"), i18next.t("organization:Balance currency - Tooltip"))} :
           </Col>
           <Col span={22} >
             <Select virtual={false} style={{width: "100%"}} value={this.state.user.balanceCurrency || "USD"} onChange={(value => {
@@ -1333,6 +1341,152 @@ class UserEditPage extends React.Component {
     );
   }
 
+  isAccountItemVisible(item) {
+    if (!item.visible) {
+      return false;
+    }
+
+    const isAdmin = Setting.isLocalAdminUser(this.props.account);
+    if (item.viewRule === "Self") {
+      if (!this.isSelfOrAdmin()) {
+        return false;
+      }
+    } else if (item.viewRule === "Admin") {
+      if (!isAdmin) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  getAccountItemsByTab(tab) {
+    const accountItems = this.getUserOrganization()?.accountItems || [];
+    return accountItems.filter(item => {
+      if (!this.isAccountItemVisible(item)) {
+        return false;
+      }
+
+      const itemTab = item.tab || "";
+      return itemTab === tab;
+    });
+  }
+
+  getUniqueTabs() {
+    const accountItems = this.getUserOrganization()?.accountItems || [];
+    const tabs = new Set();
+
+    accountItems.forEach(item => {
+      if (this.isAccountItemVisible(item)) {
+        tabs.add(item.tab || "");
+      }
+    });
+
+    return Array.from(tabs).sort((a, b) => {
+      // Empty string (default tab) comes first
+      if (a === "") {
+        return -1;
+      }
+      if (b === "") {
+        return 1;
+      }
+      return a.localeCompare(b);
+    });
+  }
+
+  renderUserForm() {
+    const tabs = this.getUniqueTabs();
+
+    // If there are no tabs or only one tab (default), render without tab navigation
+    if (tabs.length === 0 || (tabs.length === 1 && tabs[0] === "")) {
+      const accountItems = this.getAccountItemsByTab("");
+      return (
+        <Form>
+          {accountItems.map(accountItem => (
+            <React.Fragment key={accountItem.name}>
+              <Form.Item name={accountItem.name}
+                validateTrigger="onChange"
+                rules={[
+                  {
+                    pattern: accountItem.regex ? new RegExp(accountItem.regex, "g") : null,
+                    message: i18next.t("user:This field value doesn't match the pattern rule"),
+                  },
+                ]}
+                style={{margin: 0}}>
+                {this.renderAccountItem(accountItem)}
+              </Form.Item>
+            </React.Fragment>
+          ))}
+        </Form>
+      );
+    }
+
+    // Render with tabs
+    const activeKey = this.state.activeMenuKey || tabs[0] || "";
+
+    return (
+      <Layout style={{background: "inherit"}}>
+        {
+          this.state.menuMode === "Vertical" ? null : (
+            <Header style={{background: "inherit", padding: "0px"}}>
+              <Tabs
+                onChange={(key) => {
+                  this.setState({activeMenuKey: key});
+                  window.location.hash = key;
+                }}
+                type="card"
+                activeKey={activeKey}
+                items={tabs.map(tab => ({
+                  label: tab === "" ? i18next.t("general:Default") : tab,
+                  key: tab,
+                }))}
+              />
+            </Header>
+          )
+        }
+        <Layout style={{background: "inherit", maxHeight: "70vh", overflow: "auto"}}>
+          {
+            this.state.menuMode === "Vertical" ? (
+              <Sider width={200} style={{background: "inherit", position: "sticky", top: 0}}>
+                <Menu
+                  mode="vertical"
+                  selectedKeys={[activeKey]}
+                  onClick={({key}) => {
+                    this.setState({activeMenuKey: key});
+                    window.location.hash = key;
+                  }}
+                  style={{marginBottom: "20px", height: "100%"}}
+                  items={tabs.map(tab => ({
+                    label: tab === "" ? i18next.t("general:Default") : tab,
+                    key: tab,
+                  }))}
+                />
+              </Sider>) : null
+          }
+          <Content style={{padding: "15px"}}>
+            <Form>
+              {this.getAccountItemsByTab(activeKey).map(accountItem => (
+                <React.Fragment key={accountItem.name}>
+                  <Form.Item name={accountItem.name}
+                    validateTrigger="onChange"
+                    rules={[
+                      {
+                        pattern: accountItem.regex ? new RegExp(accountItem.regex, "g") : null,
+                        message: i18next.t("user:This field value doesn't match the pattern rule"),
+                      },
+                    ]}
+                    style={{margin: 0}}>
+                    {this.renderAccountItem(accountItem)}
+                  </Form.Item>
+                </React.Fragment>
+              ))}
+            </Form>
+          </Content>
+        </Layout>
+      </Layout>
+    );
+  }
+
   renderUser() {
     return (
       <div>
@@ -1346,42 +1500,7 @@ class UserEditPage extends React.Component {
             </div>
           )
         } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-          <Form>
-            {
-              this.getUserOrganization()?.accountItems?.map(accountItem => {
-                if (!accountItem.visible) {
-                  return null;
-                }
-
-                const isAdmin = Setting.isLocalAdminUser(this.props.account);
-
-                if (accountItem.viewRule === "Self") {
-                  if (!this.isSelfOrAdmin()) {
-                    return null;
-                  }
-                } else if (accountItem.viewRule === "Admin") {
-                  if (!isAdmin) {
-                    return null;
-                  }
-                }
-                return (
-                  <React.Fragment key={accountItem.name}>
-                    <Form.Item name={accountItem.name}
-                      validateTrigger="onChange"
-                      rules={[
-                        {
-                          pattern: accountItem.regex ? new RegExp(accountItem.regex, "g") : null,
-                          message: i18next.t("user:This field value doesn't match the pattern rule"),
-                        },
-                      ]}
-                      style={{margin: 0}}>
-                      {this.renderAccountItem(accountItem)}
-                    </Form.Item>
-                  </React.Fragment>
-                );
-              })
-            }
-          </Form>
+          {this.renderUserForm()}
         </Card>
       </div>
     );
@@ -1421,29 +1540,24 @@ class UserEditPage extends React.Component {
             organizationName: this.state.user.owner,
             userName: this.state.user.name,
           });
-
-          if (this.props.history !== undefined) {
-            if (exitAfterSave) {
-              const userListUrl = sessionStorage.getItem("userListUrl");
-              if (userListUrl !== null) {
-                this.props.history.push(userListUrl);
-              } else {
-                if (Setting.isLocalAdminUser(this.props.account)) {
-                  this.props.history.push("/users");
-                } else {
-                  this.props.history.push("/");
-                }
-              }
+          if (exitAfterSave) {
+            if (this.state.returnUrl) {
+              window.location.href = this.state.returnUrl;
+              return;
+            }
+            const userListUrl = sessionStorage.getItem("userListUrl");
+            if (userListUrl !== null) {
+              this.props.history.push(userListUrl);
             } else {
-              if (location.pathname !== "/account") {
-                this.props.history.push(`/users/${this.state.user.owner}/${this.state.user.name}`);
+              if (Setting.isLocalAdminUser(this.props.account)) {
+                this.props.history.push("/users");
+              } else {
+                this.props.history.push("/");
               }
             }
           } else {
-            if (exitAfterSave) {
-              if (this.state.returnUrl) {
-                window.location.href = this.state.returnUrl;
-              }
+            if (location.pathname !== "/account") {
+              this.props.history.push(`/users/${this.state.user.owner}/${this.state.user.name}`);
             }
           }
         } else {
