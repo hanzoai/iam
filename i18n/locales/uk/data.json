@@ -22,11 +22,7 @@
     "The login method: login with email is not enabled for the application": "Метод входу через email не увімкнено для цього додатка",
     "The login method: login with face is not enabled for the application": "Метод входу через обличчя не увімкнено для цього додатка",
     "The login method: login with password is not enabled for the application": "Метод входу через пароль не увімкнено для цього додатка",
-<<<<<<< HEAD
-    "The order: %s does not exist": "The order: %s does not exist",
-=======
     "The order: %s does not exist": "Замовлення: %s не існує",
->>>>>>> upstream/master
     "The organization: %s does not exist": "Організація: %s не існує",
     "The organization: %s has disabled users to signin": "Організація: %s вимкнула вхід користувачів",
     "The plan: %s does not exist": "План: %s не існує",
@@ -61,11 +57,7 @@
     "Face data mismatch": "Невідповідність даних обличчя",
     "Failed to parse client IP: %s": "Не вдалося розібрати IP клієнта: %s",
     "FirstName cannot be blank": "Ім’я не може бути порожнім",
-<<<<<<< HEAD
-    "Guest users must upgrade their account by setting a username and password before they can sign in directly": "Guest users must upgrade their account by setting a username and password before they can sign in directly",
-=======
     "Guest users must upgrade their account by setting a username and password before they can sign in directly": "Гостьові користувачі повинні оновити свій обліковий запис, встановивши ім'я користувача та пароль, перш ніж вони зможуть увійти безпосередньо",
->>>>>>> upstream/master
     "Invitation code cannot be blank": "Код запрошення не може бути порожнім",
     "Invitation code exhausted": "Код запрошення вичерпано",
     "Invitation code is invalid": "Код запрошення недійсний",
@@ -114,21 +106,6 @@
   "general": {
     "Failed to import groups": "Не вдалося імпортувати групи",
     "Failed to import users": "Не вдалося імпортувати користувачів",
-<<<<<<< HEAD
-    "Insufficient balance: new balance %v would be below credit limit %v": "Insufficient balance: new balance %v would be below credit limit %v",
-    "Insufficient balance: new organization balance %v would be below credit limit %v": "Insufficient balance: new organization balance %v would be below credit limit %v",
-    "Missing parameter": "Відсутній параметр",
-    "Only admin user can specify user": "Лише адміністратор може вказати користувача",
-    "Please login first": "Спочатку увійдіть",
-    "The LDAP: %s does not exist": "The LDAP: %s does not exist",
-    "The application: %s does not exist": "The application: %s does not exist",
-    "The organization: %s does not exist": "The organization: %s does not exist",
-    "The organization: %s should have one application at least": "Організація: %s має мати щонайменше один додаток",
-    "The syncer: %s does not exist": "The syncer: %s does not exist",
-    "The user: %s doesn't exist": "Користувач: %s не існує",
-    "The user: %s is not found": "The user: %s is not found",
-    "User is required for User category transaction": "User is required for User category transaction",
-=======
     "Insufficient balance: new balance %v would be below credit limit %v": "Недостатній баланс: новий баланс %v буде нижче кредитного ліміту %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Недостатній баланс: новий баланс організації %v буде нижче кредитного ліміту %v",
     "Missing parameter": "Відсутній параметр",
@@ -140,7 +117,8 @@
     "The user: %s doesn't exist": "Користувач: %s не існує",
     "The user: %s is not found": "Користувач: %s не знайдено",
     "User is required for User category transaction": "Користувач обов'язковий для транзакції категорії користувача",
->>>>>>> upstream/master
+    "The application: %s does not exist": "The application: %s does not exist",
+    "The organization: %s does not exist": "The organization: %s does not exist",
     "Wrong userId": "Неправильний userId",
     "don't support captchaProvider: ": "не підтримується captchaProvider: ",
     "this operation is not allowed in demo mode": "ця операція недоступна в демо-режимі",
@@ -164,30 +142,20 @@
     "Only admin can modify the %s.": "Лише адміністратор може змінити %s.",
     "The %s is immutable.": "%s незмінний.",
     "Unknown modify rule %s.": "Невідоме правило зміни %s.",
-    "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Casdoor. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option.": "Додавання нового користувача до організації «built-in» (вбудованої) на даний момент вимкнено. Зауважте: усі користувачі в організації «built-in» є глобальними адміністраторами в Casdoor. Дивіться документацію: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. Якщо ви все ще хочете створити користувача для організації «built-in», перейдіть на сторінку налаштувань організації та увімкніть опцію «Має згоду на привілеї»."
+    "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Casdoor. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option.": "Додавання нового користувача до організації «built-in» (вбудованої) на даний момент вимкнено. Зауважте: усі користувачі в організації «built-in» є глобальними адміністраторами в Hanzo IAM. Дивіться документацію: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. Якщо ви все ще хочете створити користувача для організації «built-in», перейдіть на сторінку налаштувань організації та увімкніть опцію «Має згоду на привілеї»."
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "Дозвіл: \"%s\" не існує"
   },
   "product": {
-    "Product list cannot be empty": "Список товарів не може бути порожнім"
-  },
-  "product": {
     "Product list cannot be empty": "Product list cannot be empty"
   },
   "provider": {
-<<<<<<< HEAD
-    "Failed to initialize ID Verification provider": "Failed to initialize ID Verification provider",
-    "Invalid application id": "Недійсний id додатка",
-    "No ID Verification provider configured": "No ID Verification provider configured",
-    "Provider is not an ID Verification provider": "Provider is not an ID Verification provider",
-    "The provider: %s does not exist": "The provider: %s does not exist",
-=======
     "Failed to initialize ID Verification provider": "Не вдалося ініціалізувати провайдера верифікації ID",
     "Invalid application id": "Недійсний id додатка",
     "No ID Verification provider configured": "Провайдер верифікації ID не налаштований",
     "Provider is not an ID Verification provider": "Провайдер не є провайдером верифікації ID",
->>>>>>> upstream/master
+    "The provider: %s does not exist": "The provider: %s does not exist",
     "the provider: %s does not exist": "провайдер: %s не існує"
   },
   "resource": {
@@ -206,11 +174,7 @@
     "Invalid phone receivers: %s": "Недійсні отримувачі телефону: %s"
   },
   "session": {
-<<<<<<< HEAD
-    "session id %s is the current session and cannot be deleted": "session id %s is the current session and cannot be deleted"
-=======
     "session id %s is the current session and cannot be deleted": "ідентифікатор сесії %s є поточною сесією і не може бути видалений"
->>>>>>> upstream/master
   },
   "storage": {
     "The objectKey: %s is not allowed": "objectKey: %s не дозволено",
@@ -220,11 +184,7 @@
     "Error": "Помилка"
   },
   "ticket": {
-<<<<<<< HEAD
-    "Ticket not found": "Ticket not found"
-=======
     "Ticket not found": "Квиток не знайдено"
->>>>>>> upstream/master
   },
   "token": {
     "Grant_type: %s is not supported in this application": "Grant_type: %s не підтримується в цьому додатку",
@@ -235,16 +195,6 @@
   },
   "user": {
     "Display name cannot be empty": "Відображуване ім’я не може бути порожнім",
-<<<<<<< HEAD
-    "ID card information and real name are required": "ID card information and real name are required",
-    "Identity verification failed": "Identity verification failed",
-    "MFA email is enabled but email is empty": "MFA email увімкнено, але email порожній",
-    "MFA phone is enabled but phone number is empty": "MFA телефон увімкнено, але номер телефону порожній",
-    "New password cannot contain blank space.": "Новий пароль не може містити пробіли.",
-    "No application found for user": "No application found for user",
-    "The new password must be different from your current password": "Новий пароль повинен відрізнятися від поточного пароля",
-    "User is already verified": "User is already verified",
-=======
     "ID card information and real name are required": "Інформація про посвідчення особи та справжнє ім'я обов'язкові",
     "Identity verification failed": "Верифікація особи не вдалася",
     "MFA email is enabled but email is empty": "MFA email увімкнено, але email порожній",
@@ -253,7 +203,6 @@
     "No application found for user": "Не знайдено додаток для користувача",
     "The new password must be different from your current password": "Новий пароль повинен відрізнятися від поточного пароля",
     "User is already verified": "Користувач уже верифікований",
->>>>>>> upstream/master
     "the user's owner and name should not be empty": "власник ім’я користувача не повинні бути порожніми"
   },
   "util": {

@@ -112,11 +112,8 @@
     "Only admin user can specify user": "Only admin user can specify user",
     "Please login first": "Please login first",
     "The LDAP: %s does not exist": "The LDAP: %s does not exist",
-<<<<<<< HEAD
     "The application: %s does not exist": "The application: %s does not exist",
     "The organization: %s does not exist": "The organization: %s does not exist",
-=======
->>>>>>> upstream/master
     "The organization: %s should have one application at least": "The organization: %s should have one application at least",
     "The syncer: %s does not exist": "The syncer: %s does not exist",
     "The user: %s doesn't exist": "The user: %s doesn't exist",
@@ -145,7 +142,7 @@
     "Only admin can modify the %s.": "Only admin can modify the %s.",
     "The %s is immutable.": "The %s is immutable.",
     "Unknown modify rule %s.": "Unknown modify rule %s.",
-    "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Casdoor. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option.": "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Casdoor. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option."
+    "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Casdoor. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option.": "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Hanzo IAM. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option."
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "The permission: \"%s\" doesn't exist"
@@ -158,10 +155,7 @@
     "Invalid application id": "Invalid application id",
     "No ID Verification provider configured": "No ID Verification provider configured",
     "Provider is not an ID Verification provider": "Provider is not an ID Verification provider",
-<<<<<<< HEAD
     "The provider: %s does not exist": "The provider: %s does not exist",
-=======
->>>>>>> upstream/master
     "the provider: %s does not exist": "the provider: %s does not exist"
   },
   "resource": {
