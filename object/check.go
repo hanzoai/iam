@@ -434,7 +434,7 @@ func CheckUserPermission(requestUserId, userId string, strict bool, lang string)
 		}
 
 		if targetUser == nil {
-			if strings.HasPrefix(requestUserId, "built-in/") {
+			if strings.HasPrefix(requestUserId, "hanzo/") {
 				return true, nil
 			}
 

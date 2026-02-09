@@ -6,7 +6,7 @@ describe('Test models', () => {
         cy.visit("http://localhost:7001");
         cy.visit("http://localhost:7001/models");
         cy.url().should("eq", "http://localhost:7001/models");
-        cy.visit("http://localhost:7001/models/built-in/model-hanzo");
-        cy.url().should("eq", "http://localhost:7001/models/built-in/model-hanzo");
+        cy.visit("http://localhost:7001/models/hanzo/model-hanzo");
+        cy.url().should("eq", "http://localhost:7001/models/hanzo/model-hanzo");
     });
 })
