@@ -304,7 +304,7 @@ function ManagementPage(props) {
     ]));
 
     if (Setting.isLocalAdminUser(props.account) && Conf.ShowGithubCorner) {
-      res.push(Setting.getItem(<a href={"https://casdoor.com"}>
+      res.push(Setting.getItem(<a href={"https://iam.com"}>
         <span style={{fontWeight: "bold", backgroundColor: "rgba(87,52,211,0.4)", marginTop: "12px", paddingLeft: "5px", paddingRight: "5px", display: "flex", alignItems: "center", height: "40px", borderRadius: "5px"}}>
           🚀 SaaS Hosting 🔥
         </span>

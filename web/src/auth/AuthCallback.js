@@ -169,7 +169,7 @@ class AuthCallback extends React.Component {
     }
 
     if (this.getResponseType() === "cas") {
-      // user is using casdoor as cas sso server, and wants the ticket to be acquired
+      // user is using iam as cas sso server, and wants the ticket to be acquired
       AuthBackend.loginCas(body, {"service": casService}).then((res) => {
         if (res.status === "ok") {
           const handleCasLogin = (res) => {

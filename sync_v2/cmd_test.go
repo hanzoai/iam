@@ -32,8 +32,8 @@ import (
 	auto_increment_offset = 1 # this is same as server-id
 	auto_increment_increment = 2 # this is same as the number of mysql instances (2)
 	log-bin = mysql-bin
-	replicate-do-db = casdoor # this is the database name
-	binlog-do-db = casdoor # this is the database name
+	replicate-do-db = iam # this is the database name
+	binlog-do-db = iam # this is the database name
 */
 
 var Configs = []Database{
@@ -42,7 +42,7 @@ var Configs = []Database{
 		port:     3306,
 		username: "root",
 		password: "password",
-		database: "casdoor",
+		database: "iam",
 		// the following two fields are used to create replication user, you don't need to change them
 		slaveUser:     "repl_user",
 		slavePassword: "repl_user",
@@ -52,7 +52,7 @@ var Configs = []Database{
 		port:     3306,
 		username: "root",
 		password: "password",
-		database: "casdoor",
+		database: "iam",
 		// the following two fields are used to create replication user, you don't need to change them
 		slaveUser:     "repl_user",
 		slavePassword: "repl_user",
