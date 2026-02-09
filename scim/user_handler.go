@@ -215,7 +215,7 @@ func UpdateScimUserByPatchOperation(id string, ops []scim.PatchOperation) (r sci
 			user.LastName = ToString(v["familyName"], user.LastName)
 		case "emails":
 			defaultV := AnyArray{AnyMap{"value": ""}}
-			vs := ToAnyArray(value, defaultV) // e.g. [{"value": "test@casdoor"}]
+			vs := ToAnyArray(value, defaultV) // e.g. [{"value": "test@iam"}]
 			if len(vs) > 0 {
 				v := ToAnyMap(vs[0])
 				user.Email = ToString(v["value"], user.Email)

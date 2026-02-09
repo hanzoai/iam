@@ -101,13 +101,13 @@ lint: ## Run golangci-lint
 
 .PHONY: deploy
 deploy:  ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	helm upgrade --install ${APP} manifests/casdoor --create-namespace --set ingress.enabled=true \
+	helm upgrade --install ${APP} manifests/iam --create-namespace --set ingress.enabled=true \
 	--set "ingress.hosts[0].host=${HOST},ingress.hosts[0].paths[0].path=/,ingress.hosts[0].paths[0].pathType=ImplementationSpecific" \
 	--set image.tag=${IMG_TAG} --set image.repository=${REGISTRY} --set image.name=${IMG} --version ${IMG_TAG} -n ${NAMESPACE}
 
 .PHONY: dry-run
 dry-run: ## Dry run for helm install
-	helm upgrade --install ${APP} manifests/casdoor --set ingress.enabled=true \
+	helm upgrade --install ${APP} manifests/iam --set ingress.enabled=true \
 	--set "ingress.hosts[0].host=${HOST},ingress.hosts[0].paths[0].path=/,ingress.hosts[0].paths[0].pathType=ImplementationSpecific" \
 	--set image.tag=${IMG_TAG} --set image.repository=${REGISTRY} --set image.name=${IMG} --version ${IMG_TAG} -n ${NAMESPACE} --dry-run
 

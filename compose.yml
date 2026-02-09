@@ -22,8 +22,8 @@ services:
       - REDIS_URL=redis://redis:6379
 
       # IAM Config
-      - CASDOOR_ORIGIN=${CASDOOR_ORIGIN:-https://iam.hanzo.ai}
-      - CASDOOR_APP_NAME=iam
+      - IAM_ORIGIN=${IAM_ORIGIN:-https://iam.hanzo.ai}
+      - IAM_APP_NAME=iam
 
       # Multi-tenant
       - ENABLE_MULTI_TENANT=true

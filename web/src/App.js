@@ -503,7 +503,7 @@ class App extends Component {
         title={
           <React.Fragment>
             <Tooltip title="Want to deploy your own AI assistant? Click to learn more!">
-              <a target="_blank" rel="noreferrer" href={"https://casdoor.com"}>
+              <a target="_blank" rel="noreferrer" href={"https://iam.com"}>
                 <img style={{width: "20px", marginRight: "10px", marginBottom: "2px"}} alt="help" src="https://casbin.org/img/casbin.svg" />
                 AI Assistant
               </a>
@@ -708,7 +708,7 @@ class App extends Component {
           &nbsp;&nbsp;
           {i18next.t("general:Found some texts still not translated? Please help us translate at")}
           &nbsp;
-          <a target="_blank" rel="noreferrer" href={"https://crowdin.com/project/casdoor-site"}>
+          <a target="_blank" rel="noreferrer" href={"https://crowdin.com/project/iam-site"}>
             Crowdin
           </a>
           &nbsp;!&nbsp;🙏
@@ -722,7 +722,7 @@ class App extends Component {
       <React.Fragment>
         {(this.state.account === undefined || this.state.account === null) ?
           <Helmet>
-            <link rel="icon" href={"https://cdn.casdoor.com/static/favicon.png"} />
+            <link rel="icon" href={"https://cdn.iam.com/static/favicon.png"} />
           </Helmet> :
           <Helmet>
             <title>{this.state.account.organization?.displayName}</title>

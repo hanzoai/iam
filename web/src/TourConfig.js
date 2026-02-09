@@ -4,12 +4,12 @@ import * as Setting from "./Setting";
 export const TourObj = {
   home: [
     {
-      title: "Welcome to casdoor",
+      title: "Welcome to iam",
       description: "You can learn more about the use of CasDoor at https://iam.hanzo.ai/.",
       cover: (
         <img
-          alt="casdoor.png"
-          src={`${Setting.StaticBaseUrl}/img/casdoor-logo_1185x256.png`}
+          alt="iam.png"
+          src={`${Setting.StaticBaseUrl}/img/iam-logo_1185x256.png`}
         />
       ),
     },
@@ -148,7 +148,7 @@ export const TourObj = {
   resources: [
     {
       title: "Resource List",
-      description: "You can upload resources in casdoor. Before upload resources, you need to configure a storage provider. Please see Storage Provider.",
+      description: "You can upload resources in iam. Before upload resources, you need to configure a storage provider. Please see Storage Provider.",
     },
     {
       title: "Upload Resource",
@@ -220,7 +220,7 @@ export function setIsTourVisible(visible) {
 
 export function setTourLogo(tourLogoSrc) {
   if (tourLogoSrc !== "") {
-    TourObj["home"][0]["cover"] = (<img alt="casdoor.png" src={tourLogoSrc} />);
+    TourObj["home"][0]["cover"] = (<img alt="iam.png" src={tourLogoSrc} />);
   }
 }
 
