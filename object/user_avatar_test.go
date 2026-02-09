@@ -53,7 +53,7 @@ func TestUpdateAvatars(t *testing.T) {
 	InitDefaultStorageProvider()
 	proxy.InitHttpClient()
 
-	users, err := GetUsers("casdoor")
+	users, err := GetUsers("iam")
 	if err != nil {
 		panic(err)
 	}

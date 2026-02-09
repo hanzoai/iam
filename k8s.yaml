@@ -3,41 +3,41 @@
 apiVersion: v1
 kind: Service
 metadata:
-  #EDIT IT: if you don't want to run casdoor in default namespace, please modify this field
-  #namespace: casdoor
-  name: casdoor-svc
+  #EDIT IT: if you don't want to run iam in default namespace, please modify this field
+  #namespace: iam
+  name: iam-svc
   labels:
-    app: casdoor
+    app: iam
 spec:
-  #EDIT IT: if you don't want to run casdoor in default namespace, please modify this filed
+  #EDIT IT: if you don't want to run iam in default namespace, please modify this filed
   type: NodePort
   ports:
     - port: 8000
   selector:
-    app: casdoor
+    app: iam
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  #EDIT IT: if you don't want to run casdoor in default namespace, please modify this field
-  #namespace: casdoor
-  name: casdoor-deployment
+  #EDIT IT: if you don't want to run iam in default namespace, please modify this field
+  #namespace: iam
+  name: iam-deployment
   labels:
-    app: casdoor
+    app: iam
 spec:
-  #EDIT IT: if you don't use redis, casdoor should not have multiple replicas
+  #EDIT IT: if you don't use redis, iam should not have multiple replicas
   replicas: 1
   selector:
     matchLabels:
-      app: casdoor
+      app: iam
   template:
     metadata:
       labels:
-        app: casdoor
+        app: iam
     spec:
       containers:
-        - name: casdoor-container
-          image: casbin/casdoor:latest
+        - name: iam-container
+          image: hanzoai/iam:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

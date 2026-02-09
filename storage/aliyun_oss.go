@@ -19,11 +19,11 @@ import (
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/aliyun/credentials-go/credentials"
-	casdoorOss "github.com/casdoor/oss"
+	iamOss "github.com/casdoor/oss"
 	"github.com/casdoor/oss/aliyun"
 )
 
-func NewAliyunOssStorageProvider(clientId string, clientSecret string, region string, bucket string, endpoint string) casdoorOss.StorageInterface {
+func NewAliyunOssStorageProvider(clientId string, clientSecret string, region string, bucket string, endpoint string) iamOss.StorageInterface {
 	// Check if RRSA is available (empty credentials + environment variables set)
 	if (clientId == "" || clientId == "rrsa") &&
 		(clientSecret == "" || clientSecret == "rrsa") &&
@@ -34,7 +34,7 @@ func NewAliyunOssStorageProvider(clientId string, clientSecret string, region st
 		config.SetRoleArn(os.Getenv("ALIBABA_CLOUD_ROLE_ARN"))
 		config.SetOIDCProviderArn(os.Getenv("ALIBABA_CLOUD_OIDC_PROVIDER_ARN"))
 		config.SetOIDCTokenFilePath(os.Getenv("ALIBABA_CLOUD_OIDC_TOKEN_FILE"))
-		config.SetRoleSessionName("casdoor-oss")
+		config.SetRoleSessionName("iam-oss")
 
 		// Set STS endpoint if provided
 		if stsEndpoint := os.Getenv("ALIBABA_CLOUD_STS_ENDPOINT"); stsEndpoint != "" {

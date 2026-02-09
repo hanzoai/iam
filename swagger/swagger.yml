@@ -6176,7 +6176,7 @@ definitions:
     title: TableColumn
     type: object
     properties:
-      casdoorName:
+      iamName:
         type: string
       isHashed:
         type: boolean
@@ -6416,7 +6416,7 @@ definitions:
         type: array
         items:
           $ref: '#/definitions/object.ProductInfo'
-      casdoor:
+      iam:
         type: string
       cloudfoundry:
         type: string

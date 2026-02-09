@@ -26,7 +26,7 @@ import (
 type TableColumn struct {
 	Name        string   `json:"name"`
 	Type        string   `json:"type"`
-	CasdoorName string   `json:"casdoorName"`
+	CasdoorName string   `json:"iamName"`
 	IsKey       bool     `json:"isKey"`
 	IsHashed    bool     `json:"isHashed"`
 	Values      []string `json:"values"`
