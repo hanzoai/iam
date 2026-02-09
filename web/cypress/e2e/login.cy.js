@@ -9,8 +9,8 @@ describe("Login test", () => {
       method: "POST",
       url: "http://localhost:7001/api/login",
       body: {
-        "application": "app-built-in",
-        "organization": "built-in",
+        "application": "app-hanzo",
+        "organization": "hanzo",
         "username": "admin",
         "password": "123",
         "autoSignin": true,
@@ -33,8 +33,8 @@ describe("Login test", () => {
       method: "POST",
       url: "http://localhost:7001/api/login",
       body: {
-        "application": "app-built-in",
-        "organization": "built-in",
+        "application": "app-hanzo",
+        "organization": "hanzo",
         "username": "admin",
         "password": "1234",
         "autoSignin": true,

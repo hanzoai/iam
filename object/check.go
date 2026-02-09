@@ -582,7 +582,7 @@ func CheckLoginPermission(userId string, application *Application) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if owner == "built-in" {
+	if owner == "hanzo" {
 		return true, nil
 	}
 

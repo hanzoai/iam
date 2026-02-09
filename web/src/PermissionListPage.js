@@ -38,7 +38,7 @@ class PermissionListPage extends BaseListPage {
       roles: [],
       domains: [],
       resourceType: "Application",
-      resources: ["app-built-in"],
+      resources: ["app-hanzo"],
       actions: ["Read"],
       effect: "Allow",
       isEnabled: true,

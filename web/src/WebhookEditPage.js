@@ -28,7 +28,7 @@ const {Option} = Select;
 const applicationTemplate = {
   owner: "admin", // this.props.account.applicationName,
   name: "application_123",
-  organization: "built-in",
+  organization: "hanzo",
   createdTime: "2022-01-01T01:03:42+08:00",
   displayName: "New Application - 123",
   logo: `${Setting.StaticBaseUrl}/img/casdoor-logo_1185x256.png`,
@@ -42,10 +42,10 @@ const applicationTemplate = {
 
 const previewTemplate = {
   "id": 9078,
-  "owner": "built-in",
+  "owner": "hanzo",
   "name": "68f55b28-7380-46b1-9bde-64fe1576e3b3",
   "createdTime": "2022-01-01T01:03:42+08:00",
-  "organization": "built-in",
+  "organization": "hanzo",
   "clientIp": "159.89.126.192",
   "user": "admin",
   "method": "POST",
@@ -56,7 +56,7 @@ const previewTemplate = {
 };
 
 const userTemplate = {
-  "owner": "built-in",
+  "owner": "hanzo",
   "name": "admin",
   "createdTime": "2020-07-16T21:46:52+08:00",
   "updatedTime": "",

@@ -166,7 +166,7 @@ class OrganizationEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
           </Col>
           <Col span={22} >
-            <Input value={this.state.organization.name} disabled={this.state.organization.name === "built-in"} onChange={e => {
+            <Input value={this.state.organization.name} disabled={this.state.organization.name === "hanzo"} onChange={e => {
               this.updateOrganizationField("name", e.target.value);
             }} />
           </Col>
@@ -291,7 +291,7 @@ class OrganizationEditPage extends React.Component {
           </Col>
         </Row>
         {
-          this.state.organization.name === "built-in" ? (
+          this.state.organization.name === "hanzo" ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
                 {Setting.getLabel(i18next.t("organization:Has privilege consent"), i18next.t("organization:Has privilege consent - Tooltip"))} :

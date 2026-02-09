@@ -27,7 +27,7 @@ import (
 var Enforcer *casbin.Enforcer
 
 func InitApi() {
-	e, err := object.GetInitializedEnforcer(util.GetId("built-in", "api-enforcer-built-in"))
+	e, err := object.GetInitializedEnforcer(util.GetId("hanzo", "api-enforcer-hanzo"))
 	if err != nil {
 		panic(err)
 	}
@@ -194,7 +194,7 @@ func isAllowedInDemoMode(subOwner string, subName string, method string, urlPath
 			return true
 		} else if urlPath == "/api/update-user" {
 			// Allow ordinary users to update their own information
-			if (subOwner == objOwner && subName == objName || subOwner == "app") && !(subOwner == "built-in" && subName == "admin") {
+			if (subOwner == objOwner && subName == objName || subOwner == "app") && !(subOwner == "hanzo" && subName == "admin") {
 				return true
 			}
 			return false

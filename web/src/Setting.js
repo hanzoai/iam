@@ -994,7 +994,7 @@ export function isAdminUser(account) {
   if (account === undefined || account === null) {
     return false;
   }
-  return account.owner === "built-in";
+  return account.owner === "hanzo";
 }
 
 export function isLocalAdminUser(account) {
@@ -1736,19 +1736,19 @@ export function isDefaultOrganizationSelected(account) {
 }
 
 const BuiltInObjects = [
-  "api-enforcer-built-in",
-  "user-enforcer-built-in",
-  "api-model-built-in",
-  "user-model-built-in",
-  "api-adapter-built-in",
-  "user-adapter-built-in",
+  "api-enforcer-hanzo",
+  "user-enforcer-hanzo",
+  "api-model-hanzo",
+  "user-model-hanzo",
+  "api-adapter-hanzo",
+  "user-adapter-hanzo",
 ];
 
 export function builtInObject(obj) {
   if (obj === undefined || obj === null) {
     return false;
   }
-  return obj.owner === "built-in" && BuiltInObjects.includes(obj.name);
+  return obj.owner === "hanzo" && BuiltInObjects.includes(obj.name);
 }
 
 export const CurrencyOptions = [
@@ -2402,7 +2402,7 @@ export function getApiPaths() {
   // SAML APIs
   res.push("acs", "saml/metadata");
 
-  // Casbin engine APIs
+  // Hanzo engine APIs
   res.push("run-casbin-command", "refresh-engines");
 
   // Monitoring and health APIs
