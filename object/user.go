@@ -38,7 +38,7 @@ const (
 	UserPropertiesWechatOpenId  = "wechatOpenId"
 )
 
-const UserEnforcerId = "built-in/user-enforcer-built-in"
+const UserEnforcerId = "built-in/user-enforcer-hanzo"
 
 var userEnforcer *UserGroupEnforcer
 
@@ -993,7 +993,7 @@ func AddUser(user *User, lang string) (bool, error) {
 		return false, fmt.Errorf(i18n.Translate(lang, "auth:the organization: %s is not found"), user.Owner)
 	}
 
-	if user.Owner != "built-in" {
+	if user.Owner != "hanzo" {
 		applicationCount, err := GetOrganizationApplicationCount(organization.Owner, organization.Name, "", "")
 		if err != nil {
 			return false, err
@@ -1003,8 +1003,8 @@ func AddUser(user *User, lang string) (bool, error) {
 		}
 	}
 
-	if organization.Name == "built-in" && !organization.HasPrivilegeConsent && user.Name != "admin" {
-		return false, fmt.Errorf(i18n.Translate(lang, "organization:adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Casdoor. Refer to the docs: https://casdoor.org/docs/basic/core-concepts#how-does-casdoor-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option."))
+	if organization.Name == "hanzo" && !organization.HasPrivilegeConsent && user.Name != "admin" {
+		return false, fmt.Errorf(i18n.Translate(lang, "organization:adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Casdoor. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-casdoor-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option."))
 	}
 
 	if user.BalanceCurrency == "" {
@@ -1172,7 +1172,7 @@ func deleteUser(user *User) (bool, error) {
 
 func DeleteUser(user *User) (bool, error) {
 	// Forced offline the user first
-	_, err := DeleteSession(util.GetSessionId(user.Owner, user.Name, CasdoorApplication), "")
+	_, err := DeleteSession(util.GetSessionId(user.Owner, user.Name, HanzoApplication), "")
 	if err != nil {
 		return false, err
 	}
@@ -1410,7 +1410,7 @@ func (user *User) IsGlobalAdmin() bool {
 		return false
 	}
 
-	return user.Owner == "built-in"
+	return user.Owner == "hanzo"
 }
 
 func (user *User) CheckUserFace(faceIdImage []string, provider *Provider) (bool, error) {

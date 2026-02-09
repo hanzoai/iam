@@ -310,7 +310,7 @@ class OrganizationListPage extends BaseListPage {
               <PopconfirmModal
                 title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
                 onConfirm={() => this.deleteOrganization(index)}
-                disabled={record.name === "built-in"}
+                disabled={record.name === "hanzo"}
               >
               </PopconfirmModal>
             </div>

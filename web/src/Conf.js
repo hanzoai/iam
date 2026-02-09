@@ -14,7 +14,7 @@
 
 import React from "react";
 
-export const DefaultApplication = "app-built-in";
+export const DefaultApplication = "app-hanzo";
 
 export const CasvisorUrl = "";
 

@@ -58,7 +58,7 @@ Example JSON user resource
     "userName": "scim_test_user2",
     "userType": "normal-user",
     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
-        "organization": "built-in"
+        "organization": "hanzo"
     }
 }
 */

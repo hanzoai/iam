@@ -93,7 +93,7 @@ export function signEthereumTypedData(from, nonce) {
   const typedData = JSON.stringify({
     domain: {
       chainId: window.ethereum.chainId,
-      name: "Casdoor",
+      name: "Hanzo IAM",
       version: "1",
     },
     message: {
@@ -310,7 +310,7 @@ export function initWeb3Onboard(application, provider) {
   ];
 
   const appMetadata = {
-    name: "Casdoor",
+    name: "Hanzo IAM",
     description: "Connect a wallet using Casdoor",
     recommendedInjectedWallets: [
       {name: "MetaMask", url: "https://metamask.io"},
