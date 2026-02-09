@@ -97,7 +97,7 @@ test.describe('Hanzo IAM Visual Appearance', () => {
     // Check that Casdoor branding is NOT visible
     const pageContent = await page.textContent('body');
     expect(pageContent).not.toContain('Casdoor');
-    expect(pageContent).not.toContain('casdoor.org');
+    expect(pageContent).not.toContain('iam.hanzo.ai');
   });
 
   test('shows "Powered by Hanzo AI"', async ({ page }) => {

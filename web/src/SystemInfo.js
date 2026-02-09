@@ -200,9 +200,9 @@ class SystemInfo extends React.Component {
                 <br />
                 {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
                 <br />
-                {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://casdoor.org">https://casdoor.org</a>
+                {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai">https://iam.hanzo.ai</a>
                 <br />
-                {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://casdoor.org/#:~:text=Casdoor%20API-,Community,-GitHub">Get in Touch!</a>
+                {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai/#:~:text=Casdoor%20API-,Community,-GitHub">Get in Touch!</a>
               </Card>
             </Col>
             <Col span={6}></Col>
@@ -240,9 +240,9 @@ class SystemInfo extends React.Component {
               <br />
               {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
               <br />
-              {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://casdoor.org">https://casdoor.org</a>
+              {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai">https://iam.hanzo.ai</a>
               <br />
-              {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://casdoor.org/#:~:text=Casdoor%20API-,Community,-GitHub">Get in Touch!</a>
+              {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai/#:~:text=Casdoor%20API-,Community,-GitHub">Get in Touch!</a>
             </Card>
           </Col>
         </Row>

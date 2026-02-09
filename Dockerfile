@@ -64,7 +64,7 @@ FROM db AS ALLINONE
 LABEL MAINTAINER="https://hanzo.ai/"
 =======
 FROM debian:latest AS ALLINONE
-LABEL MAINTAINER="https://casdoor.org/"
+LABEL MAINTAINER="https://iam.hanzo.ai/"
 >>>>>>> upstream/master
 ARG TARGETOS
 ARG TARGETARCH

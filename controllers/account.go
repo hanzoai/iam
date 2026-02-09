@@ -369,7 +369,7 @@ func (c *ApiController) Logout() {
 			c.ResponseError(err.Error())
 			return
 		}
-		_, err = object.DeleteSessionId(util.GetSessionId(owner, username, object.CasdoorApplication), c.Ctx.Input.CruSession.SessionID(context.Background()))
+		_, err = object.DeleteSessionId(util.GetSessionId(owner, username, object.HanzoApplication), c.Ctx.Input.CruSession.SessionID(context.Background()))
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -378,7 +378,7 @@ func (c *ApiController) Logout() {
 		util.LogInfo(c.Ctx, "API: [%s] logged out", user)
 
 		application := c.GetSessionApplication()
-		if application == nil || application.Name == "app-built-in" || application.HomepageUrl == "" {
+		if application == nil || application.Name == "app-hanzo" || application.HomepageUrl == "" {
 			c.ResponseOk(user)
 			return
 		}
@@ -422,7 +422,7 @@ func (c *ApiController) Logout() {
 			return
 		}
 
-		_, err = object.DeleteSessionId(util.GetSessionId(owner, username, object.CasdoorApplication), c.Ctx.Input.CruSession.SessionID(context.Background()))
+		_, err = object.DeleteSessionId(util.GetSessionId(owner, username, object.HanzoApplication), c.Ctx.Input.CruSession.SessionID(context.Background()))
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -481,7 +481,7 @@ func (c *ApiController) SsoLogout() {
 	}
 
 	currentSessionId := c.Ctx.Input.CruSession.SessionID(context.Background())
-	_, err = object.DeleteSessionId(util.GetSessionId(owner, username, object.CasdoorApplication), currentSessionId)
+	_, err = object.DeleteSessionId(util.GetSessionId(owner, username, object.HanzoApplication), currentSessionId)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

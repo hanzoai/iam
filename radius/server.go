@@ -70,7 +70,7 @@ func handleAccessRequest(w radius.ResponseWriter, r *radius.Request) {
 	if organization == "" {
 		organization = conf.GetConfigString("radiusDefaultOrganization")
 		if organization == "" {
-			organization = "built-in"
+			organization = "hanzo"
 		}
 	}
 

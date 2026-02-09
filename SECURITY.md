@@ -6,4 +6,4 @@ We are grateful for security researchers and users reporting a vulnerability to 
 
 - **Please do not report security vulnerabilities directly on GitHub.**
 
-- To report a vulnerability, please email [admin@casdoor.org](admin@casdoor.org).
+- To report a vulnerability, please email [admin@iam.hanzo.ai](admin@iam.hanzo.ai).
