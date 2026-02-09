@@ -37,7 +37,7 @@ class AuthCallback extends React.Component {
   }
 
   getInnerParams() {
-    // For example, for Casbin-OA, realRedirectUri = "http://localhost:9000/login"
+    // For example, for Hanzo-OA, realRedirectUri = "http://localhost:9000/login"
     // realRedirectUrl = "http://localhost:9000"
     const params = new URLSearchParams(this.props.location.search);
     const state = params.get("state");

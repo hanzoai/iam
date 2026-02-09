@@ -68,7 +68,7 @@ class ApplicationListPage extends BaseListPage {
         {name: "Providers", visible: true, required: true, rule: "None", customCss: SignupTableDefaultCssMap["Providers"]},
       ],
       grantTypes: ["authorization_code", "password", "client_credentials", "token", "id_token", "refresh_token"],
-      cert: "cert-built-in",
+      cert: "cert-hanzo",
       redirectUris: ["http://localhost:9000/callback"],
       tokenFormat: "JWT",
       tokenFields: [],
@@ -277,7 +277,7 @@ class ApplicationListPage extends BaseListPage {
               <PopconfirmModal
                 title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
                 onConfirm={() => this.deleteApplication(index)}
-                disabled={record.name === "app-built-in"}
+                disabled={record.name === "app-hanzo"}
               >
               </PopconfirmModal>
             </div>

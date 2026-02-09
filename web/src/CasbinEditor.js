@@ -19,7 +19,7 @@ import {Tabs} from "antd";
 import i18next from "i18next";
 import Editor from "./common/Editor";
 
-const CasbinEditor = ({model, onModelTextChange}) => {
+const HanzoEditor = ({model, onModelTextChange}) => {
   const [activeKey, setActiveKey] = useState("advanced");
   const iframeRef = useRef(null);
   const [localModelText, setLocalModelText] = useState(model.modelText);
@@ -95,4 +95,4 @@ const CasbinEditor = ({model, onModelTextChange}) => {
   );
 };
 
-export default CasbinEditor;
+export default HanzoEditor;

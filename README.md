@@ -49,31 +49,31 @@
 
 ## Documentation
 
-https://casdoor.org
+https://iam.hanzo.ai
 
 ## Install
 
-- By source code: https://casdoor.org/docs/basic/server-installation
-- By Docker: https://casdoor.org/docs/basic/try-with-docker
-- By Kubernetes Helm: https://casdoor.org/docs/basic/try-with-helm
+- By source code: https://iam.hanzo.ai/docs/basic/server-installation
+- By Docker: https://iam.hanzo.ai/docs/basic/try-with-docker
+- By Kubernetes Helm: https://iam.hanzo.ai/docs/basic/try-with-helm
 
 ## How to connect to Casdoor?
 
-https://casdoor.org/docs/how-to-connect/overview
+https://iam.hanzo.ai/docs/how-to-connect/overview
 
 ## Casdoor Public API
 
-- Docs: https://casdoor.org/docs/basic/public-api
+- Docs: https://iam.hanzo.ai/docs/basic/public-api
 - Swagger: https://door.casdoor.com/swagger
 
 ## Integrations
 
-https://casdoor.org/docs/category/integrations
+https://iam.hanzo.ai/docs/category/integrations
 
 ## How to contact?
 
 - Discord: https://discord.gg/5rPsrAzK7S
-- Contact: https://casdoor.org/help
+- Contact: https://iam.hanzo.ai/help
 
 ## Contribute
 

@@ -267,7 +267,7 @@ func getCertByApplication(application *Application) (*Cert, error) {
 }
 
 func GetDefaultCert() (*Cert, error) {
-	return getCert("admin", "cert-built-in")
+	return getCert("admin", "cert-hanzo")
 }
 
 func certChangeTrigger(oldName string, newName string) error {
