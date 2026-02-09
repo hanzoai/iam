@@ -1,0 +1,37 @@
+name: hanzo-iam
+region: nyc
+services:
+  - name: iam
+    github:
+      repo: hanzoai/iam
+      branch: main
+      deploy_on_push: false
+    dockerfile_path: Dockerfile.doapp
+    instance_size_slug: professional-l
+    instance_count: 1
+    http_port: 8000
+    health_check:
+      http_path: /api/health
+      initial_delay_seconds: 120
+      period_seconds: 30
+      timeout_seconds: 10
+      success_threshold: 1
+      failure_threshold: 5
+    envs:
+      - key: RUNNING_IN_DOCKER
+        value: "true"
+        scope: RUN_AND_BUILD_TIME
+      - key: dataSourceName
+        value: "user=hanzo password=AVNS_rSFKxvlWMMBqLXMXLgP host=hanzo-iam-db-do-user-27607246-0.i.db.ondigitalocean.com port=25060 sslmode=require dbname=hanzo_iam"
+        scope: RUN_TIME
+        type: SECRET
+
+domains:
+  - domain: hanzo.id
+    type: PRIMARY
+  - domain: lux.id
+    type: ALIAS
+  - domain: zoo.id
+    type: ALIAS
+  - domain: pars.id
+    type: ALIAS

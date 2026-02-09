@@ -201,7 +201,7 @@ class PlanEditPage extends React.Component {
         </Row>
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("plan:Price"), i18next.t("plan:Price - Tooltip"))} :
+            {Setting.getLabel(i18next.t("order:Price"), i18next.t("plan:Price - Tooltip"))} :
           </Col>
           <Col span={22} >
             <InputNumber value={this.state.plan.price} disabled={isViewMode} onChange={value => {
@@ -257,6 +257,16 @@ class PlanEditPage extends React.Component {
           <Col span={1} >
             <Switch checked={this.state.plan.isEnabled} disabled={isViewMode} onChange={checked => {
               this.updatePlanField("isEnabled", checked);
+            }} />
+          </Col>
+        </Row>
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
+            {Setting.getLabel(i18next.t("plan:Is exclusive"), i18next.t("plan:Is exclusive - Tooltip"))} :
+          </Col>
+          <Col span={1} >
+            <Switch checked={this.state.plan.isExclusive} disabled={isViewMode} onChange={checked => {
+              this.updatePlanField("isExclusive", checked);
             }} />
           </Col>
         </Row>
