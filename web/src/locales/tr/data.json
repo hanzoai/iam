@@ -759,7 +759,7 @@
     "Follow global theme": "Küresel temayı takip et",
     "Has privilege consent": "Ayrıcalık onayı var",
     "Has privilege consent - Tooltip": "HasPrivilegeConsent yanlış ise yerleşik organizasyona kullanıcı eklemeyi engelle",
-    "Has privilege consent warning": "'built-in' (yerleşik) organizasyona yeni bir kullanıcı ekleme şu anda devre dışı bırakılmıştır. Not: 'built-in' organizasyonundaki tüm kullanıcılar Casdoor'da genel yöneticilerdir. Belgelere bakın: https://casdoor.org/docs/basic/core-concepts#how-does-casdoor-manage-itself. Hala 'built-in' organizasyonu için bir kullanıcı oluşturmak isterseniz, organizasyonun ayarları sayfasına gidin ve 'Yetki onayı var' seçeneğini etkinleştirin.",
+    "Has privilege consent warning": "'built-in' (yerleşik) organizasyona yeni bir kullanıcı ekleme şu anda devre dışı bırakılmıştır. Not: 'built-in' organizasyonundaki tüm kullanıcılar Casdoor'da genel yöneticilerdir. Belgelere bakın: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-casdoor-manage-itself. Hala 'built-in' organizasyonu için bir kullanıcı oluşturmak isterseniz, organizasyonun ayarları sayfasına gidin ve 'Yetki onayı var' seçeneğini etkinleştirin.",
     "Init score": "Başlangıç puanı",
     "Init score - Tooltip": "Kullanıcılara kayıt sırasında verilen başlangıç puanları",
     "Is profile public": "Profil genel mi",

@@ -1084,7 +1084,7 @@ class ProviderEditPage extends React.Component {
           )
         }
         {
-          this.state.provider.type !== "ADFS" && this.state.provider.type !== "AzureAD" && this.state.provider.type !== "AzureADB2C" && (this.state.provider.type !== "Casdoor" && this.state.category !== "Storage") && this.state.provider.type !== "Okta" && this.state.provider.type !== "Nextcloud" ? null : (
+          this.state.provider.type !== "ADFS" && this.state.provider.type !== "AzureAD" && this.state.provider.type !== "AzureADB2C" && (this.state.provider.type !== "Hanzo IAM" && this.state.category !== "Storage") && this.state.provider.type !== "Okta" && this.state.provider.type !== "Nextcloud" ? null : (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={2}>
                 {this.getDomainLabel(this.state.provider)} :
@@ -1111,7 +1111,7 @@ class ProviderEditPage extends React.Component {
                 </Col>
               </Row>
             )}
-            {this.state.provider.category === "ID Verification" || ["Custom HTTP SMS", "Custom HTTP Email", "SendGrid", "Local File System", "MinIO", "Tencent Cloud COS", "Google Cloud Storage", "Qiniu Cloud Kodo", "Synology", "Casdoor", "CUCloud", "Alibaba Cloud Facebody"].includes(this.state.provider.type) ? null : (
+            {this.state.provider.category === "ID Verification" || ["Custom HTTP SMS", "Custom HTTP Email", "SendGrid", "Local File System", "MinIO", "Tencent Cloud COS", "Google Cloud Storage", "Qiniu Cloud Kodo", "Synology", "Hanzo IAM", "CUCloud", "Alibaba Cloud Facebody"].includes(this.state.provider.type) ? null : (
               <Row style={{marginTop: "20px"}} >
                 <Col style={{marginTop: "5px"}} span={2}>
                   {Setting.getLabel(i18next.t("provider:Endpoint (Intranet)"), i18next.t("provider:Region endpoint for Intranet"))} :
@@ -1126,7 +1126,7 @@ class ProviderEditPage extends React.Component {
             {this.state.provider.category === "ID Verification" || ["Custom HTTP SMS", "Custom HTTP Email", "SendGrid", "Local File System", "CUCloud", "Alibaba Cloud Facebody"].includes(this.state.provider.type) ? null : (
               <Row style={{marginTop: "20px"}} >
                 <Col style={{marginTop: "5px"}} span={2}>
-                  {["Casdoor"].includes(this.state.provider.type) ?
+                  {["Hanzo IAM"].includes(this.state.provider.type) ?
                     Setting.getLabel(i18next.t("general:Provider"), i18next.t("general:Provider - Tooltip"))
                     : Setting.getLabel(i18next.t("provider:Bucket"), i18next.t("provider:Bucket - Tooltip"))} :
                 </Col>
@@ -1149,7 +1149,7 @@ class ProviderEditPage extends React.Component {
                 </Col>
               </Row>
             )}
-            {this.state.provider.category === "ID Verification" || ["Custom HTTP SMS", "Custom HTTP Email", "SendGrid", "Synology", "Casdoor", "CUCloud", "Alibaba Cloud Facebody"].includes(this.state.provider.type) ? null : (
+            {this.state.provider.category === "ID Verification" || ["Custom HTTP SMS", "Custom HTTP Email", "SendGrid", "Synology", "Hanzo IAM", "CUCloud", "Alibaba Cloud Facebody"].includes(this.state.provider.type) ? null : (
               <Row style={{marginTop: "20px"}} >
                 <Col style={{marginTop: "5px"}} span={2}>
                   {Setting.getLabel(i18next.t("provider:Domain"), i18next.t("provider:Domain - Tooltip"))} :
@@ -1161,7 +1161,7 @@ class ProviderEditPage extends React.Component {
                 </Col>
               </Row>
             )}
-            {["Casdoor"].includes(this.state.provider.type) ? (
+            {["Hanzo IAM"].includes(this.state.provider.type) ? (
               <Row style={{marginTop: "20px"}} >
                 <Col style={{marginTop: "5px"}} span={2}>
                   {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
@@ -1173,10 +1173,10 @@ class ProviderEditPage extends React.Component {
                 </Col>
               </Row>
             ) : null}
-            {["AWS S3", "Tencent Cloud COS", "Qiniu Cloud Kodo", "Casdoor", "CUCloud OSS", "MinIO", "CUCloud", "Alibaba Cloud PNVS SMS"].includes(this.state.provider.type) ? (
+            {["AWS S3", "Tencent Cloud COS", "Qiniu Cloud Kodo", "Hanzo IAM", "CUCloud OSS", "MinIO", "CUCloud", "Alibaba Cloud PNVS SMS"].includes(this.state.provider.type) ? (
               <Row style={{marginTop: "20px"}} >
                 <Col style={{marginTop: "5px"}} span={2}>
-                  {["Casdoor"].includes(this.state.provider.type) ?
+                  {["Hanzo IAM"].includes(this.state.provider.type) ?
                     Setting.getLabel(i18next.t("general:Application"), i18next.t("general:Application - Tooltip")) :
                     Setting.getLabel(i18next.t("provider:Region ID"), i18next.t("provider:Region ID - Tooltip"))} :
                 </Col>
@@ -1782,7 +1782,7 @@ class ProviderEditPage extends React.Component {
           ) : null
         }
         {
-          (this.state.provider.type === "Alipay" || this.state.provider.type === "WeChat Pay" || this.state.provider.type === "Casdoor") ? (
+          (this.state.provider.type === "Alipay" || this.state.provider.type === "WeChat Pay" || this.state.provider.type === "Hanzo IAM") ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
                 {Setting.getLabel(i18next.t("general:Cert"), i18next.t("general:Cert - Tooltip"))} :

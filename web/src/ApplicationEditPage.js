@@ -115,11 +115,11 @@ const sideTemplate = `<style>
   }
 </style>
 <div class="left-model">
-  <span class="side-logo"> <img src="${Setting.StaticBaseUrl}/img/casdoor-logo_1185x256.png" alt="Casdoor" style="width: 120px">
+  <span class="side-logo"> <img src="${Setting.StaticBaseUrl}/img/casdoor-logo_1185x256.png" alt="Hanzo IAM" style="width: 120px">
     <span>SSO</span>
   </span>
   <div class="img">
-    <img src="${Setting.StaticBaseUrl}/img/casbin.svg" alt="Casdoor"/>
+    <img src="${Setting.StaticBaseUrl}/img/casbin.svg" alt="Hanzo IAM"/>
   </div>
 </div>
 `;
@@ -296,7 +296,7 @@ class ApplicationEditPage extends React.Component {
               {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
             </Col>
             <Col span={21} >
-              <Input value={this.state.application.name} disabled={this.state.application.name === "app-built-in"} onChange={e => {
+              <Input value={this.state.application.name} disabled={this.state.application.name === "app-hanzo"} onChange={e => {
                 const value = e.target.value;
                 if (/[/?:@#&%=+;]/.test(value)) {
                   const invalidChars = "/ ? : @ # & % = + ;";

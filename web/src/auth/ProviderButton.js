@@ -74,7 +74,7 @@ function getSigninButton(provider) {
     return <GitLabLoginButton text={text} align={"center"} />;
   } else if (provider.type === "ADFS") {
     return <AdfsLoginButton text={text} align={"center"} />;
-  } else if (provider.type === "Casdoor") {
+  } else if (provider.type === "Hanzo IAM") {
     return <CasdoorLoginButton text={text} align={"center"} />;
   } else if (provider.type === "Baidu") {
     return <BaiduLoginButton text={text} align={"center"} />;

@@ -221,7 +221,7 @@ func UpdateOrganization(id string, organization *Organization, isGlobalAdmin boo
 		return false, nil
 	}
 
-	if name == "built-in" {
+	if name == "hanzo" {
 		organization.Name = name
 	}
 
@@ -285,7 +285,7 @@ func deleteOrganization(organization *Organization) (bool, error) {
 }
 
 func DeleteOrganization(organization *Organization) (bool, error) {
-	if organization.Name == "built-in" {
+	if organization.Name == "hanzo" {
 		return false, nil
 	}
 

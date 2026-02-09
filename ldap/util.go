@@ -151,7 +151,7 @@ func getNameAndOrgFromDN(DN string) (string, string, error) {
 		return "", "", fmt.Errorf("please use Admin Name format like cn=xxx,ou=xxx,dc=example,dc=com")
 	}
 	if params["ou"] == "" {
-		return params["cn"], object.CasdoorOrganization, nil
+		return params["cn"], object.HanzoOrganization, nil
 	}
 	return params["cn"], params["ou"], nil
 }
