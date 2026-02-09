@@ -9376,7 +9376,7 @@
             "title": "TableColumn",
             "type": "object",
             "properties": {
-                "casdoorName": {
+                "iamName": {
                     "type": "string"
                 },
                 "isHashed": {
@@ -9731,7 +9731,7 @@
                         "$ref": "#/definitions/object.ProductInfo"
                     }
                 },
-                "casdoor": {
+                "iam": {
                     "type": "string"
                 },
                 "cloudfoundry": {

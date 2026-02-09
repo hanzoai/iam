@@ -97,7 +97,7 @@ func TestCamelToSnakeCase(t *testing.T) {
 		input       string
 		expected    interface{}
 	}{
-		{"Should be return casdor_is_the_best", "CasdoorIsTheBest", "casdoor_is_the_best"},
+		{"Should be return casdor_is_the_best", "CasdoorIsTheBest", "iam_is_the_best"},
 		{"Should be return lorem_ipsum", "Lorem Ipsum", "lorem_ipsum"},
 		{"Should be return Lorem Ipsum", "lorem Ipsum", "lorem_ipsum"},
 		{"Should be return lorem_ipsum", "lorem ipsum", "loremipsum"},
@@ -140,7 +140,7 @@ func TestGetId(t *testing.T) {
 		input       []string
 		expected    interface{}
 	}{
-		{"Scenery one", []string{"admin", "casdoor"}, "admin/casdoor"},
+		{"Scenery one", []string{"admin", "iam"}, "admin/iam"},
 		{"Scenery two", []string{"admin", "casbin"}, "admin/casbin"},
 		{"Scenery three", []string{"test", "lorem ipsum"}, "test/lorem ipsum"},
 	}
@@ -158,7 +158,7 @@ func TestGetMd5Hash(t *testing.T) {
 		input       string
 		expected    interface{}
 	}{
-		{"Scenery one", "casdoor", "0b874f488b4705693a60256b8f3a32da"},
+		{"Scenery one", "iam", "0b874f488b4705693a60256b8f3a32da"},
 		{"Scenery two", "casbin", "59c5a967f086f65366a80dbdd1205a6c"},
 		{"Scenery three", "lorem ipsum", "80a751fde577028640c419000e33eba6"},
 	}
@@ -195,7 +195,7 @@ func TestSnakeString(t *testing.T) {
 		input       string
 		expected    interface{}
 	}{
-		{"Should be return casdor_is_the_best", "CasdoorIsTheBest", "casdoor_is_the_best"},
+		{"Should be return casdor_is_the_best", "CasdoorIsTheBest", "iam_is_the_best"},
 		{"Should be return lorem_ipsum", "Lorem Ipsum", "lorem_ipsum"},
 		{"Should be return lorem_ipsum", "lorem Ipsum", "lorem_ipsum"},
 		{"Should be return loremipsum", "lorem ipsum", "loremipsum"},

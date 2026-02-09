@@ -162,7 +162,7 @@ services:
   iam-frontend:
     image: ghcr.io/hanzoai/iam-frontend:latest
     environment:
-      - CASDOOR_API_URL=http://iam-backend:8000
+      - IAM_API_URL=http://iam-backend:8000
     deploy:
       replicas: 2
 

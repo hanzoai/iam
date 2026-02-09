@@ -35,7 +35,7 @@ import (
 
 func main() {
 	web.BConfig.WebConfig.Session.SessionOn = true
-	web.BConfig.WebConfig.Session.SessionName = "casdoor_session_id"
+	web.BConfig.WebConfig.Session.SessionName = "iam_session_id"
 	if conf.GetConfigString("redisEndpoint") == "" {
 		web.BConfig.WebConfig.Session.SessionProvider = "file"
 		web.BConfig.WebConfig.Session.SessionProviderConfig = "./tmp"
