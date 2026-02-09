@@ -759,7 +759,7 @@
     "Follow global theme": "Seguir tema global",
     "Has privilege consent": "Tem consentimento de privilégio",
     "Has privilege consent - Tooltip": "Impede adição de usuários para organização interna se HasPrivilegeConsent for falso",
-    "Has privilege consent warning": "A adição de um novo usuário à organização 'built-in' (embutida) está atualmente desativada. Observe que todos os usuários na organização 'built-in' são administradores globais no Casdoor. Consulte a documentação: https://casdoor.org/docs/basic/core-concepts#how-does-casdoor-manage-itself. Se ainda desejar criar um usuário para a organização 'built-in', acesse a página de configurações da organização e habilite a opção 'Possui consentimento de privilégios'.",
+    "Has privilege consent warning": "A adição de um novo usuário à organização 'built-in' (embutida) está atualmente desativada. Observe que todos os usuários na organização 'built-in' são administradores globais no Casdoor. Consulte a documentação: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-casdoor-manage-itself. Se ainda desejar criar um usuário para a organização 'built-in', acesse a página de configurações da organização e habilite a opção 'Possui consentimento de privilégios'.",
     "Init score": "Pontuação inicial",
     "Init score - Tooltip": "Pontos de pontuação inicial concedidos aos usuários no momento do registro",
     "Is profile public": "Perfil é público",

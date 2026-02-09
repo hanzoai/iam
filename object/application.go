@@ -698,7 +698,7 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 		return false, fmt.Errorf(i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 
-	if name == "app-built-in" {
+	if name == "app-hanzo" {
 		application.Name = name
 	}
 
@@ -718,7 +718,7 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 		return false, err
 	}
 
-	if application.IsShared == true && application.Organization != "built-in" {
+	if application.IsShared == true && application.Organization != "hanzo" {
 		return false, fmt.Errorf("only applications belonging to built-in organization can be shared")
 	}
 
@@ -748,7 +748,7 @@ func AddApplication(application *Application) (bool, error) {
 		application.Owner = "admin"
 	}
 	if application.Organization == "" {
-		application.Organization = "built-in"
+		application.Organization = "hanzo"
 	}
 	if application.ClientId == "" {
 		application.ClientId = util.GenerateClientId()
@@ -804,7 +804,7 @@ func deleteApplication(application *Application) (bool, error) {
 }
 
 func DeleteApplication(application *Application) (bool, error) {
-	if application.Name == "app-built-in" {
+	if application.Name == "app-hanzo" {
 		return false, nil
 	}
 

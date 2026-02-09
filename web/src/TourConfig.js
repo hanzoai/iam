@@ -5,7 +5,7 @@ export const TourObj = {
   home: [
     {
       title: "Welcome to casdoor",
-      description: "You can learn more about the use of CasDoor at https://casdoor.org/.",
+      description: "You can learn more about the use of CasDoor at https://iam.hanzo.ai/.",
       cover: (
         <img
           alt="casdoor.png"
@@ -114,7 +114,7 @@ export const TourObj = {
   adapters: [
     {
       title: "Adapter List",
-      description: "Casdoor supports using the UI to connect the adapter and manage the policy rules. In Casbin, the policy storage is implemented as an adapter (aka middleware for Casbin). A Casbin user can use an adapter to load policy rules from a storage, or save policy rules to it.",
+      description: "Casdoor supports using the UI to connect the adapter and manage the policy rules. In Hanzo, the policy storage is implemented as an adapter (aka middleware for Hanzo). A Hanzo user can use an adapter to load policy rules from a storage, or save policy rules to it.",
     },
   ],
   models: [
@@ -126,7 +126,7 @@ export const TourObj = {
   permissions: [
     {
       title: "Permission List",
-      description: "All users associated with a single Casdoor organization are shared between the organization's applications and therefore have access to the applications. Sometimes you may want to restrict users' access to certain applications, or certain resources in a certain application. In this case, you can use Permission implemented by Casbin.",
+      description: "All users associated with a single Casdoor organization are shared between the organization's applications and therefore have access to the applications. Sometimes you may want to restrict users' access to certain applications, or certain resources in a certain application. In this case, you can use Permission implemented by Hanzo.",
     },
     {
       title: "Permission Add",
@@ -135,7 +135,7 @@ export const TourObj = {
     },
     {
       title: "Permission Upload",
-      description: "With Casbin Online Editor, you can get Model and Policy files suitable for your usage scenarios. You can easily import the Model file into Casdoor through the Casdoor Web UI for use by the built-in Casbin. ",
+      description: "With Hanzo Online Editor, you can get Model and Policy files suitable for your usage scenarios. You can easily import the Model file into Casdoor through the Casdoor Web UI for use by the built-in Hanzo. ",
       id: "upload-button",
     },
   ],
@@ -193,7 +193,7 @@ export const TourObj = {
   applications: [
     {
       title: "Application List",
-      description: "If you want to use Casdoor to provide login service for your web Web APPs, you can add them as Casdoor applications. Users can access all applications in their organizations without login twice.",
+      description: "If you want to use Casdoor to provide login service for your web Web APPs, you can add them as Hanzo IAM applications. Users can access all applications in their organizations without login twice.",
     },
   ],
 };

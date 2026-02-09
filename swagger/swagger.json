@@ -3810,7 +3810,7 @@
                     {
                         "in": "query",
                         "name": "sessionPkId",
-                        "description": "The session ID in format: organization/user/application (e.g., built-in/admin/app-built-in)",
+                        "description": "The session ID in format: organization/user/application (e.g., built-in/admin/app-hanzo)",
                         "required": true,
                         "type": "string"
                     }
@@ -4600,7 +4600,7 @@
                     {
                         "in": "query",
                         "name": "sessionPkId",
-                        "description": "The session ID in format: organization/user/application (e.g., built-in/admin/app-built-in)",
+                        "description": "The session ID in format: organization/user/application (e.g., built-in/admin/app-hanzo)",
                         "required": true,
                         "type": "string"
                     },
