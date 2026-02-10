@@ -340,4 +340,7 @@ func InitAPI() {
 	web.Router("/api/mcp", &mcp.McpController{}, "POST:HandleMcp")
 
 	web.Router("/api/faceid-signin-begin", &controllers.ApiController{}, "GET:FaceIDSigninBegin")
+
+	web.Router("/api/registry/token", &controllers.ApiController{}, "GET:GetRegistryToken")
+	web.Router("/api/registry/jwks", &controllers.ApiController{}, "GET:GetRegistryPublicKey")
 }
