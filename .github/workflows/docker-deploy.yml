@@ -92,19 +92,18 @@ jobs:
 
   notify:
     needs: [build, deploy]
-    if: always()
+    if: always() && vars.SLACK_WEBHOOK != ''
     runs-on: ubuntu-latest
     steps:
       - name: Send notification
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && secrets.SLACK_WEBHOOK != ''
         uses: 8398a7/action-slack@v3
         with:
-          status: ${{ job.status }}
+          status: ${{ needs.deploy.result }}
           text: |
-            IAM Deployment Status: ${{ job.status }}
+            IAM Deployment Status: ${{ needs.deploy.result }}
             Commit: ${{ github.sha }}
             Author: ${{ github.actor }}
             Message: ${{ github.event.head_commit.message }}
-          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
