@@ -71,40 +71,24 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Deploy to Production
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
-          script: |
-            cd /root/hanzo
+          token: ${{ secrets.DO_API_TOKEN }}
 
-            # Pull latest IAM image
-            docker pull ${{ env.DOCKER_IMAGE }}:latest
+      - name: Configure kubectl
+        run: doctl kubernetes cluster kubeconfig save do-sfo3-hanzo-k8s
 
-            # Update and restart IAM service via Docker Compose
-            docker compose -f compose.production.yml up -d --no-deps --pull always iam
+      - name: Deploy to K8s
+        run: |
+          kubectl set image deployment/iam iam=${{ env.DOCKER_IMAGE }}:latest -n hanzo
+          kubectl rollout status deployment/iam -n hanzo --timeout=300s
 
-            # Health check - wait for IAM to be healthy
-            echo "Waiting for IAM health check..."
-            for i in {1..30}; do
-              if curl -sf http://localhost:8000/ > /dev/null 2>&1; then
-                echo "IAM is healthy!"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "IAM health check failed"
-                docker logs hanzo-iam --tail 50
-                exit 1
-              fi
-              echo "Waiting... ($i/30)"
-              sleep 2
-            done
-
-            # Show service status
-            docker compose -f compose.production.yml ps iam
+      - name: Verify health
+        run: |
+          kubectl wait --for=condition=available deployment/iam -n hanzo --timeout=120s
+          POD=$(kubectl get pod -n hanzo -l app=iam -o jsonpath='{.items[0].metadata.name}')
+          kubectl exec "$POD" -n hanzo -- wget -qO- http://localhost:8000/api/health
 
   notify:
     needs: [build, deploy]
