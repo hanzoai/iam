@@ -116,6 +116,8 @@ p, *, *, GET, /api/run-casbin-command, *, *
 p, *, *, POST, /api/refresh-engines, *, *
 p, *, *, GET, /api/get-invitation-info, *, *
 p, *, *, GET, /api/faceid-signin-begin, *, *
+p, *, *, GET, /api/registry/token, *, *
+p, *, *, GET, /api/registry/jwks, *, *
 `
 
 		sa := stringadapter.NewAdapter(ruleText)
