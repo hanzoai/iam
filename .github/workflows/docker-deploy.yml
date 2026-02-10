@@ -77,7 +77,7 @@ jobs:
           token: ${{ secrets.DO_API_TOKEN }}
 
       - name: Configure kubectl
-        run: doctl kubernetes cluster kubeconfig save do-sfo3-hanzo-k8s
+        run: doctl kubernetes cluster kubeconfig save 1a153000-90a6-48ad-9375-7ef901a9bf7f
 
       - name: Deploy to K8s
         run: |
