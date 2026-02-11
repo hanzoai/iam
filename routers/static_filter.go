@@ -111,6 +111,21 @@ func StaticFilter(ctx *context.Context) {
 		http.ServeContent(ctx.ResponseWriter, ctx.Request, "acme-challenge", time.Now(), strings.NewReader("content"))
 	}
 
+	// Rewrite /oauth/* aliases to their canonical /api/ paths
+	oauthRewrites := map[string]string{
+		"/oauth/token":      "/api/login/oauth/access_token",
+		"/oauth/refresh":    "/api/login/oauth/refresh_token",
+		"/oauth/introspect": "/api/login/oauth/introspect",
+		"/oauth/revoke":     "/api/login/oauth/revoke",
+		"/oauth/userinfo":   "/api/userinfo",
+		"/oauth/device":     "/api/device-auth",
+		"/oauth/logout":     "/api/logout",
+	}
+	if rewrite, ok := oauthRewrites[urlPath]; ok {
+		ctx.Request.URL.Path = rewrite
+		return
+	}
+
 	if strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/.well-known/") || strings.HasPrefix(urlPath, "/oauth/") {
 		return
 	}
