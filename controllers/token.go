@@ -17,12 +17,51 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/beego/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )
+
+// parseFormEncodedBody parses application/x-www-form-urlencoded data from the
+// raw request body. This is needed because Beego's copyrequestbody=true reads
+// the body into RequestBody, which can exhaust the io.Reader before Go's
+// http.Request.ParseForm() runs. As a result, Input.Query() may not find
+// form-encoded POST parameters. This helper provides a reliable fallback.
+func parseFormEncodedBody(body []byte) url.Values {
+	if len(body) == 0 {
+		return nil
+	}
+	values, err := url.ParseQuery(string(body))
+	if err != nil {
+		return nil
+	}
+	return values
+}
+
+// getFormValue returns the value for a key from parsed form values, or empty string.
+func getFormValue(values url.Values, key string) string {
+	if values == nil {
+		return ""
+	}
+	return values.Get(key)
+}
+
+// isFormEncoded checks if the request body looks like form-encoded data
+// (contains & or = but does not start with {).
+func isFormEncoded(body []byte) bool {
+	if len(body) == 0 {
+		return false
+	}
+	s := strings.TrimSpace(string(body))
+	if strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[") {
+		return false
+	}
+	return strings.Contains(s, "=")
+}
 
 // GetTokens
 // @Title GetTokens
@@ -182,7 +221,9 @@ func (c *ApiController) GetOAuthToken() {
 	}
 
 	if len(c.Ctx.Input.RequestBody) != 0 && grantType != "urn:ietf:params:oauth:grant-type:device_code" {
-		// If clientId is empty, try to read data from RequestBody
+		// Try JSON first, then fall back to form-encoded parsing.
+		// Beego's copyrequestbody=true can exhaust the request body reader,
+		// causing Input.Query() to miss form-encoded POST parameters.
 		var tokenRequest TokenRequest
 		err := json.Unmarshal(c.Ctx.Input.RequestBody, &tokenRequest)
 		if err == nil {
@@ -230,6 +271,60 @@ func (c *ApiController) GetOAuthToken() {
 			}
 			if audience == "" {
 				audience = tokenRequest.Audience
+			}
+		} else if isFormEncoded(c.Ctx.Input.RequestBody) {
+			// Fall back to parsing application/x-www-form-urlencoded body.
+			// Standard OAuth 2.0 clients (e.g. NextAuth.js) send token requests
+			// as form-encoded POST data, which Input.Query() may miss when
+			// copyrequestbody=true exhausts the body reader.
+			formValues := parseFormEncodedBody(c.Ctx.Input.RequestBody)
+			if clientId == "" {
+				clientId = getFormValue(formValues, "client_id")
+			}
+			if clientSecret == "" {
+				clientSecret = getFormValue(formValues, "client_secret")
+			}
+			if grantType == "" {
+				grantType = getFormValue(formValues, "grant_type")
+			}
+			if code == "" {
+				code = getFormValue(formValues, "code")
+			}
+			if verifier == "" {
+				verifier = getFormValue(formValues, "code_verifier")
+			}
+			if scope == "" {
+				scope = getFormValue(formValues, "scope")
+			}
+			if nonce == "" {
+				nonce = getFormValue(formValues, "nonce")
+			}
+			if username == "" {
+				username = getFormValue(formValues, "username")
+			}
+			if password == "" {
+				password = getFormValue(formValues, "password")
+			}
+			if tag == "" {
+				tag = getFormValue(formValues, "tag")
+			}
+			if avatar == "" {
+				avatar = getFormValue(formValues, "avatar")
+			}
+			if refreshToken == "" {
+				refreshToken = getFormValue(formValues, "refresh_token")
+			}
+			if deviceCode == "" {
+				deviceCode = getFormValue(formValues, "device_code")
+			}
+			if subjectToken == "" {
+				subjectToken = getFormValue(formValues, "subject_token")
+			}
+			if subjectTokenType == "" {
+				subjectTokenType = getFormValue(formValues, "subject_token_type")
+			}
+			if audience == "" {
+				audience = getFormValue(formValues, "audience")
 			}
 		}
 	}
@@ -307,8 +402,12 @@ func (c *ApiController) RefreshToken() {
 	clientSecret := c.Ctx.Input.Query("client_secret")
 	host := c.Ctx.Request.Host
 
+	if clientId == "" && clientSecret == "" {
+		clientId, clientSecret, _ = c.Ctx.Request.BasicAuth()
+	}
+
 	if clientId == "" {
-		// If clientID is empty, try to read data from RequestBody
+		// Try JSON first, then fall back to form-encoded parsing.
 		var tokenRequest TokenRequest
 		if err := json.Unmarshal(c.Ctx.Input.RequestBody, &tokenRequest); err == nil {
 			clientId = tokenRequest.ClientId
@@ -316,6 +415,23 @@ func (c *ApiController) RefreshToken() {
 			grantType = tokenRequest.GrantType
 			scope = tokenRequest.Scope
 			refreshToken = tokenRequest.RefreshToken
+		} else if isFormEncoded(c.Ctx.Input.RequestBody) {
+			formValues := parseFormEncodedBody(c.Ctx.Input.RequestBody)
+			if clientId == "" {
+				clientId = getFormValue(formValues, "client_id")
+			}
+			if clientSecret == "" {
+				clientSecret = getFormValue(formValues, "client_secret")
+			}
+			if grantType == "" {
+				grantType = getFormValue(formValues, "grant_type")
+			}
+			if scope == "" {
+				scope = getFormValue(formValues, "scope")
+			}
+			if refreshToken == "" {
+				refreshToken = getFormValue(formValues, "refresh_token")
+			}
 		}
 	}
 
@@ -360,10 +476,28 @@ func (c *ApiController) RevokeToken() {
 	if !ok {
 		clientId = c.Ctx.Input.Query("client_id")
 		clientSecret = c.Ctx.Input.Query("client_secret")
-		if clientId == "" || clientSecret == "" {
-			c.ResponseTokenError(object.InvalidRequest)
-			return
+	}
+
+	// Fall back to form-encoded body parsing if values are still missing
+	if (tokenValue == "" || clientId == "" || clientSecret == "") && isFormEncoded(c.Ctx.Input.RequestBody) {
+		formValues := parseFormEncodedBody(c.Ctx.Input.RequestBody)
+		if tokenValue == "" {
+			tokenValue = getFormValue(formValues, "token")
 		}
+		if tokenTypeHint == "" {
+			tokenTypeHint = getFormValue(formValues, "token_type_hint")
+		}
+		if clientId == "" {
+			clientId = getFormValue(formValues, "client_id")
+		}
+		if clientSecret == "" {
+			clientSecret = getFormValue(formValues, "client_secret")
+		}
+	}
+
+	if !ok && (clientId == "" || clientSecret == "") {
+		c.ResponseTokenError(object.InvalidRequest)
+		return
 	}
 
 	// Validate client credentials
@@ -461,10 +595,25 @@ func (c *ApiController) IntrospectToken() {
 	if !ok {
 		clientId = c.Ctx.Input.Query("client_id")
 		clientSecret = c.Ctx.Input.Query("client_secret")
-		if clientId == "" || clientSecret == "" {
-			c.ResponseTokenError(object.InvalidRequest)
-			return
+	}
+
+	// Fall back to form-encoded body parsing if values are still missing
+	if (tokenValue == "" || clientId == "" || clientSecret == "") && isFormEncoded(c.Ctx.Input.RequestBody) {
+		formValues := parseFormEncodedBody(c.Ctx.Input.RequestBody)
+		if tokenValue == "" {
+			tokenValue = getFormValue(formValues, "token")
 		}
+		if clientId == "" {
+			clientId = getFormValue(formValues, "client_id")
+		}
+		if clientSecret == "" {
+			clientSecret = getFormValue(formValues, "client_secret")
+		}
+	}
+
+	if !ok && (clientId == "" || clientSecret == "") {
+		c.ResponseTokenError(object.InvalidRequest)
+		return
 	}
 
 	application, err := object.GetApplicationByClientId(clientId)
@@ -484,6 +633,10 @@ func (c *ApiController) IntrospectToken() {
 	}
 
 	tokenTypeHint := c.Ctx.Input.Query("token_type_hint")
+	if tokenTypeHint == "" && isFormEncoded(c.Ctx.Input.RequestBody) {
+		formValues := parseFormEncodedBody(c.Ctx.Input.RequestBody)
+		tokenTypeHint = getFormValue(formValues, "token_type_hint")
+	}
 	var token *object.Token
 	if tokenTypeHint != "" {
 		token, err = object.GetTokenByTokenValue(tokenValue, tokenTypeHint)
