@@ -130,12 +130,12 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 	// https://access.line.me/.well-known/openid-configuration
 	oidcDiscovery := OidcDiscovery{
 		Issuer:                                 issuer,
-		AuthorizationEndpoint:                  fmt.Sprintf("%s/login/oauth/authorize", originFrontend),
-		TokenEndpoint:                          fmt.Sprintf("%s/api/login/oauth/access_token", originBackend),
-		UserinfoEndpoint:                       fmt.Sprintf("%s/api/userinfo", originBackend),
-		DeviceAuthorizationEndpoint:            fmt.Sprintf("%s/api/device-auth", originBackend),
+		AuthorizationEndpoint:                  fmt.Sprintf("%s/oauth/authorize", originFrontend),
+		TokenEndpoint:                          fmt.Sprintf("%s/oauth/token", originBackend),
+		UserinfoEndpoint:                       fmt.Sprintf("%s/oauth/userinfo", originBackend),
+		DeviceAuthorizationEndpoint:            fmt.Sprintf("%s/oauth/device", originBackend),
 		JwksUri:                                jwksUri,
-		IntrospectionEndpoint:                  fmt.Sprintf("%s/api/login/oauth/introspect", originBackend),
+		IntrospectionEndpoint:                  fmt.Sprintf("%s/oauth/introspect", originBackend),
 		ResponseTypesSupported:                 []string{"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token", "none"},
 		ResponseModesSupported:                 []string{"query", "fragment", "form_post"},
 		GrantTypesSupported:                    []string{"authorization_code", "implicit", "password", "client_credentials", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "urn:ietf:params:oauth:grant-type:token-exchange"},
@@ -145,7 +145,7 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 		ClaimsSupported:                        []string{"iss", "ver", "sub", "aud", "iat", "exp", "id", "type", "displayName", "avatar", "permanentAvatar", "email", "phone", "location", "affiliation", "title", "homepage", "bio", "tag", "region", "language", "score", "ranking", "isOnline", "isAdmin", "isForbidden", "signupApplication", "ldap"},
 		RequestParameterSupported:              true,
 		RequestObjectSigningAlgValuesSupported: []string{"HS256", "HS384", "HS512"},
-		EndSessionEndpoint:                     fmt.Sprintf("%s/api/logout", originBackend),
+		EndSessionEndpoint:                     fmt.Sprintf("%s/oauth/logout", originBackend),
 	}
 
 	return oidcDiscovery
