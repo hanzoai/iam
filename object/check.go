@@ -254,6 +254,11 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 		passwordType = organization.PasswordType
 	}
 
+	fmt.Printf("[DEBUG CheckPassword] user=%s/%s passwordType=%q userPwdLen=%d orgPwdSalt=%q userPwdSalt=%q inputPwdLen=%d\n",
+		user.Owner, user.Name, passwordType, len(user.Password), organization.PasswordSalt, user.PasswordSalt, len(password))
+	fmt.Printf("[DEBUG CheckPassword] userPwd[0:min(40,len)]=%q inputPwd=%q\n",
+		user.Password[:min(40, len(user.Password))], password)
+
 	credManager := cred.GetCredManager(passwordType)
 	if credManager == nil {
 		return fmt.Errorf(i18n.Translate(lang, "check:unsupported password type: %s"), passwordType)
@@ -265,7 +270,11 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 		}
 	}
 
-	if !credManager.IsPasswordCorrect(password, user.Password, organization.PasswordSalt) && !credManager.IsPasswordCorrect(password, user.Password, user.PasswordSalt) {
+	result1 := credManager.IsPasswordCorrect(password, user.Password, organization.PasswordSalt)
+	result2 := credManager.IsPasswordCorrect(password, user.Password, user.PasswordSalt)
+	fmt.Printf("[DEBUG CheckPassword] result1(orgSalt)=%v result2(userSalt)=%v\n", result1, result2)
+
+	if !result1 && !result2 {
 		return recordSigninErrorInfo(user, lang, enableCaptcha)
 	}
 
