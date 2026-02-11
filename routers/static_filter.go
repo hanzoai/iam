@@ -111,7 +111,7 @@ func StaticFilter(ctx *context.Context) {
 		http.ServeContent(ctx.ResponseWriter, ctx.Request, "acme-challenge", time.Now(), strings.NewReader("content"))
 	}
 
-	if strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/.well-known/") {
+	if strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/.well-known/") || strings.HasPrefix(urlPath, "/oauth/") {
 		return
 	}
 	if strings.HasPrefix(urlPath, "/cas") && (strings.HasSuffix(urlPath, "/serviceValidate") || strings.HasSuffix(urlPath, "/proxy") || strings.HasSuffix(urlPath, "/proxyValidate") || strings.HasSuffix(urlPath, "/validate") || strings.HasSuffix(urlPath, "/p3/serviceValidate") || strings.HasSuffix(urlPath, "/p3/proxyValidate") || strings.HasSuffix(urlPath, "/samlValidate")) {
@@ -121,7 +121,7 @@ func StaticFilter(ctx *context.Context) {
 		return
 	}
 
-	if urlPath == "/login/oauth/authorize" {
+	if urlPath == "/login/oauth/authorize" || urlPath == "/oauth/authorize" {
 		redirectUrl, err := fastAutoSignin(ctx)
 		if err != nil {
 			responseError(ctx, err.Error())
