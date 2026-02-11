@@ -69,7 +69,6 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - name: Install doctl
         uses: digitalocean/action-doctl@v2
@@ -92,11 +91,11 @@ jobs:
 
   notify:
     needs: [build, deploy]
-    if: always() && vars.SLACK_WEBHOOK != ''
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Send notification
-        if: github.event_name == 'push' && secrets.SLACK_WEBHOOK != ''
+        if: secrets.SLACK_WEBHOOK != ''
         uses: 8398a7/action-slack@v3
         with:
           status: ${{ needs.deploy.result }}
