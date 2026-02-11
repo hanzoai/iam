@@ -91,18 +91,8 @@ jobs:
 
   notify:
     needs: [build, deploy]
-    if: always()
+    if: ${{ always() && needs.deploy.result != 'skipped' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Send notification
-        if: secrets.SLACK_WEBHOOK != ''
-        uses: 8398a7/action-slack@v3
-        with:
-          status: ${{ needs.deploy.result }}
-          text: |
-            IAM Deployment Status: ${{ needs.deploy.result }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-            Message: ${{ github.event.head_commit.message }}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+      - name: Log result
+        run: echo "Deploy result ${{ needs.deploy.result }}"
