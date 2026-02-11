@@ -96,6 +96,8 @@ type Organization struct {
 	UserBalance     float64 `json:"userBalance"`
 	BalanceCredit   float64 `json:"balanceCredit"`
 	BalanceCurrency string  `xorm:"varchar(100)" json:"balanceCurrency"`
+
+	IsPersonal bool `xorm:"bool" json:"isPersonal"`
 }
 
 func GetOrganizationCount(owner, name, field, value string) (int64, error) {
@@ -273,6 +275,58 @@ func AddOrganization(organization *Organization) (bool, error) {
 	}
 
 	return affected != 0, nil
+}
+
+// CreatePersonalOrganization creates a personal organization and default application for a new user.
+// Uses a database transaction for atomicity — if either insert fails, both are rolled back.
+func CreatePersonalOrganization(username, displayName string) (*Organization, error) {
+	session := ormer.Engine.NewSession()
+	defer session.Close()
+
+	if err := session.Begin(); err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	org := &Organization{
+		Owner:        "admin",
+		Name:         username,
+		CreatedTime:  util.GetCurrentTime(),
+		DisplayName:  fmt.Sprintf("%s's Organization", displayName),
+		PasswordType: "plain",
+		IsPersonal:   true,
+	}
+
+	_, err := session.Insert(org)
+	if err != nil {
+		session.Rollback()
+		return nil, fmt.Errorf("failed to create personal org: %w", err)
+	}
+
+	// Create default application so user signup validation passes
+	app := &Application{
+		Owner:          "admin",
+		Name:           fmt.Sprintf("app-%s", username),
+		CreatedTime:    util.GetCurrentTime(),
+		Organization:   username,
+		DisplayName:    fmt.Sprintf("%s App", displayName),
+		EnableSignUp:   true,
+		EnablePassword: true,
+		ClientId:       util.GenerateClientId(),
+		ClientSecret:   util.GenerateClientSecret(),
+		RedirectUris:   []string{"https://hanzo.ai", "https://hanzo.app"},
+	}
+
+	_, err = session.Insert(app)
+	if err != nil {
+		session.Rollback()
+		return nil, fmt.Errorf("failed to create default app: %w", err)
+	}
+
+	if err := session.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return org, nil
 }
 
 func deleteOrganization(organization *Organization) (bool, error) {
