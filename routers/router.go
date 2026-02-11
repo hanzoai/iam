@@ -300,14 +300,8 @@ func InitAPI() {
 	web.Router("/api/login/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
 	web.Router("/api/login/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
 
-	// Hanzo-branded OAuth endpoint aliases (canonical paths)
-	web.Router("/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
-	web.Router("/oauth/refresh", &controllers.ApiController{}, "POST:RefreshToken")
-	web.Router("/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
-	web.Router("/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
-	web.Router("/oauth/userinfo", &controllers.ApiController{}, "GET:GetUserinfo")
-	web.Router("/oauth/device", &controllers.ApiController{}, "POST:DeviceAuth")
-	web.Router("/oauth/logout", &controllers.ApiController{}, "GET,POST:Logout")
+	// Note: /oauth/* aliases are handled via URL rewrite in static_filter.go
+	// They map to the corresponding /api/ routes above
 
 	web.Router("/api/get-records", &controllers.ApiController{}, "GET:GetRecords")
 	web.Router("/api/get-records-filter", &controllers.ApiController{}, "POST:GetRecordsByFilter")
