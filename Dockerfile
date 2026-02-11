@@ -46,6 +46,7 @@ WORKDIR /
 COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/server_${BUILDX_ARCH} ./server
 COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/swagger ./swagger
 COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/conf/app.prod.conf ./conf/app.conf
+COPY --from=BACK --chown=$USER:$USER /go/src/hanzo-iam/init_data.json ./init_data.json
 COPY --from=FRONT --chown=$USER:$USER /web/build ./web/build
 
 ENTRYPOINT ["/server"]
