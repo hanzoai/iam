@@ -119,14 +119,6 @@ p, *, *, GET, /api/get-invitation-info, *, *
 p, *, *, GET, /api/faceid-signin-begin, *, *
 p, *, *, GET, /api/registry/token, *, *
 p, *, *, GET, /api/registry/jwks, *, *
-p, *, *, *, /oauth/authorize, *, *
-p, *, *, POST, /oauth/token, *, *
-p, *, *, POST, /oauth/refresh, *, *
-p, *, *, POST, /oauth/introspect, *, *
-p, *, *, POST, /oauth/revoke, *, *
-p, *, *, GET, /oauth/userinfo, *, *
-p, *, *, POST, /oauth/device, *, *
-p, *, *, *, /oauth/logout, *, *
 `
 
 		sa := stringadapter.NewAdapter(ruleText)
@@ -201,7 +193,7 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 
 func isAllowedInDemoMode(subOwner string, subName string, method string, urlPath string, objOwner string, objName string) bool {
 	if method == "POST" {
-		if strings.HasPrefix(urlPath, "/api/login") || strings.HasPrefix(urlPath, "/oauth/") || urlPath == "/api/logout" || urlPath == "/api/sso-logout" || urlPath == "/api/signup" || urlPath == "/api/callback" || urlPath == "/api/send-verification-code" || urlPath == "/api/send-email" || urlPath == "/api/verify-captcha" || urlPath == "/api/verify-code" || urlPath == "/api/check-user-password" || strings.HasPrefix(urlPath, "/api/mfa/") || urlPath == "/api/webhook" || urlPath == "/api/get-qrcode" || urlPath == "/api/refresh-engines" {
+		if strings.HasPrefix(urlPath, "/api/login") || urlPath == "/api/logout" || urlPath == "/api/sso-logout" || urlPath == "/api/signup" || urlPath == "/api/callback" || urlPath == "/api/send-verification-code" || urlPath == "/api/send-email" || urlPath == "/api/verify-captcha" || urlPath == "/api/verify-code" || urlPath == "/api/check-user-password" || strings.HasPrefix(urlPath, "/api/mfa/") || urlPath == "/api/webhook" || urlPath == "/api/get-qrcode" || urlPath == "/api/refresh-engines" {
 			return true
 		} else if urlPath == "/api/update-user" {
 			// Allow ordinary users to update their own information
