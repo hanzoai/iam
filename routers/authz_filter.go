@@ -227,6 +227,18 @@ func getUrlPath(ctx *context.Context) string {
 		return "/api/login/oauth"
 	}
 
+	// Normalize /oauth/* aliases to their canonical /api/ paths for authz
+	switch urlPath {
+	case "/oauth/token", "/oauth/refresh", "/oauth/introspect", "/oauth/revoke":
+		return "/api/login/oauth"
+	case "/oauth/userinfo":
+		return "/api/userinfo"
+	case "/oauth/device":
+		return "/api/device-auth"
+	case "/oauth/logout":
+		return "/api/logout"
+	}
+
 	if strings.HasPrefix(urlPath, "/api/webauthn") {
 		return "/api/webauthn"
 	}
