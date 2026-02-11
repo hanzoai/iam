@@ -1,7 +1,7 @@
 /* Hanzo IAM Dark Theme - Matching hanzo.ai design */
 :root {
   --hanzo-bg: #0a0a0a;
-  --hanzo-bg-card: rgba(17, 17, 17, 0.95);
+  --hanzo-bg-card: rgb(17 17 17 / 95%);
   --hanzo-border: #262626;
   --hanzo-text: #fafafa;
   --hanzo-text-muted: #a3a3a3;
@@ -11,7 +11,8 @@
 }
 
 /* Force dark background on html and body */
-html, body {
+html,
+body {
   background-color: #0a0a0a !important;
   color: #fafafa !important;
 }
@@ -37,7 +38,10 @@ body {
 }
 
 /* Dark theme overrides for Ant Design */
-#root, #parent-area, .ant-layout, .ant-layout-content {
+#root,
+#parent-area,
+.ant-layout,
+.ant-layout-content {
   background-color: var(--hanzo-bg) !important;
 }
 
@@ -62,10 +66,68 @@ body {
 }
 
 /* Login page specific */
-.login-panel, .login-form, .ant-card {
+.login-panel,
+.login-panel-dark,
+.ant-card {
   background: var(--hanzo-bg-card) !important;
   border: 1px solid var(--hanzo-border) !important;
   border-radius: 12px !important;
+}
+
+/* login-form is inside login-panel, no border of its own */
+.login-form {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 1 !important;
+}
+
+/* Center all direct children within login-form */
+.login-form > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+/* Center the form element itself */
+.login-form form {
+  margin: 0 auto !important;
+}
+
+/* Center logo box */
+.login-logo-box {
+  text-align: center !important;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Center signup link and footer text */
+.login-signup-link {
+  text-align: center !important;
+}
+
+/* Center the forgot password row */
+.login-forget-password {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+/* Login button full width */
+.login-button-box {
+  width: 100%;
+}
+
+.login-button {
+  width: 100% !important;
 }
 
 .ant-card-head {
@@ -83,7 +145,16 @@ body {
 }
 
 /* Typography */
-h1, h2, h3, h4, h5, h6, p, span, label, .ant-typography {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+span,
+label,
+.ant-typography {
   color: var(--hanzo-text) !important;
 }
 
@@ -92,28 +163,35 @@ h1, h2, h3, h4, h5, h6, p, span, label, .ant-typography {
 }
 
 /* Inputs */
-.ant-input, .ant-input-password, .ant-select-selector, .ant-picker {
+.ant-input,
+.ant-input-password,
+.ant-select-selector,
+.ant-picker {
   background-color: var(--hanzo-input-bg) !important;
   border-color: var(--hanzo-border) !important;
   color: var(--hanzo-text) !important;
   border-radius: 8px !important;
 }
 
-.ant-input::placeholder, .ant-input-password input::placeholder {
+.ant-input::placeholder,
+.ant-input-password input::placeholder {
   color: var(--hanzo-text-muted) !important;
-}
-
-.ant-input:hover, .ant-input:focus,
-.ant-input-password:hover, .ant-input-password:focus,
-.ant-input-affix-wrapper:hover, .ant-input-affix-wrapper:focus,
-.ant-input-affix-wrapper-focused {
-  border-color: var(--hanzo-primary) !important;
-  box-shadow: 0 0 0 2px rgba(253, 68, 68, 0.2) !important;
 }
 
 .ant-input-affix-wrapper {
   background-color: var(--hanzo-input-bg) !important;
   border-color: var(--hanzo-border) !important;
+}
+
+.ant-input:hover,
+.ant-input:focus,
+.ant-input-password:hover,
+.ant-input-password:focus,
+.ant-input-affix-wrapper:hover,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused {
+  border-color: var(--hanzo-primary) !important;
+  box-shadow: 0 0 0 2px rgb(253 68 68 / 20%) !important;
 }
 
 /* Primary Button - Hanzo Red */
@@ -125,7 +203,8 @@ h1, h2, h3, h4, h5, h6, p, span, label, .ant-typography {
   font-weight: 500 !important;
 }
 
-.ant-btn-primary:hover, .ant-btn-primary:focus {
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
   background: var(--hanzo-primary-hover) !important;
   border-color: var(--hanzo-primary-hover) !important;
 }
@@ -144,7 +223,8 @@ h1, h2, h3, h4, h5, h6, p, span, label, .ant-typography {
 }
 
 /* Links */
-a, .ant-btn-link {
+a,
+.ant-btn-link {
   color: var(--hanzo-primary) !important;
 }
 
@@ -182,7 +262,8 @@ a:hover {
 }
 
 /* Footer */
-.login-footer, footer {
+.login-footer,
+footer {
   background: transparent !important;
   color: var(--hanzo-text-muted) !important;
 }
@@ -202,8 +283,9 @@ a:hover {
   color: var(--hanzo-text) !important;
 }
 
-.ant-select-item-option-active, .ant-select-item-option-selected {
-  background-color: rgba(253, 68, 68, 0.1) !important;
+.ant-select-item-option-active,
+.ant-select-item-option-selected {
+  background-color: rgb(253 68 68 / 10%) !important;
 }
 
 /* Message/Toast */
@@ -234,12 +316,14 @@ a:hover {
   color: var(--hanzo-text) !important;
 }
 
-.ant-menu-item, .ant-menu-submenu-title {
+.ant-menu-item,
+.ant-menu-submenu-title {
   color: var(--hanzo-text) !important;
 }
 
-.ant-menu-item:hover, .ant-menu-item-selected {
-  background-color: rgba(253, 68, 68, 0.1) !important;
+.ant-menu-item:hover,
+.ant-menu-item-selected {
+  background-color: rgb(253 68 68 / 10%) !important;
   color: var(--hanzo-primary) !important;
 }
 
@@ -266,7 +350,7 @@ a:hover {
 }
 
 .ant-table-tbody > tr:hover > td {
-  background: rgba(253, 68, 68, 0.05) !important;
+  background: rgb(253 68 68 / 5%) !important;
 }
 
 /* Tooltip */
@@ -286,7 +370,8 @@ a:hover {
   border-color: var(--hanzo-border) !important;
 }
 
-.ant-alert-message, .ant-alert-description {
+.ant-alert-message,
+.ant-alert-description {
   color: var(--hanzo-text) !important;
 }
 
@@ -393,8 +478,8 @@ code {
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(circle at 25% 25%, rgba(253, 68, 68, 0.03) 0%, transparent 50%),
-    radial-gradient(circle at 75% 75%, rgba(253, 68, 68, 0.03) 0%, transparent 50%);
+    radial-gradient(circle at 25% 25%, rgb(253 68 68 / 3%) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgb(253 68 68 / 3%) 0%, transparent 50%);
   pointer-events: none;
 }
 
@@ -410,7 +495,7 @@ code {
 .showcase-orb-1 {
   width: 400px;
   height: 400px;
-  background: rgba(253, 68, 68, 0.15);
+  background: rgb(253 68 68 / 15%);
   top: -100px;
   right: -100px;
   animation-delay: 0s;
@@ -419,22 +504,26 @@ code {
 .showcase-orb-2 {
   width: 300px;
   height: 300px;
-  background: rgba(253, 68, 68, 0.1);
+  background: rgb(253 68 68 / 10%);
   bottom: -50px;
   left: -50px;
   animation-delay: -10s;
 }
 
 @keyframes float {
-  0%, 100% {
+  0%,
+  100% {
     transform: translate(0, 0) scale(1);
   }
+
   25% {
     transform: translate(30px, -30px) scale(1.1);
   }
+
   50% {
     transform: translate(-20px, 20px) scale(0.95);
   }
+
   75% {
     transform: translate(-30px, -20px) scale(1.05);
   }
@@ -461,8 +550,8 @@ code {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgba(253, 68, 68, 0.1);
-  border: 1px solid rgba(253, 68, 68, 0.2);
+  background: rgb(253 68 68 / 10%);
+  border: 1px solid rgb(253 68 68 / 20%);
   border-radius: 24px;
   color: #fd4444 !important;
   font-size: 13px;
@@ -480,7 +569,7 @@ code {
   font-size: 32px !important;
   font-weight: 700 !important;
   color: #fafafa !important;
-  margin: 0 0 12px 0 !important;
+  margin: 0 0 12px !important;
   line-height: 1.2 !important;
 }
 
@@ -493,11 +582,11 @@ code {
 
 /* Chat box preview */
 .showcase-chat-box {
-  background: rgba(17, 17, 17, 0.95);
+  background: rgb(17 17 17 / 95%);
   border: 1px solid #262626;
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 50%);
 }
 
 .showcase-chat-inner {
@@ -517,10 +606,12 @@ code {
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.5;
     transform: scale(0.95);
@@ -536,7 +627,7 @@ code {
   font-weight: 600 !important;
   color: #666 !important;
   letter-spacing: 0.1em !important;
-  margin: 0 0 8px 0 !important;
+  margin: 0 0 8px !important;
 }
 
 .showcase-idea-container {
@@ -570,7 +661,8 @@ code {
 }
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
+  0%,
+  100% { opacity: 1; }
   50% { opacity: 0; }
 }
 
@@ -580,7 +672,7 @@ code {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: rgba(10, 10, 10, 0.5);
+  background: rgb(10 10 10 / 50%);
 }
 
 .showcase-chat-actions {
@@ -637,7 +729,7 @@ code {
 .showcase-testimonial-content {
   position: relative;
   padding: 24px;
-  background: rgba(17, 17, 17, 0.6);
+  background: rgb(17 17 17 / 60%);
   border: 1px solid #262626;
   border-radius: 12px;
 }
@@ -654,7 +746,7 @@ code {
   font-size: 14px !important;
   color: #d4d4d4 !important;
   line-height: 1.7 !important;
-  margin: 0 0 20px 0 !important;
+  margin: 0 0 20px !important;
   font-style: italic !important;
   padding-left: 8px;
 }
