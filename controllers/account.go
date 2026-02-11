@@ -110,8 +110,36 @@ func (c *ApiController) Signup() {
 	}
 
 	if organization == nil {
-		c.ResponseError(fmt.Sprintf(c.T("auth:The organization: %s does not exist"), authForm.Organization))
-		return
+		// Auto-create personal organization for the user
+		username := authForm.Username
+		if username == "" {
+			username = authForm.Name
+		}
+		if username == "" || authForm.Organization != username {
+			// Only auto-create org if requested org name matches the username
+			c.ResponseError(fmt.Sprintf(c.T("auth:The organization: %s does not exist"), authForm.Organization))
+			return
+		}
+
+		displayName := authForm.Name
+		if displayName == "" {
+			displayName = username
+		}
+
+		organization, err = object.CreatePersonalOrganization(username, displayName)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		// Update authForm to use the new org
+		authForm.Organization = organization.Name
+
+		// Update the application reference to the new org's default app
+		application, err = object.GetApplication(fmt.Sprintf("admin/app-%s", username))
+		if err != nil || application == nil {
+			c.ResponseError(c.T("auth:Failed to find default application for new organization"))
+			return
+		}
 	}
 
 	clientIp := util.GetClientIpFromRequest(c.Ctx.Request)
