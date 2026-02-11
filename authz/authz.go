@@ -88,6 +88,7 @@ p, *, *, POST, /api/upload-resource, *, *
 p, *, *, GET, /.well-known/openid-configuration, *, *
 p, *, *, GET, /.well-known/webfinger, *, *
 p, *, *, *, /.well-known/jwks, *, *
+p, *, *, GET, /.well-known/acme-challenge, *, *
 p, *, *, GET, /.well-known/:application/openid-configuration, *, *
 p, *, *, GET, /.well-known/:application/webfinger, *, *
 p, *, *, *, /.well-known/:application/jwks, *, *
