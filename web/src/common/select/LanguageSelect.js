@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ class LanguageSelect extends React.Component {
     };
 
     return (
-      <Dropdown menu={{items: languageItems, onClick}} >
+      <Dropdown menu={{items: languageItems, onClick}} overlayStyle={{minWidth: 160}} >
         <div className="select-box" style={{display: languageItems.length === 0 ? "none" : null, ...this.props.style}} >
           <GlobalOutlined style={{fontSize: "24px"}} />
         </div>
