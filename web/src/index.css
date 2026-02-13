@@ -288,6 +288,21 @@ footer {
   background-color: rgb(253 68 68 / 10%) !important;
 }
 
+/* Dropdown menu (language selector, etc.) */
+.ant-dropdown-menu {
+  background-color: var(--hanzo-bg-card) !important;
+  border: 1px solid var(--hanzo-border) !important;
+}
+
+.ant-dropdown-menu-item {
+  color: var(--hanzo-text) !important;
+  white-space: nowrap !important;
+}
+
+.ant-dropdown-menu-item:hover {
+  background-color: rgb(253 68 68 / 10%) !important;
+}
+
 /* Message/Toast */
 .ant-message-notice-content {
   background: var(--hanzo-bg-card) !important;
