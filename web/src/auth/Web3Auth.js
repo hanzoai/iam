@@ -1,4 +1,4 @@
-// // Copyright 2023 The Casdoor Authors. All Rights Reserved.
+// // Copyright 2023 The Hanzo Authors. All Rights Reserved.
 // //
 // // Licensed under the Apache License, Version 2.0 (the "License");
 // // you may not use this file except in compliance with the License.
@@ -311,7 +311,7 @@ export function initWeb3Onboard(application, provider) {
 
   const appMetadata = {
     name: "Hanzo IAM",
-    description: "Connect a wallet using Casdoor",
+    description: "Connect a wallet using Hanzo IAM",
     recommendedInjectedWallets: [
       {name: "MetaMask", url: "https://metamask.io"},
       {name: "Coinbase", url: "https://www.coinbase.com/wallet"},

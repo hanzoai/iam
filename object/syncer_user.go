@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,11 +33,11 @@ func (syncer *Syncer) addUser(user *OriginalUser) (bool, error) {
 	return provider.AddUser(user)
 }
 
-func (syncer *Syncer) getCasdoorColumns() []string {
+func (syncer *Syncer) getIamColumns() []string {
 	res := []string{}
 	for _, tableColumn := range syncer.TableColumns {
-		if tableColumn.CasdoorName != "Id" {
-			v := util.CamelToSnakeCase(tableColumn.CasdoorName)
+		if tableColumn.IamName != "Id" {
+			v := util.CamelToSnakeCase(tableColumn.IamName)
 			res = append(res, v)
 		}
 	}
@@ -68,7 +68,7 @@ func (syncer *Syncer) updateUserForOriginalFields(user *User, key string) (bool,
 		}
 	}
 
-	columns := syncer.getCasdoorColumns()
+	columns := syncer.getIamColumns()
 	columns = append(columns, "affiliation", "hash", "pre_hash")
 	affected, err := ormer.Engine.Where(key+" = ? and owner = ?", syncer.getUserValue(&oldUser, key), oldUser.Owner).Cols(columns...).Update(user)
 	if err != nil {

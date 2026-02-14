@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ type Permission struct {
 	State       string `xorm:"varchar(100)" json:"state"`
 }
 
-const builtInMaxFields = 6 // Casdoor built-in adapter, use V5 to filter permission, so has 6 max field
+const builtInMaxFields = 6 // IAM built-in adapter, use V5 to filter permission, so has 6 max field
 
 func GetPermissionCount(owner, field, value string) (int64, error) {
 	session := GetSession(owner, -1, -1, field, value, "", "")

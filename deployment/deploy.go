@@ -1,4 +1,4 @@
-// Copyright 2022 The Casdoor Authors. All Rights Reserved.
+// Copyright 2022 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import (
 
 func deployStaticFiles(provider *object.Provider) {
 	certificate := ""
-	if provider.Category == "Storage" && provider.Type == "Casdoor" {
+	if provider.Category == "Storage" && (provider.Type == "Casdoor" || provider.Type == "IAM") {
 		cert, err := object.GetCert(util.GetId(provider.Owner, provider.Cert))
 		if err != nil {
 			panic(err)

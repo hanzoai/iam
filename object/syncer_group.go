@@ -1,4 +1,4 @@
-// Copyright 2025 The Casdoor Authors. All Rights Reserved.
+// Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ func (syncer *Syncer) createGroupFromOriginalGroup(originalGroup *OriginalGroup)
 func (syncer *Syncer) syncGroups() error {
 	fmt.Printf("Running syncGroups()..\n")
 
-	// Get existing groups from Casdoor
+	// Get existing groups from IAM
 	groups, err := GetGroups(syncer.Organization)
 	if err != nil {
 		line := fmt.Sprintf("[%s] %s\n", util.GetCurrentTime(), err.Error())
@@ -78,7 +78,7 @@ func (syncer *Syncer) syncGroups() error {
 		myGroups[group.Name] = group
 	}
 
-	// Sync groups from external system to Casdoor
+	// Sync groups from external system to IAM
 	newGroups := []*Group{}
 	for _, oGroup := range oGroups {
 		if _, ok := myGroups[oGroup.Name]; !ok {

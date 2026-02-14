@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -847,7 +847,7 @@ func (c *ApiController) Login() {
 				// Try to find existing user by username (case-insensitive)
 				// This allows OAuth providers (e.g., Wecom) to automatically associate with
 				// existing users when usernames match, particularly useful for enterprise
-				// scenarios where signup is disabled and users already exist in Casdoor
+				// scenarios where signup is disabled and users already exist in IAM
 				if user == nil && userInfo.Username != "" {
 					user, err = object.GetUserByFields(application.Organization, userInfo.Username)
 					if err != nil {
@@ -1136,7 +1136,7 @@ func (c *ApiController) Login() {
 		c.Ctx.Input.SetParam("recordUserId", user.GetId())
 	} else {
 		if c.GetSessionUsername() != "" {
-			// user already signed in to Casdoor, so let the user click the avatar button to do the quick sign-in
+			// user already signed in to IAM, so let the user click the avatar button to do the quick sign-in
 			var application *object.Application
 			application, err = object.GetApplication(fmt.Sprintf("admin/%s", authForm.Application))
 			if err != nil {
