@@ -93,7 +93,7 @@ func (idp *WeChatMobileIdProvider) GetToken(code string) (*oauth2.Token, error) 
 
 	// Check for error response
 	if bytes.Contains(buf.Bytes(), []byte("errcode")) {
-		return nil, fmt.Errorf(buf.String())
+		return nil, fmt.Errorf("%s", buf.String())
 	}
 
 	var wechatAccessToken WechatAccessToken
