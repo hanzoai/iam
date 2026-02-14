@@ -978,7 +978,7 @@ func AddUser(user *User, lang string) (bool, error) {
 	}
 
 	if user.Owner == "" || user.Name == "" {
-		return false, fmt.Errorf(i18n.Translate(lang, "user:the user's owner and name should not be empty"))
+		return false, fmt.Errorf("%s", i18n.Translate(lang, "user:the user's owner and name should not be empty"))
 	}
 
 	if CheckUsernameWithEmail(user.Name, "en") != "" {
