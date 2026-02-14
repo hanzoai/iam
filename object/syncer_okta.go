@@ -1,4 +1,4 @@
-// Copyright 2025 The Casdoor Authors. All Rights Reserved.
+// Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -192,7 +192,7 @@ func (p *OktaSyncerProvider) getOktaUsers(nextLink string) ([]*OktaUser, string,
 	return users, nextPageLink, nil
 }
 
-// oktaUserToOriginalUser converts Okta user to Casdoor OriginalUser
+// oktaUserToOriginalUser converts user to IAM OriginalUser
 func (p *OktaSyncerProvider) oktaUserToOriginalUser(oktaUser *OktaUser) *OriginalUser {
 	user := &OriginalUser{
 		Id:          oktaUser.Id,
@@ -287,7 +287,7 @@ func (p *OktaSyncerProvider) getOktaOriginalUsers() ([]*OriginalUser, error) {
 		nextLink = next
 	}
 
-	// Convert Okta users to Casdoor OriginalUser
+	// Convert users to IAM OriginalUser
 	originalUsers := []*OriginalUser{}
 	for _, oktaUser := range allUsers {
 		originalUser := p.oktaUserToOriginalUser(oktaUser)

@@ -1,4 +1,4 @@
-// Copyright 2023 The Casdoor Authors. All Rights Reserved.
+// Copyright 2023 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -66,7 +66,7 @@ func (pp *PaypalPaymentProvider) Pay(r *PayReq) (*PayResp, error) {
 	bm.Set("intent", "CAPTURE")
 	bm.Set("purchase_units", units)
 	bm.SetBodyMap("application_context", func(b gopay.BodyMap) {
-		b.Set("brand_name", "Casdoor")
+		b.Set("brand_name", "Hanzo IAM")
 		b.Set("locale", "en-PT")
 		b.Set("return_url", r.ReturnUrl)
 		b.Set("cancel_url", r.ReturnUrl)

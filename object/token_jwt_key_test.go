@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import (
 
 func TestGenerateRsaKeys(t *testing.T) {
 	fileId := "token_jwt_key"
-	certificate, privateKey, err := generateRsaKeys(4096, 512, 20, "Casdoor Cert", "Casdoor Organization")
+	certificate, privateKey, err := generateRsaKeys(4096, 512, 20, "Hanzo IAM Cert", "Hanzo Organization")
 	if err != nil {
 		panic(err)
 	}
@@ -37,7 +37,7 @@ func TestGenerateRsaKeys(t *testing.T) {
 
 func TestGenerateEsKeys(t *testing.T) {
 	fileId := "token_jwt_key"
-	certificate, privateKey, err := generateEsKeys(256, 20, "Casdoor Cert", "Casdoor Organization")
+	certificate, privateKey, err := generateEsKeys(256, 20, "Hanzo IAM Cert", "Hanzo Organization")
 	if err != nil {
 		panic(err)
 	}
@@ -51,7 +51,7 @@ func TestGenerateEsKeys(t *testing.T) {
 
 func TestGenerateRsaPssKeys(t *testing.T) {
 	fileId := "token_jwt_key"
-	certificate, privateKey, err := generateRsaPssKeys(4096, 256, 20, "Casdoor Cert", "Casdoor Organization")
+	certificate, privateKey, err := generateRsaPssKeys(4096, 256, 20, "Hanzo IAM Cert", "Hanzo Organization")
 	if err != nil {
 		panic(err)
 	}

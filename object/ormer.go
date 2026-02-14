@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -92,7 +92,7 @@ func InitAdapter() {
 				panic(err)
 			}
 			dir = strings.ReplaceAll(dir, "\\", "/")
-			panic(fmt.Sprintf("The Casdoor config file: \"app.conf\" was not found, it should be placed at: \"%s/conf/app.conf\"", dir))
+			panic(fmt.Sprintf("The IAM config file: \"app.conf\" was not found, it should be placed at: \"%s/conf/app.conf\"", dir))
 		}
 	}
 

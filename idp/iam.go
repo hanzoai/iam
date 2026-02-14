@@ -1,4 +1,4 @@
-// Copyright 2022 The Casdoor Authors. All Rights Reserved.
+// Copyright 2022 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,14 +26,14 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type CasdoorIdProvider struct {
+type IamIdProvider struct {
 	Client *http.Client
 	Config *oauth2.Config
 	Host   string
 }
 
-func NewCasdoorIdProvider(clientId string, clientSecret string, redirectUrl string, hostUrl string) *CasdoorIdProvider {
-	idp := &CasdoorIdProvider{}
+func NewIamIdProvider(clientId string, clientSecret string, redirectUrl string, hostUrl string) *IamIdProvider {
+	idp := &IamIdProvider{}
 	config := idp.getConfig(hostUrl)
 	config.ClientID = clientId
 	config.ClientSecret = clientSecret
@@ -43,11 +43,11 @@ func NewCasdoorIdProvider(clientId string, clientSecret string, redirectUrl stri
 	return idp
 }
 
-func (idp *CasdoorIdProvider) SetHttpClient(client *http.Client) {
+func (idp *IamIdProvider) SetHttpClient(client *http.Client) {
 	idp.Client = client
 }
 
-func (idp *CasdoorIdProvider) getConfig(hostUrl string) *oauth2.Config {
+func (idp *IamIdProvider) getConfig(hostUrl string) *oauth2.Config {
 	return &oauth2.Config{
 		Endpoint: oauth2.Endpoint{
 			TokenURL: hostUrl + "/api/login/oauth/access_token",
@@ -56,12 +56,12 @@ func (idp *CasdoorIdProvider) getConfig(hostUrl string) *oauth2.Config {
 	}
 }
 
-type CasdoorToken struct {
+type IamToken struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int    `json:"expires_in"`
 }
 
-func (idp *CasdoorIdProvider) GetToken(code string) (*oauth2.Token, error) {
+func (idp *IamIdProvider) GetToken(code string) (*oauth2.Token, error) {
 	resp, err := http.PostForm(idp.Config.Endpoint.TokenURL, url.Values{
 		"client_id":     {idp.Config.ClientID},
 		"client_secret": {idp.Config.ClientSecret},
@@ -76,7 +76,7 @@ func (idp *CasdoorIdProvider) GetToken(code string) (*oauth2.Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	pToken := &CasdoorToken{}
+	pToken := &IamToken{}
 	err = json.Unmarshal(body, pToken)
 	if err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func (idp *CasdoorIdProvider) GetToken(code string) (*oauth2.Token, error) {
 }
 */
 
-type CasdoorUserInfo struct {
+type IamUserInfo struct {
 	Id          string `json:"sub"`
 	Name        string `json:"preferred_username,omitempty"`
 	DisplayName string `json:"name"`
@@ -117,8 +117,8 @@ type CasdoorUserInfo struct {
 	Msg         string `json:"msg"`
 }
 
-func (idp *CasdoorIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error) {
-	cdUserinfo := &CasdoorUserInfo{}
+func (idp *IamIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error) {
+	cdUserinfo := &IamUserInfo{}
 	accessToken := token.AccessToken
 	request, err := http.NewRequest("GET", fmt.Sprintf("%s/api/userinfo", idp.Host), nil)
 	if err != nil {

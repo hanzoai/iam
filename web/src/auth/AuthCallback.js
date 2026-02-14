@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ class AuthCallback extends React.Component {
     const method = innerParams.get("method");
     if (method === "signup") {
       const realRedirectUri = innerParams.get("redirect_uri");
-      // Casdoor's own login page, so "code" is not necessary
+      // IAM's own login page, so "code" is not necessary
       if (realRedirectUri === null) {
         const samlRequest = innerParams.get("SAMLRequest");
         // cas don't use 'redirect_url', it is called 'service'
@@ -68,7 +68,7 @@ class AuthCallback extends React.Component {
 
       const realRedirectUrl = new URL(realRedirectUri).origin;
 
-      // For Casdoor itself, we use "login" directly
+      // For IAM itself, we use "login" directly
       if (authServerUrl === realRedirectUrl) {
         return "login";
       } else {
@@ -175,8 +175,8 @@ class AuthCallback extends React.Component {
           const handleCasLogin = (res) => {
             let msg = "Logged in successfully.";
             if (casService === "") {
-              // If service was not specified, Casdoor must display a message notifying the client that it has successfully initiated a single sign-on session.
-              msg += "Now you can visit apps protected by Casdoor.";
+              // If service was not specified, IAM must display a message notifying the client that it has successfully initiated a single sign-on session.
+              msg += "Now you can visit apps protected by Hanzo IAM.";
             }
             Setting.showMessage("success", msg);
 
