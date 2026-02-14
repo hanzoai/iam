@@ -1,4 +1,4 @@
-// Copyright 2025 The Casdoor Authors. All Rights Reserved.
+// Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ func getOrganizationThemeCookieFromUrlPath(ctx *context.Context, urlPath string)
 	var organization *object.Organization
 	var err error
 	if urlPath == "/login" || urlPath == "/signup" {
-		application, err = object.GetDefaultApplication(fmt.Sprintf("admin/built-in"))
+		application, err = object.GetDefaultApplication(fmt.Sprintf("admin/hanzo"))
 		if err != nil {
 			return nil, err
 		}
