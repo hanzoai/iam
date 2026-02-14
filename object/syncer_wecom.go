@@ -1,4 +1,4 @@
-// Copyright 2025 The Casdoor Authors. All Rights Reserved.
+// Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -252,7 +252,7 @@ func (p *WecomSyncerProvider) getWecomUsers() ([]*OriginalUser, error) {
 		}
 	}
 
-	// Convert WeCom users to Casdoor OriginalUser
+	// Convert users to IAM OriginalUser
 	originalUsers := []*OriginalUser{}
 	for _, wecomUser := range userMap {
 		originalUser := p.wecomUserToOriginalUser(wecomUser)
@@ -262,7 +262,7 @@ func (p *WecomSyncerProvider) getWecomUsers() ([]*OriginalUser, error) {
 	return originalUsers, nil
 }
 
-// wecomUserToOriginalUser converts WeCom user to Casdoor OriginalUser
+// wecomUserToOriginalUser converts user to IAM OriginalUser
 func (p *WecomSyncerProvider) wecomUserToOriginalUser(wecomUser *WecomUser) *OriginalUser {
 	user := &OriginalUser{
 		Id:          wecomUser.UserId,

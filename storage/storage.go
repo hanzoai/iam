@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,8 +39,8 @@ func GetStorageProvider(providerType string, clientId string, clientSecret strin
 		return NewGoogleCloudStorageProvider(clientSecret, bucket, endpoint), nil
 	case "Synology":
 		return NewSynologyNasStorageProvider(clientId, clientSecret, endpoint), nil
-	case "Casdoor":
-		return NewCasdoorStorageProvider(providerType, clientId, clientSecret, region, bucket, endpoint, cert, content), nil
+	case "Casdoor", "IAM":
+		return NewIamStorageProvider(providerType, clientId, clientSecret, region, bucket, endpoint, cert, content), nil
 	case "CUCloud OSS":
 		return NewCUCloudOssStorageProvider(clientId, clientSecret, region, bucket, endpoint), nil
 	}

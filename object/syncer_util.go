@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -337,7 +337,7 @@ func (syncer *Syncer) getOriginalUsersFromMap(results []map[string]sql.NullStrin
 			} else {
 				value = result[tableColumnName].String
 			}
-			syncer.setUserByKeyValue(originalUser, tableColumn.CasdoorName, value)
+			syncer.setUserByKeyValue(originalUser, tableColumn.IamName, value)
 		}
 
 		if syncer.Type == "Keycloak" {
@@ -449,7 +449,7 @@ func (syncer *Syncer) getMapFromOriginalUser(user *OriginalUser) map[string]stri
 
 	m2 := map[string]string{}
 	for _, tableColumn := range syncer.TableColumns {
-		m2[tableColumn.Name] = m[tableColumn.CasdoorName]
+		m2[tableColumn.Name] = m[tableColumn.IamName]
 	}
 
 	return m2
