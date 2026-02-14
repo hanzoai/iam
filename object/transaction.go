@@ -50,7 +50,8 @@ type Transaction struct {
 
 	Payment string `xorm:"varchar(100)" json:"payment"`
 
-	State string `xorm:"varchar(100)" json:"state"`
+	State     string `xorm:"varchar(100)" json:"state"`
+	ExpiresAt string `xorm:"varchar(100)" json:"expiresAt"`
 }
 
 func GetTransactionCount(owner, field, value string) (int64, error) {
