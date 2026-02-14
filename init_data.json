@@ -716,8 +716,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "hanzo-app-client-id",
       "clientSecret": "***REMOVED***",
       "redirectUris": [
@@ -753,7 +760,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -776,8 +784,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "hanzo-cloud-client-id",
       "clientSecret": "***REMOVED***",
       "redirectUris": [
@@ -807,7 +822,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -830,8 +846,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "hanzo-commerce-client-id",
       "clientSecret": "***REMOVED***",
       "redirectUris": [
@@ -860,7 +883,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -883,15 +907,30 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "hanzo-console-client-id",
       "clientSecret": "***REMOVED***",
       "redirectUris": [
+        "https://console.hanzo.ai/api/auth/callback/hanzo-iam",
         "https://console.hanzo.ai/api/auth/callback/custom",
+        "https://stg.console.hanzo.ai/api/auth/callback/hanzo-iam",
         "https://stg.console.hanzo.ai/api/auth/callback/custom",
+        "http://localhost:3000/api/auth/callback/hanzo-iam",
         "http://localhost:3000/api/auth/callback/custom",
-        "http://localhost:3091/api/auth/callback/custom"
+        "http://localhost:3001/api/auth/callback/hanzo-iam",
+        "http://localhost:3001/api/auth/callback/custom",
+        "http://localhost:3091/api/auth/callback/hanzo-iam",
+        "http://localhost:3091/api/auth/callback/custom",
+        "https://app.hanzo.bot/api/auth/callback/hanzo-iam",
+        "https://app.hanzo.bot/api/auth/callback/custom"
       ],
       "tokenFormat": "JWT",
       "tokenFields": [],
@@ -915,7 +954,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -938,8 +978,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "zoo-app-client-id",
       "clientSecret": "***REMOVED***",
       "redirectUris": [
@@ -972,7 +1019,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.zoo.ngo/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.zoo.ngo/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -995,8 +1043,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "lux-app-client-id",
       "clientSecret": "***REMOVED***",
       "redirectUris": [
@@ -1032,7 +1087,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.lux.network/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.lux.network/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -1055,8 +1111,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "pars-app-client-id",
       "clientSecret": "***REMOVED***",
       "redirectUris": [
@@ -1087,7 +1150,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.pars.ai/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.pars.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -1099,7 +1163,7 @@
       "description": "Hanzo AI Bot Platform - Multi-tenant bot gateway",
       "organization": "hanzo",
       "cert": "cert-hanzo",
-      "enablePassword": false,
+      "enablePassword": true,
       "enableSignUp": false,
       "enableSigninSession": true,
       "enableAutoSignin": false,
@@ -1110,13 +1174,22 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "hanzobot-client-id",
       "clientSecret": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4",
       "redirectUris": [
         "https://bot.hanzo.ai/auth/callback",
-        "http://localhost:18789/auth/callback"
+        "http://localhost:18789/auth/callback",
+        "https://app.hanzo.bot/auth/callback",
+        "https://app.hanzo.bot/api/auth/callback/hanzo-iam"
       ],
       "tokenFormat": "JWT",
       "tokenFields": [],
@@ -1140,7 +1213,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "hanzo",
@@ -1163,8 +1237,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "hanzo-platform-client-id",
       "clientSecret": "a4b5c6d7e8f90123456789abcdef0123456789abcdef01",
       "redirectUris": [
@@ -1195,7 +1276,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -1218,8 +1300,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "bootnode-web",
       "clientSecret": "f9e8d7c6b5a4938271605040302010f0e0d0c0b0a09080",
       "redirectUris": [
@@ -1250,7 +1339,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": ""
+      "formBackgroundUrl": "",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -1273,8 +1363,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "hanzo-web3",
       "clientSecret": "a1b2c3d4e5f6071829304a5b6c7d8e9f0a1b2c3d4e5f6078",
       "redirectUris": [
@@ -1305,7 +1402,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -1328,8 +1426,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "lux-web3",
       "clientSecret": "7e8f9a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5",
       "redirectUris": [
@@ -1338,7 +1443,17 @@
         "https://web3.lux.network/auth/callback",
         "https://web3.lux.network/callback",
         "http://localhost:3000/auth/callback",
-        "http://localhost:3000/callback"
+        "http://localhost:3000/callback",
+        "https://cloud.pars.network/auth/callback",
+        "https://cloud.pars.network/callback",
+        "https://cloud.zoo.network/auth/callback",
+        "https://cloud.zoo.network/callback",
+        "https://cloud.hanzo.network/auth/callback",
+        "https://cloud.hanzo.network/callback",
+        "https://cloud.hanzo.ai/auth/callback",
+        "https://cloud.hanzo.ai/callback",
+        "https://bootno.de/auth/callback",
+        "https://bootno.de/callback"
       ],
       "tokenFormat": "JWT",
       "tokenFields": [],
@@ -1362,7 +1477,8 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.lux.network/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.lux.network/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     },
     {
       "owner": "admin",
@@ -1385,8 +1501,15 @@
       "enableLinkWithEmail": false,
       "orgChoiceMode": "None",
       "samlReplyUrl": "",
-      "grantTypes": ["authorization_code", "refresh_token"],
-      "responseTypes": ["code", "token", "id_token"],
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
       "clientId": "zoo-web3",
       "clientSecret": "d4e5f6071829304a5b6c7d8e9f0a1b2c3d4e5f60718293a4",
       "redirectUris": [
@@ -1417,7 +1540,74 @@
       "formCssMobile": "",
       "formOffset": 2,
       "formSideHtml": "",
-      "formBackgroundUrl": "https://cdn.zoo.ngo/img/auth-bg.jpg"
+      "formBackgroundUrl": "https://cdn.zoo.ngo/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
+    },
+    {
+      "owner": "admin",
+      "name": "app-team",
+      "createdTime": "2026-02-14T00:00:00Z",
+      "displayName": "Hanzo Team",
+      "logo": "https://cdn.hanzo.ai/img/hanzo-logo-white.svg",
+      "homepageUrl": "https://hanzo.team",
+      "description": "Hanzo Team — Collaboration, Project Management, and HR Platform",
+      "organization": "hanzo",
+      "cert": "cert-hanzo",
+      "enablePassword": true,
+      "enableSignUp": true,
+      "enableSigninSession": true,
+      "enableAutoSignin": false,
+      "enableCodeSignin": true,
+      "enableSamlCompress": false,
+      "enableSamlC14n10": false,
+      "enableWebAuthn": true,
+      "enableLinkWithEmail": false,
+      "orgChoiceMode": "None",
+      "samlReplyUrl": "",
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
+      "clientId": "hanzo-team-client-id",
+      "clientSecret": "a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7a8b9c0d1",
+      "redirectUris": [
+        "https://hanzo.team/_accounts/auth/openid/callback",
+        "https://hanzo.team/callback",
+        "https://team.hanzo.ai/_accounts/auth/openid/callback",
+        "https://team.hanzo.ai/callback",
+        "http://localhost:3000/auth/openid/callback",
+        "http://localhost:3000/callback",
+        "http://localhost:8080/callback"
+      ],
+      "tokenFormat": "JWT",
+      "tokenFields": [],
+      "expireInHours": 168,
+      "refreshExpireInHours": 720,
+      "signupUrl": "",
+      "signinUrl": "",
+      "forgetUrl": "",
+      "affiliationUrl": "",
+      "termsOfUse": "https://hanzo.ai/terms",
+      "signupHtml": "",
+      "signinHtml": "",
+      "themeData": {
+        "themeType": "dark",
+        "colorPrimary": "#fd4444",
+        "borderRadius": 6,
+        "isCompact": false,
+        "isEnabled": true
+      },
+      "formCss": "",
+      "formCssMobile": "",
+      "formOffset": 2,
+      "formSideHtml": "",
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     }
   ],
   "users": [
@@ -1428,7 +1618,7 @@
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "admin",
       "type": "normal-user",
-      "password": "admin",
+      "password": "***REMOVED***",
       "passwordSalt": "",
       "passwordType": "",
       "displayName": "Admin",
@@ -1484,7 +1674,8 @@
       "groups": [],
       "lastSigninWrongTime": "",
       "signinWrongTimes": 0,
-      "managedAccounts": null
+      "managedAccounts": null,
+      "isGlobalAdmin": true
     },
     {
       "owner": "hanzo",
@@ -1493,7 +1684,7 @@
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "z",
       "type": "normal-user",
-      "password": "luxnetwork",
+      "password": "***REMOVED***",
       "passwordSalt": "",
       "passwordType": "",
       "displayName": "Z",
@@ -1559,7 +1750,7 @@
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "lux-z",
       "type": "normal-user",
-      "password": "luxnetwork",
+      "password": "***REMOVED***",
       "passwordSalt": "",
       "passwordType": "",
       "displayName": "Z",
@@ -1567,7 +1758,7 @@
       "lastName": "",
       "avatar": "https://cdn.lux.network/img/default-avatar.png",
       "permanentAvatar": "",
-      "email": "z@hanzo.ai",
+      "email": "z@lux.network",
       "emailVerified": true,
       "phone": "",
       "countryCode": "US",
@@ -1683,8 +1874,8 @@
       "type": "GitHub",
       "subType": "",
       "method": "Normal",
-      "clientId": "",
-      "clientSecret": "",
+      "clientId": "***REMOVED***",
+      "clientSecret": "***REMOVED***",
       "clientId2": "",
       "clientSecret2": "",
       "cert": "",
