@@ -1,4 +1,4 @@
-// Copyright 2026 The Casdoor Authors. All Rights Reserved.
+// Copyright 2026 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -248,7 +248,7 @@ func (c *McpController) handleInitialize(req McpRequest) {
 			},
 		},
 		ServerInfo: McpImplementation{
-			Name:    "Casdoor MCP Server",
+			Name:    "Hanzo IAM MCP Server",
 			Version: "1.0.0",
 		},
 	}

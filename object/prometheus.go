@@ -1,4 +1,4 @@
-// Copyright 2023 The Casdoor Authors. All Rights Reserved.
+// Copyright 2023 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -55,12 +55,12 @@ var (
 
 	CpuUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "iam_cpu_usage",
-		Help: "Casdoor cpu usage",
+		Help: "IAM cpu usage",
 	}, []string{"cpuNum"})
 
 	MemoryUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "iam_memory_usage",
-		Help: "Casdoor memory usage in Byte",
+		Help: "IAM memory usage in Byte",
 	}, []string{"type"})
 
 	TotalThroughput = promauto.NewGauge(prometheus.GaugeOpts{

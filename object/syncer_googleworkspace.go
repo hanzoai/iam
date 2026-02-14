@@ -1,4 +1,4 @@
-// Copyright 2025 The Casdoor Authors. All Rights Reserved.
+// Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -149,7 +149,7 @@ func (p *GoogleWorkspaceSyncerProvider) getGoogleWorkspaceUsers(service *admin.S
 	return allUsers, nil
 }
 
-// googleWorkspaceUserToOriginalUser converts Google Workspace user to Casdoor OriginalUser
+// googleWorkspaceUserToOriginalUser converts user to IAM OriginalUser
 func (p *GoogleWorkspaceSyncerProvider) googleWorkspaceUserToOriginalUser(gwUser *admin.User) *OriginalUser {
 	user := &OriginalUser{
 		Id:         gwUser.Id,
@@ -211,7 +211,7 @@ func (p *GoogleWorkspaceSyncerProvider) getGoogleWorkspaceOriginalUsers() ([]*Or
 		userGroupsMap = make(map[string][]string)
 	}
 
-	// Convert Google Workspace users to Casdoor OriginalUser
+	// Convert users to IAM OriginalUser
 	originalUsers := []*OriginalUser{}
 	for _, gwUser := range gwUsers {
 		originalUser := p.googleWorkspaceUserToOriginalUser(gwUser)
@@ -299,7 +299,7 @@ func (p *GoogleWorkspaceSyncerProvider) GetOriginalGroups() ([]*OriginalGroup, e
 		return nil, err
 	}
 
-	// Convert Google Workspace groups to Casdoor OriginalGroup
+	// Convert Google Workspace groups to IAM OriginalGroup
 	originalGroups := []*OriginalGroup{}
 	for _, gwGroup := range gwGroups {
 		originalGroup := p.googleWorkspaceGroupToOriginalGroup(gwGroup)
@@ -377,7 +377,7 @@ func (p *GoogleWorkspaceSyncerProvider) getGoogleWorkspaceGroups(service *admin.
 	return allGroups, nil
 }
 
-// googleWorkspaceGroupToOriginalGroup converts Google Workspace group to Casdoor OriginalGroup
+// googleWorkspaceGroupToOriginalGroup converts Google Workspace group to IAM OriginalGroup
 func (p *GoogleWorkspaceSyncerProvider) googleWorkspaceGroupToOriginalGroup(gwGroup *admin.Group) *OriginalGroup {
 	group := &OriginalGroup{
 		Id:          gwGroup.Id,

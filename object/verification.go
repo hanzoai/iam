@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -103,7 +103,7 @@ func SendVerificationCodeToEmail(organization *Organization, user *User, provide
 	//	code = organization.MasterVerificationCode
 	// }
 
-	// "You have requested a verification code at Casdoor. Here is your code: %s, please enter in 5 minutes."
+	// "You have requested a verification code at Hanzo IAM. Here is your code: %s, please enter in 5 minutes."
 	content := strings.Replace(provider.Content, "%s", code, 1)
 
 	if method == "forget" {

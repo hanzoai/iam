@@ -1,4 +1,4 @@
-// Copyright 2025 The Casdoor Authors. All Rights Reserved.
+// Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -212,7 +212,7 @@ func (p *AzureAdSyncerProvider) getAzureAdUsers(accessToken string) ([]*AzureAdU
 	return allUsers, nil
 }
 
-// azureAdUserToOriginalUser converts Azure AD user to Casdoor OriginalUser
+// azureAdUserToOriginalUser converts user to IAM OriginalUser
 func (p *AzureAdSyncerProvider) azureAdUserToOriginalUser(azureUser *AzureAdUser) *OriginalUser {
 	user := &OriginalUser{
 		Id:          azureUser.Id,
@@ -265,7 +265,7 @@ func (p *AzureAdSyncerProvider) getAzureAdOriginalUsers() ([]*OriginalUser, erro
 		return nil, err
 	}
 
-	// Convert Azure AD users to Casdoor OriginalUser
+	// Convert users to IAM OriginalUser
 	originalUsers := []*OriginalUser{}
 	for _, azureUser := range azureUsers {
 		originalUser := p.azureAdUserToOriginalUser(azureUser)

@@ -97,7 +97,7 @@ func TestCamelToSnakeCase(t *testing.T) {
 		input       string
 		expected    interface{}
 	}{
-		{"Should be return casdor_is_the_best", "CasdoorIsTheBest", "iam_is_the_best"},
+		{"Should be return iam_is_the_best", "IamIsTheBest", "iam_is_the_best"},
 		{"Should be return lorem_ipsum", "Lorem Ipsum", "lorem_ipsum"},
 		{"Should be return Lorem Ipsum", "lorem Ipsum", "lorem_ipsum"},
 		{"Should be return lorem_ipsum", "lorem ipsum", "loremipsum"},
@@ -195,7 +195,7 @@ func TestSnakeString(t *testing.T) {
 		input       string
 		expected    interface{}
 	}{
-		{"Should be return casdor_is_the_best", "CasdoorIsTheBest", "iam_is_the_best"},
+		{"Should be return iam_is_the_best", "IamIsTheBest", "iam_is_the_best"},
 		{"Should be return lorem_ipsum", "Lorem Ipsum", "lorem_ipsum"},
 		{"Should be return lorem_ipsum", "lorem Ipsum", "lorem_ipsum"},
 		{"Should be return loremipsum", "lorem ipsum", "loremipsum"},

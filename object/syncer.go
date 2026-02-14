@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import (
 type TableColumn struct {
 	Name        string   `json:"name"`
 	Type        string   `json:"type"`
-	CasdoorName string   `json:"iamName"`
+	IamName string   `json:"iamName"`
 	IsKey       bool     `json:"isKey"`
 	IsHashed    bool     `json:"isHashed"`
 	Values      []string `json:"values"`
@@ -289,7 +289,7 @@ func (syncer *Syncer) getKeyColumn() *TableColumn {
 
 func (syncer *Syncer) getLocalPrimaryKey() string {
 	column := syncer.getKeyColumn()
-	return util.CamelToSnakeCase(column.CasdoorName)
+	return util.CamelToSnakeCase(column.IamName)
 }
 
 func (syncer *Syncer) getTargetTablePrimaryKey() string {
