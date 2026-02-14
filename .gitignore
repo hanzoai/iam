@@ -46,3 +46,9 @@ pnpm-lock.yaml
 *.log
 .env
 
+LLM.md
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+QWEN.md
+.DS_Store
