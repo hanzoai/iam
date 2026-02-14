@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -41,13 +41,23 @@ export const Countries = [
   {label: "Español", key: "es", country: "ES", alt: "Español"},
   {label: "Français", key: "fr", country: "FR", alt: "Français"},
   {label: "Deutsch", key: "de", country: "DE", alt: "Deutsch"},
-  {label: "日本語", key: "ja", country: "JP", alt: "日本語"},
-  {label: "中文", key: "zh", country: "CN", alt: "中文"},
-  {label: "TiếngViệt", key: "vi", country: "VN", alt: "TiếngViệt"},
+  {label: "Italiano", key: "it", country: "IT", alt: "Italiano"},
+  {label: "Nederlands", key: "nl", country: "NL", alt: "Nederlands"},
   {label: "Português", key: "pt", country: "PT", alt: "Português"},
+  {label: "Svenska", key: "sv", country: "SE", alt: "Svenska"},
   {label: "Türkçe", key: "tr", country: "TR", alt: "Türkçe"},
   {label: "Polski", key: "pl", country: "PL", alt: "Polski"},
   {label: "Українська", key: "uk", country: "UA", alt: "Українська"},
+  {label: "Русский", key: "ru", country: "RU", alt: "Русский"},
+  {label: "العربية", key: "ar", country: "SA", alt: "العربية"},
+  {label: "فارسی", key: "fa", country: "IR", alt: "فارسی"},
+  {label: "हिन्दी", key: "hi", country: "IN", alt: "हिन्दी"},
+  {label: "ไทย", key: "th", country: "TH", alt: "ไทย"},
+  {label: "Bahasa Indonesia", key: "id", country: "ID", alt: "Bahasa Indonesia"},
+  {label: "한국어", key: "ko", country: "KR", alt: "한국어"},
+  {label: "日本語", key: "ja", country: "JP", alt: "日本語"},
+  {label: "中文", key: "zh", country: "CN", alt: "中文"},
+  {label: "Tiếng Việt", key: "vi", country: "VN", alt: "Tiếng Việt"},
 ];
 
 export function getThemeData(organization, application) {
