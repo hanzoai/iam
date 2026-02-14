@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -133,7 +133,7 @@ type User struct {
 	Adfs            string `xorm:"adfs varchar(100)" json:"adfs"`
 	Baidu           string `xorm:"baidu varchar(100)" json:"baidu"`
 	Alipay          string `xorm:"alipay varchar(100)" json:"alipay"`
-	Casdoor         string `xorm:"iam varchar(100)" json:"iam"`
+	Iam             string `xorm:"iam varchar(100)" json:"iam"`
 	Infoflow        string `xorm:"infoflow varchar(100)" json:"infoflow"`
 	Apple           string `xorm:"apple varchar(100)" json:"apple"`
 	AzureAD         string `xorm:"azuread varchar(100)" json:"azuread"`

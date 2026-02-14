@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -65,7 +65,7 @@ func (sp LocalFileSystemProvider) Put(path string, reader io.Reader) (*oss.Objec
 
 	err := os.MkdirAll(filepath.Dir(fullPath), os.ModePerm)
 	if err != nil {
-		return nil, fmt.Errorf("Casdoor fails to create folder: \"%s\" for local file system storage provider: %s. Make sure Casdoor process has correct permission to create/access it, or you can create it manually in advance", filepath.Dir(fullPath), err.Error())
+		return nil, fmt.Errorf("IAM fails to create folder: \"%s\" for local file system storage provider: %s. Make sure IAM process has correct permission to create/access it, or you can create it manually in advance", filepath.Dir(fullPath), err.Error())
 	}
 
 	dst, err := os.Create(filepath.Clean(fullPath))

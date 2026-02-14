@@ -1,4 +1,4 @@
-// Copyright 2022 The Casdoor Authors. All Rights Reserved.
+// Copyright 2022 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,17 +16,17 @@ import {createButton} from "react-social-login-buttons";
 import {StaticBaseUrl} from "../Setting";
 
 function Icon({width = 24, height = 24, color}) {
-  return <img src={`${StaticBaseUrl}/buttons/iam.svg`} alt="Sign in with Casdoor" style={{width: 24, height: 24}} />;
+  return <img src={`${StaticBaseUrl}/buttons/iam.svg`} alt="Sign in with Hanzo IAM" style={{width: 24, height: 24}} />;
 }
 
 const config = {
-  text: "Sign in with Casdoor",
+  text: "Sign in with Hanzo IAM",
   icon: Icon,
   iconFormat: name => `fa fa-${name}`,
   style: {background: "#ffffff", color: "#000000"},
   activeStyle: {background: "#ededee"},
 };
 
-const CasdoorLoginButton = createButton(config);
+const IamLoginButton = createButton(config);
 
-export default CasdoorLoginButton;
+export default IamLoginButton;

@@ -1,4 +1,4 @@
-// Copyright 2025 The Casdoor Authors. All Rights Reserved.
+// Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -345,7 +345,7 @@ func (p *LarkSyncerProvider) getLarkUsers() ([]*OriginalUser, error) {
 		}
 	}
 
-	// Convert Lark users to Casdoor OriginalUser
+	// Convert users to IAM OriginalUser
 	originalUsers := []*OriginalUser{}
 	for _, larkUser := range userMap {
 		originalUser := p.larkUserToOriginalUser(larkUser)
@@ -355,7 +355,7 @@ func (p *LarkSyncerProvider) getLarkUsers() ([]*OriginalUser, error) {
 	return originalUsers, nil
 }
 
-// larkUserToOriginalUser converts Lark user to Casdoor OriginalUser
+// larkUserToOriginalUser converts user to IAM OriginalUser
 func (p *LarkSyncerProvider) larkUserToOriginalUser(larkUser *LarkUser) *OriginalUser {
 	// Use user_id as name, fallback to union_id or open_id
 	userName := larkUser.UserId

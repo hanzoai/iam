@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,12 +33,12 @@ class SamlCallback extends React.Component {
 
   getResponseType(redirectUri) {
     const authServerUrl = authConfig.serverUrl;
-    // Casdoor's own login page, so "code" is not necessary
+    // IAM's own login page, so "code" is not necessary
     if (redirectUri === "null") {
       return "login";
     }
     const realRedirectUrl = new URL(redirectUri).origin;
-    // For Casdoor itself, we use "login" directly
+    // For IAM itself, we use "login" directly
     if (authServerUrl === realRedirectUrl) {
       return "login";
     } else {
