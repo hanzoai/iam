@@ -1,4 +1,4 @@
-// Copyright 2022 The Casdoor Authors. All Rights Reserved.
+// Copyright 2022 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ func (c *ApiController) GetSystemInfo() {
 // GetVersionInfo
 // @Title GetVersionInfo
 // @Tag System API
-// @Description get version info like Casdoor release version and commit ID
+// @Description get version info like IAM release version and commit ID
 // @Success 200 {object} util.VersionInfo The Response object
 // @router /get-version-info [get]
 func (c *ApiController) GetVersionInfo() {

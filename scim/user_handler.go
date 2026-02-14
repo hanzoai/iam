@@ -1,4 +1,4 @@
-// Copyright 2023 The Casdoor Authors. All Rights Reserved.
+// Copyright 2023 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -190,7 +190,7 @@ func UpdateScimUserByPatchOperation(id string, ops []scim.PatchOperation) (r sci
 		if op.Op == scim.PatchOperationRemove {
 			value = nil
 		}
-		// PatchOperationAdd and PatchOperationReplace is same in Casdoor, just replace the value
+		// PatchOperationAdd and PatchOperationReplace is same in IAM, just replace the value
 		switch op.Path.String() {
 		case "userName":
 			user.Name = ToString(value, "")

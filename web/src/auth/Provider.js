@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -130,6 +130,10 @@ const authInfo = {
     endpoint: "https://openauth.alipay.com/oauth2/publicAppAuthorize.htm",
   },
   Casdoor: {
+    scope: "openid%20profile%20email",
+    endpoint: "http://example.com",
+  },
+  IAM: {
     scope: "openid%20profile%20email",
     endpoint: "http://example.com",
   },

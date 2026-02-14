@@ -1,4 +1,4 @@
-// Copyright 2022 The Casdoor Authors. All Rights Reserved.
+// Copyright 2022 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -194,15 +194,15 @@ class SystemInfo extends React.Component {
                 </Col>
               </Row>
               <Divider />
-              <Card id="about-card" title={i18next.t("system:About Casdoor")} bordered={true} style={{textAlign: "center"}}>
+              <Card id="about-card" title={i18next.t("system:About Hanzo IAM")} bordered={true} style={{textAlign: "center"}}>
                 <div>{i18next.t("system:An Identity and Access Management (IAM) / Single-Sign-On (SSO) platform with web UI supporting OAuth 2.0, OIDC, SAML and CAS")}</div>
-                GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">Casdoor</a>
+                GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">Hanzo IAM</a>
                 <br />
                 {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
                 <br />
                 {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai">https://iam.hanzo.ai</a>
                 <br />
-                {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai/#:~:text=Casdoor%20API-,Community,-GitHub">Get in Touch!</a>
+                {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai/#:~:text=IAM%20API-,Community,-GitHub">Get in Touch!</a>
               </Card>
             </Col>
             <Col span={6}></Col>
@@ -234,15 +234,15 @@ class SystemInfo extends React.Component {
             </Card>
           </Col>
           <Col span={24}>
-            <Card title={i18next.t("system:About Casdoor")} bordered={true} style={{textAlign: "center"}}>
+            <Card title={i18next.t("system:About Hanzo IAM")} bordered={true} style={{textAlign: "center"}}>
               <div>{i18next.t("system:An Identity and Access Management (IAM) / Single-Sign-On (SSO) platform with web UI supporting OAuth 2.0, OIDC, SAML and CAS")}</div>
-              GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">Casdoor</a>
+              GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">Hanzo IAM</a>
               <br />
               {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
               <br />
               {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai">https://iam.hanzo.ai</a>
               <br />
-              {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai/#:~:text=Casdoor%20API-,Community,-GitHub">Get in Touch!</a>
+              {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai/#:~:text=IAM%20API-,Community,-GitHub">Get in Touch!</a>
             </Card>
           </Col>
         </Row>

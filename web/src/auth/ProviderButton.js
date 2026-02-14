@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import WeComLoginButton from "./WeComLoginButton";
 import LarkLoginButton from "./LarkLoginButton";
 import GitLabLoginButton from "./GitLabLoginButton";
 import AdfsLoginButton from "./AdfsLoginButton";
-import CasdoorLoginButton from "./CasdoorLoginButton";
+import IamLoginButton from "./IamLoginButton";
 import BaiduLoginButton from "./BaiduLoginButton";
 import AlipayLoginButton from "./AlipayLoginButton";
 import InfoflowLoginButton from "./InfoflowLoginButton";
@@ -75,7 +75,7 @@ function getSigninButton(provider) {
   } else if (provider.type === "ADFS") {
     return <AdfsLoginButton text={text} align={"center"} />;
   } else if (provider.type === "Hanzo IAM") {
-    return <CasdoorLoginButton text={text} align={"center"} />;
+    return <IamLoginButton text={text} align={"center"} />;
   } else if (provider.type === "Baidu") {
     return <BaiduLoginButton text={text} align={"center"} />;
   } else if (provider.type === "Alipay") {

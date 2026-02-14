@@ -1,0 +1,19 @@
+package storage
+
+import (
+	"github.com/casdoor/oss"
+	iamStorage "github.com/casdoor/oss/casdoor"
+)
+
+func NewIamStorageProvider(providerType string, clientId string, clientSecret string, region string, bucket string, endpoint string, cert string, content string) oss.StorageInterface {
+	sp := iamStorage.New(&iamStorage.Config{
+		clientId,
+		clientSecret,
+		endpoint,
+		cert,
+		region,
+		content,
+		bucket,
+	})
+	return sp
+}
