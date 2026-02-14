@@ -170,7 +170,7 @@ func UpdateSyncer(id string, syncer *Syncer, isGlobalAdmin bool, lang string) (b
 	} else if s == nil {
 		return false, nil
 	} else if !isGlobalAdmin && s.Organization != syncer.Organization {
-		return false, fmt.Errorf(i18n.Translate(lang, "auth:Unauthorized operation"))
+		return false, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 
 	// Close old syncer connections before updating

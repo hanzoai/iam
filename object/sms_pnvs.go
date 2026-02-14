@@ -77,7 +77,7 @@ func (c *PnvsSmsClient) SendMessage(param map[string]string, targetPhoneNumber .
 
 	if response.Code != "OK" {
 		if response.Message != "" {
-			return fmt.Errorf(response.Message)
+			return fmt.Errorf("%s", response.Message)
 		}
 		return fmt.Errorf("PNVS SMS send failed with code: %s", response.Code)
 	}
