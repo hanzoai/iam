@@ -1,4 +1,4 @@
-// Copyright 2021 The Casdoor Authors. All Rights Reserved.
+// Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -479,7 +479,7 @@ class LoginPage extends React.Component {
   }
 
   login(values) {
-    // here we are supposed to determine whether Casdoor is working as an OAuth server or CAS server
+    // here we are supposed to determine whether IAM is working as an OAuth server or CAS server
     values["language"] = this.state.userLang ?? "";
     const usedCaptcha = this.state.captchaValues !== undefined;
     const inlineCaptchaEnabled = this.isInlineCaptchaEnabled();
@@ -493,8 +493,8 @@ class LoginPage extends React.Component {
         const loginHandler = (res) => {
           let msg = "Logged in successfully. ";
           if (casParams.service === "") {
-            // If service was not specified, Casdoor must display a message notifying the client that it has successfully initiated a single sign-on session.
-            msg += "Now you can visit apps protected by Casdoor.";
+            // If service was not specified, IAM must display a message notifying the client that it has successfully initiated a single sign-on session.
+            msg += "Now you can visit apps protected by Hanzo IAM.";
           }
           Setting.showMessage("success", msg);
 

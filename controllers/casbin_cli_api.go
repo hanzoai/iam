@@ -1,4 +1,4 @@
-// Copyright 2024 The Casdoor Authors. All Rights Reserved.
+// Copyright 2024 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ var (
 	cliVersionMutex sync.RWMutex
 )
 
-// cleanOldMEIFolders cleans up old _MEIXXX folders from the Casdoor temp directory
+// cleanOldMEIFolders cleans up old _MEIXXX folders from the IAM temp directory
 // that are older than 24 hours. These folders are created by PyInstaller when
 // executing casbin-python-cli and can accumulate over time.
 func cleanOldMEIFolders() {

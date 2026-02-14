@@ -1,4 +1,4 @@
-// Copyright 2026 The Casdoor Authors. All Rights Reserved.
+// Copyright 2026 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -385,7 +385,7 @@ func (p *DingtalkSyncerProvider) getDingtalkUsers() ([]*OriginalUser, error) {
 		}
 	}
 
-	// Convert DingTalk users to Casdoor OriginalUser
+	// Convert users to IAM OriginalUser
 	originalUsers := []*OriginalUser{}
 	for _, dingtalkUser := range userMap {
 		originalUser := p.dingtalkUserToOriginalUser(dingtalkUser)
@@ -395,7 +395,7 @@ func (p *DingtalkSyncerProvider) getDingtalkUsers() ([]*OriginalUser, error) {
 	return originalUsers, nil
 }
 
-// dingtalkUserToOriginalUser converts DingTalk user to Casdoor OriginalUser
+// dingtalkUserToOriginalUser converts user to IAM OriginalUser
 func (p *DingtalkSyncerProvider) dingtalkUserToOriginalUser(dingtalkUser *DingtalkUser) *OriginalUser {
 	// Use unionid as name to be consistent with OAuth provider
 	// Fallback to userId if unionid is not available
@@ -464,7 +464,7 @@ func (p *DingtalkSyncerProvider) GetOriginalGroups() ([]*OriginalGroup, error) {
 	return originalGroups, nil
 }
 
-// dingtalkDepartmentToOriginalGroup converts DingTalk department to Casdoor OriginalGroup
+// dingtalkDepartmentToOriginalGroup converts DingTalk department to IAM OriginalGroup
 func (p *DingtalkSyncerProvider) dingtalkDepartmentToOriginalGroup(dept *DingtalkDepartment) *OriginalGroup {
 	// Convert department ID to string for group ID
 	deptIdStr := fmt.Sprintf("%d", dept.DeptId)

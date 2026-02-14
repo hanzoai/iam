@@ -1,4 +1,4 @@
-// Copyright 2024 The Casdoor Authors. All Rights Reserved.
+// Copyright 2024 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import copy from "copy-to-clipboard";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
-export const generateCasdoorAppUrl = (accessToken, forQrCode = true) => {
+export const generateIamAppUrl = (accessToken, forQrCode = true) => {
   let qrUrl = "";
   let error = null;
 
@@ -37,8 +37,8 @@ export const generateCasdoorAppUrl = (accessToken, forQrCode = true) => {
   return {qrUrl, error};
 };
 
-export const CasdoorAppQrCode = ({accessToken, icon}) => {
-  const {qrUrl, error} = generateCasdoorAppUrl(accessToken, true);
+export const IamAppQrCode = ({accessToken, icon}) => {
+  const {qrUrl, error} = generateIamAppUrl(accessToken, true);
 
   if (error) {
     return <Alert message={error} type="error" showIcon />;
@@ -55,8 +55,8 @@ export const CasdoorAppQrCode = ({accessToken, icon}) => {
   );
 };
 
-export const CasdoorAppUrl = ({accessToken}) => {
-  const {qrUrl, error} = generateCasdoorAppUrl(accessToken, false);
+export const IamAppUrl = ({accessToken}) => {
+  const {qrUrl, error} = generateIamAppUrl(accessToken, false);
 
   const handleCopyUrl = async() => {
     if (!window.isSecureContext) {

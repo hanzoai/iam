@@ -1,4 +1,4 @@
-// Copyright 2024 The Casdoor Authors. All Rights Reserved.
+// Copyright 2024 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
 import {Button, Col, Image, Input, Popover, Row, Table, Tooltip} from "antd";
 import * as Setting from "../Setting";
 import i18next from "i18next";
-import {CasdoorAppQrCode, CasdoorAppUrl} from "../common/CasdoorAppConnector";
+import {IamAppQrCode, IamAppUrl} from "../common/IamAppConnector";
 
 class MfaAccountTable extends React.Component {
   constructor(props) {
@@ -177,7 +177,7 @@ class MfaAccountTable extends React.Component {
             <Popover
               trigger="focus"
               overlayInnerStyle={{padding: 0}}
-              content={<CasdoorAppQrCode accessToken={this.props.accessToken} icon={this.state.icon} />}
+              content={<IamAppQrCode accessToken={this.props.accessToken} icon={this.state.icon} />}
             >
               <Button style={{marginRight: "10px"}} size="small">
                 {i18next.t("general:QR Code")}
@@ -185,7 +185,7 @@ class MfaAccountTable extends React.Component {
             </Popover>
             <Popover
               trigger="click"
-              content={<CasdoorAppUrl accessToken={this.props.accessToken} />}
+              content={<IamAppUrl accessToken={this.props.accessToken} />}
             >
               <Button size="small">
                 {i18next.t("general:URL")}
