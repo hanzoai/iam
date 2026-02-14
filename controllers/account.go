@@ -297,6 +297,11 @@ func (c *ApiController) Signup() {
 		return
 	}
 
+	// Grant $5 welcome credit to the new user (non-fatal on failure)
+	if creditErr := object.GrantWelcomeCredit(user, c.GetAcceptLanguage()); creditErr != nil {
+		util.LogWarning(c.Ctx, "Failed to grant welcome credit to user %s: %s", user.GetId(), creditErr.Error())
+	}
+
 	err = object.AddUserToOriginalDatabase(user)
 	if err != nil {
 		c.ResponseError(err.Error())
