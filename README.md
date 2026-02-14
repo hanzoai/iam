@@ -1,88 +1,108 @@
-<h1 align="center" style="border-bottom: none;">📦⚡️ Casdoor</h1>
-<h3 align="center">An open-source UI-first Identity and Access Management (IAM) / Single-Sign-On (SSO) platform with web UI supporting OAuth 2.0, OIDC, SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA and RADIUS</h3>
+<h1 align="center" style="border-bottom: none;">Hanzo IAM</h1>
+
 <p align="center">
-  <a href="#badge">
-    <img alt="semantic-release" src="https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg">
-  </a>
-  <a href="https://hub.docker.com/r/hanzoai/iam">
-    <img alt="docker pull hanzoai/iam" src="https://img.shields.io/docker/pulls/hanzoai/iam.svg">
-  </a>
+Identity and Access Management for the Hanzo ecosystem.<br/>
+UI-first centralized authentication / Single-Sign-On (SSO) platform built on
+<a href="https://github.com/casdoor/casdoor">Casdoor</a>, supporting
+OAuth 2.0, OIDC, SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA, and RADIUS.
+</p>
+
+<p align="center">
   <a href="https://github.com/hanzoai/iam/actions/workflows/build.yml">
-    <img alt="GitHub Workflow Status (branch)" src="https://github.com/hanzoai/iam/workflows/Build/badge.svg?style=flat-square">
+    <img alt="Build" src="https://github.com/hanzoai/iam/workflows/Build/badge.svg">
   </a>
   <a href="https://github.com/hanzoai/iam/releases/latest">
-    <img alt="GitHub Release" src="https://img.shields.io/github/v/release/iam/iam.svg">
+    <img alt="GitHub Release" src="https://img.shields.io/github/v/release/hanzoai/iam">
   </a>
   <a href="https://hub.docker.com/r/hanzoai/iam">
-    <img alt="Docker Image Version (latest semver)" src="https://img.shields.io/badge/Docker%20Hub-latest-brightgreen">
+    <img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/hanzoai/iam">
   </a>
-</p>
-
-<p align="center">
   <a href="https://goreportcard.com/report/github.com/hanzoai/iam">
-    <img alt="Go Report Card" src="https://goreportcard.com/badge/github.com/hanzoai/iam?style=flat-square">
+    <img alt="Go Report Card" src="https://goreportcard.com/badge/github.com/hanzoai/iam">
   </a>
   <a href="https://github.com/hanzoai/iam/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/iam/iam?style=flat-square" alt="license">
-  </a>
-  <a href="https://github.com/hanzoai/iam/issues">
-    <img alt="GitHub issues" src="https://img.shields.io/github/issues/iam/iam?style=flat-square">
-  </a>
-  <a href="#">
-    <img alt="GitHub stars" src="https://img.shields.io/github/stars/iam/iam?style=flat-square">
-  </a>
-  <a href="https://github.com/hanzoai/iam/network">
-    <img alt="GitHub forks" src="https://img.shields.io/github/forks/iam/iam?style=flat-square">
-  </a>
-  <a href="https://crowdin.com/project/iam-site">
-    <img alt="Crowdin" src="https://badges.crowdin.net/iam-site/localized.svg">
-  </a>
-  <a href="https://discord.gg/5rPsrAzK7S">
-    <img alt="Discord" src="https://img.shields.io/discord/1022748306096537660?style=flat-square&logo=discord&label=discord&color=5865F2">
+    <img alt="License" src="https://img.shields.io/github/license/hanzoai/iam">
   </a>
 </p>
 
-## Online demo
+---
 
-- Read-only site: https://door.iam.com (any modification operation will fail)
-- Writable site: https://demo.iam.com (original data will be restored for every 5 minutes)
+## Features
+
+- **OAuth 2.0 / OIDC provider** -- standards-compliant identity provider with full authorization code, implicit, client-credentials, and device-code flows
+- **SAML / CAS / LDAP** -- enterprise federation and directory integration
+- **WebAuthn / Passkeys** -- passwordless authentication with FIDO2 hardware keys and platform authenticators
+- **TOTP / MFA** -- time-based one-time passwords and multi-factor authentication
+- **Social login** -- 40+ identity providers (GitHub, Google, Apple, Microsoft, Discord, and more)
+- **RBAC** -- role-based access control with fine-grained permissions
+- **Multi-tenancy** -- multiple organizations and applications in a single deployment
+- **API-first** -- full REST API for programmatic user, application, and organization management
+- **SCIM provisioning** -- automated user lifecycle management
+- **RADIUS** -- network access authentication
+
+## Quick Start
+
+### Docker
+
+```bash
+docker run -d \
+  --name hanzo-iam \
+  -p 8000:8000 \
+  hanzoai/iam:latest
+```
+
+Open [http://localhost:8000](http://localhost:8000) in your browser.
+
+### Docker Compose
+
+```yaml
+# compose.yml
+services:
+  iam:
+    image: hanzoai/iam:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - iam-data:/var/lib/iam
+    restart: unless-stopped
+
+volumes:
+  iam-data:
+```
+
+```bash
+docker compose up -d
+```
+
+### From Source
+
+```bash
+git clone https://github.com/hanzoai/iam.git
+cd iam
+go build ./...
+```
+
+## Domains
+
+Hanzo IAM serves SSO across the Hanzo ecosystem:
+
+| Domain | Purpose |
+|--------|---------|
+| [hanzo.id](https://hanzo.id) | Hanzo AI accounts |
+| [lux.id](https://lux.id) | Lux Network accounts |
+| [zoo.id](https://zoo.id) | Zoo Labs accounts |
+| [pars.id](https://pars.id) | Pars accounts |
 
 ## Documentation
 
-https://iam.hanzo.ai
+Full documentation is available at [docs.hanzo.ai](https://docs.hanzo.ai).
 
-## Install
+## Attribution
 
-- By source code: https://iam.hanzo.ai/docs/basic/server-installation
-- By Docker: https://iam.hanzo.ai/docs/basic/try-with-docker
-- By Kubernetes Helm: https://iam.hanzo.ai/docs/basic/try-with-helm
-
-## How to connect to Casdoor?
-
-https://iam.hanzo.ai/docs/how-to-connect/overview
-
-## Casdoor Public API
-
-- Docs: https://iam.hanzo.ai/docs/basic/public-api
-- Swagger: https://door.iam.com/swagger
-
-## Integrations
-
-https://iam.hanzo.ai/docs/category/integrations
-
-## How to contact?
-
-- Discord: https://discord.gg/5rPsrAzK7S
-- Contact: https://iam.hanzo.ai/help
-
-## Contribute
-
-For iam, if you have any questions, you can give Issues, or you can also directly start Pull Requests(but we recommend giving issues first to communicate with the community).
-
-### I18n translation
-
-If you are contributing to iam, please note that we use [Crowdin](https://crowdin.com/project/iam-site) as translating platform and i18next as translating tool. When you add some words using i18next in the `web/` directory, please remember to add what you have added to the `web/src/locales/en/data.json` file.
+Based on [Casdoor](https://github.com/casdoor/casdoor) by [Casbin](https://casbin.org). See the upstream [LICENSE](https://github.com/casdoor/casdoor/blob/master/LICENSE) for attribution.
 
 ## License
 
 [Apache-2.0](https://github.com/hanzoai/iam/blob/master/LICENSE)
+
+Copyright 2025-2026 Hanzo AI Inc
