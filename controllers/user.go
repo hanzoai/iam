@@ -148,6 +148,7 @@ func (c *ApiController) GetUser() {
 	email := c.Ctx.Input.Query("email")
 	phone := c.Ctx.Input.Query("phone")
 	userId := c.Ctx.Input.Query("userId")
+	accessKey := c.Ctx.Input.Query("accessKey")
 	owner := c.Ctx.Input.Query("owner")
 	var err error
 	var userFromUserId *object.User
@@ -168,6 +169,8 @@ func (c *ApiController) GetUser() {
 	var user *object.User
 	if id == "" && owner == "" {
 		switch {
+		case accessKey != "":
+			user, err = object.GetUserByAccessKey(accessKey)
 		case email != "":
 			user, err = object.GetUserByEmailOnly(email)
 		case phone != "":
@@ -181,6 +184,8 @@ func (c *ApiController) GetUser() {
 		}
 
 		switch {
+		case accessKey != "":
+			user, err = object.GetUserByAccessKey(accessKey)
 		case email != "":
 			user, err = object.GetUserByEmail(owner, email)
 		case phone != "":
