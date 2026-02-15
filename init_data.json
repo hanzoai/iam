@@ -170,6 +170,12 @@
           "visible": true,
           "viewRule": "Self",
           "modifyRule": "Self"
+        },
+        {
+          "name": "API key",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
         }
       ]
     },
@@ -340,6 +346,12 @@
         },
         {
           "name": "Managed accounts",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "API key",
           "visible": true,
           "viewRule": "Self",
           "modifyRule": "Self"
@@ -516,6 +528,12 @@
           "visible": true,
           "viewRule": "Self",
           "modifyRule": "Self"
+        },
+        {
+          "name": "API key",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
         }
       ]
     },
@@ -687,6 +705,189 @@
         },
         {
           "name": "Managed accounts",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "API key",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        }
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "adnexus",
+      "createdTime": "2025-02-15T00:00:00Z",
+      "displayName": "AdNexus",
+      "websiteUrl": "https://ad.nexus",
+      "favicon": "https://ad.nexus/favicon.ico",
+      "passwordType": "argon2id",
+      "passwordSalt": "",
+      "passwordOptions": [
+        "AtLeast8"
+      ],
+      "countryCodes": [
+        "US",
+        "CN",
+        "JP",
+        "DE",
+        "GB",
+        "FR",
+        "CA",
+        "AU"
+      ],
+      "defaultAvatar": "https://cdn.hanzo.ai/img/default-avatar.png",
+      "defaultApplication": "app-adnexus",
+      "tags": [
+        "production"
+      ],
+      "languages": [
+        "en"
+      ],
+      "themeData": {
+        "themeType": "dark",
+        "colorPrimary": "#3b82f6",
+        "borderRadius": 6,
+        "isCompact": false,
+        "isEnabled": true
+      },
+      "masterPassword": "",
+      "initScore": 100,
+      "enableSoftDeletion": true,
+      "isProfilePublic": false,
+      "mfaItems": [],
+      "accountItems": [
+        {
+          "name": "Organization",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "ID",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Immutable"
+        },
+        {
+          "name": "Name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Display name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Avatar",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "User type",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Password",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Email",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Phone",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Country/Region",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Location",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Is admin",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is forbidden",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is deleted",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Signup application",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Balance",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Score",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "3rd-party logins",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Properties",
+          "visible": false,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "WebAuthn credentials",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Managed accounts",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "API key",
           "visible": true,
           "viewRule": "Self",
           "modifyRule": "Self"
@@ -1249,10 +1450,11 @@
       "clientId": "hanzo-platform-client-id",
       "clientSecret": "a4b5c6d7e8f90123456789abcdef0123456789abcdef01",
       "redirectUris": [
-        "https://platform.hanzo.ai/api/auth/callback/hanzo",
-        "https://stg.platform.hanzo.ai/api/auth/callback/hanzo",
-        "http://localhost:3002/api/auth/callback/hanzo",
-        "http://localhost:3000/api/auth/callback/hanzo"
+        "https://hanzo.id/callback/platform/hanzo",
+        "https://platform.hanzo.ai/api/auth/callback",
+        "https://stg.platform.hanzo.ai/api/auth/callback",
+        "http://localhost:3000/api/auth/callback",
+        "http://localhost:3002/api/auth/callback"
       ],
       "tokenFormat": "JWT",
       "tokenFields": [],
@@ -1550,7 +1752,7 @@
       "displayName": "Hanzo Team",
       "logo": "https://cdn.hanzo.ai/img/hanzo-logo-white.svg",
       "homepageUrl": "https://hanzo.team",
-      "description": "Hanzo Team — Collaboration, Project Management, and HR Platform",
+      "description": "Hanzo Team \u2014 Collaboration, Project Management, and HR Platform",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -1607,6 +1809,80 @@
       "formOffset": 2,
       "formSideHtml": "",
       "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
+    },
+    {
+      "owner": "admin",
+      "name": "app-adnexus",
+      "createdTime": "2025-02-15T00:00:00Z",
+      "displayName": "AdNexus",
+      "logo": "https://ad.nexus/logo.svg",
+      "homepageUrl": "https://ad.nexus",
+      "description": "AdNexus Programmatic Advertising Platform",
+      "organization": "adnexus",
+      "cert": "cert-adnexus",
+      "enablePassword": true,
+      "enableSignUp": true,
+      "enableSigninSession": true,
+      "enableAutoSignin": false,
+      "enableCodeSignin": true,
+      "enableSamlCompress": false,
+      "enableSamlC14n10": false,
+      "enableWebAuthn": true,
+      "enableLinkWithEmail": false,
+      "orgChoiceMode": "None",
+      "samlReplyUrl": "",
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
+      "clientId": "adnexus-app-client-id",
+      "clientSecret": "***REMOVED***",
+      "redirectUris": [
+        "https://ad.nexus/callback",
+        "https://ad.nexus/auth/callback",
+        "https://dsp.ad.nexus/callback",
+        "https://dsp.ad.nexus/auth/callback",
+        "https://ssp.ad.nexus/callback",
+        "https://ssp.ad.nexus/auth/callback",
+        "https://id.ad.nexus/callback",
+        "https://id.ad.nexus/auth/callback",
+        "https://studio.ad.nexus/callback",
+        "https://docs.ad.nexus/callback",
+        "http://localhost:3000/callback",
+        "http://localhost:3000/auth/callback",
+        "http://localhost:8080/callback",
+        "http://localhost:8081/callback",
+        "http://localhost:8082/callback"
+      ],
+      "tokenFormat": "JWT",
+      "tokenFields": [],
+      "expireInHours": 168,
+      "refreshExpireInHours": 720,
+      "signupUrl": "",
+      "signinUrl": "",
+      "forgetUrl": "",
+      "affiliationUrl": "",
+      "termsOfUse": "https://ad.nexus/terms",
+      "signupHtml": "",
+      "signinHtml": "",
+      "themeData": {
+        "themeType": "dark",
+        "colorPrimary": "#3b82f6",
+        "borderRadius": 6,
+        "isCompact": false,
+        "isEnabled": true
+      },
+      "formCss": "",
+      "formCssMobile": "",
+      "formOffset": 2,
+      "formSideHtml": "",
+      "formBackgroundUrl": "",
       "responseType": "code,token,id_token"
     }
   ],
@@ -1855,6 +2131,19 @@
       "name": "cert-pars",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Pars Certificate",
+      "scope": "JWT",
+      "type": "x509",
+      "cryptoAlgorithm": "RS256",
+      "bitSize": 4096,
+      "expireInYears": 20,
+      "certificate": "",
+      "privateKey": ""
+    },
+    {
+      "owner": "admin",
+      "name": "cert-adnexus",
+      "createdTime": "2025-02-15T00:00:00Z",
+      "displayName": "AdNexus Certificate",
       "scope": "JWT",
       "type": "x509",
       "cryptoAlgorithm": "RS256",
