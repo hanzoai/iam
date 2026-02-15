@@ -1387,8 +1387,11 @@ func AddUserKeys(user *User, isAdmin bool) (bool, error) {
 		return false, fmt.Errorf("the user is not found")
 	}
 
-	user.AccessKey = util.GenerateId()
-	user.AccessSecret = util.GenerateId()
+	// Generate API keys with hk- prefix for Hanzo API key identification.
+	// Format: hk-{uuid} — the prefix allows clients to detect IAM keys
+	// vs provider keys in Bearer auth headers.
+	user.AccessKey = "hk-" + util.GenerateId()
+	user.AccessSecret = "hk-" + util.GenerateId()
 
 	return UpdateUser(user.GetId(), user, []string{}, isAdmin)
 }
