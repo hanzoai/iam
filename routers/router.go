@@ -243,6 +243,12 @@ func InitAPI() {
 	web.Router("/api/add-transaction", &controllers.ApiController{}, "POST:AddTransaction")
 	web.Router("/api/delete-transaction", &controllers.ApiController{}, "POST:DeleteTransaction")
 
+	web.Router("/api/get-usage-records", &controllers.ApiController{}, "GET:GetUsageRecords")
+	web.Router("/api/get-user-usage-records", &controllers.ApiController{}, "GET:GetUserUsageRecords")
+	web.Router("/api/get-usage-summary", &controllers.ApiController{}, "GET:GetUsageSummary")
+	web.Router("/api/add-usage-record", &controllers.ApiController{}, "POST:AddUsageRecord")
+	web.Router("/api/add-usage-records", &controllers.ApiController{}, "POST:AddUsageRecords")
+
 	web.Router("/api/get-system-info", &controllers.ApiController{}, "GET:GetSystemInfo")
 	web.Router("/api/get-version-info", &controllers.ApiController{}, "GET:GetVersionInfo")
 	web.Router("/api/health", &controllers.ApiController{}, "GET:Health")
