@@ -1752,7 +1752,7 @@
       "displayName": "Hanzo Team",
       "logo": "https://cdn.hanzo.ai/img/hanzo-logo-white.svg",
       "homepageUrl": "https://hanzo.team",
-      "description": "Hanzo Team \u2014 Collaboration, Project Management, and HR Platform",
+      "description": "Hanzo Team — Collaboration, Project Management, and HR Platform",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -1883,7 +1883,93 @@
       "formOffset": 2,
       "formSideHtml": "",
       "formBackgroundUrl": "",
-      "responseType": "code,token,id_token"
+      "responseType": "code,token,id_token",
+      "providers": [
+        {
+          "owner": "admin",
+          "name": "provider-github",
+          "canSignUp": true,
+          "canSignIn": true,
+          "canUnlink": true,
+          "prompted": false,
+          "signupGroup": "",
+          "rule": "None",
+          "provider": null
+        },
+        {
+          "owner": "admin",
+          "name": "provider-google",
+          "canSignUp": true,
+          "canSignIn": true,
+          "canUnlink": true,
+          "prompted": false,
+          "signupGroup": "",
+          "rule": "None",
+          "provider": null
+        },
+        {
+          "owner": "admin",
+          "name": "provider-facebook",
+          "canSignUp": true,
+          "canSignIn": true,
+          "canUnlink": true,
+          "prompted": false,
+          "signupGroup": "",
+          "rule": "None",
+          "provider": null
+        }
+      ],
+      "signupItems": [
+        {
+          "name": "ID",
+          "visible": false,
+          "required": true,
+          "prompted": false,
+          "rule": "Random"
+        },
+        {
+          "name": "Username",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Display name",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Password",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Confirm password",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Email",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Agreement",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        }
+      ]
     }
   ],
   "users": [
@@ -2202,6 +2288,47 @@
       "displayName": "Google",
       "category": "OAuth",
       "type": "Google",
+      "subType": "",
+      "method": "Normal",
+      "clientId": "",
+      "clientSecret": "",
+      "clientId2": "",
+      "clientSecret2": "",
+      "cert": "",
+      "customAuthUrl": "",
+      "customTokenUrl": "",
+      "customUserInfoUrl": "",
+      "customLogo": "",
+      "scopes": "",
+      "userMapping": {},
+      "host": "",
+      "port": 0,
+      "disableSsl": false,
+      "title": "",
+      "content": "",
+      "receiver": "",
+      "regionId": "",
+      "signName": "",
+      "templateCode": "",
+      "appId": "",
+      "endpoint": "",
+      "intranetEndpoint": "",
+      "domain": "",
+      "bucket": "",
+      "pathPrefix": "",
+      "metadata": "",
+      "idP": "",
+      "issuerUrl": "",
+      "enableSignAuthnRequest": false,
+      "providerUrl": ""
+    },
+    {
+      "owner": "admin",
+      "name": "provider-facebook",
+      "createdTime": "2024-01-01T00:00:00Z",
+      "displayName": "Facebook",
+      "category": "OAuth",
+      "type": "Facebook",
       "subType": "",
       "method": "Normal",
       "clientId": "",
