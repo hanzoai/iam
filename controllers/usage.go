@@ -90,6 +90,7 @@ func (c *ApiController) GetUserUsageRecords() {
 // @Description Get aggregated usage summary
 // @Param   owner     query    string  true   "The owner"
 // @Param   user      query    string  false  "Filter by user"
+// @Param   project   query    string  false  "Filter by project"
 // @Param   startTime query    string  false  "Start time filter"
 // @Param   endTime   query    string  false  "End time filter"
 // @Success 200 {object} object
@@ -97,10 +98,11 @@ func (c *ApiController) GetUserUsageRecords() {
 func (c *ApiController) GetUsageSummary() {
 	owner := c.Ctx.Input.Query("owner")
 	user := c.Ctx.Input.Query("user")
+	project := c.Ctx.Input.Query("project")
 	startTime := c.Ctx.Input.Query("startTime")
 	endTime := c.Ctx.Input.Query("endTime")
 
-	summary, err := object.GetUsageSummary(owner, user, startTime, endTime)
+	summary, err := object.GetUsageSummaryFiltered(owner, user, project, startTime, endTime)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
