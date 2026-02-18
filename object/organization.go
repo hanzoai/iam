@@ -588,6 +588,13 @@ func organizationChangeTrigger(oldName string, newName string) error {
 		return err
 	}
 
+	project := new(Project)
+	project.Organization = newName
+	_, err = session.Where("organization=?", oldName).Update(project)
+	if err != nil {
+		return err
+	}
+
 	syncer := new(Syncer)
 	syncer.Organization = newName
 	_, err = session.Where("organization=?", oldName).Update(syncer)
