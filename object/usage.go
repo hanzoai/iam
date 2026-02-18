@@ -30,6 +30,7 @@ type UsageRecord struct {
 	User         string `xorm:"varchar(200) index" json:"user"`         // owner/username
 	Application  string `xorm:"varchar(100)" json:"application"`        // app that made the request
 	Organization string `xorm:"varchar(100) index" json:"organization"` // org for billing
+	Project      string `xorm:"varchar(100) index" json:"project"`      // project within org
 
 	Model    string `xorm:"varchar(200)" json:"model"`    // user-facing model name
 	Provider string `xorm:"varchar(100)" json:"provider"` // upstream provider name
@@ -134,8 +135,27 @@ func AddUsageRecords(records []*UsageRecord) (bool, error) {
 	return affected != 0, nil
 }
 
+func GetProjectUsageRecords(owner, project string) ([]*UsageRecord, error) {
+	records := []*UsageRecord{}
+	err := ormer.Engine.Desc("created_time").Find(&records, &UsageRecord{Owner: owner, Project: project})
+	if err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+// GetProjectUsageSummary returns aggregated usage stats for a project within a time range.
+func GetProjectUsageSummary(owner, project, startTime, endTime string) (map[string]interface{}, error) {
+	return GetUsageSummaryFiltered(owner, "", project, startTime, endTime)
+}
+
 // GetUsageSummary returns aggregated usage stats for a user within a time range.
 func GetUsageSummary(owner, user, startTime, endTime string) (map[string]interface{}, error) {
+	return GetUsageSummaryFiltered(owner, user, "", startTime, endTime)
+}
+
+// GetUsageSummaryFiltered returns aggregated usage stats with optional user and project filters.
+func GetUsageSummaryFiltered(owner, user, project, startTime, endTime string) (map[string]interface{}, error) {
 	type summary struct {
 		TotalRequests    int64   `json:"totalRequests"`
 		TotalTokens      int64   `json:"totalTokens"`
@@ -148,6 +168,9 @@ func GetUsageSummary(owner, user, startTime, endTime string) (map[string]interfa
 	session := ormer.Engine.Table(&UsageRecord{}).Where("owner = ?", owner)
 	if user != "" {
 		session = session.Where("user = ?", user)
+	}
+	if project != "" {
+		session = session.Where("project = ?", project)
 	}
 	if startTime != "" {
 		session = session.Where("created_time >= ?", startTime)

@@ -143,6 +143,9 @@ type Application struct {
 	FailedSigninLimit      int `json:"failedSigninLimit"`
 	FailedSigninFrozenTime int `json:"failedSigninFrozenTime"`
 	CodeResendTimeout      int `json:"codeResendTimeout"`
+
+	Environment string `xorm:"varchar(50)" json:"environment"` // dev, staging, production
+	Project     string `xorm:"varchar(100)" json:"project"`    // project within org
 }
 
 func GetApplicationCount(owner, field, value string) (int64, error) {

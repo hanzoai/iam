@@ -73,6 +73,13 @@ func InitAPI() {
 	web.Router("/api/get-default-application", &controllers.ApiController{}, "GET:GetDefaultApplication")
 	web.Router("/api/get-organization-names", &controllers.ApiController{}, "GET:GetOrganizationNames")
 
+	web.Router("/api/get-projects", &controllers.ApiController{}, "GET:GetProjects")
+	web.Router("/api/get-project", &controllers.ApiController{}, "GET:GetProject")
+	web.Router("/api/get-organization-projects", &controllers.ApiController{}, "GET:GetOrganizationProjects")
+	web.Router("/api/add-project", &controllers.ApiController{}, "POST:AddProject")
+	web.Router("/api/update-project", &controllers.ApiController{}, "POST:UpdateProject")
+	web.Router("/api/delete-project", &controllers.ApiController{}, "POST:DeleteProject")
+
 	web.Router("/api/get-groups", &controllers.ApiController{}, "GET:GetGroups")
 	web.Router("/api/get-group", &controllers.ApiController{}, "GET:GetGroup")
 	web.Router("/api/update-group", &controllers.ApiController{}, "POST:UpdateGroup")
