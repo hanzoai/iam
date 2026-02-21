@@ -15,8 +15,8 @@
 package notification
 
 import (
-	notify "github.com/casdoor/notify2"
-	"github.com/casdoor/notify2/service/twitter"
+	notify "github.com/hanzoid/notify2"
+	"github.com/hanzoid/notify2/service/twitter"
 	"github.com/hanzoai/iam/proxy"
 )
 
