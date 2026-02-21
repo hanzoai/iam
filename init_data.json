@@ -927,7 +927,7 @@
         "id_token"
       ],
       "clientId": "hanzo-app-client-id",
-      "clientSecret": "3c7c4d9817bf0993681f6da2605e07ba5949da87a32862ed",
+      "clientSecret": "${IAM_APP_HANZO_CLIENT_SECRET}",
       "redirectUris": [
         "https://hanzo.ai/callback",
         "https://hanzo.app/callback",
@@ -995,7 +995,7 @@
         "id_token"
       ],
       "clientId": "hanzo-cloud-client-id",
-      "clientSecret": "3c7c4d9817bf0993681f6da2605e07ba5949da87a32862ed",
+      "clientSecret": "${IAM_APP_CLOUD_CLIENT_SECRET}",
       "redirectUris": [
         "https://cloud.hanzo.ai/callback",
         "https://stg.cloud.hanzo.ai/callback",
@@ -1057,7 +1057,7 @@
         "id_token"
       ],
       "clientId": "hanzo-commerce-client-id",
-      "clientSecret": "3c7c4d9817bf0993681f6da2605e07ba5949da87a32862ed",
+      "clientSecret": "${IAM_APP_COMMERCE_CLIENT_SECRET}",
       "redirectUris": [
         "https://commerce.hanzo.ai/callback",
         "http://localhost:8090/callback"
@@ -1118,7 +1118,7 @@
         "id_token"
       ],
       "clientId": "hanzo-console-client-id",
-      "clientSecret": "3c7c4d9817bf0993681f6da2605e07ba5949da87a32862ed",
+      "clientSecret": "${IAM_APP_CONSOLE_CLIENT_SECRET}",
       "redirectUris": [
         "https://console.hanzo.ai/api/auth/callback/hanzo-iam",
         "https://console.hanzo.ai/api/auth/callback/custom",
@@ -1189,7 +1189,7 @@
         "id_token"
       ],
       "clientId": "zoo-app-client-id",
-      "clientSecret": "8a00c223d58fe175cfe8db7c2ee59b8525abcda47215da40",
+      "clientSecret": "${IAM_APP_ZOO_CLIENT_SECRET}",
       "redirectUris": [
         "https://zoo.ngo/callback",
         "https://app.zoo.ngo/callback",
@@ -1254,7 +1254,7 @@
         "id_token"
       ],
       "clientId": "lux-app-client-id",
-      "clientSecret": "2b750cdf20da2c666140d08a0be2e68c007cf430e9ac7f0b",
+      "clientSecret": "${IAM_APP_LUX_CLIENT_SECRET}",
       "redirectUris": [
         "https://lux.network/callback",
         "https://lux.id/callback",
@@ -1322,7 +1322,7 @@
         "id_token"
       ],
       "clientId": "pars-app-client-id",
-      "clientSecret": "38d12a872690f5d83781c2c7307973f9eaf876f6a4942a04",
+      "clientSecret": "${IAM_APP_PARS_CLIENT_SECRET}",
       "redirectUris": [
         "https://pars.ai/callback",
         "https://pars.id/callback",
@@ -1385,7 +1385,7 @@
         "id_token"
       ],
       "clientId": "hanzobot-client-id",
-      "clientSecret": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4",
+      "clientSecret": "${IAM_APP_HANZOBOT_CLIENT_SECRET}",
       "redirectUris": [
         "https://bot.hanzo.ai/auth/callback",
         "http://localhost:18789/auth/callback",
@@ -1451,7 +1451,7 @@
         "id_token"
       ],
       "clientId": "hanzo-platform-client-id",
-      "clientSecret": "a4b5c6d7e8f90123456789abcdef0123456789abcdef01",
+      "clientSecret": "${IAM_APP_PLATFORM_CLIENT_SECRET}",
       "redirectUris": [
         "https://hanzo.id/callback/platform/hanzo",
         "https://platform.hanzo.ai/api/auth/callback",
@@ -1515,7 +1515,7 @@
         "id_token"
       ],
       "clientId": "bootnode-web",
-      "clientSecret": "f9e8d7c6b5a4938271605040302010f0e0d0c0b0a09080",
+      "clientSecret": "${IAM_APP_BOOTNODE_CLIENT_SECRET}",
       "redirectUris": [
         "https://bootno.de/auth/callback",
         "https://bootno.de/callback",
@@ -1578,7 +1578,7 @@
         "id_token"
       ],
       "clientId": "hanzo-web3",
-      "clientSecret": "a1b2c3d4e5f6071829304a5b6c7d8e9f0a1b2c3d4e5f6078",
+      "clientSecret": "${IAM_APP_HANZO_WEB3_CLIENT_SECRET}",
       "redirectUris": [
         "https://web3.hanzo.ai/auth/callback",
         "https://web3.hanzo.ai/callback",
@@ -1641,7 +1641,7 @@
         "id_token"
       ],
       "clientId": "lux-web3",
-      "clientSecret": "7e8f9a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5",
+      "clientSecret": "${IAM_APP_LUX_WEB3_CLIENT_SECRET}",
       "redirectUris": [
         "https://cloud.lux.network/auth/callback",
         "https://cloud.lux.network/callback",
@@ -1716,7 +1716,7 @@
         "id_token"
       ],
       "clientId": "zoo-web3",
-      "clientSecret": "d4e5f6071829304a5b6c7d8e9f0a1b2c3d4e5f60718293a4",
+      "clientSecret": "${IAM_APP_ZOO_WEB3_CLIENT_SECRET}",
       "redirectUris": [
         "https://web3.zoo.ngo/auth/callback",
         "https://web3.zoo.ngo/callback",
@@ -1755,7 +1755,7 @@
       "displayName": "Hanzo Team",
       "logo": "https://cdn.hanzo.ai/img/hanzo-logo-white.svg",
       "homepageUrl": "https://hanzo.team",
-      "description": "Hanzo Team — Collaboration, Project Management, and HR Platform",
+      "description": "Hanzo Team \u2014 Collaboration, Project Management, and HR Platform",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -1779,7 +1779,7 @@
         "id_token"
       ],
       "clientId": "hanzo-team-client-id",
-      "clientSecret": "a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7a8b9c0d1",
+      "clientSecret": "${IAM_APP_TEAM_CLIENT_SECRET}",
       "redirectUris": [
         "https://hanzo.team/_accounts/auth/openid/callback",
         "https://hanzo.team/callback",
@@ -1845,7 +1845,7 @@
         "id_token"
       ],
       "clientId": "adnexus-app-client-id",
-      "clientSecret": "afcb24af6b1289f8ec01693183d51571927eb206567fc7ef",
+      "clientSecret": "${IAM_APP_ADNEXUS_CLIENT_SECRET}",
       "redirectUris": [
         "https://ad.nexus/callback",
         "https://ad.nexus/auth/callback",
@@ -1931,6 +1931,17 @@
           "signupGroup": "",
           "rule": "None",
           "provider": null
+        },
+        {
+          "owner": "admin",
+          "name": "provider-web3",
+          "canSignUp": true,
+          "canSignIn": true,
+          "canUnlink": true,
+          "prompted": false,
+          "signupGroup": "",
+          "rule": "None",
+          "provider": null
         }
       ],
       "signupItems": [
@@ -1984,6 +1995,129 @@
           "rule": "None"
         }
       ]
+    },
+    {
+      "owner": "admin",
+      "name": "app-zt-console",
+      "createdTime": "2024-01-01T00:00:00Z",
+      "displayName": "Zero Trust Console",
+      "logo": "https://cdn.hanzo.ai/img/ztc-logo.svg",
+      "homepageUrl": "https://ztc.hanzo.ai",
+      "description": "Hanzo Zero Trust Console",
+      "organization": "hanzo",
+      "cert": "cert-hanzo",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "enableSigninSession": true,
+      "enableAutoSignin": false,
+      "enableCodeSignin": true,
+      "enableSamlCompress": false,
+      "enableSamlC14n10": false,
+      "enableWebAuthn": true,
+      "enableLinkWithEmail": false,
+      "orgChoiceMode": "None",
+      "samlReplyUrl": "",
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
+      "clientId": "zt-console",
+      "clientSecret": "${IAM_APP_ZT_CONSOLE_CLIENT_SECRET}",
+      "redirectUris": [
+        "https://ztc.hanzo.ai/callback",
+        "http://localhost:3000/callback"
+      ],
+      "tokenFormat": "JWT",
+      "tokenFields": [],
+      "expireInHours": 168,
+      "refreshExpireInHours": 720,
+      "signupUrl": "",
+      "signinUrl": "",
+      "forgetUrl": "",
+      "affiliationUrl": "",
+      "termsOfUse": "https://hanzo.ai/terms",
+      "signupHtml": "",
+      "signinHtml": "",
+      "themeData": {
+        "themeType": "dark",
+        "colorPrimary": "#fd4444",
+        "borderRadius": 6,
+        "isCompact": false,
+        "isEnabled": true
+      },
+      "formCss": "",
+      "formCssMobile": "",
+      "formOffset": 2,
+      "formSideHtml": "",
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
+    },
+    {
+      "owner": "admin",
+      "name": "app-chat",
+      "createdTime": "2024-01-01T00:00:00Z",
+      "displayName": "Hanzo Chat",
+      "logo": "https://cdn.hanzo.ai/img/chat-logo.svg",
+      "homepageUrl": "https://hanzo.chat",
+      "description": "Hanzo Chat — Unified AI Chat Interface",
+      "organization": "hanzo",
+      "cert": "cert-hanzo",
+      "enablePassword": true,
+      "enableSignUp": true,
+      "enableSigninSession": true,
+      "enableAutoSignin": false,
+      "enableCodeSignin": true,
+      "enableSamlCompress": false,
+      "enableSamlC14n10": false,
+      "enableWebAuthn": true,
+      "enableLinkWithEmail": true,
+      "orgChoiceMode": "None",
+      "samlReplyUrl": "",
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
+      "clientId": "chat-app",
+      "clientSecret": "${IAM_APP_CHAT_CLIENT_SECRET}",
+      "redirectUris": [
+        "https://hanzo.chat/oauth/openid/callback",
+        "https://chat.hanzo.ai/oauth/openid/callback",
+        "http://localhost:3080/oauth/openid/callback"
+      ],
+      "tokenFormat": "JWT",
+      "tokenFields": [],
+      "expireInHours": 168,
+      "refreshExpireInHours": 720,
+      "signupUrl": "",
+      "signinUrl": "",
+      "forgetUrl": "",
+      "affiliationUrl": "",
+      "termsOfUse": "https://hanzo.ai/terms",
+      "signupHtml": "",
+      "signinHtml": "",
+      "themeData": {
+        "themeType": "dark",
+        "colorPrimary": "#fd4444",
+        "borderRadius": 6,
+        "isCompact": false,
+        "isEnabled": true
+      },
+      "formCss": "",
+      "formCssMobile": "",
+      "formOffset": 2,
+      "formSideHtml": "",
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token"
     }
   ],
   "users": [
@@ -1994,7 +2128,7 @@
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "admin",
       "type": "normal-user",
-      "password": "***REMOVED***",
+      "password": "${IAM_ADMIN_PASSWORD}",
       "passwordSalt": "",
       "passwordType": "",
       "displayName": "Admin",
@@ -2060,7 +2194,7 @@
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "z",
       "type": "normal-user",
-      "password": "***REMOVED***",
+      "password": "${IAM_Z_HANZO_PASSWORD}",
       "passwordSalt": "",
       "passwordType": "",
       "displayName": "Z",
@@ -2126,7 +2260,7 @@
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "lux-z",
       "type": "normal-user",
-      "password": "***REMOVED***",
+      "password": "${IAM_Z_LUX_PASSWORD}",
       "passwordSalt": "",
       "passwordType": "",
       "displayName": "Z",
@@ -2263,8 +2397,8 @@
       "type": "GitHub",
       "subType": "",
       "method": "Normal",
-      "clientId": "59a7e63937e7b6033e74",
-      "clientSecret": "600819dd0b90ee60c20ad6b6962bee9511adc44c",
+      "clientId": "${IAM_GITHUB_CLIENT_ID}",
+      "clientSecret": "${IAM_GITHUB_CLIENT_SECRET}",
       "clientId2": "",
       "clientSecret2": "",
       "cert": "",
@@ -2304,8 +2438,8 @@
       "type": "Google",
       "subType": "",
       "method": "Normal",
-      "clientId": "",
-      "clientSecret": "",
+      "clientId": "${IAM_GOOGLE_CLIENT_ID}",
+      "clientSecret": "${IAM_GOOGLE_CLIENT_SECRET}",
       "clientId2": "",
       "clientSecret2": "",
       "cert": "",
@@ -2413,6 +2547,47 @@
       "bucket": "",
       "pathPrefix": "",
       "metadata": "",
+      "idP": "",
+      "issuerUrl": "",
+      "enableSignAuthnRequest": false,
+      "providerUrl": ""
+    },
+    {
+      "owner": "admin",
+      "name": "provider-web3",
+      "createdTime": "2024-01-01T00:00:00Z",
+      "displayName": "Web3 Wallet",
+      "category": "OAuth",
+      "type": "Web3Onboard",
+      "subType": "",
+      "method": "Normal",
+      "clientId": "",
+      "clientSecret": "",
+      "clientId2": "",
+      "clientSecret2": "",
+      "cert": "",
+      "customAuthUrl": "",
+      "customTokenUrl": "",
+      "customUserInfoUrl": "",
+      "customLogo": "",
+      "scopes": "",
+      "userMapping": {},
+      "host": "",
+      "port": 0,
+      "disableSsl": false,
+      "title": "",
+      "content": "",
+      "receiver": "",
+      "regionId": "",
+      "signName": "",
+      "templateCode": "",
+      "appId": "",
+      "endpoint": "",
+      "intranetEndpoint": "",
+      "domain": "",
+      "bucket": "",
+      "pathPrefix": "",
+      "metadata": "[\"injected\",\"coinbase\",\"walletconnect\"]",
       "idP": "",
       "issuerUrl": "",
       "enableSignAuthnRequest": false,
