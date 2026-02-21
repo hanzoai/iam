@@ -30,4 +30,6 @@ type TokenRequest struct {
 	SubjectToken     string `json:"subject_token"`
 	SubjectTokenType string `json:"subject_token_type"`
 	Audience         string `json:"audience"`
+	AccessKey        string `json:"access_key"`
+	AccessSecretKey  string `json:"access_secret"`
 }
