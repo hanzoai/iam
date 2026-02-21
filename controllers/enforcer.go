@@ -19,7 +19,7 @@ import (
 	"fmt"
 
 	"github.com/beego/beego/v2/core/utils/pagination"
-	xormadapter "github.com/casdoor/xorm-adapter/v3"
+	xormadapter "github.com/hanzoid/xorm-adapter/v3"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )
