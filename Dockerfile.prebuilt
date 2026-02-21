@@ -1,5 +1,5 @@
 # Simplified Dockerfile for deploying with pre-built frontend
-FROM golang:1.23.12 AS builder
+FROM golang:1.24.9 AS builder
 
 WORKDIR /go/src/hanzo-iam
 
@@ -9,7 +9,8 @@ RUN go mod download
 
 # Copy source and build
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iam-server .
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iam-server .
 
 # Final stage
 FROM alpine:3.19
@@ -27,7 +28,7 @@ WORKDIR /app
 # Copy binary and configs
 COPY --from=builder /go/src/hanzo-iam/iam-server .
 COPY --from=builder /go/src/hanzo-iam/swagger ./swagger
-COPY --from=builder /go/src/hanzo-iam/conf/app.conf ./conf/app.conf
+COPY --from=builder /go/src/hanzo-iam/conf/app.prod.conf ./conf/app.conf
 COPY --from=builder /go/src/hanzo-iam/init_data.json .
 
 # Copy pre-built frontend
