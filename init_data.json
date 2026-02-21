@@ -1443,7 +1443,10 @@
       "samlReplyUrl": "",
       "grantTypes": [
         "authorization_code",
-        "refresh_token"
+        "refresh_token",
+        "password",
+        "client_credentials",
+        "api_key"
       ],
       "responseTypes": [
         "code",
