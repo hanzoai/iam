@@ -17,10 +17,20 @@ package controllers
 import (
 	"encoding/json"
 
+	"github.com/beego/beego/v2/core/logs"
 	"github.com/beego/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )
+
+// emitBillingDeprecation adds standard deprecation headers and logs a warning.
+// The billing endpoints in IAM are superseded by Commerce (https://commerce.hanzo.ai).
+func (c *ApiController) emitBillingDeprecation() {
+	c.Ctx.Output.Header("Deprecation", "true")
+	c.Ctx.Output.Header("Sunset", "2026-06-01")
+	c.Ctx.Output.Header("Link", `<https://commerce.hanzo.ai/api/v1/billing>; rel="successor-version"`)
+	logs.Warning("DEPRECATED: %s called by %s — migrate to Commerce billing API", c.Ctx.Request.URL.Path, c.Ctx.Request.RemoteAddr)
+}
 
 // GetUsageRecords
 // @Title GetUsageRecords
@@ -30,6 +40,8 @@ import (
 // @Success 200 {array} object.UsageRecord
 // @router /get-usage-records [get]
 func (c *ApiController) GetUsageRecords() {
+	c.emitBillingDeprecation()
+
 	owner := c.Ctx.Input.Query("owner")
 	limit := c.Ctx.Input.Query("pageSize")
 	page := c.Ctx.Input.Query("p")
@@ -73,6 +85,8 @@ func (c *ApiController) GetUsageRecords() {
 // @Success 200 {array} object.UsageRecord
 // @router /get-user-usage-records [get]
 func (c *ApiController) GetUserUsageRecords() {
+	c.emitBillingDeprecation()
+
 	owner := c.Ctx.Input.Query("owner")
 	user := c.Ctx.Input.Query("user")
 
@@ -96,6 +110,8 @@ func (c *ApiController) GetUserUsageRecords() {
 // @Success 200 {object} object
 // @router /get-usage-summary [get]
 func (c *ApiController) GetUsageSummary() {
+	c.emitBillingDeprecation()
+
 	owner := c.Ctx.Input.Query("owner")
 	user := c.Ctx.Input.Query("user")
 	project := c.Ctx.Input.Query("project")
@@ -118,6 +134,8 @@ func (c *ApiController) GetUsageSummary() {
 // @Success 200 {object} controllers.Response
 // @router /add-usage-record [post]
 func (c *ApiController) AddUsageRecord() {
+	c.emitBillingDeprecation()
+
 	var record object.UsageRecord
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &record)
 	if err != nil {
@@ -141,6 +159,8 @@ func (c *ApiController) AddUsageRecord() {
 // @Success 200 {object} controllers.Response
 // @router /add-usage-records [post]
 func (c *ApiController) AddUsageRecords() {
+	c.emitBillingDeprecation()
+
 	var records []*object.UsageRecord
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &records)
 	if err != nil {
