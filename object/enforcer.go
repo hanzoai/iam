@@ -19,8 +19,8 @@ import (
 	"slices"
 
 	"github.com/casbin/casbin/v2"
-	xormadapter "github.com/hanzoid/xorm-adapter/v3"
 	"github.com/hanzoai/iam/util"
+	xormadapter "github.com/hanzoid/xorm-adapter/v3"
 	"github.com/xorm-io/core"
 )
 
