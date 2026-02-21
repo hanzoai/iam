@@ -15,7 +15,7 @@
 package controllers
 
 import (
-	"github.com/casdoor/casdoor/object"
+	"github.com/hanzoai/iam/object"
 )
 
 // GetOauthProtectedResourceMetadata
