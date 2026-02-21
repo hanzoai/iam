@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/beego/beego/v2/core/logs"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/util"
 	"github.com/xorm-io/core"
@@ -149,6 +150,8 @@ func UpdateTransaction(id string, transaction *Transaction, lang string) (bool, 
 }
 
 func AddTransaction(transaction *Transaction, lang string, dryRun bool) (bool, string, error) {
+	logs.Warning("DEPRECATED: AddTransaction called for owner=%s user=%s amount=%.2f dryRun=%v — migrate to Commerce billing API (https://commerce.hanzo.ai)", transaction.Owner, transaction.User, transaction.Amount, dryRun)
+
 	transactionId := strings.ReplaceAll(util.GenerateId(), "-", "")
 	transaction.Name = transactionId
 	transaction.DisplayName = transactionId
