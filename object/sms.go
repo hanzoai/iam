@@ -17,7 +17,7 @@ package object
 import (
 	"strings"
 
-	sender "github.com/casdoor/go-sms-sender"
+	sender "github.com/hanzoid/go-sms-sender"
 )
 
 func getSmsClient(provider *Provider) (sender.SmsClient, error) {
