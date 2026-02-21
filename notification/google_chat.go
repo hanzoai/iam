@@ -18,8 +18,8 @@ import (
 	"context"
 	"strings"
 
-	notify "github.com/casdoor/notify2"
-	"github.com/casdoor/notify2/service/googlechat"
+	notify "github.com/hanzoid/notify2"
+	"github.com/hanzoid/notify2/service/googlechat"
 	"google.golang.org/api/chat/v1"
 	"google.golang.org/api/option"
 )

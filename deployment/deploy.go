@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/casdoor/oss"
+	"github.com/hanzoid/oss"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/storage"
 	"github.com/hanzoai/iam/util"
