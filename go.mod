@@ -21,12 +21,6 @@ require (
 	github.com/beego/beego/v2 v2.3.8
 	github.com/beevik/etree v1.1.0
 	github.com/casbin/casbin/v2 v2.77.2
-	github.com/hanzoid/go-sms-sender v0.25.0
-	github.com/hanzoid/gomail/v2 v2.2.0
-	github.com/hanzoid/ldapserver v1.2.0
-	github.com/hanzoid/notify2 v1.6.0
-	github.com/hanzoid/oss v1.8.0
-	github.com/hanzoid/xorm-adapter/v3 v3.1.0
 	github.com/casvisor/casvisor-go-sdk v1.4.0
 	github.com/dchest/captcha v0.0.0-20200903113550-03f5f0333e1f
 	github.com/denisenkom/go-mssqldb v0.9.0
@@ -44,6 +38,12 @@ require (
 	github.com/go-webauthn/webauthn v0.10.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
+	github.com/hanzoid/go-sms-sender v0.26.0
+	github.com/hanzoid/gomail/v2 v2.4.0
+	github.com/hanzoid/ldapserver v1.3.0
+	github.com/hanzoid/notify2 v1.1.0
+	github.com/hanzoid/oss v1.9.0
+	github.com/hanzoid/xorm-adapter/v3 v3.2.0
 	github.com/json-iterator/go v1.1.12
 	github.com/lestrrat-go/jwx v1.2.29
 	github.com/lib/pq v1.10.9
@@ -135,7 +135,6 @@ require (
 	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bwmarrin/discordgo v0.28.1 // indirect
 	github.com/caarlos0/go-reddit/v3 v3.0.1 // indirect
-	github.com/hanzoid/go-sdk v0.50.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clbanning/mxj/v2 v2.7.0 // indirect
@@ -191,6 +190,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/gregdel/pushover v1.3.1 // indirect
+	github.com/hanzoid/go-sdk v1.45.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
@@ -302,4 +302,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.8.2 // indirect
 )
-
