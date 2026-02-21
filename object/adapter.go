@@ -228,7 +228,7 @@ func adapterChangeTrigger(oldName string, newName string) error {
 }
 
 func (adapter *Adapter) isBuiltIn() bool {
-	if adapter.Owner != "hanzo" {
+	if adapter.Owner != "admin" {
 		return false
 	}
 
