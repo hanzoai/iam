@@ -48,6 +48,7 @@ import FaceIdTable from "./table/FaceIdTable";
 import MfaAccountTable from "./table/MfaAccountTable";
 import MfaTable from "./table/MfaTable";
 import TransactionTable from "./table/TransactionTable";
+import CartTable from "./table/CartTable";
 import * as TransactionBackend from "./backend/TransactionBackend";
 import {Content, Header} from "antd/es/layout/layout";
 import Sider from "antd/es/layout/Sider";
@@ -608,13 +609,20 @@ class UserEditPage extends React.Component {
       );
     } else if (accountItem.name === "Addresses") {
       return (
-        <AddressTable
-          title={i18next.t("user:Addresses")}
-          table={this.state.user.addresses}
-          onUpdateTable={(value) => {
-            this.updateUserField("addresses", value);
-          }}
-        />
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            {Setting.getLabel(i18next.t("user:Addresses"), i18next.t("user:Addresses"))} :
+          </Col>
+          <Col span={22} >
+            <AddressTable
+              title={i18next.t("user:Addresses")}
+              table={this.state.user.addresses}
+              onUpdateTable={(value) => {
+                this.updateUserField("addresses", value);
+              }}
+            />
+          </Col>
+        </Row>
       );
     } else if (accountItem.name === "Affiliation") {
       return (
@@ -861,6 +869,17 @@ class UserEditPage extends React.Component {
           </Col>
         </Row>
       );
+    } else if (accountItem.name === "Cart") {
+      return (
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            {Setting.getLabel(i18next.t("general:Cart"), i18next.t("general:Cart"))} :
+          </Col>
+          <Col span={22}>
+            <CartTable cart={this.state.user.cart} />
+          </Col>
+        </Row>
+      );
     } else if (accountItem.name === "Transactions") {
       return (
         <Row style={{marginTop: "20px"}} >
@@ -868,7 +887,7 @@ class UserEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Transactions"), i18next.t("general:Transactions"))} :
           </Col>
           <Col span={22}>
-            <TransactionTable transactions={this.state.transactions} hideTag={true} />
+            <TransactionTable title={i18next.t("general:Transactions")} transactions={this.state.transactions} hideTag={true} />
           </Col>
         </Row>
       );
@@ -1118,15 +1137,21 @@ class UserEditPage extends React.Component {
               {Setting.getLabel(i18next.t("mfa:Multi-factor authentication"), i18next.t("mfa:Multi-factor authentication - Tooltip "))} :
             </Col>
             <Col span={22} >
-              <Card size="small" title={i18next.t("mfa:Multi-factor methods")}
-                extra={this.state.multiFactorAuths?.some(mfaProps => mfaProps.enabled) ?
-                  <PopconfirmModal
-                    text={i18next.t("general:Disable")}
-                    title={i18next.t("general:Sure to disable") + "?"}
-                    onConfirm={() => this.deleteMfa()}
-                  /> : null
-                }>
+              <Card size="small" title={
+                <div>
+                  {i18next.t("mfa:Multi-factor methods")}&nbsp;&nbsp;&nbsp;&nbsp;
+                  {this.state.multiFactorAuths?.some(mfaProps => mfaProps.enabled) ?
+                    <PopconfirmModal
+                      text={i18next.t("general:Disable")}
+                      title={i18next.t("general:Sure to disable") + "?"}
+                      onConfirm={() => this.deleteMfa()}
+                      size="small"
+                    /> : null
+                  }
+                </div>
+              }>
                 <List
+                  size="small"
                   rowKey="mfaType"
                   itemLayout="horizontal"
                   dataSource={this.state.multiFactorAuths}
