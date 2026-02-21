@@ -56,7 +56,13 @@ export function setWeb3AuthToken(token) {
 
 export function getWeb3AuthToken(address) {
   const key = getWeb3AuthTokenKey(address);
-  return JSON.parse(localStorage.getItem(key));
+  const val = localStorage.getItem(key);
+  if (!val) {return null;}
+  try {
+    return JSON.parse(val);
+  } catch (e) {
+    return null;
+  }
 }
 
 export function delWeb3AuthToken(address) {
@@ -259,7 +265,15 @@ function getWeb3OnboardWallets(options) {
 export function initWeb3Onboard(application, provider) {
   // init wallet
   // options = ["injected","coinbase",...]
-  const options = JSON.parse(provider.metadata);
+  let options = [];
+  try {
+    if (provider.metadata) {
+      options = JSON.parse(provider.metadata);
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("Failed to parse Web3 provider metadata:", e);
+  }
   const wallets = getWeb3OnboardWallets(options);
 
   // init chain
