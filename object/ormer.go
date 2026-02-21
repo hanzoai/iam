@@ -26,7 +26,7 @@ import (
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 
 	"github.com/beego/beego/v2/server/web"
-	xormadapter "github.com/casdoor/xorm-adapter/v3"
+	xormadapter "github.com/hanzoid/xorm-adapter/v3"
 	_ "github.com/denisenkom/go-mssqldb" // db = mssql
 	_ "github.com/go-sql-driver/mysql"   // db = mysql
 	"github.com/hanzoai/iam/conf"

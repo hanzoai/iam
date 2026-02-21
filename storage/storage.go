@@ -14,7 +14,7 @@
 
 package storage
 
-import "github.com/casdoor/oss"
+import "github.com/hanzoid/oss"
 
 func GetStorageProvider(providerType string, clientId string, clientSecret string, region string, bucket string, endpoint string, cert string, content string) (oss.StorageInterface, error) {
 	switch providerType {
