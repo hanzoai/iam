@@ -215,6 +215,8 @@ func (c *ApiController) GetOAuthToken() {
 	subjectToken := c.Ctx.Input.Query("subject_token")
 	subjectTokenType := c.Ctx.Input.Query("subject_token_type")
 	audience := c.Ctx.Input.Query("audience")
+	accessKey := c.Ctx.Input.Query("access_key")
+	accessSecretKey := c.Ctx.Input.Query("access_secret")
 
 	if clientId == "" && clientSecret == "" {
 		clientId, clientSecret, _ = c.Ctx.Request.BasicAuth()
@@ -272,6 +274,12 @@ func (c *ApiController) GetOAuthToken() {
 			if audience == "" {
 				audience = tokenRequest.Audience
 			}
+			if accessKey == "" {
+				accessKey = tokenRequest.AccessKey
+			}
+			if accessSecretKey == "" {
+				accessSecretKey = tokenRequest.AccessSecretKey
+			}
 		} else if isFormEncoded(c.Ctx.Input.RequestBody) {
 			// Fall back to parsing application/x-www-form-urlencoded body.
 			// Standard OAuth 2.0 clients (e.g. NextAuth.js) send token requests
@@ -326,6 +334,12 @@ func (c *ApiController) GetOAuthToken() {
 			if audience == "" {
 				audience = getFormValue(formValues, "audience")
 			}
+			if accessKey == "" {
+				accessKey = getFormValue(formValues, "access_key")
+			}
+			if accessSecretKey == "" {
+				accessSecretKey = getFormValue(formValues, "access_secret")
+			}
 		}
 	}
 
@@ -370,7 +384,7 @@ func (c *ApiController) GetOAuthToken() {
 	}
 
 	host := c.Ctx.Request.Host
-	token, err := object.GetOAuthToken(grantType, clientId, clientSecret, code, verifier, scope, nonce, username, password, host, refreshToken, tag, avatar, c.GetAcceptLanguage(), subjectToken, subjectTokenType, audience)
+	token, err := object.GetOAuthToken(grantType, clientId, clientSecret, code, verifier, scope, nonce, username, password, host, refreshToken, tag, avatar, c.GetAcceptLanguage(), subjectToken, subjectTokenType, audience, accessKey, accessSecretKey)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
