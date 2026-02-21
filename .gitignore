@@ -53,3 +53,7 @@ GEMINI.md
 QWEN.md
 .DS_Store
 iam-server-linux-amd64
+object/token_jwt_key.key
+object/token_jwt_key.pem
+*.key
+*.pem
