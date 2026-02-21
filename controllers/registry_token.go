@@ -20,9 +20,13 @@ import (
 	"crypto/x509"
 	"encoding/base32"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -33,36 +37,167 @@ import (
 )
 
 // registrySigningKey is the RSA private key for signing Docker registry tokens.
-// Loaded from REGISTRY_SIGNING_KEY_FILE env var (PEM file path) if available,
-// otherwise generated at startup (only suitable for single-replica deployments).
+// Load order:
+//  1. REGISTRY_SIGNING_KEY (PEM or kms://SECRET_NAME)
+//  2. REGISTRY_SIGNING_KEY_FILE (PEM file path)
+//  3. REGISTRY_SIGNING_KEY_SECRET via KMS (or default IAM_REGISTRY_SIGNING_KEY)
 var registrySigningKey *rsa.PrivateKey
 
-func init() {
-	keyFile := os.Getenv("REGISTRY_SIGNING_KEY_FILE")
+type registryKMSSecretResponse struct {
+	Secret struct {
+		SecretValue string `json:"secretValue"`
+	} `json:"secret"`
+}
+
+func parseRegistrySigningKeyPEM(data []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, fmt.Errorf("invalid PEM data")
+	}
+
+	if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		rsaKey, ok := key.(*rsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("private key is not RSA")
+		}
+		return rsaKey, nil
+	}
+
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+
+	return nil, fmt.Errorf("failed to parse PEM as PKCS#8 or PKCS#1 RSA private key")
+}
+
+func fetchRegistrySigningKeyFromKMS(secretName string) (*rsa.PrivateKey, error) {
+	token := strings.TrimSpace(os.Getenv("KMS_SERVICE_TOKEN"))
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("HANZO_API_KEY"))
+	}
+	if token == "" {
+		return nil, fmt.Errorf("KMS_SERVICE_TOKEN or HANZO_API_KEY is required for KMS key fetch")
+	}
+
+	projectID := strings.TrimSpace(os.Getenv("REGISTRY_KMS_PROJECT_ID"))
+	if projectID == "" {
+		projectID = strings.TrimSpace(os.Getenv("KMS_PROJECT_ID"))
+	}
+	if projectID == "" {
+		return nil, fmt.Errorf("REGISTRY_KMS_PROJECT_ID or KMS_PROJECT_ID is required")
+	}
+
+	endpoint := strings.TrimRight(strings.TrimSpace(os.Getenv("KMS_ENDPOINT")), "/")
+	if endpoint == "" {
+		endpoint = "http://kms.hanzo.svc"
+	}
+
+	environment := strings.TrimSpace(os.Getenv("KMS_ENVIRONMENT"))
+	if environment == "" {
+		environment = "production"
+	}
+
+	url := fmt.Sprintf("%s/api/v4/secrets/%s?projectId=%s&environment=%s",
+		endpoint,
+		url.PathEscape(secretName),
+		url.QueryEscape(projectID),
+		url.QueryEscape(environment),
+	)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("KMS returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var kmsResp registryKMSSecretResponse
+	if err := json.Unmarshal(body, &kmsResp); err != nil {
+		return nil, fmt.Errorf("failed to parse KMS response: %w", err)
+	}
+	if strings.TrimSpace(kmsResp.Secret.SecretValue) == "" {
+		return nil, fmt.Errorf("KMS secret %q is empty", secretName)
+	}
+
+	return parseRegistrySigningKeyPEM([]byte(kmsResp.Secret.SecretValue))
+}
+
+func resolveRegistrySigningKey() (*rsa.PrivateKey, error) {
+	inlineKey := strings.TrimSpace(os.Getenv("REGISTRY_SIGNING_KEY"))
+	if inlineKey != "" {
+		if strings.HasPrefix(inlineKey, "kms://") {
+			secretName := strings.TrimPrefix(inlineKey, "kms://")
+			return fetchRegistrySigningKeyFromKMS(secretName)
+		}
+
+		return parseRegistrySigningKeyPEM([]byte(inlineKey))
+	}
+
+	keyFile := strings.TrimSpace(os.Getenv("REGISTRY_SIGNING_KEY_FILE"))
 	if keyFile != "" {
 		data, err := os.ReadFile(keyFile)
 		if err != nil {
-			logs.Error("failed to read registry signing key from %s: %v", keyFile, err)
-		} else {
-			block, _ := pem.Decode(data)
-			if block != nil {
-				key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-				if err != nil {
-					logs.Error("failed to parse registry signing key: %v", err)
-				} else if rsaKey, ok := key.(*rsa.PrivateKey); ok {
-					registrySigningKey = rsaKey
-					logs.Info("loaded registry signing key from %s", keyFile)
-				}
-			}
+			return nil, fmt.Errorf("failed to read registry signing key file %s: %w", keyFile, err)
+		}
+		return parseRegistrySigningKeyPEM(data)
+	}
+
+	secretName := strings.TrimSpace(os.Getenv("REGISTRY_SIGNING_KEY_SECRET"))
+	if secretName == "" {
+		// Default convention for KMS-managed registry signing key.
+		secretName = "IAM_REGISTRY_SIGNING_KEY"
+	}
+
+	return fetchRegistrySigningKeyFromKMS(secretName)
+}
+
+func isProductionRuntime() bool {
+	for _, v := range []string{
+		os.Getenv("ENVIRONMENT"),
+		os.Getenv("GO_ENV"),
+		os.Getenv("BEEGO_RUNMODE"),
+		os.Getenv("RUN_MODE"),
+	} {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "prod", "production":
+			return true
 		}
 	}
-	if registrySigningKey == nil {
+	return false
+}
+
+func init() {
+	key, err := resolveRegistrySigningKey()
+	if err == nil {
+		registrySigningKey = key
+		logs.Info("registry signing key loaded from configured secret source")
+		return
+	}
+
+	requirePersistent := isProductionRuntime() || strings.EqualFold(strings.TrimSpace(os.Getenv("REGISTRY_REQUIRE_PERSISTENT_SIGNING_KEY")), "true")
+	if requirePersistent {
+		panic(fmt.Sprintf("failed to initialize registry signing key: %v", err))
+	}
+
+	logs.Warn("failed to load persistent registry signing key: %v", err)
+	logs.Warn("generating ephemeral registry signing key for non-production runtime")
+	{
 		var err error
 		registrySigningKey, err = rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
 			panic(fmt.Sprintf("failed to generate registry signing key: %v", err))
 		}
-		logs.Warn("generated ephemeral registry signing key (set REGISTRY_SIGNING_KEY_FILE for persistence)")
 	}
 }
 
@@ -89,7 +224,8 @@ type RegistryTokenResponse struct {
 // GetRegistryToken handles Docker registry v2 token authentication.
 //
 // The Docker registry sends unauthenticated clients here with:
-//   GET /api/registry/token?service=registry.hanzo.ai&scope=repository:myimage:pull,push
+//
+//	GET /api/registry/token?service=registry.hanzo.ai&scope=repository:myimage:pull,push
 //
 // The client provides Basic auth credentials. This endpoint validates them
 // against IAM users and returns a short-lived JWT granting the requested access.
