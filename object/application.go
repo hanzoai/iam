@@ -721,7 +721,7 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 		return false, err
 	}
 
-	if application.IsShared == true && application.Organization != "hanzo" {
+	if application.IsShared == true && application.Organization != "admin" {
 		return false, fmt.Errorf("only applications belonging to built-in organization can be shared")
 	}
 

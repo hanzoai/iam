@@ -15,10 +15,27 @@
 package object
 
 import (
+	"os"
+	"regexp"
+
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 )
+
+var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// interpolateEnvVars replaces ${VAR_NAME} patterns in the input string
+// with values from environment variables. Unset variables are left as-is.
+func interpolateEnvVars(s string) string {
+	return envVarPattern.ReplaceAllStringFunc(s, func(match string) string {
+		varName := envVarPattern.FindStringSubmatch(match)[1]
+		if val, ok := os.LookupEnv(varName); ok {
+			return val
+		}
+		return match
+	})
+}
 
 type InitData struct {
 	Organizations []*Organization       `json:"organizations"`
@@ -151,6 +168,7 @@ func readInitDataFromFile(filePath string) (*InitData, error) {
 	}
 
 	s := util.ReadStringFromPath(filePath)
+	s = interpolateEnvVars(s)
 
 	data := &InitData{
 		Organizations: []*Organization{},
