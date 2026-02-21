@@ -214,7 +214,7 @@ func (c *ApiController) GetUser() {
 			return
 		}
 
-		if !organization.IsProfilePublic {
+		if !organization.IsProfilePublic && !c.IsServiceTokenAuthenticated() {
 			requestUserId := c.GetSessionUsername()
 			var hasPermission bool
 			hasPermission, err = object.CheckUserPermission(requestUserId, user.GetId(), false, c.GetAcceptLanguage())
@@ -315,7 +315,7 @@ func (c *ApiController) UpdateUser() {
 		return
 	}
 
-	if oldUser.Owner == "hanzo" && oldUser.Name == "admin" && (user.Owner != "hanzo" || user.Name != "admin") {
+	if oldUser.Owner == "admin" && oldUser.Name == "admin" && (user.Owner != "admin" || user.Name != "admin") {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
@@ -427,7 +427,7 @@ func (c *ApiController) DeleteUser() {
 		return
 	}
 
-	if user.Owner == "hanzo" && user.Name == "admin" {
+	if user.Owner == "admin" && user.Name == "admin" {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}

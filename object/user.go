@@ -405,7 +405,10 @@ func GetUsersByTagWithFilter(owner string, tag string, cond builder.Cond) ([]*Us
 
 func GetSortedUsers(owner string, sorter string, limit int) ([]*User, error) {
 	users := []*User{}
-	err := ormer.Engine.Desc(sorter).Limit(limit, 0).Find(&users, &User{Owner: owner})
+	if !util.FilterField(sorter) {
+		sorter = "created_time"
+	}
+	err := ormer.Engine.Desc(util.SnakeString(sorter)).Limit(limit, 0).Find(&users, &User{Owner: owner})
 	if err != nil {
 		return nil, err
 	}
@@ -993,7 +996,7 @@ func AddUser(user *User, lang string) (bool, error) {
 		return false, fmt.Errorf(i18n.Translate(lang, "auth:the organization: %s is not found"), user.Owner)
 	}
 
-	if user.Owner != "hanzo" {
+	if user.Owner != "admin" {
 		applicationCount, err := GetOrganizationApplicationCount(organization.Owner, organization.Name, "", "")
 		if err != nil {
 			return false, err
@@ -1265,7 +1268,7 @@ func (user *User) GetFriendlyName() string {
 }
 
 func isUserIdGlobalAdmin(userId string) bool {
-	return strings.HasPrefix(userId, "hanzo/") || IsAppUser(userId)
+	return strings.HasPrefix(userId, "admin/") || IsAppUser(userId)
 }
 
 func ExtendUserWithRolesAndPermissions(user *User) (err error) {
@@ -1409,7 +1412,7 @@ func (user *User) IsGlobalAdmin() bool {
 		return false
 	}
 
-	return user.Owner == "hanzo"
+	return user.Owner == "admin"
 }
 
 func (user *User) CheckUserFace(faceIdImage []string, provider *Provider) (bool, error) {

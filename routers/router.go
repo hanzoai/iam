@@ -250,6 +250,9 @@ func InitAPI() {
 	web.Router("/api/add-transaction", &controllers.ApiController{}, "POST:AddTransaction")
 	web.Router("/api/delete-transaction", &controllers.ApiController{}, "POST:DeleteTransaction")
 
+	// DEPRECATED (sunset 2026-06-01): Usage/billing endpoints are migrated to Commerce.
+	// Successor: https://commerce.hanzo.ai/api/v1/billing
+	// These routes remain active during the migration period but emit deprecation headers.
 	web.Router("/api/get-usage-records", &controllers.ApiController{}, "GET:GetUsageRecords")
 	web.Router("/api/get-user-usage-records", &controllers.ApiController{}, "GET:GetUserUsageRecords")
 	web.Router("/api/get-usage-summary", &controllers.ApiController{}, "GET:GetUsageSummary")
