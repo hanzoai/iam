@@ -125,7 +125,7 @@ func handleBind(w ldap.ResponseWriter, m *ldap.Message) {
 			return
 		}
 
-		if bindOrg == "hanzo" || bindUser.IsGlobalAdmin() {
+		if bindOrg == "admin" || bindUser.IsGlobalAdmin() {
 			m.Client.IsGlobalAdmin, m.Client.IsOrgAdmin = true, true
 		} else if bindUser.IsAdmin {
 			m.Client.IsOrgAdmin = true
