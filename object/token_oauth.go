@@ -240,7 +240,7 @@ func GetOAuthCode(userId string, clientId string, provider string, signinMethod 
 	}, nil
 }
 
-func GetOAuthToken(grantType string, clientId string, clientSecret string, code string, verifier string, scope string, nonce string, username string, password string, host string, refreshToken string, tag string, avatar string, lang string, subjectToken string, subjectTokenType string, audience string, resource string) (interface{}, error) {
+func GetOAuthToken(grantType string, clientId string, clientSecret string, code string, verifier string, scope string, nonce string, username string, password string, host string, refreshToken string, tag string, avatar string, lang string, subjectToken string, subjectTokenType string, audience string, resource string, accessKey string, accessSecret string) (interface{}, error) {
 	application, err := GetApplicationByClientId(clientId)
 	if err != nil {
 		return nil, err
@@ -277,6 +277,8 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 		token, tokenError, err = GetImplicitToken(application, username, scope, nonce, host)
 	case "urn:ietf:params:oauth:grant-type:token-exchange": // Token Exchange Grant (RFC 8693)
 		token, tokenError, err = GetTokenExchangeToken(application, clientSecret, subjectToken, subjectTokenType, audience, scope, host)
+	case "api_key": // API Key Grant — exchange access_key + access_secret for user-bound token
+		token, tokenError, err = GetApiKeyToken(application, accessKey, accessSecret, scope, host)
 	case "refresh_token":
 		refreshToken2, err := RefreshToken(grantType, refreshToken, scope, clientId, clientSecret, host)
 		if err != nil {
@@ -758,6 +760,77 @@ func GetPasswordToken(application *Application, username string, password string
 	}
 
 	accessToken, refreshToken, tokenName, err := generateJwtToken(application, user, "", "", "", scope, "", host)
+	if err != nil {
+		return nil, &TokenError{
+			Error:            EndpointError,
+			ErrorDescription: fmt.Sprintf("generate jwt token error: %s", err.Error()),
+		}, nil
+	}
+	token := &Token{
+		Owner:        application.Owner,
+		Name:         tokenName,
+		CreatedTime:  util.GetCurrentTime(),
+		Application:  application.Name,
+		Organization: user.Owner,
+		User:         user.Name,
+		Code:         util.GenerateClientId(),
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresIn:    int(application.ExpireInHours * float64(hourSeconds)),
+		Scope:        scope,
+		TokenType:    "Bearer",
+		CodeIsUsed:   true,
+	}
+	_, err = AddToken(token)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return token, nil, nil
+}
+
+// GetApiKeyToken exchanges a user's API key (access_key + access_secret) for
+// a user-bound OAuth token. This enables machine-to-machine authentication
+// using long-lived API keys instead of username/password (ROPC).
+func GetApiKeyToken(application *Application, accessKey string, accessSecret string, scope string, host string) (*Token, *TokenError, error) {
+	if accessKey == "" || accessSecret == "" {
+		return nil, &TokenError{
+			Error:            InvalidGrant,
+			ErrorDescription: "access_key and access_secret are required",
+		}, nil
+	}
+
+	user, err := GetUserByAccessKey(accessKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if user == nil {
+		return nil, &TokenError{
+			Error:            InvalidGrant,
+			ErrorDescription: "invalid access_key",
+		}, nil
+	}
+
+	if user.AccessSecret != accessSecret {
+		return nil, &TokenError{
+			Error:            InvalidGrant,
+			ErrorDescription: "invalid access_secret",
+		}, nil
+	}
+
+	if user.IsForbidden {
+		return nil, &TokenError{
+			Error:            InvalidGrant,
+			ErrorDescription: "the user is forbidden to sign in, please contact the administrator",
+		}, nil
+	}
+
+	err = ExtendUserWithRolesAndPermissions(user)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	accessToken, refreshToken, tokenName, err := generateJwtToken(application, user, "", "api_key", "", scope, "", host)
 	if err != nil {
 		return nil, &TokenError{
 			Error:            EndpointError,
