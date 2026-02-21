@@ -24,12 +24,12 @@ import (
 )
 
 type TableColumn struct {
-	Name        string   `json:"name"`
-	Type        string   `json:"type"`
-	IamName string   `json:"iamName"`
-	IsKey       bool     `json:"isKey"`
-	IsHashed    bool     `json:"isHashed"`
-	Values      []string `json:"values"`
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	IamName  string   `json:"iamName"`
+	IsKey    bool     `json:"isKey"`
+	IsHashed bool     `json:"isHashed"`
+	Values   []string `json:"values"`
 }
 
 type Syncer struct {
