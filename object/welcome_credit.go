@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	WelcomeCreditAmount   = 0
+	WelcomeCreditAmount   = 5.00
 	WelcomeCreditCurrency = "USD"
 	WelcomeCreditTag      = "welcome-credit"
 	WelcomeCreditDays     = 30
