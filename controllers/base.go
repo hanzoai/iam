@@ -159,6 +159,12 @@ func (c *ApiController) GetSessionToken() string {
 	return accessToken.(string)
 }
 
+func (c *ApiController) IsServiceTokenAuthenticated() bool {
+	ctxValue := c.Ctx.Input.GetData("serviceTokenAuthenticated")
+	enabled, ok := ctxValue.(bool)
+	return ok && enabled
+}
+
 func (c *ApiController) GetSessionApplication() *object.Application {
 	clientId := c.GetSession("aud")
 	if clientId == nil {

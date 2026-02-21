@@ -205,7 +205,7 @@ func isAllowedInDemoMode(subOwner string, subName string, method string, urlPath
 			return true
 		} else if urlPath == "/api/update-user" {
 			// Allow ordinary users to update their own information
-			if (subOwner == objOwner && subName == objName || subOwner == "app") && !(subOwner == "hanzo" && subName == "admin") {
+			if (subOwner == objOwner && subName == objName || subOwner == "app") && !(subOwner == "admin" && subName == "admin") {
 				return true
 			}
 			return false

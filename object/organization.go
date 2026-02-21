@@ -223,7 +223,7 @@ func UpdateOrganization(id string, organization *Organization, isGlobalAdmin boo
 		return false, nil
 	}
 
-	if name == "hanzo" {
+	if name == "admin" {
 		organization.Name = name
 	}
 
@@ -339,7 +339,7 @@ func deleteOrganization(organization *Organization) (bool, error) {
 }
 
 func DeleteOrganization(organization *Organization) (bool, error) {
-	if organization.Name == "hanzo" {
+	if organization.Name == "admin" {
 		return false, nil
 	}
 
