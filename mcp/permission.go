@@ -15,7 +15,7 @@
 package mcp
 
 import (
-	"github.com/casdoor/casdoor/object"
+	"github.com/hanzoai/iam/object"
 )
 
 // BuiltinScopes defines the default scope-to-tool mappings for Casdoor's MCP server
