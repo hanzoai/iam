@@ -20,10 +20,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hanzoid/oss"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/storage"
 	"github.com/hanzoai/iam/util"
+	"github.com/hanzoid/oss"
 )
 
 func deployStaticFiles(provider *object.Provider) {

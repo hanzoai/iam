@@ -39,12 +39,12 @@ type UsageRecord struct {
 	CompletionTokens int `json:"completionTokens"`
 	TotalTokens      int `json:"totalTokens"`
 
-	Cost     float64 `xorm:"DECIMAL(10,6)" json:"cost"`     // cost in USD
-	Currency string  `xorm:"varchar(10)" json:"currency"`   // currency code
-	Premium  bool    `json:"premium"`                       // premium model flag
-	Stream   bool    `json:"stream"`                        // was streaming enabled
-	Status   string  `xorm:"varchar(20)" json:"status"`     // success, error
-	ErrorMsg string  `xorm:"varchar(500)" json:"errorMsg"`  // error message if failed
+	Cost     float64 `xorm:"DECIMAL(10,6)" json:"cost"`    // cost in USD
+	Currency string  `xorm:"varchar(10)" json:"currency"`  // currency code
+	Premium  bool    `json:"premium"`                      // premium model flag
+	Stream   bool    `json:"stream"`                       // was streaming enabled
+	Status   string  `xorm:"varchar(20)" json:"status"`    // success, error
+	ErrorMsg string  `xorm:"varchar(500)" json:"errorMsg"` // error message if failed
 
 	ClientIP  string `xorm:"varchar(100)" json:"clientIp"`  // request source IP
 	RequestID string `xorm:"varchar(100)" json:"requestId"` // unique request ID
