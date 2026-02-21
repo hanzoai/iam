@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	xormadapter "github.com/casdoor/xorm-adapter/v3"
+	xormadapter "github.com/hanzoid/xorm-adapter/v3"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 	"github.com/xorm-io/core"
