@@ -21,12 +21,12 @@ require (
 	github.com/beego/beego/v2 v2.3.8
 	github.com/beevik/etree v1.1.0
 	github.com/casbin/casbin/v2 v2.77.2
-	github.com/casdoor/go-sms-sender v0.25.0
-	github.com/casdoor/gomail/v2 v2.2.0
-	github.com/casdoor/ldapserver v1.2.0
-	github.com/casdoor/notify2 v1.6.0
-	github.com/casdoor/oss v1.8.0
-	github.com/casdoor/xorm-adapter/v3 v3.1.0
+	github.com/hanzoid/go-sms-sender v0.25.0
+	github.com/hanzoid/gomail/v2 v2.2.0
+	github.com/hanzoid/ldapserver v1.2.0
+	github.com/hanzoid/notify2 v1.6.0
+	github.com/hanzoid/oss v1.8.0
+	github.com/hanzoid/xorm-adapter/v3 v3.1.0
 	github.com/casvisor/casvisor-go-sdk v1.4.0
 	github.com/dchest/captcha v0.0.0-20200903113550-03f5f0333e1f
 	github.com/denisenkom/go-mssqldb v0.9.0
@@ -135,7 +135,7 @@ require (
 	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bwmarrin/discordgo v0.28.1 // indirect
 	github.com/caarlos0/go-reddit/v3 v3.0.1 // indirect
-	github.com/casdoor/casdoor-go-sdk v0.50.0 // indirect
+	github.com/hanzoid/go-sdk v0.50.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clbanning/mxj/v2 v2.7.0 // indirect
@@ -303,16 +303,3 @@ require (
 	modernc.org/memory v1.8.2 // indirect
 )
 
-replace github.com/casdoor/go-sms-sender => github.com/hanzoid/go-sms-sender v0.25.0
-
-replace github.com/casdoor/gomail/v2 => github.com/hanzoid/gomail/v2 v2.2.0
-
-replace github.com/casdoor/ldapserver => github.com/hanzoid/ldapserver v1.2.0
-
-replace github.com/casdoor/oss => github.com/hanzoid/oss v1.8.0
-
-replace github.com/casdoor/xorm-adapter/v3 => github.com/hanzoid/xorm-adapter/v3 v3.1.0
-
-replace github.com/casdoor/casdoor-go-sdk => github.com/hanzoid/go-sdk v0.50.0
-
-replace github.com/casdoor/notify2 => github.com/hanzoid/notify2 v1.6.0
