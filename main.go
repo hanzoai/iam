@@ -48,6 +48,7 @@ func main() {
 
 	routers.InitAPI()
 	object.InitFlag()
+	object.InitKMS()
 	object.InitAdapter()
 	object.CreateTables()
 
