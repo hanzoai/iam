@@ -21,9 +21,9 @@ import (
 	"log"
 	"strings"
 
-	ldap "github.com/casdoor/ldapserver"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
+	ldap "github.com/hanzoid/ldapserver"
 	"github.com/lor00x/goldap/message"
 )
 
@@ -125,7 +125,7 @@ func handleBind(w ldap.ResponseWriter, m *ldap.Message) {
 			return
 		}
 
-		if bindOrg == "hanzo" || bindUser.IsGlobalAdmin() {
+		if bindOrg == "admin" || bindUser.IsGlobalAdmin() {
 			m.Client.IsGlobalAdmin, m.Client.IsOrgAdmin = true, true
 		} else if bindUser.IsAdmin {
 			m.Client.IsOrgAdmin = true

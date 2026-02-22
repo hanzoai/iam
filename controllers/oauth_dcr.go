@@ -18,7 +18,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/casdoor/casdoor/object"
+	"github.com/hanzoai/iam/object"
 )
 
 // DynamicClientRegister

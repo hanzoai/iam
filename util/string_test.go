@@ -158,7 +158,7 @@ func TestGetMd5Hash(t *testing.T) {
 		input       string
 		expected    interface{}
 	}{
-		{"Scenery one", "iam", "0b874f488b4705693a60256b8f3a32da"},
+		{"Scenery one", "iam", "0ebc580ae6450fce8762fad1bff32e7b"},
 		{"Scenery two", "casbin", "59c5a967f086f65366a80dbdd1205a6c"},
 		{"Scenery three", "lorem ipsum", "80a751fde577028640c419000e33eba6"},
 	}

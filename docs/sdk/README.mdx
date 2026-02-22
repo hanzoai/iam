@@ -1,0 +1,107 @@
+---
+title: IAM SDK
+description: TypeScript SDK for Hanzo IAM — OIDC auth, JWT validation, OAuth2 PKCE, org/billing APIs, and React bindings.
+---
+
+# @hanzo/iam
+
+TypeScript SDK for Hanzo IAM (Identity & Access Management). Provides everything you need to add authentication, organization management, and billing to your application.
+
+## Features
+
+- **OIDC & JWT** — Validate tokens via JWKS discovery, parse claims
+- **OAuth2 PKCE** — Browser-safe login flows (redirect, popup, silent)
+- **Token Management** — Automatic storage, refresh, and expiry handling
+- **Organizations** — List, switch, and scope to orgs/projects
+- **Billing** — Subscriptions, plans, pricing, and usage tracking
+- **React Bindings** — Drop-in `IamProvider`, `useIam()`, `useOrganizations()` hooks
+
+## Installation
+
+```bash
+npm install @hanzo/iam
+```
+
+## Quick Start
+
+### Server-side (Node.js)
+
+```typescript
+import { validateToken, IamClient, IamBillingClient } from "@hanzo/iam";
+
+// Validate a JWT from an incoming request
+const result = await validateToken(accessToken, {
+  serverUrl: "https://iam.hanzo.ai",
+  clientId: "my-app",
+});
+
+if (result.ok) {
+  console.log(`Authenticated: ${result.userId}`);
+}
+
+// Query organizations
+const client = new IamClient({
+  serverUrl: "https://iam.hanzo.ai",
+  clientId: "my-app",
+  clientSecret: process.env.IAM_CLIENT_SECRET,
+});
+
+const orgs = await client.getOrganizations();
+```
+
+### Browser (React)
+
+```tsx
+import { IamProvider, useIam, useOrganizations } from "@hanzo/iam/react";
+
+function App() {
+  return (
+    <IamProvider
+      config={{
+        serverUrl: "https://iam.hanzo.ai",
+        clientId: "my-app",
+        redirectUri: `${window.location.origin}/auth/callback`,
+      }}
+    >
+      <MyApp />
+    </IamProvider>
+  );
+}
+
+function MyApp() {
+  const { user, isAuthenticated, login, logout } = useIam();
+  const { organizations, currentOrg, switchOrg } = useOrganizations();
+
+  if (!isAuthenticated) {
+    return <button onClick={() => login()}>Sign in with Hanzo</button>;
+  }
+
+  return (
+    <div>
+      <p>Welcome, {user?.displayName}</p>
+      <select
+        value={currentOrg?.name ?? ""}
+        onChange={(e) => switchOrg(e.target.value)}
+      >
+        {organizations.map((org) => (
+          <option key={org.name} value={org.name}>
+            {org.displayName || org.name}
+          </option>
+        ))}
+      </select>
+      <button onClick={logout}>Sign out</button>
+    </div>
+  );
+}
+```
+
+## Entry Points
+
+| Import Path | Description |
+|---|---|
+| `@hanzo/iam` | Core client, JWT validation, types |
+| `@hanzo/iam/react` | React provider and hooks |
+| `@hanzo/iam/browser` | Browser PKCE SDK (standalone) |
+| `@hanzo/iam/billing` | Billing client |
+| `@hanzo/iam/auth` | JWT validation only |
+| `@hanzo/iam/types` | Type definitions only |
