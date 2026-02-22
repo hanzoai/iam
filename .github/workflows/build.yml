@@ -14,14 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15
+        image: ghcr.io/hanzoai/sql:latest
         env:
           POSTGRES_USER: hanzo
           POSTGRES_PASSWORD: hanzo123
           POSTGRES_DB: hanzo_iam
         ports:
           - 5432:5432
-        options: --health-cmd="pg_isready -U hanzo" --health-interval=10s --health-timeout=5s --health-retries=5
+        options: --health-cmd="pg_isready -U hanzo -d hanzo_iam" --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
@@ -95,43 +95,46 @@ jobs:
     needs: [ go-tests ]
     services:
       postgres:
-        image: postgres:15
+        image: ghcr.io/hanzoai/sql:latest
         env:
           POSTGRES_USER: hanzo
           POSTGRES_PASSWORD: hanzo123
           POSTGRES_DB: hanzo_iam
         ports:
           - 5432:5432
-        options: --health-cmd="pg_isready -U hanzo" --health-interval=10s --health-timeout=5s --health-retries=5
+        options: --health-cmd="pg_isready -U hanzo -d hanzo_iam" --health-interval=10s --health-timeout=5s --health-retries=5
       redis:
-        image: redis:7
+        image: ghcr.io/hanzoai/kv:latest
         ports:
           - 6379:6379
-        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+        options: --health-cmd="valkey-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
           go-version: '1.23'
           cache-dependency-path: ./go.mod
-      - name: start backend
-        run: nohup go run ./main.go > /tmp/backend.log 2>&1 &
+      - name: Build backend
+        run: go build -o server .
+        working-directory: ./
+      - name: Start backend
+        run: nohup ./server > /tmp/backend.log 2>&1 &
         working-directory: ./
       - name: Wait for backend to be ready
         run: |
           echo "Waiting for backend server to start on port 8000..."
-          for i in {1..60}; do
+          for i in {1..90}; do
             if curl -s http://localhost:8000 > /dev/null 2>&1; then
               echo "Backend is ready!"
               break
             fi
-            if [ $i -eq 60 ]; then
-              echo "Backend failed to start within 60 seconds"
+            if [ $i -eq 90 ]; then
+              echo "Backend failed to start within 90 seconds"
               echo "Backend logs:"
               cat /tmp/backend.log || echo "No backend logs available"
               exit 1
             fi
-            echo "Waiting... ($i/60)"
+            echo "Waiting... ($i/90)"
             sleep 1
           done
       - uses: actions/setup-node@v3
