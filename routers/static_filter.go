@@ -112,7 +112,8 @@ func StaticFilter(ctx *context.Context) {
 	}
 
 	// /oauth/* routes are registered directly in router.go — skip to Beego router
-	if strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/.well-known/") || strings.HasPrefix(urlPath, "/oauth/") {
+	// Exception: /oauth/authorize is a frontend route, not a backend API
+	if strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/.well-known/") || (strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize") {
 		return
 	}
 	if strings.HasPrefix(urlPath, "/cas") && (strings.HasSuffix(urlPath, "/serviceValidate") || strings.HasSuffix(urlPath, "/proxy") || strings.HasSuffix(urlPath, "/proxyValidate") || strings.HasSuffix(urlPath, "/validate") || strings.HasSuffix(urlPath, "/p3/serviceValidate") || strings.HasSuffix(urlPath, "/p3/proxyValidate") || strings.HasSuffix(urlPath, "/samlValidate")) {
