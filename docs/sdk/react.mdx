@@ -1,0 +1,219 @@
+---
+title: React Bindings
+description: Drop-in React provider and hooks for Hanzo IAM — authentication, org switching, and token management.
+---
+
+# React Bindings
+
+`@hanzo/iam/react` provides a context provider and hooks that handle the full authentication lifecycle in React applications.
+
+```bash
+npm install @hanzo/iam react
+```
+
+## IamProvider
+
+Wrap your app with `IamProvider` to enable IAM authentication.
+
+```tsx
+import { IamProvider } from "@hanzo/iam/react";
+
+function App() {
+  return (
+    <IamProvider
+      config={{
+        serverUrl: "https://iam.hanzo.ai",
+        clientId: "my-app",
+        redirectUri: `${window.location.origin}/auth/callback`,
+        scope: "openid profile email", // optional, this is the default
+        storage: localStorage,          // optional, default: sessionStorage
+      }}
+      autoInit={true}        // check stored tokens on mount (default: true)
+      onAuthChange={(authed) => console.log("Auth:", authed)}
+    >
+      <MyApp />
+    </IamProvider>
+  );
+}
+```
+
+## useIam
+
+Access authentication state and methods.
+
+```tsx
+import { useIam } from "@hanzo/iam/react";
+
+function ProfileButton() {
+  const {
+    user,            // IamUser | null
+    isAuthenticated, // boolean
+    isLoading,       // boolean (initial auth check)
+    accessToken,     // string | null
+    login,           // (params?) => Promise<void>
+    loginPopup,      // (params?) => Promise<void>
+    logout,          // () => void
+    error,           // Error | null
+  } = useIam();
+
+  if (isLoading) return <span>Loading...</span>;
+
+  if (!isAuthenticated) {
+    return <button onClick={() => login()}>Sign in</button>;
+  }
+
+  return (
+    <div>
+      <span>{user?.displayName || user?.email}</span>
+      <button onClick={logout}>Sign out</button>
+    </div>
+  );
+}
+```
+
+### Login Methods
+
+```tsx
+// Redirect to IAM login page (full-page redirect)
+await login();
+
+// Open IAM login in a popup (stays on current page)
+await loginPopup({ width: 600, height: 700 });
+
+// Pass additional OAuth params
+await login({ additionalParams: { prompt: "consent" } });
+```
+
+### Callback Handling
+
+On your callback route, use `handleCallback` to complete the OAuth flow:
+
+```tsx
+import { useIam } from "@hanzo/iam/react";
+import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+
+function AuthCallback() {
+  const { handleCallback } = useIam();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    handleCallback()
+      .then(() => navigate("/"))
+      .catch((err) => console.error("Auth failed:", err));
+  }, []);
+
+  return <p>Completing sign-in...</p>;
+}
+```
+
+## useOrganizations
+
+Manage organization and project switching. Selection persists to `localStorage`.
+
+```tsx
+import { useOrganizations } from "@hanzo/iam/react";
+
+function OrgSwitcher() {
+  const {
+    organizations,    // IamOrganization[]
+    currentOrg,       // IamOrganization | null
+    currentOrgId,     // string | null
+    switchOrg,        // (orgId: string) => void
+    currentProjectId, // string | null
+    switchProject,    // (projectId: string | null) => void
+    isLoading,        // boolean
+  } = useOrganizations();
+
+  if (isLoading) return <span>Loading orgs...</span>;
+
+  return (
+    <select
+      value={currentOrgId ?? ""}
+      onChange={(e) => switchOrg(e.target.value)}
+    >
+      {organizations.map((org) => (
+        <option key={org.name} value={org.name}>
+          {org.displayName || org.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+```
+
+### How Org Resolution Works
+
+1. On authentication, the JWT `sub` claim is parsed to extract the primary org
+2. The SDK also attempts to fetch the full org list from the IAM API
+3. The current selection is persisted to `localStorage`
+4. Switching orgs clears the project selection
+
+## useIamToken
+
+Get a valid access token with auto-refresh capability.
+
+```tsx
+import { useIamToken } from "@hanzo/iam/react";
+
+function ApiClient() {
+  const { token, isValid, refresh } = useIamToken();
+
+  const fetchData = async () => {
+    let currentToken = token;
+    if (!isValid) {
+      currentToken = await refresh();
+    }
+    const res = await fetch("/api/data", {
+      headers: { Authorization: `Bearer ${currentToken}` },
+    });
+    return res.json();
+  };
+
+  return <button onClick={fetchData}>Fetch Data</button>;
+}
+```
+
+## Integration Pattern
+
+Here's a complete integration showing auth, org switching, and a WebSocket gateway:
+
+```tsx
+import { IamProvider, useIam, useOrganizations } from "@hanzo/iam/react";
+
+function App() {
+  return (
+    <IamProvider config={iamConfig}>
+      <AuthGuard>
+        <Dashboard />
+      </AuthGuard>
+    </IamProvider>
+  );
+}
+
+function AuthGuard({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading, login } = useIam();
+
+  if (isLoading) return <div>Loading...</div>;
+  if (!isAuthenticated) {
+    return <button onClick={() => login()}>Sign in with Hanzo</button>;
+  }
+  return <>{children}</>;
+}
+
+function Dashboard() {
+  const { user, logout, accessToken } = useIam();
+  const { organizations, currentOrgId, switchOrg } = useOrganizations();
+
+  // Pass accessToken and currentOrgId to your gateway/API client
+  // When switchOrg is called, components re-render with the new context
+
+  return (
+    <header>
+      <OrgSwitcher orgs={organizations} current={currentOrgId} onSwitch={switchOrg} />
+      <span>{user?.displayName}</span>
+      <button onClick={logout}>Sign out</button>
+    </header>
+  );
+}
+```

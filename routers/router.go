@@ -73,6 +73,13 @@ func InitAPI() {
 	web.Router("/api/get-default-application", &controllers.ApiController{}, "GET:GetDefaultApplication")
 	web.Router("/api/get-organization-names", &controllers.ApiController{}, "GET:GetOrganizationNames")
 
+	web.Router("/api/get-projects", &controllers.ApiController{}, "GET:GetProjects")
+	web.Router("/api/get-project", &controllers.ApiController{}, "GET:GetProject")
+	web.Router("/api/get-organization-projects", &controllers.ApiController{}, "GET:GetOrganizationProjects")
+	web.Router("/api/add-project", &controllers.ApiController{}, "POST:AddProject")
+	web.Router("/api/update-project", &controllers.ApiController{}, "POST:UpdateProject")
+	web.Router("/api/delete-project", &controllers.ApiController{}, "POST:DeleteProject")
+
 	web.Router("/api/get-groups", &controllers.ApiController{}, "GET:GetGroups")
 	web.Router("/api/get-group", &controllers.ApiController{}, "GET:GetGroup")
 	web.Router("/api/update-group", &controllers.ApiController{}, "POST:UpdateGroup")
@@ -243,6 +250,15 @@ func InitAPI() {
 	web.Router("/api/add-transaction", &controllers.ApiController{}, "POST:AddTransaction")
 	web.Router("/api/delete-transaction", &controllers.ApiController{}, "POST:DeleteTransaction")
 
+	// DEPRECATED (sunset 2026-06-01): Usage/billing endpoints are migrated to Commerce.
+	// Successor: https://commerce.hanzo.ai/api/v1/billing
+	// These routes remain active during the migration period but emit deprecation headers.
+	web.Router("/api/get-usage-records", &controllers.ApiController{}, "GET:GetUsageRecords")
+	web.Router("/api/get-user-usage-records", &controllers.ApiController{}, "GET:GetUserUsageRecords")
+	web.Router("/api/get-usage-summary", &controllers.ApiController{}, "GET:GetUsageSummary")
+	web.Router("/api/add-usage-record", &controllers.ApiController{}, "POST:AddUsageRecord")
+	web.Router("/api/add-usage-records", &controllers.ApiController{}, "POST:AddUsageRecords")
+
 	web.Router("/api/get-system-info", &controllers.ApiController{}, "GET:GetSystemInfo")
 	web.Router("/api/get-version-info", &controllers.ApiController{}, "GET:GetVersionInfo")
 	web.Router("/api/health", &controllers.ApiController{}, "GET:Health")
@@ -298,6 +314,7 @@ func InitAPI() {
 	web.Router("/api/login/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
 	web.Router("/api/login/oauth/refresh_token", &controllers.ApiController{}, "POST:RefreshToken")
 	web.Router("/api/login/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
+	web.Router("/api/login/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
 	web.Router("/api/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
 
 	// Hanzo OAuth aliases — clean paths for OIDC discovery
