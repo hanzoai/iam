@@ -1,0 +1,167 @@
+---
+title: Authentication
+description: JWT validation, OIDC discovery, and OAuth2 PKCE flows with @hanzo/iam.
+---
+
+# Authentication
+
+The IAM SDK provides both server-side JWT validation and browser-side OAuth2 PKCE flows.
+
+## JWT Validation (Server-side)
+
+Validate access tokens issued by Hanzo IAM using JWKS (JSON Web Key Set) discovery.
+
+```typescript
+import { validateToken } from "@hanzo/iam";
+
+const result = await validateToken(accessToken, {
+  serverUrl: "https://iam.hanzo.ai",
+  clientId: "my-app",
+});
+
+if (result.ok) {
+  // result.userId — e.g. "org-name/username"
+  // result.email — user's email
+  // result.name — display name
+  // result.claims — full JWT claims
+} else {
+  // result.reason — "iam_token_expired", "iam_signature_invalid", etc.
+}
+```
+
+### Validation Steps
+
+1. Fetches OIDC discovery from `/.well-known/openid-configuration`
+2. Retrieves JWKS signing keys (cached for 5 minutes)
+3. Verifies JWT signature, issuer, audience, and expiry
+4. Extracts user claims from the payload
+
+### Auth Result
+
+```typescript
+type IamAuthResult =
+  | {
+      ok: true;
+      userId: string;   // "org/username" format
+      email?: string;
+      name?: string;
+      avatar?: string;
+      owner: string;     // Organization name
+      claims: IamJwtClaims;
+    }
+  | {
+      ok: false;
+      reason: string;    // e.g. "iam_token_expired"
+    };
+```
+
+## Browser PKCE Flow
+
+For single-page applications, use `BrowserIamSdk` for OAuth2 PKCE login.
+
+```typescript
+import { BrowserIamSdk } from "@hanzo/iam/browser";
+
+const sdk = new BrowserIamSdk({
+  serverUrl: "https://iam.hanzo.ai",
+  clientId: "my-app",
+  redirectUri: `${window.location.origin}/auth/callback`,
+});
+```
+
+### Login via Redirect
+
+```typescript
+// Redirect the user to IAM login page
+await sdk.signinRedirect();
+
+// On the callback page (/auth/callback):
+const tokens = await sdk.handleCallback();
+// tokens.access_token, tokens.refresh_token, tokens.id_token
+```
+
+### Login via Popup
+
+```typescript
+const tokens = await sdk.signinPopup({ width: 600, height: 700 });
+```
+
+### Silent Authentication
+
+Check if the user has an active IAM session without prompting:
+
+```typescript
+const tokens = await sdk.signinSilent();
+if (tokens) {
+  // User is already logged in
+} else {
+  // User needs to log in interactively
+}
+```
+
+### Token Management
+
+```typescript
+// Get stored access token
+const token = sdk.getAccessToken();
+
+// Check expiry
+if (sdk.isTokenExpired()) {
+  const newTokens = await sdk.refreshAccessToken();
+}
+
+// Auto-refresh: gets a valid token, refreshing if needed
+const validToken = await sdk.getValidAccessToken();
+
+// Logout: clear all stored tokens
+sdk.clearTokens();
+```
+
+### Storage
+
+Tokens are stored in `sessionStorage` by default. Pass `localStorage` for persistence across tabs:
+
+```typescript
+const sdk = new BrowserIamSdk({
+  serverUrl: "https://iam.hanzo.ai",
+  clientId: "my-app",
+  redirectUri: "/auth/callback",
+  storage: localStorage,
+});
+```
+
+## Core Client
+
+The `IamClient` provides direct access to IAM API endpoints.
+
+```typescript
+import { IamClient } from "@hanzo/iam";
+
+const client = new IamClient({
+  serverUrl: "https://iam.hanzo.ai",
+  clientId: "my-app",
+  clientSecret: "secret", // For server-side (confidential client)
+});
+
+// OIDC discovery
+const discovery = await client.getDiscovery();
+
+// User info
+const user = await client.getUserInfo(accessToken);
+const userById = await client.getUser("org/username", token);
+
+// Organizations
+const orgs = await client.getOrganizations(token);
+const org = await client.getOrganization("admin/my-org", token);
+const userOrgs = await client.getUserOrganizations("org/username", token);
+
+// Token exchange (server-side)
+const tokens = await client.exchangeCode({
+  code: authorizationCode,
+  redirectUri: "https://app.example.com/callback",
+  codeVerifier: pkceVerifier,
+});
+
+// Token refresh
+const newTokens = await client.refreshToken(refreshToken);
+```

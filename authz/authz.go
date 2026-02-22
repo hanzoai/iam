@@ -111,6 +111,14 @@ p, *, *, GET, /api/get-transactions, *, *
 p, *, *, GET, /api/get-transaction, *, *
 p, *, *, GET, /api/get-provider, *, *
 p, *, *, GET, /api/get-organization-names, *, *
+p, *, *, GET, /api/get-project, *, *
+p, *, *, GET, /api/get-projects, *, *
+p, *, *, GET, /api/get-organization-projects, *, *
+p, *, *, GET, /api/get-usage-summary, *, *
+p, *, *, GET, /api/get-usage-records, *, *
+p, *, *, GET, /api/get-user-usage-records, *, *
+p, *, *, POST, /api/add-usage-record, *, *
+p, *, *, POST, /api/add-usage-records, *, *
 p, *, *, GET, /api/get-all-objects, *, *
 p, *, *, GET, /api/get-all-actions, *, *
 p, *, *, GET, /api/get-all-roles, *, *
@@ -198,7 +206,7 @@ func isAllowedInDemoMode(subOwner string, subName string, method string, urlPath
 			return true
 		} else if urlPath == "/api/update-user" {
 			// Allow ordinary users to update their own information
-			if (subOwner == objOwner && subName == objName || subOwner == "app") && !(subOwner == "hanzo" && subName == "admin") {
+			if (subOwner == objOwner && subName == objName || subOwner == "app") && !(subOwner == "admin" && subName == "admin") {
 				return true
 			}
 			return false

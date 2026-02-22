@@ -16,6 +16,7 @@ package routers
 
 import (
 	stdcontext "context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -36,6 +37,47 @@ type Response struct {
 	Msg    string      `json:"msg"`
 	Data   interface{} `json:"data"`
 	Data2  interface{} `json:"data2"`
+}
+
+const serviceTokenContextKey = "serviceTokenAuthenticated"
+
+func getUnifiedServiceToken() string {
+	for _, key := range []string{"HANZO_API_KEY", "KMS_SERVICE_TOKEN", "IAM_SERVICE_TOKEN"} {
+		token := strings.TrimSpace(conf.GetConfigString(key))
+		if token != "" {
+			return token
+		}
+	}
+
+	return ""
+}
+
+func isServiceTokenRoute(urlPath string) bool {
+	switch urlPath {
+	case "/api/get-user", "/api/add-usage-record", "/api/add-usage-records":
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidUnifiedServiceToken(token string) bool {
+	expected := getUnifiedServiceToken()
+	if expected == "" || token == "" {
+		return false
+	}
+
+	return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
+}
+
+func markServiceTokenAuthenticated(ctx *context.Context) {
+	ctx.Input.SetData(serviceTokenContextKey, true)
+}
+
+func isServiceTokenAuthenticated(ctx *context.Context) bool {
+	v := ctx.Input.GetData(serviceTokenContextKey)
+	b, ok := v.(bool)
+	return ok && b
 }
 
 func responseError(ctx *context.Context, error string, data ...interface{}) {

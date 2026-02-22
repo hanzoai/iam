@@ -21,7 +21,7 @@ import i18next from "i18next";
 export function renderStorageProviderFields(provider, updateProviderField) {
   return (
     <React.Fragment>
-      {["Local File System", "MinIO", "Tencent Cloud COS", "Google Cloud Storage", "Qiniu Cloud Kodo", "Synology", "Casdoor"].includes(provider.type) ? null : (
+      {["Local File System", "MinIO", "Tencent Cloud COS", "Google Cloud Storage", "Qiniu Cloud Kodo", "Synology", "Hanzo IAM"].includes(provider.type) ? null : (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={2}>
             {Setting.getLabel(i18next.t("provider:Endpoint (Intranet)"), i18next.t("provider:Region endpoint for Intranet"))} :
@@ -48,7 +48,7 @@ export function renderStorageProviderFields(provider, updateProviderField) {
       {["Local File System"].includes(provider.type) ? null : (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={2}>
-            {["Casdoor"].includes(provider.type) ?
+            {["Hanzo IAM"].includes(provider.type) ?
               Setting.getLabel(i18next.t("general:Provider"), i18next.t("general:Provider - Tooltip"))
               : Setting.getLabel(i18next.t("provider:Bucket"), i18next.t("provider:Bucket - Tooltip"))} :
           </Col>
@@ -69,7 +69,7 @@ export function renderStorageProviderFields(provider, updateProviderField) {
           }} />
         </Col>
       </Row>
-      {["Synology", "Casdoor"].includes(provider.type) ? null : (
+      {["Synology", "Hanzo IAM"].includes(provider.type) ? null : (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={2}>
             {Setting.getLabel(i18next.t("provider:Domain"), i18next.t("provider:Domain - Tooltip"))} :
@@ -81,7 +81,7 @@ export function renderStorageProviderFields(provider, updateProviderField) {
           </Col>
         </Row>
       )}
-      {["Casdoor"].includes(provider.type) ? (
+      {["Hanzo IAM"].includes(provider.type) ? (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={2}>
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
@@ -93,10 +93,10 @@ export function renderStorageProviderFields(provider, updateProviderField) {
           </Col>
         </Row>
       ) : null}
-      {["AWS S3", "Tencent Cloud COS", "Qiniu Cloud Kodo", "Casdoor", "CUCloud OSS", "MinIO"].includes(provider.type) ? (
+      {["AWS S3", "Tencent Cloud COS", "Qiniu Cloud Kodo", "Hanzo IAM", "CUCloud OSS", "MinIO"].includes(provider.type) ? (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={2}>
-            {["Casdoor"].includes(provider.type) ?
+            {["Hanzo IAM"].includes(provider.type) ?
               Setting.getLabel(i18next.t("general:Application"), i18next.t("general:Application - Tooltip")) :
               Setting.getLabel(i18next.t("provider:Region ID"), i18next.t("provider:Region ID - Tooltip"))} :
           </Col>
