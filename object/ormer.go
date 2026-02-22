@@ -27,11 +27,11 @@ import (
 
 	"github.com/beego/beego/v2/server/web"
 	xormadapter "github.com/casdoor/xorm-adapter/v3"
-	_ "github.com/denisenkom/go-mssqldb" // db = mssql
-	_ "github.com/go-sql-driver/mysql"   // db = mysql
+	_ "github.com/go-sql-driver/mysql"    // db = mysql
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	_ "github.com/lib/pq" // db = postgres
+	_ "github.com/lib/pq"                // db = postgres
+	_ "github.com/microsoft/go-mssqldb"  // db = mssql
 	"github.com/xorm-io/xorm"
 	"github.com/xorm-io/xorm/core"
 	"github.com/xorm-io/xorm/names"
@@ -62,6 +62,12 @@ func InitFlag() {
 	configPath = *configPathPtr
 	exportData = *exportDataPtr
 	exportFilePath = *exportFilePathPtr
+
+	// Load beego config from the specified config path
+	err := web.LoadAppConfig("ini", configPath)
+	if err != nil {
+		panic(fmt.Sprintf("failed to load config from %s: %v", configPath, err))
+	}
 }
 
 func ShouldExportData() bool {
