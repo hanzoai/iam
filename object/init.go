@@ -29,10 +29,10 @@ func InitDb() {
 	if !existed {
 		initHanzoPermission()
 		initHanzoProvider()
-		initHanzoUser()
 		initHanzoApplication()
 		initHanzoCert()
 		initHanzoLdap()
+		initHanzoUser()
 	}
 
 	existed = initHanzoApiModel()
