@@ -1,7 +1,7 @@
 # Minimal dev setup - just database services
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ghcr.io/hanzoai/sql:16-alpine
     ports:
       - "5432:5432"
     environment:
@@ -18,10 +18,10 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: ghcr.io/hanzoai/kv:latest
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes
+    command: valkey-server --appendonly yes
 
 volumes:
   postgres_dev:
