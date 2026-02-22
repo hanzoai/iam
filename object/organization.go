@@ -225,7 +225,7 @@ func UpdateOrganization(id string, organization *Organization, isGlobalAdmin boo
 		return false, nil
 	}
 
-	if name == "hanzo" {
+	if name == "admin" {
 		organization.Name = name
 	}
 
@@ -341,7 +341,7 @@ func deleteOrganization(organization *Organization) (bool, error) {
 }
 
 func DeleteOrganization(organization *Organization) (bool, error) {
-	if organization.Name == "hanzo" {
+	if organization.Name == "admin" {
 		return false, nil
 	}
 
@@ -586,6 +586,13 @@ func organizationChangeTrigger(oldName string, newName string) error {
 	resource := new(Resource)
 	resource.Owner = newName
 	_, err = session.Where("owner=?", oldName).Update(resource)
+	if err != nil {
+		return err
+	}
+
+	project := new(Project)
+	project.Organization = newName
+	_, err = session.Where("organization=?", oldName).Update(project)
 	if err != nil {
 		return err
 	}

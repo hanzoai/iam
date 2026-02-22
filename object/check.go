@@ -435,7 +435,7 @@ func CheckUserPermission(requestUserId, userId string, strict bool, lang string)
 		}
 
 		if targetUser == nil {
-			if strings.HasPrefix(requestUserId, "hanzo/") {
+			if strings.HasPrefix(requestUserId, "admin/") {
 				return true, nil
 			}
 
@@ -583,7 +583,7 @@ func CheckLoginPermission(userId string, application *Application) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if owner == "hanzo" {
+	if owner == "admin" {
 		return true, nil
 	}
 

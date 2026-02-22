@@ -148,6 +148,7 @@ func (c *ApiController) GetUser() {
 	email := c.Ctx.Input.Query("email")
 	phone := c.Ctx.Input.Query("phone")
 	userId := c.Ctx.Input.Query("userId")
+	accessKey := c.Ctx.Input.Query("accessKey")
 	owner := c.Ctx.Input.Query("owner")
 	var err error
 	var userFromUserId *object.User
@@ -168,6 +169,8 @@ func (c *ApiController) GetUser() {
 	var user *object.User
 	if id == "" && owner == "" {
 		switch {
+		case accessKey != "":
+			user, err = object.GetUserByAccessKey(accessKey)
 		case email != "":
 			user, err = object.GetUserByEmailOnly(email)
 		case phone != "":
@@ -181,6 +184,8 @@ func (c *ApiController) GetUser() {
 		}
 
 		switch {
+		case accessKey != "":
+			user, err = object.GetUserByAccessKey(accessKey)
 		case email != "":
 			user, err = object.GetUserByEmail(owner, email)
 		case phone != "":
@@ -209,7 +214,7 @@ func (c *ApiController) GetUser() {
 			return
 		}
 
-		if !organization.IsProfilePublic {
+		if !organization.IsProfilePublic && !c.IsServiceTokenAuthenticated() {
 			requestUserId := c.GetSessionUsername()
 			var hasPermission bool
 			hasPermission, err = object.CheckUserPermission(requestUserId, user.GetId(), false, c.GetAcceptLanguage())
@@ -310,7 +315,7 @@ func (c *ApiController) UpdateUser() {
 		return
 	}
 
-	if oldUser.Owner == "hanzo" && oldUser.Name == "admin" && (user.Owner != "hanzo" || user.Name != "admin") {
+	if oldUser.Owner == "admin" && oldUser.Name == "admin" && (user.Owner != "admin" || user.Name != "admin") {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
@@ -422,7 +427,7 @@ func (c *ApiController) DeleteUser() {
 		return
 	}
 
-	if user.Owner == "hanzo" && user.Name == "admin" {
+	if user.Owner == "admin" && user.Name == "admin" {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
