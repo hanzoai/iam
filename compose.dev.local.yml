@@ -21,7 +21,7 @@ services:
     image: ghcr.io/hanzoai/kv:latest
     ports:
       - "6379:6379"
-    command: valkey-server --appendonly yes
+    command: kv-server --appendonly yes
 
 volumes:
   postgres_dev:
