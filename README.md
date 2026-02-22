@@ -1,5 +1,5 @@
 <h1 align="center" style="border-bottom: none;">Hanzo IAM</h1>
-
+<h3 align="center">An open-source AI-first Identity and Access Management (IAM) /AI MCP gateway and auth server with web UI supporting MCP, A2A, OAuth 2.1, OIDC, SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA, Face ID, Google Workspace, Azure AD</h3>
 <p align="center">
 Identity and Access Management for the Hanzo ecosystem.<br/>
 UI-first centralized authentication / Single-Sign-On (SSO) platform built on
