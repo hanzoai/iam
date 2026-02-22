@@ -5,7 +5,7 @@
 # - iam-backend: Hanzo IAM backend (Go)
 # - caddy: Reverse proxy with SSL for multi-domain routing
 # - postgres: Hanzo SQL (PostgreSQL + pgvector)
-# - redis: Hanzo KV (Valkey)
+# - redis: Hanzo KV
 
 services:
   iam-backend:
@@ -96,11 +96,11 @@ services:
   redis:
     image: ghcr.io/hanzoai/kv:latest
     restart: unless-stopped
-    command: valkey-server --appendonly yes
+    command: kv-server --appendonly yes
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
+      test: ["CMD", "kv", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
