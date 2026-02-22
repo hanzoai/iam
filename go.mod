@@ -22,12 +22,6 @@ require (
 	github.com/beego/beego/v2 v2.3.8
 	github.com/beevik/etree v1.1.0
 	github.com/casbin/casbin/v2 v2.77.2
-	github.com/casdoor/go-sms-sender v0.25.0
-	github.com/casdoor/gomail/v2 v2.2.0
-	github.com/casdoor/ldapserver v1.2.0
-	github.com/casdoor/notify2 v1.6.0
-	github.com/casdoor/oss v1.8.0
-	github.com/casdoor/xorm-adapter/v3 v3.1.0
 	github.com/casvisor/casvisor-go-sdk v1.4.0
 	github.com/dchest/captcha v0.0.0-20200903113550-03f5f0333e1f
 	github.com/elimity-com/scim v0.0.0-20230426070224-941a5eac92f3
@@ -44,10 +38,17 @@ require (
 	github.com/go-webauthn/webauthn v0.10.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
+	github.com/hanzoid/go-sms-sender v0.26.0
+	github.com/hanzoid/gomail/v2 v2.4.0
+	github.com/hanzoid/ldapserver v1.3.0
+	github.com/hanzoid/notify2 v1.1.0
+	github.com/hanzoid/oss v1.9.0
+	github.com/hanzoid/xorm-adapter/v3 v3.2.0
 	github.com/json-iterator/go v1.1.12
 	github.com/lestrrat-go/jwx v1.2.29
 	github.com/lib/pq v1.10.9
 	github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3
+	github.com/luxfi/kms-go v0.5.98
 	github.com/markbates/goth v1.82.0
 	github.com/microsoft/go-mssqldb v1.9.0
 	github.com/mitchellh/mapstructure v1.5.0
@@ -115,7 +116,18 @@ require (
 	github.com/alibabacloud-go/tea-xml v1.1.3 // indirect
 	github.com/apistd/uni-go-sdk v0.0.2 // indirect
 	github.com/atc0005/go-teams-notify/v2 v2.13.0 // indirect
-
+	github.com/aws/aws-sdk-go-v2 v1.41.1 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.28.11 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.17.52 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.23 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.17 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.17 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.17 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.24.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.33.7 // indirect
 	github.com/aws/smithy-go v1.24.0 // indirect
 	github.com/baidubce/bce-sdk-go v0.9.156 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -123,7 +135,6 @@ require (
 	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bwmarrin/discordgo v0.28.1 // indirect
 	github.com/caarlos0/go-reddit/v3 v3.0.1 // indirect
-	github.com/casdoor/casdoor-go-sdk v0.50.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clbanning/mxj/v2 v2.7.0 // indirect
@@ -160,9 +171,11 @@ require (
 	github.com/go-pay/smap v0.0.2 // indirect
 	github.com/go-pay/xlog v0.0.3 // indirect
 	github.com/go-pay/xtime v0.0.2 // indirect
+	github.com/go-resty/resty/v2 v2.17.2 // indirect
 	github.com/go-test/deep v1.1.0 // indirect
 	github.com/go-webauthn/x v0.1.9 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
+	github.com/gofrs/flock v0.10.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
@@ -178,8 +191,10 @@ require (
 	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/gregdel/pushover v1.3.1 // indirect
+	github.com/hanzoid/go-sdk v1.45.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
@@ -208,6 +223,7 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/onsi/gomega v1.38.3 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
+	github.com/oracle/oci-go-sdk/v65 v65.108.2 // indirect
 	github.com/pingcap/errors v0.11.5-0.20210425183316-da1aaba5fb63 // indirect
 	github.com/pingcap/log v0.0.0-20210625125904-98ed8e2eb1c7 // indirect
 	github.com/pingcap/tidb/parser v0.0.0-20221126021158-6b02a5d8ba7d // indirect
@@ -231,6 +247,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/slack-go/slack v0.15.0 // indirect
+	github.com/sony/gobreaker v0.5.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/spyzhov/ajson v0.8.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
@@ -251,6 +268,7 @@ require (
 	github.com/volcengine/volc-sdk-golang v1.0.117 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.mau.fi/util v0.8.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -285,17 +303,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.8.2 // indirect
 )
-
-replace github.com/casdoor/go-sms-sender => github.com/hanzoid/go-sms-sender v0.25.0
-
-replace github.com/casdoor/gomail/v2 => github.com/hanzoid/gomail/v2 v2.2.0
-
-replace github.com/casdoor/ldapserver => github.com/hanzoid/ldapserver v1.2.0
-
-replace github.com/casdoor/oss => github.com/hanzoid/oss v1.8.0
-
-replace github.com/casdoor/xorm-adapter/v3 => github.com/hanzoid/xorm-adapter/v3 v3.1.0
-
-replace github.com/casdoor/casdoor-go-sdk => github.com/hanzoid/go-sdk v0.50.0
-
-replace github.com/casdoor/notify2 => github.com/hanzoid/notify2 v1.6.0

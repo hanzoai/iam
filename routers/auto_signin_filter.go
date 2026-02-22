@@ -53,6 +53,11 @@ func AutoSigninFilter(ctx *context.Context) {
 	}
 
 	if accessToken != "" {
+		if isServiceTokenRoute(urlPath) && isValidUnifiedServiceToken(accessToken) {
+			markServiceTokenAuthenticated(ctx)
+			return
+		}
+
 		token, err := object.GetTokenByAccessToken(accessToken)
 		if err != nil {
 			responseError(ctx, err.Error())

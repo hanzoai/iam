@@ -27,7 +27,7 @@ export function renderNotificationProviderFields(provider, updateProviderField, 
       {["CUCloud"].includes(provider.type) ? (
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={2}>
-            {["Casdoor"].includes(provider.type) ?
+            {["Hanzo IAM"].includes(provider.type) ?
               Setting.getLabel(i18next.t("general:Application"), i18next.t("general:Application - Tooltip")) :
               Setting.getLabel(i18next.t("provider:Region ID"), i18next.t("provider:Region ID - Tooltip"))} :
           </Col>

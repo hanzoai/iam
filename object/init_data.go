@@ -151,6 +151,7 @@ func readInitDataFromFile(filePath string) (*InitData, error) {
 	}
 
 	s := util.ReadStringFromPath(filePath)
+	s = resolveSecrets(s)
 
 	data := &InitData{
 		Organizations: []*Organization{},
