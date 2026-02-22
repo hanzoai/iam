@@ -19,8 +19,8 @@ import (
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/aliyun/credentials-go/credentials"
-	iamOss "github.com/casdoor/oss"
-	"github.com/casdoor/oss/aliyun"
+	iamOss "github.com/hanzoid/oss"
+	"github.com/hanzoid/oss/aliyun"
 )
 
 func NewAliyunOssStorageProvider(clientId string, clientSecret string, region string, bucket string, endpoint string) iamOss.StorageInterface {

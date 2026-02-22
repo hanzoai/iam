@@ -155,6 +155,9 @@ type Application struct {
 	FailedSigninFrozenTime int `json:"failedSigninFrozenTime"`
 	CodeResendTimeout      int `json:"codeResendTimeout"`
 
+	Environment string `xorm:"varchar(50)" json:"environment"` // dev, staging, production
+	Project     string `xorm:"varchar(100)" json:"project"`    // project within org
+
 	// Reverse proxy fields
 	Domain       string   `xorm:"varchar(100)" json:"domain"`
 	OtherDomains []string `xorm:"varchar(1000)" json:"otherDomains"`
@@ -736,7 +739,7 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 		return false, err
 	}
 
-	if application.IsShared == true && application.Organization != "hanzo" {
+	if application.IsShared == true && application.Organization != "admin" {
 		return false, fmt.Errorf("only applications belonging to built-in organization can be shared")
 	}
 
