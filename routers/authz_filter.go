@@ -296,6 +296,15 @@ func getImpersonateUser(ctx *context.Context, subOwner, subName, username string
 }
 
 func ApiFilter(ctx *context.Context) {
+	method := ctx.Request.Method
+	urlPath := getUrlPath(ctx)
+	if isServiceTokenAuthenticated(ctx) && isServiceTokenRoute(urlPath) {
+		ctx.Input.SetData("currentUserId", "service/token")
+		logLine := fmt.Sprintf("subOwner = service, subName = token, method = %s, urlPath = %s, obj.Owner = , obj.Name = , result = allow", method, urlPath)
+		fmt.Println(logLine)
+		util.LogInfo(ctx, logLine)
+		return
+	}
 	subOwner, subName := getSubject(ctx)
 	// stash current user info into request context for controllers
 	username := ""
@@ -305,8 +314,6 @@ func ApiFilter(ctx *context.Context) {
 	}
 	ctx.Input.SetData("currentUserId", username)
 
-	method := ctx.Request.Method
-	urlPath := getUrlPath(ctx)
 	extraInfo := getExtraInfo(ctx, urlPath)
 
 	objOwner, objName := "", ""

@@ -15,8 +15,8 @@
 package storage
 
 import (
-	"github.com/casdoor/oss"
-	"github.com/casdoor/oss/googlecloud"
+	"github.com/hanzoid/oss"
+	"github.com/hanzoid/oss/googlecloud"
 )
 
 func NewGoogleCloudStorageProvider(clientSecret string, bucket string, endpoint string) oss.StorageInterface {

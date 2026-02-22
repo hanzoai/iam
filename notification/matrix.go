@@ -15,9 +15,9 @@
 package notification
 
 import (
-	notify "github.com/casdoor/notify2"
-	"github.com/casdoor/notify2/service/matrix"
 	"github.com/hanzoai/iam/proxy"
+	notify "github.com/hanzoid/notify2"
+	"github.com/hanzoid/notify2/service/matrix"
 	"maunium.net/go/mautrix/id"
 )
 
