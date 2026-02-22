@@ -104,11 +104,10 @@ jobs:
           - 5432:5432
         options: --health-cmd="pg_isready -U hanzo -d hanzo_iam" --health-interval=10s --health-timeout=5s --health-retries=5
       redis:
-        # TODO: switch to ghcr.io/hanzoai/kv:latest once amd64 manifest is published
-        image: redis:7-alpine
+        image: ghcr.io/hanzoai/kv:latest
         ports:
           - 6379:6379
-        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+        options: --health-cmd="kv ping" --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
