@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"strings"
 
-	xormadapter "github.com/casdoor/xorm-adapter/v3"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
+	xormadapter "github.com/hanzoid/xorm-adapter/v3"
 	"github.com/xorm-io/core"
 	"github.com/xorm-io/xorm"
 )
@@ -228,7 +228,7 @@ func adapterChangeTrigger(oldName string, newName string) error {
 }
 
 func (adapter *Adapter) isBuiltIn() bool {
-	if adapter.Owner != "hanzo" {
+	if adapter.Owner != "admin" {
 		return false
 	}
 

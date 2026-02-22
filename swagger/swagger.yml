@@ -1,10 +1,12 @@
 swagger: "2.0"
 info:
-  title: Casdoor RESTful API
-  description: Swagger Docs of Casdoor Backend API
+  title: Hanzo IAM API
+  description: Hanzo IAM — Identity and Access Management (OAuth2, OIDC, SAML, Web3)
   version: 1.503.0
   contact:
-    email: casbin@googlegroups.com
+    name: Hanzo AI
+    email: dev@hanzo.ai
+    url: https://hanzo.ai
 basePath: /
 schemes:
 - https
