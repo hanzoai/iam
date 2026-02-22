@@ -26,12 +26,12 @@ import (
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 
 	"github.com/beego/beego/v2/server/web"
-	xormadapter "github.com/casdoor/xorm-adapter/v3"
-	_ "github.com/go-sql-driver/mysql"    // db = mysql
+	_ "github.com/go-sql-driver/mysql" // db = mysql
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	_ "github.com/lib/pq"                // db = postgres
-	_ "github.com/microsoft/go-mssqldb"  // db = mssql
+	xormadapter "github.com/hanzoid/xorm-adapter/v3"
+	_ "github.com/lib/pq"               // db = postgres
+	_ "github.com/microsoft/go-mssqldb" // db = mssql
 	"github.com/xorm-io/xorm"
 	"github.com/xorm-io/xorm/core"
 	"github.com/xorm-io/xorm/names"
@@ -461,6 +461,16 @@ func (a *Ormer) createTable() {
 	}
 
 	err = a.Engine.Sync2(new(Ticket))
+	if err != nil {
+		panic(err)
+	}
+
+	err = a.Engine.Sync2(new(UsageRecord))
+	if err != nil {
+		panic(err)
+	}
+
+	err = a.Engine.Sync2(new(Project))
 	if err != nil {
 		panic(err)
 	}

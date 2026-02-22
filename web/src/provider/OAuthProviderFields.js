@@ -90,7 +90,7 @@ export function renderOAuthProviderFields(provider, updateProviderField, renderU
       }
       {
         provider.type !== "ADFS" && provider.type !== "AzureAD"
-        && provider.type !== "AzureADB2C" && (provider.type !== "Casdoor" && provider.category !== "Storage")
+        && provider.type !== "AzureADB2C" && (provider.type !== "Hanzo IAM" && provider.category !== "Storage")
         && provider.type !== "Okta" && provider.type !== "Nextcloud" ? null : (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={2}>
