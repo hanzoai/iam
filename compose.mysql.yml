@@ -20,14 +20,14 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: ghcr.io/hanzoai/kv:latest
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes
+    command: valkey-server --appendonly yes
     volumes:
       - iam_redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5

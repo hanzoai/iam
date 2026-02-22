@@ -2,10 +2,10 @@
 # Production deployment for Digital Ocean
 #
 # Services:
-# - iam-backend: Casdoor/Hanzo IAM backend (Go)
+# - iam-backend: Hanzo IAM backend (Go)
 # - caddy: Reverse proxy with SSL for multi-domain routing
-# - postgres: PostgreSQL database
-# - redis: Session/cache storage
+# - postgres: Hanzo SQL (PostgreSQL + pgvector)
+# - redis: Hanzo KV (Valkey)
 
 services:
   iam-backend:
@@ -72,7 +72,7 @@ services:
       - iam-network
 
   postgres:
-    image: postgres:16-alpine
+    image: ghcr.io/hanzoai/sql:16-alpine
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-hanzo}
@@ -94,13 +94,13 @@ services:
       - iam-network
 
   redis:
-    image: redis:7-alpine
+    image: ghcr.io/hanzoai/kv:latest
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: valkey-server --appendonly yes
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
