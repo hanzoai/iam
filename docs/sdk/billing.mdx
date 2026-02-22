@@ -1,0 +1,141 @@
+---
+title: Billing
+description: Subscription management, plans, pricing, and payment APIs with the IAM billing client.
+---
+
+# Billing
+
+The `IamBillingClient` provides access to IAM's subscription, plan, pricing, and payment APIs.
+
+## Setup
+
+```typescript
+import { IamBillingClient } from "@hanzo/iam/billing";
+
+const billing = new IamBillingClient({
+  serverUrl: "https://iam.hanzo.ai",
+  clientId: "my-app",
+  clientSecret: process.env.IAM_CLIENT_SECRET, // for server-side
+  orgName: "my-org",
+});
+```
+
+## Subscriptions
+
+```typescript
+// List all subscriptions for the configured org
+const subs = await billing.getSubscriptions(token);
+
+// Get a specific subscription
+const sub = await billing.getSubscription("my-org/sub-name", token);
+
+// Get subscription for a specific user
+const userSub = await billing.getUserSubscription("my-org/username", token);
+
+// Check if an org has an active subscription
+const status = await billing.isSubscriptionActive("my-org", token);
+// status.active — boolean
+// status.subscription — IamSubscription | null
+// status.plan — IamPlan | null
+```
+
+## Plans
+
+```typescript
+// List all plans
+const plans = await billing.getPlans(token);
+
+// Get a specific plan
+const plan = await billing.getPlan("my-org/pro-plan", token);
+```
+
+## Pricing
+
+```typescript
+// List pricing configurations
+const pricings = await billing.getPricings(token);
+
+// Get specific pricing
+const pricing = await billing.getPricing("my-org/standard-pricing", token);
+```
+
+## Payments & Orders
+
+```typescript
+// List payments
+const payments = await billing.getPayments(token);
+const payment = await billing.getPayment("my-org/payment-id", token);
+
+// List orders
+const orders = await billing.getOrders(token);
+const order = await billing.getOrder("my-org/order-id", token);
+```
+
+## Subscription Status Check
+
+A common pattern for gating features based on subscription:
+
+```typescript
+import { IamBillingClient } from "@hanzo/iam/billing";
+
+async function checkAccess(orgName: string, token: string): Promise<boolean> {
+  const billing = new IamBillingClient({
+    serverUrl: "https://iam.hanzo.ai",
+    clientId: "my-app",
+  });
+
+  const { active, subscription, plan } = await billing.isSubscriptionActive(
+    orgName,
+    token,
+  );
+
+  if (!active) {
+    console.log("No active subscription");
+    return false;
+  }
+
+  console.log(`Plan: ${plan?.displayName}, State: ${subscription?.state}`);
+  return true;
+}
+```
+
+## Types
+
+```typescript
+type IamSubscription = {
+  owner: string;
+  name: string;
+  displayName?: string;
+  user?: string;
+  plan?: string;
+  pricing?: string;
+  startTime?: string;
+  endTime?: string;
+  duration?: number;
+  state?: "Active" | "Inactive" | "Expired" | "Cancelled" | string;
+};
+
+type IamPlan = {
+  owner: string;
+  name: string;
+  displayName?: string;
+  description?: string;
+  pricePerMonth?: number;
+  pricePerYear?: number;
+  currency?: string;
+  options?: string[];
+  isEnabled?: boolean;
+  role?: string;
+};
+
+type IamPricing = {
+  owner: string;
+  name: string;
+  displayName?: string;
+  description?: string;
+  plans?: string[];
+  isEnabled?: boolean;
+  application?: string;
+  trialDuration?: number;
+};
+```
