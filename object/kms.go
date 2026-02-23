@@ -57,14 +57,17 @@ func InitKMS() {
 }
 
 // resolveSecrets replaces ${SECRET_NAME} patterns in the input string with
-// values from the KMS secret cache. Unresolved placeholders are left as-is.
+// values from the KMS secret cache, falling back to environment variables.
+// Unresolved placeholders are left as-is.
 func resolveSecrets(s string) string {
-	if kmsSecretCache == nil {
-		return s
-	}
 	return secretPattern.ReplaceAllStringFunc(s, func(match string) string {
 		key := secretPattern.FindStringSubmatch(match)[1]
-		if val, ok := kmsSecretCache[key]; ok {
+		if kmsSecretCache != nil {
+			if val, ok := kmsSecretCache[key]; ok {
+				return val
+			}
+		}
+		if val := os.Getenv(key); val != "" {
 			return val
 		}
 		return match
