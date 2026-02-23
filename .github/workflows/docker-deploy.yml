@@ -166,13 +166,14 @@ jobs:
         with:
           token: ${{ steps.kms.outputs.do_token }}
 
-      - name: Configure kubectl
-        run: doctl kubernetes cluster kubeconfig save 1a153000-90a6-48ad-9375-7ef901a9bf7f
+      - name: Configure kubectl (hanzo-k8s)
+        run: doctl kubernetes cluster kubeconfig save hanzo-k8s
 
       - name: Deploy to K8s
         run: |
-          kubectl set image deployment/iam iam=${{ env.DOCKER_IMAGE }}:latest -n hanzo
-          kubectl rollout status deployment/iam -n hanzo --timeout=300s
+          kubectl -n hanzo set image deployment/iam \
+            iam=ghcr.io/hanzoai/iam:latest
+          kubectl -n hanzo rollout status deployment/iam --timeout=300s
 
       - name: Verify health
         run: |
