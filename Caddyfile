@@ -135,6 +135,28 @@ pars.id {
 	}
 }
 
+# Ad Nexus Organization Login (blue theme)
+id.ad.nexus {
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	reverse_proxy iam-backend:8000 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Org-Name "adnexus"
+	}
+
+	log {
+		output file /data/logs/id.ad.nexus.log
+		format json
+	}
+}
+
 # Alternative auth domains (redirect to main *.id domains)
 auth.hanzo.ai {
 	redir https://hanzo.id{uri} permanent
