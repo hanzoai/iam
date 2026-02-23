@@ -35,6 +35,10 @@ services:
       - "traefik.http.routers.iam-pars.rule=Host(`pars.id`)"
       - "traefik.http.routers.iam-pars.entrypoints=websecure"
       - "traefik.http.routers.iam-pars.tls.certresolver=letsencrypt"
+      # Ad Nexus - Advertising platform users
+      - "traefik.http.routers.iam-adnexus.rule=Host(`id.ad.nexus`)"
+      - "traefik.http.routers.iam-adnexus.entrypoints=websecure"
+      - "traefik.http.routers.iam-adnexus.tls.certresolver=letsencrypt"
       # Load balancer config
       - "traefik.http.services.iam.loadbalancer.server.port=8000"
     healthcheck:
