@@ -35,3 +35,5 @@ domains:
     type: ALIAS
   - domain: pars.id
     type: ALIAS
+  - domain: id.ad.nexus
+    type: ALIAS
