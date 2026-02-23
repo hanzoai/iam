@@ -1393,7 +1393,8 @@
         "https://app.hanzo.bot/api/auth/callback/hanzo-iam",
         "https://playground.hanzo.bot/auth/callback",
         "http://localhost:8080/auth/callback",
-        "http://localhost:5173/auth/callback"
+        "http://localhost:5173/auth/callback",
+        "http://127.0.0.1:1456/oauth-callback"
       ],
       "tokenFormat": "JWT",
       "tokenFields": [],
