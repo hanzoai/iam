@@ -201,6 +201,9 @@ func (c *ApiController) DeleteToken() {
 func (c *ApiController) GetOAuthToken() {
 	clientId := c.Ctx.Input.Query("client_id")
 	clientSecret := c.Ctx.Input.Query("client_secret")
+	assertion := c.Ctx.Input.Query("assertion")
+	clientAssertion := c.Ctx.Input.Query("client_assertion")
+	clientAssertionType := c.Ctx.Input.Query("client_assertion_type")
 	grantType := c.Ctx.Input.Query("grant_type")
 	code := c.Ctx.Input.Query("code")
 	verifier := c.Ctx.Input.Query("code_verifier")
@@ -235,6 +238,12 @@ func (c *ApiController) GetOAuthToken() {
 			}
 			if clientSecret == "" {
 				clientSecret = tokenRequest.ClientSecret
+			}
+			if clientAssertion == "" {
+				clientAssertion = tokenRequest.ClientAssertion
+			}
+			if clientAssertionType == "" {
+				clientAssertionType = tokenRequest.ClientAssertionType
 			}
 			if grantType == "" {
 				grantType = tokenRequest.GrantType
@@ -278,6 +287,9 @@ func (c *ApiController) GetOAuthToken() {
 			if resource == "" {
 				resource = tokenRequest.Resource
 			}
+			if assertion == "" {
+				assertion = tokenRequest.Assertion
+			}
 			if accessKey == "" {
 				accessKey = tokenRequest.AccessKey
 			}
@@ -295,6 +307,12 @@ func (c *ApiController) GetOAuthToken() {
 			}
 			if clientSecret == "" {
 				clientSecret = getFormValue(formValues, "client_secret")
+			}
+			if clientAssertion == "" {
+				clientAssertion = getFormValue(formValues, "client_assertion")
+			}
+			if clientAssertionType == "" {
+				clientAssertionType = getFormValue(formValues, "client_assertion_type")
 			}
 			if grantType == "" {
 				grantType = getFormValue(formValues, "grant_type")
@@ -335,6 +353,9 @@ func (c *ApiController) GetOAuthToken() {
 			if subjectTokenType == "" {
 				subjectTokenType = getFormValue(formValues, "subject_token_type")
 			}
+			if assertion == "" {
+				assertion = getFormValue(formValues, "assertion")
+			}
 			if audience == "" {
 				audience = getFormValue(formValues, "audience")
 			}
@@ -350,6 +371,7 @@ func (c *ApiController) GetOAuthToken() {
 		}
 	}
 
+	host := c.Ctx.Request.Host
 	if deviceCode != "" {
 		deviceAuthCache, ok := object.DeviceAuthMap.Load(deviceCode)
 		if !ok {
@@ -390,8 +412,7 @@ func (c *ApiController) GetOAuthToken() {
 		username = deviceAuthCacheCast.UserName
 	}
 
-	host := c.Ctx.Request.Host
-	token, err := object.GetOAuthToken(grantType, clientId, clientSecret, code, verifier, scope, nonce, username, password, host, refreshToken, tag, avatar, c.GetAcceptLanguage(), subjectToken, subjectTokenType, audience, resource, accessKey, accessSecretKey)
+	token, err := object.GetOAuthToken(grantType, clientId, clientSecret, code, verifier, scope, nonce, username, password, host, refreshToken, tag, avatar, c.GetAcceptLanguage(), subjectToken, subjectTokenType, assertion, clientAssertion, clientAssertionType, audience, resource, accessKey, accessSecretKey)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -456,7 +477,12 @@ func (c *ApiController) RefreshToken() {
 		}
 	}
 
-	refreshToken2, err := object.RefreshToken(grantType, refreshToken, scope, clientId, clientSecret, host)
+	ok, application, clientId, _, err := c.ValidateOAuth(true)
+	if err != nil || !ok {
+		return
+	}
+
+	refreshToken2, err := object.RefreshToken(application, grantType, refreshToken, scope, clientId, clientSecret, host)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -467,12 +493,83 @@ func (c *ApiController) RefreshToken() {
 	c.ServeJSON()
 }
 
-func (c *ApiController) ResponseTokenError(errorMsg string) {
+func (c *ApiController) ResponseTokenError(errorMsg string, errorDescription string) {
 	c.Data["json"] = &object.TokenError{
-		Error: errorMsg,
+		Error:            errorMsg,
+		ErrorDescription: errorDescription,
 	}
 	c.SetTokenErrorHttpStatus()
 	c.ServeJSON()
+}
+
+func (c *ApiController) ValidateOAuth(ignoreValidSecret bool) (ok bool, application *object.Application, clientId, clientSecret string, err error) {
+	reqClientId := c.Ctx.Input.Query("client_id")
+	reqClientSecret := c.Ctx.Input.Query("client_secret")
+	clientAssertion := c.Ctx.Input.Query("client_assertion")
+	clientAssertionType := c.Ctx.Input.Query("client_assertion_type")
+
+	if reqClientId == "" && clientAssertionType == "" {
+		var tokenRequest TokenRequest
+		if err := json.Unmarshal(c.Ctx.Input.RequestBody, &tokenRequest); err == nil {
+			reqClientId = tokenRequest.ClientId
+			reqClientSecret = tokenRequest.ClientSecret
+			clientAssertion = tokenRequest.ClientAssertion
+			clientAssertionType = tokenRequest.ClientAssertionType
+		} else if isFormEncoded(c.Ctx.Input.RequestBody) {
+			formValues := parseFormEncodedBody(c.Ctx.Input.RequestBody)
+			reqClientId = getFormValue(formValues, "client_id")
+			reqClientSecret = getFormValue(formValues, "client_secret")
+			clientAssertion = getFormValue(formValues, "client_assertion")
+			clientAssertionType = getFormValue(formValues, "client_assertion_type")
+		}
+	}
+
+	if clientAssertionType == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
+		ok, application, err = object.ValidateClientAssertion(clientAssertion, c.Ctx.Request.Host)
+		if err != nil {
+			c.ResponseTokenError(object.InvalidClient, err.Error())
+			return
+		}
+
+		if !ok || application == nil {
+			c.ResponseTokenError(object.InvalidClient, "client_assertion is invalid")
+			return
+		}
+
+		clientSecret = application.ClientSecret
+		clientId = application.ClientId
+		ok = true
+		return
+	}
+
+	if reqClientId == "" && reqClientSecret == "" {
+		clientId, clientSecret, ok = c.Ctx.Request.BasicAuth()
+		if !ok {
+			clientId = c.Ctx.Input.Query("client_id")
+			clientSecret = c.Ctx.Input.Query("client_secret")
+			if clientId == "" || clientSecret == "" {
+				c.ResponseTokenError(object.InvalidRequest, "")
+				return
+			}
+		}
+	} else {
+		clientId = reqClientId
+		clientSecret = reqClientSecret
+	}
+
+	application, err = object.GetApplicationByClientId(clientId)
+	if err != nil {
+		c.ResponseTokenError(object.InvalidClient, err.Error())
+		return
+	}
+
+	if application == nil || (application.ClientSecret != clientSecret && !ignoreValidSecret) {
+		c.ResponseTokenError(object.InvalidClient, c.T("token:Invalid application or wrong clientSecret"))
+		return
+	}
+
+	ok = true
+	return
 }
 
 // RevokeToken
@@ -480,7 +577,8 @@ func (c *ApiController) ResponseTokenError(errorMsg string) {
 // @Tag Token API
 // @Description Revoke an OAuth 2.0 token (access_token or refresh_token).
 // Implements RFC 7009 - OAuth 2.0 Token Revocation.
-// This endpoint supports both Basic Authorization and form-encoded client credentials.
+// This endpoint supports both Basic Authorization, JWT client assertion (RFC 7523),
+// and form-encoded client credentials.
 //
 // @Param token formData string true "The token to revoke"
 // @Param token_type_hint formData string false "Hint about the token type: access_token or refresh_token"
@@ -493,14 +591,13 @@ func (c *ApiController) RevokeToken() {
 	tokenValue := c.Ctx.Input.Query("token")
 	tokenTypeHint := c.Ctx.Input.Query("token_type_hint")
 
-	clientId, clientSecret, ok := c.Ctx.Request.BasicAuth()
-	if !ok {
-		clientId = c.Ctx.Input.Query("client_id")
-		clientSecret = c.Ctx.Input.Query("client_secret")
+	ok, _, clientId, _, err := c.ValidateOAuth(false)
+	if err != nil || !ok {
+		return
 	}
 
-	// Fall back to form-encoded body parsing if values are still missing
-	if (tokenValue == "" || clientId == "" || clientSecret == "") && isFormEncoded(c.Ctx.Input.RequestBody) {
+	// Fall back to form-encoded body parsing for token value
+	if tokenValue == "" && isFormEncoded(c.Ctx.Input.RequestBody) {
 		formValues := parseFormEncodedBody(c.Ctx.Input.RequestBody)
 		if tokenValue == "" {
 			tokenValue = getFormValue(formValues, "token")
@@ -508,29 +605,6 @@ func (c *ApiController) RevokeToken() {
 		if tokenTypeHint == "" {
 			tokenTypeHint = getFormValue(formValues, "token_type_hint")
 		}
-		if clientId == "" {
-			clientId = getFormValue(formValues, "client_id")
-		}
-		if clientSecret == "" {
-			clientSecret = getFormValue(formValues, "client_secret")
-		}
-	}
-
-	if !ok && (clientId == "" || clientSecret == "") {
-		c.ResponseTokenError(object.InvalidRequest)
-		return
-	}
-
-	// Validate client credentials
-	application, err := object.GetApplicationByClientId(clientId)
-	if err != nil {
-		c.ResponseTokenError(err.Error())
-		return
-	}
-
-	if application == nil || application.ClientSecret != clientSecret {
-		c.ResponseTokenError(c.T("token:Invalid application or wrong clientSecret"))
-		return
 	}
 
 	// RFC 7009: If the token is empty, respond with success
@@ -602,7 +676,7 @@ func (c *ApiController) RevokeToken() {
 // parameter representing an OAuth 2.0 token and returns a JSON document
 // representing the meta information surrounding the
 // token, including whether this token is currently active.
-// This endpoint only support Basic Authorization.
+// This endpoint support Basic Authorization and authorization defined in RFC 7523.
 //
 // @Param token formData string true "access_token's value or refresh_token's value"
 // @Param token_type_hint formData string true "the token type access_token or refresh_token"
@@ -612,39 +686,15 @@ func (c *ApiController) RevokeToken() {
 // @router /login/oauth/introspect [post]
 func (c *ApiController) IntrospectToken() {
 	tokenValue := c.Ctx.Input.Query("token")
-	clientId, clientSecret, ok := c.Ctx.Request.BasicAuth()
-	if !ok {
-		clientId = c.Ctx.Input.Query("client_id")
-		clientSecret = c.Ctx.Input.Query("client_secret")
-	}
 
-	// Fall back to form-encoded body parsing if values are still missing
-	if (tokenValue == "" || clientId == "" || clientSecret == "") && isFormEncoded(c.Ctx.Input.RequestBody) {
+	// Fall back to form-encoded body parsing for the token value
+	if tokenValue == "" && isFormEncoded(c.Ctx.Input.RequestBody) {
 		formValues := parseFormEncodedBody(c.Ctx.Input.RequestBody)
-		if tokenValue == "" {
-			tokenValue = getFormValue(formValues, "token")
-		}
-		if clientId == "" {
-			clientId = getFormValue(formValues, "client_id")
-		}
-		if clientSecret == "" {
-			clientSecret = getFormValue(formValues, "client_secret")
-		}
+		tokenValue = getFormValue(formValues, "token")
 	}
 
-	if !ok && (clientId == "" || clientSecret == "") {
-		c.ResponseTokenError(object.InvalidRequest)
-		return
-	}
-
-	application, err := object.GetApplicationByClientId(clientId)
-	if err != nil {
-		c.ResponseTokenError(err.Error())
-		return
-	}
-
-	if application == nil || application.ClientSecret != clientSecret {
-		c.ResponseTokenError(c.T("token:Invalid application or wrong clientSecret"))
+	ok, application, clientId, _, err := c.ValidateOAuth(false)
+	if err != nil || !ok {
 		return
 	}
 
@@ -662,7 +712,7 @@ func (c *ApiController) IntrospectToken() {
 	if tokenTypeHint != "" {
 		token, err = object.GetTokenByTokenValue(tokenValue, tokenTypeHint)
 		if err != nil {
-			c.ResponseTokenError(err.Error())
+			c.ResponseTokenError(object.InvalidRequest, err.Error())
 			return
 		}
 		if token == nil || token.ExpiresIn <= 0 {
@@ -682,7 +732,7 @@ func (c *ApiController) IntrospectToken() {
 	// Check if token has been revoked (RFC 7009)
 	revoked, err := object.IsTokenRevoked(tokenValue)
 	if err != nil {
-		c.ResponseTokenError(err.Error())
+		c.ResponseTokenError(object.InvalidRequest, err.Error())
 		return
 	}
 	if revoked {
@@ -744,7 +794,7 @@ func (c *ApiController) IntrospectToken() {
 	if tokenTypeHint == "" {
 		token, err = object.GetTokenByTokenValue(tokenValue, introspectionResponse.TokenType)
 		if err != nil {
-			c.ResponseTokenError(err.Error())
+			c.ResponseTokenError(object.InvalidRequest, err.Error())
 			return
 		}
 		if token == nil || token.ExpiresIn <= 0 {
@@ -756,7 +806,7 @@ func (c *ApiController) IntrospectToken() {
 	if token != nil {
 		application, err = object.GetApplication(fmt.Sprintf("%s/%s", token.Owner, token.Application))
 		if err != nil {
-			c.ResponseTokenError(err.Error())
+			c.ResponseTokenError(object.InvalidClient, err.Error())
 			return
 		}
 		if application == nil {
