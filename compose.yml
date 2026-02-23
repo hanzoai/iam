@@ -27,7 +27,7 @@ services:
 
       # Multi-tenant
       - ENABLE_MULTI_TENANT=true
-      - ALLOWED_ORIGINS=hanzo.id,zoo.id,lux.id,pars.id,iam.hanzo.ai
+      - ALLOWED_ORIGINS=hanzo.id,zoo.id,lux.id,pars.id,id.ad.nexus,ad.nexus,iam.hanzo.ai
 
       # Security
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
