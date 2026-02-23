@@ -99,15 +99,15 @@ jobs:
         env:
           POSTGRES_USER: hanzo
           POSTGRES_PASSWORD: hanzo123
-          POSTGRES_DB: hanzo
+          POSTGRES_DB: hanzo_iam
         ports:
           - 5432:5432
-        options: --health-cmd="pg_isready -U hanzo -d hanzo" --health-interval=10s --health-timeout=5s --health-retries=5
+        options: --health-cmd="pg_isready -U hanzo -d hanzo_iam" --health-interval=10s --health-timeout=5s --health-retries=5
       redis:
         image: ghcr.io/hanzoai/kv:latest
         ports:
           - 6379:6379
-        options: --health-cmd="kv ping" --health-interval=10s --health-timeout=5s --health-retries=5
+        options: --health-cmd="kv-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
