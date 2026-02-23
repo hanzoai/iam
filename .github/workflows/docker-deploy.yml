@@ -83,31 +83,6 @@ jobs:
           VERSION=$(cat version.txt 2>/dev/null || echo "latest")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Extract Docker Hub metadata
-        id: meta-dockerhub
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.DOCKER_IMAGE }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix={{branch}}-
-
-      - name: Build and push to Docker Hub
-        if: steps.dockerhub.outcome == 'success'
-        continue-on-error: true
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          target: STANDARD
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-dockerhub.outputs.tags }}
-          labels: ${{ steps.meta-dockerhub.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
       - name: Extract GHCR metadata
         id: meta-ghcr
         uses: docker/metadata-action@v5
@@ -119,7 +94,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix={{branch}}-
 
-      - name: Push to GHCR
+      - name: Build and push to GHCR
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -128,6 +103,31 @@ jobs:
           push: true
           tags: ${{ steps.meta-ghcr.outputs.tags }}
           labels: ${{ steps.meta-ghcr.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract Docker Hub metadata
+        id: meta-dockerhub
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix={{branch}}-
+
+      - name: Push to Docker Hub
+        if: steps.dockerhub.outcome == 'success'
+        continue-on-error: true
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: STANDARD
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-dockerhub.outputs.tags }}
+          labels: ${{ steps.meta-dockerhub.outputs.labels }}
           cache-from: type=gha
 
   deploy:
