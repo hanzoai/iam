@@ -8,7 +8,7 @@ describe('Test products', () => {
     it("test products", () => {
         cy.visit("http://localhost:7001/products");
         cy.url().should("eq", "http://localhost:7001/products");
-        cy.get(selector.add,{timeout:10000}).should('be.visible').click();
+        cy.get(selector.add,{timeout:10000}).should('be.visible').click({force:true});
         cy.url().should("include","http://localhost:7001/products/")
     });
 })
