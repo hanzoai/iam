@@ -8,7 +8,7 @@ describe('Test adapter', () => {
     it("test adapter", () => {
         cy.visit("http://localhost:7001/adapters");
         cy.url().should("eq", "http://localhost:7001/adapters");
-        cy.get(selector.add,{timeout:10000}).click();
+        cy.get(selector.add,{timeout:10000}).should('be.visible').click();
         cy.url().should("include","http://localhost:7001/adapters/hanzo/")
     });
 })
