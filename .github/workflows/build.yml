@@ -118,6 +118,8 @@ jobs:
         run: go build -o server .
         working-directory: ./
       - name: Start backend
+        env:
+          IAM_ADMIN_PASSWORD: "123"
         run: nohup ./server > /tmp/backend.log 2>&1 &
         working-directory: ./
       - name: Wait for backend to be ready
