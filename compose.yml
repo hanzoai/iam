@@ -1,11 +1,19 @@
-# Hanzo IAM Multi-Tenant Docker Compose
-# Production deployment for Digital Ocean
+# Hanzo IAM — Multi-Tenant Identity & Access Management
 #
-# Services:
-# - iam-backend: Hanzo IAM backend (Go)
-# - caddy: Reverse proxy with SSL for multi-domain routing
-# - postgres: Hanzo SQL (PostgreSQL + pgvector)
-# - redis: Hanzo KV
+# Docker Compose deployment with Caddy reverse proxy.
+# For K8s production, see: universe/infra/k8s/iam/
+#
+# Domains:
+#   iam.hanzo.ai   — Core IAM API
+#   hanzo.id       — Hanzo login
+#   lux.id         — Lux Network login
+#   zoo.id         — Zoo Labs login
+#   pars.id        — Pars login
+#   id.ad.nexus    — Ad Nexus login
+#   id.bootno.de   — Bootnode login
+#
+# Usage:
+#   docker compose up -d
 
 services:
   iam-backend:
@@ -15,21 +23,12 @@ services:
     image: ghcr.io/hanzoai/iam:latest
     restart: unless-stopped
     environment:
-      # Database
       - DATABASE_URL=postgres://${POSTGRES_USER:-hanzo}:${POSTGRES_PASSWORD:-hanzo}@postgres:5432/${POSTGRES_DB:-iam}?sslmode=disable
-
-      # Redis
       - REDIS_URL=redis://redis:6379
-
-      # IAM Config
       - IAM_ORIGIN=${IAM_ORIGIN:-https://iam.hanzo.ai}
       - IAM_APP_NAME=iam
-
-      # Multi-tenant
       - ENABLE_MULTI_TENANT=true
-      - ALLOWED_ORIGINS=hanzo.id,zoo.id,lux.id,pars.id,id.ad.nexus,ad.nexus,iam.hanzo.ai
-
-      # Security
+      - ALLOWED_ORIGINS=hanzo.id,zoo.id,lux.id,pars.id,id.ad.nexus,ad.nexus,id.bootno.de,iam.hanzo.ai
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     volumes:
       - ./init_data.json:/app/init_data.json:ro
@@ -49,10 +48,10 @@ services:
       resources:
         limits:
           cpus: '2'
-          memory: 1G
+          memory: 4G
         reservations:
           cpus: '0.5'
-          memory: 256M
+          memory: 512M
     networks:
       - iam-network
 
@@ -72,7 +71,7 @@ services:
       - iam-network
 
   postgres:
-    image: ghcr.io/hanzoai/sql:16-alpine
+    image: ghcr.io/hanzoai/sql:latest
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-hanzo}
