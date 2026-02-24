@@ -100,6 +100,8 @@ function getSigninButton(provider) {
     return <DouyinLoginButton text={text} align={"center"} />;
   } else if (provider.type === "Kwai") {
     return <KwaiLoginButton text={text} align={"center"} />;
+  } else if (provider.category === "Web3") {
+    return <LoginButton key={provider.type} type={provider.displayName || "Wallet"} logoUrl={getProviderLogoURL(provider)} style={{background: "#ffffff", color: "#000000"}} activeStyle={{background: "#ededee"}} />;
   } else {
     return <LoginButton key={provider.type} type={provider.type} logoUrl={getProviderLogoURL(provider)} />;
   }
