@@ -37,3 +37,7 @@ domains:
     type: ALIAS
   - domain: id.ad.nexus
     type: ALIAS
+  - domain: id.bootno.de
+    type: ALIAS
+  - domain: iam.hanzo.ai
+    type: ALIAS
