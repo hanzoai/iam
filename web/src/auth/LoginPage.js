@@ -929,7 +929,12 @@ class LoginPage extends React.Component {
           <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
           <Form.Item>
             {
-              application.providers.filter(providerItem => this.isProviderVisible(providerItem)).map((providerItem, id) => {
+              application.providers.filter(providerItem => this.isProviderVisible(providerItem)).sort((a, b) => {
+                // Web3 (Connect Wallet) first
+                const aWeb3 = a.provider.category === "Web3" ? 0 : 1;
+                const bWeb3 = b.provider.category === "Web3" ? 0 : 1;
+                return aWeb3 - bWeb3;
+              }).map((providerItem, id) => {
                 if (providerHint === providerItem.provider.name) {
                   goToLink(Provider.getAuthUrl(application, providerItem.provider, "signup"));
                   return;
