@@ -303,6 +303,22 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 	return resp
 }
 
+// OAuthAuthorizeRedirect redirects /oauth/authorize to the SPA login route
+// /login/oauth/authorize, preserving all query parameters. The OIDC discovery
+// document advertises /oauth/authorize as the authorization endpoint, but the
+// React SPA handles the login UI at /login/oauth/authorize.
+// @Title OAuthAuthorizeRedirect
+// @Tag Login API
+// @Description redirect to SPA login page for OAuth authorization
+// @router /oauth/authorize [get]
+func (c *ApiController) OAuthAuthorizeRedirect() {
+	target := "/login/oauth/authorize"
+	if qs := c.Ctx.Request.URL.RawQuery; qs != "" {
+		target += "?" + qs
+	}
+	c.Ctx.Redirect(http.StatusFound, target)
+}
+
 // GetApplicationLogin ...
 // @Title GetApplicationLogin
 // @Tag Login API
