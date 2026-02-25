@@ -318,6 +318,7 @@ func InitAPI() {
 	web.Router("/api/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
 
 	// Hanzo OAuth aliases — clean paths for OIDC discovery
+	web.Router("/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
 	web.Router("/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
 	web.Router("/oauth/refresh", &controllers.ApiController{}, "POST:RefreshToken")
 	web.Router("/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
