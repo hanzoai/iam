@@ -38,7 +38,7 @@ type Product struct {
 	IsRecharge            bool      `json:"isRecharge"`
 	RechargeOptions       []float64 `xorm:"varchar(500)" json:"rechargeOptions"`
 	DisableCustomRecharge bool      `json:"disableCustomRecharge"`
-	Providers             []string  `xorm:"varchar(255)" json:"providers"`
+	Providers             []string  `xorm:"mediumtext" json:"providers"`
 	SuccessUrl            string    `xorm:"varchar(1000)" json:"successUrl"`
 
 	State string `xorm:"varchar(100)" json:"state"`
