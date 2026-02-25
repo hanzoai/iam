@@ -31,7 +31,7 @@ type Payment struct {
 	Provider string `xorm:"varchar(100)" json:"provider"`
 	Type     string `xorm:"varchar(100)" json:"type"`
 	// Product Info
-	Products            []string `xorm:"varchar(1000)" json:"products"`
+	Products            []string `xorm:"mediumtext" json:"products"`
 	ProductsDisplayName string   `xorm:"varchar(1000)" json:"productsDisplayName"`
 	ProductName         string   `xorm:"varchar(1000)" json:"productName"`
 	ProductDisplayName  string   `xorm:"varchar(1000)" json:"productDisplayName"`

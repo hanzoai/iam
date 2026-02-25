@@ -30,7 +30,7 @@ type Order struct {
 	DisplayName string `xorm:"varchar(100)" json:"displayName"`
 
 	// Product Info
-	Products     []string      `xorm:"varchar(1000)" json:"products"` // Support for multiple products per order. Using varchar(1000) for simple JSON array storage; can be refactored to separate table if needed
+	Products     []string      `xorm:"mediumtext" json:"products"` // Support for multiple products per order. Using varchar(1000) for simple JSON array storage; can be refactored to separate table if needed
 	ProductInfos []ProductInfo `xorm:"mediumtext" json:"productInfos"`
 
 	// User Info

@@ -35,7 +35,7 @@ type Form struct {
 	DisplayName string      `xorm:"varchar(100)" json:"displayName"`
 	Type        string      `xorm:"varchar(100)" json:"type"`
 	Tag         string      `xorm:"varchar(100)" json:"tag"`
-	FormItems   []*FormItem `xorm:"varchar(5000)" json:"formItems"`
+	FormItems   []*FormItem `xorm:"mediumtext" json:"formItems"`
 }
 
 func GetMaskedForm(form *Form, isMaskEnabled bool) *Form {
