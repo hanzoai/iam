@@ -238,7 +238,7 @@ type User struct {
 
 	ManagedAccounts     []ManagedAccount `xorm:"managedAccounts blob" json:"managedAccounts"`
 	MfaAccounts         []MfaAccount     `xorm:"mfaAccounts blob" json:"mfaAccounts"`
-	MfaItems            []*MfaItem       `xorm:"varchar(300)" json:"mfaItems"`
+	MfaItems            []*MfaItem       `xorm:"mediumtext" json:"mfaItems"`
 	MfaRememberDeadline string           `xorm:"varchar(100)" json:"mfaRememberDeadline"`
 	NeedUpdatePassword  bool             `json:"needUpdatePassword"`
 	IpWhitelist         string           `xorm:"varchar(200)" json:"ipWhitelist"`
