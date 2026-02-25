@@ -134,7 +134,7 @@ type UserWithoutThirdIdp struct {
 
 	// WebauthnCredentials []webauthn.Credential `xorm:"webauthnCredentials blob" json:"webauthnCredentials"`
 	PreferredMfaType string   `xorm:"varchar(100)" json:"preferredMfaType"`
-	RecoveryCodes    []string `xorm:"varchar(1000)" json:"recoveryCodes"`
+	RecoveryCodes    []string `xorm:"mediumtext" json:"recoveryCodes"`
 	TotpSecret       string   `xorm:"varchar(100)" json:"totpSecret"`
 	MfaPhoneEnabled  bool     `json:"mfaPhoneEnabled"`
 	MfaEmailEnabled  bool     `json:"mfaEmailEnabled"`

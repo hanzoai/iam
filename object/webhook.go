@@ -38,9 +38,9 @@ type Webhook struct {
 	Method         string    `xorm:"varchar(100)" json:"method"`
 	ContentType    string    `xorm:"varchar(100)" json:"contentType"`
 	Headers        []*Header `xorm:"mediumtext" json:"headers"`
-	Events         []string  `xorm:"varchar(1000)" json:"events"`
-	TokenFields    []string  `xorm:"varchar(1000)" json:"tokenFields"`
-	ObjectFields   []string  `xorm:"varchar(1000)" json:"objectFields"`
+	Events         []string  `xorm:"mediumtext" json:"events"`
+	TokenFields    []string  `xorm:"mediumtext" json:"tokenFields"`
+	ObjectFields   []string  `xorm:"mediumtext" json:"objectFields"`
 	IsUserExtended bool      `json:"isUserExtended"`
 	SingleOrgOnly  bool      `json:"singleOrgOnly"`
 	IsEnabled      bool      `json:"isEnabled"`
