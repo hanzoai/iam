@@ -111,25 +111,25 @@ type Application struct {
 	OrgChoiceMode                string          `json:"orgChoiceMode"`
 	SamlReplyUrl                 string          `xorm:"varchar(500)" json:"samlReplyUrl"`
 	Providers                    []*ProviderItem `xorm:"mediumtext" json:"providers"`
-	SigninMethods                []*SigninMethod `xorm:"varchar(2000)" json:"signinMethods"`
-	SignupItems                  []*SignupItem   `xorm:"varchar(3000)" json:"signupItems"`
+	SigninMethods                []*SigninMethod `xorm:"mediumtext" json:"signinMethods"`
+	SignupItems                  []*SignupItem   `xorm:"mediumtext" json:"signupItems"`
 	SigninItems                  []*SigninItem   `xorm:"mediumtext" json:"signinItems"`
-	GrantTypes                   []string        `xorm:"varchar(1000)" json:"grantTypes"`
+	GrantTypes                   []string        `xorm:"mediumtext" json:"grantTypes"`
 	OrganizationObj              *Organization   `xorm:"-" json:"organizationObj"`
 	CertPublicKey                string          `xorm:"-" json:"certPublicKey"`
 	Tags                         []string        `xorm:"mediumtext" json:"tags"`
-	SamlAttributes               []*SamlItem     `xorm:"varchar(1000)" json:"samlAttributes"`
+	SamlAttributes               []*SamlItem     `xorm:"mediumtext" json:"samlAttributes"`
 	SamlHashAlgorithm            string          `xorm:"varchar(20)" json:"samlHashAlgorithm"`
 	IsShared                     bool            `json:"isShared"`
 	IpRestriction                string          `json:"ipRestriction"`
 
 	ClientId                string     `xorm:"varchar(100)" json:"clientId"`
 	ClientSecret            string     `xorm:"varchar(100)" json:"clientSecret"`
-	RedirectUris            []string   `xorm:"varchar(1000)" json:"redirectUris"`
+	RedirectUris            []string   `xorm:"mediumtext" json:"redirectUris"`
 	ForcedRedirectOrigin    string     `xorm:"varchar(100)" json:"forcedRedirectOrigin"`
 	TokenFormat             string     `xorm:"varchar(100)" json:"tokenFormat"`
 	TokenSigningMethod      string     `xorm:"varchar(100)" json:"tokenSigningMethod"`
-	TokenFields             []string   `xorm:"varchar(1000)" json:"tokenFields"`
+	TokenFields             []string   `xorm:"mediumtext" json:"tokenFields"`
 	TokenAttributes         []*JwtItem `xorm:"mediumtext" json:"tokenAttributes"`
 	ExpireInHours           float64    `json:"expireInHours"`
 	RefreshExpireInHours    float64    `json:"refreshExpireInHours"`
@@ -160,7 +160,7 @@ type Application struct {
 
 	// Reverse proxy fields
 	Domain       string   `xorm:"varchar(100)" json:"domain"`
-	OtherDomains []string `xorm:"varchar(1000)" json:"otherDomains"`
+	OtherDomains []string `xorm:"mediumtext" json:"otherDomains"`
 	UpstreamHost string   `xorm:"varchar(100)" json:"upstreamHost"`
 	SslMode      string   `xorm:"varchar(100)" json:"sslMode"`
 	SslCert      string   `xorm:"varchar(100)" json:"sslCert"`
