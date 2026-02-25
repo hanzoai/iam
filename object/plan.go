@@ -33,7 +33,7 @@ type Plan struct {
 	Currency         string   `xorm:"varchar(100)" json:"currency"`
 	Period           string   `xorm:"varchar(100)" json:"period"`
 	Product          string   `xorm:"varchar(100)" json:"product"`
-	PaymentProviders []string `xorm:"varchar(100)" json:"paymentProviders"` // payment providers for related product
+	PaymentProviders []string `xorm:"mediumtext" json:"paymentProviders"` // payment providers for related product
 	IsEnabled        bool     `json:"isEnabled"`
 	IsExclusive      bool     `json:"isExclusive"` // if true, a user can only have at most one subscription of this plan
 
