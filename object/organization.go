@@ -61,7 +61,7 @@ type Organization struct {
 	HasPrivilegeConsent    bool       `xorm:"bool" json:"hasPrivilegeConsent"`
 	PasswordType           string     `xorm:"varchar(100)" json:"passwordType"`
 	PasswordSalt           string     `xorm:"varchar(100)" json:"passwordSalt"`
-	PasswordOptions        []string   `xorm:"varchar(100)" json:"passwordOptions"`
+	PasswordOptions        []string   `xorm:"mediumtext" json:"passwordOptions"`
 	PasswordObfuscatorType string     `xorm:"varchar(100)" json:"passwordObfuscatorType"`
 	PasswordObfuscatorKey  string     `xorm:"varchar(100)" json:"passwordObfuscatorKey"`
 	PasswordExpireDays     int        `json:"passwordExpireDays"`
@@ -70,7 +70,7 @@ type Organization struct {
 	DefaultApplication     string     `xorm:"varchar(100)" json:"defaultApplication"`
 	UserTypes              []string   `xorm:"mediumtext" json:"userTypes"`
 	Tags                   []string   `xorm:"mediumtext" json:"tags"`
-	Languages              []string   `xorm:"varchar(255)" json:"languages"`
+	Languages              []string   `xorm:"mediumtext" json:"languages"`
 	ThemeData              *ThemeData `xorm:"json" json:"themeData"`
 	MasterPassword         string     `xorm:"varchar(200)" json:"masterPassword"`
 	DefaultPassword        string     `xorm:"varchar(200)" json:"defaultPassword"`
@@ -87,7 +87,7 @@ type Organization struct {
 	UserNavItems           []string   `xorm:"mediumtext" json:"userNavItems"`
 	WidgetItems            []string   `xorm:"mediumtext" json:"widgetItems"`
 
-	MfaItems           []*MfaItem     `xorm:"varchar(300)" json:"mfaItems"`
+	MfaItems           []*MfaItem     `xorm:"mediumtext" json:"mfaItems"`
 	MfaRememberInHours int            `json:"mfaRememberInHours"`
 	AccountMenu        string         `xorm:"varchar(20)" json:"accountMenu"`
 	AccountItems       []*AccountItem `xorm:"mediumtext" json:"accountItems"`
