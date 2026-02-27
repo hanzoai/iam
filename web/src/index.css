@@ -273,6 +273,71 @@ footer {
   color: var(--hanzo-text-muted) !important;
 }
 
+/* Password eye toggle icon - must be clearly visible */
+.ant-input-password .ant-input-suffix .anticon,
+.ant-input-affix-wrapper .ant-input-suffix .anticon-eye,
+.ant-input-affix-wrapper .ant-input-suffix .anticon-eye-invisible {
+  color: var(--hanzo-text) !important;
+  font-size: 16px !important;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+
+.ant-input-password .ant-input-suffix .anticon:hover,
+.ant-input-affix-wrapper .ant-input-suffix .anticon-eye:hover,
+.ant-input-affix-wrapper .ant-input-suffix .anticon-eye-invisible:hover {
+  opacity: 1;
+}
+
+/* Provider buttons - consistent dark theme for all social/wallet buttons */
+.provider-big-img button,
+.provider-big-img [class*="Button"] {
+  background: var(--hanzo-input-bg) !important;
+  border: 1px solid var(--hanzo-border) !important;
+  color: var(--hanzo-text) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.provider-big-img button:hover,
+.provider-big-img [class*="Button"]:hover {
+  background: rgb(255 255 255 / 8%) !important;
+  border-color: var(--hanzo-primary) !important;
+}
+
+/* Wallet button text color fix */
+.provider-big-img button span,
+.provider-big-img [class*="Button"] span {
+  color: var(--hanzo-text) !important;
+}
+
+/* Small provider icons */
+.provider-img {
+  border-radius: 6px;
+  transition: opacity 0.2s;
+}
+
+.provider-img:hover {
+  opacity: 0.8;
+}
+
+/* Phone/email toggle inside input */
+.login-input-mode-toggle {
+  cursor: pointer;
+  padding: 0 4px;
+  color: var(--hanzo-text-muted) !important;
+  transition: color 0.2s;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.login-input-mode-toggle:hover {
+  color: var(--hanzo-text) !important;
+}
+
 /* Select dropdown */
 .ant-select-dropdown {
   background-color: var(--hanzo-bg-card) !important;
