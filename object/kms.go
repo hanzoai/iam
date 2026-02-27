@@ -84,12 +84,12 @@ func fetchKMSSecrets() map[string]string {
 
 	projectSlug := conf.GetConfigString("kmsProjectSlug")
 	if projectSlug == "" {
-		projectSlug = "iam"
+		projectSlug = "hanzo-iam"
 	}
 
 	environment := conf.GetConfigString("kmsEnvironment")
 	if environment == "" {
-		environment = "production"
+		environment = "prod"
 	}
 
 	clientId, clientSecret := getKMSAuth()
