@@ -5,8 +5,8 @@
   --hanzo-border: #262626;
   --hanzo-text: #fafafa;
   --hanzo-text-muted: #a3a3a3;
-  --hanzo-primary: #fd4444;  /* Hanzo AI Red */
-  --hanzo-primary-hover: #e03e3e;
+  --hanzo-primary: #fff;
+  --hanzo-primary-hover: #d4d4d4;
   --hanzo-input-bg: #171717;
 }
 
@@ -191,14 +191,14 @@ label,
 .ant-input-affix-wrapper:focus,
 .ant-input-affix-wrapper-focused {
   border-color: var(--hanzo-primary) !important;
-  box-shadow: 0 0 0 2px rgb(253 68 68 / 20%) !important;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 15%) !important;
 }
 
-/* Primary Button - Hanzo Red */
+/* Primary Button - Monochrome */
 .ant-btn-primary {
   background: var(--hanzo-primary) !important;
   border-color: var(--hanzo-primary) !important;
-  color: white !important;
+  color: #0a0a0a !important;
   border-radius: 8px !important;
   font-weight: 500 !important;
 }
@@ -285,7 +285,7 @@ footer {
 
 .ant-select-item-option-active,
 .ant-select-item-option-selected {
-  background-color: rgb(253 68 68 / 10%) !important;
+  background-color: rgb(255 255 255 / 8%) !important;
 }
 
 /* Dropdown menu (language selector, etc.) */
@@ -300,7 +300,7 @@ footer {
 }
 
 .ant-dropdown-menu-item:hover {
-  background-color: rgb(253 68 68 / 10%) !important;
+  background-color: rgb(255 255 255 / 8%) !important;
 }
 
 /* Message/Toast */
@@ -338,7 +338,7 @@ footer {
 
 .ant-menu-item:hover,
 .ant-menu-item-selected {
-  background-color: rgb(253 68 68 / 10%) !important;
+  background-color: rgb(255 255 255 / 8%) !important;
   color: var(--hanzo-primary) !important;
 }
 
@@ -365,7 +365,7 @@ footer {
 }
 
 .ant-table-tbody > tr:hover > td {
-  background: rgb(253 68 68 / 5%) !important;
+  background: rgb(255 255 255 / 5%) !important;
 }
 
 /* Tooltip */
@@ -493,8 +493,8 @@ code {
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(circle at 25% 25%, rgb(253 68 68 / 3%) 0%, transparent 50%),
-    radial-gradient(circle at 75% 75%, rgb(253 68 68 / 3%) 0%, transparent 50%);
+    radial-gradient(circle at 25% 25%, rgb(255 255 255 / 2%) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgb(255 255 255 / 2%) 0%, transparent 50%);
   pointer-events: none;
 }
 
@@ -510,7 +510,7 @@ code {
 .showcase-orb-1 {
   width: 400px;
   height: 400px;
-  background: rgb(253 68 68 / 15%);
+  background: rgb(255 255 255 / 10%);
   top: -100px;
   right: -100px;
   animation-delay: 0s;
@@ -519,7 +519,7 @@ code {
 .showcase-orb-2 {
   width: 300px;
   height: 300px;
-  background: rgb(253 68 68 / 10%);
+  background: rgb(255 255 255 / 8%);
   bottom: -50px;
   left: -50px;
   animation-delay: -10s;
@@ -565,10 +565,10 @@ code {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgb(253 68 68 / 10%);
-  border: 1px solid rgb(253 68 68 / 20%);
+  background: rgb(255 255 255 / 8%);
+  border: 1px solid rgb(255 255 255 / 15%);
   border-radius: 24px;
-  color: #fd4444 !important;
+  color: #fff !important;
   font-size: 13px;
   font-weight: 500;
   margin-bottom: 20px;
@@ -577,7 +577,7 @@ code {
 .showcase-sparkle {
   width: 16px;
   height: 16px;
-  color: #fd4444;
+  color: #fff;
 }
 
 .showcase-title {
@@ -614,7 +614,7 @@ code {
 .showcase-indicator {
   width: 8px;
   height: 8px;
-  background: #fd4444;
+  background: #fff;
   border-radius: 50%;
   margin-top: 6px;
   animation: pulse 2s ease-in-out infinite;
@@ -669,7 +669,7 @@ code {
   display: inline-block;
   width: 2px;
   height: 18px;
-  background: #fd4444;
+  background: #fff;
   margin-left: 2px;
   vertical-align: text-bottom;
   animation: blink 1s step-end infinite;
@@ -710,8 +710,8 @@ code {
 }
 
 .showcase-action-btn:hover {
-  border-color: #fd4444;
-  color: #fd4444;
+  border-color: #fff;
+  color: #fff;
 }
 
 .showcase-generate-btn {
@@ -719,10 +719,10 @@ code {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: #fd4444;
+  background: #fff;
   border: none;
   border-radius: 8px;
-  color: white;
+  color: #0a0a0a;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -730,7 +730,7 @@ code {
 }
 
 .showcase-generate-btn:hover {
-  background: #e03e3e;
+  background: #d4d4d4;
   transform: translateY(-1px);
 }
 
@@ -753,7 +753,7 @@ code {
   position: absolute;
   top: 20px;
   left: 20px;
-  color: #fd4444;
+  color: #fff;
   opacity: 0.3;
 }
 
@@ -778,11 +778,11 @@ code {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #fd4444, #e03e3e);
+  background: linear-gradient(135deg, #fff, #d4d4d4);
   border-radius: 50%;
   font-size: 12px;
   font-weight: 600;
-  color: white;
+  color: #0a0a0a;
 }
 
 .showcase-author-info {
@@ -821,10 +821,10 @@ code {
 }
 
 .showcase-dot:hover {
-  border-color: #fd4444;
+  border-color: #fff;
 }
 
 .showcase-dot.active {
-  background: #fd4444;
-  border-color: #fd4444;
+  background: #fff;
+  border-color: #fff;
 }
