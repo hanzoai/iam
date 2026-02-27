@@ -21,6 +21,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/beego/beego/v2/core/logs"
 	goldap "github.com/go-ldap/ldap/v3"
 	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/form"
@@ -265,8 +266,11 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 		}
 	}
 
-	if !credManager.IsPasswordCorrect(password, user.Password, organization.PasswordSalt) &&
-		!credManager.IsPasswordCorrect(password, user.Password, user.PasswordSalt) {
+	matchOrgSalt := credManager.IsPasswordCorrect(password, user.Password, organization.PasswordSalt)
+	matchUserSalt := credManager.IsPasswordCorrect(password, user.Password, user.PasswordSalt)
+	if !matchOrgSalt && !matchUserSalt {
+		logs.Warning("CheckPassword failed for %s/%s: passwordType=%s hashLen=%d orgSalt=%q userSalt=%q matchOrg=%v matchUser=%v",
+			user.Owner, user.Name, passwordType, len(user.Password), organization.PasswordSalt, user.PasswordSalt, matchOrgSalt, matchUserSalt)
 		return recordSigninErrorInfo(user, lang, enableCaptcha)
 	}
 
