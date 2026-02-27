@@ -101,7 +101,7 @@ function getSigninButton(provider) {
   } else if (provider.type === "Kwai") {
     return <KwaiLoginButton text={text} align={"center"} />;
   } else if (provider.category === "Web3") {
-    return <LoginButton key={provider.type} type={provider.displayName || "Wallet"} logoUrl={getProviderLogoURL(provider)} style={{background: "#ffffff", color: "#000000"}} activeStyle={{background: "#ededee"}} />;
+    return <LoginButton key={provider.type} type={provider.displayName || "Wallet"} logoUrl={getProviderLogoURL(provider)} style={{background: "#171717", color: "#fafafa", border: "1px solid #262626"}} activeStyle={{background: "#262626"}} />;
   } else {
     return <LoginButton key={provider.type} type={provider.type} logoUrl={getProviderLogoURL(provider)} />;
   }
