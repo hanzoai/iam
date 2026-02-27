@@ -27,7 +27,7 @@ export const DefaultLanguage = "en";
 export const InitThemeAlgorithm = true;
 export const ThemeDefault = {
   themeType: "dark",
-  colorPrimary: "#fd4444",
+  colorPrimary: "#ffffff",
   borderRadius: 6,
   isCompact: false,
 };
@@ -35,7 +35,7 @@ export const ThemeDefault = {
 // Custom footer for Hanzo branding
 export const CustomFooter = (
   <span style={{color: "#a3a3a3", fontSize: "14px"}}>
-    Powered by <a href="https://hanzo.ai" target="_blank" rel="noreferrer" style={{color: "#fd4444", fontWeight: 500}}>Hanzo AI</a>
+    Powered by <a href="https://hanzo.ai" target="_blank" rel="noreferrer" style={{color: "#ffffff", fontWeight: 500}}>Hanzo AI</a>
   </span>
 );
 
