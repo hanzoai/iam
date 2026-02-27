@@ -20,8 +20,8 @@ import (
 )
 
 func TestWelcomeCreditConstants(t *testing.T) {
-	if WelcomeCreditAmount != 5.00 {
-		t.Errorf("WelcomeCreditAmount = %v, want 5.00", WelcomeCreditAmount)
+	if WelcomeCreditAmount != 0 {
+		t.Errorf("WelcomeCreditAmount = %v, want 0 (credit granted by Commerce on payment method add)", WelcomeCreditAmount)
 	}
 	if WelcomeCreditCurrency != "USD" {
 		t.Errorf("WelcomeCreditCurrency = %q, want \"USD\"", WelcomeCreditCurrency)
@@ -41,6 +41,14 @@ func TestWelcomeCreditNilUser(t *testing.T) {
 	}
 	if err.Error() != "user is nil" {
 		t.Errorf("unexpected error message: %s", err.Error())
+	}
+}
+
+func TestWelcomeCreditZeroAmountReturnsNil(t *testing.T) {
+	user := &User{Owner: "test-org", Name: "test-user"}
+	err := GrantWelcomeCredit(user, "en")
+	if err != nil {
+		t.Errorf("expected nil error for zero credit amount, got: %v", err)
 	}
 }
 
