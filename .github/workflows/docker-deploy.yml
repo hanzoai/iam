@@ -24,6 +24,7 @@ jobs:
 
       - name: Fetch CI secrets from Hanzo KMS
         id: kms
+        continue-on-error: true
         env:
           KMS_CLIENT_ID: ${{ secrets.KMS_CLIENT_ID }}
           KMS_CLIENT_SECRET: ${{ secrets.KMS_CLIENT_SECRET }}
@@ -40,7 +41,7 @@ jobs:
           )"
 
           [ -n "${ACCESS_TOKEN}" ] && [ "${ACCESS_TOKEN}" != "null" ] || {
-            echo "::error::Failed to authenticate to Hanzo KMS"; exit 1; }
+            echo "::warning::Failed to authenticate to Hanzo KMS — Docker Hub push will be skipped"; exit 1; }
 
           fetch_secret() {
             curl -fsS "${KMS_URL}/api/v3/secrets/raw/${1}?workspaceSlug=gitops&environment=prod&secretPath=/ci&viewSecretValue=true&include_imports=true" \
@@ -50,7 +51,7 @@ jobs:
 
           for name in DOCKERHUB_USERNAME DOCKERHUB_TOKEN DIGITALOCEAN_ACCESS_TOKEN; do
             val="$(fetch_secret "$name")"
-            [ -n "$val" ] && [ "$val" != "null" ] || { echo "::error::Missing KMS secret $name"; exit 1; }
+            [ -n "$val" ] && [ "$val" != "null" ] || { echo "::warning::Missing KMS secret $name"; exit 1; }
             echo "::add-mask::${val}"
             echo "${name}=${val}" >> "$GITHUB_OUTPUT"
           done
@@ -63,6 +64,7 @@ jobs:
 
       - name: Log in to Docker Hub
         id: dockerhub
+        if: steps.kms.outcome == 'success'
         continue-on-error: true
         uses: docker/login-action@v3
         with:
@@ -137,6 +139,7 @@ jobs:
     steps:
       - name: Fetch deploy secrets from Hanzo KMS
         id: kms
+        continue-on-error: true
         env:
           KMS_CLIENT_ID: ${{ secrets.KMS_CLIENT_ID }}
           KMS_CLIENT_SECRET: ${{ secrets.KMS_CLIENT_SECRET }}
@@ -162,24 +165,32 @@ jobs:
           echo "do_token=${DO_TOKEN}" >> "$GITHUB_OUTPUT"
 
       - name: Install doctl
+        if: steps.kms.outcome == 'success'
         uses: digitalocean/action-doctl@v2
         with:
           token: ${{ steps.kms.outputs.do_token }}
 
       - name: Configure kubectl (hanzo-k8s)
+        if: steps.kms.outcome == 'success'
         run: doctl kubernetes cluster kubeconfig save hanzo-k8s
 
       - name: Deploy to K8s
+        if: steps.kms.outcome == 'success'
         run: |
           kubectl -n hanzo set image deployment/iam \
             iam=ghcr.io/hanzoai/iam:latest
           kubectl -n hanzo rollout status deployment/iam --timeout=300s
 
       - name: Verify health
+        if: steps.kms.outcome == 'success'
         run: |
           kubectl wait --for=condition=available deployment/iam -n hanzo --timeout=120s
           POD=$(kubectl get pod -n hanzo -l app=iam -o jsonpath='{.items[0].metadata.name}')
           kubectl exec "$POD" -n hanzo -- wget -qO- http://localhost:8000/api/health
+
+      - name: Skip deploy notification
+        if: steps.kms.outcome != 'success'
+        run: echo "::warning::Deploy skipped — KMS unavailable. Deploy manually with kubectl."
 
   notify:
     needs: [build, deploy]
