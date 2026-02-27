@@ -14,7 +14,7 @@
 
 import React, {Suspense, lazy} from "react";
 import {Button, Checkbox, Col, Form, Input, Result, Spin, Tabs, message} from "antd";
-import {ArrowLeftOutlined, LockOutlined, UserOutlined} from "@ant-design/icons";
+import {ArrowLeftOutlined, LockOutlined, MailOutlined, PhoneOutlined, UserOutlined} from "@ant-design/icons";
 import {withRouter} from "react-router-dom";
 import * as UserWebauthnBackend from "../backend/UserWebauthnBackend";
 import OrganizationSelect from "../common/select/OrganizationSelect";
@@ -824,7 +824,28 @@ class LoginPage extends React.Component {
             <Input
               id="input"
               className="login-username-input"
-              prefix={<UserOutlined className="site-form-item-icon" />}
+              prefix={this.state.loginMethod === "verificationCodePhone"
+                ? <PhoneOutlined className="site-form-item-icon" />
+                : this.state.loginMethod === "verificationCodeEmail"
+                  ? <MailOutlined className="site-form-item-icon" />
+                  : <UserOutlined className="site-form-item-icon" />}
+              suffix={this.state.loginMethod?.includes("verificationCode") ? (
+                <span
+                  className="login-input-mode-toggle"
+                  title={this.state.loginMethod === "verificationCodePhone" ? i18next.t("login:Switch to email") : i18next.t("login:Switch to phone")}
+                  onClick={() => {
+                    this.setState({
+                      loginMethod: this.state.loginMethod === "verificationCodePhone"
+                        ? "verificationCodeEmail"
+                        : "verificationCodePhone",
+                    });
+                  }}
+                >
+                  {this.state.loginMethod === "verificationCodePhone"
+                    ? <MailOutlined />
+                    : <PhoneOutlined />}
+                </span>
+              ) : null}
               placeholder={this.getPlaceholder(signinItem.placeholder)}
               onChange={e => {
                 this.setState({
@@ -930,10 +951,14 @@ class LoginPage extends React.Component {
           <Form.Item>
             {
               application.providers.filter(providerItem => this.isProviderVisible(providerItem)).sort((a, b) => {
-                // Web3 (Connect Wallet) first
-                const aWeb3 = a.provider.category === "Web3" ? 0 : 1;
-                const bWeb3 = b.provider.category === "Web3" ? 0 : 1;
-                return aWeb3 - bWeb3;
+                // Wallet first, then Google, then GitHub, then others
+                const order = (p) => {
+                  if (p.provider.category === "Web3") {return 0;}
+                  if (p.provider.type === "Google") {return 1;}
+                  if (p.provider.type === "GitHub") {return 2;}
+                  return 3;
+                };
+                return order(a) - order(b);
               }).map((providerItem, id) => {
                 if (providerHint === providerItem.provider.name) {
                   goToLink(Provider.getAuthUrl(application, providerItem.provider, "signup"));
