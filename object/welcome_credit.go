@@ -23,7 +23,9 @@ import (
 )
 
 const (
-	WelcomeCreditAmount   = 5.00
+	// WelcomeCreditAmount is 0 — credit is granted by Commerce when a payment
+	// method is added, not at signup. This prevents abuse from mass signups.
+	WelcomeCreditAmount   = 0
 	WelcomeCreditCurrency = "USD"
 	WelcomeCreditTag      = "welcome-credit"
 	WelcomeCreditDays     = 30
@@ -36,6 +38,10 @@ const (
 func GrantWelcomeCredit(user *User, lang string) error {
 	if user == nil {
 		return fmt.Errorf("user is nil")
+	}
+
+	if WelcomeCreditAmount <= 0 {
+		return nil
 	}
 
 	expiresAt := time.Now().AddDate(0, 0, WelcomeCreditDays).Format(time.RFC3339)
