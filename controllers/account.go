@@ -143,6 +143,24 @@ func (c *ApiController) Signup() {
 	}
 
 	clientIp := util.GetClientIpFromRequest(c.Ctx.Request)
+
+	// Per-IP signup rate limit: max 3 signups per hour
+	if err := util.IPSignupLimiter.Allow(clientIp); err != nil {
+		c.ResponseError(fmt.Sprintf("Too many signup attempts from this IP address. Please try again later."))
+		return
+	}
+
+	// Per-email-domain signup rate limit: max 10 signups per hour
+	if authForm.Email != "" {
+		parts := strings.SplitN(authForm.Email, "@", 2)
+		if len(parts) == 2 {
+			if err := util.DomainSignupLimiter.Allow(parts[1]); err != nil {
+				c.ResponseError(fmt.Sprintf("Too many signup attempts from this email domain. Please try again later."))
+				return
+			}
+		}
+	}
+
 	err = object.CheckEntryIp(clientIp, nil, application, organization, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -297,10 +315,8 @@ func (c *ApiController) Signup() {
 		return
 	}
 
-	// Grant $5 welcome credit to the new user (non-fatal on failure)
-	if creditErr := object.GrantWelcomeCredit(user, c.GetAcceptLanguage()); creditErr != nil {
-		util.LogWarning(c.Ctx, "Failed to grant welcome credit to user %s: %s", user.GetId(), creditErr.Error())
-	}
+	// Welcome credit is now granted by Commerce when user adds a payment method.
+	// This prevents abuse from mass-created accounts with no payment verification.
 
 	err = object.AddUserToOriginalDatabase(user)
 	if err != nil {
