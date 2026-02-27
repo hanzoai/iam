@@ -848,6 +848,15 @@ func UpdateUser(id string, user *User, columns []string, isAdmin bool) (bool, er
 
 	if user.Password == "***" {
 		user.Password = oldUser.Password
+	} else if user.Password != "" && user.Password != oldUser.Password {
+		// Password changed — hash it before saving (never store plaintext)
+		organization, err := GetOrganizationByUser(user)
+		if err == nil && organization != nil {
+			user.UpdateUserPassword(organization)
+			if !util.InSlice(columns, "password") && len(columns) > 0 {
+				columns = append(columns, "password", "password_salt", "password_type")
+			}
+		}
 	}
 
 	if user.Id != oldUser.Id && user.Id == "" {
