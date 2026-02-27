@@ -15,6 +15,7 @@
 package object
 
 import (
+	"github.com/beego/beego/v2/core/logs"
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
@@ -333,8 +334,10 @@ func initDefinedUser(user *User) {
 	}
 	if existed != nil {
 		if initDataNewOnly {
+			logs.Warning("initDefinedUser: skipping existing user %s/%s (initDataNewOnly=true)", user.Owner, user.Name)
 			return
 		}
+		logs.Warning("initDefinedUser: DELETING existing user %s/%s (initDataNewOnly=false)", user.Owner, user.Name)
 		affected, err := deleteUser(user)
 		if err != nil {
 			panic(err)
@@ -342,6 +345,8 @@ func initDefinedUser(user *User) {
 		if !affected {
 			panic("Fail to delete user")
 		}
+	} else {
+		logs.Warning("initDefinedUser: user %s/%s does not exist, creating", user.Owner, user.Name)
 	}
 	user.CreatedTime = util.GetCurrentTime()
 	user.Id = util.GenerateId()
