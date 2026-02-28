@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/beego/beego/v2/core/logs"
 	"github.com/google/uuid"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/idp"
@@ -258,6 +259,7 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 	}
 
 	// Check if grantType is allowed in the current application
+	logs.Info("GetOAuthToken: clientId=%s, grantType=%s, grantTypes=%v, len=%d", clientId, grantType, application.GrantTypes, len(application.GrantTypes))
 
 	if !IsGrantTypeValid(grantType, application.GrantTypes) && tag == "" {
 		return &TokenError{
