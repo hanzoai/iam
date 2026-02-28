@@ -57,12 +57,10 @@ var initDataNewOnly bool
 func InitFromFile() {
 	initDataFile := conf.GetConfigString("initDataFile")
 	if initDataFile == "" {
-		fmt.Println("[InitFromFile] no initDataFile configured, skipping")
 		return
 	}
 
 	initDataNewOnly = conf.GetConfigBool("initDataNewOnly")
-	fmt.Printf("[InitFromFile] file=%s newOnly=%v\n", initDataFile, initDataNewOnly)
 
 	initData, err := readInitDataFromFile(initDataFile)
 	if err != nil {
@@ -70,9 +68,9 @@ func InitFromFile() {
 	}
 
 	if initData != nil {
-		fmt.Printf("[InitFromFile] loaded: orgs=%d providers=%d apps=%d users=%d\n",
+		fmt.Printf("[init_data] processing: orgs=%d providers=%d apps=%d users=%d (newOnly=%v)\n",
 			len(initData.Organizations), len(initData.Providers),
-			len(initData.Applications), len(initData.Users))
+			len(initData.Applications), len(initData.Users), initDataNewOnly)
 		for _, organization := range initData.Organizations {
 			initDefinedOrganization(organization)
 		}
@@ -80,8 +78,6 @@ func InitFromFile() {
 			initDefinedProvider(provider)
 		}
 		for _, application := range initData.Applications {
-			fmt.Printf("[InitFromFile] processing app: owner=%s name=%s clientId=%s grantTypes=%v\n",
-				application.Owner, application.Name, application.ClientId, application.GrantTypes)
 			initDefinedApplication(application)
 		}
 		for _, user := range initData.Users {
@@ -317,8 +313,6 @@ func initDefinedApplication(application *Application) {
 	}
 
 	if existed != nil {
-		fmt.Printf("[initDefinedApplication] app %s/%s already exists (grantTypes=%v), newOnly=%v\n",
-			application.Owner, application.Name, existed.GrantTypes, initDataNewOnly)
 		if initDataNewOnly {
 			return
 		}
@@ -329,16 +323,12 @@ func initDefinedApplication(application *Application) {
 		if !affected {
 			panic("Fail to delete application")
 		}
-	} else {
-		fmt.Printf("[initDefinedApplication] app %s/%s NOT found, will create with grantTypes=%v\n",
-			application.Owner, application.Name, application.GrantTypes)
 	}
 	application.CreatedTime = util.GetCurrentTime()
 	_, err = AddApplication(application)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("[initDefinedApplication] app %s/%s created successfully\n", application.Owner, application.Name)
 }
 
 func initDefinedUser(user *User) {
