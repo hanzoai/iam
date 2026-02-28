@@ -11,7 +11,7 @@ jobs:
 
   go-tests:
     name: Running Go tests
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     services:
       postgres:
         image: ghcr.io/hanzoai/sql:latest
@@ -35,7 +35,7 @@ jobs:
 
   frontend:
     name: Front-end
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     needs: [ go-tests ]
     steps:
       - uses: actions/checkout@v3
@@ -55,7 +55,7 @@ jobs:
 
   backend:
     name: Back-end
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     needs: [ go-tests ]
     steps:
       - uses: actions/checkout@v3
@@ -71,7 +71,7 @@ jobs:
 
   linter:
     name: Go-Linter
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     needs: [ go-tests ]
     steps:
       - uses: actions/checkout@v3
@@ -91,7 +91,7 @@ jobs:
 
   e2e:
     name: e2e-test
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     needs: [ go-tests ]
     services:
       postgres:
@@ -169,7 +169,7 @@ jobs:
 
   tag-release:
     name: Create Tag
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     permissions:
       contents: write
       issues: write
@@ -190,7 +190,7 @@ jobs:
 
   github-release:
     name: GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     permissions:
       contents: write
       issues: write
@@ -235,7 +235,7 @@ jobs:
 
   docker-release:
     name: Docker Release
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     permissions:
       contents: write
       issues: write
