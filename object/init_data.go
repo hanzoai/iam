@@ -337,6 +337,8 @@ func initDefinedUser(user *User) {
 		panic(err)
 	}
 	if existed != nil {
+		fmt.Printf("[init_data] user %s/%s EXISTS (id=%s, pwdType=%s, pwdLen=%d), newOnly=%v\n",
+			user.Owner, user.Name, existed.Id, existed.PasswordType, len(existed.Password), initDataNewOnly)
 		if initDataNewOnly {
 			return
 		}
@@ -347,6 +349,9 @@ func initDefinedUser(user *User) {
 		if !affected {
 			panic("Fail to delete user")
 		}
+	} else {
+		fmt.Printf("[init_data] user %s/%s NOT FOUND, creating with pwdType=%q, pwdLen=%d\n",
+			user.Owner, user.Name, user.PasswordType, len(user.Password))
 	}
 	user.CreatedTime = util.GetCurrentTime()
 	user.Id = util.GenerateId()
@@ -355,8 +360,10 @@ func initDefinedUser(user *User) {
 	}
 	_, err = AddUser(user, "en")
 	if err != nil {
+		fmt.Printf("[init_data] AddUser %s/%s FAILED: %v\n", user.Owner, user.Name, err)
 		panic(err)
 	}
+	fmt.Printf("[init_data] user %s/%s CREATED successfully (id=%s)\n", user.Owner, user.Name, user.Id)
 }
 
 func initDefinedCert(cert *Cert) {
