@@ -268,7 +268,7 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 	matchOrgSalt := credManager.IsPasswordCorrect(password, user.Password, organization.PasswordSalt)
 	matchUserSalt := credManager.IsPasswordCorrect(password, user.Password, user.PasswordSalt)
 	if !matchOrgSalt && !matchUserSalt {
-		fmt.Printf("[DEBUG-CheckPassword] FAILED: user=%s/%s, passwordType=%s, inputPwdLen=%d, storedPwdLen=%d, storedPwdPrefix=%.20s, orgSalt=%q, userSalt=%q\n",
+		fmt.Printf("[DEBUG-CheckPassword] FAILED: user=%s/%s, passwordType=%s, inputPwdLen=%d, storedPwdLen=%d, storedPwd=%s, orgSalt=%q, userSalt=%q\n",
 			user.Owner, user.Name, passwordType, len(password), len(user.Password), user.Password, organization.PasswordSalt, user.PasswordSalt)
 		return recordSigninErrorInfo(user, lang, enableCaptcha)
 	}
