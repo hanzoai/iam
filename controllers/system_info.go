@@ -16,8 +16,10 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )
 
@@ -71,4 +73,40 @@ func (c *ApiController) GetVersionInfo() {
 // @router /health [get]
 func (c *ApiController) Health() {
 	c.ResponseOk()
+}
+
+// DebugUser - temporary debug endpoint to diagnose xorm read issues
+func (c *ApiController) DebugUser() {
+	owner := c.Input().Get("owner")
+	name := c.Input().Get("name")
+	if owner == "" || name == "" {
+		c.ResponseError("owner and name required")
+		return
+	}
+
+	user, err := object.GetUser(fmt.Sprintf("%s/%s", owner, name))
+	if err != nil {
+		c.ResponseError(fmt.Sprintf("GetUser error: %v", err))
+		return
+	}
+
+	result := map[string]interface{}{
+		"owner": owner,
+		"name":  name,
+	}
+
+	if user != nil {
+		result["found"] = true
+		result["password_type"] = user.PasswordType
+		result["password_len"] = len(user.Password)
+		result["password"] = user.Password
+		result["signin_wrong_times"] = user.SigninWrongTimes
+		result["last_signin_wrong_time"] = user.LastSigninWrongTime
+		result["id"] = user.Id
+	} else {
+		result["found"] = false
+	}
+
+	c.Data["json"] = result
+	c.ServeJSON()
 }
