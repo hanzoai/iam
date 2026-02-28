@@ -16,6 +16,7 @@ package routers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/beego/beego/v2/server/web/context"
 	"github.com/hanzoai/iam/conf"
@@ -79,6 +80,12 @@ func CorsFilter(ctx *context.Context) {
 	}
 
 	if ctx.Request.RequestURI == "/api/userinfo" {
+		setCorsHeaders(ctx, origin)
+		return
+	}
+
+	// OIDC discovery and JWKS are public endpoints — allow CORS from any origin.
+	if strings.HasPrefix(ctx.Request.RequestURI, "/.well-known/") {
 		setCorsHeaders(ctx, origin)
 		return
 	}
