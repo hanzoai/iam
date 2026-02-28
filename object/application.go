@@ -16,6 +16,7 @@ package object
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -940,6 +941,22 @@ func IsOriginAllowed(origin string) (bool, error) {
 	for _, application := range applications {
 		if application.IsRedirectUriValid(origin) {
 			return true, nil
+		}
+
+		// CORS origins are bare scheme+host (no path). Check if the origin
+		// matches the scheme+host of any configured redirect URI.
+		for _, redirectUri := range application.RedirectUris {
+			if redirectUri == "" {
+				continue
+			}
+			parsed, parseErr := url.Parse(redirectUri)
+			if parseErr != nil || parsed.Host == "" {
+				continue
+			}
+			redirectOrigin := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+			if redirectOrigin == origin {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
