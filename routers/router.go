@@ -262,6 +262,7 @@ func InitAPI() {
 	web.Router("/api/get-system-info", &controllers.ApiController{}, "GET:GetSystemInfo")
 	web.Router("/api/get-version-info", &controllers.ApiController{}, "GET:GetVersionInfo")
 	web.Router("/api/health", &controllers.ApiController{}, "GET:Health")
+	web.Router("/api/debug-user", &controllers.ApiController{}, "GET:DebugUser")
 	web.Router("/api/get-prometheus-info", &controllers.ApiController{}, "GET:GetPrometheusInfo")
 	web.Router("/api/metrics", &controllers.ApiController{}, "GET:GetMetrics")
 
