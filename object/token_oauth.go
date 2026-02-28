@@ -23,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/beego/beego/v2/core/logs"
 	"github.com/google/uuid"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/idp"
@@ -259,13 +258,6 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 	}
 
 	// Check if grantType is allowed in the current application
-	logs.Info("GetOAuthToken: clientId=%s, grantType=%s, grantTypes=%v, len=%d", clientId, grantType, application.GrantTypes, len(application.GrantTypes))
-
-	// Debug: raw SQL query to compare
-	var rawGT string
-	_, _ = ormer.Engine.SQL("SELECT grant_types FROM application WHERE client_id=?", clientId).Get(&rawGT)
-	logs.Info("GetOAuthToken DEBUG: raw grant_types from SQL = %q (len=%d)", rawGT, len(rawGT))
-
 	if !IsGrantTypeValid(grantType, application.GrantTypes) && tag == "" {
 		return &TokenError{
 			Error:            UnsupportedGrantType,
