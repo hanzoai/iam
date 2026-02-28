@@ -132,6 +132,22 @@ class App extends Component {
   }
 
   UNSAFE_componentWillMount() {
+    // Normalize hyphenated URL variants (e.g. /sign-up → /signup)
+    const path = window.location.pathname;
+    const search = window.location.search;
+    const urlNormMap = {"/sign-up": "/signup", "/log-in": "/login", "/register": "/signup"};
+    const normMatch = Object.entries(urlNormMap).find(([k]) => path === k || path.startsWith(k + "/"));
+    if (normMatch) {
+      window.location.replace(normMatch[1] + search);
+      return;
+    }
+    // On iam.hanzo.ai, redirect signup to hanzo.id (unified account creation)
+    if (window.location.hostname === "iam.hanzo.ai") {
+      if (path === "/signup" || path.startsWith("/signup/")) {
+        window.location.href = `https://hanzo.id/signup${search}`;
+        return;
+      }
+    }
     this.updateMenuKey();
     this.getAccount();
     this.getApplication();
@@ -487,7 +503,7 @@ class App extends Component {
               : (
                 Conf.CustomFooter !== null ? Conf.CustomFooter : (
                   <React.Fragment>
-                  Powered by <a target="_blank" href="https://iam.hanzo.ai" rel="noreferrer"><img style={{paddingBottom: "3px"}} height={"20px"} alt={"Hanzo IAM"} src={logo} /></a>
+                  Powered by <a target="_blank" href="https://hanzo.ai" rel="noreferrer"><img style={{paddingBottom: "3px"}} height={"20px"} alt={"Hanzo"} src={logo} /></a>
                   </React.Fragment>
                 )
               )
@@ -619,8 +635,19 @@ class App extends Component {
                       <Route exact path="/callback" render={(props) => <AuthCallback {...props} {...this.props} application={this.state.application} onLoginSuccess={(redirectUrl) => {this.onLoginSuccess(redirectUrl);}} />} />
                       <Route exact path="/callback/saml" render={(props) => <SamlCallback {...props} {...this.props} application={this.state.application} onLoginSuccess={(redirectUrl) => {this.onLoginSuccess(redirectUrl);}} />} />
                       <Route exact path="/telegram-login" render={(props) => <TelegramLogin {...props} {...this.props} />} />
-                      <Route path="" render={() => <Result status="404" title="404 NOT FOUND" subTitle={i18next.t("general:Sorry, the page you visited does not exist.")}
-                        extra={<a href="/"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>} />} />
+                      <Route path="" render={() => (
+                        <div style={{display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: "16px"}}>
+                          <img src="/img/hanzo-logo.svg" alt="Hanzo" height={48} style={{marginBottom: "8px", opacity: 0.9}} />
+                          <div style={{fontSize: "72px", fontWeight: 700, lineHeight: 1, color: "#1a1a2e"}}>404</div>
+                          <div style={{fontSize: "18px", color: "#555", marginBottom: "8px"}}>
+                            {i18next.t("general:Sorry, the page you visited does not exist.")}
+                          </div>
+                          <a href="/"><Button type="primary" size="large">{i18next.t("general:Back Home")}</Button></a>
+                          <div style={{marginTop: "16px", fontSize: "13px", color: "#999"}}>
+                            Looking to sign in? Visit <a href="https://hanzo.id/login" style={{color: "#1677ff"}}>hanzo.id</a>
+                          </div>
+                        </div>
+                      )} />
                     </Switch>
                 }
               </Content>
