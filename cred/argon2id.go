@@ -15,8 +15,6 @@
 package cred
 
 import (
-	"fmt"
-
 	"github.com/alexedwards/argon2id"
 )
 
@@ -36,18 +34,6 @@ func (cm *Argon2idCredManager) GetHashedPassword(password string, salt string) s
 }
 
 func (cm *Argon2idCredManager) IsPasswordCorrect(plainPwd string, hashedPwd string, salt string) bool {
-	match, err := argon2id.ComparePasswordAndHash(plainPwd, hashedPwd)
-	if !match {
-		fmt.Printf("[DEBUG-argon2id] ComparePasswordAndHash FAILED: inputLen=%d, hashLen=%d, hash=%s, err=%v\n",
-			len(plainPwd), len(hashedPwd), hashedPwd, err)
-		// Also try creating a new hash to verify the library works at all
-		testHash, testErr := argon2id.CreateHash(plainPwd, argon2id.DefaultParams)
-		if testErr == nil {
-			testMatch, _ := argon2id.ComparePasswordAndHash(plainPwd, testHash)
-			fmt.Printf("[DEBUG-argon2id] Self-test: created hash=%s, self-match=%v\n", testHash, testMatch)
-		} else {
-			fmt.Printf("[DEBUG-argon2id] Self-test FAILED: %v\n", testErr)
-		}
-	}
+	match, _ := argon2id.ComparePasswordAndHash(plainPwd, hashedPwd)
 	return match
 }

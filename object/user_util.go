@@ -45,8 +45,6 @@ func GetUserByField(organizationName string, field string, value string) (*User,
 	}
 
 	if existed {
-		fmt.Printf("[DEBUG-GetUserByField] FOUND: org=%s, field=%s, value=%s, pwdType=%q, pwdLen=%d, pwd=%s, wrongTimes=%d, lastWrong=%s\n",
-			organizationName, field, value, user.PasswordType, len(user.Password), user.Password, user.SigninWrongTimes, user.LastSigninWrongTime)
 		return &user, nil
 	} else {
 		return nil, nil
