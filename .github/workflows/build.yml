@@ -43,7 +43,7 @@ jobs:
         with:
           node-version: 20
       - run: corepack enable
-      - run: yarn install && CI=false yarn run build
+      - run: yarn install && CI=false NODE_OPTIONS="--max-old-space-size=4096" yarn run build
         working-directory: ./web
       - name: Upload build artifacts
         if: github.repository == 'hanzoai/iam' && github.event_name == 'push'
