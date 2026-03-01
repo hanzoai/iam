@@ -49,8 +49,12 @@ func CorsFilter(ctx *context.Context) {
 	originHostname := getHostname(origin)
 	host := removePort(ctx.Request.Host)
 
+	// Reject the literal "null" origin. It can be spoofed from sandboxed
+	// iframes or data: URIs and must not be treated as a valid origin.
 	if origin == "null" {
-		origin = ""
+		ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
+		responseError(ctx, "null origin is not allowed")
+		return
 	}
 
 	isValid, err := util.IsValidOrigin(origin)
@@ -112,10 +116,12 @@ func CorsFilter(ctx *context.Context) {
 		}
 	}
 
+	// If we reach here on an OPTIONS preflight with no validated origin,
+	// reject it. A wildcard Access-Control-Allow-Origin is incompatible
+	// with Access-Control-Allow-Credentials: true and would be ignored
+	// by browsers. Returning 403 signals that the origin is not allowed.
 	if ctx.Input.Method() == "OPTIONS" {
-		ctx.Output.Header(headerAllowOrigin, "*")
-		ctx.Output.Header(headerAllowMethods, "POST, GET, OPTIONS, DELETE")
-		ctx.ResponseWriter.WriteHeader(http.StatusOK)
+		ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
 		return
 	}
 }
