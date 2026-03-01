@@ -995,10 +995,7 @@ func (c *ApiController) Login() {
 						return
 					}
 
-					// Grant $5 welcome credit to the new user (non-fatal on failure)
-					if creditErr := object.GrantWelcomeCredit(user, c.GetAcceptLanguage()); creditErr != nil {
-						util.LogWarning(c.Ctx, "Failed to grant welcome credit to user %s: %s", user.GetId(), creditErr.Error())
-					}
+					// Welcome credit is now granted by Commerce when user adds a payment method.
 
 					// Increment invitation usage count
 					if invitation != nil {
