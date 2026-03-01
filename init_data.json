@@ -931,6 +931,7 @@
       "redirectUris": [
         "https://hanzo.ai/callback",
         "https://hanzo.app/callback",
+        "https://billing.hanzo.ai/auth/callback",
         "https://cloud.hanzo.ai/callback",
         "https://stg.hanzo.ai/callback",
         "https://stg.hanzo.app/callback",
