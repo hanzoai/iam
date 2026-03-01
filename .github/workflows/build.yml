@@ -44,6 +44,7 @@ jobs:
           node-version: 20
           cache: 'yarn'
           cache-dependency-path: ./web/yarn.lock
+      - run: corepack enable
       - run: yarn install && CI=false yarn run build
         working-directory: ./web
       - name: Upload build artifacts
@@ -66,7 +67,7 @@ jobs:
       - run: go version
       - name: Build
         run: |
-          go build -race -ldflags "-extldflags '-static'"
+          go build -ldflags "-extldflags '-static'"
         working-directory: ./
 
   linter:
@@ -146,6 +147,7 @@ jobs:
           node-version: 20
           cache: 'yarn'
           cache-dependency-path: ./web/yarn.lock
+      - run: corepack enable
       - run: yarn install
         working-directory: ./web
       - uses: cypress-io/github-action@v5
