@@ -11,7 +11,7 @@ jobs:
 
   go-tests:
     name: Running Go tests
-    runs-on: hanzo-build
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: ghcr.io/hanzoai/sql:latest
@@ -91,7 +91,7 @@ jobs:
 
   e2e:
     name: e2e-test
-    runs-on: hanzo-build
+    runs-on: ubuntu-latest
     needs: [ go-tests ]
     services:
       postgres:
@@ -235,7 +235,7 @@ jobs:
 
   docker-release:
     name: Docker Release
-    runs-on: hanzo-build
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       issues: write
