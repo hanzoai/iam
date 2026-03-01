@@ -42,8 +42,6 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 20
-          cache: 'yarn'
-          cache-dependency-path: ./web/yarn.lock
       - run: corepack enable
       - run: yarn install && CI=false yarn run build
         working-directory: ./web
@@ -145,8 +143,6 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 20
-          cache: 'yarn'
-          cache-dependency-path: ./web/yarn.lock
       - run: corepack enable
       - run: yarn install
         working-directory: ./web
