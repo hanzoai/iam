@@ -23,10 +23,10 @@ jobs:
           - 5432:5432
         options: --health-cmd="pg_isready -U hanzo -d hanzo" --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
           cache-dependency-path: ./go.mod
       - name: Tests
         run: |
@@ -38,8 +38,8 @@ jobs:
     runs-on: hanzo-build
     needs: [ go-tests ]
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
       - run: corepack enable
@@ -57,10 +57,10 @@ jobs:
     runs-on: hanzo-build
     needs: [ go-tests ]
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
           cache-dependency-path: ./go.mod
       - run: go version
       - name: Build
@@ -73,20 +73,15 @@ jobs:
     runs-on: hanzo-build
     needs: [ go-tests ]
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
           cache: false
-
-      # gen a dummy config file
-      - run: touch dummy.yml
-
+      - name: Install golangci-lint from source
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
-        with:
-          version: latest
-          args: --disable-all -c dummy.yml -E=gofumpt --max-same-issues=0 --timeout 5m --modules-download-mode=mod
+        run: golangci-lint run --disable-all -E=gofumpt --max-same-issues=0 --timeout 5m --modules-download-mode=mod
 
   e2e:
     name: e2e-test
@@ -108,10 +103,10 @@ jobs:
           - 6379:6379
         options: --health-cmd="valkey-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
           cache-dependency-path: ./go.mod
       - name: Create hanzo_iam database
         run: PGPASSWORD=hanzo123 psql -h localhost -U hanzo -d hanzo -c "CREATE DATABASE hanzo_iam OWNER hanzo;"
@@ -140,7 +135,7 @@ jobs:
             echo "Waiting... ($i/90)"
             sleep 1
           done
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
       - run: corepack enable
