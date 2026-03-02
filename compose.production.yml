@@ -50,7 +50,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: ghcr.io/hanzoai/sql:17-alpine
+    image: ghcr.io/hanzoai/sql:latest
     restart: unless-stopped
     environment:
       POSTGRES_USER: hanzo
