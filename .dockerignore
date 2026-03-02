@@ -1,1 +1,44 @@
+# Build artifacts
+*.exe
+iam-server*
+server_*
+casdoor
+tmp/
+logs/
+
+# Test artifacts
+test-results/
+test-results.json
+playwright-report/
+
+# Dev/editor
+.git/
+.github/
+.vscode/
+.idea/
+
+# Docs
+docs/
+README.md
+LICENSE
+SECURITY.md
+CLAUDE.md
+LLM.md
+crowdin.yml
+
+# Node (web handled separately via FRONT stage)
+node_modules/
 web/node_modules/
+web/.next/
+
+# Docker / deploy
+Dockerfile*
+compose.yml
+Caddyfile
+app-spec*.yaml
+k8s.yaml
+deployment/
+
+# Scripts not needed in image
+scripts/
+Makefile
