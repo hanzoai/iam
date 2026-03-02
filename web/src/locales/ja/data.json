@@ -11,7 +11,7 @@
     "Failed to sync policies": "ポリシーの同期に失敗しました",
     "New Adapter": "新しいアダプター",
     "Policies": "政策",
-    "Policies - Tooltip": "Casbinのポリシールール",
+    "Policies - Tooltip": "ポリシールール",
     "Rule type": "ルールタイプ",
     "Sync policies successfully": "ポリシーを同期できました",
     "Use same DB": "同じDBを使用する",
@@ -734,7 +734,7 @@
     "Basic Editor": "基本エディター",
     "Edit Model": "編集モデル",
     "Model text": "モデルテキスト",
-    "Model text - Tooltip": "Casbinのアクセス制御モデルには、ACL、RBAC、ABAC、RESTfulなどの組み込みモデルが含まれています。カスタムモデルも作成できます。詳細については、Casbinのウェブサイトをご覧ください",
+    "Model text - Tooltip": "アクセス制御モデルには、ACL、RBAC、ABAC、RESTfulなどの組み込みモデルが含まれています。カスタムモデルも作成できます。詳細については、ドキュメントをご覧ください",
     "New Model": "新しいモデル"
   },
   "order": {
