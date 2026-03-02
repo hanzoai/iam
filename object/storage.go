@@ -90,7 +90,7 @@ func GetUploadFileUrl(provider *Provider, fullFilePath string, hasTimestamp bool
 
 	host := ""
 	if provider.Type != ProviderTypeLocalFileSystem {
-		// provider.Domain = "https://cdn.casbin.com/iam/"
+		// provider.Domain = "https://cdn.hanzo.ai/iam/"
 		host = util.GetUrlHost(provider.Domain)
 	} else {
 		// provider.Domain = "http://localhost:8000" or "https://door.iam.com"
