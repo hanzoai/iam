@@ -2,12 +2,12 @@ FROM --platform=$BUILDPLATFORM node:18.19.0 AS FRONT
 WORKDIR /web
 
 # Copy only dependency files first for better caching
-COPY ./web/package.json ./web/yarn.lock ./
-RUN yarn install --frozen-lockfile --network-timeout 1000000
+COPY ./web/package.json ./web/pnpm-lock.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 
 # Copy source files and build
 COPY ./web .
-RUN NODE_OPTIONS="--max-old-space-size=4096" yarn run build
+RUN NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
 
 FROM --platform=$BUILDPLATFORM golang:1.24.9 AS BACK
 WORKDIR /go/src/hanzo-iam
