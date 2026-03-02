@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// modified from https://github.com/casbin/casnode/blob/master/service/mail.go
+// modified from https://github.com/casbin/casnode/blob/master/service/mail.go (upstream)
 
 package object
 

@@ -91,7 +91,7 @@ func TestGetMaskedUsers(t *testing.T) {
 	}{
 		{
 			name: "1",
-			args: args{users: []*User{{Password: "iam"}, {Password: "casbin"}}},
+			args: args{users: []*User{{Password: "iam"}, {Password: "secret"}}},
 			want: []*User{{Password: "***"}, {Password: "***"}},
 		},
 	}
