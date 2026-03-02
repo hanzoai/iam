@@ -985,6 +985,9 @@ func UpdateUserForAllFields(id string, user *User) (bool, error) {
 		return false, err
 	}
 
+	// Evict stale cache after full-column update.
+	EvictUserCache(owner, name)
+
 	return affected != 0, nil
 }
 
@@ -1188,6 +1191,9 @@ func deleteUser(user *User) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
+	// Evict cache on delete so stale entries don't linger.
+	EvictUserCache(user.Owner, user.Name)
 
 	return affected != 0, nil
 }
