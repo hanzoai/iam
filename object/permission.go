@@ -161,7 +161,7 @@ func UpdatePermission(id string, permission *Permission) (bool, error) {
 		}
 
 		if len(strings.Split(modelCfg["p"], ",")) != 3 {
-			return false, fmt.Errorf("the model: %s for permission: %s is not valid, Casbin model's [policy_defination] section should have 3 elements", permission.Model, permission.GetId())
+			return false, fmt.Errorf("the model: %s for permission: %s is not valid, the model's [policy_defination] section should have 3 elements", permission.Model, permission.GetId())
 		}
 	}
 

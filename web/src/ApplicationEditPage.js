@@ -121,7 +121,7 @@ const sideTemplate = `<style>
     <span>SSO</span>
   </span>
   <div class="img">
-    <img src="${Setting.StaticBaseUrl}/img/casbin.svg" alt="Hanzo IAM"/>
+    <img src="${Setting.StaticBaseUrl}/img/hanzo.svg" alt="Hanzo IAM"/>
   </div>
 </div>
 `;

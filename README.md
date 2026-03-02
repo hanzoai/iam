@@ -2,8 +2,7 @@
 <h3 align="center">An open-source AI-first Identity and Access Management (IAM) /AI MCP gateway and auth server with web UI supporting MCP, A2A, OAuth 2.1, OIDC, SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA, Face ID, Google Workspace, Azure AD</h3>
 <p align="center">
 Identity and Access Management for the Hanzo ecosystem.<br/>
-UI-first centralized authentication / Single-Sign-On (SSO) platform built on
-<a href="https://github.com/casdoor/casdoor">Casdoor</a>, supporting
+UI-first centralized authentication / Single-Sign-On (SSO) platform supporting
 OAuth 2.0, OIDC, SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA, and RADIUS.
 </p>
 
@@ -99,7 +98,7 @@ Full documentation is available at [docs.hanzo.ai](https://docs.hanzo.ai).
 
 ## Attribution
 
-Based on [Casdoor](https://github.com/casdoor/casdoor) by [Casbin](https://casbin.org). See the upstream [LICENSE](https://github.com/casdoor/casdoor/blob/master/LICENSE) for attribution.
+Originally derived from [Casdoor](https://github.com/casdoor/casdoor) by the [Casbin](https://casbin.org) community. See the upstream [LICENSE](https://github.com/casdoor/casdoor/blob/master/LICENSE) for attribution.
 
 ## License
 
