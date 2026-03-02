@@ -1,6 +1,6 @@
 module github.com/hanzoai/iam
 
-go 1.24.9
+go 1.26
 
 require (
 	github.com/Masterminds/squirrel v1.5.3
