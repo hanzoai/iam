@@ -11,7 +11,7 @@
     "Failed to sync policies": "Failed to sync policies",
     "New Adapter": "New Adapter",
     "Policies": "Policies",
-    "Policies - Tooltip": "Casbin policy rules",
+    "Policies - Tooltip": "Policy rules",
     "Rule type": "Rule type",
     "Sync policies successfully": "Sync policies successfully",
     "Use same DB": "Use same DB",
@@ -395,7 +395,7 @@
     "Menu": "Meny",
     "Method": "Method",
     "Model": "Model",
-    "Model - Tooltip": "Casbin access control model",
+    "Model - Tooltip": "Access control model",
     "Models": "Models",
     "Name": "Namn",
     "Name - Tooltip": "Unique, string-based ID",
@@ -728,7 +728,7 @@
     "Basic Editor": "Basic Editor",
     "Edit Model": "Edit Model",
     "Model text": "Model text",
-    "Model text - Tooltip": "Casbin access control model, including built-in models like ACL, RBAC, ABAC, RESTful, etc. You can also create custom models. For more information, please visit the Casbin website",
+    "Model text - Tooltip": "Access control model, including built-in models like ACL, RBAC, ABAC, RESTful, etc. You can also create custom models",
     "New Model": "New Model"
   },
   "order": {

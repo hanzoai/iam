@@ -681,12 +681,12 @@ paths:
     post:
       tags:
       - Enforcer API
-      description: Call Casbin BatchEnforce API
+      description: Call BatchEnforce API
       operationId: ApiController.BatchEnforce
       parameters:
       - in: body
         name: body
-        description: array of casbin requests
+        description: array of enforce requests
         required: true
         schema:
           type: array
@@ -1247,12 +1247,12 @@ paths:
     post:
       tags:
       - Enforcer API
-      description: Call Casbin Enforce API
+      description: Call Enforce API
       operationId: ApiController.Enforce
       parameters:
       - in: body
         name: body
-        description: Casbin request
+        description: Enforce request
         required: true
         schema:
           type: array
@@ -1363,7 +1363,7 @@ paths:
     get:
       tags:
       - Enforcer API
-      description: Get all actions for a user (Casbin API)
+      description: Get all actions for a user
       operationId: ApiController.GetAllActions
       parameters:
       - in: query
@@ -1379,7 +1379,7 @@ paths:
     get:
       tags:
       - Enforcer API
-      description: Get all objects for a user (Casbin API)
+      description: Get all objects for a user
       operationId: ApiController.GetAllObjects
       parameters:
       - in: query
@@ -1395,7 +1395,7 @@ paths:
     get:
       tags:
       - Enforcer API
-      description: Get all roles for a user (Casbin API)
+      description: Get all roles for a user
       operationId: ApiController.GetAllRoles
       parameters:
       - in: query
@@ -2879,7 +2879,7 @@ paths:
     get:
       tags:
       - System API
-      description: get version info like Casdoor release version and commit ID
+      description: get version info like release version and commit ID
       operationId: ApiController.GetVersionInfo
       responses:
         "200":
@@ -3376,7 +3376,7 @@ paths:
     get:
       tags:
       - Enforcer API
-      description: Call Casbin CLI commands
+      description: Call policy engine CLI commands
       operationId: ApiController.RunCasbinCommand
       responses:
         "200":
@@ -3405,7 +3405,7 @@ paths:
     post:
       tags:
       - Service API
-      description: This API is not for Casdoor frontend to call, it is for Casdoor SDKs.
+      description: This API is not for the frontend to call, it is for IAM SDKs.
       operationId: ApiController.SendEmail
       parameters:
       - in: query
@@ -3458,7 +3458,7 @@ paths:
     post:
       tags:
       - Service API
-      description: This API is not for Casdoor frontend to call, it is for Casdoor SDKs.
+      description: This API is not for the frontend to call, it is for IAM SDKs.
       operationId: ApiController.SendNotification
       parameters:
       - in: body
@@ -3476,7 +3476,7 @@ paths:
     post:
       tags:
       - Service API
-      description: This API is not for Casdoor frontend to call, it is for Casdoor SDKs.
+      description: This API is not for the frontend to call, it is for IAM SDKs.
       operationId: ApiController.SendSms
       parameters:
       - in: query

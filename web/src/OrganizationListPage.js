@@ -40,7 +40,7 @@ class OrganizationListPage extends BaseListPage {
       passwordObfuscatorKey: "",
       passwordExpireDays: 0,
       countryCodes: ["US"],
-      defaultAvatar: `${Setting.StaticBaseUrl}/img/casbin.svg`,
+      defaultAvatar: `${Setting.StaticBaseUrl}/img/hanzo.svg`,
       defaultApplication: "",
       tags: [],
       languages: Setting.Countries.map(item => item.key),
