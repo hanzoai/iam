@@ -188,6 +188,16 @@ func UpdateRole(id string, role *Role) (bool, error) {
 		}
 	}
 
+	if affected != 0 {
+		// Evict cache for all users whose role graph changed.
+		for _, u := range oldRole.Users {
+			EvictPermCache(u)
+		}
+		for _, u := range role.Users {
+			EvictPermCache(u)
+		}
+	}
+
 	return affected != 0, nil
 }
 
@@ -195,6 +205,12 @@ func AddRole(role *Role) (bool, error) {
 	affected, err := ormer.Engine.Insert(role)
 	if err != nil {
 		return false, err
+	}
+
+	if affected != 0 {
+		for _, u := range role.Users {
+			EvictPermCache(u)
+		}
 	}
 
 	return affected != 0, nil
@@ -208,6 +224,13 @@ func AddRoles(roles []*Role) bool {
 	if err != nil {
 		if !strings.Contains(err.Error(), "Duplicate entry") {
 			panic(err)
+		}
+	}
+	if affected != 0 {
+		for _, role := range roles {
+			for _, u := range role.Users {
+				EvictPermCache(u)
+			}
 		}
 	}
 	return affected != 0
@@ -262,7 +285,19 @@ func DeleteRole(role *Role) (bool, error) {
 		}
 	}
 
-	return deleteRole(role)
+	affected, err := deleteRole(role)
+	if err != nil {
+		return false, err
+	}
+
+	if affected {
+		// Evict cache for users who were directly assigned this role.
+		for _, u := range role.Users {
+			EvictPermCache(u)
+		}
+	}
+
+	return affected, nil
 }
 
 func (role *Role) GetId() string {
