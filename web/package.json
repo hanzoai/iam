@@ -35,7 +35,6 @@
     "craco-less": "^2.0.0",
     "crypto-js": "^4.2.0",
     "echarts": "^5.4.3",
-    "ethers": "^6.13.0",
     "face-api.js": "^0.22.2",
     "file-saver": "^2.0.5",
     "i18n-iso-countries": "^7.0.0",
