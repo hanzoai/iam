@@ -28,14 +28,14 @@ func TestGetConfString(t *testing.T) {
 		input       string
 		expected    interface{}
 	}{
-		{"Should be return casbin", "appname", "casbin"},
+		{"Should return iam", "appname", "iam"},
 		{"Should be return 8000", "httpport", "8000"},
 		{"Should be return  value", "key", "value"},
 	}
 
 	// do some set up job
 
-	os.Setenv("appname", "casbin")
+	os.Setenv("appname", "iam")
 	os.Setenv("key", "value")
 
 	err := web.LoadAppConfig("ini", "app.conf")

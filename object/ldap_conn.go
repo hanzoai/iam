@@ -537,7 +537,7 @@ func SyncLdapUsers(owner string, syncUsers []LdapUser, ldapId string) (existUser
 	return existUsers, failedUsers, err
 }
 
-// SyncLdapGroups syncs LDAP groups/OUs to Casdoor groups with hierarchy
+// SyncLdapGroups syncs LDAP groups/OUs to IAM groups with hierarchy
 func SyncLdapGroups(owner string, ldapGroups []LdapGroup, ldapId string) (newGroups int, updatedGroups int, err error) {
 	if len(ldapGroups) == 0 {
 		return 0, 0, nil
@@ -650,7 +650,7 @@ func SyncLdapGroups(owner string, ldapGroups []LdapGroup, ldapId string) (newGro
 	return newGroups, updatedGroups, nil
 }
 
-// dnToGroupName converts an LDAP DN to a Casdoor group name
+// dnToGroupName converts an LDAP DN to an IAM group name
 func dnToGroupName(owner, dn string) string {
 	if dn == "" {
 		return ""

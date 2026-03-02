@@ -520,7 +520,7 @@ class App extends Component {
           <React.Fragment>
             <Tooltip title="Want to deploy your own AI assistant? Click to learn more!">
               <a target="_blank" rel="noreferrer" href={"https://iam.com"}>
-                <img style={{width: "20px", marginRight: "10px", marginBottom: "2px"}} alt="help" src="https://casbin.org/img/casbin.svg" />
+                <img style={{width: "20px", marginRight: "10px", marginBottom: "2px"}} alt="help" src="/img/hanzo.svg" />
                 AI Assistant
               </a>
             </Tooltip>
