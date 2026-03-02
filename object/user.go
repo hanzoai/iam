@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/hanzoai/iam/conf"
@@ -437,6 +438,14 @@ func getUser(owner string, name string) (*User, error) {
 		return nil, nil
 	}
 
+	// Fast path: in-process TTL cache (10-minute TTL).
+	// Eliminates repeated DB reads for the same user within a request burst.
+	ckey := userCacheKey(owner, name)
+	var cached User
+	if userCache.get(ckey, &cached) {
+		return &cached, nil
+	}
+
 	user := User{Owner: owner, Name: name}
 	existed, err := ormer.Engine.Get(&user)
 	if err != nil {
@@ -444,10 +453,10 @@ func getUser(owner string, name string) (*User, error) {
 	}
 
 	if existed {
+		userCache.set(ckey, user, 10*time.Minute)
 		return &user, nil
-	} else {
-		return nil, nil
 	}
+	return nil, nil
 }
 
 func getUserById(owner string, id string) (*User, error) {
@@ -928,6 +937,10 @@ func updateUser(id string, user *User, columns []string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	// Evict stale cache entries so next request fetches from DB.
+	EvictUserCache(owner, name)
+
 	return affected, nil
 }
 
@@ -1281,9 +1294,28 @@ func isUserIdGlobalAdmin(userId string) bool {
 	return strings.HasPrefix(userId, "admin/") || IsAppUser(userId)
 }
 
+// permsSnapshot is the cached representation of a user's roles/permissions.
+type permsSnapshot struct {
+	Permissions []*Permission `json:"permissions"`
+	Roles       []*Role       `json:"roles"`
+}
+
 func ExtendUserWithRolesAndPermissions(user *User) (err error) {
 	if user == nil {
 		return
+	}
+
+	// Fast path: in-process TTL cache (5-minute TTL).
+	// Eliminates the N+1 role→permission DB queries on every request.
+	ckey := permsCacheKey(user.GetId())
+	var snap permsSnapshot
+	if permsCache.get(ckey, &snap) {
+		user.Permissions = snap.Permissions
+		user.Roles = snap.Roles
+		if user.Groups == nil {
+			user.Groups = []string{}
+		}
+		return nil
 	}
 
 	user.Permissions, user.Roles, err = getPermissionsAndRolesByUser(user.GetId())
@@ -1294,6 +1326,12 @@ func ExtendUserWithRolesAndPermissions(user *User) (err error) {
 	if user.Groups == nil {
 		user.Groups = []string{}
 	}
+
+	// Populate cache for subsequent requests.
+	permsCache.set(ckey, permsSnapshot{
+		Permissions: user.Permissions,
+		Roles:       user.Roles,
+	}, 5*time.Minute)
 
 	return
 }
