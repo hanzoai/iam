@@ -2,7 +2,7 @@ FROM --platform=$BUILDPLATFORM node:18.19.0 AS FRONT
 WORKDIR /web
 
 # Copy only dependency files first for better caching
-COPY ./web/package.json ./web/pnpm-lock.yaml ./
+COPY ./web/package.json ./web/pnpm-lock.yaml ./web/.npmrc ./
 RUN corepack enable && pnpm install --frozen-lockfile
 
 # Copy source files and build
