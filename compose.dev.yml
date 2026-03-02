@@ -4,7 +4,7 @@
 
 services:
   postgres:
-    image: ghcr.io/hanzoai/sql:17-alpine
+    image: ghcr.io/hanzoai/sql:latest
     environment:
       POSTGRES_USER: hanzo
       POSTGRES_PASSWORD: hanzo123
