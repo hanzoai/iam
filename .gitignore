@@ -36,7 +36,6 @@ server
 # include helm-chart
 !manifests/casdoor
 iam
-LLM.md
 
 iam-server
 node_modules/
@@ -46,7 +45,7 @@ yarn.lock
 *.log
 .env
 
-LLM.md
+# Symlinked AI agent files (LLM.md stays tracked)
 AGENTS.md
 CLAUDE.md
 GEMINI.md
