@@ -96,12 +96,12 @@ func (idp *IamIdProvider) GetToken(code string) (*oauth2.Token, error) {
 /*
 {
     "sub": "2f80c349-4beb-407f-b1f0-528aac0f1acd",
-    "iss": "https://door.casbin.com",
+    "iss": "https://hanzo.id",
     "aud": "7a11****0fa2172",
     "name": "admin",
     "preferred_username": "Admin",
     "email": "admin@example.com",
-    "picture": "https://casbin.org/img/casbin.svg",
+    "picture": "https://hanzo.ai/img/hanzo.svg",
     "address": "Guangdong",
     "phone": "12345678910"
 }

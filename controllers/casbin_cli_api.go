@@ -160,7 +160,7 @@ func processArgsToTempFiles(args []string) ([]string, []string, error) {
 // RunCasbinCommand
 // @Title RunCasbinCommand
 // @Tag Enforcer API
-// @Description Call Casbin CLI commands
+// @Description Call policy engine CLI commands
 // @Success 200 {object} controllers.Response The Response object
 // @router /run-casbin-command [get]
 func (c *ApiController) RunCasbinCommand() {

@@ -11,7 +11,7 @@
     "Failed to sync policies": "İlkeleri senkronize etmek başarısız oldu",
     "New Adapter": "Yeni Adaptör",
     "Policies": "İlkeler",
-    "Policies - Tooltip": "Casbin ilke kuralları",
+    "Policies - Tooltip": "İlke kuralları",
     "Rule type": "Kural türü",
     "Sync policies successfully": "İlkeler başarıyla senkronize edildi",
     "Use same DB": "Aynı veritabanını kullan",
@@ -398,7 +398,7 @@
     "Menu": "Menü",
     "Method": "Yöntem",
     "Model": "Model",
-    "Model - Tooltip": "Casbin erişim kontrol modeli",
+    "Model - Tooltip": "Erişim kontrol modeli",
     "Models": "Modeller",
     "Name": "Ad",
     "Name - Tooltip": "Benzersiz, dize tabanlı kimlik",
@@ -734,7 +734,7 @@
     "Basic Editor": "Temel Düzenleyici",
     "Edit Model": "Modeli Düzenle",
     "Model text": "Model metni",
-    "Model text - Tooltip": "Casbin erişim kontrol modeli; ACL, RBAC, ABAC, RESTful vb. yerleşik modelleri içerir. Ayrıca özel modeller oluşturabilirsiniz. Daha fazla bilgi için Casbin web sitesini ziyaret edin",
+    "Model text - Tooltip": "Erişim kontrol modeli; ACL, RBAC, ABAC, RESTful vb. yerleşik modelleri içerir. Ayrıca özel modeller oluşturabilirsiniz. Daha fazla bilgi için belgeleri ziyaret edin",
     "New Model": "Yeni Model"
   },
   "order": {
