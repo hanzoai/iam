@@ -43,7 +43,7 @@ jobs:
         with:
           node-version: 20
       - run: corepack enable
-      - run: yarn install && CI=false NODE_OPTIONS="--max-old-space-size=4096" yarn run build
+      - run: pnpm install && CI=false NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
         working-directory: ./web
       - name: Upload build artifacts
         if: github.repository == 'hanzoai/iam' && github.event_name == 'push'
@@ -144,12 +144,13 @@ jobs:
         with:
           node-version: 20
       - run: corepack enable
-      - run: yarn install
+      - run: pnpm install
         working-directory: ./web
       - uses: cypress-io/github-action@v5
         with:
+          install-command: pnpm install
           browser: chrome
-          start: yarn start
+          start: pnpm start
           wait-on: 'http://localhost:7001'
           wait-on-timeout: 210
           working-directory: ./web
