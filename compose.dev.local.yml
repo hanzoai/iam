@@ -1,7 +1,7 @@
 # Minimal dev setup - just database services
 services:
   postgres:
-    image: ghcr.io/hanzoai/sql:17-alpine
+    image: ghcr.io/hanzoai/sql:latest
     ports:
       - "5432:5432"
     environment:
