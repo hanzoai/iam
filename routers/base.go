@@ -145,7 +145,7 @@ func denyMcpRequest(ctx *context.Context) {
 		scheme = "http"
 	}
 	resourceMetadataUrl := fmt.Sprintf("%s://%s/.well-known/oauth-protected-resource", scheme, host)
-	ctx.Output.Header("WWW-Authenticate", fmt.Sprintf("Bearer realm=\"casdoor\", resource_metadata=\"%s\"", resourceMetadataUrl))
+	ctx.Output.Header("WWW-Authenticate", fmt.Sprintf("Bearer realm=\"hanzo-iam\", resource_metadata=\"%s\"", resourceMetadataUrl))
 
 	ctx.Output.SetStatus(http.StatusUnauthorized)
 	_ = ctx.Output.JSON(resp, true, false)

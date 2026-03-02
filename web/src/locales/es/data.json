@@ -11,7 +11,7 @@
     "Failed to sync policies": "Error al sincronizar políticas",
     "New Adapter": "Nuevo adaptador",
     "Policies": "Políticas",
-    "Policies - Tooltip": "Reglas de política de Casbin",
+    "Policies - Tooltip": "Reglas de política",
     "Rule type": "Tipo de regla",
     "Sync policies successfully": "Sincronizar políticas correctamente",
     "Use same DB": "Usar la misma base de datos",
@@ -398,7 +398,7 @@
     "Menu": "Menú",
     "Method": "Método",
     "Model": "Modelo",
-    "Model - Tooltip": "Modelo de control de acceso Casbin",
+    "Model - Tooltip": "Modelo de control de acceso",
     "Models": "Modelos",
     "Name": "Nombre",
     "Name - Tooltip": "ID único basado en cadenas",
@@ -734,7 +734,7 @@
     "Basic Editor": "Editor básico",
     "Edit Model": "Editar modelo",
     "Model text": "Texto modelo",
-    "Model text - Tooltip": "Modelo de control de acceso Casbin, incluyendo modelos integrados como ACL, RBAC, ABAC, RESTful, etc. También puede crear modelos personalizados. Para obtener más información, visite el sitio web de Casbin",
+    "Model text - Tooltip": "Modelo de control de acceso, incluyendo modelos integrados como ACL, RBAC, ABAC, RESTful, etc. También puede crear modelos personalizados. Para obtener más información, visite el documentación",
     "New Model": "Nuevo modelo"
   },
   "order": {
