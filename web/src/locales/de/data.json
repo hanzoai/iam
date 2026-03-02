@@ -11,7 +11,7 @@
     "Failed to sync policies": "Fehler beim Synchronisieren von Richtlinien",
     "New Adapter": "Neuer Adapter",
     "Policies": "Richtlinien",
-    "Policies - Tooltip": "Casbin Richtlinienregeln",
+    "Policies - Tooltip": "Richtlinienregeln",
     "Rule type": "Regeltyp",
     "Sync policies successfully": "Richtlinien synchronisiert",
     "Use same DB": "Gleiche DB verwenden",
@@ -398,7 +398,7 @@
     "Menu": "Menü",
     "Method": "Methode",
     "Model": "Modell",
-    "Model - Tooltip": "Casbin-Zugriffskontrollmodell",
+    "Model - Tooltip": "Zugriffskontrollmodell",
     "Models": "Modelle",
     "Name": "Name",
     "Name - Tooltip": "Eindeutige, auf Strings basierende ID",
@@ -734,7 +734,7 @@
     "Basic Editor": "Basis-Editor",
     "Edit Model": "Modell bearbeiten",
     "Model text": "Modelltext",
-    "Model text - Tooltip": "Casbin Zugriffskontrollmodell inklusive integrierter Modelle wie ACL, RBAC, ABAC, RESTful, usw. Sie können auch benutzerdefinierte Modelle erstellen. Weitere Informationen finden Sie auf der Casbin-Website",
+    "Model text - Tooltip": "Zugriffskontrollmodell inklusive integrierter Modelle wie ACL, RBAC, ABAC, RESTful, usw. Sie können auch benutzerdefinierte Modelle erstellen. Weitere Informationen finden Sie auf der Dokumentation",
     "New Model": "Neues Modell"
   },
   "order": {
