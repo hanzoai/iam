@@ -25,8 +25,8 @@ import (
 // Enforce
 // @Title Enforce
 // @Tag Enforcer API
-// @Description Call Casbin Enforce API
-// @Param   body    body   []string  true   "Casbin request"
+// @Description Call Enforce API
+// @Param   body    body   []string  true   "Enforce request"
 // @Param   permissionId    query   string  false   "permission id"
 // @Param   modelId    query   string  false   "model id"
 // @Param   resourceId    query   string  false   "resource id"
@@ -172,8 +172,8 @@ func (c *ApiController) Enforce() {
 // BatchEnforce
 // @Title BatchEnforce
 // @Tag Enforcer API
-// @Description Call Casbin BatchEnforce API
-// @Param   body    body   []string  true   "array of casbin requests"
+// @Description Call BatchEnforce API
+// @Param   body    body   []string  true   "array of enforce requests"
 // @Param   permissionId    query   string  false   "permission id"
 // @Param   modelId    query   string  false   "model id"
 // @Param   owner    query   string  false   "owner"
@@ -306,7 +306,7 @@ func (c *ApiController) BatchEnforce() {
 // GetAllObjects
 // @Title GetAllObjects
 // @Tag Enforcer API
-// @Description Get all objects for a user (Casbin API)
+// @Description Get all objects for a user
 // @Param   userId    query   string  false   "user id like built-in/admin"
 // @Success 200 {object} controllers.Response The Response object
 // @router /get-all-objects [get]
@@ -332,7 +332,7 @@ func (c *ApiController) GetAllObjects() {
 // GetAllActions
 // @Title GetAllActions
 // @Tag Enforcer API
-// @Description Get all actions for a user (Casbin API)
+// @Description Get all actions for a user
 // @Param   userId    query   string  false   "user id like built-in/admin"
 // @Success 200 {object} controllers.Response The Response object
 // @router /get-all-actions [get]
@@ -358,7 +358,7 @@ func (c *ApiController) GetAllActions() {
 // GetAllRoles
 // @Title GetAllRoles
 // @Tag Enforcer API
-// @Description Get all roles for a user (Casbin API)
+// @Description Get all roles for a user
 // @Param   userId    query   string  false   "user id like built-in/admin"
 // @Success 200 {object} controllers.Response The Response object
 // @router /get-all-roles [get]

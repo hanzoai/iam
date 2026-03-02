@@ -16,7 +16,7 @@
 // @APIVersion 1.503.0
 // @Title Hanzo IAM RESTful API
 // @Description Swagger Docs of Hanzo IAM Backend API
-// @Contact casbin@googlegroups.com
+// @Contact support@hanzo.ai
 // @SecurityDefinition AccessToken apiKey Authorization header
 // @Schemes https,http
 // @ExternalDocs Find out more about Hanzo IAM

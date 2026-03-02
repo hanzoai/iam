@@ -141,7 +141,7 @@ func TestGetId(t *testing.T) {
 		expected    interface{}
 	}{
 		{"Scenery one", []string{"admin", "iam"}, "admin/iam"},
-		{"Scenery two", []string{"admin", "casbin"}, "admin/casbin"},
+		{"Scenery two", []string{"admin", "hanzo"}, "admin/hanzo"},
 		{"Scenery three", []string{"test", "lorem ipsum"}, "test/lorem ipsum"},
 	}
 	for _, scenery := range scenarios {
@@ -159,7 +159,7 @@ func TestGetMd5Hash(t *testing.T) {
 		expected    interface{}
 	}{
 		{"Scenery one", "iam", "0ebc580ae6450fce8762fad1bff32e7b"},
-		{"Scenery two", "casbin", "59c5a967f086f65366a80dbdd1205a6c"},
+		{"Scenery two", "hanzo", "ce15b45484a184c81076752d7f8b30c1"},
 		{"Scenery three", "lorem ipsum", "80a751fde577028640c419000e33eba6"},
 	}
 	for _, scenery := range scenarios {

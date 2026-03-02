@@ -1,4 +1,4 @@
-// Copyright 2026 The Casdoor Authors. All Rights Reserved.
+// Copyright 2026 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import (
 	"github.com/hanzoai/iam/object"
 )
 
-// BuiltinScopes defines the default scope-to-tool mappings for Casdoor's MCP server
+// BuiltinScopes defines the default scope-to-tool mappings for the IAM MCP server
 var BuiltinScopes = []*object.ScopeItem{
 	{
 		Name:        "application:read",
