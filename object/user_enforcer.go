@@ -23,7 +23,7 @@ func NewUserGroupEnforcer(enforcer *casbin.Enforcer) *UserGroupEnforcer {
 
 func (e *UserGroupEnforcer) checkModel() error {
 	if _, ok := e.enforcer.GetModel()["g"]; !ok {
-		return fmt.Errorf("The Casbin model used by enforcer doesn't support RBAC (\"[role_definition]\" section not found), please use a RBAC enabled Casbin model for the enforcer")
+		return fmt.Errorf("The access control model used by enforcer doesn't support RBAC (\"[role_definition]\" section not found), please use a RBAC enabled model for the enforcer")
 	}
 	return nil
 }
