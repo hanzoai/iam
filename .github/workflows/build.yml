@@ -14,7 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
+<<<<<<< Updated upstream
         image: ghcr.io/hanzoai/sql:latest
+=======
+        image: ghcr.io/hanzoai/sql:17-alpine
+>>>>>>> Stashed changes
         env:
           POSTGRES_USER: hanzo
           POSTGRES_PASSWORD: hanzo123
@@ -94,7 +98,11 @@ jobs:
     needs: [ go-tests ]
     services:
       postgres:
+<<<<<<< Updated upstream
         image: ghcr.io/hanzoai/sql:latest
+=======
+        image: ghcr.io/hanzoai/sql:17-alpine
+>>>>>>> Stashed changes
         env:
           POSTGRES_USER: hanzo
           POSTGRES_PASSWORD: hanzo123
