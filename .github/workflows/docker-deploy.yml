@@ -1,201 +1,22 @@
-name: Docker Build and Deploy
+name: Docker Release
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
-env:
-  DOCKER_IMAGE: hanzoai/iam
+concurrency:
+  group: docker-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Fetch CI secrets from Hanzo KMS
-        id: kms
-        continue-on-error: true
-        env:
-          KMS_CLIENT_ID: ${{ secrets.KMS_CLIENT_ID }}
-          KMS_CLIENT_SECRET: ${{ secrets.KMS_CLIENT_SECRET }}
-        run: |
-          set -euo pipefail
-          KMS_URL="${KMS_URL:-https://kms.hanzo.ai}"
-
-          ACCESS_TOKEN="$(
-            curl -fsS -X POST "${KMS_URL}/api/v1/auth/universal-auth/login" \
-              -H "Content-Type: application/json" \
-              -d "$(jq -nc --arg cid "$KMS_CLIENT_ID" --arg cs "$KMS_CLIENT_SECRET" \
-                    '{clientId: $cid, clientSecret: $cs}')" \
-            | jq -r '.accessToken'
-          )"
-
-          [ -n "${ACCESS_TOKEN}" ] && [ "${ACCESS_TOKEN}" != "null" ] || {
-            echo "::warning::Failed to authenticate to Hanzo KMS — Docker Hub push will be skipped"; exit 1; }
-
-          fetch_secret() {
-            curl -fsS "${KMS_URL}/api/v3/secrets/raw/${1}?workspaceSlug=gitops&environment=prod&secretPath=/ci&viewSecretValue=true&include_imports=true" \
-              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-            | jq -r '.secret.secretValue'
-          }
-
-          for name in DOCKERHUB_USERNAME DOCKERHUB_TOKEN DIGITALOCEAN_ACCESS_TOKEN; do
-            val="$(fetch_secret "$name")"
-            [ -n "$val" ] && [ "$val" != "null" ] || { echo "::warning::Missing KMS secret $name"; exit 1; }
-            echo "::add-mask::${val}"
-            echo "${name}=${val}" >> "$GITHUB_OUTPUT"
-          done
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub
-        id: dockerhub
-        if: steps.kms.outcome == 'success'
-        continue-on-error: true
-        uses: docker/login-action@v3
-        with:
-          registry: docker.io
-          username: ${{ steps.kms.outputs.DOCKERHUB_USERNAME }}
-          password: ${{ steps.kms.outputs.DOCKERHUB_TOKEN }}
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(cat version.txt 2>/dev/null || echo "latest")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Extract GHCR metadata
-        id: meta-ghcr
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/hanzoai/iam
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix={{branch}}-
-
-      - name: Build and push to GHCR
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          target: STANDARD
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-ghcr.outputs.tags }}
-          labels: ${{ steps.meta-ghcr.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Extract Docker Hub metadata
-        id: meta-dockerhub
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.DOCKER_IMAGE }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix={{branch}}-
-
-      - name: Push to Docker Hub
-        if: steps.dockerhub.outcome == 'success'
-        continue-on-error: true
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          target: STANDARD
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-dockerhub.outputs.tags }}
-          labels: ${{ steps.meta-dockerhub.outputs.labels }}
-          cache-from: type=gha
-
-  deploy:
-    needs: build
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Fetch deploy secrets from Hanzo KMS
-        id: kms
-        continue-on-error: true
-        env:
-          KMS_CLIENT_ID: ${{ secrets.KMS_CLIENT_ID }}
-          KMS_CLIENT_SECRET: ${{ secrets.KMS_CLIENT_SECRET }}
-        run: |
-          set -euo pipefail
-          KMS_URL="${KMS_URL:-https://kms.hanzo.ai}"
-
-          ACCESS_TOKEN="$(
-            curl -fsS -X POST "${KMS_URL}/api/v1/auth/universal-auth/login" \
-              -H "Content-Type: application/json" \
-              -d "$(jq -nc --arg cid "$KMS_CLIENT_ID" --arg cs "$KMS_CLIENT_SECRET" \
-                    '{clientId: $cid, clientSecret: $cs}')" \
-            | jq -r '.accessToken'
-          )"
-
-          DO_TOKEN="$(
-            curl -fsS "${KMS_URL}/api/v3/secrets/raw/DIGITALOCEAN_ACCESS_TOKEN?workspaceSlug=gitops&environment=prod&secretPath=/ci&viewSecretValue=true&include_imports=true" \
-              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-            | jq -r '.secret.secretValue'
-          )"
-
-          echo "::add-mask::${DO_TOKEN}"
-          echo "do_token=${DO_TOKEN}" >> "$GITHUB_OUTPUT"
-
-      - name: Install doctl
-        if: steps.kms.outcome == 'success'
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ steps.kms.outputs.do_token }}
-
-      - name: Configure kubectl (hanzo-k8s)
-        if: steps.kms.outcome == 'success'
-        run: doctl kubernetes cluster kubeconfig save hanzo-k8s
-
-      - name: Deploy to K8s
-        if: steps.kms.outcome == 'success'
-        run: |
-          kubectl -n hanzo set image deployment/iam \
-            iam=ghcr.io/hanzoai/iam:latest
-          kubectl -n hanzo rollout status deployment/iam --timeout=300s
-
-      - name: Verify health
-        if: steps.kms.outcome == 'success'
-        run: |
-          kubectl wait --for=condition=available deployment/iam -n hanzo --timeout=120s
-          POD=$(kubectl get pod -n hanzo -l app=iam -o jsonpath='{.items[0].metadata.name}')
-          kubectl exec "$POD" -n hanzo -- wget -qO- http://localhost:8000/api/health
-
-      - name: Skip deploy notification
-        if: steps.kms.outcome != 'success'
-        run: echo "::warning::Deploy skipped — KMS unavailable. Deploy manually with kubectl."
-
-  notify:
-    needs: [build, deploy]
-    if: ${{ always() && needs.deploy.result != 'skipped' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Log result
-        run: echo "Deploy result ${{ needs.deploy.result }}"
+  docker:
+    uses: hanzoai/.github/.github/workflows/docker-build.yml@main
+    with:
+      image: ghcr.io/hanzoai/iam
+      deploy: true
+      deploy-deployment: iam
+      deploy-namespace: hanzo
+      target: STANDARD
+    secrets: inherit
