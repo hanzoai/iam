@@ -200,6 +200,14 @@ func UpdatePermission(id string, permission *Permission) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+
+		// Evict permission cache for all users affected by this permission change.
+		for _, u := range oldPermission.Users {
+			EvictPermCache(u)
+		}
+		for _, u := range permission.Users {
+			EvictPermCache(u)
+		}
 	}
 
 	return affected != 0, nil
@@ -220,6 +228,10 @@ func AddPermission(permission *Permission) (bool, error) {
 		err = addPolicies(permission)
 		if err != nil {
 			return false, err
+		}
+
+		for _, u := range permission.Users {
+			EvictPermCache(u)
 		}
 	}
 
@@ -249,6 +261,10 @@ func AddPermissions(permissions []*Permission) (bool, error) {
 			err = addPolicies(permission)
 			if err != nil {
 				return false, err
+			}
+
+			for _, u := range permission.Users {
+				EvictPermCache(u)
 			}
 		}
 	}
@@ -321,6 +337,10 @@ func DeletePermission(permission *Permission) (bool, error) {
 		// 		}
 		// 	}
 		// }
+
+		for _, u := range permission.Users {
+			EvictPermCache(u)
+		}
 	}
 
 	return affected, nil
