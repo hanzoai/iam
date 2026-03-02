@@ -1328,7 +1328,9 @@
         "https://pars.ai/callback",
         "https://pars.id/callback",
         "https://app.pars.ai/callback",
-        "http://localhost:3000/callback"
+        "https://cloud.pars.network/auth/callback",
+        "http://localhost:3000/callback",
+        "http://localhost:3000/auth/callback"
       ],
       "tokenFormat": "JWT",
       "tokenFields": [],
