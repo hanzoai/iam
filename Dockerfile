@@ -10,7 +10,7 @@ COPY ./web .
 RUN NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
 
 # ── Go build (native per-arch, cached) ─────────────────────────
-FROM golang:1.24.9 AS back
+FROM golang:1.26 AS back
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 WORKDIR /go/src/hanzo-iam
