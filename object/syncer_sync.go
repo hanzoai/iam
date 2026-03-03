@@ -30,8 +30,7 @@ func (syncer *Syncer) syncUsers() error {
 	users, err := GetUsers(syncer.Organization)
 	if err != nil {
 		line := fmt.Sprintf("[%s] %s\n", util.GetCurrentTime(), err.Error())
-		_, err2 := updateSyncerErrorText(syncer, line)
-		if err2 != nil {
+		if err2 := updateSyncerErrorText(syncer, line); err2 != nil {
 			panic(err2)
 		}
 
@@ -41,8 +40,7 @@ func (syncer *Syncer) syncUsers() error {
 	oUsers, err := syncer.getOriginalUsers()
 	if err != nil {
 		line := fmt.Sprintf("[%s] %s\n", util.GetCurrentTime(), err.Error())
-		_, err2 := updateSyncerErrorText(syncer, line)
-		if err2 != nil {
+		if err2 := updateSyncerErrorText(syncer, line); err2 != nil {
 			panic(err2)
 		}
 
@@ -56,8 +54,7 @@ func (syncer *Syncer) syncUsers() error {
 		_, affiliationMap, err = syncer.getAffiliationMap()
 		if err != nil {
 			line := fmt.Sprintf("[%s] %s\n", util.GetCurrentTime(), err.Error())
-			_, err2 := updateSyncerErrorText(syncer, line)
-			if err2 != nil {
+			if err2 := updateSyncerErrorText(syncer, line); err2 != nil {
 				panic(err2)
 			}
 
@@ -95,7 +92,7 @@ func (syncer *Syncer) syncUsers() error {
 					updatedUser.PreHash = oHash
 
 					fmt.Printf("Update from oUser to user: %v\n", updatedUser)
-					_, err = syncer.updateUserForOriginalFields(updatedUser, key)
+					err = syncer.updateUserForOriginalFields(updatedUser, key)
 					if err != nil {
 						return err
 					}
@@ -132,7 +129,7 @@ func (syncer *Syncer) syncUsers() error {
 						updatedUser.PreHash = oHash
 
 						fmt.Printf("Update from oUser to user (2nd condition): %v\n", updatedUser)
-						_, err = syncer.updateUserForOriginalFields(updatedUser, key)
+						err = syncer.updateUserForOriginalFields(updatedUser, key)
 						if err != nil {
 							return err
 						}

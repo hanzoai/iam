@@ -26,13 +26,11 @@ import (
 	"github.com/xorm-io/core"
 )
 
-func updateUserColumn(column string, user *User) bool {
-	affected, err := ormer.Engine.ID(core.PK{user.Owner, user.Name}).Cols(column).Update(user)
+func updateUserColumn(column string, user *User) {
+	_, err := ormer.Engine.ID(core.PK{user.Owner, user.Name}).Cols(column).Update(user)
 	if err != nil {
 		panic(err)
 	}
-
-	return affected != 0
 }
 
 func TestSyncAvatarsFromGitHub(t *testing.T) {
