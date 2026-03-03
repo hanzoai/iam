@@ -8,6 +8,7 @@
     "Challenge method should be S256": "Metoda wyzwania powinna być S256",
     "DeviceCode Invalid": "Nieprawidłowy kod urządzenia",
     "Failed to create user, user information is invalid: %s": "Nie udało się utworzyć użytkownika, dane użytkownika są nieprawidłowe: %s",
+    "Failed to find default application for new organization": "Failed to find default application for new organization",
     "Failed to login in: %s": "Logowanie nie powiodło się: %s",
     "Invalid token": "Nieprawidłowy token",
     "State expected: %s, but got: %s": "Oczekiwano stanu: %s, ale otrzymano: %s",
@@ -109,6 +110,7 @@
     "Insufficient balance: new balance %v would be below credit limit %v": "Niewystarczające saldo: nowe saldo %v byłoby poniżej limitu kredytowego %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Niewystarczające saldo: nowe saldo organizacji %v byłoby poniżej limitu kredytowego %v",
     "Missing parameter": "Brakujący parametr",
+    "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
     "Only admin user can specify user": "Tylko administrator może wskazać użytkownika",
     "Please login first": "Najpierw się zaloguj",
     "The LDAP: %s does not exist": "LDAP: %s nie istnieje",
@@ -117,8 +119,6 @@
     "The user: %s doesn't exist": "Użytkownik: %s nie istnieje",
     "The user: %s is not found": "Użytkownik: %s nie został znaleziony",
     "User is required for User category transaction": "Użytkownik jest wymagany do transakcji kategorii użytkownika",
-    "The application: %s does not exist": "The application: %s does not exist",
-    "The organization: %s does not exist": "The organization: %s does not exist",
     "Wrong userId": "Nieprawidłowy userId",
     "don't support captchaProvider: ": "nie obsługuje captchaProvider: ",
     "this operation is not allowed in demo mode": "ta operacja nie jest dozwolona w trybie demo",
@@ -141,8 +141,7 @@
   "organization": {
     "Only admin can modify the %s.": "Tylko administrator może modyfikować %s.",
     "The %s is immutable.": "%s jest niezmienny.",
-    "Unknown modify rule %s.": "Nieznana reguła modyfikacji %s.",
-    "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Hanzo IAM. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option.": "Dodawanie nowego użytkownika do organizacji „built-in' (wbudowanej) jest obecnie wyłączone. Należy zauważyć, że wszyscy użytkownicy w organizacji „built-in' są globalnymi administratorami w Hanzo IAM. Zobacz dokumentację: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. Jeśli nadal chcesz utworzyć użytkownika dla organizacji „built-in', przejdź do strony ustawień organizacji i włącz opcję „Ma zgodę na uprawnienia'."
+    "Unknown modify rule %s.": "Nieznana reguła modyfikacji %s."
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "Uprawnienie: \"%s\" nie istnieje"
@@ -155,7 +154,6 @@
     "Invalid application id": "Nieprawidłowe id aplikacji",
     "No ID Verification provider configured": "Brak skonfigurowanego dostawcy weryfikacji ID",
     "Provider is not an ID Verification provider": "Dostawca nie jest dostawcą weryfikacji ID",
-    "The provider: %s does not exist": "The provider: %s does not exist",
     "the provider: %s does not exist": "dostawca: %s nie istnieje"
   },
   "resource": {
@@ -190,6 +188,7 @@
     "Grant_type: %s is not supported in this application": "Grant_type: %s nie jest obsługiwany w tej aplikacji",
     "Invalid application or wrong clientSecret": "Nieprawidłowa aplikacja lub błędny clientSecret",
     "Invalid client_id": "Nieprawidłowy client_id",
+    "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "Redirect URI: %s nie istnieje na liście dozwolonych Redirect URI",
     "Token not found, invalid accessToken": "Token nie znaleziony, nieprawidłowy accessToken"
   },

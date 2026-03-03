@@ -8,6 +8,7 @@
     "Challenge method should be S256": "Challenge yöntemi S256 olmalı",
     "DeviceCode Invalid": "Cihaz Kodu Geçersiz",
     "Failed to create user, user information is invalid: %s": "Kullanıcı oluşturulamadı, kullanıcı bilgileri geçersiz: %s",
+    "Failed to find default application for new organization": "Failed to find default application for new organization",
     "Failed to login in: %s": "Giriş yapılamadı: %s",
     "Invalid token": "Geçersiz token",
     "State expected: %s, but got: %s": "Beklenen durum: %s, fakat alınan: %s",
@@ -109,6 +110,7 @@
     "Insufficient balance: new balance %v would be below credit limit %v": "Yetersiz bakiye: yeni bakiye %v kredi limitinin altında olacak %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Yetersiz bakiye: yeni organizasyon bakiyesi %v kredi limitinin altında olacak %v",
     "Missing parameter": "Eksik parametre",
+    "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
     "Only admin user can specify user": "Yalnızca yönetici kullanıcı kullanıcı belirleyebilir",
     "Please login first": "Lütfen önce giriş yapın",
     "The LDAP: %s does not exist": "LDAP: %s mevcut değil",
@@ -117,8 +119,6 @@
     "The user: %s doesn't exist": "Kullanıcı: %s bulunamadı",
     "The user: %s is not found": "Kullanıcı: %s bulunamadı",
     "User is required for User category transaction": "Kullanıcı kategorisi işlemi için kullanıcı gerekli",
-    "The application: %s does not exist": "The application: %s does not exist",
-    "The organization: %s does not exist": "The organization: %s does not exist",
     "Wrong userId": "Yanlış kullanıcı kimliği",
     "don't support captchaProvider: ": "captchaProvider desteklenmiyor: ",
     "this operation is not allowed in demo mode": "bu işlem demo modunda izin verilmiyor",
@@ -141,8 +141,7 @@
   "organization": {
     "Only admin can modify the %s.": "Yalnızca yönetici %s değiştirebilir.",
     "The %s is immutable.": "%s değiştirilemez.",
-    "Unknown modify rule %s.": "Bilinmeyen değiştirme kuralı %s.",
-    "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Hanzo IAM. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option.": "'built-in' (yerleşik) organizasyona yeni bir kullanıcı ekleme şu anda devre dışı bırakılmıştır. Not: 'built-in' organizasyonundaki tüm kullanıcılar Hanzo IAM'da genel yöneticilerdir. Belgelere bakın: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. Hala 'built-in' organizasyonu için bir kullanıcı oluşturmak isterseniz, organizasyonun ayarları sayfasına gidin ve 'Yetki onayı var' seçeneğini etkinleştirin."
+    "Unknown modify rule %s.": "Bilinmeyen değiştirme kuralı %s."
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "İzin: \"%s\" mevcut değil"
@@ -155,7 +154,6 @@
     "Invalid application id": "Geçersiz uygulama id",
     "No ID Verification provider configured": "Kimlik Doğrulama sağlayıcısı yapılandırılmamış",
     "Provider is not an ID Verification provider": "Sağlayıcı bir Kimlik Doğrulama sağlayıcısı değil",
-    "The provider: %s does not exist": "The provider: %s does not exist",
     "the provider: %s does not exist": "provider: %s bulunamadı"
   },
   "resource": {
@@ -190,6 +188,7 @@
     "Grant_type: %s is not supported in this application": "Grant_type: %s bu uygulamada desteklenmiyor",
     "Invalid application or wrong clientSecret": "Geçersiz uygulama veya yanlış clientSecret",
     "Invalid client_id": "Geçersiz client_id",
+    "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "Redirect URI: %s izin verilen Redirect URI listesinde yok",
     "Token not found, invalid accessToken": "Token bulunamadı, geçersiz accessToken"
   },

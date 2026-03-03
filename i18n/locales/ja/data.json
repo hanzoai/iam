@@ -8,6 +8,7 @@
     "Challenge method should be S256": "チャレンジメソッドはS256である必要があります",
     "DeviceCode Invalid": "デバイスコードが無効です",
     "Failed to create user, user information is invalid: %s": "ユーザーの作成に失敗しました。ユーザー情報が無効です：%s",
+    "Failed to find default application for new organization": "Failed to find default application for new organization",
     "Failed to login in: %s": "ログインできませんでした：%s",
     "Invalid token": "無効なトークン",
     "State expected: %s, but got: %s": "期待される状態： %s、実際には：%s",
@@ -109,6 +110,7 @@
     "Insufficient balance: new balance %v would be below credit limit %v": "残高不足：新しい残高 %v がクレジット制限 %v を下回ります",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "残高不足：新しい組織残高 %v がクレジット制限 %v を下回ります",
     "Missing parameter": "不足しているパラメーター",
+    "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
     "Only admin user can specify user": "管理者ユーザーのみがユーザーを指定できます",
     "Please login first": "最初にログインしてください",
     "The LDAP: %s does not exist": "LDAP：%s は存在しません",
@@ -117,8 +119,6 @@
     "The user: %s doesn't exist": "そのユーザー：%sは存在しません",
     "The user: %s is not found": "ユーザー：%s が見つかりません",
     "User is required for User category transaction": "ユーザーカテゴリトランザクションにはユーザーが必要です",
-    "The application: %s does not exist": "The application: %s does not exist",
-    "The organization: %s does not exist": "The organization: %s does not exist",
     "Wrong userId": "無効なユーザーIDです",
     "don't support captchaProvider: ": "captchaProviderをサポートしないでください",
     "this operation is not allowed in demo mode": "この操作はデモモードでは許可されていません",
@@ -141,8 +141,7 @@
   "organization": {
     "Only admin can modify the %s.": "管理者のみが%sを変更できます。",
     "The %s is immutable.": "%sは不変です。",
-    "Unknown modify rule %s.": "未知の変更ルール%s。",
-    "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Hanzo IAM. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option.": "「built-in」（組み込み）組織への新しいユーザーの追加は現在無効になっています。注意：「built-in」組織のすべてのユーザーは、Hanzo IAM のグローバル管理者です。ドキュメントを参照してください：https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself。「built-in」組織のユーザーを作成したい場合は、組織の設定ページに移動し、「特権同意を持つ」オプションを有効にしてください。"
+    "Unknown modify rule %s.": "未知の変更ルール%s。"
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "権限「%s」は存在しません"
@@ -155,7 +154,6 @@
     "Invalid application id": "アプリケーションIDが無効です",
     "No ID Verification provider configured": "ID認証プロバイダーが設定されていません",
     "Provider is not an ID Verification provider": "プロバイダーはID認証プロバイダーではありません",
-    "The provider: %s does not exist": "The provider: %s does not exist",
     "the provider: %s does not exist": "プロバイダー%sは存在しません"
   },
   "resource": {
@@ -190,6 +188,7 @@
     "Grant_type: %s is not supported in this application": "grant_type：%sはこのアプリケーションでサポートされていません",
     "Invalid application or wrong clientSecret": "無効なアプリケーションまたは誤ったクライアントシークレットです",
     "Invalid client_id": "client_idが無効です",
+    "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "リダイレクトURI：%sは許可されたリダイレクトURIリストに存在しません",
     "Token not found, invalid accessToken": "トークンが見つかりません。無効なアクセストークンです"
   },

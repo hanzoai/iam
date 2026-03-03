@@ -8,6 +8,7 @@
     "Challenge method should be S256": "Метод виклику має бути S256",
     "DeviceCode Invalid": "Недійсний DeviceCode",
     "Failed to create user, user information is invalid: %s": "Не вдалося створити користувача, інформація недійсна: %s",
+    "Failed to find default application for new organization": "Failed to find default application for new organization",
     "Failed to login in: %s": "Не вдалося увійти: %s",
     "Invalid token": "Недійсний токен",
     "State expected: %s, but got: %s": "Очікувалося стан: %s, але отримано: %s",
@@ -109,6 +110,7 @@
     "Insufficient balance: new balance %v would be below credit limit %v": "Недостатній баланс: новий баланс %v буде нижче кредитного ліміту %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Недостатній баланс: новий баланс організації %v буде нижче кредитного ліміту %v",
     "Missing parameter": "Відсутній параметр",
+    "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
     "Only admin user can specify user": "Лише адміністратор може вказати користувача",
     "Please login first": "Спочатку увійдіть",
     "The LDAP: %s does not exist": "LDAP: %s не існує",
@@ -117,8 +119,6 @@
     "The user: %s doesn't exist": "Користувач: %s не існує",
     "The user: %s is not found": "Користувач: %s не знайдено",
     "User is required for User category transaction": "Користувач обов'язковий для транзакції категорії користувача",
-    "The application: %s does not exist": "The application: %s does not exist",
-    "The organization: %s does not exist": "The organization: %s does not exist",
     "Wrong userId": "Неправильний userId",
     "don't support captchaProvider: ": "не підтримується captchaProvider: ",
     "this operation is not allowed in demo mode": "ця операція недоступна в демо-режимі",
@@ -141,8 +141,7 @@
   "organization": {
     "Only admin can modify the %s.": "Лише адміністратор може змінити %s.",
     "The %s is immutable.": "%s незмінний.",
-    "Unknown modify rule %s.": "Невідоме правило зміни %s.",
-    "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Hanzo IAM. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option.": "Додавання нового користувача до організації «built-in» (вбудованої) на даний момент вимкнено. Зауважте: усі користувачі в організації «built-in» є глобальними адміністраторами в Hanzo IAM. Дивіться документацію: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. Якщо ви все ще хочете створити користувача для організації «built-in», перейдіть на сторінку налаштувань організації та увімкніть опцію «Має згоду на привілеї»."
+    "Unknown modify rule %s.": "Невідоме правило зміни %s."
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "Дозвіл: \"%s\" не існує"
@@ -155,7 +154,6 @@
     "Invalid application id": "Недійсний id додатка",
     "No ID Verification provider configured": "Провайдер верифікації ID не налаштований",
     "Provider is not an ID Verification provider": "Провайдер не є провайдером верифікації ID",
-    "The provider: %s does not exist": "The provider: %s does not exist",
     "the provider: %s does not exist": "провайдер: %s не існує"
   },
   "resource": {
@@ -190,6 +188,7 @@
     "Grant_type: %s is not supported in this application": "Grant_type: %s не підтримується в цьому додатку",
     "Invalid application or wrong clientSecret": "Недійсний додаток або неправильний clientSecret",
     "Invalid client_id": "Недійсний client_id",
+    "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "Redirect URI: %s відсутній у списку дозволених",
     "Token not found, invalid accessToken": "Токен не знайдено, недійсний accessToken"
   },

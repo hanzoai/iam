@@ -8,6 +8,7 @@
     "Challenge method should be S256": "Die Challenge-Methode sollte S256 sein",
     "DeviceCode Invalid": "Gerätecode ungültig",
     "Failed to create user, user information is invalid: %s": "Es konnte kein Benutzer erstellt werden, da die Benutzerinformationen ungültig sind: %s",
+    "Failed to find default application for new organization": "Failed to find default application for new organization",
     "Failed to login in: %s": "Konnte nicht anmelden: %s",
     "Invalid token": "Ungültiges Token",
     "State expected: %s, but got: %s": "Erwarteter Zustand: %s, aber erhalten: %s",
@@ -109,6 +110,7 @@
     "Insufficient balance: new balance %v would be below credit limit %v": "Unzureichendes Guthaben: neues Guthaben %v wäre unter dem Kreditlimit %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Unzureichendes Guthaben: neues Organisationsguthaben %v wäre unter dem Kreditlimit %v",
     "Missing parameter": "Fehlender Parameter",
+    "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
     "Only admin user can specify user": "Nur Administrator kann Benutzer angeben",
     "Please login first": "Bitte zuerst einloggen",
     "The LDAP: %s does not exist": "Das LDAP: %s existiert nicht",
@@ -117,8 +119,6 @@
     "The user: %s doesn't exist": "Der Benutzer %s existiert nicht",
     "The user: %s is not found": "Der Benutzer: %s wurde nicht gefunden",
     "User is required for User category transaction": "Benutzer ist für Benutzer-Kategorie-Transaktionen erforderlich",
-    "The application: %s does not exist": "The application: %s does not exist",
-    "The organization: %s does not exist": "The organization: %s does not exist",
     "Wrong userId": "Falsche Benutzer-ID",
     "don't support captchaProvider: ": "Unterstütze captchaProvider nicht:",
     "this operation is not allowed in demo mode": "Dieser Vorgang ist im Demo-Modus nicht erlaubt",
@@ -141,8 +141,7 @@
   "organization": {
     "Only admin can modify the %s.": "Nur der Administrator kann das %s ändern.",
     "The %s is immutable.": "Das %s ist unveränderlich.",
-    "Unknown modify rule %s.": "Unbekannte Änderungsregel %s.",
-    "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Hanzo IAM. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option.": "Das Hinzufügen eines neuen Benutzers zur 'eingebauten' Organisation ist derzeit deaktiviert. Bitte beachten Sie: Alle Benutzer in der 'eingebauten' Organisation sind globale Administratoren in Hanzo IAM. Siehe die Docs: https://iam.hanzo.ai/docs/basic/core-concepts#how  -does-iam-manage-sich selbst. Wenn Sie immer noch einen Benutzer für die 'eingebaute' Organisation erstellen möchten, gehen Sie auf die Einstellungsseite der Organisation und aktivieren Sie die Option 'Habt Berechtigungszustimmung'."
+    "Unknown modify rule %s.": "Unbekannte Änderungsregel %s."
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "Die Berechtigung: \"%s\" existiert nicht"
@@ -155,7 +154,6 @@
     "Invalid application id": "Ungültige Anwendungs-ID",
     "No ID Verification provider configured": "Kein ID-Verifizierungsanbieter konfiguriert",
     "Provider is not an ID Verification provider": "Anbieter ist kein ID-Verifizierungsanbieter",
-    "The provider: %s does not exist": "The provider: %s does not exist",
     "the provider: %s does not exist": "Der Anbieter %s existiert nicht"
   },
   "resource": {
@@ -190,6 +188,7 @@
     "Grant_type: %s is not supported in this application": "Grant_type: %s wird von dieser Anwendung nicht unterstützt",
     "Invalid application or wrong clientSecret": "Ungültige Anwendung oder falsches clientSecret",
     "Invalid client_id": "Ungültige client_id",
+    "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "Weiterleitungs-URI: %s ist nicht in der Liste erlaubter Weiterleitungs-URIs vorhanden",
     "Token not found, invalid accessToken": "Token nicht gefunden, ungültiger Zugriffs-Token"
   },
