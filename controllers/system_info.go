@@ -70,5 +70,9 @@ func (c *ApiController) GetVersionInfo() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /health [get]
 func (c *ApiController) Health() {
-	c.ResponseOk()
+	c.ResponseOk(map[string]interface{}{
+		"service": "iam",
+		"version": util.Version,
+		"commit":  util.CommitId,
+	})
 }
