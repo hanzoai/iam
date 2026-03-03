@@ -318,6 +318,12 @@ func (c *ApiController) Signup() {
 	// Welcome credit is now granted by Commerce when user adds a payment method.
 	// This prevents abuse from mass-created accounts with no payment verification.
 
+	// Asynchronously provision the user's Commerce account and free plan.
+	// Non-blocking: signup succeeds even if Commerce is unreachable.
+	util.SafeGoroutine(func() {
+		util.SyncUserToCommerce(user.Owner, user.Name, user.Email)
+	})
+
 	err = object.AddUserToOriginalDatabase(user)
 	if err != nil {
 		c.ResponseError(err.Error())
