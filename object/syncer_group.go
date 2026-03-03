@@ -52,8 +52,7 @@ func (syncer *Syncer) syncGroups() error {
 	groups, err := GetGroups(syncer.Organization)
 	if err != nil {
 		line := fmt.Sprintf("[%s] %s\n", util.GetCurrentTime(), err.Error())
-		_, err2 := updateSyncerErrorText(syncer, line)
-		if err2 != nil {
+		if err2 := updateSyncerErrorText(syncer, line); err2 != nil {
 			panic(err2)
 		}
 		return err
@@ -63,8 +62,7 @@ func (syncer *Syncer) syncGroups() error {
 	oGroups, err := syncer.getOriginalGroups()
 	if err != nil {
 		line := fmt.Sprintf("[%s] %s\n", util.GetCurrentTime(), err.Error())
-		_, err2 := updateSyncerErrorText(syncer, line)
-		if err2 != nil {
+		if err2 := updateSyncerErrorText(syncer, line); err2 != nil {
 			panic(err2)
 		}
 		return err
