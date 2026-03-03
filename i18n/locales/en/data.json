@@ -8,6 +8,7 @@
     "Challenge method should be S256": "Challenge method should be S256",
     "DeviceCode Invalid": "DeviceCode Invalid",
     "Failed to create user, user information is invalid: %s": "Failed to create user, user information is invalid: %s",
+    "Failed to find default application for new organization": "Failed to find default application for new organization",
     "Failed to login in: %s": "Failed to login in: %s",
     "Invalid token": "Invalid token",
     "State expected: %s, but got: %s": "State expected: %s, but got: %s",
@@ -109,6 +110,7 @@
     "Insufficient balance: new balance %v would be below credit limit %v": "Insufficient balance: new balance %v would be below credit limit %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Insufficient balance: new organization balance %v would be below credit limit %v",
     "Missing parameter": "Missing parameter",
+    "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
     "Only admin user can specify user": "Only admin user can specify user",
     "Please login first": "Please login first",
     "The LDAP: %s does not exist": "The LDAP: %s does not exist",
@@ -139,8 +141,7 @@
   "organization": {
     "Only admin can modify the %s.": "Only admin can modify the %s.",
     "The %s is immutable.": "The %s is immutable.",
-    "Unknown modify rule %s.": "Unknown modify rule %s.",
-    "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Hanzo IAM. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option.": "adding a new user to the 'built-in' organization is currently disabled. Please note: all users in the 'built-in' organization are global administrators in Hanzo IAM. Refer to the docs: https://iam.hanzo.ai/docs/basic/core-concepts#how-does-iam-manage-itself. If you still wish to create a user for the 'built-in' organization, go to the organization's settings page and enable the 'Has privilege consent' option."
+    "Unknown modify rule %s.": "Unknown modify rule %s."
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "The permission: \"%s\" doesn't exist"
@@ -187,6 +188,7 @@
     "Grant_type: %s is not supported in this application": "Grant_type: %s is not supported in this application",
     "Invalid application or wrong clientSecret": "Invalid application or wrong clientSecret",
     "Invalid client_id": "Invalid client_id",
+    "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "Redirect URI: %s doesn't exist in the allowed Redirect URI list",
     "Token not found, invalid accessToken": "Token not found, invalid accessToken"
   },
