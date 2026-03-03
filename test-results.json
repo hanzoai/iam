@@ -142,29 +142,24 @@
     "updateSourceMethod": "patch",
     "version": "1.58.0",
     "workers": 5,
-    "webServer": {
-      "command": "docker compose up",
-      "url": "http://localhost:8000/api/health",
-      "reuseExistingServer": true,
-      "timeout": 120000
-    }
+    "webServer": null
   },
   "suites": [
     {
-      "title": "visual-appearance.spec.ts",
-      "file": "visual-appearance.spec.ts",
+      "title": "iam-login.spec.ts",
+      "file": "iam-login.spec.ts",
       "column": 0,
       "line": 0,
       "specs": [],
       "suites": [
         {
-          "title": "Hanzo IAM Visual Appearance",
-          "file": "visual-appearance.spec.ts",
-          "line": 29,
+          "title": "OIDC Discovery",
+          "file": "iam-login.spec.ts",
+          "line": 92,
           "column": 6,
           "specs": [
             {
-              "title": "uses dark background color",
+              "title": "hanzo.id — /.well-known/openid-configuration",
               "ok": true,
               "tags": [],
               "tests": [
@@ -179,16 +174,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1275,
+                      "duration": 253,
                       "errors": [],
-                      "stdout": [
-                        {
-                          "text": "Body background color: rgb(10, 10, 10)\n"
-                        }
-                      ],
+                      "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-25T23:14:48.656Z",
+                      "startTime": "2026-03-06T05:36:04.626Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -196,13 +187,13 @@
                   "status": "expected"
                 }
               ],
-              "id": "9b4056821743fc6531b1-6cf71a97e41a0c0a79dd",
-              "file": "visual-appearance.spec.ts",
-              "line": 36,
-              "column": 7
+              "id": "71cffa39e79e3aa37c13-c25dbf00f577842be63f",
+              "file": "iam-login.spec.ts",
+              "line": 94,
+              "column": 9
             },
             {
-              "title": "uses light text color",
+              "title": "auth.hanzo.ai — /.well-known/openid-configuration",
               "ok": true,
               "tags": [],
               "tests": [
@@ -217,16 +208,12 @@
                       "workerIndex": 1,
                       "parallelIndex": 1,
                       "status": "passed",
-                      "duration": 1393,
+                      "duration": 239,
                       "errors": [],
-                      "stdout": [
-                        {
-                          "text": "Text color: rgb(250, 250, 250)\n"
-                        }
-                      ],
+                      "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-25T23:14:48.686Z",
+                      "startTime": "2026-03-06T05:36:04.650Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -234,13 +221,13 @@
                   "status": "expected"
                 }
               ],
-              "id": "9b4056821743fc6531b1-df57aa4536531803d47f",
-              "file": "visual-appearance.spec.ts",
-              "line": 47,
-              "column": 7
+              "id": "71cffa39e79e3aa37c13-d2bfde78383613e4916d",
+              "file": "iam-login.spec.ts",
+              "line": 94,
+              "column": 9
             },
             {
-              "title": "login panel has dark background",
+              "title": "lux.id — /.well-known/openid-configuration",
               "ok": true,
               "tags": [],
               "tests": [
@@ -255,16 +242,12 @@
                       "workerIndex": 2,
                       "parallelIndex": 2,
                       "status": "passed",
-                      "duration": 1813,
+                      "duration": 261,
                       "errors": [],
-                      "stdout": [
-                        {
-                          "text": "Login panel background: rgb(10, 10, 10)\n"
-                        }
-                      ],
+                      "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-25T23:14:48.832Z",
+                      "startTime": "2026-03-06T05:36:04.633Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -272,13 +255,13 @@
                   "status": "expected"
                 }
               ],
-              "id": "9b4056821743fc6531b1-a8058892df97c0a24b97",
-              "file": "visual-appearance.spec.ts",
-              "line": 60,
-              "column": 7
+              "id": "71cffa39e79e3aa37c13-fe20bd16bd83ff5410ee",
+              "file": "iam-login.spec.ts",
+              "line": 94,
+              "column": 9
             },
             {
-              "title": "primary button uses Hanzo red",
+              "title": "pars.id — /.well-known/openid-configuration",
               "ok": true,
               "tags": [],
               "tests": [
@@ -293,16 +276,12 @@
                       "workerIndex": 3,
                       "parallelIndex": 3,
                       "status": "passed",
-                      "duration": 1235,
+                      "duration": 251,
                       "errors": [],
-                      "stdout": [
-                        {
-                          "text": "Primary button color: rgb(253, 68, 68)\n"
-                        }
-                      ],
+                      "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-25T23:14:48.806Z",
+                      "startTime": "2026-03-06T05:36:04.631Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -310,13 +289,13 @@
                   "status": "expected"
                 }
               ],
-              "id": "9b4056821743fc6531b1-19ca7ea2f65e86201c86",
-              "file": "visual-appearance.spec.ts",
-              "line": 78,
-              "column": 7
+              "id": "71cffa39e79e3aa37c13-f44ddbe07fa79fb1bc0c",
+              "file": "iam-login.spec.ts",
+              "line": 94,
+              "column": 9
             },
             {
-              "title": "does NOT show \"Powered by Casdoor\"",
+              "title": "id.lux.network — /.well-known/openid-configuration",
               "ok": true,
               "tags": [],
               "tests": [
@@ -331,12 +310,12 @@
                       "workerIndex": 4,
                       "parallelIndex": 4,
                       "status": "passed",
-                      "duration": 1401,
+                      "duration": 229,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-25T23:14:48.794Z",
+                      "startTime": "2026-03-06T05:36:04.675Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -344,13 +323,13 @@
                   "status": "expected"
                 }
               ],
-              "id": "9b4056821743fc6531b1-5982ca3a34d9f67d53fd",
-              "file": "visual-appearance.spec.ts",
-              "line": 96,
-              "column": 7
+              "id": "71cffa39e79e3aa37c13-4c0dec520c41d40fb0d0",
+              "file": "iam-login.spec.ts",
+              "line": 94,
+              "column": 9
             },
             {
-              "title": "shows \"Powered by Hanzo AI\"",
+              "title": "id.zoo.network — /.well-known/openid-configuration",
               "ok": true,
               "tags": [],
               "tests": [
@@ -365,16 +344,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1126,
+                      "duration": 171,
                       "errors": [],
-                      "stdout": [
-                        {
-                          "text": "Footer content: Powered by Hanzo AI\n"
-                        }
-                      ],
+                      "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-25T23:14:50.349Z",
+                      "startTime": "2026-03-06T05:36:04.900Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -382,51 +357,13 @@
                   "status": "expected"
                 }
               ],
-              "id": "9b4056821743fc6531b1-f9ded6784aa53a038700",
-              "file": "visual-appearance.spec.ts",
-              "line": 103,
-              "column": 7
+              "id": "71cffa39e79e3aa37c13-803a0d8116845a0edd0d",
+              "file": "iam-login.spec.ts",
+              "line": 94,
+              "column": 9
             },
             {
-              "title": "links use Hanzo red color",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 1,
-                      "parallelIndex": 1,
-                      "status": "passed",
-                      "duration": 1203,
-                      "errors": [],
-                      "stdout": [
-                        {
-                          "text": "Link color: rgb(253, 68, 68)\n"
-                        }
-                      ],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-25T23:14:50.466Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "9b4056821743fc6531b1-b2df2460ce8f4585b7c3",
-              "file": "visual-appearance.spec.ts",
-              "line": 114,
-              "column": 7
-            },
-            {
-              "title": "inputs have dark background",
+              "title": "iam.hanzo.ai — /.well-known/openid-configuration",
               "ok": true,
               "tags": [],
               "tests": [
@@ -441,16 +378,12 @@
                       "workerIndex": 3,
                       "parallelIndex": 3,
                       "status": "passed",
-                      "duration": 1299,
+                      "duration": 109,
                       "errors": [],
-                      "stdout": [
-                        {
-                          "text": "Input background color: rgb(23, 23, 23)\n"
-                        }
-                      ],
+                      "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-25T23:14:50.502Z",
+                      "startTime": "2026-03-06T05:36:04.905Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -458,13 +391,81 @@
                   "status": "expected"
                 }
               ],
-              "id": "9b4056821743fc6531b1-e1cb7c045b687941686b",
-              "file": "visual-appearance.spec.ts",
-              "line": 132,
+              "id": "71cffa39e79e3aa37c13-f58a6b81e75918e3d78b",
+              "file": "iam-login.spec.ts",
+              "line": 94,
+              "column": 9
+            },
+            {
+              "title": "iam.lux.network — /.well-known/openid-configuration",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 144,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:04.910Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-6687dcbc643bb0907a5d",
+              "file": "iam-login.spec.ts",
+              "line": 94,
+              "column": 9
+            },
+            {
+              "title": "JWKS endpoint serves valid keys",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 101,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:04.916Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-794d0ef494a7788df682",
+              "file": "iam-login.spec.ts",
+              "line": 125,
               "column": 7
             },
             {
-              "title": "takes screenshot for visual review",
+              "title": "JWKS at /.well-known/jwks.json also works",
               "ok": true,
               "tags": [],
               "tests": [
@@ -479,12 +480,12 @@
                       "workerIndex": 4,
                       "parallelIndex": 4,
                       "status": "passed",
-                      "duration": 1844,
+                      "duration": 89,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-25T23:14:50.534Z",
+                      "startTime": "2026-03-06T05:36:04.924Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -492,131 +493,55 @@
                   "status": "expected"
                 }
               ],
-              "id": "9b4056821743fc6531b1-437005ae39507d0f8a80",
-              "file": "visual-appearance.spec.ts",
-              "line": 149,
+              "id": "71cffa39e79e3aa37c13-f68a0cf5fdd72b1854e6",
+              "file": "iam-login.spec.ts",
+              "line": 136,
+              "column": 7
+            },
+            {
+              "title": "OAuth metadata /.well-known/oauth-authorization-server",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 105,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:05.020Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-a6146ae4627fce96006e",
+              "file": "iam-login.spec.ts",
+              "line": 141,
               "column": 7
             }
           ]
         },
         {
-          "title": "Hanzo IAM Responsive Design",
-          "file": "visual-appearance.spec.ts",
-          "line": 161,
+          "title": "IAM Backend Health",
+          "file": "iam-login.spec.ts",
+          "line": 151,
           "column": 6,
           "specs": [
             {
-              "title": "login page is mobile friendly",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 2,
-                      "parallelIndex": 2,
-                      "status": "passed",
-                      "duration": 1190,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-25T23:14:51.186Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "9b4056821743fc6531b1-d2e4f01bc09062ebc18c",
-              "file": "visual-appearance.spec.ts",
-              "line": 162,
-              "column": 7
-            },
-            {
-              "title": "login page works on tablet",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1135,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-25T23:14:51.496Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "9b4056821743fc6531b1-46c50266e1333d320238",
-              "file": "visual-appearance.spec.ts",
-              "line": 179,
-              "column": 7
-            }
-          ]
-        },
-        {
-          "title": "Theme Consistency",
-          "file": "visual-appearance.spec.ts",
-          "line": 197,
-          "column": 6,
-          "specs": [
-            {
-              "title": "no white backgrounds visible on login page",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 1,
-                      "parallelIndex": 1,
-                      "status": "passed",
-                      "duration": 1135,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-25T23:14:51.681Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "9b4056821743fc6531b1-5a83242d38dd3a5df69d",
-              "file": "visual-appearance.spec.ts",
-              "line": 198,
-              "column": 7
-            },
-            {
-              "title": "CSS variables are correctly defined",
+              "title": "iam.hanzo.ai /api/health returns 200",
               "ok": true,
               "tags": [],
               "tests": [
@@ -631,16 +556,12 @@
                       "workerIndex": 3,
                       "parallelIndex": 3,
                       "status": "passed",
-                      "duration": 1139,
+                      "duration": 28,
                       "errors": [],
-                      "stdout": [
-                        {
-                          "text": "CSS Variables: {\n  hanzoBg: \u001b[32m'#0a0a0a'\u001b[39m,\n  hanzoText: \u001b[32m'#fafafa'\u001b[39m,\n  hanzoPrimary: \u001b[32m'#fd4444'\u001b[39m,\n  hanzoBorder: \u001b[32m'#262626'\u001b[39m\n}\n"
-                        }
-                      ],
+                      "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-25T23:14:51.815Z",
+                      "startTime": "2026-03-06T05:36:05.020Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -648,21 +569,89 @@
                   "status": "expected"
                 }
               ],
-              "id": "9b4056821743fc6531b1-fec90e3d8bf0fc6cd3b7",
-              "file": "visual-appearance.spec.ts",
-              "line": 235,
+              "id": "71cffa39e79e3aa37c13-03a2281b593e7a7f0860",
+              "file": "iam-login.spec.ts",
+              "line": 152,
+              "column": 7
+            },
+            {
+              "title": "iam.hanzo.ai login page reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 43,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:05.024Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-231342f74d569604a5b6",
+              "file": "iam-login.spec.ts",
+              "line": 157,
               "column": 7
             }
           ]
         },
         {
-          "title": "Open Source Project Feature",
-          "file": "visual-appearance.spec.ts",
-          "line": 262,
+          "title": "Login Page Availability",
+          "file": "iam-login.spec.ts",
+          "line": 167,
           "column": 6,
           "specs": [
             {
-              "title": "login page can display project showcase",
+              "title": "hanzo.id login page shows form",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 1109,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:05.055Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-983c9c19b2c9348aace7",
+              "file": "iam-login.spec.ts",
+              "line": 175,
+              "column": 9
+            },
+            {
+              "title": "auth.hanzo.ai login page shows form",
               "ok": true,
               "tags": [],
               "tests": [
@@ -677,16 +666,12 @@
                       "workerIndex": 2,
                       "parallelIndex": 2,
                       "status": "passed",
-                      "duration": 1080,
+                      "duration": 1128,
                       "errors": [],
-                      "stdout": [
-                        {
-                          "text": "Project showcase links found: \u001b[33m0\u001b[39m\n"
-                        }
-                      ],
+                      "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-25T23:14:52.390Z",
+                      "startTime": "2026-03-06T05:36:05.061Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -694,10 +679,3190 @@
                   "status": "expected"
                 }
               ],
-              "id": "9b4056821743fc6531b1-77ddf444ee4be763a2d2",
-              "file": "visual-appearance.spec.ts",
-              "line": 266,
+              "id": "71cffa39e79e3aa37c13-9678367deb11c8265b69",
+              "file": "iam-login.spec.ts",
+              "line": 175,
+              "column": 9
+            },
+            {
+              "title": "lux.id login page shows form",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 1077,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:05.074Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-a019ca7729e02ba219d6",
+              "file": "iam-login.spec.ts",
+              "line": 175,
+              "column": 9
+            },
+            {
+              "title": "pars.id login page shows form",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1114,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:05.080Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-4c0e306924b369a0c077",
+              "file": "iam-login.spec.ts",
+              "line": 175,
+              "column": 9
+            },
+            {
+              "title": "iam.hanzo.ai login page shows form",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 1845,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:05.131Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-27e96feff26042abba3c",
+              "file": "iam-login.spec.ts",
+              "line": 175,
+              "column": 9
+            },
+            {
+              "title": "id.lux.network login page loads",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 1057,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:06.536Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-3d9144c9e45e3a4d7926",
+              "file": "iam-login.spec.ts",
+              "line": 190,
+              "column": 9
+            },
+            {
+              "title": "id.zoo.network login page loads",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 991,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:06.572Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-38d168eee5d5cc0d7288",
+              "file": "iam-login.spec.ts",
+              "line": 190,
+              "column": 9
+            },
+            {
+              "title": "iam.lux.network login page loads",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 996,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:06.577Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-bb5158758d8adf385bf9",
+              "file": "iam-login.spec.ts",
+              "line": 190,
+              "column": 9
+            }
+          ]
+        },
+        {
+          "title": "White-Label — hanzo.id",
+          "file": "iam-login.spec.ts",
+          "line": 201,
+          "column": 6,
+          "specs": [
+            {
+              "title": "login form with email + password",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 1001,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:06.586Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-017468274b2ac115246c",
+              "file": "iam-login.spec.ts",
+              "line": 202,
               "column": 7
+            },
+            {
+              "title": "invalid credentials show error",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 977,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:07.306Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-ae44f113a81f4131fd4c",
+              "file": "iam-login.spec.ts",
+              "line": 209,
+              "column": 7
+            },
+            {
+              "title": "no upstream branding visible",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 961,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:07.577Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-c080f97a1920522fc931",
+              "file": "iam-login.spec.ts",
+              "line": 221,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "White-Label — auth.hanzo.ai",
+          "file": "iam-login.spec.ts",
+          "line": 228,
+          "column": 6,
+          "specs": [
+            {
+              "title": "login form loads (Next.js)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 972,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:07.586Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-fb2a830ed3f6a42b2a92",
+              "file": "iam-login.spec.ts",
+              "line": 229,
+              "column": 7
+            },
+            {
+              "title": "no upstream branding visible",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 920,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:07.603Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-3d9325a05b379e758d1b",
+              "file": "iam-login.spec.ts",
+              "line": 236,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "White-Label — lux.id",
+          "file": "iam-login.spec.ts",
+          "line": 243,
+          "column": 6,
+          "specs": [
+            {
+              "title": "login form loads",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 903,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:07.605Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-70252937945a2e6897f8",
+              "file": "iam-login.spec.ts",
+              "line": 244,
+              "column": 7
+            },
+            {
+              "title": "no upstream branding visible",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 892,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.290Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-b443090eef19b5b51537",
+              "file": "iam-login.spec.ts",
+              "line": 251,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "White-Label — pars.id",
+          "file": "iam-login.spec.ts",
+          "line": 258,
+          "column": 6,
+          "specs": [
+            {
+              "title": "login form loads",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 842,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.518Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-826a95fde743b3b053ff",
+              "file": "iam-login.spec.ts",
+              "line": 259,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "App Registration — existence",
+          "file": "iam-login.spec.ts",
+          "line": 271,
+          "column": 6,
+          "specs": [
+            {
+              "title": "app-hanzo exists in IAM (clientId: app-hanzo)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 129,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.537Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-048858ad76d6e6786b1c",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-console exists in IAM (clientId: hanzo-console-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 48,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.557Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-3a6eef9f2dc2d3c0a869",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-cloud exists in IAM (clientId: hanzo-cloud-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 116,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.572Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-6d4d23d58c58985927ab",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-platform exists in IAM (clientId: hanzo-platform-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 35,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.626Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-6f8cd3c9071d3c4511e9",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-kms exists in IAM (clientId: hanzo-kms-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 38,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.671Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-6dcabb56a840288f2e5b",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-commerce exists in IAM (clientId: hanzo-commerce-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 38,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.683Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-f2b3889fe38a0b7a5cc1",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-hanzobot exists in IAM (clientId: hanzobot-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 38,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.694Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-7ae37aaa4b60454abe50",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-chat exists in IAM (clientId: chat-app)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 35,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.716Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-880e4ba39ac446130947",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-analytics exists in IAM (clientId: app-analytics)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 41,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.727Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-16fa3a240e80d059cc02",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-insights exists in IAM (clientId: app-insights)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 40,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.739Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-b98256073992aec5d118",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-storage exists in IAM (clientId: hanzo-storage-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 43,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.757Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-b5ecf75bdea4d5726c28",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-auto exists in IAM (clientId: hanzo-auto-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 40,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.775Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-d51186ff349cde47b3ea",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-flow exists in IAM (clientId: hanzo-flow-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 35,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.786Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-8038cb2311b6992def3f",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-lux exists in IAM (clientId: lux-app-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 28,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.805Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-4de1a9836a79272a296d",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-lux-mpc exists in IAM (clientId: lux-mpc)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 50,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.822Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-3ed2dc0f3d5e53258950",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-zoo exists in IAM (clientId: zoo-app-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 212,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.827Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-2773f43db8689021dd99",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-zoo-mpc exists in IAM (clientId: zoo-mpc)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 37,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.839Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-c941f76f6b9f42fa8b6c",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-pars exists in IAM (clientId: pars-app-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 124,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.879Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-1ef2fd2f09638462e3eb",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-pars-mpc exists in IAM (clientId: pars-mpc)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 125,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:08.881Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-105653ac8238cccaffe5",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            },
+            {
+              "title": "app-adnexus exists in IAM (clientId: adnexus-app-client-id)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 43,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.010Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-6db49de1fbe9b2db8e99",
+              "file": "iam-login.spec.ts",
+              "line": 273,
+              "column": 9
+            }
+          ]
+        },
+        {
+          "title": "App Registration — get-app-login",
+          "file": "iam-login.spec.ts",
+          "line": 289,
+          "column": 6,
+          "specs": [
+            {
+              "title": "app-hanzo resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 34,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.012Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-f80035309422b6d068d4",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-console resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 37,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.045Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-e2fb4015fdf0f97548cc",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-cloud resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 35,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.052Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-a5bd275ae48f33703609",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-platform resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 37,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.059Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-f851e7eee7246e38599c",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-kms resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 36,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.088Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-c7b924f0d923e26880f4",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-commerce resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 31,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.094Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-2e4cf2b82c05ac2948ef",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-hanzobot resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 43,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.102Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-e7125202ea5177a886f1",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-chat resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 45,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.130Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-3b8d61cd1fc9e57c2cde",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-analytics resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 42,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.132Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-6f7c818729a07bd22e19",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-insights resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 30,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.155Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-b3234e4b9dc52dc96350",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-storage resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 34,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.180Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-e29839bfcf9f1cc4fb88",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-auto resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 35,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.181Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-12ae54d687d90c21d64b",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-flow resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 40,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.188Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-a172ea9e8f8797b6e480",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-lux resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 37,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.192Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-7be40ce88aaa0c909b26",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-zoo resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 31,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.220Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-b659df83bf5385d4586f",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-pars resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 30,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.221Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-e14f2f2a447eb8e67ee7",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            },
+            {
+              "title": "app-adnexus resolves via get-app-login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 39,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.234Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-5db27e4a93c8debb9d1f",
+              "file": "iam-login.spec.ts",
+              "line": 297,
+              "column": 9
+            }
+          ]
+        },
+        {
+          "title": "OAuth2 Authorize",
+          "file": "iam-login.spec.ts",
+          "line": 322,
+          "column": 6,
+          "specs": [
+            {
+              "title": "hanzo.id + app-hanzo — /oauth/authorize responds",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 39,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.235Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-d2b397cdb19f1bf46ea8",
+              "file": "iam-login.spec.ts",
+              "line": 332,
+              "column": 9
+            },
+            {
+              "title": "auth.hanzo.ai + app-hanzo — /oauth/authorize responds",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 115,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.256Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-88b46053d815ecc2e33b",
+              "file": "iam-login.spec.ts",
+              "line": 332,
+              "column": 9
+            },
+            {
+              "title": "lux.id + app-lux — /oauth/authorize responds",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 130,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.257Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-b6e2f980643beaa942d8",
+              "file": "iam-login.spec.ts",
+              "line": 332,
+              "column": 9
+            },
+            {
+              "title": "pars.id + app-pars — /oauth/authorize responds",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 93,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.278Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-054d9672ca511d7135b7",
+              "file": "iam-login.spec.ts",
+              "line": 332,
+              "column": 9
+            },
+            {
+              "title": "auth.hanzo.ai /oauth/authorize serves login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 113,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.281Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-8c5bbe23bc9b93aac272",
+              "file": "iam-login.spec.ts",
+              "line": 347,
+              "column": 7
+            },
+            {
+              "title": "invalid client_id does NOT redirect to attacker domain",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 150,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.376Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-5905605a94017f92b5e8",
+              "file": "iam-login.spec.ts",
+              "line": 359,
+              "column": 7
+            },
+            {
+              "title": "missing redirect_uri does NOT crash",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 37,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.376Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-65837c96a3f9db714bbd",
+              "file": "iam-login.spec.ts",
+              "line": 369,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "Token Endpoint",
+          "file": "iam-login.spec.ts",
+          "line": 382,
+          "column": 6,
+          "specs": [
+            {
+              "title": "rejects missing grant_type",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 39,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.378Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-b060e044f5cb55e55c2e",
+              "file": "iam-login.spec.ts",
+              "line": 383,
+              "column": 7
+            },
+            {
+              "title": "rejects invalid authorization code",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 40,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.392Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-62901dfa649b5aad2a0f",
+              "file": "iam-login.spec.ts",
+              "line": 391,
+              "column": 7
+            },
+            {
+              "title": "hanzo.id /oauth/token proxies correctly",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 126,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.400Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-7073364adb65ba5bf482",
+              "file": "iam-login.spec.ts",
+              "line": 403,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "UserInfo Endpoint",
+          "file": "iam-login.spec.ts",
+          "line": 416,
+          "column": 6,
+          "specs": [
+            {
+              "title": "rejects missing token",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 107,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.419Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-3205368777e665821bec",
+              "file": "iam-login.spec.ts",
+              "line": 417,
+              "column": 7
+            },
+            {
+              "title": "rejects invalid bearer token",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 103,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.423Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-a23afe24166bc43f7d3b",
+              "file": "iam-login.spec.ts",
+              "line": 422,
+              "column": 7
+            },
+            {
+              "title": "hanzo.id /oauth/userinfo proxies correctly",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 177,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.437Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-6778e44c13ed264a9394",
+              "file": "iam-login.spec.ts",
+              "line": 429,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "Introspection + Revocation",
+          "file": "iam-login.spec.ts",
+          "line": 439,
+          "column": 6,
+          "specs": [
+            {
+              "title": "/oauth/introspect endpoint responds",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 39,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.532Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-febde1851d384024bcaa",
+              "file": "iam-login.spec.ts",
+              "line": 440,
+              "column": 7
+            },
+            {
+              "title": "/oauth/revoke endpoint responds",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 39,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.532Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-65d9cfeedd7846d38fd0",
+              "file": "iam-login.spec.ts",
+              "line": 447,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "Multi-Tenant Isolation",
+          "file": "iam-login.spec.ts",
+          "line": 459,
+          "column": 6,
+          "specs": [
+            {
+              "title": "hanzo.id and lux.id have different issuers",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 53,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.532Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-244abea05fab532d3617",
+              "file": "iam-login.spec.ts",
+              "line": 460,
+              "column": 7
+            },
+            {
+              "title": "hanzo.id and pars.id have different issuers",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 108,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.532Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-8c83fef229666ac2a484",
+              "file": "iam-login.spec.ts",
+              "line": 474,
+              "column": 7
+            },
+            {
+              "title": "separate browser contexts have separate sessions",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 588,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.577Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-f118b4f0b17873538e09",
+              "file": "iam-login.spec.ts",
+              "line": 486,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "Performance",
+          "file": "iam-login.spec.ts",
+          "line": 514,
+          "column": 6,
+          "specs": [
+            {
+              "title": "hanzo.id loads within 5s",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 292,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.578Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-d0d7f274c4f855fc8210",
+              "file": "iam-login.spec.ts",
+              "line": 516,
+              "column": 9
+            },
+            {
+              "title": "auth.hanzo.ai loads within 5s",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 303,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.591Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-1c1f244b66367221a9d9",
+              "file": "iam-login.spec.ts",
+              "line": 516,
+              "column": 9
+            },
+            {
+              "title": "lux.id loads within 5s",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 281,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.625Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-153c5eacddf5078238b7",
+              "file": "iam-login.spec.ts",
+              "line": 516,
+              "column": 9
+            },
+            {
+              "title": "pars.id loads within 5s",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 279,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.647Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-c4abab537616543dd53a",
+              "file": "iam-login.spec.ts",
+              "line": 516,
+              "column": 9
+            },
+            {
+              "title": "OIDC discovery responds within 2s",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 41,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.881Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-73e0034a66b8b6cc53b6",
+              "file": "iam-login.spec.ts",
+              "line": 524,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "Security",
+          "file": "iam-login.spec.ts",
+          "line": 536,
+          "column": 6,
+          "specs": [
+            {
+              "title": "password login does NOT echo password",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 53,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.899Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-9dba6ccf73853d742f32",
+              "file": "iam-login.spec.ts",
+              "line": 537,
+              "column": 7
+            },
+            {
+              "title": "HSTS header on production domains",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 136,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.915Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-0e9f6d02a4367e883af2",
+              "file": "iam-login.spec.ts",
+              "line": 552,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "Logout",
+          "file": "iam-login.spec.ts",
+          "line": 567,
+          "column": 6,
+          "specs": [
+            {
+              "title": "/oauth/logout endpoint exists on IAM",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 120,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.932Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-9a79f5b541e89ae15242",
+              "file": "iam-login.spec.ts",
+              "line": 568,
+              "column": 7
+            },
+            {
+              "title": "hanzo.id /oauth/logout proxies correctly",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 117,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.934Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-21e9c68cbfc879267e85",
+              "file": "iam-login.spec.ts",
+              "line": 573,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "RFC Path Compliance",
+          "file": "iam-login.spec.ts",
+          "line": 583,
+          "column": 6,
+          "specs": [
+            {
+              "title": "iam.hanzo.ai — /oauth/token reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 116,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:09.959Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-113ba49c1114d478b2ac",
+              "file": "iam-login.spec.ts",
+              "line": 591,
+              "column": 9
+            },
+            {
+              "title": "iam.hanzo.ai — /oauth/userinfo reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 36,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.057Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-1cf53a40e3f7916d690e",
+              "file": "iam-login.spec.ts",
+              "line": 599,
+              "column": 9
+            },
+            {
+              "title": "iam.hanzo.ai — /oauth/authorize reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 26,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.057Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-ba16474876f661cc6d7c",
+              "file": "iam-login.spec.ts",
+              "line": 604,
+              "column": 9
+            },
+            {
+              "title": "iam.hanzo.ai — /.well-known/openid-configuration",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 32,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.057Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-7765264bb24d2742afdb",
+              "file": "iam-login.spec.ts",
+              "line": 613,
+              "column": 9
+            },
+            {
+              "title": "hanzo.id — /oauth/token reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 50,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.081Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-f96359139258bb2ff600",
+              "file": "iam-login.spec.ts",
+              "line": 591,
+              "column": 9
+            },
+            {
+              "title": "hanzo.id — /oauth/userinfo reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 43,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.089Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-fe23f1547c3916402d67",
+              "file": "iam-login.spec.ts",
+              "line": 599,
+              "column": 9
+            },
+            {
+              "title": "hanzo.id — /oauth/authorize reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 35,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.102Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-0c3d3f14c39097edb394",
+              "file": "iam-login.spec.ts",
+              "line": 604,
+              "column": 9
+            },
+            {
+              "title": "hanzo.id — /.well-known/openid-configuration",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 39,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.100Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-ffac4a2c93df237ffc63",
+              "file": "iam-login.spec.ts",
+              "line": 613,
+              "column": 9
+            },
+            {
+              "title": "auth.hanzo.ai — /oauth/token reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 91,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.137Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-231d0df0a584ed0ff759",
+              "file": "iam-login.spec.ts",
+              "line": 591,
+              "column": 9
+            },
+            {
+              "title": "auth.hanzo.ai — /oauth/userinfo reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 48,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.139Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-0a7a9ff67d3832d8550a",
+              "file": "iam-login.spec.ts",
+              "line": 599,
+              "column": 9
+            },
+            {
+              "title": "auth.hanzo.ai — /oauth/authorize reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 44,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.143Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-e11fd2194864e8e6b20a",
+              "file": "iam-login.spec.ts",
+              "line": 604,
+              "column": 9
+            },
+            {
+              "title": "auth.hanzo.ai — /.well-known/openid-configuration",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 91,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-03-06T05:36:10.151Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "71cffa39e79e3aa37c13-853c4c1c07304f6784ac",
+              "file": "iam-login.spec.ts",
+              "line": 613,
+              "column": 9
             }
           ]
         }
@@ -706,9 +3871,9 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-01-25T23:14:47.377Z",
-    "duration": 6146.313,
-    "expected": 14,
+    "startTime": "2026-03-06T05:36:03.773Z",
+    "duration": 6561.875,
+    "expected": 105,
     "skipped": 0,
     "unexpected": 0,
     "flaky": 0
