@@ -630,26 +630,13 @@ func generateJwtToken(application *Application, user *User, provider string, sig
 		}
 	}
 
-	var (
-		tokenString        string
-		refreshTokenString string
-		key                interface{}
-	)
-
-	if strings.Contains(application.TokenSigningMethod, "RS") || application.TokenSigningMethod == "" {
-		// RSA private key
-		key, err = jwt.ParseRSAPrivateKeyFromPEM([]byte(cert.PrivateKey))
-	} else if strings.Contains(application.TokenSigningMethod, "ES") {
-		// ES private key
-		key, err = jwt.ParseECPrivateKeyFromPEM([]byte(cert.PrivateKey))
-	} else if strings.Contains(application.TokenSigningMethod, "Ed") {
-		// Ed private key
-		key, err = jwt.ParseEdPrivateKeyFromPEM([]byte(cert.PrivateKey))
-	}
+	// Use cached parsed key to avoid PEM parsing on every token generation.
+	key, err := parseCertPrivateKey(cert, application.TokenSigningMethod)
 	if err != nil {
 		return "", "", "", err
 	}
 
+	var tokenString, refreshTokenString string
 	token.Header["kid"] = cert.Name
 	tokenString, err = token.SignedString(key)
 	if err != nil {
