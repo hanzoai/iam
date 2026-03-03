@@ -269,6 +269,11 @@ func getUnusedVerificationRecord(dest string) (*VerificationRecord, error) {
 }
 
 func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult, error) {
+	// Staging bypass: phone +19999999999 always accepts code 999999
+	if conf.IsDemoMode() && dest == "+19999999999" && code == "999999" {
+		return &VerifyResult{VerificationSuccess, ""}, nil
+	}
+
 	record, err := getVerificationRecord(dest)
 	if err != nil {
 		return nil, err
