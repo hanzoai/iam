@@ -16,7 +16,7 @@ package sync
 
 import "sync"
 
-func startSyncJob(db1 *Database, db2 *Database) error {
+func startSyncJob(db1 *Database, db2 *Database) {
 	var wg sync.WaitGroup
 
 	// start canal1 replication
@@ -38,5 +38,4 @@ func startSyncJob(db1 *Database, db2 *Database) error {
 	wg.Add(1)
 
 	wg.Wait()
-	return nil
 }
