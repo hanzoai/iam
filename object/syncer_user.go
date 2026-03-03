@@ -49,22 +49,22 @@ func (syncer *Syncer) updateUser(user *OriginalUser) (bool, error) {
 	return provider.UpdateUser(user)
 }
 
-func (syncer *Syncer) updateUserForOriginalFields(user *User, key string) (bool, error) {
+func (syncer *Syncer) updateUserForOriginalFields(user *User, key string) error {
 	var err error
 	oldUser := User{}
 
 	existed, err := ormer.Engine.Where(key+" = ? and owner = ?", syncer.getUserValue(user, key), user.Owner).Get(&oldUser)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if !existed {
-		return false, nil
+		return nil
 	}
 
 	if user.Avatar != oldUser.Avatar && user.Avatar != "" {
 		user.PermanentAvatar, err = getPermanentAvatarUrl(user.Owner, user.Name, user.Avatar, true)
 		if err != nil {
-			return false, err
+			return err
 		}
 	}
 
@@ -82,12 +82,8 @@ func (syncer *Syncer) updateUserForOriginalFields(user *User, key string) (bool,
 		columns = append(columns, "lark")
 	}
 
-	affected, err := ormer.Engine.Where(key+" = ? and owner = ?", syncer.getUserValue(&oldUser, key), oldUser.Owner).Cols(columns...).Update(user)
-	if err != nil {
-		return false, err
-	}
-
-	return affected != 0, nil
+	_, err = ormer.Engine.Where(key+" = ? and owner = ?", syncer.getUserValue(&oldUser, key), oldUser.Owner).Cols(columns...).Update(user)
+	return err
 }
 
 func (syncer *Syncer) calculateHash(user *OriginalUser) string {
