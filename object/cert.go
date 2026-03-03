@@ -117,6 +117,13 @@ func getCert(owner string, name string) (*Cert, error) {
 		return nil, nil
 	}
 
+	// Fast path: in-process TTL cache (10-minute TTL).
+	ckey := certCacheKeyByName(owner + "/" + name)
+	var cached Cert
+	if certCache.get(ckey, &cached) {
+		return &cached, nil
+	}
+
 	cert := Cert{Owner: owner, Name: name}
 	existed, err := ormer.Engine.Get(&cert)
 	if err != nil {
@@ -124,6 +131,7 @@ func getCert(owner string, name string) (*Cert, error) {
 	}
 
 	if existed {
+		certCache.set(ckey, cert, certCacheTTL)
 		return &cert, nil
 	} else {
 		return nil, nil
@@ -135,6 +143,13 @@ func getCertByName(name string) (*Cert, error) {
 		return nil, nil
 	}
 
+	// Fast path: check cache by name (any owner).
+	ckey := certCacheKeyByName("*/" + name)
+	var cached Cert
+	if certCache.get(ckey, &cached) {
+		return &cached, nil
+	}
+
 	cert := Cert{Name: name}
 	existed, err := ormer.Engine.Get(&cert)
 	if err != nil {
@@ -142,6 +157,9 @@ func getCertByName(name string) (*Cert, error) {
 	}
 
 	if existed {
+		certCache.set(ckey, cert, certCacheTTL)
+		// Also cache by owner/name for getCert lookups.
+		certCache.set(certCacheKeyByName(cert.Owner+"/"+cert.Name), cert, certCacheTTL)
 		return &cert, nil
 	} else {
 		return nil, nil
@@ -189,6 +207,13 @@ func UpdateCert(id string, cert *Cert) (bool, error) {
 		return false, err
 	}
 
+	if affected != 0 {
+		EvictCertCache(name)
+		if name != cert.Name {
+			EvictCertCache(cert.Name)
+		}
+	}
+
 	return affected != 0, nil
 }
 
@@ -210,6 +235,10 @@ func DeleteCert(cert *Cert) (bool, error) {
 	affected, err := ormer.Engine.ID(core.PK{cert.Owner, cert.Name}).Delete(&Cert{})
 	if err != nil {
 		return false, err
+	}
+
+	if affected != 0 {
+		EvictCertCache(cert.Name)
 	}
 
 	return affected != 0, nil
