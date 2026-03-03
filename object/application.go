@@ -389,7 +389,7 @@ func extendApplicationWithSigninMethods(application *Application) (err error) {
 	return
 }
 
-func extendApplicationWithSignupItems(application *Application) (err error) {
+func extendApplicationWithSignupItems(application *Application) {
 	if len(application.SignupItems) == 0 {
 		application.SignupItems = []*SignupItem{
 			{Name: "ID", Visible: false, Required: true, Prompted: false, Rule: "Random"},
@@ -402,7 +402,6 @@ func extendApplicationWithSignupItems(application *Application) (err error) {
 			{Name: "Agreement", Visible: true, Required: true, Prompted: false, Rule: "None"},
 		}
 	}
-	return
 }
 
 func getApplication(owner string, name string) (*Application, error) {
@@ -849,10 +848,7 @@ func AddApplication(application *Application) (bool, error) {
 	}
 
 	// Initialize default values for required fields to prevent UI errors
-	err = extendApplicationWithSignupItems(application)
-	if err != nil {
-		return false, err
-	}
+	extendApplicationWithSignupItems(application)
 
 	err = extendApplicationWithSigninItems(application)
 	if err != nil {
