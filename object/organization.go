@@ -155,6 +155,13 @@ func getOrganization(owner string, name string) (*Organization, error) {
 		return nil, nil
 	}
 
+	// Fast path: in-process TTL cache (5-minute TTL).
+	ckey := orgCacheKey(owner, name)
+	var cached Organization
+	if orgCache.get(ckey, &cached) {
+		return &cached, nil
+	}
+
 	organization := Organization{Owner: owner, Name: name}
 	existed, err := ormer.Engine.Get(&organization)
 	if err != nil {
@@ -162,6 +169,7 @@ func getOrganization(owner string, name string) (*Organization, error) {
 	}
 
 	if existed {
+		orgCache.set(ckey, organization, orgCacheTTL)
 		return &organization, nil
 	}
 
@@ -267,6 +275,13 @@ func UpdateOrganization(id string, organization *Organization, isGlobalAdmin boo
 		return false, err
 	}
 
+	if affected != 0 {
+		EvictOrgCache(owner, name)
+		if name != organization.Name {
+			EvictOrgCache(owner, organization.Name)
+		}
+	}
+
 	return affected != 0, nil
 }
 
@@ -335,6 +350,10 @@ func deleteOrganization(organization *Organization) (bool, error) {
 	affected, err := ormer.Engine.ID(core.PK{organization.Owner, organization.Name}).Delete(&Organization{})
 	if err != nil {
 		return false, err
+	}
+
+	if affected != 0 {
+		EvictOrgCache(organization.Owner, organization.Name)
 	}
 
 	return affected != 0, nil

@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -38,6 +39,15 @@ func GetUserByField(organizationName string, field string, value string) (*User,
 		return nil, nil
 	}
 
+	// Fast path: if looking up by "name", check the user cache first.
+	if strings.ToLower(field) == "name" {
+		ckey := userCacheKey(organizationName, value)
+		var cached User
+		if userCache.get(ckey, &cached) {
+			return &cached, nil
+		}
+	}
+
 	user := User{Owner: organizationName}
 	existed, err := ormer.Engine.Where(fmt.Sprintf("%s=?", strings.ToLower(field)), value).Get(&user)
 	if err != nil {
@@ -45,6 +55,8 @@ func GetUserByField(organizationName string, field string, value string) (*User,
 	}
 
 	if existed {
+		// Populate cache so subsequent GetUser() calls hit it.
+		userCache.set(userCacheKey(user.Owner, user.Name), user, 10*time.Minute)
 		return &user, nil
 	} else {
 		return nil, nil

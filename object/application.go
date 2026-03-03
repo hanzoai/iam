@@ -412,6 +412,17 @@ func getApplication(owner string, name string) (*Application, error) {
 
 	realApplicationName, sharedOrg := util.GetSharedOrgFromApp(name)
 
+	// Fast path: in-process TTL cache (5-minute TTL).
+	// Applications are fetched 3+ times per login; caching eliminates ~9 DB queries.
+	ckey := appCacheKey(owner, realApplicationName)
+	var cached Application
+	if appCache.get(ckey, &cached) {
+		if cached.IsShared && sharedOrg != "" {
+			cached.Organization = sharedOrg
+		}
+		return &cached, nil
+	}
+
 	application := Application{Owner: owner, Name: realApplicationName}
 	existed, err := ormer.Engine.Get(&application)
 	if err != nil {
@@ -441,6 +452,14 @@ func getApplication(owner string, name string) (*Application, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// Cache the fully-extended application (without shared org override).
+		cacheApp := application
+		if application.IsShared && sharedOrg != "" {
+			// Store with original org so shared-org override works on cache hit.
+			cacheApp.Organization = application.Organization
+		}
+		appCache.set(ckey, cacheApp, appCacheTTL)
 
 		return &application, nil
 	} else {
@@ -509,10 +528,19 @@ func GetApplicationByUserId(userId string) (application *Application, err error)
 }
 
 func GetApplicationByClientId(clientId string) (*Application, error) {
-	application := Application{}
-
 	realClientId, sharedOrg := util.GetSharedOrgFromApp(clientId)
 
+	// Check if we have a cached owner/name for this client_id.
+	cidKey := "client:" + realClientId
+	var ownerName string
+	if appClientIdCache.get(cidKey, &ownerName) {
+		parts := splitOwnerName(ownerName)
+		if parts != nil {
+			return getApplication(parts[0], parts[1])
+		}
+	}
+
+	application := Application{}
 	existed, err := ormer.Engine.Where("client_id=?", realClientId).Get(&application)
 	if err != nil {
 		return nil, err
@@ -523,6 +551,9 @@ func GetApplicationByClientId(clientId string) (*Application, error) {
 	}
 
 	if existed {
+		// Cache the client_id → owner/name mapping.
+		appClientIdCache.set(cidKey, application.Owner+"/"+application.Name, appCacheTTL)
+
 		err = extendApplicationWithProviders(&application)
 		if err != nil {
 			return nil, err
@@ -543,10 +574,28 @@ func GetApplicationByClientId(clientId string) (*Application, error) {
 			return nil, err
 		}
 
+		// Also populate the main app cache.
+		appCache.set(appCacheKey(application.Owner, application.Name), application, appCacheTTL)
+
 		return &application, nil
 	} else {
 		return nil, nil
 	}
+}
+
+// splitOwnerName splits "owner/name" into [owner, name].
+func splitOwnerName(s string) []string {
+	idx := -1
+	for i := 0; i < len(s); i++ {
+		if s[i] == '/' {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return nil
+	}
+	return []string{s[:idx], s[idx+1:]}
 }
 
 func GetApplication(id string) (*Application, error) {
@@ -762,6 +811,17 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 		return false, err
 	}
 
+	if affected != 0 {
+		EvictAppCache(owner, name)
+		if name != application.Name {
+			EvictAppCache(owner, application.Name)
+		}
+		if oldApplication.ClientId != application.ClientId {
+			EvictAppCacheByClientId(oldApplication.ClientId)
+			EvictAppCacheByClientId(application.ClientId)
+		}
+	}
+
 	return affected != 0, nil
 }
 
@@ -820,6 +880,11 @@ func deleteApplication(application *Application) (bool, error) {
 	affected, err := ormer.Engine.ID(core.PK{application.Owner, application.Name}).Where("organization = ?", application.Organization).Delete(&Application{})
 	if err != nil {
 		return false, err
+	}
+
+	if affected != 0 {
+		EvictAppCache(application.Owner, application.Name)
+		EvictAppCacheByClientId(application.ClientId)
 	}
 
 	return affected != 0, nil
