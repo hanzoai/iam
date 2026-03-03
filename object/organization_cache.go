@@ -24,12 +24,10 @@ package object
 
 import "time"
 
-var (
-	// orgCache stores Organization objects.
-	// Key: "org:owner/name"
-	// TTL: 5 minutes.
-	orgCache = &ttlCache{}
-)
+// orgCache stores Organization objects.
+// Key: "org:owner/name"
+// TTL: 5 minutes.
+var orgCache = &ttlCache{}
 
 const orgCacheTTL = 5 * time.Minute
 
