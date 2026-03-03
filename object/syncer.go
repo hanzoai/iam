@@ -195,24 +195,20 @@ func UpdateSyncer(id string, syncer *Syncer, isGlobalAdmin bool, lang string) (b
 	return affected != 0, nil
 }
 
-func updateSyncerErrorText(syncer *Syncer, line string) (bool, error) {
+func updateSyncerErrorText(syncer *Syncer, line string) error {
 	s, err := getSyncer(syncer.Owner, syncer.Name)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	if s == nil {
-		return false, nil
+		return nil
 	}
 
 	s.ErrorText = s.ErrorText + line
 
-	affected, err := ormer.Engine.ID(core.PK{s.Owner, s.Name}).Cols("error_text").Update(s)
-	if err != nil {
-		return false, err
-	}
-
-	return affected != 0, nil
+	_, err = ormer.Engine.ID(core.PK{s.Owner, s.Name}).Cols("error_text").Update(s)
+	return err
 }
 
 func AddSyncer(syncer *Syncer) (bool, error) {
