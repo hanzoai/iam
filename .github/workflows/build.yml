@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: ghcr.io/hanzoai/sql:latest
+        image: postgres:17
         env:
           POSTGRES_USER: hanzo
           POSTGRES_PASSWORD: hanzo123
@@ -89,7 +89,7 @@ jobs:
     needs: [ go-tests ]
     services:
       postgres:
-        image: ghcr.io/hanzoai/sql:latest
+        image: postgres:17
         env:
           POSTGRES_USER: hanzo
           POSTGRES_PASSWORD: hanzo123
