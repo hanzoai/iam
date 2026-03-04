@@ -100,7 +100,6 @@
     "eslint": "8.22.0",
     "eslint-plugin-react": "^7.31.1",
     "eslint-plugin-unused-imports": "^2.0.0",
-    "husky": "^4.3.8",
     "lint-staged": "^13.0.3",
     "stylelint": "^14.11.0",
     "stylelint-config-recommended-less": "^1.0.4",
@@ -113,10 +112,5 @@
     "src/**/*.{js,jsx,ts,tsx}": [
       "eslint --fix"
     ]
-  },
-  "husky": {
-    "hooks": {
-      "pre-commit": "lint-staged"
-    }
   }
 }
