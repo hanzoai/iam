@@ -124,10 +124,6 @@ const authInfo = {
     scope: "basic",
     endpoint: "https://openauth.alipay.com/oauth2/publicAppAuthorize.htm",
   },
-  Casdoor: {
-    scope: "openid%20profile%20email",
-    endpoint: "http://example.com",
-  },
   IAM: {
     scope: "openid%20profile%20email",
     endpoint: "http://example.com",
