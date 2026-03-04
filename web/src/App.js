@@ -192,7 +192,6 @@ class App extends Component {
       "/applications", "/providers", "/resources", "/certs", // Identity
       "/roles", "/permissions", "/models", "/adapters", "/enforcers", // Authorization
       "/sessions", "/records", "/tokens", "/verifications", // Logging & Auditing
-      "/products", "/orders", "/payments", "/plans", "/pricings", "/subscriptions", "/transactions", // Business
       "/sysinfo", "/forms", "/syncers", "/webhooks", "/tickets", "/swagger", // Admin
     ];
 
@@ -252,22 +251,6 @@ class App extends Component {
       } else if (uri.includes("/verifications")) {
         return "/verifications";
       }
-    } else if (uri.includes("/products") || uri.includes("/orders") || uri.includes("/payments") || uri.includes("/plans") || uri.includes("/pricings") || uri.includes("/subscriptions") || uri.includes("/transactions")) {
-      if (uri.includes("/products")) {
-        return "/products";
-      } else if (uri.includes("/orders")) {
-        return "/orders";
-      } else if (uri.includes("/payments")) {
-        return "/payments";
-      } else if (uri.includes("/plans")) {
-        return "/plans";
-      } else if (uri.includes("/pricings")) {
-        return "/pricings";
-      } else if (uri.includes("/subscriptions")) {
-        return "/subscriptions";
-      } else if (uri.includes("/transactions")) {
-        return "/transactions";
-      }
     } else if (uri.includes("/sysinfo") || uri.includes("/forms") || uri.includes("/syncers") || uri.includes("/webhooks") || uri.includes("/tickets")) {
       if (uri.includes("/sysinfo")) {
         return "/sysinfo";
@@ -314,8 +297,6 @@ class App extends Component {
       this.setState({selectedMenuKey: "/auth"});
     } else if (uri.includes("/records") || uri.includes("/tokens") || uri.includes("/sessions") || uri.includes("/verifications")) {
       this.setState({selectedMenuKey: "/logs"});
-    } else if (uri.includes("/product-store") || uri.includes("/products") || uri.includes("/orders") || uri.includes("/payments") || uri.includes("/plans") || uri.includes("/pricings") || uri.includes("/subscriptions") || uri.includes("/transactions")) {
-      this.setState({selectedMenuKey: "/business"});
     } else if (uri.includes("/sysinfo") || uri.includes("/forms") || uri.includes("/syncers") || uri.includes("/webhooks") || uri.includes("/tickets")) {
       this.setState({selectedMenuKey: "/admin"});
     } else if (uri.includes("/signup")) {
@@ -560,8 +541,6 @@ class App extends Component {
       window.location.pathname.startsWith("/prompt") ||
       window.location.pathname.startsWith("/result") ||
       window.location.pathname.startsWith("/cas") ||
-      window.location.pathname.startsWith("/select-plan") ||
-      window.location.pathname.startsWith("/buy-plan") ||
       window.location.pathname.startsWith("/qrcode") ||
       window.location.pathname.startsWith("/consent") ||
       window.location.pathname.startsWith("/captcha");
