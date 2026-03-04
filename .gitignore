@@ -57,6 +57,14 @@ object/token_jwt_key.pem
 *.key
 *.pem
 
+# Yarn (use pnpm)
+web/.yarn/
+web/.pnp.*
+
+# Swagger source maps (generative)
+swagger/*.map
+
 # Cleanup artifacts
+..bfg-report/
 .bfg-report/
 .do/
