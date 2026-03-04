@@ -237,22 +237,12 @@ func (c *ApiController) Signup() {
 		return
 	}
 
-	userType := "normal-user"
-	if authForm.Plan != "" && authForm.Pricing != "" {
-		err = object.CheckPricingAndPlan(authForm.Organization, authForm.Pricing, authForm.Plan, c.GetAcceptLanguage())
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		userType = "paid-user"
-	}
-
 	user := &object.User{
 		Owner:             authForm.Organization,
 		Name:              username,
 		CreatedTime:       util.GetCurrentTime(),
 		Id:                id,
-		Type:              userType,
+		Type:              "normal-user",
 		Password:          authForm.Password,
 		DisplayName:       authForm.Name,
 		Gender:            authForm.Gender,
@@ -318,12 +308,6 @@ func (c *ApiController) Signup() {
 	// Welcome credit is now granted by Commerce when user adds a payment method.
 	// This prevents abuse from mass-created accounts with no payment verification.
 
-	// Asynchronously provision the user's Commerce account and free plan.
-	// Non-blocking: signup succeeds even if Commerce is unreachable.
-	util.SafeGoroutine(func() {
-		util.SyncUserToCommerce(user.Owner, user.Name, user.Email)
-	})
-
 	err = object.AddUserToOriginalDatabase(user)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -339,11 +323,7 @@ func (c *ApiController) Signup() {
 		}
 	}
 
-	if user.Type == "normal-user" {
-		c.SetSessionUsername(user.GetId())
-	} else if user.Type == "paid-user" {
-		c.SetSession("paidUsername", user.GetId())
-	}
+	c.SetSessionUsername(user.GetId())
 
 	if authForm.Email != "" {
 		err = object.DisableVerificationCode(authForm.Email)
