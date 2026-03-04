@@ -2303,7 +2303,9 @@
       "mfaPhoneEnabled": false,
       "mfaEmailEnabled": false,
       "ldap": "",
-      "properties": {},
+      "properties": {
+        "tier": "enterprise"
+      },
       "roles": [],
       "permissions": [],
       "groups": [],
@@ -2370,7 +2372,9 @@
       "mfaPhoneEnabled": false,
       "mfaEmailEnabled": false,
       "ldap": "",
-      "properties": {},
+      "properties": {
+        "tier": "enterprise"
+      },
       "roles": [],
       "permissions": [],
       "groups": [],
@@ -2436,7 +2440,9 @@
       "mfaPhoneEnabled": false,
       "mfaEmailEnabled": false,
       "ldap": "",
-      "properties": {},
+      "properties": {
+        "tier": "enterprise"
+      },
       "roles": [],
       "permissions": [],
       "groups": [],
