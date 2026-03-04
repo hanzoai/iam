@@ -94,6 +94,7 @@ type Organization struct {
 
 	DcrPolicy string `xorm:"varchar(100)" json:"dcrPolicy"`
 
+	// DEPRECATED: Balance is managed by Commerce (billing.hanzo.ai). Do not write to these fields.
 	OrgBalance      float64 `json:"orgBalance"`
 	UserBalance     float64 `json:"userBalance"`
 	BalanceCredit   float64 `json:"balanceCredit"`
@@ -585,13 +586,6 @@ func organizationChangeTrigger(oldName string, newName string) error {
 		return err
 	}
 
-	payment := new(Payment)
-	payment.Owner = newName
-	_, err = session.Where("owner=?", oldName).Update(payment)
-	if err != nil {
-		return err
-	}
-
 	record := new(Record)
 	record.Owner = newName
 	record.Organization = newName
@@ -674,39 +668,3 @@ func (org *Organization) GetInitScore() (int, error) {
 	}
 }
 
-func UpdateOrganizationBalance(owner string, name string, balance float64, currency string, isOrgBalance bool, lang string) error {
-	organization, err := getOrganization(owner, name)
-	if err != nil {
-		return err
-	}
-	if organization == nil {
-		return fmt.Errorf(i18n.Translate(lang, "auth:the organization: %s is not found"), fmt.Sprintf("%s/%s", owner, name))
-	}
-
-	// Convert the balance amount from transaction currency to organization's balance currency
-	balanceCurrency := organization.BalanceCurrency
-	if balanceCurrency == "" {
-		balanceCurrency = "USD"
-	}
-	convertedBalance := ConvertCurrency(balance, currency, balanceCurrency)
-
-	var columns []string
-	var newBalance float64
-	if isOrgBalance {
-		newBalance = AddPrices(organization.OrgBalance, convertedBalance)
-		// Check organization balance credit limit
-		if newBalance < organization.BalanceCredit {
-			return fmt.Errorf(i18n.Translate(lang, "general:Insufficient balance: new organization balance %v would be below credit limit %v"), newBalance, organization.BalanceCredit)
-		}
-		organization.OrgBalance = newBalance
-		columns = []string{"org_balance"}
-	} else {
-		// User balance is just a sum of all users' balances, no credit limit check here
-		// Individual user credit limits are checked in UpdateUserBalance
-		organization.UserBalance = AddPrices(organization.UserBalance, convertedBalance)
-		columns = []string{"user_balance"}
-	}
-
-	_, err = ormer.Engine.ID(core.PK{owner, name}).Cols(columns...).Update(organization)
-	return err
-}

@@ -52,6 +52,16 @@ func InitUserManager() {
 	userEnforcer = NewUserGroupEnforcer(enforcer.Enforcer)
 }
 
+// DEPRECATED: ProductInfo is retained for backward compatibility with the Cart column.
+// Billing is now managed by Commerce (billing.hanzo.ai).
+type ProductInfo struct {
+	Owner       string  `json:"owner"`
+	Name        string  `json:"name"`
+	DisplayName string  `json:"displayName"`
+	Price       float64 `json:"price"`
+	Quantity    int     `json:"quantity,omitempty"`
+}
+
 type User struct {
 	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
 	Name        string `xorm:"varchar(255) notnull pk" json:"name"`
@@ -95,6 +105,7 @@ type User struct {
 	Score                int        `json:"score"`
 	Karma                int        `json:"karma"`
 	Ranking              int        `json:"ranking"`
+	// DEPRECATED: Balance is managed by Commerce (billing.hanzo.ai). Do not write to these fields.
 	Balance              float64    `json:"balance"`
 	BalanceCredit        float64    `json:"balanceCredit"`
 	Currency             string     `xorm:"varchar(100)" json:"currency"`
@@ -1583,56 +1594,3 @@ func GenerateIdForNewUser(application *Application) (string, error) {
 	return res, nil
 }
 
-func UpdateUserBalance(owner string, name string, balance float64, currency string, lang string) error {
-	user, err := getUser(owner, name)
-	if err != nil {
-		return err
-	}
-	if user == nil {
-		return fmt.Errorf(i18n.Translate(lang, "general:The user: %s is not found"), fmt.Sprintf("%s/%s", owner, name))
-	}
-
-	// Convert the balance amount from transaction currency to user's balance currency
-	balanceCurrency := user.BalanceCurrency
-	var org *Organization
-	if balanceCurrency == "" {
-		// Get organization's balance currency as fallback
-		org, err = getOrganization("admin", owner)
-		if err == nil && org != nil && org.BalanceCurrency != "" {
-			balanceCurrency = org.BalanceCurrency
-		} else {
-			balanceCurrency = "USD"
-		}
-	}
-	convertedBalance := ConvertCurrency(balance, currency, balanceCurrency)
-
-	// Calculate new balance
-	newBalance := AddPrices(user.Balance, convertedBalance)
-
-	// Check balance credit limit
-	// User.BalanceCredit takes precedence over Organization.BalanceCredit
-	var balanceCredit float64
-	if user.BalanceCredit != 0 {
-		balanceCredit = user.BalanceCredit
-	} else {
-		// Get organization's balance credit as fallback
-		if org == nil {
-			org, err = getOrganization("admin", owner)
-			if err != nil {
-				return err
-			}
-		}
-		if org != nil {
-			balanceCredit = org.BalanceCredit
-		}
-	}
-
-	// Validate new balance against credit limit
-	if newBalance < balanceCredit {
-		return fmt.Errorf(i18n.Translate(lang, "general:Insufficient balance: new balance %v would be below credit limit %v"), newBalance, balanceCredit)
-	}
-
-	user.Balance = newBalance
-	_, err = UpdateUser(user.GetId(), user, []string{"balance"}, true)
-	return err
-}
