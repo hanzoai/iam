@@ -201,63 +201,9 @@ func InitAPI() {
 	web.Router("/api/add-token", &controllers.ApiController{}, "POST:AddToken")
 	web.Router("/api/delete-token", &controllers.ApiController{}, "POST:DeleteToken")
 
-	web.Router("/api/get-products", &controllers.ApiController{}, "GET:GetProducts")
-	web.Router("/api/get-product", &controllers.ApiController{}, "GET:GetProduct")
-	web.Router("/api/update-product", &controllers.ApiController{}, "POST:UpdateProduct")
-	web.Router("/api/add-product", &controllers.ApiController{}, "POST:AddProduct")
-	web.Router("/api/delete-product", &controllers.ApiController{}, "POST:DeleteProduct")
-
-	web.Router("/api/get-orders", &controllers.ApiController{}, "GET:GetOrders")
-	web.Router("/api/get-user-orders", &controllers.ApiController{}, "GET:GetUserOrders")
-	web.Router("/api/get-order", &controllers.ApiController{}, "GET:GetOrder")
-	web.Router("/api/update-order", &controllers.ApiController{}, "POST:UpdateOrder")
-	web.Router("/api/add-order", &controllers.ApiController{}, "POST:AddOrder")
-	web.Router("/api/delete-order", &controllers.ApiController{}, "POST:DeleteOrder")
-	web.Router("/api/place-order", &controllers.ApiController{}, "POST:PlaceOrder")
-	web.Router("/api/cancel-order", &controllers.ApiController{}, "POST:CancelOrder")
-	web.Router("/api/pay-order", &controllers.ApiController{}, "POST:PayOrder")
-
-	web.Router("/api/get-payments", &controllers.ApiController{}, "GET:GetPayments")
-	web.Router("/api/get-user-payments", &controllers.ApiController{}, "GET:GetUserPayments")
-	web.Router("/api/get-payment", &controllers.ApiController{}, "GET:GetPayment")
-	web.Router("/api/update-payment", &controllers.ApiController{}, "POST:UpdatePayment")
-	web.Router("/api/add-payment", &controllers.ApiController{}, "POST:AddPayment")
-	web.Router("/api/delete-payment", &controllers.ApiController{}, "POST:DeletePayment")
-	web.Router("/api/notify-payment/?:owner/?:payment", &controllers.ApiController{}, "POST:NotifyPayment")
-	web.Router("/api/invoice-payment", &controllers.ApiController{}, "POST:InvoicePayment")
-
-	web.Router("/api/get-plans", &controllers.ApiController{}, "GET:GetPlans")
-	web.Router("/api/get-plan", &controllers.ApiController{}, "GET:GetPlan")
-	web.Router("/api/update-plan", &controllers.ApiController{}, "POST:UpdatePlan")
-	web.Router("/api/add-plan", &controllers.ApiController{}, "POST:AddPlan")
-	web.Router("/api/delete-plan", &controllers.ApiController{}, "POST:DeletePlan")
-
-	web.Router("/api/get-pricings", &controllers.ApiController{}, "GET:GetPricings")
-	web.Router("/api/get-pricing", &controllers.ApiController{}, "GET:GetPricing")
-	web.Router("/api/update-pricing", &controllers.ApiController{}, "POST:UpdatePricing")
-	web.Router("/api/add-pricing", &controllers.ApiController{}, "POST:AddPricing")
-	web.Router("/api/delete-pricing", &controllers.ApiController{}, "POST:DeletePricing")
-
-	web.Router("/api/get-subscriptions", &controllers.ApiController{}, "GET:GetSubscriptions")
-	web.Router("/api/get-subscription", &controllers.ApiController{}, "GET:GetSubscription")
-	web.Router("/api/update-subscription", &controllers.ApiController{}, "POST:UpdateSubscription")
-	web.Router("/api/add-subscription", &controllers.ApiController{}, "POST:AddSubscription")
-	web.Router("/api/delete-subscription", &controllers.ApiController{}, "POST:DeleteSubscription")
-
-	web.Router("/api/get-transactions", &controllers.ApiController{}, "GET:GetTransactions")
-	web.Router("/api/get-transaction", &controllers.ApiController{}, "GET:GetTransaction")
-	web.Router("/api/update-transaction", &controllers.ApiController{}, "POST:UpdateTransaction")
-	web.Router("/api/add-transaction", &controllers.ApiController{}, "POST:AddTransaction")
-	web.Router("/api/delete-transaction", &controllers.ApiController{}, "POST:DeleteTransaction")
-
-	// DEPRECATED (sunset 2026-06-01): Usage/billing endpoints are migrated to Commerce.
-	// Successor: https://commerce.hanzo.ai/api/v1/billing
-	// These routes remain active during the migration period but emit deprecation headers.
-	web.Router("/api/get-usage-records", &controllers.ApiController{}, "GET:GetUsageRecords")
-	web.Router("/api/get-user-usage-records", &controllers.ApiController{}, "GET:GetUserUsageRecords")
-	web.Router("/api/get-usage-summary", &controllers.ApiController{}, "GET:GetUsageSummary")
-	web.Router("/api/add-usage-record", &controllers.ApiController{}, "POST:AddUsageRecord")
-	web.Router("/api/add-usage-records", &controllers.ApiController{}, "POST:AddUsageRecords")
+	// Billing routes removed: products, orders, payments, plans, pricings,
+	// subscriptions, transactions, usage records are now handled by Commerce
+	// (billing.hanzo.ai). See https://commerce.hanzo.ai/api/v1/billing
 
 	web.Router("/api/get-system-info", &controllers.ApiController{}, "GET:GetSystemInfo")
 	web.Router("/api/get-version-info", &controllers.ApiController{}, "GET:GetVersionInfo")
