@@ -114,7 +114,7 @@ func GetIdProvider(idpInfo *ProviderInfo, redirectUrl string) (IdProvider, error
 		} else {
 			return nil, fmt.Errorf("Infoflow provider subType: %s is not supported", idpInfo.SubType)
 		}
-	case "Casdoor", "IAM":
+	case "IAM":
 		return NewIamIdProvider(idpInfo.ClientId, idpInfo.ClientSecret, redirectUrl, idpInfo.HostUrl), nil
 	case "Okta":
 		return NewOktaIdProvider(idpInfo.ClientId, idpInfo.ClientSecret, redirectUrl, idpInfo.HostUrl), nil
