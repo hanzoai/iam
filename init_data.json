@@ -927,7 +927,7 @@
         "id_token"
       ],
       "clientId": "hanzo-app-client-id",
-      "clientSecret": "${IAM_APP_HANZO_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://hanzo.ai/callback",
         "https://hanzo.app/callback",
@@ -996,7 +996,7 @@
         "id_token"
       ],
       "clientId": "hanzo-cloud-client-id",
-      "clientSecret": "${IAM_APP_CLOUD_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://cloud.hanzo.ai/callback",
         "https://stg.cloud.hanzo.ai/callback",
@@ -1058,7 +1058,7 @@
         "id_token"
       ],
       "clientId": "hanzo-commerce-client-id",
-      "clientSecret": "${IAM_APP_COMMERCE_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://commerce.hanzo.ai/callback",
         "http://localhost:8090/callback"
@@ -1119,7 +1119,7 @@
         "id_token"
       ],
       "clientId": "hanzo-console-client-id",
-      "clientSecret": "${IAM_APP_CONSOLE_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://console.hanzo.ai/api/auth/callback/hanzo-iam",
         "https://console.hanzo.ai/api/auth/callback/custom",
@@ -1190,7 +1190,7 @@
         "id_token"
       ],
       "clientId": "zoo-app-client-id",
-      "clientSecret": "${IAM_APP_ZOO_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://zoo.ngo/callback",
         "https://app.zoo.ngo/callback",
@@ -1255,7 +1255,7 @@
         "id_token"
       ],
       "clientId": "lux-app-client-id",
-      "clientSecret": "${IAM_APP_LUX_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://lux.network/callback",
         "https://lux.id/callback",
@@ -1322,7 +1322,7 @@
         "id_token"
       ],
       "clientId": "lux-explore-client-id",
-      "clientSecret": "${IAM_APP_EXPLORE_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://explore.lux.network/auth/callback",
         "https://explore-zoo.lux.network/auth/callback",
@@ -1388,7 +1388,7 @@
         "id_token"
       ],
       "clientId": "pars-app-client-id",
-      "clientSecret": "${IAM_APP_PARS_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://pars.ai/callback",
         "https://pars.id/callback",
@@ -1453,7 +1453,7 @@
         "id_token"
       ],
       "clientId": "hanzobot-client-id",
-      "clientSecret": "${IAM_APP_HANZOBOT_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://bot.hanzo.ai/auth/callback",
         "http://localhost:18789/auth/callback",
@@ -1523,7 +1523,7 @@
         "id_token"
       ],
       "clientId": "hanzo-platform-client-id",
-      "clientSecret": "${IAM_APP_PLATFORM_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://hanzo.id/callback/platform/hanzo",
         "https://platform.hanzo.ai/api/auth/callback",
@@ -1587,7 +1587,7 @@
         "id_token"
       ],
       "clientId": "bootnode-web",
-      "clientSecret": "${IAM_APP_BOOTNODE_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://bootno.de/auth/callback",
         "https://bootno.de/callback",
@@ -1650,7 +1650,7 @@
         "id_token"
       ],
       "clientId": "hanzo-web3",
-      "clientSecret": "${IAM_APP_HANZO_WEB3_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://web3.hanzo.ai/auth/callback",
         "https://web3.hanzo.ai/callback",
@@ -1713,7 +1713,7 @@
         "id_token"
       ],
       "clientId": "lux-web3",
-      "clientSecret": "${IAM_APP_LUX_WEB3_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://cloud.lux.network/auth/callback",
         "https://cloud.lux.network/callback",
@@ -1788,7 +1788,7 @@
         "id_token"
       ],
       "clientId": "zoo-web3",
-      "clientSecret": "${IAM_APP_ZOO_WEB3_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://web3.zoo.ngo/auth/callback",
         "https://web3.zoo.ngo/callback",
@@ -1851,7 +1851,7 @@
         "id_token"
       ],
       "clientId": "hanzo-team-client-id",
-      "clientSecret": "${IAM_APP_TEAM_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://hanzo.team/_accounts/auth/openid/callback",
         "https://hanzo.team/callback",
@@ -1917,7 +1917,7 @@
         "id_token"
       ],
       "clientId": "adnexus-app-client-id",
-      "clientSecret": "${IAM_APP_ADNEXUS_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://ad.nexus/callback",
         "https://ad.nexus/auth/callback",
@@ -2099,7 +2099,7 @@
         "id_token"
       ],
       "clientId": "zt-console",
-      "clientSecret": "${IAM_APP_ZT_CONSOLE_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://ztc.hanzo.ai/callback",
         "http://localhost:3000/callback"
@@ -2160,7 +2160,7 @@
         "id_token"
       ],
       "clientId": "chat-app",
-      "clientSecret": "${IAM_APP_CHAT_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://hanzo.chat/oauth/openid/callback",
         "https://chat.hanzo.ai/oauth/openid/callback",
@@ -2220,7 +2220,7 @@
         "code"
       ],
       "clientId": "app-analytics",
-      "clientSecret": "${IAM_APP_ANALYTICS_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://analytics.hanzo.ai/api/auth/iam",
         "http://localhost:3000/api/auth/iam"
@@ -2279,7 +2279,7 @@
         "code"
       ],
       "clientId": "app-insights",
-      "clientSecret": "${IAM_APP_INSIGHTS_CLIENT_SECRET}",
+      "clientSecret": "",
       "redirectUris": [
         "https://insights.hanzo.ai/complete/oidc/",
         "http://localhost:8000/complete/oidc/"
@@ -2318,8 +2318,7 @@
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "admin",
       "type": "normal-user",
-      "password": "${IAM_ADMIN_PASSWORD}",
-      "passwordSalt": "",
+      "password": "",
       "passwordType": "",
       "displayName": "Admin",
       "firstName": "",
@@ -2355,7 +2354,6 @@
       "isForbidden": false,
       "isDeleted": false,
       "signupApplication": "app-hanzo",
-      "hash": "",
       "preHash": "",
       "accessKey": "",
       "accessSecret": "",
@@ -2386,8 +2384,7 @@
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "z",
       "type": "normal-user",
-      "password": "${IAM_Z_HANZO_PASSWORD}",
-      "passwordSalt": "",
+      "password": "",
       "passwordType": "",
       "displayName": "Z",
       "firstName": "",
@@ -2424,7 +2421,6 @@
       "isForbidden": false,
       "isDeleted": false,
       "signupApplication": "app-hanzo",
-      "hash": "",
       "preHash": "",
       "accessKey": "",
       "accessSecret": "",
@@ -2454,8 +2450,7 @@
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "lux-z",
       "type": "normal-user",
-      "password": "${IAM_Z_LUX_PASSWORD}",
-      "passwordSalt": "",
+      "password": "",
       "passwordType": "",
       "displayName": "Z",
       "firstName": "",
@@ -2492,7 +2487,6 @@
       "isForbidden": false,
       "isDeleted": false,
       "signupApplication": "app-lux",
-      "hash": "",
       "preHash": "",
       "accessKey": "",
       "accessSecret": "",
@@ -2593,8 +2587,8 @@
       "type": "GitHub",
       "subType": "",
       "method": "Normal",
-      "clientId": "${IAM_GITHUB_CLIENT_ID}",
-      "clientSecret": "${IAM_GITHUB_CLIENT_SECRET}",
+      "clientId": "",
+      "clientSecret": "",
       "clientId2": "",
       "clientSecret2": "",
       "cert": "",
@@ -2634,8 +2628,8 @@
       "type": "Google",
       "subType": "",
       "method": "Normal",
-      "clientId": "${IAM_GOOGLE_CLIENT_ID}",
-      "clientSecret": "${IAM_GOOGLE_CLIENT_SECRET}",
+      "clientId": "",
+      "clientSecret": "",
       "clientId2": "",
       "clientSecret2": "",
       "cert": "",
@@ -2788,6 +2782,21 @@
       "issuerUrl": "",
       "enableSignAuthnRequest": false,
       "providerUrl": ""
+    },
+    {
+      "owner": "admin",
+      "name": "provider-storage-s3",
+      "createdTime": "2024-01-01T00:00:00Z",
+      "displayName": "S3 Storage",
+      "category": "Storage",
+      "type": "MinIO",
+      "clientId": "",
+      "clientSecret": "",
+      "regionId": "us-east-1",
+      "bucket": "iam",
+      "endpoint": "http://s3:9000",
+      "domain": "https://s3.example.com",
+      "pathPrefix": "/iam"
     }
   ],
   "syncer": [],
