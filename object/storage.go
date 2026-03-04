@@ -120,7 +120,7 @@ func GetUploadFileUrl(provider *Provider, fullFilePath string, hasTimestamp bool
 func getStorageProvider(provider *Provider, lang string) (oss.StorageInterface, error) {
 	endpoint := getProviderEndpoint(provider)
 	certificate := ""
-	if provider.Category == "Storage" && (provider.Type == "Casdoor" || provider.Type == "IAM") {
+	if provider.Category == "Storage" && (provider.Type == "IAM") {
 		cert, err := GetCert(util.GetId(provider.Owner, provider.Cert))
 		if err != nil {
 			return nil, err
@@ -163,7 +163,7 @@ func uploadFile(provider *Provider, fullFilePath string, fileBuffer *bytes.Buffe
 		return "", "", err
 	}
 
-	if provider.Type == "Casdoor" || provider.Type == "IAM" {
+	if provider.Type == "IAM" {
 		fileUrl = object.Path
 	}
 

@@ -228,9 +228,9 @@ export function getTransactionTableColumns(options = {}) {
         return text;
       }
       if (record.domain) {
-        const casibaseUrl = `${record.domain}/providers/${text}`;
+        const providerUrl = `${record.domain}/providers/${text}`;
         return (
-          <a href={casibaseUrl} target="_blank" rel="noopener noreferrer">
+          <a href={providerUrl} target="_blank" rel="noopener noreferrer">
             {text}
           </a>
         );

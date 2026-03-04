@@ -28,7 +28,7 @@ class TransactionListPage extends BaseListPage {
       owner: organizationName,
       createdTime: moment().format(),
       application: "app-hanzo",
-      domain: "https://ai-admin.casibase.com",
+      domain: "https://console.hanzo.ai",
       category: "",
       type: "chat_id",
       subtype: "message_id",
