@@ -15,7 +15,6 @@
 import React from "react";
 import QRCode from "qrcode.react";
 import {Button, Col, Row} from "antd";
-import * as PaymentBackend from "./backend/PaymentBackend";
 import * as Setting from "./Setting";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import i18next from "i18next";
@@ -32,8 +31,6 @@ class QrCodePage extends React.Component {
       payUrl: props.payUrl ?? params.get("payUrl"),
       successUrl: props.successUrl ?? params.get("successUrl"),
       provider: props.provider ?? null,
-      payment: null,
-      timer: null,
     };
   }
 
@@ -56,45 +53,11 @@ class QrCodePage extends React.Component {
     }
   }
 
-  setNotifyTask() {
-    if (!this.state.owner || !this.state.paymentName) {
-      return ;
-    }
-
-    const notifyTask = async() => {
-      try {
-        const res = await PaymentBackend.notifyPayment(this.state.owner, this.state.paymentName);
-        if (res.status !== "ok") {
-          throw new Error(res.msg);
-        }
-        const payment = res.data;
-        if (payment.state !== "Created") {
-          Setting.goToLink(this.state.successUrl);
-        }
-      } catch (err) {
-        Setting.showMessage("error", err.message);
-        return ;
-      }
-    };
-
-    this.setState({
-      timer: setTimeout(async() => {
-        await notifyTask();
-        this.setNotifyTask();
-      }, 2000),
-    });
-  }
-
   componentDidMount() {
     if (this.props.onUpdateApplication) {
       this.props.onUpdateApplication(null);
     }
     this.getProvider();
-    this.setNotifyTask();
-  }
-
-  componentWillUnmount() {
-    clearInterval(this.state.timer);
   }
 
   renderProviderInfo(provider) {
