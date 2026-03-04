@@ -54,7 +54,7 @@ func getUnifiedServiceToken() string {
 
 func isServiceTokenRoute(urlPath string) bool {
 	switch urlPath {
-	case "/api/get-user", "/api/add-usage-record", "/api/add-usage-records":
+	case "/api/get-user":
 		return true
 	default:
 		return false
