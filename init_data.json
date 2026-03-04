@@ -1262,10 +1262,16 @@
         "https://wallet.lux.network/callback",
         "https://bridge.lux.network/callback",
         "https://explorer.lux.network/callback",
+        "https://explore.lux.network/auth/callback",
+        "https://explore-zoo.lux.network/auth/callback",
+        "https://explore-hanzo.lux.network/auth/callback",
+        "https://explore-spc.lux.network/auth/callback",
+        "https://explore-pars.lux.network/auth/callback",
         "https://cloud.lux.network/auth/callback",
         "https://web3.lux.network/auth/callback",
         "http://localhost:3000/callback",
-        "http://localhost:3000/auth/callback"
+        "http://localhost:3000/auth/callback",
+        "http://localhost:3100/auth/callback"
       ],
       "tokenFormat": "JWT",
       "tokenFields": [],
@@ -1425,7 +1431,7 @@
       "responseType": "code,token,id_token"
     },
     {
-      "owner": "hanzo",
+      "owner": "admin",
       "name": "app-platform",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo Platform",
