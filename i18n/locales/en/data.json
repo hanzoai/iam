@@ -107,8 +107,8 @@
   "general": {
     "Failed to import groups": "Failed to import groups",
     "Failed to import users": "Failed to import users",
-    "Insufficient balance: new balance %v would be below credit limit %v": "Insufficient balance: new balance %v would be below credit limit %v",
-    "Insufficient balance: new organization balance %v would be below credit limit %v": "Insufficient balance: new organization balance %v would be below credit limit %v",
+    "Insufficient balance: new balance %v would exceed the credit limit %v": "Insufficient balance: new balance %v would exceed the credit limit %v",
+    "Insufficient balance: new organization balance %v would exceed the credit limit %v": "Insufficient balance: new organization balance %v would exceed the credit limit %v",
     "Missing parameter": "Missing parameter",
     "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
     "Only admin user can specify user": "Only admin user can specify user",

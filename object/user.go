@@ -1593,3 +1593,57 @@ func GenerateIdForNewUser(application *Application) (string, error) {
 	res := strconv.Itoa(lastUserId + 1)
 	return res, nil
 }
+
+func UpdateUserBalance(owner string, name string, balance float64, currency string, lang string) error {
+	user, err := getUser(owner, name)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return fmt.Errorf(i18n.Translate(lang, "general:The user: %s is not found"), fmt.Sprintf("%s/%s", owner, name))
+	}
+
+	// Convert the balance amount from transaction currency to user's balance currency
+	balanceCurrency := user.BalanceCurrency
+	var org *Organization
+	if balanceCurrency == "" {
+		// Get organization's balance currency as fallback
+		org, err = getOrganization("admin", owner)
+		if err == nil && org != nil && org.BalanceCurrency != "" {
+			balanceCurrency = org.BalanceCurrency
+		} else {
+			balanceCurrency = "USD"
+		}
+	}
+	convertedBalance := ConvertCurrency(balance, currency, balanceCurrency)
+
+	// Calculate new balance
+	newBalance := AddPrices(user.Balance, convertedBalance)
+
+	// Check balance credit limit
+	// User.BalanceCredit takes precedence over Organization.BalanceCredit
+	var balanceCredit float64
+	if user.BalanceCredit != 0 {
+		balanceCredit = user.BalanceCredit
+	} else {
+		// Get organization's balance credit as fallback
+		if org == nil {
+			org, err = getOrganization("admin", owner)
+			if err != nil {
+				return err
+			}
+		}
+		if org != nil {
+			balanceCredit = org.BalanceCredit
+		}
+	}
+
+	// Validate new balance against credit limit (BalanceCredit is an overdraft limit: balance can go down to -BalanceCredit)
+	if newBalance < -balanceCredit {
+		return fmt.Errorf(i18n.Translate(lang, "general:Insufficient balance: new balance %v would exceed the credit limit %v"), newBalance, balanceCredit)
+	}
+
+	user.Balance = newBalance
+	_, err = UpdateUser(user.GetId(), user, []string{"balance"}, true)
+	return err
+}

@@ -583,12 +583,19 @@ func createGuestUserToken(application *Application, clientSecret string, verifie
 		}, nil
 	}
 
+	// Generate a unique user ID within the confines of the application
+	newUserId, idErr := GenerateIdForNewUser(application)
+	if idErr != nil {
+		// If we fail to generate a unique user ID, we can fallback to a random ID
+		newUserId = util.GenerateId()
+	}
+
 	// Create the guest user
 	guestUser := &User{
 		Owner:             application.Organization,
 		Name:              guestUsername,
 		CreatedTime:       util.GetCurrentTime(),
-		Id:                util.GenerateId(),
+		Id:                newUserId,
 		Type:              "normal-user",
 		Password:          guestPassword,
 		Tag:               "guest-user",
@@ -1172,9 +1179,16 @@ func GetWechatMiniProgramToken(application *Application, code string, host strin
 			name = fmt.Sprintf("wechat-%s", openId)
 		}
 
+		// Generate a unique user ID within the confines of the application
+		newUserId, idErr := GenerateIdForNewUser(application)
+		if idErr != nil {
+			// If we fail to generate a unique user ID, we can fallback to a random ID
+			newUserId = util.GenerateId()
+		}
+
 		user = &User{
 			Owner:             application.Organization,
-			Id:                util.GenerateId(),
+			Id:                newUserId,
 			Name:              name,
 			Avatar:            avatar,
 			SignupApplication: application.Name,
