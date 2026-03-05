@@ -15,6 +15,7 @@
 package object
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
@@ -23,7 +24,8 @@ import (
 func getCasvisorApplication() *Application {
 	applications, err := GetApplications("admin")
 	if err != nil {
-		panic(err)
+		fmt.Printf("[casvisor] WARNING: GetApplications failed: %v\n", err)
+		return nil
 	}
 
 	for _, application := range applications {
