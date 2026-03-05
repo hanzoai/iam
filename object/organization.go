@@ -667,4 +667,3 @@ func (org *Organization) GetInitScore() (int, error) {
 		return strconv.Atoi(conf.GetConfigString("initScore"))
 	}
 }
-
