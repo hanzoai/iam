@@ -42,6 +42,9 @@ type InitData struct {
 	Invitations      []*Invitation         `json:"invitations"`
 	Records          []*casvisorsdk.Record `json:"records"`
 	Sessions         []*Session            `json:"sessions"`
+	Sites            []*Site               `json:"sites"`
+	Rules            []*Rule               `json:"rules"`
+
 	EnforcerPolicies map[string][][]string `json:"enforcerPolicies"`
 }
 
@@ -122,6 +125,12 @@ func InitFromFile() {
 		for _, session := range initData.Sessions {
 			initDefinedSession(session)
 		}
+		for _, rule := range initData.Rules {
+			initDefinedRule(rule)
+		}
+		for _, site := range initData.Sites {
+			initDefinedSite(site)
+		}
 	}
 }
 
@@ -153,6 +162,9 @@ func readInitDataFromFile(filePath string) (*InitData, error) {
 		Invitations:      []*Invitation{},
 		Records:          []*casvisorsdk.Record{},
 		Sessions:         []*Session{},
+		Sites:            []*Site{},
+		Rules:            []*Rule{},
+
 		EnforcerPolicies: map[string][][]string{},
 	}
 	err := util.JsonToStruct(s, data)
@@ -702,3 +714,52 @@ func initDefinedSession(session *Session) {
 		panic(err)
 	}
 }
+
+func initDefinedSite(site *Site) {
+	existed, err := getSite(site.Owner, site.Name)
+	if err != nil {
+		panic(err)
+	}
+	if existed != nil {
+		if initDataNewOnly {
+			return
+		}
+		affected, err := DeleteSite(site)
+		if err != nil {
+			panic(err)
+		}
+		if !affected {
+			panic("Fail to delete site")
+		}
+	}
+	site.CreatedTime = util.GetCurrentTime()
+	_, err = AddSite(site)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func initDefinedRule(rule *Rule) {
+	existed, err := getRule(rule.Owner, rule.Name)
+	if err != nil {
+		panic(err)
+	}
+	if existed != nil {
+		if initDataNewOnly {
+			return
+		}
+		affected, err := DeleteRule(rule)
+		if err != nil {
+			panic(err)
+		}
+		if !affected {
+			panic("Fail to delete rule")
+		}
+	}
+	rule.CreatedTime = util.GetCurrentTime()
+	_, err = AddRule(rule)
+	if err != nil {
+		panic(err)
+	}
+}
+
