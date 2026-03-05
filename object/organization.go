@@ -667,3 +667,40 @@ func (org *Organization) GetInitScore() (int, error) {
 		return strconv.Atoi(conf.GetConfigString("initScore"))
 	}
 }
+
+func UpdateOrganizationBalance(owner string, name string, balance float64, currency string, isOrgBalance bool, lang string) error {
+	organization, err := getOrganization(owner, name)
+	if err != nil {
+		return err
+	}
+	if organization == nil {
+		return fmt.Errorf(i18n.Translate(lang, "auth:the organization: %s is not found"), fmt.Sprintf("%s/%s", owner, name))
+	}
+
+	// Convert the balance amount from transaction currency to organization's balance currency
+	balanceCurrency := organization.BalanceCurrency
+	if balanceCurrency == "" {
+		balanceCurrency = "USD"
+	}
+	convertedBalance := ConvertCurrency(balance, currency, balanceCurrency)
+
+	var columns []string
+	var newBalance float64
+	if isOrgBalance {
+		newBalance = AddPrices(organization.OrgBalance, convertedBalance)
+		// Check organization balance credit limit (BalanceCredit is an overdraft limit: balance can go down to -BalanceCredit)
+		if newBalance < -organization.BalanceCredit {
+			return fmt.Errorf(i18n.Translate(lang, "general:Insufficient balance: new organization balance %v would exceed the credit limit %v"), newBalance, organization.BalanceCredit)
+		}
+		organization.OrgBalance = newBalance
+		columns = []string{"org_balance"}
+	} else {
+		// User balance is just a sum of all users' balances, no credit limit check here
+		// Individual user credit limits are checked in UpdateUserBalance
+		organization.UserBalance = AddPrices(organization.UserBalance, convertedBalance)
+		columns = []string{"user_balance"}
+	}
+
+	_, err = ormer.Engine.ID(core.PK{owner, name}).Cols(columns...).Update(organization)
+	return err
+}
