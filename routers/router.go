@@ -133,12 +133,26 @@ func InitAPI() {
 	web.Router("/api/delete-resource", &controllers.ApiController{}, "POST:DeleteResource")
 	web.Router("/api/upload-resource", &controllers.ApiController{}, "POST:UploadResource")
 
+	web.Router("/api/get-global-sites", &controllers.ApiController{}, "GET:GetGlobalSites")
+	web.Router("/api/get-sites", &controllers.ApiController{}, "GET:GetSites")
+	web.Router("/api/get-site", &controllers.ApiController{}, "GET:GetSite")
+	web.Router("/api/update-site", &controllers.ApiController{}, "POST:UpdateSite")
+	web.Router("/api/add-site", &controllers.ApiController{}, "POST:AddSite")
+	web.Router("/api/delete-site", &controllers.ApiController{}, "POST:DeleteSite")
+
+	web.Router("/api/get-rules", &controllers.ApiController{}, "GET:GetRules")
+	web.Router("/api/get-rule", &controllers.ApiController{}, "GET:GetRule")
+	web.Router("/api/add-rule", &controllers.ApiController{}, "POST:AddRule")
+	web.Router("/api/update-rule", &controllers.ApiController{}, "POST:UpdateRule")
+	web.Router("/api/delete-rule", &controllers.ApiController{}, "POST:DeleteRule")
+
 	web.Router("/api/get-certs", &controllers.ApiController{}, "GET:GetCerts")
 	web.Router("/api/get-global-certs", &controllers.ApiController{}, "GET:GetGlobalCerts")
 	web.Router("/api/get-cert", &controllers.ApiController{}, "GET:GetCert")
 	web.Router("/api/update-cert", &controllers.ApiController{}, "POST:UpdateCert")
 	web.Router("/api/add-cert", &controllers.ApiController{}, "POST:AddCert")
 	web.Router("/api/delete-cert", &controllers.ApiController{}, "POST:DeleteCert")
+	web.Router("/api/update-cert-domain-expire", &controllers.ApiController{}, "POST:UpdateCertDomainExpire")
 
 	web.Router("/api/get-roles", &controllers.ApiController{}, "GET:GetRoles")
 	web.Router("/api/get-role", &controllers.ApiController{}, "GET:GetRole")
