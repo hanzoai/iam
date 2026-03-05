@@ -29,6 +29,7 @@ import (
 	"github.com/hanzoai/iam/proxy"
 	"github.com/hanzoai/iam/radius"
 	"github.com/hanzoai/iam/routers"
+	"github.com/hanzoai/iam/service"
 	"github.com/hanzoai/iam/util"
 )
 
@@ -73,6 +74,10 @@ func main() {
 	object.InitFromFile()
 	object.InitCasvisorConfig()
 	object.InitCleanupTokens()
+
+	object.InitSiteMap()
+	object.InitRuleMap()
+	object.StartMonitorSitesLoop()
 
 	util.SafeGoroutine(func() { object.RunSyncUsersJob() })
 	util.SafeGoroutine(func() { controllers.InitCLIDownloader() })
@@ -126,6 +131,10 @@ func main() {
 	go ldap.StartLdapServer()
 	go radius.StartRadiusServer()
 	go object.ClearThroughputPerSecond()
+
+	if len(object.SiteMap) != 0 {
+		service.Start()
+	}
 
 	web.Run(fmt.Sprintf(":%v", port))
 }

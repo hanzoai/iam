@@ -194,6 +194,10 @@ export const OtherProviderInfo = {
       logo: `${StaticBaseUrl}/img/social_default.png`,
       url: "https://hanzo.ai/docs/provider/email/overview",
     },
+    "Resend": {
+      logo: `${StaticBaseUrl}/img/email_resend.png`,
+      url: "https://resend.com/",
+    },
   },
   Storage: {
     "Local File System": {
@@ -1309,6 +1313,7 @@ export function getProviderTypeOptions(category) {
         {id: "Azure ACS", name: "Azure ACS"},
         {id: "SendGrid", name: "SendGrid"},
         {id: "Custom HTTP Email", name: "Custom HTTP Email"},
+        {id: "Resend", name: "Resend"},
       ]
     );
   } else if (category === "SMS") {
@@ -2433,4 +2438,49 @@ export function getApiPaths() {
   res.push("user", "userinfo");
 
   return res;
+}
+
+export function getItemId(item) {
+  return item.owner + "/" + item.name;
+}
+
+export function getVersionInfo(text, siteName) {
+  if (text === "") {
+    return null;
+  }
+
+  try {
+    const versionInfo = JSON.parse(text);
+    const link = versionInfo?.version !== "" ? `${getRepoUrl(siteName)}/releases/tag/${versionInfo?.version}` : "";
+    let versionText = versionInfo?.version !== "" ? versionInfo?.version : "Unknown version";
+    if (versionInfo?.commitOffset > 0) {
+      versionText += ` (ahead+${versionInfo?.commitOffset})`;
+    }
+
+    return {text: versionText, link: link};
+  } catch (e) {
+    return {text: "", link: ""};
+  }
+}
+
+export function prependRow(array, row) {
+  return [row, ...array];
+}
+
+function getOriginalName(name) {
+  const tokens = name.split("_");
+  if (tokens.length > 0) {
+    return tokens[0];
+  } else {
+    return name;
+  }
+}
+
+export function getRepoUrl(name) {
+  name = getOriginalName(name);
+  if (name === "hanzo") {
+    return "https://github.com/hanzoai/iam";
+  } else {
+    return `https://github.com/casbin/${name}`;
+  }
 }

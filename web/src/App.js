@@ -663,7 +663,7 @@ class App extends Component {
                 menuVisible={this.state.menuVisible}
                 logo={this.state.logo}
                 onChangeTheme={this.setTheme}
-                onClick = {this.onClick}
+                onClick={this.onClick}
                 onfinish={() => {
                   this.setState({requiredEnableMfa: false});
                 }}
