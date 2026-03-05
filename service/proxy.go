@@ -1,4 +1,4 @@
-// Copyright 2023 The casbin Authors. All Rights Reserved.
+// Copyright 2023 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -36,7 +36,6 @@ func forwardHandler(targetUrl string, writer http.ResponseWriter, request *http.
 
 	if nil != err {
 		panic(err)
-		return
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
@@ -187,12 +186,12 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		challengeMap := site.GetChallengeMap()
 		for token, keyAuth := range challengeMap {
 			if r.RequestURI == fmt.Sprintf("/.well-known/acme-challenge/%s", token) {
-				responseOk(w, keyAuth)
+				responseOk(w, "%s", keyAuth)
 				return
 			}
 		}
 
-		responseError(w, fmt.Sprintf("IAM WAF error: ACME HTTP-01 challenge failed, requestUri cannot match with challengeMap, requestUri = %s, challengeMap = %v", r.RequestURI, challengeMap))
+		responseError(w, "IAM WAF error: ACME HTTP-01 challenge failed, requestUri cannot match with challengeMap, requestUri = %s, challengeMap = %v", r.RequestURI, challengeMap)
 		return
 	}
 
@@ -200,7 +199,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		challengeMap := site.GetChallengeMap()
 		for path, value := range challengeMap {
 			if r.RequestURI == fmt.Sprintf("/%s", path) {
-				responseOk(w, value)
+				responseOk(w, "%s", value)
 				return
 			}
 		}
