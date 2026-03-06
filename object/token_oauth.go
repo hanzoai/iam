@@ -167,7 +167,7 @@ func CheckOAuthLogin(clientId string, responseType string, redirectUri string, s
 	return "", application, nil
 }
 
-func GetOAuthCode(userId string, clientId string, provider string, signinMethod string, responseType string, redirectUri string, scope string, state string, nonce string, challenge string, resource string, host string, lang string) (*Code, error) {
+func GetOAuthCode(userId string, clientId string, provider string, signinMethod string, responseType string, redirectUri string, scope string, state string, nonce string, challenge string, challengeMethod string, resource string, host string, lang string) (*Code, error) {
 	user, err := GetUser(userId)
 	if err != nil {
 		return nil, err
@@ -218,24 +218,28 @@ func GetOAuthCode(userId string, clientId string, provider string, signinMethod 
 	if challenge == "null" {
 		challenge = ""
 	}
+	if challengeMethod == "" || challengeMethod == "null" {
+		challengeMethod = "S256"
+	}
 
 	token := &Token{
-		Owner:         application.Owner,
-		Name:          tokenName,
-		CreatedTime:   util.GetCurrentTime(),
-		Application:   application.Name,
-		Organization:  user.Owner,
-		User:          user.Name,
-		Code:          util.GenerateClientId(),
-		AccessToken:   accessToken,
-		RefreshToken:  refreshToken,
-		ExpiresIn:     int(application.ExpireInHours * float64(hourSeconds)),
-		Scope:         scope,
-		TokenType:     "Bearer",
-		CodeChallenge: challenge,
-		CodeIsUsed:    false,
-		CodeExpireIn:  time.Now().Add(time.Minute * 5).Unix(),
-		Resource:      resource,
+		Owner:               application.Owner,
+		Name:                tokenName,
+		CreatedTime:         util.GetCurrentTime(),
+		Application:         application.Name,
+		Organization:        user.Owner,
+		User:                user.Name,
+		Code:                util.GenerateClientId(),
+		AccessToken:         accessToken,
+		RefreshToken:        refreshToken,
+		ExpiresIn:           int(application.ExpireInHours * float64(hourSeconds)),
+		Scope:               scope,
+		TokenType:           "Bearer",
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: challengeMethod,
+		CodeIsUsed:          false,
+		CodeExpireIn:        time.Now().Add(time.Minute * 5).Unix(),
+		Resource:            resource,
 	}
 	_, err = AddToken(token)
 	if err != nil {
@@ -726,11 +730,18 @@ func GetAuthorizationCodeToken(application *Application, clientSecret string, co
 	}
 
 	if token.CodeChallenge != "" {
-		challengeAnswer := pkceChallenge(verifier)
-		if challengeAnswer != token.CodeChallenge {
+		// RFC 7636: verify code_verifier against stored code_challenge
+		var challengeValid bool
+		if token.CodeChallengeMethod == "plain" {
+			challengeValid = (verifier == token.CodeChallenge)
+		} else {
+			// Default to S256
+			challengeValid = (pkceChallenge(verifier) == token.CodeChallenge)
+		}
+		if !challengeValid {
 			return nil, &TokenError{
 				Error:            InvalidGrant,
-				ErrorDescription: fmt.Sprintf("verifier is invalid, challengeAnswer: [%s], token.CodeChallenge: [%s]", challengeAnswer, token.CodeChallenge),
+				ErrorDescription: "code_verifier does not match code_challenge",
 			}, nil
 		}
 	}

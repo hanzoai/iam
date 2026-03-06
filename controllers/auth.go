@@ -137,8 +137,8 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		codeChallenge := c.Ctx.Input.Query("code_challenge")
 		resource := c.Ctx.Input.Query("resource")
 
-		if challengeMethod != "S256" && challengeMethod != "null" && challengeMethod != "" {
-			c.ResponseError(c.T("auth:Challenge method should be S256"))
+		if challengeMethod != "S256" && challengeMethod != "plain" && challengeMethod != "null" && challengeMethod != "" {
+			c.ResponseError(c.T("auth:Challenge method should be S256 or plain"))
 			return
 		}
 
@@ -154,7 +154,7 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 			return
 		}
 
-		code, err := object.GetOAuthCode(userId, clientId, form.Provider, form.SigninMethod, responseType, redirectUri, scope, state, nonce, codeChallenge, resource, c.Ctx.Request.Host, c.GetAcceptLanguage())
+		code, err := object.GetOAuthCode(userId, clientId, form.Provider, form.SigninMethod, responseType, redirectUri, scope, state, nonce, codeChallenge, challengeMethod, resource, c.Ctx.Request.Host, c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(err.Error(), nil)
 			return

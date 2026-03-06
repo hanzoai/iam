@@ -71,8 +71,14 @@ func (c *ApiController) GetAcceptLanguage() string {
 	return conf.GetLanguage(language)
 }
 
-// SetTokenErrorHttpStatus ...
+// SetTokenErrorHttpStatus sets HTTP status and RFC 6749 §5.1 required headers
+// for OAuth token responses. Successful token responses MUST include
+// Cache-Control: no-store and Pragma: no-cache (RFC 6749 §5.1).
 func (c *ApiController) SetTokenErrorHttpStatus() {
+	// RFC 6749 §5.1: token responses must not be cached
+	c.Ctx.Output.Header("Cache-Control", "no-store")
+	c.Ctx.Output.Header("Pragma", "no-cache")
+
 	_, ok := c.Data["json"].(*object.TokenError)
 	if ok {
 		if c.Data["json"].(*object.TokenError).Error == object.InvalidClient {
