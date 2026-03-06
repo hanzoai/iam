@@ -50,7 +50,7 @@ func (idp *IamIdProvider) SetHttpClient(client *http.Client) {
 func (idp *IamIdProvider) getConfig(hostUrl string) *oauth2.Config {
 	return &oauth2.Config{
 		Endpoint: oauth2.Endpoint{
-			TokenURL: hostUrl + "/api/login/oauth/access_token",
+			TokenURL: hostUrl + "/oauth/token",
 		},
 		Scopes: []string{"openid email profile"},
 	}
@@ -120,7 +120,7 @@ type IamUserInfo struct {
 func (idp *IamIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error) {
 	cdUserinfo := &IamUserInfo{}
 	accessToken := token.AccessToken
-	request, err := http.NewRequest("GET", fmt.Sprintf("%s/api/userinfo", idp.Host), nil)
+	request, err := http.NewRequest("GET", fmt.Sprintf("%s/oauth/userinfo", idp.Host), nil)
 	if err != nil {
 		return nil, err
 	}
