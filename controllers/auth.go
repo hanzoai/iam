@@ -154,7 +154,7 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 			return
 		}
 
-		code, err := object.GetOAuthCode(userId, clientId, form.Provider, form.SigninMethod, responseType, redirectUri, scope, state, nonce, codeChallenge, challengeMethod, resource, c.Ctx.Request.Host, c.GetAcceptLanguage())
+		code, err := object.GetOAuthCode(userId, clientId, form.Provider, form.SigninMethod, responseType, redirectUri, scope, state, nonce, codeChallenge, challengeMethod, resource, c.getEffectiveHost(), c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(err.Error(), nil)
 			return
@@ -175,7 +175,7 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 			if !object.IsScopeValid(scope, application) {
 				resp = &Response{Status: "error", Msg: "error: invalid_scope", Data: ""}
 			} else {
-				token, _ := object.GetTokenByUser(application, user, scope, nonce, c.Ctx.Request.Host)
+				token, _ := object.GetTokenByUser(application, user, scope, nonce, c.getEffectiveHost())
 				resp = tokenToResponse(token)
 
 				resp.Data3 = user.NeedUpdatePassword
@@ -208,7 +208,7 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 
 		resp = &Response{Status: "ok", Msg: "", Data: userId, Data3: user.NeedUpdatePassword}
 	} else if form.Type == ResponseTypeSaml { // saml flow
-		res, redirectUrl, method, err := object.GetSamlResponse(application, user, form.SamlRequest, c.Ctx.Request.Host)
+		res, redirectUrl, method, err := object.GetSamlResponse(application, user, form.SamlRequest, c.getEffectiveHost())
 		if err != nil {
 			c.ResponseError(err.Error(), nil)
 			return
@@ -739,7 +739,7 @@ func (c *ApiController) Login() {
 		var token *oauth2.Token
 		if provider.Category == "SAML" {
 			// SAML
-			userInfo, err = object.ParseSamlResponse(authForm.SamlResponse, provider, c.Ctx.Request.Host)
+			userInfo, err = object.ParseSamlResponse(authForm.SamlResponse, provider, c.getEffectiveHost())
 			if err != nil {
 				c.ResponseError(err.Error())
 				return
@@ -1198,7 +1198,7 @@ func (c *ApiController) Login() {
 func (c *ApiController) GetSamlLogin() {
 	providerId := c.Ctx.Input.Query("id")
 	relayState := c.Ctx.Input.Query("relayState")
-	authURL, method, err := object.GenerateSamlRequest(providerId, relayState, c.Ctx.Request.Host, c.GetAcceptLanguage())
+	authURL, method, err := object.GenerateSamlRequest(providerId, relayState, c.getEffectiveHost(), c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -1454,6 +1454,6 @@ func (c *ApiController) DeviceAuth() {
 	object.DeviceAuthMap.Store(deviceCode, deviceAuthCache)
 	object.DeviceAuthMap.Store(userCode, userAuthCache)
 
-	c.Data["json"] = object.GetDeviceAuthResponse(deviceCode, userCode, c.Ctx.Request.Host)
+	c.Data["json"] = object.GetDeviceAuthResponse(deviceCode, userCode, c.getEffectiveHost())
 	c.ServeJSON()
 }
