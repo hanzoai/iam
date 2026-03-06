@@ -62,6 +62,31 @@ func (c *ApiController) T(error string) string {
 	return i18n.Translate(c.GetAcceptLanguage(), error)
 }
 
+// responseBearerError returns an RFC 6750 Bearer token error response.
+func (c *ApiController) responseBearerError(errorCode string, description string) {
+	c.Ctx.Output.Header("WWW-Authenticate",
+		fmt.Sprintf(`Bearer error="%s", error_description="%s"`, errorCode, description))
+	c.Ctx.Output.SetStatus(401)
+	c.Data["json"] = map[string]string{
+		"error":             errorCode,
+		"error_description": description,
+	}
+	c.ServeJSON()
+}
+
+// getEffectiveHost returns the original client-facing hostname.
+// Prefers X-Forwarded-Host (set by reverse proxies / CF Workers)
+// over the standard Host header.
+func (c *ApiController) getEffectiveHost() string {
+	if fwdHost := c.Ctx.Request.Header.Get("X-Forwarded-Host"); fwdHost != "" {
+		if i := strings.IndexByte(fwdHost, ','); i >= 0 {
+			fwdHost = strings.TrimSpace(fwdHost[:i])
+		}
+		return fwdHost
+	}
+	return c.Ctx.Request.Host
+}
+
 // GetAcceptLanguage ...
 func (c *ApiController) GetAcceptLanguage() string {
 	language := c.Ctx.Request.Header.Get("Accept-Language")

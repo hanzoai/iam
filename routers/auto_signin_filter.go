@@ -30,7 +30,9 @@ func AutoSigninFilter(ctx *context.Context) {
 	if strings.HasPrefix(urlPath, "/api/login/oauth/access_token") {
 		return
 	}
-	if strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize" {
+	// Skip auto-signin for OAuth token endpoints (they use client auth, not session auth).
+	// But allow /oauth/userinfo and /oauth/logout through — they need Bearer→session translation.
+	if strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize" && urlPath != "/oauth/userinfo" && urlPath != "/oauth/logout" {
 		return
 	}
 	if urlPath == "/api/mcp" {
