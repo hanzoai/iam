@@ -25,7 +25,7 @@ import (
 // @Success 200 {object} object.OauthProtectedResourceMetadata
 // @router /.well-known/oauth-protected-resource [get]
 func (c *RootController) GetOauthProtectedResourceMetadata() {
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 	c.Data["json"] = object.GetOauthProtectedResourceMetadata(host)
 	c.ServeJSON()
 }
@@ -39,7 +39,7 @@ func (c *RootController) GetOauthProtectedResourceMetadata() {
 // @router /.well-known/:application/oauth-protected-resource [get]
 func (c *RootController) GetOauthProtectedResourceMetadataByApplication() {
 	application := c.Ctx.Input.Param(":application")
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 	c.Data["json"] = object.GetOauthProtectedResourceMetadataByApplication(host, application)
 	c.ServeJSON()
 }

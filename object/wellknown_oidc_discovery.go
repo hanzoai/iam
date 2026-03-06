@@ -157,7 +157,7 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 
 	oidcDiscovery := OidcDiscovery{
 		Issuer:                                    issuer,
-		AuthorizationEndpoint:                     fmt.Sprintf("%s/login/oauth/authorize", originFrontend),
+		AuthorizationEndpoint:                     fmt.Sprintf("%s/oauth/authorize", originFrontend),
 		TokenEndpoint:                             fmt.Sprintf("%s/oauth/token", originBackend),
 		UserinfoEndpoint:                          fmt.Sprintf("%s/oauth/userinfo", originBackend),
 		DeviceAuthorizationEndpoint:               fmt.Sprintf("%s/oauth/device", originBackend),

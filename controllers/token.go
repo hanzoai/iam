@@ -371,7 +371,7 @@ func (c *ApiController) GetOAuthToken() {
 		}
 	}
 
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 	if deviceCode != "" {
 		deviceAuthCache, ok := object.DeviceAuthMap.Load(deviceCode)
 		if !ok {
@@ -442,7 +442,7 @@ func (c *ApiController) RefreshToken() {
 	scope := c.Ctx.Input.Query("scope")
 	clientId := c.Ctx.Input.Query("client_id")
 	clientSecret := c.Ctx.Input.Query("client_secret")
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 
 	if clientId == "" && clientSecret == "" {
 		clientId, clientSecret, _ = c.Ctx.Request.BasicAuth()

@@ -369,7 +369,7 @@ func (c *ApiController) Signup() {
 			return
 		}
 
-		code, err := object.GetOAuthCode(userId, clientId, "", "password", responseType, redirectUri, scope, state, nonce, codeChallenge, "", "", c.Ctx.Request.Host, c.GetAcceptLanguage())
+		code, err := object.GetOAuthCode(userId, clientId, "", "password", responseType, redirectUri, scope, state, nonce, codeChallenge, "", "", c.getEffectiveHost(), c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(err.Error(), nil)
 			return
@@ -638,7 +638,7 @@ func (c *ApiController) GetAccount() {
 
 	accessToken := c.GetSessionToken()
 	if accessToken == "" {
-		accessToken, err = object.GetAccessTokenByUser(user, c.Ctx.Request.Host)
+		accessToken, err = object.GetAccessTokenByUser(user, c.getEffectiveHost())
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -666,17 +666,43 @@ func (c *ApiController) GetAccount() {
 // @Success 200 {object} object.Userinfo The Response object
 // @router /userinfo [get]
 func (c *ApiController) GetUserinfo() {
-	user, ok := c.RequireSignedInUser()
-	if !ok {
+	userId := c.GetSessionUsername()
+	if userId == "" {
+		// RFC 6750 §3.1: return Bearer error for missing/invalid token
+		c.Ctx.Output.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="Please login first"`)
+		c.Ctx.Output.SetStatus(401)
+		c.Data["json"] = map[string]string{
+			"error":             "invalid_token",
+			"error_description": "Please login first",
+		}
+		c.ServeJSON()
+		return
+	}
+
+	if object.IsAppUser(userId) {
+		tmpUserId := c.Ctx.Input.Query("userId")
+		if tmpUserId != "" {
+			userId = tmpUserId
+		}
+	}
+
+	user, err := object.GetUser(userId)
+	if err != nil {
+		c.responseBearerError("server_error", err.Error())
+		return
+	}
+	if user == nil {
+		c.ClearUserSession()
+		c.responseBearerError("invalid_token", fmt.Sprintf("The user: %s doesn't exist", userId))
 		return
 	}
 
 	scope, aud := c.GetSessionOidc()
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 
 	userInfo, err := object.GetUserInfo(user, scope, aud, host)
 	if err != nil {
-		c.ResponseError(err.Error())
+		c.responseBearerError("server_error", err.Error())
 		return
 	}
 
