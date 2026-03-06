@@ -229,7 +229,7 @@ func getUrlPath(ctx *context.Context) string {
 
 	// Normalize /oauth/* aliases to their canonical /api/ paths for authz
 	switch urlPath {
-	case "/oauth/token", "/oauth/refresh", "/oauth/introspect", "/oauth/revoke":
+	case "/oauth/token", "/oauth/access_token", "/oauth/refresh", "/oauth/introspect", "/oauth/revoke":
 		return "/api/login/oauth"
 	case "/oauth/userinfo":
 		return "/api/userinfo"
