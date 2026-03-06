@@ -34,7 +34,7 @@ import (
 // @Success 200 {object} protocol.CredentialCreation The CredentialCreationOptions object
 // @router /webauthn/signup/begin [get]
 func (c *ApiController) WebAuthnSignupBegin() {
-	webauthnObj, err := object.GetWebAuthnObject(c.Ctx.Request.Host)
+	webauthnObj, err := object.GetWebAuthnObject(c.getEffectiveHost())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -77,7 +77,7 @@ func (c *ApiController) WebAuthnSignupBegin() {
 // @Success 200 {object} controllers.Response "The Response object"
 // @router /webauthn/signup/finish [post]
 func (c *ApiController) WebAuthnSignupFinish() {
-	webauthnObj, err := object.GetWebAuthnObject(c.Ctx.Request.Host)
+	webauthnObj, err := object.GetWebAuthnObject(c.getEffectiveHost())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -120,7 +120,7 @@ func (c *ApiController) WebAuthnSignupFinish() {
 // @Success 200 {object} protocol.CredentialAssertion The CredentialAssertion object
 // @router /webauthn/signin/begin [get]
 func (c *ApiController) WebAuthnSigninBegin() {
-	webauthnObj, err := object.GetWebAuthnObject(c.Ctx.Request.Host)
+	webauthnObj, err := object.GetWebAuthnObject(c.getEffectiveHost())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -173,7 +173,7 @@ func (c *ApiController) WebAuthnSigninBegin() {
 func (c *ApiController) WebAuthnSigninFinish() {
 	responseType := c.Ctx.Input.Query("responseType")
 	clientId := c.Ctx.Input.Query("clientId")
-	webauthnObj, err := object.GetWebAuthnObject(c.Ctx.Request.Host)
+	webauthnObj, err := object.GetWebAuthnObject(c.getEffectiveHost())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
