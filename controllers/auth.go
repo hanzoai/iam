@@ -112,11 +112,26 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		util.LogInfo(c.Ctx, "API: [%s] signed in", userId)
 		resp = &Response{Status: "ok", Msg: "", Data: userId, Data3: user.NeedUpdatePassword}
 	} else if form.Type == ResponseTypeCode {
+		// Read OAuth params from query string first, then fall back to the JSON body.
+		// The Casdoor React frontend passes these as query params, but API callers
+		// may include them in the JSON body instead — both should work.
 		clientId := c.Ctx.Input.Query("clientId")
+		if clientId == "" {
+			clientId = form.ClientId
+		}
 		responseType := c.Ctx.Input.Query("responseType")
+		if responseType == "" {
+			responseType = form.Type // "code" — the obvious intent
+		}
 		redirectUri := c.Ctx.Input.Query("redirectUri")
+		if redirectUri == "" {
+			redirectUri = form.RedirectUri
+		}
 		scope := c.Ctx.Input.Query("scope")
 		state := c.Ctx.Input.Query("state")
+		if state == "" {
+			state = form.State
+		}
 		nonce := c.Ctx.Input.Query("nonce")
 		challengeMethod := c.Ctx.Input.Query("code_challenge_method")
 		codeChallenge := c.Ctx.Input.Query("code_challenge")
