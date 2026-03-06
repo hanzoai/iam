@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"strings"
 
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
+	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
 )
 
 func joinPath(a string, b string) string {
