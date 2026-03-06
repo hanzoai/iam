@@ -16,7 +16,6 @@ import React from "react";
 import {Redirect, Route, Switch} from "react-router-dom";
 import {Spin} from "antd";
 import i18next from "i18next";
-import * as ApplicationBackend from "./backend/ApplicationBackend";
 import * as Setting from "./Setting";
 import * as Conf from "./Conf";
 import SignupPage from "./auth/SignupPage";
