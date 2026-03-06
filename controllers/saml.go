@@ -23,7 +23,7 @@ import (
 )
 
 func (c *ApiController) GetSamlMeta() {
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 	paramApp := c.Ctx.Input.Query("application")
 	application, err := object.GetApplication(paramApp)
 	if err != nil {
@@ -53,7 +53,7 @@ func (c *ApiController) GetSamlMeta() {
 }
 
 func (c *ApiController) HandleSamlRedirect() {
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 
 	owner := c.Ctx.Input.Param(":owner")
 	application := c.Ctx.Input.Param(":application")
