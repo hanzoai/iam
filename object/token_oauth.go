@@ -139,7 +139,10 @@ func ExpireTokenByAccessToken(accessToken string) (bool, *Application, *Token, e
 
 func CheckOAuthLogin(clientId string, responseType string, redirectUri string, scope string, state string, lang string) (string, *Application, error) {
 	if responseType != "code" && responseType != "token" && responseType != "id_token" {
-		return fmt.Sprintf(i18n.Translate(lang, "token:Grant_type: %s is not supported in this application"), responseType), nil, nil
+		if responseType == "" {
+			return i18n.Translate(lang, "token:response_type is required (must be code, token, or id_token)"), nil, nil
+		}
+		return fmt.Sprintf(i18n.Translate(lang, "token:Unsupported response_type: %s (must be code, token, or id_token)"), responseType), nil, nil
 	}
 
 	application, err := GetApplicationByClientId(clientId)
