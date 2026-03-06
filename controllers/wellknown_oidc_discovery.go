@@ -27,9 +27,23 @@ import (
 // @Success 200 {object} object.OidcDiscovery
 // @router /.well-known/openid-configuration [get]
 func (c *RootController) GetOidcDiscovery() {
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 	c.Data["json"] = object.GetOidcDiscovery(host, "")
 	c.ServeJSON()
+}
+
+// getEffectiveHost returns the original client-facing hostname.
+// Prefers X-Forwarded-Host (set by reverse proxies / CF Workers)
+// over the standard Host header.
+func (c *RootController) getEffectiveHost() string {
+	if fwdHost := c.Ctx.Request.Header.Get("X-Forwarded-Host"); fwdHost != "" {
+		// Take only the first value if comma-separated
+		if i := strings.IndexByte(fwdHost, ','); i >= 0 {
+			fwdHost = strings.TrimSpace(fwdHost[:i])
+		}
+		return fwdHost
+	}
+	return c.Ctx.Request.Host
 }
 
 // GetOidcDiscoveryByApplication
@@ -41,7 +55,7 @@ func (c *RootController) GetOidcDiscovery() {
 // @router /.well-known/:application/openid-configuration [get]
 func (c *RootController) GetOidcDiscoveryByApplication() {
 	application := c.Ctx.Input.Param(":application")
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 	c.Data["json"] = object.GetOidcDiscovery(host, application)
 	c.ServeJSON()
 }
@@ -87,7 +101,7 @@ func (c *RootController) GetJwksByApplication() {
 func (c *RootController) GetWebFinger() {
 	resource := c.Ctx.Input.Query("resource")
 	rels := []string{}
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 
 	inputs, _ := c.Input()
 	for key, value := range inputs {
@@ -118,7 +132,7 @@ func (c *RootController) GetWebFingerByApplication() {
 	application := c.Ctx.Input.Param(":application")
 	resource := c.Ctx.Input.Query("resource")
 	rels := []string{}
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 
 	inputs, _ := c.Input()
 	for key, value := range inputs {
@@ -145,7 +159,7 @@ func (c *RootController) GetWebFingerByApplication() {
 // @Success 200 {object} object.OidcDiscovery
 // @router /.well-known/oauth-authorization-server [get]
 func (c *RootController) GetOAuthServerMetadata() {
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 	c.Data["json"] = object.GetOidcDiscovery(host, "")
 	c.ServeJSON()
 }
@@ -159,7 +173,7 @@ func (c *RootController) GetOAuthServerMetadata() {
 // @router /.well-known/:application/oauth-authorization-server [get]
 func (c *RootController) GetOAuthServerMetadataByApplication() {
 	application := c.Ctx.Input.Param(":application")
-	host := c.Ctx.Request.Host
+	host := c.getEffectiveHost()
 	c.Data["json"] = object.GetOidcDiscovery(host, application)
 	c.ServeJSON()
 }
