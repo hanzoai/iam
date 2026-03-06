@@ -112,19 +112,19 @@ func (c *ApiController) GrantConsent() {
 	}
 
 	var request struct {
-		Application  string   `json:"application"`
-		Scopes       []string `json:"grantedScopes"`
-		ClientId     string   `json:"clientId"`
-		Provider     string   `json:"provider"`
-		SigninMethod string   `json:"signinMethod"`
-		ResponseType string   `json:"responseType"`
-		RedirectUri  string   `json:"redirectUri"`
-		Scope        string   `json:"scope"`
-		State        string   `json:"state"`
-		Nonce        string   `json:"nonce"`
-		Challenge       string `json:"challenge"`
-		ChallengeMethod string `json:"challengeMethod"`
-		Resource        string `json:"resource"`
+		Application     string   `json:"application"`
+		Scopes          []string `json:"grantedScopes"`
+		ClientId        string   `json:"clientId"`
+		Provider        string   `json:"provider"`
+		SigninMethod    string   `json:"signinMethod"`
+		ResponseType    string   `json:"responseType"`
+		RedirectUri     string   `json:"redirectUri"`
+		Scope           string   `json:"scope"`
+		State           string   `json:"state"`
+		Nonce           string   `json:"nonce"`
+		Challenge       string   `json:"challenge"`
+		ChallengeMethod string   `json:"challengeMethod"`
+		Resource        string   `json:"resource"`
 	}
 
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &request)
