@@ -13,24 +13,23 @@ concurrency:
 jobs:
   # ── Test gates — broken code does not ship ───────────────────
   go-tests:
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: hanzo
-          POSTGRES_PASSWORD: hanzo123
-          POSTGRES_DB: hanzo
-        ports:
-          - 5432:5432
-        options: --health-cmd="pg_isready -U hanzo -d hanzo" --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
           cache-dependency-path: ./go.mod
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name postgres -p 5432:5432 \
+            -e POSTGRES_USER=hanzo -e POSTGRES_PASSWORD=hanzo123 -e POSTGRES_DB=hanzo \
+            postgres:18
+          for i in $(seq 1 30); do
+            docker exec postgres pg_isready -U hanzo -d hanzo && break
+            sleep 1
+          done
       - run: go test -count=1 $(go list ./...) -tags skipCi
 
   go-lint:
