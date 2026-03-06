@@ -88,6 +88,12 @@ func responseError(ctx *context.Context, error string, data ...interface{}) {
 		return
 	}
 
+	// RFC 6750 §3.1: OAuth resource endpoints return Bearer token errors
+	if urlPath == "/oauth/userinfo" || urlPath == "/api/userinfo" {
+		responseBearerError(ctx, http.StatusUnauthorized, "invalid_token", error)
+		return
+	}
+
 	resp := Response{Status: "error", Msg: error}
 	switch len(data) {
 	case 2:
@@ -97,6 +103,21 @@ func responseError(ctx *context.Context, error string, data ...interface{}) {
 		resp.Data = data[0]
 	}
 
+	err := ctx.Output.JSON(resp, true, false)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// responseBearerError returns an RFC 6750 Bearer token error response.
+func responseBearerError(ctx *context.Context, statusCode int, errorCode string, description string) {
+	ctx.ResponseWriter.Header().Set("WWW-Authenticate",
+		fmt.Sprintf(`Bearer error="%s", error_description="%s"`, errorCode, description))
+	ctx.ResponseWriter.WriteHeader(statusCode)
+	resp := map[string]string{
+		"error":             errorCode,
+		"error_description": description,
+	}
 	err := ctx.Output.JSON(resp, true, false)
 	if err != nil {
 		panic(err)

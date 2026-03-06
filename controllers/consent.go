@@ -216,7 +216,7 @@ func (c *ApiController) GrantConsent() {
 		request.Challenge,
 		request.ChallengeMethod,
 		request.Resource,
-		c.Ctx.Request.Host,
+		c.getEffectiveHost(),
 		c.GetAcceptLanguage(),
 	)
 	if err != nil {
