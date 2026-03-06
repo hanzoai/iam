@@ -122,8 +122,9 @@ func (c *ApiController) GrantConsent() {
 		Scope        string   `json:"scope"`
 		State        string   `json:"state"`
 		Nonce        string   `json:"nonce"`
-		Challenge    string   `json:"challenge"`
-		Resource     string   `json:"resource"`
+		Challenge       string `json:"challenge"`
+		ChallengeMethod string `json:"challengeMethod"`
+		Resource        string `json:"resource"`
 	}
 
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &request)
@@ -213,6 +214,7 @@ func (c *ApiController) GrantConsent() {
 		request.State,
 		request.Nonce,
 		request.Challenge,
+		request.ChallengeMethod,
 		request.Resource,
 		c.Ctx.Request.Host,
 		c.GetAcceptLanguage(),

@@ -40,8 +40,9 @@ type Token struct {
 	ExpiresIn        int    `json:"expiresIn"`
 	Scope            string `xorm:"varchar(100)" json:"scope"`
 	TokenType        string `xorm:"varchar(100)" json:"tokenType"`
-	CodeChallenge    string `xorm:"varchar(100)" json:"codeChallenge"`
-	CodeIsUsed       bool   `json:"codeIsUsed"`
+	CodeChallenge       string `xorm:"varchar(100)" json:"codeChallenge"`
+	CodeChallengeMethod string `xorm:"varchar(10)" json:"codeChallengeMethod"`
+	CodeIsUsed          bool   `json:"codeIsUsed"`
 	CodeExpireIn     int64  `json:"codeExpireIn"`
 	Resource         string `xorm:"varchar(255)" json:"resource"` // RFC 8707 Resource Indicator
 }
