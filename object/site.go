@@ -64,7 +64,7 @@ type Site struct {
 	Nodes          []*NodeItem `xorm:"mediumtext" json:"nodes"`
 
 	IamApplication string       `xorm:"varchar(100)" json:"iamApplication"`
-	ApplicationObj     *Application `xorm:"-" json:"applicationObj"`
+	ApplicationObj *Application `xorm:"-" json:"applicationObj"`
 }
 
 func GetGlobalSites() ([]*Site, error) {
