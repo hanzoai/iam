@@ -26,7 +26,7 @@ import (
 
 func getSigninUrl(iamClient *iamsdk.Client, callbackUrl string, originalPath string) string {
 	scope := "read"
-	return fmt.Sprintf("%s/login/oauth/authorize?client_id=%s&response_type=code&redirect_uri=%s&scope=%s&state=%s",
+	return fmt.Sprintf("%s/oauth/authorize?client_id=%s&response_type=code&redirect_uri=%s&scope=%s&state=%s",
 		iamClient.Endpoint, iamClient.ClientId, url.QueryEscape(callbackUrl), scope, url.QueryEscape(originalPath))
 }
 
