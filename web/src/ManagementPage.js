@@ -20,7 +20,7 @@ import React, {useState} from "react";
 import i18next from "i18next";
 import {
   AppstoreTwoTone,
-  BarsOutlined, CheckCircleTwoTone, DeploymentUnitOutlined, DollarTwoTone, DownOutlined,
+  BarsOutlined, CheckCircleTwoTone, DeploymentUnitOutlined, DownOutlined,
   HomeTwoTone,
   LockTwoTone, LogoutOutlined,
   SafetyCertificateTwoTone, SettingOutlined, SettingTwoTone,
