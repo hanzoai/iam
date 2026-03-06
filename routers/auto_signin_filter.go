@@ -30,6 +30,9 @@ func AutoSigninFilter(ctx *context.Context) {
 	if strings.HasPrefix(urlPath, "/api/login/oauth/access_token") {
 		return
 	}
+	if strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize" {
+		return
+	}
 	if urlPath == "/api/mcp" {
 		var req mcp.McpRequest
 		if err := json.Unmarshal(ctx.Input.RequestBody, &req); err == nil {

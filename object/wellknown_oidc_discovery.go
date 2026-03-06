@@ -27,25 +27,29 @@ import (
 )
 
 type OidcDiscovery struct {
-	Issuer                                 string   `json:"issuer"`
-	AuthorizationEndpoint                  string   `json:"authorization_endpoint"`
-	TokenEndpoint                          string   `json:"token_endpoint"`
-	UserinfoEndpoint                       string   `json:"userinfo_endpoint"`
-	DeviceAuthorizationEndpoint            string   `json:"device_authorization_endpoint"`
-	RegistrationEndpoint                   string   `json:"registration_endpoint,omitempty"`
-	JwksUri                                string   `json:"jwks_uri"`
-	IntrospectionEndpoint                  string   `json:"introspection_endpoint"`
-	ResponseTypesSupported                 []string `json:"response_types_supported"`
-	ResponseModesSupported                 []string `json:"response_modes_supported"`
-	GrantTypesSupported                    []string `json:"grant_types_supported"`
-	SubjectTypesSupported                  []string `json:"subject_types_supported"`
-	IdTokenSigningAlgValuesSupported       []string `json:"id_token_signing_alg_values_supported"`
-	ScopesSupported                        []string `json:"scopes_supported"`
-	CodeChallengeMethodsSupported          []string `json:"code_challenge_methods_supported"`
-	ClaimsSupported                        []string `json:"claims_supported"`
-	RequestParameterSupported              bool     `json:"request_parameter_supported"`
-	RequestObjectSigningAlgValuesSupported []string `json:"request_object_signing_alg_values_supported"`
-	EndSessionEndpoint                     string   `json:"end_session_endpoint"`
+	Issuer                                    string   `json:"issuer"`
+	AuthorizationEndpoint                     string   `json:"authorization_endpoint"`
+	TokenEndpoint                             string   `json:"token_endpoint"`
+	UserinfoEndpoint                          string   `json:"userinfo_endpoint"`
+	DeviceAuthorizationEndpoint               string   `json:"device_authorization_endpoint"`
+	RegistrationEndpoint                      string   `json:"registration_endpoint,omitempty"`
+	JwksUri                                   string   `json:"jwks_uri"`
+	IntrospectionEndpoint                     string   `json:"introspection_endpoint"`
+	RevocationEndpoint                        string   `json:"revocation_endpoint"`
+	ResponseTypesSupported                    []string `json:"response_types_supported"`
+	ResponseModesSupported                    []string `json:"response_modes_supported"`
+	GrantTypesSupported                       []string `json:"grant_types_supported"`
+	SubjectTypesSupported                     []string `json:"subject_types_supported"`
+	IdTokenSigningAlgValuesSupported          []string `json:"id_token_signing_alg_values_supported"`
+	ScopesSupported                           []string `json:"scopes_supported"`
+	TokenEndpointAuthMethodsSupported         []string `json:"token_endpoint_auth_methods_supported"`
+	IntrospectionEndpointAuthMethodsSupported []string `json:"introspection_endpoint_auth_methods_supported"`
+	RevocationEndpointAuthMethodsSupported    []string `json:"revocation_endpoint_auth_methods_supported"`
+	CodeChallengeMethodsSupported             []string `json:"code_challenge_methods_supported"`
+	ClaimsSupported                           []string `json:"claims_supported"`
+	RequestParameterSupported                 bool     `json:"request_parameter_supported"`
+	RequestObjectSigningAlgValuesSupported    []string `json:"request_object_signing_alg_values_supported"`
+	EndSessionEndpoint                        string   `json:"end_session_endpoint"`
 }
 
 type WebFinger struct {
@@ -147,26 +151,34 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 	// https://auth0.auth0.com/.well-known/openid-configuration
 	// https://accounts.google.com/.well-known/openid-configuration
 	// https://access.line.me/.well-known/openid-configuration
+	// Auth methods supported at token/introspection/revocation endpoints.
+	// RFC 6749 §2.3, RFC 7523 §2.2
+	authMethods := []string{"client_secret_basic", "client_secret_post", "private_key_jwt", "none"}
+
 	oidcDiscovery := OidcDiscovery{
-		Issuer:                                 issuer,
-		AuthorizationEndpoint:                  fmt.Sprintf("%s/login/oauth/authorize", originFrontend),
-		TokenEndpoint:                          fmt.Sprintf("%s/oauth/token", originBackend),
-		UserinfoEndpoint:                       fmt.Sprintf("%s/oauth/userinfo", originBackend),
-		DeviceAuthorizationEndpoint:            fmt.Sprintf("%s/oauth/device", originBackend),
-		RegistrationEndpoint:                   fmt.Sprintf("%s/api/oauth/register", originBackend),
-		JwksUri:                                jwksUri,
-		IntrospectionEndpoint:                  fmt.Sprintf("%s/oauth/introspect", originBackend),
-		ResponseTypesSupported:                 []string{"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token", "none"},
-		ResponseModesSupported:                 []string{"query", "fragment", "form_post"},
-		GrantTypesSupported:                    []string{"authorization_code", "implicit", "password", "client_credentials", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "urn:ietf:params:oauth:grant-type:token-exchange"},
-		SubjectTypesSupported:                  []string{"public"},
-		IdTokenSigningAlgValuesSupported:       []string{"RS256", "RS512", "ES256", "ES384", "ES512"},
-		ScopesSupported:                        scopes,
-		CodeChallengeMethodsSupported:          []string{"S256"},
-		ClaimsSupported:                        []string{"iss", "ver", "sub", "aud", "iat", "exp", "id", "type", "displayName", "avatar", "permanentAvatar", "email", "phone", "location", "affiliation", "title", "homepage", "bio", "tag", "region", "language", "score", "ranking", "isOnline", "isAdmin", "isForbidden", "signupApplication", "ldap"},
-		RequestParameterSupported:              true,
-		RequestObjectSigningAlgValuesSupported: []string{"HS256", "HS384", "HS512"},
-		EndSessionEndpoint:                     fmt.Sprintf("%s/oauth/logout", originBackend),
+		Issuer:                                    issuer,
+		AuthorizationEndpoint:                     fmt.Sprintf("%s/login/oauth/authorize", originFrontend),
+		TokenEndpoint:                             fmt.Sprintf("%s/oauth/token", originBackend),
+		UserinfoEndpoint:                          fmt.Sprintf("%s/oauth/userinfo", originBackend),
+		DeviceAuthorizationEndpoint:               fmt.Sprintf("%s/oauth/device", originBackend),
+		RegistrationEndpoint:                      fmt.Sprintf("%s/api/oauth/register", originBackend),
+		JwksUri:                                   jwksUri,
+		IntrospectionEndpoint:                     fmt.Sprintf("%s/oauth/introspect", originBackend),
+		RevocationEndpoint:                        fmt.Sprintf("%s/oauth/revoke", originBackend),
+		ResponseTypesSupported:                    []string{"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token", "none"},
+		ResponseModesSupported:                    []string{"query", "fragment", "form_post"},
+		GrantTypesSupported:                       []string{"authorization_code", "implicit", "password", "client_credentials", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "urn:ietf:params:oauth:grant-type:token-exchange"},
+		SubjectTypesSupported:                     []string{"public"},
+		IdTokenSigningAlgValuesSupported:          []string{"RS256", "RS512", "ES256", "ES384", "ES512"},
+		ScopesSupported:                           scopes,
+		TokenEndpointAuthMethodsSupported:         authMethods,
+		IntrospectionEndpointAuthMethodsSupported: authMethods,
+		RevocationEndpointAuthMethodsSupported:    authMethods,
+		CodeChallengeMethodsSupported:             []string{"plain", "S256"},
+		ClaimsSupported:                           []string{"iss", "ver", "sub", "aud", "iat", "exp", "id", "type", "displayName", "avatar", "permanentAvatar", "email", "phone", "location", "affiliation", "title", "homepage", "bio", "tag", "region", "language", "score", "ranking", "isOnline", "isAdmin", "isForbidden", "signupApplication", "ldap"},
+		RequestParameterSupported:                 true,
+		RequestObjectSigningAlgValuesSupported:    []string{"HS256", "HS384", "HS512"},
+		EndSessionEndpoint:                        fmt.Sprintf("%s/oauth/logout", originBackend),
 	}
 
 	return oidcDiscovery
