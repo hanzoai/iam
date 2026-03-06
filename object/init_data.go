@@ -23,27 +23,27 @@ import (
 )
 
 type InitData struct {
-	Organizations    []*Organization       `json:"organizations"`
-	Applications     []*Application        `json:"applications"`
-	Users            []*User               `json:"users"`
-	Certs            []*Cert               `json:"certs"`
-	Providers        []*Provider           `json:"providers"`
-	Ldaps            []*Ldap               `json:"ldaps"`
-	Models           []*Model              `json:"models"`
-	Permissions      []*Permission         `json:"permissions"`
-	Resources        []*Resource           `json:"resources"`
-	Roles            []*Role               `json:"roles"`
-	Syncers          []*Syncer             `json:"syncers"`
-	Tokens           []*Token              `json:"tokens"`
-	Webhooks         []*Webhook            `json:"webhooks"`
-	Groups           []*Group              `json:"groups"`
-	Adapters         []*Adapter            `json:"adapters"`
-	Enforcers        []*Enforcer           `json:"enforcers"`
-	Invitations      []*Invitation         `json:"invitations"`
-	Records          []*casvisorsdk.Record `json:"records"`
-	Sessions         []*Session            `json:"sessions"`
-	Sites            []*Site               `json:"sites"`
-	Rules            []*Rule               `json:"rules"`
+	Organizations []*Organization       `json:"organizations"`
+	Applications  []*Application        `json:"applications"`
+	Users         []*User               `json:"users"`
+	Certs         []*Cert               `json:"certs"`
+	Providers     []*Provider           `json:"providers"`
+	Ldaps         []*Ldap               `json:"ldaps"`
+	Models        []*Model              `json:"models"`
+	Permissions   []*Permission         `json:"permissions"`
+	Resources     []*Resource           `json:"resources"`
+	Roles         []*Role               `json:"roles"`
+	Syncers       []*Syncer             `json:"syncers"`
+	Tokens        []*Token              `json:"tokens"`
+	Webhooks      []*Webhook            `json:"webhooks"`
+	Groups        []*Group              `json:"groups"`
+	Adapters      []*Adapter            `json:"adapters"`
+	Enforcers     []*Enforcer           `json:"enforcers"`
+	Invitations   []*Invitation         `json:"invitations"`
+	Records       []*casvisorsdk.Record `json:"records"`
+	Sessions      []*Session            `json:"sessions"`
+	Sites         []*Site               `json:"sites"`
+	Rules         []*Rule               `json:"rules"`
 
 	EnforcerPolicies map[string][][]string `json:"enforcerPolicies"`
 }
@@ -143,27 +143,27 @@ func readInitDataFromFile(filePath string) (*InitData, error) {
 	s = resolveSecrets(s)
 
 	data := &InitData{
-		Organizations:    []*Organization{},
-		Applications:     []*Application{},
-		Users:            []*User{},
-		Certs:            []*Cert{},
-		Providers:        []*Provider{},
-		Ldaps:            []*Ldap{},
-		Models:           []*Model{},
-		Permissions:      []*Permission{},
-		Resources:        []*Resource{},
-		Roles:            []*Role{},
-		Syncers:          []*Syncer{},
-		Tokens:           []*Token{},
-		Webhooks:         []*Webhook{},
-		Groups:           []*Group{},
-		Adapters:         []*Adapter{},
-		Enforcers:        []*Enforcer{},
-		Invitations:      []*Invitation{},
-		Records:          []*casvisorsdk.Record{},
-		Sessions:         []*Session{},
-		Sites:            []*Site{},
-		Rules:            []*Rule{},
+		Organizations: []*Organization{},
+		Applications:  []*Application{},
+		Users:         []*User{},
+		Certs:         []*Cert{},
+		Providers:     []*Provider{},
+		Ldaps:         []*Ldap{},
+		Models:        []*Model{},
+		Permissions:   []*Permission{},
+		Resources:     []*Resource{},
+		Roles:         []*Role{},
+		Syncers:       []*Syncer{},
+		Tokens:        []*Token{},
+		Webhooks:      []*Webhook{},
+		Groups:        []*Group{},
+		Adapters:      []*Adapter{},
+		Enforcers:     []*Enforcer{},
+		Invitations:   []*Invitation{},
+		Records:       []*casvisorsdk.Record{},
+		Sessions:      []*Session{},
+		Sites:         []*Site{},
+		Rules:         []*Rule{},
 
 		EnforcerPolicies: map[string][][]string{},
 	}
@@ -762,4 +762,3 @@ func initDefinedRule(rule *Rule) {
 		panic(err)
 	}
 }
-
