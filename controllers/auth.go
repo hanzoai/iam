@@ -327,6 +327,11 @@ func (c *ApiController) GetApplicationLogin() {
 	loginType := c.Ctx.Input.Query("type")
 	userCode := c.Ctx.Input.Query("userCode")
 
+	// Default to "code" (OAuth) when clientId is provided but type is not specified
+	if loginType == "" && clientId != "" {
+		loginType = "code"
+	}
+
 	var application *object.Application
 	var msg string
 	var err error
