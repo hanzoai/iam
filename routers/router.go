@@ -280,6 +280,7 @@ func InitAPI() {
 	// Hanzo OAuth aliases — clean paths for OIDC discovery
 	web.Router("/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
 	web.Router("/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
+	web.Router("/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
 	web.Router("/oauth/refresh", &controllers.ApiController{}, "POST:RefreshToken")
 	web.Router("/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
 	web.Router("/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
