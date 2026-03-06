@@ -216,7 +216,7 @@ func (c *RootController) SamlValidate() {
 		return
 	}
 
-	response, service, err := object.GetValidationBySaml(envelopRequest.Body.Content, c.Ctx.Request.Host)
+	response, service, err := object.GetValidationBySaml(envelopRequest.Body.Content, c.getEffectiveHost())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
