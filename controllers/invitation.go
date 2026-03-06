@@ -271,7 +271,7 @@ func (c *ApiController) SendInvitation() {
 	content := provider.Metadata
 
 	content = strings.ReplaceAll(content, "%code", invitation.Code)
-	content = strings.ReplaceAll(content, "%link", invitation.GetInvitationLink(c.Ctx.Request.Host, application.Name))
+	content = strings.ReplaceAll(content, "%link", invitation.GetInvitationLink(c.getEffectiveHost(), application.Name))
 
 	err = object.SendEmail(provider, provider.Title, content, destinations, organization.DisplayName)
 	if err != nil {

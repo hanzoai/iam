@@ -329,7 +329,7 @@ func (c *ApiController) SendVerificationCode() {
 			return
 		}
 
-		sendResp = object.SendVerificationCodeToEmail(organization, user, provider, clientIp, vform.Dest, vform.Method, c.Ctx.Request.Host, application.Name, application)
+		sendResp = object.SendVerificationCodeToEmail(organization, user, provider, clientIp, vform.Dest, vform.Method, c.getEffectiveHost(), application.Name, application)
 	case object.VerifyTypePhone:
 		if vform.Method == LoginVerification || vform.Method == ForgetVerification {
 			if user != nil && util.GetMaskedPhone(user.Phone) == vform.Dest {
