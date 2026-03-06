@@ -88,7 +88,11 @@ func CorsFilter(ctx *context.Context) {
 		return
 	}
 
-	// OIDC discovery and JWKS are public endpoints — allow CORS from any origin.
+	// OAuth and OIDC endpoints are public — allow CORS from any origin (RFC 6749, RFC 7033).
+	if strings.HasPrefix(ctx.Request.RequestURI, "/oauth/") {
+		setCorsHeaders(ctx, origin)
+		return
+	}
 	if strings.HasPrefix(ctx.Request.RequestURI, "/.well-known/") {
 		setCorsHeaders(ctx, origin)
 		return
