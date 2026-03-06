@@ -34,7 +34,7 @@ jobs:
       - run: go test -count=1 $(go list ./...) -tags skipCi
 
   go-lint:
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +46,7 @@ jobs:
       - run: golangci-lint run --timeout 5m --modules-download-mode=mod
 
   go-build:
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -57,7 +57,7 @@ jobs:
       - run: go build -ldflags "-extldflags '-static'" .
 
   frontend-build:
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
