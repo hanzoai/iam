@@ -1088,17 +1088,51 @@ func GetInitDataDiagnostics() map[string]interface{} {
 			result["session-pk-constraint"] = "NO PK CONSTRAINT FOUND"
 		}
 
-		// Also check if any session rows exist for z@hanzo.ai user
+		// Check sessions for user "z" (not "z@hanzo.ai" — Name is "z")
 		sessRows, sessErr := ormer.Engine.QueryString(
 			`SELECT owner, name, application, length(session_id) as sid_len
-			 FROM session WHERE name = 'z@hanzo.ai' LIMIT 5`)
+			 FROM session WHERE name = 'z' LIMIT 10`)
 		if sessErr != nil {
-			result["session-z-hanzo"] = fmt.Sprintf("error: %v", sessErr)
+			result["session-z-user"] = fmt.Sprintf("error: %v", sessErr)
 		} else if len(sessRows) > 0 {
-			result["session-z-hanzo"] = sessRows
+			result["session-z-user"] = sessRows
 		} else {
-			result["session-z-hanzo"] = "NO SESSIONS FOUND"
+			result["session-z-user"] = "NO SESSIONS FOUND"
 		}
+	}
+
+	// CRITICAL TEST: directly test AddSession for hanzobot to verify the code
+	// path and error wrapping works. Use a __diag test session ID.
+	testSession := &Session{
+		Owner:       "hanzo",
+		Name:        "__diag_test",
+		Application: "app-hanzobot",
+		SessionId:   []string{"diag-test-session-id"},
+	}
+	testOk, testErr := AddSession(testSession)
+	if testErr != nil {
+		result["session-upsert-test"] = fmt.Sprintf("ERROR: %v", testErr)
+	} else {
+		result["session-upsert-test"] = fmt.Sprintf("ok=%v", testOk)
+		// Clean up the test session
+		_, _ = ormer.Engine.Where("owner = ? AND name = ? AND application = ?",
+			"hanzo", "__diag_test", "app-hanzobot").Delete(&Session{})
+	}
+
+	// Also test raw UPSERT SQL directly
+	testUpsertSQL := `INSERT INTO session (owner, name, application, created_time, session_id)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (owner, name, application) DO UPDATE
+		SET session_id = EXCLUDED.session_id, created_time = EXCLUDED.created_time`
+	_, rawErr := ormer.Engine.Exec(testUpsertSQL,
+		"hanzo", "__diag_raw", "app-hanzobot",
+		"2026-01-01T00:00:00Z", `["raw-test-sid"]`)
+	if rawErr != nil {
+		result["session-raw-upsert-test"] = fmt.Sprintf("ERROR: %v", rawErr)
+	} else {
+		result["session-raw-upsert-test"] = "ok"
+		// Clean up
+		_, _ = ormer.Engine.Exec("DELETE FROM session WHERE owner = 'hanzo' AND name = '__diag_raw'")
 	}
 
 	return result
