@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/beego/beego/v2/server/web"
 	"github.com/hanzoai/iam/util"
@@ -131,6 +132,26 @@ func removeExtraSessionIds(session *Session) {
 	}
 }
 
+func mergeAndUpdateSession(dbSession *Session, session *Session) (bool, error) {
+	m := make(map[string]struct{})
+	for _, v := range dbSession.SessionId {
+		m[v] = struct{}{}
+	}
+	for _, v := range session.SessionId {
+		if _, exists := m[v]; !exists {
+			dbSession.SessionId = append(dbSession.SessionId, v)
+		}
+	}
+
+	removeExtraSessionIds(dbSession)
+
+	if session.ExclusiveSignin {
+		dbSession.SessionId = []string{session.SessionId[0]}
+	}
+
+	return UpdateSession(dbSession.GetId(), dbSession)
+}
+
 func AddSession(session *Session) (bool, error) {
 	dbSession, err := GetSingleSession(session.GetId())
 	if err != nil {
@@ -142,28 +163,25 @@ func AddSession(session *Session) (bool, error) {
 
 		affected, err := ormer.Engine.Insert(session)
 		if err != nil {
+			// Handle race condition: another concurrent request may have
+			// inserted the same session between our SELECT and INSERT.
+			// Re-fetch and merge session IDs instead of failing.
+			if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "UNIQUE constraint") {
+				dbSession, err = GetSingleSession(session.GetId())
+				if err != nil {
+					return false, err
+				}
+				if dbSession != nil {
+					return mergeAndUpdateSession(dbSession, session)
+				}
+				return false, fmt.Errorf("session disappeared after duplicate key conflict")
+			}
 			return false, err
 		}
 
 		return affected != 0, nil
 	} else {
-		m := make(map[string]struct{})
-		for _, v := range dbSession.SessionId {
-			m[v] = struct{}{}
-		}
-		for _, v := range session.SessionId {
-			if _, exists := m[v]; !exists {
-				dbSession.SessionId = append(dbSession.SessionId, v)
-			}
-		}
-
-		removeExtraSessionIds(dbSession)
-
-		if session.ExclusiveSignin {
-			dbSession.SessionId = []string{session.SessionId[0]}
-		}
-
-		return UpdateSession(dbSession.GetId(), dbSession)
+		return mergeAndUpdateSession(dbSession, session)
 	}
 }
 
