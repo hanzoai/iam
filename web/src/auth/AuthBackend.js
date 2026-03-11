@@ -15,6 +15,28 @@
 import {authConfig} from "./Auth";
 import * as Setting from "../Setting";
 
+// Safely parse JSON from a fetch response. If the response body is not
+// valid JSON (e.g. a plain-text error from a panic), wrap it in a
+// standard {status, msg} envelope so callers always receive an object.
+function safeJson(res) {
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return res.json();
+  }
+  // Not JSON — read as text and wrap
+  return res.text().then(text => {
+    if (!res.ok) {
+      return {status: "error", msg: text || `Server error (${res.status})`};
+    }
+    // Try parsing anyway in case content-type header is missing
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {status: "error", msg: text || "Unknown server error"};
+    }
+  });
+}
+
 export function getAccount(query = "") {
   return fetch(`${authConfig.serverUrl}/api/get-account${query}`, {
     method: "GET",
@@ -22,7 +44,7 @@ export function getAccount(query = "") {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function signup(values, oAuthParams) {
@@ -33,7 +55,7 @@ export function signup(values, oAuthParams) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function getEmailAndPhone(organization, username) {
@@ -43,7 +65,7 @@ export function getEmailAndPhone(organization, username) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then((res) => res.json());
+  }).then(safeJson);
 }
 
 export function casLoginParamsToQuery(casParams) {
@@ -75,7 +97,7 @@ export function getApplicationLogin(params) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function login(values, oAuthParams) {
@@ -86,7 +108,7 @@ export function login(values, oAuthParams) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function loginCas(values, params) {
@@ -97,7 +119,7 @@ export function loginCas(values, params) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function logout() {
@@ -107,7 +129,7 @@ export function logout() {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function unlink(values) {
@@ -118,7 +140,7 @@ export function unlink(values) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function getSamlLogin(providerId, relayState) {
@@ -128,7 +150,7 @@ export function getSamlLogin(providerId, relayState) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function loginWithSaml(values, param) {
@@ -139,7 +161,7 @@ export function loginWithSaml(values, param) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function getWechatMessageEvent(ticket) {
@@ -149,7 +171,7 @@ export function getWechatMessageEvent(ticket) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function getWechatQRCode(providerId) {
@@ -159,7 +181,7 @@ export function getWechatQRCode(providerId) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }
 
 export function getCaptchaStatus(values) {
@@ -169,5 +191,5 @@ export function getCaptchaStatus(values) {
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-  }).then(res => res.json());
+  }).then(safeJson);
 }

@@ -296,6 +296,16 @@ func getImpersonateUser(ctx *context.Context, subOwner, subName, username string
 }
 
 func ApiFilter(ctx *context.Context) {
+	// Recover from panics (e.g. database unreachable) and return a proper
+	// JSON error instead of beego's default plain-text panic handler.
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("%v", r)
+			logs.Error("ApiFilter panic recovered: %s", errMsg)
+			responseError(ctx, errMsg)
+		}
+	}()
+
 	method := ctx.Request.Method
 	urlPath := getUrlPath(ctx)
 	if isServiceTokenAuthenticated(ctx) && isServiceTokenRoute(urlPath) {
