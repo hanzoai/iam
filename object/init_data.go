@@ -1135,5 +1135,44 @@ func GetInitDataDiagnostics() map[string]interface{} {
 		_, _ = ormer.Engine.Exec("DELETE FROM session WHERE owner = 'hanzo' AND name = '__diag_raw'")
 	}
 
+	// CRITICAL: test double UPSERT (insert then upsert same PK)
+	_, testErr1 := ormer.Engine.Exec(testUpsertSQL,
+		"hanzo", "__diag_z", "app-hanzobot",
+		"2026-01-01T00:00:00Z", `["first-sid"]`)
+	if testErr1 != nil {
+		result["session-double-upsert-1"] = fmt.Sprintf("ERROR: %v", testErr1)
+	} else {
+		result["session-double-upsert-1"] = "ok"
+		_, testErr2 := ormer.Engine.Exec(testUpsertSQL,
+			"hanzo", "__diag_z", "app-hanzobot",
+			"2026-01-01T00:00:01Z", `["second-sid"]`)
+		if testErr2 != nil {
+			result["session-double-upsert-2"] = fmt.Sprintf("ERROR: %v", testErr2)
+		} else {
+			result["session-double-upsert-2"] = "ok (ON CONFLICT worked)"
+		}
+		_, _ = ormer.Engine.Exec("DELETE FROM session WHERE owner = 'hanzo' AND name = '__diag_z'")
+	}
+
+	// Query ALL indexes on the session table
+	if driverName == "postgres" {
+		idxRows, idxErr := ormer.Engine.QueryString(
+			`SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'session'`)
+		if idxErr != nil {
+			result["session-indexes"] = fmt.Sprintf("error: %v", idxErr)
+		} else {
+			result["session-indexes"] = idxRows
+		}
+
+		colRows, colErr := ormer.Engine.QueryString(
+			`SELECT column_name, data_type FROM information_schema.columns
+			 WHERE table_name = 'session' ORDER BY ordinal_position`)
+		if colErr != nil {
+			result["session-columns"] = fmt.Sprintf("error: %v", colErr)
+		} else {
+			result["session-columns"] = colRows
+		}
+	}
+
 	return result
 }
