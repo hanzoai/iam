@@ -96,9 +96,9 @@ type Organization struct {
 
 	LdapAttributes      []string `xorm:"mediumtext" json:"ldapAttributes"`
 	KerberosRealm       string   `xorm:"varchar(200)" json:"kerberosRealm"`
-	KerberosKdcHost     string `xorm:"varchar(200)" json:"kerberosKdcHost"`
-	KerberosKeytab      string `xorm:"mediumtext" json:"kerberosKeytab"`
-	KerberosServiceName string `xorm:"varchar(100)" json:"kerberosServiceName"`
+	KerberosKdcHost     string   `xorm:"varchar(200)" json:"kerberosKdcHost"`
+	KerberosKeytab      string   `xorm:"mediumtext" json:"kerberosKeytab"`
+	KerberosServiceName string   `xorm:"varchar(100)" json:"kerberosServiceName"`
 
 	// DEPRECATED: Balance is managed by Commerce (billing.hanzo.ai). Do not write to these fields.
 	OrgBalance      float64 `json:"orgBalance"`
