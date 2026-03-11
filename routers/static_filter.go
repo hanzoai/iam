@@ -133,6 +133,12 @@ func StaticFilter(ctx *context.Context) {
 	if strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/.well-known/") || (strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize") {
 		return
 	}
+	if serveAuthCallbackHandlerScript(ctx) {
+		return
+	}
+	if serveProviderHintRedirectScript(ctx) {
+		return
+	}
 	if strings.HasPrefix(urlPath, "/cas") && (strings.HasSuffix(urlPath, "/serviceValidate") || strings.HasSuffix(urlPath, "/proxy") || strings.HasSuffix(urlPath, "/proxyValidate") || strings.HasSuffix(urlPath, "/validate") || strings.HasSuffix(urlPath, "/p3/serviceValidate") || strings.HasSuffix(urlPath, "/p3/proxyValidate") || strings.HasSuffix(urlPath, "/samlValidate")) {
 		return
 	}
@@ -151,6 +157,14 @@ func StaticFilter(ctx *context.Context) {
 			http.Redirect(ctx.ResponseWriter, ctx.Request, redirectUrl, http.StatusFound)
 			return
 		}
+
+		if serveProviderHintRedirectPage(ctx) {
+			return
+		}
+	}
+
+	if serveAuthCallbackPage(ctx) {
+		return
 	}
 
 	webBuildFolder := getWebBuildFolder()
