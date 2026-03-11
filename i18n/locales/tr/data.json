@@ -5,7 +5,7 @@
     "The application does not allow to sign up new account": "Uygulama yeni hesap kaydına izin vermiyor"
   },
   "auth": {
-    "Challenge method should be S256": "Challenge yöntemi S256 olmalı",
+    "Challenge method should be S256 or plain": "Challenge method should be S256 or plain",
     "DeviceCode Invalid": "Cihaz Kodu Geçersiz",
     "Failed to create user, user information is invalid: %s": "Kullanıcı oluşturulamadı, kullanıcı bilgileri geçersiz: %s",
     "Failed to find default application for new organization": "Failed to find default application for new organization",
@@ -23,12 +23,8 @@
     "The login method: login with email is not enabled for the application": "Uygulama için e-posta ile giriş yöntemi etkin değil",
     "The login method: login with face is not enabled for the application": "Uygulama için yüz ile giriş yöntemi etkin değil",
     "The login method: login with password is not enabled for the application": "Şifre ile giriş yöntemi bu uygulama için etkin değil",
-    "The order: %s does not exist": "Sipariş: %s mevcut değil",
     "The organization: %s does not exist": "Organizasyon: %s mevcut değil",
     "The organization: %s has disabled users to signin": "Organizasyon: %s kullanıcıların oturum açmasını devre dışı bıraktı",
-    "The plan: %s does not exist": "Plan: %s mevcut değil",
-    "The pricing: %s does not exist": "Fiyatlandırma: %s mevcut değil",
-    "The pricing: %s does not have plan: %s": "Fiyatlandırma: %s planı yok: %s",
     "The provider: %s does not exist": "Sağlayıcı: %s mevcut değil",
     "The provider: %s is not enabled for the application": "Provider: %s bu uygulama için etkin değil",
     "Unauthorized operation": "Yetkisiz işlem",
@@ -36,7 +32,6 @@
     "User's tag: %s is not listed in the application's tags": "Kullanıcı etiketi: %s uygulamanın etiketlerinde listelenmiyor",
     "UserCode Expired": "Kullanıcı Kodu Süresi Doldu",
     "UserCode Invalid": "Kullanıcı Kodu Geçersiz",
-    "paid-user %s does not have active or pending subscription and the application: %s does not have default pricing": "Ücretli kullanıcı %s aktif veya bekleyen bir aboneliğe sahip değil ve uygulama: %s varsayılan fiyatlandırmaya sahip değil",
     "the application for user %s is not found": "%s kullanıcısı için uygulama bulunamadı",
     "the organization: %s is not found": "Organizasyon: %s bulunamadı"
   },
@@ -105,20 +100,24 @@
     "the adapter: %s is not found": "bağdaştırıcı: %s bulunamadı"
   },
   "general": {
+    "Application cannot be empty": "Application cannot be empty",
     "Failed to import groups": "Gruplar içe aktarılamadı",
     "Failed to import users": "Kullanıcılar içe aktarılamadı",
+    "Granted scopes cannot be empty": "Granted scopes cannot be empty",
     "Insufficient balance: new balance %v would be below credit limit %v": "Yetersiz bakiye: yeni bakiye %v kredi limitinin altında olacak %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Yetersiz bakiye: yeni organizasyon bakiyesi %v kredi limitinin altında olacak %v",
+    "Invalid application": "Invalid application",
+    "Invalid client_id": "Invalid client_id",
     "Missing parameter": "Eksik parametre",
     "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
-    "Only admin user can specify user": "Yalnızca yönetici kullanıcı kullanıcı belirleyebilir",
     "Please login first": "Lütfen önce giriş yapın",
     "The LDAP: %s does not exist": "LDAP: %s mevcut değil",
     "The organization: %s should have one application at least": "Organizasyon: %s en az bir uygulamaya sahip olmalı",
     "The syncer: %s does not exist": "Senkronizasyon: %s mevcut değil",
+    "The user doesn't exist": "The user doesn't exist",
     "The user: %s doesn't exist": "Kullanıcı: %s bulunamadı",
     "The user: %s is not found": "Kullanıcı: %s bulunamadı",
-    "User is required for User category transaction": "Kullanıcı kategorisi işlemi için kullanıcı gerekli",
+    "User not found": "User not found",
     "Wrong userId": "Yanlış kullanıcı kimliği",
     "don't support captchaProvider: ": "captchaProvider desteklenmiyor: ",
     "this operation is not allowed in demo mode": "bu işlem demo modunda izin verilmiyor",
@@ -145,9 +144,6 @@
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "İzin: \"%s\" mevcut değil"
-  },
-  "product": {
-    "Product list cannot be empty": "Ürün listesi boş olamaz"
   },
   "provider": {
     "Failed to initialize ID Verification provider": "Kimlik Doğrulama sağlayıcısı başlatılamadı",
@@ -185,12 +181,13 @@
     "Ticket not found": "Bilet bulunamadı"
   },
   "token": {
-    "Grant_type: %s is not supported in this application": "Grant_type: %s bu uygulamada desteklenmiyor",
     "Invalid application or wrong clientSecret": "Geçersiz uygulama veya yanlış clientSecret",
     "Invalid client_id": "Geçersiz client_id",
     "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "Redirect URI: %s izin verilen Redirect URI listesinde yok",
-    "Token not found, invalid accessToken": "Token bulunamadı, geçersiz accessToken"
+    "Token not found, invalid accessToken": "Token bulunamadı, geçersiz accessToken",
+    "Unsupported response_type: %s (must be code, token, or id_token)": "Unsupported response_type: %s (must be code, token, or id_token)",
+    "response_type is required (must be code, token, or id_token)": "response_type is required (must be code, token, or id_token)"
   },
   "user": {
     "Display name cannot be empty": "Görünen ad boş olamaz",
