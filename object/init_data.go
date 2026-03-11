@@ -20,6 +20,7 @@ import (
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
+	"github.com/xorm-io/core"
 )
 
 type InitData struct {
@@ -284,6 +285,9 @@ func initDefinedApplication(application *Application) {
 
 	if existed != nil {
 		if initDataNewOnly {
+			// Even in newOnly mode, merge critical OAuth fields that may
+			// be missing from apps created before init_data.json was updated.
+			mergeApplicationOAuthDefaults(existed, application)
 			return
 		}
 		affected, err := deleteApplication(application)
@@ -298,6 +302,104 @@ func initDefinedApplication(application *Application) {
 	_, err = AddApplication(application)
 	if err != nil {
 		panic(err)
+	}
+}
+
+// mergeApplicationOAuthDefaults updates an existing application's critical OAuth
+// fields if they are empty/default but the init_data definition has values.
+// This ensures apps created before init_data.json changes still get essential
+// configuration like redirectUris, grantTypes, enablePassword, etc.
+func mergeApplicationOAuthDefaults(existing *Application, desired *Application) {
+	var updateCols []string
+
+	// Merge redirectUris if existing has none but desired has values
+	if len(existing.RedirectUris) == 0 && len(desired.RedirectUris) > 0 {
+		existing.RedirectUris = desired.RedirectUris
+		updateCols = append(updateCols, "redirect_uris")
+	}
+
+	// Merge grantTypes if existing has none
+	if len(existing.GrantTypes) == 0 && len(desired.GrantTypes) > 0 {
+		existing.GrantTypes = desired.GrantTypes
+		updateCols = append(updateCols, "grant_types")
+	}
+
+	// Enable password login if desired wants it but existing has it off
+	if !existing.EnablePassword && desired.EnablePassword {
+		existing.EnablePassword = true
+		updateCols = append(updateCols, "enable_password")
+	}
+
+	// Enable session-based signin if desired wants it but existing has it off
+	if !existing.EnableSigninSession && desired.EnableSigninSession {
+		existing.EnableSigninSession = true
+		updateCols = append(updateCols, "enable_signin_session")
+	}
+
+	// Enable code signin if desired wants it but existing has it off
+	if !existing.EnableCodeSignin && desired.EnableCodeSignin {
+		existing.EnableCodeSignin = true
+		updateCols = append(updateCols, "enable_code_signin")
+	}
+
+	// Merge tokenFormat if existing is empty
+	if existing.TokenFormat == "" && desired.TokenFormat != "" {
+		existing.TokenFormat = desired.TokenFormat
+		updateCols = append(updateCols, "token_format")
+	}
+
+	// Merge expireInHours if existing is invalid (0 or negative)
+	if existing.ExpireInHours <= 0 && desired.ExpireInHours > 0 {
+		existing.ExpireInHours = desired.ExpireInHours
+		updateCols = append(updateCols, "expire_in_hours")
+	}
+
+	// Merge refreshExpireInHours if existing is invalid
+	if existing.RefreshExpireInHours <= 0 && desired.RefreshExpireInHours > 0 {
+		existing.RefreshExpireInHours = desired.RefreshExpireInHours
+		updateCols = append(updateCols, "refresh_expire_in_hours")
+	}
+
+	// Merge cert if existing is empty
+	if existing.Cert == "" && desired.Cert != "" {
+		existing.Cert = desired.Cert
+		updateCols = append(updateCols, "cert")
+	}
+
+	// Merge providers if existing has none
+	if len(existing.Providers) == 0 && len(desired.Providers) > 0 {
+		existing.Providers = desired.Providers
+		updateCols = append(updateCols, "providers")
+	}
+
+	// Merge themeData if existing has none
+	if existing.ThemeData == nil && desired.ThemeData != nil {
+		existing.ThemeData = desired.ThemeData
+		updateCols = append(updateCols, "theme_data")
+	}
+
+	// Merge termsOfUse if existing is empty
+	if existing.TermsOfUse == "" && desired.TermsOfUse != "" {
+		existing.TermsOfUse = desired.TermsOfUse
+		updateCols = append(updateCols, "terms_of_use")
+	}
+
+	if len(updateCols) == 0 {
+		return
+	}
+
+	fmt.Printf("[init_data] merging %d OAuth fields for app %s/%s: %v\n",
+		len(updateCols), existing.Owner, existing.Name, updateCols)
+
+	_, err := ormer.Engine.ID(core.PK{existing.Owner, existing.Name}).
+		Cols(updateCols...).
+		Update(existing)
+	if err != nil {
+		fmt.Printf("[init_data] WARNING: failed to merge app %s/%s: %v\n",
+			existing.Owner, existing.Name, err)
+	} else {
+		// Evict cache so subsequent lookups see the updated values
+		EvictAppCache(existing.Owner, existing.Name)
 	}
 }
 
@@ -768,28 +870,55 @@ func initDefinedRule(rule *Rule) {
 func GetInitDataDiagnostics() map[string]interface{} {
 	result := map[string]interface{}{"message": "init data sync completed successfully"}
 
-	// Check app-hanzobot via ORM
+	// Check app-hanzobot via ORM (returns REAL unmasked values)
 	appBot, err := getApplication("admin", "app-hanzobot")
 	if err != nil {
 		result["app-hanzobot-orm"] = fmt.Sprintf("error: %v", err)
 	} else if appBot != nil {
-		result["app-hanzobot-orm"] = fmt.Sprintf("exists (clientId=%s, org=%s)", appBot.ClientId, appBot.Organization)
+		result["app-hanzobot-orm"] = map[string]interface{}{
+			"exists":               true,
+			"clientId":             appBot.ClientId,
+			"org":                  appBot.Organization,
+			"enablePassword":       appBot.EnablePassword,
+			"enableSigninSession":  appBot.EnableSigninSession,
+			"enableCodeSignin":     appBot.EnableCodeSignin,
+			"redirectUriCount":     len(appBot.RedirectUris),
+			"grantTypes":           appBot.GrantTypes,
+			"tokenFormat":          appBot.TokenFormat,
+			"expireInHours":        appBot.ExpireInHours,
+			"refreshExpireInHours": appBot.RefreshExpireInHours,
+			"cert":                 appBot.Cert,
+			"providerCount":        len(appBot.Providers),
+		}
 	} else {
 		result["app-hanzobot-orm"] = "NOT FOUND"
 	}
 
 	// Check app-hanzobot via raw SQL (bypass xorm ORM)
 	type rawApp struct {
-		Name     string `xorm:"name"`
-		Owner    string `xorm:"owner"`
-		ClientId string `xorm:"client_id"`
+		Name            string `xorm:"name"`
+		Owner           string `xorm:"owner"`
+		ClientId        string `xorm:"client_id"`
+		EnablePassword  bool   `xorm:"enable_password"`
+		RedirectUris    string `xorm:"redirect_uris"`
+		GrantTypes      string `xorm:"grant_types"`
+		ExpireInHours   int    `xorm:"expire_in_hours"`
 	}
 	var rawResult rawApp
-	has, err := ormer.Engine.SQL("SELECT name, owner, client_id FROM application WHERE name = 'app-hanzobot' AND owner = 'admin'").Get(&rawResult)
+	has, err := ormer.Engine.SQL("SELECT name, owner, client_id, enable_password, redirect_uris, grant_types, expire_in_hours FROM application WHERE name = 'app-hanzobot' AND owner = 'admin'").Get(&rawResult)
 	if err != nil {
 		result["app-hanzobot-sql"] = fmt.Sprintf("error: %v", err)
 	} else if has {
-		result["app-hanzobot-sql"] = fmt.Sprintf("exists (name=%s, owner=%s, clientId=%s)", rawResult.Name, rawResult.Owner, rawResult.ClientId)
+		result["app-hanzobot-sql"] = map[string]interface{}{
+			"exists":          true,
+			"name":            rawResult.Name,
+			"owner":           rawResult.Owner,
+			"clientId":        rawResult.ClientId,
+			"enablePassword":  rawResult.EnablePassword,
+			"redirectUris":    rawResult.RedirectUris[:min(200, len(rawResult.RedirectUris))],
+			"grantTypes":      rawResult.GrantTypes,
+			"expireInHours":   rawResult.ExpireInHours,
+		}
 	} else {
 		result["app-hanzobot-sql"] = "NOT FOUND"
 	}
@@ -799,7 +928,8 @@ func GetInitDataDiagnostics() map[string]interface{} {
 	if err != nil {
 		result["app-hanzo-orm"] = fmt.Sprintf("error: %v", err)
 	} else if appHanzo != nil {
-		result["app-hanzo-orm"] = fmt.Sprintf("exists (clientId=%s)", appHanzo.ClientId)
+		result["app-hanzo-orm"] = fmt.Sprintf("exists (clientId=%s, enablePassword=%v, redirectUris=%d)",
+			appHanzo.ClientId, appHanzo.EnablePassword, len(appHanzo.RedirectUris))
 	} else {
 		result["app-hanzo-orm"] = "NOT FOUND"
 	}
