@@ -16,43 +16,49 @@ package routers
 
 import (
 	"strings"
+	"sync"
 
+	"github.com/beego/beego/v2/server/web"
 	"github.com/beego/beego/v2/server/web/context"
 )
 
-// SecureCookieFilter is an AfterExec filter that adds the Secure flag to
-// Set-Cookie headers when the original request arrived over HTTPS.
+var secureOnce sync.Once
+
+// SecureCookieFilter is a BeforeRouter filter that ensures session cookies
+// are emitted with the Secure flag when the app runs behind a
+// TLS-terminating proxy (e.g. Kubernetes ingress, Cloudflare, AWS ALB).
 //
-// Beego v2's session manager only sets the Secure flag when
-// BConfig.Listen.EnableHTTPS is true AND req.TLS is non-nil. Behind a
-// TLS-terminating proxy (e.g. Kubernetes ingress, Cloudflare, AWS ALB)
-// neither condition holds, so session cookies are emitted without
-// Secure — causing modern browsers to reject them on HTTPS origins.
+// Beego v2's session manager determines the Secure flag via isSecure(req),
+// which checks (1) ManagerConfig.Secure is true AND (2) req.URL.Scheme ==
+// "https" or req.TLS != nil. Behind a reverse proxy both conditions fail
+// because EnableHTTPS is false and the Go process never sees TLS.
 //
-// This filter detects the upstream HTTPS connection via the standard
-// X-Forwarded-Proto header and patches every Set-Cookie that lacks
-// the Secure attribute.
+// This filter solves it in two steps:
+//
+//  1. On the first request it calls GlobalSessions.SetSecure(true) so the
+//     session manager's config.Secure flag is enabled (one-time init).
+//
+//  2. On every request where X-Forwarded-Proto is "https", it sets
+//     req.URL.Scheme = "https" so isSecure(req) returns true and Beego
+//     natively adds "; Secure" to the session cookie.
 func SecureCookieFilter(ctx *context.Context) {
 	if !isHTTPS(ctx) {
 		return
 	}
 
-	cookies := ctx.ResponseWriter.Header()["Set-Cookie"]
-	if len(cookies) == 0 {
-		return
-	}
-
-	// Rewrite in-place: delete originals, re-add with Secure appended.
-	ctx.ResponseWriter.Header().Del("Set-Cookie")
-	for _, cookie := range cookies {
-		lower := strings.ToLower(cookie)
-		hasSecure := strings.Contains(lower, "; secure") ||
-			strings.Contains(lower, ";secure")
-		if !hasSecure {
-			cookie += "; Secure"
+	// One-time: tell Beego's session manager that Secure cookies are wanted.
+	// GlobalSessions is initialized during web.Run(), so by the time the
+	// first request arrives it is guaranteed to be non-nil.
+	secureOnce.Do(func() {
+		if web.GlobalSessions != nil {
+			web.GlobalSessions.SetSecure(true)
 		}
-		ctx.ResponseWriter.Header().Add("Set-Cookie", cookie)
-	}
+	})
+
+	// Set the URL scheme so Beego's isSecure(req) sees "https" and returns
+	// true. This is safe — the scheme field is typically empty for server
+	// requests and only used by the session manager's isSecure check.
+	ctx.Request.URL.Scheme = "https"
 }
 
 // isHTTPS returns true when the original client connection was HTTPS,
