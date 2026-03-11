@@ -5,7 +5,7 @@
     "The application does not allow to sign up new account": "L'application ne permet pas de créer un nouveau compte"
   },
   "auth": {
-    "Challenge method should be S256": "La méthode de défi doit être S256",
+    "Challenge method should be S256 or plain": "Challenge method should be S256 or plain",
     "DeviceCode Invalid": "Code appareil invalide",
     "Failed to create user, user information is invalid: %s": "Échec de la création de l'utilisateur, les informations utilisateur sont invalides : %s",
     "Failed to find default application for new organization": "Failed to find default application for new organization",
@@ -23,12 +23,8 @@
     "The login method: login with email is not enabled for the application": "La méthode de connexion : connexion par e-mail n'est pas activée pour l'application",
     "The login method: login with face is not enabled for the application": "La méthode de connexion : connexion par visage n'est pas activée pour l'application",
     "The login method: login with password is not enabled for the application": "La méthode de connexion : connexion avec mot de passe n'est pas activée pour l'application",
-    "The order: %s does not exist": "La commande : %s n'existe pas",
     "The organization: %s does not exist": "L'organisation : %s n'existe pas",
     "The organization: %s has disabled users to signin": "L'organisation: %s a désactivé la connexion des utilisateurs",
-    "The plan: %s does not exist": "Le plan : %s n'existe pas",
-    "The pricing: %s does not exist": "Le tarif : %s n'existe pas",
-    "The pricing: %s does not have plan: %s": "Le tarif : %s n'a pas de plan : %s",
     "The provider: %s does not exist": "Le fournisseur : %s n'existe pas",
     "The provider: %s is not enabled for the application": "Le fournisseur :%s n'est pas activé pour l'application",
     "Unauthorized operation": "Opération non autorisée",
@@ -36,7 +32,6 @@
     "User's tag: %s is not listed in the application's tags": "Le tag de l'utilisateur : %s n'est pas répertorié dans les tags de l'application",
     "UserCode Expired": "Code utilisateur expiré",
     "UserCode Invalid": "Code utilisateur invalide",
-    "paid-user %s does not have active or pending subscription and the application: %s does not have default pricing": "L'utilisateur payant %s n'a pas d'abonnement actif ou en attente et l'application %s n'a pas de tarification par défaut",
     "the application for user %s is not found": "L'application pour l'utilisateur %s est introuvable",
     "the organization: %s is not found": "L'organisation : %s est introuvable"
   },
@@ -105,20 +100,24 @@
     "the adapter: %s is not found": "l'adaptateur : %s est introuvable"
   },
   "general": {
+    "Application cannot be empty": "Application cannot be empty",
     "Failed to import groups": "Échec de l'importation des groupes",
     "Failed to import users": "Échec de l'importation des utilisateurs",
+    "Granted scopes cannot be empty": "Granted scopes cannot be empty",
     "Insufficient balance: new balance %v would be below credit limit %v": "Solde insuffisant : le nouveau solde %v serait inférieur à la limite de crédit %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Solde insuffisant : le nouveau solde de l'organisation %v serait inférieur à la limite de crédit %v",
+    "Invalid application": "Invalid application",
+    "Invalid client_id": "Invalid client_id",
     "Missing parameter": "Paramètre manquant",
     "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
-    "Only admin user can specify user": "Seul un administrateur peut désigner un utilisateur",
     "Please login first": "Veuillez d'abord vous connecter",
     "The LDAP: %s does not exist": "Le LDAP : %s n'existe pas",
     "The organization: %s should have one application at least": "L'organisation : %s doit avoir au moins une application",
     "The syncer: %s does not exist": "Le synchroniseur : %s n'existe pas",
+    "The user doesn't exist": "The user doesn't exist",
     "The user: %s doesn't exist": "L'utilisateur : %s n'existe pas",
     "The user: %s is not found": "L'utilisateur : %s est introuvable",
-    "User is required for User category transaction": "L'utilisateur est requis pour la transaction de catégorie Utilisateur",
+    "User not found": "User not found",
     "Wrong userId": "ID utilisateur incorrect",
     "don't support captchaProvider: ": "ne prend pas en charge captchaProvider: ",
     "this operation is not allowed in demo mode": "cette opération n'est pas autorisée en mode démo",
@@ -145,9 +144,6 @@
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "La permission : \"%s\" n'existe pas"
-  },
-  "product": {
-    "Product list cannot be empty": "La liste des produits ne peut pas être vide"
   },
   "provider": {
     "Failed to initialize ID Verification provider": "Échec de l'initialisation du fournisseur de vérification d'identité",
@@ -185,12 +181,13 @@
     "Ticket not found": "Ticket introuvable"
   },
   "token": {
-    "Grant_type: %s is not supported in this application": "Type_de_subvention : %s n'est pas pris en charge dans cette application",
     "Invalid application or wrong clientSecret": "Application invalide ou clientSecret incorrect",
     "Invalid client_id": "Identifiant de client invalide",
     "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "URI de redirection: %s n'existe pas dans la liste des URI de redirection autorisés",
-    "Token not found, invalid accessToken": "Jeton non trouvé, accessToken invalide"
+    "Token not found, invalid accessToken": "Jeton non trouvé, accessToken invalide",
+    "Unsupported response_type: %s (must be code, token, or id_token)": "Unsupported response_type: %s (must be code, token, or id_token)",
+    "response_type is required (must be code, token, or id_token)": "response_type is required (must be code, token, or id_token)"
   },
   "user": {
     "Display name cannot be empty": "Le nom d'affichage ne peut pas être vide",

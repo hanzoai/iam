@@ -22,6 +22,7 @@ import (
 
 	"github.com/beego/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/captcha"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/form"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
@@ -371,12 +372,16 @@ func (c *ApiController) SendVerificationCode() {
 			return
 		}
 
-		if phone, ok := util.GetE164Number(vform.Dest, vform.CountryCode); !ok {
+		phone, ok := util.GetE164Number(vform.Dest, vform.CountryCode)
+		if !ok && conf.IsDemoMode() {
+			phone = "+" + vform.CountryCode + vform.Dest
+			ok = true
+		}
+		if !ok {
 			c.ResponseError(fmt.Sprintf(c.T("verification:Phone number is invalid in your region %s"), vform.CountryCode))
 			return
-		} else {
-			sendResp = object.SendVerificationCodeToPhone(organization, user, provider, clientIp, phone, application)
 		}
+		sendResp = object.SendVerificationCodeToPhone(organization, user, provider, clientIp, phone, application)
 	}
 
 	if sendResp != nil {

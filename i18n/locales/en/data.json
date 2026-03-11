@@ -5,7 +5,7 @@
     "The application does not allow to sign up new account": "The application does not allow to sign up new account"
   },
   "auth": {
-    "Challenge method should be S256": "Challenge method should be S256",
+    "Challenge method should be S256 or plain": "Challenge method should be S256 or plain",
     "DeviceCode Invalid": "DeviceCode Invalid",
     "Failed to create user, user information is invalid: %s": "Failed to create user, user information is invalid: %s",
     "Failed to find default application for new organization": "Failed to find default application for new organization",
@@ -23,12 +23,8 @@
     "The login method: login with email is not enabled for the application": "The login method: login with email is not enabled for the application",
     "The login method: login with face is not enabled for the application": "The login method: login with face is not enabled for the application",
     "The login method: login with password is not enabled for the application": "The login method: login with password is not enabled for the application",
-    "The order: %s does not exist": "The order: %s does not exist",
     "The organization: %s does not exist": "The organization: %s does not exist",
     "The organization: %s has disabled users to signin": "The organization: %s has disabled users to signin",
-    "The plan: %s does not exist": "The plan: %s does not exist",
-    "The pricing: %s does not exist": "The pricing: %s does not exist",
-    "The pricing: %s does not have plan: %s": "The pricing: %s does not have plan: %s",
     "The provider: %s does not exist": "The provider: %s does not exist",
     "The provider: %s is not enabled for the application": "The provider: %s is not enabled for the application",
     "Unauthorized operation": "Unauthorized operation",
@@ -36,7 +32,6 @@
     "User's tag: %s is not listed in the application's tags": "User's tag: %s is not listed in the application's tags",
     "UserCode Expired": "UserCode Expired",
     "UserCode Invalid": "UserCode Invalid",
-    "paid-user %s does not have active or pending subscription and the application: %s does not have default pricing": "paid-user %s does not have active or pending subscription and the application: %s does not have default pricing",
     "the application for user %s is not found": "the application for user %s is not found",
     "the organization: %s is not found": "the organization: %s is not found"
   },
@@ -105,20 +100,24 @@
     "the adapter: %s is not found": "the adapter: %s is not found"
   },
   "general": {
+    "Application cannot be empty": "Application cannot be empty",
     "Failed to import groups": "Failed to import groups",
     "Failed to import users": "Failed to import users",
+    "Granted scopes cannot be empty": "Granted scopes cannot be empty",
     "Insufficient balance: new balance %v would be below credit limit %v": "Insufficient balance: new balance %v would be below credit limit %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Insufficient balance: new organization balance %v would be below credit limit %v",
+    "Invalid application": "Invalid application",
+    "Invalid client_id": "Invalid client_id",
     "Missing parameter": "Missing parameter",
     "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
-    "Only admin user can specify user": "Only admin user can specify user",
     "Please login first": "Please login first",
     "The LDAP: %s does not exist": "The LDAP: %s does not exist",
     "The organization: %s should have one application at least": "The organization: %s should have one application at least",
     "The syncer: %s does not exist": "The syncer: %s does not exist",
+    "The user doesn't exist": "The user doesn't exist",
     "The user: %s doesn't exist": "The user: %s doesn't exist",
     "The user: %s is not found": "The user: %s is not found",
-    "User is required for User category transaction": "User is required for User category transaction",
+    "User not found": "User not found",
     "Wrong userId": "Wrong userId",
     "don't support captchaProvider: ": "don't support captchaProvider: ",
     "this operation is not allowed in demo mode": "this operation is not allowed in demo mode",
@@ -145,9 +144,6 @@
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "The permission: \"%s\" doesn't exist"
-  },
-  "product": {
-    "Product list cannot be empty": "Product list cannot be empty"
   },
   "provider": {
     "Failed to initialize ID Verification provider": "Failed to initialize ID Verification provider",
@@ -185,12 +181,13 @@
     "Ticket not found": "Ticket not found"
   },
   "token": {
-    "Grant_type: %s is not supported in this application": "Grant_type: %s is not supported in this application",
     "Invalid application or wrong clientSecret": "Invalid application or wrong clientSecret",
     "Invalid client_id": "Invalid client_id",
     "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "Redirect URI: %s doesn't exist in the allowed Redirect URI list",
-    "Token not found, invalid accessToken": "Token not found, invalid accessToken"
+    "Token not found, invalid accessToken": "Token not found, invalid accessToken",
+    "Unsupported response_type: %s (must be code, token, or id_token)": "Unsupported response_type: %s (must be code, token, or id_token)",
+    "response_type is required (must be code, token, or id_token)": "response_type is required (must be code, token, or id_token)"
   },
   "user": {
     "Display name cannot be empty": "Display name cannot be empty",
