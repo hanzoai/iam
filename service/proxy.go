@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/beego/beego/v2/core/logs"
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
@@ -267,14 +268,14 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		// Do not write header for Allow action, let the proxy handle it
 	case "Block":
 		w.WriteHeader(result.StatusCode)
-		responseErrorWithoutCode(w, "Blocked by CasWAF: %s", reason)
+		responseErrorWithoutCode(w, "Blocked by WAF: %s", reason)
 		return
 	case "Drop":
 		w.WriteHeader(result.StatusCode)
-		responseErrorWithoutCode(w, "Dropped by CasWAF: %s", reason)
+		responseErrorWithoutCode(w, "Dropped by WAF: %s", reason)
 		return
 	default:
-		responseError(w, "Error in CasWAF: %s", reason)
+		responseError(w, "Error in WAF: %s", reason)
 	}
 	nextHandle(w, r)
 }
@@ -305,7 +306,7 @@ func nextHandle(w http.ResponseWriter, r *http.Request) {
 func Start() {
 	serverMux := http.NewServeMux()
 	serverMux.HandleFunc("/", handleRequest)
-	serverMux.HandleFunc("/caswaf-handler", handleAuthCallback)
+	serverMux.HandleFunc("/waf-handler", handleAuthCallback)
 
 	gatewayHttpPort, err := conf.GetConfigInt64("gatewayHttpPort")
 	if err != nil {
@@ -318,15 +319,15 @@ func Start() {
 	}
 
 	go func() {
-		fmt.Printf("CasWAF gateway running on: http://127.0.0.1:%d\n", gatewayHttpPort)
+		fmt.Printf("WAF gateway running on: http://127.0.0.1:%d\n", gatewayHttpPort)
 		err := http.ListenAndServe(fmt.Sprintf(":%d", gatewayHttpPort), serverMux)
 		if err != nil {
-			panic(err)
+			logs.Error(err)
 		}
 	}()
 
 	go func() {
-		fmt.Printf("CasWAF gateway running on: https://127.0.0.1:%d\n", gatewayHttpsPort)
+		fmt.Printf("WAF gateway running on: https://127.0.0.1:%d\n", gatewayHttpsPort)
 		server := &http.Server{
 			Handler: serverMux,
 			Addr:    fmt.Sprintf(":%d", gatewayHttpsPort),
@@ -365,7 +366,7 @@ func Start() {
 
 		err := server.ListenAndServeTLS("", "")
 		if err != nil {
-			panic(err)
+			logs.Error(err)
 		}
 	}()
 }
