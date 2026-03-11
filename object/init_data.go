@@ -923,12 +923,12 @@ func GetInitDataDiagnostics() map[string]interface{} {
 	} else if has {
 		row := rawRows[0]
 		result["app-hanzobot-sql"] = map[string]interface{}{
-			"exists":         true,
-			"name":           row["name"],
-			"owner":          row["owner"],
-			"client_id":      row["client_id"],
+			"exists":          true,
+			"name":            row["name"],
+			"owner":           row["owner"],
+			"client_id":       row["client_id"],
 			"enable_password": row["enable_password"],
-			"grant_types":    row["grant_types"],
+			"grant_types":     row["grant_types"],
 			"expire_in_hours": row["expire_in_hours"],
 		}
 	} else {
