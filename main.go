@@ -17,6 +17,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/beego/beego/v2/core/logs"
 	"github.com/beego/beego/v2/server/web"
@@ -45,7 +46,7 @@ func main() {
 	}
 	web.BConfig.WebConfig.Session.SessionCookieLifeTime = 3600 * 24 * 30
 	web.BConfig.WebConfig.Session.SessionGCMaxLifetime = 3600 * 24 * 30
-	// web.BConfig.WebConfig.Session.SessionCookieSameSite = http.SameSiteNoneMode
+	web.BConfig.WebConfig.Session.SessionCookieSameSite = http.SameSiteLaxMode
 
 	routers.InitAPI()
 	object.InitFlag()
@@ -97,6 +98,7 @@ func main() {
 	web.InsertFilter("*", web.BeforeRouter, routers.PrometheusFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.RecordMessage)
 	web.InsertFilter("*", web.BeforeRouter, routers.FieldValidationFilter)
+	web.InsertFilter("*", web.AfterExec, routers.SecureCookieFilter, web.WithReturnOnOutput(false))
 	web.InsertFilter("*", web.AfterExec, routers.AfterRecordMessage, web.WithReturnOnOutput(false))
 
 	var logAdapter string
