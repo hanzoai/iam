@@ -16,10 +16,12 @@ package object
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 
 	"github.com/beego/beego/v2/server/web"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 	"github.com/xorm-io/core"
 )
@@ -95,10 +97,13 @@ func GetSessionCount(owner, field, value string) (int64, error) {
 
 func GetSingleSession(id string) (*Session, error) {
 	owner, name, application := util.GetOwnerAndNameAndOtherFromId(id)
-	session := Session{Owner: owner, Name: name, Application: application}
-	get, err := ormer.Engine.Get(&session)
+	// Use explicit Where() instead of struct-based Get() to avoid xorm
+	// auto-condition quirks with composite PKs (same fix as Application).
+	var session Session
+	get, err := ormer.Engine.Where("owner = ? AND name = ? AND application = ?",
+		owner, name, application).Get(&session)
 	if err != nil {
-		return &session, err
+		return nil, fmt.Errorf("GetSingleSession(%s): %w", id, err)
 	}
 
 	if !get {
@@ -131,40 +136,81 @@ func removeExtraSessionIds(session *Session) {
 	}
 }
 
+func mergeAndUpdateSession(dbSession *Session, session *Session) (bool, error) {
+	m := make(map[string]struct{})
+	for _, v := range dbSession.SessionId {
+		m[v] = struct{}{}
+	}
+	for _, v := range session.SessionId {
+		if _, exists := m[v]; !exists {
+			dbSession.SessionId = append(dbSession.SessionId, v)
+		}
+	}
+
+	removeExtraSessionIds(dbSession)
+
+	if session.ExclusiveSignin {
+		dbSession.SessionId = []string{session.SessionId[0]}
+	}
+
+	return UpdateSession(dbSession.GetId(), dbSession)
+}
+
 func AddSession(session *Session) (bool, error) {
 	dbSession, err := GetSingleSession(session.GetId())
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("AddSession: GetSingleSession(%s) failed: %w", session.GetId(), err)
 	}
 
-	if dbSession == nil {
-		session.CreatedTime = util.GetCurrentTime()
+	if dbSession != nil {
+		return mergeAndUpdateSession(dbSession, session)
+	}
 
-		affected, err := ormer.Engine.Insert(session)
-		if err != nil {
-			return false, err
-		}
+	// No existing session found — use atomic UPSERT to avoid duplicate key
+	// errors from race conditions (multiple pods, concurrent logins).
+	session.CreatedTime = util.GetCurrentTime()
+	removeExtraSessionIds(session)
 
-		return affected != 0, nil
+	return upsertSession(session)
+}
+
+// upsertSession performs an atomic INSERT ... ON CONFLICT UPDATE using raw SQL.
+// This avoids the SELECT-then-INSERT race condition that causes session_pkey
+// violations when multiple pods handle concurrent login requests.
+func upsertSession(session *Session) (bool, error) {
+	sessionIdJSON, err := json.Marshal(session.SessionId)
+	if err != nil {
+		return false, fmt.Errorf("upsertSession: failed to marshal session IDs: %w", err)
+	}
+
+	driverName := conf.GetConfigString("driverName")
+
+	if driverName == "postgres" {
+		// Use column-based ON CONFLICT instead of constraint name for robustness.
+		_, err = ormer.Engine.Exec(
+			`INSERT INTO session (owner, name, application, created_time, session_id)
+			 VALUES ($1, $2, $3, $4, $5)
+			 ON CONFLICT (owner, name, application) DO UPDATE
+			 SET session_id = EXCLUDED.session_id, created_time = EXCLUDED.created_time`,
+			session.Owner, session.Name, session.Application,
+			session.CreatedTime, string(sessionIdJSON),
+		)
 	} else {
-		m := make(map[string]struct{})
-		for _, v := range dbSession.SessionId {
-			m[v] = struct{}{}
-		}
-		for _, v := range session.SessionId {
-			if _, exists := m[v]; !exists {
-				dbSession.SessionId = append(dbSession.SessionId, v)
-			}
-		}
-
-		removeExtraSessionIds(dbSession)
-
-		if session.ExclusiveSignin {
-			dbSession.SessionId = []string{session.SessionId[0]}
-		}
-
-		return UpdateSession(dbSession.GetId(), dbSession)
+		// MySQL / SQLite fallback
+		_, err = ormer.Engine.Exec(
+			`INSERT INTO session (owner, name, application, created_time, session_id)
+			 VALUES (?, ?, ?, ?, ?)
+			 ON DUPLICATE KEY UPDATE session_id = VALUES(session_id), created_time = VALUES(created_time)`,
+			session.Owner, session.Name, session.Application,
+			session.CreatedTime, string(sessionIdJSON),
+		)
 	}
+
+	if err != nil {
+		return false, fmt.Errorf("upsertSession(driver=%s, owner=%s, name=%s, app=%s): %w",
+			driverName, session.Owner, session.Name, session.Application, err)
+	}
+	return true, nil
 }
 
 func DeleteSession(id, curSessionId string) (bool, error) {

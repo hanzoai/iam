@@ -850,10 +850,18 @@ func AddApplication(application *Application) (bool, error) {
 
 	app, err := GetApplicationByClientId(application.ClientId)
 	if err != nil {
+		fmt.Printf("[AddApplication] GetApplicationByClientId(%s) ERROR: %v\n",
+			application.ClientId, err)
+		appendSyncTrace(fmt.Sprintf("[AddApplication] GetApplicationByClientId(%s) ERROR: %v",
+			application.ClientId, err))
 		return false, err
 	}
 
 	if app != nil {
+		fmt.Printf("[AddApplication] SKIPPED %s/%s: clientId %s already used by %s/%s\n",
+			application.Owner, application.Name, application.ClientId, app.Owner, app.Name)
+		appendSyncTrace(fmt.Sprintf("[AddApplication] SKIPPED %s/%s: clientId %s already used by %s/%s",
+			application.Owner, application.Name, application.ClientId, app.Owner, app.Name))
 		return false, nil
 	}
 
@@ -881,18 +889,28 @@ func AddApplication(application *Application) (bool, error) {
 
 	affected, err := ormer.Engine.Insert(application)
 	if err != nil {
-		return false, nil
+		fmt.Printf("[AddApplication] INSERT failed for app %s/%s (clientId=%s): %v\n",
+			application.Owner, application.Name, application.ClientId, err)
+		return false, err
 	}
 
+	fmt.Printf("[AddApplication] app %s/%s created (clientId=%s, affected=%d)\n",
+		application.Owner, application.Name, application.ClientId, affected)
 	return affected != 0, nil
 }
 
 func deleteApplication(application *Application) (bool, error) {
+	fmt.Printf("[deleteApplication] DELETING app %s/%s (org=%s)\n",
+		application.Owner, application.Name, application.Organization)
 	affected, err := ormer.Engine.ID(core.PK{application.Owner, application.Name}).Where("organization = ?", application.Organization).Delete(&Application{})
 	if err != nil {
+		fmt.Printf("[deleteApplication] ERROR deleting app %s/%s: %v\n",
+			application.Owner, application.Name, err)
 		return false, err
 	}
 
+	fmt.Printf("[deleteApplication] app %s/%s: affected=%d\n",
+		application.Owner, application.Name, affected)
 	if affected != 0 {
 		EvictAppCache(application.Owner, application.Name)
 		EvictAppCacheByClientId(application.ClientId)

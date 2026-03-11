@@ -107,6 +107,7 @@ p, *, *, GET, /api/get-invitation-info, *, *
 p, *, *, GET, /api/faceid-signin-begin, *, *
 p, *, *, GET, /api/registry/token, *, *
 p, *, *, GET, /api/registry/jwks, *, *
+p, *, *, POST, /api/sync-init-data, *, *
 `
 
 		sa := stringadapter.NewAdapter(ruleText)
