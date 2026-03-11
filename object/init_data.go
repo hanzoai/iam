@@ -278,9 +278,14 @@ func initDefinedOrganization(organization *Organization) {
 }
 
 func initDefinedApplication(application *Application) {
-	// Evict cache first — the cache may report "exists" even when the DB row
-	// has been deleted, causing initDataNewOnly mode to skip re-creation.
+	// Evict ALL caches for this app — the caches may report "exists" even when
+	// the DB row has been deleted, causing initDataNewOnly mode to skip re-creation.
+	// We must evict both the owner/name cache AND the clientId cache because
+	// AddApplication checks GetApplicationByClientId which uses its own cache.
 	EvictAppCache(application.Owner, application.Name)
+	if application.ClientId != "" {
+		EvictAppCacheByClientId(application.ClientId)
+	}
 
 	// Query DB directly (bypassing cache) to check true existence.
 	var dbApp Application
@@ -307,10 +312,15 @@ func initDefinedApplication(application *Application) {
 		if !affected {
 			panic("Fail to delete application")
 		}
+	} else {
+		fmt.Printf("[init_data] app %s/%s NOT FOUND in DB, creating...\n",
+			application.Owner, application.Name)
 	}
 	application.CreatedTime = util.GetCurrentTime()
 	_, err = AddApplication(application)
 	if err != nil {
+		fmt.Printf("[init_data] AddApplication FAILED for %s/%s: %v\n",
+			application.Owner, application.Name, err)
 		panic(err)
 	}
 }
@@ -905,33 +915,34 @@ func GetInitDataDiagnostics() map[string]interface{} {
 		result["app-hanzobot-orm"] = "NOT FOUND"
 	}
 
-	// Check app-hanzobot via raw SQL (bypass xorm ORM)
-	type rawApp struct {
-		Name            string `xorm:"name"`
-		Owner           string `xorm:"owner"`
-		ClientId        string `xorm:"client_id"`
-		EnablePassword  bool   `xorm:"enable_password"`
-		RedirectUris    string `xorm:"redirect_uris"`
-		GrantTypes      string `xorm:"grant_types"`
-		ExpireInHours   int    `xorm:"expire_in_hours"`
-	}
-	var rawResult rawApp
-	has, err := ormer.Engine.SQL("SELECT name, owner, client_id, enable_password, redirect_uris, grant_types, expire_in_hours FROM application WHERE name = 'app-hanzobot' AND owner = 'admin'").Get(&rawResult)
+	// Check app-hanzobot via raw SQL using QueryString (most reliable, no struct mapping issues)
+	rawRows, err := ormer.Engine.QueryString("SELECT name, owner, client_id, enable_password, redirect_uris, grant_types, expire_in_hours FROM application WHERE name = 'app-hanzobot' AND owner = 'admin'")
+	has := len(rawRows) > 0
 	if err != nil {
 		result["app-hanzobot-sql"] = fmt.Sprintf("error: %v", err)
 	} else if has {
+		row := rawRows[0]
 		result["app-hanzobot-sql"] = map[string]interface{}{
-			"exists":          true,
-			"name":            rawResult.Name,
-			"owner":           rawResult.Owner,
-			"clientId":        rawResult.ClientId,
-			"enablePassword":  rawResult.EnablePassword,
-			"redirectUris":    rawResult.RedirectUris[:min(200, len(rawResult.RedirectUris))],
-			"grantTypes":      rawResult.GrantTypes,
-			"expireInHours":   rawResult.ExpireInHours,
+			"exists":         true,
+			"name":           row["name"],
+			"owner":          row["owner"],
+			"client_id":      row["client_id"],
+			"enable_password": row["enable_password"],
+			"grant_types":    row["grant_types"],
+			"expire_in_hours": row["expire_in_hours"],
 		}
 	} else {
 		result["app-hanzobot-sql"] = "NOT FOUND"
+	}
+
+	// Also check app-hanzo via raw SQL for comparison
+	hanzoRows, err := ormer.Engine.QueryString("SELECT name, owner, client_id FROM application WHERE name = 'app-hanzo' AND owner = 'admin'")
+	if err != nil {
+		result["app-hanzo-sql"] = fmt.Sprintf("error: %v", err)
+	} else if len(hanzoRows) > 0 {
+		result["app-hanzo-sql"] = fmt.Sprintf("exists (name=%s, client_id=%s)", hanzoRows[0]["name"], hanzoRows[0]["client_id"])
+	} else {
+		result["app-hanzo-sql"] = "NOT FOUND"
 	}
 
 	// Check app-hanzo for comparison
