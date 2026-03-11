@@ -90,6 +90,7 @@ func main() {
 	web.SetStaticPath("/swagger", "swagger")
 	web.SetStaticPath("/files", "files")
 	// https://studygolang.com/articles/2303
+	web.InsertFilter("*", web.BeforeRouter, routers.SecureCookieFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.StaticFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.AutoSigninFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.CorsFilter)
@@ -98,7 +99,6 @@ func main() {
 	web.InsertFilter("*", web.BeforeRouter, routers.PrometheusFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.RecordMessage)
 	web.InsertFilter("*", web.BeforeRouter, routers.FieldValidationFilter)
-	web.InsertFilter("*", web.AfterExec, routers.SecureCookieFilter, web.WithReturnOnOutput(false))
 	web.InsertFilter("*", web.AfterExec, routers.AfterRecordMessage, web.WithReturnOnOutput(false))
 
 	var logAdapter string
