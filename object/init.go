@@ -25,11 +25,11 @@ import (
 )
 
 func InitDb() {
-	existed := initHanzoOrganization()
+	existed := initDefaultOrganization()
 	if !existed {
 		initHanzoPermission()
 		initHanzoProvider()
-		initHanzoApplication()
+		initDefaultApplication()
 		initHanzoCert()
 		initHanzoLdap()
 		initHanzoUser()
@@ -112,7 +112,7 @@ func getHanzoAccountItems() []*AccountItem {
 	}
 }
 
-func initHanzoOrganization() bool {
+func initDefaultOrganization() bool {
 	organization, err := getOrganization("admin", "hanzo")
 	if err != nil {
 		panic(err)
@@ -192,7 +192,7 @@ func initHanzoUser() {
 	}
 }
 
-func initHanzoApplication() {
+func initDefaultApplication() {
 	application, err := getApplication("admin", "app-hanzo")
 	if err != nil {
 		panic(err)
