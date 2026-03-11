@@ -90,7 +90,12 @@ func main() {
 	web.SetStaticPath("/swagger", "swagger")
 	web.SetStaticPath("/files", "files")
 	// https://studygolang.com/articles/2303
-	web.InsertFilter("*", web.BeforeRouter, routers.SecureCookieFilter)
+	// SecureCookieFilter MUST run as BeforeStatic — the earliest filter position —
+	// because Beego's session init (SessionStart) runs BEFORE BeforeRouter filters.
+	// Only BeforeStatic runs before session init, giving us a chance to set
+	// req.URL.Scheme and GlobalSessions.SetSecure(true) before the session cookie
+	// attributes are determined.
+	web.InsertFilter("*", web.BeforeStatic, routers.SecureCookieFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.StaticFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.AutoSigninFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.CorsFilter)
