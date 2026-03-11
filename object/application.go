@@ -850,10 +850,18 @@ func AddApplication(application *Application) (bool, error) {
 
 	app, err := GetApplicationByClientId(application.ClientId)
 	if err != nil {
+		fmt.Printf("[AddApplication] GetApplicationByClientId(%s) ERROR: %v\n",
+			application.ClientId, err)
+		appendSyncTrace(fmt.Sprintf("[AddApplication] GetApplicationByClientId(%s) ERROR: %v",
+			application.ClientId, err))
 		return false, err
 	}
 
 	if app != nil {
+		fmt.Printf("[AddApplication] SKIPPED %s/%s: clientId %s already used by %s/%s\n",
+			application.Owner, application.Name, application.ClientId, app.Owner, app.Name)
+		appendSyncTrace(fmt.Sprintf("[AddApplication] SKIPPED %s/%s: clientId %s already used by %s/%s",
+			application.Owner, application.Name, application.ClientId, app.Owner, app.Name))
 		return false, nil
 	}
 
