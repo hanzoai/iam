@@ -113,7 +113,7 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		resp = &Response{Status: "ok", Msg: "", Data: userId, Data3: user.NeedUpdatePassword}
 	} else if form.Type == ResponseTypeCode {
 		// Read OAuth params from query string first, then fall back to the JSON body.
-		// The Casdoor React frontend passes these as query params, but API callers
+		// The React frontend passes these as query params, but API callers
 		// may include them in the JSON body instead — both should work.
 		clientId := c.Ctx.Input.Query("clientId")
 		if clientId == "" {
@@ -172,7 +172,8 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		} else {
 			scope := c.Ctx.Input.Query("scope")
 			nonce := c.Ctx.Input.Query("nonce")
-			if !object.IsScopeValid(scope, application) {
+			_, valid := object.IsScopeValidAndExpand(scope, application)
+			if !valid {
 				resp = &Response{Status: "error", Msg: "error: invalid_scope", Data: ""}
 			} else {
 				token, _ := object.GetTokenByUser(application, user, scope, nonce, c.getEffectiveHost())
@@ -448,6 +449,55 @@ func checkMfaEnable(c *ApiController, user *object.User, organization *object.Or
 	}
 
 	return false
+}
+
+func getExistUserByBindingRule(providerItem *object.ProviderItem, application *object.Application, userInfo *idp.UserInfo) (user *object.User, err error) {
+	if providerItem.BindingRule == nil {
+		providerItem.BindingRule = &[]string{"Email", "Phone", "Name"}
+	}
+	if len(*providerItem.BindingRule) == 0 {
+		return nil, nil
+	}
+
+	for _, rule := range *providerItem.BindingRule {
+		// Find existing user with Email
+		if rule == "Email" {
+			user, err = object.GetUserByField(application.Organization, "email", userInfo.Email)
+			if err != nil {
+				return nil, err
+			}
+			if user != nil {
+				return user, nil
+			}
+		}
+
+		// Find existing user with phone number
+		if rule == "Phone" {
+			user, err = object.GetUserByField(application.Organization, "phone", userInfo.Phone)
+			if err != nil {
+				return nil, err
+			}
+			if user != nil {
+				return user, nil
+			}
+		}
+
+		// Try to find existing user by username (case-insensitive)
+		// This allows OAuth providers (e.g., Wecom) to automatically associate with
+		// existing users when usernames match, particularly useful for enterprise
+		// scenarios where signup is disabled and users already exist in IAM
+		if rule == "Name" {
+			user, err = object.GetUserByFields(application.Organization, userInfo.Username)
+			if err != nil {
+				return nil, err
+			}
+			if user != nil {
+				return user, nil
+			}
+		}
+	}
+
+	return user, nil
 }
 
 // Login ...
