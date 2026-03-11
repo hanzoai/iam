@@ -16,8 +16,10 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )
 
@@ -75,4 +77,29 @@ func (c *ApiController) Health() {
 		"version": util.Version,
 		"commit":  util.CommitId,
 	})
+}
+
+// SyncInitData
+// @Title SyncInitData
+// @Tag System API
+// @Description re-run init_data.json sync (idempotent with initDataNewOnly=true)
+// @Success 200 {object} controllers.Response The Response object
+// @router /sync-init-data [post]
+func (c *ApiController) SyncInitData() {
+	var syncErr error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				syncErr = fmt.Errorf("init data sync panicked: %v", r)
+			}
+		}()
+		object.InitFromFile()
+	}()
+
+	if syncErr != nil {
+		c.ResponseError(syncErr.Error())
+		return
+	}
+
+	c.ResponseOk("init data sync completed successfully")
 }
