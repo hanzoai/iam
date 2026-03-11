@@ -915,11 +915,26 @@ func GetInitDataDiagnostics() map[string]interface{} {
 		result["app-hanzobot-orm"] = "NOT FOUND"
 	}
 
+	// Report the xorm schema setting (if set, raw SQL needs schema qualification)
+	schema := conf.GetConfigString("dbSchema")
+	xormSchema := util.GetValueFromDataSourceName("search_path", conf.GetConfigDataSourceName())
+	result["db-schema"] = map[string]interface{}{
+		"configSchema":     schema,
+		"searchPathSchema": xormSchema,
+	}
+
+	// Build schema-qualified table name for raw SQL
+	tableName := "application"
+	if xormSchema != "" {
+		tableName = fmt.Sprintf("%q.%q", xormSchema, "application")
+	}
+
 	// Check app-hanzobot via raw SQL using QueryString (most reliable, no struct mapping issues)
-	rawRows, err := ormer.Engine.QueryString("SELECT name, owner, client_id, enable_password, redirect_uris, grant_types, expire_in_hours FROM application WHERE name = 'app-hanzobot' AND owner = 'admin'")
+	sqlQuery := fmt.Sprintf("SELECT name, owner, client_id, enable_password, grant_types, expire_in_hours FROM %s WHERE name = 'app-hanzobot' AND owner = 'admin'", tableName)
+	rawRows, err := ormer.Engine.QueryString(sqlQuery)
 	has := len(rawRows) > 0
 	if err != nil {
-		result["app-hanzobot-sql"] = fmt.Sprintf("error: %v", err)
+		result["app-hanzobot-sql"] = fmt.Sprintf("error (query=%s): %v", sqlQuery, err)
 	} else if has {
 		row := rawRows[0]
 		result["app-hanzobot-sql"] = map[string]interface{}{
@@ -932,11 +947,12 @@ func GetInitDataDiagnostics() map[string]interface{} {
 			"expire_in_hours": row["expire_in_hours"],
 		}
 	} else {
-		result["app-hanzobot-sql"] = "NOT FOUND"
+		result["app-hanzobot-sql"] = fmt.Sprintf("NOT FOUND (query=%s)", sqlQuery)
 	}
 
 	// Also check app-hanzo via raw SQL for comparison
-	hanzoRows, err := ormer.Engine.QueryString("SELECT name, owner, client_id FROM application WHERE name = 'app-hanzo' AND owner = 'admin'")
+	hanzoQuery := fmt.Sprintf("SELECT name, owner, client_id FROM %s WHERE name = 'app-hanzo' AND owner = 'admin'", tableName)
+	hanzoRows, err := ormer.Engine.QueryString(hanzoQuery)
 	if err != nil {
 		result["app-hanzo-sql"] = fmt.Sprintf("error: %v", err)
 	} else if len(hanzoRows) > 0 {
