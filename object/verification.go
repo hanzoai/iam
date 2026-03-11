@@ -147,7 +147,28 @@ func SendVerificationCodeToEmail(organization *Organization, user *User, provide
 	return nil
 }
 
+// isDemoPhone returns the static code for demo phone numbers when demo mode is enabled.
+// Returns empty string if the number is not a demo number or demo mode is off.
+func isDemoPhone(dest string) string {
+	if !conf.IsDemoMode() {
+		return ""
+	}
+	switch dest {
+	case "+19999999999":
+		return "999999"
+	case "+18888888888":
+		return "888888"
+	default:
+		return ""
+	}
+}
+
 func SendVerificationCodeToPhone(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, application *Application) error {
+	// Demo mode: skip SMS sending for test numbers, just record the static code
+	if demoCode := isDemoPhone(dest); demoCode != "" {
+		return AddToVerificationRecord(user, provider, organization, remoteAddr, provider.Category, dest, demoCode)
+	}
+
 	err := IsAllowSend(user, remoteAddr, provider.Category, application)
 	if err != nil {
 		return err
@@ -269,8 +290,8 @@ func getUnusedVerificationRecord(dest string) (*VerificationRecord, error) {
 }
 
 func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult, error) {
-	// Staging bypass: phone +19999999999 always accepts code 999999
-	if conf.IsDemoMode() && dest == "+19999999999" && code == "999999" {
+	// Demo mode: accept static codes for test phone numbers
+	if demoCode := isDemoPhone(dest); demoCode != "" && code == demoCode {
 		return &VerifyResult{VerificationSuccess, ""}, nil
 	}
 

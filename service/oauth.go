@@ -33,7 +33,7 @@ func getSigninUrl(iamClient *iamsdk.Client, callbackUrl string, originalPath str
 func redirectToIAM(iamClient *iamsdk.Client, w http.ResponseWriter, r *http.Request) {
 	scheme := getScheme(r)
 
-	callbackUrl := fmt.Sprintf("%s://%s/caswaf-handler", scheme, r.Host)
+	callbackUrl := fmt.Sprintf("%s://%s/waf-handler", scheme, r.Host)
 	originalPath := r.RequestURI
 	signinUrl := getSigninUrl(iamClient, callbackUrl, originalPath)
 	http.Redirect(w, r, signinUrl, http.StatusFound)

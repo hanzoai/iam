@@ -25,8 +25,8 @@ import (
 )
 
 var (
-	HanzoApplication  = "app-hanzo"
-	HanzoOrganization = "hanzo"
+	DefaultApplication  = "app-hanzo"
+	DefaultOrganization = "hanzo"
 )
 
 type Session struct {
@@ -169,7 +169,7 @@ func AddSession(session *Session) (bool, error) {
 
 func DeleteSession(id, curSessionId string) (bool, error) {
 	owner, name, application := util.GetOwnerAndNameAndOtherFromId(id)
-	if owner == HanzoOrganization && application == HanzoApplication {
+	if owner == DefaultOrganization && application == DefaultApplication {
 		session, err := GetSingleSession(id)
 		if err != nil {
 			return false, err
@@ -215,7 +215,7 @@ func DeleteSessionId(id string, sessionId string) (bool, error) {
 	}
 
 	owner, _, application := util.GetOwnerAndNameAndOtherFromId(id)
-	if owner == HanzoOrganization && application == HanzoApplication {
+	if owner == DefaultOrganization && application == DefaultApplication {
 		DeleteBeegoSession([]string{sessionId})
 	}
 
