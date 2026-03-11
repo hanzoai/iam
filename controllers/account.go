@@ -512,7 +512,7 @@ func (c *ApiController) SsoLogout() {
 	}
 
 	currentSessionId := c.Ctx.Input.CruSession.SessionID(context.Background())
-	_, err = object.DeleteSessionId(util.GetSessionId(owner, username, object.HanzoApplication), currentSessionId)
+	_, err = object.DeleteSessionId(util.GetSessionId(owner, username, object.DefaultApplication), currentSessionId)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -831,7 +831,7 @@ func (c *ApiController) deleteUserSession(user string) error {
 	}
 
 	// IAM session ID derived from owner, username, and application
-	sessionId := util.GetSessionId(owner, username, object.HanzoApplication)
+	sessionId := util.GetSessionId(owner, username, object.DefaultApplication)
 
 	// Explicitly get the Beego session ID from the context
 	beegoSessionId := c.Ctx.Input.CruSession.SessionID(context.Background())

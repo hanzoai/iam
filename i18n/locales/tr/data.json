@@ -107,8 +107,8 @@
   "general": {
     "Failed to import groups": "Gruplar içe aktarılamadı",
     "Failed to import users": "Kullanıcılar içe aktarılamadı",
-    "Insufficient balance: new balance %v would exceed the credit limit %v": "Yetersiz bakiye: yeni bakiye %v kredi limitini aşacak %v",
-    "Insufficient balance: new organization balance %v would exceed the credit limit %v": "Yetersiz bakiye: yeni organizasyon bakiyesi %v kredi limitini aşacak %v",
+    "Insufficient balance: new balance %v would be below credit limit %v": "Yetersiz bakiye: yeni bakiye %v kredi limitinin altında olacak %v",
+    "Insufficient balance: new organization balance %v would be below credit limit %v": "Yetersiz bakiye: yeni organizasyon bakiyesi %v kredi limitinin altında olacak %v",
     "Missing parameter": "Eksik parametre",
     "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
     "Only admin user can specify user": "Yalnızca yönetici kullanıcı kullanıcı belirleyebilir",

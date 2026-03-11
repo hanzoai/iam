@@ -151,7 +151,7 @@ func getNameAndOrgFromDN(DN string) (string, string, error) {
 		return "", "", fmt.Errorf("please use Admin Name format like cn=xxx,ou=xxx,dc=example,dc=com")
 	}
 	if params["ou"] == "" {
-		return params["cn"], object.HanzoOrganization, nil
+		return params["cn"], object.DefaultOrganization, nil
 	}
 	return params["cn"], params["ou"], nil
 }
@@ -192,6 +192,20 @@ func getUsername(filter string) string {
 func stringInSlice(value string, list []string) bool {
 	for _, item := range list {
 		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+// IsLdapAttrAllowed checks whether the given LDAP attribute is allowed for the organization.
+// An empty filter or a filter containing "All" means all attributes are allowed.
+func IsLdapAttrAllowed(org *object.Organization, attr string) bool {
+	if org == nil || len(org.LdapAttributes) == 0 {
+		return true
+	}
+	for _, f := range org.LdapAttributes {
+		if strings.EqualFold(f, "All") || strings.EqualFold(f, attr) {
 			return true
 		}
 	}
