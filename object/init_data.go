@@ -762,3 +762,55 @@ func initDefinedRule(rule *Rule) {
 		panic(err)
 	}
 }
+
+// GetInitDataDiagnostics returns diagnostic information about key applications
+// to help debug issues where apps appear to exist on some pods but not others.
+func GetInitDataDiagnostics() map[string]interface{} {
+	result := map[string]interface{}{"message": "init data sync completed successfully"}
+
+	// Check app-hanzobot via ORM
+	appBot, err := getApplication("admin", "app-hanzobot")
+	if err != nil {
+		result["app-hanzobot-orm"] = fmt.Sprintf("error: %v", err)
+	} else if appBot != nil {
+		result["app-hanzobot-orm"] = fmt.Sprintf("exists (clientId=%s, org=%s)", appBot.ClientId, appBot.Organization)
+	} else {
+		result["app-hanzobot-orm"] = "NOT FOUND"
+	}
+
+	// Check app-hanzobot via raw SQL (bypass xorm ORM)
+	type rawApp struct {
+		Name     string `xorm:"name"`
+		Owner    string `xorm:"owner"`
+		ClientId string `xorm:"client_id"`
+	}
+	var rawResult rawApp
+	has, err := ormer.Engine.SQL("SELECT name, owner, client_id FROM application WHERE name = 'app-hanzobot' AND owner = 'admin'").Get(&rawResult)
+	if err != nil {
+		result["app-hanzobot-sql"] = fmt.Sprintf("error: %v", err)
+	} else if has {
+		result["app-hanzobot-sql"] = fmt.Sprintf("exists (name=%s, owner=%s, clientId=%s)", rawResult.Name, rawResult.Owner, rawResult.ClientId)
+	} else {
+		result["app-hanzobot-sql"] = "NOT FOUND"
+	}
+
+	// Check app-hanzo for comparison
+	appHanzo, err := getApplication("admin", "app-hanzo")
+	if err != nil {
+		result["app-hanzo-orm"] = fmt.Sprintf("error: %v", err)
+	} else if appHanzo != nil {
+		result["app-hanzo-orm"] = fmt.Sprintf("exists (clientId=%s)", appHanzo.ClientId)
+	} else {
+		result["app-hanzo-orm"] = "NOT FOUND"
+	}
+
+	// Count total applications in DB
+	count, err := ormer.Engine.Count(&Application{})
+	if err != nil {
+		result["total-apps"] = fmt.Sprintf("error: %v", err)
+	} else {
+		result["total-apps"] = count
+	}
+
+	return result
+}
