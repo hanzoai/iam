@@ -47,6 +47,11 @@ const Dashboard = (props) => {
     if (!Setting.isAdminUser(props.account) && Setting.isLocalAdminUser(props.account)) {
       organization = props.account.owner;
     }
+    // Fall back to the user's own organization when localStorage is empty
+    // (e.g. first login before OrganizationSelect has initialised).
+    if (!organization) {
+      organization = props.account.owner;
+    }
     return organization;
   };
 
