@@ -16,10 +16,12 @@ package object
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
+	"github.com/xorm-io/core"
 )
 
 type InitData struct {
@@ -50,6 +52,15 @@ type InitData struct {
 
 var initDataNewOnly bool
 
+// syncTrace collects diagnostic messages during InitFromFile so that
+// GetInitDataDiagnostics can include them in the HTTP response.
+// This lets us debug sync issues without needing kubectl logs access.
+var syncTrace []string
+
+func appendSyncTrace(msg string) {
+	syncTrace = append(syncTrace, msg)
+}
+
 func InitFromFile() {
 	initDataFile := conf.GetConfigString("initDataFile")
 	if initDataFile == "" {
@@ -64,9 +75,20 @@ func InitFromFile() {
 	}
 
 	if initData != nil {
-		fmt.Printf("[init_data] processing: orgs=%d providers=%d apps=%d users=%d (newOnly=%v)\n",
+		// Reset trace for this sync run
+		syncTrace = nil
+
+		msg := fmt.Sprintf("processing: orgs=%d providers=%d apps=%d users=%d (newOnly=%v)",
 			len(initData.Organizations), len(initData.Providers),
 			len(initData.Applications), len(initData.Users), initDataNewOnly)
+		fmt.Printf("[init_data] %s\n", msg)
+		appendSyncTrace(msg)
+
+		// Log which apps are in the init_data.json file
+		for i, app := range initData.Applications {
+			appendSyncTrace(fmt.Sprintf("init_data app[%d]: %s/%s (clientId=%s)", i, app.Owner, app.Name, app.ClientId))
+		}
+
 		for _, organization := range initData.Organizations {
 			initDefinedOrganization(organization)
 		}
@@ -277,13 +299,59 @@ func initDefinedOrganization(organization *Organization) {
 }
 
 func initDefinedApplication(application *Application) {
-	existed, err := getApplication(application.Owner, application.Name)
+	appId := fmt.Sprintf("%s/%s", application.Owner, application.Name)
+
+	// Evict ALL caches for this app — the caches may report "exists" even when
+	// the DB row has been deleted, causing initDataNewOnly mode to skip re-creation.
+	// We must evict both the owner/name cache AND the clientId cache because
+	// AddApplication checks GetApplicationByClientId which uses its own cache.
+	EvictAppCache(application.Owner, application.Name)
+	if application.ClientId != "" {
+		EvictAppCacheByClientId(application.ClientId)
+	}
+	appendSyncTrace(fmt.Sprintf("[%s] cache evicted (clientId=%s)", appId, application.ClientId))
+
+	// Query DB using explicit WHERE to check true existence.
+	// (Using Where() instead of struct-based Get to avoid xorm auto-condition quirks)
+	var dbApp Application
+	dbExists, err := ormer.Engine.Where("owner = ? AND name = ?",
+		application.Owner, application.Name).Get(&dbApp)
 	if err != nil {
+		appendSyncTrace(fmt.Sprintf("[%s] ERROR: DB check failed: %v", appId, err))
 		panic(err)
 	}
+	appendSyncTrace(fmt.Sprintf("[%s] DB check (WHERE): exists=%v", appId, dbExists))
 
-	if existed != nil {
+	// If PK-based lookup fails, also check by client_id.
+	// This handles the case where the row exists in the DB but with subtly
+	// different owner/name values (e.g., whitespace, encoding differences).
+	if !dbExists && application.ClientId != "" {
+		var cidApp Application
+		cidExists, cidErr := ormer.Engine.Where("client_id = ?",
+			application.ClientId).Get(&cidApp)
+		if cidErr == nil && cidExists {
+			appendSyncTrace(fmt.Sprintf("[%s] NOT FOUND by PK, but FOUND by clientId=%s (DB owner=%q name=%q ownerLen=%d nameLen=%d)",
+				appId, application.ClientId, cidApp.Owner, cidApp.Name, len(cidApp.Owner), len(cidApp.Name)))
+
+			// Delete the orphaned row and let it be re-created with correct PK values
+			_, delErr := ormer.Engine.Where("client_id = ?", application.ClientId).Delete(&Application{})
+			if delErr != nil {
+				appendSyncTrace(fmt.Sprintf("[%s] ERROR deleting orphan by clientId: %v", appId, delErr))
+			} else {
+				appendSyncTrace(fmt.Sprintf("[%s] deleted orphan row with clientId=%s", appId, application.ClientId))
+			}
+			// Fall through to create the app fresh with correct PK values
+		}
+	}
+
+	if dbExists {
 		if initDataNewOnly {
+			// Re-cache the app since we evicted it above.
+			appCache.set(appCacheKey(application.Owner, application.Name), dbApp, appCacheTTL)
+			// Merge critical OAuth fields that may be missing from apps
+			// created before init_data.json was updated.
+			mergeApplicationOAuthDefaults(&dbApp, application)
+			appendSyncTrace(fmt.Sprintf("[%s] EXISTS + newOnly=true → skipped (merged defaults)", appId))
 			return
 		}
 		affected, err := deleteApplication(application)
@@ -293,11 +361,127 @@ func initDefinedApplication(application *Application) {
 		if !affected {
 			panic("Fail to delete application")
 		}
+	} else {
+		fmt.Printf("[init_data] app %s NOT FOUND in DB, creating...\n", appId)
+		appendSyncTrace(fmt.Sprintf("[%s] NOT FOUND → will create", appId))
 	}
 	application.CreatedTime = util.GetCurrentTime()
-	_, err = AddApplication(application)
+	created, err := AddApplication(application)
 	if err != nil {
+		appendSyncTrace(fmt.Sprintf("[%s] AddApplication ERROR: %v", appId, err))
+		fmt.Printf("[init_data] AddApplication FAILED for %s: %v\n", appId, err)
 		panic(err)
+	}
+	appendSyncTrace(fmt.Sprintf("[%s] AddApplication returned: created=%v", appId, created))
+
+	// Verify the app actually exists in DB after creation
+	if !created {
+		var verifyApp Application
+		verifyExists, _ := ormer.Engine.Where("owner = ? AND name = ?",
+			application.Owner, application.Name).Get(&verifyApp)
+		var verifyCid Application
+		cidExists2, _ := ormer.Engine.Where("client_id = ?",
+			application.ClientId).Get(&verifyCid)
+		appendSyncTrace(fmt.Sprintf("[%s] POST-CREATE VERIFY: byPK=%v byCid=%v (cidOwner=%q cidName=%q)",
+			appId, verifyExists, cidExists2, verifyCid.Owner, verifyCid.Name))
+	}
+}
+
+// mergeApplicationOAuthDefaults updates an existing application's critical OAuth
+// fields if they are empty/default but the init_data definition has values.
+// This ensures apps created before init_data.json changes still get essential
+// configuration like redirectUris, grantTypes, enablePassword, etc.
+func mergeApplicationOAuthDefaults(existing *Application, desired *Application) {
+	var updateCols []string
+
+	// Merge redirectUris if existing has none but desired has values
+	if len(existing.RedirectUris) == 0 && len(desired.RedirectUris) > 0 {
+		existing.RedirectUris = desired.RedirectUris
+		updateCols = append(updateCols, "redirect_uris")
+	}
+
+	// Merge grantTypes if existing has none
+	if len(existing.GrantTypes) == 0 && len(desired.GrantTypes) > 0 {
+		existing.GrantTypes = desired.GrantTypes
+		updateCols = append(updateCols, "grant_types")
+	}
+
+	// Enable password login if desired wants it but existing has it off
+	if !existing.EnablePassword && desired.EnablePassword {
+		existing.EnablePassword = true
+		updateCols = append(updateCols, "enable_password")
+	}
+
+	// Enable session-based signin if desired wants it but existing has it off
+	if !existing.EnableSigninSession && desired.EnableSigninSession {
+		existing.EnableSigninSession = true
+		updateCols = append(updateCols, "enable_signin_session")
+	}
+
+	// Enable code signin if desired wants it but existing has it off
+	if !existing.EnableCodeSignin && desired.EnableCodeSignin {
+		existing.EnableCodeSignin = true
+		updateCols = append(updateCols, "enable_code_signin")
+	}
+
+	// Merge tokenFormat if existing is empty
+	if existing.TokenFormat == "" && desired.TokenFormat != "" {
+		existing.TokenFormat = desired.TokenFormat
+		updateCols = append(updateCols, "token_format")
+	}
+
+	// Merge expireInHours if existing is invalid (0 or negative)
+	if existing.ExpireInHours <= 0 && desired.ExpireInHours > 0 {
+		existing.ExpireInHours = desired.ExpireInHours
+		updateCols = append(updateCols, "expire_in_hours")
+	}
+
+	// Merge refreshExpireInHours if existing is invalid
+	if existing.RefreshExpireInHours <= 0 && desired.RefreshExpireInHours > 0 {
+		existing.RefreshExpireInHours = desired.RefreshExpireInHours
+		updateCols = append(updateCols, "refresh_expire_in_hours")
+	}
+
+	// Merge cert if existing is empty
+	if existing.Cert == "" && desired.Cert != "" {
+		existing.Cert = desired.Cert
+		updateCols = append(updateCols, "cert")
+	}
+
+	// Merge providers if existing has none
+	if len(existing.Providers) == 0 && len(desired.Providers) > 0 {
+		existing.Providers = desired.Providers
+		updateCols = append(updateCols, "providers")
+	}
+
+	// Merge themeData if existing has none
+	if existing.ThemeData == nil && desired.ThemeData != nil {
+		existing.ThemeData = desired.ThemeData
+		updateCols = append(updateCols, "theme_data")
+	}
+
+	// Merge termsOfUse if existing is empty
+	if existing.TermsOfUse == "" && desired.TermsOfUse != "" {
+		existing.TermsOfUse = desired.TermsOfUse
+		updateCols = append(updateCols, "terms_of_use")
+	}
+
+	if len(updateCols) == 0 {
+		return
+	}
+
+	fmt.Printf("[init_data] merging %d OAuth fields for app %s/%s: %v\n",
+		len(updateCols), existing.Owner, existing.Name, updateCols)
+
+	_, err := ormer.Engine.ID(core.PK{existing.Owner, existing.Name}).
+		Cols(updateCols...).
+		Update(existing)
+	if err != nil {
+		fmt.Printf("[init_data] WARNING: failed to merge app %s/%s: %v\n",
+			existing.Owner, existing.Name, err)
+	} else {
+		// Evict cache so subsequent lookups see the updated values
+		EvictAppCache(existing.Owner, existing.Name)
 	}
 }
 
@@ -761,4 +945,161 @@ func initDefinedRule(rule *Rule) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// GetInitDataDiagnostics returns diagnostic information about key applications
+// to help debug issues where apps appear to exist on some pods but not others.
+func GetInitDataDiagnostics() map[string]interface{} {
+	result := map[string]interface{}{"message": "init data sync completed successfully"}
+
+	// Check app-hanzobot via ORM (evict cache first to get real DB state)
+	EvictAppCache("admin", "app-hanzobot")
+	appBot, err := getApplication("admin", "app-hanzobot")
+	if err != nil {
+		result["app-hanzobot-orm"] = fmt.Sprintf("error: %v", err)
+	} else if appBot != nil {
+		result["app-hanzobot-orm"] = map[string]interface{}{
+			"exists":               true,
+			"clientId":             appBot.ClientId,
+			"org":                  appBot.Organization,
+			"enablePassword":       appBot.EnablePassword,
+			"enableSigninSession":  appBot.EnableSigninSession,
+			"enableCodeSignin":     appBot.EnableCodeSignin,
+			"redirectUriCount":     len(appBot.RedirectUris),
+			"grantTypes":           appBot.GrantTypes,
+			"tokenFormat":          appBot.TokenFormat,
+			"expireInHours":        appBot.ExpireInHours,
+			"refreshExpireInHours": appBot.RefreshExpireInHours,
+			"cert":                 appBot.Cert,
+			"providerCount":        len(appBot.Providers),
+		}
+	} else {
+		result["app-hanzobot-orm"] = "NOT FOUND"
+	}
+
+	// Report the xorm schema setting (if set, raw SQL needs schema qualification)
+	schema := conf.GetConfigString("dbSchema")
+	xormSchema := util.GetValueFromDataSourceName("search_path", conf.GetConfigDataSourceName())
+	result["db-schema"] = map[string]interface{}{
+		"configSchema":     schema,
+		"searchPathSchema": xormSchema,
+	}
+
+	// Build schema-qualified table name for raw SQL
+	tableName := "application"
+	if xormSchema != "" {
+		tableName = fmt.Sprintf("%q.%q", xormSchema, "application")
+	}
+
+	// Check app-hanzobot via raw SQL using QueryString (most reliable, no struct mapping issues)
+	sqlQuery := fmt.Sprintf("SELECT name, owner, client_id, enable_password, grant_types, expire_in_hours FROM %s WHERE name = 'app-hanzobot' AND owner = 'admin'", tableName)
+	rawRows, err := ormer.Engine.QueryString(sqlQuery)
+	has := len(rawRows) > 0
+	if err != nil {
+		result["app-hanzobot-sql"] = fmt.Sprintf("error (query=%s): %v", sqlQuery, err)
+	} else if has {
+		row := rawRows[0]
+		result["app-hanzobot-sql"] = map[string]interface{}{
+			"exists":          true,
+			"name":            row["name"],
+			"owner":           row["owner"],
+			"client_id":       row["client_id"],
+			"enable_password": row["enable_password"],
+			"grant_types":     row["grant_types"],
+			"expire_in_hours": row["expire_in_hours"],
+		}
+	} else {
+		result["app-hanzobot-sql"] = fmt.Sprintf("NOT FOUND (query=%s)", sqlQuery)
+	}
+
+	// CRITICAL DIAGNOSTIC: search by client_id to see if the row exists with different owner/name
+	clientIdQuery := fmt.Sprintf(
+		"SELECT owner, name, client_id, length(owner) as owner_len, length(name) as name_len, "+
+			"encode(owner::bytea, 'hex') as owner_hex, encode(name::bytea, 'hex') as name_hex "+
+			"FROM %s WHERE client_id = 'hanzobot-client-id'", tableName)
+	cidRows, cidErr := ormer.Engine.QueryString(clientIdQuery)
+	if cidErr != nil {
+		result["app-hanzobot-by-clientid"] = fmt.Sprintf("error: %v", cidErr)
+	} else if len(cidRows) > 0 {
+		result["app-hanzobot-by-clientid"] = cidRows[0]
+	} else {
+		result["app-hanzobot-by-clientid"] = "NOT FOUND"
+	}
+
+	// Also check app-hanzo via raw SQL for comparison
+	hanzoQuery := fmt.Sprintf("SELECT name, owner, client_id FROM %s WHERE name = 'app-hanzo' AND owner = 'admin'", tableName)
+	hanzoRows, err := ormer.Engine.QueryString(hanzoQuery)
+	if err != nil {
+		result["app-hanzo-sql"] = fmt.Sprintf("error: %v", err)
+	} else if len(hanzoRows) > 0 {
+		result["app-hanzo-sql"] = fmt.Sprintf("exists (name=%s, client_id=%s)", hanzoRows[0]["name"], hanzoRows[0]["client_id"])
+	} else {
+		result["app-hanzo-sql"] = "NOT FOUND"
+	}
+
+	// Check app-hanzo for comparison
+	appHanzo, err := getApplication("admin", "app-hanzo")
+	if err != nil {
+		result["app-hanzo-orm"] = fmt.Sprintf("error: %v", err)
+	} else if appHanzo != nil {
+		result["app-hanzo-orm"] = fmt.Sprintf("exists (clientId=%s, enablePassword=%v, redirectUris=%d)",
+			appHanzo.ClientId, appHanzo.EnablePassword, len(appHanzo.RedirectUris))
+	} else {
+		result["app-hanzo-orm"] = "NOT FOUND"
+	}
+
+	// Count total applications in DB
+	count, err := ormer.Engine.Count(&Application{})
+	if err != nil {
+		result["total-apps"] = fmt.Sprintf("error: %v", err)
+	} else {
+		result["total-apps"] = count
+	}
+
+	// Include sync trace — filter for hanzobot-related entries and summary info
+	var filteredTrace []string
+	for _, entry := range syncTrace {
+		// Include entries about hanzobot, processing summary, and any errors
+		if strings.Contains(entry, "hanzobot") ||
+			strings.Contains(entry, "processing:") ||
+			strings.Contains(entry, "ERROR") ||
+			strings.Contains(entry, "SKIPPED") ||
+			strings.Contains(entry, "FAILED") {
+			filteredTrace = append(filteredTrace, entry)
+		}
+	}
+	result["sync-trace"] = filteredTrace
+	result["sync-trace-total"] = len(syncTrace)
+
+	// Report driverName to verify runtime DB driver detection
+	driverName := conf.GetConfigString("driverName")
+	result["driverName"] = driverName
+
+	// Query the actual PK constraint name for the session table (PostgreSQL only)
+	if driverName == "postgres" {
+		pkRows, pkErr := ormer.Engine.QueryString(
+			`SELECT constraint_name FROM information_schema.table_constraints
+			 WHERE table_name = 'session' AND constraint_type = 'PRIMARY KEY'`)
+		if pkErr != nil {
+			result["session-pk-constraint"] = fmt.Sprintf("error: %v", pkErr)
+		} else if len(pkRows) > 0 {
+			result["session-pk-constraint"] = pkRows[0]["constraint_name"]
+		} else {
+			result["session-pk-constraint"] = "NO PK CONSTRAINT FOUND"
+		}
+
+		// Also check if any session rows exist for z@hanzo.ai user
+		sessRows, sessErr := ormer.Engine.QueryString(
+			`SELECT owner, name, application, length(session_id) as sid_len
+			 FROM session WHERE name = 'z@hanzo.ai' LIMIT 5`)
+		if sessErr != nil {
+			result["session-z-hanzo"] = fmt.Sprintf("error: %v", sessErr)
+		} else if len(sessRows) > 0 {
+			result["session-z-hanzo"] = sessRows
+		} else {
+			result["session-z-hanzo"] = "NO SESSIONS FOUND"
+		}
+	}
+
+	return result
 }

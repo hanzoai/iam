@@ -12,7 +12,7 @@ COPY ./web .
 RUN NODE_OPTIONS="--max-old-space-size=3072" pnpm run build
 
 # Single-stage backend build
-FROM golang:1.23.12-alpine AS backend
+FROM golang:1.26-alpine AS backend
 WORKDIR /go/src/hanzo-iam
 
 # Install build dependencies
