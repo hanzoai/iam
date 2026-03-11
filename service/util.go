@@ -54,11 +54,16 @@ func responseOk(w http.ResponseWriter, format string, a ...interface{}) {
 }
 
 func responseError(w http.ResponseWriter, format string, a ...interface{}) {
-	w.WriteHeader(http.StatusInternalServerError)
-
 	msg := fmt.Sprintf(format, a...)
 	fmt.Println(msg)
-	_, err := fmt.Fprint(w, msg)
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusInternalServerError)
+
+	escaped := strings.ReplaceAll(msg, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	resp := fmt.Sprintf(`{"status":"error","msg":"%s"}`, escaped)
+	_, err := fmt.Fprint(w, resp)
 	if err != nil {
 		panic(err)
 	}
