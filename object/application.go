@@ -888,11 +888,17 @@ func AddApplication(application *Application) (bool, error) {
 }
 
 func deleteApplication(application *Application) (bool, error) {
+	fmt.Printf("[deleteApplication] DELETING app %s/%s (org=%s)\n",
+		application.Owner, application.Name, application.Organization)
 	affected, err := ormer.Engine.ID(core.PK{application.Owner, application.Name}).Where("organization = ?", application.Organization).Delete(&Application{})
 	if err != nil {
+		fmt.Printf("[deleteApplication] ERROR deleting app %s/%s: %v\n",
+			application.Owner, application.Name, err)
 		return false, err
 	}
 
+	fmt.Printf("[deleteApplication] app %s/%s: affected=%d\n",
+		application.Owner, application.Name, affected)
 	if affected != 0 {
 		EvictAppCache(application.Owner, application.Name)
 		EvictAppCacheByClientId(application.ClientId)
