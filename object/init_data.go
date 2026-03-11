@@ -988,6 +988,20 @@ func GetInitDataDiagnostics() map[string]interface{} {
 		result["app-hanzobot-sql"] = fmt.Sprintf("NOT FOUND (query=%s)", sqlQuery)
 	}
 
+	// CRITICAL DIAGNOSTIC: search by client_id to see if the row exists with different owner/name
+	clientIdQuery := fmt.Sprintf(
+		"SELECT owner, name, client_id, length(owner) as owner_len, length(name) as name_len, "+
+			"encode(owner::bytea, 'hex') as owner_hex, encode(name::bytea, 'hex') as name_hex "+
+			"FROM %s WHERE client_id = 'hanzobot-client-id'", tableName)
+	cidRows, cidErr := ormer.Engine.QueryString(clientIdQuery)
+	if cidErr != nil {
+		result["app-hanzobot-by-clientid"] = fmt.Sprintf("error: %v", cidErr)
+	} else if len(cidRows) > 0 {
+		result["app-hanzobot-by-clientid"] = cidRows[0]
+	} else {
+		result["app-hanzobot-by-clientid"] = "NOT FOUND"
+	}
+
 	// Also check app-hanzo via raw SQL for comparison
 	hanzoQuery := fmt.Sprintf("SELECT name, owner, client_id FROM %s WHERE name = 'app-hanzo' AND owner = 'admin'", tableName)
 	hanzoRows, err := ormer.Engine.QueryString(hanzoQuery)
