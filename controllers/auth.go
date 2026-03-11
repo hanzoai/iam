@@ -274,16 +274,18 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 	}
 
 	if resp.Status == "ok" {
+		sessionId := c.Ctx.Input.CruSession.SessionID(context.Background())
 		_, err = object.AddSession(&object.Session{
 			Owner:       user.Owner,
 			Name:        user.Name,
 			Application: application.Name,
-			SessionId:   []string{c.Ctx.Input.CruSession.SessionID(context.Background())},
+			SessionId:   []string{sessionId},
 
 			ExclusiveSignin: application.EnableExclusiveSignin,
 		})
 		if err != nil {
-			c.ResponseError(err.Error(), nil)
+			c.ResponseError(fmt.Sprintf("HandleLoggedIn:AddSession(owner=%s,name=%s,app=%s,sid=%s): %s",
+				user.Owner, user.Name, application.Name, sessionId, err.Error()), nil)
 			return
 		}
 	}
