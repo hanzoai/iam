@@ -136,7 +136,7 @@ func removeExtraSessionIds(session *Session) {
 	}
 }
 
-func mergeAndUpdateSession(dbSession *Session, session *Session) (bool, error) {
+func mergeSessionIds(dbSession *Session, session *Session) {
 	m := make(map[string]struct{})
 	for _, v := range dbSession.SessionId {
 		m[v] = struct{}{}
@@ -152,22 +152,25 @@ func mergeAndUpdateSession(dbSession *Session, session *Session) (bool, error) {
 	if session.ExclusiveSignin {
 		dbSession.SessionId = []string{session.SessionId[0]}
 	}
-
-	return UpdateSession(dbSession.GetId(), dbSession)
 }
 
 func AddSession(session *Session) (bool, error) {
+	// Try to find existing session to merge session IDs.
 	dbSession, err := GetSingleSession(session.GetId())
 	if err != nil {
-		return false, fmt.Errorf("AddSession: GetSingleSession(%s) failed: %w", session.GetId(), err)
+		// If we can't read, log the error and fall through to upsert.
+		fmt.Printf("[AddSession] GetSingleSession(%s) error (will upsert): %v\n", session.GetId(), err)
 	}
 
 	if dbSession != nil {
-		return mergeAndUpdateSession(dbSession, session)
+		// Merge new session IDs into the existing session's list.
+		mergeSessionIds(dbSession, session)
+		session.SessionId = dbSession.SessionId
 	}
 
-	// No existing session found — use atomic UPSERT to avoid duplicate key
-	// errors from race conditions (multiple pods, concurrent logins).
+	// Always use atomic UPSERT for the final write — this avoids duplicate
+	// key errors from both race conditions (multiple pods) and xorm ORM
+	// quirks with composite PK updates.
 	session.CreatedTime = util.GetCurrentTime()
 	removeExtraSessionIds(session)
 
