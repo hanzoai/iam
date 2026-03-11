@@ -614,8 +614,13 @@ func (c *ApiController) Login() {
 				authForm.CountryCode = user.GetCountryCode(authForm.CountryCode)
 				var ok bool
 				if checkDest, ok = util.GetE164Number(authForm.Username, authForm.CountryCode); !ok {
-					c.ResponseError(fmt.Sprintf(c.T("verification:Phone number is invalid in your region %s"), authForm.CountryCode))
-					return
+					if conf.IsDemoMode() {
+						checkDest = "+" + authForm.CountryCode + authForm.Username
+						ok = true
+					} else {
+						c.ResponseError(fmt.Sprintf(c.T("verification:Phone number is invalid in your region %s"), authForm.CountryCode))
+						return
+					}
 				}
 			} else if verificationCodeType == object.VerifyTypeEmail {
 				checkDest = authForm.Username
