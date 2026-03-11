@@ -311,16 +311,38 @@ func initDefinedApplication(application *Application) {
 	}
 	appendSyncTrace(fmt.Sprintf("[%s] cache evicted (clientId=%s)", appId, application.ClientId))
 
-	// Query DB directly (bypassing cache) to check true existence.
+	// Query DB using explicit WHERE to check true existence.
+	// (Using Where() instead of struct-based Get to avoid xorm auto-condition quirks)
 	var dbApp Application
-	dbApp.Owner = application.Owner
-	dbApp.Name = application.Name
-	dbExists, err := ormer.Engine.Get(&dbApp)
+	dbExists, err := ormer.Engine.Where("owner = ? AND name = ?",
+		application.Owner, application.Name).Get(&dbApp)
 	if err != nil {
 		appendSyncTrace(fmt.Sprintf("[%s] ERROR: DB check failed: %v", appId, err))
 		panic(err)
 	}
-	appendSyncTrace(fmt.Sprintf("[%s] DB check: exists=%v", appId, dbExists))
+	appendSyncTrace(fmt.Sprintf("[%s] DB check (WHERE): exists=%v", appId, dbExists))
+
+	// If PK-based lookup fails, also check by client_id.
+	// This handles the case where the row exists in the DB but with subtly
+	// different owner/name values (e.g., whitespace, encoding differences).
+	if !dbExists && application.ClientId != "" {
+		var cidApp Application
+		cidExists, cidErr := ormer.Engine.Where("client_id = ?",
+			application.ClientId).Get(&cidApp)
+		if cidErr == nil && cidExists {
+			appendSyncTrace(fmt.Sprintf("[%s] NOT FOUND by PK, but FOUND by clientId=%s (DB owner=%q name=%q ownerLen=%d nameLen=%d)",
+				appId, application.ClientId, cidApp.Owner, cidApp.Name, len(cidApp.Owner), len(cidApp.Name)))
+
+			// Delete the orphaned row and let it be re-created with correct PK values
+			_, delErr := ormer.Engine.Where("client_id = ?", application.ClientId).Delete(&Application{})
+			if delErr != nil {
+				appendSyncTrace(fmt.Sprintf("[%s] ERROR deleting orphan by clientId: %v", appId, delErr))
+			} else {
+				appendSyncTrace(fmt.Sprintf("[%s] deleted orphan row with clientId=%s", appId, application.ClientId))
+			}
+			// Fall through to create the app fresh with correct PK values
+		}
+	}
 
 	if dbExists {
 		if initDataNewOnly {
@@ -353,13 +375,15 @@ func initDefinedApplication(application *Application) {
 	appendSyncTrace(fmt.Sprintf("[%s] AddApplication returned: created=%v", appId, created))
 
 	// Verify the app actually exists in DB after creation
-	if application.Name == "app-hanzobot" {
+	if !created {
 		var verifyApp Application
-		verifyApp.Owner = application.Owner
-		verifyApp.Name = application.Name
-		exists, verifyErr := ormer.Engine.Get(&verifyApp)
-		appendSyncTrace(fmt.Sprintf("[%s] POST-CREATE VERIFY: exists=%v, err=%v, clientId=%s",
-			appId, exists, verifyErr, verifyApp.ClientId))
+		verifyExists, _ := ormer.Engine.Where("owner = ? AND name = ?",
+			application.Owner, application.Name).Get(&verifyApp)
+		var verifyCid Application
+		cidExists2, _ := ormer.Engine.Where("client_id = ?",
+			application.ClientId).Get(&verifyCid)
+		appendSyncTrace(fmt.Sprintf("[%s] POST-CREATE VERIFY: byPK=%v byCid=%v (cidOwner=%q cidName=%q)",
+			appId, verifyExists, cidExists2, verifyCid.Owner, verifyCid.Name))
 	}
 }
 
