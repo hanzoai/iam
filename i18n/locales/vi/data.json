@@ -5,7 +5,7 @@
     "The application does not allow to sign up new account": "Ứng dụng không cho phép đăng ký tài khoản mới"
   },
   "auth": {
-    "Challenge method should be S256": "Phương pháp thách thức nên là S256",
+    "Challenge method should be S256 or plain": "Challenge method should be S256 or plain",
     "DeviceCode Invalid": "Mã thiết bị không hợp lệ",
     "Failed to create user, user information is invalid: %s": "Không thể tạo người dùng, thông tin người dùng không hợp lệ: %s",
     "Failed to find default application for new organization": "Failed to find default application for new organization",
@@ -23,12 +23,8 @@
     "The login method: login with email is not enabled for the application": "Phương thức đăng nhập bằng email chưa được bật cho ứng dụng",
     "The login method: login with face is not enabled for the application": "Phương thức đăng nhập bằng khuôn mặt chưa được bật cho ứng dụng",
     "The login method: login with password is not enabled for the application": "Phương thức đăng nhập: đăng nhập bằng mật khẩu không được kích hoạt cho ứng dụng",
-    "The order: %s does not exist": "Đơn hàng: %s không tồn tại",
     "The organization: %s does not exist": "Tổ chức: %s không tồn tại",
     "The organization: %s has disabled users to signin": "Tổ chức: %s đã vô hiệu hóa đăng nhập của người dùng",
-    "The plan: %s does not exist": "Kế hoạch: %s không tồn tại",
-    "The pricing: %s does not exist": "Giá: %s không tồn tại",
-    "The pricing: %s does not have plan: %s": "Giá: %s không có kế hoạch: %s",
     "The provider: %s does not exist": "Nhà cung cấp: %s không tồn tại",
     "The provider: %s is not enabled for the application": "Nhà cung cấp: %s không được kích hoạt cho ứng dụng",
     "Unauthorized operation": "Hoạt động không được ủy quyền",
@@ -36,7 +32,6 @@
     "User's tag: %s is not listed in the application's tags": "Thẻ của người dùng: %s không nằm trong danh sách thẻ của ứng dụng",
     "UserCode Expired": "Mã người dùng đã hết hạn",
     "UserCode Invalid": "Mã người dùng không hợp lệ",
-    "paid-user %s does not have active or pending subscription and the application: %s does not have default pricing": "người dùng trả phí %s không có đăng ký đang hoạt động hoặc đang chờ và ứng dụng: %s không có giá mặc định",
     "the application for user %s is not found": "không tìm thấy ứng dụng cho người dùng %s",
     "the organization: %s is not found": "không tìm thấy tổ chức: %s"
   },
@@ -105,20 +100,24 @@
     "the adapter: %s is not found": "không tìm thấy adapter: %s"
   },
   "general": {
+    "Application cannot be empty": "Application cannot be empty",
     "Failed to import groups": "Không thể nhập nhóm",
     "Failed to import users": "Không thể nhập người dùng",
+    "Granted scopes cannot be empty": "Granted scopes cannot be empty",
     "Insufficient balance: new balance %v would be below credit limit %v": "Số dư không đủ: số dư mới %v sẽ thấp hơn giới hạn tín dụng %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Số dư không đủ: số dư tổ chức mới %v sẽ thấp hơn giới hạn tín dụng %v",
+    "Invalid application": "Invalid application",
+    "Invalid client_id": "Invalid client_id",
     "Missing parameter": "Thiếu tham số",
     "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
-    "Only admin user can specify user": "Chỉ người dùng quản trị mới có thể chỉ định người dùng",
     "Please login first": "Vui lòng đăng nhập trước",
     "The LDAP: %s does not exist": "LDAP: %s không tồn tại",
     "The organization: %s should have one application at least": "Tổ chức: %s cần có ít nhất một ứng dụng",
     "The syncer: %s does not exist": "Bộ đồng bộ: %s không tồn tại",
+    "The user doesn't exist": "The user doesn't exist",
     "The user: %s doesn't exist": "Người dùng: %s không tồn tại",
     "The user: %s is not found": "Người dùng: %s không được tìm thấy",
-    "User is required for User category transaction": "Người dùng được yêu cầu cho giao dịch danh mục Người dùng",
+    "User not found": "User not found",
     "Wrong userId": "ID người dùng sai",
     "don't support captchaProvider: ": "không hỗ trợ captchaProvider: ",
     "this operation is not allowed in demo mode": "thao tác này không được phép trong chế độ demo",
@@ -145,9 +144,6 @@
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "Quyền: \"%s\" không tồn tại"
-  },
-  "product": {
-    "Product list cannot be empty": "Danh sách sản phẩm không thể trống"
   },
   "provider": {
     "Failed to initialize ID Verification provider": "Không thể khởi tạo nhà cung cấp Xác minh ID",
@@ -185,12 +181,13 @@
     "Ticket not found": "Không tìm thấy vé"
   },
   "token": {
-    "Grant_type: %s is not supported in this application": "Loại cấp phép: %s không được hỗ trợ trong ứng dụng này",
     "Invalid application or wrong clientSecret": "Đơn đăng ký không hợp lệ hoặc sai clientSecret",
     "Invalid client_id": "Client_id không hợp lệ",
     "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "Đường dẫn chuyển hướng URI: %s không tồn tại trong danh sách URI được phép chuyển hướng",
-    "Token not found, invalid accessToken": "Token không tìm thấy, accessToken không hợp lệ"
+    "Token not found, invalid accessToken": "Token không tìm thấy, accessToken không hợp lệ",
+    "Unsupported response_type: %s (must be code, token, or id_token)": "Unsupported response_type: %s (must be code, token, or id_token)",
+    "response_type is required (must be code, token, or id_token)": "response_type is required (must be code, token, or id_token)"
   },
   "user": {
     "Display name cannot be empty": "Tên hiển thị không thể trống",
