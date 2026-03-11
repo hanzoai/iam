@@ -16,11 +16,12 @@ package object
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/beego/beego/v2/server/web"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 	"github.com/xorm-io/core"
 )
@@ -158,31 +159,53 @@ func AddSession(session *Session) (bool, error) {
 		return false, err
 	}
 
-	if dbSession == nil {
-		session.CreatedTime = util.GetCurrentTime()
-
-		affected, err := ormer.Engine.Insert(session)
-		if err != nil {
-			// Handle race condition: another concurrent request may have
-			// inserted the same session between our SELECT and INSERT.
-			// Re-fetch and merge session IDs instead of failing.
-			if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "UNIQUE constraint") {
-				dbSession, err = GetSingleSession(session.GetId())
-				if err != nil {
-					return false, err
-				}
-				if dbSession != nil {
-					return mergeAndUpdateSession(dbSession, session)
-				}
-				return false, fmt.Errorf("session disappeared after duplicate key conflict")
-			}
-			return false, err
-		}
-
-		return affected != 0, nil
-	} else {
+	if dbSession != nil {
 		return mergeAndUpdateSession(dbSession, session)
 	}
+
+	// No existing session found — use atomic UPSERT to avoid duplicate key
+	// errors from race conditions (multiple pods, concurrent logins).
+	session.CreatedTime = util.GetCurrentTime()
+	removeExtraSessionIds(session)
+
+	return upsertSession(session)
+}
+
+// upsertSession performs an atomic INSERT ... ON CONFLICT UPDATE using raw SQL.
+// This avoids the SELECT-then-INSERT race condition that causes session_pkey
+// violations when multiple pods handle concurrent login requests.
+func upsertSession(session *Session) (bool, error) {
+	sessionIdJSON, err := json.Marshal(session.SessionId)
+	if err != nil {
+		return false, fmt.Errorf("upsertSession: failed to marshal session IDs: %w", err)
+	}
+
+	driverName := conf.GetConfigString("driverName")
+
+	if driverName == "postgres" {
+		_, err = ormer.Engine.Exec(
+			`INSERT INTO session (owner, name, application, created_time, session_id)
+			 VALUES ($1, $2, $3, $4, $5)
+			 ON CONFLICT (owner, name, application) DO UPDATE
+			 SET session_id = EXCLUDED.session_id, created_time = EXCLUDED.created_time`,
+			session.Owner, session.Name, session.Application,
+			session.CreatedTime, string(sessionIdJSON),
+		)
+	} else {
+		// MySQL / SQLite fallback
+		_, err = ormer.Engine.Exec(
+			`INSERT INTO session (owner, name, application, created_time, session_id)
+			 VALUES (?, ?, ?, ?, ?)
+			 ON DUPLICATE KEY UPDATE session_id = VALUES(session_id), created_time = VALUES(created_time)`,
+			session.Owner, session.Name, session.Application,
+			session.CreatedTime, string(sessionIdJSON),
+		)
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("upsertSession: %w", err)
+	}
+	return true, nil
 }
 
 func DeleteSession(id, curSessionId string) (bool, error) {
