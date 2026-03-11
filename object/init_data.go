@@ -16,6 +16,7 @@ package object
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/hanzoai/iam/conf"
@@ -51,6 +52,15 @@ type InitData struct {
 
 var initDataNewOnly bool
 
+// syncTrace collects diagnostic messages during InitFromFile so that
+// GetInitDataDiagnostics can include them in the HTTP response.
+// This lets us debug sync issues without needing kubectl logs access.
+var syncTrace []string
+
+func appendSyncTrace(msg string) {
+	syncTrace = append(syncTrace, msg)
+}
+
 func InitFromFile() {
 	initDataFile := conf.GetConfigString("initDataFile")
 	if initDataFile == "" {
@@ -65,9 +75,20 @@ func InitFromFile() {
 	}
 
 	if initData != nil {
-		fmt.Printf("[init_data] processing: orgs=%d providers=%d apps=%d users=%d (newOnly=%v)\n",
+		// Reset trace for this sync run
+		syncTrace = nil
+
+		msg := fmt.Sprintf("processing: orgs=%d providers=%d apps=%d users=%d (newOnly=%v)",
 			len(initData.Organizations), len(initData.Providers),
 			len(initData.Applications), len(initData.Users), initDataNewOnly)
+		fmt.Printf("[init_data] %s\n", msg)
+		appendSyncTrace(msg)
+
+		// Log which apps are in the init_data.json file
+		for i, app := range initData.Applications {
+			appendSyncTrace(fmt.Sprintf("init_data app[%d]: %s/%s (clientId=%s)", i, app.Owner, app.Name, app.ClientId))
+		}
+
 		for _, organization := range initData.Organizations {
 			initDefinedOrganization(organization)
 		}
@@ -278,6 +299,8 @@ func initDefinedOrganization(organization *Organization) {
 }
 
 func initDefinedApplication(application *Application) {
+	appId := fmt.Sprintf("%s/%s", application.Owner, application.Name)
+
 	// Evict ALL caches for this app — the caches may report "exists" even when
 	// the DB row has been deleted, causing initDataNewOnly mode to skip re-creation.
 	// We must evict both the owner/name cache AND the clientId cache because
@@ -286,6 +309,7 @@ func initDefinedApplication(application *Application) {
 	if application.ClientId != "" {
 		EvictAppCacheByClientId(application.ClientId)
 	}
+	appendSyncTrace(fmt.Sprintf("[%s] cache evicted (clientId=%s)", appId, application.ClientId))
 
 	// Query DB directly (bypassing cache) to check true existence.
 	var dbApp Application
@@ -293,8 +317,10 @@ func initDefinedApplication(application *Application) {
 	dbApp.Name = application.Name
 	dbExists, err := ormer.Engine.Get(&dbApp)
 	if err != nil {
+		appendSyncTrace(fmt.Sprintf("[%s] ERROR: DB check failed: %v", appId, err))
 		panic(err)
 	}
+	appendSyncTrace(fmt.Sprintf("[%s] DB check: exists=%v", appId, dbExists))
 
 	if dbExists {
 		if initDataNewOnly {
@@ -303,6 +329,7 @@ func initDefinedApplication(application *Application) {
 			// Merge critical OAuth fields that may be missing from apps
 			// created before init_data.json was updated.
 			mergeApplicationOAuthDefaults(&dbApp, application)
+			appendSyncTrace(fmt.Sprintf("[%s] EXISTS + newOnly=true → skipped (merged defaults)", appId))
 			return
 		}
 		affected, err := deleteApplication(application)
@@ -313,15 +340,26 @@ func initDefinedApplication(application *Application) {
 			panic("Fail to delete application")
 		}
 	} else {
-		fmt.Printf("[init_data] app %s/%s NOT FOUND in DB, creating...\n",
-			application.Owner, application.Name)
+		fmt.Printf("[init_data] app %s NOT FOUND in DB, creating...\n", appId)
+		appendSyncTrace(fmt.Sprintf("[%s] NOT FOUND → will create", appId))
 	}
 	application.CreatedTime = util.GetCurrentTime()
-	_, err = AddApplication(application)
+	created, err := AddApplication(application)
 	if err != nil {
-		fmt.Printf("[init_data] AddApplication FAILED for %s/%s: %v\n",
-			application.Owner, application.Name, err)
+		appendSyncTrace(fmt.Sprintf("[%s] AddApplication ERROR: %v", appId, err))
+		fmt.Printf("[init_data] AddApplication FAILED for %s: %v\n", appId, err)
 		panic(err)
+	}
+	appendSyncTrace(fmt.Sprintf("[%s] AddApplication returned: created=%v", appId, created))
+
+	// Verify the app actually exists in DB after creation
+	if application.Name == "app-hanzobot" {
+		var verifyApp Application
+		verifyApp.Owner = application.Owner
+		verifyApp.Name = application.Name
+		exists, verifyErr := ormer.Engine.Get(&verifyApp)
+		appendSyncTrace(fmt.Sprintf("[%s] POST-CREATE VERIFY: exists=%v, err=%v, clientId=%s",
+			appId, exists, verifyErr, verifyApp.ClientId))
 	}
 }
 
@@ -979,6 +1017,21 @@ func GetInitDataDiagnostics() map[string]interface{} {
 	} else {
 		result["total-apps"] = count
 	}
+
+	// Include sync trace — filter for hanzobot-related entries and summary info
+	var filteredTrace []string
+	for _, entry := range syncTrace {
+		// Include entries about hanzobot, processing summary, and any errors
+		if strings.Contains(entry, "hanzobot") ||
+			strings.Contains(entry, "processing:") ||
+			strings.Contains(entry, "ERROR") ||
+			strings.Contains(entry, "SKIPPED") ||
+			strings.Contains(entry, "FAILED") {
+			filteredTrace = append(filteredTrace, entry)
+		}
+	}
+	result["sync-trace"] = filteredTrace
+	result["sync-trace-total"] = len(syncTrace)
 
 	return result
 }
