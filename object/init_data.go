@@ -1071,5 +1071,35 @@ func GetInitDataDiagnostics() map[string]interface{} {
 	result["sync-trace"] = filteredTrace
 	result["sync-trace-total"] = len(syncTrace)
 
+	// Report driverName to verify runtime DB driver detection
+	driverName := conf.GetConfigString("driverName")
+	result["driverName"] = driverName
+
+	// Query the actual PK constraint name for the session table (PostgreSQL only)
+	if driverName == "postgres" {
+		pkRows, pkErr := ormer.Engine.QueryString(
+			`SELECT constraint_name FROM information_schema.table_constraints
+			 WHERE table_name = 'session' AND constraint_type = 'PRIMARY KEY'`)
+		if pkErr != nil {
+			result["session-pk-constraint"] = fmt.Sprintf("error: %v", pkErr)
+		} else if len(pkRows) > 0 {
+			result["session-pk-constraint"] = pkRows[0]["constraint_name"]
+		} else {
+			result["session-pk-constraint"] = "NO PK CONSTRAINT FOUND"
+		}
+
+		// Also check if any session rows exist for z@hanzo.ai user
+		sessRows, sessErr := ormer.Engine.QueryString(
+			`SELECT owner, name, application, length(session_id) as sid_len
+			 FROM session WHERE name = 'z@hanzo.ai' LIMIT 5`)
+		if sessErr != nil {
+			result["session-z-hanzo"] = fmt.Sprintf("error: %v", sessErr)
+		} else if len(sessRows) > 0 {
+			result["session-z-hanzo"] = sessRows
+		} else {
+			result["session-z-hanzo"] = "NO SESSIONS FOUND"
+		}
+	}
+
 	return result
 }
