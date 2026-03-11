@@ -17,6 +17,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/beego/beego/v2/core/logs"
@@ -37,12 +38,25 @@ import (
 func main() {
 	web.BConfig.WebConfig.Session.SessionOn = true
 	web.BConfig.WebConfig.Session.SessionName = "iam_session_id"
-	if conf.GetConfigString("redisEndpoint") == "" {
+	redisEndpoint := conf.GetConfigString("redisEndpoint")
+	if redisEndpoint == "" {
+		// Auto-discover Redis in Kubernetes: try well-known service names.
+		// This allows the Docker image to use Redis without explicit config
+		// when deployed alongside the hanzo-kv service.
+		for _, host := range []string{"hanzo-kv", "redis"} {
+			if addrs, err := net.LookupHost(host); err == nil && len(addrs) > 0 {
+				redisEndpoint = host + ":6379"
+				break
+			}
+		}
+	}
+	if redisEndpoint == "" {
 		web.BConfig.WebConfig.Session.SessionProvider = "file"
 		web.BConfig.WebConfig.Session.SessionProviderConfig = "./tmp"
 	} else {
 		web.BConfig.WebConfig.Session.SessionProvider = "redis"
-		web.BConfig.WebConfig.Session.SessionProviderConfig = conf.GetConfigString("redisEndpoint")
+		web.BConfig.WebConfig.Session.SessionProviderConfig = redisEndpoint
+		fmt.Printf("Using Redis for session storage: %s\n", redisEndpoint)
 	}
 	web.BConfig.WebConfig.Session.SessionCookieLifeTime = 3600 * 24 * 30
 	web.BConfig.WebConfig.Session.SessionGCMaxLifetime = 3600 * 24 * 30
