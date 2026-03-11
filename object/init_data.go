@@ -278,16 +278,26 @@ func initDefinedOrganization(organization *Organization) {
 }
 
 func initDefinedApplication(application *Application) {
-	existed, err := getApplication(application.Owner, application.Name)
+	// Evict cache first — the cache may report "exists" even when the DB row
+	// has been deleted, causing initDataNewOnly mode to skip re-creation.
+	EvictAppCache(application.Owner, application.Name)
+
+	// Query DB directly (bypassing cache) to check true existence.
+	var dbApp Application
+	dbApp.Owner = application.Owner
+	dbApp.Name = application.Name
+	dbExists, err := ormer.Engine.Get(&dbApp)
 	if err != nil {
 		panic(err)
 	}
 
-	if existed != nil {
+	if dbExists {
 		if initDataNewOnly {
-			// Even in newOnly mode, merge critical OAuth fields that may
-			// be missing from apps created before init_data.json was updated.
-			mergeApplicationOAuthDefaults(existed, application)
+			// Re-cache the app since we evicted it above.
+			appCache.set(appCacheKey(application.Owner, application.Name), dbApp, appCacheTTL)
+			// Merge critical OAuth fields that may be missing from apps
+			// created before init_data.json was updated.
+			mergeApplicationOAuthDefaults(&dbApp, application)
 			return
 		}
 		affected, err := deleteApplication(application)
@@ -870,7 +880,8 @@ func initDefinedRule(rule *Rule) {
 func GetInitDataDiagnostics() map[string]interface{} {
 	result := map[string]interface{}{"message": "init data sync completed successfully"}
 
-	// Check app-hanzobot via ORM (returns REAL unmasked values)
+	// Check app-hanzobot via ORM (evict cache first to get real DB state)
+	EvictAppCache("admin", "app-hanzobot")
 	appBot, err := getApplication("admin", "app-hanzobot")
 	if err != nil {
 		result["app-hanzobot-orm"] = fmt.Sprintf("error: %v", err)

@@ -881,9 +881,13 @@ func AddApplication(application *Application) (bool, error) {
 
 	affected, err := ormer.Engine.Insert(application)
 	if err != nil {
-		return false, nil
+		fmt.Printf("[AddApplication] INSERT failed for app %s/%s (clientId=%s): %v\n",
+			application.Owner, application.Name, application.ClientId, err)
+		return false, err
 	}
 
+	fmt.Printf("[AddApplication] app %s/%s created (clientId=%s, affected=%d)\n",
+		application.Owner, application.Name, application.ClientId, affected)
 	return affected != 0, nil
 }
 
