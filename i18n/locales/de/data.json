@@ -5,7 +5,7 @@
     "The application does not allow to sign up new account": "Die Anwendung erlaubt es nicht, sich für ein neues Konto anzumelden"
   },
   "auth": {
-    "Challenge method should be S256": "Die Challenge-Methode sollte S256 sein",
+    "Challenge method should be S256 or plain": "Challenge method should be S256 or plain",
     "DeviceCode Invalid": "Gerätecode ungültig",
     "Failed to create user, user information is invalid: %s": "Es konnte kein Benutzer erstellt werden, da die Benutzerinformationen ungültig sind: %s",
     "Failed to find default application for new organization": "Failed to find default application for new organization",
@@ -23,12 +23,8 @@
     "The login method: login with email is not enabled for the application": "Die Anmeldemethode: Anmeldung per E-Mail ist für die Anwendung nicht aktiviert",
     "The login method: login with face is not enabled for the application": "Die Anmeldemethode: Anmeldung per Gesicht ist für die Anwendung nicht aktiviert",
     "The login method: login with password is not enabled for the application": "Die Anmeldeart \"Anmeldung mit Passwort\" ist für die Anwendung nicht aktiviert",
-    "The order: %s does not exist": "Die Bestellung: %s existiert nicht",
     "The organization: %s does not exist": "Die Organisation: %s existiert nicht",
     "The organization: %s has disabled users to signin": "Die Organisation: %s hat die Anmeldung von Benutzern deaktiviert",
-    "The plan: %s does not exist": "Der Plan: %s existiert nicht",
-    "The pricing: %s does not exist": "Die Preisgestaltung: %s existiert nicht",
-    "The pricing: %s does not have plan: %s": "Die Preisgestaltung: %s hat keinen Plan: %s",
     "The provider: %s does not exist": "Der Anbieter: %s existiert nicht",
     "The provider: %s is not enabled for the application": "Der Anbieter: %s ist nicht für die Anwendung aktiviert",
     "Unauthorized operation": "Nicht autorisierte Operation",
@@ -36,7 +32,6 @@
     "User's tag: %s is not listed in the application's tags": "Benutzer-Tag: %s ist nicht in den Tags der Anwendung aufgeführt",
     "UserCode Expired": "Benutzercode abgelaufen",
     "UserCode Invalid": "Benutzercode ungültig",
-    "paid-user %s does not have active or pending subscription and the application: %s does not have default pricing": "Bezahlter Benutzer %s hat kein aktives oder ausstehendes Abonnement und die Anwendung: %s hat keine Standardpreisgestaltung",
     "the application for user %s is not found": "Die Anwendung für Benutzer %s wurde nicht gefunden",
     "the organization: %s is not found": "Die Organisation: %s wurde nicht gefunden"
   },
@@ -105,20 +100,24 @@
     "the adapter: %s is not found": "Der Adapter: %s wurde nicht gefunden"
   },
   "general": {
+    "Application cannot be empty": "Application cannot be empty",
     "Failed to import groups": "Gruppen importieren fehlgeschlagen",
     "Failed to import users": "Fehler beim Importieren von Benutzern",
+    "Granted scopes cannot be empty": "Granted scopes cannot be empty",
     "Insufficient balance: new balance %v would be below credit limit %v": "Unzureichendes Guthaben: neues Guthaben %v wäre unter dem Kreditlimit %v",
     "Insufficient balance: new organization balance %v would be below credit limit %v": "Unzureichendes Guthaben: neues Organisationsguthaben %v wäre unter dem Kreditlimit %v",
+    "Invalid application": "Invalid application",
+    "Invalid client_id": "Invalid client_id",
     "Missing parameter": "Fehlender Parameter",
     "Multiple captcha providers are not allowed in the same application: %s": "Multiple captcha providers are not allowed in the same application: %s",
-    "Only admin user can specify user": "Nur Administrator kann Benutzer angeben",
     "Please login first": "Bitte zuerst einloggen",
     "The LDAP: %s does not exist": "Das LDAP: %s existiert nicht",
     "The organization: %s should have one application at least": "Die Organisation: %s sollte mindestens eine Anwendung haben",
     "The syncer: %s does not exist": "Der Synchronizer: %s existiert nicht",
+    "The user doesn't exist": "The user doesn't exist",
     "The user: %s doesn't exist": "Der Benutzer %s existiert nicht",
     "The user: %s is not found": "Der Benutzer: %s wurde nicht gefunden",
-    "User is required for User category transaction": "Benutzer ist für Benutzer-Kategorie-Transaktionen erforderlich",
+    "User not found": "User not found",
     "Wrong userId": "Falsche Benutzer-ID",
     "don't support captchaProvider: ": "Unterstütze captchaProvider nicht:",
     "this operation is not allowed in demo mode": "Dieser Vorgang ist im Demo-Modus nicht erlaubt",
@@ -145,9 +144,6 @@
   },
   "permission": {
     "The permission: \"%s\" doesn't exist": "Die Berechtigung: \"%s\" existiert nicht"
-  },
-  "product": {
-    "Product list cannot be empty": "Produktliste darf nicht leer sein"
   },
   "provider": {
     "Failed to initialize ID Verification provider": "ID-Verifizierungsanbieter konnte nicht initialisiert werden",
@@ -185,12 +181,13 @@
     "Ticket not found": "Ticket nicht gefunden"
   },
   "token": {
-    "Grant_type: %s is not supported in this application": "Grant_type: %s wird von dieser Anwendung nicht unterstützt",
     "Invalid application or wrong clientSecret": "Ungültige Anwendung oder falsches clientSecret",
     "Invalid client_id": "Ungültige client_id",
     "Invalid scope": "Invalid scope",
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "Weiterleitungs-URI: %s ist nicht in der Liste erlaubter Weiterleitungs-URIs vorhanden",
-    "Token not found, invalid accessToken": "Token nicht gefunden, ungültiger Zugriffs-Token"
+    "Token not found, invalid accessToken": "Token nicht gefunden, ungültiger Zugriffs-Token",
+    "Unsupported response_type: %s (must be code, token, or id_token)": "Unsupported response_type: %s (must be code, token, or id_token)",
+    "response_type is required (must be code, token, or id_token)": "response_type is required (must be code, token, or id_token)"
   },
   "user": {
     "Display name cannot be empty": "Anzeigename darf nicht leer sein",
