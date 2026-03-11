@@ -101,5 +101,7 @@ func (c *ApiController) SyncInitData() {
 		return
 	}
 
-	c.ResponseOk("init data sync completed successfully")
+	// Return diagnostic info about key applications
+	diag := object.GetInitDataDiagnostics()
+	c.ResponseOk(diag)
 }
