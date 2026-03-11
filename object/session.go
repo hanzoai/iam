@@ -186,7 +186,7 @@ func upsertSession(session *Session) (bool, error) {
 		_, err = ormer.Engine.Exec(
 			`INSERT INTO session (owner, name, application, created_time, session_id)
 			 VALUES ($1, $2, $3, $4, $5)
-			 ON CONFLICT (owner, name, application) DO UPDATE
+			 ON CONFLICT ON CONSTRAINT session_pkey DO UPDATE
 			 SET session_id = EXCLUDED.session_id, created_time = EXCLUDED.created_time`,
 			session.Owner, session.Name, session.Application,
 			session.CreatedTime, string(sessionIdJSON),
