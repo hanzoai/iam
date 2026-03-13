@@ -34,7 +34,7 @@ jobs:
 
   frontend:
     name: Front-end
-    runs-on: hanzo-build
+    runs-on: hanzo-build-linux-amd64
     needs: [ go-tests ]
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +53,7 @@ jobs:
 
   backend:
     name: Back-end
-    runs-on: hanzo-build
+    runs-on: hanzo-build-linux-amd64
     needs: [ go-tests ]
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +69,7 @@ jobs:
 
   linter:
     name: Go-Linter
-    runs-on: hanzo-build
+    runs-on: hanzo-build-linux-amd64
     needs: [ go-tests ]
     steps:
       - uses: actions/checkout@v4
@@ -165,7 +165,7 @@ jobs:
 
   tag-release:
     name: Create Tag
-    runs-on: hanzo-build
+    runs-on: hanzo-build-linux-amd64
     permissions:
       contents: write
       issues: write
@@ -186,7 +186,7 @@ jobs:
 
   github-release:
     name: GitHub Release
-    runs-on: hanzo-build
+    runs-on: hanzo-build-linux-amd64
     permissions:
       contents: write
       issues: write
