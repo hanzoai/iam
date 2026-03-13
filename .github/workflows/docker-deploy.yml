@@ -13,7 +13,7 @@ concurrency:
 jobs:
   # ── Test gates — broken code does not ship ───────────────────
   go-tests:
-    runs-on: hanzo-build
+    runs-on: hanzo-build-linux-amd64
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
       - run: go test -count=1 $(go list ./...) -tags skipCi
 
   go-lint:
-    runs-on: hanzo-build
+    runs-on: hanzo-build-linux-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
       - run: golangci-lint run --timeout 5m --modules-download-mode=mod
 
   go-build:
-    runs-on: hanzo-build
+    runs-on: hanzo-build-linux-amd64
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -56,7 +56,7 @@ jobs:
       - run: go build -ldflags "-extldflags '-static'" .
 
   frontend-build:
-    runs-on: hanzo-build
+    runs-on: hanzo-build-linux-amd64
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
