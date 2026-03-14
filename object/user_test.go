@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"os"
 	"testing"
 
 	"github.com/hanzoai/iam/util"
@@ -34,6 +35,9 @@ func updateUserColumn(column string, user *User) {
 }
 
 func TestSyncAvatarsFromGitHub(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires database")
+	}
 	InitConfig()
 
 	users, _ := GetGlobalUsers()
@@ -48,6 +52,9 @@ func TestSyncAvatarsFromGitHub(t *testing.T) {
 }
 
 func TestSyncIds(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires database")
+	}
 	InitConfig()
 
 	users, _ := GetGlobalUsers()
@@ -62,6 +69,9 @@ func TestSyncIds(t *testing.T) {
 }
 
 func TestSyncHashes(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires database")
+	}
 	InitConfig()
 
 	users, _ := GetGlobalUsers()
@@ -79,6 +89,9 @@ func TestSyncHashes(t *testing.T) {
 }
 
 func TestGetMaskedUsers(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires database")
+	}
 	type args struct {
 		users []*User
 	}
@@ -103,6 +116,9 @@ func TestGetMaskedUsers(t *testing.T) {
 }
 
 func TestGetUserByField(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires database")
+	}
 	InitConfig()
 
 	user, _ := GetUserByField("hanzo", "DingTalk", "test")
@@ -114,6 +130,9 @@ func TestGetUserByField(t *testing.T) {
 }
 
 func TestGetEmailsForUsers(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires database")
+	}
 	InitConfig()
 
 	emailMap := map[string]int{}
