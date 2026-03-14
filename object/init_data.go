@@ -491,22 +491,17 @@ func initDefinedUser(user *User) {
 		panic(err)
 	}
 	if existed != nil {
-		fmt.Printf("[init_data] user %s/%s EXISTS (id=%s, pwdType=%s, pwdLen=%d), newOnly=%v\n",
-			user.Owner, user.Name, existed.Id, existed.PasswordType, len(existed.Password), initDataNewOnly)
-		if initDataNewOnly {
-			return
-		}
-		affected, err := deleteUser(user)
-		if err != nil {
-			panic(err)
-		}
-		if !affected {
-			panic("Fail to delete user")
-		}
-	} else {
-		fmt.Printf("[init_data] user %s/%s NOT FOUND, creating with pwdType=%q, pwdLen=%d\n",
-			user.Owner, user.Name, user.PasswordType, len(user.Password))
+		// SAFETY: Never delete/recreate existing users regardless of initDataNewOnly.
+		// Users may have changed their passwords, profile data, MFA settings, etc.
+		// Deleting and recreating would destroy all of that.
+		// Only create users that don't exist yet (first-time bootstrap).
+		fmt.Printf("[init_data] user %s/%s EXISTS (id=%s, pwdType=%s, pwdLen=%d) → SKIPPED (never overwrite existing users)\n",
+			user.Owner, user.Name, existed.Id, existed.PasswordType, len(existed.Password))
+		return
 	}
+
+	fmt.Printf("[init_data] user %s/%s NOT FOUND, creating with pwdType=%q, pwdLen=%d\n",
+		user.Owner, user.Name, user.PasswordType, len(user.Password))
 	user.CreatedTime = util.GetCurrentTime()
 	user.Id = util.GenerateId()
 	if user.Properties == nil {
