@@ -17,6 +17,7 @@
 package deployment
 
 import (
+	"os"
 	"testing"
 
 	"github.com/hanzoai/iam/object"
@@ -24,6 +25,9 @@ import (
 )
 
 func TestDeployStaticFiles(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires PostgreSQL (set IAM_DATABASE_URL or IAM_TEST_DB)")
+	}
 	object.InitConfig()
 
 	provider, err := object.GetProvider(util.GetId("admin", "provider_storage_aliyun_oss"))
