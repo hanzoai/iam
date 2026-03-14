@@ -252,10 +252,10 @@ func (c *ApiController) GetRegistryToken() {
 		return
 	}
 
-	// Authenticate against IAM — try "hanzo" org first (primary), then "built-in"
+	// Authenticate against IAM — try "built-in" org first (system), then "hanzo"
 	var user *object.User
 	var err error
-	for _, org := range []string{"hanzo", "built-in"} {
+	for _, org := range []string{"built-in", "hanzo"} {
 		user, err = object.CheckUserPassword(org, username, password, "en")
 		if err == nil && user != nil {
 			break
