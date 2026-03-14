@@ -212,7 +212,7 @@ export default function HanzoShowcase({application}) {
                 <button
                   key={index}
                   className={`showcase-dot ${currentSlide === index ? "active" : ""}`}
-                  onClick={() => { setCurrentSlide(index); setSlideDirection("in"); }}
+                  onClick={() => {setCurrentSlide(index); setSlideDirection("in");}}
                 />
               ))}
             </div>
