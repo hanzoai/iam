@@ -208,7 +208,7 @@ export default function HanzoShowcase({application}) {
           {/* Slide dots */}
           <div className="showcase-chat-footer">
             <div className="showcase-slide-dots">
-              {slides.map((_: Slide, index: number) => (
+              {slides.map((_, index) => (
                 <button
                   key={index}
                   className={`showcase-dot ${currentSlide === index ? "active" : ""}`}
@@ -238,7 +238,7 @@ export default function HanzoShowcase({application}) {
           </div>
 
           <div className="showcase-testimonial-dots">
-            {testimonials.map((_: Testimonial, index: number) => (
+            {testimonials.map((_, index) => (
               <button
                 key={index}
                 className={`showcase-dot ${currentTestimonial === index ? "active" : ""}`}
