@@ -134,9 +134,9 @@ function SlideIcon({name}) {
 // ── Main component ───────────────────────────────────────────────────────
 
 export default function HanzoShowcase({application}) {
-  const [currentSlide, setCurrentSlide] = useState<number>(0);
-  const [currentTestimonial, setCurrentTestimonial] = useState<number>(0);
-  const [slideDirection, setSlideDirection] = useState<"in" | "out">("in");
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [currentTestimonial, setCurrentTestimonial] = useState(0);
+  const [slideDirection, setSlideDirection] = useState("in");
 
   // Resolve org content — fall back to hanzo
   const orgName = application?.organization || "hanzo";
