@@ -63,7 +63,7 @@ const REGISTERED_APPS: AppConfig[] = [
   { clientId: 'chat-app', name: 'app-chat', org: 'hanzo', redirectUri: 'https://chat.hanzo.ai/oauth/openid/callback' },
   { clientId: 'app-analytics', name: 'app-analytics', org: 'hanzo', redirectUri: 'https://analytics.hanzo.ai/api/auth/iam' },
   { clientId: 'app-insights', name: 'app-insights', org: 'hanzo', redirectUri: 'https://insights.hanzo.ai/complete/oidc/' },
-  { clientId: 'hanzo-storage-client-id', name: 'app-storage', org: 'hanzo', redirectUri: 'https://hanzo.space/oauth_callback' },
+  { clientId: 'hanzo-storage-client-id', name: 'app-storage', org: 'hanzo', redirectUri: 'https://s3.hanzo.ai/oauth_callback' },
   { clientId: 'hanzo-auto-client-id', name: 'app-auto', org: 'hanzo', redirectUri: 'https://auto.hanzo.ai/callback' },
   { clientId: 'hanzo-flow-client-id', name: 'app-flow', org: 'hanzo', redirectUri: 'https://flow.hanzo.ai/callback' },
   // Lux org
