@@ -449,10 +449,16 @@ func getUserPasswordWithType(user *object.User) string {
 		panic(err)
 	}
 
-	if org.PasswordType == "" || org.PasswordType == "plain" {
+	// Determine the effective password type: prefer user-level, fall back to org-level.
+	// "plain" is a legacy type — passwords stored as plain have no hash prefix.
+	effectiveType := user.PasswordType
+	if effectiveType == "" {
+		effectiveType = org.PasswordType
+	}
+	if effectiveType == "" || effectiveType == "plain" {
 		return user.Password
 	}
-	prefix := org.PasswordType
+	prefix := effectiveType
 	if prefix == "salt" {
 		prefix = "sha256"
 	} else if prefix == "md5-salt" {
