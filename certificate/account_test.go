@@ -18,6 +18,7 @@
 package certificate
 
 import (
+	"os"
 	"testing"
 
 	"github.com/beego/beego/v2/server/web"
@@ -27,9 +28,13 @@ import (
 )
 
 func TestGetClient(t *testing.T) {
+	if os.Getenv("IAM_TEST_ACME") == "" {
+		t.Skip("skipping: requires ACME credentials (set IAM_TEST_ACME=1)")
+	}
+
 	err := web.LoadAppConfig("ini", "../conf/app.conf")
 	if err != nil {
-		panic(err)
+		t.Skipf("conf/app.conf not found: %v", err)
 	}
 
 	proxy.InitHttpClient()

@@ -16,9 +16,15 @@
 
 package object
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestDumpToFile(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires PostgreSQL (set IAM_DATABASE_URL or IAM_TEST_DB)")
+	}
 	createDatabase = false
 	InitConfig()
 

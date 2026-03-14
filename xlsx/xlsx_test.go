@@ -16,9 +16,16 @@
 
 package xlsx
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestReadSheet(t *testing.T) {
-	ticket := ReadXlsxFile("../../tmpFiles/example")
+	path := "../../tmpFiles/example"
+	if _, err := os.Stat(path + ".xlsx"); os.IsNotExist(err) {
+		t.Skip("tmpFiles/example.xlsx not found — skipping xlsx integration test")
+	}
+	ticket := ReadXlsxFile(path)
 	println(ticket)
 }
