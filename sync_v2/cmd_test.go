@@ -17,6 +17,7 @@
 package sync_v2
 
 import (
+	"os"
 	"testing"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -60,6 +61,9 @@ var Configs = []Database{
 }
 
 func TestStartMasterSlaveSync(t *testing.T) {
+	if os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires MySQL (set IAM_TEST_DB=1)")
+	}
 	// for example, this is aliyun rds
 	db0 := newDatabase(&Configs[0])
 	// for example, this is local mysql instance
@@ -71,6 +75,9 @@ func TestStartMasterSlaveSync(t *testing.T) {
 }
 
 func TestStopMasterSlaveSync(t *testing.T) {
+	if os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires MySQL (set IAM_TEST_DB=1)")
+	}
 	// for example, this is aliyun rds
 	db0 := newDatabase(&Configs[0])
 	// for example, this is local mysql instance
@@ -81,6 +88,9 @@ func TestStopMasterSlaveSync(t *testing.T) {
 }
 
 func TestStartMasterMasterSync(t *testing.T) {
+	if os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires MySQL (set IAM_TEST_DB=1)")
+	}
 	db0 := newDatabase(&Configs[0])
 	db1 := newDatabase(&Configs[1])
 	createSlaveUser(db0)
@@ -92,6 +102,9 @@ func TestStartMasterMasterSync(t *testing.T) {
 }
 
 func TestStopMasterMasterSync(t *testing.T) {
+	if os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires MySQL (set IAM_TEST_DB=1)")
+	}
 	db0 := newDatabase(&Configs[0])
 	db1 := newDatabase(&Configs[1])
 	stopSlave(db0)
@@ -101,6 +114,9 @@ func TestStopMasterMasterSync(t *testing.T) {
 }
 
 func TestShowSlaveStatus(t *testing.T) {
+	if os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires MySQL (set IAM_TEST_DB=1)")
+	}
 	db0 := newDatabase(&Configs[0])
 	db1 := newDatabase(&Configs[1])
 	slaveStatus(db0)
@@ -108,6 +124,9 @@ func TestShowSlaveStatus(t *testing.T) {
 }
 
 func TestShowMasterStatus(t *testing.T) {
+	if os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires MySQL (set IAM_TEST_DB=1)")
+	}
 	db0 := newDatabase(&Configs[0])
 	db1 := newDatabase(&Configs[1])
 	masterStatus(db0)

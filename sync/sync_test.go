@@ -17,12 +17,16 @@
 package sync
 
 import (
+	"os"
 	"testing"
 
 	_ "github.com/go-sql-driver/mysql"
 )
 
 func TestStartSyncJob(t *testing.T) {
+	if os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires MySQL (set IAM_TEST_DB=1)")
+	}
 	db1 := newDatabase("localhost", 3306, "iam", "root", "123456")
 	db2 := newDatabase("localhost", 3306, "iam2", "root", "123456")
 	startSyncJob(db1, db2)
