@@ -19,6 +19,7 @@ package sync_v2
 import (
 	"log"
 	"math/rand"
+	"os"
 	"testing"
 
 	"github.com/hanzoai/iam/util"
@@ -33,6 +34,9 @@ type TestUser struct {
 }
 
 func TestCreateUserTable(t *testing.T) {
+	if os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires MySQL (set IAM_TEST_DB=1)")
+	}
 	db := newDatabase(&Configs[0])
 	err := db.engine.Sync2(new(TestUser))
 	if err != nil {
@@ -41,6 +45,9 @@ func TestCreateUserTable(t *testing.T) {
 }
 
 func TestInsertUser(t *testing.T) {
+	if os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires MySQL (set IAM_TEST_DB=1)")
+	}
 	db := newDatabase(&Configs[0])
 	// random generate user
 	user := &TestUser{
@@ -54,6 +61,9 @@ func TestInsertUser(t *testing.T) {
 }
 
 func TestDeleteUser(t *testing.T) {
+	if os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires MySQL (set IAM_TEST_DB=1)")
+	}
 	db := newDatabase(&Configs[0])
 	user := &TestUser{
 		Id: 10,

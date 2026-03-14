@@ -333,12 +333,16 @@ func initDefinedApplication(application *Application) {
 			appendSyncTrace(fmt.Sprintf("[%s] NOT FOUND by PK, but FOUND by clientId=%s (DB owner=%q name=%q ownerLen=%d nameLen=%d)",
 				appId, application.ClientId, cidApp.Owner, cidApp.Name, len(cidApp.Owner), len(cidApp.Name)))
 
-			// Delete the orphaned row and let it be re-created with correct PK values
-			_, delErr := ormer.Engine.Where("client_id = ?", application.ClientId).Delete(&Application{})
-			if delErr != nil {
-				appendSyncTrace(fmt.Sprintf("[%s] ERROR deleting orphan by clientId: %v", appId, delErr))
+			// Only delete the orphaned row if it belongs to the same owner (prevent cross-org deletion)
+			if cidApp.Owner == application.Owner {
+				_, delErr := ormer.Engine.Where("client_id = ? AND owner = ?", application.ClientId, application.Owner).Delete(&Application{})
+				if delErr != nil {
+					appendSyncTrace(fmt.Sprintf("[%s] ERROR deleting orphan by clientId: %v", appId, delErr))
+				} else {
+					appendSyncTrace(fmt.Sprintf("[%s] deleted orphan row with clientId=%s", appId, application.ClientId))
+				}
 			} else {
-				appendSyncTrace(fmt.Sprintf("[%s] deleted orphan row with clientId=%s", appId, application.ClientId))
+				appendSyncTrace(fmt.Sprintf("[%s] SKIPPED orphan deletion: clientId=%s belongs to different owner %q", appId, application.ClientId, cidApp.Owner))
 			}
 			// Fall through to create the app fresh with correct PK values
 		}
@@ -942,108 +946,22 @@ func initDefinedRule(rule *Rule) {
 	}
 }
 
-// GetInitDataDiagnostics returns diagnostic information about key applications
-// to help debug issues where apps appear to exist on some pods but not others.
+// GetInitDataDiagnostics returns a safe summary of init data sync status.
+// Does NOT expose DB schema, indexes, raw SQL, or internal state in production.
 func GetInitDataDiagnostics() map[string]interface{} {
-	result := map[string]interface{}{"message": "init data sync completed successfully"}
-
-	// Check app-hanzobot via ORM (evict cache first to get real DB state)
-	EvictAppCache("admin", "app-hanzobot")
-	appBot, err := getApplication("admin", "app-hanzobot")
-	if err != nil {
-		result["app-hanzobot-orm"] = fmt.Sprintf("error: %v", err)
-	} else if appBot != nil {
-		result["app-hanzobot-orm"] = map[string]interface{}{
-			"exists":               true,
-			"clientId":             appBot.ClientId,
-			"org":                  appBot.Organization,
-			"enablePassword":       appBot.EnablePassword,
-			"enableSigninSession":  appBot.EnableSigninSession,
-			"enableCodeSignin":     appBot.EnableCodeSignin,
-			"redirectUriCount":     len(appBot.RedirectUris),
-			"grantTypes":           appBot.GrantTypes,
-			"tokenFormat":          appBot.TokenFormat,
-			"expireInHours":        appBot.ExpireInHours,
-			"refreshExpireInHours": appBot.RefreshExpireInHours,
-			"cert":                 appBot.Cert,
-			"providerCount":        len(appBot.Providers),
-		}
-	} else {
-		result["app-hanzobot-orm"] = "NOT FOUND"
+	result := map[string]interface{}{
+		"status":     "ok",
+		"newOnly":    initDataNewOnly,
+		"traceCount": len(syncTrace),
 	}
 
-	// Report the xorm schema setting (if set, raw SQL needs schema qualification)
-	schema := conf.GetConfigString("dbSchema")
-	xormSchema := util.GetValueFromDataSourceName("search_path", conf.GetConfigDataSourceName())
-	result["db-schema"] = map[string]interface{}{
-		"configSchema":     schema,
-		"searchPathSchema": xormSchema,
+	// Only expose detailed diagnostics in dev mode
+	runmode := conf.GetConfigString("runmode")
+	if runmode != "dev" {
+		return result
 	}
 
-	// Build schema-qualified table name for raw SQL
-	tableName := "application"
-	if xormSchema != "" {
-		tableName = fmt.Sprintf("%q.%q", xormSchema, "application")
-	}
-
-	// Check app-hanzobot via raw SQL using QueryString (most reliable, no struct mapping issues)
-	sqlQuery := fmt.Sprintf("SELECT name, owner, client_id, enable_password, grant_types, expire_in_hours FROM %s WHERE name = 'app-hanzobot' AND owner = 'admin'", tableName)
-	rawRows, err := ormer.Engine.QueryString(sqlQuery)
-	has := len(rawRows) > 0
-	if err != nil {
-		result["app-hanzobot-sql"] = fmt.Sprintf("error (query=%s): %v", sqlQuery, err)
-	} else if has {
-		row := rawRows[0]
-		result["app-hanzobot-sql"] = map[string]interface{}{
-			"exists":          true,
-			"name":            row["name"],
-			"owner":           row["owner"],
-			"client_id":       row["client_id"],
-			"enable_password": row["enable_password"],
-			"grant_types":     row["grant_types"],
-			"expire_in_hours": row["expire_in_hours"],
-		}
-	} else {
-		result["app-hanzobot-sql"] = fmt.Sprintf("NOT FOUND (query=%s)", sqlQuery)
-	}
-
-	// CRITICAL DIAGNOSTIC: search by client_id to see if the row exists with different owner/name
-	clientIdQuery := fmt.Sprintf(
-		"SELECT owner, name, client_id, length(owner) as owner_len, length(name) as name_len, "+
-			"encode(owner::bytea, 'hex') as owner_hex, encode(name::bytea, 'hex') as name_hex "+
-			"FROM %s WHERE client_id = 'hanzobot-client-id'", tableName)
-	cidRows, cidErr := ormer.Engine.QueryString(clientIdQuery)
-	if cidErr != nil {
-		result["app-hanzobot-by-clientid"] = fmt.Sprintf("error: %v", cidErr)
-	} else if len(cidRows) > 0 {
-		result["app-hanzobot-by-clientid"] = cidRows[0]
-	} else {
-		result["app-hanzobot-by-clientid"] = "NOT FOUND"
-	}
-
-	// Also check app-hanzo via raw SQL for comparison
-	hanzoQuery := fmt.Sprintf("SELECT name, owner, client_id FROM %s WHERE name = 'app-hanzo' AND owner = 'admin'", tableName)
-	hanzoRows, err := ormer.Engine.QueryString(hanzoQuery)
-	if err != nil {
-		result["app-hanzo-sql"] = fmt.Sprintf("error: %v", err)
-	} else if len(hanzoRows) > 0 {
-		result["app-hanzo-sql"] = fmt.Sprintf("exists (name=%s, client_id=%s)", hanzoRows[0]["name"], hanzoRows[0]["client_id"])
-	} else {
-		result["app-hanzo-sql"] = "NOT FOUND"
-	}
-
-	// Check app-hanzo for comparison
-	appHanzo, err := getApplication("admin", "app-hanzo")
-	if err != nil {
-		result["app-hanzo-orm"] = fmt.Sprintf("error: %v", err)
-	} else if appHanzo != nil {
-		result["app-hanzo-orm"] = fmt.Sprintf("exists (clientId=%s, enablePassword=%v, redirectUris=%d)",
-			appHanzo.ClientId, appHanzo.EnablePassword, len(appHanzo.RedirectUris))
-	} else {
-		result["app-hanzo-orm"] = "NOT FOUND"
-	}
-
-	// Count total applications in DB
+	// Dev-only: app count and sync trace summary
 	count, err := ormer.Engine.Count(&Application{})
 	if err != nil {
 		result["total-apps"] = fmt.Sprintf("error: %v", err)
@@ -1051,123 +969,15 @@ func GetInitDataDiagnostics() map[string]interface{} {
 		result["total-apps"] = count
 	}
 
-	// Include sync trace — filter for hanzobot-related entries and summary info
 	var filteredTrace []string
 	for _, entry := range syncTrace {
-		// Include entries about hanzobot, processing summary, and any errors
-		if strings.Contains(entry, "hanzobot") ||
-			strings.Contains(entry, "processing:") ||
+		if strings.Contains(entry, "processing:") ||
 			strings.Contains(entry, "ERROR") ||
-			strings.Contains(entry, "SKIPPED") ||
 			strings.Contains(entry, "FAILED") {
 			filteredTrace = append(filteredTrace, entry)
 		}
 	}
 	result["sync-trace"] = filteredTrace
-	result["sync-trace-total"] = len(syncTrace)
-
-	// Report driverName to verify runtime DB driver detection
-	driverName := conf.GetConfigString("driverName")
-	result["driverName"] = driverName
-
-	// Query the actual PK constraint name for the session table (PostgreSQL only)
-	if driverName == "postgres" {
-		pkRows, pkErr := ormer.Engine.QueryString(
-			`SELECT constraint_name FROM information_schema.table_constraints
-			 WHERE table_name = 'session' AND constraint_type = 'PRIMARY KEY'`)
-		if pkErr != nil {
-			result["session-pk-constraint"] = fmt.Sprintf("error: %v", pkErr)
-		} else if len(pkRows) > 0 {
-			result["session-pk-constraint"] = pkRows[0]["constraint_name"]
-		} else {
-			result["session-pk-constraint"] = "NO PK CONSTRAINT FOUND"
-		}
-
-		// Check sessions for user "z" (not "z@hanzo.ai" — Name is "z")
-		sessRows, sessErr := ormer.Engine.QueryString(
-			`SELECT owner, name, application, length(session_id) as sid_len
-			 FROM session WHERE name = 'z' LIMIT 10`)
-		if sessErr != nil {
-			result["session-z-user"] = fmt.Sprintf("error: %v", sessErr)
-		} else if len(sessRows) > 0 {
-			result["session-z-user"] = sessRows
-		} else {
-			result["session-z-user"] = "NO SESSIONS FOUND"
-		}
-	}
-
-	// CRITICAL TEST: directly test AddSession for hanzobot to verify the code
-	// path and error wrapping works. Use a __diag test session ID.
-	testSession := &Session{
-		Owner:       "hanzo",
-		Name:        "__diag_test",
-		Application: "app-hanzobot",
-		SessionId:   []string{"diag-test-session-id"},
-	}
-	testOk, testErr := AddSession(testSession)
-	if testErr != nil {
-		result["session-upsert-test"] = fmt.Sprintf("ERROR: %v", testErr)
-	} else {
-		result["session-upsert-test"] = fmt.Sprintf("ok=%v", testOk)
-		// Clean up the test session
-		_, _ = ormer.Engine.Where("owner = ? AND name = ? AND application = ?",
-			"hanzo", "__diag_test", "app-hanzobot").Delete(&Session{})
-	}
-
-	// Also test raw UPSERT SQL directly
-	testUpsertSQL := `INSERT INTO session (owner, name, application, created_time, session_id)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (owner, name, application) DO UPDATE
-		SET session_id = EXCLUDED.session_id, created_time = EXCLUDED.created_time`
-	_, rawErr := ormer.Engine.Exec(testUpsertSQL,
-		"hanzo", "__diag_raw", "app-hanzobot",
-		"2026-01-01T00:00:00Z", `["raw-test-sid"]`)
-	if rawErr != nil {
-		result["session-raw-upsert-test"] = fmt.Sprintf("ERROR: %v", rawErr)
-	} else {
-		result["session-raw-upsert-test"] = "ok"
-		// Clean up
-		_, _ = ormer.Engine.Exec("DELETE FROM session WHERE owner = 'hanzo' AND name = '__diag_raw'")
-	}
-
-	// CRITICAL: test double UPSERT (insert then upsert same PK)
-	_, testErr1 := ormer.Engine.Exec(testUpsertSQL,
-		"hanzo", "__diag_z", "app-hanzobot",
-		"2026-01-01T00:00:00Z", `["first-sid"]`)
-	if testErr1 != nil {
-		result["session-double-upsert-1"] = fmt.Sprintf("ERROR: %v", testErr1)
-	} else {
-		result["session-double-upsert-1"] = "ok"
-		_, testErr2 := ormer.Engine.Exec(testUpsertSQL,
-			"hanzo", "__diag_z", "app-hanzobot",
-			"2026-01-01T00:00:01Z", `["second-sid"]`)
-		if testErr2 != nil {
-			result["session-double-upsert-2"] = fmt.Sprintf("ERROR: %v", testErr2)
-		} else {
-			result["session-double-upsert-2"] = "ok (ON CONFLICT worked)"
-		}
-		_, _ = ormer.Engine.Exec("DELETE FROM session WHERE owner = 'hanzo' AND name = '__diag_z'")
-	}
-
-	// Query ALL indexes on the session table
-	if driverName == "postgres" {
-		idxRows, idxErr := ormer.Engine.QueryString(
-			`SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'session'`)
-		if idxErr != nil {
-			result["session-indexes"] = fmt.Sprintf("error: %v", idxErr)
-		} else {
-			result["session-indexes"] = idxRows
-		}
-
-		colRows, colErr := ormer.Engine.QueryString(
-			`SELECT column_name, data_type FROM information_schema.columns
-			 WHERE table_name = 'session' ORDER BY ordinal_position`)
-		if colErr != nil {
-			result["session-columns"] = fmt.Sprintf("error: %v", colErr)
-		} else {
-			result["session-columns"] = colRows
-		}
-	}
 
 	return result
 }
