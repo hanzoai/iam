@@ -107,7 +107,7 @@ function ManagementPage(props) {
           const redirectUri = res.data2;
           if (redirectUri !== null && redirectUri !== undefined && redirectUri !== "") {
             Setting.goToLink(redirectUri);
-          } else if (owner !== "hanzo") {
+          } else if (owner !== "built-in") {
             Setting.goToLink(`${window.location.origin}/login/${owner}`);
           } else {
             Setting.goToLinkSoft({props}, "/");

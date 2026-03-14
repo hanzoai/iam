@@ -2,6 +2,196 @@
   "organizations": [
     {
       "owner": "admin",
+      "name": "built-in",
+      "createdTime": "",
+      "displayName": "System",
+      "websiteUrl": "https://hanzo.id",
+      "favicon": "https://cdn.hanzo.ai/img/favicon.png",
+      "passwordType": "argon2id",
+      "passwordSalt": "",
+      "passwordOptions": [
+        "AtLeast8"
+      ],
+      "countryCodes": [
+        "US"
+      ],
+      "defaultAvatar": "https://cdn.hanzo.ai/img/default-avatar.png",
+      "defaultApplication": "app-built-in",
+      "tags": [
+        "system"
+      ],
+      "languages": [
+        "en",
+        "es",
+        "fr",
+        "de",
+        "it",
+        "nl",
+        "pt",
+        "sv",
+        "tr",
+        "pl",
+        "uk",
+        "ru",
+        "ar",
+        "fa",
+        "hi",
+        "th",
+        "id",
+        "ko",
+        "ja",
+        "zh",
+        "vi"
+      ],
+      "themeData": {
+        "themeType": "dark",
+        "colorPrimary": "#fd4444",
+        "borderRadius": 6,
+        "isCompact": false,
+        "isEnabled": true
+      },
+      "masterPassword": "",
+      "initScore": 2000,
+      "enableSoftDeletion": false,
+      "isProfilePublic": false,
+      "mfaItems": [],
+      "accountItems": [
+        {
+          "name": "Organization",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "ID",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Immutable"
+        },
+        {
+          "name": "Name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Display name",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Avatar",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "User type",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Password",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Email",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Phone",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Country/Region",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Location",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Is admin",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is forbidden",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Is deleted",
+          "visible": true,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Signup application",
+          "visible": true,
+          "viewRule": "Public",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Balance",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "Score",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "3rd-party logins",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Properties",
+          "visible": false,
+          "viewRule": "Admin",
+          "modifyRule": "Admin"
+        },
+        {
+          "name": "WebAuthn credentials",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "Managed accounts",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        },
+        {
+          "name": "API key",
+          "visible": true,
+          "viewRule": "Self",
+          "modifyRule": "Self"
+        }
+      ]
+    },
+    {
+      "owner": "admin",
       "name": "hanzo",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo",
@@ -988,6 +1178,102 @@
     }
   ],
   "applications": [
+    {
+      "owner": "admin",
+      "name": "app-built-in",
+      "createdTime": "",
+      "displayName": "IAM Admin Console",
+      "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
+      "homepageUrl": "https://hanzo.id",
+      "description": "System administration console",
+      "organization": "built-in",
+      "cert": "cert-hanzo",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "enableSigninSession": true,
+      "enableAutoSignin": false,
+      "enableCodeSignin": true,
+      "enableSamlCompress": false,
+      "enableSamlC14n10": false,
+      "enableWebAuthn": false,
+      "enableLinkWithEmail": false,
+      "orgChoiceMode": "None",
+      "samlReplyUrl": "",
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token",
+        "token"
+      ],
+      "responseTypes": [
+        "code",
+        "token",
+        "id_token"
+      ],
+      "clientId": "built-in-admin-client-id",
+      "clientSecret": "36e3ed67d56046827449e5bd82402ee9f436ce3ad584b415d0829596ad07e4d8",
+      "redirectUris": [
+        "https://hanzo.id/callback"
+      ],
+      "tokenFormat": "JWT",
+      "tokenFields": [],
+      "expireInHours": 168,
+      "refreshExpireInHours": 720,
+      "signupUrl": "",
+      "signinUrl": "",
+      "forgetUrl": "",
+      "affiliationUrl": "",
+      "termsOfUse": "",
+      "signupHtml": "",
+      "signinHtml": "",
+      "themeData": {
+        "themeType": "dark",
+        "colorPrimary": "#fd4444",
+        "borderRadius": 6,
+        "isCompact": false,
+        "isEnabled": true
+      },
+      "formCss": "",
+      "formCssMobile": "",
+      "formOffset": 2,
+      "formSideHtml": "",
+      "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
+      "responseType": "code,token,id_token",
+      "signinMethods": [
+        {
+          "name": "Password",
+          "displayName": "Password",
+          "rule": "All"
+        }
+      ],
+      "signupItems": [
+        {
+          "name": "ID",
+          "visible": false,
+          "required": true,
+          "rule": "Random"
+        },
+        {
+          "name": "Username",
+          "visible": true,
+          "required": true,
+          "rule": "None"
+        },
+        {
+          "name": "Password",
+          "visible": true,
+          "required": true,
+          "rule": "None"
+        },
+        {
+          "name": "Email",
+          "visible": true,
+          "required": true,
+          "rule": "None"
+        }
+      ],
+      "providers": [],
+      "tags": []
+    },
     {
       "owner": "admin",
       "name": "app-hanzo",
@@ -3056,14 +3342,14 @@
   ],
   "users": [
     {
-      "owner": "hanzo",
+      "owner": "built-in",
       "name": "admin",
       "createdTime": "2024-01-01T00:00:00Z",
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "admin",
       "type": "normal-user",
-      "password": "123",
-      "passwordType": "",
+      "password": "$2b$10$KBQSRJJm74mMX4KE5lZU3.hdkqqJKg9dIhydZhgfAom00NxBtXISy",
+      "passwordType": "bcrypt",
       "displayName": "Admin",
       "firstName": "",
       "lastName": "",
@@ -3097,7 +3383,7 @@
       "isAdmin": true,
       "isForbidden": false,
       "isDeleted": false,
-      "signupApplication": "app-hanzo",
+      "signupApplication": "app-built-in",
       "preHash": "",
       "accessKey": "",
       "accessSecret": "",
@@ -3122,14 +3408,14 @@
       "isGlobalAdmin": true
     },
     {
-      "owner": "hanzo",
+      "owner": "built-in",
       "name": "z",
       "createdTime": "2024-01-01T00:00:00Z",
       "updatedTime": "2024-01-01T00:00:00Z",
       "id": "z",
       "type": "normal-user",
       "password": "",
-      "passwordType": "",
+      "passwordType": "bcrypt",
       "displayName": "Z",
       "firstName": "",
       "lastName": "",
@@ -3164,7 +3450,7 @@
       "isGlobalAdmin": true,
       "isForbidden": false,
       "isDeleted": false,
-      "signupApplication": "app-hanzo",
+      "signupApplication": "app-built-in",
       "preHash": "",
       "accessKey": "",
       "accessSecret": "",
@@ -3195,7 +3481,7 @@
       "id": "lux-z",
       "type": "normal-user",
       "password": "",
-      "passwordType": "",
+      "passwordType": "bcrypt",
       "displayName": "Z",
       "firstName": "",
       "lastName": "",

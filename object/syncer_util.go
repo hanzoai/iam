@@ -228,6 +228,9 @@ func (syncer *Syncer) setUserByKeyValue(user *User, key string, value string) {
 	case "ExternalId":
 		user.ExternalId = value
 	case "PasswordType":
+		if value == "plain" {
+			value = ""
+		}
 		user.PasswordType = value
 	case "AvatarType":
 		user.AvatarType = value
