@@ -17,10 +17,14 @@ package object
 
 import (
 	"fmt"
+	"os"
 	"testing"
 )
 
 func TestGetUsers(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires PostgreSQL (set IAM_DATABASE_URL or IAM_TEST_DB)")
+	}
 	InitConfig()
 	syncers, _ := GetSyncers("admin")
 	syncer := syncers[0]
@@ -32,6 +36,9 @@ func TestGetUsers(t *testing.T) {
 }
 
 func TestSyncUsers(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires PostgreSQL (set IAM_DATABASE_URL or IAM_TEST_DB)")
+	}
 	InitConfig()
 
 	RunSyncUsersJob()
