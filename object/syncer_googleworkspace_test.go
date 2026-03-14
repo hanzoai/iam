@@ -15,12 +15,16 @@
 package object
 
 import (
+	"os"
 	"testing"
 
 	admin "google.golang.org/api/admin/directory/v1"
 )
 
 func TestGoogleWorkspaceUserToOriginalUser(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires database")
+	}
 	provider := &GoogleWorkspaceSyncerProvider{
 		Syncer: &Syncer{},
 	}
@@ -114,6 +118,9 @@ func TestGoogleWorkspaceUserToOriginalUser(t *testing.T) {
 }
 
 func TestGoogleWorkspaceGroupToOriginalGroup(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires database")
+	}
 	provider := &GoogleWorkspaceSyncerProvider{
 		Syncer: &Syncer{},
 	}
@@ -161,6 +168,9 @@ func TestGoogleWorkspaceGroupToOriginalGroup(t *testing.T) {
 }
 
 func TestGetSyncerProviderGoogleWorkspace(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires database")
+	}
 	syncer := &Syncer{
 		Type: "Google Workspace",
 		Host: "admin@example.com",
@@ -174,6 +184,9 @@ func TestGetSyncerProviderGoogleWorkspace(t *testing.T) {
 }
 
 func TestGoogleWorkspaceSyncerProviderEmptyMethods(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires database")
+	}
 	provider := &GoogleWorkspaceSyncerProvider{
 		Syncer: &Syncer{},
 	}
