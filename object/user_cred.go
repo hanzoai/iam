@@ -15,6 +15,8 @@
 package object
 
 import (
+	"fmt"
+
 	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/util"
 )
@@ -48,7 +50,17 @@ func (user *User) UpdateUserPassword(organization *Organization) {
 		return
 	}
 
-	credManager := cred.GetCredManager(organization.PasswordType)
+	// Never store passwords as plaintext. If the org somehow has "plain",
+	// override to "bcrypt" for this operation.
+	passwordType := organization.PasswordType
+	if passwordType == "plain" {
+		fmt.Printf("[SECURITY] WARNING: user %s/%s password update attempted with passwordType='plain' — blocked, using 'bcrypt'\n", user.Owner, user.Name)
+		passwordType = "bcrypt"
+	} else if passwordType == "" {
+		passwordType = "bcrypt"
+	}
+
+	credManager := cred.GetCredManager(passwordType)
 	if credManager != nil {
 		// Use organization salt if available, otherwise generate a random salt for the user
 		salt := organization.PasswordSalt
@@ -57,7 +69,7 @@ func (user *User) UpdateUserPassword(organization *Organization) {
 		}
 		hashedPassword := credManager.GetHashedPassword(user.Password, salt)
 		user.Password = hashedPassword
-		user.PasswordType = organization.PasswordType
+		user.PasswordType = passwordType
 		user.PasswordSalt = salt
 	}
 }

@@ -128,7 +128,7 @@ func UploadUsers(owner string, path string, userObj *User, lang string) (bool, e
 			if user.Type == "" {
 				user.Type = "normal-user"
 			}
-			user.PasswordType = "plain"
+			user.PasswordType = ""
 			if user.DisplayName == "" {
 				user.DisplayName = user.Name
 			}

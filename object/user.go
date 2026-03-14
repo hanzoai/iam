@@ -39,7 +39,7 @@ const (
 	UserPropertiesWechatOpenId  = "wechatOpenId"
 )
 
-const UserEnforcerId = "hanzo/user-enforcer-hanzo"
+const UserEnforcerId = "built-in/user-enforcer-built-in"
 
 var userEnforcer *UserGroupEnforcer
 
@@ -1316,7 +1316,7 @@ func (user *User) GetFriendlyName() string {
 }
 
 func isUserIdGlobalAdmin(userId string) bool {
-	return strings.HasPrefix(userId, "admin/") || IsAppUser(userId)
+	return strings.HasPrefix(userId, "built-in/") || IsAppUser(userId)
 }
 
 // permsSnapshot is the cached representation of a user's roles/permissions.
@@ -1485,7 +1485,7 @@ func (user *User) IsGlobalAdmin() bool {
 		return false
 	}
 
-	return user.Owner == "admin"
+	return user.Owner == "built-in"
 }
 
 func (user *User) CheckUserFace(faceIdImage []string, provider *Provider) (bool, error) {
