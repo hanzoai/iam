@@ -271,13 +271,11 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 		return recordSigninErrorInfo(user, lang, enableCaptcha)
 	}
 
-	// Auto-upgrade passwords to the org's current hash type.
-	// Always upgrade "plain" passwords even if the org somehow still has "plain".
-	isOutdated := passwordType != organization.PasswordType || passwordType == "plain"
+	// Auto-upgrade plaintext passwords only. Do NOT re-hash passwords that are
+	// already using a secure algorithm (bcrypt, argon2id, etc.) — Casdoor's
+	// re-hash can produce unverifiable hashes, permanently locking the user out.
 	if passwordType == "plain" {
 		fmt.Printf("[SECURITY] WARNING: user %s/%s authenticated with plaintext password — auto-upgrading to '%s'\n", user.Owner, user.Name, organization.PasswordType)
-	}
-	if isOutdated {
 		user.Password = password
 		user.UpdateUserPassword(organization)
 		_, err = UpdateUser(user.GetId(), user, []string{"password", "password_type", "password_salt"}, true)
