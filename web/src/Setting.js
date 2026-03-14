@@ -34,7 +34,7 @@ export const ServerUrl = "";
 
 // Use local paths for Hanzo logos, external CDN for other assets
 export const StaticBaseUrl = "https://cdn.casbin.org";
-export const HanzoStaticUrl = "/img";
+export const HanzoStaticUrl = "";
 
 export const MAX_PAGE_SIZE = 25;
 export const SEARCH_DEBOUNCE_MS = 300;

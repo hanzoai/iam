@@ -43,10 +43,10 @@ func (c *ApiController) DynamicClientRegister() {
 		return
 	}
 
-	// Get organization from query parameter or default to built-in
+	// Get organization from query parameter or default to hanzo
 	organization := c.Ctx.Input.Query("organization")
 	if organization == "" {
-		organization = "built-in"
+		organization = "hanzo"
 	}
 
 	// Register the client

@@ -18,6 +18,7 @@ package radius
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"layeh.com/radius"
@@ -25,6 +26,9 @@ import (
 )
 
 func TestAccessRequestRejected(t *testing.T) {
+	if os.Getenv("IAM_TEST_RADIUS") == "" {
+		t.Skip("skipping: requires RADIUS server (set IAM_TEST_RADIUS=1)")
+	}
 	packet := radius.New(radius.CodeAccessRequest, []byte(`secret`))
 	rfc2865.UserName_SetString(packet, "admin")
 	rfc2865.UserPassword_SetString(packet, "12345")
@@ -39,6 +43,9 @@ func TestAccessRequestRejected(t *testing.T) {
 }
 
 func TestAccessRequestAccepted(t *testing.T) {
+	if os.Getenv("IAM_TEST_RADIUS") == "" {
+		t.Skip("skipping: requires RADIUS server (set IAM_TEST_RADIUS=1)")
+	}
 	packet := radius.New(radius.CodeAccessRequest, []byte(`secret`))
 	rfc2865.UserName_SetString(packet, "admin")
 	rfc2865.UserPassword_SetString(packet, "123")
