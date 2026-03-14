@@ -110,7 +110,7 @@ class InvitationEditPage extends React.Component {
 
   copySignupLink() {
     let defaultApplication;
-    if (this.state.invitation.owner === "hanzo") {
+    if (this.state.invitation.owner === "built-in") {
       defaultApplication = "app-hanzo";
     } else {
       const selectedOrganization = Setting.getArrayItem(this.state.organizations, "name", this.state.invitation.owner);

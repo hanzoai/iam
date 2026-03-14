@@ -839,7 +839,7 @@ func AddApplication(application *Application) (bool, error) {
 		application.Owner = "admin"
 	}
 	if application.Organization == "" {
-		application.Organization = "hanzo"
+		application.Organization = "built-in"
 	}
 	if application.ClientId == "" {
 		application.ClientId = util.GenerateClientId()

@@ -427,7 +427,7 @@ func (c *ApiController) DeleteUser() {
 		return
 	}
 
-	if user.Owner == "admin" && user.Name == "admin" {
+	if user.Owner == "built-in" && user.Name == "admin" {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
