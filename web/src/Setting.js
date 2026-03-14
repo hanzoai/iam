@@ -1018,7 +1018,7 @@ export function isAdminUser(account) {
   if (account === undefined || account === null) {
     return false;
   }
-  return account.owner === "hanzo";
+  return account.owner === "built-in";
 }
 
 export function isLocalAdminUser(account) {
@@ -1761,19 +1761,19 @@ export function isDefaultOrganizationSelected(account) {
 }
 
 const BuiltInObjects = [
-  "api-enforcer-hanzo",
-  "user-enforcer-hanzo",
-  "api-model-hanzo",
-  "user-model-hanzo",
-  "api-adapter-hanzo",
-  "user-adapter-hanzo",
+  "api-enforcer-built-in",
+  "user-enforcer-built-in",
+  "api-model-built-in",
+  "user-model-built-in",
+  "api-adapter-built-in",
+  "user-adapter-built-in",
 ];
 
 export function builtInObject(obj) {
   if (obj === undefined || obj === null) {
     return false;
   }
-  return obj.owner === "hanzo" && BuiltInObjects.includes(obj.name);
+  return obj.owner === "built-in" && BuiltInObjects.includes(obj.name);
 }
 
 export const CurrencyOptions = [
