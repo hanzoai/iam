@@ -2,8 +2,7 @@
 // Displays animated product features + real testimonials on the right side of split-screen login
 // Content is per-organization — each org can have its own showcase slides and quotes
 
-import React, {useEffect, useState, useCallback} from "react";
-
+import React, {useCallback, useEffect, useState} from "react";
 
 // ── Per-org showcase content ──────────────────────────────────────────────
 // Each org gets its own set of product slides and testimonials.
