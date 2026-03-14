@@ -146,7 +146,7 @@ class OrganizationEditPage extends React.Component {
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
           </Col>
           <Col span={22} >
-            <Input value={this.state.organization.name} disabled={this.state.organization.name === "hanzo"} onChange={e => {
+            <Input value={this.state.organization.name} disabled={this.state.organization.name === "built-in"} onChange={e => {
               this.updateOrganizationField("name", e.target.value);
             }} />
           </Col>
@@ -271,7 +271,7 @@ class OrganizationEditPage extends React.Component {
           </Col>
         </Row>
         {
-          this.state.organization.name === "hanzo" ? (
+          this.state.organization.name === "built-in" ? (
             <Row style={{marginTop: "20px"}} >
               <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
                 {Setting.getLabel(i18next.t("organization:Has privilege consent"), i18next.t("organization:Has privilege consent - Tooltip"))} :
@@ -301,7 +301,7 @@ class OrganizationEditPage extends React.Component {
           </Col>
           <Col span={22} >
             <Select virtual={false} style={{width: "100%"}} value={this.state.organization.passwordType} onChange={(value => {this.updateOrganizationField("passwordType", value);})}
-              options={["plain", "salt", "sha512-salt", "md5-salt", "bcrypt", "pbkdf2-salt", "argon2id", "pbkdf2-django"].map(item => Setting.getOption(item, item))}
+              options={["salt", "sha512-salt", "md5-salt", "bcrypt", "pbkdf2-salt", "argon2id", "pbkdf2-django"].map(item => Setting.getOption(item, item))}
             />
           </Col>
         </Row>
