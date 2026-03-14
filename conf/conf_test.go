@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 	if _, err := os.Stat("app.conf"); os.IsNotExist(err) {
 		// Try app.dev.conf as fallback
 		if data, readErr := os.ReadFile("app.dev.conf"); readErr == nil {
-			_ = os.WriteFile("app.conf", data, 0644)
+			_ = os.WriteFile("app.conf", data, 0o644)
 			defer os.Remove("app.conf")
 		}
 	}

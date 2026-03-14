@@ -18,9 +18,9 @@ package object
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
-	"os"
 	"testing"
 
 	"github.com/hanzoai/iam/util"
