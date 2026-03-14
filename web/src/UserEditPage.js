@@ -331,7 +331,7 @@ class UserEditPage extends React.Component {
     }
 
     if (accountItem.name === "Organization" || accountItem.name === "Name") {
-      if (this.state.user.owner === "hanzo" && this.state.user.name === "admin") {
+      if (this.state.user.owner === "built-in" && this.state.user.name === "admin") {
         disabled = true;
       }
     }
