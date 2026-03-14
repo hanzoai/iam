@@ -16,6 +16,7 @@ package object
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"net/url"
@@ -960,7 +961,7 @@ func GetApiKeyToken(application *Application, accessKey string, accessSecret str
 		}, nil
 	}
 
-	if user.AccessSecret != accessSecret {
+	if subtle.ConstantTimeCompare([]byte(user.AccessSecret), []byte(accessSecret)) != 1 {
 		return nil, &TokenError{
 			Error:            InvalidGrant,
 			ErrorDescription: "invalid access_secret",
