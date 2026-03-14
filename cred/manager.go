@@ -21,6 +21,9 @@ type CredManager interface {
 
 func GetCredManager(passwordType string) CredManager {
 	if passwordType == "plain" {
+		// PlainCredManager is only used for VERIFYING legacy plaintext passwords
+		// during login so they can be auto-upgraded to the org's hash type.
+		// It must NEVER be used to hash new passwords.
 		return NewPlainCredManager()
 	} else if passwordType == "salt" {
 		return NewSha256SaltCredManager()
