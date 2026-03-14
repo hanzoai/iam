@@ -18,12 +18,16 @@ package object
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/hanzoai/iam/proxy"
 )
 
 func TestSyncPermanentAvatars(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires PostgreSQL (set IAM_DATABASE_URL or IAM_TEST_DB)")
+	}
 	InitConfig()
 	InitDefaultStorageProvider()
 	proxy.InitHttpClient()
@@ -49,6 +53,9 @@ func TestSyncPermanentAvatars(t *testing.T) {
 }
 
 func TestUpdateAvatars(t *testing.T) {
+	if os.Getenv("IAM_DATABASE_URL") == "" && os.Getenv("IAM_TEST_DB") == "" {
+		t.Skip("skipping: requires PostgreSQL (set IAM_DATABASE_URL or IAM_TEST_DB)")
+	}
 	InitConfig()
 	InitDefaultStorageProvider()
 	proxy.InitHttpClient()
