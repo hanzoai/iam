@@ -130,7 +130,7 @@ class EntryPage extends React.Component {
           {/* Right side - Hanzo Showcase (only on desktop for auth pages) */}
           {showShowcase && (
             <div className="split-login-showcase">
-              <HanzoShowcase />
+              <HanzoShowcase application={this.state.application} />
             </div>
           )}
         </div>
