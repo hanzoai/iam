@@ -82,7 +82,7 @@ class UserListPage extends BaseListPage {
       region: "",
       realName: "",
       isVerified: false,
-      isAdmin: (owner === "hanzo"),
+      isAdmin: (owner === "built-in"),
       IsForbidden: false,
       score: this.state.organization.initScore,
       isDeleted: false,
@@ -542,7 +542,7 @@ class UserListPage extends BaseListPage {
         fixed: (Setting.isMobile()) ? "false" : "right",
         render: (text, record, index) => {
           const isTreePage = this.props.groupName !== undefined;
-          const disabled = (record.owner === this.props.account.owner && record.name === this.props.account.name) || (record.owner === "hanzo" && record.name === "admin");
+          const disabled = (record.owner === this.props.account.owner && record.name === this.props.account.name) || (record.owner === "built-in" && record.name === "admin");
           return (
             <Space>
               <Button size={isTreePage ? "small" : "middle"} type="primary" onClick={() => {
