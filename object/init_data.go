@@ -316,7 +316,7 @@ func initDefinedOrganization(organization *Organization) {
 	}
 	organization.CreatedTime = util.GetCurrentTime()
 	if len(organization.AccountItems) == 0 {
-		organization.AccountItems = getHanzoAccountItems()
+		organization.AccountItems = getBuiltInAccountItems()
 	}
 
 	_, err = AddOrganization(organization)
