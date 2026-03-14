@@ -271,7 +271,12 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 		return recordSigninErrorInfo(user, lang, enableCaptcha)
 	}
 
-	isOutdated := passwordType != organization.PasswordType
+	// Auto-upgrade passwords to the org's current hash type.
+	// Always upgrade "plain" passwords even if the org somehow still has "plain".
+	isOutdated := passwordType != organization.PasswordType || passwordType == "plain"
+	if passwordType == "plain" {
+		fmt.Printf("[SECURITY] WARNING: user %s/%s authenticated with plaintext password — auto-upgrading to '%s'\n", user.Owner, user.Name, organization.PasswordType)
+	}
 	if isOutdated {
 		user.Password = password
 		user.UpdateUserPassword(organization)
