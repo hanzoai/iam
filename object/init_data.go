@@ -277,6 +277,33 @@ func initDefinedOrganization(organization *Organization) {
 
 	if existed != nil {
 		if initDataNewOnly {
+			// Merge languages: ensure all init_data languages are enabled (additive only)
+			if len(organization.Languages) > len(existed.Languages) {
+				langSet := make(map[string]bool, len(existed.Languages))
+				for _, l := range existed.Languages {
+					langSet[l] = true
+				}
+				var added []string
+				for _, l := range organization.Languages {
+					if !langSet[l] {
+						added = append(added, l)
+					}
+				}
+				if len(added) > 0 {
+					existed.Languages = append(existed.Languages, added...)
+					_, updateErr := ormer.Engine.Where("owner = ? AND name = ?",
+						existed.Owner, existed.Name).
+						Cols("languages").
+						Update(existed)
+					if updateErr != nil {
+						fmt.Printf("[init_data] WARNING: failed to merge languages for org %s: %v\n",
+							existed.Name, updateErr)
+					} else {
+						fmt.Printf("[init_data] org %s: merged %d languages (%v)\n",
+							existed.Name, len(added), added)
+					}
+				}
+			}
 			return
 		}
 		affected, err := deleteOrganization(organization)
