@@ -4,43 +4,12 @@
 
 import React, {useEffect, useState, useCallback} from "react";
 
-// ── Type definitions ─────────────────────────────────────────────────────
-
-interface Slide {
-  icon: string;
-  title: string;
-  desc: string;
-}
-
-interface Testimonial {
-  name: string;
-  role: string;
-  text: string;
-}
-
-interface OrgContent {
-  badge: string;
-  title: string;
-  subtitle: string;
-  slides: Slide[];
-  testimonials: Testimonial[];
-}
-
-interface HanzoShowcaseProps {
-  application?: {
-    organization?: string;
-  };
-}
-
-interface SlideIconProps {
-  name: string;
-}
 
 // ── Per-org showcase content ──────────────────────────────────────────────
 // Each org gets its own set of product slides and testimonials.
 // Falls back to "hanzo" content for orgs without custom content.
 
-const orgContent: Record<string, OrgContent> = {
+const orgContent = {
   hanzo: {
     badge: "AI Infrastructure",
     title: "Build with Hanzo",
@@ -136,7 +105,7 @@ const orgContent: Record<string, OrgContent> = {
 
 // ── Slide icon renderer ──────────────────────────────────────────────────
 
-const slideIcons: Record<string, React.ReactNode> = {
+const slideIcons = {
   chat: <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />,
   code: <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />,
   cloud: <path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z" />,
@@ -153,7 +122,7 @@ const slideIcons: Record<string, React.ReactNode> = {
   id: <><rect x="2" y="5" width="20" height="14" rx="2" /><circle cx="8" cy="12" r="2" /><path d="M14 10h4M14 14h2" /></>,
 };
 
-function SlideIcon({name}: SlideIconProps) {
+function SlideIcon({name}) {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -164,7 +133,7 @@ function SlideIcon({name}: SlideIconProps) {
 
 // ── Main component ───────────────────────────────────────────────────────
 
-export default function HanzoShowcase({application}: HanzoShowcaseProps) {
+export default function HanzoShowcase({application}) {
   const [currentSlide, setCurrentSlide] = useState<number>(0);
   const [currentTestimonial, setCurrentTestimonial] = useState<number>(0);
   const [slideDirection, setSlideDirection] = useState<"in" | "out">("in");
@@ -259,7 +228,7 @@ export default function HanzoShowcase({application}: HanzoShowcaseProps) {
             <p className="showcase-testimonial-text">&ldquo;{testimonial.text}&rdquo;</p>
             <div className="showcase-testimonial-author">
               <div className="showcase-avatar">
-                {testimonial.name.split(" ").map((n: string) => n[0]).join("")}
+                {testimonial.name.split(" ").map((n) => n[0]).join("")}
               </div>
               <div className="showcase-author-info">
                 <span className="showcase-author-name">{testimonial.name}</span>
