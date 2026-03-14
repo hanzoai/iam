@@ -101,7 +101,7 @@ func getModelEx(id string) (*Model, error) {
 		return model, nil
 	}
 
-	return getModel("hanzo", name)
+	return getModel("built-in", name)
 }
 
 func UpdateModelWithCheck(id string, modelObj *Model) error {
