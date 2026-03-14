@@ -271,18 +271,10 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 		return recordSigninErrorInfo(user, lang, enableCaptcha)
 	}
 
-	// Auto-upgrade plaintext passwords only. Do NOT re-hash passwords that are
-	// already using a secure algorithm (bcrypt, argon2id, etc.) — Casdoor's
-	// re-hash can produce unverifiable hashes, permanently locking the user out.
-	if passwordType == "plain" {
-		fmt.Printf("[SECURITY] WARNING: user %s/%s authenticated with plaintext password — auto-upgrading to '%s'\n", user.Owner, user.Name, organization.PasswordType)
-		user.Password = password
-		user.UpdateUserPassword(organization)
-		_, err = UpdateUser(user.GetId(), user, []string{"password", "password_type", "password_salt"}, true)
-		if err != nil {
-			return err
-		}
-	}
+	// Password auto-upgrade is DISABLED. Casdoor's re-hash produces unverifiable
+	// hashes for both argon2id and bcrypt, permanently locking users out.
+	// Passwords are set correctly at user creation / password reset time.
+	// See: https://github.com/hanzoai/iam/commit/abbffb64
 
 	return resetUserSigninErrorTimes(user)
 }
