@@ -25,29 +25,29 @@ import (
 )
 
 func InitDb() {
-	existed := initDefaultOrganization()
+	existed := initBuiltInOrganization()
 	if !existed {
-		initHanzoPermission()
-		initHanzoProvider()
-		initDefaultApplication()
-		initHanzoCert()
-		initHanzoLdap()
-		initHanzoUser()
+		initBuiltInPermission()
+		initBuiltInProvider()
+		initBuiltInApplication()
+		initBuiltInCert()
+		initBuiltInLdap()
+		initBuiltInUser()
 	}
 
-	existed = initHanzoApiModel()
+	existed = initBuiltInApiModel()
 	if !existed {
-		initHanzoApiAdapter()
-		initHanzoApiEnforcer()
-		initHanzoUserModel()
-		initHanzoUserAdapter()
-		initHanzoUserEnforcer()
+		initBuiltInApiAdapter()
+		initBuiltInApiEnforcer()
+		initBuiltInUserModel()
+		initBuiltInUserAdapter()
+		initBuiltInUserEnforcer()
 	}
 
 	initWebAuthn()
 }
 
-func getHanzoAccountItems() []*AccountItem {
+func getBuiltInAccountItems() []*AccountItem {
 	return []*AccountItem{
 		{Name: "Organization", Visible: true, ViewRule: "Public", ModifyRule: "Admin"},
 		{Name: "ID", Visible: true, ViewRule: "Public", ModifyRule: "Immutable"},
@@ -112,8 +112,8 @@ func getHanzoAccountItems() []*AccountItem {
 	}
 }
 
-func initDefaultOrganization() bool {
-	organization, err := getOrganization("admin", "hanzo")
+func initBuiltInOrganization() bool {
+	organization, err := getOrganization("admin", "built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -124,9 +124,9 @@ func initDefaultOrganization() bool {
 
 	organization = &Organization{
 		Owner:              "admin",
-		Name:               "hanzo",
+		Name:               "built-in",
 		CreatedTime:        util.GetCurrentTime(),
-		DisplayName:        "Hanzo",
+		DisplayName:        "Built-in",
 		WebsiteUrl:         "https://hanzo.ai",
 		Favicon:            "/img/hanzo-favicon.png",
 		PasswordType:       "bcrypt",
@@ -137,12 +137,11 @@ func initDefaultOrganization() bool {
 		Tags:               []string{},
 		Languages:          []string{"en", "es", "fr", "de", "ja", "zh", "vi", "pt", "tr", "pl", "uk"},
 		InitScore:          2000,
-		AccountItems:       getHanzoAccountItems(),
+		AccountItems:       getBuiltInAccountItems(),
 		EnableSoftDeletion: false,
 		IsProfilePublic:    false,
 		UseEmailAsUsername: false,
 		EnableTour:         true,
-		DcrPolicy:          "open",
 	}
 	_, err = AddOrganization(organization)
 	if err != nil {
@@ -152,8 +151,8 @@ func initDefaultOrganization() bool {
 	return false
 }
 
-func initHanzoUser() {
-	user, err := getUser("hanzo", "z")
+func initBuiltInUser() {
+	user, err := getUser("built-in", "admin")
 	if err != nil {
 		panic(err)
 	}
@@ -162,15 +161,15 @@ func initHanzoUser() {
 	}
 
 	user = &User{
-		Owner:             "hanzo",
-		Name:              "z",
+		Owner:             "built-in",
+		Name:              "admin",
 		CreatedTime:       util.GetCurrentTime(),
 		Id:                util.GenerateId(),
 		Type:              "normal-user",
-		Password:          "Hanzo2026!",
-		DisplayName:       "Z",
+		Password:          "admin",
+		DisplayName:       "Admin",
 		Avatar:            fmt.Sprintf("%s/img/hanzo-logo.svg", conf.GetConfigString("staticBaseUrl")),
-		Email:             "z@hanzo.ai",
+		Email:             "admin@hanzo.ai",
 		CountryCode:       "US",
 		Address:           []string{},
 		Affiliation:       "Hanzo AI",
@@ -180,9 +179,9 @@ func initHanzoUser() {
 		IsAdmin:           true,
 		IsForbidden:       false,
 		IsDeleted:         false,
-		SignupApplication: "app-hanzo",
+		SignupApplication: "app-built-in",
 		RegisterType:      "Add User",
-		RegisterSource:    "hanzo/z",
+		RegisterSource:    "built-in/admin",
 		CreatedIp:         "127.0.0.1",
 		Properties:        make(map[string]string),
 	}
@@ -192,8 +191,8 @@ func initHanzoUser() {
 	}
 }
 
-func initDefaultApplication() {
-	application, err := getApplication("admin", "app-hanzo")
+func initBuiltInApplication() {
+	application, err := getApplication("admin", "app-built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -204,7 +203,7 @@ func initDefaultApplication() {
 
 	application = &Application{
 		Owner:          "admin",
-		Name:           "app-hanzo",
+		Name:           "app-built-in",
 		CreatedTime:    util.GetCurrentTime(),
 		DisplayName:    "Hanzo IAM",
 		Category:       "Default",
@@ -212,10 +211,10 @@ func initDefaultApplication() {
 		Scopes:         []*ScopeItem{},
 		Logo:           "/img/hanzo-logo.svg",
 		HomepageUrl:    "https://hanzo.ai",
-		Organization:   "hanzo",
-		Cert:           "cert-hanzo",
+		Organization:   "built-in",
+		Cert:           "cert-built-in",
 		EnablePassword: true,
-		EnableSignUp:   true,
+		EnableSignUp:   false,
 		Providers: []*ProviderItem{
 			{Name: "provider_captcha_default", CanSignUp: false, CanSignIn: false, CanUnlink: false, Prompted: false, SignupGroup: "", Rule: "None", Provider: nil},
 		},
@@ -264,9 +263,9 @@ func readTokenFromFile() (string, string) {
 	return string(pem), string(key)
 }
 
-func initHanzoCert() {
+func initBuiltInCert() {
 	tokenJwtCertificate, tokenJwtPrivateKey := readTokenFromFile()
-	cert, err := getCert("admin", "cert-hanzo")
+	cert, err := getCert("admin", "cert-built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -277,9 +276,9 @@ func initHanzoCert() {
 
 	cert = &Cert{
 		Owner:           "admin",
-		Name:            "cert-hanzo",
+		Name:            "cert-built-in",
 		CreatedTime:     util.GetCurrentTime(),
-		DisplayName:     "Hanzo Cert",
+		DisplayName:     "Built-in Cert",
 		Scope:           "JWT",
 		Type:            "x509",
 		CryptoAlgorithm: "RS256",
@@ -294,8 +293,8 @@ func initHanzoCert() {
 	}
 }
 
-func initHanzoLdap() {
-	ldap, err := GetLdap("ldap-hanzo")
+func initBuiltInLdap() {
+	ldap, err := GetLdap("ldap-built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -305,14 +304,14 @@ func initHanzoLdap() {
 	}
 
 	ldap = &Ldap{
-		Id:         "ldap-hanzo",
-		Owner:      "hanzo",
-		ServerName: "Hanzo LDAP Server",
+		Id:         "ldap-built-in",
+		Owner:      "built-in",
+		ServerName: "Built-in LDAP Server",
 		Host:       "example.com",
 		Port:       389,
-		Username:   "cn=hanzo,dc=hanzo,dc=ai",
+		Username:   "cn=admin,dc=example,dc=com",
 		Password:   "123",
-		BaseDn:     "ou=Hanzo,dc=hanzo,dc=ai",
+		BaseDn:     "ou=People,dc=example,dc=com",
 		AutoSync:   0,
 		LastSync:   "",
 	}
@@ -322,7 +321,7 @@ func initHanzoLdap() {
 	}
 }
 
-func initHanzoProvider() {
+func initBuiltInProvider() {
 	providers := []*Provider{
 		{
 			Owner:       "admin",
@@ -371,8 +370,8 @@ func initWebAuthn() {
 	gob.Register(webauthn.SessionData{})
 }
 
-func initHanzoUserModel() {
-	model, err := GetModel("hanzo/user-model-hanzo")
+func initBuiltInUserModel() {
+	model, err := GetModel("built-in/user-model-built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -382,10 +381,10 @@ func initHanzoUserModel() {
 	}
 
 	model = &Model{
-		Owner:       "hanzo",
-		Name:        "user-model-hanzo",
+		Owner:       "built-in",
+		Name:        "user-model-built-in",
 		CreatedTime: util.GetCurrentTime(),
-		DisplayName: "Hanzo User Model",
+		DisplayName: "User Model",
 		ModelText: `[request_definition]
 r = sub, obj, act
 
@@ -407,8 +406,8 @@ m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act`,
 	}
 }
 
-func initHanzoApiModel() bool {
-	model, err := GetModel("hanzo/api-model-hanzo")
+func initBuiltInApiModel() bool {
+	model, err := GetModel("built-in/api-model-built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -439,8 +438,8 @@ m = (r.subOwner == p.subOwner || p.subOwner == "*") && \
     (r.subOwner == r.objOwner && r.subName == r.objName)`
 
 	model = &Model{
-		Owner:       "hanzo",
-		Name:        "api-model-hanzo",
+		Owner:       "built-in",
+		Name:        "api-model-built-in",
 		CreatedTime: util.GetCurrentTime(),
 		DisplayName: "API Model",
 		ModelText:   modelText,
@@ -452,8 +451,8 @@ m = (r.subOwner == p.subOwner || p.subOwner == "*") && \
 	return false
 }
 
-func initHanzoPermission() {
-	permission, err := GetPermission("hanzo/permission-hanzo")
+func initBuiltInPermission() {
+	permission, err := GetPermission("built-in/permission-built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -462,19 +461,19 @@ func initHanzoPermission() {
 	}
 
 	permission = &Permission{
-		Owner:        "hanzo",
-		Name:         "permission-hanzo",
+		Owner:        "built-in",
+		Name:         "permission-built-in",
 		CreatedTime:  util.GetCurrentTime(),
-		DisplayName:  "Hanzo Permission",
-		Description:  "Hanzo Permission",
-		Users:        []string{"hanzo/*"},
+		DisplayName:  "Built-in Permission",
+		Description:  "Built-in Permission",
+		Users:        []string{"built-in/*"},
 		Groups:       []string{},
 		Roles:        []string{},
 		Domains:      []string{},
-		Model:        "hanzo/user-model-hanzo",
+		Model:        "built-in/user-model-built-in",
 		Adapter:      "",
 		ResourceType: "Application",
-		Resources:    []string{"app-hanzo"},
+		Resources:    []string{"app-built-in"},
 		Actions:      []string{"Read", "Write", "Admin"},
 		Effect:       "Allow",
 		IsEnabled:    true,
@@ -489,8 +488,8 @@ func initHanzoPermission() {
 	}
 }
 
-func initHanzoUserAdapter() {
-	adapter, err := GetAdapter("hanzo/user-adapter-hanzo")
+func initBuiltInUserAdapter() {
+	adapter, err := GetAdapter("built-in/user-adapter-built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -500,8 +499,8 @@ func initHanzoUserAdapter() {
 	}
 
 	adapter = &Adapter{
-		Owner:       "hanzo",
-		Name:        "user-adapter-hanzo",
+		Owner:       "built-in",
+		Name:        "user-adapter-built-in",
 		CreatedTime: util.GetCurrentTime(),
 		Table:       "casbin_user_rule",
 		UseSameDb:   true,
@@ -512,8 +511,8 @@ func initHanzoUserAdapter() {
 	}
 }
 
-func initHanzoApiAdapter() {
-	adapter, err := GetAdapter("hanzo/api-adapter-hanzo")
+func initBuiltInApiAdapter() {
+	adapter, err := GetAdapter("built-in/api-adapter-built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -523,8 +522,8 @@ func initHanzoApiAdapter() {
 	}
 
 	adapter = &Adapter{
-		Owner:       "hanzo",
-		Name:        "api-adapter-hanzo",
+		Owner:       "built-in",
+		Name:        "api-adapter-built-in",
 		CreatedTime: util.GetCurrentTime(),
 		Table:       "casbin_api_rule",
 		UseSameDb:   true,
@@ -535,8 +534,8 @@ func initHanzoApiAdapter() {
 	}
 }
 
-func initHanzoUserEnforcer() {
-	enforcer, err := GetEnforcer("hanzo/user-enforcer-hanzo")
+func initBuiltInUserEnforcer() {
+	enforcer, err := GetEnforcer("built-in/user-enforcer-built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -546,12 +545,12 @@ func initHanzoUserEnforcer() {
 	}
 
 	enforcer = &Enforcer{
-		Owner:       "hanzo",
-		Name:        "user-enforcer-hanzo",
+		Owner:       "built-in",
+		Name:        "user-enforcer-built-in",
 		CreatedTime: util.GetCurrentTime(),
 		DisplayName: "User Enforcer",
-		Model:       "hanzo/user-model-hanzo",
-		Adapter:     "hanzo/user-adapter-hanzo",
+		Model:       "built-in/user-model-built-in",
+		Adapter:     "built-in/user-adapter-built-in",
 	}
 
 	_, err = AddEnforcer(enforcer)
@@ -560,8 +559,8 @@ func initHanzoUserEnforcer() {
 	}
 }
 
-func initHanzoApiEnforcer() {
-	enforcer, err := GetEnforcer("hanzo/api-enforcer-hanzo")
+func initBuiltInApiEnforcer() {
+	enforcer, err := GetEnforcer("built-in/api-enforcer-built-in")
 	if err != nil {
 		panic(err)
 	}
@@ -571,12 +570,12 @@ func initHanzoApiEnforcer() {
 	}
 
 	enforcer = &Enforcer{
-		Owner:       "hanzo",
-		Name:        "api-enforcer-hanzo",
+		Owner:       "built-in",
+		Name:        "api-enforcer-built-in",
 		CreatedTime: util.GetCurrentTime(),
 		DisplayName: "API Enforcer",
-		Model:       "hanzo/api-model-hanzo",
-		Adapter:     "hanzo/api-adapter-hanzo",
+		Model:       "built-in/api-model-built-in",
+		Adapter:     "built-in/api-adapter-built-in",
 	}
 
 	_, err = AddEnforcer(enforcer)

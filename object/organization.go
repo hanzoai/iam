@@ -228,7 +228,20 @@ func GetMaskedOrganizations(organizations []*Organization, errs ...error) ([]*Or
 	return organizations, nil
 }
 
+// sanitizeOrgPasswordType rejects "plain" as an organization password type.
+// Plaintext passwords are a critical security risk and are not supported.
+// If "plain" is requested, it is silently upgraded to "bcrypt" and a warning is logged.
+func sanitizeOrgPasswordType(passwordType string) string {
+	if passwordType == "plain" {
+		fmt.Printf("[SECURITY] WARNING: attempted to set organization passwordType to 'plain' — blocked, using 'bcrypt' instead. Plaintext passwords are not supported.\n")
+		return "bcrypt"
+	}
+	return passwordType
+}
+
 func UpdateOrganization(id string, organization *Organization, isGlobalAdmin bool) (bool, error) {
+	organization.PasswordType = sanitizeOrgPasswordType(organization.PasswordType)
+
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
 		return false, err
@@ -293,6 +306,8 @@ func UpdateOrganization(id string, organization *Organization, isGlobalAdmin boo
 }
 
 func AddOrganization(organization *Organization) (bool, error) {
+	organization.PasswordType = sanitizeOrgPasswordType(organization.PasswordType)
+
 	affected, err := ormer.Engine.Insert(organization)
 	if err != nil {
 		return false, err
@@ -316,7 +331,7 @@ func CreatePersonalOrganization(username, displayName string) (*Organization, er
 		Name:         username,
 		CreatedTime:  util.GetCurrentTime(),
 		DisplayName:  fmt.Sprintf("%s's Organization", displayName),
-		PasswordType: "plain",
+		PasswordType: "bcrypt",
 		IsPersonal:   true,
 	}
 
