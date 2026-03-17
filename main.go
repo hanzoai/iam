@@ -104,6 +104,7 @@ func main() {
 	web.BConfig.WebConfig.DirectoryIndex = true
 	web.SetStaticPath("/swagger", "swagger")
 	web.SetStaticPath("/files", "files")
+	web.SetStaticPath("/_/iam", "ui/dist")
 	// https://studygolang.com/articles/2303
 	// SecureCookieFilter MUST run as BeforeStatic — the earliest filter position —
 	// because Beego's session init (SessionStart) runs BEFORE BeforeRouter filters.
