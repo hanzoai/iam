@@ -134,6 +134,10 @@ func StaticFilter(ctx *context.Context) {
 	if strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/.well-known/") || (strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize") {
 		return
 	}
+	// Let Beego's static file handler serve the new admin UI at /_/iam/.
+	if strings.HasPrefix(urlPath, "/_/iam") {
+		return
+	}
 	if serveAuthCallbackHandlerScript(ctx) {
 		return
 	}
