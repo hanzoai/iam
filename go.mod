@@ -213,6 +213,7 @@ require (
 	github.com/likexian/gokit v0.25.13 // indirect
 	github.com/line/line-bot-sdk-go v7.8.0+incompatible // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
+	github.com/luxfi/compliance v0.1.1 // indirect
 	github.com/magefile/mage v1.15.1-0.20241126214340-bdc92f694516 // indirect
 	github.com/markbates/going v1.0.0 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect

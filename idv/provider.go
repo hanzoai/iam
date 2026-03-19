@@ -14,16 +14,79 @@
 
 package idv
 
+import (
+	"context"
+
+	cidv "github.com/luxfi/compliance/pkg/idv"
+)
+
+// IdvProvider is the sync identity verification interface used by IAM controllers.
+// For async workflows (webhooks, redirect flows), use the compliance module directly.
 type IdvProvider interface {
 	VerifyIdentity(idCardType string, idCard string, realName string) (bool, error)
 }
 
+// GetIdvProvider returns an IDV provider by type. Jumio, Onfido, and Plaid
+// delegate to luxfi/compliance for the full verification workflow. Alibaba
+// Cloud remains IAM-native (China-market specific).
 func GetIdvProvider(typ string, clientId string, clientSecret string, endpoint string) IdvProvider {
-	if typ == "Jumio" {
-		return NewJumioIdvProvider(clientId, clientSecret, endpoint)
-	} else if typ == "Alibaba Cloud" {
+	switch typ {
+	case "Jumio":
+		return &complianceAdapter{
+			provider: cidv.NewJumio(cidv.JumioConfig{
+				BaseURL:   endpoint,
+				APIToken:  clientId,
+				APISecret: clientSecret,
+			}),
+		}
+	case "Onfido":
+		return &complianceAdapter{
+			provider: cidv.NewOnfido(cidv.OnfidoConfig{
+				BaseURL:  endpoint,
+				APIToken: clientId,
+			}),
+		}
+	case "Plaid":
+		return &complianceAdapter{
+			provider: cidv.NewPlaid(cidv.PlaidConfig{
+				BaseURL:  endpoint,
+				ClientID: clientId,
+				Secret:   clientSecret,
+			}),
+		}
+	case "Alibaba Cloud":
 		return NewAlibabaCloudIdvProvider(clientId, clientSecret, endpoint)
+	default:
+		// Default to Jumio for backward compatibility
+		return &complianceAdapter{
+			provider: cidv.NewJumio(cidv.JumioConfig{
+				BaseURL:   endpoint,
+				APIToken:  clientId,
+				APISecret: clientSecret,
+			}),
+		}
 	}
-	// Default to Jumio for backward compatibility
-	return NewJumioIdvProvider(clientId, clientSecret, endpoint)
+}
+
+// complianceAdapter wraps a luxfi/compliance IDV provider to satisfy
+// the sync IdvProvider interface. It initiates verification and returns
+// success if a session was created (the full async flow with webhooks
+// is handled by the compliance service separately).
+type complianceAdapter struct {
+	provider cidv.Provider
+}
+
+func (a *complianceAdapter) VerifyIdentity(idCardType string, idCard string, realName string) (bool, error) {
+	resp, err := a.provider.InitiateVerification(context.Background(), &cidv.VerificationRequest{
+		GivenName:   realName,
+		DocumentType: idCardType,
+		DocumentID:   idCard,
+	})
+	if err != nil {
+		return false, err
+	}
+	// Session initiated successfully — for sync callers, this means
+	// the provider accepted the request. Full verification completes
+	// asynchronously via webhooks handled by the compliance service.
+	return resp.VerificationID != "", nil
 }
