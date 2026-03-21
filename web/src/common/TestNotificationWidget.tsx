@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
-export function sendTestNotification(provider) {
+export function sendTestNotification(provider: any) {
   testNotificationProvider(provider)
     .then((res) => {
       if (res.status === "ok") {
@@ -30,7 +29,7 @@ export function sendTestNotification(provider) {
     });
 }
 
-function testNotificationProvider(provider) {
+function testNotificationProvider(provider: any) {
   const notificationForm = {
     content: provider.content,
     owner: provider.owner,

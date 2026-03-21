@@ -15,8 +15,7 @@
 // @ts-nocheck
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Col, List, Row, Table, Tooltip} from "antd";
-import {EditOutlined} from "@ant-design/icons";
+import {Pencil, Copy} from "lucide-react";
 import moment from "moment";
 import * as Setting from "./Setting";
 import * as ApplicationBackend from "./backend/ApplicationBackend";
@@ -34,7 +33,7 @@ class ApplicationListPage extends BaseListPage {
     const randomName = Setting.getRandomName();
     const organizationName = Setting.getRequestOrganization(this.props.account);
     return {
-      owner: "admin", // this.props.account.applicationName,
+      owner: "admin",
       name: `application_${randomName}`,
       organization: organizationName,
       createdTime: moment().format(),
@@ -148,198 +147,114 @@ class ApplicationListPage extends BaseListPage {
   }
 
   renderTable(applications) {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "150px",
-        fixed: "left",
-        sorter: true,
-        ...this.getColumnSearchProps("name"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/applications/${record.organization}/${text}`}>
-              {Setting.getApplicationDisplayName(record)}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Created time"),
-        dataIndex: "createdTime",
-        key: "createdTime",
-        width: "160px",
-        sorter: true,
-        render: (text, record, index) => {
-          return Setting.getFormattedDate(text);
-        },
-      },
-      {
-        title: i18next.t("general:Display name"),
-        dataIndex: "displayName",
-        key: "displayName",
-        // width: '100px',
-        sorter: true,
-        ...this.getColumnSearchProps("displayName"),
-      },
-      {
-        title: i18next.t("general:Category"),
-        dataIndex: "category",
-        key: "category",
-        width: "120px",
-        sorter: true,
-        ...this.getColumnSearchProps("category"),
-        render: (text, record, index) => {
-          if (!text) {
-            text = "Default";
-          }
-
-          if (text === "Agent") {
-            return Setting.getTag("success", text);
-          } else {
-            return Setting.getTag("default", text);
-          }
-        },
-      },
-      {
-        title: i18next.t("general:Type"),
-        dataIndex: "type",
-        key: "type",
-        width: "100px",
-        sorter: true,
-        ...this.getColumnSearchProps("type"),
-        render: (text, record, index) => {
-          return text;
-        },
-      },
-      {
-        title: "Logo",
-        dataIndex: "logo",
-        key: "logo",
-        width: "200px",
-        render: (text, record, index) => {
-          return (
-            <a target="_blank" rel="noreferrer" href={text}>
-              <img src={text} alt={text} width={150} />
-            </a>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Organization"),
-        dataIndex: "organization",
-        key: "organization",
-        width: "150px",
-        sorter: true,
-        ...this.getColumnSearchProps("organization"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/organizations/${text}`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("application:Providers"),
-        dataIndex: "providers",
-        key: "providers",
-        ...this.getColumnSearchProps("providers"),
-        // width: '600px',
-        render: (text, record, index) => {
-          const providers = text;
-          if (providers === null || providers.length === 0) {
-            return `(${i18next.t("general:empty")})`;
-          }
-
-          const half = Math.floor((providers.length + 1) / 2);
-
-          const getList = (providers) => {
-            return (
-              <List
-                size="small"
-                locale={{emptyText: " "}}
-                dataSource={providers}
-                renderItem={(providerItem, i) => {
-                  return (
-                    <List.Item>
-                      <div style={{display: "inline"}}>
-                        <Tooltip placement="topLeft" title="Edit">
-                          <Button style={{marginRight: "5px"}} icon={<EditOutlined />} size="small" onClick={() => Setting.goToLinkSoft(this, `/providers/${record.organization}/${providerItem.name}`)} />
-                        </Tooltip>
-                        <Link to={`/providers/${record.organization}/${providerItem.name}`}>
-                          {providerItem.name}
-                        </Link>
-                      </div>
-                    </List.Item>
-                  );
-                }}
-              />
-            );
-          };
-
-          return (
-            <div>
-              <Row>
-                <Col span={12}>
-                  {
-                    getList(providers.slice(0, half))
-                  }
-                </Col>
-                <Col span={12}>
-                  {
-                    getList(providers.slice(half))
-                  }
-                </Col>
-              </Row>
-            </div>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "",
-        key: "op",
-        width: "230px",
-        fixed: (Setting.isMobile()) ? "false" : "right",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/applications/${record.organization}/${record.name}`)}>{i18next.t("general:Edit")}</Button>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} onClick={() => this.copyApplication(index)}>{i18next.t("general:Copy")}</Button>
-              <PopconfirmModal
-                title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
-                onConfirm={() => this.deleteApplication(index)}
-                disabled={record.name === "app-hanzo"}
-              >
-              </PopconfirmModal>
-            </div>
-          );
-        },
-      },
-    ];
-
-    const filteredColumns = Setting.filterTableColumns(columns, this.props.formItems ?? this.state.formItems);
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
-
     return (
-      <div>
-        <Table scroll={{x: "max-content"}} columns={filteredColumns} dataSource={applications} rowKey={(record) => `${record.owner}/${record.name}`} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Applications")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" onClick={this.addApplication.bind(this)}>{i18next.t("general:Add")}</Button>
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-white">{i18next.t("general:Applications")}</h1>
+          <button
+            className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100"
+            onClick={this.addApplication.bind(this)}
+          >
+            {i18next.t("general:Add")}
+          </button>
+        </div>
+
+        <div className="overflow-x-auto border border-white/10 rounded-xl">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Name")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Created time")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Display name")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Category")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">Logo</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Organization")}</th>
+                <th className="px-4 py-3 text-right text-gray-400 font-medium">{i18next.t("general:Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {applications && applications.map((record, index) => (
+                <tr key={`${record.owner}/${record.name}`} className="border-b border-white/5 hover:bg-white/[0.02]">
+                  <td className="px-4 py-3">
+                    <Link to={`/applications/${record.organization}/${record.name}`} className="text-white hover:underline">
+                      {Setting.getApplicationDisplayName(record)}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-gray-400">{Setting.getFormattedDate(record.createdTime)}</td>
+                  <td className="px-4 py-3 text-white">{record.displayName}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${record.category === "Agent" ? "bg-green-500/20 text-green-400" : "bg-white/10 text-gray-300"}`}>
+                      {record.category || "Default"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {record.logo && (
+                      <a target="_blank" rel="noreferrer" href={record.logo}>
+                        <img src={record.logo} alt="" className="h-8 max-w-[120px] object-contain" />
+                      </a>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Link to={`/organizations/${record.organization}`} className="text-white hover:underline">
+                      {record.organization}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1"
+                        onClick={() => this.props.history.push(`/applications/${record.organization}/${record.name}`)}
+                      >
+                        <Pencil size={12} />
+                        {i18next.t("general:Edit")}
+                      </button>
+                      <button
+                        className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1"
+                        onClick={() => this.copyApplication(index)}
+                      >
+                        <Copy size={12} />
+                        {i18next.t("general:Copy")}
+                      </button>
+                      <PopconfirmModal
+                        title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
+                        onConfirm={() => this.deleteApplication(index)}
+                        disabled={record.name === "app-hanzo"}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {(!applications || applications.length === 0) && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                    {this.state.loading ? i18next.t("general:Loading...") : i18next.t("general:No data")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between text-sm text-gray-400">
+          <span>{i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total)}</span>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={this.state.pagination.current <= 1}
+              className="px-3 py-1 border border-white/10 rounded text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.05]"
+              onClick={() => this.handleTableChange({...this.state.pagination, current: this.state.pagination.current - 1}, {}, {})}
+            >
+              Prev
+            </button>
+            <span className="text-white">{this.state.pagination.current}</span>
+            <button
+              disabled={this.state.pagination.current * this.state.pagination.pageSize >= this.state.pagination.total}
+              className="px-3 py-1 border border-white/10 rounded text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.05]"
+              onClick={() => this.handleTableChange({...this.state.pagination, current: this.state.pagination.current + 1}, {}, {})}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -351,24 +266,17 @@ class ApplicationListPage extends BaseListPage {
     (Setting.isDefaultOrganizationSelected(this.props.account) ? ApplicationBackend.getApplications("admin", params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder) :
       ApplicationBackend.getApplicationsByOrganization("admin", Setting.getRequestOrganization(this.props.account), params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder))
       .then((res) => {
-        this.setState({
-          loading: false,
-        });
+        this.setState({loading: false});
         if (res.status === "ok") {
           this.setState({
             data: res.data,
-            pagination: {
-              ...params.pagination,
-              total: res.data2,
-            },
+            pagination: {...params.pagination, total: res.data2},
             searchText: params.searchText,
             searchedColumn: params.searchedColumn,
           });
         } else {
           if (Setting.isResponseDenied(res)) {
-            this.setState({
-              isAuthorized: false,
-            });
+            this.setState({isAuthorized: false});
           } else {
             Setting.showMessage("error", res.msg);
           }
