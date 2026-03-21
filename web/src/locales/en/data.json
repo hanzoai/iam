@@ -97,6 +97,8 @@
     "Inline": "Inline",
     "Input": "Input",
     "Internet-Only": "Internet-Only",
+    "Application name must follow '<org>-<app>' format using lowercase alphanumeric segments": "Application name must follow '<org>-<app>' format using lowercase alphanumeric segments",
+    "Application name must start with org prefix": "Application name must start with org prefix",
     "Invalid characters in application name": "Invalid characters in application name",
     "Invitation code": "Invitation code",
     "Left": "Left",
