@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,226 +13,116 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import React from "react";
-import {Button, Popconfirm, Table, Tag} from "antd";
+import React, {useEffect, useState, useCallback} from "react";
+import {Plus, Pencil, Trash2, ChevronLeft, ChevronRight} from "lucide-react";
 import moment from "moment";
 import * as Setting from "./Setting";
 import * as RuleBackend from "./backend/RuleBackend";
 import i18next from "i18next";
-import BaseListPage from "./BaseListPage";
+import {Button} from "./components/ui/button";
 
-class RuleListPage extends BaseListPage {
-  UNSAFE_componentWillMount() {
-    this.setState({
-      pagination: {
-        ...this.state.pagination,
-        current: 1,
-        pageSize: 10,
-      },
-    });
-    this.fetch({pagination: this.state.pagination});
-  }
+function RuleListPage(props) {
+  const {account, history} = props;
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [pagination, setPagination] = useState({current: 1, pageSize: 10, total: 0});
 
-  fetch = (params = {}) => {
-    const sortField = params.sortField, sortOrder = params.sortOrder;
-    if (!params.pagination) {
-      params.pagination = {current: 1, pageSize: 10};
-    }
-    this.setState({
-      loading: true,
+  const fetchData = useCallback((params = {}) => {
+    const sf = params.sortField || "";
+    const so = params.sortOrder || "";
+    const pag = params.pagination || pagination;
+    setLoading(true);
+    RuleBackend.getRules(account.owner, pag.current, pag.pageSize, sf, so).then((res) => {
+      setLoading(false);
+      if (res.status === "ok") { setData(res.data || []); setPagination({...pag, total: res.data2}); }
     });
-    RuleBackend.getRules(this.props.account.owner, params.pagination.current, params.pagination.pageSize, sortField, sortOrder).then((res) => {
-      this.setState({
-        loading: false,
-      });
-      if (res.status === "ok") {
-        this.setState({
-          data: res.data,
-          pagination: {
-            ...params.pagination,
-            total: res.data2,
-          },
-        });
-      } else {
-        this.setState({loading: false});
-      }
-    });
-  };
+  }, [account, pagination]);
 
-  addRule() {
-    const newRule = this.newRule();
-    RuleBackend.addRule(newRule).then((res) => {
-      if (res.status === "error") {
-        Setting.showMessage("error", `Failed to add: ${res.msg}`);
-      } else {
-        Setting.showMessage("success", "Rule added successfully");
-        this.setState({
-          data: Setting.prependRow(this.state.data, newRule),
-        });
-        this.fetch();
-      }
-    });
-  }
+  useEffect(() => { fetchData({pagination: {current: 1, pageSize: 10, total: 0}}); }, []);
 
-  deleteRule(i) {
-    RuleBackend.deleteRule(this.state.data[i]).then((res) => {
-      if (res.status === "error") {
-        Setting.showMessage("error", `Failed to delete: ${res.msg}`);
-      } else {
-        Setting.showMessage("success", "Deleted successfully");
-        this.fetch({
-          pagination: {
-            ...this.state.pagination,
-            current: this.state.pagination.current > 1 && this.state.data.length === 1 ? this.state.pagination.current - 1 : this.state.pagination.current,
-          },
-        });
-      }
-    });
-  }
-
-  newRule() {
+  function addRule() {
     const randomName = Setting.getRandomName();
-    const owner = Setting.getRequestOrganization(this.props.account);
-    return {
-      owner: owner,
-      name: `rule_${randomName}`,
-      createdTime: moment().format(),
-      type: "User-Agent",
-      expressions: [],
-      action: "Block",
-      reason: "Your request is blocked.",
-    };
+    const owner = Setting.getRequestOrganization(account);
+    const r = {owner, name: `rule_${randomName}`, createdTime: moment().format(), type: "User-Agent", expressions: [], action: "Block", reason: "Your request is blocked."};
+    RuleBackend.addRule(r).then((res) => {
+      if (res.status === "error") Setting.showMessage("error", `Failed to add: ${res.msg}`);
+      else { Setting.showMessage("success", "Rule added successfully"); fetchData(); }
+    });
   }
 
-  renderTable(data) {
-    const columns = [
-      {
-        title: i18next.t("general:Owner"),
-        dataIndex: "owner",
-        key: "owner",
-        width: "150px",
-        sorter: (a, b) => a.owner.localeCompare(b.owner),
-      },
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "200px",
-        sorter: (a, b) => a.name.localeCompare(b.name),
-        render: (text, rule, index) => {
-          return <a href={`/rules/${rule.owner}/${text}`}>{text}</a>;
-        },
-      },
-      {
-        title: i18next.t("general:Create time"),
-        dataIndex: "createdTime",
-        key: "createdTime",
-        width: "200px",
-        sorter: (a, b) => a.createdTime.localeCompare(b.createdTime),
-        render: (text, rule, index) => {
-          return Setting.getFormattedDate(text);
-        },
-      },
-      {
-        title: i18next.t("general:Update time"),
-        dataIndex: "updatedTime",
-        key: "updatedTime",
-        width: "200px",
-        sorter: (a, b) => a.updatedTime.localeCompare(b.updatedTime),
-        render: (text, rule, index) => {
-          return Setting.getFormattedDate(text);
-        },
-      },
-      {
-        title: i18next.t("rule:Type"),
-        dataIndex: "type",
-        key: "type",
-        width: "100px",
-        sorter: (a, b) => a.type.localeCompare(b.type),
-        render: (text, rule, index) => {
-          return (
-            <Tag color="blue">
-              {i18next.t(`rule:${text}`)}
-            </Tag>
-          );
-        },
-      },
-      {
-        title: i18next.t("rule:Expressions"),
-        dataIndex: "expressions",
-        key: "expressions",
-        sorter: (a, b) => a.expressions.localeCompare(b.expressions),
-        render: (text, rule, index) => {
-          return rule.expressions.map((expression, i) => {
-            return (
-              <Tag key={expression} color={"success"}>
-                {expression.operator + " " + expression.value.slice(0, 20)}
-              </Tag>
-            );
-          });
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "action",
-        key: "action",
-        width: "100px",
-        sorter: (a, b) => a.action.localeCompare(b.action),
-      },
-      {
-        title: i18next.t("rule:Status code"),
-        dataIndex: "statusCode",
-        key: "statusCode",
-        width: "120px",
-        sorter: (a, b) => a.statusCode.localeCompare(b.statusCode),
-      },
-      {
-        title: i18next.t("rule:Reason"),
-        dataIndex: "reason",
-        key: "reason",
-        width: "300px",
-        sorter: (a, b) => a.reason.localeCompare(b.reason),
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "",
-        key: "op",
-        render: (text, rule, index) => {
-          return (
-            <div>
-              <Popconfirm
-                title={`Sure to delete rule: ${rule.name} ?`}
-                onConfirm={() => this.deleteRule(index)}
-              >
-                <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/rules/${rule.owner}/${rule.name}`)}>{i18next.t("general:Edit")}</Button>
-                <Button type="danger">{i18next.t("general:Delete")}</Button>
-              </Popconfirm>
-            </div>
-          );
-        },
-      },
-    ];
-
-    return (
-      <Table
-        dataSource={data}
-        columns={columns}
-        rowKey="name"
-        pagination={this.state.pagination}
-        loading={this.state.loading}
-        onChange={this.handleTableChange}
-        size="middle"
-        bordered
-        title={() => (
-          <div>
-            {i18next.t("general:Rules")}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button type="primary" size="small" onClick={() => this.addRule()}>{i18next.t("general:Add")}</Button>
-          </div>
-        )}
-      />
-    );
+  function deleteRule(i) {
+    RuleBackend.deleteRule(data[i]).then((res) => {
+      if (res.status === "error") Setting.showMessage("error", `Failed to delete: ${res.msg}`);
+      else { Setting.showMessage("success", "Deleted successfully"); fetchData({pagination: {...pagination, current: pagination.current > 1 && data.length === 1 ? pagination.current - 1 : pagination.current}}); }
+    });
   }
+
+  function handlePageChange(page) { const np = {...pagination, current: page}; setPagination(np); fetchData({pagination: np}); }
+  const totalPages = Math.ceil(pagination.total / pagination.pageSize);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-white">{i18next.t("general:Rules")}</h2>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-zinc-400">{i18next.t("general:{total} in total").replace("{total}", String(pagination.total))}</span>
+          <Button size="sm" onClick={addRule}><Plus className="w-4 h-4 mr-1" />{i18next.t("general:Add")}</Button>
+        </div>
+      </div>
+      <div className="border border-zinc-800 rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-zinc-800 bg-zinc-900/50">
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("general:Owner")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("general:Name")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("general:Create time")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("rule:Type")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("rule:Expressions")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("general:Action")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("rule:Reason")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("general:Action")}</th>
+            </tr></thead>
+            <tbody>
+              {loading ? (<tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-500">Loading...</td></tr>) :
+               data.length === 0 ? (<tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-500">No data</td></tr>) :
+               data.map((record, index) => (
+                <tr key={record.name} className="border-b border-zinc-800/50 hover:bg-zinc-900/30">
+                  <td className="px-4 py-3 text-zinc-300">{record.owner}</td>
+                  <td className="px-4 py-3"><a href={`/rules/${record.owner}/${record.name}`} className="text-blue-400 hover:text-blue-300">{record.name}</a></td>
+                  <td className="px-4 py-3 text-zinc-300">{Setting.getFormattedDate(record.createdTime)}</td>
+                  <td className="px-4 py-3"><span className="px-2 py-0.5 rounded text-xs bg-blue-900/50 text-blue-400">{i18next.t(`rule:${record.type}`)}</span></td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {record.expressions?.map((expr, i) => (
+                        <span key={i} className="px-2 py-0.5 rounded text-xs bg-green-900/50 text-green-400">{expr.operator} {expr.value?.slice(0, 20)}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-zinc-300">{record.action}</td>
+                  <td className="px-4 py-3 text-zinc-300 max-w-[200px] truncate">{record.reason}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => history.push(`/rules/${record.owner}/${record.name}`)}><Pencil className="w-3 h-3 mr-1" />{i18next.t("general:Edit")}</Button>
+                      <Button variant="destructive" size="sm" onClick={() => { if (window.confirm(`Sure to delete rule: ${record.name} ?`)) deleteRule(index); }}>
+                        <Trash2 className="w-3 h-3 mr-1" />{i18next.t("general:Delete")}
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" disabled={pagination.current <= 1} onClick={() => handlePageChange(pagination.current - 1)}><ChevronLeft className="w-4 h-4" /></Button>
+          <span className="text-sm text-zinc-400">{pagination.current} / {totalPages}</span>
+          <Button variant="outline" size="sm" disabled={pagination.current >= totalPages} onClick={() => handlePageChange(pagination.current + 1)}><ChevronRight className="w-4 h-4" /></Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default RuleListPage;

@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,16 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import React from "react";
 import UserEditPage from "../UserEditPage";
 
-class AccountPage extends React.Component {
-  render() {
-    return (
-      <UserEditPage organizationName={this.props.account.owner} userName={this.props.account.name} account={this.props.account} location={this.props.location} />
-    );
-  }
+function AccountPage(props) {
+  return (
+    <UserEditPage organizationName={props.account.owner} userName={props.account.name} account={props.account} location={props.location} />
+  );
 }
 
 export default AccountPage;

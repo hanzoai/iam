@@ -13,229 +13,142 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
-import {Button, Col, Input, Row, Select, Switch, Table, Tooltip} from "antd";
+import React, {useCallback} from "react";
+import {ArrowDown, ArrowUp, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
-const {Option} = Select;
+function AccountTable({title, table, onUpdateTable}) {
+  const updateTable = useCallback((tbl) => {
+    onUpdateTable(tbl);
+  }, [onUpdateTable]);
 
-class AccountTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-    };
-  }
+  const updateField = useCallback((tbl, index, key, value) => {
+    tbl[index][key] = value;
+    updateTable([...tbl]);
+  }, [updateTable]);
 
-  updateTable(table) {
-    this.props.onUpdateTable(table);
-  }
+  const addRow = useCallback((tbl) => {
+    const row = {name: Setting.getNewRowNameForTable(tbl, "Please select an account item"), visible: true, viewRule: "Public", modifyRule: "Self", tab: ""};
+    let newTable = tbl ?? [];
+    newTable = Setting.addRow(newTable, row);
+    updateTable(newTable);
+  }, [updateTable]);
 
-  updateField(table, index, key, value) {
-    table[index][key] = value;
-    this.updateTable(table);
-  }
+  const deleteRow = useCallback((tbl, i) => {
+    updateTable(Setting.deleteRow(tbl, i));
+  }, [updateTable]);
 
-  addRow(table) {
-    const row = {name: Setting.getNewRowNameForTable(table, "Please select an account item"), visible: true, viewRule: "Public", modifyRule: "Self", tab: ""};
-    if (table === undefined) {
-      table = [];
-    }
-    table = Setting.addRow(table, row);
-    this.updateTable(table);
-  }
+  const upRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i - 1, i));
+  }, [updateTable]);
 
-  deleteRow(table, i) {
-    table = Setting.deleteRow(table, i);
-    this.updateTable(table);
-  }
+  const downRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i, i + 1));
+  }, [updateTable]);
 
-  upRow(table, i) {
-    table = Setting.swapRow(table, i - 1, i);
-    this.updateTable(table);
-  }
+  const items = Setting.GetTranslatedUserItems();
 
-  downRow(table, i) {
-    table = Setting.swapRow(table, i, i + 1);
-    this.updateTable(table);
-  }
+  return (
+    <div className="mt-5">
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center gap-4">
+          <span className="text-sm text-gray-300">{title}</span>
+          <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => addRow(table)}>
+            {i18next.t("general:Add")}
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Name")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "120px"}}>{i18next.t("organization:Visible")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "150px"}}>{i18next.t("general:Tab")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("signup:Regex")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "155px"}}>{i18next.t("organization:View rule")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "155px"}}>{i18next.t("organization:Modify rule")}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("general:Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {table.map((row, i) => {
+                const regexIncludeList = ["Display name", "Password", "Email", "Phone", "Location", "Title", "Homepage", "Bio", "Gender", "Birthday", "Education", "ID card", "ID card type"];
 
-  renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        render: (text, record, index) => {
-          const items = Setting.GetTranslatedUserItems();
-          return (
-            <Select virtual={false} style={{width: "100%"}}
-              options={Setting.getDeduplicatedArray(items, table, "name").map(item => Setting.getOption(item.label, item.name))}
-              value={text}
-              onChange={value => {
-                this.updateField(table, index, "name", value);
-              }} >
-            </Select>
-          );
-        },
-      },
-      {
-        title: i18next.t("organization:Visible"),
-        dataIndex: "visible",
-        key: "visible",
-        width: "120px",
-        render: (text, record, index) => {
-          return (
-            <Switch checked={text} onChange={checked => {
-              this.updateField(table, index, "visible", checked);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Tab"),
-        dataIndex: "tab",
-        key: "tab",
-        width: "150px",
-        render: (text, record, index) => {
-          return (
-            <Input value={text} placeholder={i18next.t("general:Default")} onChange={e => {
-              this.updateField(table, index, "tab", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("signup:Regex"),
-        dataIndex: "regex",
-        key: "regex",
-        width: "200px",
-        render: (text, record, index) => {
-          const regexIncludeList = ["Display name", "Password", "Email", "Phone", "Location",
-            "Title", "Homepage", "Bio", "Gender", "Birthday", "Education", "ID card",
-            "ID card type"];
-          if (!regexIncludeList.includes(record.name)) {
-            return null;
-          }
+                const getViewRuleOptions = () => [
+                  {id: "Public", name: "Public"},
+                  {id: "Self", name: "Self"},
+                  {id: "Admin", name: "Admin"},
+                ];
 
-          return (
-            <Input value={text} onChange={e => {
-              this.updateField(table, index, "regex", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("organization:View rule"),
-        dataIndex: "viewRule",
-        key: "viewRule",
-        width: "155px",
-        render: (text, record, index) => {
-          if (!record.visible) {
-            return null;
-          }
+                const getModifyRuleOptions = () => {
+                  if (row.viewRule === "Admin" || row.name === "Is admin") {
+                    return [{id: "Admin", name: "Admin"}, {id: "Immutable", name: "Immutable"}];
+                  }
+                  return [{id: "Self", name: "Self"}, {id: "Admin", name: "Admin"}, {id: "Immutable", name: "Immutable"}];
+                };
 
-          const options = [
-            {id: "Public", name: "Public"},
-            {id: "Self", name: "Self"},
-            {id: "Admin", name: "Admin"},
-          ];
-
-          return (
-            <Select virtual={false} style={{width: "100%"}} value={text} onChange={(value => {
-              this.updateField(table, index, "viewRule", value);
-            })}>
-              {
-                options.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-              }
-            </Select>
-          );
-        },
-      },
-      {
-        title: i18next.t("organization:Modify rule"),
-        dataIndex: "modifyRule",
-        key: "modifyRule",
-        width: "155px",
-        render: (text, record, index) => {
-          if (!record.visible) {
-            return null;
-          }
-
-          let options;
-          if (record.viewRule === "Admin" || record.name === "Is admin") {
-            options = [
-              {id: "Admin", name: "Admin"},
-              {id: "Immutable", name: "Immutable"},
-            ];
-          } else {
-            options = [
-              {id: "Self", name: "Self"},
-              {id: "Admin", name: "Admin"},
-              {id: "Immutable", name: "Immutable"},
-            ];
-          }
-
-          return (
-            <Select virtual={false} style={{width: "100%"}} value={text} onChange={(value => {
-              this.updateField(table, index, "modifyRule", value);
-            })}>
-              {
-                options.map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-              }
-            </Select>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        key: "action",
-        width: "100px",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Tooltip placement="bottomLeft" title={i18next.t("general:Up")}>
-                <Button style={{marginRight: "5px"}} disabled={index === 0} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Down")}>
-                <Button style={{marginRight: "5px"}} disabled={index === table.length - 1} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Delete")}>
-                <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
-              </Tooltip>
-            </div>
-          );
-        },
-      },
-    ];
-
-    return (
-      <Table scroll={{x: "max-content"}} rowKey="name" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
-          </div>
-        )}
-      />
-    );
-  }
-
-  render() {
-    return (
-      <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
-            {
-              this.renderTable(this.props.table)
-            }
-          </Col>
-        </Row>
+                return (
+                  <tr key={row.name} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                    <td className="px-4 py-2">
+                      <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.name || ""} onChange={e => updateField(table, i, "name", e.target.value)}>
+                        <option value="">--</option>
+                        {Setting.getDeduplicatedArray(items, table, "name").map(item => (
+                          <option key={item.name} value={item.name}>{item.label}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-2">
+                      <input type="checkbox" className="rounded bg-white/5 border-white/10 text-blue-500" checked={!!row.visible} onChange={e => updateField(table, i, "visible", e.target.checked)} />
+                    </td>
+                    <td className="px-4 py-2">
+                      <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.tab || ""} placeholder={i18next.t("general:Default")} onChange={e => updateField(table, i, "tab", e.target.value)} />
+                    </td>
+                    <td className="px-4 py-2">
+                      {regexIncludeList.includes(row.name) ? (
+                        <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.regex || ""} onChange={e => updateField(table, i, "regex", e.target.value)} />
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2">
+                      {row.visible ? (
+                        <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.viewRule || ""} onChange={e => updateField(table, i, "viewRule", e.target.value)}>
+                          {getViewRuleOptions().map(opt => (
+                            <option key={opt.id} value={opt.id}>{opt.name}</option>
+                          ))}
+                        </select>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2">
+                      {row.visible ? (
+                        <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.modifyRule || ""} onChange={e => updateField(table, i, "modifyRule", e.target.value)}>
+                          {getModifyRuleOptions().map(opt => (
+                            <option key={opt.id} value={opt.id}>{opt.name}</option>
+                          ))}
+                        </select>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button title={i18next.t("general:Up")} disabled={i === 0} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => upRow(table, i)}>
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                        <button title={i18next.t("general:Down")} disabled={i === table.length - 1} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => downRow(table, i)}>
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
+                        <button title={i18next.t("general:Delete")} className="p-1 rounded hover:bg-white/10 text-red-400 hover:text-red-300" onClick={() => deleteRow(table, i)}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
 }
 
 export default AccountTable;

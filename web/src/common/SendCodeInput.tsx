@@ -12,24 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {Button, Input} from "antd";
+import {ShieldCheck, Loader2} from "lucide-react";
 import React from "react";
 import i18next from "i18next";
 import * as UserBackend from "../backend/UserBackend";
 import * as Setting from "../Setting";
-import {SafetyOutlined} from "@ant-design/icons";
 import {CaptchaModal} from "./modal/CaptchaModal";
 
-const {Search} = Input;
+interface SendCodeInputProps {
+  value?: string;
+  disabled?: boolean;
+  captchaValue?: any;
+  useInlineCaptcha?: boolean;
+  textBefore?: string;
+  onChange: (value: string) => void;
+  onButtonClickArgs: any[];
+  application: any;
+  method: string;
+  countryCode?: string;
+  refreshCaptcha?: () => void;
+}
 
-export const SendCodeInput = ({value, disabled, captchaValue, useInlineCaptcha, textBefore, onChange, onButtonClickArgs, application, method, countryCode, refreshCaptcha}) => {
+export const SendCodeInput = ({value, disabled, captchaValue, useInlineCaptcha, textBefore, onChange, onButtonClickArgs, application, method, countryCode, refreshCaptcha}: SendCodeInputProps) => {
   const [visible, setVisible] = React.useState(false);
   const [buttonLeftTime, setButtonLeftTime] = React.useState(0);
   const [buttonLoading, setButtonLoading] = React.useState(false);
 
   const getCodeResendTimeout = () => {
-    // Use application's codeResendTimeout if available, otherwise default to 60 seconds
     return (application && application.codeResendTimeout > 0) ? application.codeResendTimeout : 60;
   };
 
@@ -47,10 +56,10 @@ export const SendCodeInput = ({value, disabled, captchaValue, useInlineCaptcha, 
     setTimeout(countDown, 1000);
   };
 
-  const handleOk = (captchaType, captchaToken, clintSecret) => {
+  const handleOk = (captchaType: string, captchaToken: string, clintSecret: string) => {
     setVisible(false);
     setButtonLoading(true);
-    UserBackend.sendCode(captchaType, captchaToken, clintSecret, method, countryCode, ...onButtonClickArgs).then(res => {
+    UserBackend.sendCode(captchaType, captchaToken, clintSecret, method, countryCode, ...onButtonClickArgs).then((res: any) => {
       setButtonLoading(false);
       if (res) {
         handleCountDown(getCodeResendTimeout());
@@ -77,7 +86,6 @@ export const SendCodeInput = ({value, disabled, captchaValue, useInlineCaptcha, 
       return;
     }
 
-    // client secret is validated in backend 
     if (!captchaValue?.captchaType || !captchaValue?.captchaToken) {
       Setting.showMessage("error", i18next.t("general:Please complete the captcha correctly"));
       return;
@@ -87,34 +95,43 @@ export const SendCodeInput = ({value, disabled, captchaValue, useInlineCaptcha, 
 
   return (
     <React.Fragment>
-      <Search
-        addonBefore={textBefore}
-        disabled={disabled}
-        value={value}
-        prefix={<SafetyOutlined />}
-        placeholder={i18next.t("code:Enter your code")}
-        className="verification-code-input"
-        onChange={e => onChange(e.target.value)}
-        enterButton={
-          <Button style={{fontSize: 14}} type={"primary"} disabled={disabled || buttonLeftTime > 0} loading={buttonLoading}>
-            {buttonLeftTime > 0 ? `${buttonLeftTime} s` : buttonLoading ? i18next.t("code:Sending") : i18next.t("code:Send Code")}
-          </Button>
-        }
-        onSearch={handleSearch}
-        autoComplete="one-time-code"
-      />
-      {
-        useInlineCaptcha ? null : (
-          <CaptchaModal
-            owner={application.owner}
-            name={application.name}
-            visible={visible}
-            onOk={handleOk}
-            onCancel={handleCancel}
-            isCurrentProvider={false}
+      <div className="flex items-stretch">
+        {textBefore && (
+          <span className="inline-flex items-center px-3 text-sm text-gray-400 bg-white/5 border border-r-0 border-white/20 rounded-l-lg">
+            {textBefore}
+          </span>
+        )}
+        <div className={`flex items-center flex-1 border border-white/20 bg-transparent px-3 py-2 ${textBefore ? "" : "rounded-l-lg"}`}>
+          <ShieldCheck className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
+          <input
+            disabled={disabled}
+            value={value || ""}
+            placeholder={i18next.t("code:Enter your code")}
+            className="bg-transparent text-white outline-none flex-1 text-sm min-w-0"
+            onChange={e => onChange(e.target.value)}
+            autoComplete="one-time-code"
           />
-        )
-      }
+        </div>
+        <button
+          type="button"
+          disabled={disabled || buttonLeftTime > 0 || buttonLoading}
+          onClick={handleSearch}
+          className="px-4 py-2 text-sm bg-white text-black rounded-r-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap flex items-center gap-1"
+        >
+          {buttonLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+          {buttonLeftTime > 0 ? `${buttonLeftTime} s` : buttonLoading ? i18next.t("code:Sending") : i18next.t("code:Send Code")}
+        </button>
+      </div>
+      {useInlineCaptcha ? null : (
+        <CaptchaModal
+          owner={application.owner}
+          name={application.name}
+          visible={visible}
+          onOk={handleOk}
+          onCancel={handleCancel}
+          isCurrentProvider={false}
+        />
+      )}
     </React.Fragment>
   );
 };
