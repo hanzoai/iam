@@ -13,103 +13,73 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {Button, Col, Input, InputNumber, Row, Table} from "antd";
+import React, {useCallback} from "react";
 import i18next from "i18next";
 
-class IpRateRuleTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      defaultRules: [
-        {
-          name: "Default IP Rate",
-          operator: "100",
-          value: "6000",
-        },
-      ],
-    };
-    if (this.props.table.length === 0) {
-      this.restore();
-    }
+const defaultRules = [
+  {name: "Default IP Rate", operator: "100", value: "6000"},
+];
+
+function IpRateRuleTable({title, table, onUpdateTable}) {
+  const updateTable = useCallback((tbl) => {
+    onUpdateTable(tbl);
+  }, [onUpdateTable]);
+
+  const updateField = useCallback((tbl, index, key, value) => {
+    tbl[index][key] = String(value);
+    updateTable([...tbl]);
+  }, [updateTable]);
+
+  const restore = useCallback(() => {
+    updateTable(defaultRules);
+  }, [updateTable]);
+
+  if (table.length === 0) {
+    updateTable(defaultRules);
   }
 
-  updateTable(table) {
-    this.props.onUpdateTable(table);
-  }
-
-  updateField(table, index, key, value) {
-    table[index][key] = String(value);
-    this.updateTable(table);
-  }
-
-  restore() {
-    this.updateTable(this.state.defaultRules);
-  }
-
-  renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "20%",
-        render: (text, record, index) => (
-          <Input value={record.name} onChange={e => {
-            this.updateField(table, index, "name", e.target.value);
-          }} />
-        ),
-      },
-      {
-        title: i18next.t("rule:Rate"),
-        dataIndex: "operator",
-        key: "operator",
-        width: "40%",
-        render: (text, record, index) => (
-          <InputNumber style={{"width": "100%"}} value={Number(record.operator)} addonAfter="requests / ip / s" onChange={e => {
-            this.updateField(table, index, "operator", e);
-          }} />
-        ),
-      },
-      {
-        title: i18next.t("rule:Block Duration"),
-        dataIndex: "value",
-        key: "value",
-        width: "100%",
-        render: (text, record, index) => (
-          <InputNumber style={{"width": "100%"}} value={Number(record.value)} addonAfter={i18next.t("usage:seconds")} onChange={e => {
-            this.updateField(table, index, "value", e);
-          }} />
-        ),
-      },
-    ];
-
-    return (
-      <Table rowKey="index" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.restore()}>{i18next.t("general:Restore")}</Button>
-          </div>
-        )}
-      />
-    );
-  }
-
-  render() {
-    return (
-      <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
-            {
-              this.renderTable(this.props.table)
-            }
-          </Col>
-        </Row>
+  return (
+    <div className="mt-5">
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center gap-4">
+          <span className="text-sm text-gray-300">{title}</span>
+          <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => restore()}>
+            {i18next.t("general:Restore")}
+          </button>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/[0.02]">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "20%"}}>{i18next.t("general:Name")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "40%"}}>{i18next.t("rule:Rate")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("rule:Block Duration")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {table.map((row, i) => (
+              <tr key={i} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                <td className="px-4 py-2">
+                  <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.name || ""} onChange={e => updateField(table, i, "name", e.target.value)} />
+                </td>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <input type="number" className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={Number(row.operator)} onChange={e => updateField(table, i, "operator", e.target.value)} />
+                    <span className="text-xs text-gray-400 whitespace-nowrap">requests / ip / s</span>
+                  </div>
+                </td>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <input type="number" className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={Number(row.value)} onChange={e => updateField(table, i, "value", e.target.value)} />
+                    <span className="text-xs text-gray-400 whitespace-nowrap">{i18next.t("usage:seconds")}</span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-    );
-  }
+    </div>
+  );
 }
 
 export default IpRateRuleTable;

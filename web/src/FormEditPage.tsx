@@ -1,20 +1,5 @@
-// Copyright 2025 The Hanzo Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // @ts-nocheck
-import React from "react";
-import {Button, Card, Col, Input, Row, Select} from "antd";
+import React, {useEffect, useState} from "react";
 import * as FormBackend from "./backend/FormBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
@@ -23,204 +8,91 @@ import UserListPage from "./UserListPage";
 import ApplicationListPage from "./ApplicationListPage";
 import ProviderListPage from "./ProviderListPage";
 import OrganizationListPage from "./OrganizationListPage";
+import {Button} from "./components/ui/button";
 
-const {Option} = Select;
+function FormEditPage(props) {
+  const {account, history, match} = props;
+  const formNameFromUrl = match.params.formName;
+  const [formName, setFormName] = useState(formNameFromUrl);
+  const [form, setForm] = useState(null);
 
-class FormEditPage extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      formName: props.match.params.formName,
-      form: null,
-      formItems: [],
-    };
+  useEffect(() => {
+    FormBackend.getForm(account.owner, formNameFromUrl).then(r => { if (r.status === "ok") setForm(r.data); });
+  }, []);
+
+  function updateField(key, value) { setForm({...form, [key]: value}); }
+
+  function submitEdit(exitAfterSave) {
+    FormBackend.updateForm(form.owner, formName, Setting.deepCopy(form)).then(r => {
+      if (r.status === "ok") {
+        if (r.data) { Setting.showMessage("success", i18next.t("general:Successfully saved")); setFormName(form.name); if (exitAfterSave) history.push("/forms"); else history.push(`/forms/${form.name}`); }
+        else { Setting.showMessage("error", i18next.t("general:Failed to save")); updateField("name", formName); }
+      } else Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${r.msg}`);
+    }).catch(error => Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${error}`));
   }
 
-  UNSAFE_componentWillMount() {
-    this.getForm();
-  }
+  if (!form) return null;
 
-  getForm() {
-    FormBackend.getForm(this.props.account.owner, this.state.formName)
-      .then((res) => {
-        if (res.status === "ok") {
-          this.setState({
-            form: res.data,
-          });
-        }
-      });
-  }
+  const listPageMap = {users: UserListPage, applications: ApplicationListPage, providers: ProviderListPage, organizations: OrganizationListPage};
+  const ListPageComponent = listPageMap[form.type];
 
-  updateFormField(key, value) {
-    const form = this.state.form;
-    form[key] = value;
-    this.setState({
-      form: form,
-    });
-  }
-
-  renderForm() {
-    return (
-      <Card size="small" title={
-        <div>
-          {i18next.t("form:Edit Form")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitFormEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary"
-            onClick={() => this.submitFormEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-        </div>
-      } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Input
-              value={this.state.form.name}
-              disabled={true}
-              onChange={e => {this.updateFormField("name", e.target.value);}}
-            />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Input value={this.state.form.displayName} onChange={e => {
-              this.updateFormField("displayName", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Select
-              style={{width: "100%"}}
-              value={this.state.form.type}
-              onChange={value => {
-                this.updateFormField("type", value);
-                this.updateFormField("name", value);
-                this.updateFormField("displayName", value);
-                const defaultItems = new FormItemTable({formType: value}).getItems();
-                this.updateFormField("formItems", defaultItems);
-              }}
-            >
-              {Setting.getFormTypeOptions().map(option => (
-                <Option key={option.id} value={option.id}>{i18next.t(option.name)}</Option>
-              ))}
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Tag"), i18next.t("product:Tag - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Input value={this.state.form.tag} onChange={e => {
-              this.updateFormField("tag", e.target.value);
-              this.updateFormField("name", e.target.value ? `${this.state.form.type}-tag-${e.target.value}` : this.state.form.type);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("form:Form items"), i18next.t("form:Form items - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <FormItemTable
-              title={i18next.t("form:Form items")}
-              table={this.state.form.formItems}
-              onUpdateTable={(value) => {
-                this.updateFormField("formItems", value);
-              }}
-              formType={this.state.form.type}
-            />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Preview"), i18next.t("general:Preview - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            {
-              this.renderListPreview()
-            }
-          </Col>
-        </Row>
-      </Card>
-    );
-  }
-
-  renderListPreview() {
-    let listPageComponent = null;
-
-    if (this.state.form.type === "users") {
-      listPageComponent = (<UserListPage {...this.props} formItems={this.state.form.formItems} />);
-    } else if (this.state.form.type === "applications") {
-      listPageComponent = (<ApplicationListPage {...this.props} formItems={this.state.form.formItems} />);
-    } else if (this.state.form.type === "providers") {
-      listPageComponent = (<ProviderListPage {...this.props} formItems={this.state.form.formItems} />);
-    } else if (this.state.form.type === "organizations") {
-      listPageComponent = (<OrganizationListPage {...this.props} formItems={this.state.form.formItems} />);
-    }
-
-    return (
-      <div style={{position: "relative", border: "1px solid rgb(217,217,217)", height: "600px", cursor: "pointer"}} onClick={(e) => {Setting.openLink(`/${this.state.form.type}`);}}>
-        <div style={{position: "relative", height: "100%", overflow: "auto"}}>
-          <div style={{display: "inline-block", position: "relative", zIndex: 1, pointerEvents: "none"}}>
-            {listPageComponent}
+  return (
+    <div className="space-y-6">
+      <div className="border border-zinc-800 rounded-lg bg-zinc-900/30">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+          <h2 className="text-lg font-semibold text-white">{i18next.t("form:Edit Form")}</h2>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => submitEdit(false)}>{i18next.t("general:Save")}</Button>
+            <Button onClick={() => submitEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
           </div>
         </div>
-        <div style={{position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, background: "rgba(0,0,0,0.4)", pointerEvents: "none"}} />
-      </div>
-    );
-  }
-
-  submitFormEdit(exitAfterSave) {
-    const form = Setting.deepCopy(this.state.form);
-    FormBackend.updateForm(this.state.form.owner, this.state.formName, form)
-      .then((res) => {
-        if (res.status === "ok") {
-          if (res.data) {
-            Setting.showMessage("success", i18next.t("general:Successfully saved"));
-            this.setState({
-              formName: this.state.form.name,
-            });
-            if (exitAfterSave) {
-              this.props.history.push("/forms");
-            } else {
-              this.props.history.push(`/forms/${this.state.form.name}`);
-            }
-          } else {
-            Setting.showMessage("error", i18next.t("general:Failed to save"));
-            this.updateFormField("name", this.state.formName);
-          }
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${res.msg}`);
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${error}`);
-      });
-  }
-
-  render() {
-    return (
-      <div>
-        {
-          this.state.form !== null ? this.renderForm() : null
-        }
-        <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitFormEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large"
-            onClick={() => this.submitFormEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+        <div className="p-6 space-y-5">
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Name")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm opacity-60" disabled value={form.name} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Display name")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={form.displayName || ""} onChange={e => updateField("displayName", e.target.value)} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Type")}</label>
+            <select className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={form.type || ""} onChange={e => {
+              const v = e.target.value; updateField("type", v); updateField("name", v); updateField("displayName", v);
+              const defaultItems = new FormItemTable({formType: v}).getItems(); updateField("formItems", defaultItems);
+            }}>
+              {Setting.getFormTypeOptions().map(opt => <option key={opt.id} value={opt.id}>{i18next.t(opt.name)}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("user:Tag")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={form.tag || ""} onChange={e => { updateField("tag", e.target.value); updateField("name", e.target.value ? `${form.type}-tag-${e.target.value}` : form.type); }} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-start gap-4">
+            <label className="text-sm text-zinc-400 pt-2">{i18next.t("form:Form items")}</label>
+            <FormItemTable title={i18next.t("form:Form items")} table={form.formItems} onUpdateTable={v => updateField("formItems", v)} formType={form.type} />
+          </div>
+          {ListPageComponent && (
+            <div className="grid grid-cols-[160px_1fr] items-start gap-4">
+              <label className="text-sm text-zinc-400 pt-2">{i18next.t("general:Preview")}</label>
+              <div className="relative border border-zinc-700 h-[600px] cursor-pointer overflow-hidden" onClick={() => Setting.openLink(`/${form.type}`)}>
+                <div className="h-full overflow-auto">
+                  <div className="inline-block relative z-[1] pointer-events-none">
+                    <ListPageComponent {...props} formItems={form.formItems} />
+                  </div>
+                </div>
+                <div className="absolute inset-0 z-10 bg-black/40 pointer-events-none" />
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    );
-  }
+      <div className="flex gap-3 px-6">
+        <Button variant="outline" size="lg" onClick={() => submitEdit(false)}>{i18next.t("general:Save")}</Button>
+        <Button size="lg" onClick={() => submitEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+      </div>
+    </div>
+  );
 }
 
 export default FormEditPage;

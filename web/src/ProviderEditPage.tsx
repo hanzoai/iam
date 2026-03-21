@@ -15,7 +15,7 @@
 // @ts-nocheck
 import React from "react";
 import {Button, Card, Col, Input, Row, Select, Switch} from "antd";
-import {LinkOutlined} from "@ant-design/icons";
+import {Link as LinkIcon} from "lucide-react";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as OrganizationBackend from "./backend/OrganizationBackend";
 import * as CertBackend from "./backend/CertBackend";
@@ -634,14 +634,17 @@ class ProviderEditPage extends React.Component {
 
   renderProvider() {
     return (
-      <Card size="small" title={
-        <div>
-          {this.state.mode === "add" ? i18next.t("provider:New Provider") : i18next.t("provider:Edit Provider")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitProviderEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitProviderEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteProvider()}>{i18next.t("general:Cancel")}</Button> : null}
+      <div className="bg-white/[0.02] border border-white/10 rounded-xl p-6 space-y-1">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">
+            {this.state.mode === "add" ? i18next.t("provider:New Provider") : i18next.t("provider:Edit Provider")}
+          </h2>
+          <div className="flex gap-2">
+            <button className="px-4 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.submitProviderEdit(false)}>{i18next.t("general:Save")}</button>
+            <button className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100" onClick={() => this.submitProviderEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+            {this.state.mode === "add" ? <button className="px-4 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.deleteProvider()}>{i18next.t("general:Cancel")}</button> : null}
+          </div>
         </div>
-      } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
         <Row style={{marginTop: "10px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
@@ -992,7 +995,7 @@ class ProviderEditPage extends React.Component {
             this.state.providerName
           ) : null
         }
-      </Card>
+      </div>
     );
   }
 
@@ -1037,15 +1040,17 @@ class ProviderEditPage extends React.Component {
   }
 
   render() {
+    if (this.state.provider === null) {
+      return null;
+    }
+
     return (
-      <div>
-        {
-          this.state.provider !== null ? this.renderProvider() : null
-        }
-        <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitProviderEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitProviderEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.deleteProvider()}>{i18next.t("general:Cancel")}</Button> : null}
+      <div className="max-w-5xl mx-auto space-y-6">
+        {this.renderProvider()}
+        <div className="flex gap-3">
+          <button className="px-6 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.submitProviderEdit(false)}>{i18next.t("general:Save")}</button>
+          <button className="px-6 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100" onClick={() => this.submitProviderEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+          {this.state.mode === "add" && <button className="px-6 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.deleteProvider()}>{i18next.t("general:Cancel")}</button>}
         </div>
       </div>
     );

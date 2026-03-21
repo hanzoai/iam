@@ -12,50 +12,60 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import React from "react";
-import {Select} from "antd";
 import i18next from "i18next";
 import * as OrganizationBackend from "../../backend/OrganizationBackend";
 import * as Setting from "../../Setting";
 
-function OrganizationSelect(props) {
+interface OrganizationSelectProps {
+  onChange?: (value: string) => void;
+  initValue?: string;
+  style?: React.CSSProperties;
+  onSelect?: (value: string) => void;
+  withAll?: boolean;
+  className?: string;
+  organizations?: any[];
+}
+
+const OrganizationSelect = (props: OrganizationSelectProps) => {
   const {onChange, initValue, style, onSelect, withAll, className} = props;
-  const [organizations, setOrganizations] = React.useState([]);
-  const [value, setValue] = React.useState(initValue);
+  const [organizations, setOrganizations] = React.useState<any[]>([]);
+  const [value, setValue] = React.useState(initValue || "");
 
   React.useEffect(() => {
     if (props.organizations === undefined) {
       getOrganizations();
     }
     window.addEventListener("storageOrganizationsChanged", getOrganizations);
-    return function() {
+    return () => {
       window.removeEventListener("storageOrganizationsChanged", getOrganizations);
     };
   }, [value]);
 
   const getOrganizations = () => {
     OrganizationBackend.getOrganizationNames("admin")
-      .then((res) => {
+      .then((res: any) => {
         if (res.status === "ok") {
           setOrganizations(res.data);
-          const selectedValueExist = res.data.filter(organization => organization.name === value).length > 0;
+          const selectedValueExist = res.data.filter((org: any) => org.name === value).length > 0;
           if (initValue === undefined || !selectedValueExist) {
-            handleOnChange(getOrganizationItems().length > 0 ? getOrganizationItems()[0].value : "");
+            const items = getOrganizationItems(res.data);
+            handleOnChange(items.length > 0 ? items[0].value : "");
           }
         }
       });
   };
 
-  const handleOnChange = (value) => {
-    setValue(value);
-    onChange?.(value);
+  const handleOnChange = (val: string) => {
+    setValue(val);
+    onChange?.(val);
   };
 
-  const getOrganizationItems = () => {
-    const items = [];
+  const getOrganizationItems = (orgs?: any[]) => {
+    const data = orgs || organizations;
+    const items: Array<{label: string; value: string}> = [];
 
-    organizations.forEach((organization) => items.push(Setting.getOption(organization.displayName, organization.name)));
+    data.forEach((org: any) => items.push(Setting.getOption(org.displayName, org.name)));
 
     if (withAll) {
       items.unshift({
@@ -67,21 +77,30 @@ function OrganizationSelect(props) {
     return items;
   };
 
+  const items = getOrganizationItems();
+
   return (
-    <Select
-      options={getOrganizationItems()}
-      virtual={false}
-      popupMatchSelectWidth={false}
-      placeholder={i18next.t("login:Please select an organization")}
+    <select
       value={value}
-      onChange={handleOnChange}
-      filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+      onChange={(e) => {
+        handleOnChange(e.target.value);
+        onSelect?.(e.target.value);
+      }}
       style={style}
-      onSelect={onSelect}
-      className={className}
+      className={`px-3 py-2 text-sm bg-transparent border border-white/20 rounded-lg text-white outline-none ${className || ""}`}
     >
-    </Select>
+      {!value && (
+        <option value="" disabled className="bg-[#0a0a0a]">
+          {i18next.t("login:Please select an organization")}
+        </option>
+      )}
+      {items.map((item) => (
+        <option key={item.value} value={item.value} className="bg-[#0a0a0a]">
+          {item.label}
+        </option>
+      ))}
+    </select>
   );
-}
+};
 
 export default OrganizationSelect;

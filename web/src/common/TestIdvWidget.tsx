@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
-export function testIdvProvider(provider, account) {
-  // Test IDV provider by verifying with specific provider parameter
-  // This allows admin to test the provider in provider edit page
+export function testIdvProvider(provider: any, account: any) {
   const providerName = `${provider.owner}/${provider.name}`;
 
   return fetch(`${Setting.ServerUrl}/api/verify-identification?provider=${encodeURIComponent(providerName)}`, {

@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
-export function sendTestEmail(provider, email) {
+export function sendTestEmail(provider: any, email: string) {
   testEmailProvider(provider, email)
     .then((res) => {
       if (res.status === "ok") {
@@ -30,7 +29,7 @@ export function sendTestEmail(provider, email) {
     });
 }
 
-export function connectSmtpServer(provider) {
+export function connectSmtpServer(provider: any) {
   testEmailProvider(provider)
     .then((res) => {
       if (res.status === "ok") {
@@ -44,7 +43,7 @@ export function connectSmtpServer(provider) {
     });
 }
 
-function testEmailProvider(provider, email = "") {
+function testEmailProvider(provider: any, email = "") {
   const emailForm = {
     title: provider.title,
     content: provider.content,
