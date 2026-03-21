@@ -12,182 +12,164 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import React from "react";
-import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
-import {Button, Col, Row, Select, Table, Tooltip} from "antd";
+import React, {useEffect, useState} from "react";
+import {Trash2, ChevronUp, ChevronDown} from "lucide-react";
 import {getRules} from "../backend/RuleBackend";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
-const {Option} = Select;
+interface CompoundRuleProps {
+  owner: string;
+  ruleName: string;
+  table: any[];
+  title: string;
+  onUpdateTable: (table: any[]) => void;
+}
 
-class CompoundRule extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      rules: [],
-      defaultRules: [
-        {
-          name: "Start",
-          operator: "begin",
-          value: "rule1",
-        },
-        {
-          name: "And",
-          operator: "and",
-          value: "rule2",
-        },
-      ],
-    };
-    if (this.props.table.length === 0) {
-      this.restore();
+const defaultRules = [
+  {name: "Start", operator: "begin", value: "rule1"},
+  {name: "And", operator: "and", value: "rule2"},
+];
+
+const CompoundRule = (props: CompoundRuleProps) => {
+  const {owner, ruleName, table, title, onUpdateTable} = props;
+  const [rules, setRules] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (table.length === 0) {
+      onUpdateTable(defaultRules);
     }
-  }
+    fetchRules();
+  }, []);
 
-  UNSAFE_componentWillMount() {
-    this.getRules();
-  }
-
-  getRules() {
-    getRules(this.props.owner).then((res) => {
-      const rules = [];
+  const fetchRules = () => {
+    getRules(owner).then((res: any) => {
+      const ruleList: string[] = [];
       for (let i = 0; i < res.data.length; i++) {
-        if (Setting.getItemId(res.data[i]) === this.props.owner + "/" + this.props.ruleName) {
+        if (Setting.getItemId(res.data[i]) === owner + "/" + ruleName) {
           continue;
         }
-        rules.push(Setting.getItemId(res.data[i]));
+        ruleList.push(Setting.getItemId(res.data[i]));
       }
-      this.setState({
-        rules: rules,
-      });
+      setRules(ruleList);
     });
-  }
+  };
 
-  updateTable(table) {
-    this.props.onUpdateTable(table);
-  }
+  const updateField = (t: any[], index: number, key: string, value: string) => {
+    const newTable = [...t];
+    newTable[index] = {...newTable[index], [key]: value};
+    onUpdateTable(newTable);
+  };
 
-  updateField(table, index, key, value) {
-    table[index][key] = value;
-    this.updateTable(table);
-  }
-
-  addRow(table) {
+  const addRow = () => {
     const row = {name: `New Item - ${table.length}`, operator: "and", value: ""};
-    if (table === undefined) {
-      table = [];
-    }
+    onUpdateTable(Setting.addRow(table || [], row));
+  };
 
-    table = Setting.addRow(table, row);
-    this.updateTable(table);
-  }
+  const deleteRow = (i: number) => {
+    onUpdateTable(Setting.deleteRow(table, i));
+  };
 
-  deleteRow(table, i) {
-    table = Setting.deleteRow(table, i);
-    this.updateTable(table);
-  }
+  const upRow = (i: number) => {
+    onUpdateTable(Setting.swapRow(table, i - 1, i));
+  };
 
-  upRow(table, i) {
-    table = Setting.swapRow(table, i - 1, i);
-    this.updateTable(table);
-  }
+  const downRow = (i: number) => {
+    onUpdateTable(Setting.swapRow(table, i, i + 1));
+  };
 
-  downRow(table, i) {
-    table = Setting.swapRow(table, i, i + 1);
-    this.updateTable(table);
-  }
+  const restore = () => {
+    onUpdateTable(defaultRules);
+  };
 
-  restore() {
-    this.updateTable(this.state.defaultRules);
-  }
+  return (
+    <div className="mt-5">
+      <div className="border border-white/10 rounded-xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-2 px-4 py-3 bg-white/5 border-b border-white/10">
+          <span className="text-sm text-white font-medium">{title}</span>
+          <button
+            onClick={addRow}
+            className="px-3 py-1 text-xs bg-white text-black rounded-md hover:bg-gray-200 transition-colors"
+          >
+            {i18next.t("general:Add")}
+          </button>
+          <button
+            onClick={restore}
+            className="px-3 py-1 text-xs bg-white text-black rounded-md hover:bg-gray-200 transition-colors"
+          >
+            {i18next.t("general:Restore")}
+          </button>
+        </div>
 
-  renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("rule:Logic"),
-        dataIndex: "operator",
-        key: "operator",
-        width: "180px",
-        render: (text, record, index) => {
-          const options = [];
-          if (index !== 0) {
-            options.push({value: "and", text: i18next.t("rule:and")});
-            options.push({value: "or", text: i18next.t("rule:or")});
-          } else {
-            options.push({value: "begin", text: i18next.t("rule:begin")});
-          }
-          return (
-            <Select value={text} virtual={false} style={{width: "100%"}} onChange={value => {
-              this.updateField(table, index, "operator", value);
-            }}>
-              {
-                options.map((item, index) => <Option key={index} value={item.value}>{item.text}</Option>)
-              }
-            </Select>
-          );
-        },
-      },
-      {
-        title: i18next.t("rule:Rule"),
-        dataIndex: "value",
-        key: "value",
-        render: (text, record, index) => (
-          <Select value={text} virtual={false} style={{width: "100%"}} onChange={value => {
-            this.updateField(table, index, "value", value);
-          }}>
-            {
-              this.state.rules.map((item, index) => <Option key={index} value={item}>{item}</Option>)
-            }
-          </Select>
-        ),
-      },
-      {
-        title: i18next.t("general:Action"),
-        key: "action",
-        width: "100px",
-        render: (text, record, index) => (
-          <div>
-            <Tooltip placement="bottomLeft" title={"Up"}>
-              <Button style={{marginRight: "5px"}} disabled={index === 0} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-            </Tooltip>
-            <Tooltip placement="topLeft" title={"Down"}>
-              <Button style={{marginRight: "5px"}} disabled={index === table.length - 1} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-            </Tooltip>
-            <Tooltip placement="topLeft" title={"Delete"}>
-              <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
-            </Tooltip>
+        {/* Table header */}
+        <div className="grid grid-cols-[180px_1fr_100px] border-b border-white/10 bg-white/5">
+          <div className="px-4 py-2 text-xs text-gray-400 font-medium">{i18next.t("rule:Logic")}</div>
+          <div className="px-4 py-2 text-xs text-gray-400 font-medium">{i18next.t("rule:Rule")}</div>
+          <div className="px-4 py-2 text-xs text-gray-400 font-medium">{i18next.t("general:Action")}</div>
+        </div>
+
+        {/* Rows */}
+        {table.map((row, index) => (
+          <div key={index} className="grid grid-cols-[180px_1fr_100px] border-b border-white/10 last:border-b-0">
+            <div className="px-4 py-2">
+              <select
+                value={row.operator}
+                onChange={(e) => updateField(table, index, "operator", e.target.value)}
+                className="w-full px-2 py-1 text-sm bg-transparent border border-white/20 rounded text-white outline-none"
+              >
+                {index === 0 ? (
+                  <option value="begin" className="bg-[#0a0a0a]">{i18next.t("rule:begin")}</option>
+                ) : (
+                  <>
+                    <option value="and" className="bg-[#0a0a0a]">{i18next.t("rule:and")}</option>
+                    <option value="or" className="bg-[#0a0a0a]">{i18next.t("rule:or")}</option>
+                  </>
+                )}
+              </select>
+            </div>
+            <div className="px-4 py-2">
+              <select
+                value={row.value}
+                onChange={(e) => updateField(table, index, "value", e.target.value)}
+                className="w-full px-2 py-1 text-sm bg-transparent border border-white/20 rounded text-white outline-none"
+              >
+                <option value="" className="bg-[#0a0a0a]">--</option>
+                {rules.map((item, idx) => (
+                  <option key={idx} value={item} className="bg-[#0a0a0a]">{item}</option>
+                ))}
+              </select>
+            </div>
+            <div className="px-4 py-2 flex items-center gap-1">
+              <button
+                disabled={index === 0}
+                onClick={() => upRow(index)}
+                className="p-1 text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Up"
+              >
+                <ChevronUp className="w-4 h-4" />
+              </button>
+              <button
+                disabled={index === table.length - 1}
+                onClick={() => downRow(index)}
+                className="p-1 text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Down"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => deleteRow(index)}
+                className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                title="Delete"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-        ),
-      },
-    ];
-    return (
-      <Table rowKey="index" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
-            <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.restore()}>{i18next.t("general:Restore")}</Button>
-          </div>
-        )}
-      />
-    );
-  }
-
-  render() {
-    return (
-      <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
-            {
-              this.renderTable(this.props.table)
-            }
-          </Col>
-        </Row>
+        ))}
       </div>
-    );
-  }
-}
+    </div>
+  );
+};
 
 export default CompoundRule;
