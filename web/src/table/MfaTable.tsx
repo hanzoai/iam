@@ -13,15 +13,12 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
-import {Button, Col, Row, Select, Table, Tooltip} from "antd";
+import React, {useCallback} from "react";
+import {ArrowDown, ArrowUp, Trash2} from "lucide-react";
 import {EmailMfaType, PushMfaType, SmsMfaType, TotpMfaType} from "../auth/MfaSetupPage";
 import {MfaRuleOptional, MfaRulePrompted, MfaRuleRequired} from "../Setting";
 import * as Setting from "../Setting";
 import i18next from "i18next";
-
-const {Option} = Select;
 
 const MfaItems = [
   {name: "Phone", value: SmsMfaType},
@@ -36,145 +33,107 @@ const RuleItems = [
   {value: MfaRuleRequired, label: i18next.t("organization:Required")},
 ];
 
-class MfaTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-    };
-  }
+function MfaTable({title, table, onUpdateTable}) {
+  const updateTable = useCallback((tbl) => {
+    onUpdateTable(tbl);
+  }, [onUpdateTable]);
 
-  updateTable(table) {
-    this.props.onUpdateTable(table);
-  }
+  const updateField = useCallback((tbl, index, key, value) => {
+    tbl[index][key] = value;
+    updateTable([...tbl]);
+  }, [updateTable]);
 
-  updateField(table, index, key, value) {
-    table[index][key] = value;
-    this.updateTable(table);
-  }
+  const addRow = useCallback((tbl) => {
+    const row = {name: Setting.getNewRowNameForTable(tbl, "Please select a MFA method"), rule: "Optional"};
+    let newTable = tbl ?? [];
+    newTable = Setting.addRow(newTable, row);
+    updateTable(newTable);
+  }, [updateTable]);
 
-  addRow(table) {
-    const row = {name: Setting.getNewRowNameForTable(table, "Please select a MFA method"), rule: "Optional"};
-    if (table === undefined) {
-      table = [];
-    }
-    table = Setting.addRow(table, row);
-    this.updateTable(table);
-  }
+  const deleteRow = useCallback((tbl, i) => {
+    updateTable(Setting.deleteRow(tbl, i));
+  }, [updateTable]);
 
-  deleteRow(table, i) {
-    table = Setting.deleteRow(table, i);
-    this.updateTable(table);
-  }
+  const upRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i - 1, i));
+  }, [updateTable]);
 
-  upRow(table, i) {
-    table = Setting.swapRow(table, i - 1, i);
-    this.updateTable(table);
-  }
+  const downRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i, i + 1));
+  }, [updateTable]);
 
-  downRow(table, i) {
-    table = Setting.swapRow(table, i, i + 1);
-    this.updateTable(table);
-  }
-
-  renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        render: (text, record, index) => {
-          return (
-            <Select virtual={false} size="small" style={{width: "100%"}}
-              value={text}
-              onChange={value => {
-                this.updateField(table, index, "name", value);
-              }} >
-              {
-                Setting.getDeduplicatedArray(MfaItems, table, "name").map((item, index) => <Option key={index} value={item.value}>{item.name}</Option>)
-              }
-            </Select>
-          );
-        },
-      },
-      {
-        title: i18next.t("application:Rule"),
-        dataIndex: "rule",
-        key: "rule",
-        width: "100px",
-        render: (text, record, index) => {
-          return (
-            <Select virtual={false} size="small" style={{width: "100%"}}
-              value={text}
-              defaultValue="Optional"
-              options={RuleItems.map((item) =>
-                Setting.getOption(item.label, item.value))
-              }
-              onChange={value => {
-                let requiredCount = 0;
-                table.forEach((item) => {
-                  if (item.rule === MfaRuleRequired) {
-                    requiredCount++;
-                  }
-                });
-
-                if (value === MfaRuleRequired && requiredCount >= 1) {
-                  Setting.showMessage("error", i18next.t("general:Only 1 MFA method can be required"));
-                  return;
-                }
-                this.updateField(table, index, "rule", value);
-              }} >
-            </Select>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        key: "action",
-        width: "100px",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Tooltip placement="bottomLeft" title={i18next.t("general:Up")}>
-                <Button style={{marginRight: "5px"}} disabled={index === 0} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Down")}>
-                <Button style={{marginRight: "5px"}} disabled={index === table.length - 1} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Delete")}>
-                <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
-              </Tooltip>
-            </div>
-          );
-        },
-      },
-    ];
-
-    return (
-      <Table scroll={{x: "max-content"}} rowKey="name" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button disabled={table.length >= MfaItems.length} style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
-          </div>
-        )}
-      />
-    );
-  }
-
-  render() {
-    return (
-      <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
-            {
-              this.renderTable(this.props.table)
-            }
-          </Col>
-        </Row>
+  return (
+    <div className="mt-5">
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center gap-4">
+          <span className="text-sm text-gray-300">{title}</span>
+          <button
+            className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
+            disabled={table.length >= MfaItems.length}
+            onClick={() => addRow(table)}
+          >
+            {i18next.t("general:Add")}
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Name")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("application:Rule")}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("general:Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {table.map((row, i) => (
+                <tr key={row.name} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                  <td className="px-4 py-2">
+                    <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.name || ""} onChange={e => updateField(table, i, "name", e.target.value)}>
+                      <option value="">--</option>
+                      {Setting.getDeduplicatedArray(MfaItems, table, "name").map((item, idx) => (
+                        <option key={idx} value={item.value}>{item.name}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.rule || "Optional"} onChange={e => {
+                      const value = e.target.value;
+                      let requiredCount = 0;
+                      table.forEach((item) => {
+                        if (item.rule === MfaRuleRequired) {requiredCount++;}
+                      });
+                      if (value === MfaRuleRequired && requiredCount >= 1) {
+                        Setting.showMessage("error", i18next.t("general:Only 1 MFA method can be required"));
+                        return;
+                      }
+                      updateField(table, i, "rule", value);
+                    }}>
+                      {RuleItems.map(item => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button title={i18next.t("general:Up")} disabled={i === 0} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => upRow(table, i)}>
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button title={i18next.t("general:Down")} disabled={i === table.length - 1} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => downRow(table, i)}>
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                      <button title={i18next.t("general:Delete")} className="p-1 rounded hover:bg-white/10 text-red-400 hover:text-red-300" onClick={() => deleteRow(table, i)}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
 }
 
 export default MfaTable;
