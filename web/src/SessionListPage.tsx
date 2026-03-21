@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2022 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,184 +13,104 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import BaseListPage from "./BaseListPage";
-import * as Setting from "./Setting";
-import i18next from "i18next";
+import React, {useEffect, useState, useCallback} from "react";
 import {Link} from "react-router-dom";
-import {Popconfirm, Table, Tag} from "antd";
-import React from "react";
+import {Trash2, ChevronLeft, ChevronRight, X} from "lucide-react";
+import * as Setting from "./Setting";
 import * as SessionBackend from "./backend/SessionBackend";
-import PopconfirmModal from "./common/modal/PopconfirmModal";
+import i18next from "i18next";
+import {Button} from "./components/ui/button";
 
-class SessionListPage extends BaseListPage {
-  handleTagClose = (rowIndex, sessionId, e) => {
-    e.preventDefault();
-    e.stopPropagation();
+function SessionListPage(props) {
+  const {account} = props;
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [pagination, setPagination] = useState({current: 1, pageSize: 10, total: 0});
+  const [isAuthorized, setIsAuthorized] = useState(true);
 
-    this.setState({
-      confirmTagKey: `${rowIndex}-${sessionId}`,
-    });
-  };
-
-  deleteSession(i, sessionId = "") {
-    // Pass the optional sessionId to the backend. If sessionId is empty, the backend will delete the whole session record.
-    SessionBackend.deleteSession(this.state.data[i], sessionId)
+  const fetchData = useCallback((params = {}) => {
+    let field = params.searchedColumn || "";
+    let value = params.searchText || "";
+    const sf = params.sortField || "";
+    const so = params.sortOrder || "";
+    const pag = params.pagination || pagination;
+    setLoading(true);
+    SessionBackend.getSessions(Setting.isDefaultOrganizationSelected(account) ? "" : Setting.getRequestOrganization(account), pag.current, pag.pageSize, field, value, sf, so)
       .then((res) => {
-        if (res.status === "ok") {
-          Setting.showMessage("success", i18next.t("general:Successfully deleted"));
-          this.fetch({
-            pagination: {
-              ...this.state.pagination,
-              current: this.state.pagination.current > 1 && this.state.data.length === 1 ? this.state.pagination.current - 1 : this.state.pagination.current,
-            },
-          });
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
+        setLoading(false);
+        if (res.status === "ok") { setData(res.data || []); setPagination({...pag, total: res.data2}); }
+        else { if (Setting.isResponseDenied(res)) setIsAuthorized(false); else Setting.showMessage("error", res.msg); }
       });
+  }, [account, pagination]);
+
+  useEffect(() => { fetchData({pagination: {current: 1, pageSize: 10, total: 0}}); }, []);
+
+  function deleteSession(i, sessionId = "") {
+    SessionBackend.deleteSession(data[i], sessionId).then((res) => {
+      if (res.status === "ok") { Setting.showMessage("success", i18next.t("general:Successfully deleted")); fetchData({pagination: {...pagination, current: pagination.current > 1 && data.length === 1 ? pagination.current - 1 : pagination.current}}); }
+      else Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
+    }).catch((error) => Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`));
   }
 
-  renderTable(sessions) {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "150px",
-        fixed: "left",
-        sorter: true,
-        ...this.getColumnSearchProps("name"),
-      },
-      {
-        title: i18next.t("general:Organization"),
-        dataIndex: "owner",
-        key: "owner",
-        width: "110px",
-        sorter: true,
-        ...this.getColumnSearchProps("owner"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/organizations/${text}`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Created time"),
-        dataIndex: "createdTime",
-        key: "createdTime",
-        width: "180px",
-        sorter: true,
-        render: (text, record, index) => {
-          return Setting.getFormattedDate(text);
-        },
-      },
-      {
-        title: i18next.t("general:Session ID"),
-        dataIndex: "sessionId",
-        key: "sessionId",
-        width: "180px",
-        sorter: true,
-        render: (text, record, index) => {
-          return text.map((item, idx) => {
-            const tagKey = `${index}-${item}`;
-            const confirmTitle = i18next.t("general:Sure to delete");
-            const confirmContent = `${i18next.t("general:Session ID")}: ${item}`;
-            const isActive = this.state.confirmTagKey === tagKey;
-            return (
-              <Popconfirm
-                key={`${index}-${idx}`}
-                title={confirmTitle}
-                description={confirmContent}
-                open={isActive}
-                onConfirm={() => {this.deleteSession(index, item); this.setState({confirmTagKey: null});}}
-                onCancel={() => this.setState({confirmTagKey: null})}
-                onOpenChange={(visible) => {if (!visible && isActive) {this.setState({confirmTagKey: null});}}}
-                okText={i18next.t("general:OK")}
-                cancelText={i18next.t("general:Cancel")}
-              >
-                <Tag closable onClose={(e) => this.handleTagClose(index, item, e)}>{item}</Tag>
-              </Popconfirm>
-            );
-          });
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "",
-        key: "op",
-        width: "70px",
-        fixed: (Setting.isMobile()) ? "false" : "right",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <PopconfirmModal
-                title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
-                onConfirm={() => this.deleteSession(index)}
-              >
-              </PopconfirmModal>
-            </div>
-          );
-        },
-      },
-    ];
+  function handlePageChange(page) { const np = {...pagination, current: page}; setPagination(np); fetchData({pagination: np}); }
 
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
+  if (!isAuthorized) { return (<div className="flex flex-col items-center justify-center py-20"><h1 className="text-2xl font-bold text-white mb-2">403 Unauthorized</h1><a href="/"><Button>{i18next.t("general:Back Home")}</Button></a></div>); }
+  const totalPages = Math.ceil(pagination.total / pagination.pageSize);
 
-    return (
-      <div>
-        <Table scroll={{x: "max-content"}} columns={columns} dataSource={sessions} rowKey={(record) => `${record.owner}/${record.name}`} size="middle" bordered pagination={paginationProps}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-white">{i18next.t("general:Sessions")}</h2>
+        <span className="text-sm text-zinc-400">{i18next.t("general:{total} in total").replace("{total}", String(pagination.total))}</span>
       </div>
-    );
-  }
-
-  fetch = (params = {}) => {
-    let field = params.searchedColumn, value = params.searchText;
-    const sortField = params.sortField, sortOrder = params.sortOrder;
-    if (params.contentType !== undefined && params.contentType !== null) {
-      field = "contentType";
-      value = params.contentType;
-    }
-    this.setState({loading: true});
-    SessionBackend.getSessions(Setting.isDefaultOrganizationSelected(this.props.account) ? "" : Setting.getRequestOrganization(this.props.account), params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder)
-      .then((res) => {
-        this.setState({
-          loading: false,
-        });
-        if (res.status === "ok") {
-          this.setState({
-            data: res.data,
-            pagination: {
-              ...params.pagination,
-              total: res.data2,
-            },
-            searchText: params.searchText,
-            searchedColumn: params.searchedColumn,
-          });
-        } else {
-          if (Setting.isResponseDenied(res)) {
-            this.setState({
-              isAuthorized: false,
-            });
-          } else {
-            Setting.showMessage("error", res.msg);
-          }
-        }
-      });
-  };
+      <div className="border border-zinc-800 rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-zinc-800 bg-zinc-900/50">
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("general:Name")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("general:Organization")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("general:Created time")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("general:Session ID")}</th>
+              <th className="text-left px-4 py-3 text-zinc-400 font-medium">{i18next.t("general:Action")}</th>
+            </tr></thead>
+            <tbody>
+              {loading ? (<tr><td colSpan={5} className="px-4 py-8 text-center text-zinc-500">Loading...</td></tr>) :
+               data.length === 0 ? (<tr><td colSpan={5} className="px-4 py-8 text-center text-zinc-500">No data</td></tr>) :
+               data.map((record, index) => (
+                <tr key={`${record.owner}/${record.name}`} className="border-b border-zinc-800/50 hover:bg-zinc-900/30">
+                  <td className="px-4 py-3 text-zinc-300">{record.name}</td>
+                  <td className="px-4 py-3"><Link to={`/organizations/${record.owner}`} className="text-blue-400 hover:text-blue-300">{record.owner}</Link></td>
+                  <td className="px-4 py-3 text-zinc-300">{Setting.getFormattedDate(record.createdTime)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {record.sessionId?.map((sid, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300">
+                          {sid}
+                          <button className="hover:text-red-400" onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${sid} ?`)) deleteSession(index, sid); }}><X className="w-3 h-3" /></button>
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Button variant="destructive" size="sm" onClick={() => { if (window.confirm(`${i18next.t("general:Sure to delete")}: ${record.name} ?`)) deleteSession(index); }}>
+                      <Trash2 className="w-3 h-3 mr-1" />{i18next.t("general:Delete")}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" disabled={pagination.current <= 1} onClick={() => handlePageChange(pagination.current - 1)}><ChevronLeft className="w-4 h-4" /></Button>
+          <span className="text-sm text-zinc-400">{pagination.current} / {totalPages}</span>
+          <Button variant="outline" size="sm" disabled={pagination.current >= totalPages} onClick={() => handlePageChange(pagination.current + 1)}><ChevronRight className="w-4 h-4" /></Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default SessionListPage;
