@@ -12,16 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {Button, Modal} from "antd";
 import i18next from "i18next";
-import React from "react";
-import {useEffect, useState} from "react";
+import React, {useEffect, useState} from "react";
 import {EmailMfaType} from "../../auth/MfaSetupPage";
 import * as MfaBackend from "../../backend/MfaBackend";
 import * as Setting from "../../Setting";
 
-const EnableMfaModal = ({user, mfaType, onSuccess}) => {
+const EnableMfaModal = ({user, mfaType, onSuccess}: any) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -32,7 +29,7 @@ const EnableMfaModal = ({user, mfaType, onSuccess}) => {
     MfaBackend.MfaSetupInitiate({
       mfaType,
       ...user,
-    }).then((res) => {
+    }).then((res: any) => {
       if (res.status === "error") {
         Setting.showMessage("error", i18next.t("mfa:Failed to initiate MFA"));
       }
@@ -44,7 +41,7 @@ const EnableMfaModal = ({user, mfaType, onSuccess}) => {
     MfaBackend.MfaSetupEnable({
       mfaType,
       ...user,
-    }).then(res => {
+    }).then((res: any) => {
       if (res.status === "ok") {
         Setting.showMessage("success", i18next.t("general:Enabled successfully"));
         setOpen(false);
@@ -52,8 +49,7 @@ const EnableMfaModal = ({user, mfaType, onSuccess}) => {
       } else {
         Setting.showMessage("error", `${i18next.t("general:Failed to enable")}: ${res.msg}`);
       }
-    }
-    ).finally(() => {
+    }).finally(() => {
       setLoading(false);
     });
   };
@@ -76,11 +72,12 @@ const EnableMfaModal = ({user, mfaType, onSuccess}) => {
 
   const renderText = () => {
     return (
-      <p>{i18next.t("mfa:Please confirm the information below")}<br />
-        <b>{i18next.t("general:User")}</b>: {`${user.owner}/${user.name}`}<br />
+      <p className="text-gray-300 text-sm">
+        {i18next.t("mfa:Please confirm the information below")}<br />
+        <b className="text-white">{i18next.t("general:User")}</b>: {`${user.owner}/${user.name}`}<br />
         {mfaType === EmailMfaType ?
-          <><b>{i18next.t("general:Email")}</b> : {user.email}</> :
-          <><b>{i18next.t("general:Phone")}</b> : {user.phone}</>}
+          <><b className="text-white">{i18next.t("general:Email")}</b> : {user.email}</> :
+          <><b className="text-white">{i18next.t("general:Phone")}</b> : {user.phone}</>}
       </p>
     );
   };
@@ -95,18 +92,34 @@ const EnableMfaModal = ({user, mfaType, onSuccess}) => {
 
   return (
     <React.Fragment>
-      <Button type="primary" onClick={showModal}>
-        {i18next.t("general:Enable")}
-      </Button>
-      <Modal
-        title={i18next.t("mfa:Enable multi-factor authentication")}
-        open={open}
-        onOk={handleOk}
-        onCancel={handleCancel}
-        confirmLoading={loading}
+      <button
+        onClick={showModal}
+        className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors"
       >
-        {renderText()}
-      </Modal>
+        {i18next.t("general:Enable")}
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-6 max-w-md w-full">
+            <h2 className="text-lg font-semibold text-white mb-4">
+              {i18next.t("mfa:Enable multi-factor authentication")}
+            </h2>
+            {renderText()}
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={handleCancel} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">
+                {i18next.t("general:Cancel")}
+              </button>
+              <button
+                onClick={handleOk}
+                disabled={loading}
+                className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                {loading ? "..." : i18next.t("general:OK")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </React.Fragment>
   );
 };
