@@ -119,7 +119,7 @@ function MfaAccountTable({title, table, icon, accessToken, onUpdateTable}) {
                   </td>
                   <td className="px-4 py-2">
                     {row.issuer ? (
-                      <img width={36} height={36} src={`${Setting.StaticBaseUrl}/img/social_${row.issuer.toLowerCase()}.png`} onError={e => { e.target.src = `${Setting.StaticBaseUrl}/img/social_default.png`; }} alt={row.issuer} />
+                      <img width={36} height={36} src={`${Setting.StaticBaseUrl}/img/social_${row.issuer.toLowerCase()}.png`} onError={e => {e.target.src = `${Setting.StaticBaseUrl}/img/social_default.png`;}} alt={row.issuer} />
                     ) : (
                       <img width={36} height={36} src={`${Setting.StaticBaseUrl}/img/social_default.png`} alt="default" />
                     )}
