@@ -13,161 +13,117 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
-import {Button, Col, Input, Row, Select, Table, Tooltip} from "antd";
+import React, {useCallback} from "react";
+import {ArrowDown, ArrowUp, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
-const {Option} = Select;
+const defaultRules = [
+  {name: "Current User-Agent", operator: "equals", value: typeof window !== "undefined" ? window.navigator.userAgent : ""},
+];
 
-class UaRuleTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      defaultRules: [
-        {
-          name: "Current User-Agent",
-          operator: "equals",
-          value: window.navigator.userAgent,
-        },
-      ],
-    };
-    if (this.props.table.length === 0) {
-      this.restore();
-    }
+function UaRuleTable({title, table, onUpdateTable}) {
+  const updateTable = useCallback((tbl) => {
+    onUpdateTable(tbl);
+  }, [onUpdateTable]);
+
+  const updateField = useCallback((tbl, index, key, value) => {
+    tbl[index][key] = value;
+    updateTable([...tbl]);
+  }, [updateTable]);
+
+  const addRow = useCallback((tbl) => {
+    const row = {name: `New UA Rule - ${tbl.length}`, operator: "equals", value: ""};
+    let newTable = tbl ?? [];
+    newTable = Setting.addRow(newTable, row);
+    updateTable(newTable);
+  }, [updateTable]);
+
+  const deleteRow = useCallback((tbl, i) => {
+    updateTable(Setting.deleteRow(tbl, i));
+  }, [updateTable]);
+
+  const upRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i - 1, i));
+  }, [updateTable]);
+
+  const downRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i, i + 1));
+  }, [updateTable]);
+
+  const restore = useCallback(() => {
+    updateTable(defaultRules);
+  }, [updateTable]);
+
+  if (table.length === 0) {
+    updateTable(defaultRules);
   }
 
-  updateTable(table) {
-    this.props.onUpdateTable(table);
-  }
+  const operatorOptions = [
+    {value: "equals", text: i18next.t("rule:equals")},
+    {value: "does not equal", text: i18next.t("rule:does not equal")},
+    {value: "contains", text: i18next.t("rule:contains")},
+    {value: "does not contain", text: i18next.t("rule:does not contain")},
+    {value: "match", text: i18next.t("rule:regex match")},
+  ];
 
-  updateField(table, index, key, value) {
-    table[index][key] = value;
-    this.updateTable(table);
-  }
-
-  addRow(table) {
-    const row = {name: `New UA Rule - ${table.length}`, operator: "equals", value: ""};
-    if (table === undefined) {
-      table = [];
-    }
-
-    table = Setting.addRow(table, row);
-    this.updateTable(table);
-  }
-
-  deleteRow(table, i) {
-    table = Setting.deleteRow(table, i);
-    this.updateTable(table);
-  }
-
-  upRow(table, i) {
-    table = Setting.swapRow(table, i - 1, i);
-    this.updateTable(table);
-  }
-
-  downRow(table, i) {
-    table = Setting.swapRow(table, i, i + 1);
-    this.updateTable(table);
-  }
-
-  restore() {
-    this.updateTable(this.state.defaultRules);
-  }
-
-  renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "180px",
-        render: (text, record, index) => (
-          <Input value={text} onChange={e => {
-            this.updateField(table, index, "name", e.target.value);
-          }} />
-        ),
-      },
-      {
-        title: i18next.t("rule:Operator"),
-        dataIndex: "operator",
-        key: "operator",
-        width: "180px",
-        render: (text, record, index) => (
-          <Select value={text} virtual={false} style={{width: "100%"}} onChange={value => {
-            this.updateField(table, index, "operator", value);
-          }}>
-            {
-              [
-                {value: "equals", text: i18next.t("rule:equals")},
-                {value: "does not equal", text: i18next.t("rule:does not equal")},
-                {value: "contains", text: i18next.t("rule:contains")},
-                {value: "does not contain", text: i18next.t("rule:does not contain")},
-                {value: "match", text: i18next.t("rule:regex match")},
-              ].map((item, index) => <Option key={index} value={item.value}>{item.text}</Option>)
-            }
-          </Select>
-        ),
-      },
-      {
-        title: i18next.t("rule:Value"),
-        dataIndex: "value",
-        key: "value",
-        render: (text, record, index) => (
-          <Input value={text} onChange={e => {
-            this.updateField(table, index, "value", e.target.value);
-          }} onBlur={e => {
-            this.updateField(table, index, "value", e.target.value.replace(/\s+/g, " ").trim());
-          }} />
-        ),
-      },
-      {
-        title: i18next.t("general:Action"),
-        key: "action",
-        width: "100px",
-        render: (text, record, index) => (
-          <div>
-            <Tooltip placement="bottomLeft" title={"Up"}>
-              <Button style={{marginRight: "5px"}} disabled={index === 0} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-            </Tooltip>
-            <Tooltip placement="topLeft" title={"Down"}>
-              <Button style={{marginRight: "5px"}} disabled={index === table.length - 1} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-            </Tooltip>
-            <Tooltip placement="topLeft" title={"Delete"}>
-              <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
-            </Tooltip>
-          </div>
-        ),
-      },
-    ];
-    return (
-      <Table rowKey="index" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
-            <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.restore()}>{i18next.t("general:Restore")}</Button>
-          </div>
-        )}
-      />
-    );
-  }
-
-  render() {
-    return (
-      <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
-            {
-              this.renderTable(this.props.table)
-            }
-          </Col>
-        </Row>
+  return (
+    <div className="mt-5">
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center gap-4">
+          <span className="text-sm text-gray-300">{title}</span>
+          <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => addRow(table)}>
+            {i18next.t("general:Add")}
+          </button>
+          <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => restore()}>
+            {i18next.t("general:Restore")}
+          </button>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/[0.02]">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "180px"}}>{i18next.t("general:Name")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "180px"}}>{i18next.t("rule:Operator")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("rule:Value")}</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("general:Action")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {table.map((row, i) => (
+              <tr key={i} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                <td className="px-4 py-2">
+                  <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.name || ""} onChange={e => updateField(table, i, "name", e.target.value)} />
+                </td>
+                <td className="px-4 py-2">
+                  <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.operator || ""} onChange={e => updateField(table, i, "operator", e.target.value)}>
+                    {operatorOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.text}</option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-4 py-2">
+                  <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.value || ""} onChange={e => updateField(table, i, "value", e.target.value)} onBlur={e => updateField(table, i, "value", e.target.value.replace(/\s+/g, " ").trim())} />
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <button title="Up" disabled={i === 0} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => upRow(table, i)}>
+                      <ArrowUp className="w-4 h-4" />
+                    </button>
+                    <button title="Down" disabled={i === table.length - 1} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => downRow(table, i)}>
+                      <ArrowDown className="w-4 h-4" />
+                    </button>
+                    <button title="Delete" className="p-1 rounded hover:bg-white/10 text-red-400 hover:text-red-300" onClick={() => deleteRow(table, i)}>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-    );
-  }
+    </div>
+  );
 }
 
 export default UaRuleTable;

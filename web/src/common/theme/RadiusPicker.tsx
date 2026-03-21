@@ -12,28 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {InputNumber, Slider, Space} from "antd";
+import React from "react";
 
-export default function RadiusPicker({value, onChange}) {
+interface RadiusPickerProps {
+  value?: number;
+  onChange?: (value: number) => void;
+}
+
+export default function RadiusPicker({value, onChange}: RadiusPickerProps) {
   return (
-    <Space size="large">
-      <InputNumber
-        value={value}
-        onChange={onChange}
-        style={{width: 120}}
+    <div className="flex items-center gap-6">
+      <div className="relative">
+        <input
+          type="number"
+          value={value ?? 0}
+          onChange={(e) => onChange?.(parseFloat(e.target.value) || 0)}
+          min={0}
+          max={20}
+          className="w-[120px] px-3 py-2 text-sm bg-transparent border border-white/20 rounded-lg text-white outline-none focus:border-white/40 pr-8"
+        />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">px</span>
+      </div>
+      <input
+        type="range"
         min={0}
-        formatter={(val) => `${val}px`}
-        parser={(str) => (str ? parseFloat(str) : str)}
-      />
-      <Slider
-        tooltip={{open: false}}
-        style={{width: 128}}
-        min={0}
-        value={value}
         max={20}
-        onChange={onChange}
+        value={value ?? 0}
+        onChange={(e) => onChange?.(parseFloat(e.target.value))}
+        className="w-32 accent-white"
       />
-    </Space>
+    </div>
   );
 }

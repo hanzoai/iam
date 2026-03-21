@@ -33,6 +33,7 @@ import {
   Tabs,
   Upload, message
 } from "antd";
+import {Copy, Link as LinkIcon, Upload as UploadIcon} from "lucide-react";
 import {CopyOutlined, HolderOutlined, LinkOutlined, UploadOutlined, UsergroupAddOutlined} from "@ant-design/icons";
 import * as ApplicationBackend from "./backend/ApplicationBackend";
 import * as CertBackend from "./backend/CertBackend";
@@ -1489,15 +1490,17 @@ class ApplicationEditPage extends React.Component {
 
   renderApplication() {
     return (
-      <Card size="small" title={
-        <div>
-          {this.state.mode === "add" ? i18next.t("application:New Application") : i18next.t("application:Edit Application")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitApplicationEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitApplicationEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteApplication()}>{i18next.t("general:Cancel")}</Button> : null}
+      <div className="bg-white/[0.02] border border-white/10 rounded-xl p-6" style={{height: "calc(100vh - 145px - 48px)", overflow: "hidden"}}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">
+            {this.state.mode === "add" ? i18next.t("application:New Application") : i18next.t("application:Edit Application")}
+          </h2>
+          <div className="flex gap-2">
+            <button className="px-4 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.submitApplicationEdit(false)}>{i18next.t("general:Save")}</button>
+            <button className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100" onClick={() => this.submitApplicationEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+            {this.state.mode === "add" && <button className="px-4 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.deleteApplication()}>{i18next.t("general:Cancel")}</button>}
+          </div>
         </div>
-      } style={{margin: (Setting.isMobile()) ? "5px" : {}, height: "calc(100vh - 145px - 48px)", overflow: "hidden"}}
-      styles={{body: {height: "100%"}}} type="inner">
         <Layout style={{background: "inherit", height: "100%", overflow: "auto"}}>
           {
             this.state.menuMode === "horizontal" || !this.state.menuMode ? (
@@ -1554,7 +1557,7 @@ class ApplicationEditPage extends React.Component {
             </Content>
           </Layout>
         </Layout>
-      </Card>
+      </div>
     );
   }
 
@@ -1722,20 +1725,21 @@ class ApplicationEditPage extends React.Component {
   render() {
     if (!this.state.isAuthorized) {
       return (
-        <Result
-          status="403"
-          title="403 Unauthorized"
-          subTitle={i18next.t("general:Sorry, you do not have permission to access this page or logged in status invalid.")}
-          extra={<a href="/"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>}
-        />
+        <div className="flex flex-col items-center justify-center py-20 space-y-4">
+          <h1 className="text-4xl font-bold text-white">403 Unauthorized</h1>
+          <p className="text-gray-400">{i18next.t("general:Sorry, you do not have permission to access this page or logged in status invalid.")}</p>
+          <a href="/" className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100">{i18next.t("general:Back Home")}</a>
+        </div>
       );
     }
 
+    if (this.state.application === null) {
+      return null;
+    }
+
     return (
-      <div>
-        {
-          this.state.application !== null ? this.renderApplication() : null
-        }
+      <div className="max-w-7xl mx-auto">
+        {this.renderApplication()}
       </div>
     );
   }
