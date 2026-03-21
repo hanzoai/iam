@@ -13,9 +13,8 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
-import {AutoComplete, Button, Col, Input, Row, Table, Tooltip} from "antd";
+import React, {useCallback} from "react";
+import {ArrowDown, ArrowUp, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
@@ -28,182 +27,122 @@ const DefaultScopes = [
   {scope: "offline_access", displayName: "Offline Access", description: "Obtain refresh tokens for offline access"},
 ];
 
-class CustomScopeTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-    };
-  }
+function CustomScopeTable({title, table: rawTable, onUpdateTable}) {
+  const table = rawTable || [];
 
-  normalizeScope(scope) {
-    return (scope || "").trim().toLowerCase();
-  }
+  const normalizeScope = (scope) => (scope || "").trim().toLowerCase();
 
-  getAvailableDefaultScopes(table) {
-    const existingScopes = new Set((table || []).map(item => this.normalizeScope(item?.scope)).filter(Boolean));
-    return DefaultScopes.filter(item => !existingScopes.has(this.normalizeScope(item.scope)));
-  }
+  const getAvailableDefaultScopes = useCallback((tbl) => {
+    const existingScopes = new Set((tbl || []).map(item => normalizeScope(item?.scope)).filter(Boolean));
+    return DefaultScopes.filter(item => !existingScopes.has(normalizeScope(item.scope)));
+  }, []);
 
-  updateTable(table) {
-    this.props.onUpdateTable(table);
-  }
+  const isScopeMissing = (row) => {
+    if (!row) {return true;}
+    return (row.scope || "").trim() === "";
+  };
 
-  updateField(table, index, key, value) {
-    table[index][key] = value;
-    this.updateTable(table);
-  }
+  const updateTable = useCallback((tbl) => {
+    onUpdateTable(tbl);
+  }, [onUpdateTable]);
 
-  isScopeMissing(row) {
-    if (!row) {
-      return true;
-    }
-    const scope = (row.scope || "").trim();
-    return scope === "";
-  }
+  const updateField = useCallback((tbl, index, key, value) => {
+    tbl[index][key] = value;
+    updateTable([...tbl]);
+  }, [updateTable]);
 
-  addRow(table) {
+  const addRow = useCallback((tbl) => {
     const row = {scope: "", displayName: "", description: ""};
-    if (table === undefined || table === null) {
-      table = [];
-    }
-    table = Setting.addRow(table, row);
-    this.updateTable(table);
-  }
+    let newTable = tbl ?? [];
+    newTable = Setting.addRow(newTable, row);
+    updateTable(newTable);
+  }, [updateTable]);
 
-  deleteRow(table, i) {
-    table = Setting.deleteRow(table, i);
-    this.updateTable(table);
-  }
+  const deleteRow = useCallback((tbl, i) => {
+    updateTable(Setting.deleteRow(tbl, i));
+  }, [updateTable]);
 
-  upRow(table, i) {
-    table = Setting.swapRow(table, i - 1, i);
-    this.updateTable(table);
-  }
+  const upRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i - 1, i));
+  }, [updateTable]);
 
-  downRow(table, i) {
-    table = Setting.swapRow(table, i, i + 1);
-    this.updateTable(table);
-  }
+  const downRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i, i + 1));
+  }, [updateTable]);
 
-  renderTable(table) {
-    table = table || [];
-
-    const columns = [
-      {
-        title: (
-          <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
-            <span className="ant-form-item-required">{i18next.t("general:Name")}</span>
-            <div style={{color: "red"}}>*</div>
-          </div>
-        ),
-        dataIndex: "scope",
-        key: "scope",
-        width: "260px",
-        render: (text, record, index) => {
-          const availableDefaultScopes = this.getAvailableDefaultScopes(table);
-          const autoCompleteOptions = availableDefaultScopes.map(item => ({
-            label: `${item.scope}`,
-            value: item.scope,
-          }));
-
-          return (
-            <AutoComplete
-              status={this.isScopeMissing(record) ? "error" : ""}
-              value={text}
-              options={autoCompleteOptions}
-              placeholder="Select or input scope"
-              onSelect={(value) => {
-                this.updateField(table, index, "scope", value);
-                const selectedScope = availableDefaultScopes.find(item => item.scope === value);
-                if (selectedScope) {
-                  this.updateField(table, index, "displayName", selectedScope.displayName);
-                  this.updateField(table, index, "description", selectedScope.description);
-                }
-              }}
-              onChange={(value) => {
-                this.updateField(table, index, "scope", value);
-              }}
-            >
-              <Input />
-            </AutoComplete>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Display name"),
-        dataIndex: "displayName",
-        key: "displayName",
-        width: "200px",
-        render: (text, _, index) => {
-          return (
-            <Input value={text} onChange={e => {
-              this.updateField(table, index, "displayName", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Description"),
-        dataIndex: "description",
-        key: "description",
-        render: (text, record, index) => {
-          return (
-            <Input value={text} onChange={e => {
-              this.updateField(table, index, "description", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "action",
-        key: "action",
-        width: "110px",
-        // eslint-disable-next-line
-        render: (_, __, index) => {
-          return (
-            <div>
-              <Tooltip placement="bottomLeft" title={i18next.t("general:Up")}>
-                <Button style={{marginRight: "5px"}} disabled={index === 0} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Down")}>
-                <Button style={{marginRight: "5px"}} disabled={index === table.length - 1} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Delete")}>
-                <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
-              </Tooltip>
-            </div>
-          );
-        },
-      },
-    ];
-
-    return (
-      <Table title={() => (
-        <div style={{display: "flex", justifyContent: "space-between"}}>
-          <div style={{marginTop: "5px"}}>{this.props.title}</div>
-          <Button type="primary" size="small" onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
+  return (
+    <div className="mt-5">
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center justify-between">
+          <span className="text-sm text-gray-300">{title}</span>
+          <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => addRow(table)}>
+            {i18next.t("general:Add")}
+          </button>
         </div>
-      )}
-      columns={columns} dataSource={table} rowKey={(record, index) => record.scope?.trim() || `temp_${index}`} size="middle" bordered pagination={false}
-      />
-    );
-  }
-
-  render() {
-    return (
-      <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
-            {
-              this.renderTable(this.props.table)
-            }
-          </Col>
-        </Row>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/[0.02]">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "260px"}}>
+                <span className="text-red-400">*</span> {i18next.t("general:Name")}
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("general:Display name")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Description")}</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "110px"}}>{i18next.t("general:Action")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {table.map((row, i) => {
+              const availableDefaultScopes = getAvailableDefaultScopes(table);
+              return (
+                <tr key={row.scope?.trim() || `temp_${i}`} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                  <td className="px-4 py-2">
+                    <input
+                      list={`scope-options-${i}`}
+                      className={`w-full bg-white/5 border rounded px-2 py-1 text-sm text-white ${isScopeMissing(row) ? "border-red-500" : "border-white/10"}`}
+                      value={row.scope || ""}
+                      placeholder="Select or input scope"
+                      onChange={e => {
+                        updateField(table, i, "scope", e.target.value);
+                        const selected = availableDefaultScopes.find(item => item.scope === e.target.value);
+                        if (selected) {
+                          updateField(table, i, "displayName", selected.displayName);
+                          updateField(table, i, "description", selected.description);
+                        }
+                      }}
+                    />
+                    <datalist id={`scope-options-${i}`}>
+                      {availableDefaultScopes.map(item => (
+                        <option key={item.scope} value={item.scope}>{item.scope}</option>
+                      ))}
+                    </datalist>
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.displayName || ""} onChange={e => updateField(table, i, "displayName", e.target.value)} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.description || ""} onChange={e => updateField(table, i, "description", e.target.value)} />
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button title={i18next.t("general:Up")} disabled={i === 0} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => upRow(table, i)}>
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button title={i18next.t("general:Down")} disabled={i === table.length - 1} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => downRow(table, i)}>
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                      <button title={i18next.t("general:Delete")} className="p-1 rounded hover:bg-white/10 text-red-400 hover:text-red-300" onClick={() => deleteRow(table, i)}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-    );
-  }
+    </div>
+  );
 }
 
 export default CustomScopeTable;

@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,203 +13,121 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import React from "react";
-import {Button, Card, Col, Input, Row, Select} from "antd";
+import React, {useEffect, useState} from "react";
 import * as ModelBackend from "./backend/ModelBackend";
 import * as OrganizationBackend from "./backend/OrganizationBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import ModelEditor from "./CasbinEditor";
+import {Button} from "./components/ui/button";
 
-const {Option} = Select;
+interface ModelEditPageProps {
+  account: any;
+  history: any;
+  match: any;
+  location: any;
+  organizationName?: string;
+}
 
-class ModelEditPage extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      organizationName: props.organizationName !== undefined ? props.organizationName : props.match.params.organizationName,
-      modelName: props.match.params.modelName,
-      model: null,
-      organizations: [],
-      users: [],
-      mode: props.location.mode !== undefined ? props.location.mode : "edit",
-    };
-  }
+function ModelEditPage(props: ModelEditPageProps) {
+  const {account, history, match, location} = props;
+  const orgFromProps = props.organizationName ?? match.params.organizationName;
+  const modelNameFromUrl = match.params.modelName;
 
-  UNSAFE_componentWillMount() {
-    this.getModel();
-    this.getOrganizations();
-  }
+  const [modelName, setModelName] = useState(modelNameFromUrl);
+  const [model, setModel] = useState<any>(null);
+  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [mode] = useState(location.mode ?? "edit");
 
-  getModel() {
-    ModelBackend.getModel(this.state.organizationName, this.state.modelName)
-      .then((res) => {
-        if (res.data === null) {
-          this.props.history.push("/404");
-          return;
-        }
+  useEffect(() => { getModel(); getOrganizations(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-        if (res.status === "error") {
-          Setting.showMessage("error", res.msg);
-          return;
-        }
-
-        this.setState({
-          model: res.data,
-        });
-      });
-  }
-
-  getOrganizations() {
-    OrganizationBackend.getOrganizations("admin")
-      .then((res) => {
-        this.setState({
-          organizations: res.data || [],
-        });
-      });
-  }
-
-  parseModelField(key, value) {
-    if ([""].includes(key)) {
-      value = Setting.myParseInt(value);
-    }
-    return value;
-  }
-
-  updateModelField(key, value) {
-    value = this.parseModelField(key, value);
-
-    const model = this.state.model;
-    model[key] = value;
-    this.setState({
-      model: model,
+  function getModel() {
+    ModelBackend.getModel(orgFromProps, modelNameFromUrl).then((res: any) => {
+      if (res.data === null) { history.push("/404"); return; }
+      if (res.status === "error") { Setting.showMessage("error", res.msg); return; }
+      setModel(res.data);
     });
   }
 
-  renderModel() {
-    return (
-      <Card size="small" title={
-        <div>
-          {this.state.mode === "add" ? i18next.t("model:New Model") : i18next.t("model:Edit Model")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitModelEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitModelEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteModel()}>{i18next.t("general:Cancel")}</Button> : null}
+  function getOrganizations() { OrganizationBackend.getOrganizations("admin").then((res: any) => setOrganizations(res.data || [])); }
+
+  function updateField(key: string, value: any) { setModel({...model, [key]: value}); }
+
+  function submitEdit(exitAfterSave: boolean) {
+    const copy = Setting.deepCopy(model);
+    ModelBackend.updateModel(orgFromProps, modelName, copy).then((res: any) => {
+      if (res.status === "ok") {
+        Setting.showMessage("success", i18next.t("general:Successfully saved"));
+        setModelName(model.name);
+        if (exitAfterSave) history.push("/models");
+        else history.push(`/models/${model.owner}/${model.name}`);
+      } else {
+        Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${res.msg}`);
+        updateField("name", modelName);
+      }
+    }).catch((error: any) => Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`));
+  }
+
+  function handleDelete() {
+    ModelBackend.deleteModel(model).then((res: any) => {
+      if (res.status === "ok") history.push("/models");
+      else Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
+    }).catch((error: any) => Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`));
+  }
+
+  if (!model) return null;
+
+  return (
+    <div className="space-y-6">
+      <div className="border border-zinc-800 rounded-lg bg-zinc-900/30">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+          <h2 className="text-lg font-semibold text-white">{mode === "add" ? i18next.t("model:New Model") : i18next.t("model:Edit Model")}</h2>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => submitEdit(false)}>{i18next.t("general:Save")}</Button>
+            <Button onClick={() => submitEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+            {mode === "add" && <Button variant="outline" onClick={handleDelete}>{i18next.t("general:Cancel")}</Button>}
+          </div>
         </div>
-      } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} disabled={!Setting.isAdminUser(this.props.account) || Setting.builtInObject(this.state.model)} value={this.state.model.owner} onChange={(value => {this.updateModelField("owner", value);})}>
-              {
-                this.state.organizations.map((organization, index) => <Option key={index} value={organization.name}>{organization.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input disabled={Setting.builtInObject(this.state.model)} value={this.state.model.name} onChange={e => {
-              this.updateModelField("name", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.model.displayName} onChange={e => {
-              this.updateModelField("displayName", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Description"), i18next.t("general:Description - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.model.description} onChange={e => {
-              this.updateModelField("description", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("model:Model text"), i18next.t("model:Model text - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <div style={{position: "relative", height: "500px"}} >
-              <ModelEditor
-                model={this.state.model}
-                onModelTextChange={(value) => this.updateModelField("modelText", value)}
-              />
+
+        <div className="p-6 space-y-5">
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Organization")}</label>
+            <select className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" disabled={!Setting.isAdminUser(account) || Setting.builtInObject(model)} value={model.owner} onChange={e => updateField("owner", e.target.value)}>
+              {organizations.map((org: any) => <option key={org.name} value={org.name}>{org.name}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Name")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm disabled:opacity-60" disabled={Setting.builtInObject(model)} value={model.name} onChange={e => updateField("name", e.target.value)} />
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Display name")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={model.displayName} onChange={e => updateField("displayName", e.target.value)} />
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Description")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={model.description || ""} onChange={e => updateField("description", e.target.value)} />
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] items-start gap-4">
+            <label className="text-sm text-zinc-400 pt-2">{i18next.t("model:Model text")}</label>
+            <div className="relative h-[500px]">
+              <ModelEditor model={model} onModelTextChange={(value: string) => updateField("modelText", value)} />
             </div>
-          </Col>
-        </Row>
-      </Card>
-    );
-  }
-
-  submitModelEdit(exitAfterSave) {
-    const model = Setting.deepCopy(this.state.model);
-    ModelBackend.updateModel(this.state.organizationName, this.state.modelName, model)
-      .then((res) => {
-        if (res.status === "ok") {
-          Setting.showMessage("success", i18next.t("general:Successfully saved"));
-          this.setState({
-            modelName: this.state.model.name,
-          });
-
-          if (exitAfterSave) {
-            this.props.history.push("/models");
-          } else {
-            this.props.history.push(`/models/${this.state.model.owner}/${this.state.model.name}`);
-          }
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${res.msg}`);
-          this.updateModelField("name", this.state.modelName);
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-      });
-  }
-
-  deleteModel() {
-    ModelBackend.deleteModel(this.state.model)
-      .then((res) => {
-        if (res.status === "ok") {
-          this.props.history.push("/models");
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-      });
-  }
-
-  render() {
-    return (
-      <div>
-        {
-          this.state.model !== null ? this.renderModel() : null
-        }
-        <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitModelEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitModelEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.deleteModel()}>{i18next.t("general:Cancel")}</Button> : null}
+          </div>
         </div>
       </div>
-    );
-  }
+
+      <div className="flex gap-3 px-6">
+        <Button variant="outline" size="lg" onClick={() => submitEdit(false)}>{i18next.t("general:Save")}</Button>
+        <Button size="lg" onClick={() => submitEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+        {mode === "add" && <Button variant="outline" size="lg" onClick={handleDelete}>{i18next.t("general:Cancel")}</Button>}
+      </div>
+    </div>
+  );
 }
 
 export default ModelEditPage;

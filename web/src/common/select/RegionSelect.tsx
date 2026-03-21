@@ -12,52 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import React from "react";
 import * as Setting from "../../Setting";
-import {Select} from "antd";
 
-const {Option} = Select;
-
-class RegionSelect extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-    };
-  }
-
-  onChange(e) {
-    this.props.onChange(e);
-  }
-
-  render() {
-    const value = this.props.value !== undefined && this.props.value !== "" ? this.props.value : (this.props.defaultValue !== undefined && this.props.defaultValue !== "" ? this.props.defaultValue : undefined);
-    return (
-      <Select virtual={false}
-        size={this.props.size}
-        showSearch
-        optionFilterProp="label"
-        style={{width: "100%"}}
-        value={value}
-        placeholder="Please select country/region"
-        onChange={(val) => {this.onChange(val);}}
-        filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
-        filterSort={(optionA, optionB) =>
-          (optionA?.label ?? "").toLowerCase().localeCompare((optionB?.label ?? "").toLowerCase())
-        }
-      >
-        {
-          Setting.getCountryCodeData().map((item) => (
-            <Option key={item.code} value={item.code} label={`${item.name} (${item.code})`} >
-              {Setting.getCountryImage(item)}
-              {`${item.name} (${item.code})`}
-            </Option>
-          ))
-        }
-      </Select>
-    );
-  }
+interface RegionSelectProps {
+  value?: string;
+  defaultValue?: string;
+  size?: string;
+  onChange: (value: string) => void;
 }
+
+const RegionSelect = (props: RegionSelectProps) => {
+  const {onChange} = props;
+  const value = props.value !== undefined && props.value !== ""
+    ? props.value
+    : (props.defaultValue !== undefined && props.defaultValue !== "" ? props.defaultValue : "");
+
+  const countryData = Setting.getCountryCodeData();
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-3 py-2 text-sm bg-transparent border border-white/20 rounded-lg text-white outline-none"
+    >
+      <option value="" disabled className="bg-[#0a0a0a]">
+        Please select country/region
+      </option>
+      {countryData
+        .sort((a: any, b: any) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+        .map((item: any) => (
+          <option key={item.code} value={item.code} className="bg-[#0a0a0a]">
+            {`${item.name} (${item.code})`}
+          </option>
+        ))}
+    </select>
+  );
+};
 
 export default RegionSelect;

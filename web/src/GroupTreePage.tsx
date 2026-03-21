@@ -13,8 +13,7 @@
 // limitations under the License.
 
 // @ts-nocheck
-import {DeleteOutlined, EditOutlined, HolderOutlined, PlusOutlined, UsergroupAddOutlined} from "@ant-design/icons";
-import {Button, Col, Empty, Row, Space, Tree} from "antd";
+import {Trash2, Pencil, Plus, Users, GripVertical, ChevronRight, ChevronDown} from "lucide-react";
 import i18next from "i18next";
 import moment from "moment/moment";
 import React from "react";
@@ -33,6 +32,7 @@ class GroupTreePage extends React.Component {
       groupName: this.props.match?.params.groupName,
       treeData: [],
       selectedKeys: [this.props.match?.params.groupName],
+      expandedKeys: [],
     };
   }
 
@@ -53,114 +53,11 @@ class GroupTreePage extends React.Component {
   getTreeData() {
     GroupBackend.getGroups(this.state.organizationName, true).then((res) => {
       if (res.status === "ok") {
-        this.setState({
-          treeData: res.data,
-        });
+        this.setState({treeData: res.data});
       } else {
         Setting.showMessage("error", res.msg);
       }
     });
-  }
-
-  setTreeTitle(treeData) {
-    const haveChildren = Array.isArray(treeData.children) && treeData.children.length > 0;
-    const isSelected = this.state.groupName === treeData.key;
-    return {
-      key: treeData.key,
-      title: <Space>
-        {treeData.type === "Physical" ? <UsergroupAddOutlined /> : <HolderOutlined />}
-        <span>{treeData.title}</span>
-        {isSelected && (
-          <React.Fragment>
-            <PlusOutlined
-              style={{
-                visibility: "visible",
-                color: "inherit",
-                transition: "color 0.3s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "rgba(89,54,213,0.6)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "inherit";
-              }}
-              onMouseDown={(e) => {
-                e.currentTarget.style.color = "rgba(89,54,213,0.4)";
-              }}
-              onMouseUp={(e) => {
-                e.currentTarget.style.color = "rgba(89,54,213,0.6)";
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                sessionStorage.setItem("groupTreeUrl", window.location.pathname);
-                this.addGroup();
-              }}
-            />
-            <EditOutlined
-              style={{
-                visibility: "visible",
-                color: "inherit",
-                transition: "color 0.3s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "rgba(89,54,213,0.6)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "inherit";
-              }}
-              onMouseDown={(e) => {
-                e.currentTarget.style.color = "rgba(89,54,213,0.4)";
-              }}
-              onMouseUp={(e) => {
-                e.currentTarget.style.color = "rgba(89,54,213,0.6)";
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                sessionStorage.setItem("groupTreeUrl", window.location.pathname);
-                this.props.history.push(`/groups/${this.state.organizationName}/${treeData.key}`);
-              }}
-            />
-            {!haveChildren &&
-            <DeleteOutlined
-              style={{
-                visibility: "visible",
-                color: "inherit",
-                transition: "color 0.3s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "rgba(89,54,213,0.6)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "inherit";
-              }}
-              onMouseDown={(e) => {
-                e.currentTarget.style.color = "rgba(89,54,213,0.4)";
-              }}
-              onMouseUp={(e) => {
-                e.currentTarget.style.color = "rgba(89,54,213,0.6)";
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                GroupBackend.deleteGroup({owner: treeData.owner, name: treeData.key})
-                  .then((res) => {
-                    if (res.status === "ok") {
-                      Setting.showMessage("success", i18next.t("general:Successfully deleted"));
-                      this.getTreeData();
-                    } else {
-                      Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
-                    }
-                  })
-                  .catch(error => {
-                    Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-                  });
-              }}
-            />
-            }
-          </React.Fragment>
-        )}
-      </Space>,
-      children: haveChildren ? treeData.children.map(i => this.setTreeTitle(i)) : [],
-    };
   }
 
   setTreeExpandedKeys = () => {
@@ -174,62 +71,8 @@ class GroupTreePage extends React.Component {
       }
     };
     setExpandedKeys(this.state.treeData);
-    this.setState({
-      expandedKeys: expandedKeys,
-    });
+    this.setState({expandedKeys});
   };
-
-  renderTree() {
-    const onSelect = (selectedKeys, info) => {
-      this.setState({
-        selectedKeys: selectedKeys,
-        groupName: info.node.key,
-      });
-      this.props.history.push(`/trees/${this.state.organizationName}/${info.node.key}`);
-    };
-    const onExpand = (expandedKeysValue) => {
-      this.setState({
-        expandedKeys: expandedKeysValue,
-      });
-    };
-
-    if (this.state.treeData.length === 0) {
-      return <Empty />;
-    }
-
-    const treeData = this.state.treeData.map(i => this.setTreeTitle(i));
-    return (
-      <Tree
-        blockNode={true}
-        defaultSelectedKeys={[this.state.groupName]}
-        defaultExpandAll={true}
-        selectedKeys={this.state.selectedKeys}
-        expandedKeys={this.state.expandedKeys}
-        onSelect={onSelect}
-        onExpand={onExpand}
-        showIcon={true}
-        treeData={treeData}
-      />
-    );
-  }
-
-  renderOrganizationSelect() {
-    if (Setting.isAdminUser(this.props.account)) {
-      return (
-        <OrganizationSelect
-          initValue={this.state.organizationName}
-          style={{width: "100%"}}
-          onChange={(value) => {
-            this.setState({
-              organizationName: value,
-              groupName: "",
-            });
-            this.props.history.push(`/trees/${value}`);
-          }}
-        />
-      );
-    }
-  }
 
   newGroup(isRoot) {
     const randomName = Setting.getRandomName();
@@ -263,52 +106,156 @@ class GroupTreePage extends React.Component {
       });
   }
 
-  render() {
+  deleteTreeNode(node) {
+    GroupBackend.deleteGroup({owner: node.owner, name: node.key})
+      .then((res) => {
+        if (res.status === "ok") {
+          Setting.showMessage("success", i18next.t("general:Successfully deleted"));
+          this.getTreeData();
+        } else {
+          Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
+        }
+      })
+      .catch(error => {
+        Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
+      });
+  }
+
+  toggleExpanded(key) {
+    const expanded = [...this.state.expandedKeys];
+    const idx = expanded.indexOf(key);
+    if (idx >= 0) {
+      expanded.splice(idx, 1);
+    } else {
+      expanded.push(key);
+    }
+    this.setState({expandedKeys: expanded});
+  }
+
+  renderTreeNode(node, depth = 0) {
+    const haveChildren = Array.isArray(node.children) && node.children.length > 0;
+    const isSelected = this.state.groupName === node.key;
+    const isExpanded = this.state.expandedKeys.includes(node.key);
+
     return (
-      <div style={{
-        flex: 1,
-        backgroundColor: "white",
-        padding: "5px 5px 2px 5px",
-      }}>
-        <Row>
-          <Col span={5}>
-            <Row>
-              <Col span={24} style={{textAlign: "center"}}>
-                {this.renderOrganizationSelect()}
-              </Col>
-            </Row>
-            <Row>
-              <Col span={24} style={{marginTop: "10px"}}>
-                <Button size={"small"}
-                  onClick={() => {
-                    this.setState({
-                      selectedKeys: [],
-                      groupName: undefined,
-                    });
-                    this.props.history.push(`/trees/${this.state.organizationName}`);
+      <div key={node.key}>
+        <div
+          className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer group ${isSelected ? "bg-white/[0.08]" : "hover:bg-white/[0.04]"}`}
+          style={{paddingLeft: `${depth * 16 + 8}px`}}
+          onClick={() => {
+            this.setState({selectedKeys: [node.key], groupName: node.key});
+            this.props.history.push(`/trees/${this.state.organizationName}/${node.key}`);
+          }}
+        >
+          {haveChildren ? (
+            <button
+              className="p-0.5 text-gray-400 hover:text-white"
+              onClick={(e) => {
+                e.stopPropagation();
+                this.toggleExpanded(node.key);
+              }}
+            >
+              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+          ) : (
+            <span className="w-5" />
+          )}
+          {node.type === "Physical" ? <Users size={14} className="text-gray-400" /> : <GripVertical size={14} className="text-gray-400" />}
+          <span className="text-sm text-white flex-1">{node.title}</span>
+          {isSelected && (
+            <div className="flex items-center gap-1">
+              <button
+                className="p-1 text-gray-400 hover:text-white"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  sessionStorage.setItem("groupTreeUrl", window.location.pathname);
+                  this.addGroup();
+                }}
+              >
+                <Plus size={14} />
+              </button>
+              <button
+                className="p-1 text-gray-400 hover:text-white"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  sessionStorage.setItem("groupTreeUrl", window.location.pathname);
+                  this.props.history.push(`/groups/${this.state.organizationName}/${node.key}`);
+                }}
+              >
+                <Pencil size={14} />
+              </button>
+              {!haveChildren && (
+                <button
+                  className="p-1 text-gray-400 hover:text-red-400"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    this.deleteTreeNode(node);
                   }}
                 >
-                  {i18next.t("group:Show all")}
-                </Button>
-                <Button size={"small"} type={"primary"} style={{marginLeft: "10px"}} onClick={() => this.addGroup(true)}>
-                  {i18next.t("general:Add")}
-                </Button>
-              </Col>
-            </Row>
-            <Row style={{marginTop: 10}}>
-              <Col span={24} style={{textAlign: "left"}}>
-                {this.renderTree()}
-              </Col>
-            </Row>
-          </Col>
-          <Col span={19}>
-            <UserListPage
-              organizationName={this.state.organizationName}
-              groupName={this.state.groupName}
-              {...this.props}
-            />
-          </Col>
-        </Row>
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        {haveChildren && isExpanded && node.children.map(child => this.renderTreeNode(child, depth + 1))}
+      </div>
+    );
+  }
+
+  renderOrganizationSelect() {
+    if (Setting.isAdminUser(this.props.account)) {
+      return (
+        <OrganizationSelect
+          initValue={this.state.organizationName}
+          style={{width: "100%"}}
+          onChange={(value) => {
+            this.setState({organizationName: value, groupName: ""});
+            this.props.history.push(`/trees/${value}`);
+          }}
+        />
+      );
+    }
+    return null;
+  }
+
+  render() {
+    return (
+      <div className="flex gap-4 min-h-[70vh]">
+        <div className="w-64 shrink-0 bg-white/[0.02] border border-white/10 rounded-xl p-3 space-y-3">
+          {this.renderOrganizationSelect()}
+          <div className="flex gap-2">
+            <button
+              className="px-3 py-1.5 border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.05]"
+              onClick={() => {
+                this.setState({selectedKeys: [], groupName: undefined});
+                this.props.history.push(`/trees/${this.state.organizationName}`);
+              }}
+            >
+              {i18next.t("group:Show all")}
+            </button>
+            <button
+              className="px-3 py-1.5 bg-white text-black rounded-lg text-xs font-medium hover:bg-gray-100"
+              onClick={() => this.addGroup(true)}
+            >
+              {i18next.t("general:Add")}
+            </button>
+          </div>
+          <div className="space-y-0.5">
+            {this.state.treeData.length === 0 ? (
+              <div className="text-center text-gray-500 py-8 text-sm">{i18next.t("general:No data")}</div>
+            ) : (
+              this.state.treeData.map(node => this.renderTreeNode(node))
+            )}
+          </div>
+        </div>
+        <div className="flex-1">
+          <UserListPage
+            organizationName={this.state.organizationName}
+            groupName={this.state.groupName}
+            {...this.props}
+          />
+        </div>
       </div>
     );
   }

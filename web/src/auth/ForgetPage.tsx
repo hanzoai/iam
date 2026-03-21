@@ -13,8 +13,9 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {Button, Col, Form, Input, Popover, Row, Select, Steps} from "antd";
+import React, {useCallback, useEffect, useRef, useState} from "react";
+import {Form, Input, Select} from "antd";
+import {ArrowLeft, User, Lock, CheckCircle, KeyRound} from "lucide-react";
 import * as AuthBackend from "./AuthBackend";
 import * as ApplicationBackend from "../backend/ApplicationBackend";
 import * as Util from "./Util";
@@ -22,148 +23,124 @@ import * as Setting from "../Setting";
 import i18next from "i18next";
 import {SendCodeInput} from "../common/SendCodeInput";
 import * as UserBackend from "../backend/UserBackend";
-import {ArrowLeftOutlined, CheckCircleOutlined, KeyOutlined, LockOutlined, SolutionOutlined, UserOutlined} from "@ant-design/icons";
-import CustomGithubCorner from "../common/CustomGithubCorner";
 import {withRouter} from "react-router-dom";
 import * as PasswordChecker from "../common/PasswordChecker";
 import * as Obfuscator from "./Obfuscator";
 
 const {Option} = Select;
 
-class ForgetPage extends React.Component {
-  constructor(props) {
-    super(props);
-    const queryParams = new URLSearchParams(location.search);
-    this.state = {
-      classes: props,
-      applicationName: props.applicationName ?? props.match.params?.applicationName,
-      msg: null,
-      name: props.account ? props.account.name : queryParams.get("username"),
-      username: props.account ? props.account.name : "",
-      phone: "",
-      email: "",
-      dest: "",
-      isVerifyTypeFixed: false,
-      verifyType: "", // "email", "phone"
-      current: queryParams.get("code") ? 2 : 0,
-      code: queryParams.get("code"),
-      queryParams: queryParams,
-    };
-    this.form = React.createRef();
-  }
+function ForgetPage(props) {
+  const queryParams = new URLSearchParams(location.search);
+  const formRef = useRef(null);
 
-  componentDidMount() {
-    if (this.getApplicationObj() === undefined) {
-      if (this.state.applicationName !== undefined) {
-        this.getApplication();
+  const [applicationName] = useState(props.applicationName ?? props.match.params?.applicationName);
+  const [msg, setMsg] = useState(null);
+  const [name, setName] = useState(props.account ? props.account.name : queryParams.get("username"));
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [dest, setDest] = useState("");
+  const [isVerifyTypeFixed, setIsVerifyTypeFixed] = useState(false);
+  const [verifyType, setVerifyType] = useState("");
+  const [current, setCurrent] = useState(queryParams.get("code") ? 2 : 0);
+  const [code, setCode] = useState(queryParams.get("code"));
+  const [passwordPopover, setPasswordPopover] = useState(null);
+  const [passwordPopoverOpen, setPasswordPopoverOpen] = useState(false);
+
+  const getApplicationObj = useCallback(() => props.application, [props.application]);
+  const onUpdateApplication = useCallback((application) => props.onUpdateApplication(application), [props.onUpdateApplication]);
+
+  useEffect(() => {
+    if (getApplicationObj() === undefined) {
+      if (applicationName !== undefined) {
+        ApplicationBackend.getApplication("admin", applicationName)
+          .then((res) => {
+            if (res.status === "error") {
+              Setting.showMessage("error", res.msg);
+              return;
+            }
+            onUpdateApplication(res.data);
+          });
       } else {
-        Setting.showMessage("error", i18next.t("forget:Unknown forget type") + ": " + this.state.type);
+        Setting.showMessage("error", i18next.t("forget:Unknown forget type") + ": " + applicationName);
       }
     }
-  }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  getApplication() {
-    if (this.state.applicationName === undefined) {
-      return;
-    }
-
-    ApplicationBackend.getApplication("admin", this.state.applicationName)
-      .then((res) => {
-        if (res.status === "error") {
-          Setting.showMessage("error", res.msg);
-          return;
-        }
-        this.onUpdateApplication(res.data);
-      });
-  }
-  getApplicationObj() {
-    return this.props.application;
-  }
-
-  onUpdateApplication(application) {
-    this.props.onUpdateApplication(application);
-  }
-
-  onFormFinish(name, info, forms) {
-    switch (name) {
-    case "step1":
+  const onFormFinish = (formName, info, forms) => {
+    switch (formName) {
+    case "step1": {
       const username = forms.step1.getFieldValue("username");
       AuthBackend.getEmailAndPhone(forms.step1.getFieldValue("organization"), username)
         .then((res) => {
           if (res.status === "ok") {
-            const phone = res.data.phone;
-            const email = res.data.email;
+            const p = res.data.phone;
+            const e = res.data.email;
 
-            if (!phone && !email) {
+            if (!p && !e) {
               Setting.showMessage("error", i18next.t("general:No verification method"));
             } else {
-              this.setState({
-                name: res.data.name,
-                phone: phone,
-                email: email,
-              });
+              setName(res.data.name);
+              setPhone(p);
+              setEmail(e);
 
               const saveFields = (type, dest, fixed) => {
-                this.setState({
-                  verifyType: type,
-                  isVerifyTypeFixed: fixed,
-                  dest: dest,
-                });
+                setVerifyType(type);
+                setIsVerifyTypeFixed(fixed);
+                setDest(dest);
               };
 
               switch (res.data2) {
               case "email":
-                saveFields("email", email, true);
+                saveFields("email", e, true);
                 break;
               case "phone":
-                saveFields("phone", phone, true);
+                saveFields("phone", p, true);
                 break;
               case "username":
-                phone !== "" ? saveFields("phone", phone, false) : saveFields("email", email, false);
+                p !== "" ? saveFields("phone", p, false) : saveFields("email", e, false);
               }
 
-              this.setState({
-                current: 1,
-              });
+              setCurrent(1);
             }
           } else {
             Setting.showMessage("error", res.msg);
           }
         });
       break;
+    }
     case "step2":
       UserBackend.verifyCode({
         application: forms.step2.getFieldValue("application"),
         organization: forms.step2.getFieldValue("organization"),
         username: forms.step2.getFieldValue("dest"),
-        name: this.state.name,
+        name: name,
         code: forms.step2.getFieldValue("code"),
         type: "login",
       }).then(res => {
         if (res.status === "ok") {
-          this.setState({current: 2, code: forms.step2.getFieldValue("code")});
+          setCurrent(2);
+          setCode(forms.step2.getFieldValue("code"));
         } else {
           Setting.showMessage("error", res.msg);
         }
       });
-
       break;
     default:
       break;
     }
-  }
+  };
 
-  async onFinish(values) {
-    values.username = this.state.name;
-    values.userOwner = this.getApplicationObj()?.organizationObj.name;
+  const onFinish = async (values) => {
+    values.username = name;
+    values.userOwner = getApplicationObj()?.organizationObj.name;
 
-    if (this.state.queryParams.get("code")) {
+    if (queryParams.get("code")) {
       const res = await UserBackend.verifyCode({
-        application: this.getApplicationObj().name,
+        application: getApplicationObj().name,
         organization: values.userOwner,
-        username: this.state.queryParams.get("dest"),
-        name: this.state.name,
-        code: this.state.code,
+        username: queryParams.get("dest"),
+        name: name,
+        code: code,
         type: "login",
       });
 
@@ -173,9 +150,8 @@ class ForgetPage extends React.Component {
       }
     }
 
-    // Encrypt password using password obfuscator if configured
     let encryptedNewPassword = values?.newPassword;
-    const organization = this.getApplicationObj()?.organizationObj;
+    const organization = getApplicationObj()?.organizationObj;
 
     if (organization?.passwordObfuscatorType && organization.passwordObfuscatorType !== "Plain") {
       const [passwordCipher, errorMessage] = Obfuscator.encryptByPasswordObfuscator(
@@ -190,213 +166,157 @@ class ForgetPage extends React.Component {
       encryptedNewPassword = passwordCipher;
     }
 
-    UserBackend.setPassword(values.userOwner, values.username, "", encryptedNewPassword, this.state.code).then(res => {
+    UserBackend.setPassword(values.userOwner, values.username, "", encryptedNewPassword, code).then(res => {
       if (res.status === "ok") {
         const linkInStorage = sessionStorage.getItem("signinUrl");
         if (linkInStorage !== null && linkInStorage !== "") {
-          Setting.goToLinkSoft(this, linkInStorage);
+          Setting.goToLinkSoft({props}, linkInStorage);
         } else {
-          Setting.redirectToLoginPage(this.getApplicationObj(), this.props.history);
+          Setting.redirectToLoginPage(getApplicationObj(), props.history);
         }
       } else {
         Setting.showMessage("error", res.msg);
       }
     });
-  }
+  };
 
-  onFinishFailed(values, errorFields) {}
+  const stepBack = () => {
+    if (current > 0) {
+      setCurrent(current - 1);
+    } else if (props.history.length > 1) {
+      props.history.goBack();
+    } else {
+      Setting.redirectToLoginPage(getApplicationObj(), props.history);
+    }
+  };
 
-  renderOptions() {
+  const renderOptions = () => {
     const options = [];
-
-    if (this.state.phone !== "") {
-      options.push(
-        <Option key={"phone"} value={this.state.phone} >
-          &nbsp;&nbsp;{this.state.phone}
-        </Option>
-      );
+    if (phone !== "") {
+      options.push(<Option key={"phone"} value={phone}>&nbsp;&nbsp;{phone}</Option>);
     }
-
-    if (this.state.email !== "") {
-      options.push(
-        <Option key={"email"} value={this.state.email} >
-          &nbsp;&nbsp;{this.state.email}
-        </Option>
-      );
+    if (email !== "") {
+      options.push(<Option key={"email"} value={email}>&nbsp;&nbsp;{email}</Option>);
     }
-
     return options;
-  }
+  };
 
-  renderForm(application) {
+  const renderStepIndicator = () => {
+    const steps = [
+      {label: i18next.t("forget:Account"), icon: <User className="w-4 h-4" />},
+      {label: i18next.t("forget:Verify"), icon: <KeyRound className="w-4 h-4" />},
+      {label: i18next.t("forget:Reset"), icon: <Lock className="w-4 h-4" />},
+    ];
+
     return (
-      <Form.Provider onFormFinish={(name, {info, forms}) => {
-        this.onFormFinish(name, info, forms);
+      <div className="flex items-center justify-center gap-2 my-8">
+        {steps.map((step, idx) => (
+          <React.Fragment key={idx}>
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              idx === current
+                ? "bg-white/10 text-white"
+                : idx < current
+                  ? "text-white/60"
+                  : "text-white/30"
+            }`}>
+              <div className={`flex items-center justify-center w-6 h-6 rounded-full text-xs ${
+                idx === current
+                  ? "bg-white text-black"
+                  : idx < current
+                    ? "bg-white/30 text-white"
+                    : "bg-white/10 text-white/30"
+              }`}>
+                {idx < current ? <CheckCircle className="w-3.5 h-3.5" /> : idx + 1}
+              </div>
+              <span className="hidden sm:inline">{step.label}</span>
+            </div>
+            {idx < steps.length - 1 && (
+              <div className={`w-8 h-px ${idx < current ? "bg-white/30" : "bg-white/10"}`} />
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+    );
+  };
+
+  const renderForm = (application) => {
+    return (
+      <Form.Provider onFormFinish={(formName, {info, forms}) => {
+        onFormFinish(formName, info, forms);
       }}>
-        {/* STEP 1: input username -> get email & phone */}
-        {this.state.current === 0 ?
+        {/* STEP 1: input username */}
+        {current === 0 ?
           <Form
-            ref={this.form}
+            ref={formRef}
             name="step1"
-            // eslint-disable-next-line no-console
             onFinishFailed={(errorInfo) => console.log(errorInfo)}
             initialValues={{
               application: application.name,
               organization: application.organization,
-              username: this.state.name,
+              username: name,
             }}
             style={{width: "300px"}}
             size="large"
           >
-            <Form.Item
-              hidden
-              name="application"
-              rules={[
-                {
-                  required: true,
-                  message: i18next.t("application:Please input your application!"),
-                },
-              ]}
-            />
-            <Form.Item
-              hidden
-              name="organization"
-              rules={[
-                {
-                  required: true,
-                  message: i18next.t("application:Please input your organization!"),
-                },
-              ]}
-            />
-            <Form.Item
-              name="username"
-              rules={[
-                {
-                  required: true,
-                  message: i18next.t("forget:Please input your username!"),
-                  whitespace: true,
-                },
-              ]}
-            >
-              <Input
-                prefix={<UserOutlined />}
-                placeholder={i18next.t("login:username, Email or phone")}
-              />
+            <Form.Item hidden name="application" rules={[{required: true, message: i18next.t("application:Please input your application!")}]} />
+            <Form.Item hidden name="organization" rules={[{required: true, message: i18next.t("application:Please input your organization!")}]} />
+            <Form.Item name="username" rules={[{required: true, message: i18next.t("forget:Please input your username!"), whitespace: true}]}>
+              <Input prefix={<User className="w-4 h-4 text-neutral-500" />} placeholder={i18next.t("login:username, Email or phone")} />
             </Form.Item>
             <br />
             <Form.Item>
-              <Button block type="primary" htmlType="submit">
+              <button type="submit" className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors">
                 {i18next.t("forget:Next Step")}
-              </Button>
+              </button>
             </Form.Item>
           </Form> : null}
 
         {/* STEP 2: verify email or phone */}
-        {this.state.current === 1 ? <Form
-          ref={this.form}
+        {current === 1 ? <Form
+          ref={formRef}
           name="step2"
-          onFinishFailed={(errorInfo) =>
-            this.onFinishFailed(
-              errorInfo.values,
-              errorInfo.errorFields,
-              errorInfo.outOfDate
-            )
-          }
-          onValuesChange={(changedValues, allValues) => {
-            if (!changedValues.dest) {
-              return;
-            }
-            const verifyType = changedValues.dest?.indexOf("@") === -1 ? "phone" : "email";
-            this.setState({
-              dest: changedValues.dest,
-              verifyType: verifyType,
-            });
+          onFinishFailed={(errorInfo) => console.log(errorInfo)}
+          onValuesChange={(changedValues) => {
+            if (!changedValues.dest) {return;}
+            const vt = changedValues.dest?.indexOf("@") === -1 ? "phone" : "email";
+            setDest(changedValues.dest);
+            setVerifyType(vt);
           }}
           initialValues={{
             application: application.name,
             organization: application.organization,
-            dest: this.state.dest,
+            dest: dest,
           }}
           style={{width: "300px"}}
           size="large"
         >
-          <Form.Item
-            style={{height: 0, visibility: "hidden"}}
-            name="application"
-            rules={[
-              {
-                required: true,
-                message: i18next.t("application:Please input your application!"),
-              },
-            ]}
-          />
-          <Form.Item
-            hidden
-            name="organization"
-            rules={[
-              {
-                required: true,
-                message: i18next.t("application:Please input your organization!"),
-              },
-            ]}
-          />
-          <Form.Item
-            name="dest"
-            validateFirst
-            hasFeedback
-          >
-            {
-              <Select virtual={false}
-                disabled={this.state.isVerifyTypeFixed}
-                style={{textAlign: "left"}}
-                placeholder={i18next.t("forget:Choose email or phone")}
-              >
-                {
-                  this.renderOptions()
-                }
-              </Select>
-            }
+          <Form.Item style={{height: 0, visibility: "hidden"}} name="application" rules={[{required: true, message: i18next.t("application:Please input your application!")}]} />
+          <Form.Item hidden name="organization" rules={[{required: true, message: i18next.t("application:Please input your organization!")}]} />
+          <Form.Item name="dest" validateFirst hasFeedback>
+            <Select virtual={false} disabled={isVerifyTypeFixed} style={{textAlign: "left"}} placeholder={i18next.t("forget:Choose email or phone")}>
+              {renderOptions()}
+            </Select>
           </Form.Item>
-          <Form.Item
-            name="code"
-            rules={[
-              {
-                required: true,
-                message: i18next.t("code:Please input your verification code!"),
-              },
-            ]}
-          >
-            <SendCodeInput disabled={this.state.dest === ""}
-              method={"forget"}
-              onButtonClickArgs={[this.state.dest, this.state.verifyType, Setting.getApplicationName(this.getApplicationObj()), this.state.name]}
-              application={application}
-            />
+          <Form.Item name="code" rules={[{required: true, message: i18next.t("code:Please input your verification code!")}]}>
+            <SendCodeInput disabled={dest === ""} method={"forget"}
+              onButtonClickArgs={[dest, verifyType, Setting.getApplicationName(getApplicationObj()), name]}
+              application={application} />
           </Form.Item>
           <br />
           <Form.Item>
-            <Button
-              block
-              type="primary"
-              htmlType="submit"
-            >
+            <button type="submit" className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors">
               {i18next.t("forget:Next Step")}
-            </Button>
+            </button>
           </Form.Item>
         </Form> : null}
 
-        {/* STEP 3 */}
-        {this.state.current === 2 ?
+        {/* STEP 3: new password */}
+        {current === 2 ?
           <Form
-            ref={this.form}
+            ref={formRef}
             name="step3"
-            onFinish={(values) => this.onFinish(values)}
-            onFinishFailed={(errorInfo) =>
-              this.onFinishFailed(
-                errorInfo.values,
-                errorInfo.errorFields,
-                errorInfo.outOfDate
-              )
-            }
+            onFinish={(values) => onFinish(values)}
+            onFinishFailed={(errorInfo) => console.log(errorInfo)}
             initialValues={{
               application: application.name,
               organization: application.organization,
@@ -404,198 +324,94 @@ class ForgetPage extends React.Component {
             style={{width: "300px"}}
             size="large"
           >
-            <Form.Item
-              hidden
-              name="application"
-              rules={[
-                {
-                  required: true,
-                  message: i18next.t("application:Please input your application!"),
+            <Form.Item hidden name="application" rules={[{required: true, message: i18next.t("application:Please input your application!")}]} />
+            <Form.Item hidden name="organization" rules={[{required: true, message: i18next.t("application:Please input your organization!")}]} />
+            <Form.Item name="newPassword" hidden={current !== 2}
+              rules={[{
+                required: true,
+                validateTrigger: "onChange",
+                validator: (rule, value) => {
+                  const errorMsg = PasswordChecker.checkPasswordComplexity(value, application.organizationObj.passwordOptions);
+                  if (errorMsg === "") {return Promise.resolve();}
+                  else {return Promise.reject(errorMsg);}
                 },
-              ]}
-            />
-            <Form.Item
-              hidden
-              name="organization"
-              rules={[
-                {
-                  required: true,
-                  message: i18next.t("application:Please input your organization!"),
-                },
-              ]}
-            />
-            <Popover placement={window.innerWidth >= 960 ? "right" : "top"} content={this.state.passwordPopover} open={this.state.passwordPopoverOpen}>
-              <Form.Item
-                name="newPassword"
-                hidden={this.state.current !== 2}
-                rules={[
-                  {
-                    required: true,
-                    validateTrigger: "onChange",
-                    validator: (rule, value) => {
-                      const errorMsg = PasswordChecker.checkPasswordComplexity(value, application.organizationObj.passwordOptions);
-                      if (errorMsg === "") {
-                        return Promise.resolve();
-                      } else {
-                        return Promise.reject(errorMsg);
-                      }
-                    },
-                  },
-                ]}
-                hasFeedback
-              >
-                <Input.Password
-                  prefix={<LockOutlined />}
-                  placeholder={i18next.t("general:Password")}
-                  onChange={(e) => {
-                    this.setState({
-                      passwordPopover: PasswordChecker.renderPasswordPopover(application.organizationObj.passwordOptions, e.target.value),
-                    });
-                  }}
-                  onFocus={() => {
-                    this.setState({
-                      passwordPopoverOpen: application.organizationObj.passwordOptions?.length > 0,
-                      passwordPopover: PasswordChecker.renderPasswordPopover(application.organizationObj.passwordOptions, this.form.current?.getFieldValue("newPassword") ?? ""),
-                    });
-                  }}
-                  onBlur={() => {
-                    this.setState({
-                      passwordPopoverOpen: false,
-                    });
-                  }}
-                />
-              </Form.Item>
-            </Popover>
-            <Form.Item
-              name="confirm"
-              dependencies={["newPassword"]}
-              hasFeedback
-              rules={[
-                {
-                  required: true,
-                  message: i18next.t("signup:Please confirm your password!"),
-                },
-                ({getFieldValue}) => ({
-                  validator(rule, value) {
-                    if (!value || getFieldValue("newPassword") === value) {
-                      return Promise.resolve();
-                    }
-                    return Promise.reject(
-                      i18next.t("signup:Your confirmed password is inconsistent with the password!")
-                    );
-                  },
-                }),
-              ]}
-            >
+              }]}
+              hasFeedback>
               <Input.Password
-                prefix={<CheckCircleOutlined />}
-                placeholder={i18next.t("general:Confirm")}
+                prefix={<Lock className="w-4 h-4 text-neutral-500" />}
+                placeholder={i18next.t("general:Password")}
+                onChange={(e) => {
+                  setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj.passwordOptions, e.target.value));
+                }}
+                onFocus={() => {
+                  setPasswordPopoverOpen(application.organizationObj.passwordOptions?.length > 0);
+                  setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj.passwordOptions, formRef.current?.getFieldValue("newPassword") ?? ""));
+                }}
+                onBlur={() => { setPasswordPopoverOpen(false); }}
               />
             </Form.Item>
+            <Form.Item name="confirm" dependencies={["newPassword"]} hasFeedback
+              rules={[
+                {required: true, message: i18next.t("signup:Please confirm your password!")},
+                ({getFieldValue}) => ({
+                  validator(rule, value) {
+                    if (!value || getFieldValue("newPassword") === value) {return Promise.resolve();}
+                    return Promise.reject(i18next.t("signup:Your confirmed password is inconsistent with the password!"));
+                  },
+                }),
+              ]}>
+              <Input.Password prefix={<CheckCircle className="w-4 h-4 text-neutral-500" />} placeholder={i18next.t("general:Confirm")} />
+            </Form.Item>
             <br />
-            <Form.Item hidden={this.state.current !== 2}>
-              <Button block type="primary" htmlType="submit">
+            <Form.Item hidden={current !== 2}>
+              <button type="submit" className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors">
                 {i18next.t("forget:Change Password")}
-              </Button>
+              </button>
             </Form.Item>
           </Form> : null}
       </Form.Provider>
     );
+  };
+
+  // --- Main render ---
+
+  const application = getApplicationObj();
+  if (application === undefined) {
+    return null;
+  }
+  if (application === null) {
+    return Util.renderMessageLarge({props}, msg);
   }
 
-  stepBack() {
-    if (this.state.current > 0) {
-      this.setState({
-        current: this.state.current - 1,
-      });
-    } else if (this.props.history.length > 1) {
-      this.props.history.goBack();
-    } else {
-      Setting.redirectToLoginPage(this.getApplicationObj(), this.props.history);
-    }
-  }
-
-  render() {
-    const application = this.getApplicationObj();
-    if (application === undefined) {
-      return null;
-    }
-    if (application === null) {
-      return Util.renderMessageLarge(this, this.state.msg);
-    }
-
-    return (
-      <React.Fragment>
-        <CustomGithubCorner />
-        <div className="forget-content" style={{padding: Setting.isMobile() ? "0" : null, boxShadow: Setting.isMobile() ? "none" : null}}>
-          {Setting.inIframe() || Setting.isMobile() ? null : <div dangerouslySetInnerHTML={{__html: application.formCss}} />}
-          {Setting.inIframe() || !Setting.isMobile() ? null : <div dangerouslySetInnerHTML={{__html: application.formCssMobile}} />}
-          <Button type="text"
-            style={{position: "relative", left: Setting.isMobile() ? "10px" : "-90px", top: 0}}
-            icon={<ArrowLeftOutlined style={{fontSize: "24px"}} />}
-            size={"large"}
-            onClick={() => {this.stepBack();}}
-          />
-          <Row>
-            <Col span={24} style={{justifyContent: "center"}}>
-              <Row>
-                <Col span={24}>
-                  <div style={{marginTop: "80px", marginBottom: "10px", textAlign: "center"}}>
-                    {
-                      Setting.renderHelmet(application)
-                    }
-                    {
-                      Setting.renderLogo(application)
-                    }
-                  </div>
-                </Col>
-              </Row>
-              <Row>
-                <Col span={24}>
-                  <div style={{textAlign: "center", fontSize: "28px"}}>
-                    {i18next.t("forget:Reset password")}
-                  </div>
-                </Col>
-              </Row>
-              <Row>
-                <Col span={24}>
-                  <Steps
-                    current={this.state.current}
-                    items={[
-                      {
-                        title: i18next.t("forget:Account"),
-                        icon: <UserOutlined />,
-                      },
-                      {
-                        title: i18next.t("forget:Verify"),
-                        icon: <SolutionOutlined />,
-                      },
-                      {
-                        title: i18next.t("forget:Reset"),
-                        icon: <KeyOutlined />,
-                      },
-                    ]}
-                    style={{
-                      width: "90%",
-                      maxWidth: "500px",
-                      margin: "auto",
-                      marginTop: "80px",
-                    }}
-                  >
-                  </Steps>
-                </Col>
-              </Row>
-            </Col>
-            <Col span={24} style={{display: "flex", justifyContent: "center"}}>
-              <div style={{marginTop: "40px", textAlign: "center"}}>
-                {this.renderForm(application)}
-              </div>
-            </Col>
-          </Row>
+  return (
+    <React.Fragment>
+      <div className="forget-content" style={{padding: Setting.isMobile() ? "0" : null, boxShadow: Setting.isMobile() ? "none" : null}}>
+        {Setting.inIframe() || Setting.isMobile() ? null : <div dangerouslySetInnerHTML={{__html: application.formCss}} />}
+        {Setting.inIframe() || !Setting.isMobile() ? null : <div dangerouslySetInnerHTML={{__html: application.formCssMobile}} />}
+        <button
+          type="button"
+          className="flex items-center justify-center w-10 h-10 rounded-lg border border-white/10 bg-transparent text-neutral-400 hover:text-white hover:border-white/20 transition-colors"
+          style={{position: "relative", left: Setting.isMobile() ? "10px" : "-90px", top: 0}}
+          onClick={() => stepBack()}
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div className="flex flex-col items-center justify-center">
+          <div className="mt-20 mb-3 text-center">
+            {Setting.renderHelmet(application)}
+            {Setting.renderLogo(application)}
+          </div>
+          <div className="text-center text-2xl font-semibold text-white mb-2">
+            {i18next.t("forget:Reset password")}
+          </div>
+          {renderStepIndicator()}
+          <div className="mt-4 text-center">
+            {renderForm(application)}
+          </div>
         </div>
-      </React.Fragment>
-    );
-  }
+      </div>
+    </React.Fragment>
+  );
 }
 
 export default withRouter(ForgetPage);

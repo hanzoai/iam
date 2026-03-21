@@ -12,60 +12,81 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import React from "react";
+import React, {useMemo, useRef, useState} from "react";
+import {Globe} from "lucide-react";
 import * as Setting from "../../Setting";
-import {Dropdown} from "antd";
-import "../../App.less";
-import {GlobalOutlined} from "@ant-design/icons";
 
-function flagIcon(country, alt) {
+function flagIcon(country: string, alt: string) {
   return (
     <img width={24} alt={alt} src={`${Setting.StaticBaseUrl}/flag-icons/${country}.svg`} />
   );
 }
 
-class LanguageSelect extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      languages: props.languages ?? Setting.Countries.map(item => item.key),
-      onClick: props.onClick,
-    };
+interface LanguageSelectProps {
+  languages?: string[];
+  onClick?: (key: string) => void;
+  style?: React.CSSProperties;
+}
 
-    Setting.Countries.forEach((country) => {
+const LanguageSelect = (props: LanguageSelectProps) => {
+  const languages = props.languages ?? Setting.Countries.map((item: any) => item.key);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Preload flag icons
+  useMemo(() => {
+    Setting.Countries.forEach((country: any) => {
       new Image().src = `${Setting.StaticBaseUrl}/flag-icons/${country.country}.svg`;
     });
-  }
+  }, []);
 
-  items = Setting.Countries.map((country) => Setting.getItem(country.label, country.key, flagIcon(country.country, country.alt)));
-
-  getOrganizationLanguages(languages) {
-    const select = [];
-    for (const language of languages) {
-      this.items.map((item, index) => item.key === language ? select.push(item) : null);
-    }
-    return select;
-  }
-
-  render() {
-    const languageItems = this.getOrganizationLanguages(this.state.languages);
-    const onClick = (e) => {
-      if (typeof this.state.onClick === "function") {
-        this.state.onClick(e.key);
-      }
-      Setting.setLanguage(e.key);
-    };
-
-    return (
-      <Dropdown menu={{items: languageItems, onClick}} overlayStyle={{minWidth: 160}} >
-        <div className="select-box" style={{display: languageItems.length === 0 ? "none" : null, ...this.props.style}} >
-          <GlobalOutlined style={{fontSize: "24px"}} />
-        </div>
-      </Dropdown>
+  const languageItems = useMemo(() => {
+    return Setting.Countries.filter((country: any) =>
+      languages.includes(country.key)
     );
+  }, [languages]);
+
+  const handleClick = (key: string) => {
+    if (typeof props.onClick === "function") {
+      props.onClick(key);
+    }
+    Setting.setLanguage(key);
+    setOpen(false);
+  };
+
+  if (languageItems.length === 0) {
+    return null;
   }
-}
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        className="flex items-center justify-center p-2 text-white hover:text-gray-300 transition-colors"
+        style={props.style}
+        onClick={() => setOpen(!open)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+      >
+        <Globe className="w-6 h-6" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg py-1 shadow-lg min-w-[160px] z-50">
+          {languageItems.map((country: any) => (
+            <button
+              key={country.key}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleClick(country.key);
+              }}
+            >
+              {flagIcon(country.country, country.alt)}
+              <span>{country.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default LanguageSelect;
