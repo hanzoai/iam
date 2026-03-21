@@ -17,7 +17,6 @@ import React, {useCallback} from "react";
 import {ArrowDown, ArrowUp, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
-import Editor from "../common/Editor";
 
 const EmailCss = ".signup-email{}\n.signup-email-input{}\n.signup-email-code{}\n.signup-email-code-input{}\n";
 const PhoneCss = ".signup-phone{}\n.signup-phone-input{}\n.phone-code{}\n.signup-phone-code-input{}";
