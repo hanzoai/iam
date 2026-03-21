@@ -12,14 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {Button} from "antd";
 import React from "react";
 import i18next from "i18next";
 import {CaptchaModal} from "./modal/CaptchaModal";
 import * as UserBackend from "../backend/UserBackend";
 
-export const CaptchaPreview = (props) => {
+export const CaptchaPreview = (props: any) => {
   const {owner, name, provider, captchaType, subType, clientId, clientSecret, clientId2, clientSecret2, providerUrl} = props;
   const [visible, setVisible] = React.useState(false);
 
@@ -30,10 +28,8 @@ export const CaptchaPreview = (props) => {
     provider.providerUrl = providerUrl;
     if (clientSecret !== "***") {
       provider.clientSecret = clientSecret;
-      setVisible(true);
-    } else {
-      setVisible(true);
     }
+    setVisible(true);
   };
 
   const isButtonDisabled = () => {
@@ -50,7 +46,7 @@ export const CaptchaPreview = (props) => {
     return false;
   };
 
-  const onOk = (captchaType, captchaToken, clientSecret) => {
+  const onOk = (captchaType: string, captchaToken: string, clientSecret: string) => {
     UserBackend.verifyCaptcha(owner, name, captchaType, captchaToken, clientSecret).then(() => {
       setVisible(false);
     });
@@ -62,14 +58,13 @@ export const CaptchaPreview = (props) => {
 
   return (
     <React.Fragment>
-      <Button
-        style={{fontSize: 14}}
-        type={"primary"}
+      <button
+        className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         onClick={clickPreview}
         disabled={isButtonDisabled()}
       >
         {i18next.t("general:Preview")}
-      </Button>
+      </button>
       <CaptchaModal
         owner={owner}
         name={name}

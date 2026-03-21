@@ -42,7 +42,8 @@ import PropertyTable from "./table/propertyTable";
 import {CountryCodeSelect} from "./common/select/CountryCodeSelect";
 import PopconfirmModal from "./common/modal/PopconfirmModal";
 import {DeleteMfa} from "./backend/MfaBackend";
-import {CheckCircleOutlined, HolderOutlined, UsergroupAddOutlined} from "@ant-design/icons";
+import {CheckCircle, GripVertical, Users} from "lucide-react";
+import {HolderOutlined, UsergroupAddOutlined} from "@ant-design/icons";
 import * as MfaBackend from "./backend/MfaBackend";
 import AccountAvatar from "./account/AccountAvatar";
 import FaceIdTable from "./table/FaceIdTable";
@@ -1489,19 +1490,22 @@ class UserEditPage extends React.Component {
 
   renderUser() {
     return (
-      <div>
-        <Card size="small" title={
-          (this.props.account === null) ? i18next.t("user:User Profile") : (
-            <div>
-              {this.state.mode === "add" ? i18next.t("user:New User") : (this.isSelf() ? i18next.t("account:My Account") : i18next.t("user:Edit User"))}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button onClick={() => this.submitUserEdit(false)}>{i18next.t("general:Save")}</Button>
-              <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitUserEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-              {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteUser()}>{i18next.t("general:Cancel")}</Button> : null}
+      <div className="bg-white/[0.02] border border-white/10 rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">
+            {(this.props.account === null) ? i18next.t("user:User Profile") : (
+              this.state.mode === "add" ? i18next.t("user:New User") : (this.isSelf() ? i18next.t("account:My Account") : i18next.t("user:Edit User"))
+            )}
+          </h2>
+          {this.props.account !== null && (
+            <div className="flex gap-2">
+              <button className="px-4 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.submitUserEdit(false)}>{i18next.t("general:Save")}</button>
+              <button className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100" onClick={() => this.submitUserEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+              {this.state.mode === "add" && <button className="px-4 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.deleteUser()}>{i18next.t("general:Cancel")}</button>}
             </div>
-          )
-        } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-          {this.renderUserForm()}
-        </Card>
+          )}
+        </div>
+        {this.renderUserForm()}
       </div>
     );
   }
@@ -1591,27 +1595,30 @@ class UserEditPage extends React.Component {
   }
 
   render() {
+    if (this.state.loading) {
+      return <div className="flex items-center justify-center py-20"><div className="text-gray-400 text-lg">Loading...</div></div>;
+    }
+
+    if (this.state.user === null) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 space-y-4">
+          <h1 className="text-4xl font-bold text-white">404 NOT FOUND</h1>
+          <p className="text-gray-400">{i18next.t("general:Sorry, the user you visited does not exist or you are not authorized to access this user.")}</p>
+          <a href="/" className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100">{i18next.t("general:Back Home")}</a>
+        </div>
+      );
+    }
+
     return (
-      <div>
-        {
-          this.state.loading ? <Spin size="large" style={{marginLeft: "50%", marginTop: "10%"}} /> : (
-            this.state.user !== null ? this.renderUser() :
-              <Result
-                status="404"
-                title="404 NOT FOUND"
-                subTitle={i18next.t("general:Sorry, the user you visited does not exist or you are not authorized to access this user.")}
-                extra={<a href="/"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>}
-              />
-          )
-        }
-        {
-          (this.state.user === null || this.props.account === null) ? null :
-            <div style={{marginTop: "20px", marginLeft: "40px"}}>
-              <Button size="large" onClick={() => this.submitUserEdit(false)}>{i18next.t("general:Save")}</Button>
-              <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitUserEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-              {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.deleteUser()}>{i18next.t("general:Cancel")}</Button> : null}
-            </div>
-        }
+      <div className="max-w-5xl mx-auto space-y-6">
+        {this.renderUser()}
+        {this.props.account !== null && (
+          <div className="flex gap-3">
+            <button className="px-6 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.submitUserEdit(false)}>{i18next.t("general:Save")}</button>
+            <button className="px-6 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100" onClick={() => this.submitUserEdit(true)}>{i18next.t("general:Save & Exit")}</button>
+            {this.state.mode === "add" && <button className="px-6 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.deleteUser()}>{i18next.t("general:Cancel")}</button>}
+          </div>
+        )}
       </div>
     );
   }
