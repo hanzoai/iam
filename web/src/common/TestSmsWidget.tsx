@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
-export function sendTestSms(provider, phone) {
+export function sendTestSms(provider: any, phone: string) {
   testSmsProvider(provider, phone)
     .then((res) => {
       if (res.status === "ok") {
@@ -30,7 +29,7 @@ export function sendTestSms(provider, phone) {
     });
 }
 
-function testSmsProvider(provider, phone = "") {
+function testSmsProvider(provider: any, phone = "") {
   const SmsForm = {
     content: "123456",
     receivers: [phone],

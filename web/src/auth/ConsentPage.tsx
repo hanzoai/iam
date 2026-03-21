@@ -13,9 +13,8 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {Button, Card, List, Result, Space} from "antd";
-import {CheckOutlined, LockOutlined} from "@ant-design/icons";
+import React, {useCallback, useEffect, useState} from "react";
+import {Shield, Check, Loader2} from "lucide-react";
 import * as ApplicationBackend from "../backend/ApplicationBackend";
 import * as ConsentBackend from "../backend/ConsentBackend";
 import * as Setting from "../Setting";
@@ -23,73 +22,43 @@ import i18next from "i18next";
 import {withRouter} from "react-router-dom";
 import * as Util from "./Util";
 
-class ConsentPage extends React.Component {
-  constructor(props) {
-    super(props);
-    const params = new URLSearchParams(window.location.search);
-    this.state = {
-      applicationName: props.match?.params?.applicationName || params.get("application"),
-      scopeDescriptions: [],
-      granting: false,
-      oAuthParams: Util.getOAuthGetParameters(),
-    };
-  }
+function ConsentPage(props) {
+  const params = new URLSearchParams(window.location.search);
+  const [applicationName] = useState(props.match?.params?.applicationName || params.get("application"));
+  const [scopeDescriptions, setScopeDescriptions] = useState([]);
+  const [granting, setGranting] = useState(false);
+  const [oAuthParams] = useState(Util.getOAuthGetParameters());
 
-  getApplicationObj() {
-    return this.props.application;
-  }
+  const getApplicationObj = useCallback(() => props.application, [props.application]);
 
-  componentDidMount() {
-    this.getApplication();
-    this.loadScopeDescriptions();
-  }
-
-  componentDidUpdate(prevProps) {
-    if (this.props.application !== prevProps.application) {
-      this.loadScopeDescriptions();
-    }
-  }
-
-  getApplication() {
-    if (!this.state.applicationName) {
-      return;
-    }
-
-    ApplicationBackend.getApplication("admin", this.state.applicationName)
+  useEffect(() => {
+    if (!applicationName) {return;}
+    ApplicationBackend.getApplication("admin", applicationName)
       .then((res) => {
         if (res.status === "error") {
           Setting.showMessage("error", res.msg);
           return;
         }
-
-        this.props.onUpdateApplication(res.data);
+        props.onUpdateApplication(res.data);
       });
-  }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  loadScopeDescriptions() {
-    const {oAuthParams} = this.state;
-    const application = this.getApplicationObj();
-    if (!oAuthParams?.scope || !application) {
-      return;
-    }
-    // Check if urlPar scope is within application scopes
+  useEffect(() => {
+    const application = getApplicationObj();
+    if (!oAuthParams?.scope || !application) {return;}
+
     const scopes = oAuthParams.scope.split(" ").map(s => s.trim()).filter(Boolean);
     const customScopes = application.customScopes || [];
     const customScopesMap = {};
     customScopes.forEach(s => {
-      if (s?.scope) {
-        customScopesMap[s.scope] = s;
-      }
+      if (s?.scope) {customScopesMap[s.scope] = s;}
     });
 
-    const scopeDescriptions = scopes
+    const descriptions = scopes
       .map(scope => {
         const item = customScopesMap[scope];
         if (item) {
-          return {
-            ...item,
-            displayName: item.displayName || item.scope,
-          };
+          return {...item, displayName: item.displayName || item.scope};
         }
         return {
           scope: scope,
@@ -99,16 +68,12 @@ class ConsentPage extends React.Component {
       })
       .filter(Boolean);
 
-    this.setState({
-      scopeDescriptions: scopeDescriptions,
-    });
-  }
+    setScopeDescriptions(descriptions);
+  }, [getApplicationObj, oAuthParams]);
 
-  handleGrant() {
-    const {oAuthParams, scopeDescriptions} = this.state;
-    const application = this.getApplicationObj();
-
-    this.setState({granting: true});
+  const handleGrant = () => {
+    const application = getApplicationObj();
+    setGranting(true);
 
     const consent = {
       owner: application.owner,
@@ -119,143 +84,120 @@ class ConsentPage extends React.Component {
     ConsentBackend.grantConsent(consent, oAuthParams)
       .then((res) => {
         if (res.status === "ok") {
-          // res.data contains the authorization code
           const code = res.data;
           const concatChar = oAuthParams?.redirectUri?.includes("?") ? "&" : "?";
           const redirectUrl = `${oAuthParams.redirectUri}${concatChar}code=${code}&state=${oAuthParams.state}`;
           Setting.goToLink(redirectUrl);
         } else {
           Setting.showMessage("error", res.msg);
-          this.setState({granting: false});
+          setGranting(false);
         }
       });
-  }
+  };
 
-  handleDeny() {
-    const {oAuthParams} = this.state;
+  const handleDeny = () => {
     const concatChar = oAuthParams?.redirectUri?.includes("?") ? "&" : "?";
     Setting.goToLink(`${oAuthParams.redirectUri}${concatChar}error=access_denied&error_description=User denied consent&state=${oAuthParams.state}`);
+  };
+
+  const application = getApplicationObj();
+
+  if (application === undefined) {
+    return null;
   }
 
-  render() {
-    const application = this.getApplicationObj();
-
-    if (application === undefined) {
-      return null;
-    }
-
-    if (!application) {
-      return (
-        <Result
-          status="error"
-          title={i18next.t("general:Invalid application")}
-        />
-      );
-    }
-
-    const {scopeDescriptions, granting} = this.state;
-    const isScopeEmpty = scopeDescriptions.length === 0;
-
+  if (!application) {
     return (
-      <div className="login-content">
-        <div className={Setting.isDarkTheme(this.props.themeAlgorithm) ? "login-panel-dark" : "login-panel"}>
-          <div className="login-form">
-            <Card
-              style={{
-                padding: "32px",
-                width: 450,
-                borderRadius: "12px",
-                boxShadow: "0 10px 25px rgba(0, 0, 0, 0.05)",
-                border: "1px solid #f0f0f0",
-              }}
-            >
-              <div style={{textAlign: "center", marginBottom: 24}}>
-                {application.logo && (
-                  <div style={{marginBottom: 16}}>
-                    <img
-                      src={application.logo}
-                      alt={application.displayName || application.name}
-                      style={{height: 56, objectFit: "contain"}}
-                    />
-                  </div>
-                )}
-                <h2 style={{margin: 0, fontWeight: 600, fontSize: "24px"}}>
-                  {i18next.t("consent:Authorization Request")}
-                </h2>
-              </div>
-
-              <div style={{marginBottom: 32}}>
-                <p style={{fontSize: 15, color: "#666", textAlign: "center", lineHeight: "1.6"}}>
-                  <span style={{fontWeight: 600, color: "#000"}}>{application.displayName || application.name}</span>
-                  {" "}{i18next.t("consent:wants to access your account")}
-                </p>
-                {application.homepageUrl && (
-                  <div style={{textAlign: "center", marginTop: 4}}>
-                    <a href={application.homepageUrl} target="_blank" rel="noopener noreferrer" style={{fontSize: 13, color: "#1890ff"}}>
-                      {application.homepageUrl}
-                    </a>
-                  </div>
-                )}
-              </div>
-
-              <div style={{marginBottom: 32}}>
-                <div style={{fontSize: 14, color: "#8c8c8c", marginBottom: 16}}>
-                  <LockOutlined style={{marginRight: 8}} /> {i18next.t("consent:This application is requesting")}
-                </div>
-                <div style={{display: "flex", justifyContent: "center"}}>
-                  <List
-                    size="small"
-                    dataSource={scopeDescriptions}
-                    style={{width: "100%"}}
-                    renderItem={item => (
-                      <List.Item style={{borderBottom: "none", width: "100%"}}>
-                        <div style={{display: "inline-grid", gridTemplateColumns: "16px auto", columnGap: 8, alignItems: "start"}}>
-                          <CheckOutlined style={{color: "#52c41a", fontSize: "14px", marginTop: "4px", justifySelf: "center"}} />
-                          <div style={{fontWeight: 500, fontSize: "14px", lineHeight: "22px"}}>{item.displayName || item.scope}</div>
-                        </div>
-                        <div style={{fontSize: "12px", color: "#8c8c8c", marginTop: 2}}>{item.description}</div>
-                      </List.Item>
-                    )}
-                  />
-                </div>
-              </div>
-
-              <div style={{textAlign: "center", marginBottom: 24}}>
-                <Space size={16}>
-                  <Button
-                    type="primary"
-                    size="large"
-                    shape="round"
-                    onClick={() => this.handleGrant()}
-                    loading={granting}
-                    disabled={granting || isScopeEmpty}
-                    style={{minWidth: 120, height: 44, fontWeight: 500}}
-                  >
-                    {i18next.t("consent:Allow")}
-                  </Button>
-                  <Button
-                    size="large"
-                    shape="round"
-                    onClick={() => this.handleDeny()}
-                    disabled={granting || isScopeEmpty}
-                    style={{minWidth: 120, height: 44, fontWeight: 500}}
-                  >
-                    {i18next.t("consent:Deny")}
-                  </Button>
-                </Space>
-              </div>
-
-              <div style={{padding: "16px", backgroundColor: "#fafafa", borderRadius: "8px", border: "1px solid #f0f0f0"}}>
-                <p style={{margin: 0, fontSize: 12, color: "#8c8c8c", textAlign: "center", lineHeight: "1.5"}}>
-                  {i18next.t("consent:By clicking Allow, you allow this app to use your information")}
-                </p>
-              </div>
-            </Card>
-          </div>
-        </div>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-red-400 text-lg font-medium">{i18next.t("general:Invalid application")}</div>
       </div>
     );
   }
+
+  const isScopeEmpty = scopeDescriptions.length === 0;
+
+  return (
+    <div className="flex items-center justify-center min-h-[60vh] px-4">
+      <div className="w-full max-w-md p-8 rounded-xl border border-white/10 bg-white/[0.03]">
+        {/* Header */}
+        <div className="text-center mb-6">
+          {application.logo && (
+            <div className="mb-4 flex justify-center">
+              <img
+                src={application.logo}
+                alt={application.displayName || application.name}
+                className="h-14 object-contain"
+              />
+            </div>
+          )}
+          <h2 className="text-xl font-semibold text-white">
+            {i18next.t("consent:Authorization Request")}
+          </h2>
+        </div>
+
+        {/* App info */}
+        <div className="mb-8 text-center">
+          <p className="text-sm text-neutral-400 leading-relaxed">
+            <span className="font-semibold text-white">{application.displayName || application.name}</span>
+            {" "}{i18next.t("consent:wants to access your account")}
+          </p>
+          {application.homepageUrl && (
+            <a href={application.homepageUrl} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors">
+              {application.homepageUrl}
+            </a>
+          )}
+        </div>
+
+        {/* Scopes */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 text-sm text-neutral-400 mb-4">
+            <Shield className="w-4 h-4" />
+            {i18next.t("consent:This application is requesting")}
+          </div>
+          <div className="space-y-3">
+            {scopeDescriptions.map((item, idx) => (
+              <div key={idx} className="flex items-start gap-3 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/5">
+                <Check className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="text-sm font-medium text-white">{item.displayName || item.scope}</div>
+                  {item.description && (
+                    <div className="text-xs text-neutral-500 mt-0.5">{item.description}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Buttons */}
+        <div className="flex gap-3 mb-6">
+          <button
+            onClick={handleGrant}
+            disabled={granting || isScopeEmpty}
+            className="flex-1 h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {granting && <Loader2 className="w-4 h-4 animate-spin" />}
+            {i18next.t("consent:Allow")}
+          </button>
+          <button
+            onClick={handleDeny}
+            disabled={granting || isScopeEmpty}
+            className="flex-1 h-11 flex items-center justify-center rounded-lg border border-white/10 bg-transparent text-neutral-300 font-medium text-sm hover:border-white/20 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {i18next.t("consent:Deny")}
+          </button>
+        </div>
+
+        {/* Disclaimer */}
+        <div className="px-4 py-3 rounded-lg bg-white/[0.02] border border-white/5">
+          <p className="text-xs text-neutral-500 text-center leading-relaxed">
+            {i18next.t("consent:By clicking Allow, you allow this app to use your information")}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default withRouter(ConsentPage);
