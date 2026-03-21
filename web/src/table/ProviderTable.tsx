@@ -88,7 +88,7 @@ function ProviderTable({title, table, providers, application, onUpdateTable}) {
     return null;
   };
 
-  let showCanSignUp = application.enableSignUp;
+  const showCanSignUp = application.enableSignUp;
 
   return (
     <div className="mt-5">
