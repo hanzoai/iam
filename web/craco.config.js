@@ -1,4 +1,3 @@
-const CracoLessPlugin = require("craco-less");
 const path = require("path");
 
 module.exports = {
@@ -50,26 +49,17 @@ module.exports = {
       },
     },
   },
-  plugins: [
-    {
-      plugin: CracoLessPlugin,
-      options: {
-        lessLoaderOptions: {
-          lessOptions: {
-            modifyVars: {"@primary-color": "rgb(89,54,213)", "@border-radius-base": "5px"},
-            javascriptEnabled: true,
-          },
-        },
-      },
+  style: {
+    postcss: {
+      mode: "file",
     },
-  ],
+  },
   webpack: {
     configure: (webpackConfig, { env, paths }) => {
       paths.appBuild = path.resolve(__dirname, "build-temp");
       webpackConfig.output.path = path.resolve(__dirname, "build-temp");
 
       // ignore webpack warnings by source-map-loader
-      // https://github.com/facebook/create-react-app/pull/11752#issuecomment-1345231546
       webpackConfig.ignoreWarnings = [
         function ignoreSourcemapsloaderWarnings(warning) {
           return (
@@ -82,8 +72,6 @@ module.exports = {
       ];
 
       // use polyfill Buffer with Webpack 5
-      // https://viglucci.io/articles/how-to-polyfill-buffer-with-webpack-5
-      // https://craco.js.org/docs/configuration/webpack/
       webpackConfig.resolve.fallback = {
         buffer: require.resolve("buffer/"),
         process: false,

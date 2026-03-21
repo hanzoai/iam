@@ -20,7 +20,7 @@ import * as Setting from "./Setting";
 import {setOrgIsTourVisible, setTourLogo} from "./TourConfig";
 import {StyleProvider, legacyLogicalPropertiesTransformer} from "@ant-design/cssinjs";
 import {GithubOutlined, InfoCircleFilled, ShareAltOutlined} from "@ant-design/icons";
-import {Alert, Button, ConfigProvider, Drawer, FloatButton, Layout, Tooltip} from "antd";
+import {Alert, ConfigProvider, Drawer, FloatButton, Layout, Tooltip} from "antd";
 import {Route, Switch, withRouter} from "react-router-dom";
 import CustomGithubCorner from "./common/CustomGithubCorner";
 import * as Conf from "./Conf";
@@ -36,7 +36,6 @@ import {withTranslation} from "react-i18next";
 const ManagementPage = lazy(() => import("./ManagementPage"));
 const {Footer, Content} = Layout;
 
-import {setTwoToneColor} from "@ant-design/icons";
 import * as ApplicationBackend from "./backend/ApplicationBackend";
 import * as Cookie from "cookie";
 
@@ -67,7 +66,7 @@ import faIR from "antd/locale/fa_IR";
 import csCZ from "antd/locale/cs_CZ";
 import skSK from "antd/locale/sk_SK";
 
-setTwoToneColor("rgb(87,52,211)");
+// Monochrome theme - no two-tone colors needed
 
 function getAntdLocale(language) {
   const localeMap = {
@@ -612,14 +611,18 @@ class App extends Component {
                       <Route exact path="/callback/saml" render={(props) => <SamlCallback {...props} {...this.props} application={this.state.application} onLoginSuccess={(redirectUrl) => {this.onLoginSuccess(redirectUrl);}} />} />
                       <Route exact path="/telegram-login" render={(props) => <TelegramLogin {...props} {...this.props} />} />
                       <Route path="" render={() => (
-                        <div style={{display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: "24px"}}>
-                          <div style={{fontSize: "80px", fontWeight: 800, lineHeight: 1, color: "#fafafa", letterSpacing: "-2px"}}>404</div>
-                          <div style={{fontSize: "16px", color: "#737373"}}>
+                        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
+                          <div className="text-[80px] font-extrabold leading-none text-neutral-100 tracking-tight">404</div>
+                          <div className="text-base text-neutral-500">
                             {i18next.t("general:Sorry, the page you visited does not exist.")}
                           </div>
-                          <div style={{display: "flex", gap: "12px"}}>
-                            <a href="/login"><Button type="primary" size="large">Sign In</Button></a>
-                            <a href="/signup"><Button size="large">Sign Up</Button></a>
+                          <div className="flex gap-3">
+                            <a href="/login" className="px-6 py-2.5 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors no-underline">
+                              {i18next.t("login:Sign In")}
+                            </a>
+                            <a href="/signup" className="px-6 py-2.5 rounded-lg border border-white/10 text-neutral-300 font-medium text-sm hover:border-white/20 hover:text-white transition-colors no-underline">
+                              {i18next.t("account:Sign Up")}
+                            </a>
                           </div>
                         </div>
                       )} />

@@ -14,71 +14,67 @@
 
 // @ts-nocheck
 import React from "react";
-import {Table} from "antd";
 import i18next from "i18next";
 
-class PrometheusInfoTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      table: props.table,
-    };
-  }
-  render() {
-    const latencyColumns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-      },
-      {
-        title: i18next.t("general:Method"),
-        dataIndex: "method",
-        key: "method",
-      },
-      {
-        title: i18next.t("system:Count"),
-        dataIndex: "count",
-        key: "count",
-      },
-      {
-        title: i18next.t("system:Latency") + "(ms)",
-        dataIndex: "latency",
-        key: "latency",
-      },
-    ];
-    const throughputColumns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-      },
-      {
-        title: i18next.t("general:Method"),
-        dataIndex: "method",
-        key: "method",
-      },
-      {
-        title: i18next.t("system:Throughput"),
-        dataIndex: "throughput",
-        key: "throughput",
-      },
-    ];
-    if (this.state.table === "latency") {
-      return (
-        <div style={{height: "300px", overflow: "auto"}}>
-          <Table columns={latencyColumns} dataSource={this.props.prometheusInfo?.apiLatency} pagination={false} />
+function PrometheusInfoTable({table, prometheusInfo}) {
+  if (table === "latency") {
+    const data = prometheusInfo?.apiLatency || [];
+    return (
+      <div className="h-[300px] overflow-auto">
+        <div className="border border-white/10 rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Name")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Method")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("system:Count")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("system:Latency")}(ms)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row, i) => (
+                <tr key={i} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                  <td className="px-4 py-2 text-white">{row.name}</td>
+                  <td className="px-4 py-2 text-white">{row.method}</td>
+                  <td className="px-4 py-2 text-white">{row.count}</td>
+                  <td className="px-4 py-2 text-white">{row.latency}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      );
-    } else if (this.state.table === "throughput") {
-      return (
-        <div style={{height: "300px", overflow: "auto"}}>
-          {i18next.t("system:Total Throughput")}: {this.props.prometheusInfo?.totalThroughput}
-          <Table columns={throughputColumns} dataSource={this.props.prometheusInfo?.apiThroughput} pagination={false} />
+      </div>
+    );
+  } else if (table === "throughput") {
+    const data = prometheusInfo?.apiThroughput || [];
+    return (
+      <div className="h-[300px] overflow-auto">
+        <p className="text-sm text-gray-300 mb-2">{i18next.t("system:Total Throughput")}: {prometheusInfo?.totalThroughput}</p>
+        <div className="border border-white/10 rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Name")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Method")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("system:Throughput")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row, i) => (
+                <tr key={i} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                  <td className="px-4 py-2 text-white">{row.name}</td>
+                  <td className="px-4 py-2 text-white">{row.method}</td>
+                  <td className="px-4 py-2 text-white">{row.throughput}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      );
-    }
+      </div>
+    );
   }
+
+  return null;
 }
 
 export default PrometheusInfoTable;
