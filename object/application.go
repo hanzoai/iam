@@ -759,6 +759,23 @@ func checkMultipleCaptchaProviders(application *Application, lang string) error 
 	return nil
 }
 
+// validAppNamePattern enforces the <org>-<appname> naming convention.
+// Each segment must be lowercase alphanumeric; segments are separated by hyphens.
+var validAppNamePattern = regexp.MustCompile(`^[a-z0-9]+-[a-z0-9]+(-[a-z0-9]+)*$`)
+
+func validateAppName(app *Application) error {
+	if !validAppNamePattern.MatchString(app.Name) {
+		return fmt.Errorf("application name must follow '<org>-<app>' format using lowercase alphanumeric segments (e.g., 'hanzo-console'), got: %s", app.Name)
+	}
+
+	prefix := strings.ToLower(app.Organization) + "-"
+	if !strings.HasPrefix(app.Name, prefix) {
+		return fmt.Errorf("application name must start with org prefix '%s', got: %s", prefix, app.Name)
+	}
+
+	return nil
+}
+
 func UpdateApplication(id string, application *Application, isGlobalAdmin bool, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
@@ -807,6 +824,10 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 		return false, err
 	}
 
+	if err = validateAppName(application); err != nil {
+		return false, err
+	}
+
 	for _, providerItem := range application.Providers {
 		providerItem.Provider = nil
 	}
@@ -846,6 +867,10 @@ func AddApplication(application *Application) (bool, error) {
 	}
 	if application.ClientSecret == "" {
 		application.ClientSecret = util.GenerateClientSecret()
+	}
+
+	if err := validateAppName(application); err != nil {
+		return false, err
 	}
 
 	app, err := GetApplicationByClientId(application.ClientId)
