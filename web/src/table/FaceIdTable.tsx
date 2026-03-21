@@ -14,10 +14,9 @@
 
 // @ts-nocheck
 import React, {Suspense, lazy} from "react";
-import {Button, Col, Input, Row, Table, Upload} from "antd";
+import {Upload} from "lucide-react";
 import i18next from "i18next";
 import * as Setting from "../Setting";
-import {UploadOutlined} from "@ant-design/icons";
 import * as ResourceBackend from "../backend/ResourceBackend";
 const FaceRecognitionModal = lazy(() => import("../common/modal/FaceRecognitionModal"));
 
@@ -25,9 +24,10 @@ class FaceIdTable extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
-      classes: props,
       openFaceRecognitionModal: false,
+      uploading: false,
     };
+    this.fileInputRef = React.createRef();
   }
 
   updateTable(table) {
@@ -45,139 +45,125 @@ class FaceIdTable extends React.Component {
   }
 
   addFaceId(table, faceIdData) {
-    const faceId = {
-      name: Setting.getRandomName(),
-      faceIdData: faceIdData,
-    };
-    if (table === undefined || table === null) {
-      table = [];
-    }
+    const faceId = {name: Setting.getRandomName(), faceIdData: faceIdData};
+    if (table === undefined || table === null) {table = [];}
     table = Setting.addRow(table, faceId);
     this.updateTable(table);
   }
 
   addFaceImage(table, imageUrl) {
-    const faceId = {
-      name: Setting.getRandomName(),
-      imageUrl: imageUrl,
-      faceIdData: [],
-    };
-    if (table === undefined || table === null) {
-      table = [];
-    }
+    const faceId = {name: Setting.getRandomName(), imageUrl: imageUrl, faceIdData: []};
+    if (table === undefined || table === null) {table = [];}
     table = Setting.addRow(table, faceId);
     this.updateTable(table);
   }
 
+  handleUpload(file, table) {
+    this.setState({uploading: true});
+    const filename = file.name;
+    const fullFilePath = `resource/${this.props.account.owner}/${this.props.account.name}/${filename}`;
+    ResourceBackend.uploadResource(this.props.account.owner, this.props.account.name, "custom", "ResourceListPage", fullFilePath, file)
+      .then(res => {
+        if (res.status === "ok") {
+          Setting.showMessage("success", i18next.t("application:File uploaded successfully"));
+          this.addFaceImage(table, res.data);
+        } else {
+          Setting.showMessage("error", res.msg);
+        }
+      }).finally(() => {
+        this.setState({uploading: false});
+      });
+  }
+
   renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "200px",
-        render: (text, record, index) => {
-          return (
-            <Input defaultValue={text} onChange={e => {
-              this.updateField(table, index, "name", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Data"),
-        dataIndex: "faceIdData",
-        key: "faceIdData",
-        render: (text, record, index) => {
-          const front = text.slice(0, 3).join(", ");
-          const back = text.slice(-3).join(", ");
-          return "[" + front + " ... " + back + "]";
-        },
-      },
-      {
-        title: i18next.t("general:URL"),
-        dataIndex: "imageUrl",
-        key: "imageUrl",
-        render: (text, record, index) => {
-          return text;
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        key: "action",
-        width: "100px",
-        render: (text, record, index) => {
-          return (
-            <Button style={{marginTop: "5px", marginBottom: "5px", marginRight: "5px"}} type="primary" danger onClick={() => {this.deleteRow(table, index);}}>
-              {i18next.t("general:Delete")}
-            </Button>
-          );
-        },
-      },
-    ];
-
-    const handleUpload = (info) => {
-      this.setState({uploading: true});
-      const filename = info.fileList[0].name;
-      const fullFilePath = `resource/${this.props.account.owner}/${this.props.account.name}/${filename}`;
-      ResourceBackend.uploadResource(this.props.account.owner, this.props.account.name, "custom", "ResourceListPage", fullFilePath, info.file)
-        .then(res => {
-          if (res.status === "ok") {
-            Setting.showMessage("success", i18next.t("application:File uploaded successfully"));
-
-            this.addFaceImage(table, res.data);
-          } else {
-            Setting.showMessage("error", res.msg);
-          }
-        }).finally(() => {
-          this.setState({uploading: false});
-        });
-    };
-
     return (
-      <Table scroll={{x: "max-content"}} columns={columns} dataSource={this.props.table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {i18next.t("user:Face IDs")}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button disabled={this.props.table?.length >= 5} style={{marginRight: "10px"}} type="primary" size="small" onClick={() => this.setState({openFaceRecognitionModal: true, withImage: false})}>
-              {i18next.t("application:Add Face ID")}
-            </Button>
-            <Button disabled={this.props.table?.length >= 5} style={{marginRight: "10px"}} size="small" onClick={() => this.setState({openFaceRecognitionModal: true, withImage: true})}>
-              {i18next.t("application:Add Face ID with Image")}
-            </Button>
-            <Upload maxCount={1} accept="image/*" showUploadList={false}
-              beforeUpload={file => {return false;}} onChange={info => {handleUpload(info);}}>
-              <Button id="upload-button" icon={<UploadOutlined />} loading={this.state.uploading} size="small">
-                {i18next.t("resource:Upload a file...")}
-              </Button>
-            </Upload>
-            <Suspense fallback={null}>
-              <FaceRecognitionModal
-                visible={this.state.openFaceRecognitionModal}
-                withImage={this.state.withImage}
-                onOk={(faceIdData) => {
-                  this.addFaceId(table, faceIdData);
-                  this.setState({openFaceRecognitionModal: false});
-                }}
-                onCancel={() => this.setState({openFaceRecognitionModal: false})}
-              />
-            </Suspense>
-          </div>
-        )}
-      />
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center gap-4 flex-wrap">
+          <span className="text-sm text-gray-300">{i18next.t("user:Face IDs")}</span>
+          <button
+            disabled={this.props.table?.length >= 5}
+            className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
+            onClick={() => this.setState({openFaceRecognitionModal: true, withImage: false})}
+          >
+            {i18next.t("application:Add Face ID")}
+          </button>
+          <button
+            disabled={this.props.table?.length >= 5}
+            className="px-3 py-1 text-xs font-medium rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-50"
+            onClick={() => this.setState({openFaceRecognitionModal: true, withImage: true})}
+          >
+            {i18next.t("application:Add Face ID with Image")}
+          </button>
+          <label className="px-3 py-1 text-xs font-medium rounded bg-white/10 hover:bg-white/20 text-white cursor-pointer flex items-center gap-1">
+            <Upload className="w-3 h-3" />
+            {this.state.uploading ? "Uploading..." : i18next.t("resource:Upload a file...")}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => {
+                if (e.target.files[0]) {
+                  this.handleUpload(e.target.files[0], table);
+                }
+              }}
+            />
+          </label>
+          <Suspense fallback={null}>
+            <FaceRecognitionModal
+              visible={this.state.openFaceRecognitionModal}
+              withImage={this.state.withImage}
+              onOk={(faceIdData) => {
+                this.addFaceId(table, faceIdData);
+                this.setState({openFaceRecognitionModal: false});
+              }}
+              onCancel={() => this.setState({openFaceRecognitionModal: false})}
+            />
+          </Suspense>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("general:Name")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Data")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:URL")}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("general:Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(this.props.table || []).map((row, i) => {
+                const dataPreview = row.faceIdData ? (() => {
+                  const front = row.faceIdData.slice(0, 3).join(", ");
+                  const back = row.faceIdData.slice(-3).join(", ");
+                  return "[" + front + " ... " + back + "]";
+                })() : "";
+
+                return (
+                  <tr key={i} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                    <td className="px-4 py-2">
+                      <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" defaultValue={row.name || ""} onChange={e => this.updateField(table, i, "name", e.target.value)} />
+                    </td>
+                    <td className="px-4 py-2 text-white text-xs truncate">{dataPreview}</td>
+                    <td className="px-4 py-2 text-white text-xs truncate">{row.imageUrl}</td>
+                    <td className="px-4 py-2 text-right">
+                      <button className="px-3 py-1 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white" onClick={() => this.deleteRow(table, i)}>
+                        {i18next.t("general:Delete")}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     );
   }
 
   render() {
     return (
-      <div>
-        <Row style={{marginTop: "20px"}}>
-          <Col span={24}>
-            {
-              this.renderTable(this.props.table)
-            }
-          </Col>
-        </Row>
+      <div className="mt-5">
+        {this.renderTable(this.props.table)}
       </div>
     );
   }

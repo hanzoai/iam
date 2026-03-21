@@ -12,16 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {Select} from "antd";
+import React from "react";
 import i18next from "i18next";
 import * as Setting from "../../Setting";
-import React from "react";
 
-const {Option} = Select;
-
-export const CountryCodeSelect = (props) => {
-  const {onChange, style, disabled, initValue, mode} = props;
+export const CountryCodeSelect = (props: any) => {
+  const {onChange, style, disabled, initValue, hasDefault} = props;
   const countryCodes = props.countryCodes ?? [];
   const [value, setValue] = React.useState("");
 
@@ -29,39 +25,36 @@ export const CountryCodeSelect = (props) => {
     if (initValue !== undefined) {
       setValue(initValue);
     } else {
-      const initValue = countryCodes.length > 0 ? countryCodes[0] : "";
-      handleOnChange(initValue);
+      const init = countryCodes.length > 0 ? countryCodes[0] : "";
+      handleOnChange(init);
     }
   }, []);
 
-  const handleOnChange = (value) => {
-    setValue(value);
-    onChange?.(value);
+  const handleOnChange = (val: string) => {
+    setValue(val);
+    onChange?.(val);
   };
 
+  const countryData = Setting.getCountryCodeData(countryCodes);
+
   return (
-    <Select
-      virtual={false}
-      showSearch
+    <select
       style={style}
       disabled={disabled}
       value={value}
-      mode={mode}
-      dropdownMatchSelectWidth={false}
-      optionLabelProp={"label"}
-      onChange={handleOnChange}
-      filterOption={(input, option) => (option?.text ?? "").toLowerCase().includes(input.toLowerCase())}
+      onChange={(e) => handleOnChange(e.target.value)}
+      className="px-3 py-2 text-sm bg-transparent border border-white/20 rounded-lg text-white outline-none"
     >
-      {
-        props.hasDefault ? (<Option key={"All"} value={"All"} label={i18next.t("general:All")} text={"general:All"} >
-          <div style={{display: "flex", justifyContent: "space-between", marginRight: "10px"}}>
-            {i18next.t("general:All")}
-          </div>
-        </Option>) : null
-      }
-      {
-        Setting.getCountryCodeData(countryCodes).map((country) => Setting.getCountryCodeOption(country))
-      }
-    </Select>
+      {hasDefault && (
+        <option value="All" className="bg-[#0a0a0a]">
+          {i18next.t("general:All")}
+        </option>
+      )}
+      {countryData.map((country: any) => (
+        <option key={country.code} value={country.code} className="bg-[#0a0a0a]">
+          {country.name} (+{country.phone})
+        </option>
+      ))}
+    </select>
   );
 };

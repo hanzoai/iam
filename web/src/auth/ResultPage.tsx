@@ -13,56 +13,41 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {Button, Card, Result, Spin} from "antd";
+import React, {useCallback, useEffect, useState} from "react";
+import {CheckCircle, LogIn, Loader2} from "lucide-react";
 import i18next from "i18next";
 import {authConfig} from "./Auth";
 import * as ApplicationBackend from "../backend/ApplicationBackend";
 import * as Setting from "../Setting";
 import * as AuthBackend from "./AuthBackend";
 
-class ResultPage extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      applicationName: props.match.params.applicationName !== undefined ? props.match.params.applicationName : authConfig.appName,
-      application: null,
-    };
-  }
+function ResultPage(props) {
+  const [applicationName] = useState(
+    props.match.params.applicationName !== undefined ? props.match.params.applicationName : authConfig.appName
+  );
+  const [application, setApplication] = useState(null);
 
-  UNSAFE_componentWillMount() {
-    if (this.state.applicationName !== undefined) {
-      this.getApplication();
-    } else {
-      Setting.showMessage("error", `${i18next.t("general:Unknown application name")}: ${this.state.applicationName}`);
-    }
-  }
+  const onUpdateApplication = useCallback((app) => {
+    props.onUpdateApplication(app);
+  }, [props.onUpdateApplication]);
 
-  getApplication() {
-    if (this.state.applicationName === undefined) {
-      return;
-    }
-
-    ApplicationBackend.getApplication("admin", this.state.applicationName)
-      .then((res) => {
-        if (res.status === "error") {
-          Setting.showMessage("error", res.msg);
-          return;
-        }
-
-        this.onUpdateApplication(res.data);
-        this.setState({
-          application: res.data,
+  useEffect(() => {
+    if (applicationName !== undefined) {
+      ApplicationBackend.getApplication("admin", applicationName)
+        .then((res) => {
+          if (res.status === "error") {
+            Setting.showMessage("error", res.msg);
+            return;
+          }
+          onUpdateApplication(res.data);
+          setApplication(res.data);
         });
-      });
-  }
+    } else {
+      Setting.showMessage("error", `${i18next.t("general:Unknown application name")}: ${applicationName}`);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  onUpdateApplication(application) {
-    this.props.onUpdateApplication(application);
-  }
-
-  handleSignIn = () => {
+  const handleSignIn = () => {
     AuthBackend.getAccount()
       .then((res) => {
         if (res.status === "ok" && res.data) {
@@ -73,50 +58,45 @@ class ResultPage extends React.Component {
             Setting.goToLink("/");
           }
         } else {
-          Setting.redirectToLoginPage(this.state.application, this.props.history);
+          Setting.redirectToLoginPage(application, props.history);
         }
       });
   };
 
-  render() {
-    const application = this.state.application;
-
-    if (application === null) {
-      return (
-        <div style={{display: "flex", justifyContent: "center", alignItems: "center"}}>
-          <Spin size="large" tip={i18next.t("login:Loading")} style={{paddingTop: "10%"}} />
-        </div>
-      );
-    }
-
+  if (application === null) {
     return (
-      <div style={{display: "flex", flex: "1", justifyContent: "center"}}>
-        <Card>
-          <div style={{marginTop: "30px", marginBottom: "30px", textAlign: "center"}}>
-            {
-              Setting.renderHelmet(application)
-            }
-            {
-              Setting.renderLogo(application)
-            }
-            {
-              Setting.renderHelmet(application)
-            }
-            <Result
-              status="success"
-              title={i18next.t("signup:Your account has been created!")}
-              subTitle={i18next.t("signup:Please click the below button to sign in")}
-              extra={[
-                <Button type="primary" key="login" onClick={this.handleSignIn}>
-                  {i18next.t("login:Sign In")}
-                </Button>,
-              ]}
-            />
-          </div>
-        </Card>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-white" />
       </div>
     );
   }
+
+  return (
+    <div className="flex flex-1 items-center justify-center min-h-[60vh]">
+      <div className="w-full max-w-md mx-auto p-8 rounded-xl border border-white/10 bg-white/[0.03]">
+        <div className="text-center">
+          {Setting.renderHelmet(application)}
+          {Setting.renderLogo(application)}
+          <div className="mt-8 mb-4 flex justify-center">
+            <CheckCircle className="w-16 h-16 text-green-400" />
+          </div>
+          <h2 className="text-xl font-semibold text-white mb-2">
+            {i18next.t("signup:Your account has been created!")}
+          </h2>
+          <p className="text-neutral-400 text-sm mb-8">
+            {i18next.t("signup:Please click the below button to sign in")}
+          </p>
+          <button
+            onClick={handleSignIn}
+            className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors"
+          >
+            <LogIn className="w-4 h-4" />
+            {i18next.t("login:Sign In")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default ResultPage;

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
 
 export const DefaultApplication = "app-hanzo";
 
@@ -33,12 +32,8 @@ export const ThemeDefault = {
   isCompact: false,
 };
 
-// Custom footer for Hanzo branding
-export const CustomFooter = (
-  <span style={{color: "#a3a3a3", fontSize: "14px"}}>
-    Powered by <a href="https://hanzo.ai" target="_blank" rel="noreferrer" style={{color: "#ffffff", fontWeight: 500}}>Hanzo AI</a>
-  </span>
-);
+// Empty footer -- no branding
+export const CustomFooter = null;
 
 // Blank or null to hide Ai Assistant button
 export const AiAssistantUrl = "https://ai.hanzo.ai";
