@@ -14,7 +14,7 @@
 
 // @ts-nocheck
 import React, {Component, Suspense, lazy} from "react";
-import "./App.less";
+import "./App.css";
 import {Helmet} from "react-helmet";
 import * as Setting from "./Setting";
 import {setOrgIsTourVisible, setTourLogo} from "./TourConfig";
