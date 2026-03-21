@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2023 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,9 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {ArrowUpOutlined} from "@ant-design/icons";
-import {Card, Col, Row, Spin, Statistic, Tour} from "antd";
+import {TrendingUp} from "lucide-react";
 import * as echarts from "echarts";
 import i18next from "i18next";
 import React from "react";
@@ -24,13 +23,6 @@ import * as TourConfig from "../TourConfig";
 
 const Dashboard = (props) => {
   const [dashboardData, setDashboardData] = React.useState(null);
-  const [isTourVisible, setIsTourVisible] = React.useState(TourConfig.getTourVisible());
-  const nextPathName = TourConfig.getNextUrl("home");
-
-  React.useEffect(() => {
-    window.addEventListener("storageTourChanged", handleTourChange);
-    return () => window.removeEventListener("storageTourChanged", handleTourChange);
-  }, []);
 
   React.useEffect(() => {
     window.addEventListener("storageOrganizationChanged", handleOrganizationChange);
@@ -48,8 +40,6 @@ const Dashboard = (props) => {
     if (!Setting.isAdminUser(props.account) && Setting.isLocalAdminUser(props.account)) {
       organization = props.account.owner;
     }
-    // Fall back to the user's own organization when localStorage is empty
-    // (e.g. first login before OrganizationSelect has initialised).
     if (!organization) {
       organization = props.account.owner;
     }
@@ -57,10 +47,7 @@ const Dashboard = (props) => {
   };
 
   React.useEffect(() => {
-    if (!Setting.isLocalAdminUser(props.account)) {
-      return;
-    }
-
+    if (!Setting.isLocalAdminUser(props.account)) return;
     const organization = getOrganizationName();
     DashboardBackend.getDashboard(organization).then((res) => {
       if (res.status === "ok") {
@@ -71,17 +58,9 @@ const Dashboard = (props) => {
     });
   }, [props.owner]);
 
-  const handleTourChange = () => {
-    setIsTourVisible(TourConfig.getTourVisible());
-  };
-
   const handleOrganizationChange = () => {
-    if (!Setting.isLocalAdminUser(props.account)) {
-      return;
-    }
-
+    if (!Setting.isLocalAdminUser(props.account)) return;
     setDashboardData(null);
-
     const organization = getOrganizationName();
     DashboardBackend.getDashboard(organization).then((res) => {
       if (res.status === "ok") {
@@ -92,44 +71,17 @@ const Dashboard = (props) => {
     });
   };
 
-  const setIsTourToLocal = () => {
-    TourConfig.setIsTourVisible(false);
-    setIsTourVisible(false);
-  };
-
-  const handleTourComplete = () => {
-    if (nextPathName !== "") {
-      props.history.push("/" + nextPathName);
-      TourConfig.setIsTourVisible(true);
-    }
-  };
-
-  const getSteps = () => {
-    const steps = TourConfig.TourObj["home"];
-    steps.map((item, index) => {
-      item.target = () => document.getElementById(item.id) || null;
-      if (index === steps.length - 1) {
-        item.nextButtonProps = {
-          children: TourConfig.getNextButtonChild(nextPathName),
-        };
-      }
-    });
-    return steps;
-  };
-
   const renderEChart = () => {
     const chartDom = document.getElementById("echarts-chart");
 
     if (dashboardData === null) {
       if (chartDom) {
         const instance = echarts.getInstanceByDom(chartDom);
-        if (instance) {
-          instance.dispose();
-        }
+        if (instance) instance.dispose();
       }
       return (
-        <div style={{display: "flex", justifyContent: "center", alignItems: "center"}}>
-          <Spin size="large" tip={i18next.t("login:Loading")} style={{paddingTop: "10%"}} />
+        <div className="flex justify-center items-center">
+          <span className="text-zinc-400 pt-[10%]">{i18next.t("login:Loading")}</span>
         </div>
       );
     }
@@ -142,31 +94,21 @@ const Dashboard = (props) => {
       date.setDate(date.getDate() - i);
       const month = parseInt(date.getMonth()) + 1;
       const day = parseInt(date.getDate());
-      const formattedDate = `${month}-${day}`;
-      dateArray.push(formattedDate);
+      dateArray.push(`${month}-${day}`);
     }
     const option = {
-      title: {text: i18next.t("home:Past 30 Days")},
+      title: {text: i18next.t("home:Past 30 Days"), textStyle: {color: "#fff"}},
       tooltip: {trigger: "axis"},
       legend: {data: [
-        i18next.t("general:Users"),
-        i18next.t("application:Providers"),
-        i18next.t("general:Applications"),
-        i18next.t("general:Organizations"),
-        i18next.t("general:Subscriptions"),
-        i18next.t("general:Roles"),
-        i18next.t("general:Groups"),
-        i18next.t("general:Resources"),
-        i18next.t("general:Certs"),
-        i18next.t("general:Permissions"),
-        i18next.t("general:Transactions"),
-        i18next.t("general:Models"),
-        i18next.t("general:Adapters"),
-        i18next.t("general:Enforcers"),
-      ], top: "10%"},
+        i18next.t("general:Users"), i18next.t("application:Providers"), i18next.t("general:Applications"),
+        i18next.t("general:Organizations"), i18next.t("general:Subscriptions"), i18next.t("general:Roles"),
+        i18next.t("general:Groups"), i18next.t("general:Resources"), i18next.t("general:Certs"),
+        i18next.t("general:Permissions"), i18next.t("general:Transactions"), i18next.t("general:Models"),
+        i18next.t("general:Adapters"), i18next.t("general:Enforcers"),
+      ], top: "10%", textStyle: {color: "#a1a1aa"}},
       grid: {left: "3%", right: "4%", bottom: "0", top: "30%", containLabel: true},
-      xAxis: {type: "category", boundaryGap: false, data: dateArray},
-      yAxis: {type: "value"},
+      xAxis: {type: "category", boundaryGap: false, data: dateArray, axisLabel: {color: "#71717a"}},
+      yAxis: {type: "value", axisLabel: {color: "#71717a"}},
       series: [
         {name: i18next.t("general:Organizations"), type: "line", data: dashboardData.organizationCounts},
         {name: i18next.t("general:Users"), type: "line", data: dashboardData.userCounts},
@@ -186,57 +128,32 @@ const Dashboard = (props) => {
     };
     myChart.setOption(option);
 
-    const cardStyles = {
-      body: {
-        width: Setting.isMobile() ? "340px" : "100%",
-        height: Setting.isMobile() ? "100px" : "150px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      },
-    };
+    const stats = [
+      {label: i18next.t("home:Total users"), value: dashboardData.userCounts[30]},
+      {label: i18next.t("home:New users today"), value: dashboardData.userCounts[30] - dashboardData.userCounts[29], showArrow: true},
+      {label: i18next.t("home:New users past 7 days"), value: dashboardData.userCounts[30] - dashboardData.userCounts[23], showArrow: true},
+      {label: i18next.t("home:New users past 30 days"), value: dashboardData.userCounts[30] - dashboardData.userCounts[0], showArrow: true},
+    ];
 
     return (
-      <Row id="statistic" gutter={80} justify={"center"}>
-        <Col span={50} style={{marginBottom: "10px"}}>
-          <Card variant="borderless" styles={cardStyles}>
-            <Statistic title={i18next.t("home:Total users")} fontSize="100px" value={dashboardData.userCounts[30]} valueStyle={{fontSize: "30px"}} style={{width: "200px", paddingLeft: "10px"}} />
-          </Card>
-        </Col>
-        <Col span={50} style={{marginBottom: "10px"}}>
-          <Card variant="borderless" styles={cardStyles}>
-            <Statistic title={i18next.t("home:New users today")} fontSize="100px" value={dashboardData.userCounts[30] - dashboardData.userCounts[30 - 1]} valueStyle={{fontSize: "30px"}} prefix={<ArrowUpOutlined />} style={{width: "200px", paddingLeft: "10px"}} />
-          </Card>
-        </Col>
-        <Col span={50} style={{marginBottom: "10px"}}>
-          <Card variant="borderless" styles={cardStyles}>
-            <Statistic title={i18next.t("home:New users past 7 days")} value={dashboardData.userCounts[30] - dashboardData.userCounts[30 - 7]} valueStyle={{fontSize: "30px"}} prefix={<ArrowUpOutlined />} style={{width: "200px", paddingLeft: "10px"}} />
-          </Card>
-        </Col>
-        <Col span={50} style={{marginBottom: "10px"}}>
-          <Card variant="borderless" styles={cardStyles}>
-            <Statistic title={i18next.t("home:New users past 30 days")} value={dashboardData.userCounts[30] - dashboardData.userCounts[30 - 30]} valueStyle={{fontSize: "30px"}} prefix={<ArrowUpOutlined />} style={{width: "200px", paddingLeft: "10px"}} />
-          </Card>
-        </Col>
-      </Row>
+      <div id="statistic" className="flex flex-wrap justify-center gap-6 mb-4">
+        {stats.map((stat) => (
+          <div key={stat.label} className="border border-zinc-800 rounded-lg bg-zinc-900/30 p-6 w-[220px]">
+            <p className="text-sm text-zinc-400 mb-2">{stat.label}</p>
+            <p className="text-3xl font-semibold text-white flex items-center gap-2">
+              {stat.showArrow && <TrendingUp className="w-5 h-5 text-green-400" />}
+              {stat.value}
+            </p>
+          </div>
+        ))}
+      </div>
     );
   };
 
   return (
-    <div style={{display: "flex", justifyContent: "center", flexDirection: "column", alignItems: "center"}}>
+    <div className="flex justify-center flex-col items-center">
       {renderEChart()}
-      <div id="echarts-chart" style={{width: "80%", height: "400px", textAlign: "center", marginTop: "20px"}} />
-      <Tour
-        open={Setting.isMobile() ? false : isTourVisible}
-        onClose={setIsTourToLocal}
-        steps={getSteps()}
-        indicatorsRender={(current, total) => (
-          <span>
-            {current + 1} / {total}
-          </span>
-        )}
-        onFinish={handleTourComplete}
-      />
+      <div id="echarts-chart" className="w-4/5 h-[400px] text-center mt-5" />
     </div>
   );
 };

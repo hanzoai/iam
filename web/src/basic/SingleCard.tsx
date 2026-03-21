@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,95 +13,67 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import React from "react";
-import {Card, Col, Tag} from "antd";
 import * as Setting from "../Setting";
-import {withRouter} from "react-router-dom";
+import {useHistory} from "react-router-dom";
 
-const {Meta} = Card;
+function SingleCard({logo, link, title, desc, time, tags, isSingle}) {
+  const history = useHistory();
 
-class SingleCard extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-    };
-  }
-
-  wrappedAsSilentSigninLink(link) {
-    if (link.startsWith("http")) {
-      link += link.includes("?") ? "&silentSignin=1" : "?silentSignin=1";
+  function wrappedAsSilentSigninLink(url) {
+    if (url && url.startsWith("http")) {
+      url += url.includes("?") ? "&silentSignin=1" : "?silentSignin=1";
     }
-    return link;
+    return url;
   }
 
-  renderCardMobile(logo, link, title, desc, time, tags, isSingle) {
-    const gridStyle = {
-      width: "100vw",
-      textAlign: "center",
-      cursor: "pointer",
-    };
-    const silentSigninLink = this.wrappedAsSilentSigninLink(link);
-
+  function renderTags(tags) {
+    if (!tags || !Array.isArray(tags) || tags.length === 0) return null;
     return (
-      <Card.Grid style={gridStyle} onClick={() => Setting.goToLinkSoft(this, silentSigninLink)}>
-        <img src={logo} alt="logo" width={"100%"} style={{marginBottom: "20px"}} />
-        <Meta
-          title={title}
-          description={desc}
-          style={{justifyContent: "center"}}
-        />
-        {this.renderTags(tags)}
-      </Card.Grid>
-    );
-  }
-
-  renderTags(tags) {
-    if (!tags || !Array.isArray(tags) || tags.length === 0) {
-      return null;
-    }
-
-    return (
-      <div style={{marginTop: "8px"}}>
+      <div className="mt-2 flex flex-wrap gap-1">
         {tags.map(tag => (
-          <Tag key={tag.name} color={tag.color} style={{marginRight: "4px"}}>
+          <span key={tag.name} className="px-2 py-0.5 rounded text-xs text-white" style={{backgroundColor: tag.color}}>
             {tag.name}
-          </Tag>
+          </span>
         ))}
       </div>
     );
   }
 
-  renderCard(logo, link, title, desc, time, tags, isSingle) {
-    const silentSigninLink = this.wrappedAsSilentSigninLink(link);
+  const silentSigninLink = wrappedAsSilentSigninLink(link);
 
+  const handleClick = () => {
+    if (silentSigninLink && silentSigninLink.startsWith("http")) {
+      Setting.goToLink(silentSigninLink);
+    } else if (silentSigninLink) {
+      history.push(silentSigninLink);
+    }
+  };
+
+  if (Setting.isMobile()) {
     return (
-      <Col style={{paddingLeft: "20px", paddingRight: "20px", paddingBottom: "20px", marginBottom: "20px"}} span={6}>
-        <Card
-          hoverable
-          cover={
-            <img alt="logo" src={logo} style={{width: "100%", height: "200px", padding: "20px", objectFit: "scale-down"}} />
-          }
-          onClick={() => Setting.goToLinkSoft(this, silentSigninLink)}
-          style={isSingle ? {width: "320px", height: "100%"} : {width: "100%", height: "100%"}}
-        >
-          <Meta title={title} description={desc} />
-          {this.renderTags(tags)}
-          <br />
-          <Meta title={""} description={Setting.getFormattedDateShort(time)} />
-        </Card>
-      </Col>
+      <div className="w-full text-center cursor-pointer border-b border-zinc-800 p-4" onClick={handleClick}>
+        <img src={logo} alt="logo" className="w-full mb-5" />
+        <h3 className="text-white font-medium">{title}</h3>
+        <p className="text-zinc-400 text-sm">{desc}</p>
+        {renderTags(tags)}
+      </div>
     );
   }
 
-  render() {
-    if (Setting.isMobile()) {
-      return this.renderCardMobile(this.props.logo, this.props.link, this.props.title, this.props.desc, this.props.time, this.props.tags, this.props.isSingle);
-    } else {
-      return this.renderCard(this.props.logo, this.props.link, this.props.title, this.props.desc, this.props.time, this.props.tags, this.props.isSingle);
-    }
-  }
+  return (
+    <div className="px-5 pb-5 mb-5" style={{width: isSingle ? "320px" : "25%"}}>
+      <div className="border border-zinc-800 rounded-lg bg-zinc-900/30 hover:bg-zinc-900/60 cursor-pointer transition-colors h-full" onClick={handleClick}>
+        <img alt="logo" src={logo} className="w-full h-[200px] p-5 object-scale-down" />
+        <div className="px-4 pb-4">
+          <h3 className="text-white font-medium">{title}</h3>
+          <p className="text-zinc-400 text-sm mt-1">{desc}</p>
+          {renderTags(tags)}
+          {time && <p className="text-zinc-500 text-xs mt-2">{Setting.getFormattedDateShort(time)}</p>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
-export default withRouter(SingleCard);
+export default SingleCard;

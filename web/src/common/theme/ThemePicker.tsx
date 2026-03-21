@@ -12,92 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-/** @jsxImportSource @emotion/react */
-
-import {css} from "@emotion/react";
-import {Space, theme} from "antd";
-import * as React from "react";
+import React from "react";
 import i18next from "i18next";
 import * as Setting from "../../Setting";
 
-const {useToken} = theme;
-
-export const THEMES = {
+export const THEMES: Record<string, string> = {
   default: `${Setting.StaticBaseUrl}/img/theme_default.svg`,
   dark: `${Setting.StaticBaseUrl}/img/theme_dark.svg`,
   lark: `${Setting.StaticBaseUrl}/img/theme_lark.svg`,
   comic: `${Setting.StaticBaseUrl}/img/theme_comic.svg`,
 };
 
-const themeTypes = {
-  default: "Default", // i18next.t("general:Default")
-  dark: "Dark",       // i18next.t("theme:Dark")
-  lark: "Document",   // i18next.t("theme:Document")
-  comic: "Blossom",   // i18next.t("theme:Blossom")
+const themeTypes: Record<string, string> = {
+  default: "Default",
+  dark: "Dark",
+  lark: "Document",
+  comic: "Blossom",
 };
 
-const useStyle = () => {
-  const {token} = useToken();
-  return {
-    themeCard: css `
-      border-radius: ${token.borderRadius}px;
-      cursor: pointer;
-      transition: all ${token.motionDurationSlow};
-      overflow: hidden;
-      display: inline-block;
+interface ThemePickerProps {
+  value?: string;
+  onChange?: (theme: string) => void;
+}
 
-      & > input[type="radio"] {
-        width: 0;
-        height: 0;
-        opacity: 0;
-      }
-
-      img {
-        vertical-align: top;
-        box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08),
-          0 9px 28px 8px rgba(0, 0, 0, 0.05);
-      }
-
-      &:focus-within,
-      &:hover {
-        transform: scale(1.04);
-      }
-    `,
-    themeCardActive: css `
-      box-shadow: 0 0 0 1px ${token.colorBgContainer},
-        0 0 0 ${token.controlOutlineWidth * 2 + 1}px ${token.colorPrimary};
-        
-      &:hover:not(:focus-within) {
-        transform: scale(1);
-      }
-    `,
-  };
-};
-
-export default function ThemePicker({value, onChange}) {
-  const {token} = useToken();
-  const style = useStyle();
-
+export default function ThemePicker({value, onChange}: ThemePickerProps) {
   return (
-    <Space size={token.paddingLG}>
+    <div className="flex gap-6">
       {Object.keys(THEMES).map((theme) => {
         const url = THEMES[theme];
         return (
-          <Space key={theme} direction="vertical" align="center">
-            <label
-              css={[style.themeCard, value === theme && style.themeCardActive]}
-              onClick={() => {
-                onChange?.(theme);
-              }}
+          <div key={theme} className="flex flex-col items-center gap-2">
+            <button
+              type="button"
+              className={`rounded-lg overflow-hidden cursor-pointer transition-all hover:scale-[1.04] ${
+                value === theme
+                  ? "ring-2 ring-offset-2 ring-offset-[#0a0a0a] ring-white"
+                  : ""
+              }`}
+              onClick={() => onChange?.(theme)}
             >
-              <input type="radio" name="theme" />
-              <img src={url} alt={theme} />
-            </label>
-            <span>{i18next.t(`theme:${themeTypes[theme]}`)}</span>
-          </Space>
+              <img src={url} alt={theme} className="shadow-lg" />
+            </button>
+            <span className="text-sm text-gray-400">{i18next.t(`theme:${themeTypes[theme]}`)}</span>
+          </div>
         );
       })}
-    </Space>
+    </div>
   );
 }
