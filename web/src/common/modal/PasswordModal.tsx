@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {Button, Col, Input, Modal, Popover, Row} from "antd";
 import i18next from "i18next";
 import React from "react";
 import * as UserBackend from "../../backend/UserBackend";
@@ -21,30 +19,27 @@ import * as Setting from "../../Setting";
 import * as PasswordChecker from "../PasswordChecker";
 import * as Obfuscator from "../../auth/Obfuscator";
 
-export const PasswordModal = (props) => {
+export const PasswordModal = (props: any) => {
   const [visible, setVisible] = React.useState(false);
   const [confirmLoading, setConfirmLoading] = React.useState(false);
   const [oldPassword, setOldPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [rePassword, setRePassword] = React.useState("");
-  const {user} = props;
-  const {userName} = props;
-  const {organization} = props;
-  const {account} = props;
+  const {user, userName, organization, account} = props;
 
-  const [passwordOptions, setPasswordOptions] = React.useState([]);
+  const [passwordOptions, setPasswordOptions] = React.useState<string[]>([]);
   const [newPasswordValid, setNewPasswordValid] = React.useState(false);
   const [rePasswordValid, setRePasswordValid] = React.useState(false);
   const [newPasswordErrorMessage, setNewPasswordErrorMessage] = React.useState("");
   const [rePasswordErrorMessage, setRePasswordErrorMessage] = React.useState("");
   const [passwordPopoverOpen, setPasswordPopoverOpen] = React.useState(false);
-  const [passwordPopover, setPasswordPopover] = React.useState();
 
   React.useEffect(() => {
     if (organization) {
       setPasswordOptions(organization.passwordOptions);
     }
   }, [user.owner]);
+
   const showModal = () => {
     setVisible(true);
   };
@@ -52,17 +47,16 @@ export const PasswordModal = (props) => {
   const handleCancel = () => {
     setVisible(false);
   };
-  const handleNewPassword = (value) => {
-    setNewPassword(value);
 
+  const handleNewPassword = (value: string) => {
+    setNewPassword(value);
     const errorMessage = PasswordChecker.checkPasswordComplexity(value, passwordOptions);
     setNewPasswordValid(errorMessage === "");
     setNewPasswordErrorMessage(errorMessage);
   };
 
-  const handleRePassword = (value) => {
+  const handleRePassword = (value: string) => {
     setRePassword(value);
-
     if (value !== newPassword) {
       setRePasswordErrorMessage(i18next.t("signup:Your confirmed password is inconsistent with the password!"));
       setRePasswordValid(false);
@@ -95,7 +89,6 @@ export const PasswordModal = (props) => {
       return;
     }
 
-    // Encrypt passwords using password obfuscator if configured
     let encryptedOldPassword = oldPassword;
     let encryptedNewPassword = newPassword;
 
@@ -126,7 +119,7 @@ export const PasswordModal = (props) => {
     }
 
     UserBackend.setPassword(user.owner, userName, encryptedOldPassword, encryptedNewPassword)
-      .then((res) => {
+      .then((res: any) => {
         if (res.status === "ok") {
           Setting.showMessage("success", i18next.t("user:Password set successfully"));
           setVisible(false);
@@ -142,62 +135,89 @@ export const PasswordModal = (props) => {
   const hasOldPassword = (user.password !== "" || user.ldap !== "");
 
   return (
-    <Row>
-      <Button type="primary" disabled={props.disabled} onClick={showModal}>
-        {hasOldPassword ? i18next.t("user:Modify password...") : i18next.t("user:Set password...")}
-      </Button>
-      <Modal
-        maskClosable={false}
-        title={i18next.t("general:Password")}
-        open={visible}
-        okText={i18next.t("user:Set Password")}
-        cancelText={i18next.t("general:Cancel")}
-        confirmLoading={confirmLoading}
-        onCancel={handleCancel}
-        onOk={handleOk}
-        width={600}
+    <div>
+      <button
+        onClick={showModal}
+        disabled={props.disabled}
+        className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
       >
-        <Col style={{margin: "0px auto 40px auto", width: 1000, height: 300}}>
-          {(hasOldPassword && !Setting.isLocalAdminUser(account)) ? (
-            <Row style={{width: "100%", marginBottom: "20px"}}>
-              <Input.Password addonBefore={i18next.t("user:Old Password")} placeholder={i18next.t("user:input password")} onChange={(e) => setOldPassword(e.target.value)} />
-            </Row>
-          ) : null}
-          <Row style={{width: "100%", marginBottom: "20px"}}>
-            <Popover placement={window.innerWidth >= 960 ? "right" : "top"} content={passwordPopover} open={passwordPopoverOpen}>
-              <Input.Password
-                addonBefore={i18next.t("user:New Password")}
-                placeholder={i18next.t("user:input password")}
-                onChange={(e) => {
-                  handleNewPassword(e.target.value);
-                  setPasswordPopoverOpen(passwordOptions?.length > 0);
-                  setPasswordPopover(PasswordChecker.renderPasswordPopover(passwordOptions, e.target.value));
-
-                }}
-                onFocus={() => {
-                  setPasswordPopoverOpen(passwordOptions?.length > 0);
-                  setPasswordPopover(PasswordChecker.renderPasswordPopover(passwordOptions, newPassword));
-                }}
-                onBlur={() => {
-                  setPasswordPopoverOpen(false);
-                }}
-                status={(!newPasswordValid && newPasswordErrorMessage) ? "error" : undefined}
-              />
-            </Popover>
-          </Row>
-          {!newPasswordValid && newPasswordErrorMessage && <div style={{color: "red", marginTop: "-20px"}}>{newPasswordErrorMessage}</div>}
-          <Row style={{width: "100%", marginBottom: "20px"}}>
-            <Input.Password
-              addonBefore={i18next.t("user:Re-enter New")}
-              placeholder={i18next.t("user:input password")}
-              onChange={(e) => handleRePassword(e.target.value)}
-              status={(!rePasswordValid && rePasswordErrorMessage) ? "error" : undefined}
-            />
-          </Row>
-          {!rePasswordValid && rePasswordErrorMessage && <div style={{color: "red", marginTop: "-20px"}}>{rePasswordErrorMessage}</div>}
-        </Col>
-      </Modal>
-    </Row>
+        {hasOldPassword ? i18next.t("user:Modify password...") : i18next.t("user:Set password...")}
+      </button>
+      {visible && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-6 w-[600px]">
+            <h2 className="text-lg font-semibold text-white mb-4">{i18next.t("general:Password")}</h2>
+            <div className="space-y-4">
+              {(hasOldPassword && !Setting.isLocalAdminUser(account)) && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">{i18next.t("user:Old Password")}</label>
+                  <input
+                    type="password"
+                    placeholder={i18next.t("user:input password")}
+                    onChange={(e) => setOldPassword(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-transparent border border-white/20 rounded-lg text-white outline-none focus:border-white/40"
+                  />
+                </div>
+              )}
+              <div className="relative">
+                <label className="block text-sm text-gray-400 mb-1">{i18next.t("user:New Password")}</label>
+                <input
+                  type="password"
+                  placeholder={i18next.t("user:input password")}
+                  onChange={(e) => {
+                    handleNewPassword(e.target.value);
+                    setPasswordPopoverOpen(passwordOptions?.length > 0);
+                  }}
+                  onFocus={() => {
+                    setPasswordPopoverOpen(passwordOptions?.length > 0);
+                  }}
+                  onBlur={() => {
+                    setPasswordPopoverOpen(false);
+                  }}
+                  className={`w-full px-3 py-2 text-sm bg-transparent border rounded-lg text-white outline-none focus:border-white/40 ${
+                    !newPasswordValid && newPasswordErrorMessage ? "border-red-500" : "border-white/20"
+                  }`}
+                />
+                {passwordPopoverOpen && passwordOptions?.length > 0 && (
+                  <div className="absolute z-10 top-full mt-1 right-0 bg-[#1a1a1a] border border-white/10 rounded-lg p-3 text-sm shadow-lg">
+                    {PasswordChecker.renderPasswordPopover(passwordOptions, newPassword)}
+                  </div>
+                )}
+                {!newPasswordValid && newPasswordErrorMessage && (
+                  <div className="text-red-500 text-xs mt-1">{newPasswordErrorMessage}</div>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">{i18next.t("user:Re-enter New")}</label>
+                <input
+                  type="password"
+                  placeholder={i18next.t("user:input password")}
+                  onChange={(e) => handleRePassword(e.target.value)}
+                  className={`w-full px-3 py-2 text-sm bg-transparent border rounded-lg text-white outline-none focus:border-white/40 ${
+                    !rePasswordValid && rePasswordErrorMessage ? "border-red-500" : "border-white/20"
+                  }`}
+                />
+                {!rePasswordValid && rePasswordErrorMessage && (
+                  <div className="text-red-500 text-xs mt-1">{rePasswordErrorMessage}</div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={handleCancel} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">
+                {i18next.t("general:Cancel")}
+              </button>
+              <button
+                onClick={handleOk}
+                disabled={confirmLoading}
+                className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                {confirmLoading ? "..." : i18next.t("user:Set Password")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

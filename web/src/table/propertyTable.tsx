@@ -14,9 +14,8 @@
 
 // @ts-nocheck
 import React from "react";
-import {Button, Input, Table} from "antd";
+import {Trash2} from "lucide-react";
 import i18next from "i18next";
-import {DeleteOutlined} from "@ant-design/icons";
 import * as Setting from "../Setting";
 
 class PropertyTable extends React.Component {
@@ -26,7 +25,6 @@ class PropertyTable extends React.Component {
       properties: [],
     };
 
-    // transfer the Object to object[]
     if (this.props.properties !== null) {
       Object.entries(this.props.properties).map((item, index) => {
         this.state.properties.push({key: index, name: item[0], value: item[1]});
@@ -49,9 +47,7 @@ class PropertyTable extends React.Component {
 
   addRow(table) {
     const row = {key: this.count, name: "", value: ""};
-    if (table === undefined) {
-      table = [];
-    }
+    if (table === undefined) {table = [];}
     table = Setting.addRow(table, row);
     this.count = this.count + 1;
     this.updateTable(table);
@@ -63,7 +59,6 @@ class PropertyTable extends React.Component {
   }
 
   getIndex(index) {
-    // Need to be used in all place when modify table. Parameter is the row index in table, need to calculate the index in dataSource.
     return index + (this.page - 1) * this.pageSize;
   }
 
@@ -73,64 +68,60 @@ class PropertyTable extends React.Component {
   }
 
   renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("user:Keys"),
-        dataIndex: "name",
-        width: "200px",
-        render: (text, record, index) => {
-          return (
-            <Input value={text} onChange={e => {
-              this.updateField(table, index, "name", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("user:Values"),
-        dataIndex: "value",
-        width: "200px",
-        render: (text, record, index) => {
-          return (
-            <Input value={text} onChange={e => {
-              this.updateField(table, index, "value", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "operation",
-        width: "20px",
-        render: (text, record, index) => {
-          return (
-            <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
-          );
-        },
-      },
-    ];
+    const totalPages = Math.ceil(table.length / this.pageSize);
+    const startIdx = (this.page - 1) * this.pageSize;
+    const pageData = table.slice(startIdx, startIdx + this.pageSize);
 
     return (
-      <Table title={() => (
-        <div>
-          <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+          <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => this.addRow(table)}>
+            {i18next.t("general:Add")}
+          </button>
         </div>
-      )}
-      pagination={{
-        defaultPageSize: this.pageSize,
-        onChange: page => {this.page = page;},
-      }}
-      columns={columns} dataSource={table} rowKey="key" size="middle" bordered
-      />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/[0.02]">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("user:Keys")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("user:Values")}</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "60px"}}>{i18next.t("general:Action")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageData.map((row, i) => (
+              <tr key={row.key} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                <td className="px-4 py-2">
+                  <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.name || ""} onChange={e => this.updateField(table, i, "name", e.target.value)} />
+                </td>
+                <td className="px-4 py-2">
+                  <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.value || ""} onChange={e => this.updateField(table, i, "value", e.target.value)} />
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <button title={i18next.t("general:Delete")} className="p-1 rounded hover:bg-white/10 text-red-400 hover:text-red-300" onClick={() => this.deleteRow(table, i)}>
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {totalPages > 1 && (
+          <div className="px-4 py-3 border-t border-white/10 flex items-center justify-end gap-2">
+            {Array.from({length: totalPages}, (_, idx) => (
+              <button key={idx} className={`px-2 py-1 text-xs rounded ${this.page === idx + 1 ? "bg-blue-600 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"}`} onClick={() => { this.page = idx + 1; this.forceUpdate(); }}>
+                {idx + 1}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     );
   }
 
   render() {
     return (
       <React.Fragment>
-        {
-          this.renderTable(this.state.properties)
-        }
+        {this.renderTable(this.state.properties)}
       </React.Fragment>
     );
   }
