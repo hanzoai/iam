@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle, XCircle, AlertTriangle, Info, type LucideIcon } from "lucide-react"
+import { CheckCircle, XCircle, AlertTriangle, Info, LucideIcon } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { Button } from "./button"
 
@@ -49,4 +49,4 @@ const ResultCard = React.forwardRef<HTMLDivElement, ResultCardProps>(
 )
 ResultCard.displayName = "ResultCard"
 
-export { ResultCard, type ResultCardProps, type ResultStatus }
+export { ResultCard, ResultCardProps, ResultStatus }
