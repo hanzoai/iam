@@ -12,16 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {Button, Col, Input, Modal, Row} from "antd";
+import {Mail, Phone} from "lucide-react";
 import i18next from "i18next";
 import React from "react";
 import * as Setting from "../../Setting";
 import * as UserBackend from "../../backend/UserBackend";
 import {SendCodeInput} from "../SendCodeInput";
-import {MailOutlined, PhoneOutlined} from "@ant-design/icons";
 
-export const ResetModal = (props) => {
+export const ResetModal = (props: any) => {
   const [visible, setVisible] = React.useState(false);
   const [confirmLoading, setConfirmLoading] = React.useState(false);
   const [dest, setDest] = React.useState("");
@@ -50,7 +48,7 @@ export const ResetModal = (props) => {
       return;
     }
     setConfirmLoading(true);
-    UserBackend.resetEmailOrPhone(dest, destType, code).then(res => {
+    UserBackend.resetEmailOrPhone(dest, destType, code).then((res: any) => {
       if (res.status === "ok") {
         Setting.showMessage("success", i18next.t("user:Email/phone reset successfully"));
         window.location.reload();
@@ -69,42 +67,64 @@ export const ResetModal = (props) => {
   }
 
   return (
-    <Row>
-      <Button type="primary" onClick={showModal}>
-        {buttonText}
-      </Button>
-      <Modal
-        maskClosable={false}
-        title={buttonText}
-        open={visible}
-        okText={buttonText}
-        cancelText={i18next.t("general:Cancel")}
-        confirmLoading={confirmLoading}
-        onCancel={handleCancel}
-        onOk={handleOk}
-        width={600}
+    <div>
+      <button
+        onClick={showModal}
+        className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors"
       >
-        <Col style={{margin: "0px auto 40px auto", width: 1000, height: 300}}>
-          <Row style={{width: "100%", marginBottom: "20px"}}>
-            <Input
-              addonBefore={destType === "email" ? i18next.t("user:New Email") : i18next.t("user:New phone")}
-              prefix={destType === "email" ? <React.Fragment><MailOutlined />&nbsp;&nbsp;</React.Fragment> : (<React.Fragment><PhoneOutlined />&nbsp;&nbsp;{countryCode !== "" ? "+" : null}{Setting.getCountryCode(countryCode)}&nbsp;</React.Fragment>)}
-              placeholder={placeholder}
-              onChange={e => setDest(e.target.value)}
-            />
-          </Row>
-          <Row style={{width: "100%", marginBottom: "20px"}}>
-            <SendCodeInput
-              textBefore={i18next.t("code:Code you received")}
-              onChange={setCode}
-              method={"reset"}
-              onButtonClickArgs={[dest, destType, Setting.getApplicationName(application)]}
-              application={application}
-            />
-          </Row>
-        </Col>
-      </Modal>
-    </Row>
+        {buttonText}
+      </button>
+      {visible && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-6 w-[600px]">
+            <h2 className="text-lg font-semibold text-white mb-4">{buttonText}</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">
+                  {destType === "email" ? i18next.t("user:New Email") : i18next.t("user:New phone")}
+                </label>
+                <div className="flex items-center border border-white/20 rounded-lg bg-transparent px-3 py-2">
+                  {destType === "email" ? (
+                    <Mail className="w-4 h-4 text-gray-400 mr-2" />
+                  ) : (
+                    <React.Fragment>
+                      <Phone className="w-4 h-4 text-gray-400 mr-2" />
+                      {countryCode !== "" && <span className="text-gray-400 mr-1">+{Setting.getCountryCode(countryCode)}</span>}
+                    </React.Fragment>
+                  )}
+                  <input
+                    placeholder={placeholder}
+                    onChange={e => setDest(e.target.value)}
+                    className="bg-transparent text-white outline-none flex-1 text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <SendCodeInput
+                  textBefore={i18next.t("code:Code you received")}
+                  onChange={setCode}
+                  method={"reset"}
+                  onButtonClickArgs={[dest, destType, Setting.getApplicationName(application)]}
+                  application={application}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={handleCancel} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">
+                {i18next.t("general:Cancel")}
+              </button>
+              <button
+                onClick={handleOk}
+                disabled={confirmLoading}
+                className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                {confirmLoading ? "..." : buttonText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
