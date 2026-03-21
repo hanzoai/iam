@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2023 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {Card, Row, Spin} from "antd";
 import i18next from "i18next";
 import React from "react";
 import * as Setting from "../Setting";
@@ -24,22 +23,22 @@ const GridCards = (props) => {
 
   if (items === null || items === undefined) {
     return (
-      <div style={{display: "flex", justifyContent: "center", alignItems: "center", marginTop: "10%"}}>
-        <Spin size="large" tip={i18next.t("login:Loading")} style={{paddingTop: "10%"}} />
+      <div className="flex justify-center items-center mt-[10%]">
+        <span className="text-zinc-400 pt-[10%]">{i18next.t("login:Loading")}</span>
       </div>
     );
   }
 
   return (
     Setting.isMobile() ? (
-      <Card styles={{body: {padding: 0}}}>
-        {items.map(item => <SingleCard key={item.link} logo={item.logo} link={item.link} title={item.name} desc={item.description} tags = {item.tags} isSingle={items.length === 1} />)}
-      </Card>
+      <div className="border border-zinc-800 rounded-lg">
+        {items.map(item => <SingleCard key={item.link} logo={item.logo} link={item.link} title={item.name} desc={item.description} tags={item.tags} isSingle={items.length === 1} />)}
+      </div>
     ) : (
-      <div style={{width: "100%", padding: "0 100px"}}>
-        <Row style={{justifyContent: "center"}}>
-          {items.map(item => <SingleCard logo={item.logo} link={item.link} title={item.name} desc={item.description} tags = {item.tags} time={item.createdTime} isSingle={items.length === 1} key={item.name} />)}
-        </Row>
+      <div className="w-full px-[100px]">
+        <div className="flex flex-wrap justify-center">
+          {items.map(item => <SingleCard logo={item.logo} link={item.link} title={item.name} desc={item.description} tags={item.tags} time={item.createdTime} isSingle={items.length === 1} key={item.name} />)}
+        </div>
       </div>
     )
   );
