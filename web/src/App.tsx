@@ -142,13 +142,8 @@ class App extends Component {
       window.location.replace(normMatch[1] + search);
       return;
     }
-    // On iam.hanzo.ai, redirect signup to hanzo.id (unified account creation)
-    if (window.location.hostname === "iam.hanzo.ai") {
-      if (path === "/signup" || path.startsWith("/signup/")) {
-        window.location.href = `https://hanzo.id/signup${search}`;
-        return;
-      }
-    }
+    // On dedicated IAM domains, keep signup local (no redirect)
+    // Each deployment handles its own signup flow
     this.updateMenuKey();
     this.getAccount();
     this.getApplication();
@@ -485,7 +480,7 @@ class App extends Component {
               : (
                 Conf.CustomFooter !== null ? Conf.CustomFooter : (
                   <React.Fragment>
-                  Powered by <a target="_blank" href="https://hanzo.ai" rel="noreferrer"><img style={{paddingBottom: "3px"}} height={"20px"} alt={"Hanzo"} src={logo} /></a>
+                  &nbsp;
                   </React.Fragment>
                 )
               )
@@ -502,14 +497,14 @@ class App extends Component {
           <React.Fragment>
             <Tooltip title="Want to deploy your own AI assistant? Click to learn more!">
               <a target="_blank" rel="noreferrer" href={"https://iam.com"}>
-                <img style={{width: "20px", marginRight: "10px", marginBottom: "2px"}} alt="help" src="/img/hanzo.svg" />
+                <span style={{marginRight: "10px"}}>🤖</span>
                 AI Assistant
               </a>
             </Tooltip>
             <a className="custom-link" style={{float: "right", marginTop: "2px"}} target="_blank" rel="noreferrer" href={`${Conf.AiAssistantUrl}`}>
               <ShareAltOutlined className="custom-link" style={{fontSize: "20px", color: "rgb(140,140,140)"}} />
             </a>
-            <a className="custom-link" style={{float: "right", marginRight: "30px", marginTop: "2px"}} target="_blank" rel="noreferrer" href={"https://github.com/hanzoai/iam"}>
+            <a className="custom-link" style={{float: "right", marginRight: "30px", marginTop: "2px"}} target="_blank" rel="noreferrer" href={"#"}>
               <GithubOutlined className="custom-link" style={{fontSize: "20px", color: "rgb(140,140,140)"}} />
             </a>
           </React.Fragment>
@@ -617,15 +612,14 @@ class App extends Component {
                       <Route exact path="/callback/saml" render={(props) => <SamlCallback {...props} {...this.props} application={this.state.application} onLoginSuccess={(redirectUrl) => {this.onLoginSuccess(redirectUrl);}} />} />
                       <Route exact path="/telegram-login" render={(props) => <TelegramLogin {...props} {...this.props} />} />
                       <Route path="" render={() => (
-                        <div style={{display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: "16px"}}>
-                          <img src="/img/hanzo-logo.svg" alt="Hanzo" height={48} style={{marginBottom: "8px", opacity: 0.9}} />
-                          <div style={{fontSize: "72px", fontWeight: 700, lineHeight: 1, color: "#1a1a2e"}}>404</div>
-                          <div style={{fontSize: "18px", color: "#555", marginBottom: "8px"}}>
+                        <div style={{display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: "24px"}}>
+                          <div style={{fontSize: "80px", fontWeight: 800, lineHeight: 1, color: "#fafafa", letterSpacing: "-2px"}}>404</div>
+                          <div style={{fontSize: "16px", color: "#737373"}}>
                             {i18next.t("general:Sorry, the page you visited does not exist.")}
                           </div>
-                          <a href="/"><Button type="primary" size="large">{i18next.t("general:Back Home")}</Button></a>
-                          <div style={{marginTop: "16px", fontSize: "13px", color: "#999"}}>
-                            Looking to sign in? Visit <a href="https://hanzo.id/login" style={{color: "#1677ff"}}>hanzo.id</a>
+                          <div style={{display: "flex", gap: "12px"}}>
+                            <a href="/login"><Button type="primary" size="large">Sign In</Button></a>
+                            <a href="/signup"><Button size="large">Sign Up</Button></a>
                           </div>
                         </div>
                       )} />
