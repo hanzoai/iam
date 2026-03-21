@@ -12,93 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-/** @jsxImportSource @emotion/react */
-
-import {Input, Popover, Space, theme} from "antd";
-import React, {useEffect, useMemo, useState} from "react";
-import {css} from "@emotion/react";
+import React, {useMemo, useState} from "react";
 import {TinyColor} from "@ctrl/tinycolor";
-import ColorPanel from "antd-token-previewer/es/ColorPanel";
 
 export const BLUE_COLOR = "#1677FF";
 export const PINK_COLOR = "#ED4192";
 export const GREEN_COLOR = "#00B96B";
 
 export const COLORS = [
-  {
-    color: BLUE_COLOR,
-  },
-  {
-    color: "#5734d3",
-  },
-  {
-    color: "#9E339F",
-  },
-  {
-    color: PINK_COLOR,
-  },
-  {
-    color: "#E0282E",
-  },
-  {
-    color: "#F4801A",
-  },
-  {
-    color: "#F2BD27",
-  },
-  {
-    color: GREEN_COLOR,
-  },
+  {color: BLUE_COLOR},
+  {color: "#5734d3"},
+  {color: "#9E339F"},
+  {color: PINK_COLOR},
+  {color: "#E0282E"},
+  {color: "#F4801A"},
+  {color: "#F2BD27"},
+  {color: GREEN_COLOR},
 ];
 
 export const PRESET_COLORS = COLORS.map(({color}) => color);
 
-const {useToken} = theme;
+interface ColorPickerProps {
+  value?: string;
+  onChange?: (color: string) => void;
+}
 
-const useStyle = () => {
-  const {token} = useToken();
-  return {
-    color: css `
-      width: ${token.controlHeightLG / 2}px;
-      height: ${token.controlHeightLG / 2}px;
-      border-radius: 100%;
-      cursor: pointer;
-      transition: all ${token.motionDurationFast};
-      display: inline-block;
-
-      & > input[type="radio"] {
-        width: 0;
-        height: 0;
-        opacity: 0;
-      }
-    `,
-    colorActive: css `
-      box-shadow: 0 0 0 1px ${token.colorBgContainer},
-        0 0 0 ${token.controlOutlineWidth * 2 + 1}px ${token.colorPrimary};
-    `,
-  };
-};
-
-const DebouncedColorPanel = ({color, onChange}) => {
-  const [value, setValue] = useState(color);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      onChange?.(value);
-    }, 200);
-    return () => clearTimeout(timeout);
-  }, [value]);
-
-  useEffect(() => {
-    setValue(color);
-  }, [color]);
-
-  return <ColorPanel color={value} onChange={setValue} />;
-};
-
-export default function ColorPicker({value, onChange}) {
-  const style = useStyle();
+export default function ColorPicker({value, onChange}: ColorPickerProps) {
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const matchColors = useMemo(() => {
     const valueStr = new TinyColor(value).toRgbString();
@@ -108,7 +48,6 @@ export default function ColorPicker({value, onChange}) {
       const colorStr = new TinyColor(color).toRgbString();
       const active = colorStr === valueStr;
       existActive = existActive || active;
-
       return {color, active, picker: false};
     });
 
@@ -123,52 +62,57 @@ export default function ColorPicker({value, onChange}) {
   }, [value]);
 
   return (
-    <Space size="large">
-      <Input
-        value={value}
+    <div className="flex items-center gap-6">
+      <input
+        value={value || ""}
         onChange={(event) => {
           onChange?.(event.target.value);
         }}
-        style={{width: 120}}
+        className="w-[120px] px-3 py-2 text-sm bg-transparent border border-white/20 rounded-lg text-white outline-none focus:border-white/40"
       />
-      <Space size="middle">
+      <div className="flex items-center gap-3">
         {matchColors.map(({color, active, picker}) => {
-          let colorNode = (
-            <label
+          const swatch = (
+            <button
               key={color}
-              css={[style.color, active && style.colorActive]}
-              style={{
-                background: color,
-              }}
+              type="button"
+              className={`w-5 h-5 rounded-full cursor-pointer transition-all inline-block ${
+                active ? "ring-2 ring-offset-2 ring-offset-[#0a0a0a] ring-white" : ""
+              }`}
+              style={{background: color}}
               onClick={() => {
-                if (!picker) {
+                if (picker) {
+                  setPickerOpen(!pickerOpen);
+                } else {
                   onChange?.(color);
                 }
               }}
-            >
-              <input type="radio" name={picker ? "picker" : "color"} tabIndex={picker ? -1 : 0} />
-            </label>
+            />
           );
 
           if (picker) {
-            colorNode = (
-              <Popover
-                key={color}
-                overlayInnerStyle={{padding: 0}}
-                content={
-                  <DebouncedColorPanel color={value || ""} onChange={(c) => onChange?.(c)} />
-                }
-                trigger="click"
-                showArrow={false}
-              >
-                {colorNode}
-              </Popover>
+            return (
+              <div key={color} className="relative">
+                {swatch}
+                {pickerOpen && (
+                  <div className="absolute z-50 top-full mt-2 left-0">
+                    <div className="bg-[#1a1a1a] border border-white/10 rounded-lg p-3 shadow-lg">
+                      <input
+                        type="color"
+                        value={value || "#ffffff"}
+                        onChange={(e) => onChange?.(e.target.value)}
+                        className="w-32 h-32 cursor-pointer bg-transparent border-0"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             );
           }
 
-          return colorNode;
+          return swatch;
         })}
-      </Space>
-    </Space>
+      </div>
+    </div>
   );
 }
