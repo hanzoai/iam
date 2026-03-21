@@ -78,7 +78,7 @@ type complianceAdapter struct {
 
 func (a *complianceAdapter) VerifyIdentity(idCardType string, idCard string, realName string) (bool, error) {
 	resp, err := a.provider.InitiateVerification(context.Background(), &cidv.VerificationRequest{
-		GivenName:   realName,
+		GivenName:    realName,
 		DocumentType: idCardType,
 		DocumentID:   idCard,
 	})
