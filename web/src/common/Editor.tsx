@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import React from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import {materialDark} from "@uiw/codemirror-theme-material";
 import {langs} from "@uiw/codemirror-extensions-langs";
 
-export const Editor = (props) => {
-  let style = {};
+export const Editor = (props: any) => {
+  let style: React.CSSProperties = {};
   let height = props.height;
   let width = props.width;
   const copy2StyleProps = [
@@ -34,10 +33,6 @@ export const Editor = (props) => {
     width = "100%";
     style = {...style, width: "100%"};
   }
-  /**
-   * @uiw/react-codemirror style props sucha as "height" "width"
-   * may need to be configured with "style" in some scenarios to take effect
-   */
   copy2StyleProps.forEach(el => {
     if (["number", "string"].includes(typeof props[el])) {
       style = {...style, [el]: props[el]};
@@ -46,24 +41,18 @@ export const Editor = (props) => {
   if (props.style) {
     style = {...style, ...props.style};
   }
-  let extensions = [];
-  switch (props.lang) {
-  case "javascript":
-  case "js":
-    extensions = [langs.javascript()];
-    break;
-  case "html":
-    extensions = [langs.html()];
-    break;
-  case "css":
-    extensions = [langs.css()];
-    break;
-  case "xml":
-    extensions = [langs.xml()];
-    break;
-  case "json":
-    extensions = [langs.json()];
-    break;
+  let extensions: any[] = [];
+  const langMap: Record<string, string> = {
+    javascript: "js",
+    js: "js",
+    html: "html",
+    css: "css",
+    xml: "xml",
+    json: "json",
+  };
+  const langKey = langMap[props.lang];
+  if (langKey && (langs as any)[langKey]) {
+    extensions = [(langs as any)[langKey]()];
   }
 
   return (
