@@ -108,7 +108,7 @@ class PropertyTable extends React.Component {
         {totalPages > 1 && (
           <div className="px-4 py-3 border-t border-white/10 flex items-center justify-end gap-2">
             {Array.from({length: totalPages}, (_, idx) => (
-              <button key={idx} className={`px-2 py-1 text-xs rounded ${this.page === idx + 1 ? "bg-blue-600 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"}`} onClick={() => { this.page = idx + 1; this.forceUpdate(); }}>
+              <button key={idx} className={`px-2 py-1 text-xs rounded ${this.page === idx + 1 ? "bg-blue-600 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"}`} onClick={() => {this.page = idx + 1; this.forceUpdate();}}>
                 {idx + 1}
               </button>
             ))}
