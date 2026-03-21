@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,259 +13,143 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import React from "react";
-import {Button, Card, Col, Input, Row} from "antd";
+import React, {useEffect, useState} from "react";
 import * as TokenBackend from "./backend/TokenBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import copy from "copy-to-clipboard";
 import {jwtDecode} from "jwt-decode";
+import {Button} from "./components/ui/button";
+import {Copy} from "lucide-react";
 
-const {TextArea} = Input;
+interface TokenEditPageProps {
+  account: any;
+  history: any;
+  match: any;
+  location: any;
+}
 
-class TokenEditPage extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      tokenName: props.match.params.tokenName,
-      token: null,
-      mode: props.location.mode !== undefined ? props.location.mode : "edit",
-    };
-  }
+function TokenEditPage(props: TokenEditPageProps) {
+  const {account, history, match, location} = props;
+  const tokenNameFromUrl = match.params.tokenName;
 
-  UNSAFE_componentWillMount() {
-    this.getToken();
-  }
+  const [tokenName, setTokenName] = useState(tokenNameFromUrl);
+  const [token, setToken] = useState<any>(null);
+  const [mode] = useState(location.mode ?? "edit");
 
-  getToken() {
-    TokenBackend.getToken("admin", this.state.tokenName)
-      .then((res) => {
-        if (res.data === null) {
-          this.props.history.push("/404");
-          return;
-        }
+  useEffect(() => { getToken(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-        if (res.status === "error") {
-          Setting.showMessage("error", res.msg);
-          return;
-        }
-
-        this.setState({
-          token: res.data,
-        });
-      });
-  }
-
-  parseTokenField(key, value) {
-    // if ([].includes(key)) {
-    //   value = Setting.myParseInt(value);
-    // }
-    return value;
-  }
-
-  updateTokenField(key, value) {
-    value = this.parseTokenField(key, value);
-
-    const token = this.state.token;
-    token[key] = value;
-    this.setState({
-      token: token,
+  function getToken() {
+    TokenBackend.getToken("admin", tokenNameFromUrl).then((res: any) => {
+      if (res.data === null) { history.push("/404"); return; }
+      if (res.status === "error") { Setting.showMessage("error", res.msg); return; }
+      setToken(res.data);
     });
   }
 
-  parseAccessToken(accessToken) {
+  function updateField(key: string, value: any) {
+    setToken({...token, [key]: value});
+  }
+
+  function parseAccessToken(accessToken: string): string {
     try {
-      const parsedHeader = JSON.stringify(jwtDecode(accessToken, {header: true}), null, 2);
+      const parsedHeader = JSON.stringify(jwtDecode(accessToken, {header: true} as any), null, 2);
       const parsedPayload = JSON.stringify(jwtDecode(accessToken), null, 2);
-      const res = parsedHeader + "." + parsedPayload;
-      return res;
-    } catch (error) {
+      return parsedHeader + "." + parsedPayload;
+    } catch (error: any) {
       return error.message;
     }
   }
 
-  renderToken() {
-    const editorWidth = Setting.isMobile() ? 22 : 9;
-    const parsedResult = this.parseAccessToken(this.state.token.accessToken);
-    return (
-      <Card size="small" title={
-        <div>
-          {this.state.mode === "add" ? i18next.t("token:New Token") : i18next.t("token:Edit Token")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitTokenEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitTokenEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteToken()}>{i18next.t("general:Cancel")}</Button> : null}
+  function submitEdit(exitAfterSave: boolean) {
+    const tokenCopy = Setting.deepCopy(token);
+    TokenBackend.updateToken(token.owner, tokenName, tokenCopy).then((res: any) => {
+      if (res.status === "ok") {
+        Setting.showMessage("success", i18next.t("general:Successfully saved"));
+        setTokenName(token.name);
+        if (exitAfterSave) history.push("/tokens");
+        else history.push(`/tokens/${token.name}`);
+      } else {
+        Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${res.msg}`);
+        updateField("name", tokenName);
+      }
+    }).catch((error: any) => {
+      Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
+    });
+  }
+
+  function handleDelete() {
+    TokenBackend.deleteToken(token).then((res: any) => {
+      if (res.status === "ok") history.push("/tokens");
+      else Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
+    }).catch((error: any) => {
+      Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
+    });
+  }
+
+  if (!token) return null;
+
+  const parsedResult = parseAccessToken(token.accessToken);
+
+  return (
+    <div className="space-y-6">
+      <div className="border border-zinc-800 rounded-lg bg-zinc-900/30">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+          <h2 className="text-lg font-semibold text-white">{mode === "add" ? i18next.t("token:New Token") : i18next.t("token:Edit Token")}</h2>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => submitEdit(false)}>{i18next.t("general:Save")}</Button>
+            <Button onClick={() => submitEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+            {mode === "add" && <Button variant="outline" onClick={handleDelete}>{i18next.t("general:Cancel")}</Button>}
+          </div>
         </div>
-      } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.token.name} onChange={e => {
-              this.updateTokenField("name", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Application"), i18next.t("general:Application - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.token.application} onChange={e => {
-              this.updateTokenField("application", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input disabled={!Setting.isAdminUser(this.props.account)} value={this.state.token.organization} onChange={e => {
-              this.updateTokenField("organization", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:User"), i18next.t("general:User - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.token.user} onChange={e => {
-              this.updateTokenField("user", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("token:Authorization code"), i18next.t("token:Authorization code - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.token.code} onChange={e => {
-              this.updateTokenField("code", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("token:Expires in"), i18next.t("token:Expires in - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.token.expiresIn} onChange={e => {
-              this.updateTokenField("expiresIn", parseInt(e.target.value));
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("provider:Scope"), i18next.t("provider:Scope - Tooltip"))}
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.token.scope} onChange={e => {
-              this.updateTokenField("scope", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("token:Token type"), i18next.t("token:Token type - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.token.tokenType} onChange={e => {
-              this.updateTokenField("tokenType", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("token:Access token"), i18next.t("token:Access token - Tooltip"))} :
-          </Col>
-          <Col span={editorWidth} >
-            <Button type="primary" style={{marginRight: "10px", marginBottom: "10px"}} disabled={this.state.token.accessToken === ""} onClick={() => {
-              copy(this.state.token.accessToken);
-              Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));
-            }}
-            >
-              {i18next.t("token:Copy access token")}
-            </Button>
-            <TextArea autoSize={{minRows: 10, maxRows: 200}} value={this.state.token.accessToken} onChange={e => {
-              this.updateTokenField("accessToken", e.target.value);
-            }} />
-          </Col>
-          <Col span={1} />
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("token:Parsed result"), i18next.t("token:Parsed result - Tooltip"))} :
-          </Col>
-          <Col span={editorWidth} >
-            <Button type="primary" style={{marginRight: "10px", marginBottom: "10px"}} disabled={!parsedResult.includes("\"alg\":")} onClick={() => {
-              copy(parsedResult);
-              Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));
-            }}
-            >
-              {i18next.t("token:Copy parsed result")}
-            </Button>
-            <TextArea autoSize={{minRows: 10, maxRows: 200}} value={parsedResult} />
-          </Col>
-        </Row>
-      </Card>
-    );
-  }
 
-  submitTokenEdit(exitAfterSave) {
-    const token = Setting.deepCopy(this.state.token);
-    TokenBackend.updateToken(this.state.token.owner, this.state.tokenName, token)
-      .then((res) => {
-        if (res.status === "ok") {
-          Setting.showMessage("success", i18next.t("general:Successfully saved"));
-          this.setState({
-            tokenName: this.state.token.name,
-          });
+        <div className="p-6 space-y-5">
+          {[
+            {label: i18next.t("general:Name"), key: "name"},
+            {label: i18next.t("general:Application"), key: "application"},
+            {label: i18next.t("general:Organization"), key: "organization", disabled: !Setting.isAdminUser(account)},
+            {label: i18next.t("general:User"), key: "user"},
+            {label: i18next.t("token:Authorization code"), key: "code"},
+            {label: i18next.t("token:Expires in"), key: "expiresIn", type: "number"},
+            {label: i18next.t("provider:Scope"), key: "scope"},
+            {label: i18next.t("token:Token type"), key: "tokenType"},
+          ].map(({label, key, disabled, type}) => (
+            <div key={key} className="grid grid-cols-[160px_1fr] items-center gap-4">
+              <label className="text-sm text-zinc-400">{label}</label>
+              <input type={type || "text"} className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm disabled:opacity-60" disabled={disabled} value={token[key] ?? ""} onChange={e => updateField(key, type === "number" ? parseInt(e.target.value) || 0 : e.target.value)} />
+            </div>
+          ))}
 
-          if (exitAfterSave) {
-            this.props.history.push("/tokens");
-          } else {
-            this.props.history.push(`/tokens/${this.state.token.name}`);
-          }
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${res.msg}`);
-          this.updateTokenField("name", this.state.tokenName);
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-      });
-  }
-
-  deleteToken() {
-    TokenBackend.deleteToken(this.state.token)
-      .then((res) => {
-        if (res.status === "ok") {
-          this.props.history.push("/tokens");
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-      });
-  }
-
-  render() {
-    return (
-      <div>
-        {
-          this.state.token !== null ? this.renderToken() : null
-        }
-        <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitTokenEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitTokenEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.deleteToken()}>{i18next.t("general:Cancel")}</Button> : null}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm text-zinc-400">{i18next.t("token:Access token")}</label>
+                <Button variant="outline" size="sm" disabled={!token.accessToken} onClick={() => { copy(token.accessToken); Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully")); }}>
+                  <Copy className="w-3 h-3 mr-1" />{i18next.t("token:Copy access token")}
+                </Button>
+              </div>
+              <textarea className="w-full h-[300px] bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-xs font-mono resize-none" value={token.accessToken} onChange={e => updateField("accessToken", e.target.value)} />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm text-zinc-400">{i18next.t("token:Parsed result")}</label>
+                <Button variant="outline" size="sm" disabled={!parsedResult.includes("\"alg\":")} onClick={() => { copy(parsedResult); Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully")); }}>
+                  <Copy className="w-3 h-3 mr-1" />{i18next.t("token:Copy parsed result")}
+                </Button>
+              </div>
+              <textarea className="w-full h-[300px] bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-xs font-mono resize-none" value={parsedResult} readOnly />
+            </div>
+          </div>
         </div>
       </div>
-    );
-  }
+
+      <div className="flex gap-3 px-6">
+        <Button variant="outline" size="lg" onClick={() => submitEdit(false)}>{i18next.t("general:Save")}</Button>
+        <Button size="lg" onClick={() => submitEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+        {mode === "add" && <Button variant="outline" size="lg" onClick={handleDelete}>{i18next.t("general:Cancel")}</Button>}
+      </div>
+    </div>
+  );
 }
 
 export default TokenEditPage;
