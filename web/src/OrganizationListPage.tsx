@@ -15,7 +15,7 @@
 // @ts-nocheck
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Switch, Table} from "antd";
+import {Pencil, Users, FolderTree} from "lucide-react";
 import moment from "moment";
 import * as Setting from "./Setting";
 import * as OrganizationBackend from "./backend/OrganizationBackend";
@@ -28,7 +28,7 @@ class OrganizationListPage extends BaseListPage {
     const randomName = Setting.getRandomName();
     const DefaultMfaRememberInHours = 12;
     return {
-      owner: "admin", // this.props.account.organizationname,
+      owner: "admin",
       name: `organization_${randomName}`,
       createdTime: moment().format(),
       displayName: `New Organization - ${randomName}`,
@@ -158,199 +158,124 @@ class OrganizationListPage extends BaseListPage {
   }
 
   renderTable(organizations) {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "120px",
-        fixed: "left",
-        sorter: true,
-        ...this.getColumnSearchProps("name"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/organizations/${text}`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Created time"),
-        dataIndex: "createdTime",
-        key: "createdTime",
-        width: "160px",
-        sorter: true,
-        render: (text, record, index) => {
-          return Setting.getFormattedDate(text);
-        },
-      },
-      {
-        title: i18next.t("general:Display name"),
-        dataIndex: "displayName",
-        key: "displayName",
-        // width: '100px',
-        sorter: true,
-        ...this.getColumnSearchProps("displayName"),
-      },
-      {
-        title: i18next.t("general:Favicon"),
-        dataIndex: "favicon",
-        key: "favicon",
-        width: "50px",
-        render: (text, record, index) => {
-          return (
-            <a target="_blank" rel="noreferrer" href={text}>
-              <img src={text} alt={text} width={40} />
-            </a>
-          );
-        },
-      },
-      {
-        title: i18next.t("organization:Website URL"),
-        dataIndex: "websiteUrl",
-        key: "websiteUrl",
-        width: "200px",
-        sorter: true,
-        ...this.getColumnSearchProps("websiteUrl"),
-        render: (text, record, index) => {
-          return (
-            <a target="_blank" rel="noreferrer" href={text}>
-              {text}
-            </a>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Password type"),
-        dataIndex: "passwordType",
-        key: "passwordType",
-        width: "150px",
-        sorter: true,
-        filterMultiple: false,
-        filters: [
-          {text: "plain", value: "plain"},
-          {text: "salt", value: "salt"},
-          {text: "md5-salt", value: "md5-salt"},
-        ],
-      },
-      {
-        title: i18next.t("general:Password salt"),
-        dataIndex: "passwordSalt",
-        key: "passwordSalt",
-        width: "150px",
-        sorter: true,
-        ...this.getColumnSearchProps("passwordSalt"),
-      },
-      {
-        title: i18next.t("general:Default avatar"),
-        dataIndex: "defaultAvatar",
-        key: "defaultAvatar",
-        width: "120px",
-        render: (text, record, index) => {
-          return (
-            <a target="_blank" rel="noreferrer" href={text}>
-              <img src={text} alt={text} width={40} />
-            </a>
-          );
-        },
-      },
-      {
-        title: i18next.t("organization:Org balance"),
-        dataIndex: "orgBalance",
-        key: "orgBalance",
-        width: "120px",
-        sorter: true,
-        render: (text, record, index) => {
-          return text ?? 0;
-        },
-      },
-      {
-        title: i18next.t("organization:User balance"),
-        dataIndex: "userBalance",
-        key: "userBalance",
-        width: "120px",
-        sorter: true,
-        render: (text, record, index) => {
-          return text ?? 0;
-        },
-      },
-      {
-        title: i18next.t("organization:Balance credit"),
-        dataIndex: "balanceCredit",
-        key: "balanceCredit",
-        width: "120px",
-        sorter: true,
-        render: (text, record, index) => {
-          return text ?? 0;
-        },
-      },
-      {
-        title: i18next.t("organization:Balance currency"),
-        dataIndex: "balanceCurrency",
-        key: "balanceCurrency",
-        width: "140px",
-        sorter: true,
-        render: (text, record, index) => {
-          return text || "USD";
-        },
-      },
-      {
-        title: i18next.t("organization:Soft deletion"),
-        dataIndex: "enableSoftDeletion",
-        key: "enableSoftDeletion",
-        width: "140px",
-        sorter: true,
-        render: (text, record, index) => {
-          return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "",
-        key: "op",
-        width: "350px",
-        fixed: (Setting.isMobile()) ? "false" : "right",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/trees/${record.name}`)}>{i18next.t("general:Groups")}</Button>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/organizations/${record.name}/users`)}>{i18next.t("general:Users")}</Button>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} onClick={() => this.props.history.push(`/organizations/${record.name}`)}>{i18next.t("general:Edit")}</Button>
-              <PopconfirmModal
-                title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
-                onConfirm={() => this.deleteOrganization(index)}
-                disabled={record.name === "built-in"}
-              >
-              </PopconfirmModal>
-            </div>
-          );
-        },
-      },
-    ];
-
-    const filteredColumns = Setting.filterTableColumns(columns, this.props.formItems ?? this.state.formItems);
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
-
     return (
-      <div>
-        <Table scroll={{x: "max-content"}} columns={filteredColumns} dataSource={organizations} rowKey="name" size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Organizations")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button type="primary" size="small" disabled={!Setting.isAdminUser(this.props.account)} onClick={this.addOrganization.bind(this)}>{i18next.t("general:Add")}</Button>
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-white">{i18next.t("general:Organizations")}</h1>
+          <button
+            className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!Setting.isAdminUser(this.props.account)}
+            onClick={this.addOrganization.bind(this)}
+          >
+            {i18next.t("general:Add")}
+          </button>
+        </div>
+
+        <div className="overflow-x-auto border border-white/10 rounded-xl">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Name")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Created time")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Display name")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Favicon")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("organization:Website URL")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Password type")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("organization:Soft deletion")}</th>
+                <th className="px-4 py-3 text-right text-gray-400 font-medium">{i18next.t("general:Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {organizations && organizations.map((record, index) => (
+                <tr key={record.name} className="border-b border-white/5 hover:bg-white/[0.02]">
+                  <td className="px-4 py-3">
+                    <Link to={`/organizations/${record.name}`} className="text-white hover:underline">
+                      {record.name}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-gray-400">{Setting.getFormattedDate(record.createdTime)}</td>
+                  <td className="px-4 py-3 text-white">{record.displayName}</td>
+                  <td className="px-4 py-3">
+                    {record.favicon && (
+                      <a target="_blank" rel="noreferrer" href={record.favicon}>
+                        <img src={record.favicon} alt="" className="w-8 h-8" />
+                      </a>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <a target="_blank" rel="noreferrer" href={record.websiteUrl} className="text-gray-400 hover:text-white">
+                      {record.websiteUrl}
+                    </a>
+                  </td>
+                  <td className="px-4 py-3 text-white">{record.passwordType}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${record.enableSoftDeletion ? "bg-white/10 text-white" : "bg-white/5 text-gray-500"}`}>
+                      {record.enableSoftDeletion ? i18next.t("general:ON") : i18next.t("general:OFF")}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1"
+                        onClick={() => this.props.history.push(`/trees/${record.name}`)}
+                      >
+                        <FolderTree size={12} />
+                        {i18next.t("general:Groups")}
+                      </button>
+                      <button
+                        className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1"
+                        onClick={() => this.props.history.push(`/organizations/${record.name}/users`)}
+                      >
+                        <Users size={12} />
+                        {i18next.t("general:Users")}
+                      </button>
+                      <button
+                        className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1"
+                        onClick={() => this.props.history.push(`/organizations/${record.name}`)}
+                      >
+                        <Pencil size={12} />
+                        {i18next.t("general:Edit")}
+                      </button>
+                      <PopconfirmModal
+                        title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
+                        onConfirm={() => this.deleteOrganization(index)}
+                        disabled={record.name === "built-in"}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {(!organizations || organizations.length === 0) && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                    {this.state.loading ? i18next.t("general:Loading...") : i18next.t("general:No data")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between text-sm text-gray-400">
+          <span>{i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total)}</span>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={this.state.pagination.current <= 1}
+              className="px-3 py-1 border border-white/10 rounded text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.05]"
+              onClick={() => this.handleTableChange({...this.state.pagination, current: this.state.pagination.current - 1}, {}, {})}
+            >
+              Prev
+            </button>
+            <span className="text-white">{this.state.pagination.current}</span>
+            <button
+              disabled={this.state.pagination.current * this.state.pagination.pageSize >= this.state.pagination.total}
+              className="px-3 py-1 border border-white/10 rounded text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.05]"
+              onClick={() => this.handleTableChange({...this.state.pagination, current: this.state.pagination.current + 1}, {}, {})}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -365,9 +290,7 @@ class OrganizationListPage extends BaseListPage {
     this.setState({loading: true});
     OrganizationBackend.getOrganizations("admin", Setting.isDefaultOrganizationSelected(this.props.account) ? "" : Setting.getRequestOrganization(this.props.account), params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder)
       .then((res) => {
-        this.setState({
-          loading: false,
-        });
+        this.setState({loading: false});
         if (res.status === "ok") {
           this.setState({
             data: res.data,
@@ -380,9 +303,7 @@ class OrganizationListPage extends BaseListPage {
           });
         } else {
           if (Setting.isResponseDenied(res)) {
-            this.setState({
-              isAuthorized: false,
-            });
+            this.setState({isAuthorized: false});
           } else {
             Setting.showMessage("error", res.msg);
           }

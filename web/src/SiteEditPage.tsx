@@ -1,485 +1,109 @@
-// Copyright 2023 The casbin Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // @ts-nocheck
-import React from "react";
-import {Button, Card, Col, Input, InputNumber, Row, Select, Switch} from "antd";
-import {LinkOutlined} from "@ant-design/icons";
+import React, {useEffect, useState} from "react";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as SiteBackend from "./backend/SiteBackend";
 import * as CertBackend from "./backend/CertBackend";
 import * as RuleBackend from "./backend/RuleBackend";
 import * as ApplicationBackend from "./backend/ApplicationBackend";
+import * as OrganizationBackend from "./backend/OrganizationBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import RuleTable from "./table/RuleTable";
-import * as OrganizationBackend from "./backend/OrganizationBackend";
+import {Button} from "./components/ui/button";
 
-const {Option} = Select;
+function SiteEditPage(props) {
+  const {account, history, match} = props;
+  const ownerFromUrl = match.params.organizationName;
+  const siteNameFromUrl = match.params.siteName;
+  const [owner, setOwner] = useState(ownerFromUrl);
+  const [siteName, setSiteName] = useState(siteNameFromUrl);
+  const [site, setSite] = useState(null);
+  const [organizations, setOrganizations] = useState([]);
+  const [certs, setCerts] = useState([]);
+  const [rules, setRules] = useState([]);
+  const [applications, setApplications] = useState([]);
+  const [providers, setProviders] = useState([]);
 
-class SiteEditPage extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      owner: props.match.params.organizationName,
-      siteName: props.match.params.siteName,
-      rules: [],
-      providers: [],
-      site: null,
-      certs: null,
-      applications: null,
-      organizations: [],
-    };
+  useEffect(() => {
+    if (Setting.isAdminUser(account)) OrganizationBackend.getOrganizations("admin").then(r => setOrganizations(r.data || []));
+    SiteBackend.getSite(ownerFromUrl, siteNameFromUrl).then(r => { if (r.status === "ok") setSite(r.data); else Setting.showMessage("error", `Failed to get site: ${r.msg}`); });
+    CertBackend.getCerts(ownerFromUrl).then(r => { if (r.status === "ok") setCerts(r.data || []); });
+    RuleBackend.getRules(ownerFromUrl).then(r => { if (r.status === "ok") setRules(r.data || []); });
+    ApplicationBackend.getApplicationsByOrganization("admin", ownerFromUrl).then(r => { if (r.status === "ok") setApplications(r.data || []); });
+    ProviderBackend.getProviders().then(r => { if (r.status === "ok") setProviders(r.data?.filter(p => p.category === "SMS" || p.category === "Email").map(p => `${p.category}/${p.name}`) || []); });
+  }, []);
+
+  function updateField(key, value) { setSite({...site, [key]: value}); }
+
+  function submitEdit() {
+    SiteBackend.updateSite(owner, siteName, Setting.deepCopy(site)).then(r => {
+      if (r.status === "error") { Setting.showMessage("error", `Failed to save: ${r.msg}`); updateField("name", siteName); }
+      else { Setting.showMessage("success", "Successfully saved"); setOwner(site.owner); setSiteName(site.name); history.push(`/sites/${site.owner}/${site.name}`); }
+    }).catch(error => Setting.showMessage("error", `failed to save: ${error}`));
   }
 
-  UNSAFE_componentWillMount() {
-    this.getOrganizations();
-    this.getSite();
-    this.getCerts();
-    this.getRules();
-    this.getApplications();
-    this.getAlertProviders();
-  }
+  if (!site) return null;
 
-  getOrganizations() {
-    if (Setting.isAdminUser(this.props.account)) {
-      OrganizationBackend.getOrganizations("admin")
-        .then((res) => {
-          this.setState({
-            organizations: res.data || [],
-          });
-        });
-    }
-  }
-
-  getSite() {
-    SiteBackend.getSite(this.state.site?.owner || this.state.owner, this.state.siteName)
-      .then((res) => {
-        if (res.status === "ok") {
-          this.setState({
-            site: res.data,
-          });
-        } else {
-          Setting.showMessage("error", `Failed to get site: ${res.msg}`);
-        }
-      });
-  }
-
-  getCerts() {
-    CertBackend.getCerts(this.state.owner)
-      .then((res) => {
-        if (res.status === "ok") {
-          this.setState({
-            certs: res.data,
-          });
-        } else {
-          Setting.showMessage("error", `Failed to get certs: ${res.msg}`);
-        }
-      });
-  }
-
-  getRules() {
-    RuleBackend.getRules(this.state.owner)
-      .then((res) => {
-        if (res.status === "ok") {
-          this.setState({
-            rules: res.data,
-          });
-        } else {
-          Setting.showMessage("error", `Failed to get rules: ${res.msg}`);
-        }
-      });
-  }
-
-  getApplications(owner) {
-    ApplicationBackend.getApplicationsByOrganization("admin", owner || this.state.owner)
-      .then((res) => {
-        if (res.status === "ok") {
-          this.setState({
-            applications: res.data,
-          });
-        } else {
-          Setting.showMessage("error", `Failed to get applications: ${res.msg}`);
-        }
-      });
-  }
-
-  getAlertProviders() {
-    ProviderBackend.getProviders()
-      .then((res) => {
-        if (res.status === "ok") {
-          const data = [];
-          for (let i = 0; i < res.data.length; i++) {
-            const provider = res.data[i];
-            if (provider.category === "SMS" || provider.category === "Email") {
-              data.push(provider.category + "/" + provider.name);
-            }
-          }
-          this.setState({
-            providers: data,
-          });
-        } else {
-          Setting.showMessage("error", `Failed to get providers: ${res.msg}`);
-        }
-      });
-  }
-
-  parseSiteField(key, value) {
-    if (["score"].includes(key)) {
-      value = Setting.myParseInt(value);
-    }
-    return value;
-  }
-
-  updateSiteField(key, value) {
-    value = this.parseSiteField(key, value);
-
-    const site = this.state.site;
-    site[key] = value;
-    this.setState({
-      site: site,
-    });
-  }
-
-  renderSite() {
-    return (
-      <Card size="small" title={
-        <div>
-          {i18next.t("site:Edit Site")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button type="primary" onClick={this.submitSiteEdit.bind(this)}>{i18next.t("general:Save")}</Button>
+  return (
+    <div className="space-y-6">
+      <div className="border border-zinc-800 rounded-lg bg-zinc-900/30">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+          <h2 className="text-lg font-semibold text-white">{i18next.t("site:Edit Site")}</h2>
+          <Button onClick={submitEdit}>{i18next.t("general:Save")}</Button>
         </div>
-      } style={{marginLeft: "5px"}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} disabled={!Setting.isAdminUser(this.props.account)} value={this.state.site.owner} onChange={(value => {
-              this.updateSiteField("owner", value);
-              this.getApplications(value);
-            })}>
-              {
-                this.state.organizations.map((organization, index) => <Option key={index} value={organization.name}>{organization.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("general:Name")}:
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.site.name} onChange={e => {
-              this.updateSiteField("name", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("general:Display name")}:
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.site.displayName} onChange={e => {
-              this.updateSiteField("displayName", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("general:Tag")}:
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.site.tag} onChange={e => {
-              this.updateSiteField("tag", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Domain")}:
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.site.domain} onChange={e => {
-              this.updateSiteField("domain", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Other domains")}:
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.site.otherDomains} onChange={(value => {this.updateSiteField("otherDomains", value);})}>
-              {
-                this.state.site.otherDomains?.map((item, index) => <Option key={index} value={item}>{item}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Need redirect")}:
-          </Col>
-          <Col span={1} >
-            <Switch checked={this.state.site.needRedirect} onChange={checked => {
-              this.updateSiteField("needRedirect", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Disable verbose")}:
-          </Col>
-          <Col span={1} >
-            <Switch checked={this.state.site.disableVerbose} onChange={checked => {
-              this.updateSiteField("disableVerbose", checked);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Rules")}:
-          </Col>
-          <Col span={22} >
-            <RuleTable
-              title={"Rules"}
-              account={this.props.account}
-              sources={this.state.rules}
-              rules={this.state.site.rules}
-              onUpdateRules={(value) => this.updateSiteField("rules", value)}
-            />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={2} style={{marginTop: "5px"}}>
-            {i18next.t("site:Enable alert")}:
-          </Col>
-          <Col span={22} >
-            <Switch checked={this.state.site.enableAlert} onChange={checked => {
-              this.updateSiteField("enableAlert", checked);
-            }} />
-          </Col>
-        </Row>
-        {
-          this.state.site.enableAlert ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col span={2} style={{marginTop: "5px"}}>
-                {i18next.t("site:Alert interval")}:
-              </Col>
-              <Col span={22} >
-                <InputNumber min={1} value={this.state.site.alertInterval} addonAfter={i18next.t("usage:seconds")} onChange={value => {
-                  this.updateSiteField("alertInterval", value);
-                }} />
-              </Col>
-            </Row>
-          ) : null
-        }
-        {
-          this.state.site.enableAlert ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col span={2} style={{marginTop: "5px"}}>
-                {i18next.t("site:Alert try times")}:
-              </Col>
-              <Col span={22} >
-                <InputNumber min={1} value={this.state.site.alertTryTimes} onChange={value => {
-                  this.updateSiteField("alertTryTimes", value);
-                }} />
-              </Col>
-            </Row>
-          ) : null
-        }
-        {
-          this.state.site.enableAlert ? (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={2}>
-                {i18next.t("site:Alert providers")}:
-              </Col>
-              <Col span={22} >
-                <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.site.alertProviders} onChange={(value => {this.updateSiteField("alertProviders", value);})}>
-                  {
-                    this.state.providers.map((item, index) => <Option key={index} value={item}>{item}</Option>)
-                  }
-                </Select>
-              </Col>
-            </Row>
-          ) : null
-        }
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Challenges")}:
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.site.challenges} onChange={(value => {this.updateSiteField("challenges", value);})}>
-              {
-                this.state.site.challenges?.map((item, index) => <Option key={index} value={item}>{item}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Host")}:
-          </Col>
-          <Col span={22} >
-            <Input prefix={<LinkOutlined />} value={this.state.site.host} onChange={e => {
-              this.updateSiteField("host", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Port")}:
-          </Col>
-          <Col span={22} >
-            <InputNumber min={0} max={65535} value={this.state.site.port} onChange={value => {
-              this.updateSiteField("port", value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Hosts")}:
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.site.hosts} onChange={(value => {this.updateSiteField("hosts", value);})}>
-              {
-                this.state.site.hosts?.map((item, index) => <Option key={index} value={item}>{item}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Public IP")}:
-          </Col>
-          <Col span={22} >
-            <Input disabled={true} value={this.state.site.publicIp} onChange={e => {
-              this.updateSiteField("publicIp", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Mode")}:
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.site.sslMode} onChange={(value => {this.updateSiteField("sslMode", value);})}>
-              {
-                [
-                  {id: "HTTP", name: "HTTP"},
-                  {id: "HTTPS and HTTP", name: "HTTPS and HTTP"},
-                  {id: "HTTPS Only", name: "HTTPS Only"},
-                  {id: "Static Folder", name: "Static Folder"},
-                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:SSL cert")}:
-          </Col>
-          <Col span={22} >
-            <Select disabled={true} virtual={false} style={{width: "100%"}} showSearch value={this.state.site.sslCert} onChange={(value => {
-              this.updateSiteField("sslCert", value);
-            })}>
-              {
-                this.state.certs?.map((cert, index) => <Option key={index} value={cert.name}>{cert.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:IAM app")}:
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} showSearch value={this.state.site.iamApplication} onChange={(value => {
-              this.updateSiteField("iamApplication", value);
-            })}>
-              {
-                this.state.applications?.map((application, index) => <Option key={index} value={application.name}>{application.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
-            {i18next.t("site:Status")}:
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.site.status} onChange={(value => {this.updateSiteField("status", value);})}>
-              {
-                [
-                  {id: "Active", name: "Active"},
-                  {id: "Inactive", name: "Inactive"},
-                ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-      </Card>
-    );
-  }
-
-  submitSiteEdit() {
-    const site = Setting.deepCopy(this.state.site);
-    SiteBackend.updateSite(this.state.owner, this.state.siteName, site)
-      .then((res) => {
-        if (res.status === "error") {
-          Setting.showMessage("error", `Failed to save: ${res.msg}`);
-          this.updateSiteField("name", this.state.siteName);
-        } else {
-          Setting.showMessage("success", "Successfully saved");
-          this.setState({
-            owner: this.state.site.owner,
-            siteName: this.state.site.name,
-          });
-          this.props.history.push(`/sites/${this.state.site.owner}/${this.state.site.name}`);
-          this.getSite();
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `failed to save: ${error}`);
-      });
-  }
-
-  render() {
-    return (
-      <div>
-        <Row style={{width: "100%"}}>
-          <Col span={1}>
-          </Col>
-          <Col span={22}>
-            {
-              this.state.site !== null ? this.renderSite() : null
-            }
-          </Col>
-          <Col span={1}>
-          </Col>
-        </Row>
-        <Row style={{margin: 10}}>
-          <Col span={2}>
-          </Col>
-          <Col span={18}>
-            <Button type="primary" size="large" onClick={this.submitSiteEdit.bind(this)}>{i18next.t("general:Save")}</Button>
-          </Col>
-        </Row>
+        <div className="p-6 space-y-5">
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Organization")}</label>
+            <select className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" disabled={!Setting.isAdminUser(account)} value={site.owner} onChange={e => { updateField("owner", e.target.value); ApplicationBackend.getApplicationsByOrganization("admin", e.target.value).then(r => { if (r.status === "ok") setApplications(r.data || []); }); }}>
+              {organizations.map(org => <option key={org.name} value={org.name}>{org.name}</option>)}
+            </select>
+          </div>
+          {[{label: i18next.t("general:Name"), key: "name"}, {label: i18next.t("general:Display name"), key: "displayName"}, {label: i18next.t("general:Tag"), key: "tag"}, {label: i18next.t("site:Domain"), key: "domain"}, {label: i18next.t("site:Host"), key: "host"}].map(({label, key}) => (
+            <div key={key} className="grid grid-cols-[160px_1fr] items-center gap-4">
+              <label className="text-sm text-zinc-400">{label}</label>
+              <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={site[key] || ""} onChange={e => updateField(key, e.target.value)} />
+            </div>
+          ))}
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("site:Port")}</label>
+            <input type="number" className="w-40 bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" min={0} max={65535} value={site.port} onChange={e => updateField("port", parseInt(e.target.value) || 0)} />
+          </div>
+          {[{label: i18next.t("site:Need redirect"), key: "needRedirect"}, {label: i18next.t("site:Disable verbose"), key: "disableVerbose"}, {label: i18next.t("site:Enable alert"), key: "enableAlert"}].map(({label, key}) => (
+            <div key={key} className="grid grid-cols-[160px_1fr] items-center gap-4">
+              <label className="text-sm text-zinc-400">{label}</label>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer" checked={site[key]} onChange={e => updateField(key, e.target.checked)} />
+                <div className="w-9 h-5 bg-zinc-700 peer-checked:bg-blue-600 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
+              </label>
+            </div>
+          ))}
+          <div className="grid grid-cols-[160px_1fr] items-start gap-4">
+            <label className="text-sm text-zinc-400 pt-2">{i18next.t("site:Rules")}</label>
+            <RuleTable title="Rules" account={account} sources={rules} rules={site.rules} onUpdateRules={v => updateField("rules", v)} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("site:Public IP")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm opacity-60" disabled value={site.publicIp || ""} readOnly />
+          </div>
+          {[{label: i18next.t("site:Mode"), key: "sslMode", options: [{id: "HTTP"}, {id: "HTTPS and HTTP"}, {id: "HTTPS Only"}, {id: "Static Folder"}]},
+            {label: i18next.t("site:SSL cert"), key: "sslCert", options: certs?.map(c => ({id: c.name})), disabled: true},
+            {label: i18next.t("site:IAM app"), key: "iamApplication", options: applications?.map(a => ({id: a.name}))},
+            {label: i18next.t("site:Status"), key: "status", options: [{id: "Active"}, {id: "Inactive"}]},
+          ].map(({label, key, options, disabled}) => (
+            <div key={key} className="grid grid-cols-[160px_1fr] items-center gap-4">
+              <label className="text-sm text-zinc-400">{label}</label>
+              <select className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" disabled={disabled} value={site[key] || ""} onChange={e => updateField(key, e.target.value)}>
+                {options?.map(o => <option key={o.id} value={o.id}>{o.id}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
       </div>
-    );
-  }
+      <div className="flex gap-3 px-6">
+        <Button size="lg" onClick={submitEdit}>{i18next.t("general:Save")}</Button>
+      </div>
+    </div>
+  );
 }
 
 export default SiteEditPage;
