@@ -315,16 +315,23 @@ class ApplicationEditPage extends React.Component {
               {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
             </Col>
             <Col span={21} >
-              <Input value={this.state.application.name} disabled={this.state.application.name === "app-hanzo"} onChange={e => {
-                const value = e.target.value;
-                if (/[/?:@#&%=+;]/.test(value)) {
-                  const invalidChars = "/ ? : @ # & % = + ;";
-                  const messageText = i18next.t("application:Invalid characters in application name") + ":" + " " + invalidChars;
-                  message.error(messageText);
-                  return;
-                }
-                this.updateApplicationField("name", e.target.value);
-              }} />
+              <Input value={this.state.application.name} disabled={this.state.application.name === "app-hanzo"}
+                placeholder={`${this.state.application.organization?.toLowerCase() || "org"}-appname`}
+                onChange={e => {
+                  const value = e.target.value;
+                  if (/[/?:@#&%=+;]/.test(value)) {
+                    const invalidChars = "/ ? : @ # & % = + ;";
+                    const messageText = i18next.t("application:Invalid characters in application name") + ":" + " " + invalidChars;
+                    message.error(messageText);
+                    return;
+                  }
+                  const orgPrefix = (this.state.application.organization || "").toLowerCase() + "-";
+                  if (value.length > 0 && !value.startsWith(orgPrefix) && !orgPrefix.startsWith(value)) {
+                    message.error(i18next.t("application:Application name must start with org prefix") + `: "${orgPrefix}"`);
+                    return;
+                  }
+                  this.updateApplicationField("name", e.target.value);
+                }} />
             </Col>
           </Row>
           <Row style={{marginTop: "20px"}} >
@@ -1682,6 +1689,17 @@ class ApplicationEditPage extends React.Component {
     application.customScopes = customScopeValidation.scopes;
     if (!customScopeValidation.ok) {
       Setting.showMessage("error", `${i18next.t("general:Name")}: ${i18next.t("provider:This field is required")}`);
+      return;
+    }
+
+    const orgPrefix = (application.organization || "").toLowerCase() + "-";
+    const appNamePattern = /^[a-z0-9]+-[a-z0-9]+(-[a-z0-9]+)*$/;
+    if (!appNamePattern.test(application.name)) {
+      Setting.showMessage("error", i18next.t("application:Application name must follow '<org>-<app>' format using lowercase alphanumeric segments"));
+      return;
+    }
+    if (!application.name.startsWith(orgPrefix)) {
+      Setting.showMessage("error", `${i18next.t("application:Application name must start with org prefix")}: "${orgPrefix}"`);
       return;
     }
 
