@@ -12,49 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import React from "react";
-import {Col, Row} from "antd";
 import * as Setting from "../Setting";
 
-class SamlWidget extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      addressOptions: [],
-      affiliationOptions: [],
-    };
-  }
-
-  renderIdp(user, application, providerItem) {
-    const provider = providerItem.provider;
-    const name = user.name;
-
-    return (
-      <Row key={provider.name} style={{marginTop: "20px"}}>
-        <Col style={{marginTop: "5px"}} span={this.props.labelSpan}>
-          {
-            Setting.getProviderLogo(provider)
-          }
-          <span style={{marginLeft: "5px"}}>
-            {
-              `${provider.type}:`
-            }
-          </span>
-        </Col>
-        <Col span={24 - this.props.labelSpan} style={{marginTop: "5px"}}>
-          <span style={{
-            width: this.props.labelSpan === 3 ? "300px" : "130px",
-            display: (Setting.isMobile()) ? "inline" : "inline-block"}}>{name}</span>
-        </Col>
-      </Row>
-    );
-  }
-
-  render() {
-    return this.renderIdp(this.props.user, this.props.application, this.props.providerItem);
-  }
+interface SamlWidgetProps {
+  user: any;
+  application: any;
+  providerItem: any;
+  labelSpan: number;
 }
+
+const SamlWidget = (props: SamlWidgetProps) => {
+  const {user, providerItem, labelSpan} = props;
+  const provider = providerItem.provider;
+  const name = user.name;
+
+  return (
+    <div className="flex items-start mt-5 gap-4">
+      <div className="mt-1 min-w-0" style={{flex: `0 0 ${(labelSpan / 24) * 100}%`}}>
+        <span className="flex items-center gap-1">
+          {Setting.getProviderLogo(provider)}
+          <span className="text-sm text-gray-400 ml-1">{`${provider.type}:`}</span>
+        </span>
+      </div>
+      <div className="flex-1 mt-1">
+        <span
+          className="text-sm text-white inline-block"
+          style={{
+            width: labelSpan === 3 ? "300px" : "130px",
+            display: Setting.isMobile() ? "inline" : "inline-block",
+          }}
+        >
+          {name}
+        </span>
+      </div>
+    </div>
+  );
+};
 
 export default SamlWidget;

@@ -13,21 +13,16 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {Button, Popconfirm, Table, Tag} from "antd";
+import React, {useCallback, useState} from "react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as ConsentBackend from "../backend/ConsentBackend";
 
-class ConsentTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-    };
-  }
+function ConsentTable({title, table, onUpdateTable}) {
+  const [confirmingScope, setConfirmingScope] = useState(null);
+  const [confirmingRow, setConfirmingRow] = useState(null);
 
-  deleteScope(record, scopeToDelete) {
+  const deleteScope = useCallback((record, scopeToDelete) => {
     ConsentBackend.revokeConsent({
       application: record.application,
       grantedScopes: scopeToDelete ? [scopeToDelete] : record.grantedScopes,
@@ -35,7 +30,7 @@ class ConsentTable extends React.Component {
       .then((res) => {
         if (res.status === "ok") {
           Setting.showMessage("success", i18next.t("general:Successfully revoked"));
-          this.props.onUpdateTable();
+          onUpdateTable();
         } else {
           Setting.showMessage("error", res.msg);
         }
@@ -43,91 +38,77 @@ class ConsentTable extends React.Component {
       .catch(error => {
         Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
       });
-  }
+    setConfirmingScope(null);
+    setConfirmingRow(null);
+  }, [onUpdateTable]);
 
-  renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("general:Application"),
-        dataIndex: "application",
-        key: "application",
-        width: "200px",
-        render: (text) => {
-          return text;
-        },
-      },
-      {
-        title: i18next.t("consent:Granted scopes"),
-        dataIndex: "grantedScopes",
-        key: "grantedScopes",
-        render: (text, record) => {
-          return (
-            <div style={{display: "flex", flexWrap: "wrap", gap: "4px"}}>
-              {
-                (Array.isArray(text) ? text : []).map((scope, index) => {
-                  return (
-                    <Popconfirm
-                      key={index}
-                      title={`${i18next.t("consent:Are you sure you want to revoke scope")}: ${scope}?`}
-                      onConfirm={() => this.deleteScope(record, scope)}
-                      okText={i18next.t("general:OK")}
-                      cancelText={i18next.t("general:Cancel")}
-                    >
-                      <Tag
-                        color="blue"
-                        style={{cursor: "pointer"}}
-                      >
-                        {scope}
-                      </Tag>
-                    </Popconfirm>
-                  );
-                })
-              }
-            </div>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        key: "action",
-        width: "100px",
-        render: (_, record, __) => {
-          return (
-            <Popconfirm
-              title={i18next.t("consent:Are you sure you want to revoke this consent?")}
-              onConfirm={() => this.deleteScope(record)}
-              okText={i18next.t("general:OK")}
-              cancelText={i18next.t("general:Cancel")}
-            >
-              <Button type="primary" danger size="small">
-                {i18next.t("consent:Delete")}
-              </Button>
-            </Popconfirm>
-          );
-        },
-      },
-    ];
-
-    return (
-      <Table scroll={{x: "max-content"}} rowKey="application" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}
-          </div>
-        )}
-      />
-    );
-  }
-
-  render() {
-    return (
-      <div>
-        {
-          this.renderTable(this.props.table)
-        }
+  return (
+    <div className="border border-white/10 rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+        <span className="text-sm text-gray-300">{title}</span>
       </div>
-    );
-  }
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/[0.02]">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("general:Application")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("consent:Granted scopes")}</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("general:Action")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(table || []).map((row, i) => (
+              <tr key={row.application} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                <td className="px-4 py-2 text-white">{row.application}</td>
+                <td className="px-4 py-2">
+                  <div className="flex flex-wrap gap-1">
+                    {(Array.isArray(row.grantedScopes) ? row.grantedScopes : []).map((scope, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-300 cursor-pointer hover:bg-blue-500/30"
+                        onClick={() => {
+                          if (confirmingScope === `${row.application}-${scope}`) {
+                            deleteScope(row, scope);
+                          } else {
+                            setConfirmingScope(`${row.application}-${scope}`);
+                            setConfirmingRow(null);
+                          }
+                        }}
+                      >
+                        {confirmingScope === `${row.application}-${scope}` ? `Revoke ${scope}?` : scope}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-4 py-2 text-right">
+                  {confirmingRow === row.application ? (
+                    <div className="flex items-center justify-end gap-1">
+                      <button className="px-2 py-1 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white" onClick={() => deleteScope(row)}>
+                        {i18next.t("general:OK")}
+                      </button>
+                      <button className="px-2 py-1 text-xs font-medium rounded bg-white/10 hover:bg-white/20 text-white" onClick={() => setConfirmingRow(null)}>
+                        {i18next.t("general:Cancel")}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="px-3 py-1 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white"
+                      onClick={() => {
+                        setConfirmingRow(row.application);
+                        setConfirmingScope(null);
+                      }}
+                    >
+                      {i18next.t("consent:Delete")}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 export default ConsentTable;

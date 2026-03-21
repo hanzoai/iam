@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2021 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,12 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import React from "react";
 import * as ApplicationBackend from "../backend/ApplicationBackend";
 import GridCards from "./GridCards";
 import i18next from "i18next";
-import {Tag} from "antd";
 
 const AppListPage = (props) => {
   const [applications, setApplications] = React.useState(null);
@@ -39,9 +38,7 @@ const AppListPage = (props) => {
   };
 
   React.useEffect(() => {
-    if (props.account === null) {
-      return;
-    }
+    if (props.account === null) return;
     ApplicationBackend.getApplicationsByOrganization("admin", props.account.owner)
       .then((res) => {
         const applications = res.data || [];
@@ -52,19 +49,13 @@ const AppListPage = (props) => {
   }, [props.account]);
 
   const handleTagChange = (tag, checked) => {
-    setSelectedTags(prev =>
-      checked
-        ? [...prev, tag]
-        : prev.filter(t => t !== tag)
-    );
+    setSelectedTags(prev => checked ? [...prev, tag] : prev.filter(t => t !== tag));
   };
 
   const filterByTags = (applications) => {
-    if (selectedTags.length === 0) {return applications;}
-
+    if (selectedTags.length === 0) return applications;
     return applications.filter(application => {
-      if (!application.tags || !Array.isArray(application.tags)) {return false;}
-
+      if (!application.tags || !Array.isArray(application.tags)) return false;
       return selectedTags.every(tag => application.tags.includes(tag));
     });
   };
@@ -85,65 +76,38 @@ const AppListPage = (props) => {
   };
 
   const getItems = () => {
-    if (applications === null) {
-      return null;
-    }
-
+    if (applications === null) return null;
     const filteredApps = filterByTags(applications);
-
     return filteredApps.map(application => {
       let homepageUrl = application.homepageUrl;
       if (homepageUrl === "<custom-url>") {
         homepageUrl = props.account.homepage;
       }
-
-      const tagObjects = application.tags ? application.tags.map(tag => ({
-        name: tag,
-        color: generateTagColor(tag),
-      })) : [];
-
-      return {
-        link: homepageUrl,
-        name: application.displayName,
-        description: application.description,
-        logo: application.logo,
-        createdTime: "",
-        tags: tagObjects,
-      };
+      const tagObjects = application.tags ? application.tags.map(tag => ({name: tag, color: generateTagColor(tag)})) : [];
+      return {link: homepageUrl, name: application.displayName, description: application.description, logo: application.logo, createdTime: "", tags: tagObjects};
     });
   };
 
-  const TagFilterArea = () => {
-    return (
-      <div style={{marginBottom: "20px", display: "flex", flexWrap: "wrap", gap: "8px"}}>
-        <span style={{marginRight: "8px", fontWeight: "bold"}}>{i18next.t("organization:Tags")}</span>
-        {allTags.map(tag => (
-          <Tag.CheckableTag
-            key={tag}
-            checked={selectedTags.includes(tag)}
-            onChange={(checked) => handleTagChange(tag, checked)}
-            style={{backgroundColor: selectedTags.includes(tag) ? generateTagColor(tag) : "white", borderColor: generateTagColor(tag)}}
-          >
-            {tag}
-          </Tag.CheckableTag>
-        ))}
-
-        {selectedTags.length > 0 && (
-          <button
-            onClick={() => setSelectedTags([])}
-            style={{marginLeft: "10px", padding: "2px 8px", background: "#ffffff", border: "2px solid #ddd", borderRadius: "4px", cursor: "pointer"}}
-          >
-            {i18next.t("forget:Reset")}
-          </button>
-        )}
-      </div>
-    );
-  };
-
   return (
-    <div style={{padding: "20px"}}>
-      {allTags.length > 0 && TagFilterArea()}
-      <div style={{display: "flex", justifyContent: "center", flexDirection: "column", alignItems: "center"}}>
+    <div className="p-5">
+      {allTags.length > 0 && (
+        <div className="mb-5 flex flex-wrap gap-2 items-center">
+          <span className="mr-2 font-bold text-white">{i18next.t("organization:Tags")}</span>
+          {allTags.map(tag => (
+            <button key={tag} className="px-3 py-1 rounded text-sm border transition-colors"
+              style={{backgroundColor: selectedTags.includes(tag) ? generateTagColor(tag) : "transparent", borderColor: generateTagColor(tag), color: selectedTags.includes(tag) ? "#fff" : generateTagColor(tag)}}
+              onClick={() => handleTagChange(tag, !selectedTags.includes(tag))}>
+              {tag}
+            </button>
+          ))}
+          {selectedTags.length > 0 && (
+            <button onClick={() => setSelectedTags([])} className="ml-2 px-2 py-1 bg-zinc-900 border border-zinc-700 rounded text-sm text-zinc-400 hover:text-white cursor-pointer">
+              {i18next.t("forget:Reset")}
+            </button>
+          )}
+        </div>
+      )}
+      <div className="flex justify-center flex-col items-center">
         <GridCards items={getItems()} />
       </div>
     </div>
