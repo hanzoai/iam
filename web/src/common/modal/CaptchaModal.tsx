@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {Button, Col, Input, Modal, Row} from "antd";
+import {ShieldCheck} from "lucide-react";
 import i18next from "i18next";
 import React, {useEffect} from "react";
 import * as UserBackend from "../../backend/UserBackend";
 import {CaptchaWidget} from "../CaptchaWidget";
-import {SafetyOutlined} from "@ant-design/icons";
 
-export const CaptchaModal = (props) => {
+export const CaptchaModal = (props: any) => {
   const {owner, name, visible, onOk, onUpdateToken, onCancel, isCurrentProvider, noModal, innerRef} = props;
 
   const [captchaType, setCaptchaType] = React.useState("none");
@@ -34,7 +32,7 @@ export const CaptchaModal = (props) => {
   const [captchaImg, setCaptchaImg] = React.useState("");
   const [captchaToken, setCaptchaToken] = React.useState("");
 
-  const defaultInputRef = React.useRef(null);
+  const defaultInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (visible || noModal) {
@@ -69,7 +67,7 @@ export const CaptchaModal = (props) => {
   }, [innerRef]);
 
   const loadCaptcha = () => {
-    UserBackend.getCaptcha(owner, name, isCurrentProvider).then((res) => {
+    UserBackend.getCaptcha(owner, name, isCurrentProvider).then((res: any) => {
       if (res.type === "none") {
         handleOk();
       } else if (res.type === "Default") {
@@ -92,65 +90,56 @@ export const CaptchaModal = (props) => {
   const renderDefaultCaptcha = () => {
     if (noModal) {
       return (
-        <Row style={{textAlign: "center"}} gutter={10}>
-          <Col
-            style={{flex: noModal ? "70%" : "100%"}}>
-            <Input
-              ref={defaultInputRef}
-              value={captchaToken}
-              prefix={<SafetyOutlined />}
-              placeholder={i18next.t("general:Captcha")}
-              onChange={(e) => onChange(e.target.value)}
-            />
-          </Col>
-          <Col
-            style={{
-              flex: noModal ? "30%" : "100%",
-            }}
-          >
-            <img src={`data:image/png;base64,${captchaImg}`}
+        <div className="flex items-center gap-2 text-center">
+          <div className="flex-[70%]">
+            <div className="flex items-center border border-white/20 rounded-lg bg-transparent px-3 py-2">
+              <ShieldCheck className="w-4 h-4 text-gray-400 mr-2" />
+              <input
+                ref={defaultInputRef}
+                value={captchaToken}
+                placeholder={i18next.t("general:Captcha")}
+                className="bg-transparent text-white outline-none flex-1 text-sm"
+                onChange={(e) => onChange(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex-[30%]">
+            <img
+              src={`data:image/png;base64,${captchaImg}`}
               onClick={loadCaptcha}
-              style={{
-                borderRadius: "5px",
-                border: "1px solid #ccc",
-                marginBottom: "20px",
-                width: "100%",
-              }} alt="captcha" />
-          </Col>
-        </Row>
+              className="rounded border border-white/20 mb-5 w-full cursor-pointer"
+              alt="captcha"
+            />
+          </div>
+        </div>
       );
     }
     return (
-      <Col style={{textAlign: "center"}}>
-        <div style={{display: "inline-block"}}>
-          <Row
-            style={{
-              backgroundImage: `url('data:image/png;base64,${captchaImg}')`,
-              backgroundRepeat: "no-repeat",
-              height: "80px",
-              width: "200px",
-              borderRadius: "5px",
-              border: "1px solid #ccc",
-              marginBottom: "20px",
-            }}
+      <div className="text-center">
+        <div className="inline-block">
+          <div
+            className="h-20 w-[200px] rounded border border-white/20 mb-5 bg-no-repeat"
+            style={{backgroundImage: `url('data:image/png;base64,${captchaImg}')`}}
           />
-          <Row>
-            <Input
-              ref={defaultInputRef}
-              style={{width: "200px"}}
-              value={captchaToken}
-              prefix={<SafetyOutlined />}
-              placeholder={i18next.t("general:Captcha")}
-              onPressEnter={handleOk}
-              onChange={(e) => setCaptchaToken(e.target.value)}
-            />
-          </Row>
+          <div>
+            <div className="flex items-center border border-white/20 rounded-lg bg-transparent px-3 py-2 w-[200px]">
+              <ShieldCheck className="w-4 h-4 text-gray-400 mr-2" />
+              <input
+                ref={defaultInputRef}
+                value={captchaToken}
+                placeholder={i18next.t("general:Captcha")}
+                className="bg-transparent text-white outline-none flex-1 text-sm"
+                onKeyDown={(e) => e.key === "Enter" && handleOk()}
+                onChange={(e) => setCaptchaToken(e.target.value)}
+              />
+            </div>
+          </div>
         </div>
-      </Col>
+      </div>
     );
   };
 
-  const onChange = (token) => {
+  const onChange = (token: string) => {
     setCaptchaToken(token);
     if (noModal) {
       onUpdateToken?.(captchaType, token, clientSecret);
@@ -162,66 +151,57 @@ export const CaptchaModal = (props) => {
       return renderDefaultCaptcha();
     } else {
       return (
-        <Col>
-          <Row justify={"center"}>
-            <CaptchaWidget
-              captchaType={captchaType}
-              subType={subType}
-              siteKey={clientId}
-              clientSecret={clientSecret}
-              onChange={onChange}
-              clientId2={clientId2}
-              clientSecret2={clientSecret2}
-            />
-          </Row>
-        </Col>
+        <div className="flex justify-center">
+          <CaptchaWidget
+            captchaType={captchaType}
+            subType={subType}
+            siteKey={clientId}
+            clientSecret={clientSecret}
+            onChange={onChange}
+            clientId2={clientId2}
+            clientSecret2={clientSecret2}
+          />
+        </div>
       );
     }
   };
 
-  const renderFooter = () => {
-    let isOkDisabled = false;
-    if (captchaType === "Default") {
-      const regex = /^\d{5}$/;
-      if (!regex.test(captchaToken)) {
-        isOkDisabled = true;
-      }
-      return [
-        null,
-        <Button key="ok" disabled={isOkDisabled} type="primary" onClick={handleOk}>{i18next.t("general:OK")}</Button>,
-      ];
-    }
-
-    return null;
-  };
-
   if (noModal) {
     return renderCaptcha();
-
-  } else {
-    return (
-      <Modal
-        closable={true}
-        maskClosable={false}
-        destroyOnClose={true}
-        title={i18next.t("general:Captcha")}
-        open={open}
-        okText={i18next.t("general:OK")}
-        cancelText={i18next.t("general:Cancel")}
-        width={350}
-        footer={renderFooter()}
-        onCancel={handleCancel}
-        afterClose={handleCancel}
-        onOk={handleOk}
-      >
-        <div style={{marginTop: "20px", marginBottom: "50px"}}>
-          {
-            renderCaptcha()
-          }
-        </div>
-      </Modal>
-    );
   }
+
+  if (!open) {
+    return null;
+  }
+
+  const isOkDisabled = captchaType === "Default" && !/^\d{5}$/.test(captchaToken);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+      <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-6 w-[350px]">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">{i18next.t("general:Captcha")}</h2>
+          <button onClick={handleCancel} className="text-gray-400 hover:text-white">
+            &times;
+          </button>
+        </div>
+        <div className="mt-5 mb-12">
+          {renderCaptcha()}
+        </div>
+        {captchaType === "Default" && (
+          <div className="flex justify-end gap-2 mt-6">
+            <button
+              onClick={handleOk}
+              disabled={isOkDisabled}
+              className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {i18next.t("general:OK")}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 export const CaptchaRule = {

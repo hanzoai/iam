@@ -14,8 +14,7 @@
 
 // @ts-nocheck
 import React from "react";
-import {DeleteOutlined, EditOutlined} from "@ant-design/icons";
-import {Button, Input, Select, Table, Tooltip} from "antd";
+import {Pencil, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import * as AdapterBackend from "../backend/AdapterBackend";
 import i18next from "i18next";
@@ -37,7 +36,6 @@ class PolicyTable extends React.Component {
   pageSize = 100;
 
   getIndex(index) {
-    // Need to be used in all place when modify table. Parameter is the row index in table, need to calculate the index in dataSource.
     return index + (this.state.page - 1) * this.pageSize;
   }
 
@@ -82,14 +80,10 @@ class PolicyTable extends React.Component {
       table = [];
     }
     table = Setting.addRow(table, row, "top");
-
     this.count = this.count + 1;
     this.updateTable(table);
     this.edit(row, 0);
-    this.setState({
-      page: 1,
-      add: true,
-    });
+    this.setState({page: 1, add: true});
   }
 
   deleteRow(table, index) {
@@ -106,8 +100,6 @@ class PolicyTable extends React.Component {
     AdapterBackend.getPolicies(this.props.enforcer.owner, this.props.enforcer.name)
       .then((res) => {
         if (res.status === "ok") {
-          // Setting.showMessage("success", i18next.t("adapter:Sync policies successfully"));
-
           const policyList = res.data;
           policyList.map((policy, index) => {
             policy.key = index;
@@ -155,7 +147,6 @@ class PolicyTable extends React.Component {
     AdapterBackend.RemovePolicy(this.props.enforcer.owner, this.props.enforcer.name, table[this.getIndex(index)]).then(res => {
       if (res.status === "ok") {
         Setting.showMessage("success", i18next.t("general:Successfully deleted"));
-
         this.deleteRow(table, index);
       } else {
         Setting.showMessage("error", i18next.t("general:Failed to delete"));
@@ -168,102 +159,115 @@ class PolicyTable extends React.Component {
       return null;
     }
 
-    const columns = [
-      {
-        title: i18next.t("adapter:Rule type"),
-        dataIndex: "Ptype",
-        width: "100px",
-        render: (text, record, index) => {
-          const editing = this.isEditing(index);
-          return (
-            (editing && this.props.modelCfg) ?
-              <Select size={"small"} style={{width: "60px"}} options={Object.keys(this.props.modelCfg).reverse().map(item => Setting.getOption(item, item))} value={text} onChange={value => {
-                this.updateField(table, index, "Ptype", value);
-              }} />
-              : text
-          );
-        },
-      },
-    ];
-
     const columnKeys = ["V0", "V1", "V2", "V3", "V4", "V5"];
     const columnTitles = this.props.modelCfg ? this.props.modelCfg["p"].split(",") : columnKeys;
-    columnTitles.forEach((title, i) => {
-      columns.push({
-        title: title,
-        dataIndex: columnKeys[i],
-        width: "200px",
-        render: (text, record, index) => {
-          const editing = this.isEditing(index);
-          return (
-            editing ?
-              <Input size={"small"} value={text} onChange={e => {
-                this.updateField(table, index, columnKeys[i], e.target.value);
-              }} />
-              : text
-          );
-        },
-      });
-    });
 
-    columns.push({
-      title: i18next.t("general:Action"),
-      dataIndex: "",
-      key: "op",
-      width: "150px",
-      render: (text, record, index) => {
-        const editable = this.isEditing(index);
-        return editable ? (
-          <span>
-            <Button style={{marginRight: "10px"}} size={"small"} type={"primary"} onClick={() => this.save(table, index)}>
-              {i18next.t("general:Save")}
-            </Button>
-            <Button size={"small"} onClick={() => this.cancel(table, index)}>
-              {i18next.t("general:Cancel")}
-            </Button>
-          </span>
-        ) : (
-          <div>
-            <Tooltip placement="topLeft" title="Edit">
-              <Button disabled={this.state.editingIndex !== "" || Setting.builtInObject(this.props.enforcer)} style={{marginRight: "5px"}} icon={<EditOutlined />} size="small" onClick={() => this.edit(record, index)} />
-            </Tooltip>
-            <Tooltip placement="topLeft" title="Delete">
-              <Button disabled={this.state.editingIndex !== "" || Setting.builtInObject(this.props.enforcer)} style={{marginRight: "5px"}} icon={<DeleteOutlined />} size="small" onClick={() => this.deletePolicy(table, index)} />
-            </Tooltip>
-          </div>
-        );
-      },
-    });
+    const totalPages = Math.ceil(table.length / this.pageSize);
+    const startIdx = (this.state.page - 1) * this.pageSize;
+    const pageData = table.slice(startIdx, startIdx + this.pageSize);
 
     return (
-      <Table
-        pagination={{
-          defaultPageSize: this.pageSize,
-          onChange: (page) => this.setState({
-            page: page,
-          }),
-          current: this.state.page,
-        }}
-        columns={columns} dataSource={table} rowKey="key" size="middle" bordered
-        loading={this.state.loading}
-        title={() => (
-          <div>
-            <Button disabled={this.state.editingIndex !== "" || this.props.enforcer.model === "" || this.props.enforcer.adapter === "" || Setting.builtInObject(this.props.enforcer)} style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center gap-4">
+          <button
+            className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
+            disabled={this.state.editingIndex !== "" || this.props.enforcer.model === "" || this.props.enforcer.adapter === "" || Setting.builtInObject(this.props.enforcer)}
+            onClick={() => this.addRow(table)}
+          >
+            {i18next.t("general:Add")}
+          </button>
+        </div>
+        {this.state.loading ? (
+          <div className="px-4 py-8 text-center text-gray-400 text-sm">Loading...</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10 bg-white/[0.02]">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("adapter:Rule type")}</th>
+                  {columnTitles.map((title, idx) => (
+                    <th key={idx} className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{title}</th>
+                  ))}
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "150px"}}>{i18next.t("general:Action")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageData.map((row, i) => {
+                  const editing = this.isEditing(i);
+                  return (
+                    <tr key={row.key} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                      <td className="px-4 py-2">
+                        {editing && this.props.modelCfg ? (
+                          <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.Ptype || ""} onChange={e => this.updateField(table, i, "Ptype", e.target.value)}>
+                            {Object.keys(this.props.modelCfg).reverse().map(item => (
+                              <option key={item} value={item}>{item}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-white">{row.Ptype}</span>
+                        )}
+                      </td>
+                      {columnTitles.map((_, colIdx) => (
+                        <td key={colIdx} className="px-4 py-2">
+                          {editing ? (
+                            <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row[columnKeys[colIdx]] || ""} onChange={e => this.updateField(table, i, columnKeys[colIdx], e.target.value)} />
+                          ) : (
+                            <span className="text-white">{row[columnKeys[colIdx]]}</span>
+                          )}
+                        </td>
+                      ))}
+                      <td className="px-4 py-2 text-right">
+                        {editing ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => this.save(table, i)}>
+                              {i18next.t("general:Save")}
+                            </button>
+                            <button className="px-3 py-1 text-xs font-medium rounded bg-white/10 hover:bg-white/20 text-white" onClick={() => this.cancel(table, i)}>
+                              {i18next.t("general:Cancel")}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-1">
+                            <button title="Edit" disabled={this.state.editingIndex !== "" || Setting.builtInObject(this.props.enforcer)} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => this.edit(row, i)}>
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button title="Delete" disabled={this.state.editingIndex !== "" || Setting.builtInObject(this.props.enforcer)} className="p-1 rounded hover:bg-white/10 text-red-400 hover:text-red-300 disabled:opacity-30" onClick={() => this.deletePolicy(table, i)}>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
-      />
+        {totalPages > 1 && (
+          <div className="px-4 py-3 border-t border-white/10 flex items-center justify-end gap-2">
+            {Array.from({length: totalPages}, (_, idx) => (
+              <button key={idx} className={`px-2 py-1 text-xs rounded ${this.state.page === idx + 1 ? "bg-blue-600 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"}`} onClick={() => this.setState({page: idx + 1})}>
+                {idx + 1}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     );
   }
 
   render() {
     return (
       <React.Fragment>
-        <Button disabled={this.state.editingIndex !== "" || this.props.enforcer.model === "" || this.props.enforcer.adapter === ""} style={{marginBottom: "10px", width: "150px"}} type="primary" onClick={() => {this.getPolicies();}}>
+        <button
+          className="mb-3 px-4 py-2 text-sm font-medium rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
+          disabled={this.state.editingIndex !== "" || this.props.enforcer.model === "" || this.props.enforcer.adapter === ""}
+          onClick={() => this.getPolicies()}
+        >
           {i18next.t("general:Sync")}
-        </Button>
-        {
-          this.renderTable(this.state.policyLists)
-        }
+        </button>
+        {this.renderTable(this.state.policyLists)}
       </React.Fragment>
     );
   }

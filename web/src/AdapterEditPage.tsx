@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2022 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,321 +13,144 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import React from "react";
-import {Button, Card, Col, Input, InputNumber, Row, Select, Switch} from "antd";
+import React, {useEffect, useState} from "react";
 import * as AdapterBackend from "./backend/AdapterBackend";
 import * as OrganizationBackend from "./backend/OrganizationBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
+import {Button} from "./components/ui/button";
 
-const {Option} = Select;
+interface AdapterEditPageProps { account: any; history: any; match: any; location: any; organizationName?: string; }
 
-class AdapterEditPage extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      organizationName: props.organizationName !== undefined ? props.organizationName : props.match.params.organizationName,
-      adapterName: props.match.params.adapterName,
-      adapter: null,
-      organizations: [],
-      mode: props.location.mode !== undefined ? props.location.mode : "edit",
-    };
-  }
+function AdapterEditPage(props: AdapterEditPageProps) {
+  const {account, history, match, location} = props;
+  const orgFromProps = props.organizationName ?? match.params.organizationName;
+  const adapterNameFromUrl = match.params.adapterName;
 
-  UNSAFE_componentWillMount() {
-    this.getAdapter();
-    this.getOrganizations();
-  }
+  const [adapterName, setAdapterName] = useState(adapterNameFromUrl);
+  const [adapter, setAdapter] = useState<any>(null);
+  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [mode] = useState(location.mode ?? "edit");
 
-  getAdapter() {
-    AdapterBackend.getAdapter(this.state.organizationName, this.state.adapterName)
-      .then((res) => {
-        if (res.status === "ok") {
-          if (res.data === null) {
-            this.props.history.push("/404");
-            return;
-          }
+  useEffect(() => { getAdapter(); getOrganizations(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-          this.setState({
-            adapter: res.data,
-          });
-        }
-      });
-  }
-
-  getOrganizations() {
-    OrganizationBackend.getOrganizations("admin")
-      .then((res) => {
-        this.setState({
-          organizations: res.data || [],
-        });
-      });
-  }
-
-  parseAdapterField(key, value) {
-    // if ([].includes(key)) {
-    //   value = Setting.myParseInt(value);
-    // }
-    return value;
-  }
-
-  updateAdapterField(key, value) {
-    value = this.parseAdapterField(key, value);
-
-    const adapter = this.state.adapter;
-    adapter[key] = value;
-    this.setState({
-      adapter: adapter,
+  function getAdapter() {
+    AdapterBackend.getAdapter(orgFromProps, adapterNameFromUrl).then((res: any) => {
+      if (res.status === "ok") { if (res.data === null) { history.push("/404"); return; } setAdapter(res.data); }
     });
   }
 
-  renderAdapter() {
-    return (
-      <Card size="small" title={
-        <div>
-          {this.state.mode === "add" ? i18next.t("adapter:New Adapter") : i18next.t("adapter:Edit Adapter")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitAdapterEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitAdapterEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteAdapter()}>{i18next.t("general:Cancel")}</Button> : null}
+  function getOrganizations() { OrganizationBackend.getOrganizations("admin").then((res: any) => setOrganizations(res.data || [])); }
+
+  function updateField(key: string, value: any) { setAdapter((prev: any) => ({...prev, [key]: value})); }
+
+  function submitEdit(exitAfterSave: boolean) {
+    const copy = Setting.deepCopy(adapter);
+    AdapterBackend.updateAdapter(orgFromProps, adapterName, copy).then((res: any) => {
+      if (res.status === "ok") {
+        Setting.showMessage("success", i18next.t("general:Successfully saved"));
+        setAdapterName(adapter.name);
+        if (exitAfterSave) history.push("/adapters");
+        else history.push(`/adapters/${adapter.owner}/${adapter.name}`);
+      } else { Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${res.msg}`); updateField("name", adapterName); }
+    }).catch((error: any) => Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`));
+  }
+
+  function handleDelete() {
+    AdapterBackend.deleteAdapter(adapter).then((res: any) => {
+      if (res.status === "ok") history.push("/adapters");
+      else Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
+    }).catch((error: any) => Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`));
+  }
+
+  function testConnection() {
+    AdapterBackend.getPolicies("", "", `${adapter.owner}/${adapter.name}`).then((res: any) => {
+      if (res.status === "ok") Setting.showMessage("success", i18next.t("syncer:Connect successfully"));
+      else Setting.showMessage("error", i18next.t("syncer:Failed to connect") + ": " + res.msg);
+    }).catch((error: any) => Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`));
+  }
+
+  if (!adapter) return null;
+  const isBuiltIn = Setting.builtInObject(adapter);
+
+  return (
+    <div className="space-y-6">
+      <div className="border border-zinc-800 rounded-lg bg-zinc-900/30">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+          <h2 className="text-lg font-semibold text-white">{mode === "add" ? i18next.t("adapter:New Adapter") : i18next.t("adapter:Edit Adapter")}</h2>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => submitEdit(false)}>{i18next.t("general:Save")}</Button>
+            <Button onClick={() => submitEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+            {mode === "add" && <Button variant="outline" onClick={handleDelete}>{i18next.t("general:Cancel")}</Button>}
+          </div>
         </div>
-      } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} disabled={!Setting.isAdminUser(this.props.account) || Setting.builtInObject(this.state.adapter)} value={this.state.adapter.owner} onChange={(value => {
-              this.updateAdapterField("owner", value);
-            })}>
-              {
-                this.state.organizations.map((organization, index) => <Option key={index} value={organization.name}>{organization.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input disabled={Setting.builtInObject(this.state.adapter)} value={this.state.adapter.name} onChange={e => {
-              this.updateAdapterField("name", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("syncer:Table"), i18next.t("syncer:Table - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.adapter.table}
-              disabled={Setting.builtInObject(this.state.adapter)} onChange={e => {
-                this.updateAdapterField("table", e.target.value);
-              }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
-            {Setting.getLabel(i18next.t("adapter:Use same DB"), i18next.t("adapter:Use same DB - Tooltip"))} :
-          </Col>
-          <Col span={1} >
-            <Switch disabled={Setting.builtInObject(this.state.adapter)} checked={this.state.adapter.useSameDb || Setting.builtInObject(this.state.adapter)} onChange={checked => {
-              this.updateAdapterField("useSameDb", checked);
-              if (checked) {
-                this.updateAdapterField("type", "");
-                this.updateAdapterField("databaseType", "");
-                this.updateAdapterField("host", "");
-                this.updateAdapterField("port", 0);
-                this.updateAdapterField("user", "");
-                this.updateAdapterField("password", "");
-                this.updateAdapterField("database", "");
-              } else {
-                this.updateAdapterField("type", "Database");
-                this.updateAdapterField("databaseType", "mysql");
-                this.updateAdapterField("host", "localhost");
-                this.updateAdapterField("port", 3306);
-                this.updateAdapterField("user", "root");
-                this.updateAdapterField("password", "123456");
-                this.updateAdapterField("database", "dbName");
-              }
-            }} />
-          </Col>
-        </Row>
-        {
-          (this.state.adapter.useSameDb || Setting.builtInObject(this.state.adapter)) ? null : (
-            <React.Fragment>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Select virtual={false} disabled={Setting.builtInObject(this.state.adapter)} style={{width: "100%"}} value={this.state.adapter.type} onChange={(value => {
-                    this.updateAdapterField("type", value);
-                    const adapter = this.state.adapter;
-                    // adapter["tableColumns"] = Setting.getAdapterTableColumns(this.state.adapter);
-                    this.setState({
-                      adapter: adapter,
-                    });
-                  })}>
-                    {
-                      ["Database"]
-                        .map((item, index) => <Option key={index} value={item}>{item}</Option>)
-                    }
-                  </Select>
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("syncer:Database type"), i18next.t("syncer:Database type - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Select virtual={false} disabled={Setting.builtInObject(this.state.adapter)} style={{width: "100%"}} value={this.state.adapter.databaseType} onChange={(value => {this.updateAdapterField("databaseType", value);})}>
-                    {
-                      [
-                        {id: "mysql", name: "MySQL"},
-                        {id: "postgres", name: "PostgreSQL"},
-                        {id: "mssql", name: "SQL Server"},
-                        {id: "oracle", name: "Oracle"},
-                        {id: "sqlite3", name: "Sqlite 3"},
-                      ].map((databaseType, index) => <Option key={index} value={databaseType.id}>{databaseType.name}</Option>)
-                    }
-                  </Select>
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("provider:Host"), i18next.t("provider:Host - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Input value={this.state.adapter.host} onChange={e => {
-                    this.updateAdapterField("host", e.target.value);
-                  }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("provider:Port"), i18next.t("provider:Port - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <InputNumber value={this.state.adapter.port} min={0} max={65535} onChange={value => {
-                    this.updateAdapterField("port", value);
-                  }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("general:User"), i18next.t("general:User - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Input value={this.state.adapter.user} onChange={e => {
-                    this.updateAdapterField("user", e.target.value);
-                  }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("general:Password"), i18next.t("general:Password - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Input value={this.state.adapter.password} onChange={e => {
-                    this.updateAdapterField("password", e.target.value);
-                  }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("syncer:Database"), i18next.t("syncer:Database - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Input disabled={Setting.builtInObject(this.state.adapter)} value={this.state.adapter.database} onChange={e => {
-                    this.updateAdapterField("database", e.target.value);
-                  }} />
-                </Col>
-              </Row>
-            </React.Fragment>
-          )
-        }
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("provider:DB test"), i18next.t("provider:DB test - Tooltip"))} :
-          </Col>
-          <Col span={2} >
-            <Button disabled={this.state.organizationName !== this.state.adapter.owner} type={"primary"} onClick={() => {
-              AdapterBackend.getPolicies("", "", `${this.state.adapter.owner}/${this.state.adapter.name}`)
-                .then((res) => {
-                  if (res.status === "ok") {
-                    Setting.showMessage("success", i18next.t("syncer:Connect successfully"));
-                  } else {
-                    Setting.showMessage("error", i18next.t("syncer:Failed to connect") + ": " + res.msg);
-                  }
-                })
-                .catch(error => {
-                  Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-                });
-            }
-            }>{i18next.t("syncer:Test DB Connection")}</Button>
-          </Col>
-        </Row>
-      </Card>
-    );
-  }
+        <div className="p-6 space-y-5">
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Organization")}</label>
+            <select className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" disabled={!Setting.isAdminUser(account) || isBuiltIn} value={adapter.owner} onChange={e => updateField("owner", e.target.value)}>
+              {organizations.map((org: any) => <option key={org.name} value={org.name}>{org.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Name")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm disabled:opacity-60" disabled={isBuiltIn} value={adapter.name} onChange={e => updateField("name", e.target.value)} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("syncer:Table")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm disabled:opacity-60" disabled={isBuiltIn} value={adapter.table} onChange={e => updateField("table", e.target.value)} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("adapter:Use same DB")}</label>
+            <button disabled={isBuiltIn} className={`w-12 h-6 rounded-full transition-colors ${adapter.useSameDb || isBuiltIn ? "bg-primary" : "bg-zinc-700"}`} onClick={() => {
+              const checked = !adapter.useSameDb;
+              updateField("useSameDb", checked);
+              if (checked) { updateField("type", ""); updateField("databaseType", ""); updateField("host", ""); updateField("port", 0); updateField("user", ""); updateField("password", ""); updateField("database", ""); }
+              else { updateField("type", "Database"); updateField("databaseType", "mysql"); updateField("host", "localhost"); updateField("port", 3306); updateField("user", "root"); updateField("password", "123456"); updateField("database", "dbName"); }
+            }}>
+              <div className={`w-5 h-5 rounded-full bg-white transition-transform ${adapter.useSameDb || isBuiltIn ? "translate-x-6" : "translate-x-0.5"}`} />
+            </button>
+          </div>
 
-  submitAdapterEdit(exitAfterSave) {
-    const adapter = Setting.deepCopy(this.state.adapter);
-    AdapterBackend.updateAdapter(this.state.organizationName, this.state.adapterName, adapter)
-      .then((res) => {
-        if (res.status === "ok") {
-          Setting.showMessage("success", i18next.t("general:Successfully saved"));
-          this.setState({
-            organizationName: this.state.adapter.owner,
-            adapterName: this.state.adapter.name,
-          });
+          {!(adapter.useSameDb || isBuiltIn) && (
+            <>
+              <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+                <label className="text-sm text-zinc-400">{i18next.t("general:Type")}</label>
+                <select className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={adapter.type} onChange={e => updateField("type", e.target.value)}>
+                  <option value="Database">Database</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+                <label className="text-sm text-zinc-400">{i18next.t("syncer:Database type")}</label>
+                <select className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={adapter.databaseType} onChange={e => updateField("databaseType", e.target.value)}>
+                  {[{id: "mysql", name: "MySQL"}, {id: "postgres", name: "PostgreSQL"}, {id: "mssql", name: "SQL Server"}, {id: "oracle", name: "Oracle"}, {id: "sqlite3", name: "Sqlite 3"}].map(db => <option key={db.id} value={db.id}>{db.name}</option>)}
+                </select>
+              </div>
+              {[{label: i18next.t("provider:Host"), key: "host"}, {label: i18next.t("general:User"), key: "user"}, {label: i18next.t("general:Password"), key: "password"}, {label: i18next.t("syncer:Database"), key: "database"}].map(({label, key}) => (
+                <div key={key} className="grid grid-cols-[160px_1fr] items-center gap-4">
+                  <label className="text-sm text-zinc-400">{label}</label>
+                  <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={adapter[key] || ""} onChange={e => updateField(key, e.target.value)} />
+                </div>
+              ))}
+              <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+                <label className="text-sm text-zinc-400">{i18next.t("provider:Port")}</label>
+                <input type="number" className="w-40 bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" min={0} max={65535} value={adapter.port} onChange={e => updateField("port", parseInt(e.target.value) || 0)} />
+              </div>
+            </>
+          )}
 
-          if (exitAfterSave) {
-            this.props.history.push("/adapters");
-          } else {
-            this.props.history.push(`/adapters/${this.state.adapter.owner}/${this.state.adapter.name}`);
-          }
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${res.msg}`);
-          this.updateAdapterField("name", this.state.adapterName);
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-      });
-  }
-
-  deleteAdapter() {
-    AdapterBackend.deleteAdapter(this.state.adapter)
-      .then((res) => {
-        if (res.status === "ok") {
-          this.props.history.push("/adapters");
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-      });
-  }
-
-  render() {
-    return (
-      <div>
-        {
-          this.state.adapter !== null ? this.renderAdapter() : null
-        }
-        <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitAdapterEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitAdapterEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.deleteAdapter()}>{i18next.t("general:Cancel")}</Button> : null}
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("provider:DB test")}</label>
+            <Button disabled={orgFromProps !== adapter.owner} onClick={testConnection}>{i18next.t("syncer:Test DB Connection")}</Button>
+          </div>
         </div>
       </div>
-    );
-  }
+      <div className="flex gap-3 px-6">
+        <Button variant="outline" size="lg" onClick={() => submitEdit(false)}>{i18next.t("general:Save")}</Button>
+        <Button size="lg" onClick={() => submitEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+        {mode === "add" && <Button variant="outline" size="lg" onClick={handleDelete}>{i18next.t("general:Cancel")}</Button>}
+      </div>
+    </div>
+  );
 }
 
 export default AdapterEditPage;
