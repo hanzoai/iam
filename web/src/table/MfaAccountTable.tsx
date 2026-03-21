@@ -13,204 +13,138 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
-import {Button, Col, Image, Input, Popover, Row, Table, Tooltip} from "antd";
+import React, {useCallback, useRef, useState} from "react";
+import {ArrowDown, ArrowUp, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import {IamAppQrCode, IamAppUrl} from "../common/IamAppConnector";
 
-class MfaAccountTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      icon: this.props.icon,
-      mfaAccounts: this.props.table !== null ? this.props.table.map((item, index) => {
-        item.key = index;
-        return item;
-      }) : [],
-    };
-  }
+function MfaAccountTable({title, table, icon, accessToken, onUpdateTable}) {
+  const [mfaAccounts, setMfaAccounts] = useState(() =>
+    table !== null ? table.map((item, index) => ({...item, key: index})) : []
+  );
+  const [showQrCode, setShowQrCode] = useState(false);
+  const [showUrl, setShowUrl] = useState(false);
+  const countRef = useRef(table?.length ?? 0);
 
-  count = this.props.table?.length ?? 0;
-
-  updateTable(table) {
-    this.setState({
-      mfaAccounts: table,
-    });
-
-    this.props.onUpdateTable([...table].map((item) => {
+  const updateTable = useCallback((newTable) => {
+    setMfaAccounts(newTable);
+    onUpdateTable([...newTable].map((item) => {
       const newItem = Setting.deepCopy(item);
       delete newItem.key;
       return newItem;
     }));
-  }
+  }, [onUpdateTable]);
 
-  updateField(table, index, key, value) {
-    table[index][key] = value;
-    this.updateTable(table);
-  }
+  const updateField = useCallback((tbl, index, key, value) => {
+    tbl[index][key] = value;
+    updateTable([...tbl]);
+  }, [updateTable]);
 
-  addRow(table) {
-    const row = {key: this.count, accountName: "", issuer: "", secretKey: ""};
-    if (table === undefined || table === null) {
-      table = [];
-    }
+  const addRow = useCallback((tbl) => {
+    const row = {key: countRef.current, accountName: "", issuer: "", secretKey: ""};
+    let newTable = tbl ?? [];
+    countRef.current += 1;
+    newTable = Setting.addRow(newTable, row);
+    updateTable(newTable);
+  }, [updateTable]);
 
-    this.count += 1;
-    table = Setting.addRow(table, row);
-    this.updateTable(table);
-  }
+  const deleteRow = useCallback((tbl, i) => {
+    updateTable(Setting.deleteRow(tbl, i));
+  }, [updateTable]);
 
-  deleteRow(table, i) {
-    table = Setting.deleteRow(table, i);
-    this.updateTable(table);
-  }
+  const upRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i - 1, i));
+  }, [updateTable]);
 
-  upRow(table, i) {
-    table = Setting.swapRow(table, i - 1, i);
-    this.updateTable(table);
-  }
+  const downRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i, i + 1));
+  }, [updateTable]);
 
-  downRow(table, i) {
-    table = Setting.swapRow(table, i, i + 1);
-    this.updateTable(table);
-  }
-
-  renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("forget:Account"),
-        dataIndex: "accountName",
-        key: "accountName",
-        width: "400px",
-        render: (text, record, index) => {
-          return (
-            <Input size="small" value={text} onChange={e => {
-              this.updateField(table, index, "accountName", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: "Issuer",
-        dataIndex: "issuer",
-        key: "issuer",
-        width: "300px",
-        render: (text, record, index) => {
-          return (
-            <Input size="small" value={text} onChange={e => {
-              this.updateField(table, index, "issuer", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: "Origin",
-        dataIndex: "origin",
-        key: "origin",
-        render: (text, record, index) => {
-          return (
-            <Input size="small" value={text} onChange={e => {
-              this.updateField(table, index, "origin", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("provider:Secret key"),
-        dataIndex: "secretKey",
-        key: "secretKey",
-        render: (text, record, index) => {
-          return (
-            <Input.Password size="small" value={text} onChange={e => {
-              this.updateField(table, index, "secretKey", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Logo"),
-        dataIndex: "issuer",
-        key: "logo",
-        width: "60px",
-        render: (text, record, index) => (
-          <Tooltip>
-            {text ? (
-              <Image width={36} height={36} preview={false} src={`${Setting.StaticBaseUrl}/img/social_${text.toLowerCase()}.png`}
-                fallback={`${Setting.StaticBaseUrl}/img/social_default.png`} alt={text} />
-            ) : (
-              <Image width={36} height={36} preview={false} src={`${Setting.StaticBaseUrl}/img/social_default.png`} alt="default" />
+  return (
+    <div className="mt-5">
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center gap-4">
+          <span className="text-sm text-gray-300">{title}</span>
+          <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => addRow(mfaAccounts)}>
+            {i18next.t("general:Add")}
+          </button>
+          <div className="relative">
+            <button className="px-3 py-1 text-xs font-medium rounded bg-white/10 hover:bg-white/20 text-white" onClick={() => setShowQrCode(!showQrCode)}>
+              {i18next.t("general:QR Code")}
+            </button>
+            {showQrCode && (
+              <div className="absolute top-full left-0 mt-1 z-10">
+                <IamAppQrCode accessToken={accessToken} icon={icon} />
+              </div>
             )}
-          </Tooltip>
-        ),
-      },
-      {
-        title: i18next.t("general:Action"),
-        key: "action",
-        width: "100px",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Tooltip placement="bottomLeft" title={i18next.t("general:Up")}>
-                <Button style={{marginRight: "5px"}} disabled={index === 0} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Down")}>
-                <Button style={{marginRight: "5px"}} disabled={index === table.length - 1} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Delete")}>
-                <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
-              </Tooltip>
-            </div>
-          );
-        },
-      },
-    ];
-    return (
-      <Table scroll={{x: "max-content"}} rowKey="key" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button style={{marginRight: "10px"}} type="primary" size="small" onClick={() => this.addRow(table)}>
-              {i18next.t("general:Add")}
-            </Button>
-            <Popover
-              trigger="focus"
-              overlayInnerStyle={{padding: 0}}
-              content={<IamAppQrCode accessToken={this.props.accessToken} icon={this.state.icon} />}
-            >
-              <Button style={{marginRight: "10px"}} size="small">
-                {i18next.t("general:QR Code")}
-              </Button>
-            </Popover>
-            <Popover
-              trigger="click"
-              content={<IamAppUrl accessToken={this.props.accessToken} />}
-            >
-              <Button size="small">
-                {i18next.t("general:URL")}
-              </Button>
-            </Popover>
           </div>
-        )}
-      />
-    );
-  }
-
-  render() {
-    return (
-      <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
-            {
-              this.renderTable(this.state.mfaAccounts)
-            }
-          </Col>
-        </Row>
+          <div className="relative">
+            <button className="px-3 py-1 text-xs font-medium rounded bg-white/10 hover:bg-white/20 text-white" onClick={() => setShowUrl(!showUrl)}>
+              {i18next.t("general:URL")}
+            </button>
+            {showUrl && (
+              <div className="absolute top-full left-0 mt-1 z-10">
+                <IamAppUrl accessToken={accessToken} />
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "400px"}}>{i18next.t("forget:Account")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "300px"}}>Issuer</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Origin</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("provider:Secret key")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "60px"}}>{i18next.t("general:Logo")}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("general:Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mfaAccounts.map((row, i) => (
+                <tr key={row.key} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                  <td className="px-4 py-2">
+                    <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.accountName || ""} onChange={e => updateField(mfaAccounts, i, "accountName", e.target.value)} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.issuer || ""} onChange={e => updateField(mfaAccounts, i, "issuer", e.target.value)} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.origin || ""} onChange={e => updateField(mfaAccounts, i, "origin", e.target.value)} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input type="password" className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.secretKey || ""} onChange={e => updateField(mfaAccounts, i, "secretKey", e.target.value)} />
+                  </td>
+                  <td className="px-4 py-2">
+                    {row.issuer ? (
+                      <img width={36} height={36} src={`${Setting.StaticBaseUrl}/img/social_${row.issuer.toLowerCase()}.png`} onError={e => { e.target.src = `${Setting.StaticBaseUrl}/img/social_default.png`; }} alt={row.issuer} />
+                    ) : (
+                      <img width={36} height={36} src={`${Setting.StaticBaseUrl}/img/social_default.png`} alt="default" />
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button title={i18next.t("general:Up")} disabled={i === 0} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => upRow(mfaAccounts, i)}>
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button title={i18next.t("general:Down")} disabled={i === mfaAccounts.length - 1} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => downRow(mfaAccounts, i)}>
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                      <button title={i18next.t("general:Delete")} className="p-1 rounded hover:bg-white/10 text-red-400 hover:text-red-300" onClick={() => deleteRow(mfaAccounts, i)}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
 }
 
 export default MfaAccountTable;
