@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import React from "react";
-import {Button, Col, Row} from "antd";
+import React, {useEffect, useState} from "react";
 import i18next from "i18next";
 import * as UserBackend from "../backend/UserBackend";
 import * as Setting from "../Setting";
@@ -24,83 +22,72 @@ import {goToWeb3Url} from "../auth/ProviderButton";
 import AccountAvatar from "../account/AccountAvatar";
 import {WechatOfficialAccountModal} from "../auth/Util";
 
-class OAuthWidget extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      addressOptions: [],
-      affiliationOptions: [],
-    };
-  }
+interface OAuthWidgetProps {
+  application: any;
+  user: any;
+  account: any;
+  providerItem: any;
+  labelSpan: number;
+  onUpdateUserField: (key: string, value: any) => void;
+  onUnlinked: () => void;
+}
 
-  UNSAFE_componentWillMount() {
-    this.getAddressOptions(this.props.application);
-    this.getAffiliationOptions(this.props.application, this.props.user);
-  }
+const OAuthWidget = (props: OAuthWidgetProps) => {
+  const {application, user, account, providerItem, labelSpan, onUnlinked} = props;
+  const [addressOptions, setAddressOptions] = useState<any[]>([]);
+  const [affiliationOptions, setAffiliationOptions] = useState<any[]>([]);
 
-  getAddressOptions(application) {
-    if (application.affiliationUrl === "") {
+  useEffect(() => {
+    getAddressOptions(application);
+    getAffiliationOptions(application, user);
+  }, []);
+
+  const getAddressOptions = (app: any) => {
+    if (app.affiliationUrl === "") {
       return;
     }
-
-    const addressUrl = application.affiliationUrl.split("|")[0];
+    const addressUrl = app.affiliationUrl.split("|")[0];
     UserBackend.getAddressOptions(addressUrl)
-      .then((addressOptions) => {
-        this.setState({
-          addressOptions: addressOptions,
-        });
+      .then((opts: any) => {
+        setAddressOptions(opts);
       });
-  }
+  };
 
-  getAffiliationOptions(application, user) {
-    if (application.affiliationUrl === "") {
+  const getAffiliationOptions = (app: any, u: any) => {
+    if (app.affiliationUrl === "") {
       return;
     }
-
-    if (!user.address || user.address.length === 0) {
+    if (!u.address || u.address.length === 0) {
       return;
     }
-
-    const affiliationUrl = application.affiliationUrl.split("|")[1];
-    const code = user.address[user.address.length - 1];
+    const affiliationUrl = app.affiliationUrl.split("|")[1];
+    const code = u.address[u.address.length - 1];
     UserBackend.getAffiliationOptions(affiliationUrl, code)
-      .then((affiliationOptions) => {
-        this.setState({
-          affiliationOptions: affiliationOptions,
-        });
+      .then((opts: any) => {
+        setAffiliationOptions(opts);
       });
-  }
+  };
 
-  updateUserField(key, value) {
-    this.props.onUpdateUserField(key, value);
-  }
-
-  unlinked() {
-    this.props.onUnlinked();
-  }
-
-  getProviderLink(user, provider) {
+  const getProviderLink = (u: any, provider: any) => {
     if (provider.type === "GitHub") {
-      return `https://github.com/${this.getUserProperty(user, provider.type, "username")}`;
+      return `https://github.com/${getUserProperty(u, provider.type, "username")}`;
     } else if (provider.type === "Google") {
       return "https://mail.google.com";
     } else {
       return "";
     }
-  }
+  };
 
-  getUserProperty(user, providerType, propertyName) {
+  const getUserProperty = (u: any, providerType: string, propertyName: string) => {
     const key = `oauth_${providerType}_${propertyName}`;
-    if (user.properties === null) {return "";}
-    return user.properties[key];
-  }
+    if (u.properties === null) {return "";}
+    return u.properties[key];
+  };
 
-  unlinkUser(providerType, linkedValue) {
+  const unlinkUser = (providerType: string, linkedValue: string) => {
     const body = {
       providerType: providerType,
-      // should add the unlink user's info, cause the user may not be logged in, but a admin want to unlink the user.
-      user: this.props.user,
+      user: user,
     };
     if (providerType === "MetaMask" || providerType === "Web3Onboard") {
       import("../auth/Web3Auth")
@@ -108,11 +95,10 @@ class OAuthWidget extends React.Component {
           const delWeb3AuthToken = module.delWeb3AuthToken;
           delWeb3AuthToken(linkedValue);
           AuthBackend.unlink(body)
-            .then((res) => {
+            .then((res: any) => {
               if (res.status === "ok") {
                 Setting.showMessage("success", "Unlinked successfully");
-
-                this.unlinked();
+                onUnlinked();
               } else {
                 Setting.showMessage("error", `${i18next.t("general:Failed to unlink")}: ${res.msg}`);
               }
@@ -121,114 +107,120 @@ class OAuthWidget extends React.Component {
       return;
     }
     AuthBackend.unlink(body)
-      .then((res) => {
+      .then((res: any) => {
         if (res.status === "ok") {
           Setting.showMessage("success", "Unlinked successfully");
-
-          this.unlinked();
+          onUnlinked();
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to unlink")}: ${res.msg}`);
         }
       });
+  };
+
+  const provider = providerItem.provider;
+  const linkedValue = user[provider.type.toLowerCase()];
+  const profileUrl = getProviderLink(user, provider);
+  const id = getUserProperty(user, provider.type, "id");
+  const username = getUserProperty(user, provider.type, "username");
+  const displayName = getUserProperty(user, provider.type, "displayName");
+  const email = getUserProperty(user, provider.type, "email");
+  let avatarUrl = getUserProperty(user, provider.type, "avatarUrl");
+
+  if (avatarUrl === "" || avatarUrl === undefined) {
+    avatarUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAeCAQAAACROWYpAAAAHElEQVR42mNkoAAwjmoe1TyqeVTzqOZRzcNZMwB18wAfEFQkPQAAAABJRU5ErkJggg==";
   }
 
-  renderIdp(user, application, providerItem) {
-    const provider = providerItem.provider;
-    const linkedValue = user[provider.type.toLowerCase()];
-    const profileUrl = this.getProviderLink(user, provider);
-    const id = this.getUserProperty(user, provider.type, "id");
-    const username = this.getUserProperty(user, provider.type, "username");
-    const displayName = this.getUserProperty(user, provider.type, "displayName");
-    const email = this.getUserProperty(user, provider.type, "email");
-    let avatarUrl = this.getUserProperty(user, provider.type, "avatarUrl");
-    // the account user
-    const account = this.props.account;
-
-    if (avatarUrl === "" || avatarUrl === undefined) {
-      avatarUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAeCAQAAACROWYpAAAAHElEQVR42mNkoAAwjmoe1TyqeVTzqOZRzcNZMwB18wAfEFQkPQAAAABJRU5ErkJggg==";
+  let name = (username === undefined) ? displayName : `${displayName} (${username})`;
+  if (name === undefined) {
+    if (id !== undefined) {
+      name = id;
+    } else if (email !== undefined) {
+      name = email;
+    } else {
+      name = linkedValue;
     }
+  }
 
-    let name = (username === undefined) ? displayName : `${displayName} (${username})`;
-    if (name === undefined) {
-      if (id !== undefined) {
-        name = id;
-      } else if (email !== undefined) {
-        name = email;
-      } else {
-        name = linkedValue;
-      }
-    }
+  let linkButtonWidth = "110px";
+  if (Setting.getLanguage() === "id") {
+    linkButtonWidth = "160px";
+  }
 
-    let linkButtonWidth = "110px";
-    if (Setting.getLanguage() === "id") {
-      linkButtonWidth = "160px";
-    }
-
-    return (
-      <Row key={provider.name} style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={this.props.labelSpan}>
-          {
-            Setting.getProviderLogo(provider)
-          }
-          <span style={{marginLeft: "5px"}}>
-            {
-              `${provider.type}:`
-            }
-          </span>
-        </Col>
-        <Col span={24 - this.props.labelSpan} >
-          <AccountAvatar style={{marginRight: "10px"}} size={30} src={avatarUrl} alt={name} referrerPolicy="no-referrer" />
-          <span style={{
-            width: this.props.labelSpan === 3 ? "300px" : "200px",
-            display: (Setting.isMobile()) ? "inline" : "inline-block",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }} title={name}>
-            {
-              linkedValue === "" ? (
-                `(${i18next.t("general:empty")})`
-              ) : (
-                profileUrl === "" ? name : (
-                  <a target="_blank" rel="noreferrer" href={profileUrl}>
-                    {
-                      name
-                    }
-                  </a>
-                )
-              )
-            }
-          </span>
-          {
-            linkedValue === "" ? (
-              provider.category === "Web3" ? (
-                <Button style={{marginLeft: "20px", width: linkButtonWidth}} type="primary" disabled={user.id !== account.id} onClick={() => goToWeb3Url(application, provider, "link")}>{i18next.t("user:Link")}</Button>
-              ) : (
-                provider.type === "WeChat" && provider.clientId2 !== "" && provider.clientSecret2 !== "" && provider.disableSsl === true && !navigator.userAgent.includes("MicroMessenger") ? (
-                  <a key={provider.displayName}>
-                    <Button style={{marginLeft: "20px", width: linkButtonWidth}} type="primary" disabled={user.id !== account.id} onClick={
-                      () => {
-                        WechatOfficialAccountModal(application, provider, "link");
-                      }
-                    }>{i18next.t("user:Link")}</Button>
-                  </a>
-                ) : (
-                  <a key={provider.displayName} href={user.id !== account.id ? null : Provider.getAuthUrl(application, provider, "link")}>
-                    <Button style={{marginLeft: "20px", width: linkButtonWidth}} type="primary" disabled={user.id !== account.id}>{i18next.t("user:Link")}</Button>
-                  </a>
-                )
-              )
-            ) : (
-              <Button disabled={!providerItem.canUnlink && !Setting.isAdminUser(account)} style={{marginLeft: "20px", width: linkButtonWidth}} onClick={() => this.unlinkUser(provider.type, linkedValue)}>{i18next.t("user:Unlink")}</Button>
+  return (
+    <div className="flex items-start mt-5 gap-4">
+      <div className="mt-1 min-w-0" style={{flex: `0 0 ${(labelSpan / 24) * 100}%`}}>
+        <span className="flex items-center gap-1">
+          {Setting.getProviderLogo(provider)}
+          <span className="text-sm text-gray-400 ml-1">{`${provider.type}:`}</span>
+        </span>
+      </div>
+      <div className="flex-1 flex items-center gap-2">
+        <AccountAvatar style={{marginRight: "10px"}} size={30} src={avatarUrl} alt={name} referrerPolicy="no-referrer" />
+        <span
+          className="text-sm text-white truncate inline-block"
+          style={{
+            width: labelSpan === 3 ? "300px" : "200px",
+            display: Setting.isMobile() ? "inline" : "inline-block",
+          }}
+          title={name}
+        >
+          {linkedValue === "" ? (
+            `(${i18next.t("general:empty")})`
+          ) : (
+            profileUrl === "" ? name : (
+              <a target="_blank" rel="noreferrer" href={profileUrl} className="text-white hover:underline">
+                {name}
+              </a>
             )
-          }
-        </Col>
-      </Row>
-    );
-  }
-
-  render() {
-    return this.renderIdp(this.props.user, this.props.application, this.props.providerItem);
-  }
-}
+          )}
+        </span>
+        {linkedValue === "" ? (
+          provider.category === "Web3" ? (
+            <button
+              style={{marginLeft: "20px", width: linkButtonWidth}}
+              className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+              disabled={user.id !== account.id}
+              onClick={() => goToWeb3Url(application, provider, "link")}
+            >
+              {i18next.t("user:Link")}
+            </button>
+          ) : (
+            provider.type === "WeChat" && provider.clientId2 !== "" && provider.clientSecret2 !== "" && provider.disableSsl === true && !navigator.userAgent.includes("MicroMessenger") ? (
+              <button
+                style={{marginLeft: "20px", width: linkButtonWidth}}
+                className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                disabled={user.id !== account.id}
+                onClick={() => {
+                  WechatOfficialAccountModal(application, provider, "link");
+                }}
+              >
+                {i18next.t("user:Link")}
+              </button>
+            ) : (
+              <a href={user.id !== account.id ? undefined : Provider.getAuthUrl(application, provider, "link")}>
+                <button
+                  style={{marginLeft: "20px", width: linkButtonWidth}}
+                  className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                  disabled={user.id !== account.id}
+                >
+                  {i18next.t("user:Link")}
+                </button>
+              </a>
+            )
+          )
+        ) : (
+          <button
+            disabled={!providerItem.canUnlink && !Setting.isAdminUser(account)}
+            style={{marginLeft: "20px", width: linkButtonWidth}}
+            className="px-4 py-2 text-sm border border-white/20 text-white rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
+            onClick={() => unlinkUser(provider.type, linkedValue)}
+          >
+            {i18next.t("user:Unlink")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default OAuthWidget;
