@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React, {useCallback, useRef} from "react";
+import React, {useCallback} from "react";
 import {ArrowDown, ArrowUp, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
