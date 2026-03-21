@@ -14,7 +14,6 @@
 
 // @ts-nocheck
 import React from "react";
-import {Button, Col, Row, Table} from "antd";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as LdapBackend from "../backend/LdapBackend";
@@ -31,11 +30,6 @@ class LdapTable extends React.Component {
 
   updateTable(table) {
     this.props.onUpdateTable(table);
-  }
-
-  updateField(table, index, key, value) {
-    table[index][key] = value;
-    this.updateTable(table);
   }
 
   newLdap() {
@@ -60,16 +54,13 @@ class LdapTable extends React.Component {
       .then((res) => {
         if (res.status === "ok") {
           Setting.showMessage("success", i18next.t("general:Successfully added"));
-          if (table === undefined) {
-            table = [];
-          }
+          if (table === undefined) {table = [];}
           table = Setting.addRow(table, res.data2);
           this.updateTable(table);
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to add")}: ${res.msg}`);
         }
-      }
-      )
+      })
       .catch(error => {
         Setting.showMessage("error", `${i18next.t("general:Failed to add")}: ${error}`);
       });
@@ -92,109 +83,71 @@ class LdapTable extends React.Component {
   }
 
   renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("ldap:Server name"),
-        dataIndex: "serverName",
-        key: "serverName",
-        width: "160px",
-        sorter: (a, b) => a.serverName.localeCompare(b.serverName),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/ldap/${record.owner}/${record.id}`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("ldap:Server"),
-        dataIndex: "host",
-        key: "host",
-        ellipsis: true,
-        sorter: (a, b) => a.host.localeCompare(b.host),
-        render: (text, record, index) => {
-          return `${text}:${record.port}`;
-        },
-      },
-      {
-        title: i18next.t("ldap:Base DN"),
-        dataIndex: "baseDn",
-        key: "baseDn",
-        ellipsis: true,
-        sorter: (a, b) => a.baseDn.localeCompare(b.baseDn),
-      },
-      {
-        title: i18next.t("ldap:Auto Sync"),
-        dataIndex: "autoSync",
-        key: "autoSync",
-        width: "120px",
-        sorter: (a, b) => a.autoSync.localeCompare(b.autoSync),
-        render: (text, record, index) => {
-          return text === 0 ? (<span style={{color: "#faad14"}}>Disable</span>) : (
-            <span style={{color: "#52c41a"}}>{text + " mins"}</span>);
-        },
-      },
-      {
-        title: i18next.t("ldap:Last Sync"),
-        dataIndex: "lastSync",
-        key: "lastSync",
-        ellipsis: true,
-        sorter: (a, b) => a.lastSync.localeCompare(b.lastSync),
-        render: (text, record, index) => {
-          return text;
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "",
-        key: "op",
-        width: "240px",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary"
-                onClick={() => Setting.goToLink(`/ldap/sync/${record.owner}/${record.id}`)}>
-                {i18next.t("general:Sync")}
-              </Button>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}}
-                onClick={() => Setting.goToLink(`/ldap/${record.owner}/${record.id}`)}>
-                {i18next.t("general:Edit")}
-              </Button>
-              <PopconfirmModal
-                title={i18next.t("general:Sure to delete") + `: ${record.serverName} ?`}
-                onConfirm={() => this.deleteRow(table, index)}
-              >
-              </PopconfirmModal>
-            </div>
-          );
-        },
-      },
-    ];
-
     return (
-      <Table scroll={{x: "max-content"}} rowKey="id" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button style={{marginRight: "5px"}} type="primary" size="small"
-              onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
-          </div>
-        )}
-      />
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center gap-4">
+          <span className="text-sm text-gray-300">{this.props.title}</span>
+          <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => this.addRow(table)}>
+            {i18next.t("general:Add")}
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "160px"}}>{i18next.t("ldap:Server name")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("ldap:Server")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("ldap:Base DN")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "120px"}}>{i18next.t("ldap:Auto Sync")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("ldap:Last Sync")}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "240px"}}>{i18next.t("general:Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(table || []).map((row, i) => (
+                <tr key={row.id} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                  <td className="px-4 py-2">
+                    <Link to={`/ldap/${row.owner}/${row.id}`} className="text-blue-400 hover:text-blue-300">
+                      {row.serverName}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2 text-white truncate">{`${row.host}:${row.port}`}</td>
+                  <td className="px-4 py-2 text-white truncate">{row.baseDn}</td>
+                  <td className="px-4 py-2">
+                    {row.autoSync === 0 ? (
+                      <span className="text-yellow-400">Disable</span>
+                    ) : (
+                      <span className="text-green-400">{row.autoSync + " mins"}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-white truncate">{row.lastSync}</td>
+                  <td className="px-4 py-2 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => Setting.goToLink(`/ldap/sync/${row.owner}/${row.id}`)}>
+                        {i18next.t("general:Sync")}
+                      </button>
+                      <button className="px-3 py-1 text-xs font-medium rounded bg-white/10 hover:bg-white/20 text-white" onClick={() => Setting.goToLink(`/ldap/${row.owner}/${row.id}`)}>
+                        {i18next.t("general:Edit")}
+                      </button>
+                      <PopconfirmModal
+                        title={i18next.t("general:Sure to delete") + `: ${row.serverName} ?`}
+                        onConfirm={() => this.deleteRow(table, i)}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     );
   }
 
   render() {
     return (
-      <div>
-        <Row style={{marginTop: "20px"}}>
-          <Col span={24}>
-            {
-              this.renderTable(this.props.table)
-            }
-          </Col>
-        </Row>
+      <div className="mt-5">
+        {this.renderTable(this.props.table)}
       </div>
     );
   }
