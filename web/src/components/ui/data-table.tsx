@@ -2,11 +2,11 @@
 
 import * as React from "react"
 import {
-  type ColumnDef,
-  type ColumnFiltersState,
-  type SortingState,
-  type VisibilityState,
-  type RowSelectionState,
+  ColumnDef,
+  ColumnFiltersState,
+  SortingState,
+  VisibilityState,
+  RowSelectionState,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -172,7 +172,7 @@ function DataTable<TData, TValue>({
   )
 }
 
-export { DataTable, type DataTableProps }
+export { DataTable, DataTableProps }
 
 /** Helper to create a sortable column header. */
 export function DataTableColumnHeader<TData>({
