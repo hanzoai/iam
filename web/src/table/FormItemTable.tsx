@@ -86,7 +86,7 @@ function FormItemTable({title, table, formType, onUpdateTable}) {
             <tbody>
               {table.map((row, i) => {
                 const options = Setting.getDeduplicatedArray(items, table, "name").map(item => ({label: i18next.t(item.label), value: item.name}));
-                const selectedLabel = items.find(item => item.name === row.name)?.label || row.name;
+                const _selectedLabel = items.find(item => item.name === row.name)?.label || row.name;
                 const selectedItem = items.find(item => item.name === row.label);
                 const currentLabel = selectedItem?.label || row.label;
 
