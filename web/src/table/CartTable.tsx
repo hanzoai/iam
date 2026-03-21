@@ -14,69 +14,44 @@
 
 // @ts-nocheck
 import React from "react";
-import {Table} from "antd";
 import i18next from "i18next";
 import * as Setting from "../Setting";
 
-class CartTable extends React.Component {
-  render() {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "displayName",
-        key: "displayName",
-        width: "200px",
-      },
-      {
-        title: i18next.t("product:Image"),
-        dataIndex: "image",
-        key: "image",
-        width: "80px",
-        render: (text, record, index) => {
-          if (!text) {
-            return null;
-          }
-          return (
-            <a target="_blank" rel="noreferrer" href={text}>
-              <img src={text} alt={record.displayName} width={40} />
-            </a>
-          );
-        },
-      },
-      {
-        title: i18next.t("order:Price"),
-        dataIndex: "price",
-        key: "price",
-        width: "120px",
-        render: (text, record, index) => {
-          return Setting.getCurrencySymbol(record.currency) + text;
-        },
-      },
-      {
-        title: i18next.t("product:Quantity"),
-        dataIndex: "quantity",
-        key: "quantity",
-        width: "100px",
-      },
-      {
-        title: i18next.t("general:Detail"),
-        dataIndex: "detail",
-        key: "detail",
-      },
-    ];
+function CartTable({cart: rawCart}) {
+  const cart = rawCart || [];
 
-    const cart = this.props.cart || [];
-
-    return (
-      <Table
-        columns={columns}
-        dataSource={cart}
-        rowKey={(record) => `${record.owner}/${record.name}`}
-        size="small"
-        pagination={false}
-      />
-    );
-  }
+  return (
+    <div className="border border-white/10 rounded-lg overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-white/10 bg-white/[0.02]">
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("general:Name")}</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "80px"}}>{i18next.t("product:Image")}</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "120px"}}>{i18next.t("order:Price")}</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("product:Quantity")}</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Detail")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cart.map((row) => (
+            <tr key={`${row.owner}/${row.name}`} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+              <td className="px-4 py-2 text-white">{row.displayName}</td>
+              <td className="px-4 py-2">
+                {row.image ? (
+                  <a target="_blank" rel="noreferrer" href={row.image}>
+                    <img src={row.image} alt={row.displayName} width={40} />
+                  </a>
+                ) : null}
+              </td>
+              <td className="px-4 py-2 text-white">{Setting.getCurrencySymbol(row.currency)}{row.price}</td>
+              <td className="px-4 py-2 text-white">{row.quantity}</td>
+              <td className="px-4 py-2 text-white">{row.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export default CartTable;

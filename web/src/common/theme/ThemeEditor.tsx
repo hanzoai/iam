@@ -12,18 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {Card, ConfigProvider, Form, Layout, Switch, theme} from "antd";
+import React, {useEffect, useLayoutEffect, useState} from "react";
 import ThemePicker from "./ThemePicker";
 import ColorPicker, {GREEN_COLOR, PINK_COLOR} from "./ColorPicker";
 import RadiusPicker from "./RadiusPicker";
-import * as React from "react";
-import {useEffect, useLayoutEffect} from "react";
-import {Content} from "antd/es/layout/layout";
 import i18next from "i18next";
 import * as Conf from "../../Conf";
 
-const ThemesInfo = {
+const ThemesInfo: Record<string, any> = {
   default: {},
   dark: {
     borderRadius: 2,
@@ -38,76 +34,94 @@ const ThemesInfo = {
   },
 };
 
-const onChange = () => {};
+const noop = () => {};
 
-export default function ThemeEditor(props) {
+interface ThemeEditorProps {
+  themeData?: any;
+  onThemeChange?: (changed: any, allValues: any) => void;
+}
+
+export default function ThemeEditor(props: ThemeEditorProps) {
   const themeData = props.themeData ?? Conf.ThemeDefault;
-  const onThemeChange = props.onThemeChange ?? onChange;
+  const onThemeChange = props.onThemeChange ?? noop;
 
-  const {isCompact, themeType, ...themeToken} = themeData;
-  const isLight = themeType !== "dark";
-  const [form] = Form.useForm();
-
-  const algorithmFn = React.useMemo(() => {
-    const algorithms = [isLight ? theme.defaultAlgorithm : theme.darkAlgorithm];
-
-    if (isCompact === true) {
-      algorithms.push(theme.compactAlgorithm);
-    }
-
-    return algorithms;
-  }, [isLight, isCompact]);
+  const [formData, setFormData] = useState(themeData);
 
   useEffect(() => {
     onThemeChange(null, themeData);
-    form.setFieldsValue(themeData);
+    setFormData(themeData);
   }, []);
 
   useLayoutEffect(() => {
-    const mergedData = Object.assign(Object.assign(Object.assign({}, Conf.ThemeDefault), {themeType}), ThemesInfo[themeType]);
+    const mergedData = {
+      ...Conf.ThemeDefault,
+      themeType: formData.themeType,
+      ...ThemesInfo[formData.themeType],
+    };
     onThemeChange(null, mergedData);
-    form.setFieldsValue(mergedData);
-  }, [themeType]);
+    setFormData(mergedData);
+  }, [formData.themeType]);
+
+  const updateField = (key: string, value: any) => {
+    const newData = {...formData, [key]: value};
+    setFormData(newData);
+    onThemeChange({[key]: value}, newData);
+  };
 
   return (
-    <ConfigProvider
-      theme={{
-        token: {
-          ...themeToken,
-        },
-        hashed: true,
-        algorithm: algorithmFn,
-      }}
-    >
-      <Layout style={{width: "800px", backgroundColor: "white"}}>
-        <Content >
-          <Card
-            title={i18next.t("theme:Theme")}
-          >
-            <Form
-              form={form}
-              initialValues={themeData}
-              onValuesChange={onThemeChange}
-              labelCol={{span: 4}}
-              wrapperCol={{span: 20}}
-              style={{width: "800px"}}
-            >
-              <Form.Item label={i18next.t("theme:Theme")} name="themeType">
-                <ThemePicker />
-              </Form.Item>
-              <Form.Item label={i18next.t("theme:Primary color")} name="colorPrimary">
-                <ColorPicker />
-              </Form.Item>
-              <Form.Item label={i18next.t("theme:Border radius")} name="borderRadius">
-                <RadiusPicker />
-              </Form.Item>
-              <Form.Item label={i18next.t("theme:Is compact")} valuePropName="checked" name="isCompact">
-                <Switch />
-              </Form.Item>
-            </Form>
-          </Card>
-        </Content>
-      </Layout>
-    </ConfigProvider>
+    <div className="w-[800px] bg-black">
+      <div className="border border-white/10 rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-white mb-6">{i18next.t("theme:Theme")}</h3>
+        <div className="space-y-6">
+          <div className="flex items-start">
+            <label className="w-1/5 text-sm text-gray-400 pt-2">{i18next.t("theme:Theme")}</label>
+            <div className="flex-1">
+              <ThemePicker
+                value={formData.themeType}
+                onChange={(val: string) => updateField("themeType", val)}
+              />
+            </div>
+          </div>
+          <div className="flex items-start">
+            <label className="w-1/5 text-sm text-gray-400 pt-2">{i18next.t("theme:Primary color")}</label>
+            <div className="flex-1">
+              <ColorPicker
+                value={formData.colorPrimary}
+                onChange={(val: string) => updateField("colorPrimary", val)}
+              />
+            </div>
+          </div>
+          <div className="flex items-start">
+            <label className="w-1/5 text-sm text-gray-400 pt-2">{i18next.t("theme:Border radius")}</label>
+            <div className="flex-1">
+              <RadiusPicker
+                value={formData.borderRadius}
+                onChange={(val: number) => updateField("borderRadius", val)}
+              />
+            </div>
+          </div>
+          <div className="flex items-center">
+            <label className="w-1/5 text-sm text-gray-400">{i18next.t("theme:Is compact")}</label>
+            <div className="flex-1">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!!formData.isCompact}
+                onClick={() => updateField("isCompact", !formData.isCompact)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  formData.isCompact ? "bg-white" : "bg-white/20"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 rounded-full transition-transform ${
+                    formData.isCompact ? "translate-x-6 bg-black" : "translate-x-1 bg-gray-400"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
