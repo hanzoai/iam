@@ -15,8 +15,8 @@
 // @ts-nocheck
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Modal, Space, Switch, Table, Upload} from "antd";
-import {UploadOutlined} from "@ant-design/icons";
+import {Upload} from "antd";
+import {Upload as UploadIcon, Download, Pencil, UserRoundCheck, X} from "lucide-react";
 import moment from "moment";
 import * as OrganizationBackend from "./backend/OrganizationBackend";
 import * as Setting from "./Setting";
@@ -180,9 +180,7 @@ class UserListPage extends BaseListPage {
     OrganizationBackend.getOrganization("admin", organizationName)
       .then((res) => {
         if (res.status === "ok") {
-          this.setState({
-            organization: res.data,
-          });
+          this.setState({organization: res.data});
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to get")}: ${res.msg}`);
         }
@@ -203,7 +201,7 @@ class UserListPage extends BaseListPage {
 
   renderUpload() {
     const uploadThis = this;
-    const props = {
+    const uploadProps = {
       name: "file",
       accept: ".xlsx",
       showUploadList: false,
@@ -211,18 +209,15 @@ class UserListPage extends BaseListPage {
         const reader = new FileReader();
         reader.onload = (e) => {
           const binary = e.target.result;
-
           try {
             const workbook = XLSX.read(binary, {type: "array"});
             if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
               Setting.showMessage("error", i18next.t("general:No sheets found in file"));
               return;
             }
-
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
             const jsonData = XLSX.utils.sheet_to_json(worksheet);
             this.setState({uploadJsonData: jsonData, file: file});
-
             const columns = Setting.getUserColumns().map(el => {
               return {title: el.split("#")[0], dataIndex: el, key: el};
             });
@@ -231,11 +226,9 @@ class UserListPage extends BaseListPage {
             Setting.showMessage("error", `${i18next.t("general:Failed to upload")}: ${err.message}`);
           }
         };
-
         reader.onerror = (error) => {
           Setting.showMessage("error", `${i18next.t("general:Failed to upload")}: ${error?.message || error}`);
         };
-
         reader.readAsArrayBuffer(file);
         return false;
       },
@@ -243,362 +236,219 @@ class UserListPage extends BaseListPage {
 
     return (
       <>
-        <Upload {...props}>
-          <Button icon={<UploadOutlined />} id="upload-button" size="small">
+        <Upload {...uploadProps}>
+          <button className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1.5">
+            <UploadIcon size={14} />
             {i18next.t("general:Upload (.xlsx)")}
-          </Button>
+          </button>
         </Upload>
-        <Modal title={i18next.t("general:Upload (.xlsx)")}
-          width={"100%"}
-          closable={true}
-          open={this.state.showUploadModal}
-          okText={i18next.t("general:Click to Upload")}
-          onOk = {() => {
-            const formData = new FormData();
-            formData.append("file", this.state.file);
-            fetch(`${Setting.ServerUrl}/api/upload-users`, {
-              method: "post",
-              body: formData,
-              credentials: "include",
-              headers: {
-                "Accept-Language": Setting.getAcceptLanguage(),
-              },
-            })
-              .then((res) => res.json())
-              .then((res) => {uploadThis.uploadFile(res);})
-              .catch((error) => {
-                Setting.showMessage("error", `${i18next.t("general:Failed to upload")}: ${error.message}`);
-              });
-          }}
-          cancelText={i18next.t("general:Cancel")}
-          onCancel={() => {this.setState({showUploadModal: false, uploadJsonData: [], uploadColumns: []});}}
-        >
-          <div style={{marginRight: "34px"}}>
-            <Table scroll={{x: "max-content"}} dataSource={this.state.uploadJsonData} columns={this.state.uploadColumns} />
+        {this.state.showUploadModal && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+            <div className="bg-[#111] border border-white/10 rounded-xl p-6 w-full max-w-5xl max-h-[80vh] overflow-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">{i18next.t("general:Upload (.xlsx)")}</h3>
+                <button onClick={() => this.setState({showUploadModal: false, uploadJsonData: [], uploadColumns: []})} className="text-gray-400 hover:text-white">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/10">
+                      {this.state.uploadColumns?.map(col => (
+                        <th key={col.key} className="px-3 py-2 text-left text-gray-400 font-medium whitespace-nowrap">{col.title}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {this.state.uploadJsonData?.map((row, idx) => (
+                      <tr key={idx} className="border-b border-white/5">
+                        {this.state.uploadColumns?.map(col => (
+                          <td key={col.key} className="px-3 py-2 text-white whitespace-nowrap">{row[col.dataIndex]}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-end gap-3 mt-4">
+                <button
+                  className="px-4 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]"
+                  onClick={() => this.setState({showUploadModal: false, uploadJsonData: [], uploadColumns: []})}
+                >
+                  {i18next.t("general:Cancel")}
+                </button>
+                <button
+                  className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100"
+                  onClick={() => {
+                    const formData = new FormData();
+                    formData.append("file", this.state.file);
+                    fetch(`${Setting.ServerUrl}/api/upload-users`, {
+                      method: "post",
+                      body: formData,
+                      credentials: "include",
+                      headers: {"Accept-Language": Setting.getAcceptLanguage()},
+                    })
+                      .then((res) => res.json())
+                      .then((res) => {uploadThis.uploadFile(res);})
+                      .catch((error) => {
+                        Setting.showMessage("error", `${i18next.t("general:Failed to upload")}: ${error.message}`);
+                      });
+                  }}
+                >
+                  {i18next.t("general:Click to Upload")}
+                </button>
+              </div>
+            </div>
           </div>
-        </Modal>
+        )}
       </>
     );
   }
 
   renderTable(users) {
-    const columns = [
-      {
-        title: i18next.t("general:Organization"),
-        dataIndex: "owner",
-        key: "owner",
-        width: (Setting.isMobile()) ? "100px" : "120px",
-        fixed: "left",
-        sorter: true,
-        ...this.getColumnSearchProps("owner"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/organizations/${text}`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Application"),
-        dataIndex: "signupApplication",
-        key: "signupApplication",
-        width: (Setting.isMobile()) ? "100px" : "120px",
-        fixed: "left",
-        sorter: true,
-        ...this.getColumnSearchProps("signupApplication"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/applications/${record.owner}/${text}`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: (Setting.isMobile()) ? "80px" : "110px",
-        fixed: "left",
-        sorter: true,
-        ...this.getColumnSearchProps("name"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/users/${record.owner}/${text}`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Created time"),
-        dataIndex: "createdTime",
-        key: "createdTime",
-        width: "160px",
-        sorter: true,
-        render: (text, record, index) => {
-          return Setting.getFormattedDate(text);
-        },
-      },
-      {
-        title: i18next.t("general:Display name"),
-        dataIndex: "displayName",
-        key: "displayName",
-        // width: '100px',
-        sorter: true,
-        ...this.getColumnSearchProps("displayName"),
-      },
-      {
-        title: i18next.t("general:Avatar"),
-        dataIndex: "avatar",
-        key: "avatar",
-        width: "80px",
-        render: (text, record, index) => {
-          return (
-            <a target="_blank" rel="noreferrer" href={text}>
-              <AccountAvatar referrerPolicy="no-referrer" src={text} alt={text} size={50} />
-            </a>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Email"),
-        dataIndex: "email",
-        key: "email",
-        width: "160px",
-        sorter: true,
-        ...this.getColumnSearchProps("email"),
-        render: (text, record, index) => {
-          return (
-            <a href={`mailto:${text}`}>
-              {text}
-            </a>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Phone"),
-        dataIndex: "phone",
-        key: "phone",
-        width: "120px",
-        sorter: true,
-        ...this.getColumnSearchProps("phone"),
-      },
-      {
-        title: i18next.t("user:Affiliation"),
-        dataIndex: "affiliation",
-        key: "affiliation",
-        width: "140px",
-        sorter: true,
-        ...this.getColumnSearchProps("affiliation"),
-      },
-      {
-        title: i18next.t("application:Real name"),
-        dataIndex: "realName",
-        key: "realName",
-        width: "120px",
-        sorter: true,
-        ...this.getColumnSearchProps("realName"),
-      },
-      {
-        title: i18next.t("user:Is verified"),
-        dataIndex: "isVerified",
-        key: "isVerified",
-        width: "120px",
-        sorter: true,
-        render: (text, record, index) => {
-          return (
-            <Switch checked={text} disabled={true} />
-          );
-        },
-      },
-      {
-        title: i18next.t("user:Country/Region"),
-        dataIndex: "region",
-        key: "region",
-        width: "140px",
-        sorter: true,
-        ...this.getColumnSearchProps("region"),
-        render: (text, record, index) => {
-          return Setting.initCountries().getName(record.region, Setting.getLanguage(), {select: "official"});
-        },
-      },
-      {
-        title: i18next.t("general:User type"),
-        dataIndex: "type",
-        key: "type",
-        width: "120px",
-        sorter: true,
-        ...this.getColumnSearchProps("type"),
-      },
-      {
-        title: i18next.t("user:Tag"),
-        dataIndex: "tag",
-        key: "tag",
-        width: "110px",
-        sorter: true,
-        ...this.getColumnSearchProps("tag"),
-        render: (text, record, index) => {
-          if (this.state.organization?.tags?.length === 0) {
-            return text;
-          }
-
-          const tagMap = {};
-          this.state.organization?.tags?.map((tag, index) => {
-            const tokens = tag.split("|");
-            const displayValue = Setting.getLanguage() !== "zh" ? tokens[0] : tokens[1];
-            tagMap[tokens[0]] = displayValue;
-          });
-          return tagMap[text];
-        },
-      },
-      {
-        title: i18next.t("user:Register type"),
-        dataIndex: "registerType",
-        key: "registerType",
-        width: "150px",
-        sorter: true,
-        ...this.getColumnSearchProps("registerType"),
-      },
-      {
-        title: i18next.t("user:Register source"),
-        dataIndex: "registerSource",
-        key: "registerSource",
-        width: "150px",
-        sorter: true,
-        ...this.getColumnSearchProps("registerSource"),
-      },
-      {
-        title: i18next.t("user:Balance"),
-        dataIndex: "balance",
-        key: "balance",
-        width: "120px",
-        sorter: true,
-        render: (text, record, index) => {
-          return text ?? 0;
-        },
-      },
-      {
-        title: i18next.t("organization:Balance credit"),
-        dataIndex: "balanceCredit",
-        key: "balanceCredit",
-        width: "120px",
-        sorter: true,
-        render: (text, record, index) => {
-          return text ?? 0;
-        },
-      },
-      {
-        title: i18next.t("organization:Balance currency"),
-        dataIndex: "balanceCurrency",
-        key: "balanceCurrency",
-        width: "140px",
-        sorter: true,
-        render: (text, record, index) => {
-          return text || "USD";
-        },
-      },
-      {
-        title: i18next.t("user:Is admin"),
-        dataIndex: "isAdmin",
-        key: "isAdmin",
-        width: "120px",
-        sorter: true,
-        render: (text, record, index) => {
-          return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
-          );
-        },
-      },
-      {
-        title: i18next.t("user:Is forbidden"),
-        dataIndex: "isForbidden",
-        key: "isForbidden",
-        width: "110px",
-        sorter: true,
-        render: (text, record, index) => {
-          return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
-          );
-        },
-      },
-      {
-        title: i18next.t("user:Is deleted"),
-        dataIndex: "isDeleted",
-        key: "isDeleted",
-        width: "110px",
-        sorter: true,
-        render: (text, record, index) => {
-          return (
-            <Switch disabled checkedChildren={i18next.t("general:ON")} unCheckedChildren={i18next.t("general:OFF")} checked={text} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "",
-        key: "op",
-        width: "190px",
-        fixed: (Setting.isMobile()) ? "false" : "right",
-        render: (text, record, index) => {
-          const isTreePage = this.props.groupName !== undefined;
-          const disabled = (record.owner === this.props.account.owner && record.name === this.props.account.name) || (record.owner === "built-in" && record.name === "admin");
-          return (
-            <Space>
-              <Button size={isTreePage ? "small" : "middle"} type="primary" onClick={() => {
-                this.impersonateUser(`${record.owner}/${record.name}`);
-              }}>{i18next.t("general:Impersonation")}
-              </Button>
-              <Button size={isTreePage ? "small" : "middle"} type="primary" onClick={() => {
-                sessionStorage.setItem("userListUrl", window.location.pathname);
-                this.props.history.push(`/users/${record.owner}/${record.name}`);
-              }}>{i18next.t("general:Edit")}
-              </Button>
-              {isTreePage ?
-                <PopconfirmModal
-                  text={i18next.t("general:remove")}
-                  title={i18next.t("general:Sure to remove") + `: ${record.name} ?`}
-                  onConfirm={() => this.removeUserFromGroup(index)}
-                  disabled={disabled}
-                  size="small"
-                /> : null}
-              <PopconfirmModal
-                title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
-                onConfirm={() => this.deleteUser(index)}
-                disabled={disabled}
-                size={isTreePage ? "small" : "default"}
-              />
-            </Space>
-          );
-        },
-      },
-    ];
-
-    const filteredColumns = Setting.filterTableColumns(columns, this.props.formItems ?? this.state.formItems);
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
+    const isTreePage = this.props.groupName !== undefined;
 
     return (
-      <div>
-        <Table scroll={{x: "max-content"}} columns={filteredColumns} dataSource={users} rowKey={(record) => `${record.owner}/${record.name}`} size="middle" bordered pagination={paginationProps}
-          title={() => (
-            <div>
-              {i18next.t("general:Users")}&nbsp;&nbsp;&nbsp;&nbsp;
-              <Button style={{marginRight: "15px"}} type="primary" size="small" onClick={this.addUser.bind(this)}>{i18next.t("general:Add")} </Button>
-              <Button style={{marginRight: "15px"}} type="primary" size="small" onClick={this.generateDownloadTemplate}>{i18next.t("general:Download template")} </Button>
-              {
-                this.renderUpload()
-              }
-            </div>
-          )}
-          loading={this.state.loading}
-          onChange={this.handleTableChange}
-        />
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-white">{i18next.t("general:Users")}</h1>
+          <div className="flex gap-2">
+            <button
+              className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1.5"
+              onClick={this.generateDownloadTemplate}
+            >
+              <Download size={14} />
+              {i18next.t("general:Download template")}
+            </button>
+            {this.renderUpload()}
+            <button
+              className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-gray-100"
+              onClick={this.addUser.bind(this)}
+            >
+              {i18next.t("general:Add")}
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto border border-white/10 rounded-xl">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Organization")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Name")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Display name")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Avatar")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Email")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Phone")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("general:Created time")}</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">{i18next.t("user:Is admin")}</th>
+                <th className="px-4 py-3 text-right text-gray-400 font-medium">{i18next.t("general:Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users && users.map((record, index) => {
+                const disabled = (record.owner === this.props.account.owner && record.name === this.props.account.name) || (record.owner === "built-in" && record.name === "admin");
+                return (
+                  <tr key={`${record.owner}/${record.name}`} className="border-b border-white/5 hover:bg-white/[0.02]">
+                    <td className="px-4 py-3">
+                      <Link to={`/organizations/${record.owner}`} className="text-white hover:underline">
+                        {record.owner}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link to={`/users/${record.owner}/${record.name}`} className="text-white hover:underline">
+                        {record.name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-white">{record.displayName}</td>
+                    <td className="px-4 py-3">
+                      {record.avatar && (
+                        <a target="_blank" rel="noreferrer" href={record.avatar}>
+                          <AccountAvatar referrerPolicy="no-referrer" src={record.avatar} alt={record.avatar} size={32} />
+                        </a>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <a href={`mailto:${record.email}`} className="text-gray-400 hover:text-white">{record.email}</a>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400">{record.phone}</td>
+                    <td className="px-4 py-3 text-gray-400">{Setting.getFormattedDate(record.createdTime)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${record.isAdmin ? "bg-white/10 text-white" : "bg-white/5 text-gray-500"}`}>
+                        {record.isAdmin ? i18next.t("general:ON") : i18next.t("general:OFF")}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1"
+                          onClick={() => this.impersonateUser(`${record.owner}/${record.name}`)}
+                        >
+                          <UserRoundCheck size={12} />
+                          {i18next.t("general:Impersonation")}
+                        </button>
+                        <button
+                          className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1"
+                          onClick={() => {
+                            sessionStorage.setItem("userListUrl", window.location.pathname);
+                            this.props.history.push(`/users/${record.owner}/${record.name}`);
+                          }}
+                        >
+                          <Pencil size={12} />
+                          {i18next.t("general:Edit")}
+                        </button>
+                        {isTreePage && (
+                          <PopconfirmModal
+                            text={i18next.t("general:remove")}
+                            title={i18next.t("general:Sure to remove") + `: ${record.name} ?`}
+                            onConfirm={() => this.removeUserFromGroup(index)}
+                            disabled={disabled}
+                            size="small"
+                          />
+                        )}
+                        <PopconfirmModal
+                          title={i18next.t("general:Sure to delete") + `: ${record.name} ?`}
+                          onConfirm={() => this.deleteUser(index)}
+                          disabled={disabled}
+                          size={isTreePage ? "small" : "default"}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {(!users || users.length === 0) && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                    {this.state.loading ? i18next.t("general:Loading...") : i18next.t("general:No data")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between text-sm text-gray-400">
+          <span>{i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total)}</span>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={this.state.pagination.current <= 1}
+              className="px-3 py-1 border border-white/10 rounded text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.05]"
+              onClick={() => this.handleTableChange({...this.state.pagination, current: this.state.pagination.current - 1}, {}, {})}
+            >
+              Prev
+            </button>
+            <span className="text-white">{this.state.pagination.current}</span>
+            <button
+              disabled={this.state.pagination.current * this.state.pagination.pageSize >= this.state.pagination.total}
+              className="px-3 py-1 border border-white/10 rounded text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.05]"
+              onClick={() => this.handleTableChange({...this.state.pagination, current: this.state.pagination.current + 1}, {}, {})}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -610,24 +460,17 @@ class UserListPage extends BaseListPage {
     if (this.props.match?.path === "/users") {
       (Setting.isDefaultOrganizationSelected(this.props.account) ? UserBackend.getGlobalUsers(params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder) : UserBackend.getUsers(Setting.getRequestOrganization(this.props.account), params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder))
         .then((res) => {
-          this.setState({
-            loading: false,
-          });
+          this.setState({loading: false});
           if (res.status === "ok") {
             this.setState({
               data: res.data,
-              pagination: {
-                ...params.pagination,
-                total: res.data2,
-              },
+              pagination: {...params.pagination, total: res.data2},
               searchText: params.searchText,
               searchedColumn: params.searchedColumn,
             });
           } else {
             if (Setting.isResponseDenied(res)) {
-              this.setState({
-                isAuthorized: false,
-              });
+              this.setState({isAuthorized: false});
             } else {
               Setting.showMessage("error", res.msg);
             }
@@ -638,24 +481,17 @@ class UserListPage extends BaseListPage {
         UserBackend.getUsers(this.state.organizationName, params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder, this.props.groupName) :
         UserBackend.getUsers(this.state.organizationName, params.pagination.current, params.pagination.pageSize, field, value, sortField, sortOrder))
         .then((res) => {
-          this.setState({
-            loading: false,
-          });
+          this.setState({loading: false});
           if (res.status === "ok") {
             this.setState({
               data: res.data,
-              pagination: {
-                ...params.pagination,
-                total: res.data2,
-              },
+              pagination: {...params.pagination, total: res.data2},
               searchText: params.searchText,
               searchedColumn: params.searchedColumn,
             });
           } else {
             if (Setting.isResponseDenied(res)) {
-              this.setState({
-                isAuthorized: false,
-              });
+              this.setState({isAuthorized: false});
             } else {
               Setting.showMessage("error", res.msg);
             }
