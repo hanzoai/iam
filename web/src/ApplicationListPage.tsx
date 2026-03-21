@@ -34,7 +34,7 @@ class ApplicationListPage extends BaseListPage {
     const organizationName = Setting.getRequestOrganization(this.props.account);
     return {
       owner: "admin",
-      name: `application_${randomName}`,
+      name: `${organizationName.toLowerCase()}-${randomName}`,
       organization: organizationName,
       createdTime: moment().format(),
       displayName: `New Application - ${randomName}`,
@@ -121,7 +121,8 @@ class ApplicationListPage extends BaseListPage {
   copyApplication(i) {
     const original = this.state.data[i];
     const randomSuffix = Setting.getRandomName();
-    const newName = `${original.name}_${randomSuffix}`;
+    const orgPrefix = (original.organization || "").toLowerCase();
+    const newName = `${orgPrefix}-copy-${randomSuffix}`;
 
     const copiedApplication = {
       ...original,
