@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2023 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,9 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import React from "react";
-import {Button, Card, Col, Input, Row, Select} from "antd";
+import React, {useEffect, useState} from "react";
 import * as AdapterBackend from "./backend/AdapterBackend";
 import * as EnforcerBackend from "./backend/EnforcerBackend";
 import * as ModelBackend from "./backend/ModelBackend";
@@ -22,236 +21,121 @@ import * as OrganizationBackend from "./backend/OrganizationBackend";
 import PolicyTable from "./table/PolicyTable";
 import * as Setting from "./Setting";
 import i18next from "i18next";
+import {Button} from "./components/ui/button";
 
-class EnforcerEditPage extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      organizationName: props.organizationName !== undefined ? props.organizationName : props.match.params.organizationName,
-      enforcerName: props.match.params.enforcerName,
-      enforcer: null,
-      organizations: [],
-      models: [],
-      adapters: [],
-      mode: props.location.mode !== undefined ? props.location.mode : "edit",
-    };
-  }
+interface EnforcerEditPageProps { account: any; history: any; match: any; location: any; organizationName?: string; }
 
-  UNSAFE_componentWillMount() {
-    this.getEnforcer();
-    this.getOrganizations();
-  }
+function EnforcerEditPage(props: EnforcerEditPageProps) {
+  const {account, history, match, location} = props;
+  const orgFromProps = props.organizationName ?? match.params.organizationName;
+  const enforcerNameFromUrl = match.params.enforcerName;
 
-  getEnforcer() {
-    EnforcerBackend.getEnforcer(this.state.organizationName, this.state.enforcerName, true)
-      .then((res) => {
-        if (res.data === null) {
-          this.props.history.push("/404");
-          return;
-        }
+  const [enforcerName, setEnforcerName] = useState(enforcerNameFromUrl);
+  const [enforcer, setEnforcer] = useState<any>(null);
+  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [models, setModels] = useState<any[]>([]);
+  const [adapters, setAdapters] = useState<any[]>([]);
+  const [mode] = useState(location.mode ?? "edit");
 
-        if (res.status === "error") {
-          Setting.showMessage("error", res.msg);
-          return;
-        }
+  useEffect(() => { getEnforcer(); getOrganizations(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-        this.setState({
-          enforcer: res.data,
-        });
-
-        this.getModels(this.state.organizationName);
-        this.getAdapters(this.state.organizationName);
-      });
-  }
-
-  getOrganizations() {
-    OrganizationBackend.getOrganizations("admin")
-      .then((res) => {
-        this.setState({
-          organizations: res.data || [],
-        });
-      });
-  }
-
-  getModels(organizationName) {
-    ModelBackend.getModels(organizationName)
-      .then((res) => {
-        this.setState({
-          models: res.data || [],
-        });
-      });
-  }
-
-  getAdapters(organizationName) {
-    AdapterBackend.getAdapters(organizationName)
-      .then((res) => {
-        this.setState({
-          adapters: res.data || [],
-        });
-      });
-  }
-
-  parseEnforcerField(key, value) {
-    if ([""].includes(key)) {
-      value = Setting.myParseInt(value);
-    }
-    return value;
-  }
-
-  updateEnforcerField(key, value) {
-    value = this.parseEnforcerField(key, value);
-
-    const enforcer = this.state.enforcer;
-    enforcer[key] = value;
-    this.setState({
-      enforcer: enforcer,
+  function getEnforcer() {
+    EnforcerBackend.getEnforcer(orgFromProps, enforcerNameFromUrl, true).then((res: any) => {
+      if (res.data === null) { history.push("/404"); return; }
+      if (res.status === "error") { Setting.showMessage("error", res.msg); return; }
+      setEnforcer(res.data);
+      getModels(orgFromProps);
+      getAdapters(orgFromProps);
     });
   }
 
-  renderEnforcer() {
-    return (
-      <Card size="small" title={
-        <div>
-          {this.state.mode === "add" ? i18next.t("enforcer:New Enforcer") : i18next.t("enforcer:Edit Enforcer")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitEnforcerEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitEnforcerEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteEnforcer()}>{i18next.t("general:Cancel")}</Button> : null}
+  function getOrganizations() { OrganizationBackend.getOrganizations("admin").then((res: any) => setOrganizations(res.data || [])); }
+  function getModels(org: string) { ModelBackend.getModels(org).then((res: any) => setModels(res.data || [])); }
+  function getAdapters(org: string) { AdapterBackend.getAdapters(org).then((res: any) => setAdapters(res.data || [])); }
+
+  function updateField(key: string, value: any) { setEnforcer((prev: any) => ({...prev, [key]: value})); }
+
+  function submitEdit(exitAfterSave: boolean) {
+    const copy = Setting.deepCopy(enforcer);
+    EnforcerBackend.updateEnforcer(orgFromProps, enforcerName, copy).then((res: any) => {
+      if (res.status === "ok") {
+        Setting.showMessage("success", i18next.t("general:Successfully saved"));
+        setEnforcerName(enforcer.name);
+        if (exitAfterSave) history.push("/enforcers");
+        else history.push(`/enforcers/${enforcer.owner}/${enforcer.name}`);
+      } else { Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${res.msg}`); updateField("name", enforcerName); }
+    }).catch((error: any) => Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`));
+  }
+
+  function handleDelete() {
+    EnforcerBackend.deleteEnforcer(enforcer).then((res: any) => {
+      if (res.status === "ok") history.push("/enforcers");
+      else Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
+    }).catch((error: any) => Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`));
+  }
+
+  if (!enforcer) return null;
+  const isBuiltIn = Setting.builtInObject(enforcer);
+
+  return (
+    <div className="space-y-6">
+      <div className="border border-zinc-800 rounded-lg bg-zinc-900/30">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+          <h2 className="text-lg font-semibold text-white">{mode === "add" ? i18next.t("enforcer:New Enforcer") : i18next.t("enforcer:Edit Enforcer")}</h2>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => submitEdit(false)}>{i18next.t("general:Save")}</Button>
+            <Button onClick={() => submitEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+            {mode === "add" && <Button variant="outline" onClick={handleDelete}>{i18next.t("general:Cancel")}</Button>}
+          </div>
         </div>
-      } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} disabled={!Setting.isAdminUser(this.props.account) || Setting.builtInObject(this.state.enforcer)} value={this.state.enforcer.owner} onChange={(owner => {
-              this.updateEnforcerField("owner", owner);
-              this.getModels(owner);
-              this.getAdapters(owner);
-            })}
-            options={this.state.organizations.map((organization) => Setting.getOption(organization.name, organization.name))
-            } />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input disabled={Setting.builtInObject(this.state.enforcer)} value={this.state.enforcer.name} onChange={e => {
-              this.updateEnforcerField("name", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.enforcer.displayName} onChange={e => {
-              this.updateEnforcerField("displayName", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Description"), i18next.t("general:Description - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.enforcer.description} onChange={e => {
-              this.updateEnforcerField("description", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Model"), i18next.t("general:Model - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} disabled={Setting.builtInObject(this.state.enforcer)} style={{width: "100%"}} value={this.state.enforcer.model} onChange={(model => {
-              this.updateEnforcerField("model", model);
-            })}
-            options={this.state.models.map((model) => Setting.getOption(`${model.owner}/${model.name}`, `${model.owner}/${model.name}`))
-            } />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Adapter"), i18next.t("general:Adapter - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} disabled={Setting.builtInObject(this.state.enforcer)} style={{width: "100%"}} value={this.state.enforcer.adapter} onChange={(adapter => {
-              this.updateEnforcerField("adapter", adapter);
-            })}
-            options={this.state.adapters.map((adapter) => Setting.getOption(`${adapter.owner}/${adapter.name}`, `${adapter.owner}/${adapter.name}`))
-            } />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("adapter:Policies"), i18next.t("adapter:Policies - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <PolicyTable enforcer={this.state.enforcer} modelCfg={this.state.enforcer?.modelCfg} mode={this.state.mode} />
-          </Col>
-        </Row>
-      </Card>
-    );
-  }
-
-  submitEnforcerEdit(exitAfterSave) {
-    const enforcer = Setting.deepCopy(this.state.enforcer);
-    EnforcerBackend.updateEnforcer(this.state.organizationName, this.state.enforcerName, enforcer)
-      .then((res) => {
-        if (res.status === "ok") {
-          Setting.showMessage("success", i18next.t("general:Successfully saved"));
-          this.setState({
-            enforcerName: this.state.enforcer.name,
-          });
-
-          if (exitAfterSave) {
-            this.props.history.push("/enforcers");
-          } else {
-            this.props.history.push(`/enforcers/${this.state.enforcer.owner}/${this.state.enforcer.name}`);
-          }
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to save")}: ${res.msg}`);
-          this.updateEnforcerField("name", this.state.enforcerName);
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-      });
-  }
-
-  deleteEnforcer() {
-    EnforcerBackend.deleteEnforcer(this.state.enforcer)
-      .then((res) => {
-        if (res.status === "ok") {
-          this.props.history.push("/enforcers");
-        } else {
-          Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
-        }
-      })
-      .catch(error => {
-        Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-      });
-  }
-
-  render() {
-    return (
-      <div>
-        {
-          this.state.enforcer !== null ? this.renderEnforcer() : null
-        }
-        <div style={{marginTop: "20px", marginLeft: "40px"}}>
-          <Button size="large" onClick={() => this.submitEnforcerEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" size="large" onClick={() => this.submitEnforcerEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} size="large" onClick={() => this.deleteEnforcer()}>{i18next.t("general:Cancel")}</Button> : null}
+        <div className="p-6 space-y-5">
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Organization")}</label>
+            <select className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" disabled={!Setting.isAdminUser(account) || isBuiltIn} value={enforcer.owner} onChange={e => { updateField("owner", e.target.value); getModels(e.target.value); getAdapters(e.target.value); }}>
+              {organizations.map((org: any) => <option key={org.name} value={org.name}>{org.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Name")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm disabled:opacity-60" disabled={isBuiltIn} value={enforcer.name} onChange={e => updateField("name", e.target.value)} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Display name")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={enforcer.displayName} onChange={e => updateField("displayName", e.target.value)} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Description")}</label>
+            <input className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm" value={enforcer.description || ""} onChange={e => updateField("description", e.target.value)} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Model")}</label>
+            <select className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm disabled:opacity-60" disabled={isBuiltIn} value={enforcer.model || ""} onChange={e => updateField("model", e.target.value)}>
+              <option value="">-</option>
+              {models.map((m: any) => <option key={`${m.owner}/${m.name}`} value={`${m.owner}/${m.name}`}>{m.owner}/{m.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-center gap-4">
+            <label className="text-sm text-zinc-400">{i18next.t("general:Adapter")}</label>
+            <select className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-white text-sm disabled:opacity-60" disabled={isBuiltIn} value={enforcer.adapter || ""} onChange={e => updateField("adapter", e.target.value)}>
+              <option value="">-</option>
+              {adapters.map((a: any) => <option key={`${a.owner}/${a.name}`} value={`${a.owner}/${a.name}`}>{a.owner}/{a.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-[160px_1fr] items-start gap-4">
+            <label className="text-sm text-zinc-400 pt-2">{i18next.t("adapter:Policies")}</label>
+            <div>
+              <PolicyTable enforcer={enforcer} modelCfg={enforcer?.modelCfg} mode={mode} />
+            </div>
+          </div>
         </div>
       </div>
-    );
-  }
+      <div className="flex gap-3 px-6">
+        <Button variant="outline" size="lg" onClick={() => submitEdit(false)}>{i18next.t("general:Save")}</Button>
+        <Button size="lg" onClick={() => submitEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+        {mode === "add" && <Button variant="outline" size="lg" onClick={handleDelete}>{i18next.t("general:Cancel")}</Button>}
+      </div>
+    </div>
+  );
 }
 
 export default EnforcerEditPage;

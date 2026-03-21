@@ -13,192 +13,113 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
-import {Button, Col, Input, Row, Select, Table, Tooltip} from "antd";
+import React, {useCallback} from "react";
+import {ArrowDown, ArrowUp, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
-class TokenAttributeTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-    };
-    // List of available user fields for "Existing Field" category
-    this.userFields = ["Owner", "Name", "Id", "DisplayName", "Email", "Phone", "Tag", "Roles", "Permissions", "permissionNames", "Groups"];
-  }
+const userFields = ["Owner", "Name", "Id", "DisplayName", "Email", "Phone", "Tag", "Roles", "Permissions", "permissionNames", "Groups"];
 
-  updateTable(table) {
-    this.props.onUpdateTable(table);
-  }
+function TokenAttributeTable({table, onUpdateTable}) {
+  const updateTable = useCallback((tbl) => {
+    onUpdateTable(tbl);
+  }, [onUpdateTable]);
 
-  updateField(table, index, key, value) {
-    table[index][key] = value;
-    this.updateTable(table);
-  }
+  const updateField = useCallback((tbl, index, key, value) => {
+    tbl[index][key] = value;
+    updateTable([...tbl]);
+  }, [updateTable]);
 
-  addRow(table) {
-    // Note: Field names use lowercase to match JSON serialization from backend (json:"name", json:"value", json:"type", json:"category")
+  const addRow = useCallback((tbl) => {
     const row = {name: "", value: "", type: "Array", category: "Static Value"};
-    if (table === undefined || table === null) {
-      table = [];
-    }
-    table = Setting.addRow(table, row);
-    this.updateTable(table);
-  }
+    let newTable = tbl ?? [];
+    newTable = Setting.addRow(newTable, row);
+    updateTable(newTable);
+  }, [updateTable]);
 
-  deleteRow(table, i) {
-    table = Setting.deleteRow(table, i);
-    this.updateTable(table);
-  }
+  const deleteRow = useCallback((tbl, i) => {
+    updateTable(Setting.deleteRow(tbl, i));
+  }, [updateTable]);
 
-  upRow(table, i) {
-    table = Setting.swapRow(table, i - 1, i);
-    this.updateTable(table);
-  }
+  const upRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i - 1, i));
+  }, [updateTable]);
 
-  downRow(table, i) {
-    table = Setting.swapRow(table, i, i + 1);
-    this.updateTable(table);
-  }
+  const downRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i, i + 1));
+  }, [updateTable]);
 
-  renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "200px",
-        render: (text, record, index) => {
-          return (
-            <Input value={text} onChange={e => {
-              this.updateField(table, index, "name", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Category"),
-        dataIndex: "category",
-        key: "category",
-        width: "150px",
-        render: (text, record, index) => {
-          return (
-            <Select virtual={false} style={{width: "100%"}}
-              value={text ?? "Static Value"}
-              options={[
-                {value: "Static Value", label: i18next.t("application:Static Value")},
-                {value: "Existing Field", label: i18next.t("application:Existing Field")},
-              ].map((item) =>
-                Setting.getOption(item.label, item.value))
-              }
-              onChange={value => {
-                this.updateField(table, index, "category", value);
-              }} >
-            </Select>
-          );
-        },
-      },
-      {
-        title: i18next.t("webhook:Value"),
-        dataIndex: "value",
-        key: "value",
-        width: "200px",
-        render: (text, record, index) => {
-          const category = record.category ?? "Static Value";
-          if (category === "Existing Field") {
-            // Show dropdown for existing fields
-            return (
-              <Select virtual={false} style={{width: "100%"}}
-                value={text}
-                options={this.userFields.map((field) =>
-                  Setting.getOption(field, field))
-                }
-                onChange={value => {
-                  this.updateField(table, index, "value", value);
-                }} >
-              </Select>
-            );
-          } else {
-            // Show text input for static values
-            return (
-              <Input value={text} onChange={e => {
-                this.updateField(table, index, "value", e.target.value);
-              }} />
-            );
-          }
-        },
-      },
-      {
-        title: i18next.t("general:Type"),
-        dataIndex: "type",
-        key: "type",
-        width: "150px",
-        render: (text, record, index) => {
-          return (
-            <Select virtual={false} style={{width: "100%"}}
-              value={text ?? "Array"}
-              options={[
-                {value: "Array", label: i18next.t("application:Array")},
-                {value: "String", label: i18next.t("application:String")},
-              ].map((item) =>
-                Setting.getOption(item.label, item.value))
-              }
-              onChange={value => {
-                this.updateField(table, index, "type", value);
-              }} >
-            </Select>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "action",
-        key: "action",
-        width: "20px",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Tooltip placement="bottomLeft" title={i18next.t("general:Up")}>
-                <Button style={{marginRight: "5px"}} disabled={index === 0} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Down")}>
-                <Button style={{marginRight: "5px"}} disabled={index === table.length - 1} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Delete")}>
-                <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
-              </Tooltip>
-            </div>
-          );
-        },
-      },
-    ];
-
-    return (
-      <Table title={() => (
-        <div>
-          <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
+  return (
+    <div className="mt-5">
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+          <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => addRow(table)}>
+            {i18next.t("general:Add")}
+          </button>
         </div>
-      )}
-      columns={columns} dataSource={table} rowKey="key" size="middle" bordered
-      />
-    );
-  }
-
-  render() {
-    return (
-      <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
-            {
-              this.renderTable(this.props.table)
-            }
-          </Col>
-        </Row>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/[0.02]">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("general:Name")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "150px"}}>{i18next.t("general:Category")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("webhook:Value")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "150px"}}>{i18next.t("general:Type")}</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("general:Action")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(table || []).map((row, i) => {
+              const category = row.category ?? "Static Value";
+              return (
+                <tr key={i} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                  <td className="px-4 py-2">
+                    <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.name || ""} onChange={e => updateField(table, i, "name", e.target.value)} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={category} onChange={e => updateField(table, i, "category", e.target.value)}>
+                      <option value="Static Value">{i18next.t("application:Static Value")}</option>
+                      <option value="Existing Field">{i18next.t("application:Existing Field")}</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    {category === "Existing Field" ? (
+                      <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.value || ""} onChange={e => updateField(table, i, "value", e.target.value)}>
+                        <option value="">--</option>
+                        {userFields.map(field => (
+                          <option key={field} value={field}>{field}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.value || ""} onChange={e => updateField(table, i, "value", e.target.value)} />
+                    )}
+                  </td>
+                  <td className="px-4 py-2">
+                    <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.type ?? "Array"} onChange={e => updateField(table, i, "type", e.target.value)}>
+                      <option value="Array">{i18next.t("application:Array")}</option>
+                      <option value="String">{i18next.t("application:String")}</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button title={i18next.t("general:Up")} disabled={i === 0} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => upRow(table, i)}>
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button title={i18next.t("general:Down")} disabled={i === table.length - 1} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => downRow(table, i)}>
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                      <button title={i18next.t("general:Delete")} className="p-1 rounded hover:bg-white/10 text-red-400 hover:text-red-300" onClick={() => deleteRow(table, i)}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-    );
-  }
+    </div>
+  );
 }
 
 export default TokenAttributeTable;

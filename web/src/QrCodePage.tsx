@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2023 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,88 +13,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import React from "react";
+import React, {useEffect, useState} from "react";
 import QRCode from "qrcode.react";
-import {Button, Col, Row} from "antd";
 import * as Setting from "./Setting";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import i18next from "i18next";
 
-class QrCodePage extends React.Component {
-  constructor(props) {
-    super(props);
-    const params = new URLSearchParams(window.location.search);
-    this.state = {
-      classes: props,
-      owner: props.owner ?? (props.match?.params?.owner ?? null),
-      paymentName: props.paymentName ?? (props.match?.params?.paymentName ?? null),
-      providerName: props.providerName ?? params.get("providerName"),
-      payUrl: props.payUrl ?? params.get("payUrl"),
-      successUrl: props.successUrl ?? params.get("successUrl"),
-      provider: props.provider ?? null,
-    };
-  }
+function QrCodePage(props) {
+  const params = new URLSearchParams(window.location.search);
+  const owner = props.owner ?? (props.match?.params?.owner ?? null);
+  const paymentName = props.paymentName ?? (props.match?.params?.paymentName ?? null);
+  const providerName = props.providerName ?? params.get("providerName");
+  const payUrl = props.payUrl ?? params.get("payUrl");
+  const successUrl = props.successUrl ?? params.get("successUrl");
+  const [provider, setProvider] = useState(props.provider ?? null);
 
-  async getProvider() {
-    if (!this.state.owner || !this.state.providerName) {
-      return ;
+  useEffect(() => {
+    if (props.onUpdateApplication) props.onUpdateApplication(null);
+    if (owner && providerName) {
+      ProviderBackend.getProvider(owner, providerName).then((res) => {
+        if (res.status === "ok") setProvider(res.data);
+        else Setting.showMessage("error", res.msg);
+      }).catch(err => Setting.showMessage("error", err.message));
     }
-    try {
-      const res = await ProviderBackend.getProvider(this.state.owner, this.state.providerName);
-      if (res.status !== "ok") {
-        throw new Error(res.msg);
-      }
-      const provider = res.data;
-      this.setState({
-        provider: provider,
-      });
-    } catch (err) {
-      Setting.showMessage("error", err.message);
-      return ;
-    }
-  }
+  }, []);
 
-  componentDidMount() {
-    if (this.props.onUpdateApplication) {
-      this.props.onUpdateApplication(null);
-    }
-    this.getProvider();
-  }
+  if (!payUrl || !successUrl || !owner || !paymentName) return null;
 
-  renderProviderInfo(provider) {
-    if (!provider) {
-      return null;
-    }
-    const text = i18next.t(`product:${provider.type}`);
-    return (
-      <Button style={{height: "50px", borderWidth: "2px"}} shape="round" icon={
-        <img style={{marginRight: "10px"}} width={36} height={36} src={Setting.getProviderLogoURL(provider)} alt={provider.displayName} />
-      } size={"large"} >
-        {
-          text
-        }
-      </Button>
-    );
-  }
-
-  render() {
-    if (!this.state.payUrl || !this.state.successUrl || !this.state.owner || !this.state.paymentName) {
-      return null;
-    }
-    return (
-      <div className="login-content">
-        <Col>
-          <Row style={{justifyContent: "center"}}>
-            {this.renderProviderInfo(this.state.provider)}
-          </Row>
-          <Row style={{marginTop: "10px", justifyContent: "center"}}>
-            <QRCode value={this.state.payUrl} size={this.props.size ?? 200} />
-          </Row>
-        </Col>
+  return (
+    <div className="login-content">
+      <div className="flex flex-col items-center">
+        {provider && (
+          <div className="flex items-center gap-2 border border-zinc-700 rounded-full px-4 py-2 mb-3">
+            <img className="w-9 h-9" src={Setting.getProviderLogoURL(provider)} alt={provider.displayName} />
+            <span className="text-white">{i18next.t(`product:${provider.type}`)}</span>
+          </div>
+        )}
+        <div className="mt-3 flex justify-center">
+          <QRCode value={payUrl} size={props.size ?? 200} />
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
 }
 
 export default QrCodePage;
