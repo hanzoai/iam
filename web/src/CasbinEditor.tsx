@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Copyright 2024 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,11 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
 import React, {useCallback, useEffect, useRef, useState} from "react";
 import * as Setting from "./Setting";
 import IframeEditor from "./IframeEditor";
-import {Tabs} from "antd";
 import i18next from "i18next";
 import Editor from "./common/Editor";
 
@@ -63,18 +62,23 @@ const HanzoEditor = ({model, onModelTextChange}) => {
     setLocalModelText(model.modelText);
   }, [model.modelText]);
 
+  const tabs = [
+    {key: "basic", label: i18next.t("model:Basic Editor")},
+    {key: "advanced", label: i18next.t("model:Advanced Editor")},
+  ];
+
   return (
-    <div style={{height: "100%", width: "100%", display: "flex", flexDirection: "column"}}>
-      <Tabs
-        activeKey={activeKey}
-        onChange={handleTabChange}
-        style={{flex: "0 0 auto", marginTop: "-10px"}}
-        items={[
-          {key: "basic", label: i18next.t("model:Basic Editor")},
-          {key: "advanced", label: i18next.t("model:Advanced Editor")},
-        ]}
-      />
-      <div style={{flex: "1 1 auto", overflow: "hidden"}}>
+    <div className="h-full w-full flex flex-col">
+      <div className="flex gap-1 border-b border-zinc-800 mb-2">
+        {tabs.map(tab => (
+          <button key={tab.key}
+            className={`px-4 py-2 text-sm transition-colors ${activeKey === tab.key ? "text-white border-b-2 border-white" : "text-zinc-400 hover:text-zinc-200"}`}
+            onClick={() => handleTabChange(tab.key)}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex-1 overflow-hidden">
         {activeKey === "advanced" ? (
           <IframeEditor
             ref={iframeRef}

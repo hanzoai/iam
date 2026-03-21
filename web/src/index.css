@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* Hanzo IAM Dark Theme - Matching hanzo.ai design */
 :root {
   --hanzo-bg: #0a0a0a;
