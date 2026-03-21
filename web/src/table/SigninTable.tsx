@@ -17,7 +17,6 @@ import React, {useCallback} from "react";
 import {ArrowDown, ArrowUp, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
-import Editor from "../common/Editor";
 
 export const SigninTableDefaultCssMap = {
   "Back button": ".back-button {\n      top: 65px;\n      left: 15px;\n      position: absolute;\n}\n.back-inner-button{}",
