@@ -12,20 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// @ts-nocheck
-import {Button, Modal, Progress, message} from "antd";
 import React, {useState} from "react";
 import i18next from "i18next";
+import * as Setting from "../../Setting";
 
-const FaceRecognitionCommonModal = (props) => {
+const FaceRecognitionCommonModal = (props: any) => {
   const {visible, onOk, onCancel} = props;
 
-  const videoRef = React.useRef();
-  const canvasRef = React.useRef();
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [percent, setPercent] = useState(0);
-  const mediaStreamRef = React.useRef(null);
+  const mediaStreamRef = React.useRef<MediaStream | null>(null);
   const [isCameraCaptured, setIsCameraCaptured] = useState(false);
-  const [capturedImageArray, setCapturedImageArray] = useState([]);
+  const [capturedImageArray, setCapturedImageArray] = useState<string[]>([]);
 
   React.useEffect(() => {
     if (isCameraCaptured) {
@@ -49,10 +48,10 @@ const FaceRecognitionCommonModal = (props) => {
             } else if (count2 > 3) {
               setPercent((count2 - 4) * 20);
               const canvas = document.createElement("canvas");
-              canvas.width = videoRef.current.videoWidth;
-              canvas.height = videoRef.current.videoHeight;
-              const context = canvas.getContext("2d");
-              context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+              canvas.width = videoRef.current!.videoWidth;
+              canvas.height = videoRef.current!.videoHeight;
+              const context = canvas.getContext("2d")!;
+              context.drawImage(videoRef.current!, 0, 0, canvas.width, canvas.height);
               const b64 = canvas.toDataURL("image/png");
               capturedImageArray.push(b64);
               setCapturedImageArray(capturedImageArray);
@@ -89,69 +88,46 @@ const FaceRecognitionCommonModal = (props) => {
     }
   }, [visible]);
 
-  const handleCameraError = (error) => {
+  const handleCameraError = (error: DOMException) => {
     if (error instanceof DOMException) {
       if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
-        message.error(i18next.t("login:Please ensure that you have a camera device for facial recognition"));
+        Setting.showMessage("error", i18next.t("login:Please ensure that you have a camera device for facial recognition"));
       } else if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
-        message.error(i18next.t("login:Please provide permission to access the camera"));
+        Setting.showMessage("error", i18next.t("login:Please provide permission to access the camera"));
       } else if (error.name === "NotReadableError" || error.name === "TrackStartError") {
-        message.error(i18next.t("login:The camera is currently in use by another webpage"));
+        Setting.showMessage("error", i18next.t("login:The camera is currently in use by another webpage"));
       } else if (error.name === "TypeError") {
-        message.error(i18next.t("login:Please load the webpage using HTTPS, otherwise the camera cannot be accessed"));
+        Setting.showMessage("error", i18next.t("login:Please load the webpage using HTTPS, otherwise the camera cannot be accessed"));
       } else {
-        message.error(error.message);
+        Setting.showMessage("error", error.message);
       }
     }
   };
 
-  return <div>
-    <Modal
-      closable={false}
-      maskClosable={false}
-      title={i18next.t("login:Face Recognition")}
-      width={350}
-      footer={[
-        <Button key="ok" type={"primary"} disabled={capturedImageArray.length === 0} onClick={() => {
-          onOk(capturedImageArray);
-        }}>
-        Ok
-        </Button>,
-        <Button key="back" onClick={onCancel}>
-        Cancel
-        </Button>,
-      ]}
-      destroyOnClose={true}
-      open={visible}>
-      <Progress percent={percent} />
-      <div style={{
-        marginTop: "20px",
-        marginBottom: "50px",
-        justifyContent: "center",
-        alignContent: "center",
-        position: "relative",
-        flexDirection: "column",
-      }}>
-        {
-          <div style={{display: "flex", justifyContent: "center", alignContent: "center"}}>
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+      <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-6 w-[350px]">
+        <h2 className="text-lg font-semibold text-white mb-4">{i18next.t("login:Face Recognition")}</h2>
+
+        {/* Progress bar */}
+        <div className="w-full bg-white/10 rounded-full h-2 mb-4">
+          <div
+            className="bg-white h-2 rounded-full transition-all duration-200"
+            style={{width: `${percent}%`}}
+          />
+        </div>
+
+        <div className="mt-5 mb-12 flex flex-col justify-center items-center relative">
+          <div className="flex justify-center items-center relative">
             <video
               ref={videoRef}
-              style={{
-                borderRadius: "50%",
-                height: "220px",
-                verticalAlign: "middle",
-                width: "220px",
-                objectFit: "cover",
-              }}
-            ></video>
-            <div style={{
-              position: "absolute",
-              width: "240px",
-              height: "240px",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-            }}>
+              className="rounded-full h-[220px] w-[220px] object-cover align-middle"
+            />
+            <div className="absolute w-[240px] h-[240px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
               <svg width="240" height="240" fill="none">
                 <circle
                   strokeDasharray="700"
@@ -164,15 +140,28 @@ const FaceRecognitionCommonModal = (props) => {
                   transform="rotate(-90, 120, 120)"
                   strokeLinecap="round"
                   style={{transition: "all .2s linear"}}
-                ></circle>
+                />
               </svg>
             </div>
-            <canvas ref={canvasRef} style={{position: "absolute"}} />
+            <canvas ref={canvasRef} className="absolute" />
           </div>
-        }
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <button
+            onClick={() => onOk(capturedImageArray)}
+            disabled={capturedImageArray.length === 0}
+            className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {i18next.t("general:OK")}
+          </button>
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">
+            {i18next.t("general:Cancel")}
+          </button>
+        </div>
       </div>
-    </Modal>
-  </div>;
+    </div>
+  );
 };
 
 export default FaceRecognitionCommonModal;

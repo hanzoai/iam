@@ -13,178 +13,117 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React from "react";
-import {DeleteOutlined, DownOutlined, LinkOutlined, UpOutlined} from "@ant-design/icons";
-import {Button, Col, Input, Row, Select, Table, Tooltip} from "antd";
+import React, {useCallback, useRef, useState} from "react";
+import {ArrowDown, ArrowUp, Link, Trash2} from "lucide-react";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
-const {Option} = Select;
+function ManagedAccountTable({title, table, applications, onUpdateTable}) {
+  const [managedAccounts, setManagedAccounts] = useState(() =>
+    table !== null ? table.map((item, index) => ({...item, key: index})) : []
+  );
+  const countRef = useRef(table?.length ?? 0);
 
-class ManagedAccountTable extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      classes: props,
-      managedAccounts: this.props.table !== null ? this.props.table.map((item, index) => {
-        item.key = index;
-        return item;
-      }) : [],
-    };
-  }
-
-  count = this.props.table?.length ?? 0;
-
-  updateTable(table) {
-    this.setState({
-      managedAccounts: table,
-    });
-
-    this.props.onUpdateTable([...table].map((item) => {
+  const updateTable = useCallback((newTable) => {
+    setManagedAccounts(newTable);
+    onUpdateTable([...newTable].map((item) => {
       const newItem = Setting.deepCopy(item);
       delete newItem.key;
       return newItem;
     }));
-  }
+  }, [onUpdateTable]);
 
-  updateField(table, index, key, value) {
-    table[index][key] = value;
-    this.updateTable(table);
-  }
+  const updateField = useCallback((tbl, index, key, value) => {
+    tbl[index][key] = value;
+    updateTable([...tbl]);
+  }, [updateTable]);
 
-  addRow(table) {
-    const row = {key: this.count, application: "", username: "", password: ""};
-    if (table === undefined || table === null) {
-      table = [];
-    }
+  const addRow = useCallback((tbl) => {
+    const row = {key: countRef.current, application: "", username: "", password: ""};
+    let newTable = tbl ?? [];
+    countRef.current += 1;
+    newTable = Setting.addRow(newTable, row);
+    updateTable(newTable);
+  }, [updateTable]);
 
-    this.count += 1;
-    table = Setting.addRow(table, row);
-    this.updateTable(table);
-  }
+  const deleteRow = useCallback((tbl, i) => {
+    updateTable(Setting.deleteRow(tbl, i));
+  }, [updateTable]);
 
-  deleteRow(table, i) {
-    table = Setting.deleteRow(table, i);
-    this.updateTable(table);
-  }
+  const upRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i - 1, i));
+  }, [updateTable]);
 
-  upRow(table, i) {
-    table = Setting.swapRow(table, i - 1, i);
-    this.updateTable(table);
-  }
+  const downRow = useCallback((tbl, i) => {
+    updateTable(Setting.swapRow(tbl, i, i + 1));
+  }, [updateTable]);
 
-  downRow(table, i) {
-    table = Setting.swapRow(table, i, i + 1);
-    this.updateTable(table);
-  }
+  const items = applications || [];
 
-  renderTable(table) {
-    const columns = [
-      {
-        title: i18next.t("general:Application"),
-        dataIndex: "application",
-        key: "application",
-        render: (text, record, index) => {
-          const items = this.props.applications;
-          return (
-            <Select virtual={false} size="small" style={{width: "100%"}}
-              value={text}
-              onChange={value => {
-                this.updateField(table, index, "application", value);
-              }} >
-              {
-                items.map((item, index) => <Option key={index} value={item.name}>{item.name}</Option>)
-              }
-            </Select>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Signin URL"),
-        dataIndex: "signinUrl",
-        key: "signinUrl",
-        // width: "420px",
-        render: (text, record, index) => {
-          return (
-            <Input size="small" prefix={<LinkOutlined />} value={text} onChange={e => {
-              this.updateField(table, index, "signinUrl", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("signup:Username"),
-        dataIndex: "username",
-        key: "username",
-        width: "200px",
-        render: (text, record, index) => {
-          return (
-            <Input size="small" value={text} onChange={e => {
-              this.updateField(table, index, "username", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Password"),
-        dataIndex: "password",
-        key: "password",
-        width: "200px",
-        render: (text, record, index) => {
-          return (
-            <Input.Password size="small" value={text} onChange={e => {
-              this.updateField(table, index, "password", e.target.value);
-            }} />
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Action"),
-        key: "action",
-        width: "100px",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Tooltip placement="bottomLeft" title={i18next.t("general:Up")}>
-                <Button style={{marginRight: "5px"}} disabled={index === 0} icon={<UpOutlined />} size="small" onClick={() => this.upRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Down")}>
-                <Button style={{marginRight: "5px"}} disabled={index === table.length - 1} icon={<DownOutlined />} size="small" onClick={() => this.downRow(table, index)} />
-              </Tooltip>
-              <Tooltip placement="topLeft" title={i18next.t("general:Delete")}>
-                <Button icon={<DeleteOutlined />} size="small" onClick={() => this.deleteRow(table, index)} />
-              </Tooltip>
-            </div>
-          );
-        },
-      },
-    ];
-
-    return (
-      <Table scroll={{x: "max-content"}} rowKey="key" columns={columns} dataSource={table} size="middle" bordered pagination={false}
-        title={() => (
-          <div>
-            {this.props.title}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button style={{marginRight: "5px"}} type="primary" size="small" onClick={() => this.addRow(table)}>{i18next.t("general:Add")}</Button>
-          </div>
-        )}
-      />
-    );
-  }
-
-  render() {
-    return (
-      <div>
-        <Row style={{marginTop: "20px"}} >
-          <Col span={24}>
-            {
-              this.renderTable(this.state.managedAccounts)
-            }
-          </Col>
-        </Row>
+  return (
+    <div className="mt-5">
+      <div className="border border-white/10 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center gap-4">
+          <span className="text-sm text-gray-300">{title}</span>
+          <button className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white" onClick={() => addRow(managedAccounts)}>
+            {i18next.t("general:Add")}
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Application")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{i18next.t("general:Signin URL")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("signup:Username")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase" style={{width: "200px"}}>{i18next.t("general:Password")}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase" style={{width: "100px"}}>{i18next.t("general:Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {managedAccounts.map((row, i) => (
+                <tr key={row.key} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
+                  <td className="px-4 py-2">
+                    <select className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.application || ""} onChange={e => updateField(managedAccounts, i, "application", e.target.value)}>
+                      <option value="">--</option>
+                      {items.map((item, idx) => (
+                        <option key={idx} value={item.name}>{item.name}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    <div className="flex items-center gap-2">
+                      <Link className="w-4 h-4 text-gray-500 shrink-0" />
+                      <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.signinUrl || ""} onChange={e => updateField(managedAccounts, i, "signinUrl", e.target.value)} />
+                    </div>
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.username || ""} onChange={e => updateField(managedAccounts, i, "username", e.target.value)} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input type="password" className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white" value={row.password || ""} onChange={e => updateField(managedAccounts, i, "password", e.target.value)} />
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button title={i18next.t("general:Up")} disabled={i === 0} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => upRow(managedAccounts, i)}>
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button title={i18next.t("general:Down")} disabled={i === managedAccounts.length - 1} className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30" onClick={() => downRow(managedAccounts, i)}>
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                      <button title={i18next.t("general:Delete")} className="p-1 rounded hover:bg-white/10 text-red-400 hover:text-red-300" onClick={() => deleteRow(managedAccounts, i)}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
 }
 
 export default ManagedAccountTable;
