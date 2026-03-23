@@ -191,7 +191,7 @@ func isAllowedInDemoMode(subOwner string, subName string, method string, urlPath
 			}
 			return false
 		} else if urlPath == "/api/upload-resource" {
-			if subOwner == "app" && (subName == "app-hanzo" || subName == "app-console") {
+			if subOwner == "app" && (subName == "hanzo-app" || subName == "app-console") {
 				return true
 			}
 			return false
