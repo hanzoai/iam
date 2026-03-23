@@ -131,8 +131,8 @@ func TestDefaultOrganizationIsCustomerFacing(t *testing.T) {
 	if DefaultOrganization != "hanzo" {
 		t.Fatalf("DefaultOrganization must be 'hanzo' (customer-facing), got: %s", DefaultOrganization)
 	}
-	if DefaultApplication != "app-hanzo" {
-		t.Fatalf("DefaultApplication must be 'app-hanzo' (customer-facing), got: %s", DefaultApplication)
+	if DefaultApplication != "hanzo-app" {
+		t.Fatalf("DefaultApplication must be 'hanzo-app' (customer-facing), got: %s", DefaultApplication)
 	}
 }
 
