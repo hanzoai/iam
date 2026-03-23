@@ -14,7 +14,7 @@
 
 // @ts-nocheck
 import * as Setting from "./Setting";
-import {Avatar, Button, Card, Drawer, Dropdown, Menu, Result, Tooltip} from "antd";
+import {Avatar, Button, Card, Drawer, Dropdown, Menu, Result, Spin, Tooltip} from "antd";
 import EnableMfaNotification from "./common/notifaction/EnableMfaNotification";
 import {Link, Redirect, Route, Switch, withRouter} from "react-router-dom";
 import React, {useState} from "react";
@@ -418,7 +418,11 @@ function ManagementPage(props) {
         return <Redirect to="/login" />;
       }
     } else if (props.account === undefined) {
-      return null;
+      return (
+        <div style={{display: "flex", justifyContent: "center", alignItems: "center", height: "100vh"}}>
+          <Spin size="large" tip="Loading..." />
+        </div>
+      );
     } else if (props.account.needUpdatePassword) {
       return <Redirect to={"/forget/" + props.application.name} />;
     } else {
