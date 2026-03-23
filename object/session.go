@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	DefaultApplication  = "app-hanzo"
+	DefaultApplication  = "hanzo-app"
 	DefaultOrganization = "hanzo"
 )
 
