@@ -12,6 +12,12 @@
     <link rel="apple-touch-icon" href="/favicon.ico" />
     <link rel="manifest" href="/manifest.json" />
     <title>Sign In</title>
+    <script>
+      // Polyfill for Node.js globals required by Web3Auth and other libraries
+      if (typeof global === 'undefined') { window.global = window; }
+      if (typeof process === 'undefined') { window.process = { env: {} }; }
+      if (typeof Buffer === 'undefined') { window.Buffer = window.Buffer || { isBuffer: function() { return false; } }; }
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
