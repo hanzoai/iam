@@ -14,7 +14,7 @@
 
 // @ts-nocheck
 
-export const DefaultApplication = "app-hanzo";
+export const DefaultApplication = "hanzo-app";
 
 export const CasvisorUrl = "";
 

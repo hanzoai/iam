@@ -417,7 +417,7 @@ func (c *ApiController) Logout() {
 		}
 
 		application := c.GetSessionApplication()
-		if application == nil || application.Name == "app-hanzo" || application.HomepageUrl == "" {
+		if application == nil || application.Name == "hanzo-app" || application.HomepageUrl == "" {
 			c.ResponseOk(user)
 			return
 		}
