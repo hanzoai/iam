@@ -56,7 +56,11 @@ class EntryPage extends React.Component {
       sessionStorage.setItem("from", window.location.pathname);
       return <Redirect to="/login" />;
     } else if (this.props.account === undefined) {
-      return null;
+      return (
+        <div style={{display: "flex", justifyContent: "center", alignItems: "center", height: "100vh"}}>
+          <Spin size="large" tip="Loading..." />
+        </div>
+      );
     } else {
       return component;
     }
