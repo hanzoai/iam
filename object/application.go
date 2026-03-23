@@ -790,7 +790,7 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 
-	if name == "app-hanzo" {
+	if name == "hanzo-app" {
 		application.Name = name
 	}
 
@@ -945,7 +945,7 @@ func deleteApplication(application *Application) (bool, error) {
 }
 
 func DeleteApplication(application *Application) (bool, error) {
-	if application.Name == "app-hanzo" {
+	if application.Name == "hanzo-app" {
 		return false, nil
 	}
 
