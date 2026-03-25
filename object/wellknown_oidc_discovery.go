@@ -153,7 +153,7 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 	// https://access.line.me/.well-known/openid-configuration
 	// Auth methods supported at token/introspection/revocation endpoints.
 	// RFC 6749 §2.3, RFC 7523 §2.2
-	authMethods := []string{"client_secret_basic", "client_secret_post", "private_key_jwt", "none"}
+	authMethods := []string{"client_secret_basic", "client_secret_post", "private_key_jwt"}
 
 	oidcDiscovery := OidcDiscovery{
 		Issuer:                                    issuer,
@@ -165,16 +165,16 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 		JwksUri:                                   jwksUri,
 		IntrospectionEndpoint:                     fmt.Sprintf("%s/oauth/introspect", originBackend),
 		RevocationEndpoint:                        fmt.Sprintf("%s/oauth/revoke", originBackend),
-		ResponseTypesSupported:                    []string{"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token", "none"},
+		ResponseTypesSupported:                    []string{"code"},
 		ResponseModesSupported:                    []string{"query", "fragment", "form_post"},
-		GrantTypesSupported:                       []string{"authorization_code", "implicit", "password", "client_credentials", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "urn:ietf:params:oauth:grant-type:token-exchange"},
+		GrantTypesSupported:                       []string{"authorization_code", "client_credentials", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "urn:ietf:params:oauth:grant-type:token-exchange"},
 		SubjectTypesSupported:                     []string{"public"},
 		IdTokenSigningAlgValuesSupported:          []string{"RS256", "RS512", "ES256", "ES384", "ES512"},
 		ScopesSupported:                           scopes,
 		TokenEndpointAuthMethodsSupported:         authMethods,
 		IntrospectionEndpointAuthMethodsSupported: authMethods,
 		RevocationEndpointAuthMethodsSupported:    authMethods,
-		CodeChallengeMethodsSupported:             []string{"plain", "S256"},
+		CodeChallengeMethodsSupported:             []string{"S256"},
 		ClaimsSupported:                           []string{"iss", "ver", "sub", "aud", "iat", "exp", "id", "type", "displayName", "avatar", "permanentAvatar", "email", "phone", "location", "affiliation", "title", "homepage", "bio", "tag", "region", "language", "score", "ranking", "isOnline", "isAdmin", "isForbidden", "signupApplication", "ldap"},
 		RequestParameterSupported:                 true,
 		RequestObjectSigningAlgValuesSupported:    []string{"HS256", "HS384", "HS512"},
