@@ -31,20 +31,20 @@ type InitData struct {
 	Providers     []*Provider     `json:"providers"`
 	Ldaps         []*Ldap         `json:"ldaps"`
 	Models        []*Model        `json:"models"`
-	Permissions []*Permission `json:"permissions"`
-	Resources   []*Resource   `json:"resources"`
-	Roles       []*Role       `json:"roles"`
-	Syncers     []*Syncer     `json:"syncers"`
-	Tokens      []*Token      `json:"tokens"`
-	Webhooks    []*Webhook    `json:"webhooks"`
-	Groups      []*Group      `json:"groups"`
-	Adapters    []*Adapter    `json:"adapters"`
-	Enforcers   []*Enforcer   `json:"enforcers"`
-	Invitations []*Invitation `json:"invitations"`
-	Records     []*Record     `json:"records"`
-	Sessions    []*Session    `json:"sessions"`
-	Sites       []*Site       `json:"sites"`
-	Rules       []*Rule       `json:"rules"`
+	Permissions   []*Permission   `json:"permissions"`
+	Resources     []*Resource     `json:"resources"`
+	Roles         []*Role         `json:"roles"`
+	Syncers       []*Syncer       `json:"syncers"`
+	Tokens        []*Token        `json:"tokens"`
+	Webhooks      []*Webhook      `json:"webhooks"`
+	Groups        []*Group        `json:"groups"`
+	Adapters      []*Adapter      `json:"adapters"`
+	Enforcers     []*Enforcer     `json:"enforcers"`
+	Invitations   []*Invitation   `json:"invitations"`
+	Records       []*Record       `json:"records"`
+	Sessions      []*Session      `json:"sessions"`
+	Sites         []*Site         `json:"sites"`
+	Rules         []*Rule         `json:"rules"`
 
 	EnforcerPolicies map[string][][]string `json:"enforcerPolicies"`
 }
