@@ -104,6 +104,22 @@ func FilterField(field string) bool {
 	return ReFieldWhiteList.MatchString(field)
 }
 
+// allowedOriginSuffixes is the static allowlist of trusted origin domain
+// suffixes. An origin passes if its hostname equals or is a subdomain of one
+// of these entries.
+var allowedOriginSuffixes = []string{
+	"hanzo.ai",
+	"hanzo.app",
+	"hanzo.bot",
+	"hanzo.chat",
+	"hanzo.id",
+	"hanzo.agency",
+	"hanzo.industries",
+	"lux.network",
+	"zoo.ngo",
+	"zenlm.org",
+}
+
 func IsValidOrigin(origin string) (bool, error) {
 	urlObj, err := url.Parse(origin)
 	if err != nil {
@@ -113,11 +129,32 @@ func IsValidOrigin(origin string) (bool, error) {
 		return false, nil
 	}
 
-	originHostOnly := ""
-	if urlObj.Host != "" {
-		originHostOnly = fmt.Sprintf("%s://%s", urlObj.Scheme, urlObj.Hostname())
+	host := urlObj.Hostname()
+	if host == "" {
+		return false, nil
 	}
 
-	res := originHostOnly == "http://localhost" || originHostOnly == "https://localhost" || originHostOnly == "http://127.0.0.1" || originHostOnly == "http://iam-authenticator" || strings.HasSuffix(originHostOnly, ".chromiumapp.org")
-	return res, nil
+	// Allow localhost / 127.0.0.1 for local development (any port).
+	if host == "localhost" || host == "127.0.0.1" {
+		return true, nil
+	}
+
+	// Internal K8s service name used by IAM authenticator sidecar.
+	if host == "iam-authenticator" {
+		return true, nil
+	}
+
+	// Chrome extension origins.
+	if strings.HasSuffix(host, ".chromiumapp.org") {
+		return true, nil
+	}
+
+	// Static allowlist of Hanzo-owned domains (exact match or subdomain).
+	for _, suffix := range allowedOriginSuffixes {
+		if host == suffix || strings.HasSuffix(host, "."+suffix) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
