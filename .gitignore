@@ -71,3 +71,4 @@ swagger/*.map
 ..bfg-report/
 .bfg-report/
 .do/
+.claude/
