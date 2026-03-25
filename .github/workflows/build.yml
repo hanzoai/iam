@@ -140,6 +140,11 @@ jobs:
       - run: corepack enable
       - run: pnpm install
         working-directory: ./web
+      - name: Build frontend
+        run: pnpm build
+        working-directory: ./web
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
       - name: Install Cypress binary
         run: npx cypress install
         working-directory: ./web
