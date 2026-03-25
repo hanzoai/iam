@@ -29,7 +29,7 @@ iam.hanzo.ai {
 		method OPTIONS
 	}
 	handle @cors {
-		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Origin "{http.request.header.Origin}"
 		header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
 		header Access-Control-Allow-Headers "Authorization, Content-Type, X-Org-Name"
 		respond 204
