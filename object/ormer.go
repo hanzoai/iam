@@ -23,8 +23,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
-
 	"github.com/beego/beego/v2/server/web"
 	_ "github.com/go-sql-driver/mysql" // db = mysql
 	"github.com/hanzoai/iam/conf"
@@ -345,6 +343,11 @@ func (a *Ormer) createTable() {
 		panic(err)
 	}
 
+	err = a.Engine.Sync2(new(Key))
+	if err != nil {
+		panic(err)
+	}
+
 	err = a.Engine.Sync2(new(Role))
 	if err != nil {
 		panic(err)
@@ -390,7 +393,7 @@ func (a *Ormer) createTable() {
 		panic(err)
 	}
 
-	err = a.Engine.Sync2(new(casvisorsdk.Record))
+	err = a.Engine.Sync2(new(Record))
 	if err != nil {
 		panic(err)
 	}
@@ -441,6 +444,11 @@ func (a *Ormer) createTable() {
 	}
 
 	err = a.Engine.Sync2(new(Project))
+	if err != nil {
+		panic(err)
+	}
+
+	err = a.Engine.Sync2(new(Server))
 	if err != nil {
 		panic(err)
 	}
