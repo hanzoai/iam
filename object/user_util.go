@@ -23,7 +23,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/i18n"
@@ -262,9 +261,17 @@ func SetUserOAuthProperties(organization *Organization, user *User, providerType
 
 	if userInfo.AvatarUrl != "" {
 		propertyName := fmt.Sprintf("oauth_%s_avatarUrl", providerType)
-		setUserProperty(user, propertyName, userInfo.AvatarUrl)
-		if user.Avatar == "" || user.Avatar == organization.DefaultAvatar {
-			user.Avatar = userInfo.AvatarUrl
+
+		if organization.UsePermanentAvatar {
+			err := syncOAuthAvatarToPermanentStorage(organization, user, propertyName, userInfo.AvatarUrl)
+			if err != nil {
+				return false, err
+			}
+		} else {
+			setUserProperty(user, propertyName, userInfo.AvatarUrl)
+			if user.Avatar == "" || user.Avatar == organization.DefaultAvatar {
+				user.Avatar = userInfo.AvatarUrl
+			}
 		}
 	}
 
@@ -295,6 +302,45 @@ func SetUserOAuthProperties(organization *Organization, user *User, providerType
 	}
 
 	return UpdateUserForAllFields(user.GetId(), user)
+}
+
+// syncOAuthAvatarToPermanentStorage ensures the user's avatar is stored in permanent storage.
+// It checks whether a permanent avatar already exists for the given sourceAvatarURL.
+// If not, it uploads the avatar and retrieves a permanent URL.
+// Finally, it updates the user's avatar fields with the resolved permanent URL.
+func syncOAuthAvatarToPermanentStorage(organization *Organization, user *User, propertyName, sourceAvatarUrl string) error {
+	oldAvatarUrl := getUserProperty(user, propertyName)
+
+	avatarUrl := sourceAvatarUrl
+	permanentAvatarUrl, err := getPermanentAvatarUrl(user.Owner, user.Name, sourceAvatarUrl, false)
+	if err != nil {
+		return err
+	}
+
+	if permanentAvatarUrl != "" {
+		avatarUrl = permanentAvatarUrl
+
+		if oldAvatarUrl != permanentAvatarUrl {
+			avatarUrl, err = getPermanentAvatarUrl(user.Owner, user.Name, sourceAvatarUrl, true)
+			if err != nil {
+				return err
+			}
+			if avatarUrl == "" {
+				avatarUrl = permanentAvatarUrl
+			}
+		}
+	}
+
+	setUserProperty(user, propertyName, avatarUrl)
+
+	if user.Avatar == "" ||
+		user.Avatar == organization.DefaultAvatar ||
+		user.Avatar == sourceAvatarUrl ||
+		(oldAvatarUrl != "" && user.Avatar == oldAvatarUrl) {
+		user.Avatar = avatarUrl
+	}
+
+	return nil
 }
 
 func applyUserMapping(user *User, extraClaims map[string]string, userMapping map[string]string) {
@@ -1059,7 +1105,7 @@ func TriggerWebhookForUser(action string, user *User) {
 		return
 	}
 
-	record := &casvisorsdk.Record{
+	record := &Record{
 		Name:         util.GenerateId(),
 		CreatedTime:  util.GetCurrentTime(),
 		Organization: user.Owner,
