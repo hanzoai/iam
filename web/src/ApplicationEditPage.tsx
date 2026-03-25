@@ -1559,7 +1559,10 @@ class ApplicationEditPage extends React.Component {
                   </Menu>
                 </Sider>) : null
             }
-            <Content style={{padding: "15px"}}>
+            <Content style={{padding: "15px",
+              overflowY: "auto",
+              height: "100%",
+              paddingBottom: "80px"}}>
               {this.renderApplicationForm()}
             </Content>
           </Layout>

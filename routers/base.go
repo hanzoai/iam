@@ -27,7 +27,7 @@ import (
 	"github.com/beego/beego/v2/server/web/context"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/i18n"
-	"github.com/hanzoai/iam/mcp"
+	"github.com/hanzoai/iam/mcpself"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )
@@ -140,7 +140,7 @@ func denyRequest(ctx *context.Context) {
 }
 
 func denyMcpRequest(ctx *context.Context) {
-	req := mcp.McpRequest{}
+	req := mcpself.McpRequest{}
 	err := json.Unmarshal(ctx.Input.RequestBody, &req)
 	if err != nil {
 		ctx.Output.SetStatus(http.StatusBadRequest)
@@ -153,7 +153,7 @@ func denyMcpRequest(ctx *context.Context) {
 		return
 	}
 
-	resp := mcp.BuildMcpResponse(req.ID, nil, &mcp.McpError{
+	resp := mcpself.BuildMcpResponse(req.ID, nil, &mcpself.McpError{
 		Code:    -32001,
 		Message: "Unauthorized",
 		Data:    T(ctx, "auth:Unauthorized operation"),
@@ -198,24 +198,6 @@ func getUsernameByClientIdSecret(ctx *context.Context) (string, error) {
 	}
 
 	return fmt.Sprintf("app/%s", application.Name), nil
-}
-
-func getUsernameByKeys(ctx *context.Context) (string, error) {
-	accessKey, accessSecret := getKeys(ctx)
-	user, err := object.GetUserByAccessKey(accessKey)
-	if err != nil {
-		return "", err
-	}
-
-	if user == nil {
-		return "", fmt.Errorf("user not found for access key: %s", accessKey)
-	}
-
-	if accessSecret != user.AccessSecret {
-		return "", fmt.Errorf("incorrect access secret for user: %s", user.Name)
-	}
-
-	return user.GetId(), nil
 }
 
 func getSessionUser(ctx *context.Context) string {
