@@ -106,10 +106,35 @@ func RegisterDynamicClient(req *DynamicClientRegistrationRequest, organization s
 	if len(req.GrantTypes) == 0 {
 		req.GrantTypes = []string{"authorization_code"}
 	}
+	// SECURITY: Strip insecure grant types from DCR requests.
+	// implicit, password, id_token, and token grants are disabled per OIDC security hardening.
+	var safeGrants []string
+	for _, gt := range req.GrantTypes {
+		if gt != "implicit" && gt != "password" && gt != "token" && gt != "id_token" {
+			safeGrants = append(safeGrants, gt)
+		}
+	}
+	if len(safeGrants) == 0 {
+		safeGrants = []string{"authorization_code"}
+	}
+	req.GrantTypes = safeGrants
 	if len(req.ResponseTypes) == 0 {
 		req.ResponseTypes = []string{"code"}
 	}
-	if req.TokenEndpointAuthMethod == "" {
+	// SECURITY: Strip all implicit flow response types.
+	// Only "code" is supported; "token", "id_token", and "code id_token" are rejected.
+	var safeResponseTypes []string
+	for _, rt := range req.ResponseTypes {
+		if rt != "token" && rt != "id_token" && rt != "code id_token" {
+			safeResponseTypes = append(safeResponseTypes, rt)
+		}
+	}
+	if len(safeResponseTypes) == 0 {
+		safeResponseTypes = []string{"code"}
+	}
+	req.ResponseTypes = safeResponseTypes
+	// SECURITY: Reject auth method "none" — all clients must authenticate.
+	if req.TokenEndpointAuthMethod == "" || req.TokenEndpointAuthMethod == "none" {
 		req.TokenEndpointAuthMethod = "client_secret_basic"
 	}
 	if req.ApplicationType == "" {
