@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/beego/beego/v2/core/logs"
 	"github.com/beego/beego/v2/server/web/context"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
@@ -185,6 +186,12 @@ func StaticFilter(ctx *context.Context) {
 
 	if strings.Contains(path, "/../") || !util.FileExist(path) {
 		path = webBuildFolder + "/index.html"
+	}
+	if strings.HasSuffix(path, "/index.html") {
+		err = util.AppendWebConfigCookie(ctx)
+		if err != nil {
+			logs.Error("AppendWebConfigCookie failed in StaticFilter, error: %s", err)
+		}
 	}
 	if !util.FileExist(path) {
 		dir, err := os.Getwd()
