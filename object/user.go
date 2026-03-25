@@ -1469,7 +1469,6 @@ func AddUserKeys(user *User, isAdmin bool) (bool, error) {
 	return UpdateUser(user.GetId(), user, []string{}, isAdmin)
 }
 
-
 func (user *User) IsApplicationAdmin(application *Application) bool {
 	if user == nil {
 		return false
