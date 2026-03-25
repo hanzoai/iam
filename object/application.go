@@ -764,6 +764,12 @@ func checkMultipleCaptchaProviders(application *Application, lang string) error 
 var validAppNamePattern = regexp.MustCompile(`^[a-z0-9]+-[a-z0-9]+(-[a-z0-9]+)*$`)
 
 func validateAppName(app *Application) error {
+	// System bootstrap apps (owner=admin, org=built-in) use legacy naming
+	// and are exempt from the org-prefix convention.
+	if app.Owner == "admin" && app.Organization == "built-in" {
+		return nil
+	}
+
 	if !validAppNamePattern.MatchString(app.Name) {
 		return fmt.Errorf("application name must follow '<org>-<app>' format using lowercase alphanumeric segments (e.g., 'hanzo-console'), got: %s", app.Name)
 	}
