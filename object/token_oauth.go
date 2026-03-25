@@ -140,11 +140,13 @@ func ExpireTokenByAccessToken(accessToken string) (bool, *Application, *Token, e
 }
 
 func CheckOAuthLogin(clientId string, responseType string, redirectUri string, scope string, state string, lang string) (string, *Application, error) {
-	if responseType != "code" && responseType != "token" && responseType != "id_token" {
+	// SECURITY: Only authorization code flow is supported.
+	// Implicit flow (token/id_token) has been permanently disabled.
+	if responseType != "code" {
 		if responseType == "" {
-			return i18n.Translate(lang, "token:response_type is required (must be code, token, or id_token)"), nil, nil
+			return i18n.Translate(lang, "token:response_type is required (must be code)"), nil, nil
 		}
-		return fmt.Sprintf(i18n.Translate(lang, "token:Unsupported response_type: %s (must be code, token, or id_token)"), responseType), nil, nil
+		return fmt.Sprintf("unsupported response_type: %s — only 'code' is supported", responseType), nil, nil
 	}
 
 	application, err := GetApplicationByClientId(clientId)
@@ -230,6 +232,11 @@ func GetOAuthCode(userId string, clientId string, provider string, signinMethod 
 	if challenge == "null" {
 		challenge = ""
 	}
+	// SECURITY: Only allow S256 PKCE challenge method.
+	// "plain" is rejected to prevent code interception attacks.
+	if challengeMethod == "plain" {
+		return nil, fmt.Errorf("PKCE challenge method 'plain' is not supported, use 'S256'")
+	}
 	if challengeMethod == "" || challengeMethod == "null" {
 		challengeMethod = "S256"
 	}
@@ -300,6 +307,15 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 		}, nil
 	}
 
+	// SECURITY: Hard-reject deprecated grant types regardless of application config.
+	// Implicit and password grants are permanently disabled per OIDC security hardening.
+	if grantType == "password" || grantType == "implicit" || grantType == "token" || grantType == "id_token" {
+		return &TokenError{
+			Error:            UnsupportedGrantType,
+			ErrorDescription: "This grant type has been permanently disabled",
+		}, nil
+	}
+
 	// Check if grantType is allowed in the current application
 	if !IsGrantTypeValid(grantType, application.GrantTypes) && tag == "" {
 		return &TokenError{
@@ -313,12 +329,8 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 	switch grantType {
 	case "authorization_code": // Authorization Code Grant
 		token, tokenError, err = GetAuthorizationCodeToken(application, clientSecret, code, verifier, resource)
-	case "password": //	Resource Owner Password Credentials Grant
-		token, tokenError, err = GetPasswordToken(application, username, password, scope, host)
 	case "client_credentials": // Client Credentials Grant
 		token, tokenError, err = GetClientCredentialsToken(application, clientSecret, scope, host)
-	case "token", "id_token": // Implicit Grant
-		token, tokenError, err = GetImplicitToken(application, username, scope, nonce, host)
 	case "urn:ietf:params:oauth:grant-type:jwt-bearer":
 		token, tokenError, err = GetJwtBearerToken(application, assertion, scope, nonce, host)
 	case "urn:ietf:params:oauth:grant-type:device_code":
@@ -796,13 +808,15 @@ func GetAuthorizationCodeToken(application *Application, clientSecret string, co
 
 	if token.CodeChallenge != "" {
 		// RFC 7636: verify code_verifier against stored code_challenge
-		var challengeValid bool
+		// SECURITY: Only S256 is supported. Reject "plain" challenge method
+		// to prevent interception attacks where code_challenge == code_verifier.
 		if token.CodeChallengeMethod == "plain" {
-			challengeValid = (verifier == token.CodeChallenge)
-		} else {
-			// Default to S256
-			challengeValid = (pkceChallenge(verifier) == token.CodeChallenge)
+			return nil, &TokenError{
+				Error:            InvalidRequest,
+				ErrorDescription: "PKCE challenge method 'plain' is not supported, use 'S256'",
+			}, nil
 		}
+		challengeValid := (pkceChallenge(verifier) == token.CodeChallenge)
 		if !challengeValid {
 			return nil, &TokenError{
 				Error:            InvalidGrant,
