@@ -46,7 +46,6 @@ yarn.lock
 .env
 
 # Active config (contains local credentials, use app.dev.conf as template)
-conf/app.conf
 
 # Symlinked AI agent files (LLM.md stays tracked)
 AGENTS.md
