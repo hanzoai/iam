@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/beego/beego/v2/server/web/context"
-	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )
@@ -113,7 +112,7 @@ func AfterRecordMessage(ctx *context.Context) {
 		record.Organization, record.User = owner, user
 	}
 
-	var record2 *casvisorsdk.Record
+	var record2 *object.Record
 	recordSignup := ctx.Input.Params()["recordSignup"]
 	if recordSignup == "true" {
 		record2 = object.CopyRecord(record)
