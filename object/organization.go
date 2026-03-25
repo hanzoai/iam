@@ -273,6 +273,14 @@ func UpdateOrganization(id string, organization *Organization, isGlobalAdmin boo
 		}
 	}
 
+	if organization.MasterVerificationCode != "" && organization.MasterVerificationCode != "***" {
+		credManager := cred.GetCredManager(organization.PasswordType)
+		if credManager != nil {
+			hashedCode := credManager.GetHashedPassword(organization.MasterVerificationCode, organization.PasswordSalt)
+			organization.MasterVerificationCode = hashedCode
+		}
+	}
+
 	if !isGlobalAdmin {
 		organization.NavItems = org.NavItems
 		organization.UserNavItems = org.UserNavItems
@@ -308,6 +316,16 @@ func UpdateOrganization(id string, organization *Organization, isGlobalAdmin boo
 
 func AddOrganization(organization *Organization) (bool, error) {
 	organization.PasswordType = sanitizeOrgPasswordType(organization.PasswordType)
+
+	credManager := cred.GetCredManager(organization.PasswordType)
+	if credManager != nil {
+		if organization.MasterPassword != "" {
+			organization.MasterPassword = credManager.GetHashedPassword(organization.MasterPassword, organization.PasswordSalt)
+		}
+		if organization.MasterVerificationCode != "" {
+			organization.MasterVerificationCode = credManager.GetHashedPassword(organization.MasterVerificationCode, organization.PasswordSalt)
+		}
+	}
 
 	affected, err := ormer.Engine.Insert(organization)
 	if err != nil {
