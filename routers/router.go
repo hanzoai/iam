@@ -26,7 +26,7 @@ package routers
 import (
 	"github.com/beego/beego/v2/server/web"
 	"github.com/hanzoai/iam/controllers"
-	"github.com/hanzoai/iam/mcp"
+	"github.com/hanzoai/iam/mcpself"
 )
 
 func InitAPI() {
@@ -94,7 +94,6 @@ func InitAPI() {
 	web.Router("/api/get-user-count", &controllers.ApiController{}, "GET:GetUserCount")
 	web.Router("/api/get-user", &controllers.ApiController{}, "GET:GetUser")
 	web.Router("/api/update-user", &controllers.ApiController{}, "POST:UpdateUser")
-	web.Router("/api/add-user-keys", &controllers.ApiController{}, "POST:AddUserKeys")
 	web.Router("/api/add-user", &controllers.ApiController{}, "POST:AddUser")
 	web.Router("/api/delete-user", &controllers.ApiController{}, "POST:DeleteUser")
 	web.Router("/api/upload-users", &controllers.ApiController{}, "POST:UploadUsers")
@@ -141,6 +140,13 @@ func InitAPI() {
 	web.Router("/api/add-site", &controllers.ApiController{}, "POST:AddSite")
 	web.Router("/api/delete-site", &controllers.ApiController{}, "POST:DeleteSite")
 
+	web.Router("/api/get-servers", &controllers.ApiController{}, "GET:GetServers")
+	web.Router("/api/get-server", &controllers.ApiController{}, "GET:GetServer")
+	web.Router("/api/update-server", &controllers.ApiController{}, "POST:UpdateServer")
+	web.Router("/api/add-server", &controllers.ApiController{}, "POST:AddServer")
+	web.Router("/api/delete-server", &controllers.ApiController{}, "POST:DeleteServer")
+	web.Router("/api/server/:owner/:name", &controllers.ApiController{}, "POST:ProxyServer")
+
 	web.Router("/api/get-rules", &controllers.ApiController{}, "GET:GetRules")
 	web.Router("/api/get-rule", &controllers.ApiController{}, "GET:GetRule")
 	web.Router("/api/add-rule", &controllers.ApiController{}, "POST:AddRule")
@@ -154,6 +160,13 @@ func InitAPI() {
 	web.Router("/api/add-cert", &controllers.ApiController{}, "POST:AddCert")
 	web.Router("/api/delete-cert", &controllers.ApiController{}, "POST:DeleteCert")
 	web.Router("/api/update-cert-domain-expire", &controllers.ApiController{}, "POST:UpdateCertDomainExpire")
+
+	web.Router("/api/get-keys", &controllers.ApiController{}, "GET:GetKeys")
+	web.Router("/api/get-global-keys", &controllers.ApiController{}, "GET:GetGlobalKeys")
+	web.Router("/api/get-key", &controllers.ApiController{}, "GET:GetKey")
+	web.Router("/api/update-key", &controllers.ApiController{}, "POST:UpdateKey")
+	web.Router("/api/add-key", &controllers.ApiController{}, "POST:AddKey")
+	web.Router("/api/delete-key", &controllers.ApiController{}, "POST:DeleteKey")
 
 	web.Router("/api/get-roles", &controllers.ApiController{}, "GET:GetRoles")
 	web.Router("/api/get-role", &controllers.ApiController{}, "GET:GetRole")
@@ -334,7 +347,7 @@ func InitAPI() {
 
 	web.Router("/scim/*", &controllers.RootController{}, "*:HandleScim")
 
-	web.Router("/api/mcp", &mcp.McpController{}, "POST:HandleMcp")
+	web.Router("/api/mcp", &mcpself.McpController{}, "POST:HandleMcp")
 
 	web.Router("/api/faceid-signin-begin", &controllers.ApiController{}, "GET:FaceIDSigninBegin")
 
