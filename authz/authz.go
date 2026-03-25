@@ -62,7 +62,6 @@ p, *, *, *, /api/login/oauth, *, *
 p, *, *, POST, /api/oauth/register, *, *
 p, *, *, GET, /api/get-application, *, *
 p, *, *, GET, /api/get-organization-applications, *, *
-p, *, *, GET, /api/get-user, *, *
 p, *, *, GET, /api/get-user-application, *, *
 p, *, *, POST, /api/upload-users, *, *
 p, *, *, GET, /api/get-resources, *, *
