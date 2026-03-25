@@ -309,7 +309,7 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 
 	// SECURITY: Hard-reject deprecated grant types regardless of application config.
 	// Implicit and password grants are permanently disabled per OIDC security hardening.
-	if grantType == "password" || grantType == "implicit" || grantType == "token" || grantType == "id_token" {
+	if grantType == "password" || grantType == "implicit" || grantType == "token" || grantType == "id_token" || grantType == "urn:ietf:params:oauth:grant-type:device_code" {
 		return &TokenError{
 			Error:            UnsupportedGrantType,
 			ErrorDescription: "This grant type has been permanently disabled",
@@ -333,8 +333,7 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 		token, tokenError, err = GetClientCredentialsToken(application, clientSecret, scope, host)
 	case "urn:ietf:params:oauth:grant-type:jwt-bearer":
 		token, tokenError, err = GetJwtBearerToken(application, assertion, scope, nonce, host)
-	case "urn:ietf:params:oauth:grant-type:device_code":
-		token, tokenError, err = GetImplicitToken(application, username, scope, nonce, host)
+	// device_code is hard-rejected above; no case needed
 	case "urn:ietf:params:oauth:grant-type:token-exchange": // Token Exchange Grant (RFC 8693)
 		token, tokenError, err = GetTokenExchangeToken(application, clientSecret, subjectToken, subjectTokenType, audience, scope, host)
 	case "api_key": // API Key Grant — exchange access_key + access_secret for user-bound token
@@ -406,7 +405,7 @@ func RefreshToken(application *Application, grantType string, refreshToken strin
 		}
 	}
 
-	if clientSecret != "" && application.ClientSecret != clientSecret {
+	if clientSecret != "" && subtle.ConstantTimeCompare([]byte(application.ClientSecret), []byte(clientSecret)) != 1 {
 		return &TokenError{
 			Error:            InvalidClient,
 			ErrorDescription: "client_secret is invalid",
@@ -630,7 +629,7 @@ func IsScopeValid(scope string, application *Application) bool {
 // createGuestUserToken creates a new guest user and returns a token for them
 func createGuestUserToken(application *Application, clientSecret string, verifier string) (*Token, *TokenError, error) {
 	// Verify client secret if provided
-	if clientSecret != "" && application.ClientSecret != clientSecret {
+	if clientSecret != "" && subtle.ConstantTimeCompare([]byte(application.ClientSecret), []byte(clientSecret)) != 1 {
 		return nil, &TokenError{
 			Error:            InvalidClient,
 			ErrorDescription: "client_secret is invalid",
@@ -825,7 +824,7 @@ func GetAuthorizationCodeToken(application *Application, clientSecret string, co
 		}
 	}
 
-	if application.ClientSecret != clientSecret {
+	if subtle.ConstantTimeCompare([]byte(application.ClientSecret), []byte(clientSecret)) != 1 {
 		// when using PKCE, the Client Secret can be empty,
 		// but if it is provided, it must be accurate.
 		if token.CodeChallenge == "" {
@@ -1027,7 +1026,7 @@ func GetApiKeyToken(application *Application, accessKey string, accessSecret str
 // GetClientCredentialsToken
 // Client Credentials flow
 func GetClientCredentialsToken(application *Application, clientSecret string, scope string, host string) (*Token, *TokenError, error) {
-	if application.ClientSecret != clientSecret {
+	if subtle.ConstantTimeCompare([]byte(application.ClientSecret), []byte(clientSecret)) != 1 {
 		return nil, &TokenError{
 			Error:            InvalidClient,
 			ErrorDescription: "client_secret is invalid",
@@ -1348,7 +1347,7 @@ func GetWechatMiniProgramToken(application *Application, code string, host strin
 // Exchanges a subject token for a new token with different audience or scope
 func GetTokenExchangeToken(application *Application, clientSecret string, subjectToken string, subjectTokenType string, audience string, scope string, host string) (*Token, *TokenError, error) {
 	// Verify client secret
-	if application.ClientSecret != clientSecret {
+	if subtle.ConstantTimeCompare([]byte(application.ClientSecret), []byte(clientSecret)) != 1 {
 		return nil, &TokenError{
 			Error:            InvalidClient,
 			ErrorDescription: "client_secret is invalid",
