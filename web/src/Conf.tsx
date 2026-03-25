@@ -38,7 +38,7 @@ export const ThemeDefault = {
 export const CustomFooter = null;
 
 // Blank or null to hide Ai Assistant button
-export const AiAssistantUrl = "https://ai.hanzo.ai";
+export let AiAssistantUrl = "https://ai.hanzo.ai";
 
 // Maximum number of navbar items before switching from flat to grouped menu
 export const MaxItemsForFlatMenu = 7;
