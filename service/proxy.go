@@ -25,7 +25,6 @@ import (
 	"strings"
 
 	"github.com/beego/beego/v2/core/logs"
-	"github.com/casvisor/casvisor-go-sdk/casvisorsdk"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/rule"
@@ -122,7 +121,7 @@ func getHostNonWww(host string) string {
 func logRequest(clientIp string, r *http.Request) {
 	if !strings.Contains(r.UserAgent(), "Uptime-Kuma") {
 		fmt.Printf("handleRequest: %s\t%s\t%s\t%s\t%s\t%s\n", clientIp, r.Method, r.Host, r.RequestURI, r.UserAgent(), r.RemoteAddr)
-		record := casvisorsdk.Record{
+		record := object.Record{
 			Owner:       "admin",
 			CreatedTime: util.GetCurrentTime(),
 			Method:      r.Method,
