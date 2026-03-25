@@ -54,8 +54,6 @@ func getUnifiedServiceToken() string {
 
 func isServiceTokenRoute(urlPath string) bool {
 	switch urlPath {
-	case "/api/get-user":
-		return true
 	case "/api/sync-init-data":
 		return true
 	default:
