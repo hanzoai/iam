@@ -263,7 +263,7 @@ function LoginPage(props) {
 
     if (resp.data3) {
       sessionStorage.setItem("signinUrl", window.location.pathname + window.location.search);
-      Setting.goToLinkSoft({props}, `/forget/${application.name}`);
+      Setting.goToLinkSoft({props}, "/account");
       return;
     }
 
@@ -355,7 +355,8 @@ function LoginPage(props) {
             if (responseType === "login") {
               if (res.data3) {
                 sessionStorage.setItem("signinUrl", window.location.pathname + window.location.search);
-                Setting.goToLinkSoft({props}, `/forget/${applicationName}`);
+                Setting.goToLinkSoft({props}, "/account");
+                return;
               }
               Setting.showMessage("success", i18next.t("application:Logged in successfully"));
               props.onLoginSuccess();
@@ -367,7 +368,8 @@ function LoginPage(props) {
             } else if (responseTypes.includes("token") || responseTypes.includes("id_token")) {
               if (res.data3) {
                 sessionStorage.setItem("signinUrl", window.location.pathname + window.location.search);
-                Setting.goToLinkSoft({props}, `/forget/${applicationName}`);
+                Setting.goToLinkSoft({props}, "/account");
+                return;
               }
               const amendatoryResponseType = responseType === "token" ? "access_token" : responseType;
               const accessToken = res.data;
@@ -389,7 +391,8 @@ function LoginPage(props) {
               }
               if (res.data3) {
                 sessionStorage.setItem("signinUrl", window.location.pathname + window.location.search);
-                Setting.goToLinkSoft({props}, `/forget/${applicationName}`);
+                Setting.goToLinkSoft({props}, "/account");
+                return;
               }
               if (res.data2.method === "POST") {
                 setSamlResponse(res.data);
@@ -464,9 +467,12 @@ function LoginPage(props) {
         const rawId = assertion.rawId;
         const sig = assertion.response.signature;
         const userHandle = assertion.response.userHandle;
+        const resourceQuery = oAuthParams?.resource
+          ? `&resource=${encodeURIComponent(oAuthParams.resource)}`
+          : "";
         let finishUrl = `${Setting.ServerUrl}/api/webauthn/signin/finish?responseType=${vals["type"]}`;
         if (vals["type"] === "code") {
-          finishUrl = `${Setting.ServerUrl}/api/webauthn/signin/finish?responseType=${vals["type"]}&clientId=${oAuthParams.clientId}&scope=${oAuthParams.scope}&redirectUri=${oAuthParams.redirectUri}&nonce=${oAuthParams.nonce}&state=${oAuthParams.state}&codeChallenge=${oAuthParams.codeChallenge}&challengeMethod=${oAuthParams.challengeMethod}`;
+          finishUrl = `${Setting.ServerUrl}/api/webauthn/signin/finish?responseType=${vals["type"]}&clientId=${oAuthParams.clientId}&scope=${oAuthParams.scope}&redirectUri=${oAuthParams.redirectUri}&nonce=${oAuthParams.nonce}&state=${oAuthParams.state}&codeChallenge=${oAuthParams.codeChallenge}&challengeMethod=${oAuthParams.challengeMethod}${resourceQuery}`;
         }
         return fetch(finishUrl, {
           method: "POST",
