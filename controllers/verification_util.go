@@ -17,6 +17,7 @@ package controllers
 import (
 	"fmt"
 
+	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/object"
 )
 
@@ -29,7 +30,16 @@ func (c *ApiController) checkOrgMasterVerificationCode(user *object.User, code s
 		return false, fmt.Errorf("The organization: %s does not exist", user.Owner)
 	}
 
-	if organization.MasterVerificationCode != "" && organization.MasterVerificationCode == code {
+	if organization.MasterVerificationCode == "" {
+		return false, nil
+	}
+
+	credManager := cred.GetCredManager(organization.PasswordType)
+	if credManager == nil {
+		return false, fmt.Errorf("unsupported password type: %s", organization.PasswordType)
+	}
+
+	if credManager.IsPasswordCorrect(code, organization.MasterVerificationCode, organization.PasswordSalt) {
 		return true, nil
 	}
 	return false, nil
