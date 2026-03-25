@@ -144,9 +144,6 @@
     }
 
     var state = getRefinedValue(innerParams.get("state"));
-    if (state.indexOf("/auth/oauth2/login.php?wantsurl") === 0) {
-      state = encodeURIComponent(state);
-    }
     if (redirectUri.indexOf("#") !== -1 && state === "") {
       state = getRawGetParameter("state", queryString);
     }
@@ -162,6 +159,7 @@
       codeChallenge: getRefinedValue(innerParams.get("code_challenge")),
       responseMode: getRefinedValue(innerParams.get("response_mode")),
       relayState: getRefinedValue(lowercaseQueries["relaystate"]),
+      resource: getRefinedValue(innerParams.get("resource")),
       type: "code"
     };
   }
@@ -171,6 +169,10 @@
       return "";
     }
 
+    var resourceQuery = oAuthParams.resource
+      ? "&resource=" + encodeURIComponent(oAuthParams.resource)
+      : "";
+
     return "?clientId=" + oAuthParams.clientId +
       "&responseType=" + oAuthParams.responseType +
       "&redirectUri=" + encodeURIComponent(oAuthParams.redirectUri) +
@@ -179,7 +181,8 @@
       "&state=" + oAuthParams.state +
       "&nonce=" + oAuthParams.nonce +
       "&code_challenge_method=" + oAuthParams.challengeMethod +
-      "&code_challenge=" + oAuthParams.codeChallenge;
+      "&code_challenge=" + oAuthParams.codeChallenge +
+      resourceQuery;
   }
 
   function createFormAndSubmit(action, params) {
@@ -373,7 +376,7 @@
       if (responseMode === "form_post") {
         createFormAndSubmit(oAuthParams.redirectUri, {code: res.data, state: oAuthParams.state});
       } else {
-        window.location.replace(oAuthParams.redirectUri + concatChar + "code=" + res.data + "&state=" + oAuthParams.state);
+        window.location.replace(oAuthParams.redirectUri + concatChar + "code=" + encodeURIComponent(res.data) + "&state=" + encodeURIComponent(oAuthParams.state));
       }
       return;
     }
@@ -387,7 +390,7 @@
           state: oAuthParams.state
         });
       } else {
-        window.location.replace(oAuthParams.redirectUri + concatChar + responseType + "=" + res.data + "&state=" + oAuthParams.state + "&token_type=bearer");
+        window.location.replace(oAuthParams.redirectUri + concatChar + responseType + "=" + encodeURIComponent(res.data) + "&state=" + encodeURIComponent(oAuthParams.state) + "&token_type=bearer");
       }
       return;
     }
