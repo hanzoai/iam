@@ -86,6 +86,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "start": "vite preview --port 7001",
     "typecheck": "tsc --noEmit",
     "crowdin:sync": "crowdin upload && crowdin download",
     "fix": "eslint --fix src/**/*.{js,jsx,ts,tsx}",
