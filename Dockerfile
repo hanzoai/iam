@@ -32,11 +32,9 @@ FROM alpine:3.21 AS standard
 LABEL maintainer="https://hanzo.ai/"
 ARG USER=hanzo
 
-RUN apk add --no-cache sudo tzdata curl ca-certificates \
+RUN apk add --no-cache tzdata curl ca-certificates \
     && update-ca-certificates \
     && adduser -D $USER -u 1000 \
-    && echo "$USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$USER \
-    && chmod 0440 /etc/sudoers.d/$USER \
     && mkdir logs \
     && chown -R $USER:$USER logs
 
@@ -57,14 +55,16 @@ LABEL maintainer="https://hanzo.ai/"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates lsof \
     && update-ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -u 1000 -m hanzo
 
 WORKDIR /
-COPY --from=back /go/src/hanzo-iam/server ./server
-COPY --from=back /go/src/hanzo-iam/swagger ./swagger
-COPY --from=back /go/src/hanzo-iam/docker-entrypoint.sh /docker-entrypoint.sh
-COPY --from=back /go/src/hanzo-iam/conf/app.prod.conf ./conf/app.conf
-COPY --from=front /web/build ./web/build
+COPY --from=back --chown=hanzo:hanzo /go/src/hanzo-iam/server ./server
+COPY --from=back --chown=hanzo:hanzo /go/src/hanzo-iam/swagger ./swagger
+COPY --from=back --chown=hanzo:hanzo /go/src/hanzo-iam/docker-entrypoint.sh /docker-entrypoint.sh
+COPY --from=back --chown=hanzo:hanzo /go/src/hanzo-iam/conf/app.prod.conf ./conf/app.conf
+COPY --from=front --chown=hanzo:hanzo /web/build ./web/build
 
+USER 1000
 ENTRYPOINT ["/bin/bash"]
 CMD ["/docker-entrypoint.sh"]
