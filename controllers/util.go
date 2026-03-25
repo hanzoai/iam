@@ -165,7 +165,7 @@ func (c *ApiController) RequireAdmin() (string, bool) {
 	}
 
 	if user.Owner == "built-in" {
-		return "", true
+		return "built-in", true
 	}
 
 	if !user.IsAdmin {
