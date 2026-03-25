@@ -137,8 +137,13 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		codeChallenge := c.Ctx.Input.Query("code_challenge")
 		resource := c.Ctx.Input.Query("resource")
 
-		if challengeMethod != "S256" && challengeMethod != "plain" && challengeMethod != "null" && challengeMethod != "" {
-			c.ResponseError(c.T("auth:Challenge method should be S256 or plain"))
+		// SECURITY: Only S256 PKCE is accepted. "plain" is rejected to prevent code interception attacks.
+		if challengeMethod == "plain" {
+			c.ResponseError("PKCE challenge method 'plain' is not supported — use S256")
+			return
+		}
+		if challengeMethod != "S256" && challengeMethod != "null" && challengeMethod != "" {
+			c.ResponseError(fmt.Sprintf("unsupported code_challenge_method: %s — only S256 is supported", challengeMethod))
 			return
 		}
 
@@ -166,22 +171,8 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 			// The prompt page needs the user to be signed in
 			c.SetSessionUsername(userId)
 		}
-	} else if form.Type == ResponseTypeToken || form.Type == ResponseTypeIdToken { // implicit flow
-		if !object.IsGrantTypeValid(form.Type, application.GrantTypes) {
-			resp = &Response{Status: "error", Msg: fmt.Sprintf("error: grant_type: %s is not supported in this application", form.Type), Data: ""}
-		} else {
-			scope := c.Ctx.Input.Query("scope")
-			nonce := c.Ctx.Input.Query("nonce")
-			_, valid := object.IsScopeValidAndExpand(scope, application)
-			if !valid {
-				resp = &Response{Status: "error", Msg: "error: invalid_scope", Data: ""}
-			} else {
-				token, _ := object.GetTokenByUser(application, user, scope, nonce, c.getEffectiveHost())
-				resp = tokenToResponse(token)
-
-				resp.Data3 = user.NeedUpdatePassword
-			}
-		}
+	} else if form.Type == ResponseTypeToken || form.Type == ResponseTypeIdToken { // implicit flow — PERMANENTLY DISABLED
+		resp = &Response{Status: "error", Msg: "error: implicit flow (response_type=token/id_token) has been permanently disabled", Data: ""}
 	} else if form.Type == ResponseTypeDevice {
 		authCache, ok := object.DeviceAuthMap.LoadAndDelete(form.UserCode)
 		if !ok {
