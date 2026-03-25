@@ -19,6 +19,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 	"github.com/lor00x/goldap/message"
@@ -456,7 +457,10 @@ func getUserPasswordWithType(user *object.User) string {
 		effectiveType = org.PasswordType
 	}
 	if effectiveType == "" || effectiveType == "plain" {
-		return user.Password
+		// Never return raw passwords. Hash with bcrypt and return the hash.
+		cm := cred.NewBcryptCredManager()
+		hashedPassword := cm.GetHashedPassword(user.Password, "")
+		return fmt.Sprintf("{bcrypt}%s", hashedPassword)
 	}
 	prefix := effectiveType
 	if prefix == "salt" {
