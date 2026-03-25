@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/beego/beego/v2/core/logs"
 	"github.com/hanzoai/iam/form"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
@@ -593,6 +594,11 @@ func (c *ApiController) SsoLogout() {
 // @router /get-account [get]
 func (c *ApiController) GetAccount() {
 	var err error
+	err = util.AppendWebConfigCookie(c.Ctx)
+	if err != nil {
+		logs.Error("AppendWebConfigCookie failed in GetAccount, error: %s", err)
+	}
+
 	user, ok := c.RequireSignedInUser()
 	if !ok {
 		return
