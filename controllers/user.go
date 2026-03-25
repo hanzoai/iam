@@ -168,15 +168,25 @@ func (c *ApiController) GetUser() {
 
 	var user *object.User
 	if id == "" && owner == "" {
+		// When no id/owner is provided, require authentication and scope
+		// the lookup to the caller's organization to prevent cross-tenant
+		// user enumeration.
+		requestUserId := c.GetSessionUsername()
+		if requestUserId == "" {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return
+		}
+		callerOwner := util.GetOwnerFromId(requestUserId)
+
 		switch {
 		case accessKey != "":
 			user, err = object.GetUserByAccessKey(accessKey)
 		case email != "":
-			user, err = object.GetUserByEmailOnly(email)
+			user, err = object.GetUserByEmail(callerOwner, email)
 		case phone != "":
-			user, err = object.GetUserByPhoneOnly(phone)
+			user, err = object.GetUserByPhone(callerOwner, phone)
 		case userId != "":
-			user, err = object.GetUserByUserIdOnly(userId)
+			user, err = object.GetUserByUserId(callerOwner, userId)
 		}
 	} else {
 		if owner == "" {
