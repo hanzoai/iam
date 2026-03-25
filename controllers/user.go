@@ -785,7 +785,7 @@ func (c *ApiController) ImpersonateUser() {
 		return
 	}
 
-	if !(owner == org || org == "") {
+	if !(owner == org || org == "built-in") {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
