@@ -156,6 +156,7 @@ jobs:
           wait-on: 'http://localhost:7001'
           wait-on-timeout: 210
           working-directory: ./web
+          config-file: cypress.config.cjs
 
       - uses: actions/upload-artifact@v4
         if: failure()
