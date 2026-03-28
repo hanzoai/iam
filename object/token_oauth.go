@@ -307,9 +307,9 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 		}, nil
 	}
 
-	// SECURITY: Hard-reject deprecated grant types regardless of application config.
-	// Implicit and password grants are permanently disabled per OIDC security hardening.
-	if grantType == "password" || grantType == "implicit" || grantType == "token" || grantType == "id_token" || grantType == "urn:ietf:params:oauth:grant-type:device_code" {
+	// SECURITY: Hard-reject deprecated grant types (implicit, device_code).
+	// Password grant is allowed when explicitly enabled on the application.
+	if grantType == "implicit" || grantType == "token" || grantType == "id_token" || grantType == "urn:ietf:params:oauth:grant-type:device_code" {
 		return &TokenError{
 			Error:            UnsupportedGrantType,
 			ErrorDescription: "This grant type has been permanently disabled",
