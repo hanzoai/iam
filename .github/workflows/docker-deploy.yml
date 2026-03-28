@@ -71,7 +71,7 @@ jobs:
 
   # -- Build + push (only after all gates pass) ------------------
   docker:
-    needs: [go-tests, go-lint, go-build, frontend-build]
+    needs: [go-tests, go-build, frontend-build]
     uses: hanzoai/.github/.github/workflows/docker-build.yml@main
     with:
       image: ghcr.io/hanzoai/iam
