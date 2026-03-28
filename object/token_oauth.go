@@ -336,6 +336,8 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 	// device_code is hard-rejected above; no case needed
 	case "urn:ietf:params:oauth:grant-type:token-exchange": // Token Exchange Grant (RFC 8693)
 		token, tokenError, err = GetTokenExchangeToken(application, clientSecret, subjectToken, subjectTokenType, audience, scope, host)
+	case "password": // Resource Owner Password Credentials
+		token, tokenError, err = GetPasswordToken(application, username, password, scope, host)
 	case "api_key": // API Key Grant — exchange access_key + access_secret for user-bound token
 		token, tokenError, err = GetApiKeyToken(application, accessKey, accessSecret, scope, host)
 	case "refresh_token":
