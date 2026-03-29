@@ -73,28 +73,42 @@ func CorsFilter(ctx *context.Context) {
 		return
 	}
 
-	if ctx.Request.Method == "POST" && ctx.Request.RequestURI == "/api/login/oauth/access_token" {
-		setCorsHeaders(ctx, origin)
+	// OAuth/OIDC discovery endpoints are public per RFC 6749/7033 but still
+	// must NOT reflect arbitrary origins with credentials. Use the allowlist
+	// for credentialed endpoints; use wildcard without credentials for
+	// truly public discovery endpoints.
+	isPublicEndpoint := strings.HasPrefix(ctx.Request.RequestURI, "/.well-known/")
+	isOAuthEndpoint := strings.HasPrefix(ctx.Request.RequestURI, "/oauth/") ||
+		ctx.Request.RequestURI == "/api/userinfo" ||
+		(ctx.Request.Method == "POST" && ctx.Request.RequestURI == "/api/login/oauth/access_token") ||
+		(ctx.Request.Method == "POST" && ctx.Request.RequestURI == "/api/acs")
+
+	if isPublicEndpoint {
+		// Discovery endpoints: allow any origin but WITHOUT credentials
+		ctx.Output.Header(headerAllowOrigin, "*")
+		ctx.Output.Header(headerAllowMethods, "GET, OPTIONS")
+		ctx.Output.Header(headerAllowHeaders, "Content-Type")
+		if ctx.Input.Method() == "OPTIONS" {
+			ctx.ResponseWriter.WriteHeader(http.StatusOK)
+		}
 		return
 	}
 
-	if ctx.Request.Method == "POST" && ctx.Request.RequestURI == "/api/acs" {
-		setCorsHeaders(ctx, origin)
-		return
-	}
-
-	if ctx.Request.RequestURI == "/api/userinfo" {
-		setCorsHeaders(ctx, origin)
-		return
-	}
-
-	// OAuth and OIDC endpoints are public — allow CORS from any origin (RFC 6749, RFC 7033).
-	if strings.HasPrefix(ctx.Request.RequestURI, "/oauth/") {
-		setCorsHeaders(ctx, origin)
-		return
-	}
-	if strings.HasPrefix(ctx.Request.RequestURI, "/.well-known/") {
-		setCorsHeaders(ctx, origin)
+	if isOAuthEndpoint {
+		// OAuth token/userinfo endpoints: only allow trusted origins with credentials
+		isValid, _ := util.IsValidOrigin(origin)
+		if isValid {
+			setCorsHeaders(ctx, origin)
+		} else {
+			// Allow the request but without CORS (browser will block cross-origin read)
+			ctx.Output.Header(headerAllowOrigin, "*")
+			ctx.Output.Header(headerAllowMethods, "POST, GET, OPTIONS")
+			ctx.Output.Header(headerAllowHeaders, "Content-Type, Authorization")
+			// Explicitly NO credentials header — browser will block cookie/auth cross-origin
+		}
+		if ctx.Input.Method() == "OPTIONS" {
+			ctx.ResponseWriter.WriteHeader(http.StatusOK)
+		}
 		return
 	}
 
