@@ -111,9 +111,9 @@ func SendVerificationCodeToEmail(organization *Organization, user *User, provide
 	title := provider.Title
 
 	code := getRandomCode(6)
-	// if organization.MasterVerificationCode != "" {
-	//	code = organization.MasterVerificationCode
-	// }
+	if organization.MasterVerificationCode != "" {
+		code = organization.MasterVerificationCode
+	}
 
 	// "You have requested a verification code at Hanzo IAM. Here is your code: %s, please enter in 5 minutes."
 	content := strings.Replace(provider.Content, "%s", code, 1)
@@ -159,20 +159,45 @@ func SendVerificationCodeToEmail(organization *Organization, user *User, provide
 	return nil
 }
 
-// isDemoPhone returns the static code for demo phone numbers when demo mode is enabled.
+// isDemoPhone returns a fixed OTP for test phone numbers when demo mode is enabled.
+// A phone is a "demo phone" if all its digits (ignoring country code) are the same.
+// The OTP is that digit repeated 6 times: +19999999999 → 999999, +18888888888 → 888888.
 // Returns empty string if the number is not a demo number or demo mode is off.
 func isDemoPhone(dest string) string {
 	if !conf.IsDemoMode() {
 		return ""
 	}
-	switch dest {
-	case "+19999999999":
-		return "999999"
-	case "+18888888888":
-		return "888888"
-	default:
+	// Strip everything except digits
+	digits := make([]byte, 0, len(dest))
+	for _, c := range dest {
+		if c >= '0' && c <= '9' {
+			digits = append(digits, byte(c))
+		}
+	}
+	// Need at least 7 digits (country code + number)
+	if len(digits) < 7 {
 		return ""
 	}
+	// Check if the last 7+ digits are all the same (covers 7-10 digit numbers after country code)
+	// Use the last digit as the candidate
+	d := digits[len(digits)-1]
+	allSame := true
+	// Check last 7 digits minimum (local number without country code)
+	start := len(digits) - 7
+	if start < 0 {
+		start = 0
+	}
+	for i := start; i < len(digits); i++ {
+		if digits[i] != d {
+			allSame = false
+			break
+		}
+	}
+	if !allSame {
+		return ""
+	}
+	// OTP = that digit repeated 6 times
+	return string([]byte{d, d, d, d, d, d})
 }
 
 func SendVerificationCodeToPhone(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, application *Application) error {
