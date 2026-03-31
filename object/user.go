@@ -665,17 +665,40 @@ func GetUserByAccessKey(accessKey string) (*User, error) {
 	if accessKey == "" {
 		return nil, nil
 	}
+
+	// 1. Check User.AccessKey (legacy per-user keys, hk- prefix)
 	user := User{AccessKey: accessKey}
 	existed, err := ormer.Engine.Get(&user)
 	if err != nil {
 		return nil, err
 	}
-
 	if existed {
 		return &user, nil
-	} else {
-		return nil, nil
 	}
+
+	// 2. Check Key table (pk-/sk- prefixed keys)
+	// pk- keys are looked up by AccessKey, sk- keys by AccessSecret.
+	key, _, err := ResolveAnyKey(accessKey)
+	if err != nil || key == nil {
+		return nil, err
+	}
+
+	// Key found — resolve to the associated user
+	if key.User != "" {
+		return getUser(key.Owner, key.User)
+	}
+	// Org-scoped or app-scoped key without a specific user — return a
+	// service identity so callers get owner/name for org scoping.
+	if key.Organization != "" || key.Application != "" {
+		return &User{
+			Owner: key.Owner,
+			Name:  key.Name,
+			Id:    fmt.Sprintf("key/%s/%s", key.Owner, key.Name),
+			Type:  "service-key",
+		}, nil
+	}
+
+	return nil, nil
 }
 
 func GetUser(id string) (*User, error) {
