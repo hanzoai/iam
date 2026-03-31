@@ -112,8 +112,15 @@ func GetLanguage(language string) string {
 	}
 }
 
+// IsDemoMode returns true unless ENV=production.
+// Demo mode enables fixed OTPs for test phone numbers (repeating-digit phones).
+// Explicitly disabled ONLY in production — safe default for dev/test/staging.
 func IsDemoMode() bool {
-	return strings.ToLower(GetConfigString("isDemoMode")) == "true"
+	env := os.Getenv("ENV")
+	if env == "" {
+		env = GetConfigString("environment")
+	}
+	return env != "production"
 }
 
 func GetConfigBatchSize() int {
