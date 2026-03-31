@@ -16,6 +16,7 @@ package object
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/hanzoai/iam/util"
 	"github.com/xorm-io/core"
@@ -162,11 +163,31 @@ func UpdateKey(id string, key *Key) (bool, error) {
 }
 
 func AddKey(key *Key) (bool, error) {
+	// Generate prefixed key pair — different random values, can't derive one from the other.
+	//
+	// AccessKey (pk-) = publishable, frontend-safe, read-only API access.
+	// AccessSecret (sk-) = secret, backend-only, full API access.
+	//
+	// Format: {prefix}{env}_{random}
+	//   pk-live_a1b2c3d4...  (publishable, production)
+	//   sk-live_e5f6g7h8...  (secret, production)
+	//   pk-test_i9j0k1l2...  (publishable, test/dev)
+	//   sk-test_m3n4o5p6...  (secret, test/dev)
+	//
+	// Legacy keys without prefix (hk- or bare UUID) still work via GetKeyByAccessKey.
 	if key.AccessKey == "" {
-		key.AccessKey = util.GenerateId()
+		env := "live"
+		if key.State == "test" {
+			env = "test"
+		}
+		key.AccessKey = fmt.Sprintf("pk-%s_%s", env, util.GenerateId())
 	}
 	if key.AccessSecret == "" {
-		key.AccessSecret = util.GenerateId()
+		env := "live"
+		if key.State == "test" {
+			env = "test"
+		}
+		key.AccessSecret = fmt.Sprintf("sk-%s_%s", env, util.GenerateId())
 	}
 
 	affected, err := ormer.Engine.Insert(key)
@@ -190,6 +211,8 @@ func (key *Key) GetId() string {
 	return fmt.Sprintf("%s/%s", key.Owner, key.Name)
 }
 
+// GetKeyByAccessKey resolves a key by its AccessKey (pk-) field.
+// For sk- prefixed tokens, use GetKeyBySecretKey instead.
 func GetKeyByAccessKey(accessKey string) (*Key, error) {
 	if accessKey == "" {
 		return nil, nil
@@ -205,4 +228,42 @@ func GetKeyByAccessKey(accessKey string) (*Key, error) {
 		return &key, nil
 	}
 	return nil, nil
+}
+
+// GetKeyBySecretKey resolves a key by its AccessSecret (sk-) field.
+// Used when a backend sends a secret key for full API access.
+func GetKeyBySecretKey(secretKey string) (*Key, error) {
+	if secretKey == "" {
+		return nil, nil
+	}
+
+	key := Key{AccessSecret: secretKey}
+	existed, err := ormer.Engine.Get(&key)
+	if err != nil {
+		return nil, err
+	}
+
+	if existed {
+		return &key, nil
+	}
+	return nil, nil
+}
+
+// ResolveAnyKey resolves a token that could be pk-, sk-, or legacy (hk-/bare UUID).
+// Returns the Key and whether it's a publishable key.
+func ResolveAnyKey(token string) (*Key, bool, error) {
+	if token == "" {
+		return nil, false, nil
+	}
+
+	// sk- prefix → lookup by AccessSecret
+	if strings.HasPrefix(token, "sk-") || strings.HasPrefix(token, "sk_") {
+		key, err := GetKeyBySecretKey(token)
+		return key, false, err
+	}
+
+	// pk- prefix or any other → lookup by AccessKey
+	key, err := GetKeyByAccessKey(token)
+	isPublishable := strings.HasPrefix(token, "pk-") || strings.HasPrefix(token, "pk_")
+	return key, isPublishable, err
 }
