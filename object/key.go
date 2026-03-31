@@ -180,14 +180,14 @@ func AddKey(key *Key) (bool, error) {
 		if key.State == "test" {
 			env = "test"
 		}
-		key.AccessKey = fmt.Sprintf("pk-%s_%s", env, util.GenerateId())
+		key.AccessKey = fmt.Sprintf("pk-%s-%s", env, util.GenerateId())
 	}
 	if key.AccessSecret == "" {
 		env := "live"
 		if key.State == "test" {
 			env = "test"
 		}
-		key.AccessSecret = fmt.Sprintf("sk-%s_%s", env, util.GenerateId())
+		key.AccessSecret = fmt.Sprintf("sk-%s-%s", env, util.GenerateId())
 	}
 
 	affected, err := ormer.Engine.Insert(key)
