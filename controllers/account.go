@@ -356,6 +356,9 @@ func (c *ApiController) Signup() {
 	state := c.Ctx.Input.Query("state")
 	nonce := c.Ctx.Input.Query("nonce")
 	codeChallenge := c.Ctx.Input.Query("code_challenge")
+	if codeChallenge == "" {
+		codeChallenge = authForm.CodeChallenge
+	}
 
 	// If OAuth parameters are present, generate OAuth code and return it
 	if clientId != "" && responseType == ResponseTypeCode {
