@@ -159,10 +159,14 @@ func SendVerificationCodeToEmail(organization *Organization, user *User, provide
 	return nil
 }
 
-// isDemoPhone returns a fixed OTP for test phone numbers when demo mode is enabled.
-// A phone is a "demo phone" if all its digits (ignoring country code) are the same.
-// The OTP is that digit repeated 6 times: +19999999999 → 999999, +18888888888 → 888888.
-// Returns empty string if the number is not a demo number or demo mode is off.
+// isDemoPhone returns a fixed test OTP for repeating-digit phone numbers.
+// Any phone where all digits are the same gets that digit × 6 as the OTP:
+//
+//	+1 (111) 111-1111 → 111111
+//	+1 (999) 999-9999 → 999999
+//
+// Only active in non-production environments (ENV != production/prod/main/mainnet).
+// Returns empty string for real phone numbers or when in production.
 func isDemoPhone(dest string) string {
 	if !conf.IsDemoMode() {
 		return ""
@@ -201,7 +205,7 @@ func isDemoPhone(dest string) string {
 }
 
 func SendVerificationCodeToPhone(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, application *Application) error {
-	// Demo mode: skip SMS sending for test numbers, just record the static code
+	// Test OTP: skip SMS for repeating-digit phones, record the fixed code
 	if demoCode := isDemoPhone(dest); demoCode != "" {
 		return AddToVerificationRecord(user, provider, organization, remoteAddr, provider.Category, dest, demoCode)
 	}
@@ -327,7 +331,7 @@ func getUnusedVerificationRecord(dest string) (*VerificationRecord, error) {
 }
 
 func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult, error) {
-	// Demo mode: accept static codes for test phone numbers
+	// Test OTP: accept fixed codes for repeating-digit phones (non-production only)
 	if demoCode := isDemoPhone(dest); demoCode != "" && code == demoCode {
 		return &VerifyResult{VerificationSuccess, ""}, nil
 	}
