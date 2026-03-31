@@ -134,7 +134,13 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		}
 		nonce := c.Ctx.Input.Query("nonce")
 		challengeMethod := c.Ctx.Input.Query("code_challenge_method")
+		if challengeMethod == "" {
+			challengeMethod = form.CodeChallengeMethod
+		}
 		codeChallenge := c.Ctx.Input.Query("code_challenge")
+		if codeChallenge == "" {
+			codeChallenge = form.CodeChallenge
+		}
 		resource := c.Ctx.Input.Query("resource")
 
 		// SECURITY: Only S256 PKCE is accepted. "plain" is rejected to prevent code interception attacks.
