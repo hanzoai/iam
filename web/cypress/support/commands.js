@@ -26,7 +26,7 @@
 const selector = {
   username: "#input",
   password: "#normal_login_password",
-  loginButton: ".ant-btn",
+  loginButton: ".login-button",
 };
 Cypress.Commands.add('login', ()=>{
   cy.visit("http://localhost:8000");
