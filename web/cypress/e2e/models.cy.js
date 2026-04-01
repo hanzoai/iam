@@ -3,10 +3,10 @@ describe('Test models', () => {
         cy.login();
     })
     it("test org", () => {
-        cy.visit("http://localhost:7001");
-        cy.visit("http://localhost:7001/models");
-        cy.url().should("eq", "http://localhost:7001/models");
-        cy.visit("http://localhost:7001/models/hanzo/model-hanzo");
-        cy.url().should("eq", "http://localhost:7001/models/hanzo/model-hanzo");
+        cy.visit("http://localhost:8000");
+        cy.visit("http://localhost:8000/models");
+        cy.url().should("eq", "http://localhost:8000/models");
+        cy.visit("http://localhost:8000/models/hanzo/model-hanzo");
+        cy.url().should("eq", "http://localhost:8000/models/hanzo/model-hanzo");
     });
 })
