@@ -132,6 +132,49 @@ const orgContent: Record<string, OrgContent> = {
     ],
     testimonials: [],
   },
+
+  : {
+    badge: "Biometric Security",
+    title: "",
+    subtitle: "AI-powered identity verification for events, venues, and access control",
+    slides: [
+      {icon: "id", title: "Face Recognition", desc: "Real-time identification with 512-d ArcFace embeddings"},
+      {icon: "shield", title: "Weapon Detection", desc: "YOLO-based firearm and knife detection on live feeds"},
+      {icon: "search", title: "Smart Timeline", desc: "Automated occupancy tracking and presence analytics"},
+      {icon: "bot", title: "Deepfake Guard", desc: "AI-powered liveness detection against spoofing attacks"},
+    ],
+    testimonials: [
+      {
+        name: "Event Director",
+        role: "Major Venue Operator",
+        text: " replaced our entire badge-checking process. Attendees walk in, get recognized instantly, and we have a complete timeline of every room.",
+      },
+      {
+        name: "Security Lead",
+        role: "Conference Organizer",
+        text: "The weapon detection caught a concealed knife during setup that our metal detectors missed. The real-time alerts to our team were invaluable.",
+      },
+    ],
+  },
+
+  liquidity: {
+    badge: "Digital Securities",
+    title: "",
+    subtitle: "SEC-registered ATS for tokenized securities trading and settlement",
+    slides: [
+      {icon: "flow", title: "Smart Order Router", desc: "Best execution across 16 venues and providers"},
+      {icon: "chain", title: "On-Chain Settlement", desc: "Atomic settlement on  with MPC custody"},
+      {icon: "shield", title: "Compliance Built-In", desc: "Reg D, Rule 144, AML/KYC enforced at protocol level"},
+      {icon: "code", title: "White-Label", desc: "Launch your own BD with full branding and data isolation"},
+    ],
+    testimonials: [
+      {
+        name: "Compliance Officer",
+        role: "Introducing Broker-Dealer",
+        text: "The on-chain compliance modules mean we never have to worry about Rule 144 lockup violations. The smart contracts enforce it automatically.",
+      },
+    ],
+  },
 };
 
 // ── Slide icon renderer ──────────────────────────────────────────────────
@@ -169,13 +212,26 @@ export default function HanzoShowcase({application}: HanzoShowcaseProps) {
   const [currentTestimonial, setCurrentTestimonial] = useState<number>(0);
   const [slideDirection, setSlideDirection] = useState<"in" | "out">("in");
 
-  // Resolve org content — fall back to hanzo
+  // Resolve org content — fall back to generic (not hanzo-branded)
   const orgName = application?.organization || "hanzo";
-  const content = orgContent[orgName] || orgContent.hanzo;
+  const genericContent: OrgContent = {
+    badge: "Secure Access",
+    title: application?.organization
+      ? (orgContent[orgName]?.title || application.organization)
+      : "Sign In",
+    subtitle: "Identity and access management powered by Hanzo IAM",
+    slides: [
+      {icon: "shield", title: "Secure Auth", desc: "OAuth 2.0, OIDC, SAML, and WebAuthn out of the box"},
+      {icon: "id", title: "Multi-Tenant", desc: "Isolated organizations with per-tenant branding"},
+      {icon: "code", title: "Developer-First", desc: "SDKs, APIs, and MCP tools for rapid integration"},
+    ],
+    testimonials: [],
+  };
+  const content = orgContent[orgName] || genericContent;
   const slides = content.slides;
   const testimonials = content.testimonials.length > 0
     ? content.testimonials
-    : orgContent.hanzo.testimonials;
+    : [];
 
   const nextSlide = useCallback(() => {
     setSlideDirection("out");
@@ -250,34 +306,36 @@ export default function HanzoShowcase({application}: HanzoShowcaseProps) {
           </div>
         </div>
 
-        {/* Testimonial */}
-        <div className="showcase-testimonial">
-          <div className="showcase-testimonial-content">
-            <svg className="showcase-quote-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" opacity="0.3">
-              <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z" />
-            </svg>
-            <p className="showcase-testimonial-text">&ldquo;{testimonial.text}&rdquo;</p>
-            <div className="showcase-testimonial-author">
-              <div className="showcase-avatar">
-                {testimonial.name.split(" ").map((n: string) => n[0]).join("")}
-              </div>
-              <div className="showcase-author-info">
-                <span className="showcase-author-name">{testimonial.name}</span>
-                <span className="showcase-author-role">{testimonial.role}</span>
+        {/* Testimonial — only shown if org has testimonials */}
+        {testimonials.length > 0 && (
+          <div className="showcase-testimonial">
+            <div className="showcase-testimonial-content">
+              <svg className="showcase-quote-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" opacity="0.3">
+                <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z" />
+              </svg>
+              <p className="showcase-testimonial-text">&ldquo;{testimonial.text}&rdquo;</p>
+              <div className="showcase-testimonial-author">
+                <div className="showcase-avatar">
+                  {testimonial.name.split(" ").map((n: string) => n[0]).join("")}
+                </div>
+                <div className="showcase-author-info">
+                  <span className="showcase-author-name">{testimonial.name}</span>
+                  <span className="showcase-author-role">{testimonial.role}</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="showcase-testimonial-dots">
-            {testimonials.map((_: Testimonial, index: number) => (
-              <button
-                key={index}
-                className={`showcase-dot ${currentTestimonial === index ? "active" : ""}`}
-                onClick={() => setCurrentTestimonial(index)}
-              />
-            ))}
+            <div className="showcase-testimonial-dots">
+              {testimonials.map((_: Testimonial, index: number) => (
+                <button
+                  key={index}
+                  className={`showcase-dot ${currentTestimonial === index ? "active" : ""}`}
+                  onClick={() => setCurrentTestimonial(index)}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
