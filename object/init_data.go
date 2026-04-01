@@ -409,7 +409,7 @@ func initDefinedApplication(application *Application) {
 	// a raw SQL UPDATE immediately after creation.
 	if created {
 		_, sqlErr := ormer.Engine.Exec(
-			`UPDATE "application" SET enable_password=$1, enable_sign_up=$2, enable_signin_session=$3, enable_code_signin=$4, enable_web_authn=$5, enable_auto_signin=$6, enable_link_with_email=$7 WHERE owner=$8 AND name=$9`,
+			`UPDATE application SET enable_password=?, enable_sign_up=?, enable_signin_session=?, enable_code_signin=?, enable_web_authn=?, enable_auto_signin=?, enable_link_with_email=? WHERE owner=? AND name=?`,
 			application.EnablePassword, application.EnableSignUp, application.EnableSigninSession,
 			application.EnableCodeSignin, application.EnableWebAuthn, application.EnableAutoSignin,
 			application.EnableLinkWithEmail, application.Owner, application.Name,
