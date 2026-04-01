@@ -419,6 +419,8 @@ func initDefinedApplication(application *Application) {
 		} else {
 			fmt.Printf("[AddApplication] app %s bool fields fixed (enablePassword=%v, enableSignUp=%v, enableSigninSession=%v)\n",
 				appId, application.EnablePassword, application.EnableSignUp, application.EnableSigninSession)
+			// Refresh the in-process app cache so the API returns the corrected booleans.
+			appCache.set(appCacheKey(application.Owner, application.Name), *application, appCacheTTL)
 		}
 	}
 
