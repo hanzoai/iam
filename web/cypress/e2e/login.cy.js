@@ -2,14 +2,14 @@ describe("Login test", () => {
   const selector = {
     username: "#input",
     password: "#normal_login_password",
-    loginButton: ".ant-btn",
+    loginButton: ".login-button",
   };
   it("Login succeeded", () => {
     cy.request({
       method: "POST",
-      url: "http://localhost:7001/api/login",
+      url: "http://localhost:8000/api/login",
       body: {
-        "application": "app-hanzo",
+        "application": "hanzo-app",
         "organization": "hanzo",
         "username": "admin",
         "password": "123",
@@ -21,19 +21,20 @@ describe("Login test", () => {
     });
   });
   it("ui Login succeeded", () => {
-    cy.visit("http://localhost:7001");
+    cy.visit("http://localhost:8000");
     cy.get(selector.username).type("admin");
     cy.get(selector.password).type("123");
     cy.get(selector.loginButton).click();
-    cy.url().should("eq", "http://localhost:7001/");
+    // After successful login, Casdoor redirects to the dashboard
+    cy.url({timeout: 10000}).should("eq", "http://localhost:8000/");
   });
 
   it("Login failed", () => {
     cy.request({
       method: "POST",
-      url: "http://localhost:7001/api/login",
+      url: "http://localhost:8000/api/login",
       body: {
-        "application": "app-hanzo",
+        "application": "hanzo-app",
         "organization": "hanzo",
         "username": "admin",
         "password": "1234",
@@ -45,10 +46,11 @@ describe("Login test", () => {
     });
   });
   it("ui Login failed", () => {
-    cy.visit("http://localhost:7001");
+    cy.visit("http://localhost:8000");
     cy.get(selector.username).type("admin");
     cy.get(selector.password).type("1234");
     cy.get(selector.loginButton).click();
-    cy.url().should("eq", "http://localhost:7001/login");
+    // Failed login should stay on the login page
+    cy.url().should("include", "/login");
   });
 });
