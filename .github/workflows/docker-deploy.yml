@@ -75,7 +75,7 @@ jobs:
     uses: hanzoai/.github/.github/workflows/docker-build.yml@main
     with:
       image: ghcr.io/hanzoai/iam
-      platforms: "linux/amd64,linux/arm64"
+      platforms: "linux/amd64"
       target: standard
     secrets: inherit
 
