@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Identity and Access Management"
+    />
+    <link rel="apple-touch-icon" href="/favicon.ico" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Sign In</title>
+    <script>
+      // Polyfill for Node.js globals required by Web3Auth and other libraries
+      if (typeof global === 'undefined') { window.global = window; }
+      if (typeof process === 'undefined') { window.process = { env: {} }; }
+      if (typeof Buffer === 'undefined') { window.Buffer = window.Buffer || { isBuffer: function() { return false; } }; }
+    </script>
+    <script type="module" crossorigin src="/assets/index-DYpL5sf4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DNPYKNBC.css">
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
