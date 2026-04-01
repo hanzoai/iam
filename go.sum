@@ -296,8 +296,6 @@ github.com/casbin/casbin/v2 v2.77.2 h1:yQinn/w9x8AswiwqwtrXz93VU48R1aYTXdHEx4RI3
 github.com/casbin/casbin/v2 v2.77.2/go.mod h1:mzGx0hYW9/ksOSpw3wNjk3NRAroq5VMFYUQ6G43iGPk=
 github.com/casbin/lego/v4 v4.5.4 h1:WdVEj1A5KmKZheNuFNLF/5+UUkpXLt9mEOrLX3E81Vo=
 github.com/casbin/lego/v4 v4.5.4/go.mod h1:JjTyJgN5pyrDPcg3+aAM1NtFQIXl8zDgsoSS1TnVpJ8=
-github.com/casdoor/xorm-adapter/v3 v3.1.1 h1:qzsLeM9v2MtCCwnoKG7My/qHNVou+cyixRebhhCg+kM=
-github.com/casdoor/xorm-adapter/v3 v3.1.1/go.mod h1:4WTcUw+bTgBylGHeGHzTtBvuTXRS23dtwzFLl9tsgFM=
 github.com/cenkalti/backoff/v4 v4.1.1/go.mod h1:scbssz8iZGpm3xbr14ovlUdkxfGXNInqkPWOWmG2CLw=
 github.com/cenkalti/backoff/v4 v4.1.2/go.mod h1:scbssz8iZGpm3xbr14ovlUdkxfGXNInqkPWOWmG2CLw=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
