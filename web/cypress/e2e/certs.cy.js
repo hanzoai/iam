@@ -3,10 +3,10 @@ describe('Test certs', () => {
         cy.login();
     })
     it("test certs", () => {
-        cy.visit("http://localhost:7001");
-        cy.visit("http://localhost:7001/certs");
-        cy.url().should("eq", "http://localhost:7001/certs");
-        cy.visit("http://localhost:7001/certs/cert-hanzo");
-        cy.url().should("eq", "http://localhost:7001/certs/cert-hanzo");
+        cy.visit("http://localhost:8000");
+        cy.visit("http://localhost:8000/certs");
+        cy.url().should("eq", "http://localhost:8000/certs");
+        cy.visit("http://localhost:8000/certs/cert-hanzo");
+        cy.url().should("eq", "http://localhost:8000/certs/cert-hanzo");
     });
 })
