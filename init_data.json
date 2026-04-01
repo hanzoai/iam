@@ -1175,6 +1175,44 @@
           "modifyRule": "Self"
         }
       ]
+    },
+    {
+      "owner": "admin",
+      "name": "",
+      "createdTime": "2026-03-31T00:00:00Z",
+      "displayName": "",
+      "websiteUrl": "https://.ai",
+      "favicon": "",
+      "passwordType": "argon2id",
+      "tags": [
+        "biometrics",
+        "identity",
+        "security"
+      ],
+      "languages": [
+        "en"
+      ],
+      "defaultApplication": "app-",
+      "masterVerificationCode": ""
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity",
+      "createdTime": "2026-03-31T00:00:00Z",
+      "displayName": "",
+      "websiteUrl": "https://",
+      "favicon": "",
+      "passwordType": "argon2id",
+      "tags": [
+        "exchange",
+        "ats",
+        "securities"
+      ],
+      "languages": [
+        "en"
+      ],
+      "defaultApplication": "app-liquidity",
+      "masterVerificationCode": ""
     }
   ],
   "applications": [
@@ -2205,7 +2243,7 @@
       "displayName": "Hanzo Team",
       "logo": "https://cdn.hanzo.ai/img/hanzo-logo-white.svg",
       "homepageUrl": "https://hanzo.team",
-      "description": "Hanzo Team — Collaboration, Project Management, and HR Platform",
+      "description": "Hanzo Team \u2014 Collaboration, Project Management, and HR Platform",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2514,7 +2552,7 @@
       "displayName": "Hanzo Chat",
       "logo": "https://cdn.hanzo.ai/img/chat-logo.svg",
       "homepageUrl": "https://hanzo.chat",
-      "description": "Hanzo Chat — Unified AI Chat Interface",
+      "description": "Hanzo Chat \u2014 Unified AI Chat Interface",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2576,7 +2614,7 @@
       "displayName": "Hanzo Analytics",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://analytics.hanzo.ai",
-      "description": "Hanzo Analytics — Web & Product Analytics",
+      "description": "Hanzo Analytics \u2014 Web & Product Analytics",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2635,7 +2673,7 @@
       "displayName": "Hanzo Insights",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://insights.hanzo.ai",
-      "description": "Hanzo Insights — Behavioral Analytics",
+      "description": "Hanzo Insights \u2014 Behavioral Analytics",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2694,7 +2732,7 @@
       "displayName": "Hanzo Browser",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://hanzo.ai",
-      "description": "Hanzo AI Browser Extension — Chrome, Firefox, Safari",
+      "description": "Hanzo AI Browser Extension \u2014 Chrome, Firefox, Safari",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2879,7 +2917,7 @@
       "displayName": "Hanzo O11y",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://o11y.hanzo.ai",
-      "description": "Hanzo O11y — Unified Observability",
+      "description": "Hanzo O11y \u2014 Unified Observability",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2938,7 +2976,7 @@
       "displayName": "Lux O11y",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://o11y.lux.network",
-      "description": "Lux O11y — Unified Observability",
+      "description": "Lux O11y \u2014 Unified Observability",
       "organization": "lux",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2997,7 +3035,7 @@
       "displayName": "Hanzo Sentry",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://sentry.hanzo.ai",
-      "description": "Hanzo Sentry — Error Tracking",
+      "description": "Hanzo Sentry \u2014 Error Tracking",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -3338,6 +3376,89 @@
       "formSideHtml": "",
       "formBackgroundUrl": "https://cdn.hanzo.ai/img/auth-bg.jpg",
       "responseType": "code"
+    },
+    {
+      "owner": "admin",
+      "name": "app-",
+      "createdTime": "2026-03-31T00:00:00Z",
+      "displayName": "",
+      "organization": "",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "enableAutoSignin": false,
+      "clientId": "-app",
+      "clientSecret": "",
+      "redirectUris": [
+        "https://.dev./auth/callback",
+        "https://.test./auth/callback",
+        "https://./auth/callback",
+        "https://.main./auth/callback",
+        "http://localhost:3000/auth/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 24,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        ""
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "app--docs",
+      "createdTime": "2026-03-31T00:00:00Z",
+      "displayName": " Docs",
+      "organization": "",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "-docs",
+      "clientSecret": "",
+      "redirectUris": [
+        "https://docs..dev./auth/callback",
+        "http://localhost:3000/auth/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 24,
+      "grantTypes": [
+        "authorization_code"
+      ],
+      "tags": [
+        "",
+        "docs"
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "app-liquidity",
+      "createdTime": "2026-03-31T00:00:00Z",
+      "displayName": "",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": true,
+      "clientId": "liquidity-app",
+      "clientSecret": "",
+      "redirectUris": [
+        "https://app.dev./auth/callback",
+        "https://app.test./auth/callback",
+        "https://app./auth/callback",
+        "https:///auth/callback",
+        "http://localhost:3000/auth/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 24,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "exchange"
+      ]
     }
   ],
   "users": [
