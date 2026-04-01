@@ -404,6 +404,24 @@ func initDefinedApplication(application *Application) {
 	}
 	appendSyncTrace(fmt.Sprintf("[%s] AddApplication returned: created=%v", appId, created))
 
+	// xorm omits bool fields without explicit column tags, so boolean values
+	// from init_data.json are silently dropped during Insert. Fix them with
+	// a raw SQL UPDATE immediately after creation.
+	if created {
+		_, sqlErr := ormer.Engine.Exec(
+			`UPDATE "application" SET enable_password=$1, enable_sign_up=$2, enable_signin_session=$3, enable_code_signin=$4, enable_web_authn=$5, enable_auto_signin=$6, enable_link_with_email=$7 WHERE owner=$8 AND name=$9`,
+			application.EnablePassword, application.EnableSignUp, application.EnableSigninSession,
+			application.EnableCodeSignin, application.EnableWebAuthn, application.EnableAutoSignin,
+			application.EnableLinkWithEmail, application.Owner, application.Name,
+		)
+		if sqlErr != nil {
+			fmt.Printf("[init_data] WARNING: bool fixup SQL failed for %s: %v\n", appId, sqlErr)
+		} else {
+			fmt.Printf("[AddApplication] app %s bool fields fixed (enablePassword=%v, enableSignUp=%v, enableSigninSession=%v)\n",
+				appId, application.EnablePassword, application.EnableSignUp, application.EnableSigninSession)
+		}
+	}
+
 	// Verify the app actually exists in DB after creation
 	if !created {
 		var verifyApp Application
