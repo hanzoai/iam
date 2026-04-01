@@ -651,9 +651,25 @@ export function getPermissionColumns() {
   });
 }
 
+import countries from "i18n-iso-countries";
+import countriesEn from "i18n-iso-countries/langs/en.json";
+countries.registerLocale(countriesEn);
+
+let _countriesLangLoaded = "en";
+
 export function initCountries() {
-  const countries = require("i18n-iso-countries");
-  countries.registerLocale(require("i18n-iso-countries/langs/" + getLanguage() + ".json"));
+  const lang = getLanguage();
+  if (_countriesLangLoaded !== lang) {
+    // Dynamically load the locale for the current language
+    import(`../../node_modules/i18n-iso-countries/langs/${lang}.json`)
+      .then((mod) => {
+        countries.registerLocale(mod.default || mod);
+        _countriesLangLoaded = lang;
+      })
+      .catch(() => {
+        // Locale not available, keep English
+      });
+  }
   return countries;
 }
 
