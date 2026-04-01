@@ -148,12 +148,15 @@ jobs:
       - name: Install Cypress binary
         run: npx cypress install
         working-directory: ./web
+      - name: Copy frontend build to backend
+        run: |
+          mkdir -p ./web/build
+          cp -r ./web/dist/* ./web/build/ 2>/dev/null || true
       - uses: cypress-io/github-action@v5
         with:
           install-command: pnpm install
           browser: chrome
-          start: pnpm start
-          wait-on: 'http://localhost:7001'
+          wait-on: 'http://localhost:8000'
           wait-on-timeout: 210
           working-directory: ./web
           config-file: cypress.config.cjs
