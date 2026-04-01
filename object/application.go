@@ -173,18 +173,19 @@ type Application struct {
 }
 
 // fixApplicationBooleans patches boolean fields that xorm's Get() fails to
-// read correctly from PostgreSQL. Reads directly via raw SQL.
+// read correctly. Reads directly via raw SQL (works with both PostgreSQL and SQLite).
 func fixApplicationBooleans(app *Application) {
 	row := ormer.Engine.DB().QueryRow(
 		`SELECT enable_password, enable_sign_up, enable_signin_session,
 		        enable_code_signin, enable_web_authn, enable_auto_signin,
 		        enable_link_with_email, enable_exclusive_signin,
 		        disable_signin, is_shared
-		 FROM "application" WHERE owner=$1 AND name=$2`,
+		 FROM application WHERE owner=? AND name=?`,
 		app.Owner, app.Name,
 	)
 	var ep, esu, ess, ecs, ewa, eas, ele, ees, ds, ish bool
-	if err := row.Scan(&ep, &esu, &ess, &ecs, &ewa, &eas, &ele, &ees, &ds, &ish); err == nil {
+	if err := row.Scan(&ep, &esu, &ess, &ecs, &ewa, &eas, &ele, &ees, &ds, &ish); err != nil {
+	} else {
 		app.EnablePassword = ep
 		app.EnableSignUp = esu
 		app.EnableSigninSession = ess
@@ -680,14 +681,13 @@ func GetMaskedApplication(application *Application, userId string) *Application 
 
 	application.ClientSecret = "***"
 	application.Cert = "***"
-	application.EnablePassword = false
+	// Keep enablePassword, enableSignUp, enableCodeSignin, enableWebAuthn visible —
+	// the public login page needs these to decide which auth methods to render.
 	application.EnableSigninSession = false
-	application.EnableCodeSignin = false
 	application.EnableSamlCompress = false
 	application.EnableSamlC14n10 = false
 	application.EnableSamlPostBinding = false
 	application.DisableSamlAttributes = false
-	application.EnableWebAuthn = false
 	application.EnableLinkWithEmail = false
 	application.SamlReplyUrl = "***"
 
