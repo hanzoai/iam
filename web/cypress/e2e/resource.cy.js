@@ -3,8 +3,8 @@ describe('Test resource', () => {
         cy.login();
     })
     it("test resource", () => {
-        cy.visit("http://localhost:7001");
-        cy.visit("http://localhost:7001/resources");
-        cy.url().should("eq", "http://localhost:7001/resources");
+        cy.visit("http://localhost:8000");
+        cy.visit("http://localhost:8000/resources");
+        cy.url().should("eq", "http://localhost:8000/resources");
     });
 })
