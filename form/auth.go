@@ -38,14 +38,14 @@ type AuthForm struct {
 	Region         string `json:"region"`
 	InvitationCode string `json:"invitationCode"`
 
-	Application  string `json:"application"`
-	ClientId     string `json:"clientId"`
-	Provider     string `json:"provider"`
-	ProviderBack string `json:"providerBack"`
-	Code         string `json:"code"`
-	State        string `json:"state"`
-	RedirectUri  string `json:"redirectUri"`
-	Method       string `json:"method"`
+	Application         string `json:"application"`
+	ClientId            string `json:"clientId"`
+	Provider            string `json:"provider"`
+	ProviderBack        string `json:"providerBack"`
+	Code                string `json:"code"`
+	State               string `json:"state"`
+	RedirectUri         string `json:"redirectUri"`
+	Method              string `json:"method"`
 	CodeVerifier        string `json:"codeVerifier"`
 	CodeChallenge       string `json:"codeChallenge"`
 	CodeChallengeMethod string `json:"codeChallengeMethod"`
