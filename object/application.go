@@ -94,21 +94,21 @@ type Application struct {
 	Cert                         string          `xorm:"varchar(100)" json:"cert"`
 	DefaultGroup                 string          `xorm:"varchar(100)" json:"defaultGroup"`
 	HeaderHtml                   string          `xorm:"mediumtext" json:"headerHtml"`
-	EnablePassword               bool            `json:"enablePassword"`
-	EnableSignUp                 bool            `json:"enableSignUp"`
-	DisableSignin                bool            `json:"disableSignin"`
-	EnableSigninSession          bool            `json:"enableSigninSession"`
-	EnableAutoSignin             bool            `json:"enableAutoSignin"`
-	EnableCodeSignin             bool            `json:"enableCodeSignin"`
-	EnableExclusiveSignin        bool            `json:"enableExclusiveSignin"`
-	EnableSamlCompress           bool            `json:"enableSamlCompress"`
-	EnableSamlC14n10             bool            `json:"enableSamlC14n10"`
-	EnableSamlPostBinding        bool            `json:"enableSamlPostBinding"`
-	DisableSamlAttributes        bool            `json:"disableSamlAttributes"`
-	EnableSamlAssertionSignature bool            `json:"enableSamlAssertionSignature"`
-	UseEmailAsSamlNameId         bool            `json:"useEmailAsSamlNameId"`
-	EnableWebAuthn               bool            `json:"enableWebAuthn"`
-	EnableLinkWithEmail          bool            `json:"enableLinkWithEmail"`
+	EnablePassword               bool            `xorm:"bool" json:"enablePassword"`
+	EnableSignUp                 bool            `xorm:"bool" json:"enableSignUp"`
+	DisableSignin                bool            `xorm:"bool" json:"disableSignin"`
+	EnableSigninSession          bool            `xorm:"bool" json:"enableSigninSession"`
+	EnableAutoSignin             bool            `xorm:"bool" json:"enableAutoSignin"`
+	EnableCodeSignin             bool            `xorm:"bool" json:"enableCodeSignin"`
+	EnableExclusiveSignin        bool            `xorm:"bool" json:"enableExclusiveSignin"`
+	EnableSamlCompress           bool            `xorm:"bool" json:"enableSamlCompress"`
+	EnableSamlC14n10             bool            `xorm:"bool" json:"enableSamlC14n10"`
+	EnableSamlPostBinding        bool            `xorm:"bool" json:"enableSamlPostBinding"`
+	DisableSamlAttributes        bool            `xorm:"bool" json:"disableSamlAttributes"`
+	EnableSamlAssertionSignature bool            `xorm:"bool" json:"enableSamlAssertionSignature"`
+	UseEmailAsSamlNameId         bool            `xorm:"bool" json:"useEmailAsSamlNameId"`
+	EnableWebAuthn               bool            `xorm:"bool" json:"enableWebAuthn"`
+	EnableLinkWithEmail          bool            `xorm:"bool" json:"enableLinkWithEmail"`
 	OrgChoiceMode                string          `json:"orgChoiceMode"`
 	SamlReplyUrl                 string          `xorm:"varchar(500)" json:"samlReplyUrl"`
 	Providers                    []*ProviderItem `xorm:"mediumtext" json:"providers"`
@@ -121,7 +121,7 @@ type Application struct {
 	Tags                         []string        `xorm:"mediumtext" json:"tags"`
 	SamlAttributes               []*SamlItem     `xorm:"mediumtext" json:"samlAttributes"`
 	SamlHashAlgorithm            string          `xorm:"varchar(20)" json:"samlHashAlgorithm"`
-	IsShared                     bool            `json:"isShared"`
+	IsShared                     bool            `xorm:"bool" json:"isShared"`
 	IpRestriction                string          `json:"ipRestriction"`
 
 	ClientId                string     `xorm:"varchar(100)" json:"clientId"`
