@@ -6,9 +6,9 @@ describe('Test syncers', () => {
         add: ".ant-table-title > div > .ant-btn"
       };
     it("test syncers", () => {
-        cy.visit("http://localhost:7001/syncers");
-        cy.url().should("eq", "http://localhost:7001/syncers");
+        cy.visit("http://localhost:8000/syncers");
+        cy.url().should("eq", "http://localhost:8000/syncers");
         cy.get(selector.add,{timeout:10000}).click();
-        cy.url().should("include","http://localhost:7001/syncers/")
+        cy.url().should("include","http://localhost:8000/syncers/")
     });
 })
