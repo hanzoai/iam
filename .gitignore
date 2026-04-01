@@ -71,3 +71,6 @@ swagger/*.map
 .bfg-report/
 .do/
 .claude/
+web/build/
+web/cypress/screenshots/
+web/cypress/videos/

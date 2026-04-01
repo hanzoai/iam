@@ -6,9 +6,9 @@ describe('Test adapter', () => {
         add: ".ant-table-title > div > .ant-btn"
       };
     it("test adapter", () => {
-        cy.visit("http://localhost:7001/adapters");
-        cy.url().should("eq", "http://localhost:7001/adapters");
+        cy.visit("http://localhost:8000/adapters");
+        cy.url().should("eq", "http://localhost:8000/adapters");
         cy.get(selector.add,{timeout:10000}).should('be.visible').click({force:true});
-        cy.url().should("include","http://localhost:7001/adapters/hanzo/")
+        cy.url().should("include","http://localhost:8000/adapters/hanzo/")
     });
 })
