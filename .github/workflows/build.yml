@@ -109,6 +109,17 @@ jobs:
           cache-dependency-path: ./go.mod
       - name: Create hanzo_iam database
         run: PGPASSWORD=hanzo123 psql -h localhost -U hanzo -d hanzo -c "CREATE DATABASE hanzo_iam OWNER hanzo;"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+      - run: pnpm install
+        working-directory: ./web
+      - name: Build frontend
+        run: pnpm build
+        working-directory: ./web
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
       - name: Build backend
         run: go build -o server .
         working-directory: ./
@@ -134,24 +145,9 @@ jobs:
             echo "Waiting... ($i/90)"
             sleep 1
           done
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: corepack enable
-      - run: pnpm install
-        working-directory: ./web
-      - name: Build frontend
-        run: pnpm build
-        working-directory: ./web
-        env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
       - name: Install Cypress binary
         run: npx cypress install
         working-directory: ./web
-      - name: Copy frontend build to backend
-        run: |
-          mkdir -p ./web/build
-          cp -r ./web/dist/* ./web/build/ 2>/dev/null || true
       - uses: cypress-io/github-action@v5
         with:
           install-command: pnpm install
