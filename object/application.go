@@ -172,6 +172,32 @@ type Application struct {
 	CertObj *Cert `xorm:"-"`
 }
 
+// fixApplicationBooleans patches boolean fields that xorm's Get() fails to
+// read correctly from PostgreSQL. Reads directly via raw SQL.
+func fixApplicationBooleans(app *Application) {
+	row := ormer.Engine.DB().QueryRow(
+		`SELECT enable_password, enable_sign_up, enable_signin_session,
+		        enable_code_signin, enable_web_authn, enable_auto_signin,
+		        enable_link_with_email, enable_exclusive_signin,
+		        disable_signin, is_shared
+		 FROM "application" WHERE owner=$1 AND name=$2`,
+		app.Owner, app.Name,
+	)
+	var ep, esu, ess, ecs, ewa, eas, ele, ees, ds, ish bool
+	if err := row.Scan(&ep, &esu, &ess, &ecs, &ewa, &eas, &ele, &ees, &ds, &ish); err == nil {
+		app.EnablePassword = ep
+		app.EnableSignUp = esu
+		app.EnableSigninSession = ess
+		app.EnableCodeSignin = ecs
+		app.EnableWebAuthn = ewa
+		app.EnableAutoSignin = eas
+		app.EnableLinkWithEmail = ele
+		app.EnableExclusiveSignin = ees
+		app.DisableSignin = ds
+		app.IsShared = ish
+	}
+}
+
 func GetApplicationCount(owner, field, value string) (int64, error) {
 	session := GetSession(owner, -1, -1, field, value, "", "")
 	return session.Count(&Application{})
@@ -431,6 +457,11 @@ func getApplication(owner string, name string) (*Application, error) {
 	existed, err := ormer.Engine.Get(&application)
 	if err != nil {
 		return nil, err
+	}
+
+	// xorm does not reliably read boolean columns — fix with a targeted SQL query.
+	if existed {
+		fixApplicationBooleans(&application)
 	}
 
 	if application.IsShared && sharedOrg != "" {
