@@ -213,7 +213,7 @@
         "AU"
       ],
       "defaultAvatar": "https://cdn.hanzo.ai/img/default-avatar.png",
-      "defaultApplication": "app-hanzo",
+      "defaultApplication": "hanzo-app",
       "tags": [
         "production"
       ],
@@ -410,7 +410,7 @@
         "AU"
       ],
       "defaultAvatar": "https://cdn.zoo.ngo/img/default-avatar.png",
-      "defaultApplication": "app-zoo",
+      "defaultApplication": "zoo-app",
       "tags": [
         "production"
       ],
@@ -607,7 +607,7 @@
         "AU"
       ],
       "defaultAvatar": "https://cdn.lux.network/img/default-avatar.png",
-      "defaultApplication": "app-lux",
+      "defaultApplication": "lux-app",
       "tags": [
         "production"
       ],
@@ -805,7 +805,7 @@
         "IR"
       ],
       "defaultAvatar": "https://cdn.pars.ai/img/default-avatar.png",
-      "defaultApplication": "app-pars",
+      "defaultApplication": "pars-app",
       "tags": [
         "production"
       ],
@@ -1002,7 +1002,7 @@
         "AU"
       ],
       "defaultAvatar": "https://cdn.hanzo.ai/img/default-avatar.png",
-      "defaultApplication": "app-adnexus",
+      "defaultApplication": "adnexus-app",
       "tags": [
         "production"
       ],
@@ -1192,7 +1192,7 @@
       "languages": [
         "en"
       ],
-      "defaultApplication": "app-securegate",
+      "defaultApplication": "securegate-app",
       "masterVerificationCode": ""
     },
     {
@@ -1211,7 +1211,7 @@
       "languages": [
         "en"
       ],
-      "defaultApplication": "app-liquidity",
+      "defaultApplication": "liquidity-app",
       "masterVerificationCode": ""
     }
   ],
@@ -1314,7 +1314,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-hanzo",
+      "name": "hanzo-app",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
@@ -1383,7 +1383,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-cloud",
+      "name": "hanzo-cloud",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo Cloud",
       "logo": "https://cdn.hanzo.ai/img/cloud-logo.svg",
@@ -1445,7 +1445,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-commerce",
+      "name": "hanzo-commerce",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo Commerce",
       "logo": "https://cdn.hanzo.ai/img/commerce-logo.svg",
@@ -1506,7 +1506,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-console",
+      "name": "hanzo-console",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo Console",
       "logo": "https://cdn.hanzo.ai/img/console-logo.svg",
@@ -1577,7 +1577,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-zoo",
+      "name": "zoo-app",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Zoo",
       "logo": "https://cdn.zoo.ngo/img/logo-white.svg",
@@ -1642,7 +1642,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-lux",
+      "name": "lux-app",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Lux",
       "logo": "https://cdn.lux.network/img/logo-white.svg",
@@ -1709,7 +1709,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-explore",
+      "name": "lux-explore",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Lux Explorer",
       "logo": "https://cdn.lux.network/img/logo-white.svg",
@@ -1775,7 +1775,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-pars",
+      "name": "pars-app",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Pars",
       "logo": "https://cdn.pars.ai/img/logo-white.svg",
@@ -1840,7 +1840,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-hanzobot",
+      "name": "hanzo-hanzobot",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "HanzoBot",
       "logo": "https://cdn.hanzo.ai/img/bot-logo.svg",
@@ -1907,7 +1907,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-platform",
+      "name": "hanzo-platform",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo Platform",
       "logo": "",
@@ -1974,7 +1974,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-bootnode",
+      "name": "hanzo-bootnode",
       "createdTime": "2026-02-10T00:00:00Z",
       "displayName": "Bootnode",
       "logo": "https://bootno.de/logo/bootnode-icon.svg",
@@ -2037,7 +2037,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-hanzo-web3",
+      "name": "hanzo-web3",
       "createdTime": "2026-02-10T00:00:00Z",
       "displayName": "Hanzo Web3",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
@@ -2100,7 +2100,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-lux-web3",
+      "name": "lux-web3",
       "createdTime": "2026-02-10T00:00:00Z",
       "displayName": "Lux Web3",
       "logo": "https://cdn.lux.network/img/logo-white.svg",
@@ -2175,7 +2175,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-zoo-web3",
+      "name": "zoo-web3",
       "createdTime": "2026-02-10T00:00:00Z",
       "displayName": "Zoo Web3",
       "logo": "https://cdn.zoo.ngo/img/logo-white.svg",
@@ -2238,12 +2238,12 @@
     },
     {
       "owner": "admin",
-      "name": "app-team",
+      "name": "hanzo-team",
       "createdTime": "2026-02-14T00:00:00Z",
       "displayName": "Hanzo Team",
       "logo": "https://cdn.hanzo.ai/img/hanzo-logo-white.svg",
       "homepageUrl": "https://hanzo.team",
-      "description": "Hanzo Team \u2014 Collaboration, Project Management, and HR Platform",
+      "description": "Hanzo Team — Collaboration, Project Management, and HR Platform",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2304,7 +2304,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-adnexus",
+      "name": "adnexus-app",
       "createdTime": "2025-02-15T00:00:00Z",
       "displayName": "AdNexus",
       "logo": "https://ad.nexus/logo.svg",
@@ -2486,7 +2486,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-zt-console",
+      "name": "hanzo-zt-console",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Zero Trust Console",
       "logo": "https://cdn.hanzo.ai/img/ztc-logo.svg",
@@ -2547,12 +2547,12 @@
     },
     {
       "owner": "admin",
-      "name": "app-chat",
+      "name": "hanzo-chat",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo Chat",
       "logo": "https://cdn.hanzo.ai/img/chat-logo.svg",
       "homepageUrl": "https://hanzo.chat",
-      "description": "Hanzo Chat \u2014 Unified AI Chat Interface",
+      "description": "Hanzo Chat — Unified AI Chat Interface",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2609,12 +2609,12 @@
     },
     {
       "owner": "admin",
-      "name": "app-analytics",
+      "name": "hanzo-analytics",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo Analytics",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://analytics.hanzo.ai",
-      "description": "Hanzo Analytics \u2014 Web & Product Analytics",
+      "description": "Hanzo Analytics — Web & Product Analytics",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2668,12 +2668,12 @@
     },
     {
       "owner": "admin",
-      "name": "app-insights",
+      "name": "hanzo-insights",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo Insights",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://insights.hanzo.ai",
-      "description": "Hanzo Insights \u2014 Behavioral Analytics",
+      "description": "Hanzo Insights — Behavioral Analytics",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2727,12 +2727,12 @@
     },
     {
       "owner": "admin",
-      "name": "app-browser",
+      "name": "hanzo-browser",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo Browser",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://hanzo.ai",
-      "description": "Hanzo AI Browser Extension \u2014 Chrome, Firefox, Safari",
+      "description": "Hanzo AI Browser Extension — Chrome, Firefox, Safari",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2789,7 +2789,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-vscode",
+      "name": "hanzo-vscode",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo VS Code",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
@@ -2851,7 +2851,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-jetbrains",
+      "name": "hanzo-jetbrains",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo JetBrains",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
@@ -2912,12 +2912,12 @@
     },
     {
       "owner": "admin",
-      "name": "app-o11y",
+      "name": "hanzo-o11y",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo O11y",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://o11y.hanzo.ai",
-      "description": "Hanzo O11y \u2014 Unified Observability",
+      "description": "Hanzo O11y — Unified Observability",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2971,12 +2971,12 @@
     },
     {
       "owner": "admin",
-      "name": "app-o11y-lux",
+      "name": "lux-o11y",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Lux O11y",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://o11y.lux.network",
-      "description": "Lux O11y \u2014 Unified Observability",
+      "description": "Lux O11y — Unified Observability",
       "organization": "lux",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -3030,12 +3030,12 @@
     },
     {
       "owner": "admin",
-      "name": "app-sentry",
+      "name": "hanzo-sentry",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Hanzo Sentry",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://sentry.hanzo.ai",
-      "description": "Hanzo Sentry \u2014 Error Tracking",
+      "description": "Hanzo Sentry — Error Tracking",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -3089,7 +3089,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-o11y-pars",
+      "name": "pars-o11y",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Pars O11y",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
@@ -3147,7 +3147,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-o11y-zoo",
+      "name": "zoo-o11y",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Zoo O11y",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
@@ -3205,7 +3205,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-sentry-lux",
+      "name": "lux-sentry",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Lux Sentry",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
@@ -3263,7 +3263,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-sentry-pars",
+      "name": "pars-sentry",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Pars Sentry",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
@@ -3321,7 +3321,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-sentry-zoo",
+      "name": "zoo-sentry",
       "createdTime": "2024-01-01T00:00:00Z",
       "displayName": "Zoo Sentry",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
@@ -3379,7 +3379,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-securegate",
+      "name": "securegate-app",
       "createdTime": "2026-03-31T00:00:00Z",
       "displayName": "SecureGate",
       "organization": "securegate",
@@ -3408,7 +3408,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-securegate-docs",
+      "name": "securegate-docs",
       "createdTime": "2026-03-31T00:00:00Z",
       "displayName": "SecureGate Docs",
       "organization": "securegate",
@@ -3433,7 +3433,7 @@
     },
     {
       "owner": "admin",
-      "name": "app-liquidity",
+      "name": "liquidity-app",
       "createdTime": "2026-03-31T00:00:00Z",
       "displayName": "partner",
       "organization": "liquidity",
