@@ -40,6 +40,15 @@ func InitApi() {
 		ruleText := `
 p, built-in, *, *, *, *, *
 p, app, *, *, *, *, *
+p, *, !anonymous, POST, /api/add-organization, admin, *
+p, *, !anonymous, POST, /api/update-organization, admin, *
+p, *, !anonymous, POST, /api/delete-organization, admin, *
+p, *, !anonymous, GET, /api/get-organizations, *, *
+p, *, !anonymous, GET, /api/get-organization, *, *
+p, *, !anonymous, POST, /api/add-application, *, *
+p, *, !anonymous, POST, /api/update-application, *, *
+p, *, !anonymous, POST, /api/delete-application, *, *
+p, *, !anonymous, GET, /api/get-applications, *, *
 p, *, *, POST, /api/signup, *, *
 p, *, *, GET, /api/get-email-and-phone, *, *
 p, *, *, POST, /api/login, *, *
