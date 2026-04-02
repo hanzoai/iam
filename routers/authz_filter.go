@@ -16,6 +16,7 @@ package routers
 
 import (
 	stdcontext "context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -31,6 +32,51 @@ import (
 	"github.com/hanzoai/iam/util"
 )
 
+// getUsernameFromBearerToken extracts the user identity from a JWT Bearer token.
+// This enables stateless API calls (e.g., from backend services forwarding user tokens)
+// without requiring an active IAM session.
+func getUsernameFromBearerToken(ctx *context.Context) string {
+	auth := ctx.Input.Header("Authorization")
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return ""
+	}
+	token := strings.TrimPrefix(auth, "Bearer ")
+
+	// Quick JWT decode (no verification — the token was already issued by us)
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+
+	// Base64url decode the payload
+	payload := parts[1]
+	switch len(payload) % 4 {
+	case 2:
+		payload += "=="
+	case 3:
+		payload += "="
+	}
+	decoded, err := base64.URLEncoding.DecodeString(payload)
+	if err != nil {
+		return ""
+	}
+
+	var claims struct {
+		Owner string `json:"owner"`
+		Name  string `json:"name"`
+		Sub   string `json:"sub"`
+	}
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return ""
+	}
+
+	// Casdoor tokens have owner + name fields
+	if claims.Owner != "" && claims.Name != "" {
+		return fmt.Sprintf("%s/%s", claims.Owner, claims.Name)
+	}
+	return ""
+}
+
 type Object struct {
 	Owner string `json:"owner"`
 	Name  string `json:"name"`
@@ -45,6 +91,12 @@ func getUsername(ctx *context.Context) (username string) {
 	username, ok := ctx.Input.Session("username").(string)
 	if !ok || username == "" {
 		username, _ = getUsernameByClientIdSecret(ctx)
+	}
+
+	// If no session/client credentials, try Bearer token (JWT) authentication.
+	// This allows stateless API calls with valid IAM access tokens.
+	if username == "" {
+		username = getUsernameFromBearerToken(ctx)
 	}
 
 	session := ctx.Input.Session("SessionData")
