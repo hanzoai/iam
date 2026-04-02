@@ -15,7 +15,6 @@
 package authz
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/casbin/casbin/v2"
@@ -169,18 +168,16 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 			return true
 		}
 
-		if user.IsAdmin && (subOwner == objOwner || objOwner == "admin") {
-			return true
+		// Check IsAdmin from the loaded user struct. If xorm failed to read
+		// the boolean correctly (known issue with Postgres), fall back to a
+		// direct SQL query as a workaround.
+		isAdmin := user.IsAdmin
+		if !isAdmin {
+			isAdmin = object.CheckUserIsAdminRaw(subOwner, subName)
 		}
 
-		// Debug: log why admin check didn't pass
-		if method == "POST" && (strings.Contains(urlPath, "organization") || strings.Contains(urlPath, "application")) {
-			fmt.Printf("[authz-debug] user=%s/%s isAdmin=%v isGlobalAdmin=%v subOwner=%s objOwner=%s\n",
-				user.Owner, user.Name, user.IsAdmin, user.IsGlobalAdmin(), subOwner, objOwner)
-		}
-	} else {
-		if method == "POST" && (strings.Contains(urlPath, "organization") || strings.Contains(urlPath, "application")) {
-			fmt.Printf("[authz-debug] user is NIL for %s/%s\n", subOwner, subName)
+		if isAdmin && (subOwner == objOwner || objOwner == "admin") {
+			return true
 		}
 	}
 
@@ -190,18 +187,6 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 	}
 
 	if !res {
-		if method == "POST" && (strings.Contains(urlPath, "organization") || strings.Contains(urlPath, "application")) {
-			fmt.Printf("[authz-debug] casbin denied: sub=%s/%s method=%s url=%s obj=%s/%s\n",
-				subOwner, subName, method, urlPath, objOwner, objName)
-			// Debug: list relevant policies
-			policies := Enforcer.GetFilteredPolicy(0)
-			for _, p := range policies {
-				if len(p) >= 4 && strings.Contains(p[3], "organization") {
-					fmt.Printf("[authz-debug]   policy: %v\n", p)
-				}
-			}
-		}
-
 		res, err = object.CheckApiPermission(util.GetId(subOwner, subName), objOwner, urlPath, method)
 		if err != nil {
 			panic(err)
