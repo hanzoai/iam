@@ -110,11 +110,11 @@ type User struct {
 	BalanceCredit        float64 `json:"balanceCredit"`
 	Currency             string  `xorm:"varchar(100)" json:"currency"`
 	BalanceCurrency      string  `xorm:"varchar(100)" json:"balanceCurrency"`
-	IsDefaultAvatar      bool    `json:"isDefaultAvatar"`
-	IsOnline             bool    `json:"isOnline"`
-	IsAdmin              bool    `json:"isAdmin"`
-	IsForbidden          bool    `json:"isForbidden"`
-	IsDeleted            bool    `json:"isDeleted"`
+	IsDefaultAvatar      bool    `xorm:"bool default false" json:"isDefaultAvatar"`
+	IsOnline             bool    `xorm:"bool default false" json:"isOnline"`
+	IsAdmin              bool    `xorm:"bool default false" json:"isAdmin"`
+	IsForbidden          bool    `xorm:"bool default false" json:"isForbidden"`
+	IsDeleted            bool    `xorm:"bool default false" json:"isDeleted"`
 	SignupApplication    string  `xorm:"varchar(100)" json:"signupApplication"`
 	Hash                 string  `xorm:"varchar(100)" json:"hash"`
 	PreHash              string  `xorm:"varchar(100)" json:"preHash"`
