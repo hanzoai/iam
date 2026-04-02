@@ -1122,3 +1122,27 @@ func TriggerWebhookForUser(action string, user *User) {
 		AddRecord(record)
 	})
 }
+
+// CheckUserIsAdminRaw bypasses xorm ORM and queries the database directly
+// to check the is_admin boolean field. This works around a known issue where
+// xorm may fail to correctly deserialize boolean columns from Postgres,
+// causing user.IsAdmin to always read as false.
+func CheckUserIsAdminRaw(owner, name string) bool {
+	if ormer == nil || ormer.Db == nil {
+		return false
+	}
+
+	var query string
+	if ormer.driverName == "postgres" {
+		query = `SELECT is_admin FROM "user" WHERE owner = $1 AND name = $2 LIMIT 1`
+	} else {
+		query = `SELECT is_admin FROM "user" WHERE owner = ? AND name = ? LIMIT 1`
+	}
+
+	var isAdmin bool
+	err := ormer.Db.QueryRow(query, owner, name).Scan(&isAdmin)
+	if err != nil {
+		return false
+	}
+	return isAdmin
+}
