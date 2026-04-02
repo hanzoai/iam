@@ -165,7 +165,11 @@ func getObject(ctx *context.Context) (string, string, error) {
 		}
 
 		if strings.HasSuffix(path, "-organization") {
-			return obj.Name, obj.Name, nil
+			// Organization operations: use owner field (typically "admin") as the
+			// resource owner so that org admins (isAdmin=true) can create/update/delete
+			// organizations. Previously used obj.Name which made objOwner the new org's
+			// name — causing authorization to fail for non-built-in users.
+			return obj.Owner, obj.Name, nil
 		}
 
 		if path == "/api/delete-resource" {
