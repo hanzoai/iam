@@ -62,6 +62,25 @@ func GetUserByField(organizationName string, field string, value string) (*User,
 	}
 }
 
+// GetUserByFieldCrossOrg looks up a user by field across ALL organizations.
+// Used as a fallback when the org-scoped lookup fails, enabling multi-tenant
+// login where users may belong to a different org than the app's org.
+func GetUserByFieldCrossOrg(field string, value string) (*User, error) {
+	if field == "" || value == "" {
+		return nil, nil
+	}
+	var user User
+	existed, err := ormer.Engine.Where(fmt.Sprintf("%s=?", strings.ToLower(field)), value).Get(&user)
+	if err != nil {
+		return nil, err
+	}
+	if existed {
+		userCache.set(userCacheKey(user.Owner, user.Name), user, 10*time.Minute)
+		return &user, nil
+	}
+	return nil, nil
+}
+
 func HasUserByField(organizationName string, field string, value string) bool {
 	user, err := GetUserByField(organizationName, field, value)
 	if err != nil {
@@ -108,6 +127,24 @@ func GetUserByFields(organization string, field string) (*User, error) {
 
 	// check ID card
 	user, err = GetUserByField(organization, "id_card", field)
+	if user != nil || err != nil {
+		return user, err
+	}
+
+	// Cross-org fallback: if not found in the specified org, try to find the
+	// user in any org by email. This supports multi-tenant login where users
+	// may belong to a different org than the app's org (e.g., a user in their
+	// personal org logging into a shared app in the "hanzo" org).
+	if strings.Contains(field, "@") {
+		normalizedEmail := strings.ToLower(field)
+		user, err = GetUserByFieldCrossOrg("email", normalizedEmail)
+		if user != nil || err != nil {
+			return user, err
+		}
+	}
+
+	// Cross-org by username
+	user, err = GetUserByFieldCrossOrg("name", field)
 	if user != nil || err != nil {
 		return user, err
 	}
