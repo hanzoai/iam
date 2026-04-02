@@ -171,6 +171,16 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 		if user.IsAdmin && (subOwner == objOwner || objOwner == "admin") {
 			return true
 		}
+
+		// Debug: log why admin check didn't pass
+		if method == "POST" && (strings.Contains(urlPath, "organization") || strings.Contains(urlPath, "application")) {
+			fmt.Printf("[authz-debug] user=%s/%s isAdmin=%v isGlobalAdmin=%v subOwner=%s objOwner=%s\n",
+				user.Owner, user.Name, user.IsAdmin, user.IsGlobalAdmin(), subOwner, objOwner)
+		}
+	} else {
+		if method == "POST" && (strings.Contains(urlPath, "organization") || strings.Contains(urlPath, "application")) {
+			fmt.Printf("[authz-debug] user is NIL for %s/%s\n", subOwner, subName)
+		}
 	}
 
 	res, err := Enforcer.Enforce(subOwner, subName, method, urlPath, objOwner, objName)
@@ -179,6 +189,18 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 	}
 
 	if !res {
+		if method == "POST" && (strings.Contains(urlPath, "organization") || strings.Contains(urlPath, "application")) {
+			fmt.Printf("[authz-debug] casbin denied: sub=%s/%s method=%s url=%s obj=%s/%s\n",
+				subOwner, subName, method, urlPath, objOwner, objName)
+			// Debug: list relevant policies
+			policies := Enforcer.GetFilteredPolicy(0)
+			for _, p := range policies {
+				if len(p) >= 4 && strings.Contains(p[3], "organization") {
+					fmt.Printf("[authz-debug]   policy: %v\n", p)
+				}
+			}
+		}
+
 		res, err = object.CheckApiPermission(util.GetId(subOwner, subName), objOwner, urlPath, method)
 		if err != nil {
 			panic(err)
