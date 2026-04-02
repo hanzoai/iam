@@ -306,6 +306,28 @@ func (c *ApiController) Signup() {
 		return
 	}
 
+	// Create a personal organization for the new user so they have an isolated
+	// workspace. This is the default multi-tenant behavior: each user gets their
+	// own org. They can be invited to shared orgs later.
+	// Skip if the user already signed up with a personal org (authForm.Organization == username).
+	if authForm.Organization != username && !organization.IsPersonal {
+		personalOrg, personalErr := object.CreatePersonalOrganization(username, user.DisplayName)
+		if personalErr == nil && personalOrg != nil {
+			// Move the user to their personal org
+			_, moveErr := object.MoveUserToOrg(user, personalOrg.Name)
+			if moveErr != nil {
+				// Non-fatal: user stays in signup org. Log for debugging.
+				fmt.Printf("[signup] failed to move user %s to personal org %s: %v\n", username, personalOrg.Name, moveErr)
+			} else {
+				user.Owner = personalOrg.Name
+				authForm.Organization = personalOrg.Name
+			}
+		} else if personalErr != nil {
+			// Non-fatal: user stays in signup org.
+			fmt.Printf("[signup] failed to create personal org for %s: %v\n", username, personalErr)
+		}
+	}
+
 	// Welcome credit is now granted by Commerce when user adds a payment method.
 	// This prevents abuse from mass-created accounts with no payment verification.
 
