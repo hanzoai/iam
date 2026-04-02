@@ -1149,27 +1149,23 @@ func CheckUserIsAdminRaw(owner, name string) bool {
 
 // MoveUserToOrg changes a user's owner (organization) field.
 // Since owner is part of the composite primary key in Casdoor, this uses
-// a direct SQL UPDATE to avoid the need for delete + re-insert.
+// xorm's Exec for a direct SQL UPDATE.
 func MoveUserToOrg(user *User, newOrg string) (bool, error) {
-	if ormer == nil || ormer.Db == nil {
+	if ormer == nil || ormer.Engine == nil {
 		return false, fmt.Errorf("database not initialized")
 	}
 	if user == nil || newOrg == "" {
 		return false, fmt.Errorf("user and newOrg are required")
 	}
 
-	var query string
-	if ormer.driverName == "postgres" {
-		query = `UPDATE "user" SET owner = $1 WHERE owner = $2 AND name = $3`
-	} else {
-		query = `UPDATE "user" SET owner = ? WHERE owner = ? AND name = ?`
-	}
-
-	result, err := ormer.Db.Exec(query, newOrg, user.Owner, user.Name)
+	affected, err := ormer.Engine.Exec(
+		`UPDATE "user" SET owner = ? WHERE owner = ? AND name = ?`,
+		newOrg, user.Owner, user.Name,
+	)
 	if err != nil {
 		return false, fmt.Errorf("failed to move user to org %s: %w", newOrg, err)
 	}
 
-	affected, _ := result.RowsAffected()
-	return affected > 0, nil
+	rows, _ := affected.RowsAffected()
+	return rows > 0, nil
 }
