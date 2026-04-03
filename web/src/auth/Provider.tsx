@@ -382,20 +382,24 @@ const authInfo = {
 export function getProviderUrl(provider) {
   if (provider.category === "OAuth") {
     const type = provider.type.startsWith("Custom") ? "Custom" : provider.type;
-    const endpoint = authInfo[type].endpoint;
-    const urlObj = new URL(endpoint);
-
-    let host = urlObj.host;
-    let tokens = host.split(".");
-    if (tokens.length > 2) {
-      tokens = tokens.slice(1);
+    const endpoint = authInfo[type]?.endpoint;
+    if (!endpoint) {
+      return "";
     }
-    host = tokens.join(".");
-
-    return `${urlObj.protocol}//${host}`;
+    try {
+      const urlObj = new URL(endpoint);
+      let host = urlObj.host;
+      let tokens = host.split(".");
+      if (tokens.length > 2) {
+        tokens = tokens.slice(1);
+      }
+      host = tokens.join(".");
+      return `${urlObj.protocol}//${host}`;
+    } catch {
+      return "";
+    }
   } else {
-    const info = Setting.OtherProviderInfo[provider.category][provider.type];
-    // avoid crash when provider is not found
+    const info = Setting.OtherProviderInfo?.[provider.category]?.[provider.type];
     if (info) {
       return info.url;
     }
