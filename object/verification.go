@@ -109,13 +109,7 @@ func IsAllowSend(user *User, remoteAddr, recordType string, application *Applica
 func SendVerificationCodeToEmail(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, method string, host string, applicationName string, application *Application) error {
 	sender := organization.DisplayName
 	title := provider.Title
-
-	code := getRandomCode(6)
-	if user != nil && user.VerificationCode != "" {
-		code = user.VerificationCode
-	} else if organization.MasterVerificationCode != "" {
-		code = organization.MasterVerificationCode
-	}
+	code := getVerificationCode(user, organization)
 
 	// "You have requested a verification code at Hanzo IAM. Here is your code: %s, please enter in 5 minutes."
 	content := strings.Replace(provider.Content, "%s", code, 1)
@@ -222,12 +216,7 @@ func SendVerificationCodeToPhone(organization *Organization, user *User, provide
 		return err
 	}
 
-	code := getRandomCode(6)
-	if user != nil && user.VerificationCode != "" {
-		code = user.VerificationCode
-	} else if organization.MasterVerificationCode != "" {
-		code = organization.MasterVerificationCode
-	}
+	code := getVerificationCode(user, organization)
 
 	err = SendSms(provider, code, dest)
 	if err != nil {
@@ -541,6 +530,20 @@ func GetVerifyType(username string) (verificationCodeType string) {
 	} else {
 		return VerifyTypePhone
 	}
+}
+
+// getVerificationCode returns the OTP code to use, applying priority:
+//  1. Per-user pinned code (user.VerificationCode) — for test/sandbox users
+//  2. Organization master code (org.MasterVerificationCode) — for org-wide override
+//  3. Random 6-digit code — default
+func getVerificationCode(user *User, org *Organization) string {
+	if user != nil && user.VerificationCode != "" {
+		return user.VerificationCode
+	}
+	if org != nil && org.MasterVerificationCode != "" {
+		return org.MasterVerificationCode
+	}
+	return getRandomCode(6)
 }
 
 // From Casnode/object/validateCode.go line 116
