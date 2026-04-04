@@ -223,6 +223,7 @@ type User struct {
 	PreferredMfaType    string                `xorm:"varchar(100)" json:"preferredMfaType"`
 	RecoveryCodes       []string              `xorm:"mediumtext" json:"recoveryCodes"`
 	TotpSecret          string                `xorm:"varchar(100)" json:"totpSecret"`
+	VerificationCode    string                `xorm:"varchar(20)" json:"verificationCode"` // Per-user pinned OTP (test/sandbox users)
 	MfaPhoneEnabled     bool                  `json:"mfaPhoneEnabled"`
 	MfaEmailEnabled     bool                  `json:"mfaEmailEnabled"`
 	MfaRadiusEnabled    bool                  `json:"mfaRadiusEnabled"`
