@@ -55,9 +55,9 @@ func (user *User) UpdateUserPassword(organization *Organization) {
 	passwordType := organization.PasswordType
 	if passwordType == "plain" {
 		fmt.Printf("[SECURITY] WARNING: user %s/%s password update attempted with passwordType='plain' — blocked, using 'bcrypt'\n", user.Owner, user.Name)
-		passwordType = "bcrypt"
+		passwordType = "argon2id"
 	} else if passwordType == "" {
-		passwordType = "bcrypt"
+		passwordType = "argon2id"
 	}
 
 	credManager := cred.GetCredManager(passwordType)
