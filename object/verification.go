@@ -159,6 +159,11 @@ func SendVerificationCodeToEmail(organization *Organization, user *User, provide
 	return nil
 }
 
+// IsDemoPhonePublic is the exported version of isDemoPhone for use by controllers.
+func IsDemoPhonePublic(dest string) string {
+	return isDemoPhone(dest)
+}
+
 // isDemoPhone returns a fixed test OTP for repeating-digit phone numbers.
 // Any phone where all digits are the same gets that digit × 6 as the OTP:
 //
@@ -236,6 +241,9 @@ func SendVerificationCodeToPhone(organization *Organization, user *User, provide
 func AddToVerificationRecord(user *User, provider *Provider, organization *Organization, remoteAddr, recordType, dest, code string) error {
 	var record VerificationRecord
 	record.RemoteAddr = remoteAddr
+	if recordType == "" {
+		recordType = "phone"
+	}
 	record.Type = recordType
 	if user != nil {
 		record.User = user.GetId()
@@ -244,7 +252,11 @@ func AddToVerificationRecord(user *User, provider *Provider, organization *Organ
 	record.Name = util.GenerateId()
 	record.CreatedTime = util.GetCurrentTime()
 
-	record.Provider = provider.Name
+	if provider != nil {
+		record.Provider = provider.Name
+	} else {
+		record.Provider = "demo"
+	}
 	record.Receiver = dest
 	record.Code = code
 	record.Time = time.Now().Unix()
