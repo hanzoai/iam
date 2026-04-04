@@ -187,6 +187,7 @@
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "Đường dẫn chuyển hướng URI: %s không tồn tại trong danh sách URI được phép chuyển hướng",
     "Token not found, invalid accessToken": "Token không tìm thấy, accessToken không hợp lệ",
     "Unsupported response_type: %s (must be code, token, or id_token)": "Unsupported response_type: %s (must be code, token, or id_token)",
+    "response_type is required (must be code)": "response_type is required (must be code)",
     "response_type is required (must be code, token, or id_token)": "response_type is required (must be code, token, or id_token)"
   },
   "user": {
