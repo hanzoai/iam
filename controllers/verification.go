@@ -362,16 +362,6 @@ func (c *ApiController) SendVerificationCode() {
 			vform.CountryCode = user.GetCountryCode(vform.CountryCode)
 		}
 
-		provider, err = application.GetSmsProvider(vform.Method, vform.CountryCode)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
-		if provider == nil {
-			c.ResponseError(fmt.Sprintf(c.T("verification:please add a SMS provider to the \"Providers\" list for the application: %s"), application.Name))
-			return
-		}
-
 		phone, ok := util.GetE164Number(vform.Dest, vform.CountryCode)
 		if !ok && conf.IsDemoMode() {
 			phone = "+" + vform.CountryCode + vform.Dest
@@ -381,7 +371,22 @@ func (c *ApiController) SendVerificationCode() {
 			c.ResponseError(fmt.Sprintf(c.T("verification:Phone number is invalid in your region %s"), vform.CountryCode))
 			return
 		}
-		sendResp = object.SendVerificationCodeToPhone(organization, user, provider, clientIp, phone, application)
+
+		// Demo phones bypass SMS provider requirement entirely
+		if demoCode := object.IsDemoPhonePublic(phone); conf.IsDemoMode() && demoCode != "" {
+			sendResp = object.AddToVerificationRecord(user, nil, organization, clientIp, "phone", phone, demoCode)
+		} else {
+			provider, err = application.GetSmsProvider(vform.Method, vform.CountryCode)
+			if err != nil {
+				c.ResponseError(err.Error())
+				return
+			}
+			if provider == nil {
+				c.ResponseError(fmt.Sprintf(c.T("verification:please add a SMS provider to the \"Providers\" list for the application: %s"), application.Name))
+				return
+			}
+			sendResp = object.SendVerificationCodeToPhone(organization, user, provider, clientIp, phone, application)
+		}
 	}
 
 	if sendResp != nil {
