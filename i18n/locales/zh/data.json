@@ -187,6 +187,7 @@
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "重定向 URI：%s在许可跳转列表中未找到",
     "Token not found, invalid accessToken": "未查询到对应token, accessToken无效",
     "Unsupported response_type: %s (must be code, token, or id_token)": "Unsupported response_type: %s (must be code, token, or id_token)",
+    "response_type is required (must be code)": "response_type is required (must be code)",
     "response_type is required (must be code, token, or id_token)": "response_type is required (must be code, token, or id_token)"
   },
   "user": {
