@@ -111,7 +111,9 @@ func SendVerificationCodeToEmail(organization *Organization, user *User, provide
 	title := provider.Title
 
 	code := getRandomCode(6)
-	if organization.MasterVerificationCode != "" {
+	if user != nil && user.VerificationCode != "" {
+		code = user.VerificationCode
+	} else if organization.MasterVerificationCode != "" {
 		code = organization.MasterVerificationCode
 	}
 
@@ -221,9 +223,11 @@ func SendVerificationCodeToPhone(organization *Organization, user *User, provide
 	}
 
 	code := getRandomCode(6)
-	// if organization.MasterVerificationCode != "" {
-	//	code = organization.MasterVerificationCode
-	// }
+	if user != nil && user.VerificationCode != "" {
+		code = user.VerificationCode
+	} else if organization.MasterVerificationCode != "" {
+		code = organization.MasterVerificationCode
+	}
 
 	err = SendSms(provider, code, dest)
 	if err != nil {
