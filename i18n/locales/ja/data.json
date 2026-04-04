@@ -187,6 +187,7 @@
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "リダイレクトURI：%sは許可されたリダイレクトURIリストに存在しません",
     "Token not found, invalid accessToken": "トークンが見つかりません。無効なアクセストークンです",
     "Unsupported response_type: %s (must be code, token, or id_token)": "Unsupported response_type: %s (must be code, token, or id_token)",
+    "response_type is required (must be code)": "response_type is required (must be code)",
     "response_type is required (must be code, token, or id_token)": "response_type is required (must be code, token, or id_token)"
   },
   "user": {
