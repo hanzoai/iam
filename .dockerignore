@@ -16,6 +16,7 @@ playwright-report/
 .github/
 .vscode/
 .idea/
+.claude/
 
 # Docs
 docs/
