@@ -187,6 +187,7 @@
     "Redirect URI: %s doesn't exist in the allowed Redirect URI list": "El URI de redirección: %s no existe en la lista de URI de redirección permitidos",
     "Token not found, invalid accessToken": "Token no encontrado, accessToken inválido",
     "Unsupported response_type: %s (must be code, token, or id_token)": "Unsupported response_type: %s (must be code, token, or id_token)",
+    "response_type is required (must be code)": "response_type is required (must be code)",
     "response_type is required (must be code, token, or id_token)": "response_type is required (must be code, token, or id_token)"
   },
   "user": {
