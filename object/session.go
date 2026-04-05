@@ -198,8 +198,18 @@ func upsertSession(session *Session) (bool, error) {
 			session.Owner, session.Name, session.Application,
 			session.CreatedTime, string(sessionIdJSON),
 		)
+	} else if driverName == "sqlite" {
+		// SQLite uses same ON CONFLICT syntax as PostgreSQL but with ? placeholders
+		_, err = ormer.Engine.Exec(
+			`INSERT INTO session (owner, name, application, created_time, session_id)
+			 VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT (owner, name, application) DO UPDATE
+			 SET session_id = EXCLUDED.session_id, created_time = EXCLUDED.created_time`,
+			session.Owner, session.Name, session.Application,
+			session.CreatedTime, string(sessionIdJSON),
+		)
 	} else {
-		// MySQL / SQLite fallback
+		// MySQL fallback
 		_, err = ormer.Engine.Exec(
 			`INSERT INTO session (owner, name, application, created_time, session_id)
 			 VALUES (?, ?, ?, ?, ?)
