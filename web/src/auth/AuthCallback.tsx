@@ -321,7 +321,7 @@ class AuthCallback extends React.Component {
             let msg = "Logged in successfully.";
             if (casService === "") {
               // If service was not specified, IAM must display a message notifying the client that it has successfully initiated a single sign-on session.
-              msg += "Now you can visit apps protected by Hanzo IAM.";
+              msg += " Now you can visit apps protected by IAM.";
             }
             Setting.showMessage("success", msg);
 
