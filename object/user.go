@@ -30,8 +30,7 @@ import (
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/proxy"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/builder"
-	"github.com/xorm-io/core"
+	"github.com/hanzoai/builder"
 )
 
 const (
@@ -966,7 +965,7 @@ func updateUser(id string, user *User, columns []string) (int64, error) {
 		columns = append(columns, "hash")
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).Cols(columns...).Update(user)
+	affected, err := ormer.Engine.ID(PK{owner, name}).Cols(columns...).Update(user)
 	if err != nil {
 		return 0, err
 	}
@@ -1020,7 +1019,7 @@ func UpdateUserForAllFields(id string, user *User) (bool, error) {
 		}
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(user)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(user)
 	if err != nil {
 		return false, err
 	}
@@ -1227,7 +1226,7 @@ func AddUsersInBatch(users []*User) (bool, error) {
 }
 
 func deleteUser(user *User) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{user.Owner, user.Name}).Delete(&User{})
+	affected, err := ormer.Engine.ID(PK{user.Owner, user.Name}).Delete(&User{})
 	if err != nil {
 		return false, err
 	}

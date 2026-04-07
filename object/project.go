@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 // Project represents a project within an organization.
@@ -122,7 +121,7 @@ func UpdateProject(id string, project *Project) (bool, error) {
 		return false, nil
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(project)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(project)
 	if err != nil {
 		return false, err
 	}
@@ -131,7 +130,7 @@ func UpdateProject(id string, project *Project) (bool, error) {
 }
 
 func DeleteProject(project *Project) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{project.Owner, project.Name}).Delete(&Project{})
+	affected, err := ormer.Engine.ID(PK{project.Owner, project.Name}).Delete(&Project{})
 	if err != nil {
 		return false, err
 	}
