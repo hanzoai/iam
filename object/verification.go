@@ -29,7 +29,6 @@ import (
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type VerifyResult struct {
@@ -375,7 +374,7 @@ func DisableVerificationCode(dest string) error {
 	}
 
 	record.IsUsed = true
-	_, err = ormer.Engine.ID(core.PK{record.Owner, record.Name}).AllCols().Update(record)
+	_, err = ormer.Engine.ID(PK{record.Owner, record.Name}).AllCols().Update(record)
 	return err
 }
 

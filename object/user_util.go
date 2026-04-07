@@ -29,7 +29,6 @@ import (
 	"github.com/hanzoai/iam/idp"
 	"github.com/hanzoai/iam/util"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/xorm-io/core"
 	"golang.org/x/oauth2"
 )
 
@@ -167,7 +166,7 @@ func SetUserField(user *User, field string, value string) (bool, error) {
 		bean[strings.ToLower(field)] = value
 	}
 
-	affected, err := ormer.Engine.Table(user).ID(core.PK{user.Owner, user.Name}).Update(bean)
+	affected, err := ormer.Engine.Table(user).ID(PK{user.Owner, user.Name}).Update(bean)
 	if err != nil {
 		return false, err
 	}
@@ -186,7 +185,7 @@ func SetUserField(user *User, field string, value string) (bool, error) {
 		user.UpdatedTime = util.GetCurrentTime()
 	}
 
-	_, err = ormer.Engine.ID(core.PK{user.Owner, user.Name}).Cols("hash").Update(user)
+	_, err = ormer.Engine.ID(PK{user.Owner, user.Name}).Cols("hash").Update(user)
 	if err != nil {
 		return false, err
 	}
@@ -490,7 +489,7 @@ func ClearUserOAuthProperties(user *User, providerType string) (bool, error) {
 		}
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{user.Owner, user.Name}).Cols("properties").Update(user)
+	affected, err := ormer.Engine.ID(PK{user.Owner, user.Name}).Cols("properties").Update(user)
 	if err != nil {
 		return false, err
 	}
