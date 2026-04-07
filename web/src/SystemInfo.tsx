@@ -206,15 +206,15 @@ class SystemInfo extends React.Component {
                 </Col>
               </Row>
               <Divider />
-              <Card id="about-card" title={i18next.t("system:About Hanzo IAM")} bordered={true} style={{textAlign: "center"}}>
+              <Card id="about-card" title={i18next.t("system:About")} bordered={true} style={{textAlign: "center"}}>
                 <div>{i18next.t("system:An Identity and Access Management (IAM) / Single-Sign-On (SSO) platform with web UI supporting OAuth 2.0, OIDC, SAML and CAS")}</div>
-                GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">Hanzo IAM</a>
+                GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">IAM</a>
                 <br />
                 {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
                 <br />
-                {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai">https://iam.hanzo.ai</a>
+                {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">github.com/hanzoai/iam</a>
                 <br />
-                {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai/#:~:text=IAM%20API-,Community,-GitHub">Get in Touch!</a>
+                {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam/discussions">Get in Touch!</a>
               </Card>
             </Col>
             <Col span={6}></Col>
@@ -246,15 +246,15 @@ class SystemInfo extends React.Component {
             </Card>
           </Col>
           <Col span={24}>
-            <Card title={i18next.t("system:About Hanzo IAM")} bordered={true} style={{textAlign: "center"}}>
+            <Card title={i18next.t("system:About")} bordered={true} style={{textAlign: "center"}}>
               <div>{i18next.t("system:An Identity and Access Management (IAM) / Single-Sign-On (SSO) platform with web UI supporting OAuth 2.0, OIDC, SAML and CAS")}</div>
-              GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">Hanzo IAM</a>
+              GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">IAM</a>
               <br />
               {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
               <br />
-              {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai">https://iam.hanzo.ai</a>
+              {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">github.com/hanzoai/iam</a>
               <br />
-              {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://iam.hanzo.ai/#:~:text=IAM%20API-,Community,-GitHub">Get in Touch!</a>
+              {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam/discussions">Get in Touch!</a>
             </Card>
           </Col>
         </Row>
