@@ -200,8 +200,8 @@ func StaticFilter(ctx *context.Context) {
 		}
 		dir = strings.ReplaceAll(dir, "\\", "/")
 		ctx.ResponseWriter.WriteHeader(http.StatusNotFound)
-		errorText := fmt.Sprintf("The Hanzo IAM frontend HTML file: \"index.html\" was not found, it should be placed at: \"%s/web/build/index.html\". For more information, see: https://iam.hanzo.ai/docs/basic/server-installation/#frontend-1", dir)
-		http.ServeContent(ctx.ResponseWriter, ctx.Request, "Hanzo IAM frontend has encountered error...", time.Now(), strings.NewReader(errorText))
+		errorText := fmt.Sprintf("The IAM frontend HTML file: \"index.html\" was not found, it should be placed at: \"%s/web/build/index.html\". For more information, see: https://github.com/hanzoai/iam", dir)
+		http.ServeContent(ctx.ResponseWriter, ctx.Request, "IAM frontend has encountered error...", time.Now(), strings.NewReader(errorText))
 		return
 	}
 
@@ -228,7 +228,7 @@ func serveFileWithReplace(w http.ResponseWriter, r *http.Request, name string, o
 	newContent := oldContent
 	if organizationThemeCookie != nil {
 		newContent = strings.ReplaceAll(newContent, "https://cdn.casbin.org/img/favicon.png", organizationThemeCookie.Favicon)
-		newContent = strings.ReplaceAll(newContent, "<title>Hanzo IAM</title>", fmt.Sprintf("<title>%s</title>", organizationThemeCookie.DisplayName))
+		newContent = strings.ReplaceAll(newContent, "<title>Sign In</title>", fmt.Sprintf("<title>%s</title>", organizationThemeCookie.DisplayName))
 	}
 
 	newContent = strings.ReplaceAll(newContent, oldStaticBaseUrl, newStaticBaseUrl)

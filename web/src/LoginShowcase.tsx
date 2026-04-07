@@ -1,4 +1,4 @@
-// Hanzo AI Showcase Component for Login Page
+// Login Showcase Component
 // Displays animated product features + real testimonials on the right side of split-screen login
 // Content is per-organization — each org can have its own showcase slides and quotes
 
@@ -26,7 +26,7 @@ interface OrgContent {
   testimonials: Testimonial[];
 }
 
-interface HanzoShowcaseProps {
+interface LoginShowcaseProps {
   application?: {
     organization?: string;
   };
@@ -38,7 +38,7 @@ interface SlideIconProps {
 
 // ── Per-org showcase content ──────────────────────────────────────────────
 // Each org gets its own set of product slides and testimonials.
-// Falls back to "hanzo" content for orgs without custom content.
+// Falls back to generic content for orgs without custom content.
 
 const orgContent: Record<string, OrgContent> = {
   hanzo: {
@@ -207,19 +207,19 @@ function SlideIcon({name}: SlideIconProps) {
 
 // ── Main component ───────────────────────────────────────────────────────
 
-export default function HanzoShowcase({application}: HanzoShowcaseProps) {
+export default function LoginShowcase({application}: LoginShowcaseProps) {
   const [currentSlide, setCurrentSlide] = useState<number>(0);
   const [currentTestimonial, setCurrentTestimonial] = useState<number>(0);
   const [slideDirection, setSlideDirection] = useState<"in" | "out">("in");
 
   // Resolve org content — fall back to generic (not hanzo-branded)
-  const orgName = application?.organization || "hanzo";
+  const orgName = application?.organization || "";
   const genericContent: OrgContent = {
     badge: "Secure Access",
     title: application?.organization
       ? (orgContent[orgName]?.title || application.organization)
       : "Sign In",
-    subtitle: "Identity and access management powered by Hanzo IAM",
+    subtitle: "Identity and access management",
     slides: [
       {icon: "shield", title: "Secure Auth", desc: "OAuth 2.0, OIDC, SAML, and WebAuthn out of the box"},
       {icon: "id", title: "Multi-Tenant", desc: "Isolated organizations with per-tenant branding"},
