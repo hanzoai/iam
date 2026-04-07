@@ -21,7 +21,7 @@ import (
 
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 func getSigninUrl(iamClient *iamsdk.Client, callbackUrl string, originalPath string) string {

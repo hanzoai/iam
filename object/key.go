@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type Key struct {
@@ -154,7 +153,7 @@ func UpdateKey(id string, key *Key) (bool, error) {
 
 	key.UpdatedTime = util.GetCurrentTime()
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(key)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(key)
 	if err != nil {
 		return false, err
 	}
@@ -199,7 +198,7 @@ func AddKey(key *Key) (bool, error) {
 }
 
 func DeleteKey(key *Key) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{key.Owner, key.Name}).Delete(&Key{})
+	affected, err := ormer.Engine.ID(PK{key.Owner, key.Name}).Delete(&Key{})
 	if err != nil {
 		return false, err
 	}

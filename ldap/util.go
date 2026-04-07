@@ -24,9 +24,9 @@ import (
 	"github.com/hanzoai/iam/util"
 	"github.com/lor00x/goldap/message"
 
-	ldap "github.com/hanzoid/ldapserver"
+	ldap "github.com/casdoor/ldapserver"
 
-	"github.com/xorm-io/builder"
+	"github.com/hanzoai/builder"
 )
 
 type AttributeMapper func(user *object.User) message.AttributeValue

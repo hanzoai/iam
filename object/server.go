@@ -21,7 +21,6 @@ import (
 	"github.com/hanzoai/iam/mcp"
 	"github.com/hanzoai/iam/util"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/xorm-io/core"
 )
 
 type Tool struct {
@@ -81,7 +80,7 @@ func UpdateServer(id string, server *Server) (bool, error) {
 	server.UpdatedTime = util.GetCurrentTime()
 
 	syncServerTools(server)
-	_, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(server)
+	_, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(server)
 	if err != nil {
 		return false, err
 	}
@@ -130,7 +129,7 @@ func AddServer(server *Server) (bool, error) {
 }
 
 func DeleteServer(server *Server) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{server.Owner, server.Name}).Delete(&Server{})
+	affected, err := ormer.Engine.ID(PK{server.Owner, server.Name}).Delete(&Server{})
 	if err != nil {
 		return false, err
 	}

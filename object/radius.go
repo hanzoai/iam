@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 // https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/sec_usr_radatt/configuration/xe-16/sec-usr-radatt-xe-16-book/sec-rad-ov-ietf-attr.html
@@ -93,7 +92,7 @@ func AddRadiusAccounting(ra *RadiusAccounting) error {
 }
 
 func DeleteRadiusAccounting(ra *RadiusAccounting) error {
-	_, err := ormer.Engine.ID(core.PK{ra.Owner, ra.Name}).Delete(&RadiusAccounting{})
+	_, err := ormer.Engine.ID(PK{ra.Owner, ra.Name}).Delete(&RadiusAccounting{})
 	return err
 }
 
@@ -102,7 +101,7 @@ func UpdateRadiusAccounting(id string, ra *RadiusAccounting) error {
 	if err != nil {
 		return err
 	}
-	_, err = ormer.Engine.ID(core.PK{owner, name}).Update(ra)
+	_, err = ormer.Engine.ID(PK{owner, name}).Update(ra)
 	return err
 }
 
