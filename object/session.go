@@ -23,7 +23,6 @@ import (
 	"github.com/beego/beego/v2/server/web"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 var (
@@ -122,7 +121,7 @@ func UpdateSession(id string, session *Session) (bool, error) {
 		return false, nil
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name, application}).Update(session)
+	affected, err := ormer.Engine.ID(PK{owner, name, application}).Update(session)
 	if err != nil {
 		return false, err
 	}
@@ -247,7 +246,7 @@ func DeleteSession(id, curSessionId string) (bool, error) {
 		DeleteBeegoSession(session.SessionId)
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name, application}).Delete(&Session{})
+	affected, err := ormer.Engine.ID(PK{owner, name, application}).Delete(&Session{})
 	if err != nil {
 		return false, err
 	}
