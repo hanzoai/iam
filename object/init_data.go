@@ -152,6 +152,15 @@ func InitFromFile() {
 		for _, site := range initData.Sites {
 			initDefinedSite(site)
 		}
+
+		// Evict app cache — init may have created orgs after apps were
+		// first loaded, leaving cached apps with organizationObj: nil.
+		for _, application := range initData.Applications {
+			EvictAppCache(application.Owner, application.Name)
+			if application.ClientId != "" {
+				EvictAppCacheByClientId(application.ClientId)
+			}
+		}
 	}
 }
 
@@ -376,7 +385,8 @@ func initDefinedApplication(application *Application) {
 
 	if dbExists {
 		if initDataNewOnly {
-			// Re-cache the app since we evicted it above.
+			// Extend with org before caching so orgObj is populated.
+			_ = extendApplicationWithOrg(&dbApp)
 			appCache.set(appCacheKey(application.Owner, application.Name), dbApp, appCacheTTL)
 			// Merge critical OAuth fields that may be missing from apps
 			// created before init_data.json was updated.
