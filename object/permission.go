@@ -20,7 +20,6 @@ import (
 
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type Permission struct {
@@ -165,7 +164,7 @@ func UpdatePermission(id string, permission *Permission) (bool, error) {
 		}
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(permission)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(permission)
 	if err != nil {
 		return false, err
 	}
@@ -303,7 +302,7 @@ func AddPermissionsInBatch(permissions []*Permission) (bool, error) {
 }
 
 func deletePermission(permission *Permission) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{permission.Owner, permission.Name}).Delete(&Permission{})
+	affected, err := ormer.Engine.ID(PK{permission.Owner, permission.Name}).Delete(&Permission{})
 	if err != nil {
 		return false, err
 	}

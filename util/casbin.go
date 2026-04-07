@@ -14,7 +14,7 @@
 
 package util
 
-import xormadapter "github.com/hanzoid/xorm-adapter/v3"
+import xormadapter "github.com/hanzoai/xorm-adapter/v3"
 
 func CasbinToSlice(casbinRule xormadapter.CasbinRule) []string {
 	s := []string{

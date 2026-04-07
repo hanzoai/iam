@@ -21,7 +21,7 @@ import (
 	"github.com/beego/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
-	xormadapter "github.com/hanzoid/xorm-adapter/v3"
+	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
 
 // GetEnforcers
