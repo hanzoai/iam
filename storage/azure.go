@@ -15,8 +15,8 @@
 package storage
 
 import (
-	"github.com/hanzoid/oss"
-	"github.com/hanzoid/oss/azureblob"
+	"github.com/casdoor/oss"
+	"github.com/casdoor/oss/azureblob"
 )
 
 func NewAzureBlobStorageProvider(clientId string, clientSecret string, region string, bucket string, endpoint string) oss.StorageInterface {
