@@ -490,12 +490,15 @@ func getApplication(owner string, name string) (*Application, error) {
 		}
 
 		// Cache the fully-extended application (without shared org override).
-		cacheApp := application
-		if application.IsShared && sharedOrg != "" {
-			// Store with original org so shared-org override works on cache hit.
-			cacheApp.Organization = application.Organization
+		// Skip caching if organizationObj failed to load — avoids poisoning
+		// the cache during startup when orgs may not be initialized yet.
+		if application.OrganizationObj != nil {
+			cacheApp := application
+			if application.IsShared && sharedOrg != "" {
+				cacheApp.Organization = application.Organization
+			}
+			appCache.set(ckey, cacheApp, appCacheTTL)
 		}
-		appCache.set(ckey, cacheApp, appCacheTTL)
 
 		return &application, nil
 	} else {
