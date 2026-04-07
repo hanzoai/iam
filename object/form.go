@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type FormItem struct {
@@ -119,7 +118,7 @@ func UpdateForm(id string, form *Form) (bool, error) {
 		return false, nil
 	}
 
-	_, err = ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(form)
+	_, err = ormer.Engine.ID(PK{owner, name}).AllCols().Update(form)
 	if err != nil {
 		return false, err
 	}
@@ -137,7 +136,7 @@ func AddForm(form *Form) (bool, error) {
 }
 
 func DeleteForm(form *Form) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{form.Owner, form.Name}).Delete(&Form{})
+	affected, err := ormer.Engine.ID(PK{form.Owner, form.Name}).Delete(&Form{})
 	if err != nil {
 		return false, err
 	}

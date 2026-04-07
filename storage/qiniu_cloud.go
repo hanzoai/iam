@@ -15,8 +15,8 @@
 package storage
 
 import (
-	"github.com/hanzoid/oss"
-	"github.com/hanzoid/oss/qiniu"
+	"github.com/casdoor/oss"
+	"github.com/casdoor/oss/qiniu"
 )
 
 func NewQiniuCloudKodoStorageProvider(clientId string, clientSecret string, region string, bucket string, endpoint string) (oss.StorageInterface, error) {

@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/iam/conf"
-	sender "github.com/hanzoid/go-sms-sender"
+	sender "github.com/casdoor/go-sms-sender"
 )
 
 func getSmsClient(provider *Provider) (sender.SmsClient, error) {
