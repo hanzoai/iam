@@ -692,7 +692,7 @@ class ProviderEditPage extends React.Component {
                 this.updateProviderField("host", "smtp.example.com");
                 this.updateProviderField("port", 465);
                 this.updateProviderField("sslMode", "Auto");
-                this.updateProviderField("title", "Hanzo IAM Verification Code");
+                this.updateProviderField("title", "Verification Code");
                 this.updateProviderField("content", Setting.getDefaultHtmlEmailContent());
                 this.updateProviderField("metadata", Setting.getDefaultInvitationHtmlEmailContent());
                 this.updateProviderField("receiver", this.props.account.email);
