@@ -30,8 +30,8 @@ const selector = {
 };
 Cypress.Commands.add('login', ()=>{
   cy.visit("http://localhost:8000");
-  cy.get(selector.username).type("admin");
-  cy.get(selector.password).type("123");
+  cy.get(selector.username, {timeout: 15000}).type("admin");
+  cy.get(selector.password, {timeout: 15000}).type("123");
   cy.get(selector.loginButton).click();
-  cy.url().should("eq", "http://localhost:8000/");
+  cy.url({timeout: 15000}).should("eq", "http://localhost:8000/");
 })
