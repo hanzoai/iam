@@ -320,7 +320,7 @@ function LoginPage(props) {
         const loginHandler = (res) => {
           let msg = "Logged in successfully. ";
           if (casParams.service === "") {
-            msg += "Now you can visit apps protected by Hanzo IAM.";
+            msg += "Now you can visit apps protected by IAM.";
           }
           Setting.showMessage("success", msg);
 
