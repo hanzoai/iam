@@ -19,7 +19,6 @@ import (
 
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -176,7 +175,7 @@ func UpdateSyncer(id string, syncer *Syncer, isGlobalAdmin bool, lang string) (b
 	// Close old syncer connections before updating
 	_ = s.Close()
 
-	session := ormer.Engine.ID(core.PK{owner, name}).AllCols()
+	session := ormer.Engine.ID(PK{owner, name}).AllCols()
 	if syncer.Password == "***" {
 		syncer.Password = s.Password
 	}
@@ -207,7 +206,7 @@ func updateSyncerErrorText(syncer *Syncer, line string) error {
 
 	s.ErrorText = s.ErrorText + line
 
-	_, err = ormer.Engine.ID(core.PK{s.Owner, s.Name}).Cols("error_text").Update(s)
+	_, err = ormer.Engine.ID(PK{s.Owner, s.Name}).Cols("error_text").Update(s)
 	return err
 }
 
@@ -228,7 +227,7 @@ func AddSyncer(syncer *Syncer) (bool, error) {
 }
 
 func DeleteSyncer(syncer *Syncer) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{syncer.Owner, syncer.Name}).Where("organization = ?", syncer.Organization).Delete(&Syncer{})
+	affected, err := ormer.Engine.ID(PK{syncer.Owner, syncer.Name}).Where("organization = ?", syncer.Organization).Delete(&Syncer{})
 	if err != nil {
 		return false, err
 	}

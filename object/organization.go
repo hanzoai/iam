@@ -22,8 +22,7 @@ import (
 	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/builder"
-	"github.com/xorm-io/core"
+	"github.com/hanzoai/builder"
 )
 
 type AccountItem struct {
@@ -287,7 +286,7 @@ func UpdateOrganization(id string, organization *Organization, isGlobalAdmin boo
 		organization.WidgetItems = org.WidgetItems
 	}
 
-	session := ormer.Engine.ID(core.PK{owner, name}).AllCols()
+	session := ormer.Engine.ID(PK{owner, name}).AllCols()
 
 	if organization.MasterPassword == "***" {
 		session.Omit("master_password")
@@ -388,7 +387,7 @@ func CreatePersonalOrganization(username, displayName string) (*Organization, er
 }
 
 func deleteOrganization(organization *Organization) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{organization.Owner, organization.Name}).Delete(&Organization{})
+	affected, err := ormer.Engine.ID(PK{organization.Owner, organization.Name}).Delete(&Organization{})
 	if err != nil {
 		return false, err
 	}
@@ -741,6 +740,6 @@ func UpdateOrganizationBalance(owner string, name string, balance float64, curre
 		columns = []string{"user_balance"}
 	}
 
-	_, err = ormer.Engine.ID(core.PK{owner, name}).Cols(columns...).Update(organization)
+	_, err = ormer.Engine.ID(PK{owner, name}).Cols(columns...).Update(organization)
 	return err
 }
