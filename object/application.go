@@ -22,7 +22,6 @@ import (
 
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type SigninMethod struct {
@@ -872,7 +871,7 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 		providerItem.Provider = nil
 	}
 
-	session := ormer.Engine.ID(core.PK{owner, name}).AllCols()
+	session := ormer.Engine.ID(PK{owner, name}).AllCols()
 	if application.ClientSecret == "***" {
 		session.Omit("client_secret")
 	}
@@ -967,7 +966,7 @@ func AddApplication(application *Application) (bool, error) {
 func deleteApplication(application *Application) (bool, error) {
 	fmt.Printf("[deleteApplication] DELETING app %s/%s (org=%s)\n",
 		application.Owner, application.Name, application.Organization)
-	affected, err := ormer.Engine.ID(core.PK{application.Owner, application.Name}).Where("organization = ?", application.Organization).Delete(&Application{})
+	affected, err := ormer.Engine.ID(PK{application.Owner, application.Name}).Where("organization = ?", application.Organization).Delete(&Application{})
 	if err != nil {
 		fmt.Printf("[deleteApplication] ERROR deleting app %s/%s: %v\n",
 			application.Owner, application.Name, err)
