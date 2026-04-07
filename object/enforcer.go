@@ -20,8 +20,7 @@ import (
 
 	"github.com/casbin/casbin/v2"
 	"github.com/hanzoai/iam/util"
-	xormadapter "github.com/hanzoid/xorm-adapter/v3"
-	"github.com/xorm-io/core"
+	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
 
 type Enforcer struct {
@@ -102,7 +101,7 @@ func UpdateEnforcer(id string, enforcer *Enforcer) (bool, error) {
 		return false, nil
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(enforcer)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(enforcer)
 	if err != nil {
 		return false, err
 	}
@@ -120,7 +119,7 @@ func AddEnforcer(enforcer *Enforcer) (bool, error) {
 }
 
 func DeleteEnforcer(enforcer *Enforcer) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{enforcer.Owner, enforcer.Name}).Delete(&Enforcer{})
+	affected, err := ormer.Engine.ID(PK{enforcer.Owner, enforcer.Name}).Delete(&Enforcer{})
 	if err != nil {
 		return false, err
 	}
