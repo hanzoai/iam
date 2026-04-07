@@ -17,11 +17,11 @@ import {createButton} from "react-social-login-buttons";
 import {StaticBaseUrl} from "../Setting";
 
 function Icon({width = 24, height = 24, color}) {
-  return <img src={`${StaticBaseUrl}/buttons/iam.svg`} alt="Sign in with Hanzo IAM" style={{width: 24, height: 24}} />;
+  return <img src={`${StaticBaseUrl}/buttons/iam.svg`} alt="Sign in with IAM" style={{width: 24, height: 24}} />;
 }
 
 const config = {
-  text: "Sign in with Hanzo IAM",
+  text: "Sign in with IAM",
   icon: Icon,
   iconFormat: name => `fa fa-${name}`,
   style: {background: "#ffffff", color: "#000000"},
