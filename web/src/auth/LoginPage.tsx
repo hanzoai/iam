@@ -965,7 +965,7 @@ function LoginPage(props) {
         </div>
       );
     } else if (signinItem.name === "Languages") {
-      const languages = application.organizationObj.languages;
+      const languages = application.organizationObj?.languages ?? ["en"];
       if (languages.length <= 1) {
         const language = (languages.length === 1) ? languages[0] : "en";
         if (Setting.getLanguage() !== language) {
@@ -976,7 +976,7 @@ function LoginPage(props) {
       return (
         <div key={resultItemKey} className="login-languages">
           <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
-          <LanguageSelect languages={application.organizationObj.languages} onClick={key => { setUserLang(key); }} />
+          <LanguageSelect languages={application.organizationObj?.languages ?? ["en"]} onClick={key => { setUserLang(key); }} />
         </div>
       );
     } else if (signinItem.name === "Signin methods") {
@@ -1001,7 +1001,7 @@ function LoginPage(props) {
             >
               <CountryCodeSelect
                 style={{width: "35%"}}
-                countryCodes={getApplicationObj().organizationObj.countryCodes}
+                countryCodes={getApplicationObj().organizationObj?.countryCodes ?? ["US"]}
               />
             </Form.Item>
             <Form.Item
