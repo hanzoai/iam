@@ -21,8 +21,7 @@ import (
 
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/builder"
-	"github.com/xorm-io/core"
+	"github.com/hanzoai/builder"
 )
 
 type Group struct {
@@ -164,7 +163,7 @@ func UpdateGroup(id string, group *Group) (bool, error) {
 		}
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(group)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(group)
 	if err != nil {
 		return false, err
 	}
@@ -233,7 +232,7 @@ func AddGroupsInBatch(groups []*Group) (bool, error) {
 }
 
 func deleteGroup(group *Group) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{group.Owner, group.Name}).Delete(&Group{})
+	affected, err := ormer.Engine.ID(PK{group.Owner, group.Name}).Delete(&Group{})
 	if err != nil {
 		return false, err
 	}
@@ -448,7 +447,7 @@ func GroupChangeTrigger(oldName, newName string) error {
 	}
 	for _, group := range groups {
 		group.ParentId = newName
-		_, err := session.ID(core.PK{group.Owner, group.Name}).Cols("parent_id").Update(group)
+		_, err := session.ID(PK{group.Owner, group.Name}).Cols("parent_id").Update(group)
 		if err != nil {
 			return err
 		}
