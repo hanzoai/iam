@@ -18,8 +18,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hanzoai/iam/conf"
 	sender "github.com/casdoor/go-sms-sender"
+	"github.com/hanzoai/iam/conf"
 )
 
 func getSmsClient(provider *Provider) (sender.SmsClient, error) {
