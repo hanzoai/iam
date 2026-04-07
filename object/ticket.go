@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type TicketMessage struct {
@@ -114,7 +113,7 @@ func UpdateTicket(id string, ticket *Ticket) (bool, error) {
 		return false, nil
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(ticket)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(ticket)
 	if err != nil {
 		return false, err
 	}
@@ -132,7 +131,7 @@ func AddTicket(ticket *Ticket) (bool, error) {
 }
 
 func DeleteTicket(ticket *Ticket) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{ticket.Owner, ticket.Name}).Delete(&Ticket{})
+	affected, err := ormer.Engine.ID(PK{ticket.Owner, ticket.Name}).Delete(&Ticket{})
 	if err != nil {
 		return false, err
 	}
