@@ -95,7 +95,13 @@ export function getAlgorithmNames(themeData) {
   return algorithms;
 }
 
-export function getLogo(themes) {
+export function getLogo(themes, organization) {
+  if (organization?.logo) {
+    return organization.logo;
+  }
+  if (organization?.logoDark && themes.includes("dark")) {
+    return organization.logoDark;
+  }
   if (themes.includes("dark")) {
     return `${HanzoStaticUrl}/img/hanzo-logo-dark.svg`;
   } else {
@@ -1252,7 +1258,7 @@ export function getProviderTypeOptions(category) {
         {id: "ADFS", name: "ADFS"},
         {id: "Baidu", name: "Baidu"},
         {id: "Alipay", name: "Alipay"},
-        {id: "Hanzo", name: "Hanzo IAM"},
+        {id: "Hanzo", name: "IAM"},
         {id: "Infoflow", name: "Infoflow"},
         {id: "Apple", name: "Apple"},
         {id: "AzureAD", name: "Azure AD"},
@@ -1371,7 +1377,7 @@ export function getProviderTypeOptions(category) {
         {id: "Qiniu Cloud Kodo", name: "Qiniu Cloud Kodo"},
         {id: "Google Cloud Storage", name: "Google Cloud Storage"},
         {id: "Synology", name: "Synology"},
-        {id: "Hanzo", name: "Hanzo IAM"},
+        {id: "Hanzo", name: "IAM"},
         {id: "CUCloud OSS", name: "CUCloud OSS"},
       ]
     );
@@ -1986,7 +1992,7 @@ export function getUserCommonFields() {
 }
 
 export function getDefaultFooterContent() {
-  return `Powered by <a target="_blank" href="https://hanzo.ai" rel="noreferrer"><img style="padding-bottom: 3px" height="20" alt="Hanzo" src="${HanzoStaticUrl}/img/hanzo-logo.svg"/></a>`;
+  return `Powered by <a target="_blank" href="https://github.com/hanzoai/iam" rel="noreferrer">IAM</a>`;
 }
 
 export function getEmptyFooterContent() {
@@ -2017,8 +2023,7 @@ export function getDefaultHtmlEmailContent() {
 <body>
 <div class="email-container">
   <div class="header">
-        <h3>Hanzo AI</h3>
-        <img src="${StaticBaseUrl}/img/hanzo-logo.svg" alt="Hanzo Logo" width="300">
+        <h3>%{org.displayName}</h3>
     </div>
     <p><strong>%{user.friendlyName}</strong>, here is your verification code</p>
     <p>Use this code for your transaction. It's valid for 5 minutes</p>
@@ -2031,10 +2036,10 @@ export function getDefaultHtmlEmailContent() {
       </div>
     </reset-link>
     <p>Thanks</p>
-    <p>The Hanzo Team</p>
+    <p>The %{org.displayName} Team</p>
     <hr>
     <div class="footer">
-        <p>Hanzo IAM by Hanzo AI. For more info please refer to <a href="https://hanzo.ai">https://hanzo.ai</a></p>
+        <p>Powered by IAM</p>
     </div>
 </div>
 </body>
@@ -2060,10 +2065,9 @@ export function getDefaultInvitationHtmlEmailContent() {
 <body>
 <div class="email-container">
   <div class="header">
-        <h3>Hanzo AI</h3>
-        <img src="${StaticBaseUrl}/img/hanzo-logo.svg" alt="Hanzo Logo" width="300">
+        <h3>%{org.displayName}</h3>
     </div>
-    <p>You have been invited to join Hanzo</p>
+    <p>You have been invited to join %{org.displayName}</p>
     <div class="code">
         %code
     </div>
@@ -2073,10 +2077,10 @@ export function getDefaultInvitationHtmlEmailContent() {
       </div>
     </reset-link>
     <p>Thanks</p>
-    <p>The Hanzo Team</p>
+    <p>The %{org.displayName} Team</p>
     <hr>
     <div class="footer">
-        <p>Hanzo IAM by Hanzo AI. For more info please refer to <a href="https://hanzo.ai">https://hanzo.ai</a></p>
+        <p>Powered by IAM</p>
     </div>
 </div>
 </body>

@@ -6,7 +6,7 @@ export const TourObj = {
   home: [
     {
       title: "Welcome to iam",
-      description: "You can learn more about the use of Hanzo IAM at https://iam.hanzo.ai/.",
+      description: "You can learn more about the use of IAM at https://github.com/hanzoai/iam.",
       cover: (
         <img
           alt="iam.png"
@@ -21,20 +21,20 @@ export const TourObj = {
     },
     {
       title: "Import users",
-      description: "You can add new users or update existing Hanzo IAM users by uploading a XLSX file of user information.",
+      description: "You can add new users or update existing IAM users by uploading a XLSX file of user information.",
       id: "echarts-chart",
     },
   ],
   webhooks: [
     {
       title: "Webhook List",
-      description: "Event systems allow you to build integrations, which subscribe to certain events on Hanzo IAM. When one of those event is triggered, we'll send a POST json payload to the configured URL. The application parsed the json payload and carry out the hooked function. Events consist of signup, login, logout, update users, which are stored in the action field of the record. Event systems can be used to update an external issue from users.",
+      description: "Event systems allow you to build integrations, which subscribe to certain events on IAM. When one of those event is triggered, we'll send a POST json payload to the configured URL. The application parsed the json payload and carry out the hooked function. Events consist of signup, login, logout, update users, which are stored in the action field of the record. Event systems can be used to update an external issue from users.",
     },
   ],
   syncers: [
     {
       title: "Syncer List",
-      description: "Hanzo IAM stores users in user table. Don't worry about migrating your application user data into Hanzo IAM, when you plan to use Hanzo IAM as an authentication platform. Hanzo IAM provides syncer to quickly help you sync user data to Hanzo IAM.",
+      description: "IAM stores users in user table. Don't worry about migrating your application user data into IAM, when you plan to use IAM as an authentication platform. IAM provides syncer to quickly help you sync user data to IAM.",
     },
   ],
   sysinfo: [
@@ -59,8 +59,8 @@ export const TourObj = {
       id: "throughput-card",
     },
     {
-      title: "About Hanzo IAM",
-      description: "You can get more Hanzo IAM information in this card.",
+      title: "About IAM",
+      description: "You can get more IAM information in this card.",
       id: "about-card",
     },
   ],
@@ -73,13 +73,13 @@ export const TourObj = {
   pricings: [
     {
       title: "Price List",
-      description: "Hanzo IAM can be used as subscription management system via plan, pricing and subscription.",
+      description: "IAM can be used as subscription management system via plan, pricing and subscription.",
     },
   ],
   plans: [
     {
       title: "Plan List",
-      description: "Plan  describe list of application's features with own name and price. Plan features depends on Hanzo IAM role with set of permissions.That allow to describe plan's features independ on naming and price. For example: plan may has diffrent prices depends on county or date.",
+      description: "Plan  describe list of application's features with own name and price. Plan features depends on IAM role with set of permissions.That allow to describe plan's features independ on naming and price. For example: plan may has diffrent prices depends on county or date.",
     },
   ],
   payments: [
@@ -103,19 +103,19 @@ export const TourObj = {
   tokens: [
     {
       title: "Token List",
-      description: "Hanzo IAM is based on OAuth. Tokens are users' OAuth token.You can get access token in this list.",
+      description: "IAM is based on OAuth. Tokens are users' OAuth token.You can get access token in this list.",
     },
   ],
   enforcers: [
     {
       title: "Enforcer List",
-      description: "In addition to the API interface for requesting enforcement of permission control, Hanzo IAM also provides other interfaces that help external applications obtain permission policy information, which is also listed here.",
+      description: "In addition to the API interface for requesting enforcement of permission control, IAM also provides other interfaces that help external applications obtain permission policy information, which is also listed here.",
     },
   ],
   adapters: [
     {
       title: "Adapter List",
-      description: "Hanzo IAM supports using the UI to connect the adapter and manage the policy rules. In Hanzo, the policy storage is implemented as an adapter (aka middleware for Hanzo). A Hanzo user can use an adapter to load policy rules from a storage, or save policy rules to it.",
+      description: "IAM supports using the UI to connect the adapter and manage the policy rules. The policy storage is implemented as an adapter (aka middleware for Casbin). You can use an adapter to load policy rules from a storage, or save policy rules to it.",
     },
   ],
   models: [
@@ -127,16 +127,16 @@ export const TourObj = {
   permissions: [
     {
       title: "Permission List",
-      description: "All users associated with a single Hanzo IAM organization are shared between the organization's applications and therefore have access to the applications. Sometimes you may want to restrict users' access to certain applications, or certain resources in a certain application. In this case, you can use Permission implemented by Hanzo.",
+      description: "All users associated with a single IAM organization are shared between the organization's applications and therefore have access to the applications. Sometimes you may want to restrict users' access to certain applications, or certain resources in a certain application. In this case, you can use Permission implemented by Casbin.",
     },
     {
       title: "Permission Add",
-      description: "In the Hanzo IAM Web UI, you can add a Model for your organization in the Model configuration item, and a Policy for your organization in the Permission configuration item. ",
+      description: "In the IAM Web UI, you can add a Model for your organization in the Model configuration item, and a Policy for your organization in the Permission configuration item. ",
       id: "add-button",
     },
     {
       title: "Permission Upload",
-      description: "With Hanzo Online Editor, you can get Model and Policy files suitable for your usage scenarios. You can easily import the Model file into Hanzo IAM through the Hanzo IAM Web UI for use by the built-in Hanzo. ",
+      description: "With the Casbin Online Editor, you can get Model and Policy files suitable for your usage scenarios. You can easily import the Model file into IAM through the IAM Web UI for use by the built-in Casbin enforcer. ",
       id: "upload-button",
     },
   ],
@@ -171,7 +171,7 @@ export const TourObj = {
   organizations: [
     {
       title: "Organization List",
-      description: "Organization is the basic unit of Hanzo IAM, which manages users and applications. If a user signed in to an organization, then he can access all applications belonging to the organization without signing in again.",
+      description: "Organization is the basic unit of IAM, which manages users and applications. If a user signed in to an organization, then he can access all applications belonging to the organization without signing in again.",
     },
   ],
   groups: [
@@ -183,18 +183,18 @@ export const TourObj = {
   users: [
     {
       title: "User List",
-      description: "As an authentication platform, Hanzo IAM is able to manage users.",
+      description: "As an authentication platform, IAM is able to manage users.",
     },
     {
       title: "Import users",
-      description: "You can add new users or update existing Hanzo IAM users by uploading a XLSX file of user information.",
+      description: "You can add new users or update existing IAM users by uploading a XLSX file of user information.",
       id: "upload-button",
     },
   ],
   applications: [
     {
       title: "Application List",
-      description: "If you want to use Hanzo IAM to provide login service for your web Web APPs, you can add them as Hanzo IAM applications. Users can access all applications in their organizations without login twice.",
+      description: "If you want to use IAM to provide login service for your web Web APPs, you can add them as IAM applications. Users can access all applications in their organizations without login twice.",
     },
   ],
 };
