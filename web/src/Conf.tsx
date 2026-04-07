@@ -16,7 +16,7 @@
 
 import * as Cookie from "cookie";
 
-export const DefaultApplication = "hanzo-app";
+export const DefaultApplication = "app-built-in";
 
 export let ShowGithubCorner = false;
 export let IsDemoMode = false;
@@ -38,7 +38,7 @@ export const ThemeDefault = {
 export const CustomFooter = null;
 
 // Blank or null to hide Ai Assistant button
-export let AiAssistantUrl = "https://ai.hanzo.ai";
+export let AiAssistantUrl = "";
 
 // Maximum number of navbar items before switching from flat to grouped menu
 export const MaxItemsForFlatMenu = 7;
