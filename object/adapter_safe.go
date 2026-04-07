@@ -1,8 +1,8 @@
 package object
 
 import (
-	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 	"github.com/hanzoai/xorm"
+	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
 
 type SafeAdapter struct {
