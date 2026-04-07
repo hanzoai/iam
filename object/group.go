@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hanzoai/builder"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	"github.com/hanzoai/builder"
 )
 
 type Group struct {
