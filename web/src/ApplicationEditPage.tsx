@@ -119,11 +119,11 @@ const sideTemplate = `<style>
   }
 </style>
 <div class="left-model">
-  <span class="side-logo"> <img src="${Setting.StaticBaseUrl}/img/iam-logo_1185x256.png" alt="Hanzo IAM" style="width: 120px">
+  <span class="side-logo"> <img src="${Setting.StaticBaseUrl}/img/iam-logo_1185x256.png" alt="IAM" style="width: 120px">
     <span>SSO</span>
   </span>
   <div class="img">
-    <img src="${Setting.StaticBaseUrl}/img/hanzo.svg" alt="Hanzo IAM"/>
+    <img src="${Setting.StaticBaseUrl}/img/hanzo.svg" alt="IAM"/>
   </div>
 </div>
 `;
