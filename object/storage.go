@@ -26,7 +26,7 @@ import (
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/storage"
 	"github.com/hanzoai/iam/util"
-	"github.com/hanzoid/oss"
+	"github.com/casdoor/oss"
 )
 
 var isCloudIntranet bool

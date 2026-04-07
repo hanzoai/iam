@@ -24,7 +24,6 @@ import (
 	"github.com/hanzoai/iam/idp"
 	"github.com/hanzoai/iam/idv"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type Provider struct {
@@ -236,7 +235,7 @@ func UpdateProvider(id string, provider *Provider) (bool, error) {
 		}
 	}
 
-	session := ormer.Engine.ID(core.PK{owner, name}).AllCols()
+	session := ormer.Engine.ID(PK{owner, name}).AllCols()
 	if provider.ClientSecret == "***" {
 		session = session.Omit("client_secret")
 	}
@@ -279,7 +278,7 @@ func AddProvider(provider *Provider) (bool, error) {
 }
 
 func DeleteProvider(provider *Provider) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{provider.Owner, provider.Name}).Delete(&Provider{})
+	affected, err := ormer.Engine.ID(PK{provider.Owner, provider.Name}).Delete(&Provider{})
 	if err != nil {
 		return false, err
 	}
