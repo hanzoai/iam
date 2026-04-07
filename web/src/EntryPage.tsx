@@ -33,7 +33,7 @@ import QrCodePage from "./QrCodePage";
 import CaptchaPage from "./CaptchaPage";
 import CustomHead from "./basic/CustomHead";
 import * as Util from "./auth/Util";
-import HanzoShowcase from "./HanzoShowcase";
+import LoginShowcase from "./LoginShowcase";
 
 class EntryPage extends React.Component {
   constructor(props) {
@@ -132,10 +132,10 @@ class EntryPage extends React.Component {
             </Switch>
           </div>
 
-          {/* Right side - Hanzo Showcase (only on desktop for auth pages) */}
+          {/* Right side - Login Showcase (only on desktop for auth pages) */}
           {showShowcase && (
             <div className="split-login-showcase">
-              <HanzoShowcase application={this.state.application} />
+              <LoginShowcase application={this.state.application} />
             </div>
           )}
         </div>
