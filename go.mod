@@ -20,6 +20,12 @@ require (
 	github.com/beevik/etree v1.1.0
 	github.com/casbin/casbin/v2 v2.77.2
 	github.com/casbin/lego/v4 v4.5.4
+	github.com/casdoor/casdoor-go-sdk v1.46.0
+	github.com/casdoor/go-sms-sender v0.25.0
+	github.com/casdoor/gomail/v2 v2.3.0
+	github.com/casdoor/ldapserver v1.2.0
+	github.com/casdoor/notify2 v1.6.0
+	github.com/casdoor/oss v1.8.0
 	github.com/corazawaf/coraza/v3 v3.3.3
 	github.com/dchest/captcha v0.0.0-20200903113550-03f5f0333e1f
 	github.com/elimity-com/scim v0.0.0-20230426070224-941a5eac92f3
@@ -34,13 +40,9 @@ require (
 	github.com/go-webauthn/webauthn v0.10.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
-	github.com/hanzoid/go-sdk v1.45.0
-	github.com/hanzoid/go-sms-sender v0.26.0
-	github.com/hanzoid/gomail/v2 v2.4.0
-	github.com/hanzoid/ldapserver v1.3.0
-	github.com/hanzoid/notify2 v1.1.0
-	github.com/hanzoid/oss v1.9.0
-	github.com/hanzoid/xorm-adapter/v3 v3.2.0
+	github.com/hanzoai/builder v0.3.13
+	github.com/hanzoai/xorm v1.1.6
+	github.com/hanzoai/xorm-adapter/v3 v3.0.1
 	github.com/hsluoyz/modsecurity-go v0.0.7
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/json-iterator/go v1.1.12
@@ -70,9 +72,6 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tealeg/xlsx v1.0.5
 	github.com/thanhpk/randstr v1.0.4
-	github.com/xorm-io/builder v0.3.13
-	github.com/xorm-io/core v0.7.4
-	github.com/xorm-io/xorm v1.1.6
 	golang.org/x/crypto v0.47.0
 	golang.org/x/net v0.49.0
 	golang.org/x/oauth2 v0.34.0

@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type Token struct {
@@ -200,7 +199,7 @@ func UpdateToken(id string, token *Token, isGlobalAdmin bool) (bool, error) {
 
 	token.popularHashes()
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(token)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(token)
 	if err != nil {
 		return false, err
 	}
@@ -220,7 +219,7 @@ func AddToken(token *Token) (bool, error) {
 }
 
 func DeleteToken(token *Token) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{token.Owner, token.Name}).Where("organization = ?", token.Organization).Delete(&Token{})
+	affected, err := ormer.Engine.ID(PK{token.Owner, token.Name}).Where("organization = ?", token.Organization).Delete(&Token{})
 	if err != nil {
 		return false, err
 	}

@@ -23,7 +23,7 @@ import (
 
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
-	iamsdk "github.com/hanzoid/go-sdk/casdoorsdk"
+	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 func joinPath(a string, b string) string {
