@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type Resource struct {
@@ -107,7 +106,7 @@ func UpdateResource(id string, resource *Resource) (bool, error) {
 		return false, nil
 	}
 
-	_, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(resource)
+	_, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(resource)
 	if err != nil {
 		return false, err
 	}
@@ -126,7 +125,7 @@ func AddResource(resource *Resource) (bool, error) {
 }
 
 func DeleteResource(resource *Resource) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{resource.Owner, resource.Name}).Delete(&Resource{})
+	affected, err := ormer.Engine.ID(PK{resource.Owner, resource.Name}).Delete(&Resource{})
 	if err != nil {
 		return false, err
 	}

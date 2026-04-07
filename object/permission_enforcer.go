@@ -24,7 +24,7 @@ import (
 	"github.com/casbin/casbin/v2/model"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	xormadapter "github.com/hanzoid/xorm-adapter/v3"
+	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
 
 func getPermissionEnforcer(p *Permission, permissionIDs ...string) (*casbin.Enforcer, error) {
@@ -80,7 +80,11 @@ func (p *Permission) setEnforcerAdapter(enforcer *casbin.Enforcer) error {
 		}
 	}
 	tableNamePrefix := conf.GetConfigString("tableNamePrefix")
-	adapter, err := xormadapter.NewAdapterByEngineWithTableName(ormer.Engine, tableName, tableNamePrefix)
+	xormEngine, xormErr := newXormEngineForCasbin()
+	if xormErr != nil {
+		return xormErr
+	}
+	adapter, err := xormadapter.NewAdapterByEngineWithTableName(xormEngine, tableName, tableNamePrefix)
 	if err != nil {
 		return err
 	}

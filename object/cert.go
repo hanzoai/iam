@@ -20,7 +20,6 @@ import (
 
 	"github.com/hanzoai/iam/certificate"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -212,7 +211,7 @@ func UpdateCert(id string, cert *Cert) (bool, error) {
 		return false, err
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(cert)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(cert)
 	if err != nil {
 		return false, err
 	}
@@ -242,7 +241,7 @@ func AddCert(cert *Cert) (bool, error) {
 }
 
 func DeleteCert(cert *Cert) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{cert.Owner, cert.Name}).Delete(&Cert{})
+	affected, err := ormer.Engine.ID(PK{cert.Owner, cert.Name}).Delete(&Cert{})
 	if err != nil {
 		return false, err
 	}
