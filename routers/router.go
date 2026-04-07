@@ -14,13 +14,13 @@
 
 // Package routers
 // @APIVersion 1.503.0
-// @Title Hanzo IAM RESTful API
-// @Description Swagger Docs of Hanzo IAM Backend API
+// @Title IAM RESTful API
+// @Description Swagger Docs of IAM Backend API
 // @Contact support@hanzo.ai
 // @SecurityDefinition AccessToken apiKey Authorization header
 // @Schemes https,http
-// @ExternalDocs Find out more about Hanzo IAM
-// @ExternalDocsUrl https://iam.hanzo.ai/
+// @ExternalDocs Find out more about IAM
+// @ExternalDocsUrl https://github.com/hanzoai/iam
 package routers
 
 import (
