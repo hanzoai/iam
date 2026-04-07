@@ -23,7 +23,7 @@ import (
 
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
-	ldap "github.com/hanzoid/ldapserver"
+	ldap "github.com/casdoor/ldapserver"
 	"github.com/lor00x/goldap/message"
 )
 
