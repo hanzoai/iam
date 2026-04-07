@@ -24,11 +24,10 @@ import (
 	"testing"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 func updateUserColumn(column string, user *User) {
-	_, err := ormer.Engine.ID(core.PK{user.Owner, user.Name}).Cols(column).Update(user)
+	_, err := ormer.Engine.ID(PK{user.Owner, user.Name}).Cols(column).Update(user)
 	if err != nil {
 		panic(err)
 	}

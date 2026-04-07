@@ -19,7 +19,6 @@ import (
 
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type Invitation struct {
@@ -157,7 +156,7 @@ func UpdateInvitation(id string, invitation *Invitation, lang string) (bool, err
 		return false, err
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(invitation)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(invitation)
 	if err != nil {
 		return false, err
 	}
@@ -186,7 +185,7 @@ func AddInvitation(invitation *Invitation, lang string) (bool, error) {
 }
 
 func DeleteInvitation(invitation *Invitation) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{invitation.Owner, invitation.Name}).Delete(&Invitation{})
+	affected, err := ormer.Engine.ID(PK{invitation.Owner, invitation.Name}).Delete(&Invitation{})
 	if err != nil {
 		return false, err
 	}

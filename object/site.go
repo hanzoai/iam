@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type NodeItem struct {
@@ -158,7 +157,7 @@ func UpdateSite(id string, site *Site) (bool, error) {
 
 	site.UpdatedTime = util.GetCurrentTime()
 
-	_, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(site)
+	_, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(site)
 	if err != nil {
 		return false, err
 	}
@@ -179,7 +178,7 @@ func UpdateSiteNoRefresh(id string, site *Site) (bool, error) {
 		return false, nil
 	}
 
-	_, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(site)
+	_, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(site)
 	if err != nil {
 		return false, err
 	}
@@ -204,7 +203,7 @@ func AddSite(site *Site) (bool, error) {
 }
 
 func DeleteSite(site *Site) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{site.Owner, site.Name}).Delete(&Site{})
+	affected, err := ormer.Engine.ID(PK{site.Owner, site.Name}).Delete(&Site{})
 	if err != nil {
 		return false, err
 	}
