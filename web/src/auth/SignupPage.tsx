@@ -406,7 +406,7 @@ function SignupPage(props) {
           <Form.Item className="signup-phone" label={signupItem.label ? signupItem.label : i18next.t("general:Phone")} required={required}>
             <Input.Group compact>
               <Form.Item name="countryCode" noStyle rules={[{required: required, message: i18next.t("signup:Please select your country code!")}]}>
-                <CountryCodeSelect style={{width: "35%"}} countryCodes={getApplicationObj().organizationObj.countryCodes} />
+                <CountryCodeSelect style={{width: "35%"}} countryCodes={getApplicationObj().organizationObj?.countryCodes ?? ["US"]} />
               </Form.Item>
               <Form.Item name="phone" dependencies={["countryCode"]} noStyle
                 rules={[
@@ -477,18 +477,18 @@ function SignupPage(props) {
               required: required,
               validateTrigger: "onChange",
               validator: (rule, value) => {
-                const errorMsg = PasswordChecker.checkPasswordComplexity(value, application.organizationObj.passwordOptions);
+                const errorMsg = PasswordChecker.checkPasswordComplexity(value, application.organizationObj?.passwordOptions ?? []);
                 if (errorMsg === "") {return Promise.resolve();}
                 else {return Promise.reject(errorMsg);}
               },
             }]}
             hasFeedback>
             <Input.Password className="signup-password-input" placeholder={signupItem.placeholder} onChange={(e) => {
-              setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj.passwordOptions, e.target.value));
+              setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj?.passwordOptions ?? [], e.target.value));
             }}
             onFocus={() => {
-              setPasswordPopoverOpen(application.organizationObj.passwordOptions?.length > 0);
-              setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj.passwordOptions, formRef.current?.getFieldValue("password") ?? ""));
+              setPasswordPopoverOpen(application.organizationObj?.passwordOptions ?? []?.length > 0);
+              setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj?.passwordOptions ?? [], formRef.current?.getFieldValue("password") ?? ""));
             }}
             onBlur={() => { setPasswordPopoverOpen(false); }} />
           </Form.Item>
@@ -604,7 +604,7 @@ function SignupPage(props) {
         initialValues={{
           application: application.name,
           organization: application.organization,
-          countryCode: application.organizationObj.countryCodes?.[0],
+          countryCode: application.organizationObj?.countryCodes ?? ["US"]?.[0],
         }}
         size="large"
         layout={Setting.isMobile() ? "vertical" : "horizontal"}
@@ -661,7 +661,7 @@ function SignupPage(props) {
           <div className="login-form">
             {Setting.renderHelmet(application)}
             {Setting.renderLogo(application)}
-            <LanguageSelect languages={application.organizationObj.languages} style={{top: "55px", right: "5px", position: "absolute"}} />
+            <LanguageSelect languages={application.organizationObj?.languages ?? ["en"]} style={{top: "55px", right: "5px", position: "absolute"}} />
             {renderForm(application)}
           </div>
         </div>
