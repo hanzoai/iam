@@ -21,7 +21,6 @@ import (
 	"github.com/hanzoai/iam/conf"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type Role struct {
@@ -138,7 +137,7 @@ func UpdateRole(id string, role *Role) (bool, error) {
 		}
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(role)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(role)
 	if err != nil {
 		return false, err
 	}
@@ -262,7 +261,7 @@ func AddRolesInBatch(roles []*Role) bool {
 }
 
 func deleteRole(role *Role) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{role.Owner, role.Name}).Delete(&Role{})
+	affected, err := ormer.Engine.ID(PK{role.Owner, role.Name}).Delete(&Role{})
 	if err != nil {
 		return false, err
 	}

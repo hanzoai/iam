@@ -15,8 +15,8 @@
 package notification
 
 import (
-	notify "github.com/hanzoid/notify2"
-	"github.com/hanzoid/notify2/service/lark"
+	notify "github.com/casdoor/notify2"
+	"github.com/casdoor/notify2/service/lark"
 )
 
 func NewLarkProvider(webhookURL string) (notify.Notifier, error) {
