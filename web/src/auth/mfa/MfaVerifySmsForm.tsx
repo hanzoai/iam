@@ -83,7 +83,7 @@ export const MfaVerifySmsForm = ({mfaProps, application, onFinish, method, user}
             <CountryCodeSelect
               initValue={mfaProps.countryCode}
               style={{width: "30%"}}
-              countryCodes={application.organizationObj.countryCodes}
+              countryCodes={application.organizationObj?.countryCodes ?? ["US"]}
             />
           </Form.Item>
         }
