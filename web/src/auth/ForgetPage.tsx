@@ -132,7 +132,7 @@ function ForgetPage(props) {
 
   const onFinish = async (values) => {
     values.username = name;
-    values.userOwner = getApplicationObj()?.organizationObj.name;
+    values.userOwner = getApplicationObj()?.organizationObj?.name ?? "built-in";
 
     if (queryParams.get("code")) {
       const res = await UserBackend.verifyCode({
@@ -331,7 +331,7 @@ function ForgetPage(props) {
                 required: true,
                 validateTrigger: "onChange",
                 validator: (rule, value) => {
-                  const errorMsg = PasswordChecker.checkPasswordComplexity(value, application.organizationObj.passwordOptions);
+                  const errorMsg = PasswordChecker.checkPasswordComplexity(value, application.organizationObj?.passwordOptions ?? []);
                   if (errorMsg === "") {return Promise.resolve();}
                   else {return Promise.reject(errorMsg);}
                 },
@@ -341,11 +341,11 @@ function ForgetPage(props) {
                 prefix={<Lock className="w-4 h-4 text-neutral-500" />}
                 placeholder={i18next.t("general:Password")}
                 onChange={(e) => {
-                  setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj.passwordOptions, e.target.value));
+                  setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj?.passwordOptions ?? [], e.target.value));
                 }}
                 onFocus={() => {
-                  setPasswordPopoverOpen(application.organizationObj.passwordOptions?.length > 0);
-                  setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj.passwordOptions, formRef.current?.getFieldValue("newPassword") ?? ""));
+                  setPasswordPopoverOpen(application.organizationObj?.passwordOptions ?? []?.length > 0);
+                  setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj?.passwordOptions ?? [], formRef.current?.getFieldValue("newPassword") ?? ""));
                 }}
                 onBlur={() => { setPasswordPopoverOpen(false); }}
               />
