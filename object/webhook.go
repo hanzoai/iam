@@ -19,7 +19,6 @@ import (
 
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type Header struct {
@@ -121,7 +120,7 @@ func UpdateWebhook(id string, webhook *Webhook, isGlobalAdmin bool, lang string)
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(webhook)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(webhook)
 	if err != nil {
 		return false, err
 	}
@@ -139,7 +138,7 @@ func AddWebhook(webhook *Webhook) (bool, error) {
 }
 
 func DeleteWebhook(webhook *Webhook) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{webhook.Owner, webhook.Name}).Where("organization = ?", webhook.Organization).Delete(&Webhook{})
+	affected, err := ormer.Engine.ID(PK{webhook.Owner, webhook.Name}).Where("organization = ?", webhook.Organization).Delete(&Webhook{})
 	if err != nil {
 		return false, err
 	}
