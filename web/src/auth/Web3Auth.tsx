@@ -100,7 +100,7 @@ export function signEthereumTypedData(from, nonce) {
   const typedData = JSON.stringify({
     domain: {
       chainId: window.ethereum.chainId,
-      name: "Hanzo IAM",
+      name: "IAM",
       version: "1",
     },
     message: {
@@ -325,8 +325,8 @@ export function initWeb3Onboard(application, provider) {
   ];
 
   const appMetadata = {
-    name: "Hanzo IAM",
-    description: "Connect a wallet using Hanzo IAM",
+    name: "IAM",
+    description: "Connect a wallet using IAM",
     recommendedInjectedWallets: [
       {name: "MetaMask", url: "https://metamask.io"},
       {name: "Coinbase", url: "https://www.coinbase.com/wallet"},
