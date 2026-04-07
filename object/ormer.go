@@ -27,13 +27,13 @@ import (
 	_ "github.com/go-sql-driver/mysql" // db = mysql
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/xorm"
 	xormadapter "github.com/hanzoai/xorm-adapter/v3"
+	"github.com/hanzoai/xorm/core"
+	"github.com/hanzoai/xorm/names"
 	_ "github.com/lib/pq"               // db = postgres
 	_ "github.com/microsoft/go-mssqldb" // db = mssql
-	"github.com/hanzoai/xorm"
-	"github.com/hanzoai/xorm/names"
-	"github.com/hanzoai/xorm/core"
-	_ "modernc.org/sqlite" // db = sqlite
+	_ "modernc.org/sqlite"              // db = sqlite
 )
 
 const (
