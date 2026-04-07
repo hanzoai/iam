@@ -17,10 +17,10 @@ package notification
 import (
 	"strconv"
 
-	api "github.com/go-telegram-bot-api/telegram-bot-api"
-	"github.com/hanzoai/iam/proxy"
 	notify "github.com/casdoor/notify2"
 	"github.com/casdoor/notify2/service/telegram"
+	api "github.com/go-telegram-bot-api/telegram-bot-api"
+	"github.com/hanzoai/iam/proxy"
 )
 
 func NewTelegramProvider(apiToken string, chatIdStr string) (notify.Notifier, error) {
