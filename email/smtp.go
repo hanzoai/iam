@@ -17,8 +17,8 @@ package email
 import (
 	"crypto/tls"
 
-	"github.com/hanzoai/iam/conf"
 	"github.com/casdoor/gomail/v2"
+	"github.com/hanzoai/iam/conf"
 )
 
 type SmtpEmailProvider struct {
