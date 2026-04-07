@@ -19,7 +19,7 @@ import (
 
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/xorm"
+	"github.com/hanzoai/xorm"
 )
 
 func GetSession(owner string, offset, limit int, field, value, sortField, sortOrder string) *xorm.Session {

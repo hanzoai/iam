@@ -20,9 +20,8 @@ import (
 
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	xormadapter "github.com/hanzoid/xorm-adapter/v3"
-	"github.com/xorm-io/core"
-	"github.com/xorm-io/xorm"
+	xormadapter "github.com/hanzoai/xorm-adapter/v3"
+	"github.com/hanzoai/xorm"
 )
 
 type Adapter struct {
@@ -112,7 +111,7 @@ func UpdateAdapter(id string, adapter *Adapter) (bool, error) {
 		}
 	}
 
-	session := ormer.Engine.ID(core.PK{owner, name}).AllCols()
+	session := ormer.Engine.ID(PK{owner, name}).AllCols()
 	if adapter.Password == "***" {
 		session.Omit("password")
 	}
@@ -134,7 +133,7 @@ func AddAdapter(adapter *Adapter) (bool, error) {
 }
 
 func DeleteAdapter(adapter *Adapter) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{adapter.Owner, adapter.Name}).Delete(&Adapter{})
+	affected, err := ormer.Engine.ID(PK{adapter.Owner, adapter.Name}).Delete(&Adapter{})
 	if err != nil {
 		return false, err
 	}
