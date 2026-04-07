@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type Expression struct {
@@ -79,7 +78,7 @@ func UpdateRule(id string, rule *Rule) (bool, error) {
 		return false, nil
 	}
 	rule.UpdatedTime = util.GetCurrentTime()
-	_, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(rule)
+	_, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(rule)
 	if err != nil {
 		return false, err
 	}
@@ -105,7 +104,7 @@ func AddRule(rule *Rule) (bool, error) {
 }
 
 func DeleteRule(rule *Rule) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{rule.Owner, rule.Name}).Delete(&Rule{})
+	affected, err := ormer.Engine.ID(PK{rule.Owner, rule.Name}).Delete(&Rule{})
 	if err != nil {
 		return false, err
 	}
