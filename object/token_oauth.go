@@ -30,7 +30,6 @@ import (
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/idp"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 const (
@@ -126,7 +125,7 @@ func ExpireTokenByAccessToken(accessToken string) (bool, *Application, *Token, e
 	}
 
 	token.ExpiresIn = 0
-	affected, err := ormer.Engine.ID(core.PK{token.Owner, token.Name}).Cols("expires_in").Update(token)
+	affected, err := ormer.Engine.ID(PK{token.Owner, token.Name}).Cols("expires_in").Update(token)
 	if err != nil {
 		return false, nil, nil, err
 	}
