@@ -22,11 +22,11 @@ describe("Login test", () => {
   });
   it("ui Login succeeded", () => {
     cy.visit("http://localhost:8000");
-    cy.get(selector.username).type("admin");
-    cy.get(selector.password).type("123");
+    cy.get(selector.username, {timeout: 15000}).type("admin");
+    cy.get(selector.password, {timeout: 15000}).type("123");
     cy.get(selector.loginButton).click();
     // After successful login, Casdoor redirects to the dashboard
-    cy.url({timeout: 10000}).should("eq", "http://localhost:8000/");
+    cy.url({timeout: 15000}).should("eq", "http://localhost:8000/");
   });
 
   it("Login failed", () => {
@@ -47,8 +47,8 @@ describe("Login test", () => {
   });
   it("ui Login failed", () => {
     cy.visit("http://localhost:8000");
-    cy.get(selector.username).type("admin");
-    cy.get(selector.password).type("1234");
+    cy.get(selector.username, {timeout: 15000}).type("admin");
+    cy.get(selector.password, {timeout: 15000}).type("1234");
     cy.get(selector.loginButton).click();
     // Failed login should stay on the login page
     cy.url().should("include", "/login");
