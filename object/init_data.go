@@ -20,7 +20,6 @@ import (
 
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type InitData struct {
@@ -533,7 +532,7 @@ func mergeApplicationOAuthDefaults(existing *Application, desired *Application) 
 	fmt.Printf("[init_data] merging %d OAuth fields for app %s/%s: %v\n",
 		len(updateCols), existing.Owner, existing.Name, updateCols)
 
-	_, err := ormer.Engine.ID(core.PK{existing.Owner, existing.Name}).
+	_, err := ormer.Engine.ID(PK{existing.Owner, existing.Name}).
 		Cols(updateCols...).
 		Update(existing)
 	if err != nil {
