@@ -20,7 +20,6 @@ import (
 	"github.com/casbin/casbin/v2/config"
 	"github.com/casbin/casbin/v2/model"
 	"github.com/hanzoai/iam/util"
-	"github.com/xorm-io/core"
 )
 
 type Model struct {
@@ -136,7 +135,7 @@ func UpdateModel(id string, modelObj *Model) (bool, error) {
 		}
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{owner, name}).AllCols().Update(modelObj)
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(modelObj)
 	if err != nil {
 		return false, err
 	}
@@ -154,7 +153,7 @@ func AddModel(model *Model) (bool, error) {
 }
 
 func DeleteModel(model *Model) (bool, error) {
-	affected, err := ormer.Engine.ID(core.PK{model.Owner, model.Name}).Delete(&Model{})
+	affected, err := ormer.Engine.ID(PK{model.Owner, model.Name}).Delete(&Model{})
 	if err != nil {
 		return false, err
 	}
