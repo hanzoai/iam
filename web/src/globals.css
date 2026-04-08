@@ -414,3 +414,26 @@
     transform: scale(0.95);
   }
 }
+
+/* Ant Design dark mode overrides — kill cartoon illustrations, fix text colors */
+.ant-result-image,
+.ant-result-icon {
+  display: none !important;
+}
+
+.ant-result-title {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.ant-result-subtitle {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+.ant-result-extra .ant-btn {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.ant-result {
+  padding-top: 120px !important;
+}
