@@ -49,7 +49,7 @@ func GetConfigString(key string) string {
 	res, _ := web.AppConfig.String(key)
 	if res == "" {
 		if key == "staticBaseUrl" {
-			res = "https://cdn.casbin.org"
+			res = ""
 		} else if key == "logConfig" {
 			appname, _ := web.AppConfig.String("appname")
 			res = fmt.Sprintf("{\"filename\": \"logs/%s.log\", \"maxdays\":99999, \"perm\":\"0770\"}", appname)
