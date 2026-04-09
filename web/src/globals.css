@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
+@import url('https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css');
 
 @tailwind base;
 @tailwind components;
@@ -179,7 +179,15 @@
   }
 
   .split-login-form {
-    @apply flex-1 flex flex-col justify-center p-10 max-w-[500px];
+    @apply flex-1 flex flex-col justify-center p-10;
+    max-width: 100%;
+  }
+
+  @media (min-width: 1024px) {
+    .split-login-form {
+      flex: 0 0 50%;
+      max-width: 50%;
+    }
   }
 
   .split-login-showcase {
@@ -192,7 +200,7 @@
     }
   }
 
-  .hanzo-showcase {
+  .brand-showcase {
     @apply relative w-full h-full min-h-screen flex items-center justify-center;
     background: #000;
   }
