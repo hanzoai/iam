@@ -21,7 +21,7 @@ COPY . .
 RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o server .
 
 # ── Production image ──────────────────────────────────────────
-FROM alpine:3.21
+FROM alpine:3.21 AS standard
 LABEL maintainer="https://hanzo.ai/"
 ARG USER=hanzo
 
