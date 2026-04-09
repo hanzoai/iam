@@ -1,14 +1,27 @@
+# Cloud Build — Hanzo IAM
+#
+#   gcloud builds submit . --project=liquidity-devnet \
+#     --substitutions=_IMAGE=us-docker.pkg.dev/liquidity-registry/liquidityio/iam:dev,_VITE_APP=liquidity-exchange
+
+substitutions:
+  _IMAGE: us-docker.pkg.dev/liquidity-registry/liquidityio/iam:dev
+  _VITE_APP: app-built-in
+
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    env:
-      - 'DOCKER_BUILDKIT=1'
     args:
       - 'build'
-      - '--build-arg=BUILDPLATFORM=linux/amd64'
+      - '--build-arg'
+      - 'VITE_DEFAULT_APP=${_VITE_APP}'
       - '-t'
       - '${_IMAGE}'
       - '.'
+
 images:
   - '${_IMAGE}'
-substitutions:
-  _IMAGE: 'us-docker.pkg.dev/${PROJECT_ID}/backend/iam:latest'
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1200s
