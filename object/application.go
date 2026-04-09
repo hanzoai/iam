@@ -210,7 +210,7 @@ func GetOrganizationApplicationCount(owner, organization, field, value string) (
 
 func GetApplications(owner string) ([]*Application, error) {
 	applications := []*Application{}
-	err := ormer.Engine.Desc("created_time").Find(&applications, &Application{Owner: owner})
+	err := orgEngine(owner).Desc("created_time").Find(&applications, &Application{Owner: owner})
 	if err != nil {
 		return applications, err
 	}
@@ -220,7 +220,7 @@ func GetApplications(owner string) ([]*Application, error) {
 
 func GetOrganizationApplications(owner string, organization string) ([]*Application, error) {
 	applications := []*Application{}
-	err := ormer.Engine.Desc("created_time").Where("organization = ? or is_shared = ? ", organization, true).Find(&applications, &Application{})
+	err := orgEngine(owner).Desc("created_time").Where("organization = ? or is_shared = ? ", organization, true).Find(&applications, &Application{})
 	if err != nil {
 		return applications, err
 	}
@@ -454,7 +454,7 @@ func getApplication(owner string, name string) (*Application, error) {
 	}
 
 	application := Application{Owner: owner, Name: realApplicationName}
-	existed, err := ormer.Engine.Get(&application)
+	existed, err := orgEngine(owner).Get(&application)
 	if err != nil {
 		return nil, err
 	}
