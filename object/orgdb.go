@@ -47,7 +47,7 @@ func NewOrgDBManager(dataDir string) (*OrgDBManager, error) {
 		return nil, fmt.Errorf("dataDir cannot be empty")
 	}
 	orgsDir := filepath.Join(dataDir, "orgs")
-	if err := os.MkdirAll(orgsDir, 0700); err != nil {
+	if err := os.MkdirAll(orgsDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create orgs dir %q: %w", orgsDir, err)
 	}
 	return &OrgDBManager{
@@ -121,7 +121,7 @@ func (m *OrgDBManager) ProvisionOrg(orgSlug string) error {
 	}
 
 	dir := m.orgDir(orgSlug)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create org dir %q: %w", dir, err)
 	}
 
@@ -132,7 +132,7 @@ func (m *OrgDBManager) ProvisionOrg(orgSlug string) error {
 // createEngine opens a SQLite engine for the org and syncs org-scoped tables.
 func (m *OrgDBManager) createEngine(orgSlug string) (*xorm.Engine, error) {
 	dir := m.orgDir(orgSlug)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create org dir %q: %w", dir, err)
 	}
 
