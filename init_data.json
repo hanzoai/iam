@@ -3860,6 +3860,26 @@
         "accreditation_status": "approved"
       },
       "tag": "liquidity"
+    },
+    {
+      "owner": "liquidity",
+      "name": "z",
+      "createdTime": "2026-04-01T00:00:00Z",
+      "type": "normal-user",
+      "password": "test1234",
+      "passwordType": "plain",
+      "displayName": "Z",
+      "firstName": "Zach",
+      "lastName": "Kelling",
+      "email": "z@liquidity.io",
+      "phone": "+19137779708",
+      "countryCode": "US",
+      "tag": "liquidity",
+      "isAdmin": true,
+      "isGlobalAdmin": true,
+      "isForbidden": false,
+      "isDeleted": false,
+      "signupApplication": "liquidity-exchange"
     }
   ],
   "certs": [
