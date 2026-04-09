@@ -1478,6 +1478,21 @@ export function renderLogo(application) {
     return null;
   }
 
+  // Wordmark text when no logo is set (white-label: text-only branding)
+  if (!application.logo) {
+    const name = application.displayName || application.name;
+    if (application.homepageUrl) {
+      return (
+        <a target="_blank" rel="noreferrer" href={application.homepageUrl} style={{textDecoration: "none"}}>
+          <div className="panel-logo" style={{fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em"}}>{name}</div>
+        </a>
+      );
+    }
+    return (
+      <div className="panel-logo" style={{fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em"}}>{name}</div>
+    );
+  }
+
   if (application.homepageUrl !== "") {
     return (
       <a target="_blank" rel="noreferrer" href={application.homepageUrl}>
