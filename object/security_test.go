@@ -25,15 +25,22 @@ import (
 )
 
 // TestPlaintextPasswordBlocked verifies that sanitizeOrgPasswordType rejects "plain"
-// and upgrades it to "bcrypt". This is a critical security invariant: organizations
-// must never store passwords in plaintext.
+// and upgrades it to "argon2id". Organizations must never store passwords in plaintext.
 func TestPlaintextPasswordBlocked(t *testing.T) {
 	result := sanitizeOrgPasswordType("plain")
 	if result == "plain" {
 		t.Fatal("sanitizeOrgPasswordType must reject 'plain'")
 	}
-	if result != "bcrypt" {
-		t.Fatalf("expected 'bcrypt' as fallback, got %q", result)
+	if result != "argon2id" {
+		t.Fatalf("expected 'argon2id' as fallback, got %q", result)
+	}
+}
+
+// TestBcryptUpgradedToArgon2id verifies bcrypt is upgraded to argon2id.
+func TestBcryptUpgradedToArgon2id(t *testing.T) {
+	result := sanitizeOrgPasswordType("bcrypt")
+	if result != "argon2id" {
+		t.Fatalf("expected 'argon2id', got %q", result)
 	}
 }
 
