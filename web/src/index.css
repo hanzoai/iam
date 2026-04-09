@@ -24,16 +24,11 @@ body {
 body {
   margin: 0;
   font-family:
+    "Geist",
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    "Fira Sans",
-    "Droid Sans",
-    "Helvetica Neue",
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -76,6 +71,7 @@ body {
   background: var(--hanzo-bg-card) !important;
   border: 1px solid var(--hanzo-border) !important;
   border-radius: 12px !important;
+  max-width: calc(100vw - 2rem) !important;
 }
 
 /* login-form is inside login-panel, no border of its own */
@@ -545,7 +541,7 @@ code {
 }
 
 /* Showcase container */
-.hanzo-showcase {
+.brand-showcase {
   position: relative;
   width: 100%;
   height: 100%;
