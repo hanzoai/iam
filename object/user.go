@@ -376,12 +376,12 @@ func GetUserCount(owner, field, value string, groupName string) (int64, error) {
 }
 
 func GetOnlineUserCount(owner string, isOnline int) (int64, error) {
-	return ormer.Engine.Where("is_online = ?", isOnline).Count(&User{Owner: owner})
+	return orgEngine(owner).Where("is_online = ?", isOnline).Count(&User{Owner: owner})
 }
 
 func GetUsers(owner string) ([]*User, error) {
 	users := []*User{}
-	err := ormer.Engine.Desc("created_time").Find(&users, &User{Owner: owner})
+	err := orgEngine(owner).Desc("created_time").Find(&users, &User{Owner: owner})
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +391,7 @@ func GetUsers(owner string) ([]*User, error) {
 
 func GetUsersWithFilter(owner string, cond builder.Cond) ([]*User, error) {
 	users := []*User{}
-	session := ormer.Engine.Desc("created_time")
+	session := orgEngine(owner).Desc("created_time")
 	if cond != nil {
 		session = session.Where(cond)
 	}
@@ -405,7 +405,7 @@ func GetUsersWithFilter(owner string, cond builder.Cond) ([]*User, error) {
 
 func GetUsersByTagWithFilter(owner string, tag string, cond builder.Cond) ([]*User, error) {
 	users := []*User{}
-	session := ormer.Engine.Desc("created_time")
+	session := orgEngine(owner).Desc("created_time")
 	if cond != nil {
 		session = session.Where(cond)
 	}
@@ -422,7 +422,7 @@ func GetSortedUsers(owner string, sorter string, limit int) ([]*User, error) {
 	if !util.FilterField(sorter) {
 		sorter = "created_time"
 	}
-	err := ormer.Engine.Desc(util.SnakeString(sorter)).Limit(limit, 0).Find(&users, &User{Owner: owner})
+	err := orgEngine(owner).Desc(util.SnakeString(sorter)).Limit(limit, 0).Find(&users, &User{Owner: owner})
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +459,7 @@ func getUser(owner string, name string) (*User, error) {
 	}
 
 	user := User{Owner: owner, Name: name}
-	existed, err := ormer.Engine.Get(&user)
+	existed, err := orgEngine(owner).Get(&user)
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +477,7 @@ func getUserById(owner string, id string) (*User, error) {
 	}
 
 	user := User{Owner: owner, Id: id}
-	existed, err := ormer.Engine.Get(&user)
+	existed, err := orgEngine(owner).Get(&user)
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +494,7 @@ func getUserByWechatId(owner string, wechatOpenId string, wechatUnionId string) 
 		wechatUnionId = wechatOpenId
 	}
 	user := &User{}
-	existed, err := ormer.Engine.Where("owner = ?", owner).Where("wechat = ? OR wechat = ?", wechatOpenId, wechatUnionId).Get(user)
+	existed, err := orgEngine(owner).Where("owner = ?", owner).Where("wechat = ? OR wechat = ?", wechatOpenId, wechatUnionId).Get(user)
 	if err != nil {
 		return nil, err
 	}
@@ -512,7 +512,7 @@ func GetUserByEmail(owner string, email string) (*User, error) {
 	}
 
 	user := User{Owner: owner, Email: email}
-	existed, err := ormer.Engine.Get(&user)
+	existed, err := orgEngine(owner).Get(&user)
 	if err != nil {
 		return nil, err
 	}
@@ -575,7 +575,7 @@ func GetUserByPhone(owner string, phone string) (*User, error) {
 	phone = util.GetSeperatedPhone(phone)
 
 	user := User{Owner: owner, Phone: phone}
-	existed, err := ormer.Engine.Get(&user)
+	existed, err := orgEngine(owner).Get(&user)
 	if err != nil {
 		return nil, err
 	}
@@ -613,7 +613,7 @@ func GetUserByUserId(owner string, userId string) (*User, error) {
 	}
 
 	user := User{Owner: owner, Id: userId}
-	existed, err := ormer.Engine.Get(&user)
+	existed, err := orgEngine(owner).Get(&user)
 	if err != nil {
 		return nil, err
 	}
@@ -840,7 +840,7 @@ func GetMaskedUsers(users []*User, errs ...error) ([]*User, error) {
 
 func getLastUser(owner string) (*User, error) {
 	user := User{Owner: owner}
-	existed, err := ormer.Engine.Desc("created_time", "id").Get(&user)
+	existed, err := orgEngine(owner).Desc("created_time", "id").Get(&user)
 	if err != nil {
 		return nil, err
 	}
@@ -965,7 +965,7 @@ func updateUser(id string, user *User, columns []string) (int64, error) {
 		columns = append(columns, "hash")
 	}
 
-	affected, err := ormer.Engine.ID(PK{owner, name}).Cols(columns...).Update(user)
+	affected, err := orgEngine(owner).ID(PK{owner, name}).Cols(columns...).Update(user)
 	if err != nil {
 		return 0, err
 	}
@@ -1019,7 +1019,7 @@ func UpdateUserForAllFields(id string, user *User) (bool, error) {
 		}
 	}
 
-	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(user)
+	affected, err := orgEngine(owner).ID(PK{owner, name}).AllCols().Update(user)
 	if err != nil {
 		return false, err
 	}
@@ -1135,7 +1135,7 @@ func AddUser(user *User, lang string) (bool, error) {
 		user.Name = strings.ToLower(user.Name)
 	}
 
-	affected, err := ormer.Engine.Insert(user)
+	affected, err := orgEngine(user.Owner).Insert(user)
 	if err != nil {
 		return false, err
 	}
@@ -1226,7 +1226,7 @@ func AddUsersInBatch(users []*User) (bool, error) {
 }
 
 func deleteUser(user *User) (bool, error) {
-	affected, err := ormer.Engine.ID(PK{user.Owner, user.Name}).Delete(&User{})
+	affected, err := orgEngine(user.Owner).ID(PK{user.Owner, user.Name}).Delete(&User{})
 	if err != nil {
 		return false, err
 	}
