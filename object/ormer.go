@@ -116,6 +116,19 @@ func InitAdapter() {
 	tableNamePrefix := conf.GetConfigString("tableNamePrefix")
 	tbMapper := names.NewPrefixMapper(names.SnakeMapper{}, tableNamePrefix)
 	ormer.Engine.SetTableMapper(tbMapper)
+
+	// Initialize per-org SQLite isolation if configured.
+	if conf.GetConfigString("orgIsolation") == "sqlite" {
+		dataDir := conf.GetConfigString("dataDir")
+		if dataDir == "" {
+			dataDir = "data"
+		}
+		mgr, err := NewOrgDBManager(dataDir)
+		if err != nil {
+			panic(fmt.Errorf("init OrgDBManager: %w", err))
+		}
+		ormer.OrgDBManager = mgr
+	}
 }
 
 func CreateTables() {
@@ -136,10 +149,34 @@ type Ormer struct {
 	dbName         string
 	Db             *sql.DB
 	Engine         *xorm.Engine
+	OrgDBManager   *OrgDBManager // nil when orgIsolation != "sqlite"
+}
+
+// OrgIsolationEnabled returns true if per-org SQLite isolation is active.
+func OrgIsolationEnabled() bool {
+	return ormer != nil && ormer.OrgDBManager != nil
+}
+
+// orgEngine returns the org-scoped xorm engine for the given owner.
+// If org isolation is disabled or owner is empty, returns the global engine.
+func orgEngine(owner string) *xorm.Engine {
+	if owner == "" || ormer.OrgDBManager == nil {
+		return ormer.Engine
+	}
+	eng, err := ormer.OrgDBManager.GetEngine(owner)
+	if err != nil {
+		// Fallback to global engine on error (org might not be provisioned yet).
+		return ormer.Engine
+	}
+	return eng
 }
 
 // finalizer is the destructor for Ormer.
 func finalizer(a *Ormer) {
+	if a.OrgDBManager != nil {
+		a.OrgDBManager.ReleasePools()
+	}
+
 	err := a.Engine.Close()
 	if err != nil {
 		panic(err)
