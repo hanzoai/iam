@@ -17,7 +17,7 @@ export default function LoginShowcase({application}: LoginShowcaseProps) {
   const tagline = application?.description || "";
 
   return (
-    <div className="hanzo-showcase">
+    <div className="brand-showcase">
       <div className="showcase-content">
         <div className="showcase-brand">
           <div className="showcase-brand-name">{displayName}</div>

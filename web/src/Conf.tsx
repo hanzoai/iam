@@ -16,7 +16,7 @@
 
 import * as Cookie from "cookie";
 
-export const DefaultApplication = "app-built-in";
+export const DefaultApplication = (import.meta.env.VITE_DEFAULT_APP as string) || "app-built-in";
 
 export let ShowGithubCorner = false;
 export let IsDemoMode = false;
