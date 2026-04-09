@@ -1,6 +1,6 @@
 // Login Showcase — brand-neutral right panel for split-screen login
-// Shows org name + tagline. No carousel, no testimonials, no vendor branding.
-// Per-org content is display name + one-liner only.
+// Reads display name + description from the application object.
+// No hardcoded org content — all branding comes from IAM database config.
 
 import React from "react";
 
@@ -8,23 +8,13 @@ interface LoginShowcaseProps {
   application?: {
     organization?: string;
     displayName?: string;
+    description?: string;
   };
 }
 
-const orgDisplay: Record<string, { name: string; tagline: string }> = {
-  liquidity: {name: "", tagline: "Digital Securities Platform"},
-  hanzo: {name: "Hanzo", tagline: "AI Infrastructure"},
-  lux: {name: "Lux", tagline: "Blockchain Infrastructure"},
-  zoo: {name: "Zoo", tagline: "Open AI Research"},
-  pars: {name: "Pars", tagline: "Digital Identity"},
-  : {name: "", tagline: "Biometric Security"},
-};
-
 export default function LoginShowcase({application}: LoginShowcaseProps) {
-  const orgName = application?.organization || "";
-  const org = orgDisplay[orgName];
-  const displayName = org?.name || application?.displayName || "Sign In";
-  const tagline = org?.tagline || "";
+  const displayName = application?.displayName || "Sign In";
+  const tagline = application?.description || "";
 
   return (
     <div className="hanzo-showcase">
