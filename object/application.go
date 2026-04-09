@@ -997,10 +997,7 @@ func (application *Application) GetId() string {
 
 func (application *Application) IsRedirectUriValid(redirectUri string) bool {
 	isValid, err := util.IsValidOrigin(redirectUri)
-	if err != nil {
-		panic(err)
-	}
-	if isValid {
+	if err == nil && isValid {
 		return true
 	}
 
@@ -1008,7 +1005,20 @@ func (application *Application) IsRedirectUriValid(redirectUri string) bool {
 		if targetUri == "" {
 			continue
 		}
-		targetUriRegex := regexp.MustCompile(targetUri)
+		// Convert glob wildcards to regex: "*" → ".*"
+		// This lets init_data use "*" (match all) or "https://*.example.com/*"
+		pattern := targetUri
+		if strings.Contains(pattern, "*") && !strings.Contains(pattern, ".*") {
+			pattern = strings.ReplaceAll(pattern, "*", ".*")
+		}
+		targetUriRegex, err := regexp.Compile("^" + pattern + "$")
+		if err != nil {
+			// Not valid regex — treat as literal substring match
+			if strings.Contains(redirectUri, targetUri) {
+				return true
+			}
+			continue
+		}
 		if targetUriRegex.MatchString(redirectUri) || strings.Contains(redirectUri, targetUri) {
 			return true
 		}
