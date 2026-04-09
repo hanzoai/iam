@@ -3458,6 +3458,182 @@
       "tags": [
         "liquidity",
         "exchange"
+      ],
+      "logo": ""
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-superadmin",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity SuperAdmin",
+      "description": "Platform Control",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "liquidity-superadmin",
+      "clientSecret": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+      "redirectUris": [
+        "https://superadmin.dev.example.internal/callback",
+        "https://superadmin.test.example.internal/callback",
+        "https://superadmin.example.internal/callback",
+        "http://localhost:3000/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 8,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "admin"
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-ats",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity ATS",
+      "description": "Alternative Trading System",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "liquidity-ats",
+      "clientSecret": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+      "redirectUris": [
+        "https://ats.dev.example.internal/callback",
+        "https://ats.test.example.internal/callback",
+        "https://ats.example.internal/callback",
+        "http://localhost:3000/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 8,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "admin"
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-bd",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity Broker-Dealer",
+      "description": "Broker-Dealer Compliance",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "liquidity-bd",
+      "clientSecret": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+      "redirectUris": [
+        "https://bd.dev.example.internal/callback",
+        "https://bd.test.example.internal/callback",
+        "https://bd.example.internal/callback",
+        "http://localhost:3000/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 8,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "admin"
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-ta",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity Transfer Agent",
+      "description": "Transfer Agent Operations",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "liquidity-ta",
+      "clientSecret": "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
+      "redirectUris": [
+        "https://ta.dev.example.internal/callback",
+        "https://ta.test.example.internal/callback",
+        "https://ta.example.internal/callback",
+        "http://localhost:3000/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 8,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "admin"
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-exchange",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity Exchange",
+      "description": "Digital Securities Exchange",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": true,
+      "clientId": "liquidity-exchange-client-id",
+      "clientSecret": "e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
+      "redirectUris": [
+        "https://exchange.dev.example.internal/auth/callback",
+        "https://exchange.test.example.internal/auth/callback",
+        "https://exchange.example.internal/auth/callback",
+        "https://partner/auth/callback",
+        "http://localhost:3000/auth/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 24,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "exchange"
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-docs",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity Docs",
+      "description": "Documentation Portal",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "liquidity-docs-client-id",
+      "clientSecret": "f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1",
+      "redirectUris": [
+        "https://docs.dev.example.internal/auth/callback",
+        "https://docs.test.example.internal/auth/callback",
+        "https://docs.example.internal/auth/callback",
+        "http://localhost:3000/auth/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 24,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "docs"
       ]
     }
   ],
