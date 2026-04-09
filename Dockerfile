@@ -1,34 +1,27 @@
-# syntax=docker/dockerfile:1
 # ── Frontend build ─────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM node:18.19.0 AS front
+FROM node:18.19.0 AS front
 WORKDIR /web
+ARG VITE_DEFAULT_APP=app-built-in
 
 COPY ./web/package.json ./web/pnpm-lock.yaml ./web/.npmrc ./
 RUN corepack enable && pnpm install --frozen-lockfile
 
 COPY ./web .
+ENV VITE_DEFAULT_APP=$VITE_DEFAULT_APP
 RUN NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
 
-# ── Go build (native per-arch, cached) ─────────────────────────
+# ── Go build ──────────────────────────────────────────────────
 FROM golang:1.26 AS back
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
 WORKDIR /go/src/hanzo-iam
 
 COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
+RUN go mod download
 
-# Copy only Go source (web/, docs/, .github/ excluded by .dockerignore)
 COPY . .
-
-# Single-arch native build with persistent build cache
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -ldflags="-w -s" -o server .
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o server .
 
 # ── Production image ──────────────────────────────────────────
-FROM alpine:3.21 AS standard
+FROM alpine:3.21
 LABEL maintainer="https://hanzo.ai/"
 ARG USER=hanzo
 
@@ -47,24 +40,3 @@ COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/init_data.json ./init_dat
 COPY --from=front --chown=$USER:$USER /web/build ./web/build
 
 ENTRYPOINT ["/server"]
-
-# ── All-in-one (dev/debug) ────────────────────────────────────
-FROM debian:bookworm-slim AS allinone
-LABEL maintainer="https://hanzo.ai/"
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates lsof \
-    && update-ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -u 1000 -m hanzo
-
-WORKDIR /
-COPY --from=back --chown=hanzo:hanzo /go/src/hanzo-iam/server ./server
-COPY --from=back --chown=hanzo:hanzo /go/src/hanzo-iam/swagger ./swagger
-COPY --from=back --chown=hanzo:hanzo /go/src/hanzo-iam/docker-entrypoint.sh /docker-entrypoint.sh
-COPY --from=back --chown=hanzo:hanzo /go/src/hanzo-iam/conf/app.prod.conf ./conf/app.conf
-COPY --from=front --chown=hanzo:hanzo /web/build ./web/build
-
-USER 1000
-ENTRYPOINT ["/bin/bash"]
-CMD ["/docker-entrypoint.sh"]
