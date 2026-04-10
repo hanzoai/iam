@@ -159,8 +159,9 @@ export function renderProviderLogo(provider, application, width, margin, size, l
         );
       } else {
         return (
-          <a key={provider.displayName} href={Provider.getAuthUrl(application, provider, "signup")}>
-            <img width={width} height={width} src={getProviderLogoURL(provider)} alt={provider.displayName} className="provider-img" style={{margin: margin}} />
+          <a key={provider.displayName} href={Provider.getAuthUrl(application, provider, "signup")} className="provider-button">
+            <img width={20} height={20} src={getProviderLogoURL(provider)} alt={provider.displayName} className="provider-img" />
+            <span>Sign in with {provider.type}</span>
           </a>
         );
       }
