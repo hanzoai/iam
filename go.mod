@@ -41,7 +41,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/hanzoai/builder v0.3.13
-	github.com/hanzoai/sqlite v0.0.0-20260410000728-59dc4c7c0d90
 	github.com/hanzoai/xorm v1.1.6
 	github.com/hanzoai/xorm-adapter/v3 v3.0.1
 	github.com/hsluoyz/modsecurity-go v0.0.7
