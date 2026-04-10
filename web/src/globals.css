@@ -1,3 +1,5 @@
+@import url('https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -40,16 +42,10 @@
   body {
     margin: 0;
     font-family:
+      "Geist",
       -apple-system,
       BlinkMacSystemFont,
       "Segoe UI",
-      Roboto,
-      Oxygen,
-      Ubuntu,
-      Cantarell,
-      "Fira Sans",
-      "Droid Sans",
-      "Helvetica Neue",
       sans-serif;
   }
 
@@ -175,7 +171,7 @@
 }
 
 /* ========================================
-   Hanzo Showcase Component (Split Login)
+   Split-Screen Login Layout
    ======================================== */
 @layer components {
   .split-login-container {
@@ -183,7 +179,15 @@
   }
 
   .split-login-form {
-    @apply flex-1 flex flex-col justify-center p-10 max-w-[500px];
+    @apply flex-1 flex flex-col justify-center p-10;
+    max-width: 100%;
+  }
+
+  @media (min-width: 1024px) {
+    .split-login-form {
+      flex: 0 0 50%;
+      max-width: 50%;
+    }
   }
 
   .split-login-showcase {
@@ -196,221 +200,44 @@
     }
   }
 
-  .hanzo-showcase {
-    @apply relative w-full h-full min-h-screen flex items-center justify-center overflow-hidden;
-    background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0a0a0a 100%);
-  }
-
-  .showcase-bg-pattern {
-    @apply absolute inset-0 pointer-events-none;
-    background-image:
-      radial-gradient(circle at 25% 25%, rgb(255 255 255 / 2%) 0%, transparent 50%),
-      radial-gradient(circle at 75% 75%, rgb(255 255 255 / 2%) 0%, transparent 50%);
-  }
-
-  .showcase-orb {
-    @apply absolute rounded-full pointer-events-none;
-    filter: blur(100px);
-    animation: float 20s ease-in-out infinite;
-  }
-
-  .showcase-orb-1 {
-    @apply w-[400px] h-[400px] -top-[100px] -right-[100px];
-    background: rgb(255 255 255 / 10%);
-    animation-delay: 0s;
-  }
-
-  .showcase-orb-2 {
-    @apply w-[300px] h-[300px] -bottom-[50px] -left-[50px];
-    background: rgb(255 255 255 / 8%);
-    animation-delay: -10s;
+  .brand-showcase {
+    @apply relative w-full h-full min-h-screen flex items-center justify-center;
+    background: #000;
   }
 
   .showcase-content {
-    @apply relative z-10 max-w-[480px] p-10 flex flex-col gap-8;
+    @apply relative z-10 flex flex-col items-center justify-center text-center;
   }
 
-  .showcase-header {
-    @apply text-center;
+  .showcase-brand-name {
+    @apply text-[2rem] font-bold text-white tracking-tight;
+    letter-spacing: -0.02em;
   }
 
-  .showcase-badge {
-    @apply inline-flex items-center gap-2 px-4 py-2 rounded-3xl text-white text-[13px] font-medium mb-5;
-    background: rgb(255 255 255 / 8%);
-    border: 1px solid rgb(255 255 255 / 15%);
-  }
-
-  .showcase-sparkle {
-    @apply w-4 h-4 text-white;
-  }
-
-  .showcase-title {
-    @apply text-[32px] font-bold text-[#fafafa] leading-tight mb-3;
-  }
-
-  .showcase-subtitle {
-    @apply text-base text-[#a3a3a3] leading-relaxed;
-  }
-
-  .showcase-chat-box {
-    @apply overflow-hidden rounded-2xl;
-    background: rgb(17 17 17 / 95%);
-    border: 1px solid #262626;
-    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 50%);
-  }
-
-  .showcase-chat-inner {
-    @apply flex gap-4 p-5;
-    border-bottom: 1px solid #262626;
-  }
-
-  .showcase-indicator {
-    @apply w-2 h-2 bg-white rounded-full mt-[6px];
-    animation: pulse 2s ease-in-out infinite;
-  }
-
-  .showcase-chat-content {
-    @apply flex-1;
-  }
-
-  .showcase-slide {
-    @apply flex items-center gap-[14px] transition-all duration-300 ease-in-out;
-  }
-  .showcase-slide.in {
-    @apply opacity-100 translate-y-0;
-  }
-  .showcase-slide.out {
-    @apply opacity-0 -translate-y-2;
-  }
-
-  .showcase-slide-icon {
-    @apply shrink-0 w-10 h-10 rounded-[10px] flex items-center justify-center;
-    background: rgb(253 68 68 / 15%);
-    color: #fd4444;
-  }
-
-  .showcase-slide-text {
-    @apply flex-1 min-w-0;
-  }
-
-  .showcase-slide-title {
-    @apply text-[15px] font-semibold text-[#fafafa] leading-tight mb-[2px];
-  }
-
-  .showcase-slide-desc {
-    @apply text-[13px] text-[#999] leading-snug;
-  }
-
-  .showcase-slide-dots {
-    @apply flex gap-[6px];
-  }
-
-  .showcase-chat-footer {
-    @apply flex justify-center items-center px-4 py-3;
-    background: rgb(10 10 10 / 50%);
-  }
-
-  .showcase-chat-actions {
-    @apply flex gap-2;
-  }
-
-  .showcase-action-btn {
-    @apply w-8 h-8 flex items-center justify-center bg-transparent rounded-lg cursor-pointer transition-all duration-200;
-    border: 1px solid #262626;
-    color: #666;
-  }
-  .showcase-action-btn:hover {
-    border-color: #fff;
-    color: #fff;
-  }
-
-  .showcase-generate-btn {
-    @apply flex items-center gap-2 px-4 py-2 bg-white border-none rounded-lg text-[#0a0a0a] text-[13px] font-semibold cursor-pointer transition-all duration-200;
-  }
-  .showcase-generate-btn:hover {
-    @apply bg-[#d4d4d4] -translate-y-px;
-  }
-
-  .showcase-testimonial {
-    @apply flex flex-col gap-5;
-  }
-
-  .showcase-testimonial-content {
-    @apply relative p-6 rounded-xl;
-    background: rgb(17 17 17 / 60%);
-    border: 1px solid #262626;
-  }
-
-  .showcase-quote-icon {
-    @apply absolute top-5 left-5 text-white opacity-30;
-  }
-
-  .showcase-testimonial-text {
-    @apply text-sm text-[#d4d4d4] leading-relaxed italic pl-2 mb-5;
-  }
-
-  .showcase-testimonial-author {
-    @apply flex items-center gap-3;
-  }
-
-  .showcase-avatar {
-    @apply w-10 h-10 flex items-center justify-center rounded-full text-xs font-semibold text-[#0a0a0a];
-    background: linear-gradient(135deg, #fff, #d4d4d4);
-  }
-
-  .showcase-author-info {
-    @apply flex flex-col gap-[2px];
-  }
-
-  .showcase-author-name {
-    @apply text-sm font-semibold text-[#fafafa];
-  }
-
-  .showcase-author-role {
-    @apply text-xs text-[#666];
-  }
-
-  .showcase-testimonial-dots {
-    @apply flex justify-center gap-2;
-  }
-
-  .showcase-dot {
-    @apply w-2 h-2 p-0 rounded-full bg-transparent cursor-pointer transition-all duration-200;
-    border: 1px solid #444;
-  }
-  .showcase-dot:hover {
-    border-color: #fff;
-  }
-  .showcase-dot.active {
-    @apply bg-white;
-    border-color: #fff;
+  .showcase-brand-tagline {
+    @apply text-sm text-[#737373] mt-2;
   }
 }
 
-@keyframes float {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  25% {
-    transform: translate(30px, -30px) scale(1.1);
-  }
-  50% {
-    transform: translate(-20px, 20px) scale(0.95);
-  }
-  75% {
-    transform: translate(-30px, -20px) scale(1.05);
-  }
+/* Ant Design dark mode overrides — kill cartoon illustrations, fix text colors */
+.ant-result-image,
+.ant-result-icon {
+  display: none !important;
 }
 
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: scale(0.95);
-  }
+.ant-result-title {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.ant-result-subtitle {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+.ant-result-extra .ant-btn {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.ant-result {
+  padding-top: 120px !important;
 }

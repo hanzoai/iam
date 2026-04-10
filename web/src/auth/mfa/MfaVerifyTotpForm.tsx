@@ -20,7 +20,7 @@ export const MfaVerifyTotpForm = ({mfaProps, onFinish}) => {
           <QRCode
             errorLevel="H"
             value={mfaProps.url}
-            icon={"https://cdn.iam.com/static/favicon.png"}
+            icon={"/favicon.ico"}
           />
         </Col>
         <p style={{textAlign: "center"}}>{i18next.t("mfa:Scan the QR code with your Authenticator App")}</p>

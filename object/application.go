@@ -210,7 +210,7 @@ func GetOrganizationApplicationCount(owner, organization, field, value string) (
 
 func GetApplications(owner string) ([]*Application, error) {
 	applications := []*Application{}
-	err := ormer.Engine.Desc("created_time").Find(&applications, &Application{Owner: owner})
+	err := orgEngine(owner).Desc("created_time").Find(&applications, &Application{Owner: owner})
 	if err != nil {
 		return applications, err
 	}
@@ -220,7 +220,7 @@ func GetApplications(owner string) ([]*Application, error) {
 
 func GetOrganizationApplications(owner string, organization string) ([]*Application, error) {
 	applications := []*Application{}
-	err := ormer.Engine.Desc("created_time").Where("organization = ? or is_shared = ? ", organization, true).Find(&applications, &Application{})
+	err := orgEngine(owner).Desc("created_time").Where("organization = ? or is_shared = ? ", organization, true).Find(&applications, &Application{})
 	if err != nil {
 		return applications, err
 	}
@@ -454,7 +454,7 @@ func getApplication(owner string, name string) (*Application, error) {
 	}
 
 	application := Application{Owner: owner, Name: realApplicationName}
-	existed, err := ormer.Engine.Get(&application)
+	existed, err := orgEngine(owner).Get(&application)
 	if err != nil {
 		return nil, err
 	}
@@ -797,9 +797,9 @@ func checkMultipleCaptchaProviders(application *Application, lang string) error 
 var validAppNamePattern = regexp.MustCompile(`^[a-z0-9]+-[a-z0-9]+(-[a-z0-9]+)*$`)
 
 func validateAppName(app *Application) error {
-	// System bootstrap apps (owner=admin, org=built-in) use legacy naming
+	// System bootstrap apps (owner=admin, org=superuser) use legacy naming
 	// and are exempt from the org-prefix convention.
-	if app.Owner == "admin" && app.Organization == "built-in" {
+	if app.Owner == "admin" && app.Organization == "superuser" {
 		return nil
 	}
 
@@ -899,7 +899,7 @@ func AddApplication(application *Application) (bool, error) {
 		application.Owner = "admin"
 	}
 	if application.Organization == "" {
-		application.Organization = "built-in"
+		application.Organization = "superuser"
 	}
 	if application.ClientId == "" {
 		application.ClientId = util.GenerateClientId()
@@ -997,10 +997,7 @@ func (application *Application) GetId() string {
 
 func (application *Application) IsRedirectUriValid(redirectUri string) bool {
 	isValid, err := util.IsValidOrigin(redirectUri)
-	if err != nil {
-		panic(err)
-	}
-	if isValid {
+	if err == nil && isValid {
 		return true
 	}
 
@@ -1008,7 +1005,20 @@ func (application *Application) IsRedirectUriValid(redirectUri string) bool {
 		if targetUri == "" {
 			continue
 		}
-		targetUriRegex := regexp.MustCompile(targetUri)
+		// Convert glob wildcards to regex: "*" → ".*"
+		// This lets init_data use "*" (match all) or "https://*.example.com/*"
+		pattern := targetUri
+		if strings.Contains(pattern, "*") && !strings.Contains(pattern, ".*") {
+			pattern = strings.ReplaceAll(pattern, "*", ".*")
+		}
+		targetUriRegex, err := regexp.Compile("^" + pattern + "$")
+		if err != nil {
+			// Not valid regex — treat as literal substring match
+			if strings.Contains(redirectUri, targetUri) {
+				return true
+			}
+			continue
+		}
 		if targetUriRegex.MatchString(redirectUri) || strings.Contains(redirectUri, targetUri) {
 			return true
 		}

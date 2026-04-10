@@ -230,11 +230,15 @@ func GetMaskedOrganizations(organizations []*Organization, errs ...error) ([]*Or
 
 // sanitizeOrgPasswordType rejects "plain" as an organization password type.
 // Plaintext passwords are a critical security risk and are not supported.
-// If "plain" is requested, it is silently upgraded to "bcrypt" and a warning is logged.
+// If "plain" is requested, it is upgraded to "argon2id".
+// If "bcrypt" is requested, it is upgraded to "argon2id" (modern default).
 func sanitizeOrgPasswordType(passwordType string) string {
 	if passwordType == "plain" {
-		fmt.Printf("[SECURITY] WARNING: attempted to set organization passwordType to 'plain' — blocked, using 'bcrypt' instead. Plaintext passwords are not supported.\n")
-		return "bcrypt"
+		fmt.Printf("[SECURITY] WARNING: attempted to set organization passwordType to 'plain' — blocked, using 'argon2id' instead.\n")
+		return "argon2id"
+	}
+	if passwordType == "" || passwordType == "bcrypt" {
+		return "argon2id"
 	}
 	return passwordType
 }
@@ -349,7 +353,7 @@ func CreatePersonalOrganization(username, displayName string) (*Organization, er
 		Name:         username,
 		CreatedTime:  util.GetCurrentTime(),
 		DisplayName:  fmt.Sprintf("%s's Organization", displayName),
-		PasswordType: "bcrypt",
+		PasswordType: "argon2id",
 		IsPersonal:   true,
 	}
 

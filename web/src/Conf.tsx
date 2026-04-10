@@ -16,7 +16,7 @@
 
 import * as Cookie from "cookie";
 
-export const DefaultApplication = "app-built-in";
+export const DefaultApplication = (import.meta.env.VITE_DEFAULT_APP as string) || "app-built-in";
 
 export let ShowGithubCorner = false;
 export let IsDemoMode = false;
@@ -24,7 +24,7 @@ export let IsDemoMode = false;
 export let ForceLanguage = "";
 export let DefaultLanguage = "en";
 
-export let StaticBaseUrl = "https://cdn.casbin.org";
+export let StaticBaseUrl = "";
 
 export const InitThemeAlgorithm = true;
 export const ThemeDefault = {
