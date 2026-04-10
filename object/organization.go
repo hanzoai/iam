@@ -92,6 +92,11 @@ type Organization struct {
 	AccountMenu        string         `xorm:"varchar(20)" json:"accountMenu"`
 	AccountItems       []*AccountItem `xorm:"mediumtext" json:"accountItems"`
 
+	// Per-org signin rate limiting. Overrides the application-level defaults.
+	// 0 = use the application setting (which defaults to 5 attempts / 15 min).
+	FailedSigninLimit      int `json:"failedSigninLimit"`
+	FailedSigninFrozenTime int `json:"failedSigninFrozenTime"`
+
 	DcrPolicy string `xorm:"varchar(100)" json:"dcrPolicy"`
 
 	LdapAttributes      []string `xorm:"mediumtext" json:"ldapAttributes"`
@@ -209,6 +214,15 @@ func GetMaskedOrganization(organization *Organization, errs ...error) (*Organiza
 	if organization.MasterVerificationCode != "" {
 		organization.MasterVerificationCode = "***"
 	}
+	if organization.PasswordSalt != "" {
+		organization.PasswordSalt = "***"
+	}
+	if organization.PasswordObfuscatorKey != "" {
+		organization.PasswordObfuscatorKey = "***"
+	}
+	if organization.KerberosKeytab != "" {
+		organization.KerberosKeytab = "***"
+	}
 	return organization, nil
 }
 
@@ -243,8 +257,29 @@ func sanitizeOrgPasswordType(passwordType string) string {
 	return passwordType
 }
 
+// clampSigninRateLimits validates and clamps per-org signin rate limit fields.
+// 0 means "use default" (inherit from application). Non-zero values are clamped
+// to safe bounds: FailedSigninLimit [3, 100], FailedSigninFrozenTime [1, 1440].
+func clampSigninRateLimits(org *Organization) {
+	if org.FailedSigninLimit != 0 {
+		if org.FailedSigninLimit < 3 {
+			org.FailedSigninLimit = 3
+		} else if org.FailedSigninLimit > 100 {
+			org.FailedSigninLimit = 100
+		}
+	}
+	if org.FailedSigninFrozenTime != 0 {
+		if org.FailedSigninFrozenTime < 1 {
+			org.FailedSigninFrozenTime = 1
+		} else if org.FailedSigninFrozenTime > 1440 {
+			org.FailedSigninFrozenTime = 1440
+		}
+	}
+}
+
 func UpdateOrganization(id string, organization *Organization, isGlobalAdmin bool) (bool, error) {
 	organization.PasswordType = sanitizeOrgPasswordType(organization.PasswordType)
+	clampSigninRateLimits(organization)
 
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
