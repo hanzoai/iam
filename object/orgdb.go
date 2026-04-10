@@ -15,16 +15,13 @@
 package object
 
 import (
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/hanzoai/iam/conf"
-	hansqlite "github.com/hanzoai/sqlite"
 	"github.com/hanzoai/xorm"
-	"github.com/hanzoai/xorm/core"
 	"github.com/hanzoai/xorm/names"
 	_ "modernc.org/sqlite"
 )
@@ -39,40 +36,29 @@ import (
 // When orgIsolation is "none" (default), this manager is nil and all queries
 // go through the global ormer.Engine as before.
 type OrgDBManager struct {
-	mu        sync.RWMutex
-	dataDir   string
-	masterKey []byte                   // nil = unencrypted, 32 bytes = HKDF master
-	engines   map[string]*xorm.Engine  // orgSlug → engine
+	mu      sync.RWMutex
+	dataDir string
+	engines map[string]*xorm.Engine // orgSlug -> engine
 }
 
 // NewOrgDBManager creates a new per-org database manager.
-// If ENCRYPTION_MASTER_KEY is set (64 hex chars = 32 bytes), per-org databases
-// are encrypted with HKDF-derived CEKs via hanzoai/sqlite + sqlcipher.
+// Per-org databases use modernc.org/sqlite (pure Go). Directory-level isolation
+// separates org data; file permissions are set to 0700.
 func NewOrgDBManager(dataDir string) (*OrgDBManager, error) {
 	if dataDir == "" {
 		return nil, fmt.Errorf("dataDir cannot be empty")
+	}
+	if mkHex := os.Getenv("ENCRYPTION_MASTER_KEY"); mkHex != "" {
+		return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY is set but per-org database encryption requires a CGO build with sqlcipher; unset the variable or build with CGO_ENABLED=1")
 	}
 	orgsDir := filepath.Join(dataDir, "orgs")
 	if err := os.MkdirAll(orgsDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create orgs dir %q: %w", orgsDir, err)
 	}
 
-	var masterKey []byte
-	if mkHex := os.Getenv("ENCRYPTION_MASTER_KEY"); mkHex != "" {
-		var err error
-		masterKey, err = hex.DecodeString(mkHex)
-		if err != nil {
-			return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY: invalid hex: %w", err)
-		}
-		if len(masterKey) != 32 {
-			return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY: must be 32 bytes (64 hex chars), got %d", len(masterKey))
-		}
-	}
-
 	return &OrgDBManager{
-		dataDir:   dataDir,
-		masterKey: masterKey,
-		engines:   make(map[string]*xorm.Engine),
+		dataDir: dataDir,
+		engines: make(map[string]*xorm.Engine),
 	}, nil
 }
 
@@ -150,8 +136,8 @@ func (m *OrgDBManager) ProvisionOrg(orgSlug string) error {
 }
 
 // createEngine opens a SQLite engine for the org and syncs org-scoped tables.
-// When masterKey is set, the database is encrypted with a per-org CEK derived
-// via HKDF-SHA256.
+// Uses modernc.org/sqlite (pure Go, no CGO). Per-org directory isolation provides
+// data separation; file-level encryption requires a CGO build with sqlcipher.
 func (m *OrgDBManager) createEngine(orgSlug string) (*xorm.Engine, error) {
 	dir := m.orgDir(orgSlug)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -159,28 +145,10 @@ func (m *OrgDBManager) createEngine(orgSlug string) (*xorm.Engine, error) {
 	}
 
 	dbPath := m.orgDBPath(orgSlug)
-
-	var engine *xorm.Engine
-	if m.masterKey != nil {
-		// Encrypted: derive per-org CEK and open via hanzoai/sqlite (sqlcipher).
-		db, err := hansqlite.Open(dbPath, hansqlite.WithPrincipalKey(m.masterKey, hansqlite.PrincipalOrg, orgSlug))
-		if err != nil {
-			return nil, fmt.Errorf("open encrypted org db %q: %w", dbPath, err)
-		}
-		xormDb := core.FromDB(db.DB)
-		engine, err = xorm.NewEngineWithDB("sqlite3", dbPath, xormDb)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("xorm engine for encrypted org db %q: %w", dbPath, err)
-		}
-	} else {
-		// Unencrypted: use modernc/sqlite via xorm directly.
-		dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=5000", dbPath)
-		var err error
-		engine, err = xorm.NewEngine("sqlite", dsn)
-		if err != nil {
-			return nil, fmt.Errorf("open org db %q: %w", dbPath, err)
-		}
+	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=5000", dbPath)
+	engine, err := xorm.NewEngine("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open org db %q: %w", dbPath, err)
 	}
 
 	// Match the table name prefix from config.
