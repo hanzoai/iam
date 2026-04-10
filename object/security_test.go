@@ -56,17 +56,17 @@ func TestValidPasswordTypesPassThrough(t *testing.T) {
 	}
 }
 
-// TestBuiltInOrgIsGlobalAdmin verifies that only users in the "built-in" org
+// TestSuperuserOrgIsGlobalAdmin verifies that only users in the "superuser" org
 // are treated as global admins. Users in customer-facing orgs (hanzo, lux, zoo, etc.)
 // must never get global admin privileges regardless of their IsAdmin flag.
-func TestBuiltInOrgIsGlobalAdmin(t *testing.T) {
-	builtInUser := &User{Owner: "built-in", Name: "admin", IsAdmin: true}
-	if !builtInUser.IsGlobalAdmin() {
-		t.Fatal("built-in org user must be global admin")
+func TestSuperuserOrgIsGlobalAdmin(t *testing.T) {
+	superUser := &User{Owner: "superuser", Name: "admin", IsAdmin: true}
+	if !superUser.IsGlobalAdmin() {
+		t.Fatal("superuser org user must be global admin")
 	}
 
-	// Non-built-in orgs must never grant global admin
-	nonGlobalOrgs := []string{"hanzo", "lux", "zoo", "pars", "adnexus", "customer-org", ""}
+	// Non-superuser orgs must never grant global admin
+	nonGlobalOrgs := []string{"hanzo", "lux", "zoo", "pars", "adnexus", "customer-org", "built-in", ""}
 	for _, org := range nonGlobalOrgs {
 		u := &User{Owner: org, Name: "test-user", IsAdmin: true}
 		if u.IsGlobalAdmin() {
@@ -114,18 +114,18 @@ func TestIsApplicationAdminScoping(t *testing.T) {
 		t.Fatal("org admin should be admin of shared application")
 	}
 
-	// built-in user should be admin of everything
-	builtInUser := &User{Owner: "built-in", Name: "admin", IsAdmin: true}
-	if !builtInUser.IsApplicationAdmin(luxApp) {
-		t.Fatal("built-in user must be admin of any application (global admin)")
+	// superuser org user should be admin of everything
+	superUser := &User{Owner: "superuser", Name: "admin", IsAdmin: true}
+	if !superUser.IsApplicationAdmin(luxApp) {
+		t.Fatal("superuser org user must be admin of any application (global admin)")
 	}
 }
 
-// TestBuiltInOrgConstants verifies that system enforcer constants reference
-// the built-in org, not any customer-facing org.
-func TestBuiltInOrgConstants(t *testing.T) {
-	if !strings.Contains(UserEnforcerId, "built-in") {
-		t.Fatalf("UserEnforcerId must reference built-in org, got: %s", UserEnforcerId)
+// TestSuperuserOrgConstants verifies that system enforcer constants reference
+// the superuser org, not any customer-facing org.
+func TestSuperuserOrgConstants(t *testing.T) {
+	if !strings.Contains(UserEnforcerId, "superuser") {
+		t.Fatalf("UserEnforcerId must reference superuser org, got: %s", UserEnforcerId)
 	}
 	if strings.Contains(UserEnforcerId, "hanzo/") {
 		t.Fatalf("UserEnforcerId must NOT reference hanzo org, got: %s", UserEnforcerId)
