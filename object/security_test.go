@@ -25,15 +25,22 @@ import (
 )
 
 // TestPlaintextPasswordBlocked verifies that sanitizeOrgPasswordType rejects "plain"
-// and upgrades it to "bcrypt". This is a critical security invariant: organizations
-// must never store passwords in plaintext.
+// and upgrades it to "argon2id". Organizations must never store passwords in plaintext.
 func TestPlaintextPasswordBlocked(t *testing.T) {
 	result := sanitizeOrgPasswordType("plain")
 	if result == "plain" {
 		t.Fatal("sanitizeOrgPasswordType must reject 'plain'")
 	}
-	if result != "bcrypt" {
-		t.Fatalf("expected 'bcrypt' as fallback, got %q", result)
+	if result != "argon2id" {
+		t.Fatalf("expected 'argon2id' as fallback, got %q", result)
+	}
+}
+
+// TestBcryptUpgradedToArgon2id verifies bcrypt is upgraded to argon2id.
+func TestBcryptUpgradedToArgon2id(t *testing.T) {
+	result := sanitizeOrgPasswordType("bcrypt")
+	if result != "argon2id" {
+		t.Fatalf("expected 'argon2id', got %q", result)
 	}
 }
 
@@ -49,17 +56,17 @@ func TestValidPasswordTypesPassThrough(t *testing.T) {
 	}
 }
 
-// TestBuiltInOrgIsGlobalAdmin verifies that only users in the "built-in" org
+// TestSuperuserOrgIsGlobalAdmin verifies that only users in the "superuser" org
 // are treated as global admins. Users in customer-facing orgs (hanzo, lux, zoo, etc.)
 // must never get global admin privileges regardless of their IsAdmin flag.
-func TestBuiltInOrgIsGlobalAdmin(t *testing.T) {
-	builtInUser := &User{Owner: "built-in", Name: "admin", IsAdmin: true}
-	if !builtInUser.IsGlobalAdmin() {
-		t.Fatal("built-in org user must be global admin")
+func TestSuperuserOrgIsGlobalAdmin(t *testing.T) {
+	superUser := &User{Owner: "superuser", Name: "admin", IsAdmin: true}
+	if !superUser.IsGlobalAdmin() {
+		t.Fatal("superuser org user must be global admin")
 	}
 
-	// Non-built-in orgs must never grant global admin
-	nonGlobalOrgs := []string{"hanzo", "lux", "zoo", "pars", "adnexus", "customer-org", ""}
+	// Non-superuser orgs must never grant global admin
+	nonGlobalOrgs := []string{"hanzo", "lux", "zoo", "pars", "adnexus", "customer-org", "built-in", ""}
 	for _, org := range nonGlobalOrgs {
 		u := &User{Owner: org, Name: "test-user", IsAdmin: true}
 		if u.IsGlobalAdmin() {
@@ -107,18 +114,18 @@ func TestIsApplicationAdminScoping(t *testing.T) {
 		t.Fatal("org admin should be admin of shared application")
 	}
 
-	// built-in user should be admin of everything
-	builtInUser := &User{Owner: "built-in", Name: "admin", IsAdmin: true}
-	if !builtInUser.IsApplicationAdmin(luxApp) {
-		t.Fatal("built-in user must be admin of any application (global admin)")
+	// superuser org user should be admin of everything
+	superUser := &User{Owner: "superuser", Name: "admin", IsAdmin: true}
+	if !superUser.IsApplicationAdmin(luxApp) {
+		t.Fatal("superuser org user must be admin of any application (global admin)")
 	}
 }
 
-// TestBuiltInOrgConstants verifies that system enforcer constants reference
-// the built-in org, not any customer-facing org.
-func TestBuiltInOrgConstants(t *testing.T) {
-	if !strings.Contains(UserEnforcerId, "built-in") {
-		t.Fatalf("UserEnforcerId must reference built-in org, got: %s", UserEnforcerId)
+// TestSuperuserOrgConstants verifies that system enforcer constants reference
+// the superuser org, not any customer-facing org.
+func TestSuperuserOrgConstants(t *testing.T) {
+	if !strings.Contains(UserEnforcerId, "superuser") {
+		t.Fatalf("UserEnforcerId must reference superuser org, got: %s", UserEnforcerId)
 	}
 	if strings.Contains(UserEnforcerId, "hanzo/") {
 		t.Fatalf("UserEnforcerId must NOT reference hanzo org, got: %s", UserEnforcerId)
