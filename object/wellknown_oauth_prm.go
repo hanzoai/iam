@@ -37,7 +37,7 @@ func GetOauthProtectedResourceMetadata(host string) OauthProtectedResourceMetada
 		AuthorizationServers:   []string{originBackend},
 		BearerMethodsSupported: []string{"header"},
 		ScopesSupported:        []string{"openid", "profile", "email", "read", "write"},
-		ResourceSigningAlg:     []string{"RS256"},
+		ResourceSigningAlg:     []string{"RS256", algMLDSA65},
 	}
 }
 
@@ -54,6 +54,6 @@ func GetOauthProtectedResourceMetadataByApplication(host string, applicationName
 		AuthorizationServers:   []string{authServer},
 		BearerMethodsSupported: []string{"header"},
 		ScopesSupported:        []string{"openid", "profile", "email", "read", "write"},
-		ResourceSigningAlg:     []string{"RS256"},
+		ResourceSigningAlg:     []string{"RS256", algMLDSA65},
 	}
 }
