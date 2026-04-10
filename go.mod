@@ -52,6 +52,7 @@ require (
 	github.com/likexian/whois-parser v1.24.9
 	github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3
 	github.com/luxfi/compliance v0.1.1
+	github.com/luxfi/crypto v1.17.55
 	github.com/luxfi/kms-go v0.5.98
 	github.com/markbates/goth v1.82.0
 	github.com/microsoft/go-mssqldb v1.9.0
