@@ -129,6 +129,17 @@ func parseMLDSA65PublicKey(pemData string) (*mldsa.PublicKey, error) {
 	return mldsa.PublicKeyFromBytes(raw, mldsa.MLDSA65)
 }
 
+// mldsa65JWK creates the JWKS entry for an ML-DSA-65 public key.
+func mldsa65JWK(kid string, pk *mldsa.PublicKey) MLDSA65WebKey {
+	return MLDSA65WebKey{
+		Kty: "MLDSA",
+		Alg: algMLDSA65,
+		Use: "sig",
+		Kid: kid,
+		X:   base64.RawURLEncoding.EncodeToString(pk.Bytes()),
+	}
+}
+
 // extractPEMPayload strips PEM header/footer lines and returns the base64 body.
 func extractPEMPayload(pemData string) string {
 	var lines []string
