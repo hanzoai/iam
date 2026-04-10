@@ -63,6 +63,7 @@ p, *, *, GET, /api/get-account, *, *
 p, *, *, GET, /api/userinfo, *, *
 p, *, *, GET, /api/user, *, *
 p, *, *, GET, /api/health, *, *
+p, *, *, GET, /healthz, *, *
 p, *, *, *, /api/webhook, *, *
 p, *, *, GET, /api/get-qrcode, *, *
 p, *, *, GET, /api/get-webhook-event, *, *
