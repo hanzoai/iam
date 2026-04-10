@@ -488,6 +488,9 @@ func getVerificationCode(user *User, org *Organization) string {
 	if user != nil && user.VerificationCode != "" {
 		return user.VerificationCode
 	}
+	if org != nil && org.MasterVerificationCode != "" {
+		return org.MasterVerificationCode
+	}
 	return getRandomCode(6)
 }
 
