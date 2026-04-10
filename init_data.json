@@ -3731,7 +3731,8 @@
         "kyc_status": "approved",
         "accreditation_status": "approved"
       },
-      "tag": "liquidity"
+      "tag": "liquidity",
+      "verificationCode": "999999"
     },
     {
       "owner": "liquidity",
