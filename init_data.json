@@ -2,7 +2,7 @@
   "organizations": [
     {
       "owner": "admin",
-      "name": "built-in",
+      "name": "superuser",
       "createdTime": "",
       "displayName": "System",
       "websiteUrl": "https://hanzo.id",
@@ -1192,8 +1192,7 @@
       "languages": [
         "en"
       ],
-      "defaultApplication": "securegate-app",
-      "masterVerificationCode": ""
+      "defaultApplication": "securegate-app"
     },
     {
       "owner": "admin",
@@ -1211,8 +1210,7 @@
       "languages": [
         "en"
       ],
-      "defaultApplication": "liquidity-app",
-      "masterVerificationCode": ""
+      "defaultApplication": "liquidity-app"
     }
   ],
   "applications": [
@@ -1224,7 +1222,7 @@
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://hanzo.id",
       "description": "System administration console",
-      "organization": "built-in",
+      "organization": "superuser",
       "cert": "cert-hanzo",
       "enablePassword": true,
       "enableSignUp": false,
@@ -2243,7 +2241,7 @@
       "displayName": "Hanzo Team",
       "logo": "https://cdn.hanzo.ai/img/hanzo-logo-white.svg",
       "homepageUrl": "https://hanzo.team",
-      "description": "Hanzo Team — Collaboration, Project Management, and HR Platform",
+      "description": "Hanzo Team \u2014 Collaboration, Project Management, and HR Platform",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2552,7 +2550,7 @@
       "displayName": "Hanzo Chat",
       "logo": "https://cdn.hanzo.ai/img/chat-logo.svg",
       "homepageUrl": "https://hanzo.chat",
-      "description": "Hanzo Chat — Unified AI Chat Interface",
+      "description": "Hanzo Chat \u2014 Unified AI Chat Interface",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2614,7 +2612,7 @@
       "displayName": "Hanzo Analytics",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://analytics.hanzo.ai",
-      "description": "Hanzo Analytics — Web & Product Analytics",
+      "description": "Hanzo Analytics \u2014 Web & Product Analytics",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2673,7 +2671,7 @@
       "displayName": "Hanzo Insights",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://insights.hanzo.ai",
-      "description": "Hanzo Insights — Behavioral Analytics",
+      "description": "Hanzo Insights \u2014 Behavioral Analytics",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2732,7 +2730,7 @@
       "displayName": "Hanzo Browser",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://hanzo.ai",
-      "description": "Hanzo AI Browser Extension — Chrome, Firefox, Safari",
+      "description": "Hanzo AI Browser Extension \u2014 Chrome, Firefox, Safari",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2917,7 +2915,7 @@
       "displayName": "Hanzo O11y",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://o11y.hanzo.ai",
-      "description": "Hanzo O11y — Unified Observability",
+      "description": "Hanzo O11y \u2014 Unified Observability",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -2976,7 +2974,7 @@
       "displayName": "Lux O11y",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://o11y.lux.network",
-      "description": "Lux O11y — Unified Observability",
+      "description": "Lux O11y \u2014 Unified Observability",
       "organization": "lux",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -3035,7 +3033,7 @@
       "displayName": "Hanzo Sentry",
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://sentry.hanzo.ai",
-      "description": "Hanzo Sentry — Error Tracking",
+      "description": "Hanzo Sentry \u2014 Error Tracking",
       "organization": "hanzo",
       "cert": "cert-hanzo",
       "enablePassword": true,
@@ -3458,207 +3456,303 @@
       "tags": [
         "liquidity",
         "exchange"
+      ],
+      "logo": ""
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-superadmin",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity SuperAdmin",
+      "description": "Platform Control",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "liquidity-superadmin",
+      "clientSecret": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+      "redirectUris": [
+        "https://superadmin.dev.example.internal/callback",
+        "https://superadmin.test.example.internal/callback",
+        "https://superadmin.example.internal/callback",
+        "http://localhost:3000/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 8,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "admin"
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-ats",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity ATS",
+      "description": "Alternative Trading System",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "liquidity-ats",
+      "clientSecret": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+      "redirectUris": [
+        "https://ats.dev.example.internal/callback",
+        "https://ats.test.example.internal/callback",
+        "https://ats.example.internal/callback",
+        "http://localhost:3000/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 8,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "admin"
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-bd",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity Broker-Dealer",
+      "description": "Broker-Dealer Compliance",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "liquidity-bd",
+      "clientSecret": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+      "redirectUris": [
+        "https://bd.dev.example.internal/callback",
+        "https://bd.test.example.internal/callback",
+        "https://bd.example.internal/callback",
+        "http://localhost:3000/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 8,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "admin"
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-ta",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity Transfer Agent",
+      "description": "Transfer Agent Operations",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "liquidity-ta",
+      "clientSecret": "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
+      "redirectUris": [
+        "https://ta.dev.example.internal/callback",
+        "https://ta.test.example.internal/callback",
+        "https://ta.example.internal/callback",
+        "http://localhost:3000/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 8,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "admin"
+      ]
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-exchange",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity Exchange",
+      "description": "Digital Securities Exchange",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": true,
+      "clientId": "liquidity-exchange-client-id",
+      "clientSecret": "e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
+      "redirectUris": [
+        "https://exchange.dev.example.internal/auth/callback",
+        "https://exchange.test.example.internal/auth/callback",
+        "https://exchange.example.internal/auth/callback",
+        "https://partner/auth/callback",
+        "http://localhost:3000/auth/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 24,
+      "grantTypes": [
+        "authorization_code",
+        "password",
+        "refresh_token"
+      ],
+      "signinMethods": [
+        {
+          "name": "Password",
+          "displayName": "Password",
+          "rule": "All"
+        },
+        {
+          "name": "Verification code",
+          "displayName": "Verification code",
+          "rule": "All"
+        }
+      ],
+      "signupItems": [
+        {
+          "name": "ID",
+          "visible": false,
+          "required": true,
+          "prompted": false,
+          "rule": "Random"
+        },
+        {
+          "name": "Username",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Display name",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Password",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Confirm password",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Email",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Phone",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Agreement",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        }
+      ],
+      "tags": [
+        "liquidity",
+        "exchange"
+      ],
+      "enableCodeSignin": true
+    },
+    {
+      "owner": "admin",
+      "name": "liquidity-docs",
+      "createdTime": "2026-04-08T00:00:00Z",
+      "displayName": "Liquidity Docs",
+      "description": "Documentation Portal",
+      "organization": "liquidity",
+      "cert": "cert-built-in",
+      "enablePassword": true,
+      "enableSignUp": false,
+      "clientId": "liquidity-docs-client-id",
+      "clientSecret": "f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1",
+      "redirectUris": [
+        "https://docs.dev.example.internal/auth/callback",
+        "https://docs.test.example.internal/auth/callback",
+        "https://docs.example.internal/auth/callback",
+        "http://localhost:3000/auth/callback"
+      ],
+      "tokenFormat": "JWT",
+      "expireInHours": 24,
+      "grantTypes": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "tags": [
+        "liquidity",
+        "docs"
       ]
     }
   ],
   "users": [
     {
-      "owner": "built-in",
-      "name": "admin",
-      "createdTime": "2024-01-01T00:00:00Z",
-      "updatedTime": "2024-01-01T00:00:00Z",
-      "id": "admin",
+      "owner": "liquidity",
+      "name": "dev-tester",
+      "createdTime": "2026-04-01T00:00:00Z",
       "type": "normal-user",
-      "password": "$2b$10$KBQSRJJm74mMX4KE5lZU3.hdkqqJKg9dIhydZhgfAom00NxBtXISy",
-      "passwordType": "bcrypt",
-      "displayName": "Admin",
-      "firstName": "",
-      "lastName": "",
-      "avatar": "https://cdn.hanzo.ai/img/default-avatar.png",
-      "permanentAvatar": "",
-      "email": "admin@hanzo.ai",
-      "emailVerified": true,
-      "phone": "",
+      "password": "test1234",
+      "passwordSalt": "",
+      "passwordType": "plain",
+      "displayName": "Dev Tester",
+      "firstName": "Dev",
+      "lastName": "Tester",
+      "email": "dev@example.internal",
+      "phone": "+19999999999",
       "countryCode": "US",
-      "region": "",
-      "location": "",
-      "address": [],
-      "affiliation": "",
-      "title": "",
-      "idCardType": "",
-      "idCard": "",
-      "homepage": "",
-      "bio": "",
-      "tag": "",
-      "language": "en",
-      "gender": "",
-      "birthday": "",
-      "education": "",
-      "score": 1000,
-      "karma": 0,
-      "ranking": 1,
-      "balance": 10000,
-      "currency": "USD",
-      "isDefaultAvatar": false,
-      "isOnline": false,
-      "isAdmin": true,
+      "isAdmin": false,
+      "isGlobalAdmin": false,
       "isForbidden": false,
       "isDeleted": false,
-      "signupApplication": "app-built-in",
-      "preHash": "",
-      "accessKey": "",
-      "accessSecret": "",
-      "createdIp": "",
-      "lastSigninTime": "",
-      "lastSigninIp": "",
-      "preferredMfaType": "",
-      "recoveryCodes": null,
-      "totpSecret": "",
-      "mfaPhoneEnabled": false,
-      "mfaEmailEnabled": false,
-      "ldap": "",
+      "signupApplication": "liquidity-exchange",
       "properties": {
-        "tier": "enterprise"
+        "kyc_status": "approved",
+        "accreditation_status": "approved"
       },
-      "roles": [],
-      "permissions": [],
-      "groups": [],
-      "lastSigninWrongTime": "",
-      "signinWrongTimes": 0,
-      "managedAccounts": null,
-      "isGlobalAdmin": true
+      "tag": "liquidity"
     },
     {
-      "owner": "built-in",
+      "owner": "liquidity",
       "name": "z",
-      "createdTime": "2024-01-01T00:00:00Z",
-      "updatedTime": "2024-01-01T00:00:00Z",
-      "id": "z",
+      "createdTime": "2026-04-01T00:00:00Z",
       "type": "normal-user",
-      "password": "",
-      "passwordType": "bcrypt",
+      "password": "test1234",
+      "passwordType": "plain",
       "displayName": "Z",
-      "firstName": "",
-      "lastName": "",
-      "avatar": "https://cdn.hanzo.ai/img/default-avatar.png",
-      "permanentAvatar": "",
-      "email": "z@hanzo.ai",
-      "emailVerified": true,
-      "phone": "",
+      "firstName": "Zach",
+      "lastName": "Kelling",
+      "email": "z@partner",
+      "phone": "+19137779708",
       "countryCode": "US",
-      "region": "",
-      "location": "",
-      "address": [],
-      "affiliation": "Hanzo AI",
-      "title": "Founder",
-      "idCardType": "",
-      "idCard": "",
-      "homepage": "https://hanzo.ai",
-      "bio": "",
-      "tag": "founder",
-      "language": "en",
-      "gender": "",
-      "birthday": "",
-      "education": "",
-      "score": 10000,
-      "karma": 0,
-      "ranking": 1,
-      "balance": 100000,
-      "currency": "USD",
-      "isDefaultAvatar": false,
-      "isOnline": false,
+      "tag": "liquidity",
       "isAdmin": true,
       "isGlobalAdmin": true,
       "isForbidden": false,
       "isDeleted": false,
-      "signupApplication": "app-built-in",
-      "preHash": "",
-      "accessKey": "",
-      "accessSecret": "",
-      "createdIp": "",
-      "lastSigninTime": "",
-      "lastSigninIp": "",
-      "preferredMfaType": "",
-      "recoveryCodes": null,
-      "totpSecret": "",
-      "mfaPhoneEnabled": false,
-      "mfaEmailEnabled": false,
-      "ldap": "",
-      "properties": {
-        "tier": "enterprise"
-      },
-      "roles": [],
-      "permissions": [],
-      "groups": [],
-      "lastSigninWrongTime": "",
-      "signinWrongTimes": 0,
-      "managedAccounts": null
-    },
-    {
-      "owner": "lux",
-      "name": "z",
-      "createdTime": "2024-01-01T00:00:00Z",
-      "updatedTime": "2024-01-01T00:00:00Z",
-      "id": "lux-z",
-      "type": "normal-user",
-      "password": "",
-      "passwordType": "bcrypt",
-      "displayName": "Z",
-      "firstName": "",
-      "lastName": "",
-      "avatar": "https://cdn.lux.network/img/default-avatar.png",
-      "permanentAvatar": "",
-      "email": "z@lux.network",
-      "emailVerified": true,
-      "phone": "",
-      "countryCode": "US",
-      "region": "",
-      "location": "",
-      "address": [],
-      "affiliation": "Lux Network",
-      "title": "Founder",
-      "idCardType": "",
-      "idCard": "",
-      "homepage": "https://lux.network",
-      "bio": "",
-      "tag": "founder",
-      "language": "en",
-      "gender": "",
-      "birthday": "",
-      "education": "",
-      "score": 10000,
-      "karma": 0,
-      "ranking": 1,
-      "balance": 100000,
-      "currency": "USD",
-      "isDefaultAvatar": false,
-      "isOnline": false,
-      "isAdmin": true,
-      "isGlobalAdmin": false,
-      "isForbidden": false,
-      "isDeleted": false,
-      "signupApplication": "app-lux",
-      "preHash": "",
-      "accessKey": "",
-      "accessSecret": "",
-      "createdIp": "",
-      "lastSigninTime": "",
-      "lastSigninIp": "",
-      "preferredMfaType": "",
-      "recoveryCodes": null,
-      "totpSecret": "",
-      "mfaPhoneEnabled": false,
-      "mfaEmailEnabled": false,
-      "ldap": "",
-      "properties": {
-        "tier": "enterprise"
-      },
-      "roles": [],
-      "permissions": [],
-      "groups": [],
-      "lastSigninWrongTime": "",
-      "signinWrongTimes": 0,
-      "managedAccounts": null
+      "signupApplication": "liquidity-exchange",
+      "verificationCode": "777777"
     }
   ],
   "certs": [
