@@ -27,7 +27,7 @@ import (
 var Enforcer *casbin.Enforcer
 
 func InitApi() {
-	e, err := object.GetInitializedEnforcer(util.GetId("built-in", "api-enforcer-built-in"))
+	e, err := object.GetInitializedEnforcer(util.GetId("superuser", "api-enforcer-superuser"))
 	if err != nil {
 		panic(err)
 	}
@@ -62,7 +62,7 @@ p, *, *, POST, /api/device-auth, *, *
 p, *, *, GET, /api/get-account, *, *
 p, *, *, GET, /api/userinfo, *, *
 p, *, *, GET, /api/user, *, *
-p, *, *, GET, /api/health, *, *
+p, *, *, GET, /healthz, *, *
 p, *, *, *, /api/webhook, *, *
 p, *, *, GET, /api/get-qrcode, *, *
 p, *, *, GET, /api/get-webhook-event, *, *
@@ -202,7 +202,7 @@ func isAllowedInDemoMode(subOwner string, subName string, method string, urlPath
 			return true
 		} else if urlPath == "/api/update-user" {
 			// Allow ordinary users to update their own information
-			if (subOwner == objOwner && subName == objName || subOwner == "app") && !(subOwner == "built-in" && subName == "admin") {
+			if (subOwner == objOwner && subName == objName || subOwner == "app") && !(subOwner == "superuser" && subName == "admin") {
 				return true
 			}
 			return false
