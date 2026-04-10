@@ -154,8 +154,6 @@ func SendVerificationCodeToEmail(organization *Organization, user *User, provide
 	return nil
 }
 
-
-
 func SendVerificationCodeToPhone(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, application *Application) error {
 	// Per-user pinned OTP or org master code: skip SMS entirely, just record the code.
 	// This allows test/sandbox users to have a permanent OTP without needing an SMS provider.
