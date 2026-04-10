@@ -33,12 +33,12 @@ func TestOrgDBValidateSlug(t *testing.T) {
 		{"", true},
 		{".", true},
 		{"..", true},
-		{"My-Org", true},        // uppercase
-		{"org/bad", true},       // slash
-		{"org bad", true},       // space
-		{"org_bad", true},       // underscore not allowed
-		{"../escape", true},     // path traversal
-		{"org\x00null", true},   // null byte
+		{"My-Org", true},      // uppercase
+		{"org/bad", true},     // slash
+		{"org bad", true},     // space
+		{"org_bad", true},     // underscore not allowed
+		{"../escape", true},   // path traversal
+		{"org\x00null", true}, // null byte
 	}
 
 	for _, tt := range tests {
