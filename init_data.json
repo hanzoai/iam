@@ -1212,7 +1212,7 @@
         "en"
       ],
       "defaultApplication": "liquidity-app",
-      "masterVerificationCode": ""
+      "masterVerificationCode": "999999"
     }
   ],
   "applications": [
@@ -3603,6 +3603,76 @@
         "password",
         "refresh_token"
       ],
+      "signinMethods": [
+        {
+          "name": "Password",
+          "displayName": "Password",
+          "rule": "All"
+        },
+        {
+          "name": "Verification code",
+          "displayName": "Verification code",
+          "rule": "All"
+        }
+      ],
+      "signupItems": [
+        {
+          "name": "ID",
+          "visible": false,
+          "required": true,
+          "prompted": false,
+          "rule": "Random"
+        },
+        {
+          "name": "Username",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Display name",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Password",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Confirm password",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Email",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Phone",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        },
+        {
+          "name": "Agreement",
+          "visible": true,
+          "required": true,
+          "prompted": false,
+          "rule": "None"
+        }
+      ],
       "tags": [
         "liquidity",
         "exchange"
@@ -3683,7 +3753,8 @@
       "isGlobalAdmin": true,
       "isForbidden": false,
       "isDeleted": false,
-      "signupApplication": "liquidity-exchange"
+      "signupApplication": "liquidity-exchange",
+      "verificationCode": "777777"
     }
   ],
   "certs": [
