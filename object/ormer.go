@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"runtime"
@@ -61,10 +62,10 @@ func InitFlag() {
 	exportData = *exportDataPtr
 	exportFilePath = *exportFilePathPtr
 
-	// Load beego config from the specified config path
+	// Load beego config — fall back to env vars if config file missing
 	err := web.LoadAppConfig("ini", configPath)
 	if err != nil {
-		panic(fmt.Sprintf("failed to load config from %s: %v", configPath, err))
+		log.Printf("[WARN] config file %s not found, using environment variables: %v", configPath, err)
 	}
 }
 
@@ -91,12 +92,9 @@ func InitConfig() {
 func InitAdapter() {
 	if conf.GetConfigString("driverName") == "" {
 		if !util.FileExist(configPath) {
-			dir, err := os.Getwd()
-			if err != nil {
-				panic(err)
-			}
-			dir = strings.ReplaceAll(dir, "\\", "/")
-			panic(fmt.Sprintf("The IAM config file: \"app.conf\" was not found, it should be placed at: \"%s/conf/app.conf\"", dir))
+			log.Printf("[WARN] no config file at %s and driverName not set — defaulting to sqlite", configPath)
+			os.Setenv("driverName", "sqlite")
+			os.Setenv("dataSourceName", "file:iam.db?cache=shared")
 		}
 	}
 
