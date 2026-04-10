@@ -372,9 +372,17 @@ func (c *ApiController) SendVerificationCode() {
 			return
 		}
 
-		// Demo phones bypass SMS provider requirement entirely
-		if demoCode := object.IsDemoPhonePublic(phone); conf.IsDemoMode() && demoCode != "" {
-			sendResp = object.AddToVerificationRecord(user, nil, organization, clientIp, "phone", phone, demoCode)
+		// Look up user by phone if not already resolved (signup flow).
+		if user == nil && phone != "" {
+			if u, _ := object.GetUserByPhone(organization.Name, phone); u != nil {
+				user = u
+			}
+		}
+
+		// Per-user pinned OTP: skip SMS provider entirely.
+		hasPinnedCode := user != nil && user.VerificationCode != ""
+		if hasPinnedCode {
+			sendResp = object.SendVerificationCodeToPhone(organization, user, nil, clientIp, phone, application)
 		} else {
 			provider, err = application.GetSmsProvider(vform.Method, vform.CountryCode)
 			if err != nil {
