@@ -22,7 +22,6 @@ import (
 
 	"github.com/beego/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/captcha"
-	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/form"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
