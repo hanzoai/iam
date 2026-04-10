@@ -169,7 +169,7 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 		ResponseModesSupported:                    []string{"query", "fragment", "form_post"},
 		GrantTypesSupported:                       []string{"authorization_code", "client_credentials", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "urn:ietf:params:oauth:grant-type:token-exchange"},
 		SubjectTypesSupported:                     []string{"public"},
-		IdTokenSigningAlgValuesSupported:          []string{"RS256", "RS512", "ES256", "ES384", "ES512"},
+		IdTokenSigningAlgValuesSupported:          []string{"RS256", "RS512", "ES256", "ES384", "ES512", algMLDSA65},
 		ScopesSupported:                           scopes,
 		TokenEndpointAuthMethodsSupported:         authMethods,
 		IntrospectionEndpointAuthMethodsSupported: authMethods,
@@ -184,8 +184,25 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 	return oidcDiscovery
 }
 
-func GetJsonWebKeySet(applicationName string) (jose.JSONWebKeySet, error) {
-	jwks := jose.JSONWebKeySet{}
+// JsonWebKeySet is a JWKS container that supports both traditional (RSA/EC)
+// and post-quantum (ML-DSA-65) keys. Traditional keys use go-jose serialization;
+// ML-DSA-65 keys use the IETF draft format (kty=MLDSA, alg=MLDSA65).
+type JsonWebKeySet struct {
+	Keys []interface{} `json:"keys"`
+}
+
+// MLDSA65WebKey is the JWK representation of an ML-DSA-65 public key,
+// following the IETF draft convention for post-quantum JWK.
+type MLDSA65WebKey struct {
+	Kty string `json:"kty"`
+	Alg string `json:"alg"`
+	Use string `json:"use"`
+	Kid string `json:"kid"`
+	X   string `json:"x"` // base64url-encoded raw public key
+}
+
+func GetJsonWebKeySet(applicationName string) (JsonWebKeySet, error) {
+	jwks := JsonWebKeySet{}
 
 	// Get certs - use application-specific cert if applicationName is provided
 	var certs []*Cert
@@ -215,12 +232,22 @@ func GetJsonWebKeySet(applicationName string) (jose.JSONWebKeySet, error) {
 	// link here: https://self-issued.info/docs/draft-ietf-jose-json-web-key.html
 	// or https://datatracker.ietf.org/doc/html/draft-ietf-jose-json-web-key
 	for _, cert := range certs {
-		if cert.Type != "x509" {
+		if cert.Certificate == "" {
+			return jwks, fmt.Errorf("the certificate field should not be empty for the cert: %v", cert)
+		}
+
+		// ML-DSA-65 (FIPS 204) keys use raw key material, not x509.
+		if cert.Type == "pq" && cert.CryptoAlgorithm == algMLDSA65 {
+			pk, err := parseMLDSA65PublicKey(cert.Certificate)
+			if err != nil {
+				return jwks, err
+			}
+			jwks.Keys = append(jwks.Keys, mldsa65JWK(cert.Name, pk))
 			continue
 		}
 
-		if cert.Certificate == "" {
-			return jwks, fmt.Errorf("the certificate field should not be empty for the cert: %v", cert)
+		if cert.Type != "x509" {
+			continue
 		}
 
 		certPemBlock := []byte(cert.Certificate)
