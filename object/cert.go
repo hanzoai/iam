@@ -360,10 +360,18 @@ func RenewCert(cert *Cert) (bool, error) {
 
 func getCertByApplication(application *Application) (*Cert, error) {
 	if application.Cert != "" {
-		return getCertByName(application.Cert)
-	} else {
-		return GetDefaultCert()
+		cert, err := getCertByName(application.Cert)
+		if err != nil {
+			return nil, err
+		}
+		// If the named cert doesn't exist (e.g. "cert-built-in" on fresh
+		// boot), fall back to the default cert so JWT signing works.
+		if cert == nil {
+			return GetDefaultCert()
+		}
+		return cert, nil
 	}
+	return GetDefaultCert()
 }
 
 func GetDefaultCert() (*Cert, error) {
