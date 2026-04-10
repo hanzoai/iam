@@ -53,7 +53,7 @@ func GetTokenCount(owner, organization, field, value string) (int64, error) {
 
 func GetTokens(owner string, organization string) ([]*Token, error) {
 	tokens := []*Token{}
-	err := ormer.Engine.Desc("created_time").Find(&tokens, &Token{Owner: owner, Organization: organization})
+	err := orgEngine(owner).Desc("created_time").Find(&tokens, &Token{Owner: owner, Organization: organization})
 	return tokens, err
 }
 
@@ -70,7 +70,7 @@ func getToken(owner string, name string) (*Token, error) {
 	}
 
 	token := Token{Owner: owner, Name: name}
-	existed, err := ormer.Engine.Get(&token)
+	existed, err := orgEngine(owner).Get(&token)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func UpdateToken(id string, token *Token, isGlobalAdmin bool) (bool, error) {
 
 	token.popularHashes()
 
-	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(token)
+	affected, err := orgEngine(owner).ID(PK{owner, name}).AllCols().Update(token)
 	if err != nil {
 		return false, err
 	}
@@ -210,7 +210,7 @@ func UpdateToken(id string, token *Token, isGlobalAdmin bool) (bool, error) {
 func AddToken(token *Token) (bool, error) {
 	token.popularHashes()
 
-	affected, err := ormer.Engine.Insert(token)
+	affected, err := orgEngine(token.Owner).Insert(token)
 	if err != nil {
 		return false, err
 	}
@@ -219,7 +219,7 @@ func AddToken(token *Token) (bool, error) {
 }
 
 func DeleteToken(token *Token) (bool, error) {
-	affected, err := ormer.Engine.ID(PK{token.Owner, token.Name}).Where("organization = ?", token.Organization).Delete(&Token{})
+	affected, err := orgEngine(token.Owner).ID(PK{token.Owner, token.Name}).Where("organization = ?", token.Organization).Delete(&Token{})
 	if err != nil {
 		return false, err
 	}

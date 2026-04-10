@@ -112,7 +112,7 @@ func getBuiltInAccountItems() []*AccountItem {
 }
 
 func initBuiltInOrganization() bool {
-	organization, err := getOrganization("admin", "built-in")
+	organization, err := getOrganization("admin", "superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -123,9 +123,9 @@ func initBuiltInOrganization() bool {
 
 	organization = &Organization{
 		Owner:              "admin",
-		Name:               "built-in",
+		Name:               "superuser",
 		CreatedTime:        util.GetCurrentTime(),
-		DisplayName:        "Built-in",
+		DisplayName:        "Superuser",
 		WebsiteUrl:         "https://hanzo.ai",
 		Favicon:            "/img/hanzo-favicon.png",
 		PasswordType:       "bcrypt",
@@ -151,7 +151,7 @@ func initBuiltInOrganization() bool {
 }
 
 func initBuiltInUser() {
-	user, err := getUser("built-in", "admin")
+	user, err := getUser("superuser", "admin")
 	if err != nil {
 		panic(err)
 	}
@@ -160,7 +160,7 @@ func initBuiltInUser() {
 	}
 
 	user = &User{
-		Owner:             "built-in",
+		Owner:             "superuser",
 		Name:              "admin",
 		CreatedTime:       util.GetCurrentTime(),
 		Id:                util.GenerateId(),
@@ -178,9 +178,9 @@ func initBuiltInUser() {
 		IsAdmin:           true,
 		IsForbidden:       false,
 		IsDeleted:         false,
-		SignupApplication: "app-built-in",
+		SignupApplication: "app-superuser",
 		RegisterType:      "Add User",
-		RegisterSource:    "built-in/admin",
+		RegisterSource:    "superuser/admin",
 		CreatedIp:         "127.0.0.1",
 		Properties:        make(map[string]string),
 	}
@@ -191,7 +191,7 @@ func initBuiltInUser() {
 }
 
 func initBuiltInApplication() {
-	application, err := getApplication("admin", "app-built-in")
+	application, err := getApplication("admin", "app-superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -202,7 +202,7 @@ func initBuiltInApplication() {
 
 	application = &Application{
 		Owner:          "admin",
-		Name:           "app-built-in",
+		Name:           "app-superuser",
 		CreatedTime:    util.GetCurrentTime(),
 		DisplayName:    "IAM",
 		Category:       "Default",
@@ -210,8 +210,8 @@ func initBuiltInApplication() {
 		Scopes:         []*ScopeItem{},
 		Logo:           "",
 		HomepageUrl:    "",
-		Organization:   "built-in",
-		Cert:           "cert-built-in",
+		Organization:   "superuser",
+		Cert:           "cert-superuser",
 		EnablePassword: true,
 		EnableSignUp:   false,
 		Providers: []*ProviderItem{
@@ -264,7 +264,7 @@ func readTokenFromFile() (string, string) {
 
 func initBuiltInCert() {
 	tokenJwtCertificate, tokenJwtPrivateKey := readTokenFromFile()
-	cert, err := getCert("admin", "cert-built-in")
+	cert, err := getCert("admin", "cert-superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -275,9 +275,9 @@ func initBuiltInCert() {
 
 	cert = &Cert{
 		Owner:           "admin",
-		Name:            "cert-built-in",
+		Name:            "cert-superuser",
 		CreatedTime:     util.GetCurrentTime(),
-		DisplayName:     "Built-in Cert",
+		DisplayName:     "Superuser Cert",
 		Scope:           "JWT",
 		Type:            "x509",
 		CryptoAlgorithm: "RS256",
@@ -293,7 +293,7 @@ func initBuiltInCert() {
 }
 
 func initBuiltInLdap() {
-	ldap, err := GetLdap("ldap-built-in")
+	ldap, err := GetLdap("ldap-superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -303,9 +303,9 @@ func initBuiltInLdap() {
 	}
 
 	ldap = &Ldap{
-		Id:         "ldap-built-in",
-		Owner:      "built-in",
-		ServerName: "Built-in LDAP Server",
+		Id:         "ldap-superuser",
+		Owner:      "superuser",
+		ServerName: "Superuser LDAP Server",
 		Host:       "example.com",
 		Port:       389,
 		Username:   "cn=admin,dc=example,dc=com",
@@ -370,7 +370,7 @@ func initWebAuthn() {
 }
 
 func initBuiltInUserModel() {
-	model, err := GetModel("built-in/user-model-built-in")
+	model, err := GetModel("superuser/user-model-superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -380,8 +380,8 @@ func initBuiltInUserModel() {
 	}
 
 	model = &Model{
-		Owner:       "built-in",
-		Name:        "user-model-built-in",
+		Owner:       "superuser",
+		Name:        "user-model-superuser",
 		CreatedTime: util.GetCurrentTime(),
 		DisplayName: "User Model",
 		ModelText: `[request_definition]
@@ -406,7 +406,7 @@ m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act`,
 }
 
 func initBuiltInApiModel() bool {
-	model, err := GetModel("built-in/api-model-built-in")
+	model, err := GetModel("superuser/api-model-superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -437,8 +437,8 @@ m = (r.subOwner == p.subOwner || p.subOwner == "*") && \
     (r.subOwner == r.objOwner && r.subName == r.objName)`
 
 	model = &Model{
-		Owner:       "built-in",
-		Name:        "api-model-built-in",
+		Owner:       "superuser",
+		Name:        "api-model-superuser",
 		CreatedTime: util.GetCurrentTime(),
 		DisplayName: "API Model",
 		ModelText:   modelText,
@@ -451,7 +451,7 @@ m = (r.subOwner == p.subOwner || p.subOwner == "*") && \
 }
 
 func initBuiltInPermission() {
-	permission, err := GetPermission("built-in/permission-built-in")
+	permission, err := GetPermission("superuser/permission-superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -460,19 +460,19 @@ func initBuiltInPermission() {
 	}
 
 	permission = &Permission{
-		Owner:        "built-in",
-		Name:         "permission-built-in",
+		Owner:        "superuser",
+		Name:         "permission-superuser",
 		CreatedTime:  util.GetCurrentTime(),
-		DisplayName:  "Built-in Permission",
-		Description:  "Built-in Permission",
-		Users:        []string{"built-in/*"},
+		DisplayName:  "Superuser Permission",
+		Description:  "Superuser Permission",
+		Users:        []string{"superuser/*"},
 		Groups:       []string{},
 		Roles:        []string{},
 		Domains:      []string{},
-		Model:        "built-in/user-model-built-in",
+		Model:        "superuser/user-model-superuser",
 		Adapter:      "",
 		ResourceType: "Application",
-		Resources:    []string{"app-built-in"},
+		Resources:    []string{"app-superuser"},
 		Actions:      []string{"Read", "Write", "Admin"},
 		Effect:       "Allow",
 		IsEnabled:    true,
@@ -488,7 +488,7 @@ func initBuiltInPermission() {
 }
 
 func initBuiltInUserAdapter() {
-	adapter, err := GetAdapter("built-in/user-adapter-built-in")
+	adapter, err := GetAdapter("superuser/user-adapter-superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -498,8 +498,8 @@ func initBuiltInUserAdapter() {
 	}
 
 	adapter = &Adapter{
-		Owner:       "built-in",
-		Name:        "user-adapter-built-in",
+		Owner:       "superuser",
+		Name:        "user-adapter-superuser",
 		CreatedTime: util.GetCurrentTime(),
 		Table:       "casbin_user_rule",
 		UseSameDb:   true,
@@ -511,7 +511,7 @@ func initBuiltInUserAdapter() {
 }
 
 func initBuiltInApiAdapter() {
-	adapter, err := GetAdapter("built-in/api-adapter-built-in")
+	adapter, err := GetAdapter("superuser/api-adapter-superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -521,8 +521,8 @@ func initBuiltInApiAdapter() {
 	}
 
 	adapter = &Adapter{
-		Owner:       "built-in",
-		Name:        "api-adapter-built-in",
+		Owner:       "superuser",
+		Name:        "api-adapter-superuser",
 		CreatedTime: util.GetCurrentTime(),
 		Table:       "casbin_api_rule",
 		UseSameDb:   true,
@@ -534,7 +534,7 @@ func initBuiltInApiAdapter() {
 }
 
 func initBuiltInUserEnforcer() {
-	enforcer, err := GetEnforcer("built-in/user-enforcer-built-in")
+	enforcer, err := GetEnforcer("superuser/user-enforcer-superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -544,12 +544,12 @@ func initBuiltInUserEnforcer() {
 	}
 
 	enforcer = &Enforcer{
-		Owner:       "built-in",
-		Name:        "user-enforcer-built-in",
+		Owner:       "superuser",
+		Name:        "user-enforcer-superuser",
 		CreatedTime: util.GetCurrentTime(),
 		DisplayName: "User Enforcer",
-		Model:       "built-in/user-model-built-in",
-		Adapter:     "built-in/user-adapter-built-in",
+		Model:       "superuser/user-model-superuser",
+		Adapter:     "superuser/user-adapter-superuser",
 	}
 
 	_, err = AddEnforcer(enforcer)
@@ -559,7 +559,7 @@ func initBuiltInUserEnforcer() {
 }
 
 func initBuiltInApiEnforcer() {
-	enforcer, err := GetEnforcer("built-in/api-enforcer-built-in")
+	enforcer, err := GetEnforcer("superuser/api-enforcer-superuser")
 	if err != nil {
 		panic(err)
 	}
@@ -569,12 +569,12 @@ func initBuiltInApiEnforcer() {
 	}
 
 	enforcer = &Enforcer{
-		Owner:       "built-in",
-		Name:        "api-enforcer-built-in",
+		Owner:       "superuser",
+		Name:        "api-enforcer-superuser",
 		CreatedTime: util.GetCurrentTime(),
 		DisplayName: "API Enforcer",
-		Model:       "built-in/api-model-built-in",
-		Adapter:     "built-in/api-adapter-built-in",
+		Model:       "superuser/api-model-superuser",
+		Adapter:     "superuser/api-adapter-superuser",
 	}
 
 	_, err = AddEnforcer(enforcer)

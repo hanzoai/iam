@@ -107,9 +107,9 @@ class App extends Component {
     this.setThemeAlgorithm();
     let storageThemeAlgorithm = [];
     try {
-      storageThemeAlgorithm = localStorage.getItem("themeAlgorithm") ? JSON.parse(localStorage.getItem("themeAlgorithm")) : ["default"];
+      storageThemeAlgorithm = localStorage.getItem("themeAlgorithm") ? JSON.parse(localStorage.getItem("themeAlgorithm")) : ["dark"];
     } catch {
-      storageThemeAlgorithm = ["default"];
+      storageThemeAlgorithm = ["dark"];
     }
     this.state = {
       classes: props,
@@ -730,7 +730,7 @@ class App extends Component {
       <React.Fragment>
         {(this.state.account === undefined || this.state.account === null) ?
           <Helmet>
-            <link rel="icon" href={"https://cdn.iam.com/static/favicon.png"} />
+            <link rel="icon" href={"/favicon.ico"} />
           </Helmet> :
           <Helmet>
             <title>{this.state.account.organization?.displayName}</title>
