@@ -372,7 +372,14 @@ func (c *ApiController) SendVerificationCode() {
 			return
 		}
 
-		// Per-user pinned OTP or org master code: skip SMS provider entirely.
+		// Look up user by phone if not already resolved (signup flow).
+		if user == nil && phone != "" {
+			if u, _ := object.GetUserByPhone(organization.Name, phone); u != nil {
+				user = u
+			}
+		}
+
+		// Per-user pinned OTP: skip SMS provider entirely.
 		hasPinnedCode := user != nil && user.VerificationCode != ""
 		if hasPinnedCode {
 			sendResp = object.SendVerificationCodeToPhone(organization, user, nil, clientIp, phone, application)
