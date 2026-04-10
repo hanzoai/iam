@@ -511,8 +511,8 @@ func mergeApplicationOAuthDefaults(existing *Application, desired *Application) 
 		updateCols = append(updateCols, "cert")
 	}
 
-	// Merge providers if existing has none
-	if len(existing.Providers) == 0 && len(desired.Providers) > 0 {
+	// Merge providers if desired has more than existing (additive merge)
+	if len(desired.Providers) > len(existing.Providers) {
 		existing.Providers = desired.Providers
 		updateCols = append(updateCols, "providers")
 	}
