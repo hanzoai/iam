@@ -2,7 +2,7 @@
   "organizations": [
     {
       "owner": "admin",
-      "name": "built-in",
+      "name": "superuser",
       "createdTime": "",
       "displayName": "System",
       "websiteUrl": "https://hanzo.id",
@@ -1224,7 +1224,7 @@
       "logo": "https://cdn.hanzo.ai/img/logo-white.svg",
       "homepageUrl": "https://hanzo.id",
       "description": "System administration console",
-      "organization": "built-in",
+      "organization": "superuser",
       "cert": "cert-hanzo",
       "enablePassword": true,
       "enableSignUp": false,
@@ -3639,7 +3639,7 @@
   ],
   "users": [
     {
-      "owner": "built-in",
+      "owner": "superuser",
       "name": "admin",
       "createdTime": "2024-01-01T00:00:00Z",
       "updatedTime": "2024-01-01T00:00:00Z",
@@ -3705,7 +3705,7 @@
       "isGlobalAdmin": true
     },
     {
-      "owner": "built-in",
+      "owner": "superuser",
       "name": "z",
       "createdTime": "2024-01-01T00:00:00Z",
       "updatedTime": "2024-01-01T00:00:00Z",

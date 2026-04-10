@@ -38,7 +38,7 @@ const (
 	UserPropertiesWechatOpenId  = "wechatOpenId"
 )
 
-const UserEnforcerId = "built-in/user-enforcer-built-in"
+const UserEnforcerId = "superuser/user-enforcer-superuser"
 
 var userEnforcer *UserGroupEnforcer
 
@@ -1505,7 +1505,7 @@ func (user *User) IsGlobalAdmin() bool {
 		return false
 	}
 
-	return user.Owner == "built-in"
+	return user.Owner == "superuser"
 }
 
 func (user *User) CheckUserFace(faceIdImage []string, provider *Provider) (bool, error) {
