@@ -313,14 +313,42 @@ footer {
   color: var(--hanzo-text) !important;
 }
 
-/* Small provider icons */
+/* Social login provider buttons — full-width styled buttons */
 .provider-img {
-  border-radius: 6px;
+  border-radius: 4px;
   transition: opacity 0.2s;
+  cursor: pointer;
+  width: 20px !important;
+  height: 20px !important;
 }
 
 .provider-img:hover {
   opacity: 0.8;
+}
+
+/* Style social login as full-width buttons */
+.provider-button,
+a:has(> .provider-img) {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--hanzo-text, #e5e5e5);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s, border-color 0.2s;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+.provider-button:hover,
+a:has(> .provider-img):hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* Phone/email toggle inside input */
