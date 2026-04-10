@@ -413,15 +413,15 @@ func initDefinedApplication(application *Application) {
 	}
 	appendSyncTrace(fmt.Sprintf("[%s] AddApplication returned: created=%v", appId, created))
 
-	// xorm omits bool fields without explicit column tags, so boolean values
-	// from init_data.json are silently dropped during Insert. Fix them with
-	// a raw SQL UPDATE immediately after creation.
+	// xorm omits bool fields and may mis-serialize slices during Insert.
+	// Fix booleans and grant_types with a raw SQL UPDATE immediately after creation.
 	if created {
+		grantTypesJSON := util.StructToJson(application.GrantTypes)
 		_, sqlErr := ormer.Engine.Exec(
-			`UPDATE application SET enable_password=?, enable_sign_up=?, enable_signin_session=?, enable_code_signin=?, enable_web_authn=?, enable_auto_signin=?, enable_link_with_email=? WHERE owner=? AND name=?`,
+			`UPDATE application SET enable_password=?, enable_sign_up=?, enable_signin_session=?, enable_code_signin=?, enable_web_authn=?, enable_auto_signin=?, enable_link_with_email=?, grant_types=? WHERE owner=? AND name=?`,
 			application.EnablePassword, application.EnableSignUp, application.EnableSigninSession,
 			application.EnableCodeSignin, application.EnableWebAuthn, application.EnableAutoSignin,
-			application.EnableLinkWithEmail, application.Owner, application.Name,
+			application.EnableLinkWithEmail, grantTypesJSON, application.Owner, application.Name,
 		)
 		if sqlErr != nil {
 			fmt.Printf("[init_data] WARNING: bool fixup SQL failed for %s: %v\n", appId, sqlErr)
@@ -569,7 +569,7 @@ func initDefinedUser(user *User) {
 	_, err = AddUser(user, "en")
 	if err != nil {
 		fmt.Printf("[init_data] AddUser %s/%s FAILED: %v\n", user.Owner, user.Name, err)
-		panic(err)
+		return
 	}
 	fmt.Printf("[init_data] user %s/%s CREATED successfully (id=%s)\n", user.Owner, user.Name, user.Id)
 }
