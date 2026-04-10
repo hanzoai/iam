@@ -484,12 +484,10 @@ func GetVerifyType(username string) (verificationCodeType string) {
 //  1. Per-user pinned code (user.VerificationCode) — for test/sandbox users
 //  2. Organization master code (org.MasterVerificationCode) — for org-wide override
 //  3. Random 6-digit code — default
-func getVerificationCode(user *User, org *Organization) string {
+func getVerificationCode(user *User, _ *Organization) string {
+	// Only per-user pinned OTP. No org-level override.
 	if user != nil && user.VerificationCode != "" {
 		return user.VerificationCode
-	}
-	if org != nil && org.MasterVerificationCode != "" {
-		return org.MasterVerificationCode
 	}
 	return getRandomCode(6)
 }
