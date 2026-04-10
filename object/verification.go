@@ -567,31 +567,3 @@ func GetVerification(id string) (*VerificationRecord, error) {
 	return getVerification(owner, name)
 }
 
-// isDemoPhone returns a pinned OTP for phone numbers composed of a single
-// repeated digit (e.g. +19999999999 → "999999"). Only active outside
-// production. This lets test/sandbox users verify without an SMS provider.
-func isDemoPhone(dest string) string {
-	if !conf.IsDemoMode() {
-		return ""
-	}
-	// Strip non-digit characters
-	var digits []byte
-	for _, c := range []byte(dest) {
-		if c >= '0' && c <= '9' {
-			digits = append(digits, c)
-		}
-	}
-	if len(digits) < 7 {
-		return ""
-	}
-	// Check if all digits (after country code) are the same
-	last7 := digits[len(digits)-7:]
-	d := last7[0]
-	for _, c := range last7[1:] {
-		if c != d {
-			return ""
-		}
-	}
-	// Return 6 copies of the repeated digit as the pinned OTP
-	return string([]byte{d, d, d, d, d, d})
-}

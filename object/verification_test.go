@@ -81,38 +81,20 @@ func TestGetVerificationCode_UserPinnedOverridesOrg(t *testing.T) {
 	}
 }
 
-func TestIsDemoPhone(t *testing.T) {
-	// isDemoPhone only works when ENV is NOT production
-	os.Setenv("ENV", "dev")
-	defer os.Unsetenv("ENV")
-
-	tests := []struct {
-		phone    string
-		expected string
-	}{
-		{"+19999999999", "999999"},
-		{"+11111111111", "111111"},
-		{"+15555555555", "555555"},
-		{"+12223334444", ""},            // mixed digits
-		{"+1234", ""},                   // too short
-		{"9999999", "999999"},           // 7 digits, all same
-		{"+1 (999) 999-9999", "999999"}, // formatted
-	}
-
-	for _, tc := range tests {
-		got := isDemoPhone(tc.phone)
-		if got != tc.expected {
-			t.Errorf("isDemoPhone(%q) = %q, want %q", tc.phone, got, tc.expected)
-		}
+func TestPinnedOTP(t *testing.T) {
+	// Per-user pinned OTP: set on User.VerificationCode, returned by getVerificationCode
+	user := &User{VerificationCode: "123456"}
+	code := getVerificationCode(user, nil)
+	if code != "123456" {
+		t.Errorf("pinned OTP: expected 123456, got %s", code)
 	}
 }
 
-func TestIsDemoPhone_ProductionDisabled(t *testing.T) {
-	os.Setenv("ENV", "production")
-	defer os.Unsetenv("ENV")
-
-	got := isDemoPhone("+19999999999")
-	if got != "" {
-		t.Errorf("isDemoPhone should return empty in production, got %q", got)
+func TestPinnedOTP_Empty(t *testing.T) {
+	// No pinned OTP: should generate a random code
+	user := &User{VerificationCode: ""}
+	code := getVerificationCode(user, nil)
+	if len(code) != 6 {
+		t.Errorf("random OTP should be 6 digits, got %q (len=%d)", code, len(code))
 	}
 }
