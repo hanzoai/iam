@@ -110,6 +110,8 @@ func main() {
 	// Only BeforeStatic runs before session init, giving us a chance to set
 	// req.URL.Scheme and GlobalSessions.SetSecure(true) before the session cookie
 	// attributes are determined.
+	// Rewrite /v1/iam/* → /api/* so callers can use the canonical path.
+	web.InsertFilter("/v1/iam/*", web.BeforeStatic, routers.V1IAMRewriteFilter)
 	web.InsertFilter("*", web.BeforeStatic, routers.SecureCookieFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.StaticFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.AutoSigninFilter)
