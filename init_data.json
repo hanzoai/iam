@@ -1192,8 +1192,7 @@
       "languages": [
         "en"
       ],
-      "defaultApplication": "-app",
-      "masterVerificationCode": ""
+      "defaultApplication": "-app"
     },
     {
       "owner": "admin",
@@ -1211,8 +1210,7 @@
       "languages": [
         "en"
       ],
-      "defaultApplication": "liquidity-app",
-      "masterVerificationCode": "999999"
+      "defaultApplication": "liquidity-app"
     }
   ],
   "applications": [
