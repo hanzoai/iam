@@ -3820,6 +3820,19 @@
       "expireInYears": 20,
       "certificate": "",
       "privateKey": ""
+    },
+    {
+      "owner": "admin",
+      "name": "cert-built-in",
+      "createdTime": "2024-01-01T00:00:00Z",
+      "displayName": "Hanzo Certificate",
+      "scope": "JWT",
+      "type": "x509",
+      "cryptoAlgorithm": "RS256",
+      "bitSize": 4096,
+      "expireInYears": 20,
+      "certificate": "",
+      "privateKey": ""
     }
   ],
   "providers": [
