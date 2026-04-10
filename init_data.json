@@ -3710,29 +3710,23 @@
   "users": [
     {
       "owner": "liquidity",
-      "name": "dev-tester",
+      "name": "satoshi.nakamoto",
       "createdTime": "2026-04-01T00:00:00Z",
       "type": "normal-user",
       "password": "test1234",
-      "passwordSalt": "",
       "passwordType": "plain",
-      "displayName": "Dev Tester",
-      "firstName": "Dev",
-      "lastName": "Tester",
-      "email": "dev@satschel.com",
+      "displayName": "Satoshi Nakamoto",
+      "firstName": "Satoshi",
+      "lastName": "Nakamoto",
+      "email": "satoshi.nakamoto@liquidity.test",
       "phone": "9999999999",
       "countryCode": "US",
+      "tag": "liquidity",
+      "verificationCode": "999999",
       "isAdmin": false,
-      "isGlobalAdmin": false,
       "isForbidden": false,
       "isDeleted": false,
-      "signupApplication": "liquidity-exchange",
-      "properties": {
-        "kyc_status": "approved",
-        "accreditation_status": "approved"
-      },
-      "tag": "liquidity",
-      "verificationCode": "999999"
+      "signupApplication": "liquidity-exchange"
     },
     {
       "owner": "liquidity",
