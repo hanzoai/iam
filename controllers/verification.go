@@ -373,8 +373,7 @@ func (c *ApiController) SendVerificationCode() {
 		}
 
 		// Per-user pinned OTP or org master code: skip SMS provider entirely.
-		hasPinnedCode := (user != nil && user.VerificationCode != "") ||
-			(organization != nil && organization.MasterVerificationCode != "")
+		hasPinnedCode := user != nil && user.VerificationCode != ""
 		if hasPinnedCode {
 			sendResp = object.SendVerificationCodeToPhone(organization, user, nil, clientIp, phone, application)
 		} else {
