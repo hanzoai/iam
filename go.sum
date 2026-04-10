@@ -834,6 +834,8 @@ github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
 github.com/luxfi/compliance v0.1.1 h1:Qv+Nm87lIU95h4LN2blsGNTqJRWr9RWLKe9xryajabI=
 github.com/luxfi/compliance v0.1.1/go.mod h1:fKjNaafxNx9koHwmhlNN4L0aB9rDtgpYZ/sQxb3+wd8=
+github.com/luxfi/crypto v1.17.55 h1:D3FqoN4a5vAxag8gexR4uEp6NLQk2FyX+XT1FEtBSd4=
+github.com/luxfi/crypto v1.17.55/go.mod h1:GnAkhQ7HNs3X0Tzx5nOONS3kl0yRmWHbDcRO5ffILsg=
 github.com/luxfi/kms-go v0.5.98 h1:iSbSaKwC4fv/IipFT2k7m8zvaXvbJTmobactfRRP66c=
 github.com/luxfi/kms-go v0.5.98/go.mod h1:UIhk9UHFPUVIz5FQ1nibsEhi2mHMnELbFbFQzEKnK7M=
 github.com/magefile/mage v1.15.1-0.20241126214340-bdc92f694516 h1:aAO0L0ulox6m/CLRYvJff+jWXYYCKGpEm3os7dM/Z+M=
