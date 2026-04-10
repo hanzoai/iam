@@ -235,7 +235,6 @@ func InitAPI() {
 
 	web.Router("/api/get-system-info", &controllers.ApiController{}, "GET:GetSystemInfo")
 	web.Router("/api/get-version-info", &controllers.ApiController{}, "GET:GetVersionInfo")
-	web.Router("/api/health", &controllers.ApiController{}, "GET:Health")
 	web.Router("/healthz", &controllers.ApiController{}, "GET:Health")
 	web.Router("/api/sync-init-data", &controllers.ApiController{}, "POST:SyncInitData")
 	web.Router("/api/get-prometheus-info", &controllers.ApiController{}, "GET:GetPrometheusInfo")
