@@ -666,8 +666,6 @@ github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0/go.mod h1:8NvIoxWQoOIhqOTXgf
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
 github.com/hanzoai/builder v0.3.13 h1:tAOJ+0Q0xrrovk7lkvaZxuKZ4lqENIB6tE0Rr9+6Bo8=
 github.com/hanzoai/builder v0.3.13/go.mod h1:TWZaiP0Y9tCMwtLH2EvQqBAeT1f3aJI5Y0XPM8S0wcE=
-github.com/hanzoai/sqlite v0.0.0-20260410000728-59dc4c7c0d90 h1:Y/+pLkoJhDjmbW9wY7F8YjySdIivrdcprBoAlQSnaFE=
-github.com/hanzoai/sqlite v0.0.0-20260410000728-59dc4c7c0d90/go.mod h1:2kVVbR1YnxUrCfrsbbzXK8orH14QTMWZdALXRCqNED8=
 github.com/hanzoai/xorm v1.1.6 h1:z8B3alP39taTGLA4BonBa+7RHIOMmjYjxF3N9gpzh84=
 github.com/hanzoai/xorm v1.1.6/go.mod h1:wso0cQDDuzgjJwNOj3AXCftkKF3uOoUowKp5A7ol0zc=
 github.com/hanzoai/xorm-adapter/v3 v3.0.1 h1:r04YHcab8qHzbvYKXnx4e2xUHG3jZNt3+hvXvbbMRc4=
