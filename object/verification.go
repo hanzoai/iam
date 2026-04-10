@@ -205,17 +205,21 @@ func isDemoPhone(dest string) string {
 }
 
 func SendVerificationCodeToPhone(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, application *Application) error {
-	// Test OTP: skip SMS for repeating-digit phones, record the fixed code
-	if demoCode := isDemoPhone(dest); demoCode != "" {
-		return AddToVerificationRecord(user, provider, organization, remoteAddr, provider.Category, dest, demoCode)
+	// Per-user pinned OTP or org master code: skip SMS entirely, just record the code.
+	// This allows test/sandbox users to have a permanent OTP without needing an SMS provider.
+	code := getVerificationCode(user, organization)
+	if (user != nil && user.VerificationCode != "") || (organization != nil && organization.MasterVerificationCode != "") {
+		category := "phone"
+		if provider != nil {
+			category = provider.Category
+		}
+		return AddToVerificationRecord(user, provider, organization, remoteAddr, category, dest, code)
 	}
 
 	err := IsAllowSend(user, remoteAddr, provider.Category, application)
 	if err != nil {
 		return err
 	}
-
-	code := getVerificationCode(user, organization)
 
 	err = SendSms(provider, code, dest)
 	if err != nil {
@@ -335,11 +339,6 @@ func getUnusedVerificationRecord(dest string) (*VerificationRecord, error) {
 }
 
 func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult, error) {
-	// Test OTP: accept fixed codes for repeating-digit phones (non-production only)
-	if demoCode := isDemoPhone(dest); demoCode != "" && code == demoCode {
-		return &VerifyResult{VerificationSuccess, ""}, nil
-	}
-
 	record, err := getVerificationRecord(dest)
 	if err != nil {
 		return nil, err
