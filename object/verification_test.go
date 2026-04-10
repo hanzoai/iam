@@ -21,38 +21,15 @@ import (
 
 func TestGetVerificationCode_UserPinned(t *testing.T) {
 	user := &User{VerificationCode: "123456"}
-	org := &Organization{MasterVerificationCode: "999999"}
-
-	code := getVerificationCode(user, org)
+	code := getVerificationCode(user, nil)
 	if code != "123456" {
-		t.Errorf("expected per-user code 123456, got %s", code)
+		t.Errorf("expected per-user pinned OTP 123456, got %s", code)
 	}
 }
 
-func TestGetVerificationCode_OrgMaster(t *testing.T) {
+func TestGetVerificationCode_NoPinned_Random(t *testing.T) {
 	user := &User{VerificationCode: ""}
-	org := &Organization{MasterVerificationCode: "999999"}
-
-	code := getVerificationCode(user, org)
-	if code != "999999" {
-		t.Errorf("expected org master code 999999, got %s", code)
-	}
-}
-
-func TestGetVerificationCode_NilUser_OrgMaster(t *testing.T) {
-	org := &Organization{MasterVerificationCode: "888888"}
-
-	code := getVerificationCode(nil, org)
-	if code != "888888" {
-		t.Errorf("expected org master code 888888, got %s", code)
-	}
-}
-
-func TestGetVerificationCode_Random(t *testing.T) {
-	user := &User{VerificationCode: ""}
-	org := &Organization{MasterVerificationCode: ""}
-
-	code := getVerificationCode(user, org)
+	code := getVerificationCode(user, nil)
 	if len(code) != 6 {
 		t.Errorf("expected 6-digit random code, got %q (len %d)", code, len(code))
 	}
@@ -64,20 +41,23 @@ func TestGetVerificationCode_Random(t *testing.T) {
 	}
 }
 
-func TestGetVerificationCode_NilUserNilOrg(t *testing.T) {
+func TestGetVerificationCode_NilUser(t *testing.T) {
 	code := getVerificationCode(nil, nil)
 	if len(code) != 6 {
 		t.Errorf("expected 6-digit random code, got %q (len %d)", code, len(code))
 	}
 }
 
-func TestGetVerificationCode_UserPinnedOverridesOrg(t *testing.T) {
-	user := &User{VerificationCode: "111111"}
-	org := &Organization{MasterVerificationCode: "222222"}
-
+func TestGetVerificationCode_OrgMasterIgnored(t *testing.T) {
+	// Org-level master code must NOT be used — only per-user pinned OTP
+	user := &User{VerificationCode: ""}
+	org := &Organization{MasterVerificationCode: "999999"}
 	code := getVerificationCode(user, org)
-	if code != "111111" {
-		t.Errorf("per-user code should override org master: expected 111111, got %s", code)
+	if code == "999999" {
+		t.Errorf("org MasterVerificationCode must NOT be used, but got %s", code)
+	}
+	if len(code) != 6 {
+		t.Errorf("expected 6-digit random code, got %q", code)
 	}
 }
 
