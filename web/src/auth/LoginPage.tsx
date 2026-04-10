@@ -1221,8 +1221,10 @@ function LoginPage(props) {
                 const order = (p) => {
                   if (p.provider.category === "Web3") {return 0;}
                   if (p.provider.type === "Google") {return 1;}
-                  if (p.provider.type === "GitHub") {return 2;}
-                  return 3;
+                  if (p.provider.type === "Apple") {return 2;}
+                  if (p.provider.type === "Facebook") {return 3;}
+                  if (p.provider.type === "GitHub") {return 4;}
+                  return 5;
                 };
                 return order(a) - order(b);
               }).map((providerItem, id) => {
