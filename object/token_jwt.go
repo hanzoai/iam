@@ -565,17 +565,20 @@ func generateJwtToken(application *Application, user *User, provider string, sig
 
 	var jwtMethod jwt.SigningMethod
 
-	if application.TokenSigningMethod == "RS256" {
+	switch application.TokenSigningMethod {
+	case "RS256":
 		jwtMethod = jwt.SigningMethodRS256
-	} else if application.TokenSigningMethod == "RS512" {
+	case "RS512":
 		jwtMethod = jwt.SigningMethodRS512
-	} else if application.TokenSigningMethod == "ES256" {
+	case "ES256":
 		jwtMethod = jwt.SigningMethodES256
-	} else if application.TokenSigningMethod == "ES512" {
+	case "ES512":
 		jwtMethod = jwt.SigningMethodES512
-	} else if application.TokenSigningMethod == "ES384" {
+	case "ES384":
 		jwtMethod = jwt.SigningMethodES384
-	} else {
+	case algMLDSA65:
+		jwtMethod = SigningMethodMLDSA65
+	default:
 		jwtMethod = jwt.SigningMethodRS256
 	}
 
@@ -669,6 +672,9 @@ func ParseJwtToken(token string, cert *Cert) (*Claims, error) {
 		} else if _, ok := token.Method.(*jwt.SigningMethodECDSA); ok {
 			// ES certificate
 			certificate, err = jwt.ParseECPublicKeyFromPEM([]byte(cert.Certificate))
+		} else if _, ok := token.Method.(*signingMethodMLDSA65); ok {
+			// ML-DSA-65 post-quantum key
+			certificate, err = parseMLDSA65PublicKey(cert.Certificate)
 		} else {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
