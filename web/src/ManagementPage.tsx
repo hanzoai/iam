@@ -503,8 +503,15 @@ function ManagementPage(props) {
         <Route exact path="/ldap/sync/:organizationName/:ldapId" render={(props) => renderLoginIfNotLoggedIn(<LdapSyncPage account={account} {...props} />)} />
         <Route exact path="/mfa/setup" render={(props) => renderLoginIfNotLoggedIn(<MfaSetupPage account={account} onfinish={onfinish} {...props} />)} />
         <Route exact path="/.well-known/openid-configuration" render={(props) => <OdicDiscoveryPage />} />
-        <Route path="" render={() => <Result status="404" title="404 NOT FOUND" subTitle={i18next.t("general:Sorry, the page you visited does not exist.")}
-          extra={<a href="/"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>} />} />
+        <Route path="" render={() => (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
+            <div className="text-[80px] font-extrabold leading-none text-neutral-100 tracking-tight">404</div>
+            <div className="text-base text-neutral-500">
+              {i18next.t("general:Sorry, the page you visited does not exist.")}
+            </div>
+            <a href="/"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>
+          </div>
+        )} />
       </Switch>
     );
   }
