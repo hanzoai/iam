@@ -363,10 +363,6 @@ func (c *ApiController) SendVerificationCode() {
 		}
 
 		phone, ok := util.GetE164Number(vform.Dest, vform.CountryCode)
-		if !ok && conf.IsDemoMode() {
-			phone = "+" + vform.CountryCode + vform.Dest
-			ok = true
-		}
 		if !ok {
 			c.ResponseError(fmt.Sprintf(c.T("verification:Phone number is invalid in your region %s"), vform.CountryCode))
 			return
