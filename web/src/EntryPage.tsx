@@ -90,10 +90,7 @@ class EntryPage extends React.Component {
 
     const isDarkMode = this.props.themeAlgorithm.includes("dark");
 
-    // Check if this is a login or signup page (show showcase)
-    const currentPath = window.location.pathname;
-    const isAuthPage = currentPath.includes("/login") || currentPath.includes("/signup") || currentPath.includes("/forget");
-    const showShowcase = isAuthPage && !Setting.isMobile() && !Setting.inIframe();
+    const bgUrl = Setting.inIframe() ? null : (Setting.isMobile() ? this.state.application?.formBackgroundUrlMobile : this.state.application?.formBackgroundUrl);
 
     return (
       <React.Fragment>
@@ -102,9 +99,7 @@ class EntryPage extends React.Component {
           {/* Left side - Login Form */}
           <div className={`split-login-form ${isDarkMode ? "loginBackgroundDark" : "loginBackground"}`}
             style={{
-              flex: showShowcase ? "0 0 50%" : "1",
-              maxWidth: showShowcase ? "50%" : "100%",
-              backgroundImage: Setting.inIframe() ? null : (Setting.isMobile() ? `url(${this.state.application?.formBackgroundUrlMobile})` : `url(${this.state.application?.formBackgroundUrl})`),
+              backgroundImage: bgUrl ? `url(${bgUrl})` : undefined,
             }}>
             <Spin size="large" spinning={this.state.application === undefined} tip={i18next.t("login:Loading")}
               style={{width: "100%", margin: "0 auto", position: "absolute"}} />
@@ -132,12 +127,10 @@ class EntryPage extends React.Component {
             </Switch>
           </div>
 
-          {/* Right side - Login Showcase (only on desktop for auth pages) */}
-          {showShowcase && (
-            <div className="split-login-showcase">
-              <LoginShowcase application={this.state.application} />
-            </div>
-          )}
+          {/* Right side - Showcase (CSS-hidden below 1024px) */}
+          <div className="split-login-showcase">
+            <LoginShowcase application={this.state.application} />
+          </div>
         </div>
       </React.Fragment>
     );
