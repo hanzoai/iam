@@ -169,7 +169,7 @@ export function renderProviderLogo(provider, application, width, margin, size, l
               cursor: "pointer",
             }}>
             <img width={20} height={20} src={getProviderLogoURL(provider)} alt={provider.displayName} style={{borderRadius: "3px"}} />
-            <span>Sign in with {provider.type}</span>
+            <span>{provider.displayName || ("Sign in with " + provider.type)}</span>
           </a>
         );
       }
