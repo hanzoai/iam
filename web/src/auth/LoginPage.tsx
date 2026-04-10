@@ -174,7 +174,7 @@ function LoginPage(props) {
     case "verificationCodeEmail": return i18next.t("general:Email");
     case "verificationCodePhone": return i18next.t("general:Phone");
     case "ldap": return i18next.t("login:LDAP username, Email or phone");
-    default: return i18next.t("login:username, Email or phone");
+    default: return i18next.t("login:Username, email, or phone");
     }
   }, [loginMethod]);
 
@@ -1249,6 +1249,13 @@ function LoginPage(props) {
             }
             {renderOtherFormProvider(application)}
           </Form.Item>
+          {showForm && (
+            <div style={{display: "flex", alignItems: "center", gap: "12px", margin: "4px 0 12px"}}>
+              <div style={{flex: 1, height: "1px", background: "rgba(255,255,255,0.1)"}} />
+              <span style={{color: "rgba(255,255,255,0.3)", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em"}}>or sign in with email</span>
+              <div style={{flex: 1, height: "1px", background: "rgba(255,255,255,0.1)"}} />
+            </div>
+          )}
         </div>
       );
     } else if (signinItem.name === "Captcha" && signinItem.rule === "inline") {
