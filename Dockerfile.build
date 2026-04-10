@@ -1,0 +1,37 @@
+# ── Frontend build ─────────────────────────────────────────────
+FROM node:18.19.0 AS front
+WORKDIR /web
+ARG VITE_DEFAULT_APP=app-built-in
+
+COPY ./web/package.json ./web/pnpm-lock.yaml ./web/.npmrc ./
+RUN corepack enable && pnpm install --frozen-lockfile
+
+COPY ./web .
+ENV VITE_DEFAULT_APP=$VITE_DEFAULT_APP
+RUN NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
+
+# ── Go build ──────────────────────────────────────────────────
+FROM golang:1.26 AS back
+WORKDIR /go/src/hanzo-iam
+
+ARG GITHUB_TOKEN
+ENV GOPRIVATE=github.com/hanzoai/*,github.com/luxfi/*
+RUN git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o server .
+
+# ── Production image ──────────────────────────────────────────
+FROM alpine:3.21 AS standard
+LABEL maintainer="https://hanzo.ai/"
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=back /go/src/hanzo-iam/server /server
+COPY --from=front /web/build /web/build
+COPY --from=front /web/package.json /web/package.json
+
+EXPOSE 8000
+ENTRYPOINT ["/server"]
