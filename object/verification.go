@@ -154,55 +154,7 @@ func SendVerificationCodeToEmail(organization *Organization, user *User, provide
 	return nil
 }
 
-// IsDemoPhonePublic is the exported version of isDemoPhone for use by controllers.
-func IsDemoPhonePublic(dest string) string {
-	return isDemoPhone(dest)
-}
 
-// isDemoPhone returns a fixed test OTP for repeating-digit phone numbers.
-// Any phone where all digits are the same gets that digit × 6 as the OTP:
-//
-//	+1 (111) 111-1111 → 111111
-//	+1 (999) 999-9999 → 999999
-//
-// Only active in non-production environments (ENV != production/prod/main/mainnet).
-// Returns empty string for real phone numbers or when in production.
-func isDemoPhone(dest string) string {
-	if !conf.IsDemoMode() {
-		return ""
-	}
-	// Strip everything except digits
-	digits := make([]byte, 0, len(dest))
-	for _, c := range dest {
-		if c >= '0' && c <= '9' {
-			digits = append(digits, byte(c))
-		}
-	}
-	// Need at least 7 digits (country code + number)
-	if len(digits) < 7 {
-		return ""
-	}
-	// Check if the last 7+ digits are all the same (covers 7-10 digit numbers after country code)
-	// Use the last digit as the candidate
-	d := digits[len(digits)-1]
-	allSame := true
-	// Check last 7 digits minimum (local number without country code)
-	start := len(digits) - 7
-	if start < 0 {
-		start = 0
-	}
-	for i := start; i < len(digits); i++ {
-		if digits[i] != d {
-			allSame = false
-			break
-		}
-	}
-	if !allSame {
-		return ""
-	}
-	// OTP = that digit repeated 6 times
-	return string([]byte{d, d, d, d, d, d})
-}
 
 func SendVerificationCodeToPhone(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, application *Application) error {
 	// Per-user pinned OTP or org master code: skip SMS entirely, just record the code.
