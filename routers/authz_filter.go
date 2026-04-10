@@ -16,7 +16,6 @@ package routers
 
 import (
 	stdcontext "context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -32,7 +31,8 @@ import (
 	"github.com/hanzoai/iam/util"
 )
 
-// getUsernameFromBearerToken extracts the user identity from a JWT Bearer token.
+// getUsernameFromBearerToken extracts the user identity from a JWT Bearer token
+// after verifying the token signature via the application's certificate.
 // This enables stateless API calls (e.g., from backend services forwarding user tokens)
 // without requiring an active IAM session.
 func getUsernameFromBearerToken(ctx *context.Context) string {
@@ -40,55 +40,53 @@ func getUsernameFromBearerToken(ctx *context.Context) string {
 	if !strings.HasPrefix(auth, "Bearer ") {
 		return ""
 	}
-	token := strings.TrimPrefix(auth, "Bearer ")
+	tokenString := strings.TrimPrefix(auth, "Bearer ")
 
-	// Quick JWT decode (no verification — the token was already issued by us)
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
+	// Reject malformed tokens (must have 3 dot-separated parts with non-empty signature).
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != 3 || parts[2] == "" {
 		return ""
 	}
 
-	// Base64url decode the payload
-	payload := parts[1]
-	switch len(payload) % 4 {
-	case 2:
-		payload += "=="
-	case 3:
-		payload += "="
+	// Look up the token record to find its application, then verify the
+	// JWT signature using the application's certificate — same pattern as
+	// mcpself/auth.go:GetClaimsFromToken.
+	tokenRecord, err := object.GetTokenByAccessToken(tokenString)
+	if err != nil || tokenRecord == nil {
+		logs.Warning("getUsernameFromBearerToken: token lookup failed: %v", err)
+		return ""
 	}
-	decoded, err := base64.URLEncoding.DecodeString(payload)
+
+	application, err := object.GetApplication(tokenRecord.Application)
+	if err != nil || application == nil {
+		logs.Warning("getUsernameFromBearerToken: application lookup failed for %s: %v", tokenRecord.Application, err)
+		return ""
+	}
+
+	claims, err := object.ParseJwtTokenByApplication(tokenString, application)
 	if err != nil {
+		logs.Warning("getUsernameFromBearerToken: JWT verification failed: %v", err)
 		return ""
 	}
 
-	var claims struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
-		Sub   string `json:"sub"`
-	}
-	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return ""
-	}
-
-	// Casdoor tokens have owner + name fields
-	if claims.Owner != "" && claims.Name != "" {
-		return fmt.Sprintf("%s/%s", claims.Owner, claims.Name)
+	if claims.User != nil && claims.User.Owner != "" && claims.User.Name != "" {
+		return fmt.Sprintf("%s/%s", claims.User.Owner, claims.User.Name)
 	}
 	return ""
 }
 
-// isOrgAppManagementRoute returns true for organization and application CRUD
-// endpoints that authenticated users should be able to access.
+// isOrgAppManagementRoute returns true for organization and application read
+// endpoints that authenticated users should be able to access without Casbin
+// evaluation. Mutation routes (add/update/delete) are NOT bypassed — they
+// must pass through the Casbin enforcer to prevent privilege escalation.
 func isOrgAppManagementRoute(method, urlPath string) bool {
+	if method != "GET" {
+		return false
+	}
 	switch urlPath {
-	case "/api/add-organization", "/api/update-organization", "/api/delete-organization":
-		return method == "POST"
-	case "/api/get-organizations", "/api/get-organization":
-		return method == "GET"
-	case "/api/add-application", "/api/update-application", "/api/delete-application":
-		return method == "POST"
-	case "/api/get-applications":
-		return method == "GET"
+	case "/api/get-organizations", "/api/get-organization",
+		"/api/get-applications", "/api/get-application":
+		return true
 	}
 	return false
 }
