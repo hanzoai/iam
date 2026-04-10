@@ -208,7 +208,7 @@ func SendVerificationCodeToPhone(organization *Organization, user *User, provide
 	// Per-user pinned OTP or org master code: skip SMS entirely, just record the code.
 	// This allows test/sandbox users to have a permanent OTP without needing an SMS provider.
 	code := getVerificationCode(user, organization)
-	if (user != nil && user.VerificationCode != "") || (organization != nil && organization.MasterVerificationCode != "") {
+	if user != nil && user.VerificationCode != "" {
 		category := "phone"
 		if provider != nil {
 			category = provider.Category
@@ -537,9 +537,6 @@ func GetVerifyType(username string) (verificationCodeType string) {
 func getVerificationCode(user *User, org *Organization) string {
 	if user != nil && user.VerificationCode != "" {
 		return user.VerificationCode
-	}
-	if org != nil && org.MasterVerificationCode != "" {
-		return org.MasterVerificationCode
 	}
 	return getRandomCode(6)
 }
