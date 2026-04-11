@@ -566,7 +566,9 @@ func initDefinedUser(user *User) {
 	fmt.Printf("[init_data] user %s/%s NOT FOUND, creating with pwdType=%q, pwdLen=%d\n",
 		user.Owner, user.Name, user.PasswordType, len(user.Password))
 	user.CreatedTime = util.GetCurrentTime()
-	user.Id = util.GenerateId()
+	if user.Id == "" {
+		user.Id = util.GenerateId()
+	}
 	if user.Properties == nil {
 		user.Properties = make(map[string]string)
 	}
