@@ -83,14 +83,13 @@ go build ./...
 
 ## Domains
 
-Hanzo IAM serves SSO across the Hanzo ecosystem:
+Hanzo IAM serves SSO across multiple organizations via white-label domain support:
 
 | Domain | Purpose |
 |--------|---------|
 | [hanzo.id](https://hanzo.id) | Hanzo AI accounts |
-| [lux.id](https://lux.id) | Lux Network accounts |
-| [zoo.id](https://zoo.id) | Zoo Labs accounts |
-| [pars.id](https://pars.id) | Pars accounts |
+
+Additional domains can be configured per organization. Each domain gets its own branding, login flow, and user pool while sharing the same IAM infrastructure.
 
 ## Documentation
 
