@@ -23,7 +23,7 @@ import (
 
 	"github.com/beego/beego/v2/server/web"
 	"github.com/hanzoai/iam/conf"
-	kms "github.com/luxfi/kms-go"
+	kms "github.com/luxfi/kms/pkg/client"
 )
 
 var secretPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
