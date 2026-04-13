@@ -1,4 +1,4 @@
-// Copyright 2026 The Casdoor Authors. All Rights Reserved.
+// Copyright 2026 Hanzo AI Inc. Based on Casdoor, Apache 2.0 licensed.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
 (function() {
   "use strict";
 
-  var reactFallbackKey = "__casdoor_callback_react";
-  var reactFallbackPayloadKey = "casdoor_callback_react_fallback";
+  var reactFallbackKey = "__iam_callback_react";
+  var reactFallbackPayloadKey = "iam_callback_react_fallback";
 
   function setStatus(message, isError) {
     var statusNode = document.getElementById("callback-status");
@@ -323,7 +323,7 @@
       }
 
       if (casService === "") {
-        setStatus("Logged in successfully. Now you can visit apps protected by Casdoor.", false);
+        setStatus("Logged in successfully.", false);
         return;
       }
 
@@ -423,7 +423,7 @@
     goToReactFallback();
   }
 
-  window.CasdoorAuthCallback = {
+  window.IAMAuthCallback = {
     run: function() {
       return run().catch(function(error) {
         setStatus(error && error.message ? error.message : "Failed to complete callback.", true);
