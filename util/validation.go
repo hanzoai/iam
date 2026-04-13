@@ -118,6 +118,8 @@ var allowedOriginSuffixes = []string{
 	"lux.network",
 	"zoo.ngo",
 	"zenlm.org",
+	"",
+	"",
 }
 
 func IsValidOrigin(origin string) (bool, error) {
