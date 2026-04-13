@@ -1,4 +1,4 @@
-// Copyright 2026 The Casdoor Authors. All Rights Reserved.
+// Copyright 2026 Hanzo AI Inc. Based on Casdoor, Apache 2.0 licensed.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -144,12 +144,12 @@ func serveProviderHintRedirectPage(ctx *context.Context) bool {
 				window.location.replace(url.pathname + url.search + url.hash);
 			}
 
-			if (!window.CasdoorProviderHintRedirect || typeof window.CasdoorProviderHintRedirect.run !== "function") {
+			if (!window.IAMProviderHintRedirect || typeof window.IAMProviderHintRedirect.run !== "function") {
 				redirectToFallback();
 				return;
 			}
 
-			window.CasdoorProviderHintRedirect.run();
+			window.IAMProviderHintRedirect.run();
 		})();
 	</script>
 </body>
@@ -172,7 +172,7 @@ func serveAuthCallbackPage(ctx *context.Context) bool {
 		return false
 	}
 
-	if ctx.Input.Query("__casdoor_callback_react") == "1" {
+	if ctx.Input.Query("__iam_callback_react") == "1" {
 		return false
 	}
 
@@ -215,12 +215,12 @@ func serveAuthCallbackPage(ctx *context.Context) bool {
 	<script src="/AuthCallbackHandler.js"></script>
 	<script>
 		(function() {
-			if (!window.CasdoorAuthCallback || typeof window.CasdoorAuthCallback.run !== "function") {
+			if (!window.IAMAuthCallback || typeof window.IAMAuthCallback.run !== "function") {
 				document.getElementById("callback-status").textContent = "Failed to load callback handler.";
 				return;
 			}
 
-			window.CasdoorAuthCallback.run();
+			window.IAMAuthCallback.run();
 		})();
 	</script>
 </body>
