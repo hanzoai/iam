@@ -95,19 +95,22 @@ func CorsFilter(ctx *context.Context) {
 	}
 
 	if isOAuthEndpoint {
-		// OAuth token/userinfo endpoints: only allow trusted origins with credentials
+		// OAuth token/userinfo endpoints: only allow trusted origins with credentials.
+		// Untrusted origins are rejected — no wildcard fallback.
+		if origin == "" {
+			// Server-to-server (no browser origin header): allow without CORS.
+			return
+		}
 		isValid, _ := util.IsValidOrigin(origin)
+		if !isValid {
+			// Also check application redirect URIs.
+			isValid, _ = object.IsOriginAllowed(origin)
+		}
 		if isValid {
 			setCorsHeaders(ctx, origin)
 		} else {
-			// Allow the request but without CORS (browser will block cross-origin read)
-			ctx.Output.Header(headerAllowOrigin, "*")
-			ctx.Output.Header(headerAllowMethods, "POST, GET, OPTIONS")
-			ctx.Output.Header(headerAllowHeaders, "Content-Type, Authorization")
-			// Explicitly NO credentials header — browser will block cookie/auth cross-origin
-		}
-		if ctx.Input.Method() == "OPTIONS" {
-			ctx.ResponseWriter.WriteHeader(http.StatusOK)
+			ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
+			responseError(ctx, "origin not allowed")
 		}
 		return
 	}
