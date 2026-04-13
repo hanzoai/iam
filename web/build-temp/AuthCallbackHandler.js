@@ -1,4 +1,4 @@
-// Copyright 2026 The Casdoor Authors. All Rights Reserved.
+// Copyright 2026 Hanzo AI Inc. Based on Casdoor, Apache 2.0 licensed.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
 (function() {
   "use strict";
 
-  var reactFallbackKey = "__casdoor_callback_react";
-  var reactFallbackPayloadKey = "casdoor_callback_react_fallback";
+  var reactFallbackKey = "__iam_callback_react";
+  var reactFallbackPayloadKey = "iam_callback_react_fallback";
 
   function setStatus(message, isError) {
     var statusNode = document.getElementById("callback-status");
@@ -144,9 +144,6 @@
     }
 
     var state = getRefinedValue(innerParams.get("state"));
-    if (state.indexOf("/auth/oauth2/login.php?wantsurl") === 0) {
-      state = encodeURIComponent(state);
-    }
     if (redirectUri.indexOf("#") !== -1 && state === "") {
       state = getRawGetParameter("state", queryString);
     }
@@ -162,6 +159,7 @@
       codeChallenge: getRefinedValue(innerParams.get("code_challenge")),
       responseMode: getRefinedValue(innerParams.get("response_mode")),
       relayState: getRefinedValue(lowercaseQueries["relaystate"]),
+      resource: getRefinedValue(innerParams.get("resource")),
       type: "code"
     };
   }
@@ -171,6 +169,10 @@
       return "";
     }
 
+    var resourceQuery = oAuthParams.resource
+      ? "&resource=" + encodeURIComponent(oAuthParams.resource)
+      : "";
+
     return "?clientId=" + oAuthParams.clientId +
       "&responseType=" + oAuthParams.responseType +
       "&redirectUri=" + encodeURIComponent(oAuthParams.redirectUri) +
@@ -179,7 +181,8 @@
       "&state=" + oAuthParams.state +
       "&nonce=" + oAuthParams.nonce +
       "&code_challenge_method=" + oAuthParams.challengeMethod +
-      "&code_challenge=" + oAuthParams.codeChallenge;
+      "&code_challenge=" + oAuthParams.codeChallenge +
+      resourceQuery;
   }
 
   function createFormAndSubmit(action, params) {
@@ -320,7 +323,7 @@
       }
 
       if (casService === "") {
-        setStatus("Logged in successfully. Now you can visit apps protected by Casdoor.", false);
+        setStatus("Logged in successfully.", false);
         return;
       }
 
@@ -373,7 +376,7 @@
       if (responseMode === "form_post") {
         createFormAndSubmit(oAuthParams.redirectUri, {code: res.data, state: oAuthParams.state});
       } else {
-        window.location.replace(oAuthParams.redirectUri + concatChar + "code=" + res.data + "&state=" + oAuthParams.state);
+        window.location.replace(oAuthParams.redirectUri + concatChar + "code=" + encodeURIComponent(res.data) + "&state=" + encodeURIComponent(oAuthParams.state));
       }
       return;
     }
@@ -387,7 +390,7 @@
           state: oAuthParams.state
         });
       } else {
-        window.location.replace(oAuthParams.redirectUri + concatChar + responseType + "=" + res.data + "&state=" + oAuthParams.state + "&token_type=bearer");
+        window.location.replace(oAuthParams.redirectUri + concatChar + responseType + "=" + encodeURIComponent(res.data) + "&state=" + encodeURIComponent(oAuthParams.state) + "&token_type=bearer");
       }
       return;
     }
@@ -420,7 +423,7 @@
     goToReactFallback();
   }
 
-  window.CasdoorAuthCallback = {
+  window.IAMAuthCallback = {
     run: function() {
       return run().catch(function(error) {
         setStatus(error && error.message ? error.message : "Failed to complete callback.", true);
