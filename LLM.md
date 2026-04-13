@@ -2,7 +2,16 @@
 
 ## Overview
 
-Hanzo IAM is a fork of Casdoor that provides OAuth2.0/OIDC/SAML/CAS identity and access management for the Hanzo ecosystem. It serves as the unified authentication provider at **hanzo.id**.
+Hanzo IAM (fork of Casdoor, Apache 2.0) provides OAuth2.0/OIDC/SAML/CAS identity and access management for the Hanzo ecosystem. Serves as the unified authentication provider at **hanzo.id**.
+
+## Rename Status (2026-04-13)
+
+- JS globals: `window.IAMAuthCallback`, `window.IAMProviderHintRedirect` (was `Casdoor*`)
+- Session keys: `__iam_callback_react`, `iam_callback_react_fallback` (was `casdoor_*`)
+- Go import paths: `github.com/casbin/casbin/v2`, `github.com/casdoor/*` -- unchanged (upstream deps)
+- Casbin fork: NOT started. Requires forking `github.com/casbin/casbin` to `github.com/hanzoai/authz`.
+- K8s: `CASDOOR_ORIGIN` renamed to `originFrontend` in all manifests.
+- Replication: sidecar removed (Beego has no plugin hook). Pending Base migration.
 
 ## Architecture
 
