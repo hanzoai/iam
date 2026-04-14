@@ -1045,8 +1045,19 @@ func AddUser(user *User, lang string) (bool, error) {
 		user.Id = id
 	}
 
-	if user.Owner == "" || user.Name == "" {
+	if user.Owner == "" {
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "user:the user's owner and name should not be empty"))
+	}
+
+	// Auto-generate username if not provided (onboarding flows collect phone/email only).
+	if user.Name == "" {
+		if user.Phone != "" {
+			user.Name = "user_" + user.Phone[len(user.Phone)-min(10, len(user.Phone)):]
+		} else if user.Email != "" {
+			user.Name = strings.SplitN(user.Email, "@", 2)[0]
+		} else {
+			user.Name = util.GetRandomName()
+		}
 	}
 
 	if CheckUsernameWithEmail(user.Name, "en") != "" {
