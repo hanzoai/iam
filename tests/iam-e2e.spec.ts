@@ -174,7 +174,7 @@ test.describe('Authentication Security', () => {
     expect(res.status()).toBeLessThan(500);
 
     const body = await res.json();
-    // Casdoor returns {status: "error", msg: "..."} for invalid credentials
+    // IAM returns {status: "error", msg: "..."} for invalid credentials
     if (body.status) {
       expect(body.status).toBe('error');
       expect(body.msg).toBeTruthy();
@@ -648,7 +648,7 @@ test.describe('API Security', () => {
     if (res.status() === 200) {
       // If 200, the response should indicate no user (null data or error status)
       const body = await res.json();
-      // Casdoor returns {status: "ok", data: null} for unauthenticated requests
+      // IAM returns {status: "ok", data: null} for unauthenticated requests
       // or {status: "error"} -- either way, no sensitive user data
       if (body.data) {
         // If data is present, it should not contain another user's info
