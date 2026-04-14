@@ -76,9 +76,9 @@ func getUsernameFromBearerToken(ctx *context.Context) string {
 }
 
 // isOrgAppManagementRoute returns true for organization and application read
-// endpoints that authenticated users should be able to access without Casbin
+// endpoints that authenticated users should be able to access without authz
 // evaluation. Mutation routes (add/update/delete) are NOT bypassed — they
-// must pass through the Casbin enforcer to prevent privilege escalation.
+// must pass through the authz enforcer to prevent privilege escalation.
 func isOrgAppManagementRoute(method, urlPath string) bool {
 	if method != "GET" {
 		return false
@@ -364,7 +364,7 @@ func ApiFilter(ctx *context.Context) {
 	// Allow authenticated (non-anonymous) users to manage organizations and
 	// applications. These operations are essential for multi-tenant workflows
 	// where org admins create/manage orgs from frontend apps via Bearer token.
-	// The Casbin enforcer has matching policies, but xorm boolean deserialization
+	// The authz enforcer has matching policies, but xorm boolean deserialization
 	// issues can cause the user.IsAdmin check to fail. This bypass ensures
 	// org/app CRUD works reliably for any authenticated user.
 	if subOwner != "anonymous" && subName != "anonymous" {

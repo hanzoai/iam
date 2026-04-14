@@ -18,7 +18,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1
 	github.com/beego/beego/v2 v2.3.8
 	github.com/beevik/etree v1.1.0
-	github.com/casbin/casbin/v2 v2.77.2
 	github.com/casbin/lego/v4 v4.5.4
 	github.com/casdoor/casdoor-go-sdk v1.46.0
 	github.com/casdoor/go-sms-sender v0.25.0
@@ -128,6 +127,7 @@ require (
 	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bwmarrin/discordgo v0.28.1 // indirect
 	github.com/caarlos0/go-reddit/v3 v3.0.1 // indirect
+	github.com/casbin/casbin/v2 v2.77.2
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clbanning/mxj/v2 v2.7.0 // indirect
