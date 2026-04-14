@@ -18,7 +18,7 @@ import * as ModelBackend from "./backend/ModelBackend";
 import * as OrganizationBackend from "./backend/OrganizationBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
-import ModelEditor from "./CasbinEditor";
+import ModelEditor from "./AuthzEditor";
 import {Button} from "./components/ui/button";
 
 interface ModelEditPageProps {
