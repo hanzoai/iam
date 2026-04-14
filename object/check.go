@@ -271,7 +271,7 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 		return recordSigninErrorInfo(user, lang, enableCaptcha)
 	}
 
-	// Password auto-upgrade is DISABLED. Casdoor's re-hash produces unverifiable
+	// Password auto-upgrade is DISABLED. IAM's re-hash produces unverifiable
 	// hashes for both argon2id and bcrypt, permanently locking users out.
 	// Passwords are set correctly at user creation / password reset time.
 	// See: https://github.com/hanzoai/iam/commit/abbffb64
