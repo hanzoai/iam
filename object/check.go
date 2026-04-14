@@ -65,7 +65,7 @@ func CheckUserSignup(application *Application, organization *Organization, authF
 				return i18n.Translate(lang, "check:Email already exists")
 			}
 		}
-		if HasUserByField(organization.Name, "phone", authForm.Phone) {
+		if authForm.Phone != "" && HasUserByField(organization.Name, "phone", authForm.Phone) {
 			return i18n.Translate(lang, "check:Phone already exists")
 		}
 	}
