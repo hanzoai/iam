@@ -308,7 +308,7 @@ func (c *ApiController) Signup() {
 
 	// Create a personal organization for the new user so they have an isolated
 	// workspace available. The user stays in the signup org (e.g., "hanzo") for
-	// login purposes — Casdoor requires user.Owner to match the app's org.
+	// login purposes — IAM requires user.Owner to match the app's org.
 	// The personal org is available for switching after login.
 	// Skip if the user already signed up with a personal org.
 	if authForm.Organization != username && !organization.IsPersonal {

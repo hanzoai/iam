@@ -243,7 +243,7 @@ func (c *ApiController) UpdatePolicy() {
 		return
 	}
 
-	affected, err := object.UpdatePolicy(id, policies[0].Ptype, util.CasbinToSlice(policies[0]), util.CasbinToSlice(policies[1]))
+	affected, err := object.UpdatePolicy(id, policies[0].Ptype, util.AuthzRuleToSlice(policies[0]), util.AuthzRuleToSlice(policies[1]))
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -270,7 +270,7 @@ func (c *ApiController) AddPolicy() {
 		return
 	}
 
-	affected, err := object.AddPolicy(id, policy.Ptype, util.CasbinToSlice(policy))
+	affected, err := object.AddPolicy(id, policy.Ptype, util.AuthzRuleToSlice(policy))
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -297,7 +297,7 @@ func (c *ApiController) RemovePolicy() {
 		return
 	}
 
-	affected, err := object.RemovePolicy(id, policy.Ptype, util.CasbinToSlice(policy))
+	affected, err := object.RemovePolicy(id, policy.Ptype, util.AuthzRuleToSlice(policy))
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
