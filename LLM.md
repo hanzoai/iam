@@ -14,7 +14,7 @@ Hanzo IAM (fork of Casdoor, Apache 2.0) provides OAuth2.0/OIDC/SAML/CAS identity
 - File renames: `casbin_engine.go` -> `authz_engine.go`, `casbin_cli_api.go` -> `authz_cli_api.go`, `util/casbin.go` -> `util/authz.go`, `CasbinEditor.tsx` -> `AuthzEditor.tsx` (done)
 - API endpoint: `/api/run-casbin-command` -> `/api/run-authz-command` (done)
 - Comments: all `Casbin`/`Casdoor` in comments -> `authz`/`IAM` (done)
-- Casbin fork: `github.com/hanzoai/authz` exists on GitHub (v2.77.2 tag). Go replace directive not used (type compat issues). Import paths stay `github.com/casbin/casbin/v2` with `authz` import alias.
+- Casbin fork: `github.com/hanzoai/authz` exists on GitHub (v2.78.0+). Import paths use `github.com/casbin/casbin/v2` with `authz` import alias; `replace` directive in go.mod redirects to `github.com/hanzoai/authz/v2 v2.78.0`. Never import `hanzoai/authz` directly (module declares casbin/v2 path).
 - Upstream deps NOT renamed: `github.com/casdoor/*` (notify2, oss, ldapserver, go-sms-sender, gomail), `github.com/casbin/lego/v4`. These are separate upstream projects.
 - K8s: `CASDOOR_ORIGIN` renamed to `originFrontend` in all manifests.
 - Replication: sidecar removed (Beego has no plugin hook). Pending Base migration.
