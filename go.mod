@@ -307,4 +307,4 @@ require (
 	rsc.io/binaryregexp v0.2.0 // indirect
 )
 
-replace github.com/casbin/casbin/v2 => github.com/hanzoai/authz v1.78.0
+replace github.com/casbin/casbin/v2 => github.com/hanzoai/authz/v2 v2.78.0
