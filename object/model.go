@@ -17,8 +17,8 @@ package object
 import (
 	"fmt"
 
-	authzconfig "github.com/casbin/casbin/v2/config"
-	authzmodel "github.com/casbin/casbin/v2/model"
+	authzconfig "github.com/hanzoai/authz/config"
+	authzmodel "github.com/hanzoai/authz/model"
 	"github.com/hanzoai/iam/util"
 )
 
