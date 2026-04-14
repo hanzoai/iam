@@ -81,7 +81,7 @@ const pages = [
       });
       console.log(`Elements: ${JSON.stringify(elements, null, 2)}`);
 
-      // Check for any Casdoor/Hanzo branding text
+      // Check for any upstream/Hanzo branding text leaks
       const brandingText = await p.evaluate(() => {
         const text = document.body.innerText;
         const matches: string[] = [];

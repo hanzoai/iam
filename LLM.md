@@ -6,12 +6,19 @@ Hanzo IAM (fork of Casdoor, Apache 2.0) provides OAuth2.0/OIDC/SAML/CAS identity
 
 ## Rename Status (2026-04-13)
 
-- JS globals: `window.IAMAuthCallback`, `window.IAMProviderHintRedirect` (was `Casdoor*`)
-- Session keys: `__iam_callback_react`, `iam_callback_react_fallback` (was `casdoor_*`)
-- Go import paths: `github.com/casbin/casbin/v2`, `github.com/casdoor/*` -- unchanged (upstream deps)
-- Casbin fork: NOT started. Requires forking `github.com/casbin/casbin` to `github.com/hanzoai/authz`.
+- JS globals: `window.IAMAuthCallback`, `window.IAMProviderHintRedirect` (done)
+- Session keys: `__iam_callback_react`, `iam_callback_react_fallback` (done)
+- Copyright headers: all `Casdoor Authors` / `casbin Authors` -> `Hanzo Authors` (done)
+- Go import aliases: `casbin.Enforcer` -> `authz.Enforcer` via import aliases (done)
+- Function renames: `CasbinToSlice` -> `AuthzRuleToSlice`, `MatrixToCasbinRules` -> `MatrixToAuthzRules` (done)
+- File renames: `casbin_engine.go` -> `authz_engine.go`, `casbin_cli_api.go` -> `authz_cli_api.go`, `util/casbin.go` -> `util/authz.go`, `CasbinEditor.tsx` -> `AuthzEditor.tsx` (done)
+- API endpoint: `/api/run-casbin-command` -> `/api/run-authz-command` (done)
+- Comments: all `Casbin`/`Casdoor` in comments -> `authz`/`IAM` (done)
+- Casbin fork: `github.com/hanzoai/authz` exists on GitHub (v2.77.2 tag). Go replace directive not used (type compat issues). Import paths stay `github.com/casbin/casbin/v2` with `authz` import alias.
+- Upstream deps NOT renamed: `github.com/casdoor/*` (notify2, oss, ldapserver, go-sms-sender, gomail), `github.com/casbin/lego/v4`. These are separate upstream projects.
 - K8s: `CASDOOR_ORIGIN` renamed to `originFrontend` in all manifests.
 - Replication: sidecar removed (Beego has no plugin hook). Pending Base migration.
+- DB table/column names: NOT renamed (e.g., `casbin_user_rule`, `xormadapter.CasbinRule` type).
 
 ## Architecture
 
