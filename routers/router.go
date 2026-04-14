@@ -213,7 +213,7 @@ func InitAPI() {
 	web.Router("/api/get-all-actions", &controllers.ApiController{}, "GET:GetAllActions")
 	web.Router("/api/get-all-roles", &controllers.ApiController{}, "GET:GetAllRoles")
 
-	web.Router("/api/run-casbin-command", &controllers.ApiController{}, "GET:RunCasbinCommand")
+	web.Router("/api/run-authz-command", &controllers.ApiController{}, "GET:RunAuthzCommand")
 	web.Router("/api/refresh-engines", &controllers.ApiController{}, "POST:RefreshEngines")
 
 	web.Router("/api/get-sessions", &controllers.ApiController{}, "GET:GetSessions")

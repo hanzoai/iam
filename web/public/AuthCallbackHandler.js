@@ -1,4 +1,4 @@
-// Copyright 2026 Hanzo AI Inc. Based on Casdoor, Apache 2.0 licensed.
+// Copyright 2026 Hanzo AI Inc. Apache 2.0 licensed.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
