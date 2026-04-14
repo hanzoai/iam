@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"slices"
 
-	authz "github.com/hanzoai/authz"
+	authz "github.com/casbin/casbin/v2"
 	"github.com/hanzoai/iam/util"
 	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
