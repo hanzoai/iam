@@ -2468,7 +2468,7 @@ export function getApiPaths() {
   res.push("acs", "saml/metadata");
 
   // Hanzo engine APIs
-  res.push("run-casbin-command", "refresh-engines");
+  res.push("run-authz-command", "refresh-engines");
 
   // Monitoring and health APIs
   res.push("health", "metrics");

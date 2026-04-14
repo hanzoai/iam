@@ -18,20 +18,20 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casbin/casbin/v2"
-	"github.com/casbin/casbin/v2/config"
-	"github.com/casbin/casbin/v2/log"
-	"github.com/casbin/casbin/v2/model"
+	authz "github.com/casbin/casbin/v2"
+	authzconfig "github.com/casbin/casbin/v2/config"
+	authzlog "github.com/casbin/casbin/v2/log"
+	authzmodel "github.com/casbin/casbin/v2/model"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
 
-func getPermissionEnforcer(p *Permission, permissionIDs ...string) (*casbin.Enforcer, error) {
+func getPermissionEnforcer(p *Permission, permissionIDs ...string) (*authz.Enforcer, error) {
 	// Init an enforcer instance without specifying a model or adapter.
 	// If you specify an adapter, it will load all policies, which is a
 	// heavy process that can slow down the application.
-	enforcer, err := casbin.NewEnforcer(&log.DefaultLogger{}, false)
+	enforcer, err := authz.NewEnforcer(&authzlog.DefaultLogger{}, false)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func getPermissionEnforcer(p *Permission, permissionIDs ...string) (*casbin.Enfo
 	return enforcer, nil
 }
 
-func (p *Permission) setEnforcerAdapter(enforcer *casbin.Enforcer) error {
+func (p *Permission) setEnforcerAdapter(enforcer *authz.Enforcer) error {
 	tableName := "permission_rule"
 	if len(p.Adapter) != 0 {
 		adapterObj, err := getAdapter(p.Owner, p.Adapter)
@@ -80,7 +80,7 @@ func (p *Permission) setEnforcerAdapter(enforcer *casbin.Enforcer) error {
 		}
 	}
 	tableNamePrefix := conf.GetConfigString("tableNamePrefix")
-	xormEngine, xormErr := newXormEngineForCasbin()
+	xormEngine, xormErr := newXormEngineForAuthz()
 	if xormErr != nil {
 		return xormErr
 	}
@@ -93,7 +93,7 @@ func (p *Permission) setEnforcerAdapter(enforcer *casbin.Enforcer) error {
 	return nil
 }
 
-func (p *Permission) setEnforcerModel(enforcer *casbin.Enforcer) error {
+func (p *Permission) setEnforcerModel(enforcer *authz.Enforcer) error {
 	var permissionModel *Model
 	var err error
 	if p.Model != "" {
@@ -104,7 +104,7 @@ func (p *Permission) setEnforcerModel(enforcer *casbin.Enforcer) error {
 	}
 
 	// TODO: return error if permissionModel is nil.
-	m := model.Model{}
+	m := authzmodel.Model{}
 	if permissionModel != nil {
 		m, err = GetBuiltInModel(permissionModel.ModelText)
 	} else {
@@ -319,7 +319,7 @@ func BatchEnforce(permission *Permission, requests [][]string, permissionIds ...
 	return enforcer.BatchEnforce(interfaceRequests)
 }
 
-func getEnforcers(userId string) ([]*casbin.Enforcer, error) {
+func getEnforcers(userId string) ([]*authz.Enforcer, error) {
 	permissions, _, err := getPermissionsAndRolesByUser(userId)
 	if err != nil {
 		return nil, err
@@ -340,9 +340,9 @@ func getEnforcers(userId string) ([]*casbin.Enforcer, error) {
 		permissions = append(permissions, permissionsByRole...)
 	}
 
-	var enforcers []*casbin.Enforcer
+	var enforcers []*authz.Enforcer
 	for _, permission := range permissions {
-		var enforcer *casbin.Enforcer
+		var enforcer *authz.Enforcer
 		enforcer, err = getPermissionEnforcer(permission)
 		if err != nil {
 			return nil, err
@@ -394,7 +394,7 @@ func GetAllRoles(userId string) ([]string, error) {
 	return res, nil
 }
 
-func GetBuiltInModel(modelText string) (model.Model, error) {
+func GetBuiltInModel(modelText string) (authzmodel.Model, error) {
 	if modelText == "" {
 		modelText = `[request_definition]
 r = sub, obj, act
@@ -410,9 +410,9 @@ e = some(where (p.eft == allow))
 
 [matchers]
 m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act`
-		return model.NewModelFromString(modelText)
+		return authzmodel.NewModelFromString(modelText)
 	} else {
-		cfg, err := config.NewConfigFromText(modelText)
+		cfg, err := authzconfig.NewConfigFromText(modelText)
 		if err != nil {
 			return nil, err
 		}
@@ -439,7 +439,7 @@ m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act`
 			policyDefinition = append(policyDefinition, "permissionId")
 		}
 
-		m, err := model.NewModelFromString(modelText)
+		m, err := authzmodel.NewModelFromString(modelText)
 		if err != nil {
 			return nil, err
 		}
