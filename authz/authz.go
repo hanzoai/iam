@@ -17,14 +17,14 @@ package authz
 import (
 	"strings"
 
-	"github.com/casbin/casbin/v2"
+	authzengine "github.com/casbin/casbin/v2"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 	stringadapter "github.com/qiangmzsx/string-adapter/v2"
 )
 
-var Enforcer *casbin.Enforcer
+var Enforcer *authzengine.Enforcer
 
 func InitApi() {
 	e, err := object.GetInitializedEnforcer(util.GetId("superuser", "api-enforcer-superuser"))
@@ -109,7 +109,7 @@ p, *, *, GET, /api/get-organization-projects, *, *
 p, *, *, GET, /api/get-all-objects, *, *
 p, *, *, GET, /api/get-all-actions, *, *
 p, *, *, GET, /api/get-all-roles, *, *
-p, *, *, GET, /api/run-casbin-command, *, *
+p, *, *, GET, /api/run-authz-command, *, *
 p, *, *, POST, /api/refresh-engines, *, *
 p, *, *, GET, /api/get-invitation-info, *, *
 p, *, *, GET, /api/faceid-signin-begin, *, *
