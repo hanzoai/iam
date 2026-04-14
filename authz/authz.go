@@ -17,7 +17,7 @@ package authz
 import (
 	"strings"
 
-	authzengine "github.com/casbin/casbin/v2"
+	authzengine "github.com/hanzoai/authz"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
