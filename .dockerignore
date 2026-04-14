@@ -2,7 +2,6 @@
 *.exe
 iam-server*
 server_*
-casdoor
 tmp/
 logs/
 
