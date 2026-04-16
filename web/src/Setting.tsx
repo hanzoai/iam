@@ -1213,9 +1213,26 @@ export function getClickable(text) {
   );
 }
 
+// Providers with local SVG assets in /buttons/ — no external CDN needed
+const localProviderLogos: Record<string, string> = {
+  Google: "/buttons/google.svg",
+  GitHub: "/buttons/github.svg",
+  Apple: "/buttons/apple.svg",
+  Facebook: "/buttons/facebook.svg",
+  LinkedIn: "/buttons/linkedin.svg",
+  Discord: "/buttons/discord.svg",
+  Slack: "/buttons/slack.svg",
+  Microsoft: "/buttons/microsoft.svg",
+  Twitter: "/buttons/twitter.svg",
+};
+
 export function getProviderLogoURL(provider) {
   if (provider.type.startsWith("Custom") && provider.customLogo) {
     return provider.customLogo;
+  }
+  // Prefer local SVG assets over external CDN
+  if (localProviderLogos[provider.type]) {
+    return localProviderLogos[provider.type];
   }
   if (provider.category === "OAuth") {
     const type = provider.type.startsWith("Custom") ? "Custom" : provider.type;
