@@ -686,6 +686,13 @@ function LoginPage(props) {
 
   // --- Helpers ---
 
+  // Strip emoji-only labels (Casdoor defaults like red circle emoji).
+  // Returns the label if it contains at least one ASCII letter/digit, null otherwise.
+  const sanitizeLabel = (label) => {
+    if (!label) {return null;}
+    return /[a-zA-Z0-9]/.test(label) ? label : null;
+  };
+
   const isProviderVisible = (providerItem) => {
     if (mode === "signup") {
       return Setting.isProviderVisibleForSignUp(providerItem);
@@ -795,12 +802,13 @@ function LoginPage(props) {
             <Form.Item
               name="password"
               className="login-password"
-              label={signinItem.label ? signinItem.label : null}
+              label={sanitizeLabel(signinItem.label)}
               rules={[{required: true, message: i18next.t("login:Please input your password!")}]}
             >
               <Input.Password
                 className="login-password-input"
                 prefix={<Lock className="w-4 h-4 text-neutral-500" />}
+                iconRender={(visible) => visible ? <Eye className="w-4 h-4 text-neutral-400 cursor-pointer" /> : <EyeOff className="w-4 h-4 text-neutral-400 cursor-pointer" />}
                 type="password"
                 placeholder={signinItem.placeholder ? signinItem.placeholder : i18next.t("general:Password")}
                 disabled={loginMethod === "password" ? !Setting.isPasswordEnabled(application) : !Setting.isLdapEnabled(application)}
@@ -842,7 +850,7 @@ function LoginPage(props) {
         <Col span={24}>
           <Form.Item
             name="code"
-            label={signinItem.label ? signinItem.label : null}
+            label={sanitizeLabel(signinItem.label)}
             rules={[{required: true, message: i18next.t("login:Please input your code!")}]}
             className="verification-code"
           >
@@ -1042,7 +1050,7 @@ function LoginPage(props) {
           <Form.Item
             name="username"
             className="login-username"
-            label={signinItem.label ? signinItem.label : null}
+            label={sanitizeLabel(signinItem.label)}
             rules={[
               {
                 required: loginMethod !== "webAuthn",
@@ -1249,10 +1257,10 @@ function LoginPage(props) {
             }
             {renderOtherFormProvider(application)}
           </Form.Item>
-          {showForm && (
+          {showForm && application.providers.filter(providerItem => isProviderVisible(providerItem)).length > 0 && (
             <div style={{display: "flex", alignItems: "center", gap: "12px", margin: "4px 0 12px"}}>
               <div style={{flex: 1, height: "1px", background: "rgba(255,255,255,0.1)"}} />
-              <span style={{color: "rgba(255,255,255,0.3)", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em"}}>or sign in with email</span>
+              <span style={{color: "rgba(255,255,255,0.3)", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em"}}>or</span>
               <div style={{flex: 1, height: "1px", background: "rgba(255,255,255,0.1)"}} />
             </div>
           )}
