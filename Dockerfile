@@ -18,7 +18,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o server .
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iamd ./cmd/iamd/
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iam ./cmd/iam/
 
 # ── Production image ──────────────────────────────────────────
 FROM alpine:3.21 AS standard
@@ -33,10 +34,12 @@ RUN apk add --no-cache tzdata curl ca-certificates \
 
 USER 1000
 WORKDIR /
-COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/server ./server
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/iamd ./iamd
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/iam ./iam
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/swagger ./swagger
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/conf/app.prod.conf ./conf/app.conf
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/init_data.json ./init_data.json
 COPY --from=front --chown=$USER:$USER /web/build ./web/build
 
-ENTRYPOINT ["/server"]
+ENTRYPOINT ["/iamd"]
+CMD ["serve"]
