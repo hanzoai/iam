@@ -1,0 +1,4 @@
+#!include:.dockerignore
+
+# Cloud Build extras (Dockerfiles needed locally but not as build output)
+cloudbuild.yaml
