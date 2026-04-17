@@ -807,8 +807,6 @@ github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3 h1:wIONC+HMNRqmWBjuM
 github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3/go.mod h1:37YR9jabpiIxsb8X9VCIx8qFOjTDIIrIHHODa8C4gz0=
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ81pIr0yLvtUWk2if982qA3F3QD6H4=
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
-github.com/luxfi/compliance v0.2.2 h1:vpiMmToCUBNAO3zhb5maUvBPpexZtdrUZwvrBofa+Hw=
-github.com/luxfi/compliance v0.2.2/go.mod h1:fKjNaafxNx9koHwmhlNN4L0aB9rDtgpYZ/sQxb3+wd8=
 github.com/luxfi/crypto v1.17.55 h1:D3FqoN4a5vAxag8gexR4uEp6NLQk2FyX+XT1FEtBSd4=
 github.com/luxfi/crypto v1.17.55/go.mod h1:GnAkhQ7HNs3X0Tzx5nOONS3kl0yRmWHbDcRO5ffILsg=
 github.com/luxfi/kms v1.2.0 h1:RKXEfnazh3GtRKNkyCnfrvflDJd0HSLfKWqOnyRmCsY=
