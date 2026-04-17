@@ -25,7 +25,7 @@ func TestOrgDBValidateSlug(t *testing.T) {
 		slug    string
 		wantErr bool
 	}{
-		{"liquidity", false},
+		{"example", false},
 		{"hanzo", false},
 		{"my-org", false},
 		{"org123", false},
