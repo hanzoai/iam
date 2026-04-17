@@ -1,5 +1,3 @@
-//go:build idv
-
 // Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +24,7 @@ import (
 
 	stdbytes "bytes"
 
-	cidv "github.com/luxfi/compliance/pkg/idv"
+	cidv "github.com/hanzoai/idv/provider"
 )
 
 // VerifyIdentityRequest is the JSON body for POST /v1/idv/verify.
