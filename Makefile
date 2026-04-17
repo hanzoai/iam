@@ -58,13 +58,20 @@ ut: ## UT test
 
 ##@ Build
 
+.PHONY: iamd
+iamd: fmt vet ## Build iamd daemon binary.
+	go build -o iamd ./cmd/iamd/
+
+.PHONY: iam-cli
+iam-cli: fmt vet ## Build iam CLI binary.
+	go build -o iam ./cmd/iam/
+
 .PHONY: backend
-backend: fmt vet ## Build backend binary.
-	go build -o bin/manager main.go
+backend: iamd iam-cli ## Build both binaries.
 
 .PHONY: backend-vendor
 backend-vendor: vendor fmt vet ## Build backend binary with vendor.
-	go build -mod=vendor -o bin/manager main.go
+	go build -mod=vendor -o iamd ./cmd/iamd/
 
 .PHONY: frontend
 frontend: ## Build backend binary.
@@ -75,8 +82,8 @@ vendor: ## Update vendor.
 	go mod vendor
 
 .PHONY: run
-run: fmt vet ## Run backend in local 
-	go run ./main.go
+run: fmt vet ## Run backend in local
+	go run ./cmd/iamd/ serve
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
