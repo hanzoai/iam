@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 
 	stdbytes "bytes"
@@ -130,19 +131,21 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		providerName = cidv.ProviderJumio
 	}
 
-	// Verify HMAC signature if webhook secret is configured.
-	if h.WebhookSecret != "" {
-		sig := r.Header.Get("X-Webhook-Signature")
-		if sig == "" {
-			sig = r.Header.Get("X-SHA2-Signature") // Onfido
-		}
-		if sig == "" {
-			sig = r.Header.Get("Plaid-Verification") // Plaid
-		}
-		if !verifyHMAC(body, sig, h.WebhookSecret) {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid webhook signature"})
-			return
-		}
+	// Reject webhooks when secret is not configured — never fail open.
+	if h.WebhookSecret == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "webhook verification not configured"})
+		return
+	}
+	sig := r.Header.Get("X-Webhook-Signature")
+	if sig == "" {
+		sig = r.Header.Get("X-SHA2-Signature") // Onfido
+	}
+	if sig == "" {
+		sig = r.Header.Get("Plaid-Verification") // Plaid
+	}
+	if !verifyHMAC(body, sig, h.WebhookSecret) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid webhook signature"})
+		return
 	}
 
 	headers := make(map[string]string)
@@ -181,9 +184,25 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 		notifBody, _ := json.Marshal(notification)
 		go func() {
-			resp, err := http.Post(h.BDWebhookURL, "application/json", stdbytes.NewReader(notifBody))
-			if err == nil {
-				resp.Body.Close()
+			req, err := http.NewRequest(http.MethodPost, h.BDWebhookURL, stdbytes.NewReader(notifBody))
+			if err != nil {
+				log.Printf("idv: failed to build BD webhook request: %v", err)
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if h.WebhookSecret != "" {
+				mac := hmac.New(sha256.New, []byte(h.WebhookSecret))
+				mac.Write(notifBody)
+				req.Header.Set("X-Webhook-Signature", hex.EncodeToString(mac.Sum(nil)))
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				log.Printf("idv: BD webhook delivery failed: %v", err)
+				return
+			}
+			resp.Body.Close()
+			if resp.StatusCode >= 400 {
+				log.Printf("idv: BD webhook returned status %d", resp.StatusCode)
 			}
 		}()
 	}
