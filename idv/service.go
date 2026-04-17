@@ -1,3 +1,5 @@
+//go:build idv
+
 // Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	cidv "github.com/luxfi/compliance/pkg/idv"
+	cidv "github.com/hanzoai/idv/provider"
 )
 
 // CheckType enumerates the per-check types in a composite result.
