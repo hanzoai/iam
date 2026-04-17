@@ -184,7 +184,7 @@ func (s *Service) CheckStatus(ctx context.Context, providerName, verificationID 
 // Returns (clear, detail).
 func (s *Service) screenSanctions(ctx context.Context, name, dob string) (bool, string) {
 	if s.amlURL == "" {
-		return true, "aml_url_not_configured"
+		return false, "aml_url_not_configured"
 	}
 
 	payload, _ := json.Marshal(map[string]string{
@@ -194,21 +194,21 @@ func (s *Service) screenSanctions(ctx context.Context, name, dob string) (bool, 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		s.amlURL+"/v1/aml/sanctions/search", bytes.NewReader(payload))
 	if err != nil {
-		return true, "request_build_failed"
+		return false, "request_build_failed"
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.amlClient.Do(req)
 	if err != nil {
-		// Fail open on network error — log but don't block.
-		return true, "aml_unreachable"
+		// Fail closed on network error — block until AML can be verified.
+		return false, "aml_unreachable"
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	var hits []json.RawMessage
 	if err := json.Unmarshal(body, &hits); err != nil {
-		return true, "aml_parse_error"
+		return false, "aml_parse_error"
 	}
 
 	if len(hits) > 0 {
@@ -222,7 +222,7 @@ func (s *Service) screenSanctions(ctx context.Context, name, dob string) (bool, 
 // tagged in the sanctions lists). Returns (clear, detail).
 func (s *Service) screenPEP(ctx context.Context, name, dob string) (bool, string) {
 	if s.amlURL == "" {
-		return true, "aml_url_not_configured"
+		return false, "aml_url_not_configured"
 	}
 
 	payload, _ := json.Marshal(map[string]string{
@@ -233,20 +233,21 @@ func (s *Service) screenPEP(ctx context.Context, name, dob string) (bool, string
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		s.amlURL+"/v1/aml/sanctions/search", bytes.NewReader(payload))
 	if err != nil {
-		return true, "request_build_failed"
+		return false, "request_build_failed"
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.amlClient.Do(req)
 	if err != nil {
-		return true, "aml_unreachable"
+		// Fail closed on network error — block until PEP can be verified.
+		return false, "aml_unreachable"
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	var hits []json.RawMessage
 	if err := json.Unmarshal(body, &hits); err != nil {
-		return true, "aml_parse_error"
+		return false, "aml_parse_error"
 	}
 
 	if len(hits) > 0 {

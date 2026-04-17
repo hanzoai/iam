@@ -144,7 +144,7 @@ func TestServiceVerify_NoAMLURL(t *testing.T) {
 	}))
 	defer idvServer.Close()
 
-	// No AML URL — sanctions/PEP should pass with "not configured"
+	// No AML URL — sanctions/PEP should FAIL (fail-closed)
 	svc := NewService("")
 	svc.RegisterProvider(cidv.ProviderJumio, cidv.NewJumio(cidv.JumioConfig{
 		BaseURL:   idvServer.URL,
@@ -160,12 +160,18 @@ func TestServiceVerify_NoAMLURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Status != CompositePending {
-		t.Fatalf("expected pending, got %q", result.Status)
+	if result.Status != CompositeRejected {
+		t.Fatalf("expected rejected (AML not configured, fail-closed), got %q", result.Status)
 	}
-	// Both sanctions and PEP should pass with "not configured" detail
+	// Both sanctions and PEP should fail with "not configured" detail
+	if result.Checks[1].Status != CheckFailed {
+		t.Fatalf("expected sanctions/failed, got %s", result.Checks[1].Status)
+	}
 	if result.Checks[1].Detail != "aml_url_not_configured" {
 		t.Fatalf("expected aml_url_not_configured, got %q", result.Checks[1].Detail)
+	}
+	if result.Checks[2].Status != CheckFailed {
+		t.Fatalf("expected pep/failed, got %s", result.Checks[2].Status)
 	}
 }
 
