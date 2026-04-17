@@ -1,5 +1,3 @@
-//go:build idv
-
 // Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +22,7 @@ import (
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 
-	cidv "github.com/luxfi/compliance/pkg/idv"
+	cidv "github.com/hanzoai/idv/provider"
 )
 
 // IDVService is the global IDV service instance. Initialized via InitIDV().
