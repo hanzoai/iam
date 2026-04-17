@@ -1,44 +1,75 @@
-# Build artifacts
-*.exe
-iam-server*
-server_*
-tmp/
-logs/
+# === .dockerignore — single source of truth ===
+# Included by .gcloudignore via #!include:.dockerignore
+#
+# KEEP: Go source (*.go, go.mod, go.sum), web/, conf/, i18n/,
+#       swagger/, ui/embed.go, ui/dist/, init_data.json, Dockerfile*
 
-# Test artifacts
-test-results/
-test-results.json
-playwright-report/
-
-# Dev/editor
+# ── VCS / editor / CI ──
 .git/
 .github/
-.vscode/
-.idea/
 .claude/
+.idea/
+.vscode/
+.bfg-report/
+.gitattributes
+.gitignore
+.golangci.yml
+.goreleaser.yaml
+.releaserc.json
 
-# Docs
+# ── Documentation / metadata ──
 docs/
+screenshots/
 README.md
 LICENSE
 SECURITY.md
 CLAUDE.md
 LLM.md
+AGENTS.md
 crowdin.yml
 
-# Node (web handled separately via FRONT stage)
+# ── Node.js (root-level, not needed) ──
 node_modules/
+package.json
+pnpm-lock.yaml
+playwright.config.ts
+
+# ── web/ build artifacts (rebuilt in Docker) ──
 web/node_modules/
 web/.next/
 
-# Docker / deploy
-Dockerfile*
-compose.yml
+# ── ui/ source + deps (only ui/embed.go + ui/dist/ needed for go:embed) ──
+ui/node_modules/
+ui/src/
+ui/*.ts
+ui/*.json
+ui/index.html
+
+# ── Test artifacts ──
+tests/
+test-results/
+test-results.json
+playwright-report/
+
+# ── Build artifacts / binaries ──
+*.exe
+iam-server*
+server*
+server_*
+iamd
+tmp/
+logs/
+
+# ── Deploy / infra (not part of build) ──
+deployment/
+k8s.yaml
 Caddyfile
 app-spec*.yaml
-k8s.yaml
-deployment/
-
-# Scripts not needed in image
+compose*.yml
 scripts/
 Makefile
+build.sh
+docker-entrypoint.sh
+
+# ── Env / secrets ──
+.env*
