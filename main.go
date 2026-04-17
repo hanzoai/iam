@@ -98,6 +98,22 @@ func main() {
 	util.SafeGoroutine(func() { object.RunSyncUsersJob() })
 	util.SafeGoroutine(func() { controllers.InitCLIDownloader() })
 
+	// Initialize IDV service with provider configs from env.
+	controllers.InitIDV(
+		conf.GetConfigString("amlUrl"),
+		conf.GetConfigString("jumioApiKey"),
+		conf.GetConfigString("jumioApiSecret"),
+		conf.GetConfigString("jumioEndpoint"),
+		conf.GetConfigString("onfidoApiToken"),
+		conf.GetConfigString("onfidoWebhookToken"),
+		conf.GetConfigString("onfidoEndpoint"),
+		conf.GetConfigString("plaidClientId"),
+		conf.GetConfigString("plaidSecret"),
+		conf.GetConfigString("plaidEndpoint"),
+		conf.GetConfigString("idvWebhookSecret"),
+		conf.GetConfigString("bdWebhookUrl"),
+	)
+
 	// web.DelStaticPath("/static")
 	// web.SetStaticPath("/static", "web/build/static")
 
