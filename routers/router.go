@@ -353,4 +353,10 @@ func InitAPI() {
 
 	web.Router("/api/registry/token", &controllers.ApiController{}, "GET:GetRegistryToken")
 	web.Router("/api/registry/jwks", &controllers.ApiController{}, "GET:GetRegistryPublicKey")
+
+	// IDV (Identity Verification) routes
+	web.Router("/api/verify-identity", &controllers.ApiController{}, "POST:VerifyIdentity")
+	web.Router("/api/verify-identity/webhook", &controllers.ApiController{}, "POST:VerifyIdentityWebhook")
+	web.Router("/api/verify-identity/status", &controllers.ApiController{}, "GET:GetVerifyIdentityStatus")
+	web.Router("/api/verify-accreditation", &controllers.ApiController{}, "POST:VerifyAccreditation")
 }
