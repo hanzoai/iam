@@ -212,6 +212,197 @@ export interface Webhook {
   headers: { name: string; value: string }[]
 }
 
+export interface Group {
+  owner: string
+  name: string
+  createdTime: string
+  updatedTime: string
+  displayName: string
+  type: string
+  users: string[]
+}
+
+export interface Ldap {
+  owner: string
+  name: string
+  createdTime: string
+  serverName: string
+  host: string
+  port: number
+  admin: string
+  passwd: string
+  baseDn: string
+  autoSync: number
+}
+
+export interface Syncer {
+  owner: string
+  name: string
+  createdTime: string
+  type: string
+  table: string
+  databaseType: string
+  database: string
+  host: string
+  port: number
+  user: string
+  password: string
+  isEnabled: boolean
+}
+
+export interface Enforcer {
+  owner: string
+  name: string
+  createdTime: string
+  displayName: string
+  model: string
+  adapter: string
+}
+
+export interface Adapter {
+  owner: string
+  name: string
+  createdTime: string
+  type: string
+  databaseType: string
+  host: string
+  port: number
+  user: string
+  password: string
+  database: string
+  table: string
+}
+
+export interface Model {
+  owner: string
+  name: string
+  createdTime: string
+  displayName: string
+  modelText: string
+}
+
+export interface Form {
+  owner: string
+  name: string
+  createdTime: string
+  type: string
+  displayName: string
+  formItems: { name: string; visible: boolean; required: boolean; prompted: boolean; rule: string }[]
+}
+
+export interface Ticket {
+  owner: string
+  name: string
+  createdTime: string
+  type: string
+  title: string
+  body: string
+  state: string
+}
+
+export interface Site {
+  owner: string
+  name: string
+  createdTime: string
+  displayName: string
+  domain: string
+  host: string
+  port: number
+  enableHttps: boolean
+}
+
+export interface Invitation {
+  owner: string
+  name: string
+  createdTime: string
+  sender: string
+  recipient: string
+  state: string
+  application: string
+}
+
+export interface Key {
+  owner: string
+  name: string
+  createdTime: string
+  displayName: string
+  type: string
+  algorithm: string
+  key: string
+  certificate: string
+  isEnabled: boolean
+}
+
+export interface Server {
+  owner: string
+  name: string
+  createdTime: string
+  protocol: string
+  host: string
+  port: number
+  admin: string
+  password: string
+}
+
+export interface CaptchaProvider {
+  owner: string
+  name: string
+  createdTime: string
+  type: string
+  siteKey: string
+  secretKey: string
+}
+
+export interface Verification {
+  owner: string
+  name: string
+  createdTime: string
+  type: string
+  provider: string
+  receiver: string
+  code: string
+  isUsed: boolean
+}
+
+export interface Resource {
+  owner: string
+  name: string
+  createdTime: string
+  provider: string
+  type: string
+  user: string
+  application: string
+  url: string
+}
+
+export interface AuditRecord {
+  owner: string
+  name: string
+  createdTime: string
+  method: string
+  requestUri: string
+  action: string
+  isTriggered: boolean
+  organization: string
+  user: string
+  clientIp: string
+}
+
+export interface Rule {
+  owner: string
+  name: string
+  createdTime: string
+  modelName: string
+  adapterName: string
+  ptype: string
+  v0: string
+  v1: string
+  v2: string
+  v3: string
+  v4: string
+  v5: string
+}
+
 // --- API methods ---
 
 export const api = {
@@ -292,6 +483,136 @@ export const api = {
     request<{ data: Webhook }>('GET', getUrl('webhook', owner, name)),
   updateWebhook: (owner: string, name: string, wh: Webhook) =>
     request<{ data: string }>('POST', updateUrl('webhook', owner, name), wh),
+
+  // Groups
+  getGroups: (owner: string) =>
+    request<ListResponse<Group>>('GET', listUrl('group', owner)),
+  getGroup: (owner: string, name: string) =>
+    request<{ data: Group }>('GET', getUrl('group', owner, name)),
+  updateGroup: (owner: string, name: string, g: Group) =>
+    request<{ data: string }>('POST', updateUrl('group', owner, name), g),
+
+  // LDAP
+  getLdaps: (owner: string) =>
+    request<ListResponse<Ldap>>('GET', listUrl('ldap', owner)),
+  getLdap: (owner: string, name: string) =>
+    request<{ data: Ldap }>('GET', getUrl('ldap', owner, name)),
+  updateLdap: (owner: string, name: string, l: Ldap) =>
+    request<{ data: string }>('POST', updateUrl('ldap', owner, name), l),
+
+  // Syncers
+  getSyncers: (owner: string) =>
+    request<ListResponse<Syncer>>('GET', listUrl('syncer', owner)),
+  getSyncer: (owner: string, name: string) =>
+    request<{ data: Syncer }>('GET', getUrl('syncer', owner, name)),
+  updateSyncer: (owner: string, name: string, s: Syncer) =>
+    request<{ data: string }>('POST', updateUrl('syncer', owner, name), s),
+
+  // Enforcers
+  getEnforcers: (owner: string) =>
+    request<ListResponse<Enforcer>>('GET', listUrl('enforcer', owner)),
+  getEnforcer: (owner: string, name: string) =>
+    request<{ data: Enforcer }>('GET', getUrl('enforcer', owner, name)),
+  updateEnforcer: (owner: string, name: string, e: Enforcer) =>
+    request<{ data: string }>('POST', updateUrl('enforcer', owner, name), e),
+
+  // Adapters
+  getAdapters: (owner: string) =>
+    request<ListResponse<Adapter>>('GET', listUrl('adapter', owner)),
+  getAdapter: (owner: string, name: string) =>
+    request<{ data: Adapter }>('GET', getUrl('adapter', owner, name)),
+  updateAdapter: (owner: string, name: string, a: Adapter) =>
+    request<{ data: string }>('POST', updateUrl('adapter', owner, name), a),
+
+  // Models
+  getModels: (owner: string) =>
+    request<ListResponse<Model>>('GET', listUrl('model', owner)),
+  getModel: (owner: string, name: string) =>
+    request<{ data: Model }>('GET', getUrl('model', owner, name)),
+  updateModel: (owner: string, name: string, m: Model) =>
+    request<{ data: string }>('POST', updateUrl('model', owner, name), m),
+
+  // Forms
+  getForms: (owner: string) =>
+    request<ListResponse<Form>>('GET', listUrl('form', owner)),
+  getForm: (owner: string, name: string) =>
+    request<{ data: Form }>('GET', getUrl('form', owner, name)),
+  updateForm: (owner: string, name: string, f: Form) =>
+    request<{ data: string }>('POST', updateUrl('form', owner, name), f),
+
+  // Tickets
+  getTickets: (owner: string) =>
+    request<ListResponse<Ticket>>('GET', listUrl('ticket', owner)),
+  getTicket: (owner: string, name: string) =>
+    request<{ data: Ticket }>('GET', getUrl('ticket', owner, name)),
+  updateTicket: (owner: string, name: string, t: Ticket) =>
+    request<{ data: string }>('POST', updateUrl('ticket', owner, name), t),
+
+  // Sites
+  getSites: (owner: string) =>
+    request<ListResponse<Site>>('GET', listUrl('site', owner)),
+  getSite: (owner: string, name: string) =>
+    request<{ data: Site }>('GET', getUrl('site', owner, name)),
+  updateSite: (owner: string, name: string, s: Site) =>
+    request<{ data: string }>('POST', updateUrl('site', owner, name), s),
+
+  // Invitations
+  getInvitations: (owner: string) =>
+    request<ListResponse<Invitation>>('GET', listUrl('invitation', owner)),
+
+  // Keys
+  getKeys: (owner: string) =>
+    request<ListResponse<Key>>('GET', listUrl('key', owner)),
+  getKey: (owner: string, name: string) =>
+    request<{ data: Key }>('GET', getUrl('key', owner, name)),
+  updateKey: (owner: string, name: string, k: Key) =>
+    request<{ data: string }>('POST', updateUrl('key', owner, name), k),
+
+  // Servers
+  getServers: (owner: string) =>
+    request<ListResponse<Server>>('GET', listUrl('server', owner)),
+  getServer: (owner: string, name: string) =>
+    request<{ data: Server }>('GET', getUrl('server', owner, name)),
+  updateServer: (owner: string, name: string, s: Server) =>
+    request<{ data: string }>('POST', updateUrl('server', owner, name), s),
+
+  // Captcha
+  getCaptchaProvider: (owner: string) =>
+    request<ListResponse<CaptchaProvider>>('GET', listUrl('captcha-provider', owner)),
+  updateCaptchaProvider: (owner: string, name: string, c: CaptchaProvider) =>
+    request<{ data: string }>('POST', updateUrl('captcha-provider', owner, name), c),
+
+  // Verifications
+  getVerifications: (owner: string) =>
+    request<ListResponse<Verification>>('GET', listUrl('verification', owner)),
+
+  // Resources
+  getResources: (owner: string) =>
+    request<ListResponse<Resource>>('GET', listUrl('resource', owner)),
+  getResource: (owner: string, name: string) =>
+    request<{ data: Resource }>('GET', getUrl('resource', owner, name)),
+  updateResource: (owner: string, name: string, r: Resource) =>
+    request<{ data: string }>('POST', updateUrl('resource', owner, name), r),
+
+  // Records
+  getRecords: (owner: string) =>
+    request<ListResponse<AuditRecord>>('GET', listUrl('record', owner)),
+
+  // Rules
+  getRules: (owner: string) =>
+    request<ListResponse<Rule>>('GET', listUrl('rule', owner)),
+  getRule: (owner: string, name: string) =>
+    request<{ data: Rule }>('GET', getUrl('rule', owner, name)),
+  updateRule: (owner: string, name: string, r: Rule) =>
+    request<{ data: string }>('POST', updateUrl('rule', owner, name), r),
+
+  // Search (for command palette)
+  searchUsers: (q: string) =>
+    request<ListResponse<User>>('GET', `/api/get-users?owner=*&q=${encodeURIComponent(q)}`),
+  searchOrganizations: (q: string) =>
+    request<ListResponse<Organization>>('GET', `/api/get-organizations?owner=admin&q=${encodeURIComponent(q)}`),
+  searchApplications: (q: string) =>
+    request<ListResponse<Application>>('GET', `/api/get-applications?owner=*&q=${encodeURIComponent(q)}`),
 
   // Account (current user)
   getAccount: () =>
