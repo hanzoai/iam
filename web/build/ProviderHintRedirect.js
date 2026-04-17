@@ -1,4 +1,4 @@
-// Copyright 2026 The Hanzo Authors. All Rights Reserved.
+// Copyright 2026 Hanzo AI Inc. Apache 2.0 licensed.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -399,7 +399,7 @@
     window.location.replace(authUrl);
   }
 
-  window.CasdoorProviderHintRedirect = {
+  window.IAMProviderHintRedirect = {
     run: function() {
       return run().catch(function() {
         redirectToFallback();
