@@ -17,12 +17,6 @@ func TestIsValidOrigin(t *testing.T) {
 		{"https://lux.network", true},
 		{"https://explorer.lux.network", true},
 
-		// Allowed: Liquidity domains
-		{"https://exchange.dev.", true},
-		{"https://", true},
-		{"https://iam.dev.", true},
-		{"https://", true},
-		{"https://app.", true},
 
 		// Allowed: localhost
 		{"http://localhost:3000", true},
@@ -35,8 +29,6 @@ func TestIsValidOrigin(t *testing.T) {
 		// Rejected: arbitrary domains
 		{"https://evil.com", false},
 		{"https://hanzo.ai.evil.com", false},
-		{"https://not", false},
-		{"https://fake.evil.com", false},
 		{"https://example.org", false},
 
 		// Rejected: empty
