@@ -16,12 +16,15 @@ package idv
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	cidv "github.com/luxfi/compliance/pkg/idv"
+	cidv "github.com/hanzoai/idv/provider"
 )
 
 func TestServiceVerify_Success(t *testing.T) {
@@ -208,16 +211,21 @@ func TestServiceCheckStatus(t *testing.T) {
 }
 
 func TestServiceHandleWebhook(t *testing.T) {
+	secret := "test-webhook-secret"
 	svc := NewService("")
-	svc.RegisterProvider(cidv.ProviderJumio, cidv.NewJumio(cidv.JumioConfig{}))
+	svc.RegisterProvider(cidv.ProviderJumio, cidv.NewJumio(cidv.JumioConfig{APISecret: secret}))
 
-	payload := `{
+	payload := []byte(`{
 		"transactionReference": "txn-wh-001",
 		"customerInternalReference": "user-1",
 		"status": "DONE",
 		"verificationStatus": "APPROVED_VERIFIED"
-	}`
-	event, err := svc.HandleWebhook(cidv.ProviderJumio, []byte(payload), nil)
+	}`)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(payload)
+	sig := hex.EncodeToString(mac.Sum(nil))
+
+	event, err := svc.HandleWebhook(cidv.ProviderJumio, payload, map[string]string{"Callback-Sig": sig})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
