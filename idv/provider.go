@@ -1,3 +1,5 @@
+//go:build idv
+
 // Copyright 2025 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +19,7 @@ package idv
 import (
 	"context"
 
-	cidv "github.com/luxfi/compliance/pkg/idv"
+	cidv "github.com/hanzoai/idv/provider"
 )
 
 // IdvProvider is the sync identity verification interface used by IAM controllers.
