@@ -638,6 +638,8 @@ github.com/hanzoai/authz/v2 v2.78.0 h1:cduelQHNPEkI7H837UQLTW26/gL+5u/R/uNt6Re5d
 github.com/hanzoai/authz/v2 v2.78.0/go.mod h1:mzGx0hYW9/ksOSpw3wNjk3NRAroq5VMFYUQ6G43iGPk=
 github.com/hanzoai/builder v0.3.13 h1:tAOJ+0Q0xrrovk7lkvaZxuKZ4lqENIB6tE0Rr9+6Bo8=
 github.com/hanzoai/builder v0.3.13/go.mod h1:TWZaiP0Y9tCMwtLH2EvQqBAeT1f3aJI5Y0XPM8S0wcE=
+github.com/hanzoai/idv v1.0.0 h1:z+z5KS3cZnM7ndtlLB2mmuh7hc+p78hJNa+zVSD8pIE=
+github.com/hanzoai/idv v1.0.0/go.mod h1:vujJF4DQmwRrdh2UxnpCjWLkYKJ1bbgp10thlo4xZYQ=
 github.com/hanzoai/xorm v1.1.6 h1:z8B3alP39taTGLA4BonBa+7RHIOMmjYjxF3N9gpzh84=
 github.com/hanzoai/xorm v1.1.6/go.mod h1:wso0cQDDuzgjJwNOj3AXCftkKF3uOoUowKp5A7ol0zc=
 github.com/hanzoai/xorm-adapter/v3 v3.0.1 h1:r04YHcab8qHzbvYKXnx4e2xUHG3jZNt3+hvXvbbMRc4=
