@@ -718,7 +718,7 @@ export function getCountryCodeOption(country) {
 }
 
 export function getCountryImage(country) {
-  return <img src={`${StaticBaseUrl}/flag-icons/${country.code}.svg`} alt={country.name} height={20} style={{marginRight: 10}} />;
+  return <img src={`/flag-icons/${country.code}.svg`} alt={country.name} height={20} style={{marginRight: 10}} />;
 }
 
 export function initServerUrl() {
@@ -1962,7 +1962,7 @@ export function getCurrencyFlag(currency) {
   }
 
   return (
-    <img src={`${StaticBaseUrl}/flag-icons/${countryCode}.svg`} alt={`${currency} flag`} height={20} style={{marginRight: 5}} />
+    <img src={`/flag-icons/${countryCode}.svg`} alt={`${currency} flag`} height={20} style={{marginRight: 5}} />
   );
 }
 
@@ -1978,7 +1978,7 @@ export function getCurrencyWithFlag(currency) {
 
   return (
     <span>
-      <img src={`${StaticBaseUrl}/flag-icons/${countryCode}.svg`} alt={`${currency} flag`} height={20} style={{marginRight: 5}} />
+      <img src={`/flag-icons/${countryCode}.svg`} alt={`${currency} flag`} height={20} style={{marginRight: 5}} />
       {currencyText}
     </span>
   );
