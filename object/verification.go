@@ -290,7 +290,13 @@ func getUnusedVerificationRecord(dest string) (*VerificationRecord, error) {
 }
 
 func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult, error) {
-	// Accept pinned OTP for test numbers without requiring a send step.
+	// Per-user pinned OTP: look up user by phone, accept their VerificationCode
+	// without requiring the send step. Set via superadmin per user.
+	if user, _ := GetUserByPhoneOnly(dest); user != nil && user.VerificationCode != "" && user.VerificationCode == code {
+		return &VerifyResult{VerificationSuccess, ""}, nil
+	}
+
+	// Accept env-var pinned OTP for test numbers (all-same-digit phones).
 	if pinned := pinnedOTP(dest); pinned != "" && code == pinned {
 		return &VerifyResult{VerificationSuccess, ""}, nil
 	}
