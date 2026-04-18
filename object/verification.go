@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/rand"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -289,6 +290,11 @@ func getUnusedVerificationRecord(dest string) (*VerificationRecord, error) {
 }
 
 func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult, error) {
+	// Accept pinned OTP for test numbers without requiring a send step.
+	if pinned := pinnedOTP(dest); pinned != "" && code == pinned {
+		return &VerifyResult{VerificationSuccess, ""}, nil
+	}
+
 	record, err := getVerificationRecord(dest)
 	if err != nil {
 		return nil, err
@@ -566,14 +572,13 @@ func GetVerification(id string) (*VerificationRecord, error) {
 	return getVerification(owner, name)
 }
 
-// isDemoPhone returns a pinned OTP for phone numbers composed of a single
-// repeated digit (e.g. +19999999999 → "999999"). Only active outside
-// production. This lets test/sandbox users verify without an SMS provider.
-func isDemoPhone(dest string) string {
-	if !conf.IsDemoMode() {
+// pinnedOTP returns the BYPASS_OTP value if the phone number is a test
+// number (all repeated digits like +19999999999). Returns "" otherwise.
+func pinnedOTP(dest string) string {
+	code := os.Getenv("BYPASS_OTP")
+	if code == "" {
 		return ""
 	}
-	// Strip non-digit characters
 	var digits []byte
 	for _, c := range []byte(dest) {
 		if c >= '0' && c <= '9' {
@@ -583,7 +588,6 @@ func isDemoPhone(dest string) string {
 	if len(digits) < 7 {
 		return ""
 	}
-	// Check if all digits (after country code) are the same
 	last7 := digits[len(digits)-7:]
 	d := last7[0]
 	for _, c := range last7[1:] {
@@ -591,6 +595,5 @@ func isDemoPhone(dest string) string {
 			return ""
 		}
 	}
-	// Return 6 copies of the repeated digit as the pinned OTP
-	return string([]byte{d, d, d, d, d, d})
+	return code
 }
