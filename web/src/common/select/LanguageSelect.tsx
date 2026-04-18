@@ -18,7 +18,7 @@ import * as Setting from "../../Setting";
 
 function flagIcon(country: string, alt: string) {
   return (
-    <img width={24} alt={alt} src={`/flag-icons/${country}.svg`} />
+    <img width={24} alt={alt} src={`${Setting.StaticBaseUrl}/flag-icons/${country}.svg`} />
   );
 }
 
@@ -36,7 +36,7 @@ const LanguageSelect = (props: LanguageSelectProps) => {
   // Preload flag icons
   useMemo(() => {
     Setting.Countries.forEach((country: any) => {
-      new Image().src = `/flag-icons/${country.country}.svg`;
+      new Image().src = `${Setting.StaticBaseUrl}/flag-icons/${country.country}.svg`;
     });
   }, []);
 
