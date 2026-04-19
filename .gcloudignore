@@ -1,4 +1,16 @@
-#!include:.dockerignore
-
-# Cloud Build extras (Dockerfiles needed locally but not as build output)
-cloudbuild.yaml
+.git/
+.claude/
+web/
+node_modules/
+ui/node_modules/
+ui/src/
+docs/
+screenshots/
+swagger/
+test-results/
+playwright-report/
+.bfg-report/
+tmp/
+logs/
+*.exe
+iamd
