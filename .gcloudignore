@@ -1,16 +1,59 @@
+# Cloud Build source upload — same semantics as .dockerignore.
+#
+# KEEP: Go source (*.go, go.mod, go.sum, cmd/), conf/, i18n/, swagger/,
+#       ui/embed.go + ui/dist/, web/* (needed by Dockerfile front stage),
+#       init_data.json, Dockerfile*, scripts/init*.
+#
+# EXCLUDE: git / editor / docs / prebuilt binaries / heavy deps / tests.
+
 .git/
+.github/
 .claude/
-web/
-node_modules/
-ui/node_modules/
-ui/src/
+.idea/
+.vscode/
+.bfg-report/
+
+# Docs / screenshots
 docs/
 screenshots/
-swagger/
+README.md
+LICENSE
+SECURITY.md
+CLAUDE.md
+LLM.md
+AGENTS.md
+crowdin.yml
+
+# Heavy node_modules
+node_modules/
+web/node_modules/
+ui/node_modules/
+
+# UI source (Dockerfile only embeds ui/dist/ + ui/embed.go)
+ui/src/
+ui/*.ts
+ui/*.json
+ui/index.html
+ui/vite.config.*
+ui/.npmrc
+
+# Test artifacts
+tests/
 test-results/
+test-results.json
 playwright-report/
-.bfg-report/
+
+# Prebuilt binaries at repo root only (anchor with leading /)
+/iamd
+/iam-server
+/iam-server_darwin_*
+/iam-server_linux_*
+/server
+/server_darwin_*
+/server_linux_*
+/*.exe
 tmp/
 logs/
-*.exe
-iamd
+
+# Env
+.env*
