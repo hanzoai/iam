@@ -20,6 +20,23 @@ import (
 	"testing"
 )
 
+func TestResolveDataDir(t *testing.T) {
+	// DATA_DIR env wins over any beego config value and over the "data" default.
+	t.Setenv("DATA_DIR", "/foo")
+	if got := resolveDataDir(); got != "/foo" {
+		t.Errorf("resolveDataDir() with DATA_DIR=/foo = %q, want %q", got, "/foo")
+	}
+
+	// With DATA_DIR unset, resolver falls through to the beego config value
+	// (tests run without app.conf loaded, so dataDir config is empty) and
+	// lands on the "data" default — matching the pre-operator CWD behaviour.
+	t.Setenv("DATA_DIR", "")
+	os.Unsetenv("DATA_DIR")
+	if got := resolveDataDir(); got != "data" {
+		t.Errorf("resolveDataDir() with DATA_DIR unset = %q, want %q", got, "data")
+	}
+}
+
 func TestOrgDBValidateSlug(t *testing.T) {
 	tests := []struct {
 		slug    string
