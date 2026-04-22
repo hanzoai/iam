@@ -15,7 +15,6 @@
 package object
 
 import (
-	"os"
 	"testing"
 )
 
@@ -61,38 +60,7 @@ func TestGetVerificationCode_OrgMasterIgnored(t *testing.T) {
 	}
 }
 
-func TestIsDemoPhone(t *testing.T) {
-	// isDemoPhone only works when ENV is NOT production
-	os.Setenv("ENV", "dev")
-	defer os.Unsetenv("ENV")
-
-	tests := []struct {
-		phone    string
-		expected string
-	}{
-		{"+19999999999", "999999"},
-		{"+11111111111", "111111"},
-		{"+15555555555", "555555"},
-		{"+12223334444", ""},            // mixed digits
-		{"+1234", ""},                   // too short
-		{"9999999", "999999"},           // 7 digits, all same
-		{"+1 (999) 999-9999", "999999"}, // formatted
-	}
-
-	for _, tc := range tests {
-		got := isDemoPhone(tc.phone)
-		if got != tc.expected {
-			t.Errorf("isDemoPhone(%q) = %q, want %q", tc.phone, got, tc.expected)
-		}
-	}
-}
-
-func TestIsDemoPhone_ProductionDisabled(t *testing.T) {
-	os.Setenv("ENV", "production")
-	defer os.Unsetenv("ENV")
-
-	got := isDemoPhone("+19999999999")
-	if got != "" {
-		t.Errorf("isDemoPhone should return empty in production, got %q", got)
-	}
-}
+// TestIsDemoPhone removed: demo-phone fallback (e.g. +19999999999 → 999999)
+// was replaced by per-user pinnedOTP in CheckVerificationCode. The old
+// isDemoPhone helper no longer exists; these tests referenced a deleted
+// symbol and prevented the object package test binary from compiling.
