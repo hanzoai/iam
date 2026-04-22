@@ -117,16 +117,28 @@ func InitAdapter() {
 
 	// Initialize per-org SQLite isolation if configured.
 	if conf.GetConfigString("orgIsolation") == "sqlite" {
-		dataDir := conf.GetConfigString("dataDir")
-		if dataDir == "" {
-			dataDir = "data"
-		}
-		mgr, err := NewOrgDBManager(dataDir)
+		mgr, err := NewOrgDBManager(resolveDataDir())
 		if err != nil {
 			panic(fmt.Errorf("init OrgDBManager: %w", err))
 		}
 		ormer.OrgDBManager = mgr
 	}
+}
+
+// resolveDataDir returns the directory used for IAM's on-disk state.
+// The DATA_DIR environment variable wins (that is how operators override
+// config — the Liquidity operator emits DATA_DIR=/data/iam on the Deployment,
+// and the Dockerfile sets WORKDIR /, so the relative `dataDir = data` in
+// app.prod.conf would otherwise resolve to a read-only path and panic).
+// Falls back to the beego `dataDir` config key, then to "data".
+func resolveDataDir() string {
+	if v := os.Getenv("DATA_DIR"); v != "" {
+		return v
+	}
+	if v := conf.GetConfigString("dataDir"); v != "" {
+		return v
+	}
+	return "data"
 }
 
 func CreateTables() {
