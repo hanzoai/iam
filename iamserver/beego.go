@@ -18,12 +18,10 @@ package iamserver
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 
 	"github.com/beego/beego/v2/core/logs"
 	"github.com/beego/beego/v2/server/web"
-	_ "github.com/beego/beego/v2/server/web/session/redis"
 	"github.com/hanzoai/iam/authz"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/controllers"
@@ -37,26 +35,16 @@ import (
 )
 
 // Run starts the IAM Beego server. This is the body of the original main().
+//
+// Sessions use the beego `memory` provider. Multi-pod IAM is intentionally
+// not supported — every cluster runs IAM at a single replica and per-org
+// persistent state lives in SQLite under DATA_DIR (replicated by Base
+// Network quasar when that flips on). There is no external cache.
 func Run() {
 	web.BConfig.WebConfig.Session.SessionOn = true
 	web.BConfig.WebConfig.Session.SessionName = "iam_session_id"
-	redisEndpoint := conf.GetConfigString("redisEndpoint")
-	if redisEndpoint == "" {
-		for _, host := range []string{"hanzo-kv", "redis"} {
-			if addrs, err := net.LookupHost(host); err == nil && len(addrs) > 0 {
-				redisEndpoint = host + ":6379"
-				break
-			}
-		}
-	}
-	if redisEndpoint == "" {
-		web.BConfig.WebConfig.Session.SessionProvider = "file"
-		web.BConfig.WebConfig.Session.SessionProviderConfig = "./tmp"
-	} else {
-		web.BConfig.WebConfig.Session.SessionProvider = "redis"
-		web.BConfig.WebConfig.Session.SessionProviderConfig = redisEndpoint
-		fmt.Printf("Using Redis for session storage: %s\n", redisEndpoint)
-	}
+	web.BConfig.WebConfig.Session.SessionProvider = "memory"
+	web.BConfig.WebConfig.Session.SessionProviderConfig = ""
 	web.BConfig.WebConfig.Session.SessionCookieLifeTime = 3600 * 24 * 30
 	web.BConfig.WebConfig.Session.SessionGCMaxLifetime = 3600 * 24 * 30
 	web.BConfig.WebConfig.Session.SessionCookieSameSite = http.SameSiteLaxMode
