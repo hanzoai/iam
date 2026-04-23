@@ -686,7 +686,7 @@ function LoginPage(props) {
 
   // --- Helpers ---
 
-  // Strip emoji-only labels (Casdoor defaults like red circle emoji).
+  // Strip emoji-only labels (upstream defaults such as a red circle emoji).
   // Returns the label if it contains at least one ASCII letter/digit, null otherwise.
   const sanitizeLabel = (label) => {
     if (!label) {return null;}
