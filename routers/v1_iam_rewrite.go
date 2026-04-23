@@ -13,6 +13,7 @@ import (
 // Most API endpoints live under /api/*. A few intentionally live at root
 // because standards expect them unprefixed. The filter maps:
 //
+//	/v1/iam/login/oauth/* → /login/oauth/*    (OAuth2 standard path)
 //	/v1/iam/oauth/*       → /oauth/*          (OAuth2 + OIDC aliases)
 //	/v1/iam/.well-known/* → /.well-known/*    (OIDC discovery + JWKS)
 //	/v1/iam/X             → /api/X            (everything else)
@@ -24,6 +25,8 @@ func V1IAMRewriteFilter(ctx *context.Context) {
 	rest := strings.TrimPrefix(path, "/v1/iam/")
 	var newPath string
 	switch {
+	case strings.HasPrefix(rest, "login/oauth/"):
+		newPath = "/" + rest
 	case strings.HasPrefix(rest, "oauth/"):
 		newPath = "/" + rest
 	case strings.HasPrefix(rest, ".well-known/"):
