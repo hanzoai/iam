@@ -1,5 +1,5 @@
 // Typed API client for IAM backend — all calls use cookies (same origin).
-// IAM (Casdoor) API pattern:
+// IAM API pattern:
 //   GET  /api/get-{entity}s?owner={org}      → list (returns { data: T[], data2: T[] } with pagination)
 //   GET  /api/get-{entity}?id={org}/{name}    → single
 //   POST /api/add-{entity}                    → create
