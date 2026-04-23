@@ -2,23 +2,53 @@
 
 ## Overview
 
-Hanzo IAM (fork of Casdoor, Apache 2.0) provides OAuth2.0/OIDC/SAML/CAS identity and access management for the Hanzo ecosystem. Serves as the unified authentication provider at **hanzo.id**.
+Hanzo IAM is the Hanzo ecosystem's Identity and Access Management server — OAuth 2.0 / OIDC / SAML / CAS / LDAP / SCIM / WebAuthn / MFA. Derived from the upstream Casdoor project (Apache 2.0). Unified authentication provider at **hanzo.id**.
 
-## Rename Status (2026-04-13)
+## Rename Status (updated 2026-04-23)
 
-- JS globals: `window.IAMAuthCallback`, `window.IAMProviderHintRedirect` (done)
-- Session keys: `__iam_callback_react`, `iam_callback_react_fallback` (done)
-- Copyright headers: all `Casdoor Authors` / `casbin Authors` -> `Hanzo Authors` (done)
-- Go import aliases: `casbin.Enforcer` -> `authz.Enforcer` via import aliases (done)
-- Function renames: `CasbinToSlice` -> `AuthzRuleToSlice`, `MatrixToCasbinRules` -> `MatrixToAuthzRules` (done)
-- File renames: `casbin_engine.go` -> `authz_engine.go`, `casbin_cli_api.go` -> `authz_cli_api.go`, `util/casbin.go` -> `util/authz.go`, `CasbinEditor.tsx` -> `AuthzEditor.tsx` (done)
-- API endpoint: `/api/run-casbin-command` -> `/api/run-authz-command` (done)
-- Comments: all `Casbin`/`Casdoor` in comments -> `authz`/`IAM` (done)
-- Casbin fork: `github.com/hanzoai/authz` exists on GitHub (v2.78.0+). Import paths use `github.com/casbin/casbin/v2` with `authz` import alias; `replace` directive in go.mod redirects to `github.com/hanzoai/authz/v2 v2.78.0`. Never import `hanzoai/authz` directly (module declares casbin/v2 path).
-- Upstream deps NOT renamed: `github.com/casdoor/*` (notify2, oss, ldapserver, go-sms-sender, gomail), `github.com/casbin/lego/v4`. These are separate upstream projects.
-- K8s: `CASDOOR_ORIGIN` renamed to `originFrontend` in all manifests.
-- Replication: sidecar removed (Beego has no plugin hook). Pending Base migration.
-- DB table/column names: NOT renamed (e.g., `casbin_user_rule`, `xormadapter.CasbinRule` type).
+Internal naming is renamed from Casdoor → IAM. Only upstream library boundaries retain the original name.
+
+- JS globals: `window.IAMAuthCallback`, `window.IAMProviderHintRedirect`.
+- Session keys: `__iam_callback_react`, `iam_callback_react_fallback`.
+- Copyright headers: all upstream `Casdoor Authors` / `casbin Authors` → `Hanzo Authors`.
+- Go import aliases: `casbin.Enforcer` → `authz.Enforcer` via alias; `casdoorsdk` → `iamsdk` via alias.
+- Function renames: `CasbinToSlice` → `AuthzRuleToSlice`, `MatrixToCasbinRules` → `MatrixToAuthzRules`.
+- File renames: `casbin_engine.go` → `authz_engine.go`, `casbin_cli_api.go` → `authz_cli_api.go`, `util/casbin.go` → `util/authz.go`, `CasbinEditor.tsx` → `AuthzEditor.tsx`.
+- API endpoint: `/api/run-casbin-command` → `/api/run-authz-command`.
+- Comments and log messages: `Casbin` / `Casdoor` → `authz` / `IAM`.
+- Casbin fork: `github.com/hanzoai/authz` exists on GitHub (v2.78.0+). Import path stays `github.com/casbin/casbin/v2` with `authz` alias; `replace` directive in go.mod redirects to `github.com/hanzoai/authz/v2 v2.78.0`. Never import `hanzoai/authz` directly (module declares casbin/v2 path).
+- K8s: `CASDOOR_ORIGIN` → `originFrontend` in all manifests.
+- Replication sidecar: removed (Beego has no plugin hook). Base migration pending.
+
+### Deferred (upstream library boundaries)
+
+The following retain the `github.com/casdoor/*` import paths because they are separate upstream projects that would require a publishing fork under `hanzoai/*`:
+
+| Package | Imported by |
+|---------|-------------|
+| `github.com/casdoor/notify2` (+ service subpackages) | `notification/*.go`, `object/notification.go` |
+| `github.com/casdoor/oss` (+ casdoor subpackage) | `storage/*.go`, `object/storage.go`, `deployment/deploy.go` |
+| `github.com/casdoor/casdoor-go-sdk/casdoorsdk` | `service/oauth.go`, `service/util.go` (aliased as `iamsdk`) |
+| `github.com/casdoor/go-sms-sender` | `object/sms.go` (aliased as `sender`) |
+| `github.com/casdoor/gomail/v2` | `email/smtp.go` |
+| `github.com/casdoor/ldapserver` | `ldap/server.go`, `ldap/util.go` (aliased as `ldap`) |
+| `github.com/casbin/lego/v4` | `certificate/*.go` (ACME client) |
+
+These are tracked for a future `hanzoai/*` publishing fork. Until then, Go module resolution must keep the upstream paths.
+
+### DB schema (NOT renamed)
+
+Schema-level identifiers stay on upstream names to avoid migration:
+- Table names prefixed with `casbin_*` (e.g. `casbin_user_rule`).
+- Go struct type `xormadapter.CasbinRule`.
+
+### Provider type (NOT renamed — functional identifier)
+
+`Casdoor` is a valid upstream OAuth provider type in `web/public/ProviderHintRedirect.js` and upstream provider config. An operator can wire another Casdoor instance as an upstream OIDC IdP; the string identifies that integration target. Not branding.
+
+### Env vars
+
+Legacy `CASDOOR_*` prefixes are retained as aliases when used (already absent from our manifests). `IAM_*` prefix is preferred for new code.
 
 ## Architecture
 
