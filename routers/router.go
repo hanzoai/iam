@@ -292,6 +292,14 @@ func InitAPI() {
 	web.Router("/api/login/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
 	web.Router("/api/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
 
+	// /login/oauth/* — upstream Casdoor convention, no /api prefix.
+	// Drop-in aliases so downstream services use standard paths.
+	web.Router("/login/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
+	web.Router("/login/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
+	web.Router("/login/oauth/refresh_token", &controllers.ApiController{}, "POST:RefreshToken")
+	web.Router("/login/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
+	web.Router("/login/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
+
 	// Hanzo OAuth aliases — clean paths for OIDC discovery
 	web.Router("/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
 	web.Router("/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
