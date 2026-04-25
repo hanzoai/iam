@@ -21,7 +21,7 @@
 // Configuration is environment-only (no conf/*.conf variables):
 //
 //	BASE_KMS_NODES       CSV of MPC node addrs, e.g.
-//	                     "https://pod-0.svc:9651,https://pod-1.svc:9651,https://pod-2.svc:9651"
+//	                     "https://pod-0.svc:9999,https://pod-1.svc:9999,https://pod-2.svc:9999"
 //	BASE_KMS_ORG_SLUG    Organization identifier for CEK derivation
 //	BASE_KMS_THRESHOLD   t-of-n threshold (defaults to ceil(n/2)+1)
 //	BASE_KMS_PASSPHRASE  Bootstrap passphrase (injected from K8s secret)
