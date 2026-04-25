@@ -98,7 +98,7 @@ func TestLoadConfig_EmptyNodes_ReturnsNil(t *testing.T) {
 }
 
 func TestLoadConfig_RequiresOrgSlug(t *testing.T) {
-	t.Setenv("BASE_KMS_NODES", "https://n0:9651")
+	t.Setenv("BASE_KMS_NODES", "https://n0:9999")
 	t.Setenv("BASE_KMS_ORG_SLUG", "")
 	if _, err := LoadConfig(); err == nil {
 		t.Fatal("expected error when BASE_KMS_ORG_SLUG is missing")
@@ -106,7 +106,7 @@ func TestLoadConfig_RequiresOrgSlug(t *testing.T) {
 }
 
 func TestLoadConfig_DefaultThreshold(t *testing.T) {
-	t.Setenv("BASE_KMS_NODES", "https://n0:9651,https://n1:9651,https://n2:9651")
+	t.Setenv("BASE_KMS_NODES", "https://n0:9999,https://n1:9999,https://n2:9999")
 	t.Setenv("BASE_KMS_ORG_SLUG", "liquidity")
 	t.Setenv("BASE_KMS_THRESHOLD", "")
 	cfg, err := LoadConfig()
@@ -125,7 +125,7 @@ func TestLoadConfig_DefaultThreshold(t *testing.T) {
 }
 
 func TestLoadConfig_ExplicitThresholdOutOfRange(t *testing.T) {
-	t.Setenv("BASE_KMS_NODES", "https://n0:9651")
+	t.Setenv("BASE_KMS_NODES", "https://n0:9999")
 	t.Setenv("BASE_KMS_ORG_SLUG", "x")
 	t.Setenv("BASE_KMS_THRESHOLD", "2")
 	if _, err := LoadConfig(); err == nil {
