@@ -70,5 +70,8 @@ swagger/*.map
 web/build/
 web/cypress/screenshots/
 web/cypress/videos/
-iam
-iamd
+/iam
+/iamd
+/iam-server
+/server
+/server_darwin_arm64
