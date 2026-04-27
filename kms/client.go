@@ -39,10 +39,10 @@ import (
 
 // Client is a process-wide singleton that fronts the base KMS plugin's SDK.
 type Client struct {
-	mu     sync.RWMutex
-	inner  *sdk.Client
-	org    string
-	ready  bool
+	mu    sync.RWMutex
+	inner *sdk.Client
+	org   string
+	ready bool
 }
 
 var (
