@@ -184,6 +184,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # semantic-release-action shells out to npm; the hanzo self-hosted
+      # runner image doesn't ship npm, so the action errors with
+      # `npm: not found` and the whole release path is skipped silently.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Create Tag with Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
