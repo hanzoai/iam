@@ -20,8 +20,9 @@ import (
 //
 // Endpoint:  POST /v1/iam/admin/applications/upsert
 // Auth:      service-token via Authorization: Bearer <token>
-//            where token is one of $HANZO_API_KEY / $KMS_SERVICE_TOKEN / $IAM_SERVICE_TOKEN.
-//            Validated by routers/auto_signin_filter.go before this handler runs.
+//
+//	where token is one of $HANZO_API_KEY / $KMS_SERVICE_TOKEN / $IAM_SERVICE_TOKEN.
+//	Validated by routers/auto_signin_filter.go before this handler runs.
 //
 // Idempotent operator-driven application provisioning. Used by liquid-operator
 // to wire service accounts (KMS, BD treasury signer, ATS settlement key, etc.)
