@@ -45,7 +45,6 @@ func InitAPI() {
 	web.AddNamespace(ns)
 
 	web.Router("/api/signup", &controllers.ApiController{}, "POST:Signup")
-	web.Router("/api/get-phone-user", &controllers.ApiController{}, "POST:GetPhoneUser")
 	web.Router("/api/login", &controllers.ApiController{}, "POST:Login")
 	web.Router("/api/get-app-login", &controllers.ApiController{}, "GET:GetApplicationLogin")
 	web.Router("/api/get-dashboard", &controllers.ApiController{}, "GET:GetDashboard")
