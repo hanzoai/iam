@@ -56,6 +56,11 @@ func isServiceTokenRoute(urlPath string) bool {
 	switch urlPath {
 	case "/api/sync-init-data":
 		return true
+	case "/api/admin/applications/upsert":
+		// Operator-driven service-account provisioning. Auth via the same
+		// HANZO_API_KEY/KMS_SERVICE_TOKEN/IAM_SERVICE_TOKEN service-token
+		// pipeline used by sync-init-data.
+		return true
 	default:
 		return false
 	}
