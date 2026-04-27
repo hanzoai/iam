@@ -35,8 +35,8 @@ var IDVHandler *idv.Handler
 func InitIDV(amlURL, jumioToken, jumioSecret, jumioEndpoint,
 	onfidoToken, onfidoWebhookToken, onfidoEndpoint,
 	plaidClientID, plaidSecret, plaidEndpoint,
-	webhookSecret, bdWebhookURL string) {
-
+	webhookSecret, bdWebhookURL string,
+) {
 	IDVService = idv.NewService(amlURL)
 
 	if jumioToken != "" {
