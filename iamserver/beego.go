@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/beego/beego/v2/core/logs"
 	"github.com/beego/beego/v2/server/web"
@@ -41,6 +42,18 @@ import (
 // persistent state lives in SQLite under DATA_DIR (replicated by Base
 // Network quasar when that flips on). There is no external cache.
 func Run() {
+	port := Init()
+	web.Run(fmt.Sprintf(":%v", port))
+}
+
+// Init runs the full IAM bootstrap (config, DB, controllers, filters,
+// background loops) but does NOT bind a listener. It returns the
+// configured HTTP port from app.conf.
+//
+// This is the entry point for in-process embedding (see
+// github.com/hanzoai/iam/pkg/iam.Embed). The standalone iamd binary
+// uses Run, which is Init + web.Run.
+func Init() int {
 	web.BConfig.WebConfig.Session.SessionOn = true
 	web.BConfig.WebConfig.Session.SessionName = "iam_session_id"
 	web.BConfig.WebConfig.Session.SessionProvider = "memory"
@@ -57,7 +70,11 @@ func Run() {
 
 	object.InitDb()
 
-	// Handle export command
+	// Handle export command. We exit the process here rather than
+	// returning a port, because the standalone iamd binary's contract is
+	// "init then run", and the embedded path never sets the export
+	// envelope. This keeps the Init() return type honest: a real,
+	// listenable port for every successful return.
 	if object.ShouldExportData() {
 		exportPath := object.GetExportFilePath()
 		err := object.DumpToFile(exportPath)
@@ -65,7 +82,7 @@ func Run() {
 			panic(fmt.Sprintf("Error exporting data to %s: %v", exportPath, err))
 		}
 		fmt.Printf("Data exported successfully to %s\n", exportPath)
-		return
+		os.Exit(0)
 	}
 
 	object.InitDefaultStorageProvider()
@@ -153,5 +170,5 @@ func Run() {
 		service.Start()
 	}
 
-	web.Run(fmt.Sprintf(":%v", port))
+	return port
 }
