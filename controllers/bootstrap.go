@@ -77,12 +77,15 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		req.ClientSecret = generateBootstrapSecret()
 	}
 
-	// Owner. Apps used by system services live under owner='admin' so they
-	// aren't bound to a single tenant. A per-tenant caller can set owner via
-	// the organization name explicitly when that's intentional.
-	owner := "admin"
-	if req.Organization != "" && req.Organization != "liquidity" && req.Organization != "admin" {
-		owner = req.Organization
+	// Owner = the requested organization. The JWT `owner` claim carries
+	// this value verbatim, and KMS (and any other URL-org-scoped service)
+	// requires `owner == URL org segment` to authorize a request. There
+	// is NO `owner=admin` shortcut — that was the cross-tenant root-key
+	// bug Red demonstrated 2026-04-21. Empty Organization defaults to
+	// "admin" so the bootstrap superuser-app keeps working unchanged.
+	owner := req.Organization
+	if owner == "" {
+		owner = "admin"
 	}
 	id := owner + "/" + req.Name
 
