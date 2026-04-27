@@ -6,9 +6,10 @@ import (
 	"github.com/beego/beego/v2/server/web/context"
 )
 
-// V1IAMRewriteFilter rewrites /v1/iam/* requests to the underlying Casdoor
+// V1IAMRewriteFilter rewrites /v1/iam/* requests to the underlying internal
 // route so the canonical /<version>/<service>/<path> pattern works without
-// duplicating every route in router.go.
+// duplicating every route in router.go. /v1/iam/* is the only public surface
+// callers should rely on.
 //
 // Most API endpoints live under /api/*. A few intentionally live at root
 // because standards expect them unprefixed. The filter maps:
