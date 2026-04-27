@@ -45,6 +45,7 @@ func InitAPI() {
 	web.AddNamespace(ns)
 
 	web.Router("/api/signup", &controllers.ApiController{}, "POST:Signup")
+	web.Router("/api/get-phone-user", &controllers.ApiController{}, "POST:GetPhoneUser")
 	web.Router("/api/login", &controllers.ApiController{}, "POST:Login")
 	web.Router("/api/get-app-login", &controllers.ApiController{}, "GET:GetApplicationLogin")
 	web.Router("/api/get-dashboard", &controllers.ApiController{}, "GET:GetDashboard")
@@ -292,8 +293,8 @@ func InitAPI() {
 	web.Router("/api/login/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
 	web.Router("/api/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
 
-	// /login/oauth/* — upstream Casdoor convention, no /api prefix.
-	// Drop-in aliases so downstream services use standard paths.
+	// /login/oauth/* — standard OAuth2 path with no /api prefix.
+	// Drop-in aliases so downstream services can use plain RFC paths.
 	web.Router("/login/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
 	web.Router("/login/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
 	web.Router("/login/oauth/refresh_token", &controllers.ApiController{}, "POST:RefreshToken")
