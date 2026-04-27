@@ -1,308 +1,167 @@
-# Hanzo IAM - LLM Context Document
+# Hanzo IAM
 
 ## Overview
 
-Hanzo IAM is the Hanzo ecosystem's Identity and Access Management server — OAuth 2.0 / OIDC / SAML / CAS / LDAP / SCIM / WebAuthn / MFA. Derived from the upstream Casdoor project (Apache 2.0). Unified authentication provider at **hanzo.id**.
+Identity & Access Management for the Hanzo + Liquidity ecosystems. OAuth 2.0 / OIDC / SAML / LDAP / SCIM / WebAuthn / MFA — all served behind a single canonical surface at `/v1/iam/*`.
 
-## Rename Status (updated 2026-04-23)
+Data lives in Base (`hanzoai/base`) — embedded SQLite with auto-migrations and replicate-to-S3 (no PostgreSQL, no Redis). Inter-service traffic uses native ZAP binary protocol.
 
-Internal naming is renamed from Casdoor → IAM. Only upstream library boundaries retain the original name.
+## API surface
 
-- JS globals: `window.IAMAuthCallback`, `window.IAMProviderHintRedirect`.
-- Session keys: `__iam_callback_react`, `iam_callback_react_fallback`.
-- Copyright headers: all upstream `Casdoor Authors` / `casbin Authors` → `Hanzo Authors`.
-- Go import aliases: `casbin.Enforcer` → `authz.Enforcer` via alias; `casdoorsdk` → `iamsdk` via alias.
-- Function renames: `CasbinToSlice` → `AuthzRuleToSlice`, `MatrixToCasbinRules` → `MatrixToAuthzRules`.
-- File renames: `casbin_engine.go` → `authz_engine.go`, `casbin_cli_api.go` → `authz_cli_api.go`, `util/casbin.go` → `util/authz.go`, `CasbinEditor.tsx` → `AuthzEditor.tsx`.
-- API endpoint: `/api/run-casbin-command` → `/api/run-authz-command`.
-- Comments and log messages: `Casbin` / `Casdoor` → `authz` / `IAM`.
-- Casbin fork: `github.com/hanzoai/authz` exists on GitHub (v2.78.0+). Import path stays `github.com/casbin/casbin/v2` with `authz` alias; `replace` directive in go.mod redirects to `github.com/hanzoai/authz/v2 v2.78.0`. Never import `hanzoai/authz` directly (module declares casbin/v2 path).
-- K8s: `CASDOOR_ORIGIN` → `originFrontend` in all manifests.
-- Replication sidecar: removed (Beego has no plugin hook). Base migration pending.
-
-### Deferred (upstream library boundaries)
-
-The following retain the `github.com/casdoor/*` import paths because they are separate upstream projects that would require a publishing fork under `hanzoai/*`:
-
-| Package | Imported by |
-|---------|-------------|
-| `github.com/casdoor/notify2` (+ service subpackages) | `notification/*.go`, `object/notification.go` |
-| `github.com/casdoor/oss` (+ casdoor subpackage) | `storage/*.go`, `object/storage.go`, `deployment/deploy.go` |
-| `github.com/casdoor/casdoor-go-sdk/casdoorsdk` | `service/oauth.go`, `service/util.go` (aliased as `iamsdk`) |
-| `github.com/casdoor/go-sms-sender` | `object/sms.go` (aliased as `sender`) |
-| `github.com/casdoor/gomail/v2` | `email/smtp.go` |
-| `github.com/casdoor/ldapserver` | `ldap/server.go`, `ldap/util.go` (aliased as `ldap`) |
-| `github.com/casbin/lego/v4` | `certificate/*.go` (ACME client) |
-
-These are tracked for a future `hanzoai/*` publishing fork. Until then, Go module resolution must keep the upstream paths.
-
-### DB schema (NOT renamed)
-
-Schema-level identifiers stay on upstream names to avoid migration:
-- Table names prefixed with `casbin_*` (e.g. `casbin_user_rule`).
-- Go struct type `xormadapter.CasbinRule`.
-
-### Provider type (NOT renamed — functional identifier)
-
-`Casdoor` is a valid upstream OAuth provider type in `web/public/ProviderHintRedirect.js` and upstream provider config. An operator can wire another Casdoor instance as an upstream OIDC IdP; the string identifies that integration target. Not branding.
-
-### Env vars
-
-Legacy `CASDOOR_*` prefixes are retained as aliases when used (already absent from our manifests). `IAM_*` prefix is preferred for new code.
-
-## Architecture
+**Public:** `/v1/iam/*` only. Internal services and SDKs target this.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Hanzo IAM (hanzo.id)                   │
-├─────────────────────────────────────────────────────────────┤
-│  Go Backend (Beego)  │  React Frontend  │  OAuth2/OIDC     │
-├─────────────────────────────────────────────────────────────┤
-│  PostgreSQL/MySQL    │  Redis           │  User Balances   │
-└─────────────────────────────────────────────────────────────┘
-            ↑                    ↑                    ↑
-    ┌───────┴───────┐    ┌───────┴───────┐    ┌──────┴──────┐
-    │   hanzo.app   │    │ cloud.hanzo.ai │    │  commerce   │
-    │  (hanzo.ai)   │    │  (AI/MCP)      │    │  (billing)  │
-    └───────────────┘    └───────────────┘    └─────────────┘
+/v1/iam/login                       — username/password + MFA
+/v1/iam/login/oauth/authorize       — OAuth2 authorization endpoint
+/v1/iam/login/oauth/access_token    — OAuth2 token endpoint (incl. client_credentials)
+/v1/iam/login/oauth/refresh_token
+/v1/iam/login/oauth/introspect
+/v1/iam/login/oauth/revoke
+/v1/iam/oauth/register              — Dynamic Client Registration (RFC 7591)
+/v1/iam/.well-known/openid-configuration
+/v1/iam/.well-known/jwks
+/v1/iam/users/...
+/v1/iam/applications/...
+/v1/iam/organizations/...
+/v1/iam/...
 ```
 
-## Environments
+A request filter rewrites `/v1/iam/X` → internal `/api/X` for all non-OAuth paths. The internal `/api/*` paths exist but should not be relied on by external callers — they may move.
 
-| Environment | URL | Compose File | Config |
-|-------------|-----|--------------|--------|
-| **Local (MySQL)** | http://localhost:8000 | `compose.mysql.yml` | `conf/app.mysql.conf` |
-| **Local (PostgreSQL)** | http://localhost:8000 | `compose.dev.yml` | `conf/app.dev.conf` |
-| **Staging** | https://stg.hanzo.id | `compose.staging.yml` | `conf/app.staging.conf` |
-| **Production** | https://hanzo.id | K8s on hanzo-k8s (`24.199.76.156`) | `IAM_DATABASE_URL` secret |
+ZAP RPC runs on a separate port for service-to-service auth (`AuthService.GetToken`, `AuthService.IntrospectToken`).
 
-## Quick Start
+## Storage
 
-### Local Development (MySQL - Recommended)
+Base under the hood. Each deployment gets its own SQLite file at `${IAM_DATA_DIR}/iam.db`. Per-org encrypted tables with a master key from KMS. WAL streamed to S3 via the replicate sidecar.
+
+Schema migrations are managed by Base (Goose-style migration files in `migrations/`). On boot, IAM applies any pending migrations against its SQLite file.
+
+For multi-tenant per-org isolation: each org gets a separate SQLite file under `${IAM_DATA_DIR}/orgs/{orgSlug}.db` with a HKDF-derived per-org DEK. See `feedback_no_postgres_anywhere.md` in memory for the broader policy.
+
+## Auth flows
+
+### User login
+
+1. Browser hits `https://iam.{env}.satschel.com/v1/iam/login`
+2. Form submit → Base verifies password + MFA
+3. Sets session, redirects to OAuth `authorize` endpoint
+4. Returns code → SPA exchanges via `/v1/iam/login/oauth/access_token`
+
+### Service-to-service (client_credentials)
+
+For machine identity (e.g. KMS pulling from IAM, or a CI job calling internal APIs):
 
 ```bash
-# Start MySQL + Redis
-docker compose -f compose.mysql.yml up -d
-
-# Build Go binary
-go build -o server_darwin_arm64 .
-
-# Run server
-cp conf/app.mysql.conf conf/app.conf
-./server_darwin_arm64
+curl -X POST https://iam.dev.satschel.com/v1/iam/login/oauth/access_token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials&client_id=<id>&client_secret=<secret>"
 ```
 
-### Docker Development
+Returns `{"access_token": "...", "expires_in": 86400, "token_type": "Bearer"}`.
+
+### JWKS for downstream JWT validation
+
+`GET /v1/iam/.well-known/jwks` — RSA public keys for verifying issued JWTs. Liquid Gateway and ATS validate tokens using JWKS — no shared secret.
+
+## Deployment
+
+| Env | URL | Image | Storage |
+|---|---|---|---|
+| devnet | `https://iam.dev.satschel.com` | `liquidityio/iam:dev` | Base/SQLite (PVC) |
+| testnet | `https://iam.test.satschel.com` | `liquidityio/iam:test` | Base/SQLite (PVC) |
+| mainnet | `https://iam.main.satschel.com` | `liquidityio/iam:main` | Base/SQLite (PVC) |
+| local | `http://localhost:8000` | `liquidityio/iam:dev` | SQLite (volume) |
+
+Deployed via `LiquidIAM` CRD reconciled by `liquid-operator`. Source CR: `~/work/liquidity/universe/k8s/platforms/{env}.yaml`.
+
+## Configuration
+
+Env vars consumed at boot:
+
+| Var | Purpose | Default |
+|---|---|---|
+| `IAM_DATA_DIR` | Base SQLite parent dir | `/data/iam` |
+| `IAM_LISTEN` | HTTP listen address | `:8000` |
+| `IAM_ZAP_LISTEN` | ZAP RPC listen | `:9653` |
+| `IAM_KMS_MASTER_KEY` | Master encryption key (KMS-sourced) | required |
+| `IAM_REPLICATE_BUCKET` | GCS bucket for WAL replication | optional |
+| `IAM_REPLICATE_AGE_RECIPIENT` | age public key for at-rest encryption | optional (required if bucket set) |
+
+**Don't** use `CASDOOR_*` env vars — they're legacy aliases retained for backward compatibility, not preferred. Use `IAM_*`.
+
+## Build
 
 ```bash
-# Build and run everything
-make dev
-
-# Or step by step
-docker compose -f compose.dev.yml build
-docker compose -f compose.dev.yml up
+cd ~/work/hanzo/iam
+go build -o iam ./cmd/iam     # backend
+cd web && pnpm build           # frontend (Vite)
 ```
 
-### Staging/Production
+CI builds multi-arch Docker image (`hanzo-build-linux-amd64` + `hanzo-build-linux-arm64` runners) and pushes to:
+- `ghcr.io/hanzoai/iam:{tag}` (canonical for Hanzo)
+- `us-docker.pkg.dev/liquidity-registry/liquidityio/iam:{tag}` (for Liquidity)
 
-```bash
-# Build staging image
-make build-staging
-
-# Deploy staging
-make staging
-
-# Build production image
-make build-prod
-
-# Deploy production
-make prod
-```
-
-## Configuration Notes
-
-### MySQL Connection Format
-For MySQL, the `dataSourceName` should NOT include the database name (it's appended from `dbName`):
-```
-dataSourceName = user:password@tcp(host:3306)/
-dbName = hanzo_iam
-```
-
-### PostgreSQL Connection Format
-```
-dataSourceName = user=hanzo password=xxx host=postgres port=5432 sslmode=disable dbname=hanzo_iam
-```
-
-## Init Data
-
-The `init_data.json` file configures:
-
-### Organization
-- **Name**: hanzo
-- **Theme**: Dark mode, primary color #fd4444
-
-### Applications
-| App | Client ID | Redirect URIs |
-|-----|-----------|---------------|
-| app-hanzo | hanzo-app-client-id | hanzo.ai, hanzo.app, localhost |
-| app-cloud | hanzo-cloud-client-id | cloud.hanzo.ai |
-| app-commerce | hanzo-commerce-client-id | commerce.hanzo.ai |
-
-### Default Admin
-- **Email**: admin@hanzo.ai
-- **Password**: admin (change in production!)
-- **Balance**: 10000 USD credits
-
-## Integration with Hanzo Ecosystem
-
-### Authentication Flow
-1. User visits hanzo.app or cloud.hanzo.ai
-2. Redirected to hanzo.id for OAuth login
-3. After auth, redirected back with token
-4. Service validates token with IAM
-
-### Billing Integration
-IAM tracks user credit balances. The flow is:
-1. **Commerce** processes payments → adds credits to IAM balance
-2. **Cloud** uses AI tokens → creates transactions in IAM (debits balance)
-3. **IAM** maintains the source of truth for user credits
-
-### SDK Integration
-```go
-// Go - using iam-go-sdk
-import "github.com/iam/iam-go-sdk/iamsdk"
-
-iamsdk.InitConfig(
-    "https://hanzo.id",
-    "hanzo-app-client-id",
-    "hanzo-app-client-secret",
-    "cert-hanzo",
-    "hanzo",
-    "app-hanzo",
-)
-```
-
-```javascript
-// JavaScript
-import { SDK } from 'iam-js-sdk'
-
-const sdk = new SDK({
-  serverUrl: 'https://hanzo.id',
-  clientId: 'hanzo-app-client-id',
-  appName: 'app-hanzo',
-  organizationName: 'hanzo',
-})
-```
-
-## Branding
-
-### Colors
-- **Primary**: #fd4444
-- **Secondary**: #ff6b6b
-- **Hover**: #e03e3e
-
-### Assets
-- Logo: `https://cdn.hanzo.ai/img/logo-white.svg`
-- Favicon: `/img/hanzo-favicon.png` (local) or `https://cdn.hanzo.ai/img/favicon.png`
-- Auth Background: `https://cdn.hanzo.ai/img/auth-bg.jpg`
-
-## CI/CD
-
-### Build Workflow (`.github/workflows/build.yml`)
-1. **Tests**: Go tests with PostgreSQL
-2. **Frontend**: Yarn build
-3. **Backend**: Go build with race detection
-4. **Linter**: gofumpt
-5. **E2E**: Cypress tests with Chrome
-6. **Release**: Semantic versioning → GitHub Release → Docker push to ghcr.io/hanzoai/iam
-
-### Deploy Workflow (`.github/workflows/docker-deploy.yml`)
-Automated deployment to Hanzo Cloud:
-- **Trigger**: Push to main/master
-- **Build**: Multi-arch Docker image (amd64/arm64)
-- **Deploy**: SSH to production server, Docker Compose update
-- **Health Check**: Waits for IAM to be healthy before completion
-
-### Required GitHub Secrets
-| Secret | Description |
-|--------|-------------|
-| `DEPLOY_HOST` | Production server IP (143.198.188.26) |
-| `DEPLOY_USER` | SSH username (root) |
-| `DEPLOY_SSH_KEY` | SSH private key for deployment |
-| `DEPLOY_PORT` | SSH port (default: 22) |
-| `SLACK_WEBHOOK` | Optional Slack notification webhook |
-
-## Production Deployment
-
-### Current Status (as of 2026-01-30)
-- **URL**: https://hanzo.id
-- **Server**: 143.198.188.26 (hanzo-gateway)
-- **Container**: hanzo-iam
-- **Network**: hanzo-network
-- **Reverse Proxy**: Traefik with automatic HTTPS
-
-### Services Deployed
-| Service | URL | Status |
-|---------|-----|--------|
-| IAM | https://hanzo.id | ✓ Running |
-| Console | https://console.hanzo.ai | ✓ Running |
-| Platform | https://platform.hanzo.ai | ✓ Running |
-
-### OAuth Applications (Production)
-| App | Client ID | Redirect URIs |
-|-----|-----------|---------------|
-| app-hanzo | hanzo-app-client-id | hanzo.ai, hanzo.app |
-| app-console | hanzo-console-client-id | console.hanzo.ai |
-| app-platform | hanzo-platform-client-id | platform.hanzo.ai |
-
-## Key Directories
+## Repository layout
 
 ```
 iam/
-├── conf/                    # Configuration files
-│   ├── app.conf            # Active config (gitignored)
-│   ├── app.dev.conf        # Docker dev (PostgreSQL)
-│   ├── app.mysql.conf      # Local dev (MySQL)
-│   ├── app.staging.conf    # Staging (stg.hanzo.id)
-│   └── app.prod.conf       # Production (hanzo.id)
-├── object/                  # Core business logic
-│   ├── adapter.go          # Database adapter
-│   ├── ormer.go            # ORM setup
-│   └── transaction.go      # Billing transactions
-├── web/                     # React frontend
-│   ├── src/
-│   │   ├── Setting.js      # UI configuration
-│   │   └── Conf.js         # App config
-│   └── public/img/         # Hanzo branding assets
-├── compose.dev.yml         # Docker dev (PostgreSQL)
-├── compose.mysql.yml       # Docker dev (MySQL)
-├── compose.staging.yml     # Staging deployment
-├── compose.production.yml  # Production deployment
-├── init_data.json          # Default org/apps/users
-└── Makefile                # Build commands
+├── cmd/iam/                 — main binary
+├── controllers/             — HTTP handlers
+├── routers/
+│   ├── router.go            — route table (/api/* internal)
+│   └── v1_iam_rewrite.go    — /v1/iam/* → /api/* filter
+├── object/                  — domain logic (users, apps, orgs, sessions)
+├── service/                 — auth flows (oauth, oidc, saml, ldap)
+├── migrations/              — Base schema migrations
+├── notification/            — email/SMS/webhook fan-out adapters
+├── storage/                 — pluggable file backends (S3, GCS, Azure, ...)
+├── web/                     — React SPA
+├── compose.yml              — local dev stack
+├── deployment/              — K8s manifests (operator-managed in prod)
+├── conf/                    — sample app.conf templates
+└── NOTICE                   — third-party license attributions
 ```
 
-## Common Issues
+## Integration points (across the stack)
 
-### "could not open file global/pg_filenode.map"
-PostgreSQL volume corruption. Fix:
+- **Liquid Gateway** (`liquid-gateway` in `liquidity` ns): validates inbound JWTs against IAM JWKS
+- **KMS** (`liquid-kms`): authenticates clients via `/v1/iam/login/oauth/access_token` (client_credentials), then mints short-lived bearer for KMS sessions
+- **ATS / BD / TA**: extract `sub` (user) and `owner` (org) from JWT claims
+- **Liquidity Console / Exchange / Superadmin / Platform**: standard authorization_code + PKCE OAuth flow
+- **MPC**: WebAuthn challenges issued via IAM, completed in browser, then user shard authorized via JWT bound to NodeID
+
+## Security posture
+
+- All secrets land in KMS first, synced to k8s `Secret` via `KMSSecret` CR — never push raw key bytes through `kubectl apply`
+- Argon2id password hashing (NEVER plaintext, NEVER bcrypt)
+- Per-org DEK derived from a master key stored in KMS — encrypted-at-rest tables
+- TLS termination at Liquid Ingress; IAM serves plain HTTP internally
+- JWKS rotation: keys are dual-published (current + previous) for graceful rollover
+
+## Testing
+
 ```bash
-docker compose -f compose.dev.yml down -v
-docker volume prune
-docker compose -f compose.dev.yml up -d
+go test ./...                       # backend unit tests
+cd web && pnpm test                 # frontend
+pnpm e2e                            # Playwright (hits live dev IAM)
 ```
 
-### "Access denied for user 'hanzo'@'%' to database 'hanzo_iamhanzo_iam'"
-MySQL config issue - dataSourceName should end with `/` not `/dbname`:
-```
-dataSourceName = hanzo:pass@tcp(localhost:3306)/    # Correct
-dataSourceName = hanzo:pass@tcp(localhost:3306)/db  # Wrong
-```
+E2E tests live at `tests/iam-e2e.spec.ts` and `tests/iam-login.spec.ts`. They run against a dev or staging IAM with a known seed user (`satoshi.nakamoto` per memory `feedback_seed_credentials.md`).
 
-## Related Projects
+## Things this is NOT
 
-| Project | Path | Integration |
-|---------|------|-------------|
-| Cloud | `~/work/hanzo/cloud` | Uses IAM for auth, creates transactions |
-| Commerce | `~/work/hanzo/commerce` | Processes payments, adds credits to IAM |
-| Universe | `~/work/hanzo/universe` | Infrastructure deployment |
+- ❌ Casdoor (the upstream library this was originally derived from has its own deployment, ours is independent)
+- ❌ A PostgreSQL service (no postgres anywhere — Base/SQLite only)
+- ❌ A Redis user (no Redis — sessions live in Base)
+- ❌ Available at `hanzo.id` for Liquidity workloads — Liquidity uses `iam.{env}.satschel.com`. `hanzo.id` is the public Hanzo brand origin, separate cluster.
+
+## Related
+
+- `~/work/hanzo/iam/NOTICE` — upstream library attributions (legal)
+- `~/work/liquidity/operator/src/crd.rs` — `LiquidIAM` CRD spec
+- `~/work/liquidity/universe/k8s/platforms/{env}.yaml` — per-env CR instances
+- Memory notes (these are policy):
+  - `feedback_iam_no_casdoor.md` — IAM is uniquely ours
+  - `feedback_no_postgres_anywhere.md` — Base/SQLite only
+  - `feedback_keys_from_mnemonic.md` — keys derive from mnemonic + KMS
+  - `feedback_seed_credentials.md` — fixed dev seed users
