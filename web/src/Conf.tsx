@@ -29,7 +29,12 @@ export let StaticBaseUrl = "";
 export const InitThemeAlgorithm = true;
 export const ThemeDefault = {
   themeType: "dark",
-  colorPrimary: "#ffffff",
+  colorPrimary: "#f2f2f2",
+  colorBgBase: "#070b13",
+  colorBgContainer: "#0d121d",
+  colorBorder: "#1f2937",
+  colorText: "#f2f2f2",
+  colorTextSecondary: "#94a3b8",
   borderRadius: 6,
   isCompact: false,
 };
