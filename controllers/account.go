@@ -184,6 +184,25 @@ func (c *ApiController) Signup() {
 		invitationName = invitation.Name
 	}
 
+	// Phone + OTP is identity. If the phone number already has a user in this
+	// organization and the OTP is valid, this is a sign-IN, not a collision.
+	// Short-circuit to the login path — no user creation, no "already exists"
+	// error. Runs BEFORE email/phone OTP validation so the validation is still
+	// performed (inside signinExistingPhoneUser) but with the existing user
+	// as the target, not a new one.
+	if application.IsSignupItemVisible("Phone") && authForm.Phone != "" && authForm.PhoneCode != "" {
+		checkPhone, _ := util.GetE164Number(authForm.Phone, authForm.CountryCode)
+		existingUser, lookupErr := object.GetUserByPhone(organization.Name, checkPhone)
+		if lookupErr != nil {
+			c.ResponseError(lookupErr.Error())
+			return
+		}
+		if existingUser != nil {
+			c.signinExistingPhoneUser(application, existingUser, &authForm, checkPhone)
+			return
+		}
+	}
+
 	userEmailVerified := false
 
 	if application.IsSignupItemVisible("Email") && application.GetSignupItemRule("Email") != "No verification" && authForm.Email != "" {
@@ -399,6 +418,153 @@ func (c *ApiController) Signup() {
 	}
 
 	c.ResponseOk(userId)
+}
+
+// GetPhoneUser
+// @Tag Account API
+// @Title GetPhoneUser
+// @Description check whether a phone number is already registered with a user,
+//              gated by a valid (but not-yet-consumed) verification code.
+//              Returns { exists: bool } so the SPA can skip the Terms screen
+//              during signup and go straight to sign-IN for existing users.
+// @router /get-phone-user [post]
+func (c *ApiController) GetPhoneUser() {
+	var body struct {
+		Organization string `json:"organization"`
+		Application  string `json:"application"`
+		Phone        string `json:"phone"`
+		CountryCode  string `json:"countryCode"`
+		PhoneCode    string `json:"phoneCode"`
+	}
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	if body.Organization == "" || body.Phone == "" || body.CountryCode == "" || body.PhoneCode == "" {
+		c.ResponseError(c.T("general:Missing parameter"))
+		return
+	}
+
+	// Rate limit by IP to mitigate enumeration attempts (even though the OTP
+	// gate already provides most of the defense).
+	clientIp := util.GetClientIpFromRequest(c.Ctx.Request)
+	if err := util.IPSignupLimiter.Allow(clientIp); err != nil {
+		c.ResponseError("Too many requests from this IP address. Please try again later.")
+		return
+	}
+
+	checkPhone, ok := util.GetE164Number(body.Phone, body.CountryCode)
+	if !ok {
+		c.ResponseError(fmt.Sprintf(c.T("verification:Phone number is invalid in your region %s"), body.CountryCode))
+		return
+	}
+
+	// Verify the OTP is valid but DO NOT consume it — the subsequent /api/signup
+	// or /api/login call will consume it atomically.
+	checkResult, err := object.CheckVerificationCode(checkPhone, body.PhoneCode, c.GetAcceptLanguage())
+	if err != nil {
+		c.ResponseError(c.T(err.Error()))
+		return
+	}
+	if checkResult.Code != object.VerificationSuccess {
+		c.ResponseError(checkResult.Msg)
+		return
+	}
+
+	user, err := object.GetUserByPhone(body.Organization, checkPhone)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	c.ResponseOk(map[string]bool{"exists": user != nil})
+}
+
+// signinExistingPhoneUser verifies the signup-form OTP for a phone number that
+// already belongs to an existing user and issues a login response for that user.
+// No user is created. Mirrors the OAuth/session response shape used by the tail
+// of Signup() so the client's auto-login path works identically to a fresh
+// signup. The sentinel string "alreadyExists" is returned in the response's
+// Data2 field so the SPA can distinguish the two paths.
+func (c *ApiController) signinExistingPhoneUser(application *object.Application, user *object.User, authForm *form.AuthForm, checkPhone string) {
+	if user.IsForbidden {
+		c.ResponseError(c.T("check:The user is forbidden to sign in, please contact the administrator"))
+		return
+	}
+	if user.IsDeleted {
+		c.ResponseError(c.T("check:The user has been deleted and cannot be used to sign in, please contact the administrator"))
+		return
+	}
+
+	// Enforce phone-OTP signup rule for existing-user sign-in. If the application
+	// explicitly disables phone verification at signup time, fall back to the
+	// standard error path — we cannot authenticate without a verified factor.
+	if application.GetSignupItemRule("Phone") == "No verification" {
+		c.ResponseError(c.T("check:Phone already exists"))
+		return
+	}
+
+	checkResult, err := object.CheckVerificationCode(checkPhone, authForm.PhoneCode, c.GetAcceptLanguage())
+	if err != nil {
+		c.ResponseError(c.T(err.Error()))
+		return
+	}
+	if checkResult.Code != object.VerificationSuccess {
+		c.ResponseError(checkResult.Msg)
+		return
+	}
+
+	// Consume the OTP so it cannot be replayed.
+	if err = object.DisableVerificationCode(checkPhone); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	// Set server session (cookie-based login).
+	c.SetSessionUsername(user.GetId())
+
+	userId := user.GetId()
+	util.LogInfo(c.Ctx, "API: [%s] signed in via phone-OTP (existing user, signup short-circuit)", userId)
+
+	// If this is an OAuth flow (clientId+responseType=code), issue an
+	// authorization code identical to the successful-signup OAuth path.
+	clientId := c.Ctx.Input.Query("clientId")
+	responseType := c.Ctx.Input.Query("responseType")
+	redirectUri := c.Ctx.Input.Query("redirectUri")
+	scope := c.Ctx.Input.Query("scope")
+	state := c.Ctx.Input.Query("state")
+	nonce := c.Ctx.Input.Query("nonce")
+	codeChallenge := c.Ctx.Input.Query("code_challenge")
+	if codeChallenge == "" {
+		codeChallenge = authForm.CodeChallenge
+	}
+
+	if clientId != "" && responseType == ResponseTypeCode {
+		consentRequired, err := object.CheckConsentRequired(user, application, scope)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		if consentRequired {
+			c.ResponseOk(map[string]bool{"required": true}, "alreadyExists")
+			return
+		}
+
+		code, err := object.GetOAuthCode(userId, clientId, "", "password", responseType, redirectUri, scope, state, nonce, codeChallenge, "", "", c.getEffectiveHost(), c.GetAcceptLanguage())
+		if err != nil {
+			c.ResponseError(err.Error(), nil)
+			return
+		}
+
+		resp := codeToResponse(code)
+		resp.Data2 = "alreadyExists"
+		c.Data["json"] = resp
+		c.ServeJSON()
+		return
+	}
+
+	c.ResponseOk(userId, "alreadyExists")
 }
 
 // Logout
