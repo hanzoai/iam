@@ -23,10 +23,10 @@ import (
 
 // Accreditation methods (SEC Rule 501 of Regulation D).
 const (
-	AccreditationIncome       = "income"        // >$200K/yr individual, >$300K/yr joint
-	AccreditationNetWorth     = "net_worth"      // >$1M excluding primary residence
-	AccreditationProfessional = "professional"   // Series 7, 65, or 82 license
-	AccreditationEntity       = "entity"         // >$5M in assets
+	AccreditationIncome       = "income"       // >$200K/yr individual, >$300K/yr joint
+	AccreditationNetWorth     = "net_worth"    // >$1M excluding primary residence
+	AccreditationProfessional = "professional" // Series 7, 65, or 82 license
+	AccreditationEntity       = "entity"       // >$5M in assets
 )
 
 // AccreditationStatus enumerates accreditation outcomes.
@@ -43,20 +43,20 @@ type AccreditationRequest struct {
 	Method string `json:"method"` // income, net_worth, professional, entity
 
 	// Income method
-	AnnualIncome     float64 `json:"annual_income,omitempty"`
-	JointIncome      float64 `json:"joint_income,omitempty"`
-	IncomeYears      int     `json:"income_years,omitempty"` // consecutive years
+	AnnualIncome float64 `json:"annual_income,omitempty"`
+	JointIncome  float64 `json:"joint_income,omitempty"`
+	IncomeYears  int     `json:"income_years,omitempty"` // consecutive years
 
 	// Net worth method
-	NetWorth         float64 `json:"net_worth,omitempty"`
+	NetWorth float64 `json:"net_worth,omitempty"`
 
 	// Professional method
-	LicenseType      string `json:"license_type,omitempty"`  // series_7, series_65, series_82
-	LicenseNumber    string `json:"license_number,omitempty"`
+	LicenseType   string `json:"license_type,omitempty"` // series_7, series_65, series_82
+	LicenseNumber string `json:"license_number,omitempty"`
 
 	// Entity method
-	EntityName       string  `json:"entity_name,omitempty"`
-	EntityAssets     float64 `json:"entity_assets,omitempty"`
+	EntityName   string  `json:"entity_name,omitempty"`
+	EntityAssets float64 `json:"entity_assets,omitempty"`
 }
 
 // AccreditationResult is the outcome of accredited investor verification.
