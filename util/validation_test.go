@@ -17,7 +17,6 @@ func TestIsValidOrigin(t *testing.T) {
 		{"https://lux.network", true},
 		{"https://explorer.lux.network", true},
 
-
 		// Allowed: localhost
 		{"http://localhost:3000", true},
 		{"http://localhost:5173", true},
