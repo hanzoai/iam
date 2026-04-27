@@ -120,6 +120,12 @@ func InitAPI() {
 	web.Router("/api/add-application", &controllers.ApiController{}, "POST:AddApplication")
 	web.Router("/api/delete-application", &controllers.ApiController{}, "POST:DeleteApplication")
 
+	// Operator-only bootstrap path. Auth via Authorization: Bootstrap <token>,
+	// where the token comes from $IAM_BOOTSTRAP_TOKEN env (set by liquid-operator).
+	// Used to wire service-account OAuth apps (KMS, BD signers, etc.) without
+	// a human admin in the loop. Disabled (503) when env unset.
+	web.Router("/api/admin/applications/upsert", &controllers.ApiController{}, "POST:BootstrapApplicationUpsert")
+
 	web.Router("/api/get-providers", &controllers.ApiController{}, "GET:GetProviders")
 	web.Router("/api/get-provider", &controllers.ApiController{}, "GET:GetProvider")
 	web.Router("/api/get-global-providers", &controllers.ApiController{}, "GET:GetGlobalProviders")
