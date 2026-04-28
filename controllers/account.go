@@ -424,9 +424,11 @@ func (c *ApiController) Signup() {
 // @Tag Account API
 // @Title GetPhoneUser
 // @Description check whether a phone number is already registered with a user,
-//              gated by a valid (but not-yet-consumed) verification code.
-//              Returns { exists: bool } so the SPA can skip the Terms screen
-//              during signup and go straight to sign-IN for existing users.
+//
+//	gated by a valid (but not-yet-consumed) verification code.
+//	Returns { exists: bool } so the SPA can skip the Terms screen
+//	during signup and go straight to sign-IN for existing users.
+//
 // @router /get-phone-user [post]
 func (c *ApiController) GetPhoneUser() {
 	var body struct {
