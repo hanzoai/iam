@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 
 	"github.com/hanzoai/iam/object"
 )
@@ -142,6 +143,34 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 
 	created, err := object.AddApplication(app)
 	if err != nil {
+		// xorm's per-org engine routing is asymmetric on the read/write sides
+		// for some org configurations: getApplication can return nil while
+		// AddApplication's INSERT lands in the global engine, where the row
+		// already exists from a prior call (or from the LiquidIAM tenant seed
+		// in init_data.json). When that happens the underlying SQLite raises
+		// UNIQUE on (owner, name). Treat it as "the row exists" and fall
+		// through to UpdateApplication so the operator's repeated upserts
+		// are actually idempotent.
+		if isUniqueConstraintErr(err) {
+			ok, uerr := object.UpdateApplication(id, app, true, c.GetAcceptLanguage())
+			if uerr != nil {
+				c.ResponseError(uerr.Error())
+				return
+			}
+			c.Data["json"] = map[string]any{
+				"status": "ok",
+				"action": "updated",
+				"data": map[string]string{
+					"name":         req.Name,
+					"organization": req.Organization,
+					"clientId":     req.ClientId,
+					"clientSecret": req.ClientSecret,
+				},
+				"updated": ok,
+			}
+			c.ServeJSON()
+			return
+		}
 		c.ResponseError(err.Error())
 		return
 	}
@@ -157,6 +186,19 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		"created": created,
 	}
 	c.ServeJSON()
+}
+
+func isUniqueConstraintErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	// SQLite: "UNIQUE constraint failed: application.owner, application.name (1555)"
+	// Postgres: "duplicate key value violates unique constraint"
+	// MySQL:    "Error 1062: Duplicate entry"
+	return strings.Contains(msg, "UNIQUE constraint failed") ||
+		strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "Duplicate entry")
 }
 
 // generateBootstrapSecret returns a 32-byte URL-safe random secret.
