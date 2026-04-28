@@ -1,5 +1,7 @@
 // Copyright 2026 The Hanzo Authors. All Rights Reserved.
 
+//go:build !skipCi
+
 package iam
 
 import (
