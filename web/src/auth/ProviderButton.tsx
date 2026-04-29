@@ -159,8 +159,17 @@ export function renderProviderLogo(provider, application, width, margin, size, l
         );
       } else {
         return (
-          <a key={provider.displayName} href={Provider.getAuthUrl(application, provider, "signup")}>
-            <img width={width} height={width} src={getProviderLogoURL(provider)} alt={provider.displayName} className="provider-img" style={{margin: margin}} />
+          <a key={provider.displayName} href={Provider.getAuthUrl(application, provider, "signup")}
+            style={{
+              display: "flex", alignItems: "center", gap: "10px",
+              width: "100%", padding: "10px 16px", boxSizing: "border-box",
+              border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px",
+              textDecoration: "none", color: "#e5e5e5",
+              fontSize: "14px", fontWeight: 500, marginBottom: "8px",
+              cursor: "pointer",
+            }}>
+            <img width={20} height={20} src={getProviderLogoURL(provider)} alt={provider.displayName} style={{borderRadius: "3px"}} />
+            <span>{provider.displayName || ("Sign in with " + provider.type)}</span>
           </a>
         );
       }
@@ -172,8 +181,17 @@ export function renderProviderLogo(provider, application, width, margin, size, l
       );
     } else if (provider.category === "Web3") {
       return (
-        <a key={provider.displayName} onClick={() => goToWeb3Url(application, provider, "signup")}>
-          <img width={width} height={width} src={getProviderLogoURL(provider)} alt={provider.displayName} className="provider-img" style={{margin: margin}} />
+        <a key={provider.displayName} onClick={() => goToWeb3Url(application, provider, "signup")}
+          style={{
+            display: "flex", alignItems: "center", gap: "10px",
+            width: "100%", padding: "10px 16px", boxSizing: "border-box",
+            border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px",
+            textDecoration: "none", color: "#e5e5e5",
+            fontSize: "14px", fontWeight: 500, marginBottom: "8px",
+            cursor: "pointer",
+          }}>
+          <img width={20} height={20} src={getProviderLogoURL(provider)} alt={provider.displayName} style={{borderRadius: "3px"}} />
+          <span>{provider.displayName || "Connect Wallet"}</span>
         </a>
       );
     }

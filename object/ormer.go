@@ -18,10 +18,12 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/beego/beego/v2/server/web"
 	_ "github.com/go-sql-driver/mysql" // db = mysql
@@ -49,23 +51,38 @@ var (
 	exportFilePath        = defaultExportFilePath
 )
 
+// initFlagOnce guards the flag registration. Re-entry (e.g. a second
+// in-process Embed in the same test binary) would panic at flag.Bool
+// because Go's flag package treats double-registration as a bug. The
+// embedded path bypasses CLI flag parsing entirely; the standalone iamd
+// path runs InitFlag exactly once at startup.
+var initFlagOnce sync.Once
+
 func InitFlag() {
-	createDatabasePtr := flag.Bool("createDatabase", false, "true if you need to create database")
-	configPathPtr := flag.String("config", defaultConfigPath, "set it to \"/your/path/app.conf\" if your config file is not in: \"/conf/app.conf\"")
-	exportDataPtr := flag.Bool("export", false, "export database to JSON file and exit (use -exportPath to specify custom location)")
-	exportFilePathPtr := flag.String("exportPath", defaultExportFilePath, "path to the exported data file (used with -export)")
-	flag.Parse()
+	initFlagOnce.Do(func() {
+		// Skip flag parsing entirely when the test runner has already
+		// parsed flags — avoids clashing with `-test.*` flags from the
+		// `testing` package and avoids re-registering "createDatabase"
+		// across multiple Embed calls.
+		if !flag.Parsed() {
+			createDatabasePtr := flag.Bool("createDatabase", false, "true if you need to create database")
+			configPathPtr := flag.String("config", defaultConfigPath, "set it to \"/your/path/app.conf\" if your config file is not in: \"/conf/app.conf\"")
+			exportDataPtr := flag.Bool("export", false, "export database to JSON file and exit (use -exportPath to specify custom location)")
+			exportFilePathPtr := flag.String("exportPath", defaultExportFilePath, "path to the exported data file (used with -export)")
+			flag.Parse()
 
-	createDatabase = *createDatabasePtr
-	configPath = *configPathPtr
-	exportData = *exportDataPtr
-	exportFilePath = *exportFilePathPtr
+			createDatabase = *createDatabasePtr
+			configPath = *configPathPtr
+			exportData = *exportDataPtr
+			exportFilePath = *exportFilePathPtr
+		}
 
-	// Load beego config from the specified config path
-	err := web.LoadAppConfig("ini", configPath)
-	if err != nil {
-		panic(fmt.Sprintf("failed to load config from %s: %v", configPath, err))
-	}
+		// Load beego config — fall back to env vars if config file missing
+		err := web.LoadAppConfig("ini", configPath)
+		if err != nil {
+			log.Printf("[WARN] config file %s not found, using environment variables: %v", configPath, err)
+		}
+	})
 }
 
 func ShouldExportData() bool {
@@ -91,12 +108,9 @@ func InitConfig() {
 func InitAdapter() {
 	if conf.GetConfigString("driverName") == "" {
 		if !util.FileExist(configPath) {
-			dir, err := os.Getwd()
-			if err != nil {
-				panic(err)
-			}
-			dir = strings.ReplaceAll(dir, "\\", "/")
-			panic(fmt.Sprintf("The IAM config file: \"app.conf\" was not found, it should be placed at: \"%s/conf/app.conf\"", dir))
+			log.Printf("[WARN] no config file at %s and driverName not set — defaulting to sqlite", configPath)
+			os.Setenv("driverName", "sqlite")
+			os.Setenv("dataSourceName", "file:iam.db?cache=shared")
 		}
 	}
 
@@ -119,16 +133,28 @@ func InitAdapter() {
 
 	// Initialize per-org SQLite isolation if configured.
 	if conf.GetConfigString("orgIsolation") == "sqlite" {
-		dataDir := conf.GetConfigString("dataDir")
-		if dataDir == "" {
-			dataDir = "data"
-		}
-		mgr, err := NewOrgDBManager(dataDir)
+		mgr, err := NewOrgDBManager(resolveDataDir())
 		if err != nil {
 			panic(fmt.Errorf("init OrgDBManager: %w", err))
 		}
 		ormer.OrgDBManager = mgr
 	}
+}
+
+// resolveDataDir returns the directory used for IAM's on-disk state.
+// The DATA_DIR environment variable wins (that is how operators override
+// config — the Liquidity operator emits DATA_DIR=/data/iam on the Deployment,
+// and the Dockerfile sets WORKDIR /, so the relative `dataDir = data` in
+// app.prod.conf would otherwise resolve to a read-only path and panic).
+// Falls back to the beego `dataDir` config key, then to "data".
+func resolveDataDir() string {
+	if v := os.Getenv("DATA_DIR"); v != "" {
+		return v
+	}
+	if v := conf.GetConfigString("dataDir"); v != "" {
+		return v
+	}
+	return "data"
 }
 
 func CreateTables() {
@@ -271,7 +297,11 @@ func createDatabaseForPostgres(driverName string, dataSourceName string, dbName 
 }
 
 func (a *Ormer) CreateDatabase() error {
-	if a.driverName == "postgres" {
+	// Postgres handles its own DB creation in createDatabaseForPostgres.
+	// SQLite has no concept of "CREATE DATABASE" — the file IS the DB —
+	// and emitting the MySQL-flavoured DDL panics the embedded path.
+	// Only MySQL/MS-SQL hit this branch.
+	if a.driverName == "postgres" || a.driverName == "sqlite" || a.driverName == "sqlite3" {
 		return nil
 	}
 

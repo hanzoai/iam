@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/casbin/casbin/v2"
+	authz "github.com/casbin/casbin/v2"
 	"github.com/hanzoai/iam/util"
 	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
@@ -35,7 +35,7 @@ type Enforcer struct {
 	Adapter string `xorm:"varchar(100)" json:"adapter"`
 
 	ModelCfg map[string]string `xorm:"-" json:"modelCfg"`
-	*casbin.Enforcer
+	*authz.Enforcer
 }
 
 func GetEnforcerCount(owner, field, value string) (int64, error) {
@@ -170,12 +170,12 @@ func (enforcer *Enforcer) InitEnforcer() error {
 		return err
 	}
 
-	casbinEnforcer, err := casbin.NewEnforcer(m.Model, NewSafeAdapter(a))
+	authzEnforcer, err := authz.NewEnforcer(m.Model, NewSafeAdapter(a))
 	if err != nil {
 		return err
 	}
 
-	enforcer.Enforcer = casbinEnforcer
+	enforcer.Enforcer = authzEnforcer
 	return nil
 }
 
@@ -201,11 +201,11 @@ func GetPolicies(id string) ([]*xormadapter.CasbinRule, error) {
 	}
 
 	pRules := enforcer.GetPolicy()
-	res := util.MatrixToCasbinRules("p", pRules)
+	res := util.MatrixToAuthzRules("p", pRules)
 
 	if enforcer.GetModel()["g"] != nil {
 		gRules := enforcer.GetGroupingPolicy()
-		res2 := util.MatrixToCasbinRules("g", gRules)
+		res2 := util.MatrixToAuthzRules("g", gRules)
 		res = append(res, res2...)
 	}
 
@@ -245,7 +245,7 @@ func GetFilteredPolicies(id string, ptype string, fieldIndex int, fieldValues ..
 		}
 	}
 
-	res := util.MatrixToCasbinRules(ptype, allRules)
+	res := util.MatrixToAuthzRules(ptype, allRules)
 	return res, nil
 }
 
