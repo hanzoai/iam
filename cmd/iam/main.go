@@ -40,7 +40,7 @@ func cmdStatus() {
 	addr := envOr("IAM_ADDR", "http://localhost:8000")
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	resp, err := client.Get(addr + "/api/health")
+	resp, err := client.Get(addr + "/healthz")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "iam: health check failed: %v\n", err)
 		os.Exit(1)
