@@ -101,8 +101,8 @@ func NewGothIdProvider(providerType string, clientId string, clientSecret string
 			Session:  &amazon.Session{},
 		}
 	case "Apple":
-		if !strings.Contains(redirectUrl, "/api/callback") {
-			redirectUrl = strings.Replace(redirectUrl, "/callback", "/api/callback", 1)
+		if !strings.Contains(redirectUrl, "/v1/iam/callback") {
+			redirectUrl = strings.Replace(redirectUrl, "/callback", "/v1/iam/callback", 1)
 		}
 
 		iat := time.Now().Unix()
