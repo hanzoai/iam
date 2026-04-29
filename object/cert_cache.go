@@ -92,6 +92,8 @@ func parseCertPrivateKey(cert *Cert, signingMethod string) (interface{}, error) 
 	var err error
 
 	switch {
+	case signingMethod == algMLDSA65:
+		key, err = parseMLDSA65PrivateKey(cert.PrivateKey)
 	case signingMethod == "" || strings.Contains(signingMethod, "RS"):
 		key, err = jwt.ParseRSAPrivateKeyFromPEM([]byte(cert.PrivateKey))
 	case strings.Contains(signingMethod, "ES"):

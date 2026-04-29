@@ -16,14 +16,14 @@ package util
 
 import xormadapter "github.com/hanzoai/xorm-adapter/v3"
 
-func CasbinToSlice(casbinRule xormadapter.CasbinRule) []string {
+func AuthzRuleToSlice(rule xormadapter.CasbinRule) []string {
 	s := []string{
-		casbinRule.V0,
-		casbinRule.V1,
-		casbinRule.V2,
-		casbinRule.V3,
-		casbinRule.V4,
-		casbinRule.V5,
+		rule.V0,
+		rule.V1,
+		rule.V2,
+		rule.V3,
+		rule.V4,
+		rule.V5,
 	}
 	// remove empty strings from end, for update model policy map
 	for i := len(s) - 1; i >= 0; i-- {
@@ -43,7 +43,7 @@ func safeReturn(policy []string, i int) string {
 	}
 }
 
-func MatrixToCasbinRules(Ptype string, policies [][]string) []*xormadapter.CasbinRule {
+func MatrixToAuthzRules(Ptype string, policies [][]string) []*xormadapter.CasbinRule {
 	res := []*xormadapter.CasbinRule{}
 
 	for _, policy := range policies {

@@ -797,9 +797,8 @@ func checkMultipleCaptchaProviders(application *Application, lang string) error 
 var validAppNamePattern = regexp.MustCompile(`^[a-z0-9]+-[a-z0-9]+(-[a-z0-9]+)*$`)
 
 func validateAppName(app *Application) error {
-	// System bootstrap apps (owner=admin, org=superuser) use legacy naming
-	// and are exempt from the org-prefix convention.
-	if app.Owner == "admin" && app.Organization == "superuser" {
+	// System/built-in apps are exempt from the org-prefix convention.
+	if app.Owner == "admin" && (app.Organization == "superuser" || app.Name == "app-built-in") {
 		return nil
 	}
 

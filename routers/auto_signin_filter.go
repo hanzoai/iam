@@ -27,7 +27,7 @@ import (
 
 func AutoSigninFilter(ctx *context.Context) {
 	urlPath := ctx.Request.URL.Path
-	if strings.HasPrefix(urlPath, "/api/login/oauth/access_token") {
+	if strings.HasPrefix(urlPath, "/login/oauth/access_token") {
 		return
 	}
 	// Skip auto-signin for OAuth token endpoints (they use client auth, not session auth).
@@ -35,7 +35,7 @@ func AutoSigninFilter(ctx *context.Context) {
 	if strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize" && urlPath != "/oauth/userinfo" && urlPath != "/oauth/logout" {
 		return
 	}
-	if urlPath == "/api/mcp" {
+	if urlPath == "/v1/iam/mcp" {
 		var req mcpself.McpRequest
 		if err := json.Unmarshal(ctx.Input.RequestBody, &req); err == nil {
 			if req.Method == "initialize" || req.Method == "notifications/initialized" || req.Method == "ping" || req.Method == "tools/list" {
