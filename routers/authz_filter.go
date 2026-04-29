@@ -16,7 +16,6 @@ package routers
 
 import (
 	stdcontext "context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -32,7 +31,8 @@ import (
 	"github.com/hanzoai/iam/util"
 )
 
-// getUsernameFromBearerToken extracts the user identity from a JWT Bearer token.
+// getUsernameFromBearerToken extracts the user identity from a JWT Bearer token
+// after verifying the token signature via the application's certificate.
 // This enables stateless API calls (e.g., from backend services forwarding user tokens)
 // without requiring an active IAM session.
 func getUsernameFromBearerToken(ctx *context.Context) string {
@@ -40,55 +40,53 @@ func getUsernameFromBearerToken(ctx *context.Context) string {
 	if !strings.HasPrefix(auth, "Bearer ") {
 		return ""
 	}
-	token := strings.TrimPrefix(auth, "Bearer ")
+	tokenString := strings.TrimPrefix(auth, "Bearer ")
 
-	// Quick JWT decode (no verification — the token was already issued by us)
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
+	// Reject malformed tokens (must have 3 dot-separated parts with non-empty signature).
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != 3 || parts[2] == "" {
 		return ""
 	}
 
-	// Base64url decode the payload
-	payload := parts[1]
-	switch len(payload) % 4 {
-	case 2:
-		payload += "=="
-	case 3:
-		payload += "="
+	// Look up the token record to find its application, then verify the
+	// JWT signature using the application's certificate — same pattern as
+	// mcpself/auth.go:GetClaimsFromToken.
+	tokenRecord, err := object.GetTokenByAccessToken(tokenString)
+	if err != nil || tokenRecord == nil {
+		logs.Warning("getUsernameFromBearerToken: token lookup failed: %v", err)
+		return ""
 	}
-	decoded, err := base64.URLEncoding.DecodeString(payload)
+
+	application, err := object.GetApplication(tokenRecord.Application)
+	if err != nil || application == nil {
+		logs.Warning("getUsernameFromBearerToken: application lookup failed for %s: %v", tokenRecord.Application, err)
+		return ""
+	}
+
+	claims, err := object.ParseJwtTokenByApplication(tokenString, application)
 	if err != nil {
+		logs.Warning("getUsernameFromBearerToken: JWT verification failed: %v", err)
 		return ""
 	}
 
-	var claims struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
-		Sub   string `json:"sub"`
-	}
-	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return ""
-	}
-
-	// Casdoor tokens have owner + name fields
-	if claims.Owner != "" && claims.Name != "" {
-		return fmt.Sprintf("%s/%s", claims.Owner, claims.Name)
+	if claims.User != nil && claims.User.Owner != "" && claims.User.Name != "" {
+		return fmt.Sprintf("%s/%s", claims.User.Owner, claims.User.Name)
 	}
 	return ""
 }
 
-// isOrgAppManagementRoute returns true for organization and application CRUD
-// endpoints that authenticated users should be able to access.
+// isOrgAppManagementRoute returns true for organization and application read
+// endpoints that authenticated users should be able to access without authz
+// evaluation. Mutation routes (add/update/delete) are NOT bypassed — they
+// must pass through the authz enforcer to prevent privilege escalation.
 func isOrgAppManagementRoute(method, urlPath string) bool {
+	if method != "GET" {
+		return false
+	}
 	switch urlPath {
-	case "/api/add-organization", "/api/update-organization", "/api/delete-organization":
-		return method == "POST"
-	case "/api/get-organizations", "/api/get-organization":
-		return method == "GET"
-	case "/api/add-application", "/api/update-application", "/api/delete-application":
-		return method == "POST"
-	case "/api/get-applications":
-		return method == "GET"
+	case "/v1/iam/get-organizations", "/v1/iam/get-organization",
+		"/v1/iam/get-applications", "/v1/iam/get-application":
+		return true
 	}
 	return false
 }
@@ -163,16 +161,16 @@ func getObject(ctx *context.Context) (string, string, error) {
 	path := ctx.Request.URL.Path
 
 	// Special handling for MCP requests
-	if path == "/api/mcp" && method == http.MethodPost {
+	if path == "/v1/iam/mcp" && method == http.MethodPost {
 		return getMcpObject(ctx)
 	}
 
-	if strings.HasPrefix(path, "/api/server/") {
+	if strings.HasPrefix(path, "/v1/iam/server/") {
 		return ctx.Input.Param(":owner"), ctx.Input.Param(":name"), nil
 	}
 
 	if method == http.MethodGet {
-		if ctx.Request.URL.Path == "/api/get-policies" {
+		if ctx.Request.URL.Path == "/v1/iam/get-policies" {
 			if ctx.Input.Query("id") == "/" {
 				adapterId := ctx.Input.Query("adapterId")
 				if adapterId != "" {
@@ -187,7 +185,7 @@ func getObject(ctx *context.Context) (string, string, error) {
 			}
 		}
 
-		if !(strings.HasPrefix(ctx.Request.URL.Path, "/api/get-") && strings.HasSuffix(ctx.Request.URL.Path, "s")) {
+		if !(strings.HasPrefix(ctx.Request.URL.Path, "/v1/iam/get-") && strings.HasSuffix(ctx.Request.URL.Path, "s")) {
 			// query == "?id=built-in/admin"
 			id := ctx.Input.Query("id")
 			if id != "" {
@@ -202,7 +200,7 @@ func getObject(ctx *context.Context) (string, string, error) {
 
 		return "", "", nil
 	} else {
-		if path == "/api/add-policy" || path == "/api/remove-policy" || path == "/api/update-policy" || path == "/api/send-invitation" {
+		if path == "/v1/iam/add-policy" || path == "/v1/iam/remove-policy" || path == "/v1/iam/update-policy" || path == "/v1/iam/send-invitation" {
 			id := ctx.Input.Query("id")
 			if id != "" {
 				return util.GetOwnerAndNameFromIdWithError(id)
@@ -240,7 +238,7 @@ func getObject(ctx *context.Context) (string, string, error) {
 			return obj.Owner, obj.Name, nil
 		}
 
-		if path == "/api/delete-resource" {
+		if path == "/v1/iam/delete-resource" {
 			tokens := strings.Split(obj.Name, "/")
 			if len(tokens) >= 5 {
 				obj.Name = tokens[4]
@@ -252,7 +250,7 @@ func getObject(ctx *context.Context) (string, string, error) {
 }
 
 func willLog(subOwner string, subName string, method string, urlPath string, objOwner string, objName string) bool {
-	if subOwner == "anonymous" && subName == "anonymous" && method == "GET" && (urlPath == "/api/get-account" || urlPath == "/api/get-app-login") && objOwner == "" && objName == "" {
+	if subOwner == "anonymous" && subName == "anonymous" && method == "GET" && (urlPath == "/v1/iam/get-account" || urlPath == "/v1/iam/get-app-login") && objOwner == "" && objName == "" {
 		return false
 	}
 	return true
@@ -269,28 +267,28 @@ func getUrlPath(ctx *context.Context) string {
 		return "/scim"
 	}
 
-	if strings.HasPrefix(urlPath, "/api/login/oauth") {
-		return "/api/login/oauth"
+	if strings.HasPrefix(urlPath, "/login/oauth") {
+		return "/login/oauth"
 	}
 
-	// Normalize /oauth/* aliases to their canonical /api/ paths for authz
+	// Normalize /oauth/* aliases to their canonical paths for authz.
 	switch urlPath {
 	case "/oauth/token", "/oauth/access_token", "/oauth/refresh", "/oauth/introspect", "/oauth/revoke":
-		return "/api/login/oauth"
+		return "/login/oauth"
 	case "/oauth/userinfo":
-		return "/api/userinfo"
+		return "/v1/iam/userinfo"
 	case "/oauth/device":
-		return "/api/device-auth"
+		return "/v1/iam/device-auth"
 	case "/oauth/logout":
-		return "/api/logout"
+		return "/v1/iam/logout"
 	}
 
-	if strings.HasPrefix(urlPath, "/api/webauthn") {
-		return "/api/webauthn"
+	if strings.HasPrefix(urlPath, "/v1/iam/webauthn") {
+		return "/v1/iam/webauthn"
 	}
 
-	if strings.HasPrefix(urlPath, "/api/saml/redirect") {
-		return "/api/saml/redirect"
+	if strings.HasPrefix(urlPath, "/v1/iam/saml/redirect") {
+		return "/v1/iam/saml/redirect"
 	}
 
 	return urlPath
@@ -298,7 +296,7 @@ func getUrlPath(ctx *context.Context) string {
 
 func getExtraInfo(ctx *context.Context, urlPath string) map[string]interface{} {
 	var extra map[string]interface{}
-	if urlPath == "/api/mcp" {
+	if urlPath == "/v1/iam/mcp" {
 		var m map[string]interface{}
 		if err := json.Unmarshal(ctx.Input.RequestBody, &m); err != nil {
 			return nil
@@ -366,7 +364,7 @@ func ApiFilter(ctx *context.Context) {
 	// Allow authenticated (non-anonymous) users to manage organizations and
 	// applications. These operations are essential for multi-tenant workflows
 	// where org admins create/manage orgs from frontend apps via Bearer token.
-	// The Casbin enforcer has matching policies, but xorm boolean deserialization
+	// The authz enforcer has matching policies, but xorm boolean deserialization
 	// issues can cause the user.IsAdmin check to fail. This bypass ensures
 	// org/app CRUD works reliably for any authenticated user.
 	if subOwner != "anonymous" && subName != "anonymous" {
@@ -391,7 +389,7 @@ func ApiFilter(ctx *context.Context) {
 	extraInfo := getExtraInfo(ctx, urlPath)
 
 	objOwner, objName := "", ""
-	if urlPath != "/api/get-app-login" && urlPath != "/api/get-resource" {
+	if urlPath != "/v1/iam/get-app-login" && urlPath != "/v1/iam/get-resource" {
 		var err error
 		objOwner, objName, err = getObject(ctx)
 		if err != nil {
@@ -400,8 +398,8 @@ func ApiFilter(ctx *context.Context) {
 		}
 	}
 
-	if strings.HasPrefix(urlPath, "/api/notify-payment") {
-		urlPath = "/api/notify-payment"
+	if strings.HasPrefix(urlPath, "/v1/iam/notify-payment") {
+		urlPath = "/v1/iam/notify-payment"
 	}
 
 	isAllowed := authz.IsAllowed(subOwner, subName, method, urlPath, objOwner, objName, extraInfo)
@@ -423,7 +421,7 @@ func ApiFilter(ctx *context.Context) {
 	}
 
 	if !isAllowed {
-		if urlPath == "/api/mcp" || strings.HasPrefix(urlPath, "/api/server/") {
+		if urlPath == "/v1/iam/mcp" || strings.HasPrefix(urlPath, "/v1/iam/server/") {
 			denyMcpRequest(ctx)
 		} else {
 			denyRequest(ctx)
