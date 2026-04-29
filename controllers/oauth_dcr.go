@@ -29,7 +29,7 @@ import (
 // @Param   body    body   object.DynamicClientRegistrationRequest  true        "Client registration request"
 // @Success 201 {object} object.DynamicClientRegistrationResponse
 // @Failure 400 {object} object.DcrError
-// @router /api/oauth/register [post]
+// @router /oauth/register [post]
 func (c *ApiController) DynamicClientRegister() {
 	var req object.DynamicClientRegistrationRequest
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &req)
