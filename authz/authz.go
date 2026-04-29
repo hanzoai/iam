@@ -17,14 +17,14 @@ package authz
 import (
 	"strings"
 
-	"github.com/casbin/casbin/v2"
+	authzengine "github.com/casbin/casbin/v2"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 	stringadapter "github.com/qiangmzsx/string-adapter/v2"
 )
 
-var Enforcer *casbin.Enforcer
+var Enforcer *authzengine.Enforcer
 
 func InitApi() {
 	e, err := object.GetInitializedEnforcer(util.GetId("superuser", "api-enforcer-superuser"))
@@ -40,49 +40,49 @@ func InitApi() {
 		ruleText := `
 p, built-in, *, *, *, *, *
 p, app, *, *, *, *, *
-p, *, !anonymous, POST, /api/add-organization, admin, *
-p, *, !anonymous, POST, /api/update-organization, admin, *
-p, *, !anonymous, POST, /api/delete-organization, admin, *
-p, *, !anonymous, GET, /api/get-organizations, *, *
-p, *, !anonymous, GET, /api/get-organization, *, *
-p, *, !anonymous, POST, /api/add-application, *, *
-p, *, !anonymous, POST, /api/update-application, *, *
-p, *, !anonymous, POST, /api/delete-application, *, *
-p, *, !anonymous, GET, /api/get-applications, *, *
-p, *, *, POST, /api/signup, *, *
-p, *, *, GET, /api/get-email-and-phone, *, *
-p, *, *, POST, /api/login, *, *
-p, *, *, GET, /api/get-app-login, *, *
-p, *, *, POST, /api/logout, *, *
-p, *, *, GET, /api/logout, *, *
-p, *, *, POST, /api/sso-logout, *, *
-p, *, *, GET, /api/sso-logout, *, *
-p, *, *, POST, /api/callback, *, *
-p, *, *, POST, /api/device-auth, *, *
-p, *, *, GET, /api/get-account, *, *
-p, *, *, GET, /api/userinfo, *, *
-p, *, *, GET, /api/user, *, *
+p, *, !anonymous, POST, /v1/iam/add-organization, admin, *
+p, *, !anonymous, POST, /v1/iam/update-organization, admin, *
+p, *, !anonymous, POST, /v1/iam/delete-organization, admin, *
+p, *, !anonymous, GET, /v1/iam/get-organizations, *, *
+p, *, !anonymous, GET, /v1/iam/get-organization, *, *
+p, *, !anonymous, POST, /v1/iam/add-application, *, *
+p, *, !anonymous, POST, /v1/iam/update-application, *, *
+p, *, !anonymous, POST, /v1/iam/delete-application, *, *
+p, *, !anonymous, GET, /v1/iam/get-applications, *, *
+p, *, *, POST, /v1/iam/signup, *, *
+p, *, *, GET, /v1/iam/get-email-and-phone, *, *
+p, *, *, POST, /v1/iam/login, *, *
+p, *, *, GET, /v1/iam/get-app-login, *, *
+p, *, *, POST, /v1/iam/logout, *, *
+p, *, *, GET, /v1/iam/logout, *, *
+p, *, *, POST, /v1/iam/sso-logout, *, *
+p, *, *, GET, /v1/iam/sso-logout, *, *
+p, *, *, POST, /v1/iam/callback, *, *
+p, *, *, POST, /v1/iam/device-auth, *, *
+p, *, *, GET, /v1/iam/get-account, *, *
+p, *, *, GET, /v1/iam/userinfo, *, *
+p, *, *, GET, /v1/iam/user, *, *
 p, *, *, GET, /healthz, *, *
-p, *, *, *, /api/webhook, *, *
-p, *, *, GET, /api/get-qrcode, *, *
-p, *, *, GET, /api/get-webhook-event, *, *
-p, *, *, GET, /api/get-captcha-status, *, *
-p, *, *, *, /api/login/oauth, *, *
-p, *, *, POST, /api/oauth/register, *, *
-p, *, *, GET, /api/get-application, *, *
-p, *, *, GET, /api/get-organization-applications, *, *
-p, *, *, GET, /api/get-user-application, *, *
-p, *, *, POST, /api/upload-users, *, *
-p, *, *, GET, /api/get-resources, *, *
-p, *, *, GET, /api/get-records, *, *
-p, *, *, POST, /api/unlink, *, *
-p, *, *, POST, /api/set-password, *, *
-p, *, *, POST, /api/send-verification-code, *, *
-p, *, *, GET, /api/get-captcha, *, *
-p, *, *, POST, /api/verify-captcha, *, *
-p, *, *, POST, /api/verify-code, *, *
-p, *, *, POST, /api/reset-email-or-phone, *, *
-p, *, *, POST, /api/upload-resource, *, *
+p, *, *, *, /v1/iam/webhook, *, *
+p, *, *, GET, /v1/iam/get-qrcode, *, *
+p, *, *, GET, /v1/iam/get-webhook-event, *, *
+p, *, *, GET, /v1/iam/get-captcha-status, *, *
+p, *, *, *, /login/oauth, *, *
+p, *, *, POST, /oauth/register, *, *
+p, *, *, GET, /v1/iam/get-application, *, *
+p, *, *, GET, /v1/iam/get-organization-applications, *, *
+p, *, *, GET, /v1/iam/get-user-application, *, *
+p, *, *, POST, /v1/iam/upload-users, *, *
+p, *, *, GET, /v1/iam/get-resources, *, *
+p, *, *, GET, /v1/iam/get-records, *, *
+p, *, *, POST, /v1/iam/unlink, *, *
+p, *, *, POST, /v1/iam/set-password, *, *
+p, *, *, POST, /v1/iam/send-verification-code, *, *
+p, *, *, GET, /v1/iam/get-captcha, *, *
+p, *, *, POST, /v1/iam/verify-captcha, *, *
+p, *, *, POST, /v1/iam/verify-code, *, *
+p, *, *, POST, /v1/iam/reset-email-or-phone, *, *
+p, *, *, POST, /v1/iam/upload-resource, *, *
 p, *, *, GET, /.well-known/openid-configuration, *, *
 p, *, *, GET, /.well-known/webfinger, *, *
 p, *, *, *, /.well-known/jwks, *, *
@@ -90,32 +90,32 @@ p, *, *, GET, /.well-known/acme-challenge, *, *
 p, *, *, GET, /.well-known/:application/openid-configuration, *, *
 p, *, *, GET, /.well-known/:application/webfinger, *, *
 p, *, *, *, /.well-known/:application/jwks, *, *
-p, *, *, GET, /api/get-saml-login, *, *
-p, *, *, POST, /api/acs, *, *
-p, *, *, GET, /api/saml/metadata, *, *
-p, *, *, *, /api/saml/redirect, *, *
+p, *, *, GET, /v1/iam/get-saml-login, *, *
+p, *, *, POST, /v1/iam/acs, *, *
+p, *, *, GET, /v1/iam/saml/metadata, *, *
+p, *, *, *, /v1/iam/saml/redirect, *, *
 p, *, *, *, /cas, *, *
 p, *, *, *, /scim, *, *
-p, *, *, *, /api/webauthn, *, *
-p, *, *, GET, /api/get-release, *, *
-p, *, *, GET, /api/get-default-application, *, *
-p, *, *, GET, /api/get-prometheus-info, *, *
-p, *, *, *, /api/metrics, *, *
-p, *, *, GET, /api/get-provider, *, *
-p, *, *, GET, /api/get-organization-names, *, *
-p, *, *, GET, /api/get-project, *, *
-p, *, *, GET, /api/get-projects, *, *
-p, *, *, GET, /api/get-organization-projects, *, *
-p, *, *, GET, /api/get-all-objects, *, *
-p, *, *, GET, /api/get-all-actions, *, *
-p, *, *, GET, /api/get-all-roles, *, *
-p, *, *, GET, /api/run-casbin-command, *, *
-p, *, *, POST, /api/refresh-engines, *, *
-p, *, *, GET, /api/get-invitation-info, *, *
-p, *, *, GET, /api/faceid-signin-begin, *, *
-p, *, *, GET, /api/registry/token, *, *
-p, *, *, GET, /api/registry/jwks, *, *
-p, *, *, POST, /api/sync-init-data, *, *
+p, *, *, *, /v1/iam/webauthn, *, *
+p, *, *, GET, /v1/iam/get-release, *, *
+p, *, *, GET, /v1/iam/get-default-application, *, *
+p, *, *, GET, /v1/iam/get-prometheus-info, *, *
+p, *, *, *, /v1/iam/metrics, *, *
+p, *, *, GET, /v1/iam/get-provider, *, *
+p, *, *, GET, /v1/iam/get-organization-names, *, *
+p, *, *, GET, /v1/iam/get-project, *, *
+p, *, *, GET, /v1/iam/get-projects, *, *
+p, *, *, GET, /v1/iam/get-organization-projects, *, *
+p, *, *, GET, /v1/iam/get-all-objects, *, *
+p, *, *, GET, /v1/iam/get-all-actions, *, *
+p, *, *, GET, /v1/iam/get-all-roles, *, *
+p, *, *, GET, /v1/iam/run-authz-command, *, *
+p, *, *, POST, /v1/iam/refresh-engines, *, *
+p, *, *, GET, /v1/iam/get-invitation-info, *, *
+p, *, *, GET, /v1/iam/faceid-signin-begin, *, *
+p, *, *, GET, /v1/iam/registry/token, *, *
+p, *, *, GET, /v1/iam/registry/jwks, *, *
+p, *, *, POST, /v1/iam/sync-init-data, *, *
 `
 
 		sa := stringadapter.NewAdapter(ruleText)
@@ -136,7 +136,7 @@ p, *, *, POST, /api/sync-init-data, *, *
 }
 
 func IsAllowed(subOwner string, subName string, method string, urlPath string, objOwner string, objName string, extraInfo map[string]interface{}) bool {
-	if urlPath == "/api/mcp" {
+	if urlPath == "/v1/iam/mcp" {
 		if detailPath, ok := extraInfo["detailPathUrl"].(string); ok {
 			if detailPath == "initialize" || detailPath == "notifications/initialized" || detailPath == "ping" || detailPath == "tools/list" {
 				return true
@@ -198,15 +198,15 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 
 func isAllowedInDemoMode(subOwner string, subName string, method string, urlPath string, objOwner string, objName string) bool {
 	if method == "POST" {
-		if strings.HasPrefix(urlPath, "/api/login") || urlPath == "/api/logout" || urlPath == "/api/sso-logout" || urlPath == "/api/signup" || urlPath == "/api/callback" || urlPath == "/api/send-verification-code" || urlPath == "/api/send-email" || urlPath == "/api/verify-captcha" || urlPath == "/api/verify-code" || urlPath == "/api/check-user-password" || strings.HasPrefix(urlPath, "/api/mfa/") || urlPath == "/api/webhook" || urlPath == "/api/get-qrcode" || urlPath == "/api/refresh-engines" {
+		if strings.HasPrefix(urlPath, "/v1/iam/login") || strings.HasPrefix(urlPath, "/login/oauth") || urlPath == "/v1/iam/logout" || urlPath == "/v1/iam/sso-logout" || urlPath == "/v1/iam/signup" || urlPath == "/v1/iam/callback" || urlPath == "/v1/iam/send-verification-code" || urlPath == "/v1/iam/send-email" || urlPath == "/v1/iam/verify-captcha" || urlPath == "/v1/iam/verify-code" || urlPath == "/v1/iam/check-user-password" || strings.HasPrefix(urlPath, "/v1/iam/mfa/") || urlPath == "/v1/iam/webhook" || urlPath == "/v1/iam/get-qrcode" || urlPath == "/v1/iam/refresh-engines" {
 			return true
-		} else if urlPath == "/api/update-user" {
+		} else if urlPath == "/v1/iam/update-user" {
 			// Allow ordinary users to update their own information
 			if (subOwner == objOwner && subName == objName || subOwner == "app") && !(subOwner == "superuser" && subName == "admin") {
 				return true
 			}
 			return false
-		} else if urlPath == "/api/upload-resource" {
+		} else if urlPath == "/v1/iam/upload-resource" {
 			if subOwner == "app" && (subName == "hanzo-app" || subName == "app-console") {
 				return true
 			}

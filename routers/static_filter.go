@@ -129,9 +129,13 @@ func StaticFilter(ctx *context.Context) {
 		http.ServeContent(ctx.ResponseWriter, ctx.Request, "acme-challenge", time.Now(), strings.NewReader("content"))
 	}
 
-	// /oauth/* routes are registered directly in router.go — skip to Beego router
-	// Exception: /oauth/authorize is a frontend route, not a backend API
-	if strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/.well-known/") || (strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize") {
+	// /oauth/* and /login/oauth/* routes are registered directly in router.go — skip to Beego router.
+	// Exception: /oauth/authorize is a frontend route, not a backend API.
+	if strings.HasPrefix(urlPath, "/v1/iam/") || strings.HasPrefix(urlPath, "/.well-known/") || strings.HasPrefix(urlPath, "/login/oauth/") || (strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize") {
+		return
+	}
+	// Let Beego's static file handler serve the new admin UI at /_/iam/.
+	if strings.HasPrefix(urlPath, "/_/iam") {
 		return
 	}
 	if serveAuthCallbackHandlerScript(ctx) {
@@ -160,6 +164,17 @@ func StaticFilter(ctx *context.Context) {
 		}
 
 		if serveProviderHintRedirectPage(ctx) {
+			return
+		}
+
+		// /oauth/authorize is the OIDC-advertised endpoint but the SPA mounts
+		// the login form at /login/oauth/authorize. Hand off to the Beego
+		// router so OAuthAuthorizeRedirect can 302 to the SPA route — serving
+		// index.html here drops the request on App.tsx's catch-all 404 because
+		// isEntryPages() only matches /login/*, /signup/*, etc. This regressed
+		// non-default-brand tenants whose OIDC clients hit /oauth/authorize
+		// directly (default brand tends to enter via /login/oauth/authorize).
+		if urlPath == "/oauth/authorize" {
 			return
 		}
 	}

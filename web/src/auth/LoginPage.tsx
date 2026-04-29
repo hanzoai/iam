@@ -174,7 +174,7 @@ function LoginPage(props) {
     case "verificationCodeEmail": return i18next.t("general:Email");
     case "verificationCodePhone": return i18next.t("general:Phone");
     case "ldap": return i18next.t("login:LDAP username, Email or phone");
-    default: return i18next.t("login:username, Email or phone");
+    default: return i18next.t("login:Username, email, or phone");
     }
   }, [loginMethod]);
 
@@ -686,6 +686,13 @@ function LoginPage(props) {
 
   // --- Helpers ---
 
+  // Strip emoji-only labels (upstream defaults such as a red circle emoji).
+  // Returns the label if it contains at least one ASCII letter/digit, null otherwise.
+  const sanitizeLabel = (label) => {
+    if (!label) {return null;}
+    return /[a-zA-Z0-9]/.test(label) ? label : null;
+  };
+
   const isProviderVisible = (providerItem) => {
     if (mode === "signup") {
       return Setting.isProviderVisibleForSignUp(providerItem);
@@ -795,12 +802,13 @@ function LoginPage(props) {
             <Form.Item
               name="password"
               className="login-password"
-              label={signinItem.label ? signinItem.label : null}
+              label={sanitizeLabel(signinItem.label)}
               rules={[{required: true, message: i18next.t("login:Please input your password!")}]}
             >
               <Input.Password
                 className="login-password-input"
                 prefix={<Lock className="w-4 h-4 text-neutral-500" />}
+                iconRender={(visible) => visible ? <Eye className="w-4 h-4 text-neutral-400 cursor-pointer" /> : <EyeOff className="w-4 h-4 text-neutral-400 cursor-pointer" />}
                 type="password"
                 placeholder={signinItem.placeholder ? signinItem.placeholder : i18next.t("general:Password")}
                 disabled={loginMethod === "password" ? !Setting.isPasswordEnabled(application) : !Setting.isLdapEnabled(application)}
@@ -842,7 +850,7 @@ function LoginPage(props) {
         <Col span={24}>
           <Form.Item
             name="code"
-            label={signinItem.label ? signinItem.label : null}
+            label={sanitizeLabel(signinItem.label)}
             rules={[{required: true, message: i18next.t("login:Please input your code!")}]}
             className="verification-code"
           >
@@ -1042,7 +1050,7 @@ function LoginPage(props) {
           <Form.Item
             name="username"
             className="login-username"
-            label={signinItem.label ? signinItem.label : null}
+            label={sanitizeLabel(signinItem.label)}
             rules={[
               {
                 required: loginMethod !== "webAuthn",
@@ -1221,8 +1229,10 @@ function LoginPage(props) {
                 const order = (p) => {
                   if (p.provider.category === "Web3") {return 0;}
                   if (p.provider.type === "Google") {return 1;}
-                  if (p.provider.type === "GitHub") {return 2;}
-                  return 3;
+                  if (p.provider.type === "Apple") {return 2;}
+                  if (p.provider.type === "Facebook") {return 3;}
+                  if (p.provider.type === "GitHub") {return 4;}
+                  return 5;
                 };
                 return order(a) - order(b);
               }).map((providerItem, id) => {
@@ -1247,6 +1257,13 @@ function LoginPage(props) {
             }
             {renderOtherFormProvider(application)}
           </Form.Item>
+          {showForm && application.providers.filter(providerItem => isProviderVisible(providerItem)).length > 0 && (
+            <div style={{display: "flex", alignItems: "center", gap: "12px", margin: "4px 0 12px"}}>
+              <div style={{flex: 1, height: "1px", background: "rgba(255,255,255,0.1)"}} />
+              <span style={{color: "rgba(255,255,255,0.3)", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em"}}>or</span>
+              <div style={{flex: 1, height: "1px", background: "rgba(255,255,255,0.1)"}} />
+            </div>
+          )}
         </div>
       );
     } else if (signinItem.name === "Captcha" && signinItem.rule === "inline") {
