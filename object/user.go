@@ -1045,8 +1045,19 @@ func AddUser(user *User, lang string) (bool, error) {
 		user.Id = id
 	}
 
-	if user.Owner == "" || user.Name == "" {
+	if user.Owner == "" {
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "user:the user's owner and name should not be empty"))
+	}
+
+	// Auto-generate username if not provided (onboarding flows collect phone/email only).
+	if user.Name == "" {
+		if user.Phone != "" {
+			user.Name = "user_" + user.Phone[len(user.Phone)-min(10, len(user.Phone)):]
+		} else if user.Email != "" {
+			user.Name = strings.SplitN(user.Email, "@", 2)[0]
+		} else {
+			user.Name = util.GetRandomName()
+		}
 	}
 
 	if CheckUsernameWithEmail(user.Name, "en") != "" {
@@ -1061,15 +1072,11 @@ func AddUser(user *User, lang string) (bool, error) {
 		return false, fmt.Errorf(i18n.Translate(lang, "auth:the organization: %s is not found"), user.Owner)
 	}
 
-	if user.Owner != "admin" {
-		applicationCount, err := GetOrganizationApplicationCount(organization.Owner, organization.Name, "", "")
-		if err != nil {
-			return false, err
-		}
-		if applicationCount == 0 {
-			return false, fmt.Errorf(i18n.Translate(lang, "general:The organization: %s should have one application at least"), organization.Owner)
-		}
-	}
+	// Skip application-count gate during user creation. In per-org SQLite
+	// mode the count query can return 0 even when apps exist (they live in
+	// the admin org's DB, not the tenant org's DB). Apps are validated at
+	// login time via client_id anyway.
+	// See: https://github.com/hanzoai/iam/issues/1
 
 	if user.BalanceCurrency == "" {
 		if organization.BalanceCurrency != "" {

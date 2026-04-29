@@ -264,6 +264,16 @@ func readTokenFromFile() (string, string) {
 
 func initBuiltInCert() {
 	tokenJwtCertificate, tokenJwtPrivateKey := readTokenFromFile()
+
+	// If no PEM files on disk, generate fresh RSA keys.
+	if tokenJwtCertificate == "" || tokenJwtPrivateKey == "" {
+		var err error
+		tokenJwtCertificate, tokenJwtPrivateKey, err = generateRsaKeys(4096, 256, 20, "Hanzo", "Hanzo")
+		if err != nil {
+			panic(fmt.Sprintf("failed to generate RSA keys for cert-superuser: %v", err))
+		}
+	}
+
 	cert, err := getCert("admin", "cert-superuser")
 	if err != nil {
 		panic(err)
