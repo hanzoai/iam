@@ -366,7 +366,7 @@ export const OtherProviderInfo = {
       url: "https://metamask.io/",
     },
     "Web3Onboard": {
-      logo: `${StaticBaseUrl}/img/social_web3onboard.svg`,
+      logo: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1' y='4' width='22' height='16' rx='2' ry='2'/%3E%3Cline x1='1' y1='10' x2='23' y2='10'/%3E%3C/svg%3E",
       url: "https://onboard.blocknative.com/",
     },
   },
@@ -1213,9 +1213,26 @@ export function getClickable(text) {
   );
 }
 
+// Providers with local SVG assets in /buttons/ — no external CDN needed
+const localProviderLogos: Record<string, string> = {
+  Google: "/buttons/google.svg",
+  GitHub: "/buttons/github.svg",
+  Apple: "/buttons/apple.svg",
+  Facebook: "/buttons/facebook.svg",
+  LinkedIn: "/buttons/linkedin.svg",
+  Discord: "/buttons/discord.svg",
+  Slack: "/buttons/slack.svg",
+  Microsoft: "/buttons/microsoft.svg",
+  Twitter: "/buttons/twitter.svg",
+};
+
 export function getProviderLogoURL(provider) {
   if (provider.type.startsWith("Custom") && provider.customLogo) {
     return provider.customLogo;
+  }
+  // Prefer local SVG assets over external CDN
+  if (localProviderLogos[provider.type]) {
+    return localProviderLogos[provider.type];
   }
   if (provider.category === "OAuth") {
     const type = provider.type.startsWith("Custom") ? "Custom" : provider.type;
@@ -2468,7 +2485,7 @@ export function getApiPaths() {
   res.push("acs", "saml/metadata");
 
   // Hanzo engine APIs
-  res.push("run-casbin-command", "refresh-engines");
+  res.push("run-authz-command", "refresh-engines");
 
   // Monitoring and health APIs
   res.push("health", "metrics");
