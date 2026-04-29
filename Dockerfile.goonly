@@ -1,0 +1,17 @@
+# Go-only build — frontend pre-built in ui/dist/ via go:embed
+FROM golang:1.26-alpine AS builder
+RUN apk add --no-cache gcc musl-dev
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=1 go build -trimpath -o /iamd ./cmd/iamd/
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
+RUN adduser -D -u 65532 appuser
+COPY --from=builder /iamd /app/iamd
+WORKDIR /app
+USER appuser
+EXPOSE 8000
+ENTRYPOINT ["/app/iamd"]

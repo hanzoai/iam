@@ -4,18 +4,18 @@ import (
 	errors2 "errors"
 	"fmt"
 
-	"github.com/casbin/casbin/v2/errors"
+	authzerrors "github.com/casbin/casbin/v2/errors"
 
-	"github.com/casbin/casbin/v2"
+	authz "github.com/casbin/casbin/v2"
 	"github.com/hanzoai/iam/util"
 )
 
 type UserGroupEnforcer struct {
 	// use rbac model implement use group, the enforcer can also implement user role
-	enforcer *casbin.Enforcer
+	enforcer *authz.Enforcer
 }
 
-func NewUserGroupEnforcer(enforcer *casbin.Enforcer) *UserGroupEnforcer {
+func NewUserGroupEnforcer(enforcer *authz.Enforcer) *UserGroupEnforcer {
 	return &UserGroupEnforcer{
 		enforcer: enforcer,
 	}
@@ -89,7 +89,7 @@ func (e *UserGroupEnforcer) GetAllUsersByGroup(group string) ([]string, error) {
 
 	users, err := e.enforcer.GetUsersForRole(GetGroupWithPrefix(group))
 	if err != nil {
-		if errors2.Is(err, errors.ErrNameNotFound) {
+		if errors2.Is(err, authzerrors.ErrNameNotFound) {
 			return []string{}, nil
 		}
 		return nil, err
