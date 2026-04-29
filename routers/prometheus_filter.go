@@ -21,7 +21,7 @@ func recordSystemInfo(systemInfo *util.SystemInfo) {
 func PrometheusFilter(ctx *context.Context) {
 	method := ctx.Input.Method()
 	path := ctx.Input.URL()
-	if strings.HasPrefix(path, "/api/metrics") {
+	if strings.HasPrefix(path, "/v1/iam/metrics") {
 		systemInfo, err := util.GetSystemInfo()
 		if err == nil {
 			recordSystemInfo(systemInfo)
@@ -29,7 +29,7 @@ func PrometheusFilter(ctx *context.Context) {
 		return
 	}
 
-	if strings.HasPrefix(path, "/api") {
+	if strings.HasPrefix(path, "/v1/iam") {
 		ctx.Input.SetData("startTime", time.Now())
 		object.TotalThroughput.Inc()
 		object.ApiThroughput.WithLabelValues(path, method).Inc()
