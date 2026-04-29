@@ -83,25 +83,20 @@ go build ./...
 
 ## Domains
 
-Hanzo IAM serves SSO across the Hanzo ecosystem:
+Hanzo IAM serves SSO across multiple organizations via white-label domain support:
 
 | Domain | Purpose |
 |--------|---------|
 | [hanzo.id](https://hanzo.id) | Hanzo AI accounts |
-| [lux.id](https://lux.id) | Lux Network accounts |
-| [zoo.id](https://zoo.id) | Zoo Labs accounts |
-| [pars.id](https://pars.id) | Pars accounts |
+
+Additional domains can be configured per organization. Each domain gets its own branding, login flow, and user pool while sharing the same IAM infrastructure.
 
 ## Documentation
 
 Full documentation is available at [docs.hanzo.ai](https://docs.hanzo.ai).
 
-## Attribution
-
-Originally derived from [Casdoor](https://github.com/casdoor/casdoor) by the [Casbin](https://casbin.org) community. See the upstream [LICENSE](https://github.com/casdoor/casdoor/blob/master/LICENSE) for attribution.
-
 ## License
 
-[Apache-2.0](https://github.com/hanzoai/iam/blob/master/LICENSE)
+[Apache-2.0](https://github.com/hanzoai/iam/blob/master/LICENSE) — historical attribution and third-party notices in [NOTICE](./NOTICE).
 
 Copyright 2025-2026 Hanzo AI Inc

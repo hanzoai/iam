@@ -3372,12 +3372,12 @@ paths:
           description: The Response object
           schema:
             $ref: '#/definitions/object.Userinfo'
-  /api/run-casbin-command:
+  /api/run-authz-command:
     get:
       tags:
       - Enforcer API
       description: Call policy engine CLI commands
-      operationId: ApiController.RunCasbinCommand
+      operationId: ApiController.RunAuthzCommand
       responses:
         "200":
           description: The Response object

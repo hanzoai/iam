@@ -14,13 +14,12 @@
 
 // @ts-nocheck
 import {createButton} from "react-social-login-buttons";
-import {StaticBaseUrl} from "../Setting";
 import {useGoogleOneTapLogin} from "react-google-one-tap-login";
 import * as Setting from "../Setting";
 import * as Provider from "./Provider";
 
 function Icon({width = 24, height = 24, color}) {
-  return <img src={`${StaticBaseUrl}/buttons/google.svg`} alt="Sign in with Google" />;
+  return <img src="/buttons/google.svg" width={width} height={height} alt="Sign in with Google" />;
 }
 
 const config = {

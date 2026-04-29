@@ -261,7 +261,7 @@ function ForgetPage(props) {
             <Form.Item hidden name="application" rules={[{required: true, message: i18next.t("application:Please input your application!")}]} />
             <Form.Item hidden name="organization" rules={[{required: true, message: i18next.t("application:Please input your organization!")}]} />
             <Form.Item name="username" rules={[{required: true, message: i18next.t("forget:Please input your username!"), whitespace: true}]}>
-              <Input prefix={<User className="w-4 h-4 text-neutral-500" />} placeholder={i18next.t("login:username, Email or phone")} />
+              <Input prefix={<User className="w-4 h-4 text-neutral-500" />} placeholder={i18next.t("login:Username, email, or phone")} />
             </Form.Item>
             <br />
             <Form.Item>

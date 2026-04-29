@@ -417,11 +417,15 @@ func initDefinedApplication(application *Application) {
 	// Fix booleans and grant_types with a raw SQL UPDATE immediately after creation.
 	if created {
 		grantTypesJSON := util.StructToJson(application.GrantTypes)
+		providersJSON := util.StructToJson(application.Providers)
+		signinMethodsJSON := util.StructToJson(application.SigninMethods)
+		signupItemsJSON := util.StructToJson(application.SignupItems)
+		redirectUrisJSON := util.StructToJson(application.RedirectUris)
 		_, sqlErr := ormer.Engine.Exec(
-			`UPDATE application SET enable_password=?, enable_sign_up=?, enable_signin_session=?, enable_code_signin=?, enable_web_authn=?, enable_auto_signin=?, enable_link_with_email=?, grant_types=? WHERE owner=? AND name=?`,
+			`UPDATE application SET enable_password=?, enable_sign_up=?, enable_signin_session=?, enable_code_signin=?, enable_web_authn=?, enable_auto_signin=?, enable_link_with_email=?, grant_types=?, providers=?, signin_methods=?, signup_items=?, redirect_uris=? WHERE owner=? AND name=?`,
 			application.EnablePassword, application.EnableSignUp, application.EnableSigninSession,
 			application.EnableCodeSignin, application.EnableWebAuthn, application.EnableAutoSignin,
-			application.EnableLinkWithEmail, grantTypesJSON, application.Owner, application.Name,
+			application.EnableLinkWithEmail, grantTypesJSON, providersJSON, signinMethodsJSON, signupItemsJSON, redirectUrisJSON, application.Owner, application.Name,
 		)
 		if sqlErr != nil {
 			fmt.Printf("[init_data] WARNING: bool fixup SQL failed for %s: %v\n", appId, sqlErr)
@@ -507,8 +511,8 @@ func mergeApplicationOAuthDefaults(existing *Application, desired *Application) 
 		updateCols = append(updateCols, "cert")
 	}
 
-	// Merge providers if existing has none
-	if len(existing.Providers) == 0 && len(desired.Providers) > 0 {
+	// Merge providers if desired has more than existing (additive merge)
+	if len(desired.Providers) > len(existing.Providers) {
 		existing.Providers = desired.Providers
 		updateCols = append(updateCols, "providers")
 	}
@@ -562,7 +566,9 @@ func initDefinedUser(user *User) {
 	fmt.Printf("[init_data] user %s/%s NOT FOUND, creating with pwdType=%q, pwdLen=%d\n",
 		user.Owner, user.Name, user.PasswordType, len(user.Password))
 	user.CreatedTime = util.GetCurrentTime()
-	user.Id = util.GenerateId()
+	if user.Id == "" {
+		user.Id = util.GenerateId()
+	}
 	if user.Properties == nil {
 		user.Properties = make(map[string]string)
 	}
