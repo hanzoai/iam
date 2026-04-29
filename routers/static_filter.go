@@ -129,9 +129,9 @@ func StaticFilter(ctx *context.Context) {
 		http.ServeContent(ctx.ResponseWriter, ctx.Request, "acme-challenge", time.Now(), strings.NewReader("content"))
 	}
 
-	// /oauth/* routes are registered directly in router.go — skip to Beego router
-	// Exception: /oauth/authorize is a frontend route, not a backend API
-	if strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/.well-known/") || (strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize") {
+	// /oauth/* and /login/oauth/* routes are registered directly in router.go — skip to Beego router.
+	// Exception: /oauth/authorize is a frontend route, not a backend API.
+	if strings.HasPrefix(urlPath, "/v1/iam/") || strings.HasPrefix(urlPath, "/.well-known/") || strings.HasPrefix(urlPath, "/login/oauth/") || (strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize") {
 		return
 	}
 	// Let Beego's static file handler serve the new admin UI at /_/iam/.
