@@ -115,7 +115,7 @@ export const TourObj = {
   adapters: [
     {
       title: "Adapter List",
-      description: "IAM supports using the UI to connect the adapter and manage the policy rules. The policy storage is implemented as an adapter (aka middleware for Casbin). You can use an adapter to load policy rules from a storage, or save policy rules to it.",
+      description: "IAM supports using the UI to connect the adapter and manage the policy rules. The policy storage is implemented as an adapter (aka middleware for the authz engine). You can use an adapter to load policy rules from a storage, or save policy rules to it.",
     },
   ],
   models: [
@@ -127,7 +127,7 @@ export const TourObj = {
   permissions: [
     {
       title: "Permission List",
-      description: "All users associated with a single IAM organization are shared between the organization's applications and therefore have access to the applications. Sometimes you may want to restrict users' access to certain applications, or certain resources in a certain application. In this case, you can use Permission implemented by Casbin.",
+      description: "All users associated with a single IAM organization are shared between the organization's applications and therefore have access to the applications. Sometimes you may want to restrict users' access to certain applications, or certain resources in a certain application. In this case, you can use Permission implemented by the authz engine.",
     },
     {
       title: "Permission Add",
@@ -136,7 +136,7 @@ export const TourObj = {
     },
     {
       title: "Permission Upload",
-      description: "With the Casbin Online Editor, you can get Model and Policy files suitable for your usage scenarios. You can easily import the Model file into IAM through the IAM Web UI for use by the built-in Casbin enforcer. ",
+      description: "With the Authz Online Editor, you can get Model and Policy files suitable for your usage scenarios. You can easily import the Model file into IAM through the IAM Web UI for use by the built-in authz enforcer. ",
       id: "upload-button",
     },
   ],
