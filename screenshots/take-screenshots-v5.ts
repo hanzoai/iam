@@ -22,7 +22,7 @@ const OUT = '/Users/z/work/hanzo/iam/screenshots';
 
   p.on('response', resp => {
     const url = resp.url();
-    if (url.includes('/api/') || url.includes('get-app')) {
+    if (url.includes('/v1/iam/') || url.includes('get-app')) {
       apiCalls.push(`${resp.status()} ${resp.url()}`);
     }
     if (resp.status() >= 400) {
