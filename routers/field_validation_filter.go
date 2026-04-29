@@ -31,7 +31,7 @@ func FieldValidationFilter(ctx *context.Context) {
 	}
 
 	urlPath := ctx.Request.URL.Path
-	if !(strings.HasPrefix(urlPath, "/api/add-") || strings.HasPrefix(urlPath, "/api/update-")) {
+	if !(strings.HasPrefix(urlPath, "/v1/iam/add-") || strings.HasPrefix(urlPath, "/v1/iam/update-")) {
 		return
 	}
 

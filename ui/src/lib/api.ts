@@ -1,10 +1,10 @@
 // Typed API client for IAM backend — all calls use cookies (same origin).
 // IAM API pattern:
-//   GET  /api/get-{entity}s?owner={org}      → list (returns { data: T[], data2: T[] } with pagination)
-//   GET  /api/get-{entity}?id={org}/{name}    → single
-//   POST /api/add-{entity}                    → create
-//   POST /api/update-{entity}?id={org}/{name} → update
-//   POST /api/delete-{entity}                 → delete
+//   GET  /v1/iam/get-{entity}s?owner={org}      → list (returns { data: T[], data2: T[] } with pagination)
+//   GET  /v1/iam/get-{entity}?id={org}/{name}    → single
+//   POST /v1/iam/add-{entity}                    → create
+//   POST /v1/iam/update-{entity}?id={org}/{name} → update
+//   POST /v1/iam/delete-{entity}                 → delete
 
 export class APIError extends Error {
   constructor(public status: number, public body: unknown) {
@@ -39,19 +39,19 @@ function listUrl(entity: string, owner: string, extra?: Record<string, string>):
       if (v) params.set(k, v)
     }
   }
-  return `/api/get-${entity}s?${params}`
+  return `/v1/iam/get-${entity}s?${params}`
 }
 
 function getUrl(entity: string, owner: string, name: string): string {
-  return `/api/get-${entity}?id=${owner}/${encodeURIComponent(name)}`
+  return `/v1/iam/get-${entity}?id=${owner}/${encodeURIComponent(name)}`
 }
 
 function updateUrl(entity: string, owner: string, name: string): string {
-  return `/api/update-${entity}?id=${owner}/${encodeURIComponent(name)}`
+  return `/v1/iam/update-${entity}?id=${owner}/${encodeURIComponent(name)}`
 }
 
 function deleteUrl(entity: string): string {
-  return `/api/delete-${entity}`
+  return `/v1/iam/delete-${entity}`
 }
 
 // --- Types (matching Go backend JSON tags) ---
@@ -608,13 +608,13 @@ export const api = {
 
   // Search (for command palette)
   searchUsers: (q: string) =>
-    request<ListResponse<User>>('GET', `/api/get-users?owner=*&q=${encodeURIComponent(q)}`),
+    request<ListResponse<User>>('GET', `/v1/iam/get-users?owner=*&q=${encodeURIComponent(q)}`),
   searchOrganizations: (q: string) =>
-    request<ListResponse<Organization>>('GET', `/api/get-organizations?owner=admin&q=${encodeURIComponent(q)}`),
+    request<ListResponse<Organization>>('GET', `/v1/iam/get-organizations?owner=admin&q=${encodeURIComponent(q)}`),
   searchApplications: (q: string) =>
-    request<ListResponse<Application>>('GET', `/api/get-applications?owner=*&q=${encodeURIComponent(q)}`),
+    request<ListResponse<Application>>('GET', `/v1/iam/get-applications?owner=*&q=${encodeURIComponent(q)}`),
 
   // Account (current user)
   getAccount: () =>
-    request<{ data: User }>('GET', '/api/get-account'),
+    request<{ data: User }>('GET', '/v1/iam/get-account'),
 }
