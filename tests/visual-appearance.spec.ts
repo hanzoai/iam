@@ -3,7 +3,7 @@
  *
  * These Playwright tests verify that the login page:
  * 1. Uses dark theme matching hanzo.ai design system
- * 2. Has correct Hanzo branding (not Casdoor)
+ * 2. Has correct Hanzo branding (no upstream leaks)
  * 3. Uses Hanzo red (#fd4444) as the primary color
  *
  * Run with:
@@ -93,8 +93,8 @@ test.describe('Hanzo IAM Visual Appearance', () => {
     }
   });
 
-  test('does NOT show "Powered by Casdoor"', async ({ page }) => {
-    // Check that Casdoor branding is NOT visible
+  test('does NOT show upstream branding', async ({ page }) => {
+    // Check that upstream branding is NOT visible
     const pageContent = await page.textContent('body');
     expect(pageContent).not.toContain('Casdoor');
     expect(pageContent).not.toContain('iam.hanzo.ai');

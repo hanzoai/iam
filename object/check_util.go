@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/beego/beego/v2/core/logs"
 	"github.com/hanzoai/iam/i18n"
 )
 
@@ -57,14 +58,28 @@ func GetFailedSigninConfigByUser(user *User) (int, int, error) {
 		return 0, 0, fmt.Errorf("the application for user %s is not found", user.GetId())
 	}
 
-	failedSigninLimit := application.FailedSigninLimit
-	if failedSigninLimit == 0 {
-		failedSigninLimit = DefaultFailedSigninLimit
+	// Priority: org override > app override > global default.
+	failedSigninLimit := DefaultFailedSigninLimit
+	failedSigninFrozenTime := DefaultFailedSigninFrozenTime
+
+	// App-level override.
+	if application.FailedSigninLimit > 0 {
+		failedSigninLimit = application.FailedSigninLimit
+	}
+	if application.FailedSigninFrozenTime > 0 {
+		failedSigninFrozenTime = application.FailedSigninFrozenTime
 	}
 
-	failedSigninFrozenTime := application.FailedSigninFrozenTime
-	if failedSigninFrozenTime == 0 {
-		failedSigninFrozenTime = DefaultFailedSigninFrozenTime
+	// Org-level override (highest priority).
+	if org, err := GetOrganizationByUser(user); err != nil {
+		logs.Warning("GetFailedSigninConfigByUser: failed to get organization for user %s: %v", user.GetId(), err)
+	} else if org != nil {
+		if org.FailedSigninLimit > 0 {
+			failedSigninLimit = org.FailedSigninLimit
+		}
+		if org.FailedSigninFrozenTime > 0 {
+			failedSigninFrozenTime = org.FailedSigninFrozenTime
+		}
 	}
 
 	return failedSigninLimit, failedSigninFrozenTime, nil
