@@ -276,6 +276,18 @@ func (p *Cert) populateContent() error {
 		return nil
 	}
 
+	// ML-DSA-65 (FIPS 204) uses raw key material, not x509 certificates.
+	if p.CryptoAlgorithm == algMLDSA65 {
+		certificate, privateKey, err := generateMLDSA65Keys()
+		if err != nil {
+			return err
+		}
+		p.Certificate = certificate
+		p.PrivateKey = privateKey
+		p.Type = "pq" // not x509
+		return nil
+	}
+
 	if len(p.CryptoAlgorithm) < 3 {
 		err := fmt.Errorf("populateContent() error, unsupported crypto algorithm: %s", p.CryptoAlgorithm)
 		return err
@@ -348,10 +360,18 @@ func RenewCert(cert *Cert) (bool, error) {
 
 func getCertByApplication(application *Application) (*Cert, error) {
 	if application.Cert != "" {
-		return getCertByName(application.Cert)
-	} else {
-		return GetDefaultCert()
+		cert, err := getCertByName(application.Cert)
+		if err != nil {
+			return nil, err
+		}
+		// If the named cert doesn't exist (e.g. "cert-built-in" on fresh
+		// boot), fall back to the default cert so JWT signing works.
+		if cert == nil {
+			return GetDefaultCert()
+		}
+		return cert, nil
 	}
+	return GetDefaultCert()
 }
 
 func GetDefaultCert() (*Cert, error) {
