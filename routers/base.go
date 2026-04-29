@@ -54,7 +54,12 @@ func getUnifiedServiceToken() string {
 
 func isServiceTokenRoute(urlPath string) bool {
 	switch urlPath {
-	case "/api/sync-init-data":
+	case "/v1/iam/sync-init-data":
+		return true
+	case "/v1/iam/admin/applications/upsert":
+		// Operator-driven service-account provisioning. Auth via the same
+		// HANZO_API_KEY/KMS_SERVICE_TOKEN/IAM_SERVICE_TOKEN service-token
+		// pipeline used by sync-init-data.
 		return true
 	default:
 		return false
@@ -83,13 +88,13 @@ func isServiceTokenAuthenticated(ctx *context.Context) bool {
 func responseError(ctx *context.Context, error string, data ...interface{}) {
 	// ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
 	urlPath := ctx.Request.URL.Path
-	if urlPath == "/api/mcp" {
+	if urlPath == "/v1/iam/mcp" {
 		denyMcpRequest(ctx)
 		return
 	}
 
 	// RFC 6750 §3.1: OAuth resource endpoints return Bearer token errors
-	if urlPath == "/oauth/userinfo" || urlPath == "/api/userinfo" {
+	if urlPath == "/oauth/userinfo" || urlPath == "/v1/iam/userinfo" {
 		responseBearerError(ctx, http.StatusUnauthorized, "invalid_token", error)
 		return
 	}
@@ -166,7 +171,7 @@ func denyMcpRequest(ctx *context.Context) {
 		scheme = "http"
 	}
 	resourceMetadataUrl := fmt.Sprintf("%s://%s/.well-known/oauth-protected-resource", scheme, host)
-	ctx.Output.Header("WWW-Authenticate", fmt.Sprintf("Bearer realm=\"hanzo-iam\", resource_metadata=\"%s\"", resourceMetadataUrl))
+	ctx.Output.Header("WWW-Authenticate", fmt.Sprintf("Bearer realm=\"iam\", resource_metadata=\"%s\"", resourceMetadataUrl))
 
 	ctx.Output.SetStatus(http.StatusUnauthorized)
 	_ = ctx.Output.JSON(resp, true, false)

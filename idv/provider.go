@@ -17,7 +17,7 @@ package idv
 import (
 	"context"
 
-	cidv "github.com/luxfi/compliance/pkg/idv"
+	cidv "github.com/hanzoai/idv/provider"
 )
 
 // IdvProvider is the sync identity verification interface used by IAM controllers.

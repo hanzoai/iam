@@ -246,7 +246,7 @@ func GetSamlMeta(application *Application, host string, enablePostBinding bool) 
 	idpLocation := ""
 	idpBinding := ""
 	if enablePostBinding {
-		idpLocation = fmt.Sprintf("%s/api/saml/redirect/%s/%s", originBackend, application.Owner, application.Name)
+		idpLocation = fmt.Sprintf("%s/v1/iam/saml/redirect/%s/%s", originBackend, application.Owner, application.Name)
 		idpBinding = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
 	} else {
 		idpLocation = fmt.Sprintf("%s/login/saml/authorize/%s/%s", originFrontend, application.Owner, application.Name)
