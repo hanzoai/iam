@@ -640,7 +640,7 @@ test.describe('Login Showcase', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('API Security', () => {
-  test('/api/get-account without auth returns 401 or 403', async ({ request }) => {
+  test('/v1/iam/get-account without auth returns 401 or 403', async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/get-account`);
     // Without a valid session or token, should be rejected
     expect([200, 401, 403]).toContain(res.status());
@@ -659,7 +659,7 @@ test.describe('API Security', () => {
     }
   });
 
-  test('/api/userinfo without auth returns proper error', async ({ request }) => {
+  test('/v1/iam/userinfo without auth returns proper error', async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/userinfo`);
     // Should be 401 or 403, or 200 with empty/error data
     expect(res.status()).toBeLessThan(500);
@@ -684,7 +684,7 @@ test.describe('API Security', () => {
     expect([401, 403]).toContain(res.status());
   });
 
-  test('/api/sync-init-data without service token returns 403', async ({ request }) => {
+  test('/v1/iam/sync-init-data without service token returns 403', async ({ request }) => {
     // This is an admin-only endpoint that syncs init data
     const res = await request.post(`${BASE_URL}/api/sync-init-data`);
     // Should require authentication -- return 401, 403, or 405
@@ -692,7 +692,7 @@ test.describe('API Security', () => {
     expect(res.status()).toBeLessThan(500);
   });
 
-  test('/api/get-users without auth does not leak user list', async ({ request }) => {
+  test('/v1/iam/get-users without auth does not leak user list', async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/get-users?owner=hanzo`);
     expect(res.status()).toBeLessThan(500);
 
@@ -708,7 +708,7 @@ test.describe('API Security', () => {
     }
   });
 
-  test('/api/login does not expose stack traces on malformed input', async ({ request }) => {
+  test('/v1/iam/login does not expose stack traces on malformed input', async ({ request }) => {
     // Send completely malformed JSON
     const res = await request.post(`${BASE_URL}/api/login`, {
       headers: { 'Content-Type': 'application/json' },
