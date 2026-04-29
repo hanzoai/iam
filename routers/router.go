@@ -242,7 +242,13 @@ func InitAPI() {
 
 	web.Router("/v1/iam/get-system-info", &controllers.ApiController{}, "GET:GetSystemInfo")
 	web.Router("/v1/iam/get-version-info", &controllers.ApiController{}, "GET:GetVersionInfo")
+	// Health probes — wired in every shape callers might try:
+	//   /healthz / /health             — root, direct/standalone probes
+	//   /v1/iam/healthz / /v1/iam/health — gateway-routed, no prefix strip
 	web.Router("/healthz", &controllers.ApiController{}, "GET:Health")
+	web.Router("/health", &controllers.ApiController{}, "GET:Health")
+	web.Router("/v1/iam/healthz", &controllers.ApiController{}, "GET:Health")
+	web.Router("/v1/iam/health", &controllers.ApiController{}, "GET:Health")
 	web.Router("/v1/iam/sync-init-data", &controllers.ApiController{}, "POST:SyncInitData")
 	web.Router("/v1/iam/get-prometheus-info", &controllers.ApiController{}, "GET:GetPrometheusInfo")
 	web.Router("/v1/iam/metrics", &controllers.ApiController{}, "GET:GetMetrics")
