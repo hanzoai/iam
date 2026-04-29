@@ -165,7 +165,7 @@ func CheckOAuthLogin(clientId string, responseType string, redirectUri string, s
 		return i18n.Translate(lang, "token:Invalid scope"), application, nil
 	}
 
-	// Mask application for /api/get-app-login
+	// Mask application for /v1/iam/get-app-login
 	application.ClientSecret = ""
 	return "", application, nil
 }
@@ -1154,7 +1154,7 @@ func ValidateJwtAssertion(clientAssertion string, application *Application, host
 		return false, nil, nil
 	}
 
-	if !slices.Contains(claims.Audience, fmt.Sprintf("%s/api/login/oauth/access_token", originBackend)) {
+	if !slices.Contains(claims.Audience, fmt.Sprintf("%s/login/oauth/access_token", originBackend)) {
 		return false, nil, nil
 	}
 
