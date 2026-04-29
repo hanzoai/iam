@@ -475,7 +475,7 @@ func CheckApiPermission(userId string, organization string, path string, method 
 		return false, err
 	}
 
-	path = strings.TrimPrefix(path, "/api/")
+	path = strings.TrimPrefix(path, "/v1/iam/")
 
 	allowPermissionCount := 0
 	denyPermissionCount := 0
