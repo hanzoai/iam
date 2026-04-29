@@ -2,7 +2,7 @@ package object
 
 // user_cache.go provides an in-process TTL cache for user objects and
 // permission/role assignments. This eliminates repeated DB round-trips for
-// the hot paths: GET /api/get-account and GET /api/userinfo.
+// the hot paths: GET /v1/iam/get-account and GET /v1/iam/userinfo.
 //
 // Architecture:
 //   - Two separate caches: one for the user row, one for role/permission graphs

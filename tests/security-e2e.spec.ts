@@ -120,7 +120,7 @@ test.describe('Authentication Security', () => {
 // ── API security ────────────────────────────────────────────────────────
 
 test.describe('API Security', () => {
-  test('/api/get-account without auth returns error', async ({ request }) => {
+  test('/v1/iam/get-account without auth returns error', async ({ request }) => {
     const response = await request.get(`${BASE_URL}/api/get-account`);
     // Should not return 200 with user data
     const body = await response.json().catch(() => ({}));
@@ -129,24 +129,24 @@ test.describe('API Security', () => {
            body.status === 'error' || body.msg?.includes('please sign in')).toBeTruthy();
   });
 
-  test('/api/userinfo without auth returns proper error', async ({ request }) => {
+  test('/v1/iam/userinfo without auth returns proper error', async ({ request }) => {
     const response = await request.get(`${BASE_URL}/api/userinfo`);
     expect(response.status()).toBeGreaterThanOrEqual(400);
   });
 
-  test('/api/sync-init-data without service token returns 403', async ({ request }) => {
+  test('/v1/iam/sync-init-data without service token returns 403', async ({ request }) => {
     const response = await request.post(`${BASE_URL}/api/sync-init-data`);
     expect(response.status()).toBeGreaterThanOrEqual(400);
   });
 
-  test('/api/get-users without auth returns error', async ({ request }) => {
+  test('/v1/iam/get-users without auth returns error', async ({ request }) => {
     const response = await request.get(`${BASE_URL}/api/get-users?owner=built-in`);
     const body = await response.json().catch(() => ({}));
     expect(response.status() === 401 || response.status() === 403 ||
            body.status === 'error').toBeTruthy();
   });
 
-  test('/api/get-organizations without auth returns error', async ({ request }) => {
+  test('/v1/iam/get-organizations without auth returns error', async ({ request }) => {
     const response = await request.get(`${BASE_URL}/api/get-organizations?owner=admin`);
     const body = await response.json().catch(() => ({}));
     // Should not leak org data to unauthenticated requests
