@@ -149,7 +149,7 @@ test.describe('OIDC Discovery', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('IAM Backend Health', () => {
-  test('iam.hanzo.ai /api/health returns 200', async ({ request }) => {
+  test('iam.hanzo.ai /healthz returns 200', async ({ request }) => {
     const res = await request.get(`${IAM_ORIGIN}/api/health`);
     expect(res.status()).toBe(200);
   });
