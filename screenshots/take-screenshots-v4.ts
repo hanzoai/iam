@@ -82,7 +82,7 @@ const OUT = '/Users/z/work/hanzo/iam/screenshots';
 
   // Try to see if the form loads after removing the spinner
   // Also check if the page is trying to fetch an API that fails
-  const apiCalls = allRequests.filter(r => r.includes('/api/') || r.includes('get-app-login'));
+  const apiCalls = allRequests.filter(r => r.includes('/v1/iam/') || r.includes('get-app-login'));
   console.log(`\nAPI calls: ${JSON.stringify(apiCalls, null, 2)}`);
 
   await p.close();

@@ -58,14 +58,14 @@ func getUserByClientIdSecret(ctx *context.Context) string {
 }
 
 func RecordMessage(ctx *context.Context) {
-	if ctx.Request.URL.Path == "/api/login" || ctx.Request.URL.Path == "/api/signup" {
+	if ctx.Request.URL.Path == "/v1/iam/login" || ctx.Request.URL.Path == "/v1/iam/signup" {
 		return
 	}
 
 	userId := getUser(ctx)
 
 	// Special handling for set-password endpoint to capture target user
-	if ctx.Request.URL.Path == "/api/set-password" {
+	if ctx.Request.URL.Path == "/v1/iam/set-password" {
 		// Parse form if not already parsed
 		if err := ctx.Request.ParseForm(); err != nil {
 			fmt.Printf("RecordMessage() error parsing form: %s\n", err.Error())
