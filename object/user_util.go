@@ -1147,7 +1147,7 @@ func TriggerWebhookForUser(action string, user *User) {
 		Organization: user.Owner,
 		User:         user.Name,
 		Method:       "POST",
-		RequestUri:   "/api/" + action,
+		RequestUri:   "/v1/iam/" + action,
 		Action:       action,
 		Object:       util.StructToJson(user),
 		StatusCode:   200,
