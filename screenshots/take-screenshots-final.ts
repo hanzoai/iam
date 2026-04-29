@@ -20,7 +20,7 @@ const OUT = '/Users/z/work/hanzo/iam/screenshots';
   const apiResponses: Record<string, any> = {};
   p1.on('response', async resp => {
     const url = resp.url();
-    if (url.includes('/api/')) {
+    if (url.includes('/v1/iam/')) {
       try {
         const json = await resp.json();
         const key = url.replace(BASE, '');
