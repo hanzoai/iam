@@ -25,7 +25,7 @@ describe("Login test", () => {
     cy.get(selector.username, {timeout: 15000}).type("admin");
     cy.get(selector.password, {timeout: 15000}).type("123");
     cy.get(selector.loginButton).click();
-    // After successful login, Casdoor redirects to the dashboard
+    // After successful login, IAM redirects to the dashboard
     cy.url({timeout: 15000}).should("eq", "http://localhost:8000/");
   });
 

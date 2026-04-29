@@ -24,7 +24,7 @@ func NewSafeAdapter(a *Adapter) *SafeAdapter {
 }
 
 func (a *SafeAdapter) RemovePolicy(sec string, ptype string, rule []string) error {
-	line := a.buildCasbinRule(ptype, rule)
+	line := a.buildAuthzRule(ptype, rule)
 
 	session := a.engine.NewSession()
 	defer session.Close()
@@ -43,7 +43,7 @@ func (a *SafeAdapter) RemovePolicy(sec string, ptype string, rule []string) erro
 func (a *SafeAdapter) RemovePolicies(sec string, ptype string, rules [][]string) error {
 	_, err := a.engine.Transaction(func(tx *xorm.Session) (interface{}, error) {
 		for _, rule := range rules {
-			line := a.buildCasbinRule(ptype, rule)
+			line := a.buildAuthzRule(ptype, rule)
 
 			var session *xorm.Session
 			if a.tableName != "" {
@@ -64,7 +64,7 @@ func (a *SafeAdapter) RemovePolicies(sec string, ptype string, rules [][]string)
 	return err
 }
 
-func (a *SafeAdapter) buildCasbinRule(ptype string, rule []string) *xormadapter.CasbinRule {
+func (a *SafeAdapter) buildAuthzRule(ptype string, rule []string) *xormadapter.CasbinRule {
 	line := xormadapter.CasbinRule{Ptype: ptype}
 
 	l := len(rule)

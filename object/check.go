@@ -65,7 +65,7 @@ func CheckUserSignup(application *Application, organization *Organization, authF
 				return i18n.Translate(lang, "check:Email already exists")
 			}
 		}
-		if HasUserByField(organization.Name, "phone", authForm.Phone) {
+		if authForm.Phone != "" && HasUserByField(organization.Name, "phone", authForm.Phone) {
 			return i18n.Translate(lang, "check:Phone already exists")
 		}
 	}
@@ -271,7 +271,7 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 		return recordSigninErrorInfo(user, lang, enableCaptcha)
 	}
 
-	// Password auto-upgrade is DISABLED. Casdoor's re-hash produces unverifiable
+	// Password auto-upgrade is DISABLED. IAM's re-hash produces unverifiable
 	// hashes for both argon2id and bcrypt, permanently locking users out.
 	// Passwords are set correctly at user creation / password reset time.
 	// See: https://github.com/hanzoai/iam/commit/abbffb64
@@ -475,7 +475,7 @@ func CheckApiPermission(userId string, organization string, path string, method 
 		return false, err
 	}
 
-	path = strings.TrimPrefix(path, "/api/")
+	path = strings.TrimPrefix(path, "/v1/iam/")
 
 	allowPermissionCount := 0
 	denyPermissionCount := 0
