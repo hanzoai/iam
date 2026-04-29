@@ -17,8 +17,8 @@ package object
 import (
 	"fmt"
 
-	"github.com/casbin/casbin/v2/config"
-	"github.com/casbin/casbin/v2/model"
+	authzconfig "github.com/casbin/casbin/v2/config"
+	authzmodel "github.com/casbin/casbin/v2/model"
 	"github.com/hanzoai/iam/util"
 )
 
@@ -31,7 +31,7 @@ type Model struct {
 
 	ModelText string `xorm:"mediumtext" json:"modelText"`
 
-	model.Model `xorm:"-" json:"-"`
+	authzmodel.Model `xorm:"-" json:"-"`
 }
 
 func GetModelCount(owner, field, value string) (int64, error) {
@@ -105,7 +105,7 @@ func getModelEx(id string) (*Model, error) {
 
 func UpdateModelWithCheck(id string, modelObj *Model) error {
 	// check model grammar
-	_, err := model.NewModelFromString(modelObj.ModelText)
+	_, err := authzmodel.NewModelFromString(modelObj.ModelText)
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func modelChangeTrigger(oldName string, newName string) error {
 	return session.Commit()
 }
 
-func HasRoleDefinition(m model.Model) bool {
+func HasRoleDefinition(m authzmodel.Model) bool {
 	if m == nil {
 		return false
 	}
@@ -202,18 +202,18 @@ func HasRoleDefinition(m model.Model) bool {
 
 func (m *Model) initModel() error {
 	if m.Model == nil {
-		casbinModel, err := model.NewModelFromString(m.ModelText)
+		authzModel, err := authzmodel.NewModelFromString(m.ModelText)
 		if err != nil {
 			return err
 		}
-		m.Model = casbinModel
+		m.Model = authzModel
 	}
 
 	return nil
 }
 
 func getModelCfg(m *Model) (map[string]string, error) {
-	cfg, err := config.NewConfigFromText(m.ModelText)
+	cfg, err := authzconfig.NewConfigFromText(m.ModelText)
 	if err != nil {
 		return nil, err
 	}
