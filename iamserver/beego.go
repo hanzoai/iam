@@ -122,7 +122,6 @@ func Init() int {
 	web.SetStaticPath("/swagger", "swagger")
 	web.SetStaticPath("/files", "files")
 	web.SetStaticPath("/_/iam", "ui/dist")
-	web.InsertFilter("/v1/iam/*", web.BeforeStatic, routers.V1IAMRewriteFilter)
 	web.InsertFilter("*", web.BeforeStatic, routers.SecureCookieFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.StaticFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.AutoSigninFilter)
