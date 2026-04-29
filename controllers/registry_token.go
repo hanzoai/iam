@@ -225,7 +225,7 @@ type RegistryTokenResponse struct {
 //
 // The Docker registry sends unauthenticated clients here with:
 //
-//	GET /api/registry/token?service=registry.hanzo.ai&scope=repository:myimage:pull,push
+//	GET /v1/iam/registry/token?service=registry.hanzo.ai&scope=repository:myimage:pull,push
 //
 // The client provides Basic auth credentials. This endpoint validates them
 // against IAM users and returns a short-lived JWT granting the requested access.
@@ -237,7 +237,7 @@ type RegistryTokenResponse struct {
 // @Param   scope       query   string  false   "The requested scope (type:name:actions)"
 // @Success 200 {object} RegistryTokenResponse
 // @Failure 401 Unauthorized
-// @router /api/registry/token [get]
+// @router /v1/iam/registry/token [get]
 func (c *ApiController) GetRegistryToken() {
 	service := c.GetString("service")
 	scope := c.GetString("scope")
@@ -339,7 +339,7 @@ func (c *ApiController) GetRegistryToken() {
 // @Tag Registry API
 // @Description Get the public key used to verify registry tokens (JWKS format)
 // @Success 200 {object} map[string]interface{}
-// @router /api/registry/jwks [get]
+// @router /v1/iam/registry/jwks [get]
 func (c *ApiController) GetRegistryPublicKey() {
 	pubKey := registrySigningKey.Public().(*rsa.PublicKey)
 

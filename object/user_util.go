@@ -1147,7 +1147,7 @@ func TriggerWebhookForUser(action string, user *User) {
 		Organization: user.Owner,
 		User:         user.Name,
 		Method:       "POST",
-		RequestUri:   "/api/" + action,
+		RequestUri:   "/v1/iam/" + action,
 		Action:       action,
 		Object:       util.StructToJson(user),
 		StatusCode:   200,
@@ -1184,7 +1184,7 @@ func CheckUserIsAdminRaw(owner, name string) bool {
 }
 
 // MoveUserToOrg changes a user's owner (organization) field.
-// Since owner is part of the composite primary key in Casdoor, this uses
+// Since owner is part of the composite primary key in IAM, this uses
 // xorm's Exec for a direct SQL UPDATE.
 func MoveUserToOrg(user *User, newOrg string) (bool, error) {
 	if ormer == nil || ormer.Engine == nil {

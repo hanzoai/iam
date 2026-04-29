@@ -30,12 +30,8 @@ lastupdate.tmp
 commentsRouter*.go
 
 # ignore build result
-casdoor
+iam-server
 server
-
-# include helm-chart
-!manifests/casdoor
-iam
 
 iam-server
 node_modules/
@@ -74,3 +70,8 @@ swagger/*.map
 web/build/
 web/cypress/screenshots/
 web/cypress/videos/
+/iam
+/iamd
+/iam-server
+/server
+/server_darwin_arm64
