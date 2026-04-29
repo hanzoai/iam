@@ -25,7 +25,7 @@ import i18next from "i18next";
 import RedirectForm from "../common/RedirectForm";
 import {createFormAndSubmit, renderLoginPanel} from "../Setting";
 
-const reactFallbackKey = "__casdoor_callback_react";
+const reactFallbackKey = "__iam_callback_react";
 const reactFallbackPayloadKey = "iam_callback_react_fallback";
 
 class AuthCallback extends React.Component {
