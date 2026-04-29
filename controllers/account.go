@@ -462,8 +462,8 @@ func (c *ApiController) GetPhoneUser() {
 		return
 	}
 
-	// Verify the OTP is valid but DO NOT consume it — the subsequent /api/signup
-	// or /api/login call will consume it atomically.
+	// Verify the OTP is valid but DO NOT consume it — the subsequent /v1/iam/signup
+	// or /v1/iam/login call will consume it atomically.
 	checkResult, err := object.CheckVerificationCode(checkPhone, body.PhoneCode, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(c.T(err.Error()))

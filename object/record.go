@@ -70,7 +70,7 @@ func maskPassword(recordString string) string {
 
 func NewRecord(ctx *context.Context) (*Record, error) {
 	clientIp := strings.Replace(util.GetClientIpFromRequest(ctx.Request), ": ", "", -1)
-	action := strings.Replace(ctx.Request.URL.Path, "/api/", "", -1)
+	action := strings.Replace(ctx.Request.URL.Path, "/v1/iam/", "", -1)
 	if strings.HasPrefix(action, "notify-payment") {
 		action = "notify-payment"
 	}
