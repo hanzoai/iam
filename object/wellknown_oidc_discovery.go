@@ -161,7 +161,7 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 		TokenEndpoint:                             fmt.Sprintf("%s/oauth/token", originBackend),
 		UserinfoEndpoint:                          fmt.Sprintf("%s/oauth/userinfo", originBackend),
 		DeviceAuthorizationEndpoint:               fmt.Sprintf("%s/oauth/device", originBackend),
-		RegistrationEndpoint:                      fmt.Sprintf("%s/api/oauth/register", originBackend),
+		RegistrationEndpoint:                      fmt.Sprintf("%s/oauth/register", originBackend),
 		JwksUri:                                   jwksUri,
 		IntrospectionEndpoint:                     fmt.Sprintf("%s/oauth/introspect", originBackend),
 		RevocationEndpoint:                        fmt.Sprintf("%s/oauth/revoke", originBackend),
