@@ -166,6 +166,17 @@ func StaticFilter(ctx *context.Context) {
 		if serveProviderHintRedirectPage(ctx) {
 			return
 		}
+
+		// /oauth/authorize is the OIDC-advertised endpoint but the SPA mounts
+		// the login form at /login/oauth/authorize. Hand off to the Beego
+		// router so OAuthAuthorizeRedirect can 302 to the SPA route — serving
+		// index.html here drops the request on App.tsx's catch-all 404 because
+		// isEntryPages() only matches /login/*, /signup/*, etc. This regressed
+		// non-default-brand tenants whose OIDC clients hit /oauth/authorize
+		// directly (default brand tends to enter via /login/oauth/authorize).
+		if urlPath == "/oauth/authorize" {
+			return
+		}
 	}
 
 	if serveAuthCallbackPage(ctx) {
