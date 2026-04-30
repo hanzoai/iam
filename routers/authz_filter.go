@@ -272,8 +272,13 @@ func getUrlPath(ctx *context.Context) string {
 	}
 
 	// Normalize /oauth/* aliases to their canonical paths for authz.
+	// /oauth/authorize is the OIDC-advertised authorize endpoint; it must be
+	// reachable by anonymous users (the Beego handler 302s to the SPA login
+	// at /login/oauth/authorize). Map it to /login/oauth so existing anonymous
+	// policy applies — without this, authz denies before OAuthAuthorizeRedirect
+	// can run and the client sees `{status:"error",msg:"Unauthorized operation"}`.
 	switch urlPath {
-	case "/oauth/token", "/oauth/access_token", "/oauth/refresh", "/oauth/introspect", "/oauth/revoke":
+	case "/oauth/authorize", "/oauth/token", "/oauth/access_token", "/oauth/refresh", "/oauth/introspect", "/oauth/revoke":
 		return "/login/oauth"
 	case "/oauth/userinfo":
 		return "/v1/iam/userinfo"
