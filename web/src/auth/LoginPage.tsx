@@ -1257,13 +1257,6 @@ function LoginPage(props) {
             }
             {renderOtherFormProvider(application)}
           </Form.Item>
-          {showForm && application.providers.filter(providerItem => isProviderVisible(providerItem)).length > 0 && (
-            <div style={{display: "flex", alignItems: "center", gap: "12px", margin: "4px 0 12px"}}>
-              <div style={{flex: 1, height: "1px", background: "rgba(255,255,255,0.1)"}} />
-              <span style={{color: "rgba(255,255,255,0.3)", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em"}}>or</span>
-              <div style={{flex: 1, height: "1px", background: "rgba(255,255,255,0.1)"}} />
-            </div>
-          )}
         </div>
       );
     } else if (signinItem.name === "Captcha" && signinItem.rule === "inline") {
