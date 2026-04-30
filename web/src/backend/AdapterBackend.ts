@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getAdapters(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-adapters?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-adapters?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getAdapters(owner, page = "", pageSize = "", field = "", value =
 }
 
 export function getAdapter(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-adapter?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-adapter?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,7 +37,7 @@ export function getAdapter(owner, name) {
 
 export function updateAdapter(owner, name, Adapter) {
   const newAdapter = Setting.deepCopy(Adapter);
-  return fetch(`${Setting.ServerUrl}/api/update-adapter?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-adapter?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newAdapter),
@@ -49,7 +49,7 @@ export function updateAdapter(owner, name, Adapter) {
 
 export function addAdapter(Adapter) {
   const newAdapter = Setting.deepCopy(Adapter);
-  return fetch(`${Setting.ServerUrl}/api/add-adapter`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-adapter`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newAdapter),
@@ -61,7 +61,7 @@ export function addAdapter(Adapter) {
 
 export function deleteAdapter(Adapter) {
   const newAdapter = Setting.deepCopy(Adapter);
-  return fetch(`${Setting.ServerUrl}/api/delete-adapter`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-adapter`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newAdapter),
@@ -72,7 +72,7 @@ export function deleteAdapter(Adapter) {
 }
 
 export function UpdatePolicy(owner, name, policy) {
-  return fetch(`${Setting.ServerUrl}/api/update-policy?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-policy?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(policy),
@@ -83,7 +83,7 @@ export function UpdatePolicy(owner, name, policy) {
 }
 
 export function AddPolicy(owner, name, policy) {
-  return fetch(`${Setting.ServerUrl}/api/add-policy?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-policy?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(policy),
@@ -94,7 +94,7 @@ export function AddPolicy(owner, name, policy) {
 }
 
 export function RemovePolicy(owner, name, policy) {
-  return fetch(`${Setting.ServerUrl}/api/remove-policy?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/remove-policy?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(policy),
@@ -105,7 +105,7 @@ export function RemovePolicy(owner, name, policy) {
 }
 
 export function getPolicies(owner, name, adapterId = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-policies?id=${owner}/${encodeURIComponent(name)}&adapterId=${adapterId}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-policies?id=${owner}/${encodeURIComponent(name)}&adapterId=${adapterId}`, {
     method: "GET",
     credentials: "include",
     headers: {
