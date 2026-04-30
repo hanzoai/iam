@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getInvitations(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-invitations?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-invitations?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getInvitations(owner, page = "", pageSize = "", field = "", valu
 }
 
 export function getInvitation(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-invitation?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-invitation?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getInvitation(owner, name) {
 }
 
 export function getInvitationCodeInfo(code, applicationName) {
-  return fetch(`${Setting.ServerUrl}/api/get-invitation-info?code=${code}&applicationId=${encodeURIComponent(applicationName)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-invitation-info?code=${code}&applicationId=${encodeURIComponent(applicationName)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,7 +47,7 @@ export function getInvitationCodeInfo(code, applicationName) {
 
 export function updateInvitation(owner, name, invitation) {
   const newInvitation = Setting.deepCopy(invitation);
-  return fetch(`${Setting.ServerUrl}/api/update-invitation?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-invitation?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newInvitation),
@@ -59,7 +59,7 @@ export function updateInvitation(owner, name, invitation) {
 
 export function addInvitation(invitation) {
   const newInvitation = Setting.deepCopy(invitation);
-  return fetch(`${Setting.ServerUrl}/api/add-invitation`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-invitation`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newInvitation),
@@ -71,7 +71,7 @@ export function addInvitation(invitation) {
 
 export function deleteInvitation(invitation) {
   const newInvitation = Setting.deepCopy(invitation);
-  return fetch(`${Setting.ServerUrl}/api/delete-invitation`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-invitation`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newInvitation),
@@ -82,7 +82,7 @@ export function deleteInvitation(invitation) {
 }
 
 export function verifyInvitation(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/verify-invitation?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/verify-invitation?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -92,7 +92,7 @@ export function verifyInvitation(owner, name) {
 }
 
 export function sendInvitation(invitation, destinations) {
-  return fetch(`${Setting.ServerUrl}/api/send-invitation?id=${invitation.owner}/${encodeURIComponent(invitation.name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/send-invitation?id=${invitation.owner}/${encodeURIComponent(invitation.name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(destinations),

@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getDashboard(owner) {
-  return fetch(`${Setting.ServerUrl}/api/get-dashboard?owner=${owner}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-dashboard?owner=${owner}`, {
     method: "GET",
     credentials: "include",
     headers: {

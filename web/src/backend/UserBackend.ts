@@ -17,7 +17,7 @@ import * as Setting from "../Setting";
 import i18next from "i18next";
 
 export function getGlobalUsers(page, pageSize, field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-global-users?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-global-users?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -27,7 +27,7 @@ export function getGlobalUsers(page, pageSize, field = "", value = "", sortField
 }
 
 export function getUsers(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "", groupName = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-users?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}&groupName=${groupName}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-users?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}&groupName=${groupName}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,7 +37,7 @@ export function getUsers(owner, page = "", pageSize = "", field = "", value = ""
 }
 
 export function getUser(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-user?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-user?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -48,7 +48,7 @@ export function getUser(owner, name) {
 
 export function updateUser(owner, name, user) {
   const newUser = Setting.deepCopy(user);
-  return fetch(`${Setting.ServerUrl}/api/update-user?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-user?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newUser),
@@ -60,7 +60,7 @@ export function updateUser(owner, name, user) {
 
 export function addUser(user) {
   const newUser = Setting.deepCopy(user);
-  return fetch(`${Setting.ServerUrl}/api/add-user`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-user`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newUser),
@@ -72,7 +72,7 @@ export function addUser(user) {
 
 export function deleteUser(user) {
   const newUser = Setting.deepCopy(user);
-  return fetch(`${Setting.ServerUrl}/api/delete-user`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-user`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newUser),
@@ -104,7 +104,7 @@ export function setPassword(userOwner, userName, oldPassword, newPassword, code 
     formData.append("code", code);
   }
 
-  return fetch(`${Setting.ServerUrl}/api/set-password`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/set-password`, {
     method: "POST",
     credentials: "include",
     body: formData,
@@ -129,7 +129,7 @@ export function sendCode(captchaType, captchaToken, clientSecret, method, countr
   formData.append("type", type);
   formData.append("applicationId", applicationId);
   formData.append("checkUser", checkUser);
-  return fetch(`${Setting.ServerUrl}/api/send-verification-code`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/send-verification-code`, {
     method: "POST",
     credentials: "include",
     body: formData,
@@ -153,7 +153,7 @@ export function verifyCaptcha(owner, name, captchaType, captchaToken, clientSecr
   formData.append("captchaToken", captchaToken);
   formData.append("clientSecret", clientSecret);
   formData.append("applicationId", `${owner}/${name}`);
-  return fetch(`${Setting.ServerUrl}/api/verify-captcha`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/verify-captcha`, {
     method: "POST",
     credentials: "include",
     body: formData,
@@ -180,7 +180,7 @@ export function resetEmailOrPhone(dest, type, code) {
   formData.append("dest", dest);
   formData.append("type", type);
   formData.append("code", code);
-  return fetch(`${Setting.ServerUrl}/api/reset-email-or-phone`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/reset-email-or-phone`, {
     method: "POST",
     credentials: "include",
     body: formData,
@@ -193,7 +193,7 @@ export function resetEmailOrPhone(dest, type, code) {
 export function impersonateUser(username) {
   const formData = new FormData();
   formData.append("username", username);
-  return fetch(`${Setting.ServerUrl}/api/impersonate-user`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/impersonate-user`, {
     method: "POST",
     credentials: "include",
     body: formData,
@@ -204,7 +204,7 @@ export function impersonateUser(username) {
 }
 
 export function exitImpersonateUser() {
-  return fetch(`${Setting.ServerUrl}/api/exit-impersonate-user`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/exit-impersonate-user`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -214,7 +214,7 @@ export function exitImpersonateUser() {
 }
 
 export function getCaptcha(owner, name, isCurrentProvider) {
-  return fetch(`${Setting.ServerUrl}/api/get-captcha?applicationId=${owner}/${encodeURIComponent(name)}&isCurrentProvider=${isCurrentProvider}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-captcha?applicationId=${owner}/${encodeURIComponent(name)}&isCurrentProvider=${isCurrentProvider}`, {
     method: "GET",
     headers: {
       "Accept-Language": Setting.getAcceptLanguage(),
@@ -223,7 +223,7 @@ export function getCaptcha(owner, name, isCurrentProvider) {
 }
 
 export function verifyCode(values) {
-  return fetch(`${Setting.ServerUrl}/api/verify-code`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/verify-code`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(values),
@@ -234,7 +234,7 @@ export function verifyCode(values) {
 }
 
 export function checkUserPassword(values) {
-  return fetch(`${Setting.ServerUrl}/api/check-user-password`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/check-user-password`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(values),
@@ -246,7 +246,7 @@ export function removeUserFromGroup({owner, name, groupName}) {
   formData.append("owner", owner);
   formData.append("name", name);
   formData.append("groupName", groupName);
-  return fetch(`${Setting.ServerUrl}/api/remove-user-from-group`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/remove-user-from-group`, {
     method: "POST",
     credentials: "include",
     body: formData,
@@ -257,7 +257,7 @@ export function removeUserFromGroup({owner, name, groupName}) {
 }
 
 export function verifyIdentification(owner, name, provider) {
-  let url = `${Setting.ServerUrl}/api/verify-identification`;
+  let url = `${Setting.ServerUrl}/v1/iam/verify-identification`;
   const params = [];
 
   if (owner && name) {

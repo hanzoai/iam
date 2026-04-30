@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getOrganizations(owner, organizationName = "", page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-organizations?owner=${owner}&organizationName=${organizationName}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-organizations?owner=${owner}&organizationName=${organizationName}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getOrganizations(owner, organizationName = "", page = "", pageSi
 }
 
 export function getOrganization(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-organization?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-organization?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,7 +37,7 @@ export function getOrganization(owner, name) {
 
 export function updateOrganization(owner, name, organization) {
   const newOrganization = Setting.deepCopy(organization);
-  return fetch(`${Setting.ServerUrl}/api/update-organization?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-organization?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newOrganization),
@@ -49,7 +49,7 @@ export function updateOrganization(owner, name, organization) {
 
 export function addOrganization(organization) {
   const newOrganization = Setting.deepCopy(organization);
-  return fetch(`${Setting.ServerUrl}/api/add-organization`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-organization`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newOrganization),
@@ -61,7 +61,7 @@ export function addOrganization(organization) {
 
 export function deleteOrganization(organization) {
   const newOrganization = Setting.deepCopy(organization);
-  return fetch(`${Setting.ServerUrl}/api/delete-organization`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-organization`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newOrganization),
@@ -72,7 +72,7 @@ export function deleteOrganization(organization) {
 }
 
 export function getDefaultApplication(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-default-application?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-default-application?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -82,7 +82,7 @@ export function getDefaultApplication(owner, name) {
 }
 
 export function getOrganizationNames(owner) {
-  return fetch(`${Setting.ServerUrl}/api/get-organization-names?owner=${owner}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-organization-names?owner=${owner}`, {
     method: "GET",
     credentials: "include",
     headers: {
