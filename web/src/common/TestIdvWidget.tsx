@@ -18,7 +18,7 @@ import i18next from "i18next";
 export function testIdvProvider(provider: any, account: any) {
   const providerName = `${provider.owner}/${provider.name}`;
 
-  return fetch(`${Setting.ServerUrl}/api/verify-identification?provider=${encodeURIComponent(providerName)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/verify-identification?provider=${encodeURIComponent(providerName)}`, {
     method: "POST",
     credentials: "include",
     headers: {
