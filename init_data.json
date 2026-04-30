@@ -10,7 +10,27 @@
         "system"
       ],
       "languages": [
-        "en"
+        "en",
+        "es",
+        "fr",
+        "de",
+        "it",
+        "nl",
+        "pt",
+        "sv",
+        "tr",
+        "pl",
+        "uk",
+        "ru",
+        "ar",
+        "fa",
+        "hi",
+        "th",
+        "id",
+        "ko",
+        "ja",
+        "zh",
+        "vi"
       ],
       "themeData": {
         "themeType": "dark",
