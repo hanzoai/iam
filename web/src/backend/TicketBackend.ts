@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getTickets(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-tickets?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-tickets?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getTickets(owner, page = "", pageSize = "", field = "", value = 
 }
 
 export function getTicket(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-ticket?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-ticket?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,7 +37,7 @@ export function getTicket(owner, name) {
 
 export function updateTicket(owner, name, ticket) {
   const newTicket = Setting.deepCopy(ticket);
-  return fetch(`${Setting.ServerUrl}/api/update-ticket?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-ticket?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newTicket),
@@ -49,7 +49,7 @@ export function updateTicket(owner, name, ticket) {
 
 export function addTicket(ticket) {
   const newTicket = Setting.deepCopy(ticket);
-  return fetch(`${Setting.ServerUrl}/api/add-ticket`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-ticket`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newTicket),
@@ -61,7 +61,7 @@ export function addTicket(ticket) {
 
 export function deleteTicket(ticket) {
   const newTicket = Setting.deepCopy(ticket);
-  return fetch(`${Setting.ServerUrl}/api/delete-ticket`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-ticket`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newTicket),
@@ -72,7 +72,7 @@ export function deleteTicket(ticket) {
 }
 
 export function addTicketMessage(owner, name, message) {
-  return fetch(`${Setting.ServerUrl}/api/add-ticket-message?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-ticket-message?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(message),

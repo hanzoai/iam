@@ -53,7 +53,7 @@ window.fetch = async(url, option = {}) => {
   return new Promise((resolve, reject) => {
     originalFetch(url, option)
       .then(res => {
-        if (!url.startsWith("/api/get-organizations")) {
+        if (!url.startsWith("/v1/iam/get-organizations")) {
           responseFilters.forEach(filter => filter(res.clone()));
         }
         resolve(res);
