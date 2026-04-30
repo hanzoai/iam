@@ -26,7 +26,7 @@ FROM alpine:3.21 AS standard
 LABEL maintainer="https://hanzo.ai/"
 ARG USER=hanzo
 
-RUN apk add --no-cache tzdata curl ca-certificates \
+RUN apk add --no-cache tzdata curl ca-certificates sqlite \
     && update-ca-certificates \
     && adduser -D $USER -u 1000 \
     && mkdir logs \
