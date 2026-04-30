@@ -352,6 +352,17 @@ func ApiFilter(ctx *context.Context) {
 
 	method := ctx.Request.Method
 	urlPath := getUrlPath(ctx)
+
+	// Health probes — always allow, no auth required.
+	// Wired in every shape so probes are interchangeable: /healthz, /health,
+	// /v1/iam/healthz, /v1/iam/health.
+	if method == "GET" {
+		switch urlPath {
+		case "/healthz", "/health", "/v1/iam/healthz", "/v1/iam/health":
+			return
+		}
+	}
+
 	if isServiceTokenAuthenticated(ctx) && isServiceTokenRoute(urlPath) {
 		ctx.Input.SetData("currentUserId", "service/token")
 		logLine := fmt.Sprintf("subOwner = service, subName = token, method = %s, urlPath = %s, obj.Owner = , obj.Name = , result = allow", method, urlPath)
