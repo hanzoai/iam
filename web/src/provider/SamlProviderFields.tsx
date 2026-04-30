@@ -102,11 +102,11 @@ export function renderSamlProviderFields(provider, updateProviderField, metadata
           {Setting.getLabel(i18next.t("provider:SP ACS URL"), i18next.t("provider:SP ACS URL - Tooltip"))} :
         </Col>
         <Col span={21} >
-          <Input value={`${authConfig.serverUrl}/api/acs`} readOnly="readonly" />
+          <Input value={`${authConfig.serverUrl}/v1/iam/acs`} readOnly="readonly" />
         </Col>
         <Col span={1}>
           <Button type="primary" onClick={() => {
-            copy(`${authConfig.serverUrl}/api/acs`);
+            copy(`${authConfig.serverUrl}/v1/iam/acs`);
             Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));
           }}>
             {i18next.t("general:Copy")}
@@ -118,11 +118,11 @@ export function renderSamlProviderFields(provider, updateProviderField, metadata
           {Setting.getLabel(i18next.t("provider:SP Entity ID"), i18next.t("provider:SP Entity ID - Tooltip"))} :
         </Col>
         <Col span={21} >
-          <Input value={`${authConfig.serverUrl}/api/acs`} readOnly="readonly" />
+          <Input value={`${authConfig.serverUrl}/v1/iam/acs`} readOnly="readonly" />
         </Col>
         <Col span={1}>
           <Button type="primary" onClick={() => {
-            copy(`${authConfig.serverUrl}/api/acs`);
+            copy(`${authConfig.serverUrl}/v1/iam/acs`);
             Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));
           }}>
             {i18next.t("general:Copy")}
