@@ -16,6 +16,14 @@
 import React, {memo} from "react";
 import {createButton} from "react-social-login-buttons";
 
+// Match "MetaMask_0xabc...", "Coinbase_0xabc...", etc.
+const WEB3_NAME_RE = /^([A-Za-z][A-Za-z0-9 ]*)_0x([0-9a-fA-F]{40})$/;
+
+function shortenAddress(addr) {
+  if (!addr || addr.length < 12) {return addr;}
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
 class SelfLoginButton extends React.Component {
   generateIcon() {
     const avatar = this.props.account.avatar;
@@ -25,9 +33,16 @@ class SelfLoginButton extends React.Component {
   }
 
   getAccountShowName() {
-    let {name, displayName} = this.props.account;
+    const {name, displayName} = this.props.account;
+    // Web3 accounts have name = "<Wallet>_0x<40-hex>" — render cleanly.
+    const m = name && name.match(WEB3_NAME_RE);
+    if (m) {
+      const wallet = m[1];
+      const addr = shortenAddress(`0x${m[2]}`);
+      return `Signed in as ${wallet} ${addr}`;
+    }
     if (displayName !== "") {
-      name += " (" + displayName + ")";
+      return name + " (" + displayName + ")";
     }
     return name;
   }
