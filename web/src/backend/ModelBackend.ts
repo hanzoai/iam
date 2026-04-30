@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getModels(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-models?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-models?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getModels(owner, page = "", pageSize = "", field = "", value = "
 }
 
 export function getModel(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-model?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-model?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,7 +37,7 @@ export function getModel(owner, name) {
 
 export function updateModel(owner, name, model) {
   const newModel = Setting.deepCopy(model);
-  return fetch(`${Setting.ServerUrl}/api/update-model?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-model?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newModel),
@@ -49,7 +49,7 @@ export function updateModel(owner, name, model) {
 
 export function addModel(model) {
   const newModel = Setting.deepCopy(model);
-  return fetch(`${Setting.ServerUrl}/api/add-model`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-model`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newModel),
@@ -61,7 +61,7 @@ export function addModel(model) {
 
 export function deleteModel(model) {
   const newModel = Setting.deepCopy(model);
-  return fetch(`${Setting.ServerUrl}/api/delete-model`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-model`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newModel),

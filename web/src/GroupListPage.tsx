@@ -198,7 +198,7 @@ class GroupListPage extends BaseListPage {
                   onClick={() => {
                     const formData = new FormData();
                     formData.append("file", this.state.file);
-                    fetch(`${Setting.ServerUrl}/api/upload-groups`, {
+                    fetch(`${Setting.ServerUrl}/v1/iam/upload-groups`, {
                       method: "post",
                       body: formData,
                       credentials: "include",
