@@ -278,6 +278,12 @@ func getUrlPath(ctx *context.Context) string {
 	// policy applies — without this, authz denies before OAuthAuthorizeRedirect
 	// can run and the client sees `{status:"error",msg:"Unauthorized operation"}`.
 	switch urlPath {
+	// TODO(red-2026-04-30,finding-C): /oauth/introspect and /oauth/revoke
+	// are aliased to the anonymous /login/oauth policy here so the OIDC
+	// metadata endpoints work, but introspect leaks a token-validity
+	// oracle and revoke is a free unauthenticated mutation. Re-evaluate
+	// post-demo: split these out and require client_credentials (RFC 7662
+	// §2.1, RFC 7009 §2.1) before they hit this normalizer.
 	case "/oauth/authorize", "/oauth/token", "/oauth/access_token", "/oauth/refresh", "/oauth/introspect", "/oauth/revoke":
 		return "/login/oauth"
 	case "/oauth/userinfo":
