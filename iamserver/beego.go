@@ -54,6 +54,10 @@ func Run() {
 // github.com/hanzoai/iam/pkg/iam.Embed). The standalone iamd binary
 // uses Run, which is Init + web.Run.
 func Init() int {
+	// Refuse to boot if SANDBOX_GLOBAL_OTP is set on a non-sandbox origin.
+	// This is a hard fail — see iamserver/sandbox_guard.go.
+	EnforceSandboxOriginGuard()
+
 	web.BConfig.WebConfig.Session.SessionOn = true
 	web.BConfig.WebConfig.Session.SessionName = "iam_session_id"
 	web.BConfig.WebConfig.Session.SessionProvider = "memory"
@@ -127,6 +131,7 @@ func Init() int {
 	web.InsertFilter("*", web.BeforeRouter, routers.AutoSigninFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.CorsFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.TimeoutFilter)
+	web.InsertFilter("*", web.BeforeRouter, routers.VerificationRateLimitFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.ApiFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.PrometheusFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.RecordMessage)
