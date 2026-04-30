@@ -15,7 +15,7 @@
 import * as Setting from "../Setting";
 
 export function getKeys(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-keys?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-keys?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -25,7 +25,7 @@ export function getKeys(owner, page = "", pageSize = "", field = "", value = "",
 }
 
 export function getGlobalKeys(page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-global-keys?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-global-keys?p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -35,7 +35,7 @@ export function getGlobalKeys(page = "", pageSize = "", field = "", value = "", 
 }
 
 export function getKey(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-key?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-key?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -46,7 +46,7 @@ export function getKey(owner, name) {
 
 export function updateKey(owner, name, key) {
   const newKey = Setting.deepCopy(key);
-  return fetch(`${Setting.ServerUrl}/api/update-key?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-key?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newKey),
@@ -58,7 +58,7 @@ export function updateKey(owner, name, key) {
 
 export function addKey(key) {
   const newKey = Setting.deepCopy(key);
-  return fetch(`${Setting.ServerUrl}/api/add-key`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-key`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newKey),
@@ -70,7 +70,7 @@ export function addKey(key) {
 
 export function deleteKey(key) {
   const newKey = Setting.deepCopy(key);
-  return fetch(`${Setting.ServerUrl}/api/delete-key`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-key`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newKey),

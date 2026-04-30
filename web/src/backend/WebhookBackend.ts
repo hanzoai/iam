@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getWebhooks(owner, organization, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-webhooks?owner=${owner}&organization=${organization}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-webhooks?owner=${owner}&organization=${organization}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getWebhooks(owner, organization, page = "", pageSize = "", field
 }
 
 export function getWebhook(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-webhook?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-webhook?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,7 +37,7 @@ export function getWebhook(owner, name) {
 
 export function updateWebhook(owner, name, webhook) {
   const newWebhook = Setting.deepCopy(webhook);
-  return fetch(`${Setting.ServerUrl}/api/update-webhook?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-webhook?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newWebhook),
@@ -49,7 +49,7 @@ export function updateWebhook(owner, name, webhook) {
 
 export function addWebhook(webhook) {
   const newWebhook = Setting.deepCopy(webhook);
-  return fetch(`${Setting.ServerUrl}/api/add-webhook`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-webhook`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newWebhook),
@@ -61,7 +61,7 @@ export function addWebhook(webhook) {
 
 export function deleteWebhook(webhook) {
   const newWebhook = Setting.deepCopy(webhook);
-  return fetch(`${Setting.ServerUrl}/api/delete-webhook`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-webhook`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newWebhook),
