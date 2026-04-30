@@ -535,6 +535,7 @@ class App extends Component {
   isEntryPages() {
     return window.location.pathname.startsWith("/signup") ||
       window.location.pathname.startsWith("/login") ||
+      window.location.pathname.startsWith("/oauth") ||
       window.location.pathname.startsWith("/forget") ||
       window.location.pathname.startsWith("/prompt") ||
       window.location.pathname.startsWith("/result") ||
