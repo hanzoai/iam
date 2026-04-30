@@ -307,8 +307,16 @@ func (c *ApiController) SendVerificationCode() {
 			}
 
 			if user == nil {
-				c.ResponseError(c.T("verification:the user does not exist, please sign up first"))
-				return
+				if vform.Method == LoginVerification && application.EnableSignUp {
+					user, err = autoCreateUserForVerification(application, organization, vform.Dest, "", "", c.GetAcceptLanguage())
+					if err != nil {
+						c.ResponseError(err.Error())
+						return
+					}
+				} else {
+					c.ResponseError(c.T("verification:the user does not exist, please sign up first"))
+					return
+				}
 			}
 		} else if vform.Method == ResetVerification {
 			user = c.getCurrentUser()
@@ -340,8 +348,16 @@ func (c *ApiController) SendVerificationCode() {
 				c.ResponseError(err.Error())
 				return
 			} else if user == nil {
-				c.ResponseError(c.T("verification:the user does not exist, please sign up first"))
-				return
+				if vform.Method == LoginVerification && application.EnableSignUp {
+					user, err = autoCreateUserForVerification(application, organization, "", vform.Dest, vform.CountryCode, c.GetAcceptLanguage())
+					if err != nil {
+						c.ResponseError(err.Error())
+						return
+					}
+				} else {
+					c.ResponseError(c.T("verification:the user does not exist, please sign up first"))
+					return
+				}
 			}
 
 			vform.CountryCode = user.GetCountryCode(vform.CountryCode)
@@ -627,4 +643,71 @@ func (c *ApiController) VerifyCode() {
 	c.SetSession("verifiedCode", authForm.Code)
 	c.SetSession("verifiedUserId", user.GetId())
 	c.ResponseOk()
+}
+
+// autoCreateUserForVerification creates a minimal user record so a Send Code
+// request for an unknown phone/email can proceed when the application allows
+// signup. Caller must already have checked application.EnableSignUp.
+// Exactly one of email or phone must be non-empty.
+func autoCreateUserForVerification(application *object.Application, organization *object.Organization, email, phone, countryCode, lang string) (*object.User, error) {
+	id, err := object.GenerateIdForNewUser(application)
+	if err != nil {
+		return nil, err
+	}
+
+	var name string
+	switch {
+	case phone != "":
+		stored := util.GetSeperatedPhone(phone)
+		if n := len(stored); n > 10 {
+			name = "user_" + stored[n-10:]
+		} else {
+			name = "user_" + stored
+		}
+	case email != "":
+		name = strings.SplitN(strings.ToLower(email), "@", 2)[0]
+	default:
+		return nil, errors.New("autoCreateUserForVerification requires email or phone")
+	}
+
+	user := &object.User{
+		Owner:             organization.Name,
+		Name:              name,
+		CreatedTime:       util.GetCurrentTime(),
+		Id:                id,
+		Type:              "normal-user",
+		DisplayName:       name,
+		Avatar:            organization.DefaultAvatar,
+		Email:             strings.ToLower(email),
+		Phone:             phone,
+		CountryCode:       countryCode,
+		Address:           []string{},
+		SignupApplication: application.Name,
+		Properties:        map[string]string{},
+		EmailVerified:     false,
+		RegisterType:      "Code Sign-in Auto-Signup",
+		RegisterSource:    fmt.Sprintf("%s/%s", organization.Name, application.Name),
+	}
+
+	if application.DefaultGroup != "" {
+		user.Groups = []string{application.DefaultGroup}
+	}
+
+	affected, err := object.AddUser(user, lang)
+	if err != nil {
+		return nil, err
+	}
+	if !affected {
+		return nil, errors.New("failed to auto-create user for verification")
+	}
+
+	// Re-load to pick up server-side fields written by AddUser.
+	created, err := object.GetUser(user.GetId())
+	if err != nil {
+		return nil, err
+	}
+	if created == nil {
+		return user, nil
+	}
+	return created, nil
 }
