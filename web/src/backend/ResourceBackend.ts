@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getResources(owner, user, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-resources?owner=${owner}&user=${user}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-resources?owner=${owner}&user=${user}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getResources(owner, user, page = "", pageSize = "", field = "", 
 }
 
 export function getResource(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-resource?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-resource?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,7 +37,7 @@ export function getResource(owner, name) {
 
 export function updateResource(owner, name, resource) {
   const newResource = Setting.deepCopy(resource);
-  return fetch(`${Setting.ServerUrl}/api/update-resource?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-resource?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newResource),
@@ -49,7 +49,7 @@ export function updateResource(owner, name, resource) {
 
 export function addResource(resource) {
   const newResource = Setting.deepCopy(resource);
-  return fetch(`${Setting.ServerUrl}/api/add-resource`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-resource`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newResource),
@@ -61,7 +61,7 @@ export function addResource(resource) {
 
 export function deleteResource(resource, provider = "") {
   const newResource = Setting.deepCopy(resource);
-  return fetch(`${Setting.ServerUrl}/api/delete-resource?provider=${provider}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-resource?provider=${provider}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newResource),
@@ -75,7 +75,7 @@ export function uploadResource(owner, user, tag, parent, fullFilePath, file, pro
   const application = "app-hanzo";
   const formData = new FormData();
   formData.append("file", file);
-  return fetch(`${Setting.ServerUrl}/api/upload-resource?owner=${owner}&user=${user}&application=${application}&tag=${tag}&parent=${parent}&fullFilePath=${encodeURIComponent(fullFilePath)}&provider=${provider}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/upload-resource?owner=${owner}&user=${user}&application=${application}&tag=${tag}&parent=${parent}&fullFilePath=${encodeURIComponent(fullFilePath)}&provider=${provider}`, {
     body: formData,
     method: "POST",
     credentials: "include",
