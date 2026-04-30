@@ -181,7 +181,7 @@ export function renderProviderLogo(provider, application, width, margin, size, l
       );
     } else if (provider.category === "Web3") {
       return (
-        <a key={provider.displayName} onClick={() => goToWeb3Url(application, provider, "signup")}
+        <a key={provider.displayName} className="provider-web3" onClick={() => goToWeb3Url(application, provider, "signup")}
           style={{
             display: "flex", alignItems: "center", gap: "10px",
             width: "100%", padding: "10px 16px", boxSizing: "border-box",
