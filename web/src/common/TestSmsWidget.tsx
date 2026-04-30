@@ -37,7 +37,7 @@ function testSmsProvider(provider: any, phone = "") {
     name: provider.name,
   };
 
-  return fetch(`${Setting.ServerUrl}/api/send-sms?provider=` + provider.name, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/send-sms?provider=` + provider.name, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(SmsForm),

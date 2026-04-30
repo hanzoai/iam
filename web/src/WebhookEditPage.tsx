@@ -8,7 +8,7 @@ import WebhookHeaderTable from "./table/WebhookHeaderTable";
 import Editor from "./common/Editor";
 import {Button} from "./components/ui/button";
 
-const previewTemplate = {"id": 9078, "owner": "built-in", "name": "68f55b28-7380-46b1-9bde-64fe1576e3b3", "createdTime": "2022-01-01T01:03:42+08:00", "organization": "built-in", "clientIp": "159.89.126.192", "user": "admin", "method": "POST", "requestUri": "/api/add-application", "action": "login", "isTriggered": false, "object": "{}"};
+const previewTemplate = {"id": 9078, "owner": "built-in", "name": "68f55b28-7380-46b1-9bde-64fe1576e3b3", "createdTime": "2022-01-01T01:03:42+08:00", "organization": "built-in", "clientIp": "159.89.126.192", "user": "admin", "method": "POST", "requestUri": "/v1/iam/add-application", "action": "login", "isTriggered": false, "object": "{}"};
 const userTemplate = {"owner": "built-in", "name": "admin", "createdTime": "2020-07-16T21:46:52+08:00", "id": "9eb20f79", "type": "normal-user", "displayName": "Admin", "email": "admin@example.com"};
 
 function WebhookEditPage(props) {
