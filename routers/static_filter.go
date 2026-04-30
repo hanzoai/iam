@@ -130,8 +130,12 @@ func StaticFilter(ctx *context.Context) {
 	}
 
 	// /oauth/* and /login/oauth/* routes are registered directly in router.go — skip to Beego router.
-	// Exception: /oauth/authorize is a frontend route, not a backend API.
-	if strings.HasPrefix(urlPath, "/v1/iam/") || strings.HasPrefix(urlPath, "/.well-known/") || strings.HasPrefix(urlPath, "/login/oauth/") || (strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize") {
+	// Exceptions: /oauth/authorize and /login/oauth/authorize are frontend SPA
+	// routes, NOT backend APIs. router.go registers OAuthAuthorizeRedirect on both
+	// paths, but for /login/oauth/authorize the redirect target is itself — that
+	// produces an infinite 302 loop. Both paths fall through to the static-filter
+	// special case below, which 302s autosignin or serves the SPA index.html.
+	if strings.HasPrefix(urlPath, "/v1/iam/") || strings.HasPrefix(urlPath, "/.well-known/") || (strings.HasPrefix(urlPath, "/login/oauth/") && urlPath != "/login/oauth/authorize") || (strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize") {
 		return
 	}
 	// Let Beego's static file handler serve the new admin UI at /_/iam/.
