@@ -29,7 +29,7 @@ export function grantConsent(consent, oAuthParams) {
     challenge: oAuthParams.codeChallenge || "",
     resource: "",
   };
-  return fetch(`${Setting.ServerUrl}/api/grant-consent`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/grant-consent`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(request),
@@ -40,7 +40,7 @@ export function grantConsent(consent, oAuthParams) {
 }
 
 export function revokeConsent(consent) {
-  return fetch(`${Setting.ServerUrl}/api/revoke-consent`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/revoke-consent`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(consent),

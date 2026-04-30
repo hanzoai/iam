@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getPermissions(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-permissions?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-permissions?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getPermissions(owner, page = "", pageSize = "", field = "", valu
 }
 
 export function getPermissionsBySubmitter() {
-  return fetch(`${Setting.ServerUrl}/api/get-permissions-by-submitter`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-permissions-by-submitter`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getPermissionsBySubmitter() {
 }
 
 export function getPermission(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-permission?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-permission?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,7 +47,7 @@ export function getPermission(owner, name) {
 
 export function updatePermission(owner, name, permission) {
   const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/api/update-permission?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-permission?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newPermission),
@@ -59,7 +59,7 @@ export function updatePermission(owner, name, permission) {
 
 export function addPermission(permission) {
   const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/api/add-permission`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-permission`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newPermission),
@@ -71,7 +71,7 @@ export function addPermission(permission) {
 
 export function deletePermission(permission) {
   const newPermission = Setting.deepCopy(permission);
-  return fetch(`${Setting.ServerUrl}/api/delete-permission`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-permission`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newPermission),

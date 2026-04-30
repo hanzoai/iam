@@ -20,7 +20,7 @@ export function MfaSetupInitiate(values) {
   formData.append("owner", values.owner);
   formData.append("name", values.name);
   formData.append("mfaType", values.mfaType);
-  return fetch(`${Setting.ServerUrl}/api/mfa/setup/initiate`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/mfa/setup/initiate`, {
     method: "POST",
     credentials: "include",
     body: formData,
@@ -36,7 +36,7 @@ export function MfaSetupVerify(values) {
   formData.append("secret", values.secret);
   formData.append("dest", values.dest);
   formData.append("countryCode", values.countryCode);
-  return fetch(`${Setting.ServerUrl}/api/mfa/setup/verify`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/mfa/setup/verify`, {
     method: "POST",
     credentials: "include",
     body: formData,
@@ -52,7 +52,7 @@ export function MfaSetupEnable(values) {
   formData.append("recoveryCodes", values.recoveryCodes);
   formData.append("dest", values.dest);
   formData.append("countryCode", values.countryCode);
-  return fetch(`${Setting.ServerUrl}/api/mfa/setup/enable`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/mfa/setup/enable`, {
     method: "POST",
     credentials: "include",
     body: formData,
@@ -63,7 +63,7 @@ export function DeleteMfa(values) {
   const formData = new FormData();
   formData.append("owner", values.owner);
   formData.append("name", values.name);
-  return fetch(`${Setting.ServerUrl}/api/delete-mfa`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-mfa`, {
     method: "POST",
     credentials: "include",
     body: formData,
@@ -75,7 +75,7 @@ export function SetPreferredMfa(values) {
   formData.append("mfaType", values.mfaType);
   formData.append("owner", values.owner);
   formData.append("name", values.name);
-  return fetch(`${Setting.ServerUrl}/api/set-preferred-mfa`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/set-preferred-mfa`, {
     method: "POST",
     credentials: "include",
     body: formData,

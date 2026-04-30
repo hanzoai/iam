@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getLdaps(owner) {
-  return fetch(`${Setting.ServerUrl}/api/get-ldaps?owner=${owner}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-ldaps?owner=${owner}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getLdaps(owner) {
 }
 
 export function getLdap(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-ldap?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-ldap?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getLdap(owner, name) {
 }
 
 export function addLdap(body) {
-  return fetch(`${Setting.ServerUrl}/api/add-ldap`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-ldap`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(body),
@@ -47,7 +47,7 @@ export function addLdap(body) {
 }
 
 export function deleteLdap(body) {
-  return fetch(`${Setting.ServerUrl}/api/delete-ldap`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-ldap`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(body),
@@ -58,7 +58,7 @@ export function deleteLdap(body) {
 }
 
 export function updateLdap(body) {
-  return fetch(`${Setting.ServerUrl}/api/update-ldap`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-ldap`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(body),
@@ -69,7 +69,7 @@ export function updateLdap(body) {
 }
 
 export function getLdapUser(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-ldap-users?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-ldap-users?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -79,7 +79,7 @@ export function getLdapUser(owner, name) {
 }
 
 export function syncUsers(owner, name, body) {
-  return fetch(`${Setting.ServerUrl}/api/sync-ldap-users?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/sync-ldap-users?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(body),

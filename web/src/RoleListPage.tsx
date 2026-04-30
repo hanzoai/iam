@@ -104,7 +104,7 @@ function RoleListPage(props: RoleListPageProps) {
     if (!file) return;
     const formData = new FormData();
     formData.append("file", file);
-    fetch(`${Setting.ServerUrl}/api/upload-roles`, {
+    fetch(`${Setting.ServerUrl}/v1/iam/upload-roles`, {
       method: "post", body: formData, credentials: "include",
       headers: {"Accept-Language": Setting.getAcceptLanguage()},
     }).then(res => res.json()).then((res: any) => {

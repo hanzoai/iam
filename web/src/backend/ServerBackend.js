@@ -15,14 +15,14 @@
 import * as Setting from "../Setting";
 
 export function getServers(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-servers?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-servers?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function getServer(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-server?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-server?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
@@ -30,7 +30,7 @@ export function getServer(owner, name) {
 
 export function updateServer(owner, name, server) {
   const newServer = Setting.deepCopy(server);
-  return fetch(`${Setting.ServerUrl}/api/update-server?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-server?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newServer),
@@ -39,7 +39,7 @@ export function updateServer(owner, name, server) {
 
 export function addServer(server) {
   const newServer = Setting.deepCopy(server);
-  return fetch(`${Setting.ServerUrl}/api/add-server`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-server`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newServer),
@@ -48,7 +48,7 @@ export function addServer(server) {
 
 export function deleteServer(server) {
   const newServer = Setting.deepCopy(server);
-  return fetch(`${Setting.ServerUrl}/api/delete-server`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-server`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newServer),

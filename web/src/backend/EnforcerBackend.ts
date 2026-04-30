@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getEnforcers(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-enforcers?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-enforcers?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getEnforcers(owner, page = "", pageSize = "", field = "", value 
 }
 
 export function getEnforcer(owner, name, loadModelCfg = false) {
-  return fetch(`${Setting.ServerUrl}/api/get-enforcer?id=${owner}/${encodeURIComponent(name)}&loadModelCfg=${loadModelCfg}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-enforcer?id=${owner}/${encodeURIComponent(name)}&loadModelCfg=${loadModelCfg}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -37,7 +37,7 @@ export function getEnforcer(owner, name, loadModelCfg = false) {
 
 export function updateEnforcer(owner, name, enforcer) {
   const newEnforcer = Setting.deepCopy(enforcer);
-  return fetch(`${Setting.ServerUrl}/api/update-enforcer?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-enforcer?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newEnforcer),
@@ -49,7 +49,7 @@ export function updateEnforcer(owner, name, enforcer) {
 
 export function addEnforcer(enforcer) {
   const newEnforcer = Setting.deepCopy(enforcer);
-  return fetch(`${Setting.ServerUrl}/api/add-enforcer`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-enforcer`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newEnforcer),
@@ -61,7 +61,7 @@ export function addEnforcer(enforcer) {
 
 export function deleteEnforcer(enforcer) {
   const newEnforcer = Setting.deepCopy(enforcer);
-  return fetch(`${Setting.ServerUrl}/api/delete-enforcer`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-enforcer`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newEnforcer),
