@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getSessions(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-sessions?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-sessions?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getSessions(owner, page = "", pageSize = "", field = "", value =
 }
 
 export function deleteSession(session, sessionId = "") {
-  let url = `${Setting.ServerUrl}/api/delete-session`;
+  let url = `${Setting.ServerUrl}/v1/iam/delete-session`;
   if (sessionId !== undefined && sessionId !== null && sessionId !== "") {
     url += `?sessionId=${encodeURIComponent(sessionId)}`;
   }

@@ -449,7 +449,7 @@ function LoginPage(props) {
     populateOauthValues(vals);
     const application = getApplicationObj();
     const usernameParam = `&name=${encodeURIComponent(uname)}`;
-    return fetch(`${Setting.ServerUrl}/api/webauthn/signin/begin?owner=${application.organization}${uname ? usernameParam : ""}`, {
+    return fetch(`${Setting.ServerUrl}/v1/iam/webauthn/signin/begin?owner=${application.organization}${uname ? usernameParam : ""}`, {
       method: "GET",
       credentials: "include",
     })
@@ -479,9 +479,9 @@ function LoginPage(props) {
         const resourceQuery = oAuthParams?.resource
           ? `&resource=${encodeURIComponent(oAuthParams.resource)}`
           : "";
-        let finishUrl = `${Setting.ServerUrl}/api/webauthn/signin/finish?responseType=${vals["type"]}`;
+        let finishUrl = `${Setting.ServerUrl}/v1/iam/webauthn/signin/finish?responseType=${vals["type"]}`;
         if (vals["type"] === "code") {
-          finishUrl = `${Setting.ServerUrl}/api/webauthn/signin/finish?responseType=${vals["type"]}&clientId=${oAuthParams.clientId}&scope=${oAuthParams.scope}&redirectUri=${oAuthParams.redirectUri}&nonce=${oAuthParams.nonce}&state=${oAuthParams.state}&codeChallenge=${oAuthParams.codeChallenge}&challengeMethod=${oAuthParams.challengeMethod}${resourceQuery}`;
+          finishUrl = `${Setting.ServerUrl}/v1/iam/webauthn/signin/finish?responseType=${vals["type"]}&clientId=${oAuthParams.clientId}&scope=${oAuthParams.scope}&redirectUri=${oAuthParams.redirectUri}&nonce=${oAuthParams.nonce}&state=${oAuthParams.state}&codeChallenge=${oAuthParams.codeChallenge}&challengeMethod=${oAuthParams.challengeMethod}${resourceQuery}`;
         }
         return fetch(finishUrl, {
           method: "POST",
@@ -540,7 +540,7 @@ function LoginPage(props) {
         uname = formValues["username"];
       }
       const application = getApplicationObj();
-      fetch(`${Setting.ServerUrl}/api/faceid-signin-begin?owner=${application.organization}&name=${uname}`, {
+      fetch(`${Setting.ServerUrl}/v1/iam/faceid-signin-begin?owner=${application.organization}&name=${uname}`, {
         method: "GET",
         credentials: "include",
         headers: {
