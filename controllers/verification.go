@@ -655,15 +655,33 @@ func autoCreateUserForVerification(application *object.Application, organization
 		return nil, err
 	}
 
+	// Identity rules per ops:
+	//   email — MUST be unique (one account per email forever)
+	//   phone — MAY be reused across multiple accounts (family sharing,
+	//           reassigned numbers, sandbox demos with the same dev phone)
+	//
+	// Username derivation reflects this:
+	//   email path → name = local-part of email (no suffix). AddUser
+	//                relies on UNIQUE(owner,name) to reject duplicates;
+	//                the second signup with the same email fails fast
+	//                with a clear "already registered" error and the
+	//                caller should sign in instead.
+	//   phone path → name = "user_<last10digits>_<8-char-random>".
+	//                The random suffix lets multiple users share one
+	//                phone without colliding on the username PK.
+	//                Phone lookup (GetUserByPhone) still finds the
+	//                most-recent owner for OTP-only sign-in.
 	var name string
 	switch {
 	case phone != "":
 		stored := util.GetSeperatedPhone(phone)
+		var prefix string
 		if n := len(stored); n > 10 {
-			name = "user_" + stored[n-10:]
+			prefix = "user_" + stored[n-10:]
 		} else {
-			name = "user_" + stored
+			prefix = "user_" + stored
 		}
+		name = prefix + "_" + util.GenerateId()[:8]
 	case email != "":
 		name = strings.SplitN(strings.ToLower(email), "@", 2)[0]
 	default:
