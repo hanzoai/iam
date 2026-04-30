@@ -131,6 +131,15 @@ function LoginPage(props) {
 
   const getDefaultLoginMethod = useCallback((application) => {
     if (application?.signinMethods?.length > 0) {
+      // Prefer Verification code as default tab regardless of DB order.
+      const codeMethod = application.signinMethods.find(m => m.name === "Verification code" && m.rule !== "Hide password");
+      if (codeMethod) {
+        switch (codeMethod.rule) {
+        case "All": return "verificationCode";
+        case "Email only": return "verificationCodeEmail";
+        case "Phone only": return "verificationCodePhone";
+        }
+      }
       switch (application?.signinMethods[0].name) {
       case "Password": return "password";
       case "Verification code": {
@@ -890,7 +899,20 @@ function LoginPage(props) {
       [generateItemKey("WeChat", "None"), {label: i18next.t("login:WeChat"), key: "wechat"}],
     ]);
 
-    application?.signinMethods?.forEach((signinMethod) => {
+    // Render tabs in fixed order: Code, Password, WebAuthn, Face ID, LDAP, WeChat.
+    // This guarantees Code is first regardless of DB order in application.signinMethods.
+    const methodPriority = (m) => {
+      if (m.name === "Verification code") {return 0;}
+      if (m.name === "Password") {return 1;}
+      if (m.name === "WebAuthn") {return 2;}
+      if (m.name === "Face ID") {return 3;}
+      if (m.name === "LDAP") {return 4;}
+      if (m.name === "WeChat") {return 5;}
+      return 99;
+    };
+    const orderedMethods = [...(application?.signinMethods ?? [])].sort((a, b) => methodPriority(a) - methodPriority(b));
+
+    orderedMethods.forEach((signinMethod) => {
       if (signinMethod.rule === "Hide password") {
         return;
       }
