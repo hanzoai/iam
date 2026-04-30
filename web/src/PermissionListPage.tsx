@@ -108,7 +108,7 @@ function PermissionListPage(props: PermissionListPageProps) {
     if (!file) return;
     const formData = new FormData();
     formData.append("file", file);
-    fetch(`${Setting.ServerUrl}/api/upload-permissions`, {
+    fetch(`${Setting.ServerUrl}/v1/iam/upload-permissions`, {
       method: "post", body: formData, credentials: "include",
       headers: {"Accept-Language": Setting.getAcceptLanguage()},
     }).then(r => r.json()).then((res: any) => {

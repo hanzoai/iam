@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getGlobalForms() {
-  return fetch(`${Setting.ServerUrl}/api/get-global-forms`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-global-forms`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getGlobalForms() {
 }
 
 export function getForms(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-forms?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-forms?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getForms(owner, page = "", pageSize = "", field = "", value = ""
 }
 
 export function getForm(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-form?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-form?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -47,7 +47,7 @@ export function getForm(owner, name) {
 
 export function updateForm(owner, name, form) {
   const newForm = Setting.deepCopy(form);
-  return fetch(`${Setting.ServerUrl}/api/update-form?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-form?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -59,7 +59,7 @@ export function updateForm(owner, name, form) {
 
 export function addForm(form) {
   const newForm = Setting.deepCopy(form);
-  return fetch(`${Setting.ServerUrl}/api/add-form`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-form`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -71,7 +71,7 @@ export function addForm(form) {
 
 export function deleteForm(form) {
   const newForm = Setting.deepCopy(form);
-  return fetch(`${Setting.ServerUrl}/api/delete-form`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-form`, {
     method: "POST",
     credentials: "include",
     headers: {

@@ -39,7 +39,7 @@ function safeJson(res) {
 }
 
 export function getAccount(query = "") {
-  return fetch(`${authConfig.serverUrl}/api/get-account${query}`, {
+  return fetch(`${authConfig.serverUrl}/v1/iam/get-account${query}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -49,7 +49,7 @@ export function getAccount(query = "") {
 }
 
 export function signup(values, oAuthParams) {
-  return fetch(`${authConfig.serverUrl}/api/signup${oAuthParamsToQuery(oAuthParams)}`, {
+  return fetch(`${authConfig.serverUrl}/v1/iam/signup${oAuthParamsToQuery(oAuthParams)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(values),
@@ -60,7 +60,7 @@ export function signup(values, oAuthParams) {
 }
 
 export function getEmailAndPhone(organization, username) {
-  return fetch(`${authConfig.serverUrl}/api/get-email-and-phone?organization=${organization}&username=${encodeURIComponent(username)}`, {
+  return fetch(`${authConfig.serverUrl}/v1/iam/get-email-and-phone?organization=${organization}&username=${encodeURIComponent(username)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -96,7 +96,7 @@ export function getApplicationLogin(params) {
   } else {
     queryParams = oAuthParamsToQuery(params);
   }
-  return fetch(`${authConfig.serverUrl}/api/get-app-login${queryParams}`, {
+  return fetch(`${authConfig.serverUrl}/v1/iam/get-app-login${queryParams}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -106,7 +106,7 @@ export function getApplicationLogin(params) {
 }
 
 export function login(values, oAuthParams) {
-  return fetch(`${authConfig.serverUrl}/api/login${oAuthParamsToQuery(oAuthParams)}`, {
+  return fetch(`${authConfig.serverUrl}/v1/iam/login${oAuthParamsToQuery(oAuthParams)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(values),
@@ -117,7 +117,7 @@ export function login(values, oAuthParams) {
 }
 
 export function loginCas(values, params) {
-  return fetch(`${authConfig.serverUrl}/api/login?service=${params.service}`, {
+  return fetch(`${authConfig.serverUrl}/v1/iam/login?service=${params.service}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(values),
@@ -128,7 +128,7 @@ export function loginCas(values, params) {
 }
 
 export function logout() {
-  return fetch(`${authConfig.serverUrl}/api/logout`, {
+  return fetch(`${authConfig.serverUrl}/v1/iam/logout`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -138,7 +138,7 @@ export function logout() {
 }
 
 export function unlink(values) {
-  return fetch(`${authConfig.serverUrl}/api/unlink`, {
+  return fetch(`${authConfig.serverUrl}/v1/iam/unlink`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(values),
@@ -149,7 +149,7 @@ export function unlink(values) {
 }
 
 export function getSamlLogin(providerId, relayState) {
-  return fetch(`${authConfig.serverUrl}/api/get-saml-login?id=${providerId}&relayState=${relayState}`, {
+  return fetch(`${authConfig.serverUrl}/v1/iam/get-saml-login?id=${providerId}&relayState=${relayState}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -159,7 +159,7 @@ export function getSamlLogin(providerId, relayState) {
 }
 
 export function loginWithSaml(values, param) {
-  return fetch(`${authConfig.serverUrl}/api/login${param}`, {
+  return fetch(`${authConfig.serverUrl}/v1/iam/login${param}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(values),
@@ -170,7 +170,7 @@ export function loginWithSaml(values, param) {
 }
 
 export function getWechatMessageEvent(ticket) {
-  return fetch(`${Setting.ServerUrl}/api/get-webhook-event?ticket=${ticket}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-webhook-event?ticket=${ticket}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -180,7 +180,7 @@ export function getWechatMessageEvent(ticket) {
 }
 
 export function getWechatQRCode(providerId) {
-  return fetch(`${Setting.ServerUrl}/api/get-qrcode?id=${providerId}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-qrcode?id=${providerId}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -190,7 +190,7 @@ export function getWechatQRCode(providerId) {
 }
 
 export function getCaptchaStatus(values) {
-  return fetch(`${Setting.ServerUrl}/api/get-captcha-status?organization=${values["organization"]}&userId=${values["username"]}&application=${values["application"]}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-captcha-status?organization=${values["organization"]}&userId=${values["username"]}&application=${values["application"]}`, {
     method: "GET",
     credentials: "include",
     headers: {

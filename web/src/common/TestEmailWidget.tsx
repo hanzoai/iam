@@ -55,7 +55,7 @@ function testEmailProvider(provider: any, email = "") {
     name: provider.name,
   };
 
-  return fetch(`${Setting.ServerUrl}/api/send-email`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/send-email`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(emailForm),

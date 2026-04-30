@@ -283,7 +283,7 @@ class UserListPage extends BaseListPage {
                   onClick={() => {
                     const formData = new FormData();
                     formData.append("file", this.state.file);
-                    fetch(`${Setting.ServerUrl}/api/upload-users`, {
+                    fetch(`${Setting.ServerUrl}/v1/iam/upload-users`, {
                       method: "post",
                       body: formData,
                       credentials: "include",
