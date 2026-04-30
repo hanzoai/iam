@@ -1220,10 +1220,18 @@ function LoginPage(props) {
       const searchParams = new URLSearchParams(window.location.search);
       const providerHint = searchParams.get("provider_hint");
 
+      const hasVisibleProviders = application.providers.filter(providerItem => isProviderVisible(providerItem)).length > 0;
       return (
         <div key={resultItemKey}>
           <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
-          <Form.Item>
+          {showForm && hasVisibleProviders && (
+            <div className="login-providers-divider" style={{display: "flex", alignItems: "center", gap: "12px", margin: "16px 0 12px"}}>
+              <div style={{flex: 1, height: "1px", background: "rgba(255,255,255,0.1)"}} />
+              <span style={{color: "rgba(255,255,255,0.4)", fontSize: "12px", letterSpacing: "0.02em"}}>{i18next.t("login:Or continue with")}</span>
+              <div style={{flex: 1, height: "1px", background: "rgba(255,255,255,0.1)"}} />
+            </div>
+          )}
+          <Form.Item className={signinItem.rule === "small" ? "login-providers-grid" : undefined}>
             {
               application.providers.filter(providerItem => isProviderVisible(providerItem)).sort((a, b) => {
                 const order = (p) => {
