@@ -16,21 +16,21 @@
 import * as Setting from "../Setting";
 
 export function getRules(owner, page = "", pageSize = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-rules?owner=${owner}&p=${page}&pageSize=${pageSize}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-rules?owner=${owner}&p=${page}&pageSize=${pageSize}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function getRule(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-rule?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-rule?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
   }).then(res => res.json());
 }
 
 export function addRule(rule) {
-  return fetch(`${Setting.ServerUrl}/api/add-rule`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-rule`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(rule),
@@ -38,7 +38,7 @@ export function addRule(rule) {
 }
 
 export function updateRule(owner, name, rule) {
-  return fetch(`${Setting.ServerUrl}/api/update-rule?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-rule?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(rule),
@@ -46,7 +46,7 @@ export function updateRule(owner, name, rule) {
 }
 
 export function deleteRule(rule) {
-  return fetch(`${Setting.ServerUrl}/api/delete-rule`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-rule`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(rule),
