@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/mail"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 
@@ -79,7 +80,39 @@ func IsInvitationCodeMatch(pattern string, invitationCode string) (bool, error) 
 
 func GetE164Number(phone string, countryCode string) (string, bool) {
 	phoneNumber, _ := phonenumbers.Parse(phone, countryCode)
-	return phonenumbers.Format(phoneNumber, phonenumbers.E164), phonenumbers.IsValidNumber(phoneNumber)
+	formatted := phonenumbers.Format(phoneNumber, phonenumbers.E164)
+	if phonenumbers.IsValidNumber(phoneNumber) {
+		return formatted, true
+	}
+	// Sandbox bypass: when SANDBOX_SKIP_PHONE_VALIDATION is set (devnet+testnet
+	// only — must be hostname-guarded by the same boot check that gates
+	// SANDBOX_GLOBAL_OTP), accept any parseable phone shape so demo flows can
+	// use any number format without hitting libphonenumber's region rules.
+	// Production manifests must leave the env empty.
+	if os.Getenv("SANDBOX_SKIP_PHONE_VALIDATION") != "" {
+		// If phonenumbers.Parse returned a usable result, format it; else fall
+		// back to a synthetic E.164 string from the raw input.
+		if formatted == "" || formatted == "+0" {
+			cleaned := ""
+			for _, r := range phone {
+				if r >= '0' && r <= '9' {
+					cleaned += string(r)
+				}
+			}
+			cc := ""
+			for _, r := range countryCode {
+				if r >= '0' && r <= '9' {
+					cc += string(r)
+				}
+			}
+			if cc == "" {
+				cc = "1"
+			}
+			formatted = "+" + cc + cleaned
+		}
+		return formatted, true
+	}
+	return formatted, false
 }
 
 func GetCountryCode(prefix string, phone string) (string, error) {
