@@ -301,6 +301,13 @@ func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult
 		return &VerifyResult{VerificationSuccess, ""}, nil
 	}
 
+	// Sandbox global bypass: when SANDBOX_GLOBAL_OTP is set, ANY phone or email
+	// accepts that code without a real verification record. Set this only in
+	// non-prod (devnet/testnet sandbox) manifests — production must leave it empty.
+	if pinned := os.Getenv("SANDBOX_GLOBAL_OTP"); pinned != "" && code == pinned {
+		return &VerifyResult{VerificationSuccess, ""}, nil
+	}
+
 	record, err := getVerificationRecord(dest)
 	if err != nil {
 		return nil, err
