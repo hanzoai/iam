@@ -214,7 +214,7 @@
         endpoint = endpoint.replace("common", provider.domain);
       }
     } else if (provider.type === "Apple") {
-      redirectUri = redirectOrigin + "/api/callback";
+      redirectUri = redirectOrigin + "/v1/iam/callback";
     } else if (provider.type === "Google" && provider.disableSsl) {
       scope += "+https://www.googleapis.com/auth/user.phonenumbers.read";
     } else if (provider.type === "Nextcloud") {
@@ -334,13 +334,13 @@
   }
 
   async function getApplication(applicationName) {
-    return fetchJson("/api/get-application?id=" + encodeURIComponent(applicationName), {
+    return fetchJson("/v1/iam/get-application?id=" + encodeURIComponent(applicationName), {
       credentials: "include"
     });
   }
 
   async function getProviders(applicationName, language) {
-    return fetchJson("/api/get-login-providers?application=" + encodeURIComponent(applicationName) + "&acceptLanguage=" + encodeURIComponent(language), {
+    return fetchJson("/v1/iam/get-login-providers?application=" + encodeURIComponent(applicationName) + "&acceptLanguage=" + encodeURIComponent(language), {
       credentials: "include"
     });
   }
@@ -366,7 +366,7 @@
     searchParams.set("code_challenge_method", currentSearchParams.get("code_challenge_method") || "");
     searchParams.set("code_challenge", currentSearchParams.get("code_challenge") || "");
 
-    var response = await fetch("/api/get-app-login?" + searchParams.toString(), {
+    var response = await fetch("/v1/iam/get-app-login?" + searchParams.toString(), {
       method: "GET",
       credentials: "include",
       headers: {
