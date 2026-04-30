@@ -1240,7 +1240,11 @@ function LoginPage(props) {
         signinItem.rule = showForm ? "small" : "big";
       }
       const searchParams = new URLSearchParams(window.location.search);
-      const providerHint = searchParams.get("provider_hint");
+      // Accept either `?provider_hint=<provider.name>` (legacy, e.g.
+      // `provider_google`) or `?provider=<type-lowercase>` (the convention
+      // emitted by @hanzo/iam SDK's getSocialLoginUrl + the ?provider=google
+      // pattern hanzoai/login uses). Both end on the same auto-redirect.
+      const providerHint = searchParams.get("provider_hint") || searchParams.get("provider");
 
       const hasVisibleProviders = application.providers.filter(providerItem => isProviderVisible(providerItem)).length > 0;
       return (
@@ -1266,7 +1270,13 @@ function LoginPage(props) {
                 };
                 return order(a) - order(b);
               }).map((providerItem, id) => {
-                if (providerHint === providerItem.provider.name) {
+                // Match by provider.name (e.g. "provider_google") OR by
+                // provider.type (case-insensitive: "google", "apple", "github").
+                // SDK sends ?provider=google → matches by type. Legacy
+                // ?provider_hint=provider_google → matches by name.
+                const hint = (providerHint || "").toLowerCase();
+                if (hint && (hint === providerItem.provider.name.toLowerCase() ||
+                    hint === providerItem.provider.type.toLowerCase())) {
                   goToLink(Provider.getAuthUrl(application, providerItem.provider, "signup"));
                   return;
                 }
