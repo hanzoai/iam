@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function registerWebauthnCredential() {
-  return fetch(`${Setting.ServerUrl}/api/webauthn/signup/begin`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/webauthn/signup/begin`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -41,7 +41,7 @@ export function registerWebauthnCredential() {
       const attestationObject = credential.response.attestationObject;
       const clientDataJSON = credential.response.clientDataJSON;
       const rawId = credential.rawId;
-      return fetch(`${Setting.ServerUrl}/api/webauthn/signup/finish`, {
+      return fetch(`${Setting.ServerUrl}/v1/iam/webauthn/signup/finish`, {
         method: "POST",
         credentials: "include",
         body: JSON.stringify({
@@ -62,7 +62,7 @@ export function deleteUserWebAuthnCredential(credentialID) {
   const form = new FormData();
   form.append("credentialID", credentialID);
 
-  return fetch(`${Setting.ServerUrl}/api/webauthn/delete-credential`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/webauthn/delete-credential`, {
     method: "POST",
     credentials: "include",
     body: form,

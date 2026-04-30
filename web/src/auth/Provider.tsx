@@ -463,7 +463,7 @@ export function getAuthUrl(application, provider, method, code) {
       endpoint = endpoint.replace("common", provider.domain);
     }
   } else if (provider.type === "Apple") {
-    redirectUri = `${redirectOrigin}/api/callback`;
+    redirectUri = `${redirectOrigin}/v1/iam/callback`;
   } else if (provider.type === "Google" && provider.disableSsl) {
     scope += "+https://www.googleapis.com/auth/user.phonenumbers.read";
   } else if (provider.type === "Nextcloud") {
