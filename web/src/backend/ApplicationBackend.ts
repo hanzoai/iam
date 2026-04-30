@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getApplications(owner, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-applications?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-applications?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getApplications(owner, page = "", pageSize = "", field = "", val
 }
 
 export function getApplicationsByOrganization(owner, organization, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-organization-applications?owner=${owner}&organization=${organization}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-organization-applications?owner=${owner}&organization=${organization}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -36,7 +36,7 @@ export function getApplicationsByOrganization(owner, organization, page = "", pa
 }
 
 export function getApplication(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-application?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-application?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -46,7 +46,7 @@ export function getApplication(owner, name) {
 }
 
 export function getUserApplication(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-user-application?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-user-application?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -56,7 +56,7 @@ export function getUserApplication(owner, name) {
 }
 
 export function updateApplication(owner, name, application) {
-  return fetch(`${Setting.ServerUrl}/api/update-application?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/update-application?id=${owner}/${encodeURIComponent(name)}`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(application),
@@ -68,7 +68,7 @@ export function updateApplication(owner, name, application) {
 
 export function addApplication(application) {
   const newApplication = Setting.deepCopy(application);
-  return fetch(`${Setting.ServerUrl}/api/add-application`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/add-application`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newApplication),
@@ -80,7 +80,7 @@ export function addApplication(application) {
 
 export function deleteApplication(application) {
   const newApplication = Setting.deepCopy(application);
-  return fetch(`${Setting.ServerUrl}/api/delete-application`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/delete-application`, {
     method: "POST",
     credentials: "include",
     body: JSON.stringify(newApplication),
@@ -91,7 +91,7 @@ export function deleteApplication(application) {
 }
 
 export function getSamlMetadata(owner, name, enablePostBinding) {
-  return fetch(`${Setting.ServerUrl}/api/saml/metadata?application=${owner}/${encodeURIComponent(name)}&enablePostBinding=${enablePostBinding}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/saml/metadata?application=${owner}/${encodeURIComponent(name)}&enablePostBinding=${enablePostBinding}`, {
     method: "GET",
     credentials: "include",
     headers: {

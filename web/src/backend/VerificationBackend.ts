@@ -16,7 +16,7 @@
 import * as Setting from "../Setting";
 
 export function getVerifications(owner, organization, page = "", pageSize = "", field = "", value = "", sortField = "", sortOrder = "") {
-  return fetch(`${Setting.ServerUrl}/api/get-verifications?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-verifications?owner=${owner}&p=${page}&pageSize=${pageSize}&field=${field}&value=${value}&sortField=${sortField}&sortOrder=${sortOrder}`, {
     method: "GET",
     credentials: "include",
     headers: {
@@ -26,7 +26,7 @@ export function getVerifications(owner, organization, page = "", pageSize = "", 
 }
 
 export function getVerification(owner, name) {
-  return fetch(`${Setting.ServerUrl}/api/get-verification?id=${owner}/${encodeURIComponent(name)}`, {
+  return fetch(`${Setting.ServerUrl}/v1/iam/get-verification?id=${owner}/${encodeURIComponent(name)}`, {
     method: "GET",
     credentials: "include",
     headers: {

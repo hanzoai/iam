@@ -225,7 +225,7 @@ class ServerEditPage extends React.Component {
             {Setting.getLabel(i18next.t("provider:Base URL"), i18next.t("provider:Base URL - Tooltip"))} :
           </Col>
           <Col span={22} >
-            <Input prefix={<LinkOutlined />} readonly value={`${window.location.origin}/api/server/${this.state.server.owner}/${this.state.server.name}`} />
+            <Input prefix={<LinkOutlined />} readonly value={`${window.location.origin}/v1/iam/server/${this.state.server.owner}/${this.state.server.name}`} />
           </Col>
         </Row>
       </Card>
