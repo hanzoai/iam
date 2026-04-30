@@ -254,7 +254,7 @@
   }
 
   async function loginCas(body, casService) {
-    return fetch(window.location.origin + "/api/login?service=" + encodeURIComponent(casService || ""), {
+    return fetch(window.location.origin + "/v1/iam/login?service=" + encodeURIComponent(casService || ""), {
       method: "POST",
       credentials: "include",
       body: JSON.stringify(body),
@@ -334,7 +334,7 @@
     }
 
     var oAuthParams = getOAuthGetParameters(innerParams, queryString);
-    var response = await fetch(window.location.origin + "/api/login" + oAuthParamsToQuery(oAuthParams), {
+    var response = await fetch(window.location.origin + "/v1/iam/login" + oAuthParamsToQuery(oAuthParams), {
       method: "POST",
       credentials: "include",
       body: JSON.stringify(body),
