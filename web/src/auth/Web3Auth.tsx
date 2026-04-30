@@ -263,6 +263,34 @@ function getWeb3OnboardWallets(options) {
   });
 }
 
+// White-label: hide the "powered by thirdweb" branding rendered by web3-onboard.
+// web3-onboard mounts inside a `<onboard-v2>` shadow DOM, so global CSS can't
+// reach it — we must inject a stylesheet into the shadow root after mount.
+function hideWeb3OnboardBranding() {
+  if (typeof document === "undefined") {return;}
+  const inject = (el) => {
+    const root = el && el.shadowRoot;
+    if (!root || root.querySelector("style[data-iam-wl='true']")) {return;}
+    const style = document.createElement("style");
+    style.setAttribute("data-iam-wl", "true");
+    // Hide bottom thirdweb badge in account-center maximized view (.powered-by-container)
+    // and hide the connect-modal sidebar link to thirdweb.com.
+    style.textContent =
+      ".powered-by-container{display:none !important}" +
+      "a[href*='thirdweb.com']{display:none !important}";
+    root.appendChild(style);
+  };
+  // existing element
+  const existing = document.querySelector("onboard-v2");
+  if (existing) {inject(existing);}
+  // future mounts
+  const obs = new MutationObserver(() => {
+    const el = document.querySelector("onboard-v2");
+    if (el) {inject(el);}
+  });
+  obs.observe(document.body, {childList: true, subtree: true});
+}
+
 export function initWeb3Onboard(application, provider) {
   // init wallet
   // options = ["injected","coinbase",...]
@@ -339,6 +367,7 @@ export function initWeb3Onboard(application, provider) {
     chains,
     appMetadata,
   });
+  hideWeb3OnboardBranding();
   return web3Onboard;
 }
 
