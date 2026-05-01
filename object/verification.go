@@ -584,4 +584,3 @@ func GetVerification(id string) (*VerificationRecord, error) {
 	}
 	return getVerification(owner, name)
 }
-
