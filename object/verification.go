@@ -290,20 +290,20 @@ func getUnusedVerificationRecord(dest string) (*VerificationRecord, error) {
 }
 
 func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult, error) {
-	// Per-user pinned OTP: look up user by phone, accept their VerificationCode
-	// without requiring the send step. Set via superadmin per user.
+	// Per-user pinned OTP — primary path. Set `user.VerificationCode` from
+	// superadmin to give a single test/sandbox user a permanent code. Works
+	// without an SMS provider; the send step is skipped (see
+	// SendVerificationCodeToPhone).
 	if user, _ := GetUserByPhoneOnly(dest); user != nil && user.VerificationCode != "" && user.VerificationCode == code {
 		return &VerifyResult{VerificationSuccess, ""}, nil
 	}
 
-	// Accept env-var pinned OTP for test numbers (all-same-digit phones).
-	if pinned := pinnedOTP(dest); pinned != "" && code == pinned {
-		return &VerifyResult{VerificationSuccess, ""}, nil
-	}
-
-	// Sandbox global bypass: when SANDBOX_GLOBAL_OTP is set, ANY phone or email
-	// accepts that code without a real verification record. Set this only in
-	// non-prod (devnet/testnet sandbox) manifests — production must leave it empty.
+	// Sandbox-wide bypass — one env, gated by EnforceSandboxOriginGuard at
+	// boot so it can ONLY be set on .dev.satschel.com / .test.satschel.com /
+	// localhost / .local. Boot panics if set with any other ORIGIN. When
+	// active, ANY phone or email accepts that single code without a real
+	// verification record. Production manifests must leave SANDBOX_GLOBAL_OTP
+	// empty (the guard enforces this).
 	if pinned := os.Getenv("SANDBOX_GLOBAL_OTP"); pinned != "" && code == pinned {
 		return &VerifyResult{VerificationSuccess, ""}, nil
 	}
@@ -585,28 +585,3 @@ func GetVerification(id string) (*VerificationRecord, error) {
 	return getVerification(owner, name)
 }
 
-// pinnedOTP returns the BYPASS_OTP value if the phone number is a test
-// number (all repeated digits like +19999999999). Returns "" otherwise.
-func pinnedOTP(dest string) string {
-	code := os.Getenv("BYPASS_OTP")
-	if code == "" {
-		return ""
-	}
-	var digits []byte
-	for _, c := range []byte(dest) {
-		if c >= '0' && c <= '9' {
-			digits = append(digits, c)
-		}
-	}
-	if len(digits) < 7 {
-		return ""
-	}
-	last7 := digits[len(digits)-7:]
-	d := last7[0]
-	for _, c := range last7[1:] {
-		if c != d {
-			return ""
-		}
-	}
-	return code
-}
