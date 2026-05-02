@@ -12,9 +12,13 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"os"
 	"strings"
 
+	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/util"
 )
 
 // BootstrapApplicationUpsert
@@ -186,6 +190,251 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		"created": created,
 	}
 	c.ServeJSON()
+}
+
+// BootstrapUserUpsert
+//
+// Endpoint:  POST /v1/iam/admin/users/upsert
+// Auth:      service-token via Authorization: Bearer <token>
+//
+//	where token is one of $HANZO_API_KEY / $KMS_SERVICE_TOKEN / $IAM_SERVICE_TOKEN.
+//	Validated by routers/auto_signin_filter.go before this handler runs.
+//
+// Idempotent operator-driven user provisioning. Used by liquid-operator to
+// reconcile LiquidIAM.spec.users[] against IAM — no human admin in the loop.
+//
+// If the user exists by (owner, name) → update; else insert. Passwords are
+// always hashed at rest (argon2id by default; bcrypt rejected; "plain" passes
+// through only when explicitly requested for sandbox fixtures).
+//
+// Body:
+//
+//	{
+//	  "owner":             "liquidity",        // required
+//	  "name":              "z",                // required
+//	  "displayName":       "Z",
+//	  "email":             "z@",
+//	  "phone":             "9137779708",
+//	  "countryCode":       "US",
+//	  "password":          "...",
+//	  "passwordType":      "argon2id"|"plain", // default argon2id; bcrypt rejected
+//	  "type":              "normal-user",      // default normal-user
+//	  "isAdmin":           false,
+//	  "signupApplication": "liquidity-app",
+//	  "emailVerified":     true,
+//	  "properties":        { "...": "..." }    // future-proof free-form
+//	}
+//
+// Response on success:
+//
+//	{ "status": "ok", "data": { "created": bool, "name": "...", "email": "..." } }
+func (c *ApiController) BootstrapUserUpsert() {
+	var req struct {
+		Owner             string            `json:"owner"`
+		Name              string            `json:"name"`
+		DisplayName       string            `json:"displayName"`
+		Email             string            `json:"email"`
+		Phone             string            `json:"phone"`
+		CountryCode       string            `json:"countryCode"`
+		Password          string            `json:"password"`
+		PasswordType      string            `json:"passwordType"`
+		Type              string            `json:"type"`
+		IsAdmin           bool              `json:"isAdmin"`
+		SignupApplication string            `json:"signupApplication"`
+		EmailVerified     bool              `json:"emailVerified"`
+		Properties        map[string]string `json:"properties"`
+	}
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	req.Owner = strings.TrimSpace(req.Owner)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Owner == "" || req.Name == "" {
+		c.ResponseError("owner and name are required")
+		return
+	}
+
+	if req.Type == "" {
+		req.Type = "normal-user"
+	}
+
+	if req.Email != "" && !util.IsEmailValid(req.Email) {
+		c.ResponseError(fmt.Sprintf("invalid email: %s", req.Email))
+		return
+	}
+
+	if req.Phone != "" && os.Getenv("SANDBOX_SKIP_PHONE_VALIDATION") == "" {
+		// E.164 acceptable shape: + followed by digits, or libphonenumber-valid.
+		if !util.IsPhoneValid(req.Phone, req.CountryCode) {
+			c.ResponseError(fmt.Sprintf("invalid phone: %s (countryCode=%s)", req.Phone, req.CountryCode))
+			return
+		}
+	}
+
+	hashedPassword, hashedSalt, hashedType, err := hashBootstrapPassword(req.Password, req.PasswordType)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	id := req.Owner + "/" + req.Name
+	existing, _ := object.GetUser(id)
+
+	if existing != nil {
+		existing.DisplayName = pickNonEmpty(req.DisplayName, existing.DisplayName)
+		existing.Email = pickNonEmpty(req.Email, existing.Email)
+		existing.Phone = pickNonEmpty(req.Phone, existing.Phone)
+		existing.CountryCode = pickNonEmpty(req.CountryCode, existing.CountryCode)
+		existing.Type = pickNonEmpty(req.Type, existing.Type)
+		existing.SignupApplication = pickNonEmpty(req.SignupApplication, existing.SignupApplication)
+		existing.IsAdmin = req.IsAdmin
+		existing.EmailVerified = req.EmailVerified
+		if req.Properties != nil {
+			if existing.Properties == nil {
+				existing.Properties = map[string]string{}
+			}
+			for k, v := range req.Properties {
+				existing.Properties[k] = v
+			}
+		}
+		if hashedPassword != "" {
+			existing.Password = hashedPassword
+			existing.PasswordSalt = hashedSalt
+			existing.PasswordType = hashedType
+		}
+
+		// Persist verbatim — UpdateUserForAllFields does AllCols().Update so
+		// the password, salt, and type we computed land exactly as-is. This
+		// also handles the displayName/email/phone/etc updates without the
+		// column allowlist gymnastics UpdateUser requires.
+		ok, uerr := object.UpdateUserForAllFields(id, existing)
+		if uerr != nil {
+			c.ResponseError(uerr.Error())
+			return
+		}
+		c.Data["json"] = map[string]any{
+			"status": "ok",
+			"data": map[string]any{
+				"created": false,
+				"name":    req.Name,
+				"email":   existing.Email,
+			},
+			"updated": ok,
+		}
+		c.ServeJSON()
+		return
+	}
+
+	user := &object.User{
+		Owner:             req.Owner,
+		Name:              req.Name,
+		DisplayName:       req.DisplayName,
+		Email:             req.Email,
+		Phone:             req.Phone,
+		CountryCode:       req.CountryCode,
+		Type:              req.Type,
+		IsAdmin:           req.IsAdmin,
+		SignupApplication: req.SignupApplication,
+		EmailVerified:     req.EmailVerified,
+		Properties:        req.Properties,
+		Password:          hashedPassword,
+		PasswordSalt:      hashedSalt,
+		PasswordType:      hashedType,
+	}
+	if user.DisplayName == "" {
+		user.DisplayName = req.Name
+	}
+
+	created, err := object.AddUser(user, c.GetAcceptLanguage())
+	if err != nil {
+		// Mirror the applications/upsert race-tolerance: if the global engine
+		// holds a row that the per-org getUser missed, AddUser's INSERT raises
+		// UNIQUE. Fall through to update so repeated operator calls are
+		// genuinely idempotent.
+		if isUniqueConstraintErr(err) {
+			ok, uerr := object.UpdateUserForAllFields(id, user)
+			if uerr != nil {
+				c.ResponseError(uerr.Error())
+				return
+			}
+			c.Data["json"] = map[string]any{
+				"status": "ok",
+				"data": map[string]any{
+					"created": false,
+					"name":    req.Name,
+					"email":   user.Email,
+				},
+				"updated": ok,
+			}
+			c.ServeJSON()
+			return
+		}
+		c.ResponseError(err.Error())
+		return
+	}
+
+	c.Data["json"] = map[string]any{
+		"status": "ok",
+		"data": map[string]any{
+			"created": created,
+			"name":    req.Name,
+			"email":   user.Email,
+		},
+	}
+	c.ServeJSON()
+}
+
+// hashBootstrapPassword normalizes the requested passwordType and returns the
+// (password, salt, passwordType) triple the controller will pass downstream.
+//
+//	""           → "argon2id"  (default — argon2id hash with random salt)
+//	"argon2id"   → "argon2id"  (hash with random salt)
+//	"plain"      → "plain"     (sandbox/test fixture; plaintext returned)
+//	"bcrypt"     → error       (deprecated, use argon2id)
+//	other        → error       (unsupported)
+//
+// An empty password is allowed (e.g. OAuth-only users) and returns ("","","").
+//
+// Note: when the caller writes a "plain" row through AddUser (new user),
+// IAM's existing security gate auto-upgrades plain → argon2id at insert time
+// (see object.User.UpdateUserPassword + object.sanitizeOrgPasswordType).
+// That means in practice "plain" is the controller-boundary contract for
+// "send me plaintext and I'll hash it for you" — at-rest the row is always
+// argon2id. Existing rows updated through UpdateUserForAllFields persist the
+// fields verbatim; "plain" at rest there is reserved for explicit fixture
+// scenarios under SANDBOX_* gates and must not be used in production.
+func hashBootstrapPassword(password, passwordType string) (string, string, string, error) {
+	if password == "" {
+		return "", "", "", nil
+	}
+	switch passwordType {
+	case "", "argon2id":
+		cm := cred.GetCredManager("argon2id")
+		if cm == nil {
+			return "", "", "", fmt.Errorf("argon2id cred manager unavailable")
+		}
+		salt := util.GeneratePasswordSalt()
+		hashed := cm.GetHashedPassword(password, salt)
+		if hashed == "" {
+			return "", "", "", fmt.Errorf("argon2id hash failed")
+		}
+		return hashed, salt, "argon2id", nil
+	case "plain":
+		return password, "", "plain", nil
+	case "bcrypt":
+		return "", "", "", fmt.Errorf("passwordType 'bcrypt' is rejected — use 'argon2id'")
+	default:
+		return "", "", "", fmt.Errorf("unsupported passwordType: %s", passwordType)
+	}
+}
+
+func pickNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func isUniqueConstraintErr(err error) bool {
