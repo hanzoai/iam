@@ -267,16 +267,24 @@ func getUrlPath(ctx *context.Context) string {
 		return "/scim"
 	}
 
-	if strings.HasPrefix(urlPath, "/login/oauth") {
+	// /login/oauth/* — Casdoor-legacy OAuth surface. Both the bare prefix
+	// (e.g. /login/oauth/access_token) and the canonical /v1/iam/-prefixed
+	// variant (e.g. /v1/iam/login/oauth/access_token) collapse to the same
+	// /login/oauth resource so the anonymous policy applies. Without the
+	// /v1/iam/login/oauth case, IAM v1.13.0+ public clients hit
+	// "Unauthorized operation" because Casbin sees the full prefixed path.
+	if strings.HasPrefix(urlPath, "/login/oauth") ||
+		strings.HasPrefix(urlPath, "/v1/iam/login/oauth") {
 		return "/login/oauth"
 	}
 
-	// Normalize /oauth/* aliases to their canonical paths for authz.
-	// /oauth/authorize is the OIDC-advertised authorize endpoint; it must be
-	// reachable by anonymous users (the Beego handler 302s to the SPA login
-	// at /login/oauth/authorize). Map it to /login/oauth so existing anonymous
-	// policy applies — without this, authz denies before OAuthAuthorizeRedirect
-	// can run and the client sees `{status:"error",msg:"Unauthorized operation"}`.
+	// Normalize /oauth/* aliases (and their /v1/iam/-prefixed canonical
+	// variants) to existing authz paths so the anonymous OIDC/OAuth policy
+	// applies. /oauth/authorize is the OIDC-advertised authorize endpoint;
+	// it must be reachable by anonymous users (the Beego handler 302s to the
+	// SPA login at /login/oauth/authorize). Without this, authz denies
+	// before OAuthAuthorizeRedirect can run and the client sees
+	// `{status:"error",msg:"Unauthorized operation"}`.
 	switch urlPath {
 	// TODO(red-2026-04-30,finding-C): /oauth/introspect and /oauth/revoke
 	// are aliased to the anonymous /login/oauth policy here so the OIDC
@@ -284,13 +292,14 @@ func getUrlPath(ctx *context.Context) string {
 	// oracle and revoke is a free unauthenticated mutation. Re-evaluate
 	// post-demo: split these out and require client_credentials (RFC 7662
 	// §2.1, RFC 7009 §2.1) before they hit this normalizer.
-	case "/oauth/authorize", "/oauth/token", "/oauth/access_token", "/oauth/refresh", "/oauth/introspect", "/oauth/revoke":
+	case "/oauth/authorize", "/oauth/token", "/oauth/access_token", "/oauth/refresh", "/oauth/introspect", "/oauth/revoke",
+		"/v1/iam/oauth/authorize", "/v1/iam/oauth/token", "/v1/iam/oauth/access_token", "/v1/iam/oauth/refresh", "/v1/iam/oauth/introspect", "/v1/iam/oauth/revoke":
 		return "/login/oauth"
-	case "/oauth/userinfo":
+	case "/oauth/userinfo", "/v1/iam/oauth/userinfo":
 		return "/v1/iam/userinfo"
-	case "/oauth/device":
+	case "/oauth/device", "/v1/iam/oauth/device":
 		return "/v1/iam/device-auth"
-	case "/oauth/logout":
+	case "/oauth/logout", "/v1/iam/oauth/logout":
 		return "/v1/iam/logout"
 	}
 
