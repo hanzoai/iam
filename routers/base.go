@@ -61,6 +61,10 @@ func isServiceTokenRoute(urlPath string) bool {
 		// HANZO_API_KEY/KMS_SERVICE_TOKEN/IAM_SERVICE_TOKEN service-token
 		// pipeline used by sync-init-data.
 		return true
+	case "/v1/iam/admin/users/upsert":
+		// Operator-driven user provisioning (LiquidIAM.spec.users[]). Same
+		// service-token pipeline as applications/upsert.
+		return true
 	default:
 		return false
 	}
