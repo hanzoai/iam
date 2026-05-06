@@ -25,7 +25,7 @@ import (
 // @Title DynamicClientRegister
 // @Tag OAuth API
 // @Description Register a new OAuth 2.0 client dynamically (RFC 7591)
-// @Param   organization     query    string  false        "The organization name (defaults to built-in)"
+// @Param   organization     query    string  false        "The organization name (defaults to admin)"
 // @Param   body    body   object.DynamicClientRegistrationRequest  true        "Client registration request"
 // @Success 201 {object} object.DynamicClientRegistrationResponse
 // @Failure 400 {object} object.DcrError
