@@ -1010,7 +1010,12 @@ func AddApplication(application *Application) (bool, error) {
 		providerItem.Provider = nil
 	}
 
-	affected, err := ormer.Engine.Insert(application)
+	// Route through orgEngine so per-org SQLite isolation (orgIsolation=sqlite)
+	// writes to the same DB getApplication reads from. Without this, init-seeded
+	// apps land in the global iam.db while runtime lookups hit /data/iam/orgs/<owner>/iam.db
+	// and never find them — login dies with "application does not exist" even
+	// though the row is right there. Matches the read path at line 459.
+	affected, err := orgEngine(application.Owner).Insert(application)
 	if err != nil {
 		fmt.Printf("[AddApplication] INSERT failed for app %s/%s (clientId=%s): %v\n",
 			application.Owner, application.Name, application.ClientId, err)
