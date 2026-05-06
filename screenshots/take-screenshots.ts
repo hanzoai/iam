@@ -7,11 +7,12 @@ import { chromium } from '@playwright/test';
     colorScheme: 'dark',
   });
 
+  const BASE = process.env.IAM_SCREENSHOT_BASE || 'http://localhost:8000';
   const pages = [
-    { url: 'https://iam.next.satschel.com/login', name: '01-login' },
-    { url: 'https://iam.next.satschel.com/signup', name: '02-signup' },
-    { url: 'https://iam.next.satschel.com/nonexistent-page-404', name: '03-404' },
-    { url: 'https://iam.next.satschel.com/', name: '04-home' },
+    { url: `${BASE}/login`, name: '01-login' },
+    { url: `${BASE}/signup`, name: '02-signup' },
+    { url: `${BASE}/nonexistent-page-404`, name: '03-404' },
+    { url: `${BASE}/`, name: '04-home' },
   ];
 
   for (const { url, name } of pages) {
