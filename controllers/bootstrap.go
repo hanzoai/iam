@@ -150,6 +150,11 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		TokenFormat:    "JWT",
 		EnablePassword: true,
 		EnableSignUp:   true,
+		// Sign JWTs with the system-seeded cert by default. init.go puts
+		// `cert-superuser` (RSA keypair) in the admin namespace; every
+		// tenant app can reference it to mint tokens. Per-tenant certs
+		// are an explicit override (set req.Cert / future field).
+		Cert: "cert-superuser",
 	}
 	if app.DisplayName == "" {
 		app.DisplayName = req.Name
