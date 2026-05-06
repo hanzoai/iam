@@ -71,16 +71,56 @@ jobs:
         working-directory: ./web
 
   # -- Build + push (only after all gates pass) ------------------
+  # Single-runner multi-arch via QEMU. The shared docker-build.yml's
+  # matrix variant requires a `hanzo-build-linux-arm64` ARC pool that's
+  # currently paused; until that comes back, IAM builds both arches on
+  # the amd64 runner with binfmt emulation. Mirror what
+  # lux/{explorer,graph,indexer} do — Mac devs run native arm64 under
+  # OrbStack with zero Rosetta, so the build-time emulation is
+  # acceptable; runtime is what matters.
   docker:
     needs: [go-tests, go-build, frontend-build]
-    uses: hanzoai/.github/.github/workflows/docker-build.yml@main
-    with:
-      image: ghcr.io/hanzoai/iam
-      # Mac devs run images natively under OrbStack on Apple Silicon.
-      # Zero Rosetta is allowed — every image must publish linux/arm64.
-      platforms: "linux/amd64,linux/arm64"
-      target: standard
-    secrets: inherit
+    runs-on: hanzo-build-linux-amd64
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test' || startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          driver-opts: network=host
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/hanzoai/iam
+          flavor: latest=auto
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: standard
+          platforms: linux/amd64,linux/arm64
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=iam
+          cache-to: type=gha,scope=iam,mode=max
+          provenance: false
+          push: true
 
   # -- Dispatch to universe for GitOps deploy --------------------
   dispatch-to-universe:
