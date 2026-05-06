@@ -38,7 +38,7 @@ func InitApi() {
 	// if len(Enforcer.GetPolicy()) == 0 {
 	if true {
 		ruleText := `
-p, built-in, *, *, *, *, *
+p, superuser, *, *, *, *, *
 p, app, *, *, *, *, *
 p, *, !anonymous, POST, /v1/iam/add-organization, admin, *
 p, *, !anonymous, POST, /v1/iam/update-organization, admin, *
