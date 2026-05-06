@@ -653,6 +653,42 @@ func GetApplication(id string) (*Application, error) {
 	return getApplication(owner, name)
 }
 
+// FindApplicationByName resolves an application by its name across the
+// configured admin namespace and a tenant org. Tries `<adminOrg>/<name>`
+// first (system apps + the legacy seed location), then `<orgHint>/<name>`
+// (apps owned by a tenant org), then a global by-name lookup so a caller
+// that doesn't know the owner can still find the row. Returns (nil, nil)
+// if no match.
+//
+// Use this everywhere a controller currently does
+// `GetApplication("admin/" + appName)` — that hardcoded `admin/` lookup
+// breaks the moment an app is owned by a tenant org (which is the
+// post-init steady state for everything except app-superuser /
+// app-built-in).
+func FindApplicationByName(name, orgHint string) (*Application, error) {
+	if name == "" {
+		return nil, nil
+	}
+	if app, err := getApplication(conf.AdminOrg(), name); err != nil {
+		return nil, err
+	} else if app != nil {
+		return app, nil
+	}
+	if orgHint != "" && orgHint != conf.AdminOrg() {
+		if app, err := getApplication(orgHint, name); err != nil {
+			return nil, err
+		} else if app != nil {
+			return app, nil
+		}
+	}
+	app := Application{}
+	existed, err := ormer.Engine.Where("name = ?", name).Get(&app)
+	if err != nil || !existed {
+		return nil, err
+	}
+	return &app, nil
+}
+
 func GetMaskedApplication(application *Application, userId string) *Application {
 	if application == nil {
 		return nil
