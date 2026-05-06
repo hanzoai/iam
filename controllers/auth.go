@@ -538,7 +538,7 @@ func (c *ApiController) Login() {
 			}
 
 			var application *object.Application
-			application, err = object.GetApplication(fmt.Sprintf("admin/%s", authForm.Application))
+			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
 			if err != nil {
 				c.ResponseError(err.Error(), nil)
 				return
@@ -585,7 +585,7 @@ func (c *ApiController) Login() {
 			}
 
 			var application *object.Application
-			application, err = object.GetApplication(fmt.Sprintf("admin/%s", authForm.Application))
+			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
 			if err != nil {
 				c.ResponseError(err.Error(), nil)
 				return
@@ -652,7 +652,7 @@ func (c *ApiController) Login() {
 			}
 		} else {
 			var application *object.Application
-			application, err = object.GetApplication(fmt.Sprintf("admin/%s", authForm.Application))
+			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
 			if err != nil {
 				c.ResponseError(err.Error(), nil)
 				return
@@ -726,7 +726,7 @@ func (c *ApiController) Login() {
 			return
 		} else {
 			var application *object.Application
-			application, err = object.GetApplication(fmt.Sprintf("admin/%s", authForm.Application))
+			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
 			if err != nil {
 				c.ResponseError(err.Error())
 				return
@@ -760,7 +760,7 @@ func (c *ApiController) Login() {
 				return
 			}
 		} else {
-			application, err = object.GetApplication(fmt.Sprintf("admin/%s", authForm.Application))
+			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
 			if err != nil {
 				c.ResponseError(err.Error())
 				return
@@ -1136,7 +1136,7 @@ func (c *ApiController) Login() {
 
 		var application *object.Application
 		if authForm.ClientId == "" {
-			application, err = object.GetApplication(fmt.Sprintf("admin/%s", authForm.Application))
+			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
 		} else {
 			application, err = object.GetApplicationByClientId(authForm.ClientId)
 		}
@@ -1213,7 +1213,7 @@ func (c *ApiController) Login() {
 		if c.GetSessionUsername() != "" {
 			// user already signed in to IAM, so let the user click the avatar button to do the quick sign-in
 			var application *object.Application
-			application, err = object.GetApplication(fmt.Sprintf("admin/%s", authForm.Application))
+			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
 			if err != nil {
 				c.ResponseError(err.Error())
 				return
@@ -1411,7 +1411,7 @@ func (c *ApiController) GetCaptchaStatus() {
 	userId := c.Ctx.Input.Query("userId")
 	applicationName := c.Ctx.Input.Query("application")
 
-	application, err := object.GetApplication(fmt.Sprintf("admin/%s", applicationName))
+	application, err := object.FindApplicationByName(applicationName, "")
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

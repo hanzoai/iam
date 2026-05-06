@@ -89,7 +89,7 @@ func (c *ApiController) Signup() {
 		return
 	}
 
-	application, err := object.GetApplication(fmt.Sprintf("admin/%s", authForm.Application))
+	application, err := object.FindApplicationByName(authForm.Application, authForm.Organization)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
