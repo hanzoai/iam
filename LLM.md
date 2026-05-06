@@ -42,7 +42,7 @@ For multi-tenant per-org isolation: each org gets a separate SQLite file under `
 
 ### User login
 
-1. Browser hits `https://iam.{env}./v1/iam/login`
+1. Browser hits `https://iam.{env}.{deployment-domain}/v1/iam/login`
 2. Form submit → Base verifies password + MFA
 3. Sets session, redirects to OAuth `authorize` endpoint
 4. Returns code → SPA exchanges via `/v1/iam/login/oauth/access_token`
@@ -52,7 +52,7 @@ For multi-tenant per-org isolation: each org gets a separate SQLite file under `
 For machine identity (e.g. KMS pulling from IAM, or a CI job calling internal APIs):
 
 ```bash
-curl -X POST https://iam.dev./v1/iam/login/oauth/access_token \
+curl -X POST https://iam.dev.{deployment-domain}/v1/iam/login/oauth/access_token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials&client_id=<id>&client_secret=<secret>"
 ```
@@ -61,18 +61,18 @@ Returns `{"access_token": "...", "expires_in": 86400, "token_type": "Bearer"}`.
 
 ### JWKS for downstream JWT validation
 
-`GET /v1/iam/.well-known/jwks` — RSA public keys for verifying issued JWTs. Liquid Gateway and ATS validate tokens using JWKS — no shared secret.
+`GET /v1/iam/.well-known/jwks` — RSA public keys for verifying issued JWTs. Downstream services (gateways, ATS, etc.) validate tokens using JWKS — no shared secret.
 
 ## Deployment
 
 | Env | URL | Image | Storage |
 |---|---|---|---|
-| devnet | `https://iam.dev.` | `/iam:dev` | Base/SQLite (PVC) |
-| testnet | `https://iam.test.` | `/iam:test` | Base/SQLite (PVC) |
-| mainnet | `https://iam.main.` | `/iam:main` | Base/SQLite (PVC) |
-| local | `http://localhost:8000` | `/iam:dev` | SQLite (volume) |
+| devnet | `https://iam.dev.{domain}` | `ghcr.io/hanzoai/iam:dev` | Base/SQLite (PVC) |
+| testnet | `https://iam.test.{domain}` | `ghcr.io/hanzoai/iam:test` | Base/SQLite (PVC) |
+| mainnet | `https://iam.main.{domain}` | `ghcr.io/hanzoai/iam:main` | Base/SQLite (PVC) |
+| local | `http://localhost:8000` | `ghcr.io/hanzoai/iam:dev` | SQLite (volume) |
 
-Deployed via `LiquidIAM` CRD reconciled by `liquid-operator`. Source CR: `~/work/liquidity/universe/k8s/platforms/{env}.yaml`.
+Deployed via the IAM operator CRD. Per-deployment configuration is supplied by the consuming product.
 
 ## Configuration
 
@@ -98,8 +98,7 @@ cd web && pnpm build           # frontend (Vite)
 ```
 
 CI builds multi-arch Docker image (`hanzo-build-linux-amd64` + `hanzo-build-linux-arm64` runners) and pushes to:
-- `ghcr.io/hanzoai/iam:{tag}` (canonical for Hanzo)
-- `us-docker.pkg.dev/liquidity-registry//iam:{tag}` (for Liquidity)
+- `ghcr.io/hanzoai/iam:{tag}` (canonical)
 
 ## Repository layout
 
@@ -124,10 +123,10 @@ iam/
 
 ## Integration points (across the stack)
 
-- **Liquid Gateway** (`liquid-gateway` in `liquidity` ns): validates inbound JWTs against IAM JWKS
-- **KMS** (``): authenticates clients via `/v1/iam/login/oauth/access_token` (client_credentials), then mints short-lived bearer for KMS sessions
-- **ATS / BD / TA**: extract `sub` (user) and `owner` (org) from JWT claims
-- **Liquidity Console / Exchange / Superadmin / Platform**: standard authorization_code + PKCE OAuth flow
+- **Gateway**: validates inbound JWTs against IAM JWKS
+- **KMS**: authenticates clients via `/v1/iam/login/oauth/access_token` (client_credentials), then mints short-lived bearer for KMS sessions
+- **Downstream services**: extract `sub` (user) and `owner` (org) from JWT claims
+- **Web consoles / SPA clients**: standard authorization_code + PKCE OAuth flow
 - **MPC**: WebAuthn challenges issued via IAM, completed in browser, then user shard authorized via JWT bound to NodeID
 
 ## Security posture
@@ -135,7 +134,7 @@ iam/
 - All secrets land in KMS first, synced to k8s `Secret` via `KMSSecret` CR — never push raw key bytes through `kubectl apply`
 - Argon2id password hashing (NEVER plaintext, NEVER bcrypt)
 - Per-org DEK derived from a master key stored in KMS — encrypted-at-rest tables
-- TLS termination at Liquid Ingress; IAM serves plain HTTP internally
+- TLS termination at the deployment ingress; IAM serves plain HTTP internally
 - JWKS rotation: keys are dual-published (current + previous) for graceful rollover
 
 ## Testing
@@ -152,13 +151,11 @@ E2E tests live at `tests/iam-e2e.spec.ts` and `tests/iam-login.spec.ts`. They ru
 
 - ❌ A PostgreSQL service (no postgres anywhere — Base/SQLite only)
 - ❌ A Redis user (no Redis — sessions live in Base)
-- ❌ Available at `hanzo.id` for Liquidity workloads — Liquidity uses `iam.{env}.`. `hanzo.id` is the public Hanzo brand origin, separate cluster.
+- ❌ Branded — IAM is the white-label engine; brand surfaces live in the consuming product, not here.
 
 ## Related
 
 - `~/work/hanzo/iam/NOTICE` — upstream library attributions (legal)
-- `~/work/liquidity/operator/src/crd.rs` — `LiquidIAM` CRD spec
-- `~/work/liquidity/universe/k8s/platforms/{env}.yaml` — per-env CR instances
 - Memory notes (these are policy):
   - `feedback_iam_no_casdoor.md` — IAM is uniquely ours
   - `feedback_no_postgres_anywhere.md` — Base/SQLite only
