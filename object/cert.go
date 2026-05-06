@@ -364,7 +364,7 @@ func getCertByApplication(application *Application) (*Cert, error) {
 		if err != nil {
 			return nil, err
 		}
-		// If the named cert doesn't exist (e.g. "cert-built-in" on fresh
+		// If the named cert doesn't exist (e.g. "cert-admin" on fresh
 		// boot), fall back to the default cert so JWT signing works.
 		if cert == nil {
 			return GetDefaultCert()
