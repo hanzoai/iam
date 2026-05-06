@@ -177,7 +177,7 @@ func getObject(ctx *context.Context) (string, string, error) {
 					return util.GetOwnerAndNameFromIdWithError(adapterId)
 				}
 			} else {
-				// query == "?id=built-in/admin"
+				// query == "?id=superuser/admin"
 				id := ctx.Input.Query("id")
 				if id != "" {
 					return util.GetOwnerAndNameFromIdWithError(id)
@@ -186,7 +186,7 @@ func getObject(ctx *context.Context) (string, string, error) {
 		}
 
 		if !(strings.HasPrefix(ctx.Request.URL.Path, "/v1/iam/get-") && strings.HasSuffix(ctx.Request.URL.Path, "s")) {
-			// query == "?id=built-in/admin"
+			// query == "?id=superuser/admin"
 			id := ctx.Input.Query("id")
 			if id != "" {
 				return util.GetOwnerAndNameFromIdWithError(id)
@@ -234,7 +234,7 @@ func getObject(ctx *context.Context) (string, string, error) {
 			// Organization operations: use owner field (typically "admin") as the
 			// resource owner so that org admins (isAdmin=true) can create/update/delete
 			// organizations. Previously used obj.Name which made objOwner the new org's
-			// name — causing authorization to fail for non-built-in users.
+			// name — causing authorization to fail for non-superuser users.
 			return obj.Owner, obj.Name, nil
 		}
 

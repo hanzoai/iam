@@ -136,3 +136,16 @@ func GetConfigBatchSize() int {
 	}
 	return res
 }
+
+// AdminOrg returns the namespace owner used for system-wide resources
+// (apps, certs, providers, syncers, organizations seeded by init.go).
+// Configurable via the `adminOrg` setting in app.conf or env var. Defaults
+// to "admin". Set per install — Liquidity uses "admin"; other tenants may
+// pick their own. There is no fallback: every "admin"-namespaced lookup
+// in the codebase resolves through this single source.
+func AdminOrg() string {
+	if v := GetConfigString("adminOrg"); v != "" {
+		return v
+	}
+	return "admin"
+}

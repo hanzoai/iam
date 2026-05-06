@@ -47,7 +47,7 @@ func TestBcryptUpgradedToArgon2id(t *testing.T) {
 // TestValidPasswordTypesPassThrough verifies that legitimate hash types
 // are not modified by sanitizeOrgPasswordType.
 func TestValidPasswordTypesPassThrough(t *testing.T) {
-	validTypes := []string{"bcrypt", "argon2id", "salt", "md5-salt", "sha512-salt", "pbkdf2-salt", "pbkdf2-django"}
+	validTypes := []string{"argon2id", "salt", "md5-salt", "sha512-salt", "pbkdf2-salt", "pbkdf2-django"}
 	for _, pt := range validTypes {
 		result := sanitizeOrgPasswordType(pt)
 		if result != pt {
@@ -66,7 +66,7 @@ func TestSuperuserOrgIsGlobalAdmin(t *testing.T) {
 	}
 
 	// Non-superuser orgs must never grant global admin
-	nonGlobalOrgs := []string{"hanzo", "lux", "zoo", "pars", "adnexus", "customer-org", "built-in", ""}
+	nonGlobalOrgs := []string{"hanzo", "lux", "zoo", "pars", "adnexus", "customer-org", "admin", ""}
 	for _, org := range nonGlobalOrgs {
 		u := &User{Owner: org, Name: "test-user", IsAdmin: true}
 		if u.IsGlobalAdmin() {
