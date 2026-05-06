@@ -16,6 +16,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
@@ -127,6 +128,15 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		return
 	}
 
+	// Bootstrap is operator-driven — the moment we seed an app it should
+	// be usable for browser login. Auto-create the org row if it's the
+	// first app in that tenant, then enable password+signup so the very
+	// next /login call against this app succeeds without a follow-up
+	// admin tweak. Operator already holds the service token; trust it.
+	if err := ensureOrganization(req.Organization); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
 	app := &object.Application{
 		Owner:          owner,
 		Name:           req.Name,
@@ -138,8 +148,8 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		RedirectUris:   req.RedirectUris,
 		ExpireInHours:  24,
 		TokenFormat:    "JWT",
-		EnablePassword: false,
-		EnableSignUp:   false,
+		EnablePassword: true,
+		EnableSignUp:   true,
 	}
 	if app.DisplayName == "" {
 		app.DisplayName = req.Name
@@ -253,6 +263,11 @@ func (c *ApiController) BootstrapUserUpsert() {
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Owner == "" || req.Name == "" {
 		c.ResponseError("owner and name are required")
+		return
+	}
+
+	if err := ensureOrganization(req.Owner); err != nil {
+		c.ResponseError(err.Error())
 		return
 	}
 
@@ -457,4 +472,43 @@ func generateBootstrapSecret() string {
 		panic("crypto/rand failed: " + err.Error())
 	}
 	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
+// ensureOrganization creates the org row if it doesn't exist. Bootstrap is
+// trusted (operator-driven), and password-login on a freshly-seeded app
+// requires the org row exist. Idempotent: existing orgs are left alone.
+//
+// Empty name resolves to the configured admin org so the legacy unset-org
+// callers (which fell through to "admin" elsewhere) keep working.
+func ensureOrganization(name string) error {
+	if name == "" {
+		name = conf.AdminOrg()
+	}
+	id := util.GetId(conf.AdminOrg(), name)
+	existing, err := object.GetOrganization(id)
+	if err != nil {
+		return fmt.Errorf("lookup org %s: %w", id, err)
+	}
+	if existing != nil {
+		return nil
+	}
+	org := &object.Organization{
+		Owner:        conf.AdminOrg(),
+		Name:         name,
+		DisplayName:  name,
+		PasswordType: "argon2id",
+		AccountItems: []*object.AccountItem{
+			{Name: "Organization", Visible: true, ViewRule: "Public", ModifyRule: "Admin"},
+			{Name: "ID", Visible: true, ViewRule: "Public", ModifyRule: "Immutable"},
+			{Name: "Name", Visible: true, ViewRule: "Public", ModifyRule: "Admin"},
+			{Name: "Display name", Visible: true, ViewRule: "Public", ModifyRule: "Self"},
+			{Name: "Email", Visible: true, ViewRule: "Public", ModifyRule: "Self"},
+			{Name: "Phone", Visible: true, ViewRule: "Public", ModifyRule: "Self"},
+			{Name: "Password", Visible: true, ViewRule: "Self", ModifyRule: "Self"},
+		},
+	}
+	if _, err := object.AddOrganization(org); err != nil {
+		return fmt.Errorf("create org %s: %w", id, err)
+	}
+	return nil
 }
