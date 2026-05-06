@@ -299,11 +299,12 @@ func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult
 	}
 
 	// Sandbox-wide bypass — one env, gated by EnforceSandboxOriginGuard at
-	// boot so it can ONLY be set on .dev.example.internal / .test.example.internal /
-	// localhost / .local. Boot panics if set with any other ORIGIN. When
-	// active, ANY phone or email accepts that single code without a real
-	// verification record. Production manifests must leave SANDBOX_GLOBAL_OTP
-	// empty (the guard enforces this).
+	// boot so it can ONLY be set on origins on the sandbox allowlist
+	// (default: localhost / .local; extend per-deployment via
+	// SANDBOX_ORIGIN_ALLOWLIST). Boot panics if set with any other ORIGIN.
+	// When active, ANY phone or email accepts that single code without a
+	// real verification record. Production manifests must leave
+	// SANDBOX_GLOBAL_OTP empty (the guard enforces this).
 	if pinned := os.Getenv("SANDBOX_GLOBAL_OTP"); pinned != "" && code == pinned {
 		return &VerifyResult{VerificationSuccess, ""}, nil
 	}
