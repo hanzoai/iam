@@ -38,7 +38,7 @@ type EmailForm struct {
 type SmsForm struct {
 	Content   string   `json:"content"`
 	Receivers []string `json:"receivers"`
-	OrgId     string   `json:"organizationId"` // e.g. "admin/built-in"
+	OrgId     string   `json:"organizationId"` // e.g. "admin/superuser"
 }
 
 type NotificationForm struct {
