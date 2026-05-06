@@ -70,7 +70,7 @@ func (c *ApiController) GetSessions() {
 // @Title GetSingleSession
 // @Tag Session API
 // @Description Get session for one user in one application.
-// @Param   sessionPkId     query    string  true        "The session ID in format: organization/user/application (e.g., built-in/admin/app-hanzo)"
+// @Param   sessionPkId     query    string  true        "The session ID in format: organization/user/application (e.g., superuser/admin/app-hanzo)"
 // @Success 200 {array} string The Response object
 // @router /get-session [get]
 func (c *ApiController) GetSingleSession() {
@@ -160,7 +160,7 @@ func (c *ApiController) DeleteSession() {
 // @Title IsSessionDuplicated
 // @Tag Session API
 // @Description Check if there are other different sessions for one user in one application.
-// @Param   sessionPkId     query    string  true        "The session ID in format: organization/user/application (e.g., built-in/admin/app-hanzo)"
+// @Param   sessionPkId     query    string  true        "The session ID in format: organization/user/application (e.g., superuser/admin/app-hanzo)"
 // @Param   sessionId     query    string  true        "The specific session ID to check"
 // @Success 200 {array} string The Response object
 // @router /is-session-duplicated [get]
