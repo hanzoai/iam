@@ -2,7 +2,7 @@
 
 ## Overview
 
-Identity & Access Management for the Hanzo + Liquidity ecosystems. OAuth 2.0 / OIDC / SAML / LDAP / SCIM / WebAuthn / MFA — all served behind a single canonical surface at `/v1/iam/*`.
+Identity & Access Management for the Hanzo ecosystem and any product that consumes it as a white-label engine. OAuth 2.0 / OIDC / SAML / LDAP / SCIM / WebAuthn / MFA — all served behind a single canonical surface at `/v1/iam/*`.
 
 Data lives in Base (`hanzoai/base`) — embedded SQLite with auto-migrations and replicate-to-S3 (no PostgreSQL, no Redis). Inter-service traffic uses native ZAP binary protocol.
 
