@@ -67,7 +67,7 @@ func isFormEncoded(body []byte) bool {
 // @Title GetTokens
 // @Tag Token API
 // @Description get tokens
-// @Param   owner     query    string  true        "The organization name (e.g., built-in)"
+// @Param   owner     query    string  true        "The organization name (e.g., admin)"
 // @Param   pageSize     query    string  true        "The size of each page"
 // @Param   p     query    string  true        "The number of the page"
 // @Success 200 {array} object.Token The Response object
@@ -112,7 +112,7 @@ func (c *ApiController) GetTokens() {
 // @Title GetToken
 // @Tag Token API
 // @Description get token
-// @Param   id     query    string  true        "The token ID in format: organization/token-name (e.g., built-in/token-123456)"
+// @Param   id     query    string  true        "The token ID in format: organization/token-name (e.g., admin/token-123456)"
 // @Success 200 {object} object.Token The Response object
 // @router /get-token [get]
 func (c *ApiController) GetToken() {
@@ -130,7 +130,7 @@ func (c *ApiController) GetToken() {
 // @Title UpdateToken
 // @Tag Token API
 // @Description update token
-// @Param   id     query    string  true        "The token ID in format: organization/token-name (e.g., built-in/token-123456)"
+// @Param   id     query    string  true        "The token ID in format: organization/token-name (e.g., admin/token-123456)"
 // @Param   body    body   object.Token  true        "Details of the token"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-token [post]

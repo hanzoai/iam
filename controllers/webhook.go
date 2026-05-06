@@ -26,7 +26,7 @@ import (
 // @Title GetWebhooks
 // @Tag Webhook API
 // @Description get webhooks
-// @Param   owner     query    string  built-in/admin	true        "The owner of webhooks"
+// @Param   owner     query    string  superuser/admin	true        "The owner of webhooks"
 // @Success 200 {array} object.Webhook The Response object
 // @router /get-webhooks [get]
 // @Security test_apiKey
@@ -72,7 +72,7 @@ func (c *ApiController) GetWebhooks() {
 // @Title GetWebhook
 // @Tag Webhook API
 // @Description get webhook
-// @Param   id     query    string  built-in/admin	true        "The id ( owner/name ) of the webhook"
+// @Param   id     query    string  superuser/admin	true        "The id ( owner/name ) of the webhook"
 // @Success 200 {object} object.Webhook The Response object
 // @router /get-webhook [get]
 func (c *ApiController) GetWebhook() {
@@ -91,7 +91,7 @@ func (c *ApiController) GetWebhook() {
 // @Title UpdateWebhook
 // @Tag Webhook API
 // @Description update webhook
-// @Param   id     query    string  built-in/admin true        "The id ( owner/name ) of the webhook"
+// @Param   id     query    string  superuser/admin true        "The id ( owner/name ) of the webhook"
 // @Param   body    body   object.Webhook  true        "The details of the webhook"
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-webhook [post]
