@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 
 const VIEWPORT = { width: 1440, height: 900 };
-const BASE = 'https://iam.next.satschel.com';
+const BASE = process.env.IAM_SCREENSHOT_BASE || 'http://localhost:8000';
 const OUT = '/Users/z/work/hanzo/iam/screenshots';
 
 const pages = [
