@@ -267,12 +267,13 @@ func getUrlPath(ctx *context.Context) string {
 		return "/scim"
 	}
 
-	// /login/oauth/* — Casdoor-legacy OAuth surface. Both the bare prefix
-	// (e.g. /login/oauth/access_token) and the canonical /v1/iam/-prefixed
-	// variant (e.g. /v1/iam/login/oauth/access_token) collapse to the same
-	// /login/oauth resource so the anonymous policy applies. Without the
-	// /v1/iam/login/oauth case, IAM v1.13.0+ public clients hit
-	// "Unauthorized operation" because Casbin sees the full prefixed path.
+	// /login/oauth/* — legacy OAuth surface (predates the /v1/iam/* prefix).
+	// Both the bare prefix (e.g. /login/oauth/access_token) and the canonical
+	// /v1/iam/-prefixed variant (e.g. /v1/iam/login/oauth/access_token)
+	// collapse to the same /login/oauth resource so the anonymous policy
+	// applies. Without the /v1/iam/login/oauth case, IAM v1.13.0+ public
+	// clients hit "Unauthorized operation" because Casbin sees the full
+	// prefixed path.
 	if strings.HasPrefix(urlPath, "/login/oauth") ||
 		strings.HasPrefix(urlPath, "/v1/iam/login/oauth") {
 		return "/login/oauth"
