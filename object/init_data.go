@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/util"
 )
 
@@ -572,6 +573,29 @@ func initDefinedUser(user *User) {
 	if user.Properties == nil {
 		user.Properties = make(map[string]string)
 	}
+
+	// Hash the password through the configured cred manager when the
+	// init_data caller wrote a plaintext value with a non-plain
+	// passwordType. Without this, plaintext leaks into user.password
+	// and CheckPassword's hashing-comparator never matches — every
+	// login fails with "password or code is incorrect" even though
+	// the input matches what the operator typed. AddUser only auto-
+	// hashes when PasswordType=="" or "plain"; explicit "argon2id" /
+	// "bcrypt" / etc skip that branch (the contract is "I already
+	// gave you a hash"), but init_data.json writers reasonably write
+	// the plaintext + the desired hash type and expect IAM to do the
+	// math. Detect by missing-PHC-prefix and hash accordingly.
+	if user.Password != "" && user.PasswordType != "" && user.PasswordType != "plain" &&
+		!strings.HasPrefix(user.Password, "$") {
+		credManager := cred.GetCredManager(user.PasswordType)
+		if credManager != nil {
+			hashed := credManager.GetHashedPassword(user.Password, user.PasswordSalt)
+			fmt.Printf("[init_data] hashed plaintext for user %s/%s via %s (was %d → now %d bytes)\n",
+				user.Owner, user.Name, user.PasswordType, len(user.Password), len(hashed))
+			user.Password = hashed
+		}
+	}
+
 	_, err = AddUser(user, "en")
 	if err != nil {
 		fmt.Printf("[init_data] AddUser %s/%s FAILED: %v\n", user.Owner, user.Name, err)
