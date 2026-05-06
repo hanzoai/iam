@@ -303,43 +303,22 @@ func InitAPI() {
 	web.Router("/v1/iam/delete-ldap", &controllers.ApiController{}, "POST:DeleteLdap")
 	web.Router("/v1/iam/sync-ldap-users", &controllers.ApiController{}, "POST:SyncLdapUsers")
 
-	// /login/oauth/* — standard OAuth2 path with no prefix, mandated by the spec.
-	// Each endpoint also registers under /v1/iam/ so the gateway can pass
-	// requests through unmodified (KrakenD doesn't strip path prefixes when
-	// `output_encoding: no-op`). The authz_filter normalizes both shapes to
-	// the same Casbin resource so anonymous OAuth clients aren't blocked.
+	// OAuth surface — exactly one route per endpoint, mounted at the
+	// canonical /login/oauth/* path mandated by the OAuth2 spec. Aliases
+	// (/oauth/*, /v1/iam/oauth/*, /v1/iam/login/oauth/*, /api/iam/...)
+	// are normalized to this form by routers.PathRewriteFilter before
+	// dispatch. New aliases go in path_rewrite_filter.go, never here.
 	web.Router("/login/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
 	web.Router("/login/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
+	web.Router("/login/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
 	web.Router("/login/oauth/refresh_token", &controllers.ApiController{}, "POST:RefreshToken")
+	web.Router("/login/oauth/refresh", &controllers.ApiController{}, "POST:RefreshToken")
 	web.Router("/login/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
 	web.Router("/login/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
-	web.Router("/v1/iam/login/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
-	web.Router("/v1/iam/login/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
-	web.Router("/v1/iam/login/oauth/refresh_token", &controllers.ApiController{}, "POST:RefreshToken")
-	web.Router("/v1/iam/login/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
-	web.Router("/v1/iam/login/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
-
-	// /oauth/* — Hanzo OAuth aliases for clean OIDC discovery paths.
-	web.Router("/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
-	web.Router("/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
-	web.Router("/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
-	web.Router("/oauth/refresh", &controllers.ApiController{}, "POST:RefreshToken")
-	web.Router("/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
-	web.Router("/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
-	web.Router("/oauth/userinfo", &controllers.ApiController{}, "GET:GetUserinfo")
-	web.Router("/oauth/device", &controllers.ApiController{}, "POST:DeviceAuth")
-	web.Router("/oauth/logout", &controllers.ApiController{}, "GET,POST:Logout")
-	web.Router("/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
-	web.Router("/v1/iam/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
-	web.Router("/v1/iam/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
-	web.Router("/v1/iam/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
-	web.Router("/v1/iam/oauth/refresh", &controllers.ApiController{}, "POST:RefreshToken")
-	web.Router("/v1/iam/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
-	web.Router("/v1/iam/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
-	web.Router("/v1/iam/oauth/userinfo", &controllers.ApiController{}, "GET:GetUserinfo")
-	web.Router("/v1/iam/oauth/device", &controllers.ApiController{}, "POST:DeviceAuth")
-	web.Router("/v1/iam/oauth/logout", &controllers.ApiController{}, "GET,POST:Logout")
-	web.Router("/v1/iam/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
+	web.Router("/login/oauth/userinfo", &controllers.ApiController{}, "GET:GetUserinfo")
+	web.Router("/login/oauth/device", &controllers.ApiController{}, "POST:DeviceAuth")
+	web.Router("/login/oauth/logout", &controllers.ApiController{}, "GET,POST:Logout")
+	web.Router("/login/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
 
 	web.Router("/v1/iam/get-records", &controllers.ApiController{}, "GET:GetRecords")
 	web.Router("/v1/iam/get-records-filter", &controllers.ApiController{}, "POST:GetRecordsByFilter")
