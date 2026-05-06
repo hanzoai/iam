@@ -37,7 +37,7 @@ func (c *ApiController) KerberosLogin() {
 		return
 	}
 
-	application, err := object.GetApplication(fmt.Sprintf("admin/%s", applicationName))
+	application, err := object.FindApplicationByName(applicationName, "")
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
