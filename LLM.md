@@ -150,7 +150,6 @@ E2E tests live at `tests/iam-e2e.spec.ts` and `tests/iam-login.spec.ts`. They ru
 
 ## Things this is NOT
 
-- ❌ Casdoor (the upstream library this was originally derived from has its own deployment, ours is independent)
 - ❌ A PostgreSQL service (no postgres anywhere — Base/SQLite only)
 - ❌ A Redis user (no Redis — sessions live in Base)
 - ❌ Available at `hanzo.id` for Liquidity workloads — Liquidity uses `iam.{env}.example.internal`. `hanzo.id` is the public Hanzo brand origin, separate cluster.
