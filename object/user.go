@@ -649,7 +649,7 @@ func GetUserByInvitationCode(owner string, invitationCode string) (*User, error)
 	}
 
 	user := User{Owner: owner, InvitationCode: invitationCode}
-	existed, err := ormer.Engine.Get(&user)
+	existed, err := orgEngine(owner).Get(&user)
 	if err != nil {
 		return nil, err
 	}

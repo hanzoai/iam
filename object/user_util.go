@@ -47,7 +47,10 @@ func GetUserByField(organizationName string, field string, value string) (*User,
 	}
 
 	user := User{Owner: organizationName}
-	existed, err := ormer.Engine.Where(fmt.Sprintf("%s=?", strings.ToLower(field)), value).Get(&user)
+	// Route through orgEngine so per-org SQLite isolation (orgIsolation=sqlite)
+	// reads from the same DB the writer used. With orgIsolation=none the
+	// helper returns ormer.Engine and behavior is unchanged.
+	existed, err := orgEngine(organizationName).Where(fmt.Sprintf("%s=?", strings.ToLower(field)), value).Get(&user)
 	if err != nil {
 		return nil, err
 	}
@@ -64,10 +67,17 @@ func GetUserByField(organizationName string, field string, value string) (*User,
 // GetUserByFieldCrossOrg looks up a user by field across ALL organizations.
 // Used as a fallback when the org-scoped lookup fails, enabling multi-tenant
 // login where users may belong to a different org than the app's org.
+//
+// With orgIsolation=sqlite each org's user rows live in a separate DB file,
+// so a single global query cannot see them. We iterate per-org engines for
+// the configured tenant orgs; the global engine still answers when isolation
+// is disabled.
 func GetUserByFieldCrossOrg(field string, value string) (*User, error) {
 	if field == "" || value == "" {
 		return nil, nil
 	}
+	// Try the global engine first (orgIsolation=none default + the global
+	// row catalog under orgIsolation=sqlite).
 	var user User
 	existed, err := ormer.Engine.Where(fmt.Sprintf("%s=?", strings.ToLower(field)), value).Get(&user)
 	if err != nil {
@@ -76,6 +86,29 @@ func GetUserByFieldCrossOrg(field string, value string) (*User, error) {
 	if existed {
 		userCache.set(userCacheKey(user.Owner, user.Name), user, 10*time.Minute)
 		return &user, nil
+	}
+	if ormer.OrgDBManager == nil {
+		return nil, nil
+	}
+	// orgIsolation=sqlite: walk each tenant DB.
+	owners, err := ormer.OrgDBManager.ListOrgs()
+	if err != nil {
+		return nil, err
+	}
+	for _, owner := range owners {
+		eng, err := ormer.OrgDBManager.GetEngine(owner)
+		if err != nil {
+			continue
+		}
+		var u User
+		ok, err := eng.Where(fmt.Sprintf("%s=?", strings.ToLower(field)), value).Get(&u)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			userCache.set(userCacheKey(u.Owner, u.Name), u, 10*time.Minute)
+			return &u, nil
+		}
 	}
 	return nil, nil
 }
