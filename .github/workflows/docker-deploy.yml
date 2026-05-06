@@ -25,7 +25,7 @@ jobs:
         run: |
           docker run -d --name postgres -p 5432:5432 \
             -e POSTGRES_USER=hanzo -e POSTGRES_PASSWORD=hanzo123 -e POSTGRES_DB=hanzo \
-            postgres:18
+            public.ecr.aws/docker/library/postgres:18
           for i in $(seq 1 30); do
             docker exec postgres pg_isready -U hanzo -d hanzo && break
             sleep 1
