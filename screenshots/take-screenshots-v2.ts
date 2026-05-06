@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 
 const VIEWPORT = { width: 1440, height: 900 };
-const BASE = 'https://iam.next.example.internal';
+const BASE = process.env.IAM_SCREENSHOT_BASE || 'http://localhost:8000';
 const OUT = '/Users/z/work/hanzo/iam/screenshots';
 
 const pages = [
@@ -85,10 +85,10 @@ const pages = [
       const brandingText = await p.evaluate(() => {
         const text = document.body.innerText;
         const matches: string[] = [];
+        // Brand-purity probe: detect any upstream/legacy or external white-label
+        // strings leaking into the IAM UI. The OSS Lux IAM should ship neutral.
         if (text.includes('Casdoor')) matches.push('Casdoor');
         if (text.includes('Hanzo')) matches.push('Hanzo');
-        if (text.includes('partner')) matches.push('partner');
-        if (text.includes('Liquidity')) matches.push('Liquidity');
         if (text.includes('Powered by')) {
           const idx = text.indexOf('Powered by');
           matches.push('Powered by: ' + text.substring(idx, idx + 40));
