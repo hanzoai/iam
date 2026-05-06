@@ -26,14 +26,29 @@ import (
 // sandboxOriginAllowlist returns hostname suffixes / exact values that are
 // allowed to run with SANDBOX_GLOBAL_OTP enabled. Anything else triggers a
 // hard fail at boot. Suffixes start with ".", exact matches do not.
+//
+// The default list covers only loopback and `.local` — additional sandbox
+// suffixes (e.g. a deployment's `.dev.example.com`) MUST be supplied by the
+// consuming product via the SANDBOX_ORIGIN_ALLOWLIST env var (comma-separated
+// list of suffixes, each starting with "." for suffix match or bare for exact
+// match). The white-label IAM core never hardcodes operator-specific
+// hostnames.
 var sandboxOriginAllowlist = []string{
-	".dev.example.internal",
-	".test.example.internal",
 	".local",
 	"localhost",
 	"127.0.0.1",
 	"0.0.0.0",
 	"::1",
+}
+
+func init() {
+	if extra := strings.TrimSpace(os.Getenv("SANDBOX_ORIGIN_ALLOWLIST")); extra != "" {
+		for _, e := range strings.Split(extra, ",") {
+			if v := strings.TrimSpace(e); v != "" {
+				sandboxOriginAllowlist = append(sandboxOriginAllowlist, v)
+			}
+		}
+	}
 }
 
 // hostMatchesSandboxAllowlist returns true if host is acceptable for sandbox
@@ -55,7 +70,7 @@ func hostMatchesSandboxAllowlist(host string) bool {
 			if strings.HasSuffix(host, allowed) {
 				return true
 			}
-			// Allow bare apex matching the suffix root (e.g. "dev.example.internal").
+			// Allow bare apex matching the suffix root (e.g. "dev.example.com").
 			if host == strings.TrimPrefix(allowed, ".") {
 				return true
 			}
@@ -110,8 +125,8 @@ func EnforceSandboxOriginGuard() {
 		// SANDBOX_GLOBAL_OTP from the manifest or fix ORIGIN to point at
 		// a real sandbox host.
 		panic("SANDBOX_GLOBAL_OTP is set but ORIGIN/origin (" + originRaw +
-			") is not on the sandbox allowlist (.dev.example.internal, " +
-			".test.example.internal, .local, localhost, 127.0.0.1). Refusing " +
+			") is not on the sandbox allowlist (default: .local, localhost, " +
+			"127.0.0.1; extend with SANDBOX_ORIGIN_ALLOWLIST). Refusing " +
 			"to boot — this would silently bypass MFA for every account.")
 	}
 
