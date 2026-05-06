@@ -1,5 +1,9 @@
 # ── Frontend build ─────────────────────────────────────────────
-FROM node:18.19.0 AS front
+# Base images pinned to AWS public ECR mirror (public.ecr.aws/docker/library)
+# to dodge Docker Hub's 100/6h unauthenticated pull cap that periodically
+# wedges CI. AWS public ECR mirrors Docker Hub library/* with no rate
+# limit. Tags match upstream verbatim.
+FROM public.ecr.aws/docker/library/node:18.19.0 AS front
 WORKDIR /web
 ARG VITE_DEFAULT_APP=app-built-in
 
@@ -11,7 +15,7 @@ ENV VITE_DEFAULT_APP=$VITE_DEFAULT_APP
 RUN NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
 
 # ── Go build ──────────────────────────────────────────────────
-FROM golang:1.26 AS back
+FROM public.ecr.aws/docker/library/golang:1.26 AS back
 WORKDIR /go/src/hanzo-iam
 
 COPY go.mod go.sum ./
@@ -22,7 +26,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iamd ./cmd/iamd/
 RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iam ./cmd/iam/
 
 # ── Production image ──────────────────────────────────────────
-FROM alpine:3.21 AS standard
+FROM public.ecr.aws/docker/library/alpine:3.21 AS standard
 LABEL maintainer="https://hanzo.ai/"
 ARG USER=hanzo
 
