@@ -307,7 +307,7 @@ func (c *ApiController) BatchEnforce() {
 // @Title GetAllObjects
 // @Tag Enforcer API
 // @Description Get all objects for a user
-// @Param   userId    query   string  false   "user id like built-in/admin"
+// @Param   userId    query   string  false   "user id like superuser/admin"
 // @Success 200 {object} controllers.Response The Response object
 // @router /get-all-objects [get]
 func (c *ApiController) GetAllObjects() {
@@ -333,7 +333,7 @@ func (c *ApiController) GetAllObjects() {
 // @Title GetAllActions
 // @Tag Enforcer API
 // @Description Get all actions for a user
-// @Param   userId    query   string  false   "user id like built-in/admin"
+// @Param   userId    query   string  false   "user id like superuser/admin"
 // @Success 200 {object} controllers.Response The Response object
 // @router /get-all-actions [get]
 func (c *ApiController) GetAllActions() {
@@ -359,7 +359,7 @@ func (c *ApiController) GetAllActions() {
 // @Title GetAllRoles
 // @Tag Enforcer API
 // @Description Get all roles for a user
-// @Param   userId    query   string  false   "user id like built-in/admin"
+// @Param   userId    query   string  false   "user id like superuser/admin"
 // @Success 200 {object} controllers.Response The Response object
 // @router /get-all-roles [get]
 func (c *ApiController) GetAllRoles() {
