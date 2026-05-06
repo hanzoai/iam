@@ -210,17 +210,17 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 // Body:
 //
 //	{
-//	  "owner":             "liquidity",        // required
+//	  "owner":             "example-org",      // required
 //	  "name":              "z",                // required
 //	  "displayName":       "Z",
-//	  "email":             "z@",
-//	  "phone":             "9137779708",
+//	  "email":             "z@example.org",
+//	  "phone":             "5550001234",
 //	  "countryCode":       "US",
 //	  "password":          "...",
 //	  "passwordType":      "argon2id"|"plain", // default argon2id; bcrypt rejected
 //	  "type":              "normal-user",      // default normal-user
 //	  "isAdmin":           false,
-//	  "signupApplication": "liquidity-app",
+//	  "signupApplication": "example-app",
 //	  "emailVerified":     true,
 //	  "properties":        { "...": "..." }    // future-proof free-form
 //	}
