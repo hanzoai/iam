@@ -53,7 +53,10 @@ func GetTokenCount(owner, organization, field, value string) (int64, error) {
 
 func GetTokens(owner string, organization string) ([]*Token, error) {
 	tokens := []*Token{}
-	err := orgEngine(owner).Desc("created_time").Find(&tokens, &Token{Owner: owner, Organization: organization})
+	// Tokens live on the global engine — see AddToken comment. Reading from
+	// orgEngine(owner) returned empty lists under orgIsolation=sqlite even
+	// when AddToken had successfully written to the global table.
+	err := ormer.Engine.Desc("created_time").Find(&tokens, &Token{Owner: owner, Organization: organization})
 	return tokens, err
 }
 
@@ -70,7 +73,7 @@ func getToken(owner string, name string) (*Token, error) {
 	}
 
 	token := Token{Owner: owner, Name: name}
-	existed, err := orgEngine(owner).Get(&token)
+	existed, err := ormer.Engine.Get(&token)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +202,13 @@ func UpdateToken(id string, token *Token, isGlobalAdmin bool) (bool, error) {
 
 	token.popularHashes()
 
-	affected, err := orgEngine(owner).ID(PK{owner, name}).AllCols().Update(token)
+	// Tokens stay on the global engine even under orgIsolation=sqlite —
+	// the OAuth code-exchange path (getTokenByCode / GetTokenByAccessToken /
+	// GetTokenByRefreshToken) has no owner context, so cross-org reads are
+	// inherent. Writing to per-org DBs split reads from writes and broke
+	// every authorization_code grant. Tokens are short-lived auth artifacts;
+	// per-org isolation is a user-data concern, not a token concern.
+	affected, err := ormer.Engine.ID(PK{owner, name}).AllCols().Update(token)
 	if err != nil {
 		return false, err
 	}
@@ -210,7 +219,7 @@ func UpdateToken(id string, token *Token, isGlobalAdmin bool) (bool, error) {
 func AddToken(token *Token) (bool, error) {
 	token.popularHashes()
 
-	affected, err := orgEngine(token.Owner).Insert(token)
+	affected, err := ormer.Engine.Insert(token)
 	if err != nil {
 		return false, err
 	}
@@ -219,7 +228,7 @@ func AddToken(token *Token) (bool, error) {
 }
 
 func DeleteToken(token *Token) (bool, error) {
-	affected, err := orgEngine(token.Owner).ID(PK{token.Owner, token.Name}).Where("organization = ?", token.Organization).Delete(&Token{})
+	affected, err := ormer.Engine.ID(PK{token.Owner, token.Name}).Where("organization = ?", token.Organization).Delete(&Token{})
 	if err != nil {
 		return false, err
 	}
