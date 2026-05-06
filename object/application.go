@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/util"
 )
@@ -540,11 +541,19 @@ func GetApplicationByOrganizationName(organization string) (*Application, error)
 }
 
 func GetApplicationByUser(user *User) (*Application, error) {
-	if user.SignupApplication != "" {
-		return getApplication("admin", user.SignupApplication)
-	} else {
+	if user.SignupApplication == "" {
 		return GetApplicationByOrganizationName(user.Owner)
 	}
+	app, err := getApplication(conf.AdminOrg(), user.SignupApplication)
+	if err != nil {
+		return nil, err
+	}
+	if app != nil {
+		return app, nil
+	}
+	// Operators historically passed the client_id where the app NAME was
+	// expected. Fall back to client_id resolution so legacy seeds survive.
+	return GetApplicationByClientId(user.SignupApplication)
 }
 
 func GetApplicationByUserId(userId string) (application *Application, err error) {
@@ -553,7 +562,7 @@ func GetApplicationByUserId(userId string) (application *Application, err error)
 		return nil, err
 	}
 	if IsAppUser(userId) {
-		application, err = getApplication("admin", name)
+		application, err = getApplication(conf.AdminOrg(), name)
 		return
 	}
 
@@ -797,8 +806,8 @@ func checkMultipleCaptchaProviders(application *Application, lang string) error 
 var validAppNamePattern = regexp.MustCompile(`^[a-z0-9]+-[a-z0-9]+(-[a-z0-9]+)*$`)
 
 func validateAppName(app *Application) error {
-	// System/built-in apps are exempt from the org-prefix convention.
-	if app.Owner == "admin" && (app.Organization == "superuser" || app.Name == "app-built-in") {
+	// System apps in the admin namespace bypass the org-prefix convention.
+	if app.Owner == conf.AdminOrg() && app.Organization == "superuser" {
 		return nil
 	}
 
@@ -849,7 +858,7 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 	}
 
 	if application.IsShared == true && application.Organization != "admin" {
-		return false, fmt.Errorf("only applications belonging to built-in organization can be shared")
+		return false, fmt.Errorf("only applications belonging to the admin namespace can be shared")
 	}
 
 	err = checkMultipleCaptchaProviders(application, lang)
