@@ -3,7 +3,7 @@
 
 services:
   iam:
-    image: ghcr.io/hanzoai/iam:latest
+    image: ghcr.io/hanzoai/iam:1.1000.1
     restart: unless-stopped
     ports:
       - "8000:8000"
