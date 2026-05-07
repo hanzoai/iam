@@ -211,7 +211,7 @@ func GetOrganizationApplicationCount(owner, organization, field, value string) (
 
 func GetApplications(owner string) ([]*Application, error) {
 	applications := []*Application{}
-	err := orgEngine(owner).Desc("created_time").Find(&applications, &Application{Owner: owner})
+	err := ormer.Engine.Desc("created_time").Find(&applications, &Application{Owner: owner})
 	if err != nil {
 		return applications, err
 	}
@@ -221,7 +221,7 @@ func GetApplications(owner string) ([]*Application, error) {
 
 func GetOrganizationApplications(owner string, organization string) ([]*Application, error) {
 	applications := []*Application{}
-	err := orgEngine(owner).Desc("created_time").Where("organization = ? or is_shared = ? ", organization, true).Find(&applications, &Application{})
+	err := ormer.Engine.Desc("created_time").Where("organization = ? or is_shared = ? ", organization, true).Find(&applications, &Application{})
 	if err != nil {
 		return applications, err
 	}
@@ -454,8 +454,9 @@ func getApplication(owner string, name string) (*Application, error) {
 		return &cached, nil
 	}
 
+	// Symmetric with AddApplication — apps live on the global engine.
 	application := Application{Owner: owner, Name: realApplicationName}
-	existed, err := orgEngine(owner).Get(&application)
+	existed, err := ormer.Engine.Get(&application)
 	if err != nil {
 		return nil, err
 	}
@@ -1010,12 +1011,14 @@ func AddApplication(application *Application) (bool, error) {
 		providerItem.Provider = nil
 	}
 
-	// Route through orgEngine so per-org SQLite isolation (orgIsolation=sqlite)
-	// writes to the same DB getApplication reads from. Without this, init-seeded
-	// apps land in the global iam.db while runtime lookups hit /data/iam/orgs/<owner>/iam.db
-	// and never find them — login dies with "application does not exist" even
-	// though the row is right there. Matches the read path at line 459.
-	affected, err := orgEngine(application.Owner).Insert(application)
+	// Applications live on the global engine — same rationale as tokens:
+	// the OAuth token endpoint resolves apps by client_id alone (no owner
+	// context), so GetApplicationByClientId reads `ormer.Engine`. Writing
+	// to per-org engines split the writes from the reads and made
+	// `client_credentials` grants fail with `invalid_client` despite the
+	// row existing in the per-org DB. Apps are tenant config, not user
+	// data; per-org isolation is a user-data concern.
+	affected, err := ormer.Engine.Insert(application)
 	if err != nil {
 		fmt.Printf("[AddApplication] INSERT failed for app %s/%s (clientId=%s): %v\n",
 			application.Owner, application.Name, application.ClientId, err)
