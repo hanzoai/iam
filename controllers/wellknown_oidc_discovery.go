@@ -66,13 +66,36 @@ func (c *RootController) GetOidcDiscoveryByApplication() {
 // @Success 200 {object} jose.JSONWebKey
 // @router /.well-known/jwks [get]
 func (c *RootController) GetJwks() {
-	jwks, err := object.GetJsonWebKeySet("")
+	c.serveJwksBytes("")
+}
+
+// serveJwksBytes is the fast path for both GetJwks and
+// GetJwksByApplication. Cached bytes + strong ETag avoid the
+// SQLite + x509 + reflect-marshal cost on every JWT validation.
+func (c *RootController) serveJwksBytes(applicationName string) {
+	body, etag, err := object.GetJwksBytes(applicationName)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
-	c.Data["json"] = jwks
-	c.ServeJSON()
+
+	w := c.Ctx.ResponseWriter
+	r := c.Ctx.Request
+
+	// Conditional GET — keys rotate rarely so most requests hit 304.
+	if inm := r.Header.Get("If-None-Match"); inm != "" && inm == etag {
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "public, max-age=60")
+		w.WriteHeader(304)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	_, _ = w.Write(body)
+	// Bypass beego's ServeJSON — we already wrote bytes.
+	c.StopRun()
 }
 
 // GetJwksByApplication
