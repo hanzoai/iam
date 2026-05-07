@@ -6,6 +6,11 @@ on:
     branches: [main, dev, test]
   pull_request:
 
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
 jobs:
 
   go-tests:
