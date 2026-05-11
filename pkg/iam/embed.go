@@ -31,6 +31,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -63,9 +64,10 @@ type EmbedConfig struct {
 	HTTPAddr string
 
 	// JWTKeySource is the JWKS URL used when IAM acts as a relying
-	// party (e.g. to validate inbound service tokens). Empty →
-	// "https://hanzo.id/.well-known/jwks". Stored as env var
-	// IAM_JWT_KEY_SOURCE so downstream config readers see it.
+	// party (e.g. to validate inbound service tokens). Required when
+	// inbound service tokens are expected — empty value disables
+	// relying-party verification but never silently points at a
+	// foreign IAM. Read from env IAM_JWT_KEY_SOURCE if set.
 	JWTKeySource string
 
 	// AppConfPath is an optional absolute path to a Beego app.conf.
@@ -259,7 +261,7 @@ func applyDefaults(cfg EmbedConfig) EmbedConfig {
 		cfg.HTTPAddr = ":" + strconv.Itoa(8000)
 	}
 	if cfg.JWTKeySource == "" {
-		cfg.JWTKeySource = "https://hanzo.id/.well-known/jwks"
+		cfg.JWTKeySource = strings.TrimSpace(os.Getenv("IAM_JWT_KEY_SOURCE"))
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
