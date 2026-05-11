@@ -67,7 +67,7 @@ type EmbedConfig struct {
 	// party (e.g. to validate inbound service tokens). Required when
 	// inbound service tokens are expected — empty value disables
 	// relying-party verification but never silently points at a
-	// foreign IAM. Read from env IAM_JWT_KEY_SOURCE if set.
+	// foreign IAM. Read from env IAM_KEYS_URL if set.
 	JWTKeySource string
 
 	// AppConfPath is an optional absolute path to a Beego app.conf.
@@ -126,7 +126,7 @@ func Embed(ctx context.Context, cfg EmbedConfig) (*Embedded, error) {
 		_ = os.Setenv("IAM_DATA_DIR", cfg.DataDir)
 	}
 	if cfg.JWTKeySource != "" {
-		_ = os.Setenv("IAM_JWT_KEY_SOURCE", cfg.JWTKeySource)
+		_ = os.Setenv("IAM_KEYS_URL", cfg.JWTKeySource)
 	}
 	if cfg.AppConfPath != "" {
 		_ = os.Setenv("BEEGO_APP_CONFIG", cfg.AppConfPath)
@@ -261,7 +261,7 @@ func applyDefaults(cfg EmbedConfig) EmbedConfig {
 		cfg.HTTPAddr = ":" + strconv.Itoa(8000)
 	}
 	if cfg.JWTKeySource == "" {
-		cfg.JWTKeySource = strings.TrimSpace(os.Getenv("IAM_JWT_KEY_SOURCE"))
+		cfg.JWTKeySource = strings.TrimSpace(os.Getenv("IAM_KEYS_URL"))
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
