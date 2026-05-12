@@ -123,7 +123,7 @@ func GetLanguage(language string) string {
 // this — real phones MUST parse as E.164 or signin fails clearly.
 //
 // (Replaces the older IsDemoMode() which braided two concerns —
-// the OTP shortcut and the upstream Casdoor demo-site UI hijack —
+// the OTP shortcut and the original demo-site UI hijack —
 // into one boolean. The UI hijack is ripped; this function keeps
 // only the OTP semantics under a name that reflects what it does.)
 func SandboxOTPEnabled() bool {
