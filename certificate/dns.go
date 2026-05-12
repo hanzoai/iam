@@ -16,14 +16,16 @@ package certificate
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
 	"time"
 
-	"github.com/casbin/lego/v4/certificate"
-	"github.com/casbin/lego/v4/challenge/dns01"
-	"github.com/casbin/lego/v4/cmd"
-	"github.com/casbin/lego/v4/lego"
-	"github.com/casbin/lego/v4/providers/dns/alidns"
-	"github.com/casbin/lego/v4/providers/dns/godaddy"
+	"github.com/go-acme/lego/v4/certificate"
+	"github.com/go-acme/lego/v4/challenge/dns01"
+	"github.com/go-acme/lego/v4/lego"
+	"github.com/go-acme/lego/v4/providers/dns/alidns"
+	"github.com/go-acme/lego/v4/providers/dns/godaddy"
 )
 
 type AliConf struct {
@@ -58,7 +60,7 @@ func getAliCert(client *lego.Client, conf AliConf) (string, string, error) {
 	config.RAMRole = conf.RAMRole
 	config.SecurityToken = conf.SecurityToken
 
-	dnsProvider, err := alidns.NewDNSProvider(config)
+	dnsProvider, err := alidns.NewDNSProviderConfig(config)
 	if err != nil {
 		return "", "", err
 	}
@@ -94,7 +96,7 @@ func getGoDaddyCert(client *lego.Client, conf GodaddyConf) (string, string, erro
 	config.APIKey = conf.APIKey
 	config.APISecret = conf.APISecret
 
-	dnsProvider, err := godaddy.NewDNSProvider(config)
+	dnsProvider, err := godaddy.NewDNSProviderConfig(config)
 	if err != nil {
 		return "", "", err
 	}
@@ -144,8 +146,29 @@ func ObtainCertificateGoDaddy(client *lego.Client, domain string, accessKey stri
 }
 
 func SaveCert(path, filename string, cert *certificate.Resource) {
-	// Store the certificate file locally
-	certsStorage := cmd.NewCertificatesStorageLib(path, filename, true)
-	certsStorage.CreateRootFolder()
-	certsStorage.SaveResource(cert)
+	// go-acme/lego's NewCertificatesStorage is bound to the CLI's cli.Context.
+	// We persist the certificate triplet (cert, issuer, key, metadata) directly —
+	// matches the historical casbin/lego NewCertificatesStorageLib semantics
+	// without dragging in the cli package.
+	rootPath := filepath.Join(path, "certificates")
+	if err := os.MkdirAll(rootPath, 0o755); err != nil {
+		log.Fatalf("Could not create certificates path: %v", err)
+	}
+	if filename == "" {
+		filename = cert.Domain
+	}
+	writeFile := func(ext string, data []byte) {
+		if len(data) == 0 {
+			return
+		}
+		if err := os.WriteFile(filepath.Join(rootPath, filename+ext), data, 0o600); err != nil {
+			log.Fatalf("Unable to save %s for %s: %v", ext, filename, err)
+		}
+	}
+	writeFile(".crt", cert.Certificate)
+	writeFile(".issuer.crt", cert.IssuerCertificate)
+	writeFile(".key", cert.PrivateKey)
+	if cert.CSR != nil {
+		writeFile(".csr", cert.CSR)
+	}
 }
