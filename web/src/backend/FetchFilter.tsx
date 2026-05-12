@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // @ts-nocheck
-// Demo-mode hijack ripped 2026-05-12. The upstream Casdoor behavior
+// Demo-mode hijack ripped 2026-05-12. The upstream behavior
 // intercepted every "Unauthorized operation" response and prompted the
 // operator to redirect to the public demo at https://iam.hanzo.ai —
 // which is wrong for every Hanzo deployment (local docker-compose,
