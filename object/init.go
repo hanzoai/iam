@@ -20,7 +20,6 @@ import (
 	"os"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 )
 
