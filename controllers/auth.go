@@ -611,7 +611,7 @@ func (c *ApiController) Login() {
 				authForm.CountryCode = user.GetCountryCode(authForm.CountryCode)
 				var ok bool
 				if checkDest, ok = util.GetE164Number(authForm.Username, authForm.CountryCode); !ok {
-					if conf.IsDemoMode() {
+					if conf.SandboxOTPEnabled() {
 						checkDest = "+" + authForm.CountryCode + authForm.Username
 						ok = true
 					} else {
