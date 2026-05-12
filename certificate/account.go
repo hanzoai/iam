@@ -17,10 +17,10 @@ package certificate
 import (
 	"crypto"
 
-	"github.com/casbin/lego/v4/acme"
-	"github.com/casbin/lego/v4/certcrypto"
-	"github.com/casbin/lego/v4/lego"
-	"github.com/casbin/lego/v4/registration"
+	"github.com/go-acme/lego/v4/acme"
+	"github.com/go-acme/lego/v4/certcrypto"
+	"github.com/go-acme/lego/v4/lego"
+	"github.com/go-acme/lego/v4/registration"
 	"github.com/hanzoai/iam/proxy"
 )
 
