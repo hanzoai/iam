@@ -137,20 +137,28 @@ func FilterField(field string) bool {
 	return ReFieldWhiteList.MatchString(field)
 }
 
-// allowedOriginSuffixes is the static allowlist of trusted origin domain
-// suffixes. An origin passes if its hostname equals or is a subdomain of one
-// of these entries.
-var allowedOriginSuffixes = []string{
-	"hanzo.ai",
-	"hanzo.app",
-	"hanzo.bot",
-	"hanzo.chat",
-	"hanzo.id",
-	"hanzo.agency",
-	"hanzo.industries",
-	"lux.network",
-	"zoo.ngo",
-	"zenlm.org",
+// allowedOriginSuffixes is loaded from $IAM_TRUSTED_ORIGIN_SUFFIXES
+// (comma-separated). Empty by default — the image ships tenant-neutral
+// and the deployer pins the apex list (e.g.
+// `,` for Liquidity, `hanzo.ai,hanzo.app` for
+// Hanzo, etc.). An origin passes if its hostname equals or is a subdomain
+// of one of these entries.
+var allowedOriginSuffixes = loadTrustedOriginSuffixes()
+
+func loadTrustedOriginSuffixes() []string {
+	raw := os.Getenv("IAM_TRUSTED_ORIGIN_SUFFIXES")
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		s := strings.TrimSpace(p)
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func IsValidOrigin(origin string) (bool, error) {
