@@ -19,7 +19,6 @@ import * as Cookie from "cookie";
 export const DefaultApplication = (import.meta.env.VITE_DEFAULT_APP as string) || "app-built-in";
 
 export let ShowGithubCorner = false;
-export let IsDemoMode = false;
 
 export let ForceLanguage = "";
 export let DefaultLanguage = "en";
@@ -50,9 +49,6 @@ export function setConfig(config) {
   }
   if (config.showGithubCorner !== undefined) {
     ShowGithubCorner = config.showGithubCorner;
-  }
-  if (config.isDemoMode !== undefined) {
-    IsDemoMode = config.isDemoMode;
   }
   if (config.forceLanguage !== undefined) {
     ForceLanguage = config.forceLanguage;
