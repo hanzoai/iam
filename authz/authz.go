@@ -15,10 +15,10 @@
 package authz
 
 import (
-	authzengine "github.com/casbin/casbin/v2"
+	authzengine "github.com/hanzoai/authz"
+	stringadapter "github.com/hanzoai/authz/persist/string-adapter"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
-	stringadapter "github.com/qiangmzsx/string-adapter/v2"
 )
 
 var Enforcer *authzengine.Enforcer
