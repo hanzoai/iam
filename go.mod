@@ -18,8 +18,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1
 	github.com/beego/beego/v2 v2.3.8
 	github.com/beevik/etree v1.1.0
-	github.com/casbin/casbin/v2 v2.37.0
-	github.com/casbin/lego/v4 v4.5.4
 	github.com/casdoor/casdoor-go-sdk v1.46.0
 	github.com/casdoor/go-sms-sender v0.25.0
 	github.com/casdoor/gomail/v2 v2.3.0
@@ -30,6 +28,7 @@ require (
 	github.com/dchest/captcha v0.0.0-20200903113550-03f5f0333e1f
 	github.com/elimity-com/scim v0.0.0-20230426070224-941a5eac92f3
 	github.com/fogleman/gg v1.3.0
+	github.com/go-acme/lego/v4 v4.16.1
 	github.com/go-asn1-ber/asn1-ber v1.5.5
 	github.com/go-git/go-git/v5 v5.16.4
 	github.com/go-jose/go-jose/v4 v4.1.3
@@ -44,7 +43,7 @@ require (
 	github.com/hanzoai/idv v1.0.0
 	github.com/hanzoai/kms/sdk/go v1.0.0
 	github.com/hanzoai/xorm v1.1.6
-	github.com/hanzoai/xorm-adapter/v3 v3.0.1
+	github.com/hanzoai/xorm-adapter/v3 v3.0.2
 	github.com/hsluoyz/modsecurity-go v0.0.7
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/json-iterator/go v1.1.12
@@ -62,7 +61,6 @@ require (
 	github.com/pquerna/otp v1.5.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
-	github.com/qiangmzsx/string-adapter/v2 v2.1.0
 	github.com/resend/resend-go/v3 v3.1.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/russellhaering/gosaml2 v0.9.0
@@ -136,7 +134,6 @@ require (
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
 	github.com/corazawaf/libinjection-go v0.2.2 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/cschomburg/go-pushbullet v0.0.0-20171206132031-67759df45fbb // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -183,6 +180,7 @@ require (
 	github.com/gregdel/pushover v1.3.1 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
+	github.com/jarcoal/httpmock v1.3.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
@@ -232,10 +230,8 @@ require (
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.19.2 // indirect
 	github.com/qiniu/go-sdk/v7 v7.12.1 // indirect
-	github.com/rainycape/memcache v0.0.0-20150622160815-1031fa0ce2f2 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
-	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/scim2/filter-parser/v2 v2.2.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.3 // indirect
@@ -262,7 +258,6 @@ require (
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/twilio/twilio-go v1.13.0 // indirect
 	github.com/ucloud/ucloud-sdk-go v0.22.5 // indirect
-	github.com/urfave/cli v1.22.17 // indirect
 	github.com/utahta/go-linenotify v0.5.0 // indirect
 	github.com/valllabh/ocsf-schema-golang v1.0.3 // indirect
 	github.com/volcengine/volc-sdk-golang v1.0.117 // indirect
@@ -298,7 +293,6 @@ require (
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
-	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.70.0 // indirect
@@ -307,4 +301,8 @@ require (
 	rsc.io/binaryregexp v0.2.0 // indirect
 )
 
-replace github.com/casbin/casbin/v2 => github.com/hanzoai/authz/v2 v2.78.0
+// hanzoai/authz is the in-house casbin v2 fork. Module path renamed in v1.10.0
+// (commit d59807e); workspace consumers import this directly — no external
+// casbin/v2 anywhere in the dep graph. The casbin/lego ACME fork was swapped
+// for go-acme/lego (the upstream casbin/lego tracks).
+require github.com/hanzoai/authz v1.10.0
