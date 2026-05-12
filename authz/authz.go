@@ -110,7 +110,6 @@ p, *, *, GET, /v1/iam/get-all-objects, *, *
 p, *, *, GET, /v1/iam/get-all-actions, *, *
 p, *, *, GET, /v1/iam/get-all-roles, *, *
 p, *, *, GET, /v1/iam/run-authz-command, *, *
-p, *, *, POST, /v1/iam/refresh-engines, *, *
 p, *, *, GET, /v1/iam/get-invitation-info, *, *
 p, *, *, GET, /v1/iam/faceid-signin-begin, *, *
 p, *, *, GET, /v1/iam/registry/token, *, *
@@ -141,12 +140,6 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 			if detailPath == "initialize" || detailPath == "notifications/initialized" || detailPath == "ping" || detailPath == "tools/list" {
 				return true
 			}
-		}
-	}
-
-	if conf.IsDemoMode() {
-		if !isAllowedInDemoMode(subOwner, subName, method, urlPath, objOwner, objName) {
-			return false
 		}
 	}
 
@@ -194,28 +187,4 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 	}
 
 	return res
-}
-
-func isAllowedInDemoMode(subOwner string, subName string, method string, urlPath string, objOwner string, objName string) bool {
-	if method == "POST" {
-		if strings.HasPrefix(urlPath, "/v1/iam/login") || strings.HasPrefix(urlPath, "/login/oauth") || urlPath == "/v1/iam/logout" || urlPath == "/v1/iam/sso-logout" || urlPath == "/v1/iam/signup" || urlPath == "/v1/iam/callback" || urlPath == "/v1/iam/send-verification-code" || urlPath == "/v1/iam/send-email" || urlPath == "/v1/iam/verify-captcha" || urlPath == "/v1/iam/verify-code" || urlPath == "/v1/iam/check-user-password" || strings.HasPrefix(urlPath, "/v1/iam/mfa/") || urlPath == "/v1/iam/webhook" || urlPath == "/v1/iam/get-qrcode" || urlPath == "/v1/iam/refresh-engines" {
-			return true
-		} else if urlPath == "/v1/iam/update-user" {
-			// Allow ordinary users to update their own information
-			if (subOwner == objOwner && subName == objName || subOwner == "app") && !(subOwner == "superuser" && subName == "admin") {
-				return true
-			}
-			return false
-		} else if urlPath == "/v1/iam/upload-resource" {
-			if subOwner == "app" && (subName == "hanzo-app" || subName == "app-console") {
-				return true
-			}
-			return false
-		} else {
-			return false
-		}
-	}
-
-	// If method equals GET
-	return true
 }
