@@ -104,7 +104,6 @@ func Init() int {
 	}
 
 	util.SafeGoroutine(func() { object.RunSyncUsersJob() })
-	util.SafeGoroutine(func() { controllers.InitCLIDownloader() })
 
 	// Initialize IDV service with provider configs from env.
 	controllers.InitIDV(
