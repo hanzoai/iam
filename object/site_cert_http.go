@@ -17,7 +17,7 @@ package object
 import (
 	"fmt"
 
-	"github.com/casbin/lego/v4/certificate"
+	"github.com/go-acme/lego/v4/certificate"
 )
 
 type HttpProvider struct {

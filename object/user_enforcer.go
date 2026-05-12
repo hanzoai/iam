@@ -4,9 +4,9 @@ import (
 	errors2 "errors"
 	"fmt"
 
-	authzerrors "github.com/casbin/casbin/v2/errors"
+	authzerrors "github.com/hanzoai/authz/errors"
 
-	authz "github.com/casbin/casbin/v2"
+	authz "github.com/hanzoai/authz"
 	"github.com/hanzoai/iam/util"
 )
 
