@@ -409,7 +409,7 @@ func CreatePersonalOrganization(username, displayName string) (*Organization, er
 		EnablePassword: true,
 		ClientId:       util.GenerateClientId(),
 		ClientSecret:   util.GenerateClientSecret(),
-		RedirectUris:   []string{"https://hanzo.ai", "https://hanzo.app"},
+		RedirectUris:   []string{},
 	}
 
 	_, err = session.Insert(app)
