@@ -112,11 +112,27 @@ func GetLanguage(language string) string {
 	}
 }
 
-// IsDemoMode returns true unless running in a production environment.
-// Enables test OTPs for repeating-digit phone numbers (e.g. +1999... → 999999).
-// Disabled when ENV is any of: production, prod, main, mainnet.
-// Everything else (dev, test, staging, local, unset) → test OTPs enabled.
+// IsDemoMode always returns false. The original upstream Casdoor flag
+// gated two unrelated things — the UI "go to writable demo site" hijack
+// (ripped 2026-05-12 from web/src/backend/FetchFilter.tsx + App.tsx) and
+// a Hanzo-added sandbox-OTP shortcut for repeating-digit phone numbers.
+// The OTP shortcut moved to SandboxOTPEnabled(); the UI hijack is gone.
+// This stays as a no-op so the web/Conf.tsx wire field still serialises
+// (clients drop demo-mode-conditional UI when this is false).
 func IsDemoMode() bool {
+	return false
+}
+
+// SandboxOTPEnabled gates the phone-OTP shortcut: when true, non-E.164
+// phone numbers are accepted on signin (the country-code prefix is
+// added inline) so seed scripts using sandbox phones like 1337000007
+// can complete OTP login. Enabled in any non-prod env. Read from
+// ENV first (sandbox infra usually sets this), then `environment` in
+// app.conf.
+//
+// Production envs (production / prod / main / mainnet) hard-disable
+// this — real phones MUST parse as E.164 or signin fails clearly.
+func SandboxOTPEnabled() bool {
 	env := strings.ToLower(os.Getenv("ENV"))
 	if env == "" {
 		env = strings.ToLower(GetConfigString("environment"))
