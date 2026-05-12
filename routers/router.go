@@ -225,7 +225,6 @@ func InitAPI() {
 	web.Router("/v1/iam/get-all-roles", &controllers.ApiController{}, "GET:GetAllRoles")
 
 	web.Router("/v1/iam/run-authz-command", &controllers.ApiController{}, "GET:RunAuthzCommand")
-	web.Router("/v1/iam/refresh-engines", &controllers.ApiController{}, "POST:RefreshEngines")
 
 	web.Router("/v1/iam/get-sessions", &controllers.ApiController{}, "GET:GetSessions")
 	web.Router("/v1/iam/get-session", &controllers.ApiController{}, "GET:GetSingleSession")
