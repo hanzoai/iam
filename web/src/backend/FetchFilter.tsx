@@ -13,39 +13,15 @@
 // limitations under the License.
 
 // @ts-nocheck
-import {Modal} from "antd";
-import {ExclamationCircleFilled} from "@ant-design/icons";
-import i18next from "i18next";
-import * as Conf from "../Conf";
-import * as Setting from "../Setting";
-
-const {confirm} = Modal;
+// Demo-mode hijack ripped 2026-05-12. The upstream Casdoor behavior
+// intercepted every "Unauthorized operation" response and prompted the
+// operator to redirect to the public demo at https://iam.hanzo.ai —
+// which is wrong for every Hanzo deployment (local docker-compose,
+// liquidity universe, etc). A real 403 should surface as a real 403;
+// the UI no longer offers to bounce the operator off-cluster.
 const {fetch: originalFetch} = window;
-
-const demoModeCallback = (res) => {
-  res.json().then(data => {
-    if (Setting.isResponseDenied(data)) {
-      confirm({
-        title: i18next.t("general:This is a read-only demo site!"),
-        icon: <ExclamationCircleFilled />,
-        content: i18next.t("general:Go to writable demo site?"),
-        okText: i18next.t("general:OK"),
-        cancelText: i18next.t("general:Cancel"),
-        onOk() {
-          Setting.openLink(`https://iam.hanzo.ai${location.pathname}${location.search}?username=hanzo/z&password=Hanzo2026!`);
-        },
-        onCancel() {},
-      });
-    }
-  });
-};
-
 const requestFilters = [];
 const responseFilters = [];
-
-if (Conf.IsDemoMode) {
-  responseFilters.push(demoModeCallback);
-}
 
 window.fetch = async(url, option = {}) => {
   requestFilters.forEach(filter => filter(url, option));
