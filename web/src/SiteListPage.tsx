@@ -33,7 +33,7 @@ function SiteListPage(props) {
   function addSite() {
     const randomName = Setting.getRandomName();
     const owner = Setting.getRequestOrganization(account);
-    const s = {owner, name: `site_${randomName}`, createdTime: moment().format(), displayName: `New Site - ${randomName}`, domain: "door.hanzo.ai", otherDomains: [], needRedirect: false, disableVerbose: false, rules: [], enableAlert: false, alertInterval: 60, alertTryTimes: 3, alertProviders: [], challenges: [], host: "", port: 8000, hosts: [], sslMode: "HTTPS Only", sslCert: "", publicIp: "8.131.81.162", node: "", isSelf: false, nodes: [], iamApplication: "", organizations: []};
+    const s = {owner, name: `site_${randomName}`, createdTime: moment().format(), displayName: `New Site - ${randomName}`, domain: "", otherDomains: [], needRedirect: false, disableVerbose: false, rules: [], enableAlert: false, alertInterval: 60, alertTryTimes: 3, alertProviders: [], challenges: [], host: "", port: 8000, hosts: [], sslMode: "HTTPS Only", sslCert: "", publicIp: "", node: "", isSelf: false, nodes: [], iamApplication: "", organizations: []};
     SiteBackend.addSite(s).then((res) => {
       if (res.status === "error") Setting.showMessage("error", `Failed to add: ${res.msg}`);
       else { Setting.showMessage("success", "Site added successfully"); fetchData(); }
