@@ -207,11 +207,6 @@ func (c *ApiController) IsMaskedEnabled() (bool, bool) {
 	if withSecret == "1" {
 		isMaskEnabled = false
 
-		if conf.IsDemoMode() {
-			c.ResponseError(c.T("general:this operation is not allowed in demo mode"))
-			return false, isMaskEnabled
-		}
-
 		_, ok := c.RequireAdmin()
 		if !ok {
 			return false, isMaskEnabled
