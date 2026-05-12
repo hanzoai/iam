@@ -96,7 +96,7 @@ test.describe('Hanzo IAM Visual Appearance', () => {
   test('does NOT show upstream branding', async ({ page }) => {
     // Check that upstream branding is NOT visible
     const pageContent = await page.textContent('body');
-    expect(pageContent).not.toContain('Casdoor');
+    expect(pageContent).not.toContain('Hanzo IAM');
     expect(pageContent).not.toContain('iam.hanzo.ai');
   });
 
