@@ -701,29 +701,11 @@ class App extends Component {
   }
 
   renderBanner() {
-    if (!Conf.IsDemoMode) {
-      return null;
-    }
-
-    const language = Setting.getLanguage();
-    if (language === "en" || language === "zh") {
-      return null;
-    }
-
-    return (
-      <Alert type="info" banner showIcon={false} closable message={
-        <div style={{textAlign: "center"}}>
-          <InfoCircleFilled style={{color: "rgb(87,52,211)"}} />
-          &nbsp;&nbsp;
-          {i18next.t("general:Found some texts still not translated? Please help us translate at")}
-          &nbsp;
-          <a target="_blank" rel="noreferrer" href={"https://crowdin.com/project/iam-site"}>
-            Crowdin
-          </a>
-          &nbsp;!&nbsp;🙏
-        </div>
-      } />
-    );
+    // Demo banner ripped 2026-05-12. Was upstream Casdoor's
+    // "help translate via Crowdin" nag, gated on IsDemoMode. Hanzo IAM
+    // deployments don't run as a public demo, so the banner never had
+    // a reason to be on.
+    return null;
   }
 
   render() {
