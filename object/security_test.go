@@ -17,10 +17,11 @@
 package object
 
 import (
-	"github.com/hanzoai/iam/conf"
 	"crypto/subtle"
 	"strings"
 	"testing"
+
+	"github.com/hanzoai/iam/conf"
 
 	"github.com/hanzoai/iam/cred"
 )
