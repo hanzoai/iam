@@ -547,9 +547,9 @@ func GetApplicationByUser(user *User) (*Application, error) {
 	}
 	// Resolve in tenant→admin→client_id order. Apps live under their tenant
 	// org by default (post-init steady state); the admin namespace holds
-	// system seeds like app-superuser; a few legacy seeds stored a clientId
-	// where the NAME was expected.
-	if user.Owner != "" && user.Owner != conf.AdminOrg() {
+	// admin-owned seeds like the IAM app; a few legacy seeds stored a
+	// clientId where the NAME was expected.
+	if user.Owner != "" && user.Owner != conf.AdminOrg {
 		app, err := getApplication(user.Owner, user.SignupApplication)
 		if err != nil {
 			return nil, err
@@ -558,7 +558,7 @@ func GetApplicationByUser(user *User) (*Application, error) {
 			return app, nil
 		}
 	}
-	app, err := getApplication(conf.AdminOrg(), user.SignupApplication)
+	app, err := getApplication(conf.AdminOrg, user.SignupApplication)
 	if err != nil {
 		return nil, err
 	}
@@ -574,7 +574,7 @@ func GetApplicationByUserId(userId string) (application *Application, err error)
 		return nil, err
 	}
 	if IsAppUser(userId) {
-		application, err = getApplication(conf.AdminOrg(), name)
+		application, err = getApplication(conf.AdminOrg, name)
 		return
 	}
 
@@ -675,21 +675,20 @@ func GetApplication(id string) (*Application, error) {
 // Use this everywhere a controller currently does
 // `GetApplication("admin/" + appName)` — that hardcoded `admin/` lookup
 // breaks the moment an app is owned by a tenant org (which is the
-// post-init steady state for everything except app-superuser /
-// app-built-in).
+// post-init steady state for everything except the admin-owned IAM app).
 func FindApplicationByName(name, orgHint string) (*Application, error) {
 	if name == "" {
 		return nil, nil
 	}
 	// Tenant first — the steady-state location for every non-system app.
-	if orgHint != "" && orgHint != conf.AdminOrg() {
+	if orgHint != "" && orgHint != conf.AdminOrg {
 		if app, err := getApplication(orgHint, name); err != nil {
 			return nil, err
 		} else if app != nil {
 			return app, nil
 		}
 	}
-	if app, err := getApplication(conf.AdminOrg(), name); err != nil {
+	if app, err := getApplication(conf.AdminOrg, name); err != nil {
 		return nil, err
 	} else if app != nil {
 		return app, nil
@@ -856,10 +855,10 @@ var validAppNamePattern = regexp.MustCompile(`^[a-z0-9]+-[a-z0-9]+(-[a-z0-9]+)*$
 
 func validateAppName(app *Application) error {
 	// System apps in the admin namespace bypass the org-prefix convention.
-	// init_data.json seeds the admin/superuser app + the legacy admin/built-in
+	// init_data.json seeds the admin/admin app + the legacy admin/built-in
 	// app on first boot; tenant apps like liquidity/liquidity-exchange are
 	// the validated path.
-	if app.Owner == conf.AdminOrg() {
+	if app.Owner == conf.AdminOrg {
 		return nil
 	}
 
@@ -959,7 +958,7 @@ func AddApplication(application *Application) (bool, error) {
 		application.Owner = "admin"
 	}
 	if application.Organization == "" {
-		application.Organization = "superuser"
+		application.Organization = conf.AdminOrg
 	}
 	if application.ClientId == "" {
 		application.ClientId = util.GenerateClientId()

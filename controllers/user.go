@@ -437,7 +437,7 @@ func (c *ApiController) DeleteUser() {
 		return
 	}
 
-	if user.Owner == "superuser" && user.Name == "admin" {
+	if user.Owner == conf.AdminOrg && user.Name == conf.AdminUser {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
@@ -795,7 +795,7 @@ func (c *ApiController) ImpersonateUser() {
 		return
 	}
 
-	if !(owner == org || org == "superuser") {
+	if !(owner == org || org == conf.AdminOrg) {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
