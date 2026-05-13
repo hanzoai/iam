@@ -23,7 +23,7 @@ import (
 	authzlog "github.com/hanzoai/authz/log"
 	authzmodel "github.com/hanzoai/authz/model"
 	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object/authzstore"
+	"github.com/hanzoai/authzstore"
 	"github.com/hanzoai/iam/util"
 )
 
