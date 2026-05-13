@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/iam/util"
 	"github.com/lor00x/goldap/message"
 
-	ldap "github.com/casdoor/ldapserver"
+	ldap "github.com/hanzoai/ldapserver"
 
 	"github.com/hanzoai/builder"
 )
