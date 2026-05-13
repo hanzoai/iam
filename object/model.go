@@ -19,6 +19,7 @@ import (
 
 	authzconfig "github.com/hanzoai/authz/config"
 	authzmodel "github.com/hanzoai/authz/model"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 )
 
@@ -100,7 +101,7 @@ func getModelEx(id string) (*Model, error) {
 		return model, nil
 	}
 
-	return getModel("superuser", name)
+	return getModel(conf.AdminOrg, name)
 }
 
 func UpdateModelWithCheck(id string, modelObj *Model) error {

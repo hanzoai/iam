@@ -3,6 +3,8 @@ package object
 import (
 	"github.com/hanzoai/xorm"
 	xormadapter "github.com/hanzoai/xorm-adapter/v3"
+
+	"github.com/hanzoai/iam/util"
 )
 
 type SafeAdapter struct {
@@ -64,8 +66,8 @@ func (a *SafeAdapter) RemovePolicies(sec string, ptype string, rules [][]string)
 	return err
 }
 
-func (a *SafeAdapter) buildAuthzRule(ptype string, rule []string) *xormadapter.CasbinRule {
-	line := xormadapter.CasbinRule{Ptype: ptype}
+func (a *SafeAdapter) buildAuthzRule(ptype string, rule []string) *util.AuthzRule {
+	line := util.AuthzRule{Ptype: ptype}
 
 	l := len(rule)
 	if l > 0 {

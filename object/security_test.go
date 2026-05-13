@@ -17,6 +17,7 @@
 package object
 
 import (
+	"github.com/hanzoai/iam/conf"
 	"crypto/subtle"
 	"strings"
 	"testing"
@@ -56,18 +57,20 @@ func TestValidPasswordTypesPassThrough(t *testing.T) {
 	}
 }
 
-// TestSuperuserOrgIsGlobalAdmin verifies that only users in the "superuser" org
-// are treated as global admins. Users in customer-facing orgs (hanzo, lux, zoo, etc.)
-// must never get global admin privileges regardless of their IsAdmin flag.
-func TestSuperuserOrgIsGlobalAdmin(t *testing.T) {
-	superUser := &User{Owner: "superuser", Name: "admin", IsAdmin: true}
-	if !superUser.IsGlobalAdmin() {
-		t.Fatal("superuser org user must be global admin")
+// TestAdminOrgIsGlobalAdmin verifies that only users in conf.AdminOrg are
+// treated as global admins. Users in customer-facing orgs (hanzo, lux, zoo,
+// etc.) must never get global admin privileges regardless of IsAdmin.
+func TestAdminOrgIsGlobalAdmin(t *testing.T) {
+	root := &User{Owner: conf.AdminOrg, Name: conf.AdminUser, IsAdmin: true}
+	if !root.IsGlobalAdmin() {
+		t.Fatal("admin org user must be global admin")
 	}
 
-	// Non-superuser orgs must never grant global admin
-	nonGlobalOrgs := []string{"hanzo", "lux", "zoo", "pars", "adnexus", "customer-org", "admin", ""}
+	nonGlobalOrgs := []string{"hanzo", "lux", "zoo", "pars", "adnexus", "customer-org", ""}
 	for _, org := range nonGlobalOrgs {
+		if org == conf.AdminOrg {
+			continue
+		}
 		u := &User{Owner: org, Name: "test-user", IsAdmin: true}
 		if u.IsGlobalAdmin() {
 			t.Fatalf("user in org %q must NOT be global admin (IsAdmin=true is org-scoped)", org)
@@ -114,21 +117,21 @@ func TestIsApplicationAdminScoping(t *testing.T) {
 		t.Fatal("org admin should be admin of shared application")
 	}
 
-	// superuser org user should be admin of everything
-	superUser := &User{Owner: "superuser", Name: "admin", IsAdmin: true}
-	if !superUser.IsApplicationAdmin(luxApp) {
-		t.Fatal("superuser org user must be admin of any application (global admin)")
+	// admin org user should be admin of everything
+	root := &User{Owner: conf.AdminOrg, Name: conf.AdminUser, IsAdmin: true}
+	if !root.IsApplicationAdmin(luxApp) {
+		t.Fatal("admin org user must be admin of any application (global admin)")
 	}
 }
 
-// TestSuperuserOrgConstants verifies that system enforcer constants reference
-// the superuser org, not any customer-facing org.
-func TestSuperuserOrgConstants(t *testing.T) {
-	if !strings.Contains(UserEnforcerId, "superuser") {
-		t.Fatalf("UserEnforcerId must reference superuser org, got: %s", UserEnforcerId)
+// TestAdminEnforcerConstants verifies that authz enforcer constants
+// reference the admin org, not any customer-facing org.
+func TestAdminEnforcerConstants(t *testing.T) {
+	if !strings.Contains(UserAuthzEnforcerId, conf.AdminOrg) {
+		t.Fatalf("UserAuthzEnforcerId must reference admin org, got: %s", UserAuthzEnforcerId)
 	}
-	if strings.Contains(UserEnforcerId, "hanzo/") {
-		t.Fatalf("UserEnforcerId must NOT reference hanzo org, got: %s", UserEnforcerId)
+	if strings.Contains(UserAuthzEnforcerId, "hanzo/") {
+		t.Fatalf("UserAuthzEnforcerId must NOT reference hanzo org, got: %s", UserAuthzEnforcerId)
 	}
 }
 

@@ -20,33 +20,39 @@ import (
 	"os"
 
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 )
 
+// InitDb is the bootstrap entrypoint: it seeds the admin org, the IAM
+// application, the bootstrap admin user, and the authz primitives (model,
+// adapter, enforcer, permission). All seeds are idempotent — if a row
+// already exists with the canonical (owner, name), the seed is skipped.
 func InitDb() {
-	existed := initBuiltInOrganization()
+	existed := initAdminOrganization()
 	if !existed {
-		initBuiltInPermission()
-		initBuiltInProvider()
-		initBuiltInApplication()
-		initBuiltInCert()
-		initBuiltInLdap()
-		initBuiltInUser()
+		initAdminPermission()
+		initAdminProvider()
+		initAdminApplication()
+		initAdminCert()
+		// No default LDAP seed — example.com/"123" was dev junk.
+		// Deployments configure LDAP via the admin console.
+		initAdminUser()
 	}
 
-	existed = initBuiltInApiModel()
+	existed = initAdminAPIModel()
 	if !existed {
-		initBuiltInApiAdapter()
-		initBuiltInApiEnforcer()
-		initBuiltInUserModel()
-		initBuiltInUserAdapter()
-		initBuiltInUserEnforcer()
+		initAdminAPIAdapter()
+		initAdminAPIEnforcer()
+		initAdminUserModel()
+		initAdminUserAdapter()
+		initAdminUserEnforcer()
 	}
 
 	initWebAuthn()
 }
 
-func getBuiltInAccountItems() []*AccountItem {
+func getAdminAccountItems() []*AccountItem {
 	return []*AccountItem{
 		{Name: "Organization", Visible: true, ViewRule: "Public", ModifyRule: "Admin"},
 		{Name: "ID", Visible: true, ViewRule: "Public", ModifyRule: "Immutable"},
@@ -110,139 +116,117 @@ func getBuiltInAccountItems() []*AccountItem {
 	}
 }
 
-func initBuiltInOrganization() bool {
-	organization, err := getOrganization("admin", "superuser")
+func initAdminOrganization() bool {
+	org := NewAdminOrg()
+	existing, err := getOrganization(org.Owner, org.Name)
 	if err != nil {
 		panic(err)
 	}
-
-	if organization != nil {
+	if existing != nil {
 		return true
 	}
 
-	organization = &Organization{
-		Owner:              "admin",
-		Name:               "superuser",
-		CreatedTime:        util.GetCurrentTime(),
-		DisplayName:        "Superuser",
-		WebsiteUrl:         "",
-		Favicon:            "",
-		PasswordType:       "bcrypt",
-		PasswordOptions:    []string{"AtLeast6"},
-		CountryCodes:       []string{"US", "ES", "FR", "DE", "GB", "CN", "JP", "KR", "VN", "ID", "SG", "IN"},
-		DefaultAvatar:      "",
-		UserTypes:          []string{},
-		Tags:               []string{},
-		Languages:          []string{"en", "es", "fr", "de", "ja", "zh", "vi", "pt", "tr", "pl", "uk"},
-		InitScore:          2000,
-		AccountItems:       getBuiltInAccountItems(),
-		EnableSoftDeletion: false,
-		IsProfilePublic:    false,
-		UseEmailAsUsername: false,
-		EnableTour:         true,
-	}
-	_, err = AddOrganization(organization)
-	if err != nil {
+	org.CreatedTime = util.GetCurrentTime()
+	org.DisplayName = "Admin"
+	org.PasswordType = "bcrypt"
+	org.PasswordOptions = []string{"AtLeast6"}
+	org.CountryCodes = []string{"US", "ES", "FR", "DE", "GB", "CN", "JP", "KR", "VN", "ID", "SG", "IN"}
+	org.UserTypes = []string{}
+	org.Tags = []string{}
+	org.Languages = []string{"en", "es", "fr", "de", "ja", "zh", "vi", "pt", "tr", "pl", "uk"}
+	org.InitScore = 2000
+	org.AccountItems = getAdminAccountItems()
+	org.EnableSoftDeletion = false
+	org.IsProfilePublic = false
+	org.UseEmailAsUsername = false
+	org.EnableTour = true
+
+	if _, err := AddOrganization(org); err != nil {
 		panic(err)
 	}
-
 	return false
 }
 
-func initBuiltInUser() {
-	user, err := getUser("superuser", "admin")
+func initAdminUser() {
+	user := NewAdminUser()
+	existing, err := getUser(user.Owner, user.Name)
 	if err != nil {
 		panic(err)
 	}
-	if user != nil {
+	if existing != nil {
 		return
 	}
 
-	user = &User{
-		Owner:             "superuser",
-		Name:              "admin",
-		CreatedTime:       util.GetCurrentTime(),
-		Id:                util.GenerateId(),
-		Type:              "normal-user",
-		Password:          "admin",
-		DisplayName:       "Admin",
-		Avatar:            "",
-		Email:             "admin@localhost",
-		CountryCode:       "US",
-		Address:           []string{},
-		Affiliation:       "",
-		Tag:               "staff",
-		Score:             2000,
-		Ranking:           1,
-		IsAdmin:           true,
-		IsForbidden:       false,
-		IsDeleted:         false,
-		SignupApplication: "app-superuser",
-		RegisterType:      "Add User",
-		RegisterSource:    "superuser/admin",
-		CreatedIp:         "127.0.0.1",
-		Properties:        make(map[string]string),
-	}
-	_, err = AddUser(user, "en")
-	if err != nil {
+	user.CreatedTime = util.GetCurrentTime()
+	user.Id = util.GenerateId()
+	user.Type = "normal-user"
+	user.Password = conf.AdminUser
+	user.DisplayName = "Admin"
+	user.Email = conf.AdminUser + "@localhost"
+	user.CountryCode = "US"
+	user.Address = []string{}
+	user.Tag = "staff"
+	user.Score = 2000
+	user.Ranking = 1
+	user.IsAdmin = true
+	user.SignupApplication = conf.AdminApp
+	user.RegisterType = "Add User"
+	user.RegisterSource = conf.AdminOrg + "/" + conf.AdminUser
+	user.CreatedIp = "127.0.0.1"
+	user.Properties = make(map[string]string)
+
+	if _, err := AddUser(user, "en"); err != nil {
 		panic(err)
 	}
 }
 
-func initBuiltInApplication() {
-	application, err := getApplication("admin", "app-superuser")
+func initAdminApplication() {
+	app := NewAdminApp()
+	existing, err := getApplication(app.Owner, app.Name)
 	if err != nil {
 		panic(err)
 	}
-
-	if application != nil {
+	if existing != nil {
 		return
 	}
 
-	application = &Application{
-		Owner:          "admin",
-		Name:           "app-superuser",
-		CreatedTime:    util.GetCurrentTime(),
-		DisplayName:    "IAM",
-		Category:       "Default",
-		Type:           "All",
-		Scopes:         []*ScopeItem{},
-		Logo:           "",
-		HomepageUrl:    "",
-		Organization:   "superuser",
-		Cert:           "cert-superuser",
-		EnablePassword: true,
-		EnableSignUp:   false,
-		Providers: []*ProviderItem{
-			{Name: "provider_captcha_default", CanSignUp: false, CanSignIn: false, CanUnlink: false, Prompted: false, SignupGroup: "", Rule: "None", Provider: nil},
-		},
-		SigninMethods: []*SigninMethod{
-			{Name: "Password", DisplayName: "Password", Rule: "All"},
-			{Name: "Verification code", DisplayName: "Verification code", Rule: "All"},
-			{Name: "WebAuthn", DisplayName: "WebAuthn", Rule: "None"},
-			{Name: "Face ID", DisplayName: "Face ID", Rule: "None"},
-		},
-		SignupItems: []*SignupItem{
-			{Name: "ID", Visible: false, Required: true, Prompted: false, Rule: "Random"},
-			{Name: "Username", Visible: true, Required: true, Prompted: false, Rule: "None"},
-			{Name: "Display name", Visible: true, Required: true, Prompted: false, Rule: "None"},
-			{Name: "Password", Visible: true, Required: true, Prompted: false, Rule: "None"},
-			{Name: "Confirm password", Visible: true, Required: true, Prompted: false, Rule: "None"},
-			{Name: "Email", Visible: true, Required: true, Prompted: false, Rule: "Normal"},
-			{Name: "Phone", Visible: true, Required: true, Prompted: false, Rule: "None"},
-			{Name: "Agreement", Visible: true, Required: true, Prompted: false, Rule: "None"},
-		},
-		Tags:          []string{},
-		RedirectUris:  []string{},
-		TokenFormat:   "JWT",
-		TokenFields:   []string{},
-		ExpireInHours: 168,
-		FormOffset:    2,
-
-		CookieExpireInHours: 720,
+	app.CreatedTime = util.GetCurrentTime()
+	app.DisplayName = "IAM"
+	app.Category = "Default"
+	app.Type = "All"
+	app.Scopes = []*ScopeItem{}
+	app.Organization = AdminAppOrganization()
+	app.Cert = AdminCertName()
+	app.EnablePassword = true
+	app.EnableSignUp = false
+	app.Providers = []*ProviderItem{
+		{Name: "provider_captcha_default", CanSignUp: false, CanSignIn: false, CanUnlink: false, Prompted: false, SignupGroup: "", Rule: "None", Provider: nil},
 	}
-	_, err = AddApplication(application)
-	if err != nil {
+	app.SigninMethods = []*SigninMethod{
+		{Name: "Password", DisplayName: "Password", Rule: "All"},
+		{Name: "Verification code", DisplayName: "Verification code", Rule: "All"},
+		{Name: "WebAuthn", DisplayName: "WebAuthn", Rule: "None"},
+		{Name: "Face ID", DisplayName: "Face ID", Rule: "None"},
+	}
+	app.SignupItems = []*SignupItem{
+		{Name: "ID", Visible: false, Required: true, Prompted: false, Rule: "Random"},
+		{Name: "Username", Visible: true, Required: true, Prompted: false, Rule: "None"},
+		{Name: "Display name", Visible: true, Required: true, Prompted: false, Rule: "None"},
+		{Name: "Password", Visible: true, Required: true, Prompted: false, Rule: "None"},
+		{Name: "Confirm password", Visible: true, Required: true, Prompted: false, Rule: "None"},
+		{Name: "Email", Visible: true, Required: true, Prompted: false, Rule: "Normal"},
+		{Name: "Phone", Visible: true, Required: true, Prompted: false, Rule: "None"},
+		{Name: "Agreement", Visible: true, Required: true, Prompted: false, Rule: "None"},
+	}
+	app.Tags = []string{}
+	app.RedirectUris = []string{}
+	app.TokenFormat = "JWT"
+	app.TokenFields = []string{}
+	app.ExpireInHours = 168
+	app.FormOffset = 2
+	app.CookieExpireInHours = 720
+
+	if _, err := AddApplication(app); err != nil {
 		panic(err)
 	}
 }
@@ -261,114 +245,58 @@ func readTokenFromFile() (string, string) {
 	return string(pem), string(key)
 }
 
-func initBuiltInCert() {
-	tokenJwtCertificate, tokenJwtPrivateKey := readTokenFromFile()
-
-	// If no PEM files on disk, generate fresh RSA keys.
-	if tokenJwtCertificate == "" || tokenJwtPrivateKey == "" {
+func initAdminCert() {
+	certPEM, keyPEM := readTokenFromFile()
+	if certPEM == "" || keyPEM == "" {
 		var err error
-		tokenJwtCertificate, tokenJwtPrivateKey, err = generateRsaKeys(4096, 256, 20, "Hanzo", "Hanzo")
+		certPEM, keyPEM, err = generateRsaKeys(4096, 256, 20, "Hanzo", "Hanzo")
 		if err != nil {
-			panic(fmt.Sprintf("failed to generate RSA keys for cert-superuser: %v", err))
+			panic(fmt.Sprintf("failed to generate RSA keys for %s: %v", AdminCertName(), err))
 		}
 	}
 
-	cert, err := getCert("admin", "cert-superuser")
+	existing, err := getCert(conf.AdminOrg, AdminCertName())
 	if err != nil {
 		panic(err)
 	}
-
-	if cert != nil {
+	if existing != nil {
 		return
 	}
 
-	cert = &Cert{
-		Owner:           "admin",
-		Name:            "cert-superuser",
+	cert := &Cert{
+		Owner:           conf.AdminOrg,
+		Name:            AdminCertName(),
 		CreatedTime:     util.GetCurrentTime(),
-		DisplayName:     "Superuser Cert",
+		DisplayName:     "Admin Cert",
 		Scope:           "JWT",
 		Type:            "x509",
 		CryptoAlgorithm: "RS256",
 		BitSize:         4096,
 		ExpireInYears:   20,
-		Certificate:     tokenJwtCertificate,
-		PrivateKey:      tokenJwtPrivateKey,
+		Certificate:     certPEM,
+		PrivateKey:      keyPEM,
 	}
-	_, err = AddCert(cert)
-	if err != nil {
+	if _, err := AddCert(cert); err != nil {
 		panic(err)
 	}
 }
 
-func initBuiltInLdap() {
-	ldap, err := GetLdap("ldap-superuser")
-	if err != nil {
-		panic(err)
-	}
-
-	if ldap != nil {
-		return
-	}
-
-	ldap = &Ldap{
-		Id:         "ldap-superuser",
-		Owner:      "superuser",
-		ServerName: "Superuser LDAP Server",
-		Host:       "example.com",
-		Port:       389,
-		Username:   "cn=admin,dc=example,dc=com",
-		Password:   "123",
-		BaseDn:     "ou=People,dc=example,dc=com",
-		AutoSync:   0,
-		LastSync:   "",
-	}
-	_, err = AddLdap(ldap)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func initBuiltInProvider() {
+func initAdminProvider() {
 	providers := []*Provider{
-		{
-			Owner:       "admin",
-			Name:        "provider_captcha_default",
-			CreatedTime: util.GetCurrentTime(),
-			DisplayName: "Captcha Default",
-			Category:    "Captcha",
-			Type:        "Default",
-		},
-		{
-			Owner:       "admin",
-			Name:        "provider_balance",
-			CreatedTime: util.GetCurrentTime(),
-			DisplayName: "Balance",
-			Category:    "Payment",
-			Type:        "Balance",
-		},
-		{
-			Owner:       "admin",
-			Name:        "provider_payment_dummy",
-			CreatedTime: util.GetCurrentTime(),
-			DisplayName: "Dummy Payment",
-			Category:    "Payment",
-			Type:        "Dummy",
-		},
+		{Owner: conf.AdminOrg, Name: "provider_captcha_default", CreatedTime: util.GetCurrentTime(), DisplayName: "Captcha Default", Category: "Captcha", Type: "Default"},
+		{Owner: conf.AdminOrg, Name: "provider_balance", CreatedTime: util.GetCurrentTime(), DisplayName: "Balance", Category: "Payment", Type: "Balance"},
+		{Owner: conf.AdminOrg, Name: "provider_payment_dummy", CreatedTime: util.GetCurrentTime(), DisplayName: "Dummy Payment", Category: "Payment", Type: "Dummy"},
 	}
 
-	for _, provider := range providers {
-		existingProvider, err := GetProvider(util.GetId("admin", provider.Name))
+	for _, p := range providers {
+		existing, err := GetProvider(util.GetId(conf.AdminOrg, p.Name))
 		if err != nil {
 			panic(err)
 		}
-
-		if existingProvider != nil {
+		if existing != nil {
 			continue
 		}
-
-		_, err = AddProvider(provider)
-		if err != nil {
+		if _, err := AddProvider(p); err != nil {
 			panic(err)
 		}
 	}
@@ -378,19 +306,18 @@ func initWebAuthn() {
 	gob.Register(webauthn.SessionData{})
 }
 
-func initBuiltInUserModel() {
-	model, err := GetModel("superuser/user-model-superuser")
+func initAdminUserModel() {
+	existing, err := GetModel(conf.AdminOrg + "/" + AdminUserModelName())
 	if err != nil {
 		panic(err)
 	}
-
-	if model != nil {
+	if existing != nil {
 		return
 	}
 
-	model = &Model{
-		Owner:       "superuser",
-		Name:        "user-model-superuser",
+	m := &Model{
+		Owner:       conf.AdminOrg,
+		Name:        AdminUserModelName(),
 		CreatedTime: util.GetCurrentTime(),
 		DisplayName: "User Model",
 		ModelText: `[request_definition]
@@ -408,23 +335,26 @@ e = some(where (p.eft == allow))
 [matchers]
 m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act`,
 	}
-	_, err = AddModel(model)
-	if err != nil {
+	if _, err := AddModel(m); err != nil {
 		panic(err)
 	}
 }
 
-func initBuiltInApiModel() bool {
-	model, err := GetModel("superuser/api-model-superuser")
+func initAdminAPIModel() bool {
+	existing, err := GetModel(conf.AdminOrg + "/" + AdminAPIModelName())
 	if err != nil {
 		panic(err)
 	}
-
-	if model != nil {
+	if existing != nil {
 		return true
 	}
 
-	modelText := `[request_definition]
+	m := &Model{
+		Owner:       conf.AdminOrg,
+		Name:        AdminAPIModelName(),
+		CreatedTime: util.GetCurrentTime(),
+		DisplayName: "API Model",
+		ModelText: `[request_definition]
 r = subOwner, subName, method, urlPath, objOwner, objName
 
 [policy_definition]
@@ -443,151 +373,132 @@ m = (r.subOwner == p.subOwner || p.subOwner == "*") && \
     (keyMatch2(r.urlPath, p.urlPath) || p.urlPath == "*") && \
     (r.objOwner == p.objOwner || p.objOwner == "*") && \
     (r.objName == p.objName || p.objName == "*") || \
-    (r.subOwner == r.objOwner && r.subName == r.objName)`
-
-	model = &Model{
-		Owner:       "superuser",
-		Name:        "api-model-superuser",
-		CreatedTime: util.GetCurrentTime(),
-		DisplayName: "API Model",
-		ModelText:   modelText,
+    (r.subOwner == r.objOwner && r.subName == r.objName)`,
 	}
-	_, err = AddModel(model)
-	if err != nil {
+	if _, err := AddModel(m); err != nil {
 		panic(err)
 	}
 	return false
 }
 
-func initBuiltInPermission() {
-	permission, err := GetPermission("superuser/permission-superuser")
+func initAdminPermission() {
+	existing, err := GetPermission(conf.AdminOrg + "/" + AdminPermissionName())
 	if err != nil {
 		panic(err)
 	}
-	if permission != nil {
+	if existing != nil {
 		return
 	}
 
-	permission = &Permission{
-		Owner:        "superuser",
-		Name:         "permission-superuser",
+	p := &Permission{
+		Owner:        conf.AdminOrg,
+		Name:         AdminPermissionName(),
 		CreatedTime:  util.GetCurrentTime(),
-		DisplayName:  "Superuser Permission",
-		Description:  "Superuser Permission",
-		Users:        []string{"superuser/*"},
+		DisplayName:  "Admin Permission",
+		Description:  "Admin Permission",
+		Users:        []string{conf.AdminOrg + "/*"},
 		Groups:       []string{},
 		Roles:        []string{},
 		Domains:      []string{},
-		Model:        "superuser/user-model-superuser",
+		Model:        conf.AdminOrg + "/" + AdminUserModelName(),
 		Adapter:      "",
 		ResourceType: "Application",
-		Resources:    []string{"app-superuser"},
+		Resources:    []string{conf.AdminApp},
 		Actions:      []string{"Read", "Write", "Admin"},
 		Effect:       "Allow",
 		IsEnabled:    true,
-		Submitter:    "admin",
-		Approver:     "admin",
+		Submitter:    conf.AdminUser,
+		Approver:     conf.AdminUser,
 		ApproveTime:  util.GetCurrentTime(),
 		State:        "Approved",
 	}
-	_, err = AddPermission(permission)
-	if err != nil {
+	if _, err := AddPermission(p); err != nil {
 		panic(err)
 	}
 }
 
-func initBuiltInUserAdapter() {
-	adapter, err := GetAdapter("superuser/user-adapter-superuser")
+func initAdminUserAdapter() {
+	existing, err := GetAdapter(conf.AdminOrg + "/" + AdminUserAdapterName())
 	if err != nil {
 		panic(err)
 	}
-
-	if adapter != nil {
+	if existing != nil {
 		return
 	}
 
-	adapter = &Adapter{
-		Owner:       "superuser",
-		Name:        "user-adapter-superuser",
+	a := &Adapter{
+		Owner:       conf.AdminOrg,
+		Name:        AdminUserAdapterName(),
 		CreatedTime: util.GetCurrentTime(),
-		Table:       "casbin_user_rule",
+		Table:       "authz_user_rule",
 		UseSameDb:   true,
 	}
-	_, err = AddAdapter(adapter)
-	if err != nil {
+	if _, err := AddAdapter(a); err != nil {
 		panic(err)
 	}
 }
 
-func initBuiltInApiAdapter() {
-	adapter, err := GetAdapter("superuser/api-adapter-superuser")
+func initAdminAPIAdapter() {
+	existing, err := GetAdapter(conf.AdminOrg + "/" + AdminAPIAdapterName())
 	if err != nil {
 		panic(err)
 	}
-
-	if adapter != nil {
+	if existing != nil {
 		return
 	}
 
-	adapter = &Adapter{
-		Owner:       "superuser",
-		Name:        "api-adapter-superuser",
+	a := &Adapter{
+		Owner:       conf.AdminOrg,
+		Name:        AdminAPIAdapterName(),
 		CreatedTime: util.GetCurrentTime(),
-		Table:       "casbin_api_rule",
+		Table:       "authz_api_rule",
 		UseSameDb:   true,
 	}
-	_, err = AddAdapter(adapter)
-	if err != nil {
+	if _, err := AddAdapter(a); err != nil {
 		panic(err)
 	}
 }
 
-func initBuiltInUserEnforcer() {
-	enforcer, err := GetEnforcer("superuser/user-enforcer-superuser")
+func initAdminUserEnforcer() {
+	existing, err := GetEnforcer(conf.AdminOrg + "/" + AdminUserEnforcerName())
 	if err != nil {
 		panic(err)
 	}
-
-	if enforcer != nil {
+	if existing != nil {
 		return
 	}
 
-	enforcer = &Enforcer{
-		Owner:       "superuser",
-		Name:        "user-enforcer-superuser",
+	e := &Enforcer{
+		Owner:       conf.AdminOrg,
+		Name:        AdminUserEnforcerName(),
 		CreatedTime: util.GetCurrentTime(),
 		DisplayName: "User Enforcer",
-		Model:       "superuser/user-model-superuser",
-		Adapter:     "superuser/user-adapter-superuser",
+		Model:       conf.AdminOrg + "/" + AdminUserModelName(),
+		Adapter:     conf.AdminOrg + "/" + AdminUserAdapterName(),
 	}
-
-	_, err = AddEnforcer(enforcer)
-	if err != nil {
+	if _, err := AddEnforcer(e); err != nil {
 		panic(err)
 	}
 }
 
-func initBuiltInApiEnforcer() {
-	enforcer, err := GetEnforcer("superuser/api-enforcer-superuser")
+func initAdminAPIEnforcer() {
+	existing, err := GetEnforcer(conf.AdminOrg + "/" + AdminAPIEnforcerName())
 	if err != nil {
 		panic(err)
 	}
-
-	if enforcer != nil {
+	if existing != nil {
 		return
 	}
 
-	enforcer = &Enforcer{
-		Owner:       "superuser",
-		Name:        "api-enforcer-superuser",
+	e := &Enforcer{
+		Owner:       conf.AdminOrg,
+		Name:        AdminAPIEnforcerName(),
 		CreatedTime: util.GetCurrentTime(),
 		DisplayName: "API Enforcer",
-		Model:       "superuser/api-model-superuser",
-		Adapter:     "superuser/api-adapter-superuser",
+		Model:       conf.AdminOrg + "/" + AdminAPIModelName(),
+		Adapter:     conf.AdminOrg + "/" + AdminAPIAdapterName(),
 	}
-
-	_, err = AddEnforcer(enforcer)
-	if err != nil {
+	if _, err := AddEnforcer(e); err != nil {
 		panic(err)
 	}
 }

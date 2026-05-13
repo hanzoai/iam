@@ -324,7 +324,7 @@ func initDefinedOrganization(organization *Organization) {
 	}
 	organization.CreatedTime = util.GetCurrentTime()
 	if len(organization.AccountItems) == 0 {
-		organization.AccountItems = getBuiltInAccountItems()
+		organization.AccountItems = getAdminAccountItems()
 	}
 
 	_, err = AddOrganization(organization)
