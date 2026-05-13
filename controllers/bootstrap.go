@@ -80,9 +80,6 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 	if len(req.GrantTypes) == 0 {
 		req.GrantTypes = []string{"client_credentials"}
 	}
-	if req.ClientSecret == "" {
-		req.ClientSecret = generateBootstrapSecret()
-	}
 
 	// Owner = the requested organization. The JWT `owner` claim carries
 	// this value verbatim, and KMS (and any other URL-org-scoped service)
@@ -97,6 +94,21 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 	id := owner + "/" + req.Name
 
 	existing, _ := object.GetApplication(id)
+	// Idempotency contract: when the caller submits an empty clientSecret
+	// AND the application already exists with a non-empty stored secret,
+	// PRESERVE the existing secret. Without this, every operator reconcile
+	// cycle (which submits "" expecting BootstrapApplicationUpsert to mean
+	// "leave the secret alone if you can") silently rotates the credential
+	// and breaks every consumer that read the env at pod boot. Only mint a
+	// fresh secret when (a) creating a brand-new app, OR (b) caller passed
+	// an explicit non-empty value (treated as a deliberate override).
+	if req.ClientSecret == "" {
+		if existing != nil && existing.ClientSecret != "" {
+			req.ClientSecret = existing.ClientSecret
+		} else {
+			req.ClientSecret = generateBootstrapSecret()
+		}
+	}
 	if existing != nil {
 		existing.ClientId = req.ClientId
 		existing.ClientSecret = req.ClientSecret

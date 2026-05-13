@@ -123,9 +123,6 @@ func New(engine *xorm.Engine, tableName, tablePrefix string) (*Adapter, error) {
 	return a, nil
 }
 
-// TableName returns the fully-qualified table this adapter writes to.
-func (a *Adapter) TableName() string { return a.table }
-
 // ensureTable creates the `authz_*_rule` table if missing. xorm's
 // Sync2 uses the struct tags above to produce the right DDL across
 // SQLite / MySQL / PostgreSQL.
