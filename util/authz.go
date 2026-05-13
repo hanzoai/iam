@@ -16,7 +16,12 @@ package util
 
 import xormadapter "github.com/hanzoai/xorm-adapter/v3"
 
-func AuthzRuleToSlice(rule xormadapter.CasbinRule) []string {
+// AuthzRule is the canonical Hanzo name for a policy row stored by the
+// xorm adapter. It aliases the external type at the boundary so the rest
+// of the codebase never spells the external vocabulary directly.
+type AuthzRule = xormadapter.CasbinRule
+
+func AuthzRuleToSlice(rule AuthzRule) []string {
 	s := []string{
 		rule.V0,
 		rule.V1,
@@ -38,16 +43,14 @@ func AuthzRuleToSlice(rule xormadapter.CasbinRule) []string {
 func safeReturn(policy []string, i int) string {
 	if len(policy) > i {
 		return policy[i]
-	} else {
-		return ""
 	}
+	return ""
 }
 
-func MatrixToAuthzRules(Ptype string, policies [][]string) []*xormadapter.CasbinRule {
-	res := []*xormadapter.CasbinRule{}
-
+func MatrixToAuthzRules(Ptype string, policies [][]string) []*AuthzRule {
+	res := []*AuthzRule{}
 	for _, policy := range policies {
-		line := xormadapter.CasbinRule{
+		line := AuthzRule{
 			Ptype: Ptype,
 			V0:    safeReturn(policy, 0),
 			V1:    safeReturn(policy, 1),
@@ -58,6 +61,5 @@ func MatrixToAuthzRules(Ptype string, policies [][]string) []*xormadapter.Casbin
 		}
 		res = append(res, &line)
 	}
-
 	return res
 }
