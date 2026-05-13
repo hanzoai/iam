@@ -14,7 +14,7 @@
 
 package util
 
-import "github.com/hanzoai/iam/object/authzstore"
+import "github.com/hanzoai/authzstore"
 
 // AuthzRule is the canonical Hanzo name for a policy row. It aliases
 // the row type owned by the object/authzstore package so callers in

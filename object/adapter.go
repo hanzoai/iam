@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object/authzstore"
+	"github.com/hanzoai/authzstore"
 	"github.com/hanzoai/iam/util"
 	"github.com/hanzoai/xorm"
 )
