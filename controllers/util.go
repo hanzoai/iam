@@ -164,8 +164,8 @@ func (c *ApiController) RequireAdmin() (string, bool) {
 		return "", false
 	}
 
-	if user.Owner == "superuser" {
-		return "superuser", true
+	if user.Owner == conf.AdminOrg {
+		return conf.AdminOrg, true
 	}
 
 	if !user.IsAdmin {
