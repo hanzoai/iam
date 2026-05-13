@@ -20,7 +20,6 @@ import (
 
 	authz "github.com/hanzoai/authz"
 	"github.com/hanzoai/iam/util"
-	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
 
 type Enforcer struct {
@@ -194,7 +193,7 @@ func GetInitializedEnforcer(enforcerId string) (*Enforcer, error) {
 	return enforcer, nil
 }
 
-func GetPolicies(id string) ([]*xormadapter.CasbinRule, error) {
+func GetPolicies(id string) ([]*util.AuthzRule, error) {
 	enforcer, err := GetInitializedEnforcer(id)
 	if err != nil {
 		return nil, err
@@ -219,7 +218,7 @@ type Filter struct {
 	FieldValues []string `json:"fieldValues"`
 }
 
-func GetFilteredPolicies(id string, ptype string, fieldIndex int, fieldValues ...string) ([]*xormadapter.CasbinRule, error) {
+func GetFilteredPolicies(id string, ptype string, fieldIndex int, fieldValues ...string) ([]*util.AuthzRule, error) {
 	enforcer, err := GetInitializedEnforcer(id)
 	if err != nil {
 		return nil, err
@@ -252,7 +251,7 @@ func GetFilteredPolicies(id string, ptype string, fieldIndex int, fieldValues ..
 // GetFilteredPoliciesMulti applies multiple filters to policies
 // Doing this in our loop is more efficient than using GetFilteredGroupingPolicy / GetFilteredPolicy which
 // iterates over all policies again and again
-func GetFilteredPoliciesMulti(id string, filters []Filter) ([]*xormadapter.CasbinRule, error) {
+func GetFilteredPoliciesMulti(id string, filters []Filter) ([]*util.AuthzRule, error) {
 	// Get all policies first
 	allPolicies, err := GetPolicies(id)
 	if err != nil {
@@ -260,7 +259,7 @@ func GetFilteredPoliciesMulti(id string, filters []Filter) ([]*xormadapter.Casbi
 	}
 
 	// Filter policies based on multiple criteria
-	var filteredPolicies []*xormadapter.CasbinRule
+	var filteredPolicies []*util.AuthzRule
 	if len(filters) == 0 {
 		// No filters, return all policies
 		return allPolicies, nil

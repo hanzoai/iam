@@ -89,7 +89,7 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 	// requires `owner == URL org segment` to authorize a request. There
 	// is NO `owner=admin` shortcut — that was the cross-tenant root-key
 	// bug Red demonstrated 2026-04-21. Empty Organization defaults to
-	// "admin" so the bootstrap superuser-app keeps working unchanged.
+	// "admin" so the bootstrap admin-app keeps working unchanged.
 	owner := req.Organization
 	if owner == "" {
 		owner = "admin"
@@ -150,11 +150,11 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		TokenFormat:    "JWT",
 		EnablePassword: true,
 		EnableSignUp:   true,
-		// Sign JWTs with the system-seeded cert by default. init.go puts
-		// `cert-superuser` (RSA keypair) in the admin namespace; every
-		// tenant app can reference it to mint tokens. Per-tenant certs
-		// are an explicit override (set req.Cert / future field).
-		Cert: "cert-superuser",
+		// Sign JWTs with the admin-seeded cert by default. init.go puts
+		// the IAM cert (RSA keypair) in the admin namespace; every tenant
+		// app can reference it to mint tokens. Per-tenant certs are an
+		// explicit override (set req.Cert / future field).
+		Cert: object.AdminCertName(),
 	}
 	if app.DisplayName == "" {
 		app.DisplayName = req.Name
@@ -487,9 +487,9 @@ func generateBootstrapSecret() string {
 // callers (which fell through to "admin" elsewhere) keep working.
 func ensureOrganization(name string) error {
 	if name == "" {
-		name = conf.AdminOrg()
+		name = conf.AdminOrg
 	}
-	id := util.GetId(conf.AdminOrg(), name)
+	id := util.GetId(conf.AdminOrg, name)
 	existing, err := object.GetOrganization(id)
 	if err != nil {
 		return fmt.Errorf("lookup org %s: %w", id, err)
@@ -498,7 +498,7 @@ func ensureOrganization(name string) error {
 		return nil
 	}
 	org := &object.Organization{
-		Owner:        conf.AdminOrg(),
+		Owner:        conf.AdminOrg,
 		Name:         name,
 		DisplayName:  name,
 		PasswordType: "argon2id",

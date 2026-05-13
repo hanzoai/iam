@@ -30,7 +30,6 @@ import (
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 	"github.com/hanzoai/xorm"
-	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 	"github.com/hanzoai/xorm/core"
 	"github.com/hanzoai/xorm/names"
 	_ "github.com/lib/pq"               // db = postgres
@@ -485,7 +484,7 @@ func (a *Ormer) createTable() {
 		panic(err)
 	}
 
-	err = a.Engine.Sync2(new(xormadapter.CasbinRule))
+	err = a.Engine.Sync2(new(util.AuthzRule))
 	if err != nil {
 		panic(err)
 	}
