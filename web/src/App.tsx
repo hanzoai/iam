@@ -701,10 +701,8 @@ class App extends Component {
   }
 
   renderBanner() {
-    // Demo banner ripped 2026-05-12. Was upstream Casdoor's
-    // "help translate via Crowdin" nag, gated on IsDemoMode. Hanzo IAM
-    // deployments don't run as a public demo, so the banner never had
-    // a reason to be on.
+    // Demo banner ripped 2026-05-12. Hanzo IAM deployments never run
+    // as a public demo, so the banner has no reason to be on.
     return null;
   }
 

@@ -13,12 +13,8 @@
 // limitations under the License.
 
 // @ts-nocheck
-// Demo-mode hijack ripped 2026-05-12. The upstream Casdoor behavior
-// intercepted every "Unauthorized operation" response and prompted the
-// operator to redirect to the public demo at https://iam.hanzo.ai —
-// which is wrong for every Hanzo deployment (local docker-compose,
-// liquidity universe, etc). A real 403 should surface as a real 403;
-// the UI no longer offers to bounce the operator off-cluster.
+// Demo-mode hijack ripped 2026-05-12. A real 403 should surface as a
+// real 403; the UI no longer offers to bounce the operator off-cluster.
 const {fetch: originalFetch} = window;
 const requestFilters = [];
 const responseFilters = [];
