@@ -15,9 +15,9 @@
 package authz
 
 import (
-	"github.com/hanzoai/iam/conf"
 	authzengine "github.com/hanzoai/authz"
 	stringadapter "github.com/hanzoai/authz/persist/string-adapter"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )
