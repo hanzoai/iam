@@ -2533,11 +2533,3 @@ function getOriginalName(name) {
   }
 }
 
-export function getRepoUrl(name) {
-  name = getOriginalName(name);
-  if (name === "hanzo") {
-    return "https://github.com/hanzoai/iam";
-  } else {
-    return `https://github.com/casbin/${name}`;
-  }
-}
