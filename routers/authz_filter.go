@@ -272,8 +272,8 @@ func getUrlPath(ctx *context.Context) string {
 	// /v1/iam/-prefixed variant (e.g. /v1/iam/login/oauth/access_token)
 	// collapse to the same /login/oauth resource so the anonymous policy
 	// applies. Without the /v1/iam/login/oauth case, IAM v1.13.0+ public
-	// clients hit "Unauthorized operation" because Casbin sees the full
-	// prefixed path.
+	// clients hit "Unauthorized operation" because the authz engine sees
+	// the full prefixed path.
 	if strings.HasPrefix(urlPath, "/login/oauth") ||
 		strings.HasPrefix(urlPath, "/v1/iam/login/oauth") {
 		return "/login/oauth"
