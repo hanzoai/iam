@@ -15,8 +15,8 @@
 package storage
 
 import (
-	"github.com/casdoor/oss"
-	"github.com/casdoor/oss/synology"
+	"github.com/hanzoai/oss"
+	"github.com/hanzoai/oss/synology"
 )
 
 func NewSynologyNasStorageProvider(clientId string, clientSecret string, endpoint string) oss.StorageInterface {
