@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/casdoor/oss"
+	"github.com/hanzoai/oss"
 )
 
 // LocalFileSystemProvider file system storage
