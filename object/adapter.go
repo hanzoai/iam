@@ -19,9 +19,9 @@ import (
 	"strings"
 
 	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam/object/authzstore"
 	"github.com/hanzoai/iam/util"
 	"github.com/hanzoai/xorm"
-	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
 
 type Adapter struct {
@@ -39,8 +39,8 @@ type Adapter struct {
 	Password     string `xorm:"varchar(150)" json:"password"`
 	Database     string `xorm:"varchar(100)" json:"database"`
 
-	*xormadapter.Adapter `xorm:"-" json:"-"`
-	engine               *xorm.Engine
+	*authzstore.Adapter `xorm:"-" json:"-"`
+	engine              *xorm.Engine
 }
 
 func GetAdapterCount(owner, field, value string) (int64, error) {
@@ -199,7 +199,7 @@ func (adapter *Adapter) InitAdapter() error {
 
 	tableName := adapter.Table
 
-	xa, err := xormadapter.NewAdapterByEngineWithTableName(engine, tableName, "")
+	xa, err := authzstore.New(engine, tableName, "")
 	if err != nil {
 		_ = engine.Close()
 		return err
