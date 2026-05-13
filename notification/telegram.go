@@ -17,8 +17,8 @@ package notification
 import (
 	"strconv"
 
-	notify "github.com/casdoor/notify2"
-	"github.com/casdoor/notify2/service/telegram"
+	notify "github.com/hanzoai/notify2"
+	"github.com/hanzoai/notify2/service/telegram"
 	api "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/hanzoai/iam/proxy"
 )
