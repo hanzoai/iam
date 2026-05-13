@@ -2,8 +2,8 @@ package storage
 
 import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/casdoor/oss"
-	"github.com/casdoor/oss/s3"
+	"github.com/hanzoai/oss"
+	"github.com/hanzoai/oss/s3"
 )
 
 func NewCUCloudOssStorageProvider(clientId string, clientSecret string, region string, bucket string, endpoint string) oss.StorageInterface {
