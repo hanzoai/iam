@@ -42,9 +42,9 @@ func TestGetClient(t *testing.T) {
 	eccKey := util.ReadStringFromPath("acme_account.key")
 	println(eccKey)
 
-	client, err := GetAcmeClient("acme2@casbin.org", eccKey, false)
+	client, err := GetAcmeClient("acme-test@example.org", eccKey, false)
 	assert.Nil(t, err)
-	pem, key, err := ObtainCertificateAli(client, "casbin.com", accessKeyId, accessKeySecret)
+	pem, key, err := ObtainCertificateAli(client, "example.com", accessKeyId, accessKeySecret)
 	assert.Nil(t, err)
 	println(pem)
 	println()
