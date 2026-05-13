@@ -18,12 +18,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1
 	github.com/beego/beego/v2 v2.3.8
 	github.com/beevik/etree v1.1.0
-	github.com/casdoor/casdoor-go-sdk v1.46.0
-	github.com/casdoor/go-sms-sender v0.25.0
-	github.com/casdoor/gomail/v2 v2.3.0
-	github.com/casdoor/ldapserver v1.2.0
-	github.com/casdoor/notify2 v1.6.0
-	github.com/casdoor/oss v1.8.0
 	github.com/corazawaf/coraza/v3 v3.3.3
 	github.com/dchest/captcha v0.0.0-20200903113550-03f5f0333e1f
 	github.com/elimity-com/scim v0.0.0-20230426070224-941a5eac92f3
@@ -40,8 +34,14 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hanzoai/builder v0.3.13
+	github.com/hanzoai/go-sms-sender v0.25.2
+	github.com/hanzoai/gomail/v2 v2.3.2
+	github.com/hanzoai/iam-go-sdk v1.46.1
 	github.com/hanzoai/idv v1.0.0
 	github.com/hanzoai/kms/sdk/go v1.0.0
+	github.com/hanzoai/ldapserver v1.2.1
+	github.com/hanzoai/notify2 v1.6.3
+	github.com/hanzoai/oss v1.8.3
 	github.com/hanzoai/xorm v1.1.6
 	github.com/hanzoai/xorm-adapter/v3 v3.0.2
 	github.com/hsluoyz/modsecurity-go v0.0.7
@@ -57,6 +57,8 @@ require (
 	github.com/microsoft/go-mssqldb v1.9.0
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/modelcontextprotocol/go-sdk v1.4.0
+	github.com/nats-io/nats-server/v2 v2.5.0
+	github.com/nats-io/nats.go v1.12.1
 	github.com/nyaruka/phonenumbers v1.2.2
 	github.com/pquerna/otp v1.5.0
 	github.com/prometheus/client_golang v1.23.2
@@ -211,10 +213,14 @@ require (
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mileusna/viber v1.0.1 // indirect
+	github.com/minio/highwayhash v1.0.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/mrjones/oauth v0.0.0-20180629183705-f4e24b6d100c // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/nats-io/jwt/v2 v2.0.3 // indirect
+	github.com/nats-io/nkeys v0.3.0 // indirect
+	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/onsi/gomega v1.39.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect

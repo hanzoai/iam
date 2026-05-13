@@ -15,8 +15,8 @@
 package notification
 
 import (
-	notify "github.com/casdoor/notify2"
-	"github.com/casdoor/notify2/service/pushbullet"
+	notify "github.com/hanzoai/notify2"
+	"github.com/hanzoai/notify2/service/pushbullet"
 )
 
 func NewPushbulletProvider(apiToken string, deviceNickname string) (notify.Notifier, error) {
