@@ -168,6 +168,124 @@ func TestAdapter_RemoveFilteredPolicy(t *testing.T) {
 	}
 }
 
+// TestAdapter_LegacySchemaMigration simulates the prod-migration
+// scenario: the table was created by the legacy xorm-adapter DDL,
+// rows already exist, and the IAM boots up and constructs an
+// authzstore.Adapter against that existing table. The contract is:
+//
+//  1. Existing rows survive byte-for-byte across the New(...) call
+//     (Sync2 must NOT rewrite the schema in a way that drops data).
+//  2. LoadPolicy reads them as-is.
+//  3. SavePolicy(post-refactor: DELETE + INSERT in a tx) round-trips
+//     the same rows back into the table.
+//
+// This is the scenario Red flagged that wasn't covered. If SavePolicy
+// ever regresses to a non-transactional DROP+CREATE, the table would
+// briefly not exist mid-call and the post-refactor INSERT into
+// a.table (which is the original table) would either fail or succeed
+// against a freshly-recreated table — either way we'd notice here.
+func TestAdapter_LegacySchemaMigration(t *testing.T) {
+	eng := newTestEngine(t)
+
+	// 1. Create the table with the legacy DDL the upstream xorm-adapter
+	//    would have produced for the prod `authz_user_rule` table.
+	const legacyDDL = `CREATE TABLE authz_user_rule (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		ptype VARCHAR(100),
+		v0 VARCHAR(100),
+		v1 VARCHAR(100),
+		v2 VARCHAR(100),
+		v3 VARCHAR(100),
+		v4 VARCHAR(100),
+		v5 VARCHAR(100)
+	)`
+	if _, err := eng.Exec(legacyDDL); err != nil {
+		t.Fatalf("legacy DDL: %v", err)
+	}
+
+	// 2. INSERT a few rows directly via SQL — simulating the data
+	//    already-on-disk from the previous xorm-adapter deployment.
+	seed := [][]string{
+		{"p", "alice", "data1", "read", "allow", "", "perm-A"},
+		{"p", "bob", "data2", "write", "allow", "", "perm-B"},
+		{"g", "alice", "admin", "", "", "", ""},
+	}
+	for _, r := range seed {
+		if _, err := eng.Exec(
+			`INSERT INTO authz_user_rule (ptype, v0, v1, v2, v3, v4, v5) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			r[0], r[1], r[2], r[3], r[4], r[5], r[6],
+		); err != nil {
+			t.Fatalf("seed insert: %v", err)
+		}
+	}
+
+	// 3. The prod-migration construction: an IAM boot points an
+	//    authzstore.Adapter at the existing table with no prefix.
+	a, err := New(eng, "authz_user_rule", "")
+	if err != nil {
+		t.Fatalf("New (migration scenario): %v", err)
+	}
+
+	// Snapshot what's physically in the table before any policy-layer
+	// operation. We compare against this after LoadPolicy + SavePolicy
+	// to confirm the round-trip preserves rows byte-for-byte.
+	type physRow struct{ Ptype, V0, V1, V2, V3, V4, V5 string }
+	dump := func() []physRow {
+		t.Helper()
+		var out []physRow
+		res, err := eng.Query("SELECT ptype, v0, v1, v2, v3, v4, v5 FROM authz_user_rule ORDER BY ptype, v0, v1, v2, v3, v4, v5")
+		if err != nil {
+			t.Fatalf("dump query: %v", err)
+		}
+		for _, row := range res {
+			out = append(out, physRow{
+				Ptype: string(row["ptype"]),
+				V0:    string(row["v0"]),
+				V1:    string(row["v1"]),
+				V2:    string(row["v2"]),
+				V3:    string(row["v3"]),
+				V4:    string(row["v4"]),
+				V5:    string(row["v5"]),
+			})
+		}
+		return out
+	}
+	before := dump()
+	if len(before) != 3 {
+		t.Fatalf("seed dump: got %d rows, want 3", len(before))
+	}
+
+	// 4. LoadPolicy must see all three rows.
+	m, err := authzmodel.NewModelFromString(testModel)
+	if err != nil {
+		t.Fatalf("model: %v", err)
+	}
+	if err := a.LoadPolicy(m); err != nil {
+		t.Fatalf("LoadPolicy: %v", err)
+	}
+	if got, want := len(m["p"]["p"].Policy), 2; got != want {
+		t.Errorf("p rule count after legacy LoadPolicy = %d, want %d", got, want)
+	}
+	if got, want := len(m["g"]["g"].Policy), 1; got != want {
+		t.Errorf("g rule count after legacy LoadPolicy = %d, want %d", got, want)
+	}
+
+	// 5. SavePolicy round-trip — DELETE + INSERT in a single tx. Every
+	//    row from the model should land back in the table identically.
+	if err := a.SavePolicy(m); err != nil {
+		t.Fatalf("SavePolicy: %v", err)
+	}
+	after := dump()
+	if len(after) != len(before) {
+		t.Fatalf("row count after SavePolicy = %d, want %d", len(after), len(before))
+	}
+	for i := range before {
+		if before[i] != after[i] {
+			t.Errorf("row[%d] mismatch:\n  before=%+v\n  after =%+v", i, before[i], after[i])
+		}
+	}
+}
+
 func mustAdd(t *testing.T, a *Adapter, ptype string, rule []string) {
 	t.Helper()
 	if err := a.AddPolicy(ptype, ptype, rule); err != nil {
