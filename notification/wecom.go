@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"time"
 
-	notify "github.com/casdoor/notify2"
+	notify "github.com/hanzoai/notify2"
 )
 
 // wecomService encapsulates the WeCom webhook client
