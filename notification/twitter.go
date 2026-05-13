@@ -15,9 +15,9 @@
 package notification
 
 import (
+	"github.com/hanzoai/iam/proxy"
 	notify "github.com/hanzoai/notify2"
 	"github.com/hanzoai/notify2/service/twitter"
-	"github.com/hanzoai/iam/proxy"
 )
 
 func NewTwitterProvider(consumerKey string, consumerSecret string, accessToken string, accessTokenSecret string, twitterId string) (*notify.Notify, error) {
