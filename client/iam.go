@@ -12,14 +12,14 @@ import (
 
 // Typed errors. Callers branch via errors.Is.
 var (
-	ErrTokenMissing    = errors.New("iam: authentication required")
-	ErrTokenInvalid    = errors.New("iam: invalid token")
-	ErrTokenExpired    = errors.New("iam: token expired")
-	ErrTokenRevoked    = errors.New("iam: token revoked")
-	ErrTokenAudience   = errors.New("iam: token audience mismatch")
-	ErrUserNotFound    = errors.New("iam: user not found")
-	ErrOrgNotFound     = errors.New("iam: org not found")
-	ErrCrossOrg        = errors.New("iam: cross-org access forbidden")
+	ErrTokenMissing  = errors.New("iam: authentication required")
+	ErrTokenInvalid  = errors.New("iam: invalid token")
+	ErrTokenExpired  = errors.New("iam: token expired")
+	ErrTokenRevoked  = errors.New("iam: token revoked")
+	ErrTokenAudience = errors.New("iam: token audience mismatch")
+	ErrUserNotFound  = errors.New("iam: user not found")
+	ErrOrgNotFound   = errors.New("iam: org not found")
+	ErrCrossOrg      = errors.New("iam: cross-org access forbidden")
 )
 
 // IAM is the identity-and-access surface.
