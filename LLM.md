@@ -86,8 +86,18 @@ Env vars consumed at boot:
 | `IAM_KMS_MASTER_KEY` | Master encryption key (KMS-sourced) | required |
 | `IAM_REPLICATE_BUCKET` | GCS bucket for WAL replication | optional |
 | `IAM_REPLICATE_AGE_RECIPIENT` | age public key for at-rest encryption | optional (required if bucket set) |
+| `IAM_ADMIN_ORG` | Admin organization name | `admin` (panics if unset in production) |
+| `IAM_ADMIN_APP` | IAM application name inside the admin org | `iam` (panics if unset in production) |
+| `IAM_ADMIN_USER` | Bootstrap admin user name | `root` (panics if unset in production) |
 
-**Don't** use `CASDOOR_*` env vars — they're legacy aliases retained for backward compatibility, not preferred. Use `IAM_*`.
+The three admin slots are orthogonal: `admin/admin` is the org row, `admin/iam`
+is the application row, `admin/root` is the bootstrap user row. Each is read
+once at package init via `requiredEnvOrDefault`, which **panics in production**
+when the corresponding env var is unset. Use the `object.NewAdminOrg/App/User()`
+constructors when seeding — never spell the values inline.
+
+There are no upstream-brand env vars, aliases, or fallbacks — `IAM_*`
+everywhere, period.
 
 ## Build
 
@@ -157,7 +167,7 @@ E2E tests live at `tests/iam-e2e.spec.ts` and `tests/iam-login.spec.ts`. They ru
 
 - `~/work/hanzo/iam/NOTICE` — upstream library attributions (legal)
 - Memory notes (these are policy):
-  - `feedback_iam_no_casdoor.md` — IAM is uniquely ours
+  - IAM is uniquely ours — no upstream brand in source, env, or docs
   - `feedback_no_postgres_anywhere.md` — Base/SQLite only
   - `feedback_keys_from_mnemonic.md` — keys derive from mnemonic + KMS
   - `feedback_seed_credentials.md` — fixed dev seed users
