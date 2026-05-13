@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"strings"
 
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
+	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
 func joinPath(a string, b string) string {
