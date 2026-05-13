@@ -60,10 +60,10 @@ func TestForbiddenVocabulary(t *testing.T) {
 	// Files allowed to mention these tokens. Each entry is a glob-style
 	// path suffix relative to repo root.
 	allow := []string{
-		"go.sum",      // dependency hashes
-		"go.mod",      // workspace dep declarations
-		"NOTICE",      // attribution
-		"LICENSE",     // license texts
+		"go.sum",                      // dependency hashes
+		"go.mod",                      // workspace dep declarations
+		"NOTICE",                      // attribution
+		"LICENSE",                     // license texts
 		"swagger.json", "swagger.yml", // generated API docs (fix later)
 		"object/vocabulary_test.go",  // this file
 		"object/init_data_pruner.go", // legacy data pruner (deletes old rows)

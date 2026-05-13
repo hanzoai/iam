@@ -15,9 +15,10 @@
 package object
 
 import (
-	"github.com/hanzoai/iam/conf"
 	"fmt"
 	"time"
+
+	"github.com/hanzoai/iam/conf"
 
 	"github.com/hanzoai/iam/certificate"
 	"github.com/hanzoai/iam/util"
