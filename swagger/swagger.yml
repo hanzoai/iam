@@ -383,7 +383,7 @@ paths:
         description: The policy to add
         required: true
         schema:
-          $ref: '#/definitions/xormadapter.CasbinRule'
+          $ref: '#/definitions/util.AuthzRule'
       responses:
         "200":
           description: ""
@@ -1655,7 +1655,7 @@ paths:
           schema:
             type: array
             items:
-              $ref: '#/definitions/xormadapter.CasbinRule'
+              $ref: '#/definitions/util.AuthzRule'
   /api/get-form:
     get:
       tags:
@@ -2191,7 +2191,7 @@ paths:
           schema:
             type: array
             items:
-              $ref: '#/definitions/xormadapter.CasbinRule'
+              $ref: '#/definitions/util.AuthzRule'
   /api/get-pricing:
     get:
       tags:
@@ -3356,7 +3356,7 @@ paths:
         description: The policy to remove
         required: true
         schema:
-          $ref: '#/definitions/xormadapter.CasbinRule'
+          $ref: '#/definitions/util.AuthzRule'
       responses:
         "200":
           description: ""
@@ -3969,7 +3969,7 @@ paths:
         schema:
           type: array
           items:
-            $ref: '#/definitions/xormadapter.CasbinRule'
+            $ref: '#/definitions/util.AuthzRule'
       responses:
         "200":
           description: ""
@@ -4504,7 +4504,7 @@ definitions:
   Response:
     title: Response
     type: object
-  casbin.Enforcer:
+  authz.Enforcer:
     title: Enforcer
     type: object
   casvisorsdk.Record:
@@ -6921,8 +6921,8 @@ definitions:
   xormadapter.Adapter:
     title: Adapter
     type: object
-  xormadapter.CasbinRule:
-    title: CasbinRule
+  util.AuthzRule:
+    title: AuthzRule
     type: object
 securityDefinitions:
   AccessToken:
