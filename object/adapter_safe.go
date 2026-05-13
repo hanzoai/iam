@@ -17,7 +17,7 @@ package object
 import (
 	"github.com/hanzoai/xorm"
 
-	"github.com/hanzoai/iam/object/authzstore"
+	"github.com/hanzoai/authzstore"
 	"github.com/hanzoai/iam/util"
 )
 
