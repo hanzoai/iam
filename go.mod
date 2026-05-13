@@ -18,12 +18,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1
 	github.com/beego/beego/v2 v2.3.8
 	github.com/beevik/etree v1.1.0
-	github.com/casdoor/casdoor-go-sdk v1.46.0
-	github.com/casdoor/go-sms-sender v0.25.0
-	github.com/casdoor/gomail/v2 v2.3.0
-	github.com/casdoor/ldapserver v1.2.0
-	github.com/casdoor/notify2 v1.6.0
-	github.com/casdoor/oss v1.8.0
 	github.com/corazawaf/coraza/v3 v3.3.3
 	github.com/dchest/captcha v0.0.0-20200903113550-03f5f0333e1f
 	github.com/elimity-com/scim v0.0.0-20230426070224-941a5eac92f3
@@ -40,8 +34,14 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hanzoai/builder v0.3.13
+	github.com/hanzoai/go-sms-sender v0.25.2
+	github.com/hanzoai/gomail/v2 v2.3.2
+	github.com/hanzoai/iamsdk/v2 v2.1.0
 	github.com/hanzoai/idv v1.0.0
 	github.com/hanzoai/kms/sdk/go v1.0.0
+	github.com/hanzoai/ldapserver v1.2.1
+	github.com/hanzoai/notify2 v1.6.3
+	github.com/hanzoai/oss v1.8.5
 	github.com/hanzoai/xorm v1.1.6
 	github.com/hanzoai/xorm-adapter/v3 v3.0.2
 	github.com/hsluoyz/modsecurity-go v0.0.7
