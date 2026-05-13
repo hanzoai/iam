@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"strings"
 
-	iamsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	iamsdk "github.com/hanzoai/iam-go-sdk/casdoorsdk"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 )

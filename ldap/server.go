@@ -21,7 +21,7 @@ import (
 	"log"
 	"strings"
 
-	ldap "github.com/casdoor/ldapserver"
+	ldap "github.com/hanzoai/ldapserver"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 	"github.com/lor00x/goldap/message"
