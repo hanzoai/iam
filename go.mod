@@ -36,7 +36,7 @@ require (
 	github.com/hanzoai/builder v0.3.13
 	github.com/hanzoai/go-sms-sender v0.25.2
 	github.com/hanzoai/gomail/v2 v2.3.2
-	github.com/hanzoai/iam-go-sdk v1.46.1
+	github.com/hanzoai/iam-go-sdk/v2 v2.0.2
 	github.com/hanzoai/idv v1.0.0
 	github.com/hanzoai/kms/sdk/go v1.0.0
 	github.com/hanzoai/ldapserver v1.2.1
@@ -180,6 +180,7 @@ require (
 	github.com/gorilla/sessions v1.4.0 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/gregdel/pushover v1.3.1 // indirect
+	github.com/hanzoai/iam-go-sdk v1.46.1 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/jarcoal/httpmock v1.3.0 // indirect

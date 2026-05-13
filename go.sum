@@ -608,6 +608,8 @@ github.com/hanzoai/gomail/v2 v2.3.2 h1:qQY5O5d9OJKf137OpDPJWNebqcSZhixK0jg3iEMKk
 github.com/hanzoai/gomail/v2 v2.3.2/go.mod h1:5iSiOcaBeJW0m4mp8j8jzby6zeVq31+ogMewkn4xxMw=
 github.com/hanzoai/iam-go-sdk v1.46.1 h1:jWUsIced4H9HDVk/dPs5zVfqaYrTuI2BFs3piUn6PIk=
 github.com/hanzoai/iam-go-sdk v1.46.1/go.mod h1:cKc/aCaVJKot7/GhkYuOwBk2wF0h4aEkFQDj8vJBEwY=
+github.com/hanzoai/iam-go-sdk/v2 v2.0.2 h1:T1/i/LmagkTlYB2nZJ8s5v4FBmkmATYWrgWc6xFtoDs=
+github.com/hanzoai/iam-go-sdk/v2 v2.0.2/go.mod h1:YSFc3Oqpp3veNTVGUBaHG1Xm0BHrAVmVlP2wI7uk/UE=
 github.com/hanzoai/idv v1.0.0 h1:z+z5KS3cZnM7ndtlLB2mmuh7hc+p78hJNa+zVSD8pIE=
 github.com/hanzoai/idv v1.0.0/go.mod h1:vujJF4DQmwRrdh2UxnpCjWLkYKJ1bbgp10thlo4xZYQ=
 github.com/hanzoai/kms/sdk/go v1.0.0 h1:rY7LDkRvjPotwJ4ydqDfRkQ+2Ob4QW3ptRydAa52x9g=
