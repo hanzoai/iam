@@ -17,8 +17,9 @@ import (
 // (/login/oauth/*, /oauth/*) and canonical /v1/iam/-prefixed OAuth surfaces
 // collapse to the same authz resource so the anonymous policy applies. Without
 // this, public OIDC clients hitting /v1/iam/login/oauth/access_token saw
-// `{"status":"error","msg":"Unauthorized operation"}` because Casbin matched
-// against the full prefixed path and no policy granted anonymous access.
+// `{"status":"error","msg":"Unauthorized operation"}` because the authz
+// engine matched the full prefixed path and no policy granted anonymous
+// access.
 func TestGetUrlPath_NormalizesV1IamOAuth(t *testing.T) {
 	cases := []struct {
 		name string
