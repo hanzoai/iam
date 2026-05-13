@@ -1346,7 +1346,7 @@ func (user *User) GetFriendlyName() string {
 }
 
 func isUserIdGlobalAdmin(userId string) bool {
-	return strings.HasPrefix(userId, conf.AdminOrg + "/") || IsAppUser(userId)
+	return strings.HasPrefix(userId, conf.AdminOrg+"/") || IsAppUser(userId)
 }
 
 // permsSnapshot is the cached representation of a user's roles/permissions.
