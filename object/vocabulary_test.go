@@ -108,27 +108,8 @@ func TestForbiddenVocabulary(t *testing.T) {
 		// We don't own those packages, so the brand bleeds in at the
 		// import path; the rule applies to identifiers we coin in our
 		// own code.
-		isImportBoundary := func(line string) bool {
-			t := strings.TrimSpace(line)
-			if !strings.HasPrefix(t, "\"") && !strings.Contains(t, " \"") {
-				return false
-			}
-			for _, mod := range []string{
-				`"github.com/hanzoai/xorm-adapter`,
-				`"github.com/casdoor/`,
-				`"github.com/hanzoai/authz`,
-			} {
-				if strings.Contains(t, mod) {
-					return true
-				}
-			}
-			return false
-		}
 		for _, r := range rules {
 			for _, line := range strings.Split(string(data), "\n") {
-				if isImportBoundary(line) {
-					continue
-				}
 				if r.pattern.MatchString(line) {
 					violations = append(violations,
 						rel+": ["+r.name+"] "+strings.TrimSpace(line))
