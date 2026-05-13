@@ -301,8 +301,7 @@ require (
 	rsc.io/binaryregexp v0.2.0 // indirect
 )
 
-// hanzoai/authz is the in-house casbin v2 fork. Module path renamed in v1.10.0
-// (commit d59807e); workspace consumers import this directly — no external
-// casbin/v2 anywhere in the dep graph. The casbin/lego ACME fork was swapped
-// for go-acme/lego (the upstream casbin/lego tracks).
+// hanzoai/authz is the in-house policy engine fork. Module path was renamed
+// in v1.10.0 (commit d59807e); workspace consumers import this directly.
+// The upstream ACME fork was likewise swapped for go-acme/lego.
 require github.com/hanzoai/authz v1.10.0
