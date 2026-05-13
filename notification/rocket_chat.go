@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"strings"
 
-	notify "github.com/casdoor/notify2"
-	"github.com/casdoor/notify2/service/rocketchat"
+	notify "github.com/hanzoai/notify2"
+	"github.com/hanzoai/notify2/service/rocketchat"
 )
 
 func NewRocketChatProvider(clientId string, clientSecret string, endpoint string, channelName string) (notify.Notifier, error) {
