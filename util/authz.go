@@ -14,12 +14,13 @@
 
 package util
 
-import xormadapter "github.com/hanzoai/xorm-adapter/v3"
+import "github.com/hanzoai/iam/object/authzstore"
 
-// AuthzRule is the canonical Hanzo name for a policy row stored by the
-// xorm adapter. It aliases the external type at the boundary so the rest
-// of the codebase never spells the external vocabulary directly.
-type AuthzRule = xormadapter.CasbinRule
+// AuthzRule is the canonical Hanzo name for a policy row. It aliases
+// the row type owned by the object/authzstore package so callers in
+// util and controllers can manipulate policies without importing the
+// adapter implementation directly.
+type AuthzRule = authzstore.AuthzRule
 
 func AuthzRuleToSlice(rule AuthzRule) []string {
 	s := []string{
@@ -30,7 +31,8 @@ func AuthzRuleToSlice(rule AuthzRule) []string {
 		rule.V4,
 		rule.V5,
 	}
-	// remove empty strings from end, for update model policy map
+	// Trim empty trailing slots so callers can round-trip a partial
+	// rule (e.g. {"u", "r1"}) without picking up a tail of "" cells.
 	for i := len(s) - 1; i >= 0; i-- {
 		if s[i] != "" {
 			s = s[:i+1]
