@@ -2,35 +2,14 @@
   "organizations": [
     {
       "owner": "admin",
-      "name": "built-in",
+      "name": "admin",
       "createdTime": "",
-      "displayName": "System",
+      "displayName": "Admin",
       "passwordType": "argon2id",
-      "tags": [
-        "system"
-      ],
+      "tags": ["admin"],
       "languages": [
-        "en",
-        "es",
-        "fr",
-        "de",
-        "it",
-        "nl",
-        "pt",
-        "sv",
-        "tr",
-        "pl",
-        "uk",
-        "ru",
-        "ar",
-        "fa",
-        "hi",
-        "th",
-        "id",
-        "ko",
-        "ja",
-        "zh",
-        "vi"
+        "en", "es", "fr", "de", "it", "nl", "pt", "sv", "tr", "pl", "uk",
+        "ru", "ar", "fa", "hi", "th", "id", "ko", "ja", "zh", "vi"
       ],
       "themeData": {
         "themeType": "dark",
@@ -47,11 +26,11 @@
   "applications": [
     {
       "owner": "admin",
-      "name": "app-built-in",
-      "organization": "built-in",
-      "displayName": "Built-in App",
+      "name": "iam",
+      "organization": "admin",
+      "displayName": "IAM",
       "enablePassword": true,
-      "enableSignUp": true
+      "enableSignUp": false
     }
   ],
   "users": [],

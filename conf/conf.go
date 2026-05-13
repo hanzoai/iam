@@ -123,20 +123,11 @@ func GetLanguage(language string) string {
 // this — real phones MUST parse as E.164 or signin fails clearly.
 //
 // (Replaces the older IsDemoMode() which braided two concerns —
-// the OTP shortcut and the upstream Casdoor demo-site UI hijack —
+// the OTP shortcut and the original demo-site UI hijack —
 // into one boolean. The UI hijack is ripped; this function keeps
 // only the OTP semantics under a name that reflects what it does.)
 func SandboxOTPEnabled() bool {
-	env := strings.ToLower(os.Getenv("ENV"))
-	if env == "" {
-		env = strings.ToLower(GetConfigString("environment"))
-	}
-	switch env {
-	case "production", "prod", "main", "mainnet":
-		return false
-	default:
-		return true
-	}
+	return !IsProduction()
 }
 
 func GetConfigBatchSize() int {
@@ -147,15 +138,56 @@ func GetConfigBatchSize() int {
 	return res
 }
 
-// AdminOrg returns the namespace owner used for system-wide resources
-// (apps, certs, providers, syncers, organizations seeded by init.go).
-// Configurable via the `adminOrg` setting in app.conf or env var. Defaults
-// to "admin". Set per install — Liquidity uses "admin"; other tenants may
-// pick their own. There is no fallback: every "admin"-namespaced lookup
-// in the codebase resolves through this single source.
-func AdminOrg() string {
-	if v := GetConfigString("adminOrg"); v != "" {
+// Admin identity. Three orthogonal slots:
+//
+//	AdminOrg   organization that owns IAM itself          (default "admin")
+//	AdminApp   the IAM application inside that org        (default "iam")
+//	AdminUser  bootstrap admin user inside that org       (default "root")
+//
+// Resolved once at package init. In production each may be overridden via
+// env; if unset in production, requiredEnvOrDefault panics so a misconfig
+// fails loud at boot rather than silently bootstrapping with weak names.
+const (
+	DefaultAdminOrg  = "admin"
+	DefaultAdminApp  = "iam"
+	DefaultAdminUser = "root"
+)
+
+var (
+	AdminOrg  = requiredEnvOrDefault("IAM_ADMIN_ORG", DefaultAdminOrg)
+	AdminApp  = requiredEnvOrDefault("IAM_ADMIN_APP", DefaultAdminApp)
+	AdminUser = requiredEnvOrDefault("IAM_ADMIN_USER", DefaultAdminUser)
+)
+
+func requiredEnvOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
 		return v
 	}
-	return "admin"
+	if IsProduction() {
+		panic(key + " must be set in production")
+	}
+	return def
+}
+
+// IsProduction reports whether the runtime environment is production-grade.
+// Checks $ENV, $ENVIRONMENT, $GO_ENV, $BEEGO_RUNMODE, $RUN_MODE and the
+// `environment` key in app.conf.
+func IsProduction() bool {
+	candidates := []string{
+		os.Getenv("ENV"),
+		os.Getenv("ENVIRONMENT"),
+		os.Getenv("GO_ENV"),
+		os.Getenv("BEEGO_RUNMODE"),
+		os.Getenv("RUN_MODE"),
+	}
+	if v, _ := web.AppConfig.String("environment"); v != "" {
+		candidates = append(candidates, v)
+	}
+	for _, c := range candidates {
+		switch strings.ToLower(strings.TrimSpace(c)) {
+		case "production", "prod", "main", "mainnet":
+			return true
+		}
+	}
+	return false
 }
