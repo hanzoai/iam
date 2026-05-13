@@ -15,6 +15,7 @@
 package authz
 
 import (
+	"github.com/hanzoai/iam/conf"
 	authzengine "github.com/hanzoai/authz"
 	stringadapter "github.com/hanzoai/authz/persist/string-adapter"
 	"github.com/hanzoai/iam/object"
@@ -24,7 +25,7 @@ import (
 var Enforcer *authzengine.Enforcer
 
 func InitApi() {
-	e, err := object.GetInitializedEnforcer(util.GetId("superuser", "api-enforcer-superuser"))
+	e, err := object.GetInitializedEnforcer(util.GetId(conf.AdminOrg, object.AdminAPIEnforcerName()))
 	if err != nil {
 		panic(err)
 	}
@@ -35,7 +36,7 @@ func InitApi() {
 	// if len(Enforcer.GetPolicy()) == 0 {
 	if true {
 		ruleText := `
-p, superuser, *, *, *, *, *
+p, ` + conf.AdminOrg + `, *, *, *, *, *
 p, app, *, *, *, *, *
 p, *, !anonymous, POST, /v1/iam/add-organization, admin, *
 p, *, !anonymous, POST, /v1/iam/update-organization, admin, *
@@ -166,7 +167,7 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 			isAdmin = object.CheckUserIsAdminRaw(subOwner, subName)
 		}
 
-		if isAdmin && (subOwner == objOwner || objOwner == "admin") {
+		if isAdmin && (subOwner == objOwner || objOwner == conf.AdminOrg) {
 			return true
 		}
 	}

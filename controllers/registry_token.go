@@ -33,6 +33,7 @@ import (
 
 	"github.com/beego/beego/v2/core/logs"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 )
 
@@ -162,20 +163,7 @@ func resolveRegistrySigningKey() (*rsa.PrivateKey, error) {
 	return fetchRegistrySigningKeyFromKMS(secretName)
 }
 
-func isProductionRuntime() bool {
-	for _, v := range []string{
-		os.Getenv("ENVIRONMENT"),
-		os.Getenv("GO_ENV"),
-		os.Getenv("BEEGO_RUNMODE"),
-		os.Getenv("RUN_MODE"),
-	} {
-		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "prod", "production":
-			return true
-		}
-	}
-	return false
-}
+func isProductionRuntime() bool { return conf.IsProduction() }
 
 func init() {
 	key, err := resolveRegistrySigningKey()
@@ -252,10 +240,10 @@ func (c *ApiController) GetRegistryToken() {
 		return
 	}
 
-	// Authenticate against IAM — try "superuser" org first (system), then "hanzo"
+	// Authenticate against IAM — try the admin org first, then "hanzo".
 	var user *object.User
 	var err error
-	for _, org := range []string{"superuser", "hanzo"} {
+	for _, org := range []string{conf.AdminOrg, "hanzo"} {
 		user, err = object.CheckUserPassword(org, username, password, "en")
 		if err == nil && user != nil {
 			break
