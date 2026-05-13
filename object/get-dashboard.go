@@ -39,8 +39,8 @@ func GetDashboard(owner string) (*map[string][]int64, error) {
 	dashboard := make(map[string][]int64)
 	dashboardMap := sync.Map{}
 	// Tables enumerated here MUST have a matching xorm-registered model
-	// in this fork. Upstream Casdoor's `subscription` + `transaction`
-	// tables are not migrated here (no billing surface), so they were
+	// in this fork. The upstream `subscription` + `transaction` tables
+	// are not migrated here (no billing surface), so they were
 	// removed from the list. Adding a name without a model returns
 	// `SQL logic error: no such table: <name>` from modernc.org/sqlite
 	// and aborts the entire dashboard payload.
