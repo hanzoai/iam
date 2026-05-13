@@ -23,8 +23,8 @@ import (
 	authzlog "github.com/hanzoai/authz/log"
 	authzmodel "github.com/hanzoai/authz/model"
 	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam/object/authzstore"
 	"github.com/hanzoai/iam/util"
-	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
 
 func getPermissionEnforcer(p *Permission, permissionIDs ...string) (*authz.Enforcer, error) {
@@ -51,7 +51,7 @@ func getPermissionEnforcer(p *Permission, permissionIDs ...string) (*authz.Enfor
 		policyFilterV5 = permissionIDs
 	}
 
-	policyFilter := xormadapter.Filter{
+	policyFilter := authzstore.Filter{
 		V5: policyFilterV5,
 	}
 
@@ -84,7 +84,7 @@ func (p *Permission) setEnforcerAdapter(enforcer *authz.Enforcer) error {
 	if xormErr != nil {
 		return xormErr
 	}
-	adapter, err := xormadapter.NewAdapterByEngineWithTableName(xormEngine, tableName, tableNamePrefix)
+	adapter, err := authzstore.New(xormEngine, tableName, tableNamePrefix)
 	if err != nil {
 		return err
 	}
