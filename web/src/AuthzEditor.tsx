@@ -13,15 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, {useCallback, useEffect, useRef, useState} from "react";
+import React, {useCallback, useEffect, useState} from "react";
 import * as Setting from "./Setting";
-import IframeEditor from "./IframeEditor";
-import i18next from "i18next";
 import Editor from "./common/Editor";
 
 const HanzoEditor = ({model, onModelTextChange}) => {
-  const [activeKey, setActiveKey] = useState("advanced");
-  const iframeRef = useRef(null);
   const [localModelText, setLocalModelText] = useState(model.modelText);
 
   const handleModelTextChange = useCallback((newModelText) => {
@@ -31,70 +27,20 @@ const HanzoEditor = ({model, onModelTextChange}) => {
     }
   }, [model, onModelTextChange]);
 
-  const syncModelText = useCallback(() => {
-    return new Promise((resolve) => {
-      if (activeKey === "advanced" && iframeRef.current) {
-        const handleSyncMessage = (event) => {
-          if (event.data.type === "modelUpdate") {
-            window.removeEventListener("message", handleSyncMessage);
-            handleModelTextChange(event.data.modelText);
-            resolve();
-          }
-        };
-        window.addEventListener("message", handleSyncMessage);
-        iframeRef.current.getModelText();
-      } else {
-        resolve();
-      }
-    });
-  }, [activeKey, handleModelTextChange]);
-
-  const handleTabChange = (key) => {
-    syncModelText().then(() => {
-      setActiveKey(key);
-      if (key === "advanced" && iframeRef.current) {
-        iframeRef.current.updateModelText(localModelText);
-      }
-    });
-  };
-
   useEffect(() => {
     setLocalModelText(model.modelText);
   }, [model.modelText]);
 
-  const tabs = [
-    {key: "basic", label: i18next.t("model:Basic Editor")},
-    {key: "advanced", label: i18next.t("model:Advanced Editor")},
-  ];
-
   return (
     <div className="h-full w-full flex flex-col">
-      <div className="flex gap-1 border-b border-zinc-800 mb-2">
-        {tabs.map(tab => (
-          <button key={tab.key}
-            className={`px-4 py-2 text-sm transition-colors ${activeKey === tab.key ? "text-white border-b-2 border-white" : "text-zinc-400 hover:text-zinc-200"}`}
-            onClick={() => handleTabChange(tab.key)}>
-            {tab.label}
-          </button>
-        ))}
-      </div>
       <div className="flex-1 overflow-hidden">
-        {activeKey === "advanced" ? (
-          <IframeEditor
-            ref={iframeRef}
-            initialModelText={localModelText}
-            onModelTextChange={handleModelTextChange}
-            style={{width: "100%", height: "100%"}}
-          />
-        ) : (
-          <Editor
-            value={localModelText}
-            readOnly={Setting.builtInObject(model)}
-            onChange={value => {
-              handleModelTextChange(value);
-            }}
-          />
-        )}
+        <Editor
+          value={localModelText}
+          readOnly={Setting.builtInObject(model)}
+          onChange={value => {
+            handleModelTextChange(value);
+          }}
+        />
       </div>
     </div>
   );
