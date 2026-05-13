@@ -47,7 +47,9 @@ m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act
 // inserted row from another connection would return empty.
 func newTestEngine(t *testing.T) *xorm.Engine {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "authzstore.db")
+	// WAL + 5s busy_timeout matches the in-product hanzoai/sqlite config
+	// and keeps concurrent reader/writer tests from racing into BUSY.
+	path := filepath.Join(t.TempDir(), "authzstore.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	e, err := xorm.NewEngine("sqlite", path)
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)

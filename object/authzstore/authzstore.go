@@ -175,15 +175,21 @@ func (a *Adapter) SavePolicy(model authzmodel.Model) error {
 		}
 	}
 
+	batchSize := a.insertBatchSize()
+
 	_, err := a.engine.Transaction(func(tx *xorm.Session) (interface{}, error) {
 		if _, err := tx.Exec("DELETE FROM " + a.table); err != nil {
 			return nil, err
 		}
-		if len(rows) == 0 {
-			return nil, nil
-		}
-		if _, err := tx.Table(a.table).Insert(&rows); err != nil {
-			return nil, err
+		for i := 0; i < len(rows); i += batchSize {
+			j := i + batchSize
+			if j > len(rows) {
+				j = len(rows)
+			}
+			batch := rows[i:j]
+			if _, err := tx.Table(a.table).Insert(&batch); err != nil {
+				return nil, err
+			}
 		}
 		return nil, nil
 	})
@@ -350,4 +356,59 @@ func loadPolicyRow(r *AuthzRule, model authzmodel.Model) {
 	// LoadPolicyArray expects [ptype, v0, v1, ...]; persist's helper
 	// already de-dupes against the model.
 	_ = persist.LoadPolicyArray(parts, model)
+}
+
+// insertBatchSize picks the largest INSERT batch (in rows) that stays
+// under each driver's single-statement parameter limit. AuthzRule
+// serializes to 8 columns per row (id + ptype + v0..v5).
+//
+//   - SQLite: SQLITE_MAX_VARIABLE_NUMBER — read at runtime from
+//     `pragma_compile_options`. Default 999 before 3.32, 32766 since.
+//     modernc.org/sqlite (our build) compiles with 32766.
+//   - Postgres: bind-parameter limit is uint16 (~65535). 8000 rows ×
+//     8 cols = 64000 binds, safe.
+//   - MySQL: no hard parameter cap; max_allowed_packet is the limiter.
+//     8000 rows ≈ 1 MB on the wire, well under the 16 MB default.
+//
+// Sized in rows, not parameters, since callers don't see column count.
+// Cached after first probe — the limit is compile-time on every driver.
+func (a *Adapter) insertBatchSize() int {
+	const cols = 8
+	switch a.engine.DriverName() {
+	case "sqlite", "sqlite3":
+		limit := a.sqliteVariableLimit()
+		if limit <= 0 {
+			limit = 999 // safe across every SQLite version
+		}
+		return limit / cols
+	default:
+		return 8000
+	}
+}
+
+// sqliteVariableLimit returns the compiled-in SQLITE_MAX_VARIABLE_NUMBER
+// for the live driver, or 0 if it can't be read. Queries the SQLite
+// compile-options table: every option is emitted as `KEY=VAL` (or just
+// `KEY` for boolean flags). We pull the VAL for MAX_VARIABLE_NUMBER and
+// parse it as int.
+func (a *Adapter) sqliteVariableLimit() int {
+	type opt struct {
+		CompileOptions string `xorm:"compile_options"`
+	}
+	var rows []opt
+	if err := a.engine.SQL(`SELECT compile_options FROM pragma_compile_options WHERE compile_options LIKE 'MAX_VARIABLE_NUMBER=%'`).Find(&rows); err != nil {
+		return 0
+	}
+	for _, r := range rows {
+		const prefix = "MAX_VARIABLE_NUMBER="
+		s := r.CompileOptions
+		if len(s) <= len(prefix) {
+			continue
+		}
+		var n int
+		if _, err := fmt.Sscanf(s[len(prefix):], "%d", &n); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
 }
