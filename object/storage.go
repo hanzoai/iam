@@ -22,11 +22,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hanzoai/oss"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/storage"
 	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/oss"
 )
 
 var isCloudIntranet bool
