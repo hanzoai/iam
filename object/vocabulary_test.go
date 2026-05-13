@@ -31,9 +31,9 @@ import (
 //	CasbinRule / casbin_       → AuthzRule / authz_
 //	casbin (as a noun in code) → authz
 //
-// The xormadapter import (github.com/hanzoai/xorm-adapter) is allowed —
-// that's an external module path our fork still publishes under its
-// historical name. The `casbin/casbin/v2` package path is *not* allowed.
+// Every Hanzo-owned source file is in scope; there are no longer any
+// external imports of the xorm-adapter/casbin family — the IAM owns
+// its policy storage via object/authzstore.
 func TestForbiddenVocabulary(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {
@@ -67,7 +67,6 @@ func TestForbiddenVocabulary(t *testing.T) {
 		"swagger.json", "swagger.yml", // generated API docs (fix later)
 		"object/vocabulary_test.go",  // this file
 		"object/init_data_pruner.go", // legacy data pruner (deletes old rows)
-		"util/authz.go",              // alias boundary: type AuthzRule = xormadapter.CasbinRule
 		"routers/static_filter.go",   // scrubs upstream CDN URL out of HTML at runtime
 	}
 	allowed := func(rel string) bool {
