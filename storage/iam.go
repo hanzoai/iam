@@ -2,7 +2,7 @@ package storage
 
 import (
 	"github.com/hanzoai/oss"
-	iamStorage "github.com/hanzoai/oss/casdoor"
+	iamStorage "github.com/hanzoai/oss/iam"
 )
 
 func NewIamStorageProvider(providerType string, clientId string, clientSecret string, region string, bucket string, endpoint string, cert string, content string) oss.StorageInterface {
