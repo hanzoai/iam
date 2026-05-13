@@ -15,6 +15,7 @@
 package object
 
 import (
+	"github.com/hanzoai/iam/conf"
 	"fmt"
 	"time"
 
@@ -182,7 +183,7 @@ func GetCert(id string) (*Cert, error) {
 	}
 	cert, err := getCert(owner, name)
 	if cert == nil && owner != "admin" {
-		return getCert("admin", name)
+		return getCert(conf.AdminOrg, name)
 	} else {
 		return cert, err
 	}
@@ -364,7 +365,7 @@ func getCertByApplication(application *Application) (*Cert, error) {
 		if err != nil {
 			return nil, err
 		}
-		// If the named cert doesn't exist (e.g. "cert-admin" on fresh
+		// If the named cert doesn't exist (e.g. cert-iam on fresh
 		// boot), fall back to the default cert so JWT signing works.
 		if cert == nil {
 			return GetDefaultCert()
@@ -375,7 +376,7 @@ func getCertByApplication(application *Application) (*Cert, error) {
 }
 
 func GetDefaultCert() (*Cert, error) {
-	return getCert("admin", "cert-hanzo")
+	return getCert(conf.AdminOrg, AdminCertName())
 }
 
 func certChangeTrigger(oldName string, newName string) error {

@@ -38,12 +38,15 @@ const (
 	UserPropertiesWechatOpenId  = "wechatOpenId"
 )
 
-const UserEnforcerId = "superuser/user-enforcer-superuser"
+// UserAuthzEnforcerId is the composite ID for the user authz enforcer in
+// the admin org. Derived from conf.AdminOrg / conf.AdminApp at package
+// init; immutable thereafter.
+var UserAuthzEnforcerId = conf.AdminOrg + "/user-enforcer-" + conf.AdminApp
 
 var userEnforcer *UserGroupEnforcer
 
 func InitUserManager() {
-	enforcer, err := GetInitializedEnforcer(UserEnforcerId)
+	enforcer, err := GetInitializedEnforcer(UserAuthzEnforcerId)
 	if err != nil {
 		panic(err)
 	}
@@ -1343,7 +1346,7 @@ func (user *User) GetFriendlyName() string {
 }
 
 func isUserIdGlobalAdmin(userId string) bool {
-	return strings.HasPrefix(userId, "superuser/") || IsAppUser(userId)
+	return strings.HasPrefix(userId, conf.AdminOrg + "/") || IsAppUser(userId)
 }
 
 // permsSnapshot is the cached representation of a user's roles/permissions.
@@ -1512,7 +1515,7 @@ func (user *User) IsGlobalAdmin() bool {
 		return false
 	}
 
-	return user.Owner == "superuser"
+	return user.Owner == conf.AdminOrg
 }
 
 func (user *User) CheckUserFace(faceIdImage []string, provider *Provider) (bool, error) {
@@ -1635,7 +1638,7 @@ func UpdateUserBalance(owner string, name string, balance float64, currency stri
 	var org *Organization
 	if balanceCurrency == "" {
 		// Get organization's balance currency as fallback
-		org, err = getOrganization("admin", owner)
+		org, err = getOrganization(conf.AdminOrg, owner)
 		if err == nil && org != nil && org.BalanceCurrency != "" {
 			balanceCurrency = org.BalanceCurrency
 		} else {
@@ -1655,7 +1658,7 @@ func UpdateUserBalance(owner string, name string, balance float64, currency stri
 	} else {
 		// Get organization's balance credit as fallback
 		if org == nil {
-			org, err = getOrganization("admin", owner)
+			org, err = getOrganization(conf.AdminOrg, owner)
 			if err != nil {
 				return err
 			}

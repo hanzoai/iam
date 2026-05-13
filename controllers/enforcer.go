@@ -21,7 +21,6 @@ import (
 	"github.com/beego/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
-	xormadapter "github.com/hanzoai/xorm-adapter/v3"
 )
 
 // GetEnforcers
@@ -162,7 +161,7 @@ func (c *ApiController) DeleteEnforcer() {
 // @Description get policies
 // @Param   id     query    string  true        "The id ( owner/name )  of enforcer"
 // @Param   adapterId     query    string  false        "The adapter id"
-// @Success 200 {array} xormadapter.CasbinRule
+// @Success 200 {array} util.AuthzRule
 // @router /get-policies [get]
 func (c *ApiController) GetPolicies() {
 	id := c.Ctx.Input.Query("id")
@@ -204,7 +203,7 @@ func (c *ApiController) GetPolicies() {
 // @Description get filtered policies with support for multiple filters via POST body
 // @Param   id     query    string  true        "The id ( owner/name )  of enforcer"
 // @Param   body   body    []object.Filter  true        "Array of filter objects for multiple filters"
-// @Success 200 {array} xormadapter.CasbinRule
+// @Success 200 {array} util.AuthzRule
 // @router /get-filtered-policies [post]
 func (c *ApiController) GetFilteredPolicies() {
 	id := c.Ctx.Input.Query("id")
@@ -230,13 +229,13 @@ func (c *ApiController) GetFilteredPolicies() {
 // @Tag Enforcer API
 // @Description update policy
 // @Param   id     query    string  true        "The id ( owner/name )  of enforcer"
-// @Param   body     body    []xormadapter.CasbinRule  true        "Array containing old and new policy"
+// @Param   body     body    []util.AuthzRule  true        "Array containing old and new policy"
 // @Success 200 {object} Response
 // @router /update-policy [post]
 func (c *ApiController) UpdatePolicy() {
 	id := c.Ctx.Input.Query("id")
 
-	var policies []xormadapter.CasbinRule
+	var policies []util.AuthzRule
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &policies)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -257,13 +256,13 @@ func (c *ApiController) UpdatePolicy() {
 // @Tag Enforcer API
 // @Description add policy
 // @Param   id     query    string  true        "The id ( owner/name )  of enforcer"
-// @Param   body     body    xormadapter.CasbinRule  true        "The policy to add"
+// @Param   body     body    util.AuthzRule  true        "The policy to add"
 // @Success 200 {object} Response
 // @router /add-policy [post]
 func (c *ApiController) AddPolicy() {
 	id := c.Ctx.Input.Query("id")
 
-	var policy xormadapter.CasbinRule
+	var policy util.AuthzRule
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &policy)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -284,13 +283,13 @@ func (c *ApiController) AddPolicy() {
 // @Tag Enforcer API
 // @Description remove policy
 // @Param   id     query    string  true        "The id ( owner/name )  of enforcer"
-// @Param   body     body    xormadapter.CasbinRule  true        "The policy to remove"
+// @Param   body     body    util.AuthzRule  true        "The policy to remove"
 // @Success 200 {object} Response
 // @router /remove-policy [post]
 func (c *ApiController) RemovePolicy() {
 	id := c.Ctx.Input.Query("id")
 
-	var policy xormadapter.CasbinRule
+	var policy util.AuthzRule
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &policy)
 	if err != nil {
 		c.ResponseError(err.Error())

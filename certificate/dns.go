@@ -148,7 +148,7 @@ func ObtainCertificateGoDaddy(client *lego.Client, domain string, accessKey stri
 func SaveCert(path, filename string, cert *certificate.Resource) {
 	// go-acme/lego's NewCertificatesStorage is bound to the CLI's cli.Context.
 	// We persist the certificate triplet (cert, issuer, key, metadata) directly —
-	// matches the historical casbin/lego NewCertificatesStorageLib semantics
+	// matches the historical upstream NewCertificatesStorageLib semantics
 	// without dragging in the cli package.
 	rootPath := filepath.Join(path, "certificates")
 	if err := os.MkdirAll(rootPath, 0o755); err != nil {
