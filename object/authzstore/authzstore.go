@@ -38,11 +38,20 @@ package authzstore
 import (
 	"errors"
 	"fmt"
+	"regexp"
 
 	authzmodel "github.com/hanzoai/authz/model"
 	"github.com/hanzoai/authz/persist"
 	"github.com/hanzoai/xorm"
 )
+
+// validTableName matches SQL identifier shape: leading letter or
+// underscore, then letters / digits / underscores. The IAM only ever
+// passes literals like "authz_user_rule" / "authz_api_rule", but we
+// validate at construction so any future caller passing an attacker-
+// controlled value can't smuggle DDL through the table-name
+// concatenations in session() / SavePolicy.
+var validTableName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // AuthzRule is one policy row in the `authz_*_rule` family of tables.
 // Field tags match the historical schema produced by the xorm-adapter
@@ -100,19 +109,19 @@ func New(engine *xorm.Engine, tableName, tablePrefix string) (*Adapter, error) {
 	if tableName == "" {
 		return nil, errors.New("authzstore: empty table name")
 	}
+	fq := tablePrefix + tableName
+	if !validTableName.MatchString(fq) {
+		return nil, fmt.Errorf("authzstore: invalid table name %q (must match [A-Za-z_][A-Za-z0-9_]*)", fq)
+	}
 	a := &Adapter{
 		engine: engine,
-		table:  tablePrefix + tableName,
+		table:  fq,
 	}
 	if err := a.ensureTable(); err != nil {
 		return nil, fmt.Errorf("authzstore: ensure table %q: %w", a.table, err)
 	}
 	return a, nil
 }
-
-// Engine returns the underlying xorm engine. Used by the safe-adapter
-// shim for bulk Delete operations that need explicit MustCols handling.
-func (a *Adapter) Engine() *xorm.Engine { return a.engine }
 
 // TableName returns the fully-qualified table this adapter writes to.
 func (a *Adapter) TableName() string { return a.table }
@@ -146,18 +155,17 @@ func (a *Adapter) LoadPolicy(model authzmodel.Model) error {
 	return nil
 }
 
-// SavePolicy drops and re-inserts every rule from the model. The
-// xorm-adapter implementation did the same — it is the only way to
-// faithfully reflect "save the whole model" semantics with a SQL
-// adapter.
+// SavePolicy atomically rewrites the rule set: DELETE every row, then
+// INSERT every rule the model holds, all inside a single transaction.
+//
+// The legacy xorm-adapter implementation did DROP TABLE → CREATE →
+// INSERT outside a tx, so a crash between the DROP and the bulk INSERT
+// left the next pod loading an empty policy — every Enforce() then
+// returned false (deny-all). We preserve the table+indexes (already
+// Sync2'd at boot) and rewrite the rows under a single transaction
+// boundary: either every row in the new model is visible, or every
+// pre-existing row is visible. Never a half-empty table.
 func (a *Adapter) SavePolicy(model authzmodel.Model) error {
-	if err := a.dropTable(); err != nil {
-		return err
-	}
-	if err := a.ensureTable(); err != nil {
-		return err
-	}
-
 	rows := make([]*AuthzRule, 0, 64)
 	for ptype, ast := range model["p"] {
 		for _, rule := range ast.Policy {
@@ -169,13 +177,19 @@ func (a *Adapter) SavePolicy(model authzmodel.Model) error {
 			rows = append(rows, newRow(ptype, rule))
 		}
 	}
-	if len(rows) == 0 {
-		return nil
-	}
 
-	s := a.session()
-	defer s.Close()
-	_, err := s.Insert(&rows)
+	_, err := a.engine.Transaction(func(tx *xorm.Session) (interface{}, error) {
+		if _, err := tx.Exec("DELETE FROM " + a.table); err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			return nil, nil
+		}
+		if _, err := tx.Table(a.table).Insert(&rows); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	})
 	return err
 }
 
@@ -255,16 +269,6 @@ func (a *Adapter) LoadFilteredPolicy(model authzmodel.Model, filter interface{})
 
 // IsFiltered reports whether the last load was a filtered load.
 func (a *Adapter) IsFiltered() bool { return a.isFiltered }
-
-// dropTable drops the table. Used by SavePolicy before a full re-insert
-// so callers see exactly the rules the model held — no stale rows. The
-// xorm-adapter behaved the same way.
-func (a *Adapter) dropTable() error {
-	s := a.engine.NewSession()
-	defer s.Close()
-	_, err := s.Exec("DROP TABLE IF EXISTS " + a.table)
-	return err
-}
 
 // applyFilter narrows s to rows where each column in the filter matches.
 // An empty slice for a column means "no constraint".
