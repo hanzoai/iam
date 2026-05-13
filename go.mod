@@ -43,7 +43,6 @@ require (
 	github.com/hanzoai/notify2 v1.6.3
 	github.com/hanzoai/oss v1.8.5
 	github.com/hanzoai/xorm v1.1.6
-	github.com/hanzoai/xorm-adapter/v3 v3.0.2
 	github.com/hsluoyz/modsecurity-go v0.0.7
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/json-iterator/go v1.1.12
