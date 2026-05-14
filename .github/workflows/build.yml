@@ -257,3 +257,25 @@ jobs:
       image: ghcr.io/hanzoai/iam
       target: standard
     secrets: inherit
+
+  notify-universe:
+    # After a successful image push, dispatch to hanzoai/universe so
+    # service-released.yml opens an auto-bump PR for the iam pin.
+    name: Notify universe (auto-bump pin)
+    runs-on: ubuntu-latest
+    if: github.repository == 'hanzoai/iam' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
+    needs: [ tag-release, docker-release ]
+    steps:
+      - name: Repository dispatch
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.UNIVERSE_DISPATCH_TOKEN }}
+          repository: hanzoai/universe
+          event-type: iam
+          client-payload: |
+            {
+              "service": "iam",
+              "version": "${{ needs.tag-release.outputs.new-release-version }}",
+              "image":   "ghcr.io/hanzoai/iam:${{ needs.tag-release.outputs.new-release-version }}",
+              "sha":     "${{ github.sha }}"
+            }
