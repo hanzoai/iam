@@ -99,11 +99,23 @@ func extractHost(s string) string {
 // resolveOrigin returns the origin/host the operator configured for this
 // IAM. It checks ORIGIN env first, then beego app.conf "origin", then
 // falls back to "" (which fails the allowlist and panics).
+//
+// When app.conf "origin" is a comma-separated multi-tenant list, we use the
+// first entry — the sandbox guard treats it as the "canonical" origin for
+// allowlist comparison; the rest are aliases pointing at the same IAM.
 func resolveOrigin() string {
 	if v := strings.TrimSpace(os.Getenv("ORIGIN")); v != "" {
+		// strip a trailing CSV tail just in case the env was set to a list
+		if i := strings.IndexByte(v, ','); i >= 0 {
+			v = strings.TrimSpace(v[:i])
+		}
 		return v
 	}
-	return strings.TrimSpace(conf.GetConfigString("origin"))
+	raw := strings.TrimSpace(conf.GetConfigString("origin"))
+	if i := strings.IndexByte(raw, ','); i >= 0 {
+		raw = strings.TrimSpace(raw[:i])
+	}
+	return raw
 }
 
 // EnforceSandboxOriginGuard runs at boot. If SANDBOX_GLOBAL_OTP is set, the
