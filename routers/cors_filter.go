@@ -43,9 +43,28 @@ func setCorsHeaders(ctx *context.Context, origin string) {
 	}
 }
 
+// originList is the parsed, trimmed list of allowed origins from app.conf.
+// Multi-tenant IAM may set "origin" to a comma-separated list; the CORS
+// filter must compare incoming Origin against any list entry, not the
+// CSV-joined string.
+func originList() []string {
+	raw := conf.GetConfigString("origin")
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func CorsFilter(ctx *context.Context) {
 	origin := ctx.Input.Header(headerOrigin)
-	originConf := conf.GetConfigString("origin")
 	originHostname := getHostname(origin)
 	host := removePort(ctx.Request.Host)
 
@@ -116,7 +135,15 @@ func CorsFilter(ctx *context.Context) {
 	}
 
 	if origin != "" {
-		if origin == originConf {
+		// Match against any entry in the multi-tenant origin allowlist.
+		allowedByConf := false
+		for _, o := range originList() {
+			if origin == o {
+				allowedByConf = true
+				break
+			}
+		}
+		if allowedByConf {
 			setCorsHeaders(ctx, origin)
 		} else if originHostname == host {
 			setCorsHeaders(ctx, origin)
