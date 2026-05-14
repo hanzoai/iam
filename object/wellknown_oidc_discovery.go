@@ -79,10 +79,68 @@ func isIpAddress(host string) bool {
 	return ip != nil
 }
 
+// SplitOriginList parses a comma-separated origin config value into a slice
+// of trimmed origins. Empty entries are dropped. Returns nil for empty input.
+//
+// Multi-tenant IAM serves many host names from one backend, so `origin` (and
+// `originFrontend`) in app.conf may be either a single origin or a CSV. The
+// discovery endpoint must emit exactly one issuer per request — the one that
+// matches the incoming host — not the entire CSV joined back together.
+func SplitOriginList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// selectOriginForHost picks the origin whose host (without scheme/port) matches
+// the incoming Host header. Falls back to the first entry if no match.
+// Empty input returns "".
+func selectOriginForHost(originList []string, host string) string {
+	if len(originList) == 0 {
+		return ""
+	}
+	// Strip port from host: "iam.hanzo.ai:443" -> "iam.hanzo.ai".
+	hostOnly := host
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		hostOnly = host[:i]
+	}
+	for _, o := range originList {
+		// o is like "https://hanzo.id" — extract hostname for comparison.
+		oHost := o
+		// strip scheme
+		if i := strings.Index(oHost, "://"); i >= 0 {
+			oHost = oHost[i+3:]
+		}
+		// strip path
+		if i := strings.IndexByte(oHost, '/'); i >= 0 {
+			oHost = oHost[:i]
+		}
+		// strip port
+		if i := strings.IndexByte(oHost, ':'); i >= 0 {
+			oHost = oHost[:i]
+		}
+		if strings.EqualFold(oHost, hostOnly) {
+			return o
+		}
+	}
+	// No match: fall back to the first entry. This is the
+	// expected path when origin is single-valued.
+	return originList[0]
+}
+
 func getOriginFromHostInternal(host string) (string, string) {
-	origin := conf.GetConfigString("origin")
-	if origin != "" {
-		return origin, origin
+	originList := SplitOriginList(conf.GetConfigString("origin"))
+	if matched := selectOriginForHost(originList, host); matched != "" {
+		return matched, matched
 	}
 
 	isDev := conf.GetConfigString("runmode") == "dev"
@@ -106,9 +164,9 @@ func getOriginFromHostInternal(host string) (string, string) {
 func getOriginFromHost(host string) (string, string) {
 	originF, originB := getOriginFromHostInternal(host)
 
-	originFrontend := conf.GetConfigString("originFrontend")
-	if originFrontend != "" {
-		originF = originFrontend
+	frontList := SplitOriginList(conf.GetConfigString("originFrontend"))
+	if matched := selectOriginForHost(frontList, host); matched != "" {
+		originF = matched
 	}
 
 	return originF, originB
