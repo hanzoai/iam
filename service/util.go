@@ -122,6 +122,12 @@ func getIAMClientFromSite(site *object.Site) (*iamsdk.Client, error) {
 	}
 
 	iamEndpoint := conf.GetConfigString("origin")
+	// Multi-tenant deployments store CSV in "origin"; the S2S SDK needs a
+	// single base URL, so take the first entry. The remaining entries are
+	// aliases for the same backend.
+	if i := strings.IndexByte(iamEndpoint, ','); i >= 0 {
+		iamEndpoint = strings.TrimSpace(iamEndpoint[:i])
+	}
 	if iamEndpoint == "" {
 		iamEndpoint = "http://localhost:8000"
 	}
