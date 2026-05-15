@@ -14,41 +14,67 @@ import (
 	"github.com/beego/beego/v2/server/web/context"
 )
 
-// PathRewriteFilter normalizes the OAuth surface to one canonical form
-// before Beego dispatches the route. There is exactly one OAuth route
-// per endpoint, registered at /login/oauth/* in router.go. Every alias
-// — /oauth/*, /v1/iam/oauth/*, /v1/iam/login/oauth/*, /api/iam/oauth/*,
-// /api/iam/login/oauth/* — is rewritten here. New aliases go in this
-// list; new endpoints go in router.go. Single source of truth, both
-// directions.
+// PathRewriteFilter normalizes legacy/alias URLs to the one canonical form
+// recognized by router.go before Beego dispatches the request. Two flavors:
 //
-// Why: /login/oauth/* is mandated by the OAuth2 spec; /oauth/* is the
-// shape OIDC discovery emits; /v1/iam/login/oauth/* is what reaches IAM
-// when a path-preserving gateway (KrakenD output_encoding=no-op, hanzo
-// ingress reverse-proxy) forwards a request hitting api.<host>/v1/iam.
-// Without normalization, only one of the three resolves and the others
-// fall through to the SPA HTML fallback — silently breaks every OAuth
-// client.
+//  1. OAuth — collapse every alias to /login/oauth/<endpoint>.
+//     Aliases: /oauth/*, /v1/iam/oauth/*, /v1/iam/login/oauth/*,
+//     /api/iam/oauth/*, /api/iam/login/oauth/*.
 //
-// This filter ONLY touches OAuth paths. Other /v1/iam/* and /api/iam/*
-// routes are registered explicitly in router.go and pass through
-// unchanged.
+//  2. Legacy upstream-Casdoor API — collapse /api/<endpoint> to
+//     /v1/iam/<endpoint>. Routes register only under /v1/iam/*, so an
+//     unrewritten /api/login falls through to the SPA static fallback
+//     and returns HTML — the silent-mux bug that broke every legacy
+//     /api/* client of hanzo.id. Rewrite is method-agnostic (POST,
+//     GET, DELETE — all the same).
+//
+// New aliases go in this filter. New endpoints go in router.go. Single
+// source of truth, both directions.
+//
+// The filter runs BeforeRouter, ahead of StaticFilter, so the rewritten
+// /v1/iam/* path matches StaticFilter's pass-through guard and lands at
+// the Beego controller instead of the SPA.
 func PathRewriteFilter(ctx *context.Context) {
-	canonical := canonicalOAuthPath(ctx.Request.URL.Path)
+	canonical := canonicalPath(ctx.Request.URL.Path)
 	if canonical == ctx.Request.URL.Path {
 		return
 	}
 	ctx.Request.URL.Path = canonical
 }
 
-// canonicalOAuthPath returns the canonical /login/oauth/<endpoint> form
-// for any recognized OAuth alias. Returns the input unchanged if no
-// alias matches.
+// canonicalPath returns the canonical form for any recognized alias.
+// Returns the input unchanged if no alias matches.
+func canonicalPath(p string) string {
+	if c := canonicalOAuthPath(p); c != p {
+		return c
+	}
+	return canonicalLegacyAPIPath(p)
+}
+
+// canonicalOAuthPath returns /login/oauth/<endpoint> for any recognized
+// OAuth alias. Returns input unchanged if none match.
 func canonicalOAuthPath(p string) string {
 	for _, prefix := range oauthAliasPrefixes {
 		if rest, ok := stripPrefix(p, prefix); ok {
 			return "/login/oauth" + rest
 		}
+	}
+	return p
+}
+
+// canonicalLegacyAPIPath rewrites /api/<endpoint> → /v1/iam/<endpoint>.
+// /api/iam/* is reserved for OAuth aliases (handled above) and is left
+// alone here — if it reaches this function, it's not an OAuth path and
+// is a deliberate legacy /api/iam/<non-oauth> caller; collapse that to
+// /v1/iam/<endpoint> as well.
+//
+// Returns input unchanged if not a legacy /api/* path.
+func canonicalLegacyAPIPath(p string) string {
+	if rest, ok := stripPrefix(p, "/api/iam"); ok {
+		return "/v1/iam" + rest
+	}
+	if rest, ok := stripPrefix(p, "/api"); ok {
+		return "/v1/iam" + rest
 	}
 	return p
 }
