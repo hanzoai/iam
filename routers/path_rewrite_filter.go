@@ -17,11 +17,15 @@ import (
 // PathRewriteFilter normalizes legacy/alias URLs to the one canonical form
 // recognized by router.go before Beego dispatches the request. Two flavors:
 //
-//  1. OAuth — collapse every alias to /login/oauth/<endpoint>.
-//     Aliases: /oauth/*, /v1/iam/oauth/*, /v1/iam/login/oauth/*,
-//     /api/iam/oauth/*, /api/iam/login/oauth/*.
+//  1. OAuth — every alias collapses to /v1/iam/oauth/<endpoint>, the
+//     canonical published form advertised by the OIDC discovery doc.
+//     Aliases: /oauth/*, /v1/iam/login/oauth/*, /api/iam/oauth/*,
+//     /api/iam/login/oauth/*. The legacy /login/oauth/* form is left
+//     UNCHANGED — direct routes still serve it for back-compat callers
+//     pinned to the OAuth2-spec literal path. New consumers must use
+//     /v1/iam/oauth/* per the discovery doc.
 //
-//  2. Legacy upstream-Casdoor API — collapse /api/<endpoint> to
+//  2. Legacy upstream-shape API — collapse /api/<endpoint> to
 //     /v1/iam/<endpoint>. Routes register only under /v1/iam/*, so an
 //     unrewritten /api/login falls through to the SPA static fallback
 //     and returns HTML — the silent-mux bug that broke every legacy
@@ -51,12 +55,15 @@ func canonicalPath(p string) string {
 	return canonicalLegacyAPIPath(p)
 }
 
-// canonicalOAuthPath returns /login/oauth/<endpoint> for any recognized
-// OAuth alias. Returns input unchanged if none match.
+// canonicalOAuthPath returns /v1/iam/oauth/<endpoint> for any recognized
+// OAuth alias. The legacy /login/oauth/* form is intentionally NOT in
+// the alias set — it routes directly to its own handlers so existing
+// strict-OAuth2-spec callers keep working without a hop. Returns input
+// unchanged if no alias matches.
 func canonicalOAuthPath(p string) string {
 	for _, prefix := range oauthAliasPrefixes {
 		if rest, ok := stripPrefix(p, prefix); ok {
-			return "/login/oauth" + rest
+			return "/v1/iam/oauth" + rest
 		}
 	}
 	return p
@@ -79,12 +86,16 @@ func canonicalLegacyAPIPath(p string) string {
 	return p
 }
 
-// oauthAliasPrefixes is the closed set of recognized OAuth path prefixes.
-// Order: longest first so /v1/iam/login/oauth wins over /v1/iam/oauth.
+// oauthAliasPrefixes is the closed set of recognized OAuth path prefixes
+// that collapse to the new canonical /v1/iam/oauth/* form. /v1/iam/oauth
+// itself is NOT in this list — it is the destination, not an alias, and
+// must pass through unchanged so router.go's direct /v1/iam/oauth/*
+// registrations dispatch. /login/oauth is also absent — its existing
+// direct routes remain authoritative for that legacy shape. Order:
+// longest first so /v1/iam/login/oauth wins over its shorter siblings.
 var oauthAliasPrefixes = []string{
 	"/v1/iam/login/oauth",
 	"/api/iam/login/oauth",
-	"/v1/iam/oauth",
 	"/api/iam/oauth",
 	"/oauth",
 }
