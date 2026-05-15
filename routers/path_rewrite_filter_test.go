@@ -16,35 +16,44 @@ func TestCanonicalPath(t *testing.T) {
 		in, want string
 	}{
 		// --- OAuth surface ---
+		//
+		// Canonical form is /v1/iam/oauth/* (advertised by OIDC discovery).
+		// Legacy /login/oauth/* literal paths pass through unchanged and
+		// hit their own direct route registrations in router.go.
 
-		// Bare OAuth2-spec form passes through unchanged.
+		// Canonical /v1/iam/oauth/* — no-op.
+		{"/v1/iam/oauth/authorize", "/v1/iam/oauth/authorize"},
+		{"/v1/iam/oauth/access_token", "/v1/iam/oauth/access_token"},
+		{"/v1/iam/oauth/token", "/v1/iam/oauth/token"},
+		{"/v1/iam/oauth/userinfo", "/v1/iam/oauth/userinfo"},
+
+		// Legacy /login/oauth/* — strict OAuth2-spec literal, passes through
+		// to its own direct routes. Filter does NOT touch it.
 		{"/login/oauth/authorize", "/login/oauth/authorize"},
 		{"/login/oauth/access_token", "/login/oauth/access_token"},
 
-		// /oauth/* OIDC-discovery alias collapses to /login/oauth/*.
-		{"/oauth/authorize", "/login/oauth/authorize"},
-		{"/oauth/token", "/login/oauth/token"},
-		{"/oauth/access_token", "/login/oauth/access_token"},
-		{"/oauth/refresh", "/login/oauth/refresh"},
-		{"/oauth/introspect", "/login/oauth/introspect"},
-		{"/oauth/revoke", "/login/oauth/revoke"},
-		{"/oauth/userinfo", "/login/oauth/userinfo"},
-		{"/oauth/device", "/login/oauth/device"},
-		{"/oauth/logout", "/login/oauth/logout"},
-		{"/oauth/register", "/login/oauth/register"},
+		// /oauth/* OIDC-discovery alias collapses to /v1/iam/oauth/*.
+		{"/oauth/authorize", "/v1/iam/oauth/authorize"},
+		{"/oauth/token", "/v1/iam/oauth/token"},
+		{"/oauth/access_token", "/v1/iam/oauth/access_token"},
+		{"/oauth/refresh", "/v1/iam/oauth/refresh"},
+		{"/oauth/introspect", "/v1/iam/oauth/introspect"},
+		{"/oauth/revoke", "/v1/iam/oauth/revoke"},
+		{"/oauth/userinfo", "/v1/iam/oauth/userinfo"},
+		{"/oauth/device", "/v1/iam/oauth/device"},
+		{"/oauth/logout", "/v1/iam/oauth/logout"},
+		{"/oauth/register", "/v1/iam/oauth/register"},
 
-		// Gateway-prefixed forms collapse to /login/oauth/*.
-		{"/v1/iam/oauth/authorize", "/login/oauth/authorize"},
-		{"/v1/iam/oauth/access_token", "/login/oauth/access_token"},
-		{"/v1/iam/login/oauth/authorize", "/login/oauth/authorize"},
-		{"/v1/iam/login/oauth/access_token", "/login/oauth/access_token"},
-		{"/v1/iam/login/oauth/refresh_token", "/login/oauth/refresh_token"},
+		// Gateway-doubled forms collapse to canonical /v1/iam/oauth/*.
+		{"/v1/iam/login/oauth/authorize", "/v1/iam/oauth/authorize"},
+		{"/v1/iam/login/oauth/access_token", "/v1/iam/oauth/access_token"},
+		{"/v1/iam/login/oauth/refresh_token", "/v1/iam/oauth/refresh_token"},
 
 		// Legacy /api/iam/<oauth>... — OAuth aliases win over generic /api/* rewrite.
-		{"/api/iam/oauth/access_token", "/login/oauth/access_token"},
-		{"/api/iam/login/oauth/access_token", "/login/oauth/access_token"},
+		{"/api/iam/oauth/access_token", "/v1/iam/oauth/access_token"},
+		{"/api/iam/login/oauth/access_token", "/v1/iam/oauth/access_token"},
 
-		// --- Legacy /api/* surface (upstream-Casdoor shape) ---
+		// --- Legacy /api/* surface (legacy upstream shape) ---
 
 		// /api/<endpoint> → /v1/iam/<endpoint>. Method-agnostic — same
 		// rewrite for GET, POST, PUT, DELETE.
@@ -122,10 +131,12 @@ func TestPathRewriteFilter_LegacyAPI_POST(t *testing.T) {
 		{"DELETE_api_delete_token", http.MethodDelete, "/api/delete-token", "/v1/iam/delete-token"},
 		{"POST_api_iam_login", http.MethodPost, "/api/iam/login", "/v1/iam/login"},
 		// OAuth on /api/iam wins via canonicalOAuthPath, not the legacy
-		// rewrite — both end up at /login/oauth/*.
-		{"POST_api_iam_oauth_token", http.MethodPost, "/api/iam/oauth/access_token", "/login/oauth/access_token"},
+		// rewrite — both end up at the canonical /v1/iam/oauth/* form.
+		{"POST_api_iam_oauth_token", http.MethodPost, "/api/iam/oauth/access_token", "/v1/iam/oauth/access_token"},
 		// Already-canonical paths are no-ops.
 		{"POST_v1_iam_login_noop", http.MethodPost, "/v1/iam/login", "/v1/iam/login"},
+		{"POST_v1_iam_oauth_token_noop", http.MethodPost, "/v1/iam/oauth/access_token", "/v1/iam/oauth/access_token"},
+		{"POST_login_oauth_token_noop", http.MethodPost, "/login/oauth/access_token", "/login/oauth/access_token"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -177,12 +188,18 @@ func TestCanonicalOAuthPath(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
+		// Canonical /v1/iam/oauth/* and legacy /login/oauth/* pass through
+		// unchanged — both are real destination registrations in router.go.
+		{"/v1/iam/oauth/authorize", "/v1/iam/oauth/authorize"},
+		{"/v1/iam/oauth/access_token", "/v1/iam/oauth/access_token"},
 		{"/login/oauth/authorize", "/login/oauth/authorize"},
-		{"/oauth/authorize", "/login/oauth/authorize"},
-		{"/v1/iam/oauth/access_token", "/login/oauth/access_token"},
-		{"/v1/iam/login/oauth/access_token", "/login/oauth/access_token"},
-		{"/api/iam/oauth/access_token", "/login/oauth/access_token"},
-		{"/api/iam/login/oauth/access_token", "/login/oauth/access_token"},
+		{"/login/oauth/access_token", "/login/oauth/access_token"},
+
+		// Aliases collapse to canonical /v1/iam/oauth/*.
+		{"/oauth/authorize", "/v1/iam/oauth/authorize"},
+		{"/v1/iam/login/oauth/access_token", "/v1/iam/oauth/access_token"},
+		{"/api/iam/oauth/access_token", "/v1/iam/oauth/access_token"},
+		{"/api/iam/login/oauth/access_token", "/v1/iam/oauth/access_token"},
 
 		// Non-OAuth: untouched by canonicalOAuthPath.
 		{"/api/login", "/api/login"},
