@@ -172,20 +172,42 @@ func getOriginFromHost(host string) (string, string) {
 	return originF, originB
 }
 
+// Canonical public OIDC paths. The IAM service publishes its discovery doc
+// using ONLY these — external consumers (IdPs, SDKs, OIDC libraries) see
+// exactly one shape per endpoint. Legacy /oauth/*, /login/oauth/*, and
+// /api/* aliases are accepted by routers.PathRewriteFilter but never
+// advertised. /v1/iam/* is the law.
+const (
+	OidcPathAuthorize     = "/v1/iam/oauth/authorize"
+	OidcPathToken         = "/v1/iam/oauth/token"
+	OidcPathUserinfo      = "/v1/iam/oauth/userinfo"
+	OidcPathDevice        = "/v1/iam/oauth/device"
+	OidcPathRegister      = "/v1/iam/oauth/register"
+	OidcPathIntrospect    = "/v1/iam/oauth/introspect"
+	OidcPathRevoke        = "/v1/iam/oauth/revoke"
+	OidcPathEndSession    = "/v1/iam/oauth/logout"
+	OidcPathWellKnownBase = "/v1/iam/.well-known"
+)
+
+// buildIssuerAndJwks composes the canonical issuer and JWKS URI from a
+// single backend origin. Pure string composition — kept separate from
+// GetOidcDiscovery so it stays testable without the application DB
+// lookup that GetOidcDiscovery performs to merge per-app scopes.
+//
+// origin MUST be a single URL (no CSV). selectOriginForHost in
+// getOriginFromHost guarantees this for the request-scoped path.
+func buildIssuerAndJwks(origin, applicationName string) (issuer, jwksUri string) {
+	if applicationName != "" {
+		return fmt.Sprintf("%s%s/%s", origin, OidcPathWellKnownBase, applicationName),
+			fmt.Sprintf("%s%s/%s/jwks", origin, OidcPathWellKnownBase, applicationName)
+	}
+	return origin, fmt.Sprintf("%s%s/jwks", origin, OidcPathWellKnownBase)
+}
+
 func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 	originFrontend, originBackend := getOriginFromHost(host)
 
-	// If application is provided, use application-specific URLs
-	var issuer, jwksUri string
-	if applicationName != "" {
-		// Application-specific issuer and endpoints (owner is always "admin")
-		issuer = fmt.Sprintf("%s/.well-known/%s", originBackend, applicationName)
-		jwksUri = fmt.Sprintf("%s/.well-known/%s/jwks", originBackend, applicationName)
-	} else {
-		// Default global issuer and endpoints
-		issuer = originBackend
-		jwksUri = fmt.Sprintf("%s/.well-known/jwks", originBackend)
-	}
+	issuer, jwksUri := buildIssuerAndJwks(originBackend, applicationName)
 
 	// Default OIDC scopes
 	scopes := []string{"openid", "email", "profile", "address", "phone", "offline_access"}
@@ -215,14 +237,14 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 
 	oidcDiscovery := OidcDiscovery{
 		Issuer:                                    issuer,
-		AuthorizationEndpoint:                     fmt.Sprintf("%s/oauth/authorize", originFrontend),
-		TokenEndpoint:                             fmt.Sprintf("%s/oauth/token", originBackend),
-		UserinfoEndpoint:                          fmt.Sprintf("%s/oauth/userinfo", originBackend),
-		DeviceAuthorizationEndpoint:               fmt.Sprintf("%s/oauth/device", originBackend),
-		RegistrationEndpoint:                      fmt.Sprintf("%s/oauth/register", originBackend),
+		AuthorizationEndpoint:                     fmt.Sprintf("%s%s", originFrontend, OidcPathAuthorize),
+		TokenEndpoint:                             fmt.Sprintf("%s%s", originBackend, OidcPathToken),
+		UserinfoEndpoint:                          fmt.Sprintf("%s%s", originBackend, OidcPathUserinfo),
+		DeviceAuthorizationEndpoint:               fmt.Sprintf("%s%s", originBackend, OidcPathDevice),
+		RegistrationEndpoint:                      fmt.Sprintf("%s%s", originBackend, OidcPathRegister),
 		JwksUri:                                   jwksUri,
-		IntrospectionEndpoint:                     fmt.Sprintf("%s/oauth/introspect", originBackend),
-		RevocationEndpoint:                        fmt.Sprintf("%s/oauth/revoke", originBackend),
+		IntrospectionEndpoint:                     fmt.Sprintf("%s%s", originBackend, OidcPathIntrospect),
+		RevocationEndpoint:                        fmt.Sprintf("%s%s", originBackend, OidcPathRevoke),
 		ResponseTypesSupported:                    []string{"code"},
 		ResponseModesSupported:                    []string{"query", "fragment", "form_post"},
 		GrantTypesSupported:                       []string{"authorization_code", "client_credentials", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "urn:ietf:params:oauth:grant-type:token-exchange"},
@@ -236,7 +258,7 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 		ClaimsSupported:                           []string{"iss", "ver", "sub", "aud", "iat", "exp", "id", "type", "displayName", "avatar", "permanentAvatar", "email", "phone", "location", "affiliation", "title", "homepage", "bio", "tag", "region", "language", "score", "ranking", "isOnline", "isAdmin", "isForbidden", "signupApplication", "ldap"},
 		RequestParameterSupported:                 true,
 		RequestObjectSigningAlgValuesSupported:    []string{"HS256", "HS384", "HS512"},
-		EndSessionEndpoint:                        fmt.Sprintf("%s/oauth/logout", originBackend),
+		EndSessionEndpoint:                        fmt.Sprintf("%s%s", originBackend, OidcPathEndSession),
 	}
 
 	return oidcDiscovery
@@ -373,7 +395,7 @@ func GetDeviceAuthResponse(deviceCode string, userCode string, host string) Devi
 	return DeviceAuthResponse{
 		DeviceCode:      deviceCode,
 		UserCode:        userCode,
-		VerificationUri: fmt.Sprintf("%s/login/oauth/device/%s", originFrontend, userCode),
+		VerificationUri: fmt.Sprintf("%s%s/%s", originFrontend, OidcPathDevice, userCode),
 		ExpiresIn:       120,
 	}
 }
