@@ -16,6 +16,7 @@ package object
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -59,6 +60,90 @@ func TestSplitOriginList(t *testing.T) {
 				t.Fatalf("SplitOriginList(%q) = %v, want %v", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestGetOidcDiscovery_CanonicalSurface locks the published discovery shape
+// to /v1/iam/oauth/* + /v1/iam/.well-known/jwks. Any future drift that
+// regresses to the bare /oauth/* form or the legacy /login/oauth/* form
+// is a documented contract break — external IdPs/SDKs cache the discovery
+// doc and will not refetch on a 404.
+//
+// Origin selection covers both single-host deployments (host matches
+// nothing in the CSV → fallback to first entry, both fields equal) and
+// multi-host (host present in CSV → exact match used).
+func TestGetOidcDiscovery_CanonicalSurface(t *testing.T) {
+	d := GetOidcDiscovery("iam.hanzo.ai", "")
+
+	// Issuer must be a single absolute URL — never a CSV. The earlier
+	// "comma-concatenated origin" regression made every URL invalid for
+	// any OIDC library that does string equality on iss.
+	if strings.ContainsRune(d.Issuer, ',') {
+		t.Fatalf("issuer must be a single origin, got CSV: %q", d.Issuer)
+	}
+	if !strings.HasPrefix(d.Issuer, "http://") && !strings.HasPrefix(d.Issuer, "https://") {
+		t.Fatalf("issuer missing scheme: %q", d.Issuer)
+	}
+
+	wantSuffix := map[string]string{
+		"AuthorizationEndpoint":       "/v1/iam/oauth/authorize",
+		"TokenEndpoint":               "/v1/iam/oauth/token",
+		"UserinfoEndpoint":            "/v1/iam/oauth/userinfo",
+		"DeviceAuthorizationEndpoint": "/v1/iam/oauth/device",
+		"RegistrationEndpoint":        "/v1/iam/oauth/register",
+		"IntrospectionEndpoint":       "/v1/iam/oauth/introspect",
+		"RevocationEndpoint":          "/v1/iam/oauth/revoke",
+		"EndSessionEndpoint":          "/v1/iam/oauth/logout",
+		"JwksUri":                     "/v1/iam/.well-known/jwks",
+	}
+	got := map[string]string{
+		"AuthorizationEndpoint":       d.AuthorizationEndpoint,
+		"TokenEndpoint":               d.TokenEndpoint,
+		"UserinfoEndpoint":            d.UserinfoEndpoint,
+		"DeviceAuthorizationEndpoint": d.DeviceAuthorizationEndpoint,
+		"RegistrationEndpoint":        d.RegistrationEndpoint,
+		"IntrospectionEndpoint":       d.IntrospectionEndpoint,
+		"RevocationEndpoint":          d.RevocationEndpoint,
+		"EndSessionEndpoint":          d.EndSessionEndpoint,
+		"JwksUri":                     d.JwksUri,
+	}
+	for field, suffix := range wantSuffix {
+		v := got[field]
+		if strings.ContainsRune(v, ',') {
+			t.Errorf("%s must be a single URL, got CSV: %q", field, v)
+		}
+		if !strings.HasSuffix(v, suffix) {
+			t.Errorf("%s = %q, want suffix %q", field, v, suffix)
+		}
+	}
+}
+
+// TestBuildIssuerAndJwks_AppSpecific locks the per-application URL shape
+// using the pure composition helper — the same code GetOidcDiscovery
+// runs before its DB-touching scope merge. Issuer + jwks_uri MUST use
+// /v1/iam/.well-known/<app>/... and MUST be single URLs (no CSV).
+func TestBuildIssuerAndJwks_AppSpecific(t *testing.T) {
+	issuer, jwksUri := buildIssuerAndJwks("https://iam.hanzo.ai", "myapp")
+	if strings.ContainsRune(issuer, ',') || strings.ContainsRune(jwksUri, ',') {
+		t.Fatalf("app-specific issuer/jwks must be single URLs, got %q / %q", issuer, jwksUri)
+	}
+	if want := "https://iam.hanzo.ai/v1/iam/.well-known/myapp"; issuer != want {
+		t.Errorf("issuer = %q, want %q", issuer, want)
+	}
+	if want := "https://iam.hanzo.ai/v1/iam/.well-known/myapp/jwks"; jwksUri != want {
+		t.Errorf("jwks_uri = %q, want %q", jwksUri, want)
+	}
+}
+
+// TestBuildIssuerAndJwks_Global covers the global (no application)
+// shape — issuer is the bare origin, jwks_uri is canonical /v1/iam/.well-known/jwks.
+func TestBuildIssuerAndJwks_Global(t *testing.T) {
+	issuer, jwksUri := buildIssuerAndJwks("https://iam.hanzo.ai", "")
+	if want := "https://iam.hanzo.ai"; issuer != want {
+		t.Errorf("issuer = %q, want %q", issuer, want)
+	}
+	if want := "https://iam.hanzo.ai/v1/iam/.well-known/jwks"; jwksUri != want {
+		t.Errorf("jwks_uri = %q, want %q", jwksUri, want)
 	}
 }
 
