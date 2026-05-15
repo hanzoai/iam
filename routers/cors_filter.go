@@ -96,9 +96,11 @@ func CorsFilter(ctx *context.Context) {
 	// must NOT reflect arbitrary origins with credentials. Use the allowlist
 	// for credentialed endpoints; use wildcard without credentials for
 	// truly public discovery endpoints.
-	isPublicEndpoint := strings.HasPrefix(ctx.Request.RequestURI, "/.well-known/")
+	isPublicEndpoint := strings.HasPrefix(ctx.Request.RequestURI, "/.well-known/") ||
+		strings.HasPrefix(ctx.Request.RequestURI, "/v1/iam/.well-known/")
 	isOAuthEndpoint := strings.HasPrefix(ctx.Request.RequestURI, "/oauth/") ||
 		strings.HasPrefix(ctx.Request.RequestURI, "/login/oauth/") ||
+		strings.HasPrefix(ctx.Request.RequestURI, "/v1/iam/oauth/") ||
 		ctx.Request.RequestURI == "/v1/iam/userinfo" ||
 		(ctx.Request.Method == "POST" && ctx.Request.RequestURI == "/v1/iam/acs")
 
