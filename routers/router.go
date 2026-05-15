@@ -300,11 +300,31 @@ func InitAPI() {
 	web.Router("/v1/iam/delete-ldap", &controllers.ApiController{}, "POST:DeleteLdap")
 	web.Router("/v1/iam/sync-ldap-users", &controllers.ApiController{}, "POST:SyncLdapUsers")
 
-	// OAuth surface — exactly one route per endpoint, mounted at the
-	// canonical /login/oauth/* path mandated by the OAuth2 spec. Aliases
-	// (/oauth/*, /v1/iam/oauth/*, /v1/iam/login/oauth/*, /api/iam/...)
-	// are normalized to this form by routers.PathRewriteFilter before
-	// dispatch. New aliases go in path_rewrite_filter.go, never here.
+	// OAuth surface — canonical published form is /v1/iam/oauth/* and is
+	// what the OIDC discovery doc advertises. /login/oauth/* exists as a
+	// strict-OAuth2-spec legacy back-compat registration; both shapes
+	// target the same controller methods so behavior is byte-identical.
+	// Aliases (/oauth/*, /v1/iam/login/oauth/*, /api/iam/oauth/*,
+	// /api/iam/login/oauth/*) collapse to /v1/iam/oauth/* via
+	// routers.PathRewriteFilter before dispatch. New alias prefixes go
+	// in path_rewrite_filter.go; new endpoints go here, once per shape.
+	web.Router("/v1/iam/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
+	web.Router("/v1/iam/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
+	web.Router("/v1/iam/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
+	web.Router("/v1/iam/oauth/refresh_token", &controllers.ApiController{}, "POST:RefreshToken")
+	web.Router("/v1/iam/oauth/refresh", &controllers.ApiController{}, "POST:RefreshToken")
+	web.Router("/v1/iam/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
+	web.Router("/v1/iam/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
+	web.Router("/v1/iam/oauth/userinfo", &controllers.ApiController{}, "GET:GetUserinfo")
+	web.Router("/v1/iam/oauth/device", &controllers.ApiController{}, "POST:DeviceAuth")
+	web.Router("/v1/iam/oauth/logout", &controllers.ApiController{}, "GET,POST:Logout")
+	web.Router("/v1/iam/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
+
+	// Legacy /login/oauth/* — exact OAuth2-spec literal paths. Kept for
+	// pre-cutover callers that hardcoded these URLs before the
+	// /v1/iam/oauth/* surface existed. Scheduled for removal in a
+	// later cut, AFTER every consumer has migrated to the discovery-
+	// doc-advertised /v1/iam/oauth/* form.
 	web.Router("/login/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
 	web.Router("/login/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
 	web.Router("/login/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
@@ -339,6 +359,27 @@ func InitAPI() {
 	web.Router("/v1/iam/grant-consent", &controllers.ApiController{}, "POST:GrantConsent")
 	web.Router("/v1/iam/revoke-consent", &controllers.ApiController{}, "POST:RevokeConsent")
 
+	// Canonical OIDC discovery & metadata — published external surface
+	// per Hanzo policy is /v1/iam/.well-known/*. /.well-known/* paths
+	// remain as legacy back-compat (browsers, IdPs, legacy SDKs that
+	// hit the root form), but new integrations should use /v1/iam/.
+	// Each canonical → legacy pair targets the same controller method,
+	// so OIDC libraries that probe either form land on identical bytes.
+	web.Router("/v1/iam/.well-known/openid-configuration", &controllers.RootController{}, "GET:GetOidcDiscovery")
+	web.Router("/v1/iam/.well-known/:application/openid-configuration", &controllers.RootController{}, "GET:GetOidcDiscoveryByApplication")
+	web.Router("/v1/iam/.well-known/oauth-authorization-server", &controllers.RootController{}, "GET:GetOAuthServerMetadata")
+	web.Router("/v1/iam/.well-known/:application/oauth-authorization-server", &controllers.RootController{}, "GET:GetOAuthServerMetadataByApplication")
+	web.Router("/v1/iam/.well-known/jwks", &controllers.RootController{}, "*:GetJwks")
+	web.Router("/v1/iam/.well-known/:application/jwks", &controllers.RootController{}, "*:GetJwksByApplication")
+	web.Router("/v1/iam/.well-known/webfinger", &controllers.RootController{}, "GET:GetWebFinger")
+	web.Router("/v1/iam/.well-known/:application/webfinger", &controllers.RootController{}, "GET:GetWebFingerByApplication")
+	web.Router("/v1/iam/.well-known/oauth-protected-resource", &controllers.RootController{}, "GET:GetOauthProtectedResourceMetadata")
+	web.Router("/v1/iam/.well-known/:application/oauth-protected-resource", &controllers.RootController{}, "GET:GetOauthProtectedResourceMetadataByApplication")
+
+	// Legacy back-compat: root /.well-known/* still served. Scheduled for
+	// removal once all downstream consumers consume the discovery doc
+	// (which advertises only the /v1/iam/ form). Do NOT add new endpoints
+	// here — add them under /v1/iam/.well-known/* only.
 	web.Router("/.well-known/openid-configuration", &controllers.RootController{}, "GET:GetOidcDiscovery")
 	web.Router("/.well-known/:application/openid-configuration", &controllers.RootController{}, "GET:GetOidcDiscoveryByApplication")
 	web.Router("/.well-known/oauth-authorization-server", &controllers.RootController{}, "GET:GetOAuthServerMetadata")
