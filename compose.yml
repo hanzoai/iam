@@ -1,123 +1,55 @@
 # Hanzo IAM — Multi-Tenant Identity & Access Management
 #
-# Docker Compose deployment with Caddy reverse proxy.
-# For K8s production, see: universe/infra/k8s/iam/
-#
-# Domains:
-#   iam.hanzo.ai   — Core IAM API
-#   hanzo.id       — Hanzo login
-#   lux.id         — Lux Network login
-#   zoo.id         — Zoo Labs login
-#   pars.id        — Pars login
-#   id.ad.nexus    — Ad Nexus login
-#   id.bootno.de   — Bootnode login
+# Embedded Base/SQLite. NO PostgreSQL, NO Redis, NO Caddy.
+# Per iam/CLAUDE.md: "Data lives in Base — embedded SQLite with
+# auto-migrations and replicate-to-S3. Inter-service traffic uses
+# native ZAP binary protocol."
 #
 # Usage:
 #   docker compose up -d
+#
+# Ports:
+#   8000 — HTTP (canonical /v1/iam/* surface)
+#   9653 — ZAP RPC (service-to-service)
 
 services:
-  iam-backend:
+  iam:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/hanzoai/iam:1.1000.1
+    image: ghcr.io/hanzoai/iam:1.14.28
     restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "9653:9653"
     environment:
-      - DATABASE_URL=postgres://${POSTGRES_USER:-hanzo}:${POSTGRES_PASSWORD:-hanzo}@postgres:5432/${POSTGRES_DB:-iam}?sslmode=disable
-      - REDIS_URL=redis://redis:6379
-      - IAM_ORIGIN=${IAM_ORIGIN:-https://iam.hanzo.ai}
-      - IAM_APP_NAME=iam
-      - ENABLE_MULTI_TENANT=true
-      - ALLOWED_ORIGINS=hanzo.id,zoo.id,lux.id,pars.id,id.ad.nexus,ad.nexus,id.bootno.de,iam.hanzo.ai
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      # Canonical IAM_* env contract (no HANZO_ prefix).
+      - IAM_DATA_DIR=/data/iam
+      - IAM_LISTEN=:8000
+      - IAM_ZAP_LISTEN=:9653
+      - IAM_ADMIN_ORG=${IAM_ADMIN_ORG:-admin}
+      - IAM_ADMIN_APP=${IAM_ADMIN_APP:-iam}
+      - IAM_ADMIN_USER=${IAM_ADMIN_USER:-root}
+      - IAM_KMS_MASTER_KEY=${IAM_KMS_MASTER_KEY:-}
+      - IAM_REPLICATE_BUCKET=${IAM_REPLICATE_BUCKET:-}
+      - IAM_REPLICATE_AGE_RECIPIENT=${IAM_REPLICATE_AGE_RECIPIENT:-}
     volumes:
       - ./init_data.json:/app/init_data.json:ro
-      - iam_data:/app/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
+      - iam_data:/data/iam
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/v1/iam/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 20s
     deploy:
       resources:
         limits:
           cpus: '2'
-          memory: 4G
+          memory: 1G
         reservations:
-          cpus: '0.5'
-          memory: 512M
-    networks:
-      - iam-network
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - iam-backend
-    networks:
-      - iam-network
-
-  postgres:
-    image: ghcr.io/hanzoai/sql:latest
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-hanzo}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-hanzo}
-      - POSTGRES_DB=${POSTGRES_DB:-iam}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hanzo} -d ${POSTGRES_DB:-iam}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-    networks:
-      - iam-network
-
-  redis:
-    image: ghcr.io/hanzoai/kv:latest
-    restart: unless-stopped
-    command: kv-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "kv", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-    networks:
-      - iam-network
+          cpus: '0.25'
+          memory: 128M
 
 volumes:
   iam_data:
-  caddy_data:
-  caddy_config:
-  postgres_data:
-  redis_data:
-
-networks:
-  iam-network:
-    driver: bridge
