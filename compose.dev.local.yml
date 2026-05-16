@@ -1,27 +1,13 @@
-# Minimal dev setup - just database services
+# Hanzo IAM — minimal local-dev compose. No deps to spin up: IAM is
+# self-contained on Base/SQLite. This file exists only to declare the
+# `iam` service with host networking so you can run other services
+# (mpc, kms, console, …) alongside it from the same docker context.
+#
+# For the full IAM stack with ports/volumes, use compose.dev.yml.
+
 services:
-  postgres:
-    image: ghcr.io/hanzoai/sql:latest
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: hanzo
-      POSTGRES_PASSWORD: hanzo123
-      POSTGRES_DB: hanzo_iam
-      POSTGRES_HOST_AUTH_METHOD: trust
-    volumes:
-      - postgres_dev:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hanzo -d hanzo_iam"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
-
-volumes:
-  postgres_dev:
+  iam:
+    extends:
+      file: compose.dev.yml
+      service: iam
+    network_mode: host
