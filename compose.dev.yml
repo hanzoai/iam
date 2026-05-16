@@ -1,63 +1,35 @@
-# Hanzo IAM Development Environment
-# Local development with PostgreSQL and Redis
+# Hanzo IAM — local dev (Base/SQLite embedded, no Postgres/Redis).
+#
+# Same shape as compose.yml but: builds locally, no init_data.json mount,
+# data dir wired to ./data/ for easy inspection.
+#
 # Usage: make dev
 
 services:
-  postgres:
-    image: ghcr.io/hanzoai/sql:latest
-    environment:
-      POSTGRES_USER: hanzo
-      POSTGRES_PASSWORD: hanzo123
-      POSTGRES_DB: hanzo_iam
-    ports:
-      - "5432:5432"
-    volumes:
-      - iam_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hanzo -d hanzo_iam"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
-    volumes:
-      - iam_redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   iam:
     build:
       context: .
       dockerfile: Dockerfile
-      target: STANDARD
+    image: hanzoai/iam:dev
+    restart: unless-stopped
     ports:
       - "8000:8000"
+      - "9653:9653"
     environment:
-      RUNNING_IN_DOCKER: "true"
+      - IAM_DATA_DIR=/data/iam
+      - IAM_LISTEN=:8000
+      - IAM_ZAP_LISTEN=:9653
+      - IAM_ADMIN_ORG=admin
+      - IAM_ADMIN_APP=iam
+      - IAM_ADMIN_USER=root
+      # dev KMS master key — replace via .env for any real testing.
+      - IAM_KMS_MASTER_KEY=${IAM_KMS_MASTER_KEY:-dev-master-key-do-not-use-in-prod-please}
     volumes:
-      - ./conf/app.dev.conf:/conf/app.conf:ro
-      - ./init_data.json:/init_data.json:ro
-      - iam_logs:/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - ./data:/data/iam
+      - ./init_data.json:/app/init_data.json:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-volumes:
-  iam_postgres_data:
-  iam_redis_data:
-  iam_logs:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/v1/iam/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
