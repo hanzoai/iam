@@ -33,7 +33,7 @@ require (
 	github.com/go-webauthn/webauthn v0.10.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/hanzoai/authzstore v0.1.0
+	github.com/hanzoai/authzstore v0.1.1
 	github.com/hanzoai/builder v0.3.13
 	github.com/hanzoai/go-sms-sender v0.25.2
 	github.com/hanzoai/gomail/v2 v2.3.2
