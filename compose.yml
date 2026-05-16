@@ -71,11 +71,7 @@ services:
       - iam-network
 
   postgres:
-<<<<<<< Updated upstream
     image: ghcr.io/hanzoai/sql:latest
-=======
-    image: ghcr.io/hanzoai/sql:latest
->>>>>>> Stashed changes
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-hanzo}
