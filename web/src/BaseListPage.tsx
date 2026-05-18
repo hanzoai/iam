@@ -14,13 +14,15 @@
 
 // @ts-nocheck
 import React from "react";
-import {Button, Input, Result, Space, Tour} from "antd";
-import {SearchOutlined} from "@ant-design/icons";
+import {Search} from "lucide-react";
 import Highlighter from "react-highlight-words";
 import i18next from "i18next";
 import * as Setting from "./Setting";
 import * as TourConfig from "./TourConfig";
 import * as FormBackend from "./backend/FormBackend";
+import {Button} from "./components/ui/button";
+import {Input} from "./components/ui/input";
+import {ResultCard} from "./components/ui/result-card";
 
 class BaseListPage extends React.Component {
   constructor(props) {
@@ -108,9 +110,12 @@ class BaseListPage extends React.Component {
       });
   }
 
+  // Backward-compatible column descriptor used by subclasses. The antd-specific
+  // filterDropdown/filterIcon hooks are dropped; instead `render` is preserved
+  // so existing column shapes still highlight the active search column.
   getColumnSearchProps = (dataIndex, customRender = null) => ({
     filterDropdown: ({setSelectedKeys, selectedKeys, confirm, clearFilters}) => (
-      <div style={{padding: 8}}>
+      <div className="p-2 flex items-center gap-2 bg-popover border border-border rounded-md">
         <Input
           ref={node => {
             this.searchInput = node;
@@ -118,51 +123,39 @@ class BaseListPage extends React.Component {
           placeholder={i18next.t("general:Please input your search")}
           value={selectedKeys[0]}
           onChange={e => setSelectedKeys(e.target.value ? [e.target.value] : [])}
-          onPressEnter={() => this.handleSearch(selectedKeys, confirm, dataIndex)}
-          style={{marginBottom: 8, display: "block"}}
+          onKeyDown={(e) => { if (e.key === "Enter") this.handleSearch(selectedKeys, confirm, dataIndex); }}
+          className="w-48"
         />
-
-        <Space>
-          <Button
-            type="primary"
-            onClick={() => this.handleSearch(selectedKeys, confirm, dataIndex)}
-            icon={<SearchOutlined />}
-            size="small"
-            style={{width: 90}}
-          >
-            {i18next.t("general:Search")}
-          </Button>
-          <Button onClick={() => this.handleReset(clearFilters)} size="small" style={{width: 90}}>
-            {i18next.t("forget:Reset")}
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            onClick={() => {
-              confirm({closeDropdown: false});
-              this.setState({
-                searchText: selectedKeys[0],
-                searchedColumn: dataIndex,
-              });
-            }}
-          >
-            {i18next.t("general:Filter")}
-          </Button>
-        </Space>
+        <Button
+          size="sm"
+          onClick={() => this.handleSearch(selectedKeys, confirm, dataIndex)}
+        >
+          <Search className="h-3 w-3 mr-1" />
+          {i18next.t("general:Search")}
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => this.handleReset(clearFilters)}>
+          {i18next.t("forget:Reset")}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            confirm({closeDropdown: false});
+            this.setState({
+              searchText: selectedKeys[0],
+              searchedColumn: dataIndex,
+            });
+          }}
+        >
+          {i18next.t("general:Filter")}
+        </Button>
       </div>
     ),
-    filterIcon: filtered => <SearchOutlined style={{color: filtered ? "#1890ff" : undefined}} />,
+    filterIcon: filtered => <Search className={`h-3.5 w-3.5 ${filtered ? "text-primary" : "text-muted-foreground"}`} />,
     onFilter: (value, record) =>
       record[dataIndex]
         ? record[dataIndex].toString().toLowerCase().includes(value.toLowerCase())
         : "",
-    filterDropdownProps: {
-      onOpenChange: visible => {
-        if (visible) {
-          setTimeout(() => this.searchInput.select(), 100);
-        }
-      },
-    },
     render: (text, record, index) => {
       const highlightContent = this.state.searchedColumn === dataIndex ? (
         <Highlighter
@@ -184,15 +177,15 @@ class BaseListPage extends React.Component {
   };
 
   handleReset = clearFilters => {
-    clearFilters();
+    clearFilters?.();
     const {pagination} = this.state;
     this.fetch({pagination});
   };
 
   handleTableChange = (pagination, filters, sorter) => {
     this.fetch({
-      sortField: sorter.field,
-      sortOrder: sorter.order,
+      sortField: sorter?.field,
+      sortOrder: sorter?.order,
       pagination,
       ...filters,
       searchText: this.state.searchText,
@@ -205,60 +198,24 @@ class BaseListPage extends React.Component {
     this.setState({isTourVisible: false});
   };
 
-  getSteps = () => {
-    const nextPathName = TourConfig.getNextUrl();
-    const steps = TourConfig.getSteps();
-    steps.map((item, index) => {
-      if (!index) {
-        item.target = () => document.querySelector(".ant-table");
-      } else {
-        item.target = () => document.getElementById(item.id) || null;
-      }
-      if (index === steps.length - 1) {
-        item.nextButtonProps = {
-          children: TourConfig.getNextButtonChild(nextPathName),
-        };
-      }
-    });
-    return steps;
-  };
-
-  handleTourComplete = () => {
-    const nextPathName = TourConfig.getNextUrl();
-    if (nextPathName !== "") {
-      this.props.history.push("/" + nextPathName);
-      TourConfig.setIsTourVisible(true);
-    }
-  };
-
   render() {
     if (!this.state.isAuthorized) {
       return (
-        <Result
-          status="403"
+        <ResultCard
+          status="error"
           title="403 Unauthorized"
-          subTitle={i18next.t("general:Sorry, you do not have permission to access this page or logged in status invalid.")}
-          extra={<a href="/"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>}
+          subtitle={i18next.t("general:Sorry, you do not have permission to access this page or logged in status invalid.")}
+          extra={<a href="/"><Button>{i18next.t("general:Back Home")}</Button></a>}
         />
       );
     }
 
+    // TODO(rip-antd): Tour walkthrough disabled
     return (
       <div>
         {
           this.renderTable(this.state.data)
         }
-        <Tour
-          open={Setting.isMobile() ? false : this.state.isTourVisible}
-          onClose={this.setIsTourVisible}
-          steps={this.getSteps()}
-          indicatorsRender={(current, total) => (
-            <span>
-              {current + 1} / {total}
-            </span>
-          )}
-          onFinish={this.handleTourComplete}
-        />
       </div>
     );
   }
