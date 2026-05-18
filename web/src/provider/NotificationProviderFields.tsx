@@ -14,91 +14,96 @@
 
 // @ts-nocheck
 import React from "react";
-import {Button, Col, Input, Row, Select} from "antd";
+import {Button} from "../components/ui/button";
+import {Input} from "../components/ui/input";
+import {Textarea} from "../components/ui/textarea";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "../components/ui/select";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as ProviderNotification from "../common/TestNotificationWidget";
-
-const {Option} = Select;
-const {TextArea} = Input;
 
 export function renderNotificationProviderFields(provider, updateProviderField, getReceiverRow) {
   return (
     <React.Fragment>
       {["CUCloud"].includes(provider.type) ? (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-2 mt-1">
             {["Hanzo IAM"].includes(provider.type) ?
               Setting.getLabel(i18next.t("general:Application"), i18next.t("general:Application - Tooltip")) :
               Setting.getLabel(i18next.t("provider:Region ID"), i18next.t("provider:Region ID - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="col-span-10">
             <Input value={provider.regionId} onChange={e => {
               updateProviderField("regionId", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </div>
+        </div>
       ) : null}
       {["Custom HTTP"].includes(provider.type) ? (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("general:Method"), i18next.t("provider:Method - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={provider.method} onChange={value => {
+          </div>
+          <div className="col-span-12 md:col-span-10">
+            <Select value={provider.method} onValueChange={value => {
               updateProviderField("method", value);
             }}>
-              {
-                [
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[
                   {id: "GET", name: "GET"},
                   {id: "POST", name: "POST"},
-                ].map((method, index) => <Option key={index} value={method.id}>{method.name}</Option>)
-              }
+                ].map((method, index) => <SelectItem key={index} value={method.id}>{method.name}</SelectItem>)}
+              </SelectContent>
             </Select>
-          </Col>
-        </Row>
+          </div>
+        </div>
       ) : null}
       {["Custom HTTP", "CUCloud"].includes(provider.type) ? (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("provider:Parameter"), i18next.t("provider:Parameter - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="col-span-12 md:col-span-10">
             <Input value={provider.title} onChange={e => {
               updateProviderField("title", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </div>
+        </div>
       ) : null}
       {["Google Chat", "CUCloud"].includes(provider.type) ? (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="grid grid-cols-12 gap-4 items-start mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("provider:Metadata"), i18next.t("provider:Metadata - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <TextArea rows={4} value={provider.metadata} onChange={e => {
+          </div>
+          <div className="col-span-12 md:col-span-10">
+            <Textarea rows={4} value={provider.metadata} onChange={e => {
               updateProviderField("metadata", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </div>
+        </div>
       ) : null}
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+      <div className="grid grid-cols-12 gap-4 items-start mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Content"), i18next.t("provider:Content - Tooltip"))} :
-        </Col>
-        <Col span={22} >
-          <TextArea autoSize={{minRows: 3, maxRows: 100}} value={provider.content} onChange={e => {
+        </div>
+        <div className="col-span-12 md:col-span-10">
+          <Textarea rows={3} value={provider.content} onChange={e => {
             updateProviderField("content", e.target.value);
           }} />
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
         {getReceiverRow(provider)}
-        <Button style={{marginLeft: "10px", marginBottom: "5px"}} type="primary"
-          onClick={() => ProviderNotification.sendTestNotification(provider)} >
+        <Button
+          className="ml-2"
+          onClick={() => ProviderNotification.sendTestNotification(provider)}
+        >
           {i18next.t("provider:Send Testing Notification")}
         </Button>
-      </Row>
+      </div>
     </React.Fragment>
   );
 }
