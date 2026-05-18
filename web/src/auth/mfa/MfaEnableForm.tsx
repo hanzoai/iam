@@ -1,5 +1,6 @@
 // @ts-nocheck
-import {Button} from "antd";
+import {Loader2} from "lucide-react";
+import {Button} from "../../components/ui/button";
 import i18next from "i18next";
 import React, {useState} from "react";
 import * as MfaBackend from "../../backend/MfaBackend";
@@ -32,10 +33,11 @@ export function MfaEnableForm({user, mfaType, secret, recoveryCodes, dest, count
     <div style={{width: "400px"}}>
       <p>{i18next.t("mfa:Please save this recovery code. Once your device cannot provide an authentication code, you can reset mfa authentication by this recovery code")}</p>
       <br />
-      <code style={{fontStyle: "solid"}}>{recoveryCodes[0]}</code>
-      <Button style={{marginTop: 24}} loading={loading} onClick={() => {
+      <code className="not-italic">{recoveryCodes[0]}</code>
+      <Button className="mt-6 w-full" disabled={loading} onClick={() => {
         requestEnableMfa();
-      }} block type="primary">
+      }}>
+        {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
         {i18next.t("general:Enable")}
       </Button>
     </div>

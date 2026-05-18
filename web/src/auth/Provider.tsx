@@ -14,7 +14,7 @@
 
 // @ts-nocheck
 import React from "react";
-import {Tooltip} from "antd";
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "../components/ui/tooltip";
 import CryptoJS from "crypto-js";
 import * as Util from "./Util";
 import * as Setting from "../Setting";
@@ -418,17 +418,27 @@ export function getProviderLogoWidget(provider, options = {}) {
 
   if (url !== "" && !disableLink) {
     return (
-      <Tooltip title={provider.type}>
-        <a target="_blank" rel="noreferrer" href={getProviderUrl(provider)}>
-          {imgEl}
-        </a>
-      </Tooltip>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <a target="_blank" rel="noreferrer" href={getProviderUrl(provider)}>
+              {imgEl}
+            </a>
+          </TooltipTrigger>
+          <TooltipContent>{provider.type}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   } else {
     return (
-      <Tooltip title={provider.type}>
-        {imgEl}
-      </Tooltip>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>{imgEl}</span>
+          </TooltipTrigger>
+          <TooltipContent>{provider.type}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   }
 }
