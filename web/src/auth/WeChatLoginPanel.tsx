@@ -17,7 +17,8 @@ import React from "react";
 import * as AuthBackend from "./AuthBackend";
 import i18next from "i18next";
 import * as Util from "./Util";
-import {QRCode} from "antd";
+import {QRCodeSVG} from "qrcode.react";
+import {Spinner} from "../components/ui/spinner";
 
 class WeChatLoginPanel extends React.Component {
   constructor(props) {
@@ -81,11 +82,32 @@ class WeChatLoginPanel extends React.Component {
   render() {
     const {loginWidth = 320} = this.props;
     const {status, qrCode} = this.state;
+    const renderQR = () => {
+      if (status === "loading") {
+        return (
+          <div className="flex justify-center items-center" style={{width: 230, height: 230, margin: "20px auto"}}>
+            <Spinner size="lg" />
+          </div>
+        );
+      }
+      if (status === "expired" || !qrCode) {
+        return (
+          <div className="flex justify-center items-center text-muted-foreground" style={{width: 230, height: 230, margin: "20px auto"}}>
+            {i18next.t("login:Refresh")}
+          </div>
+        );
+      }
+      return (
+        <div className="mx-auto my-5 w-fit">
+          <QRCodeSVG value={qrCode ?? " "} size={230} />
+        </div>
+      );
+    };
     return (
-      <div style={{width: loginWidth, margin: "0 auto", textAlign: "center", marginTop: 16}}>
-        <div style={{marginTop: 2}}>
-          <QRCode style={{margin: "auto", marginTop: "20px", marginBottom: "20px"}} bordered={false} status={status} value={qrCode ?? " "} size={230} />
-          <div style={{marginTop: 8}}>
+      <div style={{width: loginWidth}} className="mx-auto text-center mt-4">
+        <div className="mt-0.5">
+          {renderQR()}
+          <div className="mt-2">
             <a onClick={e => {e.preventDefault(); this.fetchQrCode();}}>
               {i18next.t("login:Refresh")}
             </a>
