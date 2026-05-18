@@ -7,6 +7,13 @@
 #
 # Usage:
 #   docker compose up -d
+#   open http://localhost:8000
+#   sign in:  admin/root  ·  password: root  ·  OTP if prompted: 999999
+#
+# Defaults below give a working local-dev IAM out of the box. Override any
+# value via `.env` (cp .env.example .env). For production, change every
+# DEV-ONLY value and unset SANDBOX_GLOBAL_OTP — the origin guard refuses to
+# boot if it's set with a non-sandbox ORIGIN.
 #
 # Ports:
 #   8000 — HTTP (canonical /v1/iam/* surface)
@@ -17,7 +24,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/hanzoai/iam:1.14.28
+    image: ghcr.io/hanzoai/iam:${IAM_IMAGE_TAG:-1.14.28}
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -27,10 +34,33 @@ services:
       - IAM_DATA_DIR=/data/iam
       - IAM_LISTEN=:8000
       - IAM_ZAP_LISTEN=:9653
+
+      # Admin identity. Convention: app id is `<org>-<appname>` for any
+      # consumer app you register; the engine self-app stays `admin/iam`.
       - IAM_ADMIN_ORG=${IAM_ADMIN_ORG:-admin}
       - IAM_ADMIN_APP=${IAM_ADMIN_APP:-iam}
       - IAM_ADMIN_USER=${IAM_ADMIN_USER:-root}
-      - IAM_KMS_MASTER_KEY=${IAM_KMS_MASTER_KEY:-}
+      # Bootstrap admin password — Argon2id-hashed at first boot. DEV-ONLY.
+      - IAM_ADMIN_PASSWORD=${IAM_ADMIN_PASSWORD:-root}
+
+      # Anything other than production/prod/main/mainnet keeps
+      # IsProduction()=false, which enables sandbox OTP and the dev defaults.
+      - ENV=${ENV:-dev}
+
+      # Origin this IAM lives at. The sandbox guard checks this against the
+      # allowlist before letting SANDBOX_GLOBAL_OTP take effect.
+      - ORIGIN=${ORIGIN:-http://localhost:8000}
+      - SANDBOX_ORIGIN_ALLOWLIST=${SANDBOX_ORIGIN_ALLOWLIST:-}
+
+      # When set AND origin is on the sandbox allowlist, any OTP challenge
+      # accepts this exact code. Leave EMPTY in production manifests — the
+      # origin guard panics at boot if this is set with a non-sandbox ORIGIN.
+      - SANDBOX_GLOBAL_OTP=${SANDBOX_GLOBAL_OTP:-999999}
+
+      # Master key for per-org DEK derivation. KMS-sourced in prod.
+      - IAM_KMS_MASTER_KEY=${IAM_KMS_MASTER_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+
+      # WAL replication (optional — leave empty for local).
       - IAM_REPLICATE_BUCKET=${IAM_REPLICATE_BUCKET:-}
       - IAM_REPLICATE_AGE_RECIPIENT=${IAM_REPLICATE_AGE_RECIPIENT:-}
     volumes:
