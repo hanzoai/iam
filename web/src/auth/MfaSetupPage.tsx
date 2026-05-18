@@ -14,13 +14,16 @@
 
 // @ts-nocheck
 import React from "react";
-import {Button, Col, Result, Row, Spin, Steps} from "antd";
+import {Check, KeyRound, User} from "lucide-react";
+import {Button} from "../components/ui/button";
+import {ResultCard} from "../components/ui/result-card";
+import {Spinner} from "../components/ui/spinner";
+import {cn} from "../lib/utils";
 import {withRouter} from "react-router-dom";
 import * as ApplicationBackend from "../backend/ApplicationBackend";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as MfaBackend from "../backend/MfaBackend";
-import {CheckOutlined, KeyOutlined, UserOutlined} from "@ant-design/icons";
 import CheckPasswordForm from "./mfa/CheckPasswordForm";
 import MfaEnableForm from "./mfa/MfaEnableForm";
 import {MfaVerifyForm} from "./mfa/MfaVerifyForm";
@@ -112,7 +115,7 @@ class MfaSetupPage extends React.Component {
       if (this.state.mfaType === SmsMfaType) {
         return null;
       }
-      return (<Button type={"link"} onClick={() => {
+      return (<Button variant="link" onClick={() => {
         this.setState({
           mfaType: SmsMfaType,
         });
@@ -126,7 +129,7 @@ class MfaSetupPage extends React.Component {
       if (this.state.mfaType === EmailMfaType) {
         return null;
       }
-      return (<Button type={"link"} onClick={() => {
+      return (<Button variant="link" onClick={() => {
         this.setState({
           mfaType: EmailMfaType,
         });
@@ -140,7 +143,7 @@ class MfaSetupPage extends React.Component {
       if (this.state.mfaType === TotpMfaType) {
         return null;
       }
-      return (<Button type={"link"} onClick={() => {
+      return (<Button variant="link" onClick={() => {
         this.setState({
           mfaType: TotpMfaType,
         });
@@ -154,7 +157,7 @@ class MfaSetupPage extends React.Component {
       if (this.state.mfaType === RadiusMfaType) {
         return null;
       }
-      return (<Button type={"link"} onClick={() => {
+      return (<Button variant="link" onClick={() => {
         this.setState({
           mfaType: RadiusMfaType,
         });
@@ -168,7 +171,7 @@ class MfaSetupPage extends React.Component {
       if (this.state.mfaType === PushMfaType) {
         return null;
       }
-      return (<Button type={"link"} onClick={() => {
+      return (<Button variant="link" onClick={() => {
         this.setState({
           mfaType: PushMfaType,
         });
@@ -223,9 +226,9 @@ class MfaSetupPage extends React.Component {
               Setting.showMessage("error", i18next.t("general:Failed to verify") + ": " + res.msg);
             }}
           />
-          <Col span={24} style={{display: "flex", justifyContent: "left"}}>
+          <div className="w-full flex justify-start">
             {this.renderMfaTypeSwitch()}
-          </Col>
+          </div>
         </div>
       );
     case 2:
@@ -255,43 +258,69 @@ class MfaSetupPage extends React.Component {
   render() {
     if (!this.props.account) {
       return (
-        <Result
-          status="403"
+        <ResultCard
+          status="error"
           title="403 Unauthorized"
-          subTitle={i18next.t("general:Sorry, you do not have permission to access this page or logged in status invalid.")}
-          extra={<a href="/web/public"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>}
+          subtitle={i18next.t("general:Sorry, you do not have permission to access this page or logged in status invalid.")}
+          extra={<a href="/web/public"><Button>{i18next.t("general:Back Home")}</Button></a>}
         />
       );
     }
 
+    const steps = [
+      {title: i18next.t("mfa:Verify Password"), icon: <User className="w-4 h-4" />},
+      {title: i18next.t("mfa:Verify Code"), icon: <KeyRound className="w-4 h-4" />},
+      {title: i18next.t("general:Enable"), icon: <Check className="w-4 h-4" />},
+    ];
+    const current = this.state.current;
+
     return (
-      <Row>
-        <Col span={24} style={{justifyContent: "center"}}>
-          <Row>
-            <Col span={24}>
-              <p style={{textAlign: "center", fontSize: "28px"}}>
-                {i18next.t("mfa:Protect your account with Multi-factor authentication")}</p>
-              <p style={{textAlign: "center", fontSize: "16px", marginTop: "10px"}}>{i18next.t("mfa:Each time you sign in to your Account, you'll need your password and a authentication code")}</p>
-            </Col>
-          </Row>
-          <Spin spinning={this.state.loading}>
-            <Steps current={this.state.current}
-              items={[
-                {title: i18next.t("mfa:Verify Password"), icon: <UserOutlined />},
-                {title: i18next.t("mfa:Verify Code"), icon: <KeyOutlined />},
-                {title: i18next.t("general:Enable"), icon: <CheckOutlined />},
-              ]}
-              style={{width: "90%", maxWidth: "500px", margin: "auto", marginTop: "50px",
-              }} >
-            </Steps>
-          </Spin>
-        </Col>
-        <Col span={24} style={{display: "flex", justifyContent: "center"}}>
-          <div style={{marginTop: "10px", textAlign: "center"}}>
+      <div className="w-full">
+        <div className="w-full">
+          <p className="text-center text-[28px]">
+            {i18next.t("mfa:Protect your account with Multi-factor authentication")}
+          </p>
+          <p className="text-center text-base mt-2.5">
+            {i18next.t("mfa:Each time you sign in to your Account, you'll need your password and a authentication code")}
+          </p>
+          <div className={cn("relative w-[90%] max-w-[500px] mx-auto mt-12", this.state.loading && "opacity-60")}>
+            {this.state.loading && (
+              <div className="absolute inset-0 flex items-center justify-center z-10">
+                <Spinner />
+              </div>
+            )}
+            <ol className="flex items-center justify-between gap-2">
+              {steps.map((step, idx) => (
+                <React.Fragment key={idx}>
+                  <li className="flex items-center gap-2">
+                    <div className={cn(
+                      "w-8 h-8 rounded-full flex items-center justify-center border",
+                      idx < current ? "bg-foreground text-background border-foreground" :
+                        idx === current ? "border-foreground text-foreground" :
+                          "border-muted-foreground/30 text-muted-foreground"
+                    )}>
+                      {idx < current ? <Check className="w-4 h-4" /> : step.icon}
+                    </div>
+                    <span className={cn("text-sm hidden sm:inline",
+                      idx <= current ? "text-foreground" : "text-muted-foreground")}>
+                      {step.title}
+                    </span>
+                  </li>
+                  {idx < steps.length - 1 && (
+                    <div className={cn("flex-1 h-px",
+                      idx < current ? "bg-foreground" : "bg-muted-foreground/30")} />
+                  )}
+                </React.Fragment>
+              ))}
+            </ol>
+          </div>
+        </div>
+        <div className="w-full flex justify-center">
+          <div className="mt-2.5 text-center">
             {this.renderStep()}
           </div>
-        </Col>
-      </Row>
+        </div>
+      </div>
     );
   }
 }
