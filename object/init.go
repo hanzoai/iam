@@ -24,6 +24,17 @@ import (
 	"github.com/hanzoai/iam/util"
 )
 
+// bootstrapAdminPassword returns the plaintext to seed the admin user with.
+// Reads IAM_ADMIN_PASSWORD, falls back to the admin user name. The fallback
+// matches the historical default (password = "root") so existing deployments
+// don't change behavior; new ones get a one-env-var lever to override.
+func bootstrapAdminPassword() string {
+	if v := os.Getenv("IAM_ADMIN_PASSWORD"); v != "" {
+		return v
+	}
+	return conf.AdminUser
+}
+
 // InitDb is the bootstrap entrypoint: it seeds the admin org, the IAM
 // application, the bootstrap admin user, and the authz primitives (model,
 // adapter, enforcer, permission). All seeds are idempotent — if a row
@@ -160,7 +171,7 @@ func initAdminUser() {
 	user.CreatedTime = util.GetCurrentTime()
 	user.Id = util.GenerateId()
 	user.Type = "normal-user"
-	user.Password = conf.AdminUser
+	user.Password = bootstrapAdminPassword()
 	user.DisplayName = "Admin"
 	user.Email = conf.AdminUser + "@localhost"
 	user.CountryCode = "US"
