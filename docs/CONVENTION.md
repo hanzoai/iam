@@ -22,11 +22,25 @@ There is exactly one rule: **app slug = `<org>-<app>`**. If you're seeing
 `hanzo-foundation`, `zoo-foundation`, `app-computer`, fix them to match
 the rule.
 
-## 2. Environment variables (consumer-side)
+## 2. Three namespaces — `IAM_*`, `HANZO_*`, `IDV_*`
 
-Use **these names** and only these names. No `HANZO_` prefix, no
-`CASDOOR_`, no `*_ENDPOINT`, no `*_SERVER_URL`, no `VITE_*` (use
-`/config.json` instead, see §5).
+Different concerns get different prefixes. Knowing which is which prevents
+the historical mess where `HANZO_IAM_URL` / `HANZO_CLIENT_ID` /
+`IAM_ENDPOINT` all meant the same thing in different files.
+
+| Prefix | What it's for | Examples |
+|---|---|---|
+| `IAM_*` | The auth/OIDC engine (user identity, JWT issuance, session) | `IAM_URL`, `IAM_CLIENT_ID`, `IAM_CLIENT_SECRET`, `IAM_AUDIENCE`, `IAM_ORG`, `IAM_REDIRECT_URI` |
+| `HANZO_*` | Hanzo **product** API access at `api.hanzo.ai` / `llm.hanzo.ai` / `chat.hanzo.ai` etc — your developer credentials to *use* Hanzo as a paid service | `HANZO_API_KEY`, `HANZO_OAUTH_CLIENT_ID`, `HANZO_OAUTH_CLIENT_SECRET`, `HANZO_OAUTH_REDIRECT_URI` |
+| `IDV_*` | Identity-verification providers (Onyxplus biometric, future KYC vendors) | `IDV_URL`, `IDV_CLIENT_ID`, `IDV_CLIENT_SECRET` |
+| `CASDOOR_*` | **DEAD** — engine isn't Casdoor-branded anymore | (delete) |
+
+A bot that **authenticates users via Hanzo IAM** AND **calls api.hanzo.ai for
+LLM completions** uses BOTH namespaces. They don't merge. They live side
+by side, distinct.
+
+Use **only the canonical name in each namespace**. No aliases, no
+fallbacks, no acceptance-of-multiple-names code.
 
 | Variable | Purpose | Default for local-dev |
 |---|---|---|
@@ -40,21 +54,38 @@ Use **these names** and only these names. No `HANZO_` prefix, no
 
 ### Killed names (NEVER use, NEVER add)
 
+These names duplicated an `IAM_*` or `HANZO_*` concept under a wrong
+prefix. Pick the right namespace and use the canonical name:
+
 ```
-HANZO_IAM_URL          → IAM_URL
+HANZO_IAM_URL          → IAM_URL              (this is IAM auth, not Hanzo product API)
 HANZO_IAM_ENDPOINT     → IAM_URL
 HANZO_IAM_SERVER_URL   → IAM_URL
-HANZO_OAUTH_*          → IAM_OAUTH_*  (or IAM_CLIENT_*, IAM_REDIRECT_URI)
-HANZO_CLIENT_ID        → IAM_CLIENT_ID
-HANZO_CLIENT_SECRET    → IAM_CLIENT_SECRET
+HANZO_IAM_CLIENT_ID    → IAM_CLIENT_ID
+HANZO_IAM_CLIENT_SECRET→ IAM_CLIENT_SECRET
 IAM_ENDPOINT           → IAM_URL
 IAM_SERVER_URL         → IAM_URL
 IAM_KEYS_URL           → derived from IAM_URL + /v1/iam/.well-known/jwks
-CASDOOR_*              → IAM_*       (engine isn't Casdoor-branded anymore)
+CASDOOR_*              → IAM_*                (engine isn't Casdoor-branded anymore)
 NEXT_PUBLIC_CASDOOR_*  → SPA runtime /config.json (§5)
 VITE_IAM_URL           → SPA runtime /config.json (§5)
 VITE_IAM_CLIENT_ID     → SPA runtime /config.json (§5)
 ```
+
+**HANZO_OAUTH_*** is **NOT killed** — it's legitimate and lives in the
+`HANZO_*` namespace for consuming Hanzo product APIs (api.hanzo.ai etc).
+Rename to `IAM_*` only if the value is actually consumed by an
+@hanzo/iam SDK / /v1/iam/* route / JWKS validator. The give-away is
+where the value is consumed:
+
+- Used by `@hanzo/iam` SDK, points at an IAM instance, validates JWKS,
+  hits `/v1/iam/oauth/*`           →  IAM_*
+- Used by `@hanzo/api` (or raw fetch) against `https://api.hanzo.ai` /
+  `https://llm.hanzo.ai` for LLM/Chat/MCP                          →  HANZO_*
+- Used by a biometric / KYC IDV provider (Onyxplus etc)            →  IDV_*
+
+A single app can (and often does) carry env vars from all three
+namespaces. They don't merge.
 
 ## 3. Environment variables (server-side, IAM itself)
 
