@@ -14,7 +14,8 @@
 
 // @ts-nocheck
 import React from "react";
-import {Card, Spin} from "antd";
+import {Card, CardContent} from "../components/ui/card";
+import {Spinner} from "../components/ui/spinner";
 import {withRouter} from "react-router-dom";
 import * as AuthBackend from "./AuthBackend";
 import * as Setting from "../Setting";
@@ -76,11 +77,12 @@ class CasLogout extends React.Component {
   render() {
     return (
       <Card>
-        <div style={{display: "flex", justifyContent: "center", alignItems: "center"}}>
-          {
-            <Spin size="large" tip={i18next.t("login:Logging out...")} style={{paddingTop: "10%"}} />
-          }
-        </div>
+        <CardContent>
+          <div className="flex justify-center items-center flex-col gap-3 pt-[10%]">
+            <Spinner size="lg" />
+            <span className="text-sm text-muted-foreground">{i18next.t("login:Logging out...")}</span>
+          </div>
+        </CardContent>
       </Card>
     );
   }
