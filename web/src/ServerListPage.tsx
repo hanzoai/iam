@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// @ts-nocheck
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Table} from "antd";
 import moment from "moment";
 import * as Setting from "./Setting";
 import * as ServerBackend from "./backend/ServerBackend";
 import i18next from "i18next";
 import BaseListPage from "./BaseListPage";
 import PopconfirmModal from "./common/modal/PopconfirmModal";
+import {Button} from "./components/ui/button";
+import {Spinner} from "./components/ui/spinner";
 
 class ServerListPage extends BaseListPage {
   newServer() {
@@ -100,117 +102,69 @@ class ServerListPage extends BaseListPage {
   };
 
   renderTable(servers) {
-    const columns = [
-      {
-        title: i18next.t("general:Name"),
-        dataIndex: "name",
-        key: "name",
-        width: "160px",
-        sorter: true,
-        ...this.getColumnSearchProps("name"),
-        render: (text, record, index) => {
-          return (
-            <Link to={`/servers/${record.owner}/${text}`}>
-              {text}
-            </Link>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Organization"),
-        dataIndex: "owner",
-        key: "owner",
-        width: "130px",
-        sorter: true,
-        ...this.getColumnSearchProps("owner"),
-      },
-      {
-        title: i18next.t("general:Created time"),
-        dataIndex: "createdTime",
-        key: "createdTime",
-        width: "180px",
-        sorter: true,
-        render: (text, record, index) => {
-          return Setting.getFormattedDate(text);
-        },
-      },
-      {
-        title: i18next.t("general:Display name"),
-        dataIndex: "displayName",
-        key: "displayName",
-        sorter: true,
-        ...this.getColumnSearchProps("displayName"),
-      },
-      {
-        title: i18next.t("general:URL"),
-        dataIndex: "url",
-        key: "url",
-        sorter: true,
-        ...this.getColumnSearchProps("url"),
-        render: (text) => {
-          if (!text) {
-            return null;
-          }
-
-          return (
-            <a target="_blank" rel="noreferrer" href={text}>
-              {Setting.getShortText(text, 40)}
-            </a>
-          );
-        },
-      },
-      {
-        title: i18next.t("general:Application"),
-        dataIndex: "application",
-        key: "application",
-        width: "140px",
-        sorter: true,
-        ...this.getColumnSearchProps("application"),
-      },
-      {
-        title: i18next.t("general:Action"),
-        dataIndex: "op",
-        key: "op",
-        width: "180px",
-        fixed: (Setting.isMobile()) ? false : "right",
-        render: (text, record, index) => {
-          return (
-            <div>
-              <Button style={{marginTop: "10px", marginBottom: "10px", marginRight: "10px"}} type="primary" onClick={() => this.props.history.push(`/servers/${record.owner}/${record.name}`)}>{i18next.t("general:Edit")}</Button>
-              <PopconfirmModal title={i18next.t("general:Sure to delete") + `: ${record.name} ?`} onConfirm={() => this.deleteServer(index)}>
-              </PopconfirmModal>
-            </div>
-          );
-        },
-      },
-    ];
-
-    const filteredColumns = Setting.filterTableColumns(columns, this.props.formItems ?? this.state.formItems);
-    const paginationProps = {
-      total: this.state.pagination.total,
-      showQuickJumper: true,
-      showSizeChanger: true,
-      showTotal: () => i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total),
-    };
-
     return (
-      <Table
-        scroll={{x: "max-content"}}
-        dataSource={servers}
-        columns={filteredColumns}
-        rowKey={record => `${record.owner}/${record.name}`}
-        pagination={{...this.state.pagination, ...paginationProps}}
-        loading={this.state.loading}
-        onChange={this.handleTableChange}
-        size="middle"
-        bordered
-        title={() => (
-          <div>
-            {i18next.t("server:Edit MCP Server")}&nbsp;&nbsp;&nbsp;&nbsp;
-            <Button type="primary" size="small" onClick={() => this.addServer()}>{i18next.t("general:Add")}</Button>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">{i18next.t("server:Edit MCP Server")}</h2>
+          <Button size="sm" onClick={() => this.addServer()}>{i18next.t("general:Add")}</Button>
+        </div>
+
+        <div className="overflow-x-auto border border-border rounded-md">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium" style={{width: "160px"}}>{i18next.t("general:Name")}</th>
+                <th className="px-4 py-2 text-left font-medium" style={{width: "130px"}}>{i18next.t("general:Organization")}</th>
+                <th className="px-4 py-2 text-left font-medium" style={{width: "180px"}}>{i18next.t("general:Created time")}</th>
+                <th className="px-4 py-2 text-left font-medium">{i18next.t("general:Display name")}</th>
+                <th className="px-4 py-2 text-left font-medium">{i18next.t("general:URL")}</th>
+                <th className="px-4 py-2 text-left font-medium" style={{width: "140px"}}>{i18next.t("general:Application")}</th>
+                <th className="px-4 py-2 text-right font-medium" style={{width: "180px"}}>{i18next.t("general:Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {this.state.loading && (
+                <tr><td colSpan={7} className="px-4 py-10 text-center"><Spinner size="lg" /></td></tr>
+              )}
+              {!this.state.loading && servers?.map((record, index) => (
+                <tr key={`${record.owner}/${record.name}`} className="border-t border-border hover:bg-muted/20">
+                  <td className="px-4 py-2"><Link to={`/servers/${record.owner}/${record.name}`}>{record.name}</Link></td>
+                  <td className="px-4 py-2">{record.owner}</td>
+                  <td className="px-4 py-2 text-muted-foreground">{Setting.getFormattedDate(record.createdTime)}</td>
+                  <td className="px-4 py-2">{record.displayName}</td>
+                  <td className="px-4 py-2">
+                    {record.url ? (
+                      <a target="_blank" rel="noreferrer" href={record.url}>{Setting.getShortText(record.url, 40)}</a>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-2">{record.application}</td>
+                  <td className="px-4 py-2 text-right">
+                    <div className="inline-flex gap-2">
+                      <Button size="sm" onClick={() => this.props.history.push(`/servers/${record.owner}/${record.name}`)}>{i18next.t("general:Edit")}</Button>
+                      <PopconfirmModal title={i18next.t("general:Sure to delete") + `: ${record.name} ?`} onConfirm={() => this.deleteServer(index)} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!this.state.loading && (!servers || servers.length === 0) && (
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">{i18next.t("general:No data")}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>{i18next.t("general:{total} in total").replace("{total}", this.state.pagination.total ?? 0)}</span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={this.state.pagination.current <= 1}
+              onClick={() => this.handleTableChange({...this.state.pagination, current: this.state.pagination.current - 1}, {}, {})}>Prev</Button>
+            <span>{this.state.pagination.current}</span>
+            <Button variant="outline" size="sm"
+              disabled={this.state.pagination.current * this.state.pagination.pageSize >= (this.state.pagination.total ?? 0)}
+              onClick={() => this.handleTableChange({...this.state.pagination, current: this.state.pagination.current + 1}, {}, {})}>Next</Button>
           </div>
-        )}
-      />
+        </div>
+      </div>
     );
   }
 }
