@@ -14,59 +14,67 @@
 
 // @ts-nocheck
 import React from "react";
-import {Col, Input, Row, Select} from "antd";
+import {Link} from "lucide-react";
+import {Input} from "../components/ui/input";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "../components/ui/select";
 import * as Setting from "../Setting";
 import i18next from "i18next";
-import {LinkOutlined} from "@ant-design/icons";
-
-const {Option} = Select;
 
 export function renderPaymentProviderFields(provider, updateProviderField, certs) {
   return (
     <React.Fragment>
       {
         (provider.type === "Alipay" || provider.type === "WeChat Pay" || provider.type === "Hanzo IAM") ? (
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          <div className="grid grid-cols-12 gap-4 items-center mt-5">
+            <div className="col-span-12 md:col-span-2 mt-1">
               {Setting.getLabel(i18next.t("general:Cert"), i18next.t("general:Cert - Tooltip"))} :
-            </Col>
-            <Col span={22} >
-              <Select virtual={false} style={{width: "100%"}} value={provider.cert} onChange={(value => {updateProviderField("cert", value);})}>
-                {
-                  certs.map((cert, index) => <Option key={index} value={cert.name}>{cert.name}</Option>)
-                }
+            </div>
+            <div className="col-span-12 md:col-span-10">
+              <Select value={provider.cert} onValueChange={(value) => {updateProviderField("cert", value);}}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {certs.map((cert, index) => <SelectItem key={index} value={cert.name}>{cert.name}</SelectItem>)}
+                </SelectContent>
               </Select>
-            </Col>
-          </Row>
+            </div>
+          </div>
         ) : null
       }
       {
         (provider.type === "Alipay") ? (
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          <div className="grid grid-cols-12 gap-4 items-center mt-5">
+            <div className="col-span-12 md:col-span-2 mt-1">
               {Setting.getLabel(i18next.t("general:Root cert"), i18next.t("general:Root cert - Tooltip"))} :
-            </Col>
-            <Col span={22} >
-              <Select virtual={false} style={{width: "100%"}} value={provider.metadata} onChange={(value => {updateProviderField("metadata", value);})}>
-                {
-                  certs.map((cert, index) => <Option key={index} value={cert.name}>{cert.name}</Option>)
-                }
+            </div>
+            <div className="col-span-12 md:col-span-10">
+              <Select value={provider.metadata} onValueChange={(value) => {updateProviderField("metadata", value);}}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {certs.map((cert, index) => <SelectItem key={index} value={cert.name}>{cert.name}</SelectItem>)}
+                </SelectContent>
               </Select>
-            </Col>
-          </Row>
+            </div>
+          </div>
         ) : null
       }
       {(provider.type === "GC" || provider.type === "FastSpring") ? (
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("provider:Host"), i18next.t("provider:Host - Tooltip"))} :
-          </Col>
-          <Col span={22}>
-            <Input prefix={<LinkOutlined />} value={provider.host} onChange={e => {
-              updateProviderField("host", e.target.value);
-            }} />
-          </Col>
-        </Row>
+          </div>
+          <div className="col-span-12 md:col-span-10">
+            <div className="relative">
+              <Link className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input className="pl-9" value={provider.host} onChange={e => {
+                updateProviderField("host", e.target.value);
+              }} />
+            </div>
+          </div>
+        </div>
       ) : null}
     </React.Fragment>
   );
