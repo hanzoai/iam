@@ -14,18 +14,17 @@
 
 // @ts-nocheck
 import React from "react";
-import {Col, Row} from "antd";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import {CaptchaPreview} from "../common/CaptchaPreview";
 
 export function renderCaptchaProviderFields(provider, providerName) {
   return (
-    <Row style={{marginTop: "20px"}} >
-      <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+    <div className="grid grid-cols-12 gap-4 items-start mt-5">
+      <div className="col-span-12 md:col-span-2 mt-1">
         {Setting.getLabel(i18next.t("general:Preview"), i18next.t("general:Preview - Tooltip"))} :
-      </Col>
-      <Col span={22} >
+      </div>
+      <div className="col-span-12 md:col-span-10">
         <CaptchaPreview
           owner={provider.owner}
           name={provider.name}
@@ -39,7 +38,7 @@ export function renderCaptchaProviderFields(provider, providerName) {
           clientSecret2={provider.clientSecret2}
           providerUrl={provider.providerUrl}
         />
-      </Col>
-    </Row>
+      </div>
+    </div>
   );
 }

@@ -14,15 +14,16 @@
 
 // @ts-nocheck
 import React from "react";
-import {Button, Col, Input, Row, Select, Switch} from "antd";
+import {Link} from "lucide-react";
+import {Button} from "../components/ui/button";
+import {Input} from "../components/ui/input";
+import {Switch} from "../components/ui/switch";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "../components/ui/select";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as ProviderEditTestSms from "../common/TestSmsWidget";
 import {CountryCodeSelect} from "../common/select/CountryCodeSelect";
 import HttpHeaderTable from "../table/HttpHeaderTable";
-import {LinkOutlined} from "@ant-design/icons";
-
-const {Option} = Select;
 
 const SMS_PROVIDERS_WITHOUT_SIGN_NAME = ["Custom HTTP SMS", "Twilio SMS", "Amazon SNS", "Msg91 SMS", "Infobip SMS"];
 const SMS_PROVIDERS_WITHOUT_TEMPLATE_CODE = ["Infobip SMS", "Custom HTTP SMS"];
@@ -32,128 +33,144 @@ export function renderSmsProviderFields(provider, updateProviderField, renderSms
     <React.Fragment>
       {SMS_PROVIDERS_WITHOUT_SIGN_NAME.includes(provider.type) ?
         null :
-        (<Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        (<div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("provider:Sign Name"), i18next.t("provider:Sign Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="col-span-12 md:col-span-10">
             <Input value={provider.signName} onChange={e => {
               updateProviderField("signName", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </div>
+        </div>
         )
       }
       {SMS_PROVIDERS_WITHOUT_TEMPLATE_CODE.includes(provider.type) ?
         null :
-        (<Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        (<div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("provider:Template code"), i18next.t("provider:Template code - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="col-span-12 md:col-span-10">
             <Input value={provider.templateCode} onChange={e => {
               updateProviderField("templateCode", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </div>
+        </div>
         )
       }
       {
         provider.type === "Custom HTTP SMS" ? (
           <React.Fragment>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={2}>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-2 mt-1">
                 {Setting.getLabel(i18next.t("provider:Endpoint"), i18next.t("provider:Region endpoint for Internet"))} :
-              </Col>
-              <Col span={22} >
-                <Input prefix={<LinkOutlined />} value={provider.endpoint} onChange={e => {
-                  updateProviderField("endpoint", e.target.value);
-                }} />
-              </Col>
-            </Row>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              </div>
+              <div className="col-span-10">
+                <div className="relative">
+                  <Link className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input className="pl-9" value={provider.endpoint} onChange={e => {
+                    updateProviderField("endpoint", e.target.value);
+                  }} />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
                 {Setting.getLabel(i18next.t("general:Method"), i18next.t("provider:Method - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <Select virtual={false} style={{width: "100%"}} value={provider.method} onChange={value => {
+              </div>
+              <div className="col-span-12 md:col-span-10">
+                <Select value={provider.method} onValueChange={value => {
                   updateProviderField("method", value);
                 }}>
-                  {
-                    [
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
                       {id: "GET", name: "GET"},
                       {id: "POST", name: "POST"},
                       {id: "PUT", name: "PUT"},
                       {id: "DELETE", name: "DELETE"},
-                    ].map((method, index) => <Option key={index} value={method.id}>{method.name}</Option>)
-                  }
+                    ].map((method, index) => <SelectItem key={index} value={method.id}>{method.name}</SelectItem>)}
+                  </SelectContent>
                 </Select>
-              </Col>
-            </Row>
+              </div>
+            </div>
             {
-              provider.method !== "GET" ? (<Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("webhook:Content type"), i18next.t("webhook:Content type - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Select virtual={false} style={{width: "100%"}} value={provider.issuerUrl === "" ? "application/x-www-form-urlencoded" : provider.issuerUrl} onChange={value => {
-                    updateProviderField("issuerUrl", value);
-                  }}>
-                    {
-                      [
-                        {id: "application/json", name: "application/json"},
-                        {id: "application/x-www-form-urlencoded", name: "application/x-www-form-urlencoded"},
-                      ].map((method, index) => <Option key={index} value={method.id}>{method.name}</Option>)
-                    }
-                  </Select>
-                </Col>
-              </Row>) : null
+              provider.method !== "GET" ? (
+                <div className="grid grid-cols-12 gap-4 items-center mt-5">
+                  <div className="col-span-12 md:col-span-2 mt-1">
+                    {Setting.getLabel(i18next.t("webhook:Content type"), i18next.t("webhook:Content type - Tooltip"))} :
+                  </div>
+                  <div className="col-span-12 md:col-span-10">
+                    <Select
+                      value={provider.issuerUrl === "" ? "application/x-www-form-urlencoded" : provider.issuerUrl}
+                      onValueChange={value => {
+                        updateProviderField("issuerUrl", value);
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[
+                          {id: "application/json", name: "application/json"},
+                          {id: "application/x-www-form-urlencoded", name: "application/x-www-form-urlencoded"},
+                        ].map((method, index) => <SelectItem key={index} value={method.id}>{method.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ) : null
             }
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="grid grid-cols-12 gap-4 items-start mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
                 {Setting.getLabel(i18next.t("provider:HTTP header"), i18next.t("provider:HTTP header - Tooltip"))} :
-              </Col>
-              <Col span={22} >
+              </div>
+              <div className="col-span-12 md:col-span-10">
                 <HttpHeaderTable httpHeaders={provider.httpHeaders} onUpdateTable={(value) => {updateProviderField("httpHeaders", value);}} />
-              </Col>
-            </Row>
-            {provider.method !== "GET" ? <Row style={{marginTop: "20px"}}>
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                {Setting.getLabel(i18next.t("provider:HTTP body mapping"), i18next.t("provider:HTTP body mapping - Tooltip"))} :
-              </Col>
-              <Col span={22}>
-                {renderSmsMappingInput()}
-              </Col>
-            </Row> : null}
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              </div>
+            </div>
+            {provider.method !== "GET" ? (
+              <div className="grid grid-cols-12 gap-4 items-start mt-5">
+                <div className="col-span-12 md:col-span-2 mt-1">
+                  {Setting.getLabel(i18next.t("provider:HTTP body mapping"), i18next.t("provider:HTTP body mapping - Tooltip"))} :
+                </div>
+                <div className="col-span-12 md:col-span-10">
+                  {renderSmsMappingInput()}
+                </div>
+              </div>
+            ) : null}
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
                 {Setting.getLabel(i18next.t("provider:Parameter"), i18next.t("provider:Parameter - Tooltip"))} :
-              </Col>
-              <Col span={22} >
+              </div>
+              <div className="col-span-12 md:col-span-10">
                 <Input value={provider.title} onChange={e => {
                   updateProviderField("title", e.target.value);
                 }} />
-              </Col>
-            </Row>
+              </div>
+            </div>
           </React.Fragment>
         ) : null
       }
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Enable proxy"), i18next.t("provider:Enable proxy - Tooltip"))} :
-        </Col>
-        <Col span={1} >
-          <Switch checked={provider.enableProxy} onChange={checked => {
+        </div>
+        <div className="col-span-12 md:col-span-10">
+          <Switch checked={provider.enableProxy} onCheckedChange={checked => {
             updateProviderField("enableProxy", checked);
           }} />
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:SMS Test"), i18next.t("provider:SMS Test - Tooltip"))} :
-        </Col>
-        <Col span={4} >
-          <Input.Group compact>
+        </div>
+        <div className="col-span-12 md:col-span-10">
+          <div className="flex gap-2 items-center">
             <CountryCodeSelect
               style={{width: "90px"}}
               initValue={provider.content}
@@ -162,22 +179,24 @@ export function renderSmsProviderFields(provider, updateProviderField, renderSms
               }}
               countryCodes={account.organization.countryCodes}
             />
-            <Input value={provider.receiver}
-              style={{width: "150px"}}
-              placeholder = {i18next.t("user:Input your phone number")}
+            <Input
+              value={provider.receiver}
+              className="w-40"
+              placeholder={i18next.t("user:Input your phone number")}
               onChange={e => {
                 updateProviderField("receiver", e.target.value);
-              }} />
-          </Input.Group>
-        </Col>
-        <Col span={2} >
-          <Button style={{marginLeft: "10px", marginBottom: "5px"}} type="primary"
-            disabled={!Setting.isValidPhone(provider.receiver) || (provider.type === "Custom HTTP SMS" && provider.endpoint === "")}
-            onClick={() => ProviderEditTestSms.sendTestSms(provider, "+" + Setting.getCountryCode(provider.content) + provider.receiver)} >
-            {i18next.t("provider:Send Testing SMS")}
-          </Button>
-        </Col>
-      </Row>
+              }}
+            />
+            <Button
+              className="ml-2"
+              disabled={!Setting.isValidPhone(provider.receiver) || (provider.type === "Custom HTTP SMS" && provider.endpoint === "")}
+              onClick={() => ProviderEditTestSms.sendTestSms(provider, "+" + Setting.getCountryCode(provider.content) + provider.receiver)}
+            >
+              {i18next.t("provider:Send Testing SMS")}
+            </Button>
+          </div>
+        </div>
+      </div>
     </React.Fragment>
   );
 }
