@@ -14,10 +14,14 @@
 
 // @ts-nocheck
 import React from "react";
-import {Tooltip} from "antd";
-import {QuestionCircleOutlined} from "@ant-design/icons";
+import {HelpCircle} from "lucide-react";
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "../components/ui/tooltip";
 import * as TourConfig from "../TourConfig";
 import * as Setting from "../Setting";
+
+// TODO(rip-antd): Tour walkthrough disabled — needs driver.js or similar.
+// The icon + tooltip remain so the slot in the UI is preserved; clicking
+// it currently flips TourConfig state but nothing renders the overlay.
 
 class OpenTour extends React.Component {
   constructor(props) {
@@ -33,17 +37,34 @@ class OpenTour extends React.Component {
   };
 
   render() {
+    const hidden = Setting.isMobile();
+
+    if (this.canTour()) {
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className="select-box"
+                style={{display: hidden ? "none" : undefined, ...this.props.style}}
+                onClick={() => TourConfig.setIsTourVisible(true)}
+              >
+                <HelpCircle style={{width: 24, height: 24}} />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>Click to open tour</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+
     return (
-      this.canTour() ?
-        <Tooltip title="Click to open tour">
-          <div className="select-box" style={{display: Setting.isMobile() ? "none" : null, ...this.props.style}} onClick={() => TourConfig.setIsTourVisible(true)} >
-            <QuestionCircleOutlined style={{fontSize: "24px"}} />
-          </div>
-        </Tooltip>
-        :
-        <div className="select-box" style={{display: Setting.isMobile() ? "none" : null, cursor: "not-allowed", ...this.props.style}} >
-          <QuestionCircleOutlined style={{fontSize: "24px", color: "#adadad"}} />
-        </div>
+      <div
+        className="select-box"
+        style={{display: hidden ? "none" : undefined, cursor: "not-allowed", ...this.props.style}}
+      >
+        <HelpCircle style={{width: 24, height: 24, color: "#adadad"}} />
+      </div>
     );
   }
 }
