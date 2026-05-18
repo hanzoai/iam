@@ -14,8 +14,11 @@
 
 // @ts-nocheck
 import React from "react";
-import {Alert, Button, QRCode} from "antd";
+import {QRCodeSVG} from "qrcode.react";
+import {AlertCircle} from "lucide-react";
 import copy from "copy-to-clipboard";
+import {Alert, AlertDescription} from "../components/ui/alert";
+import {Button} from "../components/ui/button";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
@@ -42,16 +45,31 @@ export const IamAppQrCode = ({accessToken, icon}) => {
   const {qrUrl, error} = generateIamAppUrl(accessToken, true);
 
   if (error) {
-    return <Alert message={error} type="error" showIcon />;
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    );
   }
 
+  // TODO(rip-antd): antd <QRCode> supported an `icon` prop that embedded an
+  // image in the middle. qrcode.react needs `imageSettings={{src, width, height, excavate}}`
+  // — if a caller actually passes an icon URL we wire it through; otherwise it's plain.
+  const imageSettings = typeof icon === "string" ? {
+    src: icon,
+    height: 40,
+    width: 40,
+    excavate: true,
+  } : undefined;
+
   return (
-    <QRCode
+    <QRCodeSVG
       value={qrUrl}
-      icon={icon}
-      errorLevel="M"
+      level="M"
       size={230}
-      bordered={false}
+      includeMargin={false}
+      imageSettings={imageSettings}
     />
   );
 };
@@ -69,7 +87,12 @@ export const IamAppUrl = ({accessToken}) => {
   };
 
   if (error) {
-    return <Alert message={error} type="error" showIcon />;
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    );
   }
 
   return (
@@ -81,7 +104,7 @@ export const IamAppUrl = ({accessToken}) => {
         marginBottom: "10px",
       }}>
         {window.isSecureContext && (
-          <Button size="small" type="primary" onClick={handleCopyUrl} style={{marginLeft: "10px"}}>
+          <Button size="sm" onClick={handleCopyUrl} style={{marginLeft: "10px"}}>
             {i18next.t("resource:Copy Link")}
           </Button>
         )}
