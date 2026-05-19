@@ -172,7 +172,8 @@ function DataTable<TData, TValue>({
   )
 }
 
-export { DataTable, DataTableProps }
+export { DataTable }
+export type { DataTableProps }
 
 /** Helper to create a sortable column header. */
 export function DataTableColumnHeader<TData>({
