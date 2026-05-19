@@ -138,6 +138,16 @@ Additional domains can be configured per organization. Each domain gets its own 
 
 Full documentation is available at [docs.hanzo.ai](https://docs.hanzo.ai).
 
+Operator quick-links:
+
+- [`docs/CLI.md`](docs/CLI.md) — `iam` administrative CLI reference (apps, redirect URIs, users, orgs, tokens)
+- [`docs/SDK.md`](docs/SDK.md) — `@hanzo/sdk/iam` TypeScript client reference
+- [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md) — running IAM locally
+- [`docs/CONVENTION.md`](docs/CONVENTION.md) — on-the-wire conventions
+
+The CLI, TS SDK, and Liquidity's [`liquid iam`](https://github.com//cli)
+wrapper all call the same REST surface; pick the layer that fits your tool.
+
 ## License
 
 [Apache-2.0](https://github.com/hanzoai/iam/blob/master/LICENSE) — historical attribution and third-party notices in [NOTICE](./NOTICE).
