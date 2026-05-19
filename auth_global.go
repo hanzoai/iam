@@ -1,4 +1,4 @@
-// Copyright 2021 The Hanzo Authors. All Rights Reserved.
+// Copyright 2023 The Hanzo Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Root main.go — thin wrapper for backward compat.
-// Canonical entrypoint is cmd/iamd/main.go.
-package main
+package iam
 
-import "github.com/hanzoai/iam/iamserver"
+import "golang.org/x/oauth2"
 
-func main() {
-	iamserver.Run()
+func GetOAuthToken(code string, state string, opts ...OAuthOption) (*oauth2.Token, error) {
+	return globalClient.GetOAuthToken(code, state, opts...)
+}
+
+func RefreshOAuthToken(refreshToken string, opts ...OAuthOption) (*oauth2.Token, error) {
+	return globalClient.RefreshOAuthToken(refreshToken, opts...)
 }
