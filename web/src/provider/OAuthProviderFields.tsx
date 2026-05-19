@@ -14,12 +14,14 @@
 
 // @ts-nocheck
 import React from "react";
-import {Col, Input, Radio, Row, Switch} from "antd";
-import {LinkOutlined} from "@ant-design/icons";
+import {Link} from "lucide-react";
+import {Input} from "../components/ui/input";
+import {Switch} from "../components/ui/switch";
+import {Textarea} from "../components/ui/textarea";
+import {Button} from "../components/ui/button";
+import {cn} from "../lib/utils";
 import * as Setting from "../Setting";
 import i18next from "i18next";
-
-const {TextArea} = Input;
 
 export function renderOAuthProviderFields(provider, updateProviderField, renderUserMappingInput) {
   const getDomainLabel = provider => {
@@ -37,55 +39,75 @@ export function renderOAuthProviderFields(provider, updateProviderField, renderU
 
   return (
     <React.Fragment>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+      <div className="grid grid-cols-12 gap-4 items-start mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Email regex"), i18next.t("provider:Email regex - Tooltip"))} :
-        </Col>
-        <Col span={22}>
-          <TextArea rows={4} value={provider.emailRegex} onChange={e => {
+        </div>
+        <div className="col-span-12 md:col-span-10">
+          <Textarea rows={4} value={provider.emailRegex} onChange={e => {
             updateProviderField("emailRegex", e.target.value);
           }} />
-        </Col>
-      </Row>
+        </div>
+      </div>
       {
         provider.type !== "WeChat" ? null : (
           <React.Fragment>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
                 {Setting.getLabel(i18next.t("provider:Use WeChat Media Platform in PC"), i18next.t("provider:Use WeChat Media Platform in PC - Tooltip"))} :
-              </Col>
-              <Col span={1} >
-                <Switch disabled={!provider.clientId} checked={provider.disableSsl} onChange={checked => {
-                  updateProviderField("disableSsl", checked);
-                }} />
-              </Col>
-            </Row>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              </div>
+              <div className="col-span-12 md:col-span-10">
+                <Switch
+                  disabled={!provider.clientId}
+                  checked={provider.disableSsl}
+                  onCheckedChange={checked => {
+                    updateProviderField("disableSsl", checked);
+                  }}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
                 {Setting.getLabel(i18next.t("token:Access token"), i18next.t("token:Access token - Tooltip"))} :
-              </Col>
-              <Col span={22} >
+              </div>
+              <div className="col-span-12 md:col-span-10">
                 <Input value={provider.content} disabled={!provider.disableSsl || !provider.clientId2} onChange={e => {
                   updateProviderField("content", e.target.value);
                 }} />
-              </Col>
-            </Row>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              </div>
+            </div>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
                 {Setting.getLabel(i18next.t("provider:Follow-up action"), i18next.t("provider:Follow-up action - Tooltip"))} :
-              </Col>
-              <Col>
-                <Radio.Group value={provider.signName}
-                  disabled={!provider.disableSsl || !provider.clientId || !provider.clientId2}
-                  buttonStyle="solid"
-                  onChange={e => {
-                    updateProviderField("signName", e.target.value);
-                  }}>
-                  <Radio.Button value="open">{i18next.t("provider:Use WeChat Open Platform to login")}</Radio.Button>
-                  <Radio.Button value="media">{i18next.t("provider:Use WeChat Media Platform to login")}</Radio.Button>
-                </Radio.Group>
-              </Col>
-            </Row>
+              </div>
+              <div className="col-span-12 md:col-span-10">
+                <div className="inline-flex rounded-md border border-input bg-background">
+                  {[
+                    {value: "open", label: i18next.t("provider:Use WeChat Open Platform to login")},
+                    {value: "media", label: i18next.t("provider:Use WeChat Media Platform to login")},
+                  ].map((opt, i, arr) => {
+                    const selected = provider.signName === opt.value;
+                    const disabled = !provider.disableSsl || !provider.clientId || !provider.clientId2;
+                    return (
+                      <Button
+                        key={opt.value}
+                        type="button"
+                        variant={selected ? "default" : "ghost"}
+                        disabled={disabled}
+                        className={cn(
+                          "rounded-none",
+                          i === 0 ? "rounded-l-md" : "",
+                          i === arr.length - 1 ? "rounded-r-md" : "border-l border-input"
+                        )}
+                        onClick={() => updateProviderField("signName", opt.value)}
+                      >
+                        {opt.label}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </React.Fragment>
         )
       }
@@ -93,124 +115,128 @@ export function renderOAuthProviderFields(provider, updateProviderField, renderU
         provider.type !== "ADFS" && provider.type !== "AzureAD"
         && provider.type !== "AzureADB2C" && (provider.type !== "Hanzo IAM" && provider.category !== "Storage")
         && provider.type !== "Okta" && provider.type !== "Nextcloud" ? null : (
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={2}>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-2 mt-1">
                 {getDomainLabel(provider)} :
-              </Col>
-              <Col span={22} >
-                <Input prefix={<LinkOutlined />} value={provider.domain} onChange={e => {
-                  updateProviderField("domain", e.target.value);
-                }} />
-              </Col>
-            </Row>
+              </div>
+              <div className="col-span-10">
+                <div className="relative">
+                  <Link className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input className="pl-9" value={provider.domain} onChange={e => {
+                    updateProviderField("domain", e.target.value);
+                  }} />
+                </div>
+              </div>
+            </div>
           )
       }
       {
         provider.type !== "Google" && provider.type !== "Lark" ? null : (
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          <div className="grid grid-cols-12 gap-4 items-center mt-5">
+            <div className="col-span-12 md:col-span-2 mt-1">
               {provider.type === "Google" ?
                 Setting.getLabel(i18next.t("provider:Get phone number"), i18next.t("provider:Get phone number - Tooltip"))
                 : Setting.getLabel(i18next.t("provider:Use global endpoint"), i18next.t("provider:Use global endpoint - Tooltip"))} :
-            </Col>
-            <Col span={1} >
-              <Switch disabled={!provider.clientId} checked={provider.disableSsl} onChange={checked => {
+            </div>
+            <div className="col-span-12 md:col-span-10">
+              <Switch disabled={!provider.clientId} checked={provider.disableSsl} onCheckedChange={checked => {
                 updateProviderField("disableSsl", checked);
               }} />
-            </Col>
-          </Row>
+            </div>
+          </div>
         )
       }
       {
         provider.type.startsWith("Custom") ? (
           <React.Fragment>
-            <Col>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("provider:Auth URL"), i18next.t("provider:Auth URL - Tooltip"))}
-                </Col>
-                <Col span={22} >
-                  <Input value={provider.customAuthUrl} onChange={e => {
-                    updateProviderField("customAuthUrl", e.target.value);
-                  }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("provider:Token URL"), i18next.t("provider:Token URL - Tooltip"))}
-                </Col>
-                <Col span={22} >
-                  <Input value={provider.customTokenUrl} onChange={e => {
-                    updateProviderField("customTokenUrl", e.target.value);
-                  }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("provider:Scope"), i18next.t("provider:Scope - Tooltip"))}
-                </Col>
-                <Col span={22} >
-                  <Input value={provider.scopes} onChange={e => {
-                    updateProviderField("scopes", e.target.value);
-                  }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("provider:UserInfo URL"), i18next.t("provider:UserInfo URL - Tooltip"))}
-                </Col>
-                <Col span={22} >
-                  <Input value={provider.customUserInfoUrl} onChange={e => {
-                    updateProviderField("customUserInfoUrl", e.target.value);
-                  }} />
-                </Col>
-              </Row>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-                  {Setting.getLabel(i18next.t("provider:Enable PKCE"), i18next.t("provider:Enable PKCE - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Switch checked={provider.enablePkce} onChange={checked => {
-                    updateProviderField("enablePkce", checked);
-                  }} />
-                </Col>
-              </Row>
-            </Col>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
+                {Setting.getLabel(i18next.t("provider:Auth URL"), i18next.t("provider:Auth URL - Tooltip"))}
+              </div>
+              <div className="col-span-12 md:col-span-10">
+                <Input value={provider.customAuthUrl} onChange={e => {
+                  updateProviderField("customAuthUrl", e.target.value);
+                }} />
+              </div>
+            </div>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
+                {Setting.getLabel(i18next.t("provider:Token URL"), i18next.t("provider:Token URL - Tooltip"))}
+              </div>
+              <div className="col-span-12 md:col-span-10">
+                <Input value={provider.customTokenUrl} onChange={e => {
+                  updateProviderField("customTokenUrl", e.target.value);
+                }} />
+              </div>
+            </div>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
+                {Setting.getLabel(i18next.t("provider:Scope"), i18next.t("provider:Scope - Tooltip"))}
+              </div>
+              <div className="col-span-12 md:col-span-10">
+                <Input value={provider.scopes} onChange={e => {
+                  updateProviderField("scopes", e.target.value);
+                }} />
+              </div>
+            </div>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
+                {Setting.getLabel(i18next.t("provider:UserInfo URL"), i18next.t("provider:UserInfo URL - Tooltip"))}
+              </div>
+              <div className="col-span-12 md:col-span-10">
+                <Input value={provider.customUserInfoUrl} onChange={e => {
+                  updateProviderField("customUserInfoUrl", e.target.value);
+                }} />
+              </div>
+            </div>
+            <div className="grid grid-cols-12 gap-4 items-center mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
+                {Setting.getLabel(i18next.t("provider:Enable PKCE"), i18next.t("provider:Enable PKCE - Tooltip"))} :
+              </div>
+              <div className="col-span-12 md:col-span-10">
+                <Switch checked={provider.enablePkce} onCheckedChange={checked => {
+                  updateProviderField("enablePkce", checked);
+                }} />
+              </div>
+            </div>
+            <div className="grid grid-cols-12 gap-4 items-start mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
                 {Setting.getLabel(i18next.t("provider:User mapping"), i18next.t("provider:User mapping - Tooltip"))} :
-              </Col>
-              <Col span={22} >
+              </div>
+              <div className="col-span-12 md:col-span-10">
                 {renderUserMappingInput()}
-              </Col>
-            </Row>
-            <Row style={{marginTop: "20px"}} >
-              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              </div>
+            </div>
+            <div className="grid grid-cols-12 gap-4 items-start mt-5">
+              <div className="col-span-12 md:col-span-2 mt-1">
                 {Setting.getLabel(i18next.t("general:Favicon"), i18next.t("general:Favicon - Tooltip"))} :
-              </Col>
-              <Col span={22} >
-                <Row style={{marginTop: "20px"}} >
-                  <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 1}>
+              </div>
+              <div className="col-span-12 md:col-span-10">
+                <div className="grid grid-cols-12 gap-4 items-center">
+                  <div className="col-span-12 md:col-span-1 mt-1">
                     {Setting.getLabel(i18next.t("general:URL"), i18next.t("general:URL - Tooltip"))} :
-                  </Col>
-                  <Col span={23} >
-                    <Input prefix={<LinkOutlined />} value={provider.customLogo} onChange={e => {
-                      updateProviderField("customLogo", e.target.value);
-                    }} />
-                  </Col>
-                </Row>
-                <Row style={{marginTop: "20px"}} >
-                  <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 1}>
+                  </div>
+                  <div className="col-span-12 md:col-span-11">
+                    <div className="relative">
+                      <Link className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                      <Input className="pl-9" value={provider.customLogo} onChange={e => {
+                        updateProviderField("customLogo", e.target.value);
+                      }} />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-12 gap-4 items-center mt-5">
+                  <div className="col-span-12 md:col-span-1 mt-1">
                     {i18next.t("general:Preview")}:
-                  </Col>
-                  <Col span={23} >
+                  </div>
+                  <div className="col-span-12 md:col-span-11">
                     <a target="_blank" rel="noreferrer" href={provider.customLogo}>
                       <img src={provider.customLogo} alt={provider.customLogo} height={90} style={{marginBottom: "20px"}} />
                     </a>
-                  </Col>
-                </Row>
-              </Col>
-            </Row>
+                  </div>
+                </div>
+              </div>
+            </div>
           </React.Fragment>
         ) : null
       }

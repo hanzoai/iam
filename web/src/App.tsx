@@ -18,9 +18,10 @@ import "./App.css";
 import {Helmet} from "react-helmet";
 import * as Setting from "./Setting";
 import {setOrgIsTourVisible, setTourLogo} from "./TourConfig";
-import {StyleProvider, legacyLogicalPropertiesTransformer} from "@ant-design/cssinjs";
-import {GithubOutlined, InfoCircleFilled, ShareAltOutlined} from "@ant-design/icons";
-import {Alert, ConfigProvider, Drawer, FloatButton, Layout, Tooltip} from "antd";
+import {Github, Share2, ArrowUp} from "lucide-react";
+import {Sheet, SheetContent, SheetHeader, SheetTitle} from "./components/ui/sheet";
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "./components/ui/tooltip";
+import {Toaster} from "sonner";
 import {Route, Switch, withRouter} from "react-router-dom";
 import CustomGithubCorner from "./common/CustomGithubCorner";
 import * as Conf from "./Conf";
@@ -34,72 +35,9 @@ import TelegramLogin from "./auth/TelegramLogin";
 import i18next from "i18next";
 import {withTranslation} from "react-i18next";
 const ManagementPage = lazy(() => import("./ManagementPage"));
-const {Footer, Content} = Layout;
 
 import * as ApplicationBackend from "./backend/ApplicationBackend";
 import * as Cookie from "cookie";
-
-// Ant Design locale imports
-import enUS from "antd/locale/en_US";
-import zhCN from "antd/locale/zh_CN";
-import zhTW from "antd/locale/zh_TW";
-import esES from "antd/locale/es_ES";
-import frFR from "antd/locale/fr_FR";
-import deDE from "antd/locale/de_DE";
-import idID from "antd/locale/id_ID";
-import jaJP from "antd/locale/ja_JP";
-import koKR from "antd/locale/ko_KR";
-import ruRU from "antd/locale/ru_RU";
-import viVN from "antd/locale/vi_VN";
-import ptBR from "antd/locale/pt_BR";
-import itIT from "antd/locale/it_IT";
-import msMY from "antd/locale/ms_MY";
-import trTR from "antd/locale/tr_TR";
-import arEG from "antd/locale/ar_EG";
-import heIL from "antd/locale/he_IL";
-import nlNL from "antd/locale/nl_NL";
-import plPL from "antd/locale/pl_PL";
-import fiFI from "antd/locale/fi_FI";
-import svSE from "antd/locale/sv_SE";
-import ukUA from "antd/locale/uk_UA";
-import faIR from "antd/locale/fa_IR";
-import csCZ from "antd/locale/cs_CZ";
-import skSK from "antd/locale/sk_SK";
-
-// Monochrome theme - no two-tone colors needed
-
-function getAntdLocale(language) {
-  const localeMap = {
-    "en": enUS,
-    "zh": zhCN,
-    "zh-tw": zhTW,
-    "es": esES,
-    "fr": frFR,
-    "de": deDE,
-    "id": idID,
-    "ja": jaJP,
-    "ko": koKR,
-    "ru": ruRU,
-    "vi": viVN,
-    "pt": ptBR,
-    "it": itIT,
-    "ms": msMY,
-    "tr": trTR,
-    "ar": arEG,
-    "he": heIL,
-    "nl": nlNL,
-    "pl": plPL,
-    "fi": fiFI,
-    "sv": svSE,
-    "uk": ukUA,
-    "fa": faIR,
-    "cs": csCZ,
-    "sk": skSK,
-    "kk": ruRU, // Use Russian for Kazakh as antd doesn't have Kazakh
-    "az": trTR, // Use Turkish for Azerbaijani as they're similar
-  };
-  return localeMap[language] || enUS;
-}
 
 class App extends Component {
   constructor(props) {
@@ -469,11 +407,7 @@ class App extends Component {
       <React.Fragment>
         {!this.state.account ? null : <div style={{display: "none"}} id="IamApplicationName" value={this.state.account.signupApplication} />}
         {!this.state.account ? null : <div style={{display: "none"}} id="IamAccessToken" value={this.state.accessToken} />}
-        <Footer id="footer" style={
-          {
-            textAlign: "center",
-          }
-        }>
+        <footer id="footer" className="text-center">
           {
             footerHtml && footerHtml !== "" ?
               <React.Fragment>
@@ -487,42 +421,41 @@ class App extends Component {
                 )
               )
           }
-        </Footer>
+        </footer>
       </React.Fragment>
     );
   }
 
   renderAiAssistant() {
     return (
-      <Drawer
-        title={
-          <React.Fragment>
-            <Tooltip title="Want to deploy your own AI assistant? Click to learn more!">
-              <a target="_blank" rel="noreferrer" href={"https://iam.com"}>
-                <span style={{marginRight: "10px"}}>🤖</span>
-                AI Assistant
-              </a>
-            </Tooltip>
-            <a className="custom-link" style={{float: "right", marginTop: "2px"}} target="_blank" rel="noreferrer" href={`${Conf.AiAssistantUrl}`}>
-              <ShareAltOutlined className="custom-link" style={{fontSize: "20px", color: "rgb(140,140,140)"}} />
-            </a>
-            <a className="custom-link" style={{float: "right", marginRight: "30px", marginTop: "2px"}} target="_blank" rel="noreferrer" href={"#"}>
-              <GithubOutlined className="custom-link" style={{fontSize: "20px", color: "rgb(140,140,140)"}} />
-            </a>
-          </React.Fragment>
-        }
-        placement="right"
-        width={500}
-        mask={false}
-        onClose={() => {
-          this.setState({
-            isAiAssistantOpen: false,
-          });
-        }}
-        open={this.state.isAiAssistantOpen}
-      >
-        <iframe id="iframeHelper" title={"iframeHelper"} src={`${Conf.AiAssistantUrl}/?isRaw=1`} width="100%" height="100%" scrolling="no" frameBorder="no" />
-      </Drawer>
+      <Sheet open={this.state.isAiAssistantOpen} onOpenChange={(open) => this.setState({isAiAssistantOpen: open})}>
+        <SheetContent side="right" className="w-[500px] sm:max-w-[500px] p-0 flex flex-col">
+          <SheetHeader className="px-4 py-3 border-b border-border">
+            <SheetTitle asChild>
+              <div className="flex items-center justify-between">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <a target="_blank" rel="noreferrer" href={"https://iam.com"} className="flex items-center">
+                      <span className="mr-2.5">🤖</span>
+                      AI Assistant
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent>Want to deploy your own AI assistant? Click to learn more!</TooltipContent>
+                </Tooltip>
+                <div className="flex items-center gap-3">
+                  <a className="custom-link" target="_blank" rel="noreferrer" href={"#"}>
+                    <Github className="w-5 h-5 text-neutral-500" />
+                  </a>
+                  <a className="custom-link" target="_blank" rel="noreferrer" href={`${Conf.AiAssistantUrl}`}>
+                    <Share2 className="w-5 h-5 text-neutral-500" />
+                  </a>
+                </div>
+              </div>
+            </SheetTitle>
+          </SheetHeader>
+          <iframe id="iframeHelper" title={"iframeHelper"} src={`${Conf.AiAssistantUrl}/?isRaw=1`} className="flex-1 w-full" scrolling="no" frameBorder="no" />
+        </SheetContent>
+      </Sheet>
     );
   }
 
@@ -563,6 +496,19 @@ class App extends Component {
     this.getAccount();
   }
 
+  renderBackToTop() {
+    return (
+      <button
+        type="button"
+        aria-label="Back to top"
+        onClick={() => window.scrollTo({top: 0, behavior: "smooth"})}
+        className="fixed bottom-6 right-6 z-40 w-10 h-10 rounded-full bg-neutral-800 text-white shadow-lg hover:bg-neutral-700 flex items-center justify-center transition-colors"
+      >
+        <ArrowUp className="w-4 h-4" />
+      </button>
+    );
+  }
+
   renderPage() {
     if (this.isDoorPages()) {
       let themeData = this.state.themeData;
@@ -582,78 +528,63 @@ class App extends Component {
       }
 
       return (
-        <ConfigProvider
-          locale={getAntdLocale(Setting.getLanguage())}
-          theme={{
-            token: {
-              colorPrimary: themeData.colorPrimary,
-              borderRadius: themeData.borderRadius,
-            },
-            algorithm: Setting.getAlgorithm(this.state.themeAlgorithm),
-          }}>
-          <StyleProvider hashPriority="high" transformers={[legacyLogicalPropertiesTransformer]}>
-            <Layout id="parent-area">
-              <Content style={{display: "flex", justifyContent: "center"}}>
-                {
-                  this.isEntryPages() ?
-                    <EntryPage
-                      account={this.state.account}
-                      theme={this.state.themeData}
-                      themeAlgorithm={this.state.themeAlgorithm}
-                      requiredEnableMfa={this.state.requiredEnableMfa}
-                      updateApplication={(application) => {
-                        this.setState({
-                          application: application,
-                        });
-                      }}
-                      onLoginSuccess={(redirectUrl) => {this.onLoginSuccess(redirectUrl);}}
-                      onUpdateAccount={(account) => this.onUpdateAccount(account)}
-                      updataThemeData={this.setTheme}
-                    /> :
-                    <Switch>
-                      <Route exact path="/callback" render={(props) => <AuthCallback {...props} {...this.props} application={this.state.application} onLoginSuccess={(redirectUrl) => {this.onLoginSuccess(redirectUrl);}} />} />
-                      <Route exact path="/callback/saml" render={(props) => <SamlCallback {...props} {...this.props} application={this.state.application} onLoginSuccess={(redirectUrl) => {this.onLoginSuccess(redirectUrl);}} />} />
-                      <Route exact path="/telegram-login" render={(props) => <TelegramLogin {...props} {...this.props} />} />
-                      <Route path="" render={() => (
-                        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-                          <div className="text-[80px] font-extrabold leading-none text-neutral-100 tracking-tight">404</div>
-                          <div className="text-base text-neutral-500">
-                            {i18next.t("general:Sorry, the page you visited does not exist.")}
-                          </div>
-                          <div className="flex gap-3">
-                            <a href="/login" className="px-6 py-2.5 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors no-underline">
-                              {i18next.t("login:Sign In")}
-                            </a>
-                            <a href="/signup" className="px-6 py-2.5 rounded-lg border border-white/10 text-neutral-300 font-medium text-sm hover:border-white/20 hover:text-white transition-colors no-underline">
-                              {i18next.t("account:Sign Up")}
-                            </a>
-                          </div>
-                        </div>
-                      )} />
-                    </Switch>
-                }
-              </Content>
-              {
-                this.renderFooter(logo, footerHtml)
-              }
-              {
-                this.renderAiAssistant()
-              }
-            </Layout>
-          </StyleProvider>
-        </ConfigProvider>
+        <div id="parent-area" className="min-h-screen flex flex-col">
+          <main className="flex-1 flex justify-center">
+            {
+              this.isEntryPages() ?
+                <EntryPage
+                  account={this.state.account}
+                  theme={this.state.themeData}
+                  themeAlgorithm={this.state.themeAlgorithm}
+                  requiredEnableMfa={this.state.requiredEnableMfa}
+                  updateApplication={(application) => {
+                    this.setState({
+                      application: application,
+                    });
+                  }}
+                  onLoginSuccess={(redirectUrl) => {this.onLoginSuccess(redirectUrl);}}
+                  onUpdateAccount={(account) => this.onUpdateAccount(account)}
+                  updataThemeData={this.setTheme}
+                /> :
+                <Switch>
+                  <Route exact path="/callback" render={(props) => <AuthCallback {...props} {...this.props} application={this.state.application} onLoginSuccess={(redirectUrl) => {this.onLoginSuccess(redirectUrl);}} />} />
+                  <Route exact path="/callback/saml" render={(props) => <SamlCallback {...props} {...this.props} application={this.state.application} onLoginSuccess={(redirectUrl) => {this.onLoginSuccess(redirectUrl);}} />} />
+                  <Route exact path="/telegram-login" render={(props) => <TelegramLogin {...props} {...this.props} />} />
+                  <Route path="" render={() => (
+                    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
+                      <div className="text-[80px] font-extrabold leading-none text-neutral-100 tracking-tight">404</div>
+                      <div className="text-base text-neutral-500">
+                        {i18next.t("general:Sorry, the page you visited does not exist.")}
+                      </div>
+                      <div className="flex gap-3">
+                        <a href="/login" className="px-6 py-2.5 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors no-underline">
+                          {i18next.t("login:Sign In")}
+                        </a>
+                        <a href="/signup" className="px-6 py-2.5 rounded-lg border border-white/10 text-neutral-300 font-medium text-sm hover:border-white/20 hover:text-white transition-colors no-underline">
+                          {i18next.t("account:Sign Up")}
+                        </a>
+                      </div>
+                    </div>
+                  )} />
+                </Switch>
+            }
+          </main>
+          {
+            this.renderFooter(logo, footerHtml)
+          }
+          {
+            this.renderAiAssistant()
+          }
+        </div>
       );
     }
     return (
       <React.Fragment>
-        {/* { */}
-        {/*   this.renderBanner() */}
-        {/* } */}
-        <FloatButton.BackTop />
+        {this.renderBackToTop()}
         <CustomGithubCorner />
         {
           <Suspense fallback={null}>
-            <Layout id="parent-area">
+            <div id="parent-area" className="min-h-screen flex flex-col">
               <ManagementPage
                 account={this.state.account}
                 application={this.state.application}
@@ -693,7 +624,7 @@ class App extends Component {
               {
                 this.renderAiAssistant()
               }
-            </Layout>
+            </div>
           </Suspense>
         }
       </React.Fragment>
@@ -718,22 +649,12 @@ class App extends Component {
             <link rel="icon" href={this.state.account.organization?.favicon} />
           </Helmet>
         }
-        <ConfigProvider
-          locale={getAntdLocale(Setting.getLanguage())}
-          theme={{
-            token: {
-              colorPrimary: this.state.themeData.colorPrimary,
-              colorInfo: this.state.themeData.colorPrimary,
-              borderRadius: this.state.themeData.borderRadius,
-            },
-            algorithm: Setting.getAlgorithm(this.state.themeAlgorithm),
-          }}>
-          <StyleProvider hashPriority="high" transformers={[legacyLogicalPropertiesTransformer]}>
-            {
-              this.renderPage()
-            }
-          </StyleProvider>
-        </ConfigProvider>
+        <TooltipProvider>
+          {
+            this.renderPage()
+          }
+          <Toaster position="top-right" richColors closeButton />
+        </TooltipProvider>
       </React.Fragment>
     );
   }

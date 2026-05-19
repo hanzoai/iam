@@ -15,7 +15,6 @@
 // @ts-nocheck
 import React from "react";
 import {Link} from "react-router-dom";
-import {Upload} from "antd";
 import {Upload as UploadIcon, Download, Trash2, Pencil, X} from "lucide-react";
 import moment from "moment";
 import * as Setting from "./Setting";
@@ -114,49 +113,49 @@ class GroupListPage extends BaseListPage {
     XLSX.writeFile(workbook, "import-group.xlsx", {compression: true});
   }
 
+  handleUploadFile = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const binary = e.target.result;
+      try {
+        const workbook = XLSX.read(binary, {type: "array"});
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          Setting.showMessage("error", i18next.t("general:No sheets found in file"));
+          return;
+        }
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        this.setState({uploadJsonData: jsonData, file: file});
+        const columns = Setting.getGroupColumns().map(el => {
+          return {title: el.split("#")[0], dataIndex: el, key: el};
+        });
+        this.setState({uploadColumns: columns}, () => {this.setState({showUploadModal: true});});
+      } catch (err) {
+        Setting.showMessage("error", `${i18next.t("general:Failed to upload")}: ${err.message}`);
+      }
+    };
+    reader.onerror = (error) => {
+      Setting.showMessage("error", `${i18next.t("general:Failed to upload")}: ${error?.message || error}`);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   renderUpload() {
     const uploadThis = this;
-    const uploadProps = {
-      name: "file",
-      accept: ".xlsx",
-      showUploadList: false,
-      beforeUpload: (file) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const binary = e.target.result;
-          try {
-            const workbook = XLSX.read(binary, {type: "array"});
-            if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-              Setting.showMessage("error", i18next.t("general:No sheets found in file"));
-              return;
-            }
-            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(worksheet);
-            this.setState({uploadJsonData: jsonData, file: file});
-            const columns = Setting.getGroupColumns().map(el => {
-              return {title: el.split("#")[0], dataIndex: el, key: el};
-            });
-            this.setState({uploadColumns: columns}, () => {this.setState({showUploadModal: true});});
-          } catch (err) {
-            Setting.showMessage("error", `${i18next.t("general:Failed to upload")}: ${err.message}`);
-          }
-        };
-        reader.onerror = (error) => {
-          Setting.showMessage("error", `${i18next.t("general:Failed to upload")}: ${error?.message || error}`);
-        };
-        reader.readAsArrayBuffer(file);
-        return false;
-      },
-    };
 
     return (
       <>
-        <Upload {...uploadProps}>
-          <button className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1.5">
-            <UploadIcon size={14} />
-            {i18next.t("general:Upload (.xlsx)")}
-          </button>
-        </Upload>
+        <label className="px-3 py-1.5 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white hover:bg-white/[0.08] inline-flex items-center gap-1.5 cursor-pointer">
+          <UploadIcon size={14} />
+          {i18next.t("general:Upload (.xlsx)")}
+          <input type="file" accept=".xlsx" className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {this.handleUploadFile(file);}
+              e.target.value = "";
+            }}
+          />
+        </label>
         {this.state.showUploadModal && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
             <div className="bg-[#111] border border-white/10 rounded-xl p-6 w-full max-w-4xl max-h-[80vh] overflow-auto">

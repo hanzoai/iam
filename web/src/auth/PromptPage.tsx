@@ -14,7 +14,9 @@
 
 // @ts-nocheck
 import React from "react";
-import {Button, Card, Col, Result, Row} from "antd";
+import {Button} from "../components/ui/button";
+import {Card, CardContent, CardHeader, CardTitle} from "../components/ui/card";
+import {ResultCard} from "../components/ui/result-card";
 import * as ApplicationBackend from "../backend/ApplicationBackend";
 import * as UserBackend from "../backend/UserBackend";
 import * as Setting from "../Setting";
@@ -162,20 +164,20 @@ class PromptPage extends React.Component {
                   return null;
                 }
                 return (
-                  <Row key={signupItem.name} style={{marginTop: "20px", justifyContent: "space-between"}} >
-                    <Col style={{marginTop: "5px"}} >
-                      <span style={{marginLeft: "5px"}}>
+                  <div key={signupItem.name} className="flex justify-between mt-5">
+                    <div className="mt-1">
+                      <span className="ml-1">
                         {
                           i18next.t("user:Country/Region")
                         }:
                       </span>
-                    </Col>
-                    <Col >
+                    </div>
+                    <div>
                       <RegionSelect defaultValue={this.state.user.region} onChange={(value) => {
                         this.updateUserFieldWithoutSubmit("region", value);
                       }} />
-                    </Col>
-                  </Row>
+                    </div>
+                  </div>
                 );
               })
             )
@@ -251,11 +253,11 @@ class PromptPage extends React.Component {
 
   renderPromptProvider(application) {
     return (
-      <div style={{display: "flex", alignItems: "center", flexDirection: "column"}}>
+      <div className="flex items-center flex-col">
         {this.renderContent(application)}
-        <Button style={{marginTop: "50px", width: "200px"}}
+        <Button className="mt-12 w-[200px]"
           disabled={!Setting.isPromptAnswered(this.state.user, application)}
-          type="primary" size="large" onClick={() => {
+          onClick={() => {
             this.submitUserEdit(true);
           }}>
           {i18next.t("code:Submit and complete")}
@@ -284,10 +286,13 @@ class PromptPage extends React.Component {
     }
 
     return (
-      <Card style={{marginTop: "20px", marginBottom: "20px"}}
-        title={this.state.steps[this.state.current].title}
-      >
-        <div >{this.state.steps[this.state.current].content}</div>
+      <Card className="mt-5 mb-5">
+        <CardHeader>
+          <CardTitle>{this.state.steps[this.state.current].title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div>{this.state.steps[this.state.current].content}</div>
+        </CardContent>
       </Card>
     );
   }
