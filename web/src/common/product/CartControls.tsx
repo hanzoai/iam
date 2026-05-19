@@ -14,54 +14,57 @@
 
 // @ts-nocheck
 import React from "react";
-import {Badge, Button, InputNumber} from "antd";
-import {MinusOutlined, PlusOutlined, ShoppingCartOutlined} from "@ant-design/icons";
+import {Minus, Plus, ShoppingCart} from "lucide-react";
+import {Button} from "../../components/ui/button";
+import {Input} from "../../components/ui/input";
+import {cn} from "../../lib/utils";
 
 export class QuantityStepper extends React.Component {
   render() {
-    const {value, onIncrease, onDecrease, onChange, min = 1, max, disabled} = this.props;
+    const {value, onIncrease, onDecrease, onChange, min = 1, max, disabled, className, style} = this.props;
 
     const parsedValue = (value === null || value === undefined || value === "") ? NaN : Number(value);
     const normalizedValue = Number.isFinite(parsedValue) ? parsedValue : min;
 
     return (
-      <div style={{display: "inline-flex", alignItems: "center", border: "1px solid #d9d9d9", borderRadius: "6px", height: "36px", ...this.props.style}}>
+      <div
+        className={cn("inline-flex items-center border border-input rounded-md h-9 overflow-hidden", className)}
+        style={style}
+      >
         <Button
-          type="text"
-          size="small"
-          icon={<MinusOutlined />}
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-full w-1/3 rounded-none"
           disabled={disabled || normalizedValue <= min}
           onClick={onDecrease}
-          style={{borderRadius: "6px 0 0 6px", height: "100%", width: "calc(100% / 3)"}}
-        />
+        >
+          <Minus className="h-4 w-4" />
+        </Button>
 
-        <InputNumber
+        <Input
+          type="number"
           min={min}
           max={max}
           value={normalizedValue}
-          onChange={onChange}
-          controls={false}
+          onChange={(e) => onChange?.(Number(e.target.value))}
           disabled={disabled}
-          style={{
-            width: "calc(100% / 3)",
-            height: "100%",
-            textAlign: "center",
-            border: "none",
-            boxShadow: "none",
-            pointerEvents: onChange ? "auto" : "none",
-            display: "flex",
-            alignItems: "center",
-          }}
+          className={cn(
+            "w-1/3 h-full text-center border-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none",
+            !onChange && "pointer-events-none",
+          )}
         />
 
         <Button
-          type="text"
-          size="small"
-          icon={<PlusOutlined />}
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-full w-1/3 rounded-none"
           disabled={disabled || (max !== undefined && normalizedValue >= max)}
           onClick={onIncrease}
-          style={{borderRadius: "0 6px 6px 0", height: "100%", width: "calc(100% / 3)"}}
-        />
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
       </div>
     );
   }
@@ -73,24 +76,23 @@ export class FloatingCartButton extends React.Component {
 
     return (
       <div
-        style={{
-          position: "fixed",
-          bottom: "50px",
-          right: "50px",
-          zIndex: 1000,
-          cursor: "pointer",
-        }}
+        style={{position: "fixed", bottom: "50px", right: "50px", zIndex: 1000, cursor: "pointer"}}
         onClick={onClick}
       >
-        <Badge count={itemCount} offset={[-5, 5]} size="default">
+        <div className="relative">
           <Button
-            type="primary"
-            shape="circle"
-            icon={<ShoppingCartOutlined style={{fontSize: "24px"}} />}
-            size="large"
-            style={{width: "60px", height: "60px", boxShadow: "0 4px 8px rgba(0,0,0,0.15)"}}
-          />
-        </Badge>
+            type="button"
+            size="icon"
+            className="rounded-full w-[60px] h-[60px] shadow-lg"
+          >
+            <ShoppingCart style={{width: 24, height: 24}} />
+          </Button>
+          {itemCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] px-1 rounded-full bg-destructive text-destructive-foreground text-xs font-semibold flex items-center justify-center">
+              {itemCount}
+            </span>
+          )}
+        </div>
       </div>
     );
   }
