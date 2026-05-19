@@ -13,22 +13,15 @@
 // limitations under the License.
 
 // @ts-nocheck
-import {Card, Col, Divider, Progress, Row, Spin, Tour} from "antd";
 import * as SystemBackend from "./backend/SystemInfo";
 import React from "react";
 import * as Setting from "./Setting";
 import * as TourConfig from "./TourConfig";
 import i18next from "i18next";
 import PrometheusInfoTable from "./table/PrometheusInfoTable";
-
-const getProgressColor = (percent) => {
-  if (percent >= 90) {
-    return "#ff4d4f";
-  } else if (percent >= 70) {
-    return "#faad14";
-  }
-  return undefined;
-};
+import {Card, CardContent, CardHeader, CardTitle} from "./components/ui/card";
+import {Progress} from "./components/ui/progress";
+import {Spinner} from "./components/ui/spinner";
 
 class SystemInfo extends React.Component {
 
@@ -129,34 +122,26 @@ class SystemInfo extends React.Component {
     this.setState({isTourVisible: false});
   };
 
-  handleTourComplete = () => {
-    const nextPathName = TourConfig.getNextUrl();
-    if (nextPathName !== "") {
-      this.props.history.push("/" + nextPathName);
-      TourConfig.setIsTourVisible(true);
-    }
-  };
-
-  getSteps = () => {
-    const nextPathName = TourConfig.getNextUrl();
-    const steps = TourConfig.getSteps();
-    steps.map((item, index) => {
-      item.target = () => document.getElementById(item.id) || null;
-      if (index === steps.length - 1) {
-        item.nextButtonProps = {
-          children: TourConfig.getNextButtonChild(nextPathName),
-        };
-      }
-    });
-    return steps;
-  };
+  renderInfoCard(id, title, body) {
+    return (
+      <Card id={id} className="text-center h-full">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+        <CardContent>{body}</CardContent>
+      </Card>
+    );
+  }
 
   render() {
     const cpuUi = this.state.systemInfo.cpuUsage?.length <= 0 ? i18next.t("general:Failed to get") :
       this.state.systemInfo.cpuUsage.map((usage, i) => {
         const percent = Number(usage.toFixed(1));
         return (
-          <Progress key={i} percent={percent} strokeColor={getProgressColor(percent)} format={p => `${p}%`} />
+          <div key={i} className="flex items-center gap-2 mb-2">
+            <Progress value={percent} className="flex-1" />
+            <span className="text-sm text-muted-foreground w-12 text-right">{percent}%</span>
+          </div>
         );
       });
 
@@ -165,11 +150,14 @@ class SystemInfo extends React.Component {
       <div>
         {Setting.getFriendlyFileSize(this.state.systemInfo.memoryUsed)} / {Setting.getFriendlyFileSize(this.state.systemInfo.memoryTotal)}
         <br /> <br />
-        <Progress type="circle" percent={memPercent} strokeColor={getProgressColor(memPercent)} format={p => `${p}%`} />
+        <div className="flex items-center gap-2">
+          <Progress value={memPercent} className="flex-1" />
+          <span className="text-sm text-muted-foreground w-12 text-right">{memPercent}%</span>
+        </div>
       </div>;
-    const latencyUi = this.state.prometheusInfo?.apiLatency === null || this.state.prometheusInfo?.apiLatency?.length <= 0 ? <Spin size="large" /> :
+    const latencyUi = this.state.prometheusInfo?.apiLatency === null || this.state.prometheusInfo?.apiLatency?.length <= 0 ? <Spinner size="lg" /> :
       <PrometheusInfoTable prometheusInfo={this.state.prometheusInfo} table={"latency"} />;
-    const throughputUi = this.state.prometheusInfo?.apiThroughput === null || this.state.prometheusInfo?.apiThroughput?.length <= 0 ? <Spin size="large" /> :
+    const throughputUi = this.state.prometheusInfo?.apiThroughput === null || this.state.prometheusInfo?.apiThroughput?.length <= 0 ? <Spinner size="lg" /> :
       <PrometheusInfoTable prometheusInfo={this.state.prometheusInfo} table={"throughput"} />;
     const link = this.state.versionInfo?.version !== "" ? `https://github.com/hanzoai/iam/releases/tag/${this.state.versionInfo?.version}` : "";
     let versionText = this.state.versionInfo?.version !== "" ? this.state.versionInfo?.version : i18next.t("system:Unknown version");
@@ -177,87 +165,49 @@ class SystemInfo extends React.Component {
       versionText += ` (ahead+${this.state.versionInfo?.commitOffset})`;
     }
 
+    const aboutCard = (
+      <Card id="about-card" className="text-center">
+        <CardHeader>
+          <CardTitle>{i18next.t("system:About")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div>{i18next.t("system:An Identity and Access Management (IAM) / Single-Sign-On (SSO) platform with web UI supporting OAuth 2.0, OIDC, SAML and CAS")}</div>
+          GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">IAM</a>
+          <br />
+          {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
+          <br />
+          {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">github.com/hanzoai/iam</a>
+          <br />
+          {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam/discussions">Get in Touch!</a>
+        </CardContent>
+      </Card>
+    );
+
     if (!Setting.isMobile()) {
       return (
-        <>
-          <Row>
-            <Col span={6}></Col>
-            <Col span={12}>
-              <Row gutter={[10, 10]}>
-                <Col span={12}>
-                  <Card id="cpu-card" title={i18next.t("system:CPU Usage")} bordered={true} style={{textAlign: "center", height: "100%"}}>
-                    {this.state.loading ? <Spin size="large" /> : cpuUi}
-                  </Card>
-                </Col>
-                <Col span={12}>
-                  <Card id="memory-card" title={i18next.t("system:Memory Usage")} bordered={true} style={{textAlign: "center", height: "100%"}}>
-                    {this.state.loading ? <Spin size="large" /> : memUi}
-                  </Card>
-                </Col>
-                <Col span={24}>
-                  <Card id="latency-card" title={i18next.t("system:API Latency")} bordered={true} style={{textAlign: "center", height: "100%"}}>
-                    {this.state.loading ? <Spin size="large" /> : latencyUi}
-                  </Card>
-                </Col>
-                <Col span={24}>
-                  <Card id="throughput-card" title={i18next.t("system:API Throughput")} bordered={true} style={{textAlign: "center", height: "100%"}}>
-                    {this.state.loading ? <Spin size="large" /> : throughputUi}
-                  </Card>
-                </Col>
-              </Row>
-              <Divider />
-              <Card id="about-card" title={i18next.t("system:About")} bordered={true} style={{textAlign: "center"}}>
-                <div>{i18next.t("system:An Identity and Access Management (IAM) / Single-Sign-On (SSO) platform with web UI supporting OAuth 2.0, OIDC, SAML and CAS")}</div>
-                GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">IAM</a>
-                <br />
-                {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
-                <br />
-                {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">github.com/hanzoai/iam</a>
-                <br />
-                {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam/discussions">Get in Touch!</a>
-              </Card>
-            </Col>
-            <Col span={6}></Col>
-          </Row>
-          <Tour
-            open={Setting.isMobile() ? false : this.state.isTourVisible}
-            onClose={this.setIsTourVisible}
-            steps={this.getSteps()}
-            indicatorsRender={(current, total) => (
-              <span>
-                {current + 1} / {total}
-              </span>
-            )}
-            onFinish={this.handleTourComplete}
-          />
-        </>
+        // TODO(rip-antd): Tour walkthrough disabled
+        <div className="grid grid-cols-12 gap-3">
+          <div className="col-span-3"></div>
+          <div className="col-span-6 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              {this.renderInfoCard("cpu-card", i18next.t("system:CPU Usage"), this.state.loading ? <Spinner size="lg" /> : cpuUi)}
+              {this.renderInfoCard("memory-card", i18next.t("system:Memory Usage"), this.state.loading ? <Spinner size="lg" /> : memUi)}
+            </div>
+            {this.renderInfoCard("latency-card", i18next.t("system:API Latency"), this.state.loading ? <Spinner size="lg" /> : latencyUi)}
+            {this.renderInfoCard("throughput-card", i18next.t("system:API Throughput"), this.state.loading ? <Spinner size="lg" /> : throughputUi)}
+            <hr className="border-border my-4" />
+            {aboutCard}
+          </div>
+          <div className="col-span-3"></div>
+        </div>
       );
     } else {
       return (
-        <Row gutter={[16, 0]}>
-          <Col span={24}>
-            <Card title={i18next.t("system:CPU Usage")} bordered={true} style={{textAlign: "center", width: "100%"}}>
-              {this.state.loading ? <Spin size="large" /> : cpuUi}
-            </Card>
-          </Col>
-          <Col span={24}>
-            <Card title={i18next.t("system:Memory Usage")} bordered={true} style={{textAlign: "center", width: "100%"}}>
-              {this.state.loading ? <Spin size="large" /> : memUi}
-            </Card>
-          </Col>
-          <Col span={24}>
-            <Card title={i18next.t("system:About")} bordered={true} style={{textAlign: "center"}}>
-              <div>{i18next.t("system:An Identity and Access Management (IAM) / Single-Sign-On (SSO) platform with web UI supporting OAuth 2.0, OIDC, SAML and CAS")}</div>
-              GitHub: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">IAM</a>
-              <br />
-              {i18next.t("system:Version")}: <a target="_blank" rel="noreferrer" href={link}>{versionText}</a>
-              <br />
-              {i18next.t("system:Official website")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam">github.com/hanzoai/iam</a>
-              <br />
-              {i18next.t("system:Community")}: <a target="_blank" rel="noreferrer" href="https://github.com/hanzoai/iam/discussions">Get in Touch!</a>
-            </Card>
-          </Col>
-        </Row>
+        <div className="space-y-4">
+          {this.renderInfoCard(null, i18next.t("system:CPU Usage"), this.state.loading ? <Spinner size="lg" /> : cpuUi)}
+          {this.renderInfoCard(null, i18next.t("system:Memory Usage"), this.state.loading ? <Spinner size="lg" /> : memUi)}
+          {aboutCard}
+        </div>
       );
     }
   }

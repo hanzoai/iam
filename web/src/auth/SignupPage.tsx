@@ -13,9 +13,12 @@
 // limitations under the License.
 
 // @ts-nocheck
-import React, {useCallback, useEffect, useRef, useState} from "react";
-import {Form, Input, Popover, Radio, Select, message} from "antd";
-import {UserPlus, Loader2} from "lucide-react";
+import React, {useCallback, useEffect, useState} from "react";
+import {UserPlus} from "lucide-react";
+import {Input} from "../components/ui/input";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "../components/ui/select";
+import {Popover, PopoverContent, PopoverTrigger} from "../components/ui/popover";
+import {toast} from "sonner";
 import * as Setting from "../Setting";
 import * as AuthBackend from "./AuthBackend";
 import * as ProviderButton from "./ProviderButton";
@@ -32,52 +35,22 @@ import {CountryCodeSelect} from "../common/select/CountryCodeSelect";
 import * as PasswordChecker from "../common/PasswordChecker";
 import * as InvitationBackend from "../backend/InvitationBackend";
 
-const formItemLayout = {
-  labelCol: {xs: {span: 24}, sm: {span: 8}},
-  wrapperCol: {xs: {span: 24}, sm: {span: 16}},
-};
-
-const renderFormItem = (signupItem) => {
-  const commonRules = [
-    {
-      required: signupItem.required,
-      message: i18next.t("signup:Please input your {label}!").replace("{label}", signupItem.label || signupItem.name),
-    },
-  ];
-
-  if (!signupItem.type || signupItem.type === "Input") {
-    const inputRules = [...commonRules];
-    if (signupItem.regex) {
-      inputRules.push({
-        pattern: new RegExp(signupItem.regex),
-        message: i18next.t("signup:The input doesn't match the signup item regex!"),
-      });
-    }
-    return (
-      <Form.Item name={signupItem.name.toLowerCase()} label={signupItem.label || signupItem.name} rules={inputRules}>
-        <Input placeholder={signupItem.placeholder} />
-      </Form.Item>
-    );
-  } else if (signupItem.type === "Single Choice" || signupItem.type === "Multiple Choices") {
-    return (
-      <Form.Item name={signupItem.name.toLowerCase()} label={signupItem.label || signupItem.name} rules={commonRules}>
-        <Select
-          mode={signupItem.type === "Multiple Choices" ? "multiple" : "single"}
-          placeholder={signupItem.placeholder}
-          showSearch={false}
-          options={signupItem.options.map(option => ({label: option, value: option}))}
-        />
-      </Form.Item>
-    );
-  }
-};
-
-export const tailFormItemLayout = {
-  wrapperCol: {xs: {span: 24, offset: 0}, sm: {span: 16, offset: 8}},
-};
+// Field wrapper: label, error, and child input.
+function Field({label, required, error, children, className = ""}) {
+  return (
+    <div className={`mb-3 ${className}`}>
+      {label && (
+        <label className="block text-sm text-neutral-300 mb-1">
+          {label}{required ? <span className="text-red-400 ml-0.5">*</span> : null}
+        </label>
+      )}
+      {children}
+      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+    </div>
+  );
+}
 
 function SignupPage(props) {
-  const formRef = useRef(null);
   const [applicationName] = useState((props.applicationName ?? props.match?.params?.applicationName) ?? null);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -91,6 +64,14 @@ function SignupPage(props) {
   const [passwordPopover, setPasswordPopover] = useState(null);
   const [passwordPopoverOpen, setPasswordPopoverOpen] = useState(false);
   const [msgState, setMsgState] = useState(null);
+
+  const [values, setValues] = useState({});
+  const [errors, setErrors] = useState({});
+
+  const setField = (name, value) => {
+    setValues((prev) => ({...prev, [name]: value}));
+    setErrors((prev) => ({...prev, [name]: ""}));
+  };
 
   const getApplicationObj = useCallback(() => props.application, [props.application]);
   const onUpdateAccount = useCallback((account) => props.onUpdateAccount(account), [props.onUpdateAccount]);
@@ -134,9 +115,7 @@ function SignupPage(props) {
       setInvitationCode(code);
       if (code !== "") {
         let appName = applicationName;
-        if (application) {
-          appName = application.name;
-        }
+        if (application) {appName = application.name;}
         getInvitationCodeInfo(code, "admin/" + appName);
       }
     }
@@ -146,9 +125,8 @@ function SignupPage(props) {
     AuthBackend.getApplicationLogin(oAuthParams)
       .then((res) => {
         if (res.status === "ok") {
-          const application = res.data;
-          onUpdateApplication(application);
-          setInvitationCodeFromUrl(application);
+          onUpdateApplication(res.data);
+          setInvitationCodeFromUrl(res.data);
         } else {
           onUpdateApplication(null);
           setMsgState(res.msg);
@@ -162,7 +140,6 @@ function SignupPage(props) {
       const signinUrl = window.location.pathname.replace("/signup/oauth/authorize", "/login/oauth/authorize");
       sessionStorage.setItem("signinUrl", signinUrl + window.location.search);
     }
-
     if (getApplicationObj() === undefined) {
       if (applicationName !== null) {
         getApplication(applicationName);
@@ -176,10 +153,26 @@ function SignupPage(props) {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const parseOffset = (offset) => {
-    if (offset === 2 || offset === 4 || Setting.inIframe() || Setting.isMobile()) {
-      return "0 auto";
+  // Seed values from application + invitation.
+  useEffect(() => {
+    const app = getApplicationObj();
+    if (!app) {return;}
+    const init = {
+      application: app.name,
+      organization: app.organization,
+      countryCode: (app.organizationObj?.countryCodes ?? ["US"])?.[0],
+    };
+    if (invitation !== undefined) {
+      if (invitation.username !== "") {init.username = invitation.username;}
+      if (invitation.email !== "") {init.email = invitation.email;}
+      if (invitation.phone !== "") {init.phone = invitation.phone;}
+      if (invitationCode !== "") {init.invitationCode = invitationCode;}
     }
+    setValues((prev) => ({...init, ...prev}));
+  }, [props.application, invitation, invitationCode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const parseOffset = (offset) => {
+    if (offset === 2 || offset === 4 || Setting.inIframe() || Setting.isMobile()) {return "0 auto";}
     if (offset === 1) {return "0 10%";}
     if (offset === 3) {return "0 60%";}
   };
@@ -188,37 +181,79 @@ function SignupPage(props) {
     if (signupParams?.plan && signupParams?.pricing) {
       return `/buy-plan/${application.organization}/${signupParams?.pricing}?user=${signupParams.username}&plan=${signupParams.plan}`;
     }
-    if (authConfig.appName === application.name) {
-      return "/result";
-    } else {
-      const oAuthParams = Util.getOAuthGetParameters();
-      if (Setting.hasPromptPage(application)) {
-        return `/prompt/${application.name}?oauth=${oAuthParams !== null}`;
-      } else {
-        return `/result/${application.name}`;
-      }
+    if (authConfig.appName === application.name) {return "/result";}
+    const oAuthParams = Util.getOAuthGetParameters();
+    if (Setting.hasPromptPage(application)) {
+      return `/prompt/${application.name}?oauth=${oAuthParams !== null}`;
     }
+    return `/result/${application.name}`;
   };
 
-  const onFinish = (values) => {
-    const application = getApplicationObj();
+  const validate = (application) => {
+    const next = {};
+    const get = (k) => values[k];
+    (application.signupItems || []).forEach((signupItem) => {
+      if (!signupItem.visible) {return;}
+      const required = signupItem.required;
+      const name = signupItem.name;
+      if (name === "Username") {
+        if (required && !(get("username") || "").trim()) {next.username = i18next.t("forget:Please input your username!");}
+        else if (signupItem.regex && get("username") && !new RegExp(signupItem.regex).test(get("username"))) {next.username = i18next.t("signup:The input doesn't match the signup item regex!");}
+      } else if (name === "Display name") {
+        if (signupItem.rule === "First, last" && Setting.getLanguage() !== "zh") {
+          if (required && !(get("firstName") || "").trim()) {next.firstName = i18next.t("signup:Please input your first name!");}
+          if (required && !(get("lastName") || "").trim()) {next.lastName = i18next.t("signup:Please input your last name!");}
+        } else if (required && !(get("name") || "").trim()) {
+          next.name = (signupItem.rule === "Real name" || signupItem.rule === "First, last") ? i18next.t("signup:Please input your real name!") : i18next.t("signup:Please input your display name!");
+        }
+      } else if (name === "First name" && displayNameRule !== "First, last") {
+        if (required && !(get("firstName") || "").trim()) {next.firstName = i18next.t("signup:Please input your first name!");}
+      } else if (name === "Last name" && displayNameRule !== "First, last") {
+        if (required && !(get("lastName") || "").trim()) {next.lastName = i18next.t("signup:Please input your last name!");}
+      } else if (name === "Affiliation") {
+        if (required && !(get("affiliation") || "").trim()) {next.affiliation = i18next.t("signup:Please input your affiliation!");}
+      } else if (name === "ID card") {
+        const v = get("idCard");
+        if (required && !v) {next.idCard = i18next.t("signup:Please input your ID card number!");}
+        else if (v && !/^[1-9]\d{5}(18|19|20)\d{2}((0[1-9])|(10|11|12))(([0-2][1-9])|10|20|30|31)\d{3}[0-9X]$/.test(v)) {
+          next.idCard = i18next.t("signup:Please input the correct ID card number!");
+        }
+      } else if (name === "Country/Region") {
+        if (required && !get("country_region")) {next.country_region = i18next.t("signup:Please select your country/region!");}
+      } else if (name === "Email") {
+        if (required && !get("email")) {next.email = i18next.t("login:Please input your Email!");}
+        else if (get("email") && !Setting.isValidEmail(get("email"))) {next.email = i18next.t("login:The input is not valid Email!");}
+        if (signupItem.rule !== "No verification" && required && !get("emailCode")) {next.emailCode = i18next.t("code:Please input your verification code!");}
+      } else if (name === "Phone") {
+        if (required && !get("phone")) {next.phone = i18next.t("signup:Please input your phone number!");}
+        else if (get("phone") && !Setting.isValidPhone(get("phone"), get("countryCode"))) {next.phone = i18next.t("signup:The input is not valid Phone!");}
+        if (signupItem.rule !== "No verification" && required && !get("phoneCode")) {next.phoneCode = i18next.t("code:Please input your phone verification code!");}
+      } else if (name === "Password") {
+        const err = PasswordChecker.checkPasswordComplexity(get("password"), application.organizationObj?.passwordOptions ?? []);
+        if (err) {next.password = err;}
+      } else if (name === "Confirm password") {
+        if (required && !get("confirm")) {next.confirm = i18next.t("signup:Please confirm your password!");}
+        else if (get("confirm") && get("confirm") !== get("password")) {next.confirm = i18next.t("signup:Your confirmed password is inconsistent with the password!");}
+      } else if (name === "Invitation code") {
+        if (required && !get("invitationCode")) {next.invitationCode = i18next.t("signup:Please input your invitation code!");}
+      }
+    });
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
 
-    if (Array.isArray(values.gender)) {values.gender = values.gender.join(", ");}
-    if (Array.isArray(values.bio)) {values.bio = values.bio.join(", ");}
-    if (Array.isArray(values.tag)) {values.tag = values.tag.join(", ");}
-    if (Array.isArray(values.education)) {values.education = values.education.join(", ");}
-
-    if (invitationCode && !values.invitationCode) {
-      values.invitationCode = invitationCode;
-    }
-
+  const onFinish = (application) => {
+    const v = {...values};
+    if (Array.isArray(v.gender)) {v.gender = v.gender.join(", ");}
+    if (Array.isArray(v.bio)) {v.bio = v.bio.join(", ");}
+    if (Array.isArray(v.tag)) {v.tag = v.tag.join(", ");}
+    if (Array.isArray(v.education)) {v.education = v.education.join(", ");}
+    if (invitationCode && !v.invitationCode) {v.invitationCode = invitationCode;}
     const params = new URLSearchParams(window.location.search);
-    values.plan = params.get("plan");
-    values.pricing = params.get("pricing");
-
+    v.plan = params.get("plan");
+    v.pricing = params.get("pricing");
     const oAuthParams = Util.getOAuthGetParameters();
-
-    AuthBackend.signup(values, oAuthParams)
+    AuthBackend.signup(v, oAuthParams)
       .then((res) => {
         if (res.status === "ok") {
           if (oAuthParams && res.data && typeof res.data === "string" && !res.data.includes("/")) {
@@ -227,30 +262,25 @@ function SignupPage(props) {
             Setting.goToLink(redirectUrl);
             return;
           }
-
           if (oAuthParams && res.data && typeof res.data === "object" && res.data.required === true) {
             Setting.goToLink(`/consent/${application.name}?${window.location.search.substring(1)}`);
             return;
           }
-
-          if (typeof res.data === "string") {
-            values.username = res.data.split("/")[1];
-          }
-          if (Setting.hasPromptPage(application) && (!values.plan || !values.pricing)) {
+          if (typeof res.data === "string") {v.username = res.data.split("/")[1];}
+          if (Setting.hasPromptPage(application) && (!v.plan || !v.pricing)) {
             AuthBackend.getAccount("")
               .then((res) => {
-                let account = null;
                 if (res.status === "ok") {
-                  account = res.data;
+                  const account = res.data;
                   account.organization = res.data2;
                   onUpdateAccount(account);
-                  Setting.goToLinkSoft({props}, getResultPath(application, values));
+                  Setting.goToLinkSoft({props}, getResultPath(application, v));
                 } else {
                   Setting.showMessage("error", `${i18next.t("application:Failed to sign in")}: ${res.msg}`);
                 }
               });
           } else {
-            Setting.goToLinkSoft({props}, getResultPath(application, values));
+            Setting.goToLinkSoft({props}, getResultPath(application, v));
           }
         } else {
           Setting.showMessage("error", res.msg);
@@ -258,272 +288,221 @@ function SignupPage(props) {
       });
   };
 
-  const onFinishFailed = (values, errorFields) => {
-    formRef.current?.scrollToField(errorFields[0].name);
-  };
-
-  const isProviderVisible = (providerItem) => {
-    return Setting.isProviderVisibleForSignUp(providerItem);
-  };
+  const isProviderVisible = (providerItem) => Setting.isProviderVisibleForSignUp(providerItem);
 
   const renderSignupFormItem = (application, signupItem) => {
-    const validItems = ["Gender", "Bio", "Tag", "Education"];
     if (!signupItem.visible) {return null;}
     const required = signupItem.required;
+    const label = signupItem.label || signupItem.name;
 
     if (signupItem.name === "Username") {
-      const usernameRules = [{required: required, message: i18next.t("forget:Please input your username!"), whitespace: true}];
-      if (signupItem.regex) {
-        usernameRules.push({pattern: new RegExp(signupItem.regex), message: i18next.t("signup:The input doesn't match the signup item regex!")});
-      }
       return (
-        <Form.Item name="username" className="signup-username" label={signupItem.label ? signupItem.label : i18next.t("signup:Username")} rules={usernameRules}>
-          <Input className="signup-username-input" placeholder={signupItem.placeholder}
-            disabled={invitation !== undefined && invitation.username !== ""} />
-        </Form.Item>
+        <Field key="username" label={label} required={required} error={errors.username}>
+          <Input
+            value={values.username ?? ""}
+            onChange={(e) => setField("username", e.target.value)}
+            placeholder={signupItem.placeholder}
+            disabled={invitation !== undefined && invitation.username !== ""}
+          />
+        </Field>
       );
     } else if (signupItem.name === "Display name") {
       if (signupItem.rule === "First, last" && Setting.getLanguage() !== "zh") {
-        const firstNameRules = [{required: required, message: i18next.t("signup:Please input your first name!"), whitespace: true}];
-        const lastNameRules = [{required: required, message: i18next.t("signup:Please input your last name!"), whitespace: true}];
-        if (signupItem.regex) {
-          const regexRule = {pattern: new RegExp(signupItem.regex), message: i18next.t("signup:The input doesn't match the signup item regex!")};
-          firstNameRules.push(regexRule);
-          lastNameRules.push(regexRule);
-        }
         return (
-          <React.Fragment>
-            <Form.Item name="firstName" className="signup-first-name" label={signupItem.label ? signupItem.label : i18next.t("general:First name")} rules={firstNameRules}>
-              <Input className="signup-first-name-input" placeholder={signupItem.placeholder} />
-            </Form.Item>
-            <Form.Item name="lastName" className="signup-last-name" label={signupItem.label ? signupItem.label : i18next.t("general:Last name")} rules={lastNameRules}>
-              <Input className="signup-last-name-input" placeholder={signupItem.placeholder} />
-            </Form.Item>
+          <React.Fragment key="display-name">
+            <Field label={i18next.t("general:First name")} required={required} error={errors.firstName}>
+              <Input value={values.firstName ?? ""} onChange={(e) => setField("firstName", e.target.value)} placeholder={signupItem.placeholder} />
+            </Field>
+            <Field label={i18next.t("general:Last name")} required={required} error={errors.lastName}>
+              <Input value={values.lastName ?? ""} onChange={(e) => setField("lastName", e.target.value)} placeholder={signupItem.placeholder} />
+            </Field>
           </React.Fragment>
         );
       }
-
-      const displayNameRules = [{
-        required: required,
-        message: (signupItem.rule === "Real name" || signupItem.rule === "First, last") ? i18next.t("signup:Please input your real name!") : i18next.t("signup:Please input your display name!"),
-        whitespace: true,
-      }];
-      if (signupItem.regex) {
-        displayNameRules.push({pattern: new RegExp(signupItem.regex), message: i18next.t("signup:The input doesn't match the signup item regex!")});
-      }
       return (
-        <Form.Item name="name" className="signup-name"
-          label={(signupItem.label ? signupItem.label : (signupItem.rule === "Real name" || signupItem.rule === "First, last") ? i18next.t("application:Real name") : i18next.t("general:Display name"))}
-          rules={displayNameRules}>
-          <Input className="signup-name-input" placeholder={signupItem.placeholder} />
-        </Form.Item>
+        <Field key="name" label={label} required={required} error={errors.name}>
+          <Input value={values.name ?? ""} onChange={(e) => setField("name", e.target.value)} placeholder={signupItem.placeholder} />
+        </Field>
       );
     } else if (signupItem.name === "First name" && displayNameRule !== "First, last") {
-      const firstNameRules = [{required: required, message: i18next.t("signup:Please input your first name!"), whitespace: true}];
-      if (signupItem.regex) {
-        firstNameRules.push({pattern: new RegExp(signupItem.regex), message: i18next.t("signup:The input doesn't match the signup item regex!")});
-      }
       return (
-        <Form.Item name="firstName" className="signup-first-name" label={signupItem.label ? signupItem.label : i18next.t("general:First name")} rules={firstNameRules}>
-          <Input className="signup-first-name-input" placeholder={signupItem.placeholder} />
-        </Form.Item>
+        <Field key="firstName" label={label} required={required} error={errors.firstName}>
+          <Input value={values.firstName ?? ""} onChange={(e) => setField("firstName", e.target.value)} placeholder={signupItem.placeholder} />
+        </Field>
       );
     } else if (signupItem.name === "Last name" && displayNameRule !== "First, last") {
-      const lastNameRules = [{required: required, message: i18next.t("signup:Please input your last name!"), whitespace: true}];
-      if (signupItem.regex) {
-        lastNameRules.push({pattern: new RegExp(signupItem.regex), message: i18next.t("signup:The input doesn't match the signup item regex!")});
-      }
       return (
-        <Form.Item name="lastName" className="signup-last-name" label={signupItem.label ? signupItem.label : i18next.t("general:Last name")} rules={lastNameRules}>
-          <Input className="signup-last-name-input" placeholder={signupItem.placeholder} />
-        </Form.Item>
+        <Field key="lastName" label={label} required={required} error={errors.lastName}>
+          <Input value={values.lastName ?? ""} onChange={(e) => setField("lastName", e.target.value)} placeholder={signupItem.placeholder} />
+        </Field>
       );
     } else if (signupItem.name === "Affiliation") {
-      const affiliationRules = [{required: required, message: i18next.t("signup:Please input your affiliation!"), whitespace: true}];
-      if (signupItem.regex) {
-        affiliationRules.push({pattern: new RegExp(signupItem.regex), message: i18next.t("signup:The input doesn't match the signup item regex!")});
-      }
       return (
-        <Form.Item name="affiliation" className="signup-affiliation" label={signupItem.label ? signupItem.label : i18next.t("user:Affiliation")} rules={affiliationRules}>
-          <Input className="signup-affiliation-input" placeholder={signupItem.placeholder} />
-        </Form.Item>
+        <Field key="affiliation" label={label} required={required} error={errors.affiliation}>
+          <Input value={values.affiliation ?? ""} onChange={(e) => setField("affiliation", e.target.value)} placeholder={signupItem.placeholder} />
+        </Field>
       );
     } else if (signupItem.name === "ID card") {
       return (
-        <Form.Item name="idCard" className="signup-idcard" label={signupItem.label ? signupItem.label : i18next.t("user:ID card")}
-          rules={[
-            {required: required, message: i18next.t("signup:Please input your ID card number!"), whitespace: true},
-            {required: required, pattern: new RegExp(/^[1-9]\d{5}(18|19|20)\d{2}((0[1-9])|(10|11|12))(([0-2][1-9])|10|20|30|31)\d{3}[0-9X]$/, "g"), message: i18next.t("signup:Please input the correct ID card number!")},
-          ]}>
-          <Input className="signup-idcard-input" placeholder={signupItem.placeholder} />
-        </Form.Item>
+        <Field key="idCard" label={label} required={required} error={errors.idCard}>
+          <Input value={values.idCard ?? ""} onChange={(e) => setField("idCard", e.target.value)} placeholder={signupItem.placeholder} />
+        </Field>
       );
     } else if (signupItem.name === "Country/Region") {
       return (
-        <Form.Item name="country_region" className="signup-country-region" label={signupItem.label ? signupItem.label : i18next.t("user:Country/Region")}
-          rules={[{required: required, message: i18next.t("signup:Please select your country/region!")}]}>
-          <RegionSelect className="signup-region-select" onChange={(value) => { setRegion(value); }} />
-        </Form.Item>
+        <Field key="country_region" label={label} required={required} error={errors.country_region}>
+          <RegionSelect onChange={(v) => { setRegion(v); setField("country_region", v); }} />
+        </Field>
       );
-    } else if (signupItem.name === "Email" || signupItem.name === "Phone" || signupItem.name === "Email or Phone" || signupItem.name === "Phone or Email") {
+    } else if (["Email", "Phone", "Email or Phone", "Phone or Email"].includes(signupItem.name)) {
       const renderEmailItem = () => (
         <React.Fragment>
-          <Form.Item name="email" className="signup-email" label={signupItem.label ? signupItem.label : i18next.t("general:Email")}
-            rules={[
-              {required: required, message: i18next.t("login:Please input your Email!")},
-              {
-                validator: (_, value) => {
-                  if (email !== "" && !Setting.isValidEmail(email)) {
-                    setValidEmail(false);
-                    return Promise.reject(i18next.t("login:The input is not valid Email!"));
-                  }
-                  if (signupItem.regex) {
-                    const reg = new RegExp(signupItem.regex);
-                    if (!reg.test(email)) {
-                      setValidEmail(false);
-                      return Promise.reject(i18next.t("signup:The input Email doesn't match the signup item regex!"));
-                    }
-                  }
-                  setValidEmail(true);
-                  return Promise.resolve();
-                },
-              },
-            ]}>
-            <Input className="signup-email-input" placeholder={signupItem.placeholder} disabled={invitation !== undefined && invitation.email !== ""} onChange={e => setEmail(e.target.value)} />
-          </Form.Item>
-          {signupItem.rule !== "No verification" &&
-            <Form.Item name="emailCode" className="signup-email-code" label={signupItem.label ? signupItem.label : i18next.t("code:Email code")}
-              rules={[{required: required, message: i18next.t("code:Please input your verification code!")}]}>
-              <SendCodeInput className="signup-email-code-input" disabled={!validEmail} method={"signup"}
-                onButtonClickArgs={[email, "email", Setting.getApplicationName(application)]} application={application} />
-            </Form.Item>
-          }
+          <Field label={i18next.t("general:Email")} required={required} error={errors.email}>
+            <Input
+              value={values.email ?? ""}
+              onChange={(e) => {
+                setField("email", e.target.value);
+                setEmail(e.target.value);
+                setValidEmail(Setting.isValidEmail(e.target.value));
+              }}
+              placeholder={signupItem.placeholder}
+              disabled={invitation !== undefined && invitation.email !== ""}
+            />
+          </Field>
+          {signupItem.rule !== "No verification" && (
+            <Field label={i18next.t("code:Email code")} required={required} error={errors.emailCode}>
+              <SendCodeInput
+                value={values.emailCode ?? ""}
+                onChange={(v) => setField("emailCode", v)}
+                disabled={!validEmail}
+                method={"signup"}
+                onButtonClickArgs={[email, "email", Setting.getApplicationName(application)]}
+                application={application}
+              />
+            </Field>
+          )}
         </React.Fragment>
       );
-
       const renderPhoneItem = () => (
         <React.Fragment>
-          <Form.Item className="signup-phone" label={signupItem.label ? signupItem.label : i18next.t("general:Phone")} required={required}>
-            <Input.Group compact>
-              <Form.Item name="countryCode" noStyle rules={[{required: required, message: i18next.t("signup:Please select your country code!")}]}>
-                <CountryCodeSelect style={{width: "35%"}} countryCodes={getApplicationObj().organizationObj?.countryCodes ?? ["US"]} />
-              </Form.Item>
-              <Form.Item name="phone" dependencies={["countryCode"]} noStyle
-                rules={[
-                  {required: required, message: i18next.t("signup:Please input your phone number!")},
-                  ({getFieldValue}) => ({
-                    validator: (_, value) => {
-                      if (!required && !value) {return Promise.resolve();}
-                      if (value && !Setting.isValidPhone(value, getFieldValue("countryCode"))) {
-                        setValidPhone(false);
-                        return Promise.reject(i18next.t("signup:The input is not valid Phone!"));
-                      }
-                      setValidPhone(true);
-                      return Promise.resolve();
-                    },
-                  }),
-                ]}>
-                <Input className="signup-phone-input" placeholder={signupItem.placeholder} style={{width: "65%"}}
-                  disabled={invitation !== undefined && invitation.phone !== ""} onChange={e => setPhone(e.target.value)} />
-              </Form.Item>
-            </Input.Group>
-          </Form.Item>
-          {signupItem.rule !== "No verification" &&
-            <Form.Item name="phoneCode" className="phone-code" label={signupItem.label ? signupItem.label : i18next.t("code:Phone code")}
-              rules={[{required: required, message: i18next.t("code:Please input your phone verification code!")}]}>
-              <SendCodeInput className="signup-phone-code-input" disabled={!validPhone} method={"signup"}
-                onButtonClickArgs={[phone, "phone", Setting.getApplicationName(application)]} application={application}
-                countryCode={formRef.current?.getFieldValue("countryCode")} />
-            </Form.Item>
-          }
+          <Field label={i18next.t("general:Phone")} required={required} error={errors.phone}>
+            <div className="flex gap-2">
+              <CountryCodeSelect
+                initValue={values.countryCode}
+                onChange={(v) => setField("countryCode", v)}
+                style={{width: "35%"}}
+                countryCodes={getApplicationObj().organizationObj?.countryCodes ?? ["US"]}
+              />
+              <Input
+                value={values.phone ?? ""}
+                onChange={(e) => {
+                  setField("phone", e.target.value);
+                  setPhone(e.target.value);
+                  setValidPhone(Setting.isValidPhone(e.target.value, values.countryCode));
+                }}
+                placeholder={signupItem.placeholder}
+                style={{width: "65%"}}
+                disabled={invitation !== undefined && invitation.phone !== ""}
+              />
+            </div>
+          </Field>
+          {signupItem.rule !== "No verification" && (
+            <Field label={i18next.t("code:Phone code")} required={required} error={errors.phoneCode}>
+              <SendCodeInput
+                value={values.phoneCode ?? ""}
+                onChange={(v) => setField("phoneCode", v)}
+                disabled={!validPhone}
+                method={"signup"}
+                onButtonClickArgs={[phone, "phone", Setting.getApplicationName(application)]}
+                application={application}
+                countryCode={values.countryCode}
+              />
+            </Field>
+          )}
         </React.Fragment>
       );
-
-      if (signupItem.name === "Email") {return renderEmailItem();}
-      else if (signupItem.name === "Phone") {return renderPhoneItem();}
-      else if (signupItem.name === "Email or Phone" || signupItem.name === "Phone or Email") {
+      if (signupItem.name === "Email") {return <React.Fragment key="email-grp">{renderEmailItem()}</React.Fragment>;}
+      if (signupItem.name === "Phone") {return <React.Fragment key="phone-grp">{renderPhoneItem()}</React.Fragment>;}
+      if (signupItem.name === "Email or Phone" || signupItem.name === "Phone or Email") {
         let mode = emailOrPhoneMode;
-        if (mode === "") {
-          mode = signupItem.name === "Email or Phone" ? "Email" : "Phone";
-        }
+        if (mode === "") {mode = signupItem.name === "Email or Phone" ? "Email" : "Phone";}
+        const options = signupItem.name === "Email or Phone" ? ["Email", "Phone"] : ["Phone", "Email"];
         return (
-          <React.Fragment>
-            <div className="flex justify-center my-6">
-              <Radio.Group buttonStyle="solid" onChange={e => setEmailOrPhoneMode(e.target.value)} value={mode}>
-                {signupItem.name === "Email or Phone" ? (
-                  <React.Fragment>
-                    <Radio.Button value={"Email"}>{i18next.t("general:Email")}</Radio.Button>
-                    <Radio.Button value={"Phone"}>{i18next.t("general:Phone")}</Radio.Button>
-                  </React.Fragment>
-                ) : (
-                  <React.Fragment>
-                    <Radio.Button value={"Phone"}>{i18next.t("general:Phone")}</Radio.Button>
-                    <Radio.Button value={"Email"}>{i18next.t("general:Email")}</Radio.Button>
-                  </React.Fragment>
-                )}
-              </Radio.Group>
+          <React.Fragment key="email-or-phone">
+            <div className="flex justify-center my-6 gap-2">
+              {options.map((opt) => (
+                <button key={opt} type="button"
+                  onClick={() => setEmailOrPhoneMode(opt)}
+                  className={`px-4 py-1.5 rounded-md text-sm ${mode === opt ? "bg-white text-black" : "bg-white/10 text-white"}`}>
+                  {i18next.t(`general:${opt}`)}
+                </button>
+              ))}
             </div>
             {mode === "Email" ? renderEmailItem() : renderPhoneItem()}
           </React.Fragment>
         );
-      } else {
-        return null;
       }
+      return null;
     } else if (signupItem.name === "Password") {
       return (
-        <Popover placement={"top"} content={passwordPopover} open={passwordPopoverOpen}>
-          <Form.Item name="password" className="signup-password" label={signupItem.label ? signupItem.label : i18next.t("general:Password")}
-            rules={[{
-              required: required,
-              validateTrigger: "onChange",
-              validator: (rule, value) => {
-                const errorMsg = PasswordChecker.checkPasswordComplexity(value, application.organizationObj?.passwordOptions ?? []);
-                if (errorMsg === "") {return Promise.resolve();}
-                else {return Promise.reject(errorMsg);}
-              },
-            }]}
-            hasFeedback>
-            <Input.Password className="signup-password-input" placeholder={signupItem.placeholder} onChange={(e) => {
-              setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj?.passwordOptions ?? [], e.target.value));
-            }}
-            onFocus={() => {
-              setPasswordPopoverOpen(application.organizationObj?.passwordOptions ?? []?.length > 0);
-              setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj?.passwordOptions ?? [], formRef.current?.getFieldValue("password") ?? ""));
-            }}
-            onBlur={() => { setPasswordPopoverOpen(false); }} />
-          </Form.Item>
+        <Popover key="password" open={passwordPopoverOpen} onOpenChange={setPasswordPopoverOpen}>
+          <PopoverTrigger asChild>
+            <div>
+              <Field label={label} required={required} error={errors.password}>
+                <Input
+                  type="password"
+                  value={values.password ?? ""}
+                  onChange={(e) => {
+                    setField("password", e.target.value);
+                    setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj?.passwordOptions ?? [], e.target.value));
+                  }}
+                  onFocus={() => {
+                    setPasswordPopoverOpen((application.organizationObj?.passwordOptions ?? [])?.length > 0);
+                    setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj?.passwordOptions ?? [], values.password ?? ""));
+                  }}
+                  onBlur={() => setPasswordPopoverOpen(false)}
+                  placeholder={signupItem.placeholder}
+                />
+              </Field>
+            </div>
+          </PopoverTrigger>
+          <PopoverContent side="top">{passwordPopover}</PopoverContent>
         </Popover>
       );
     } else if (signupItem.name === "Confirm password") {
       return (
-        <Form.Item name="confirm" className="signup-confirm" label={signupItem.label ? signupItem.label : i18next.t("general:Confirm")}
-          dependencies={["password"]} hasFeedback
-          rules={[
-            {required: required, message: i18next.t("signup:Please confirm your password!")},
-            ({getFieldValue}) => ({
-              validator(rule, value) {
-                if (!value || getFieldValue("password") === value) {return Promise.resolve();}
-                return Promise.reject(i18next.t("signup:Your confirmed password is inconsistent with the password!"));
-              },
-            }),
-          ]}>
-          <Input.Password placeholder={signupItem.placeholder} />
-        </Form.Item>
+        <Field key="confirm" label={label} required={required} error={errors.confirm}>
+          <Input
+            type="password"
+            value={values.confirm ?? ""}
+            onChange={(e) => setField("confirm", e.target.value)}
+            placeholder={signupItem.placeholder}
+          />
+        </Field>
       );
     } else if (signupItem.name === "Invitation code") {
       return (
-        <Form.Item name="invitationCode" className="signup-invitation-code" label={signupItem.label ? signupItem.label : i18next.t("application:Invitation code")}
-          rules={[{required: required, message: i18next.t("signup:Please input your invitation code!")}]}>
-          <Input className="signup-invitation-code-input" placeholder={signupItem.placeholder} disabled={invitation !== undefined && invitation !== ""} />
-        </Form.Item>
+        <Field key="invitationCode" label={label} required={required} error={errors.invitationCode}>
+          <Input
+            value={values.invitationCode ?? ""}
+            onChange={(e) => setField("invitationCode", e.target.value)}
+            placeholder={signupItem.placeholder}
+            disabled={invitation !== undefined && invitation !== ""}
+          />
+        </Field>
       );
     } else if (signupItem.name === "Agreement") {
-      return AgreementModal.renderAgreementFormItem(application, required, tailFormItemLayout, {props, form: formRef, state: {}, setState: () => {}});
+      // TODO(rip-antd): AgreementModal.renderAgreementFormItem still expects antd Form.Item context.
+      return (
+        <div key="agreement">
+          {AgreementModal.renderAgreementFormItem(application, required, {}, {props, form: {current: {getFieldValue: () => values.agreement, setFieldValue: (k, v) => setField(k, v)}}, state: {}, setState: () => {}})}
+        </div>
+      );
     } else if (signupItem.name.startsWith("Text ")) {
-      return (<div dangerouslySetInnerHTML={{__html: signupItem.label}} />);
+      return (<div key={`text-${signupItem.label}`} dangerouslySetInnerHTML={{__html: signupItem.label}} />);
     } else if (signupItem.name === "Signup button") {
       return (
-        <Form.Item {...tailFormItemLayout}>
+        <div key="signup-btn" className="mt-4">
           <button type="submit" className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors">
             <UserPlus className="w-4 h-4" />
             {i18next.t("account:Sign Up")}
@@ -541,7 +520,7 @@ function SignupPage(props) {
               {i18next.t("signup:sign in now")}
             </a>
           </div>
-        </Form.Item>
+        </div>
       );
     } else if (signupItem.name === "Providers") {
       const showForm = Setting.isPasswordEnabled(application) || Setting.isCodeSigninEnabled(application) || Setting.isWebAuthnEnabled(application) || Setting.isLdapEnabled(application);
@@ -549,23 +528,58 @@ function SignupPage(props) {
         signupItem.rule = showForm ? "small" : "big";
       }
       return (
-        application.providers.filter(providerItem => isProviderVisible(providerItem)).map((providerItem, id) => {
-          return (
+        <div key="providers">
+          {application.providers.filter(providerItem => isProviderVisible(providerItem)).map((providerItem, id) => (
             <span key={id} onClick={(e) => {
-              const agreementChecked = formRef.current.getFieldValue("agreement");
+              const agreementChecked = values.agreement;
               if (agreementChecked !== undefined && typeof agreementChecked === "boolean" && !agreementChecked) {
                 e.preventDefault();
-                message.error(i18next.t("signup:Please accept the agreement!"));
+                toast.error(i18next.t("signup:Please accept the agreement!"));
               }
             }}>
               {ProviderButton.renderProviderLogo(providerItem.provider, application, null, null, signupItem.rule, props.location)}
             </span>
-          );
-        })
+          ))}
+        </div>
       );
-    } else if (validItems.includes(signupItem.name)) {
-      return renderFormItem(signupItem);
+    } else if (["Gender", "Bio", "Tag", "Education"].includes(signupItem.name)) {
+      const fieldName = signupItem.name.toLowerCase();
+      if (!signupItem.type || signupItem.type === "Input") {
+        return (
+          <Field key={fieldName} label={label} required={required} error={errors[fieldName]}>
+            <Input value={values[fieldName] ?? ""} onChange={(e) => setField(fieldName, e.target.value)} placeholder={signupItem.placeholder} />
+          </Field>
+        );
+      } else if (signupItem.type === "Multiple Choices") {
+        return (
+          <Field key={fieldName} label={label} required={required} error={errors[fieldName]}>
+            <select
+              multiple
+              value={Array.isArray(values[fieldName]) ? values[fieldName] : []}
+              onChange={(e) => {
+                const next = Array.from(e.target.selectedOptions).map(o => o.value);
+                setField(fieldName, next);
+              }}
+              className="w-full px-3 py-2 text-sm bg-transparent border border-white/20 rounded-lg text-white outline-none"
+            >
+              {signupItem.options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </Field>
+        );
+      } else if (signupItem.type === "Single Choice") {
+        return (
+          <Field key={fieldName} label={label} required={required} error={errors[fieldName]}>
+            <Select value={values[fieldName]} onValueChange={(v) => setField(fieldName, v)}>
+              <SelectTrigger><SelectValue placeholder={signupItem.placeholder} /></SelectTrigger>
+              <SelectContent>
+                {signupItem.options.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+        );
+      }
     }
+    return null;
   };
 
   const renderForm = (application) => {
@@ -581,74 +595,38 @@ function SignupPage(props) {
         </div>
       );
     }
-
-    if (invitation !== undefined) {
-      if (invitation.username !== "") {formRef.current?.setFieldValue("username", invitation.username);}
-      if (invitation.email !== "") {formRef.current?.setFieldValue("email", invitation.email);}
-      if (invitation.phone !== "") {formRef.current?.setFieldValue("phone", invitation.phone);}
-      if (invitationCode !== "") {formRef.current?.setFieldValue("invitationCode", invitationCode);}
-    }
-
     const displayNameItem = application.signupItems?.find(item => item.name === "Display name");
-    if (displayNameItem && !displayNameRule) {
-      setDisplayNameRule(displayNameItem.rule);
-    }
-
+    if (displayNameItem && !displayNameRule) {setDisplayNameRule(displayNameItem.rule);}
     return (
-      <Form
-        {...formItemLayout}
-        ref={formRef}
-        name="signup"
-        onFinish={(values) => onFinish(values)}
-        onFinishFailed={(errorInfo) => onFinishFailed(errorInfo.values, errorInfo.errorFields)}
-        initialValues={{
-          application: application.name,
-          organization: application.organization,
-          countryCode: application.organizationObj?.countryCodes ?? ["US"]?.[0],
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (validate(application)) {onFinish(application);}
         }}
-        size="large"
-        layout={Setting.isMobile() ? "vertical" : "horizontal"}
         style={{width: Setting.isMobile() ? "300px" : "400px"}}
       >
-        <Form.Item name="application" hidden={true} rules={[{required: true, message: "Please input your application!"}]} />
-        <Form.Item name="organization" hidden={true} rules={[{required: true, message: "Please input your organization!"}]} />
-        {
-          application.signupItems?.map((signupItem, idx) => (
-            <div key={idx}>
-              <div dangerouslySetInnerHTML={{__html: ("<style>" + signupItem.customCss + "</style>")}} />
-              {renderSignupFormItem(application, signupItem)}
-            </div>
-          ))
-        }
-      </Form>
+        {application.signupItems?.map((signupItem, idx) => (
+          <div key={idx}>
+            <div dangerouslySetInnerHTML={{__html: ("<style>" + signupItem.customCss + "</style>")}} />
+            {renderSignupFormItem(application, signupItem)}
+          </div>
+        ))}
+      </form>
     );
   };
 
-  // --- Main render ---
-
   const application = getApplicationObj();
-  if (application === undefined || application === null) {
-    return null;
-  }
-
+  if (application === undefined || application === null) {return null;}
   let existSignupButton = false;
   application.signupItems?.map(item => {
     item.name === "Signup button" ? existSignupButton = true : null;
   });
   if (!existSignupButton) {
-    application.signupItems?.push({
-      customCss: "",
-      label: "",
-      name: "Signup button",
-      placeholder: "",
-      visible: true,
-    });
+    application.signupItems?.push({customCss: "", label: "", name: "Signup button", placeholder: "", visible: true});
   }
-
   if (application.signupHtml !== "") {
     return (<div dangerouslySetInnerHTML={{__html: application.signupHtml}} />);
   }
-
   return (
     <React.Fragment>
       <div className="login-content" style={{margin: props.preview ?? parseOffset(application.formOffset)}}>

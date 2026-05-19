@@ -15,7 +15,9 @@
 // @ts-nocheck
 import React, {Fragment, useState} from "react";
 import i18next from "i18next";
-import {Button, Input} from "antd";
+import {Loader2} from "lucide-react";
+import {Button} from "../../components/ui/button";
+import {Input} from "../../components/ui/input";
 import * as AuthBackend from "../AuthBackend";
 import {EmailMfaType, PushMfaType, RecoveryMfaType, SmsMfaType, TotpMfaType} from "../MfaSetupPage";
 import {mfaAuth} from "./MfaVerifyForm";
@@ -140,15 +142,16 @@ export function MfaAuthVerifyForm({formValues, authParams, mfaProps, application
           {i18next.t("mfa:Multi-factor recover description")}
         </div>
         <Input placeholder={i18next.t("mfa:Recovery code")}
-          style={{marginBottom: 24}}
-          type={"passcode"}
-          size={"large"}
+          className="mb-6"
+          type="text"
           onChange={event => setRecoveryCode(event.target.value)}
         />
-        <Button style={{width: "100%", marginBottom: 20}} size={"large"} loading={loading}
-          type={"primary"} onClick={() => {
+        <Button className="w-full mb-5" disabled={loading}
+          onClick={() => {
             recover();
-          }}>{i18next.t("forget:Verify")}
+          }}>
+          {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+          {i18next.t("forget:Verify")}
         </Button>
         <span style={{float: "right"}}>
           {i18next.t("mfa:Have problems?")}
