@@ -14,10 +14,15 @@
 
 // @ts-nocheck
 import React from "react";
-import {
-  Button, Card, Col, Form, Input, InputNumber, Layout, List,
-  Menu, Result, Row, Select, Space, Spin, Switch, Tabs, Tag, Tooltip
-} from "antd";
+import {Button} from "./components/ui/button";
+import {Input} from "./components/ui/input";
+import {Switch} from "./components/ui/switch";
+import {Card, CardContent, CardHeader, CardTitle} from "./components/ui/card";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "./components/ui/select";
+import {Tabs, TabsList, TabsTrigger} from "./components/ui/tabs";
+import {Tooltip, TooltipContent, TooltipTrigger} from "./components/ui/tooltip";
+import {Badge} from "./components/ui/badge";
+import {cn} from "./lib/utils";
 import {withRouter} from "react-router-dom";
 import {TotpMfaType} from "./auth/MfaSetupPage";
 import * as GroupBackend from "./backend/GroupBackend";
@@ -43,17 +48,36 @@ import {CountryCodeSelect} from "./common/select/CountryCodeSelect";
 import PopconfirmModal from "./common/modal/PopconfirmModal";
 import {DeleteMfa} from "./backend/MfaBackend";
 import {CheckCircle, GripVertical, Users} from "lucide-react";
-import {HolderOutlined, UsergroupAddOutlined} from "@ant-design/icons";
 import * as MfaBackend from "./backend/MfaBackend";
 import AccountAvatar from "./account/AccountAvatar";
 import FaceIdTable from "./table/FaceIdTable";
 import MfaAccountTable from "./table/MfaAccountTable";
 import MfaTable from "./table/MfaTable";
 import ConsentTable from "./table/ConsentTable";
-import {Content, Header} from "antd/es/layout/layout";
-import Sider from "antd/es/layout/Sider";
 
-const {Option} = Select;
+// Reusable label column for the 12-col field grid.
+function FieldLabel({children, className = ""}) {
+  return (
+    <div className={cn("col-span-12 md:col-span-2 pt-2 text-sm text-gray-300", className)}>
+      {children} :
+    </div>
+  );
+}
+
+// Reusable input column.
+function FieldValue({children, span = 10, className = ""}) {
+  const spanCls = span === 22 ? "col-span-12 md:col-span-10"
+    : span === 5 ? "col-span-12 md:col-span-5"
+      : span === 4 ? "col-span-12 md:col-span-4"
+        : span === 2 ? "col-span-12 md:col-span-2"
+          : "col-span-12 md:col-span-10";
+  return <div className={cn(spanCls, className)}>{children}</div>;
+}
+
+// Grid row wrapper to mimic antd Row+Col layout.
+function FieldRow({children, className = ""}) {
+  return <div className={cn("grid grid-cols-12 gap-3 mt-5", className)}>{children}</div>;
+}
 
 class UserEditPage extends React.Component {
   constructor(props) {
@@ -335,101 +359,94 @@ class UserEditPage extends React.Component {
 
     if (accountItem.name === "Organization") {
       return (
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} disabled={disabled} value={this.state.user.owner} onChange={(value => {
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <Select disabled={disabled} value={this.state.user.owner} onValueChange={(value) => {
               this.getApplicationsByOrganization(value);
               this.updateUserField("owner", value);
               this.getGroups(value);
-            })}>
-              {
-                this.state.organizations.map((organization, index) => <Option key={index} value={organization.name}>{organization.name}</Option>)
-              }
+            }}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {this.state.organizations.map((organization, index) => (
+                  <SelectItem key={index} value={organization.name}>{organization.name}</SelectItem>
+                ))}
+              </SelectContent>
             </Select>
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Groups") {
+      // Multi-select: render as a list of checkbox-style toggles inside a popover-like inline list.
+      // TODO(rip-antd): proper multi-select primitive; for now use native multi-select with cn-styled fallback.
       return (
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Groups"), i18next.t("general:Groups - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} mode="multiple" style={{width: "100%"}} disabled={disabled} value={this.state.user.groups ?? []} onChange={(value => {
-              if (this.state.groups?.filter(group => value.includes(`${group.owner}/${group.name}`))
-                .filter(group => group.type === "Physical").length > 1) {
-                Setting.showMessage("error", i18next.t("general:You can only select one physical group"));
-                return;
-              }
-
-              this.updateUserField("groups", value);
-            })}
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Groups"), i18next.t("general:Groups - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <select
+              multiple
+              disabled={disabled}
+              className="w-full bg-transparent border border-white/10 rounded-md px-2 py-1 text-sm text-white"
+              value={this.state.user.groups ?? []}
+              onChange={(e) => {
+                const value = Array.from(e.target.selectedOptions, (opt) => opt.value);
+                if (this.state.groups?.filter(group => value.includes(`${group.owner}/${group.name}`))
+                  .filter(group => group.type === "Physical").length > 1) {
+                  Setting.showMessage("error", i18next.t("general:You can only select one physical group"));
+                  return;
+                }
+                this.updateUserField("groups", value);
+              }}
             >
-              {
-                this.state.groups?.map((group) => <Option key={group.name} value={`${group.owner}/${group.name}`}>
-                  <Space>
-                    {group.type === "Physical" ? <UsergroupAddOutlined /> : <HolderOutlined />}
-                    {group.displayName}
-                  </Space>
-                </Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
+              {this.state.groups?.map((group) => (
+                <option key={group.name} value={`${group.owner}/${group.name}`}>
+                  {group.type === "Physical" ? "[P] " : "[V] "}{group.displayName}
+                </option>
+              ))}
+            </select>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "ID") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel("ID", i18next.t("general:ID - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel("ID", i18next.t("general:ID - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.id} disabled={disabled} onChange={e => {
               this.updateUserField("id", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Name") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.name} disabled={disabled} onChange={e => {
               this.updateUserField("name", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Display name") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.displayName} onChange={e => {
               this.updateUserField("displayName", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Avatar") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Avatar"), i18next.t("general:Avatar - Tooltip"))} :
-          </Col>
-          {
-            this.renderImage(this.state.user.avatar, i18next.t("user:Upload a photo"), i18next.t("user:Set new profile picture"), "avatar", false)
-          }
-        </Row>
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Avatar"), i18next.t("general:Avatar - Tooltip"))}</FieldLabel>
+          {this.renderImage(this.state.user.avatar, i18next.t("user:Upload a photo"), i18next.t("user:Set new profile picture"), "avatar", false)}
+        </FieldRow>
       );
     } else if (accountItem.name === "User type") {
       let userTypes = ["normal-user", "paid-user"];
@@ -439,153 +456,144 @@ class UserEditPage extends React.Component {
       }
 
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:User type"), i18next.t("general:User type - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.user.type} onChange={(value => {this.updateUserField("type", value);})}
-              options={userTypes.map(item => Setting.getOption(item, item))}
-            />
-          </Col>
-        </Row>
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:User type"), i18next.t("general:User type - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <Select value={this.state.user.type} onValueChange={(value) => {this.updateUserField("type", value);}}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {userTypes.map((item) => (
+                  <SelectItem key={item} value={item}>{item}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Password") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Password"), i18next.t("general:Password - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Password"), i18next.t("general:Password - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             {
               (this.state.user.name === this.state.userName) ? (
                 <PasswordModal user={this.state.user} userName={this.state.userName} organization={this.getUserOrganization()} account={this.props.account} disabled={disabled} />
               ) : (
-                <Tooltip placement={"topLeft"} title={i18next.t("user:You have changed the username, please save your change first before modifying the password")}>
-                  <span>
-                    <PasswordModal user={this.state.user} userName={this.state.userName} organization={this.getUserOrganization()} account={this.props.account} disabled={true} />
-                  </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <PasswordModal user={this.state.user} userName={this.state.userName} organization={this.getUserOrganization()} account={this.props.account} disabled={true} />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="start">
+                    {i18next.t("user:You have changed the username, please save your change first before modifying the password")}
+                  </TooltipContent>
                 </Tooltip>
               )
             }
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Email") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Email"), i18next.t("general:Email - Tooltip"))} :
-          </Col>
-          <Col style={{paddingRight: "20px"}} span={5} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Email"), i18next.t("general:Email - Tooltip"))}</FieldLabel>
+          <FieldValue span={5} className="pr-5">
             <Input
               value={this.state.user.email}
-              style={{width: "280Px"}}
+              style={{width: "280px"}}
               disabled={!Setting.isLocalAdminUser(this.props.account) ? true : disabled}
               onChange={e => {
                 this.updateUserField("email", e.target.value);
               }}
             />
-          </Col>
-          <Col span={Setting.isMobile() ? 22 : 5} >
+          </FieldValue>
+          <FieldValue span={5}>
             {/* backend auto get the current user, so admin can not edit. Just self can reset*/}
             {this.isSelf() ? <ResetModal application={this.state.application} disabled={disabled} buttonText={i18next.t("user:Reset Email...")} destType={"email"} /> : null}
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Phone") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Phone"), i18next.t("general:Phone - Tooltip"))} :
-          </Col>
-          <Col style={{paddingRight: "20px"}} span={5} >
-            <Input.Group compact style={{width: "280Px"}}>
-              <CountryCodeSelect
-                style={{width: "30%"}}
-                // disabled={!Setting.isLocalAdminUser(this.props.account) ? true : disabled}
-                initValue={this.state.user.countryCode}
-                onChange={(value) => {
-                  this.updateUserField("countryCode", value);
-                }}
-                countryCodes={this.getUserOrganization()?.countryCodes}
-              />
-              <Input value={this.state.user.phone}
-                style={{width: "70%"}}
-                disabled={!Setting.isLocalAdminUser(this.props.account) ? true : disabled}
-                onChange={e => {
-                  this.updateUserField("phone", e.target.value);
-                }} />
-            </Input.Group>
-          </Col>
-          <Col span={Setting.isMobile() ? 24 : 5} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Phone"), i18next.t("general:Phone - Tooltip"))}</FieldLabel>
+          <FieldValue span={5} className="pr-5">
+            <div className="flex" style={{width: "280px"}}>
+              <div style={{width: "30%"}}>
+                <CountryCodeSelect
+                  // disabled={!Setting.isLocalAdminUser(this.props.account) ? true : disabled}
+                  initValue={this.state.user.countryCode}
+                  onChange={(value) => {
+                    this.updateUserField("countryCode", value);
+                  }}
+                  countryCodes={this.getUserOrganization()?.countryCodes}
+                />
+              </div>
+              <div style={{width: "70%"}}>
+                <Input value={this.state.user.phone}
+                  disabled={!Setting.isLocalAdminUser(this.props.account) ? true : disabled}
+                  onChange={e => {
+                    this.updateUserField("phone", e.target.value);
+                  }} />
+              </div>
+            </div>
+          </FieldValue>
+          <FieldValue span={5}>
             {this.isSelf() ? (<ResetModal application={this.state.application} countryCode={this.getCountryCode()} disabled={disabled} buttonText={i18next.t("user:Reset Phone...")} destType={"phone"} />) : null}
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Country/Region") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Country/Region"), i18next.t("user:Country/Region - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Country/Region"), i18next.t("user:Country/Region - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <RegionSelect defaultValue={this.state.user.region} onChange={(value) => {
               this.updateUserField("region", value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Location") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Location"), i18next.t("user:Location - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Location"), i18next.t("user:Location - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.location} onChange={e => {
               this.updateUserField("location", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Address") {
       return (
         <React.Fragment>
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-              {Setting.getLabel(i18next.t("user:Address"), i18next.t("user:Address - Tooltip"))} :
-            </Col>
-            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-              <span>{i18next.t("user:Address line") + " 1"}</span> :
-            </Col>
-            <Col span={20} >
+          <FieldRow>
+            <FieldLabel>{Setting.getLabel(i18next.t("user:Address"), i18next.t("user:Address - Tooltip"))}</FieldLabel>
+            <FieldLabel>{i18next.t("user:Address line") + " 1"}</FieldLabel>
+            <div className="col-span-12 md:col-span-8">
               <Input value={!this.state.user.address ? "" : this.state.user.address[0]} onChange={e => {
                 this.updateUserField("address", e.target.value, 0);
               }} />
-            </Col>
-          </Row>
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            </Col>
-            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-              <span>{i18next.t("user:Address line") + " 2"}</span> :
-            </Col>
-            <Col span={20} >
+            </div>
+          </FieldRow>
+          <FieldRow>
+            <FieldLabel>{""}</FieldLabel>
+            <FieldLabel>{i18next.t("user:Address line") + " 2"}</FieldLabel>
+            <div className="col-span-12 md:col-span-8">
               <Input value={!this.state.user.address ? "" : this.state.user.address[1]} onChange={e => {
                 this.updateUserField("address", e.target.value, 1);
               }} />
-            </Col>
-          </Row>
+            </div>
+          </FieldRow>
         </React.Fragment>
       );
     } else if (accountItem.name === "Addresses") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Addresses"), i18next.t("user:Addresses"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Addresses"), i18next.t("user:Addresses"))}</FieldLabel>
+          <FieldValue span={22}>
             <AddressTable
               title={i18next.t("user:Addresses")}
               table={this.state.user.addresses}
@@ -593,8 +601,8 @@ class UserEditPage extends React.Component {
                 this.updateUserField("addresses", value);
               }}
             />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Affiliation") {
       return (
@@ -604,51 +612,43 @@ class UserEditPage extends React.Component {
       );
     } else if (accountItem.name === "Title") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Title"), i18next.t("general:Title - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Title"), i18next.t("general:Title - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.title} onChange={e => {
               this.updateUserField("title", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "ID card type") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:ID card type"), i18next.t("user:ID card type - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:ID card type"), i18next.t("user:ID card type - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.idCardType} onChange={e => {
               this.updateUserField("idCardType", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "ID card") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:ID card"), i18next.t("user:ID card - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:ID card"), i18next.t("user:ID card - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.idCard} disabled={disabled} onChange={e => {
               this.updateUserField("idCard", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "ID card info") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:ID card info"), i18next.t("user:ID card info - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Row style={{marginTop: "20px"}} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:ID card info"), i18next.t("user:ID card info - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <div className="grid grid-cols-12 gap-3 mt-5">
               {
                 [
                   {name: "ID card front", value: "idCardFront"},
@@ -658,300 +658,269 @@ class UserEditPage extends React.Component {
                   return this.renderImage(this.state.user.properties === null ? "" : (this.state.user.properties[entry.value] || ""), this.getIdCardType(entry.name), this.getIdCardText(entry.name), entry.value, disabled);
                 })
               }
-            </Row>
-          </Col>
-        </Row>
+            </div>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Real name") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("application:Real name"), i18next.t("user:Real name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("application:Real name"), i18next.t("user:Real name - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.realName} disabled={disabled} onChange={e => {
               this.updateUserField("realName", e.target.value);
             }} placeholder={i18next.t("user:Please enter your real name")} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "ID verification") {
       const isVerified = this.state.user.isVerified;
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:ID verification"), i18next.t("user:ID verification - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:ID verification"), i18next.t("user:ID verification - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Button
-              type="primary"
               disabled={isVerified || disabled}
               onClick={() => this.handleVerifyIdentification()}
             >
               {isVerified ? i18next.t("user:Verified") : i18next.t("user:Verify Identity")}
             </Button>
-            {isVerified && <Tag color="success" style={{marginLeft: "10px"}}><CheckCircleOutlined /> {i18next.t("user:Identity verified")}</Tag>}
-          </Col>
-        </Row>
+            {isVerified && (
+              <Badge className="ml-2 bg-green-500/20 text-green-400 border-green-500/30">
+                <CheckCircle className="w-3.5 h-3.5 mr-1 inline" /> {i18next.t("user:Identity verified")}
+              </Badge>
+            )}
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Homepage") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Homepage"), i18next.t("user:Homepage - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Homepage"), i18next.t("user:Homepage - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.homepage} onChange={e => {
               this.updateUserField("homepage", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Bio") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Bio"), i18next.t("user:Bio - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Bio"), i18next.t("user:Bio - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.bio} onChange={e => {
               this.updateUserField("bio", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Tag") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Tag"), i18next.t("product:Tag - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Tag"), i18next.t("product:Tag - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             {
               this.getUserOrganization()?.tags?.length > 0 ? (
-                <Select virtual={false} style={{width: "100%"}} value={this.state.user.tag}
-                  onChange={(value => {this.updateUserField("tag", value);})}
-                  options={this.getUserOrganization()?.tags?.map((tag) => {
-                    const tokens = tag.split("|");
-                    const value = tokens[0];
-                    const displayValue = Setting.getLanguage() !== "zh" ? tokens[0] : tokens[1];
-                    return Setting.getOption(displayValue, value);
-                  })} />
+                <Select value={this.state.user.tag}
+                  onValueChange={(value) => {this.updateUserField("tag", value);}}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {this.getUserOrganization()?.tags?.map((tag) => {
+                      const tokens = tag.split("|");
+                      const value = tokens[0];
+                      const displayValue = Setting.getLanguage() !== "zh" ? tokens[0] : tokens[1];
+                      return <SelectItem key={value} value={value}>{displayValue}</SelectItem>;
+                    })}
+                  </SelectContent>
+                </Select>
               ) : (
                 <Input value={this.state.user.tag} onChange={e => {
                   this.updateUserField("tag", e.target.value);
                 }} />
               )
             }
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Language") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Language"), i18next.t("user:Language - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Language"), i18next.t("user:Language - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.language} onChange={e => {
               this.updateUserField("language", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Gender") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Gender"), i18next.t("user:Gender - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Gender"), i18next.t("user:Gender - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.gender} onChange={e => {
               this.updateUserField("gender", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Birthday") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Birthday"), i18next.t("user:Birthday - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Birthday"), i18next.t("user:Birthday - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.birthday} onChange={e => {
               this.updateUserField("birthday", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Education") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Education"), i18next.t("user:Education - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Education"), i18next.t("user:Education - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.education} onChange={e => {
               this.updateUserField("education", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Balance") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Balance"), i18next.t("user:Balance - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber value={this.state.user.balance} onChange={value => {
-              this.updateUserField("balance", value);
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Balance"), i18next.t("user:Balance - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <Input type="number" value={this.state.user.balance} onChange={e => {
+              this.updateUserField("balance", e.target.value === "" ? null : Number(e.target.value));
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Balance credit") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("organization:Balance credit"), i18next.t("organization:Balance credit - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber value={this.state.user.balanceCredit ?? 0} onChange={value => {
-              this.updateUserField("balanceCredit", value);
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("organization:Balance credit"), i18next.t("organization:Balance credit - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <Input type="number" value={this.state.user.balanceCredit ?? 0} onChange={e => {
+              this.updateUserField("balanceCredit", e.target.value === "" ? null : Number(e.target.value));
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Balance currency") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("organization:Balance currency"), i18next.t("organization:Balance currency - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.user.balanceCurrency || "USD"} onChange={(value => {
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("organization:Balance currency"), i18next.t("organization:Balance currency - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <Select value={this.state.user.balanceCurrency || "USD"} onValueChange={(value) => {
               this.updateUserField("balanceCurrency", value);
-            })}>
-              {
-                Setting.CurrencyOptions.map((item, index) => <Option key={index} value={item.id}>{Setting.getCurrencyWithFlag(item.id)}</Option>)
-              }
+            }}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Setting.CurrencyOptions.map((item, index) => (
+                  <SelectItem key={index} value={item.id}>{Setting.getCurrencyWithFlag(item.id)}</SelectItem>
+                ))}
+              </SelectContent>
             </Select>
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Score") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Score"), i18next.t("user:Score - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber value={this.state.user.score} onChange={value => {
-              this.updateUserField("score", value);
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Score"), i18next.t("user:Score - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <Input type="number" value={this.state.user.score} onChange={e => {
+              this.updateUserField("score", e.target.value === "" ? null : Number(e.target.value));
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Karma") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Karma"), i18next.t("user:Karma - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber value={this.state.user.karma} onChange={value => {
-              this.updateUserField("karma", value);
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Karma"), i18next.t("user:Karma - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <Input type="number" value={this.state.user.karma} onChange={e => {
+              this.updateUserField("karma", e.target.value === "" ? null : Number(e.target.value));
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Ranking") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Ranking"), i18next.t("user:Ranking - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <InputNumber value={this.state.user.ranking} onChange={value => {
-              this.updateUserField("ranking", value);
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Ranking"), i18next.t("user:Ranking - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <Input type="number" value={this.state.user.ranking} onChange={e => {
+              this.updateUserField("ranking", e.target.value === "" ? null : Number(e.target.value));
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Signup application") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Signup application"), i18next.t("general:Signup application - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} disabled={disabled} value={this.state.user.signupApplication}
-              onChange={(value => {this.updateUserField("signupApplication", value);})}
-              options={this.state.applications.map((application) => Setting.getOption(application.name, application.name))
-              } />
-          </Col>
-        </Row>
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Signup application"), i18next.t("general:Signup application - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <Select disabled={disabled} value={this.state.user.signupApplication}
+              onValueChange={(value) => {this.updateUserField("signupApplication", value);}}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {this.state.applications.map((application) => (
+                  <SelectItem key={application.name} value={application.name}>{application.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Register type") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Register type"), i18next.t("user:Register type - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Register type"), i18next.t("user:Register type - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.registerType} disabled={!this.props.account.isAdmin}
               onChange={e => {this.updateUserField("registerType", e.target.value);}} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Register source") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Register source"), i18next.t("user:Register source - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Register source"), i18next.t("user:Register source - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.registerSource} disabled={!this.props.account.isAdmin}
               onChange={e => {this.updateUserField("registerSource", e.target.value);}} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Roles") {
       return (
-        <Row style={{marginTop: "20px", alignItems: "center"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Roles"), i18next.t("general:Roles - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            {
-              Setting.getTags(this.state.user.roles.map(role => role.name))
-            }
-          </Col>
-        </Row>
+        <FieldRow className="items-center">
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Roles"), i18next.t("general:Roles - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            {Setting.getTags(this.state.user.roles.map(role => role.name))}
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Permissions") {
       return (
-        <Row style={{marginTop: "20px", alignItems: "center"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Permissions"), i18next.t("general:Permissions - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            {
-              Setting.getTags(this.state.user.permissions.map(permission => permission.name))
-            }
-          </Col>
-        </Row>
+        <FieldRow className="items-center">
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Permissions"), i18next.t("general:Permissions - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            {Setting.getTags(this.state.user.permissions.map(permission => permission.name))}
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "3rd-party logins") {
       return (
         !this.isSelfOrAdmin() ? null : (
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-              {Setting.getLabel(i18next.t("user:3rd-party logins"), i18next.t("user:3rd-party logins - Tooltip"))} :
-            </Col>
-            <Col span={22} >
+          <FieldRow>
+            <FieldLabel>{Setting.getLabel(i18next.t("user:3rd-party logins"), i18next.t("user:3rd-party logins - Tooltip"))}</FieldLabel>
+            <FieldValue span={22}>
               <div style={{marginBottom: 20}}>
                 {
                   (this.state.application === null || this.state.user === null) ? null : (
@@ -978,236 +947,215 @@ class UserEditPage extends React.Component {
                   )
                 }
               </div>
-            </Col>
-          </Row>
+            </FieldValue>
+          </FieldRow>
         )
       );
     } else if (accountItem.name === "Properties") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Properties"), i18next.t("user:Properties - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Properties"), i18next.t("user:Properties - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <PropertyTable properties={this.state.user.properties} onUpdateTable={(value) => {this.updateUserField("properties", value);}} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Is admin") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Is admin"), i18next.t("user:Is admin - Tooltip"))} :
-          </Col>
-          <Col span={(Setting.isMobile()) ? 22 : 2} >
-            <Switch disabled={disabled} checked={this.state.user.isAdmin} onChange={checked => {
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Is admin"), i18next.t("user:Is admin - Tooltip"))}</FieldLabel>
+          <FieldValue span={2}>
+            <Switch disabled={disabled} checked={this.state.user.isAdmin} onCheckedChange={(checked) => {
               this.updateUserField("isAdmin", checked);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Is forbidden") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Is forbidden"), i18next.t("user:Is forbidden - Tooltip"))} :
-          </Col>
-          <Col span={(Setting.isMobile()) ? 22 : 2} >
-            <Switch checked={this.state.user.isForbidden} onChange={checked => {
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Is forbidden"), i18next.t("user:Is forbidden - Tooltip"))}</FieldLabel>
+          <FieldValue span={2}>
+            <Switch checked={this.state.user.isForbidden} onCheckedChange={(checked) => {
               this.updateUserField("isForbidden", checked);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Is deleted") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Is deleted"), i18next.t("user:Is deleted - Tooltip"))} :
-          </Col>
-          <Col span={(Setting.isMobile()) ? 22 : 2} >
-            <Switch checked={this.state.user.isDeleted} onChange={checked => {
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Is deleted"), i18next.t("user:Is deleted - Tooltip"))}</FieldLabel>
+          <FieldValue span={2}>
+            <Switch checked={this.state.user.isDeleted} onCheckedChange={(checked) => {
               this.updateUserField("isDeleted", checked);
               this.updateUserField("deletedTime", checked ? moment().format() : "");
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "MFA items") {
-      return (<Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-          {Setting.getLabel(i18next.t("general:MFA items"), i18next.t("general:MFA items - Tooltip"))} :
-        </Col>
-        <Col span={22} >
-          <MfaTable
-            title={i18next.t("general:MFA items")}
-            table={this.state.user.mfaItems ?? []}
-            onUpdateTable={(value) => {this.updateUserField("mfaItems", value);}}
-          />
-        </Col>
-      </Row>);
+      return (
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:MFA items"), i18next.t("general:MFA items - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
+            <MfaTable
+              title={i18next.t("general:MFA items")}
+              table={this.state.user.mfaItems ?? []}
+              onUpdateTable={(value) => {this.updateUserField("mfaItems", value);}}
+            />
+          </FieldValue>
+        </FieldRow>
+      );
     } else if (accountItem.name === "Consents") {
       return (
-        <Row style={{marginTop: "20px"}}>
-          <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
-            {Setting.getLabel(i18next.t("consent:Consents"), i18next.t("consent:Consents - Tooltip"))} :
-          </Col>
-          <Col span={22}>
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("consent:Consents"), i18next.t("consent:Consents - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <ConsentTable
               title={i18next.t("consent:Consents")}
               table={this.state.consents}
               onUpdateTable={() => this.getUser()}
             />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Multi-factor authentication") {
       return (
         !this.isSelfOrAdmin() ? null : (
-          <Row style={{marginTop: "20px"}} >
-            <Col style={{marginTop: "5px"}} span={Setting.isMobile() ? 22 : 2}>
-              {Setting.getLabel(i18next.t("mfa:Multi-factor authentication"), i18next.t("mfa:Multi-factor authentication - Tooltip "))} :
-            </Col>
-            <Col span={22} >
-              <Card size="small" title={
-                <div>
-                  {i18next.t("mfa:Multi-factor methods")}&nbsp;&nbsp;&nbsp;&nbsp;
-                  {this.state.multiFactorAuths?.some(mfaProps => mfaProps.enabled) ?
-                    <PopconfirmModal
-                      text={i18next.t("general:Disable")}
-                      title={i18next.t("general:Sure to disable") + "?"}
-                      onConfirm={() => this.deleteMfa()}
-                      size="small"
-                    /> : null
-                  }
-                </div>
-              }>
-                <List
-                  size="small"
-                  rowKey="mfaType"
-                  itemLayout="horizontal"
-                  dataSource={this.state.multiFactorAuths}
-                  renderItem={(item, index) => (
-                    <List.Item>
-                      <Space>
-                        {i18next.t("general:Type")}: {item.mfaType}
-                        {item.secret}
-                      </Space>
-                      {item.enabled ? (
-                        <Space>
-                          <Tag icon={<CheckCircleOutlined />} color="success">
-                            {i18next.t("general:Enabled")}
-                          </Tag>
-                          {item.isPreferred ?
-                            <Tag icon={<CheckCircleOutlined />} color="blue" style={{marginRight: 20}} >
-                              {i18next.t("mfa:preferred")}
-                            </Tag> :
-                            <Button type="primary" style={{marginRight: 20}} onClick={() => {
-                              const values = {
-                                owner: this.state.user.owner,
-                                name: this.state.user.name,
-                                mfaType: item.mfaType,
-                              };
-                              MfaBackend.SetPreferredMfa(values).then((res) => {
-                                if (res.status === "ok") {
-                                  this.setState({
-                                    multiFactorAuths: res.data,
-                                  });
-                                }
-                              });
+          <FieldRow>
+            <FieldLabel>{Setting.getLabel(i18next.t("mfa:Multi-factor authentication"), i18next.t("mfa:Multi-factor authentication - Tooltip "))}</FieldLabel>
+            <FieldValue span={22}>
+              <Card>
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm flex items-center gap-4">
+                    <span>{i18next.t("mfa:Multi-factor methods")}</span>
+                    {this.state.multiFactorAuths?.some(mfaProps => mfaProps.enabled) ?
+                      <PopconfirmModal
+                        text={i18next.t("general:Disable")}
+                        title={i18next.t("general:Sure to disable") + "?"}
+                        onConfirm={() => this.deleteMfa()}
+                        size="small"
+                      /> : null
+                    }
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="py-2">
+                  <ul className="divide-y divide-white/10">
+                    {this.state.multiFactorAuths?.map((item) => (
+                      <li key={item.mfaType} className="flex items-center justify-between py-2">
+                        <div className="flex gap-2 items-center text-sm">
+                          <span>{i18next.t("general:Type")}: {item.mfaType}</span>
+                          <span>{item.secret}</span>
+                        </div>
+                        {item.enabled ? (
+                          <div className="flex gap-2 items-center">
+                            <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                              <CheckCircle className="w-3.5 h-3.5 mr-1 inline" />
+                              {i18next.t("general:Enabled")}
+                            </Badge>
+                            {item.isPreferred ?
+                              <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 mr-5">
+                                <CheckCircle className="w-3.5 h-3.5 mr-1 inline" />
+                                {i18next.t("mfa:preferred")}
+                              </Badge> :
+                              <Button className="mr-5" onClick={() => {
+                                const values = {
+                                  owner: this.state.user.owner,
+                                  name: this.state.user.name,
+                                  mfaType: item.mfaType,
+                                };
+                                MfaBackend.SetPreferredMfa(values).then((res) => {
+                                  if (res.status === "ok") {
+                                    this.setState({
+                                      multiFactorAuths: res.data,
+                                    });
+                                  }
+                                });
+                              }}>
+                                {i18next.t("mfa:Set preferred")}
+                              </Button>
+                            }
+                            {this.isSelf() ? <Button variant="outline" onClick={() => {
+                              this.props.history.push(`/mfa/setup?mfaType=${item.mfaType}`);
                             }}>
-                              {i18next.t("mfa:Set preferred")}
-                            </Button>
-                          }
-                          {this.isSelf() ? <Button type={"default"} onClick={() => {
-                            this.props.history.push(`/mfa/setup?mfaType=${item.mfaType}`);
-                          }}>
-                            {i18next.t("general:Edit")}
-                          </Button> : null}
-                        </Space>
-                      ) :
-                        <Space>
-                          {item.mfaType !== TotpMfaType && Setting.isLocalAdminUser(this.props.account) && !this.isSelf() ?
-                            <EnableMfaModal user={this.state.user} mfaType={item.mfaType} onSuccess={() => {
-                              this.getUser();
-                            }} /> : null}
-                          {this.isSelf() ? <Button type={"default"} onClick={() => {
-                            this.props.history.push(`/mfa/setup?mfaType=${item.mfaType}`);
-                          }}>
-                            {i18next.t("mfa:Setup")}
-                          </Button> : null}
-                        </Space>}
-                    </List.Item>
-                  )}
-                />
+                              {i18next.t("general:Edit")}
+                            </Button> : null}
+                          </div>
+                        ) :
+                          <div className="flex gap-2 items-center">
+                            {item.mfaType !== TotpMfaType && Setting.isLocalAdminUser(this.props.account) && !this.isSelf() ?
+                              <EnableMfaModal user={this.state.user} mfaType={item.mfaType} onSuccess={() => {
+                                this.getUser();
+                              }} /> : null}
+                            {this.isSelf() ? <Button variant="outline" onClick={() => {
+                              this.props.history.push(`/mfa/setup?mfaType=${item.mfaType}`);
+                            }}>
+                              {i18next.t("mfa:Setup")}
+                            </Button> : null}
+                          </div>}
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
               </Card>
-            </Col>
-          </Row>
+            </FieldValue>
+          </FieldRow>
         )
       );
     } else if (accountItem.name === "WebAuthn credentials") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:WebAuthn credentials"), i18next.t("user:WebAuthn credentials"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:WebAuthn credentials"), i18next.t("user:WebAuthn credentials"))}</FieldLabel>
+          <FieldValue span={22}>
             <WebAuthnCredentialTable isSelf={this.isSelf()} table={this.state.user.webauthnCredentials} updateTable={(table) => {this.updateUserField("webauthnCredentials", table);}} refresh={this.getUser.bind(this)} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Last change password time") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Last change password time"), i18next.t("user:Last change password time"))} :
-          </Col>
-          <Col span={22}>
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Last change password time"), i18next.t("user:Last change password time"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.lastChangePasswordTime} onChange={e => {
               this.updateUserField("lastChangePasswordTime", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Managed accounts") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Managed accounts"), i18next.t("user:Managed accounts"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Managed accounts"), i18next.t("user:Managed accounts"))}</FieldLabel>
+          <FieldValue span={22}>
             <ManagedAccountTable
               title={i18next.t("user:Managed accounts")}
               table={this.state.user.managedAccounts}
               onUpdateTable={(table) => {this.updateUserField("managedAccounts", table);}}
               applications={this.state.applications}
             />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Face ID") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Face IDs"), i18next.t("user:Face IDs"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Face IDs"), i18next.t("user:Face IDs"))}</FieldLabel>
+          <FieldValue span={22}>
             <FaceIdTable
               title={i18next.t("user:Face IDs")}
               table={this.state.user.faceIds}
               {...this.props}
               onUpdateTable={(table) => {this.updateUserField("faceIds", table);}}
             />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "MFA accounts") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:MFA accounts"), i18next.t("user:MFA accounts"))} :
-          </Col>
-          <Col span={22} >
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:MFA accounts"), i18next.t("user:MFA accounts"))}</FieldLabel>
+          <FieldValue span={22}>
             <MfaAccountTable
               title={i18next.t("user:MFA accounts")}
               table={this.state.user.mfaAccounts}
@@ -1215,67 +1163,59 @@ class UserEditPage extends React.Component {
               icon={this.state.user.avatar}
               onUpdateTable={(table) => {this.updateUserField("mfaAccounts", table);}}
             />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Need update password") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("user:Need update password"), i18next.t("user:Need update password - Tooltip"))} :
-          </Col>
-          <Col span={(Setting.isMobile()) ? 22 : 2} >
-            <Switch disabled={(!this.state.user.phone) && (!this.state.user.email) && (!this.state.user.mfaProps)} checked={this.state.user.needUpdatePassword} onChange={checked => {
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("user:Need update password"), i18next.t("user:Need update password - Tooltip"))}</FieldLabel>
+          <FieldValue span={2}>
+            <Switch disabled={(!this.state.user.phone) && (!this.state.user.email) && (!this.state.user.mfaProps)} checked={this.state.user.needUpdatePassword} onCheckedChange={(checked) => {
               this.updateUserField("needUpdatePassword", checked);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "IP whitelist") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:IP whitelist"), i18next.t("general:IP whitelist - Tooltip"))} :
-          </Col>
-          <Col span={22}>
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:IP whitelist"), i18next.t("general:IP whitelist - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.ipWhitelist} onChange={e => {
               this.updateUserField("ipWhitelist", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "First name") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:First name"), i18next.t("general:First name - Tooltip"))} :
-          </Col>
-          <Col span={22}>
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:First name"), i18next.t("general:First name - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.firstName} onChange={e => {
               this.updateUserField("firstName", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     } else if (accountItem.name === "Last name") {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Last name"), i18next.t("general:Last name - Tooltip"))} :
-          </Col>
-          <Col span={22}>
+        <FieldRow>
+          <FieldLabel>{Setting.getLabel(i18next.t("general:Last name"), i18next.t("general:Last name - Tooltip"))}</FieldLabel>
+          <FieldValue span={22}>
             <Input value={this.state.user.lastName} onChange={e => {
               this.updateUserField("lastName", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </FieldValue>
+        </FieldRow>
       );
     }
   }
 
   renderImage(imgUrl, title, set, tag, disabled) {
     return (
-      <Col span={4} style={{textAlign: "center", margin: "auto", marginLeft: "20px"}} key={tag}>
+      <div className="col-span-12 md:col-span-4 text-center mx-auto" style={{marginLeft: "20px"}} key={tag}>
         {
           imgUrl ?
             <div style={{marginBottom: "10px"}}>
@@ -1284,17 +1224,17 @@ class UserEditPage extends React.Component {
               </a>
             </div>
             :
-            <Col style={{height: "78%", border: "1px dotted grey", borderRadius: 3, marginBottom: "10px"}}>
+            <div className="border border-dotted border-gray-500 rounded-sm" style={{height: "78%", marginBottom: "10px"}}>
               <div style={{fontSize: 30, margin: 10}}>+</div>
               <div style={{verticalAlign: "middle", marginBottom: 10}}>{`(${i18next.t("general:empty")})`}</div>
-            </Col>
+            </div>
         }
         {
           (this.props.account === null) ? null : (
             <CropperDivModal disabled={disabled} tag={tag} setTitle={set} buttonText={`${title}...`} title={title} user={this.state.user} organization={this.getUserOrganization()} />
           )
         }
-      </Col>
+      </div>
     );
   }
 
@@ -1358,89 +1298,91 @@ class UserEditPage extends React.Component {
     if (tabs.length === 0 || (tabs.length === 1 && tabs[0] === "")) {
       const accountItems = this.getAccountItemsByTab("");
       return (
-        <Form>
+        <div>
           {accountItems.map(accountItem => (
             <React.Fragment key={accountItem.name}>
-              <Form.Item name={accountItem.name}
-                validateTrigger="onChange"
-                rules={[
-                  {
-                    pattern: accountItem.regex ? new RegExp(accountItem.regex, "g") : null,
-                    message: i18next.t("user:This field value doesn't match the pattern rule"),
-                  },
-                ]}
-                style={{margin: 0}}>
-                {this.renderAccountItem(accountItem)}
-              </Form.Item>
+              {this.renderAccountItem(accountItem)}
             </React.Fragment>
           ))}
-        </Form>
+        </div>
       );
     }
 
     // Render with tabs
     const activeKey = this.state.activeMenuKey || tabs[0] || "";
 
-    return (
-      <Layout style={{background: "inherit"}}>
-        {
-          this.state.menuMode === "Vertical" ? null : (
-            <Header style={{background: "inherit", padding: "0px"}}>
-              <Tabs
-                onChange={(key) => {
-                  this.setState({activeMenuKey: key});
-                  window.location.hash = key;
-                }}
-                type="card"
-                activeKey={activeKey}
-                items={tabs.map(tab => ({
-                  label: tab === "" ? i18next.t("general:Default") : tab,
-                  key: tab,
-                }))}
-              />
-            </Header>
-          )
-        }
-        <Layout style={{background: "inherit", maxHeight: "70vh", overflow: "auto"}}>
-          {
-            this.state.menuMode === "Vertical" ? (
-              <Sider width={200} style={{background: "inherit", position: "sticky", top: 0}}>
-                <Menu
-                  mode="vertical"
-                  selectedKeys={[activeKey]}
-                  onClick={({key}) => {
-                    this.setState({activeMenuKey: key});
-                    window.location.hash = key;
-                  }}
-                  style={{marginBottom: "20px", height: "100%"}}
-                  items={tabs.map(tab => ({
-                    label: tab === "" ? i18next.t("general:Default") : tab,
-                    key: tab,
-                  }))}
-                />
-              </Sider>) : null
-          }
-          <Content style={{padding: "15px"}}>
-            <Form>
+    const setActive = (key) => {
+      this.setState({activeMenuKey: key});
+      window.location.hash = key;
+    };
+
+    if (this.state.menuMode === "Vertical") {
+      // Vertical nav: aside + content
+      return (
+        <div className="flex bg-inherit" style={{maxHeight: "70vh", overflow: "auto"}}>
+          <aside className="w-60 shrink-0 sticky top-0">
+            <nav>
+              <ul className="space-y-1">
+                {tabs.map((tab) => {
+                  const isActive = tab === activeKey;
+                  const label = tab === "" ? i18next.t("general:Default") : tab;
+                  return (
+                    <li key={tab}>
+                      <button
+                        type="button"
+                        onClick={() => setActive(tab)}
+                        className={cn(
+                          "w-full text-left px-3 py-2 rounded-md text-sm transition-colors",
+                          isActive ? "bg-white/10 text-white" : "text-gray-300 hover:bg-white/5"
+                        )}
+                      >
+                        {label}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+          </aside>
+          <main className="flex-1 px-4">
+            <div>
               {this.getAccountItemsByTab(activeKey).map(accountItem => (
                 <React.Fragment key={accountItem.name}>
-                  <Form.Item name={accountItem.name}
-                    validateTrigger="onChange"
-                    rules={[
-                      {
-                        pattern: accountItem.regex ? new RegExp(accountItem.regex, "g") : null,
-                        message: i18next.t("user:This field value doesn't match the pattern rule"),
-                      },
-                    ]}
-                    style={{margin: 0}}>
-                    {this.renderAccountItem(accountItem)}
-                  </Form.Item>
+                  {this.renderAccountItem(accountItem)}
                 </React.Fragment>
               ))}
-            </Form>
-          </Content>
-        </Layout>
-      </Layout>
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    // Horizontal Tabs header + content below
+    return (
+      <div className="bg-inherit">
+        <div className="bg-inherit">
+          <Tabs value={activeKey} onValueChange={setActive}>
+            <TabsList>
+              {tabs.map((tab) => (
+                <TabsTrigger key={tab} value={tab}>
+                  {tab === "" ? i18next.t("general:Default") : tab}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
+        <div className="bg-inherit" style={{maxHeight: "70vh", overflow: "auto"}}>
+          <main className="px-4">
+            <div>
+              {this.getAccountItemsByTab(activeKey).map(accountItem => (
+                <React.Fragment key={accountItem.name}>
+                  {this.renderAccountItem(accountItem)}
+                </React.Fragment>
+              ))}
+            </div>
+          </main>
+        </div>
+      </div>
     );
   }
 

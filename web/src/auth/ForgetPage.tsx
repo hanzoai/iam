@@ -14,8 +14,9 @@
 
 // @ts-nocheck
 import React, {useCallback, useEffect, useRef, useState} from "react";
-import {Form, Input, Select} from "antd";
 import {ArrowLeft, User, Lock, CheckCircle, KeyRound} from "lucide-react";
+import {Input} from "../components/ui/input";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "../components/ui/select";
 import * as AuthBackend from "./AuthBackend";
 import * as ApplicationBackend from "../backend/ApplicationBackend";
 import * as Util from "./Util";
@@ -27,11 +28,8 @@ import {withRouter} from "react-router-dom";
 import * as PasswordChecker from "../common/PasswordChecker";
 import * as Obfuscator from "./Obfuscator";
 
-const {Option} = Select;
-
 function ForgetPage(props) {
   const queryParams = new URLSearchParams(location.search);
-  const formRef = useRef(null);
 
   const [applicationName] = useState(props.applicationName ?? props.match.params?.applicationName);
   const [msg, setMsg] = useState(null);
@@ -43,8 +41,17 @@ function ForgetPage(props) {
   const [verifyType, setVerifyType] = useState("");
   const [current, setCurrent] = useState(queryParams.get("code") ? 2 : 0);
   const [code, setCode] = useState(queryParams.get("code"));
-  const [passwordPopover, setPasswordPopover] = useState(null);
-  const [passwordPopoverOpen, setPasswordPopoverOpen] = useState(false);
+  // Step 1
+  const [step1Username, setStep1Username] = useState(name ?? "");
+  const [step1Error, setStep1Error] = useState("");
+  // Step 2
+  const [step2Code, setStep2Code] = useState("");
+  const [step2Error, setStep2Error] = useState("");
+  // Step 3
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [newPasswordError, setNewPasswordError] = useState("");
+  const [confirmError, setConfirmError] = useState("");
 
   const getApplicationObj = useCallback(() => props.application, [props.application]);
   const onUpdateApplication = useCallback((application) => props.onUpdateApplication(application), [props.onUpdateApplication]);
@@ -66,98 +73,111 @@ function ForgetPage(props) {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onFormFinish = (formName, info, forms) => {
-    switch (formName) {
-    case "step1": {
-      const username = forms.step1.getFieldValue("username");
-      AuthBackend.getEmailAndPhone(forms.step1.getFieldValue("organization"), username)
-        .then((res) => {
-          if (res.status === "ok") {
-            const p = res.data.phone;
-            const e = res.data.email;
-
-            if (!p && !e) {
-              Setting.showMessage("error", i18next.t("general:No verification method"));
-            } else {
-              setName(res.data.name);
-              setPhone(p);
-              setEmail(e);
-
-              const saveFields = (type, dest, fixed) => {
-                setVerifyType(type);
-                setIsVerifyTypeFixed(fixed);
-                setDest(dest);
-              };
-
-              switch (res.data2) {
-              case "email":
-                saveFields("email", e, true);
-                break;
-              case "phone":
-                saveFields("phone", p, true);
-                break;
-              case "username":
-                p !== "" ? saveFields("phone", p, false) : saveFields("email", e, false);
-              }
-
-              setCurrent(1);
-            }
-          } else {
-            Setting.showMessage("error", res.msg);
-          }
-        });
-      break;
+  const submitStep1 = (application) => (e) => {
+    e.preventDefault();
+    if (!step1Username?.trim()) {
+      setStep1Error(i18next.t("forget:Please input your username!"));
+      return;
     }
-    case "step2":
-      UserBackend.verifyCode({
-        application: forms.step2.getFieldValue("application"),
-        organization: forms.step2.getFieldValue("organization"),
-        username: forms.step2.getFieldValue("dest"),
-        name: name,
-        code: forms.step2.getFieldValue("code"),
-        type: "login",
-      }).then(res => {
+    setStep1Error("");
+    AuthBackend.getEmailAndPhone(application.organization, step1Username)
+      .then((res) => {
         if (res.status === "ok") {
-          setCurrent(2);
-          setCode(forms.step2.getFieldValue("code"));
+          const p = res.data.phone;
+          const e2 = res.data.email;
+          if (!p && !e2) {
+            Setting.showMessage("error", i18next.t("general:No verification method"));
+          } else {
+            setName(res.data.name);
+            setPhone(p);
+            setEmail(e2);
+            const saveFields = (type, d, fixed) => {
+              setVerifyType(type);
+              setIsVerifyTypeFixed(fixed);
+              setDest(d);
+            };
+            switch (res.data2) {
+            case "email": saveFields("email", e2, true); break;
+            case "phone": saveFields("phone", p, true); break;
+            case "username":
+              p !== "" ? saveFields("phone", p, false) : saveFields("email", e2, false);
+            }
+            setCurrent(1);
+          }
         } else {
           Setting.showMessage("error", res.msg);
         }
       });
-      break;
-    default:
-      break;
-    }
   };
 
-  const onFinish = async (values) => {
-    values.username = name;
-    values.userOwner = getApplicationObj()?.organizationObj?.name ?? "built-in";
+  const submitStep2 = (application) => (e) => {
+    e.preventDefault();
+    if (!step2Code) {
+      setStep2Error(i18next.t("code:Please input your verification code!"));
+      return;
+    }
+    setStep2Error("");
+    UserBackend.verifyCode({
+      application: application.name,
+      organization: application.organization,
+      username: dest,
+      name: name,
+      code: step2Code,
+      type: "login",
+    }).then(res => {
+      if (res.status === "ok") {
+        setCurrent(2);
+        setCode(step2Code);
+      } else {
+        Setting.showMessage("error", res.msg);
+      }
+    });
+  };
+
+  const onFinish = async (application) => {
+    const userOwner = application?.organizationObj?.name ?? "built-in";
+
+    let pwError = "";
+    const checkErr = PasswordChecker.checkPasswordComplexity(newPassword, application.organizationObj?.passwordOptions ?? []);
+    if (checkErr !== "") {pwError = checkErr;}
+    if (pwError) {
+      setNewPasswordError(pwError);
+      return;
+    }
+    setNewPasswordError("");
+
+    if (!confirmPassword) {
+      setConfirmError(i18next.t("signup:Please confirm your password!"));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setConfirmError(i18next.t("signup:Your confirmed password is inconsistent with the password!"));
+      return;
+    }
+    setConfirmError("");
 
     if (queryParams.get("code")) {
       const res = await UserBackend.verifyCode({
-        application: getApplicationObj().name,
-        organization: values.userOwner,
+        application: application.name,
+        organization: userOwner,
         username: queryParams.get("dest"),
         name: name,
         code: code,
         type: "login",
       });
-
       if (res.status !== "ok") {
         Setting.showMessage("error", res.msg);
         return;
       }
     }
 
-    let encryptedNewPassword = values?.newPassword;
-    const organization = getApplicationObj()?.organizationObj;
-
+    let encryptedNewPassword = newPassword;
+    const organization = application.organizationObj;
     if (organization?.passwordObfuscatorType && organization.passwordObfuscatorType !== "Plain") {
       const [passwordCipher, errorMessage] = Obfuscator.encryptByPasswordObfuscator(
         organization.passwordObfuscatorType,
         organization.passwordObfuscatorKey,
-        values?.newPassword
+        newPassword
       );
       if (errorMessage.length > 0) {
         Setting.showMessage("error", errorMessage);
@@ -166,13 +186,13 @@ function ForgetPage(props) {
       encryptedNewPassword = passwordCipher;
     }
 
-    UserBackend.setPassword(values.userOwner, values.username, "", encryptedNewPassword, code).then(res => {
+    UserBackend.setPassword(userOwner, name, "", encryptedNewPassword, code).then(res => {
       if (res.status === "ok") {
         const linkInStorage = sessionStorage.getItem("signinUrl");
         if (linkInStorage !== null && linkInStorage !== "") {
           Setting.goToLinkSoft({props}, linkInStorage);
         } else {
-          Setting.redirectToLoginPage(getApplicationObj(), props.history);
+          Setting.redirectToLoginPage(application, props.history);
         }
       } else {
         Setting.showMessage("error", res.msg);
@@ -190,24 +210,12 @@ function ForgetPage(props) {
     }
   };
 
-  const renderOptions = () => {
-    const options = [];
-    if (phone !== "") {
-      options.push(<Option key={"phone"} value={phone}>&nbsp;&nbsp;{phone}</Option>);
-    }
-    if (email !== "") {
-      options.push(<Option key={"email"} value={email}>&nbsp;&nbsp;{email}</Option>);
-    }
-    return options;
-  };
-
   const renderStepIndicator = () => {
     const steps = [
       {label: i18next.t("forget:Account"), icon: <User className="w-4 h-4" />},
       {label: i18next.t("forget:Verify"), icon: <KeyRound className="w-4 h-4" />},
       {label: i18next.t("forget:Reset"), icon: <Lock className="w-4 h-4" />},
     ];
-
     return (
       <div className="flex items-center justify-center gap-2 my-8">
         {steps.map((step, idx) => (
@@ -241,139 +249,95 @@ function ForgetPage(props) {
 
   const renderForm = (application) => {
     return (
-      <Form.Provider onFormFinish={(formName, {info, forms}) => {
-        onFormFinish(formName, info, forms);
-      }}>
-        {/* STEP 1: input username */}
-        {current === 0 ?
-          <Form
-            ref={formRef}
-            name="step1"
-            onFinishFailed={(errorInfo) => console.log(errorInfo)}
-            initialValues={{
-              application: application.name,
-              organization: application.organization,
-              username: name,
-            }}
-            style={{width: "300px"}}
-            size="large"
-          >
-            <Form.Item hidden name="application" rules={[{required: true, message: i18next.t("application:Please input your application!")}]} />
-            <Form.Item hidden name="organization" rules={[{required: true, message: i18next.t("application:Please input your organization!")}]} />
-            <Form.Item name="username" rules={[{required: true, message: i18next.t("forget:Please input your username!"), whitespace: true}]}>
-              <Input prefix={<User className="w-4 h-4 text-neutral-500" />} placeholder={i18next.t("login:Username, email, or phone")} />
-            </Form.Item>
+      <React.Fragment>
+        {current === 0 && (
+          <form onSubmit={submitStep1(application)} style={{width: "300px"}}>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+              <Input
+                className="pl-9"
+                value={step1Username}
+                onChange={(e) => { setStep1Username(e.target.value); setStep1Error(""); }}
+                placeholder={i18next.t("login:Username, email, or phone")}
+              />
+            </div>
+            {step1Error && <p className="text-sm text-red-500 mt-1">{step1Error}</p>}
             <br />
-            <Form.Item>
-              <button type="submit" className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors">
-                {i18next.t("forget:Next Step")}
-              </button>
-            </Form.Item>
-          </Form> : null}
-
-        {/* STEP 2: verify email or phone */}
-        {current === 1 ? <Form
-          ref={formRef}
-          name="step2"
-          onFinishFailed={(errorInfo) => console.log(errorInfo)}
-          onValuesChange={(changedValues) => {
-            if (!changedValues.dest) {return;}
-            const vt = changedValues.dest?.indexOf("@") === -1 ? "phone" : "email";
-            setDest(changedValues.dest);
-            setVerifyType(vt);
-          }}
-          initialValues={{
-            application: application.name,
-            organization: application.organization,
-            dest: dest,
-          }}
-          style={{width: "300px"}}
-          size="large"
-        >
-          <Form.Item style={{height: 0, visibility: "hidden"}} name="application" rules={[{required: true, message: i18next.t("application:Please input your application!")}]} />
-          <Form.Item hidden name="organization" rules={[{required: true, message: i18next.t("application:Please input your organization!")}]} />
-          <Form.Item name="dest" validateFirst hasFeedback>
-            <Select virtual={false} disabled={isVerifyTypeFixed} style={{textAlign: "left"}} placeholder={i18next.t("forget:Choose email or phone")}>
-              {renderOptions()}
-            </Select>
-          </Form.Item>
-          <Form.Item name="code" rules={[{required: true, message: i18next.t("code:Please input your verification code!")}]}>
-            <SendCodeInput disabled={dest === ""} method={"forget"}
-              onButtonClickArgs={[dest, verifyType, Setting.getApplicationName(getApplicationObj()), name]}
-              application={application} />
-          </Form.Item>
-          <br />
-          <Form.Item>
             <button type="submit" className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors">
               {i18next.t("forget:Next Step")}
             </button>
-          </Form.Item>
-        </Form> : null}
+          </form>
+        )}
 
-        {/* STEP 3: new password */}
-        {current === 2 ?
-          <Form
-            ref={formRef}
-            name="step3"
-            onFinish={(values) => onFinish(values)}
-            onFinishFailed={(errorInfo) => console.log(errorInfo)}
-            initialValues={{
-              application: application.name,
-              organization: application.organization,
-            }}
-            style={{width: "300px"}}
-            size="large"
-          >
-            <Form.Item hidden name="application" rules={[{required: true, message: i18next.t("application:Please input your application!")}]} />
-            <Form.Item hidden name="organization" rules={[{required: true, message: i18next.t("application:Please input your organization!")}]} />
-            <Form.Item name="newPassword" hidden={current !== 2}
-              rules={[{
-                required: true,
-                validateTrigger: "onChange",
-                validator: (rule, value) => {
-                  const errorMsg = PasswordChecker.checkPasswordComplexity(value, application.organizationObj?.passwordOptions ?? []);
-                  if (errorMsg === "") {return Promise.resolve();}
-                  else {return Promise.reject(errorMsg);}
-                },
-              }]}
-              hasFeedback>
-              <Input.Password
-                prefix={<Lock className="w-4 h-4 text-neutral-500" />}
-                placeholder={i18next.t("general:Password")}
-                onChange={(e) => {
-                  setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj?.passwordOptions ?? [], e.target.value));
-                }}
-                onFocus={() => {
-                  setPasswordPopoverOpen(application.organizationObj?.passwordOptions ?? []?.length > 0);
-                  setPasswordPopover(PasswordChecker.renderPasswordPopover(application.organizationObj?.passwordOptions ?? [], formRef.current?.getFieldValue("newPassword") ?? ""));
-                }}
-                onBlur={() => { setPasswordPopoverOpen(false); }}
+        {current === 1 && (
+          <form onSubmit={submitStep2(application)} style={{width: "300px"}}>
+            <Select
+              value={dest}
+              disabled={isVerifyTypeFixed}
+              onValueChange={(v) => {
+                setDest(v);
+                setVerifyType(v?.indexOf("@") === -1 ? "phone" : "email");
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={i18next.t("forget:Choose email or phone")} />
+              </SelectTrigger>
+              <SelectContent>
+                {phone !== "" && <SelectItem value={phone}>{phone}</SelectItem>}
+                {email !== "" && <SelectItem value={email}>{email}</SelectItem>}
+              </SelectContent>
+            </Select>
+            <div className="mt-3">
+              <SendCodeInput
+                value={step2Code}
+                onChange={(v) => { setStep2Code(v); setStep2Error(""); }}
+                disabled={dest === ""}
+                method={"forget"}
+                onButtonClickArgs={[dest, verifyType, Setting.getApplicationName(application), name]}
+                application={application}
               />
-            </Form.Item>
-            <Form.Item name="confirm" dependencies={["newPassword"]} hasFeedback
-              rules={[
-                {required: true, message: i18next.t("signup:Please confirm your password!")},
-                ({getFieldValue}) => ({
-                  validator(rule, value) {
-                    if (!value || getFieldValue("newPassword") === value) {return Promise.resolve();}
-                    return Promise.reject(i18next.t("signup:Your confirmed password is inconsistent with the password!"));
-                  },
-                }),
-              ]}>
-              <Input.Password prefix={<CheckCircle className="w-4 h-4 text-neutral-500" />} placeholder={i18next.t("general:Confirm")} />
-            </Form.Item>
+            </div>
+            {step2Error && <p className="text-sm text-red-500 mt-1">{step2Error}</p>}
             <br />
-            <Form.Item hidden={current !== 2}>
-              <button type="submit" className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors">
-                {i18next.t("forget:Change Password")}
-              </button>
-            </Form.Item>
-          </Form> : null}
-      </Form.Provider>
+            <button type="submit" className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors">
+              {i18next.t("forget:Next Step")}
+            </button>
+          </form>
+        )}
+
+        {current === 2 && (
+          <form onSubmit={(e) => { e.preventDefault(); onFinish(application); }} style={{width: "300px"}}>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+              <Input
+                type="password"
+                className="pl-9"
+                value={newPassword}
+                onChange={(e) => { setNewPassword(e.target.value); setNewPasswordError(""); }}
+                placeholder={i18next.t("general:Password")}
+              />
+            </div>
+            {newPasswordError && <p className="text-sm text-red-500 mt-1">{newPasswordError}</p>}
+            <div className="relative mt-3">
+              <CheckCircle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+              <Input
+                type="password"
+                className="pl-9"
+                value={confirmPassword}
+                onChange={(e) => { setConfirmPassword(e.target.value); setConfirmError(""); }}
+                placeholder={i18next.t("general:Confirm")}
+              />
+            </div>
+            {confirmError && <p className="text-sm text-red-500 mt-1">{confirmError}</p>}
+            <br />
+            <button type="submit" className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-colors">
+              {i18next.t("forget:Change Password")}
+            </button>
+          </form>
+        )}
+      </React.Fragment>
     );
   };
-
-  // --- Main render ---
 
   const application = getApplicationObj();
   if (application === undefined) {

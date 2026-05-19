@@ -14,7 +14,7 @@
 
 // @ts-nocheck
 import React from "react";
-import {Spin} from "antd";
+import {Spinner} from "../components/ui/spinner";
 import {withRouter} from "react-router-dom";
 import * as AuthBackend from "./AuthBackend";
 import * as Util from "./Util";
@@ -366,10 +366,13 @@ class AuthCallback extends React.Component {
     }
 
     return (
-      <div style={{display: "flex", justifyContent: "center", alignItems: "center"}}>
+      <div className="flex justify-center items-center">
         {
           (this.state.msg === null) ? (
-            <Spin size="large" tip={i18next.t("login:Signing in...")} style={{paddingTop: "10%"}} />
+            <div className="flex flex-col items-center gap-3 pt-[10%]">
+              <Spinner size="lg" />
+              <span className="text-sm text-muted-foreground">{i18next.t("login:Signing in...")}</span>
+            </div>
           ) : (
             Util.renderMessageLarge(this, this.state.msg)
           )

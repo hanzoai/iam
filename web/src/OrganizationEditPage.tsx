@@ -14,7 +14,6 @@
 
 // @ts-nocheck
 import React from "react";
-import {Select} from "antd";
 import * as OrganizationBackend from "./backend/OrganizationBackend";
 import * as ApplicationBackend from "./backend/ApplicationBackend";
 import * as LdapBackend from "./backend/LdapBackend";
@@ -30,7 +29,7 @@ import MfaTable from "./table/MfaTable";
 import {NavItemTree} from "./common/NavItemTree";
 import {WidgetItemTree} from "./common/WidgetItemTree";
 
-const {Option} = Select;
+const NATIVE_SELECT_CLASS = "w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-white";
 
 class OrganizationEditPage extends React.Component {
   constructor(props) {
@@ -198,8 +197,9 @@ class OrganizationEditPage extends React.Component {
         )}
 
         {this.renderField(i18next.t("general:Password type"),
-          <Select virtual={false} style={{width: "100%"}} value={this.state.organization.passwordType} onChange={value => this.updateOrganizationField("passwordType", value)}
-            options={["salt", "sha512-salt", "md5-salt", "bcrypt", "pbkdf2-salt", "argon2id", "pbkdf2-django"].map(item => Setting.getOption(item, item))} />
+          <select className={NATIVE_SELECT_CLASS} value={this.state.organization.passwordType} onChange={e => this.updateOrganizationField("passwordType", e.target.value)}>
+            {["salt", "sha512-salt", "md5-salt", "bcrypt", "pbkdf2-salt", "argon2id", "pbkdf2-django"].map(item => <option key={item} value={item}>{item}</option>)}
+          </select>
         )}
 
         {this.renderField(i18next.t("general:Password salt"),
@@ -207,22 +207,37 @@ class OrganizationEditPage extends React.Component {
         )}
 
         {this.renderField(i18next.t("general:Password complexity options"),
-          <Select virtual={false} style={{width: "100%"}} mode="multiple" value={this.state.organization.passwordOptions} onChange={value => this.updateOrganizationField("passwordOptions", value)}
-            options={[
+          (() => {
+            const opts = [
               {value: "AtLeast6", name: i18next.t("user:The password must have at least 6 characters")},
               {value: "AtLeast8", name: i18next.t("user:The password must have at least 8 characters")},
               {value: "Aa123", name: i18next.t("user:The password must contain at least one uppercase letter, one lowercase letter and one digit")},
               {value: "SpecialChar", name: i18next.t("user:The password must contain at least one special character")},
               {value: "NoRepeat", name: i18next.t("user:The password must not contain any repeated characters")},
-            ].map(item => Setting.getOption(item.name, item.value))} />
+            ];
+            const selected = this.state.organization.passwordOptions ?? [];
+            return (
+              <div className="space-y-2">
+                {opts.map(opt => (
+                  <label key={opt.value} className="flex items-start gap-2 text-sm text-white">
+                    <input type="checkbox" checked={selected.includes(opt.value)} onChange={e => {
+                      const next = e.target.checked ? [...selected, opt.value] : selected.filter(v => v !== opt.value);
+                      this.updateOrganizationField("passwordOptions", next);
+                    }} />
+                    <span>{opt.name}</span>
+                  </label>
+                ))}
+              </div>
+            );
+          })()
         )}
 
         {this.renderField(i18next.t("general:Password obfuscator"),
-          <Select virtual={false} style={{width: "100%"}} value={this.state.organization.passwordObfuscatorType} onChange={value => this.updatePasswordObfuscator("type", value)}>
-            <Option value="Plain">Plain</Option>
-            <Option value="AES">AES</Option>
-            <Option value="DES">DES</Option>
-          </Select>
+          <select className={NATIVE_SELECT_CLASS} value={this.state.organization.passwordObfuscatorType} onChange={e => this.updatePasswordObfuscator("type", e.target.value)}>
+            <option value="Plain">Plain</option>
+            <option value="AES">AES</option>
+            <option value="DES">DES</option>
+          </select>
         )}
 
         {(this.state.organization.passwordObfuscatorType !== "Plain" && this.state.organization.passwordObfuscatorType !== "") &&
@@ -236,19 +251,19 @@ class OrganizationEditPage extends React.Component {
         )}
 
         {this.renderField(i18next.t("general:Supported country codes"),
-          <Select virtual={false} mode="multiple" style={{width: "100%"}} value={this.state.organization.countryCodes ?? []}
-            onChange={value => this.updateOrganizationField("countryCodes", value)}
-            filterOption={(input, option) => (option?.text ?? "").toLowerCase().includes(input.toLowerCase())}>
-            {Setting.getCountryCodeOption({name: i18next.t("general:All"), code: "All", phone: 0})}
-            {Setting.getCountryCodeData().map(country => Setting.getCountryCodeOption(country))}
-          </Select>
+          <select multiple className={NATIVE_SELECT_CLASS + " h-32"} value={this.state.organization.countryCodes ?? []}
+            onChange={e => this.updateOrganizationField("countryCodes", Array.from(e.target.selectedOptions, o => o.value))}>
+            <option value="All">{i18next.t("general:All")}</option>
+            {Setting.getCountryCodeData().map(country => <option key={country.code} value={country.code}>{country.name} (+{country.phone})</option>)}
+          </select>
         )}
 
         {this.renderField(i18next.t("general:Languages"),
-          <Select virtual={false} mode="multiple" style={{width: "100%"}}
-            options={Setting.Countries.map(item => Setting.getOption(item.label, item.key))}
+          <select multiple className={NATIVE_SELECT_CLASS + " h-32"}
             value={this.state.organization.languages ?? []}
-            onChange={value => this.updateOrganizationField("languages", value)} />
+            onChange={e => this.updateOrganizationField("languages", Array.from(e.target.selectedOptions, o => o.value))}>
+            {Setting.Countries.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+          </select>
         )}
 
         {this.renderField(i18next.t("general:Default avatar"),
@@ -262,20 +277,22 @@ class OrganizationEditPage extends React.Component {
         )}
 
         {this.renderField(i18next.t("general:Default application"),
-          <Select virtual={false} style={{width: "100%"}} value={this.state.organization.defaultApplication} onChange={value => this.updateOrganizationField("defaultApplication", value)}
-            options={this.state.applications?.map(item => Setting.getOption(Setting.getApplicationDisplayName(item.name), item.name))} />
+          <select className={NATIVE_SELECT_CLASS} value={this.state.organization.defaultApplication ?? ""} onChange={e => this.updateOrganizationField("defaultApplication", e.target.value)}>
+            <option value=""></option>
+            {this.state.applications?.map(item => <option key={item.name} value={item.name}>{Setting.getApplicationDisplayName(item.name)}</option>)}
+          </select>
         )}
 
         {this.renderField(i18next.t("organization:User types"),
-          <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.organization.userTypes} onChange={value => this.updateOrganizationField("userTypes", value)}>
-            {this.state.organization.userTypes?.map((item, index) => <Option key={index} value={item}>{item}</Option>)}
-          </Select>
+          <input className={NATIVE_SELECT_CLASS} value={(this.state.organization.userTypes ?? []).join(",")}
+            placeholder="comma,separated,tags"
+            onChange={e => this.updateOrganizationField("userTypes", e.target.value.split(",").map(s => s.trim()).filter(Boolean))} />
         )}
 
         {this.renderField(i18next.t("organization:Tags"),
-          <Select virtual={false} mode="tags" style={{width: "100%"}} value={this.state.organization.tags} onChange={value => this.updateOrganizationField("tags", value)}>
-            {this.state.organization.tags?.map((item, index) => <Option key={index} value={item}>{item}</Option>)}
-          </Select>
+          <input className={NATIVE_SELECT_CLASS} value={(this.state.organization.tags ?? []).join(",")}
+            placeholder="comma,separated,tags"
+            onChange={e => this.updateOrganizationField("tags", e.target.value.split(",").map(s => s.trim()).filter(Boolean))} />
         )}
 
         {this.renderField(i18next.t("general:Master password"),
@@ -311,9 +328,9 @@ class OrganizationEditPage extends React.Component {
         )}
 
         {this.renderField(i18next.t("organization:Balance currency"),
-          <Select virtual={false} style={{width: "200px"}} value={this.state.organization.balanceCurrency || "USD"} onChange={value => this.updateOrganizationField("balanceCurrency", value)}>
-            {Setting.CurrencyOptions.map((item, index) => <Option key={index} value={item.id}>{Setting.getCurrencyWithFlag(item.id)}</Option>)}
-          </Select>
+          <select className={NATIVE_SELECT_CLASS + " w-[200px]"} value={this.state.organization.balanceCurrency || "USD"} onChange={e => this.updateOrganizationField("balanceCurrency", e.target.value)}>
+            {Setting.CurrencyOptions.map((item, index) => <option key={index} value={item.id}>{Setting.getCurrencyWithFlag(item.id)}</option>)}
+          </select>
         )}
 
         {[
@@ -360,8 +377,10 @@ class OrganizationEditPage extends React.Component {
         )}
 
         {this.renderField(i18next.t("organization:Account menu"),
-          <Select virtual={false} style={{width: "100%"}} value={this.state.organization.accountMenu || "Horizontal"} onChange={value => this.updateOrganizationField("accountMenu", value)}
-            options={[{value: "Horizontal", label: i18next.t("application:Horizontal")}, {value: "Vertical", label: i18next.t("application:Vertical")}].map(item => Setting.getOption(item.label, item.value))} />
+          <select className={NATIVE_SELECT_CLASS} value={this.state.organization.accountMenu || "Horizontal"} onChange={e => this.updateOrganizationField("accountMenu", e.target.value)}>
+            <option value="Horizontal">{i18next.t("application:Horizontal")}</option>
+            <option value="Vertical">{i18next.t("application:Vertical")}</option>
+          </select>
         )}
 
         {this.renderField(i18next.t("organization:Account items"),
@@ -407,9 +426,10 @@ class OrganizationEditPage extends React.Component {
         )}
 
         {this.renderField(i18next.t("organization:LDAP attributes"),
-          <Select mode="multiple" allowClear style={{width: "100%"}} value={this.state.organization.ldapAttributes ?? []}
-            onChange={value => this.updateOrganizationField("ldapAttributes", value)}
-            options={["uid", "cn", "mail", "email", "mobile", "displayName", "givenName", "sn", "uidNumber", "gidNumber", "homeDirectory", "loginShell", "gecos", "sshPublicKey", "memberOf", "title", "userPassword", "c", "co"].map(v => ({value: v, label: v}))} />
+          <select multiple className={NATIVE_SELECT_CLASS + " h-32"} value={this.state.organization.ldapAttributes ?? []}
+            onChange={e => this.updateOrganizationField("ldapAttributes", Array.from(e.target.selectedOptions, o => o.value))}>
+            {["uid", "cn", "mail", "email", "mobile", "displayName", "givenName", "sn", "uidNumber", "gidNumber", "homeDirectory", "loginShell", "gecos", "sshPublicKey", "memberOf", "title", "userPassword", "c", "co"].map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
         )}
 
         {this.renderField(i18next.t("general:LDAPs"),
