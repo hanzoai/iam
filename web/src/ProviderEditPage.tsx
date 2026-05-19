@@ -13,6 +13,12 @@
 // limitations under the License.
 
 // @ts-nocheck
+// TODO(rip-antd): ProviderEditPage (1060 lines, ~100 antd JSX nodes) still
+// imports antd Button/Card/Col/Input/Row/Select/Switch + 11 provider-field
+// sub-modules that each render antd Row/Col/Select. Migrate in a follow-up:
+// 1) ship a single Tailwind row/col helper, 2) rewrite each renderXxxProviderFields
+// to use native <select> + components/ui/{input,switch,button,card}, 3) drop
+// this import. See feat/rip-antd commit history for the established pattern.
 import React from "react";
 import {Button, Card, Col, Input, Row, Select, Switch} from "antd";
 import {Link as LinkIcon} from "lucide-react";

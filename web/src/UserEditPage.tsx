@@ -13,6 +13,15 @@
 // limitations under the License.
 
 // @ts-nocheck
+// TODO(rip-antd): UserEditPage (1583 lines) still imports 18 antd
+// components (Button/Card/Col/Form/Input/InputNumber/Layout/List/Menu/
+// Result/Row/Select/Space/Spin/Switch/Tabs/Tag/Tooltip) plus antd/es/layout
+// sub-imports (Content/Header/Sider). The Layout+Sider+Tabs combo drives the
+// account-detail sidebar navigation and Form drives 30+ fields. Needs a
+// dedicated follow-up: 1) replace the Layout/Sider shell with a Tailwind
+// grid + components/ui/tabs, 2) convert each Form.Item to label+input pairs
+// in the established renderField pattern, 3) replace antd Tag with
+// components/ui/badge.
 import React from "react";
 import {
   Button, Card, Col, Form, Input, InputNumber, Layout, List,
