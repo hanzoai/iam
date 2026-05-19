@@ -61,4 +61,5 @@ const DescriptionList = React.forwardRef<HTMLDListElement, DescriptionListProps>
 )
 DescriptionList.displayName = "DescriptionList"
 
-export { DescriptionList, DescriptionItem, DescriptionListProps }
+export { DescriptionList }
+export type { DescriptionItem, DescriptionListProps }
