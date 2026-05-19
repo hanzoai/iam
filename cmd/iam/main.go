@@ -1,70 +1,36 @@
-// Command iam is the administrative CLI for IAM.
+// Command iam is the administrative CLI for Hanzo IAM.
 //
 // Usage:
 //
-//	iam status     Check IAM server health
-//	iam token      Generate or validate a JWT
-//	iam seed       Seed init_data into the database
-//	iam version    Print version and exit
+//	iam status                              Check IAM server health
+//	iam version                             Print version and exit
+//	iam app list [--owner=<slug>] [--json]  List applications
+//	iam app get <client-id> [--json]        Get one application by client ID
+//	iam app upsert <file.json>              Idempotent upsert from JSON
+//	iam app delete <client-id>              Delete an application
+//	iam app redirect add <id> <url>...      Add redirect URIs (idempotent)
+//	iam app redirect list <id> [--json]     List redirect URIs
+//	iam app redirect remove <id> <url>      Remove a redirect URI
+//	iam user list [--owner=<slug>] [--json] List users
+//	iam user get <owner> <name> [--json]    Get one user
+//	iam user create <file.json>             Create a user
+//	iam org list [--json]                   List organizations
+//	iam org create <file.json>              Create an organization
+//	iam org delete <name>                   Delete an organization
+//
+// See docs/CLI.md for the full reference.
 package main
 
 import (
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"time"
+
+	"github.com/hanzoai/iam/cmd/iam/cli"
 )
 
-var version = "(dev)"
-
 func main() {
-	if len(os.Args) < 2 {
-		usage()
+	if err := cli.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-
-	switch os.Args[1] {
-	case "status":
-		cmdStatus()
-	case "version":
-		fmt.Printf("iam %s\n", version)
-	default:
-		fmt.Fprintf(os.Stderr, "iam: unknown command %q\n", os.Args[1])
-		usage()
-		os.Exit(1)
-	}
-}
-
-func cmdStatus() {
-	addr := envOr("IAM_ADDR", "http://localhost:8000")
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	resp, err := client.Get(addr + "/healthz")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "iam: health check failed: %v\n", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	fmt.Printf("status: %d\n%s\n", resp.StatusCode, body)
-}
-
-func usage() {
-	fmt.Fprintln(os.Stderr, `Usage: iam <command> [flags]
-
-Commands:
-  status     Check IAM server health
-  version    Print version
-
-Global Flags:
-  IAM_ADDR   IAM server address (default: http://localhost:8000)`)
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
