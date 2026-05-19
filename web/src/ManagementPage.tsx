@@ -13,6 +13,22 @@
 // limitations under the License.
 
 // @ts-nocheck
+// TODO(rip-antd): ManagementPage (581 lines) is the admin shell — top nav
+// (antd Menu), mobile drawer (antd Drawer), user dropdown (antd Dropdown),
+// avatar (antd Avatar), content card (antd Card), 404 result (antd Result),
+// loading spinner (antd Spin). It also pulls antd/es/layout/layout
+// (Content + Header) — see line 83 below. Migration plan:
+// 1) Drawer -> components/ui/sheet,
+// 2) Dropdown -> components/ui/dropdown-menu,
+// 3) Menu (horizontal) -> custom Tailwind nav + components/ui/dropdown-menu
+//    for the sub-groups,
+// 4) Avatar -> components/ui/avatar,
+// 5) Card -> components/ui/card,
+// 6) Result -> components/ui/result-card,
+// 7) Spin -> components/ui/spinner,
+// 8) Tooltip -> components/ui/tooltip,
+// 9) Layout/Header/Content -> plain semantic <header>/<main> + Tailwind,
+// 10) @ant-design/icons (~8 used) -> lucide-react equivalents.
 import * as Setting from "./Setting";
 import {Avatar, Button, Card, Drawer, Dropdown, Menu, Result, Spin, Tooltip} from "antd";
 import EnableMfaNotification from "./common/notifaction/EnableMfaNotification";
