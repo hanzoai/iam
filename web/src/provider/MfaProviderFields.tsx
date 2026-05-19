@@ -14,44 +14,53 @@
 
 // @ts-nocheck
 import React from "react";
-import {Col, Input, InputNumber, Row} from "antd";
-import {LinkOutlined} from "@ant-design/icons";
+import {Link} from "lucide-react";
+import {Input} from "../components/ui/input";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
 export function renderMfaProviderFields(provider, updateProviderField) {
   return (
     <React.Fragment>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Host"), i18next.t("provider:Host - Tooltip"))} :
-        </Col>
-        <Col span={22} >
-          <Input prefix={<LinkOutlined />} value={provider.host} placeholder="10.10.10.10" onChange={e => {
-            updateProviderField("host", e.target.value);
-          }} />
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        </div>
+        <div className="col-span-12 md:col-span-10">
+          <div className="relative">
+            <Link className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input className="pl-9" value={provider.host} placeholder="10.10.10.10" onChange={e => {
+              updateProviderField("host", e.target.value);
+            }} />
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Port"), i18next.t("provider:Port - Tooltip"))} :
-        </Col>
-        <Col span={22} >
-          <InputNumber value={provider.port} onChange={value => {
-            updateProviderField("port", value);
-          }} />
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        </div>
+        <div className="col-span-12 md:col-span-10">
+          <Input
+            type="number"
+            className="w-40"
+            value={provider.port ?? ""}
+            onChange={e => {
+              const v = e.target.value;
+              updateProviderField("port", v === "" ? null : Number(v));
+            }}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Client secret"), i18next.t("provider:RADIUS Shared Secret - Tooltip"))} :
-        </Col>
-        <Col span={22} >
+        </div>
+        <div className="col-span-12 md:col-span-10">
           <Input value={provider.clientSecret} placeholder="Shared secret" onChange={e => {
             updateProviderField("clientSecret", e.target.value);
           }} />
-        </Col>
-      </Row>
+        </div>
+      </div>
     </React.Fragment>
   );
 }

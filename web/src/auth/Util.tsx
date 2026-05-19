@@ -14,7 +14,11 @@
 
 // @ts-nocheck
 import React from "react";
-import {Alert, Button, Modal, QRCode, Result} from "antd";
+import {QRCodeSVG} from "qrcode.react";
+import {Alert, AlertDescription, AlertTitle} from "../components/ui/alert";
+import {Button} from "../components/ui/button";
+import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle} from "../components/ui/dialog";
+import {ResultCard} from "../components/ui/result-card";
 import i18next from "i18next";
 import {getWechatMessageEvent} from "./AuthBackend";
 import * as Setting from "../Setting";
@@ -24,18 +28,18 @@ import * as AuthBackend from "./AuthBackend";
 export function renderMessage(msg) {
   if (msg !== null) {
     return (
-      <div style={{display: "inline"}}>
-        <Alert
-          message={i18next.t("application:Failed to sign in")}
-          showIcon
-          description={msg}
-          type="error"
-          action={
-            <Button size="small" type="primary" danger>
-              {i18next.t("general:Detail")}
-            </Button>
-          }
-        />
+      <div className="inline-block">
+        <Alert variant="destructive">
+          <AlertTitle>{i18next.t("application:Failed to sign in")}</AlertTitle>
+          <AlertDescription>
+            <div className="flex items-center gap-3">
+              <span>{msg}</span>
+              <Button size="sm" variant="destructive">
+                {i18next.t("general:Detail")}
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
       </div>
     );
   } else {
@@ -46,20 +50,19 @@ export function renderMessage(msg) {
 export function renderMessageLarge(ths, msg) {
   if (msg !== null) {
     return (
-      <Result
-        style={{margin: "0px auto"}}
+      <ResultCard
+        className="mx-auto"
         status="error"
         title={i18next.t("general:There was a problem signing you in..")}
-        subTitle={msg}
-        extra={[
-          <Button type="primary" key="back" onClick={() => {
+        subtitle={msg}
+        extra={
+          <Button key="back" onClick={() => {
             window.history.go(-2);
           }}>
             {i18next.t("general:Back")}
-          </Button>,
-        ]}
-      >
-      </Result>
+          </Button>
+        }
+      />
     );
   } else {
     return null;
@@ -212,19 +215,35 @@ export async function WechatOfficialAccountModal(application, provider, method) 
       }
 
       const t1 = setInterval(await getEvent, 1000, application, provider, res.data2, method);
-      {
-        Modal.info({
-          title: i18next.t("provider:Please use WeChat to scan the QR code and follow the official account for sign in"),
-          content: (
-            <div style={{marginRight: "34px"}}>
-              <QRCode style={{padding: "20px", margin: "auto"}} bordered={false} value={res.data} size={230} />
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const close = () => {
+        window.clearInterval(t1);
+        const {unmountComponentAtNode} = require("react-dom");
+        unmountComponentAtNode(container);
+        container.remove();
+      };
+      const ModalEl = (
+        <Dialog open={true} onOpenChange={(open) => { if (!open) {close();} }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {i18next.t("provider:Please use WeChat to scan the QR code and follow the official account for sign in")}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="mr-[34px]">
+              <div className="p-5 mx-auto w-fit">
+                <QRCodeSVG value={res.data} size={230} />
+              </div>
             </div>
-          ),
-          onOk() {
-            window.clearInterval(t1);
-          },
-        });
-      }
+            <DialogFooter>
+              <Button onClick={close}>{i18next.t("general:OK")}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      );
+      const {render} = require("react-dom");
+      render(ModalEl, container);
     }
   );
 }
