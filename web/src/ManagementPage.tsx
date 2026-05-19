@@ -13,36 +13,37 @@
 // limitations under the License.
 
 // @ts-nocheck
-// TODO(rip-antd): ManagementPage (581 lines) is the admin shell — top nav
-// (antd Menu), mobile drawer (antd Drawer), user dropdown (antd Dropdown),
-// avatar (antd Avatar), content card (antd Card), 404 result (antd Result),
-// loading spinner (antd Spin). It also pulls antd/es/layout/layout
-// (Content + Header) — see line 83 below. Migration plan:
-// 1) Drawer -> components/ui/sheet,
-// 2) Dropdown -> components/ui/dropdown-menu,
-// 3) Menu (horizontal) -> custom Tailwind nav + components/ui/dropdown-menu
-//    for the sub-groups,
-// 4) Avatar -> components/ui/avatar,
-// 5) Card -> components/ui/card,
-// 6) Result -> components/ui/result-card,
-// 7) Spin -> components/ui/spinner,
-// 8) Tooltip -> components/ui/tooltip,
-// 9) Layout/Header/Content -> plain semantic <header>/<main> + Tailwind,
-// 10) @ant-design/icons (~8 used) -> lucide-react equivalents.
 import * as Setting from "./Setting";
-import {Avatar, Button, Card, Drawer, Dropdown, Menu, Result, Spin, Tooltip} from "antd";
 import EnableMfaNotification from "./common/notifaction/EnableMfaNotification";
 import {Link, Redirect, Route, Switch, withRouter} from "react-router-dom";
 import React, {useState} from "react";
 import i18next from "i18next";
 import {
-  AppstoreTwoTone,
-  BarsOutlined, CheckCircleTwoTone, DeploymentUnitOutlined, DownOutlined,
-  HomeTwoTone,
-  LockTwoTone, LogoutOutlined,
-  SafetyCertificateTwoTone, SettingOutlined, SettingTwoTone,
-  WalletTwoTone
-} from "@ant-design/icons";
+  AppWindow,
+  ChevronDown,
+  CircleCheck,
+  Cpu,
+  Home,
+  KeyRound,
+  LogOut,
+  Menu as MenuIcon,
+  Settings,
+  ShieldCheck,
+  Wallet,
+} from "lucide-react";
+import {Button} from "./components/ui/button";
+import {Card} from "./components/ui/card";
+import {Avatar, AvatarFallback, AvatarImage} from "./components/ui/avatar";
+import {Sheet, SheetContent, SheetHeader, SheetTitle} from "./components/ui/sheet";
+import {Spinner} from "./components/ui/spinner";
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "./components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./components/ui/dropdown-menu";
+import {cn} from "./lib/utils";
 import Dashboard from "./basic/Dashboard";
 import AppListPage from "./basic/AppListPage";
 import ShortcutsPage from "./basic/ShortcutsPage";
@@ -96,7 +97,6 @@ import ThemeSelect from "./common/select/ThemeSelect";
 import OpenTour from "./common/OpenTour";
 import OrganizationSelect from "./common/select/OrganizationSelect";
 import AccountAvatar from "./account/AccountAvatar";
-import {Content, Header} from "antd/es/layout/layout";
 import * as AuthBackend from "./auth/AuthBackend";
 import {clearWeb3AuthToken} from "./auth/Web3Auth";
 import VerificationListPage from "./VerificationListPage";
@@ -113,9 +113,11 @@ import RuleListPage from "./RuleListPage";
 
 function ManagementPage(props) {
   const [menuVisible, setMenuVisible] = useState(false);
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const organization = props.account?.organization;
   const navItems = Setting.isLocalAdminUser(props.account) ? organization?.navItems : (organization?.userNavItems ?? []);
   const widgetItems = organization?.widgetItems;
+  const isDark = props.themeAlgorithm?.includes("dark");
 
   function logout() {
     AuthBackend.logout()
@@ -140,73 +142,76 @@ function ManagementPage(props) {
   }
 
   function renderAvatar() {
+    const name = props.account.name;
+    const short = Setting.getShortName(name);
     if (props.account.avatar === "") {
       return (
-        <Avatar style={{backgroundColor: Setting.getAvatarColor(props.account.name), verticalAlign: "middle"}} size="large">
-          {Setting.getShortName(props.account.name)}
-        </Avatar>
-      );
-    } else {
-      return (
-        <Avatar src={props.account.avatar} style={{verticalAlign: "middle"}} size="large"
-          icon={<AccountAvatar src={props.account.avatar} style={{verticalAlign: "middle"}} size={40} />}
-        >
-          {Setting.getShortName(props.account.name)}
+        <Avatar className="h-10 w-10 align-middle" style={{backgroundColor: Setting.getAvatarColor(name)}}>
+          <AvatarFallback className="bg-transparent text-white">{short}</AvatarFallback>
         </Avatar>
       );
     }
+    return (
+      <Avatar className="h-10 w-10 align-middle">
+        <AvatarImage src={props.account.avatar} alt={name} />
+        <AvatarFallback>
+          <AccountAvatar src={props.account.avatar} style={{verticalAlign: "middle"}} size={40} />
+        </AvatarFallback>
+      </Avatar>
+    );
   }
 
   function renderRightDropdown() {
-    const items = [];
-    if (props.requiredEnableMfa === false) {
-      items.push(Setting.getItem(<><SettingOutlined />&nbsp;&nbsp;{i18next.t("account:My Account")}</>,
-        "/account"
-      ));
-    }
     const curCookie = Cookie.parse(document.cookie);
-    if (curCookie["impersonateUser"]) {
-      items.push(Setting.getItem(<><LogoutOutlined />&nbsp;&nbsp;{i18next.t("account:Exit impersonation")}</>,
-        "/exit-impersonation"));
-    } else {
-      items.push(Setting.getItem(<><LogoutOutlined />&nbsp;&nbsp;{i18next.t("account:Logout")}</>,
-        "/logout"));
-    }
+    const impersonating = !!curCookie["impersonateUser"];
 
-    const onClick = (e) => {
-      if (e.key === "/account") {
-        props.history.push("/account");
-      } else if (e.key === "/subscription") {
-        props.history.push("/subscription");
-      } else if (e.key === "/logout") {
-        logout();
-      } else if (e.key === "/exit-impersonation") {
-        UserBackend.exitImpersonateUser().then((res) => {
-          if (res.status === "ok") {
-            Setting.showMessage("success", i18next.t("account:Exit impersonation"));
-            Setting.goToLinkSoft({props}, "/");
-            window.location.reload();
-          } else {
-            Setting.showMessage("error", res.msg);
-          }
-        });
-      }
+    const onAccount = () => props.history.push("/account");
+    const onLogout = () => logout();
+    const onExitImpersonation = () => {
+      UserBackend.exitImpersonateUser().then((res) => {
+        if (res.status === "ok") {
+          Setting.showMessage("success", i18next.t("account:Exit impersonation"));
+          Setting.goToLinkSoft({props}, "/");
+          window.location.reload();
+        } else {
+          Setting.showMessage("error", res.msg);
+        }
+      });
     };
 
     return (
-      <Dropdown key="/rightDropDown" menu={{items, onClick}} placement="bottomRight" >
-        <div className="rightDropDown">
-          {
-            renderAvatar()
-          }
-          &nbsp;
-          &nbsp;
-          {Setting.isMobile() ? null : Setting.getShortText(Setting.getNameAtLeast(props.account.displayName), 30)} &nbsp; <DownOutlined />
-          &nbsp;
-          &nbsp;
-          &nbsp;
-        </div>
-      </Dropdown>
+      <DropdownMenu key="/rightDropDown">
+        <DropdownMenuTrigger asChild>
+          <button className="rightDropDown inline-flex items-center gap-2 px-2 py-1 rounded-md hover:bg-accent/50 focus:outline-none">
+            {renderAvatar()}
+            {Setting.isMobile() ? null : (
+              <span className="ml-1">
+                {Setting.getShortText(Setting.getNameAtLeast(props.account.displayName), 30)}
+              </span>
+            )}
+            <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[180px]">
+          {props.requiredEnableMfa === false && (
+            <DropdownMenuItem onSelect={onAccount}>
+              <Settings className="mr-2 h-4 w-4" />
+              {i18next.t("account:My Account")}
+            </DropdownMenuItem>
+          )}
+          {impersonating ? (
+            <DropdownMenuItem onSelect={onExitImpersonation}>
+              <LogOut className="mr-2 h-4 w-4" />
+              {i18next.t("account:Exit impersonation")}
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem onSelect={onLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              {i18next.t("account:Logout")}
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
   }
 
@@ -227,20 +232,27 @@ function ManagementPage(props) {
       Setting.getItem(<ThemeSelect themeAlgorithm={props.themeAlgorithm} onChange={props.setLogoAndThemeAlgorithm} />, "theme"),
       Setting.getItem(<LanguageSelect languages={props.account.organization.languages} />, "language"),
       Setting.getItem(Conf.AiAssistantUrl?.trim() && (
-        <Tooltip title="Click to open AI assistant">
-          <div className="select-box" onClick={props.openAiAssistant}>
-            <DeploymentUnitOutlined style={{fontSize: "24px"}} />
-          </div>
-        </Tooltip>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="select-box cursor-pointer" onClick={props.openAiAssistant}>
+                <Cpu className="h-6 w-6" />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>Click to open AI assistant</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       ), "ai-assistant"),
       Setting.getItem(<OpenTour />, "tour"),
     ];
 
     if (widgetItemsIsAll()) {
-      return widgets.map(item => item.label);
+      return widgets.map(item => <React.Fragment key={item.key}>{item.label}</React.Fragment>);
     }
 
-    return widgets.filter(item => widgetItems.includes(item.key)).map(item => item.label);
+    return widgets
+      .filter(item => widgetItems.includes(item.key))
+      .map(item => <React.Fragment key={item.key}>{item.label}</React.Fragment>);
   }
 
   function renderAccountMenu() {
@@ -273,109 +285,154 @@ function ManagementPage(props) {
     }
   }
 
+  // Build top-level menu groups. Each group is `{label, key, icon, children, href}`
+  // where `children` is the list of leaf items `{label, key, href, external?}`.
+  // Keeping this shape compatible with the navItems filter (item.key + item.children[].key)
+  // means the org-side allow-list logic is preserved unchanged.
   function getMenuItems() {
-    const res = [];
-
     if (props.account === null || props.account === undefined) {
       return [];
     }
 
-    let textColor = "black";
-    const twoToneColor = props.themeData.colorPrimary;
+    const res = [];
+    const iconClass = "h-4 w-4";
 
     let logo = props.account.organization.logo ? props.account.organization.logo : Setting.getLogo(props.themeAlgorithm);
-    if (props.themeAlgorithm.includes("dark")) {
-      if (props.account.organization.logoDark) {
-        logo = props.account.organization.logoDark;
-      }
-      textColor = "white";
+    if (isDark && props.account.organization.logoDark) {
+      logo = props.account.organization.logoDark;
     }
 
-    !Setting.isMobile() ? res.push({
-      label:
-        <Link to="/">
-          <img className="logo" src={logo ?? props.logo} alt="logo" />
-        </Link>,
-      disabled: true, key: "logo",
-      style: {
-        padding: 0,
-        height: "auto",
-      },
-    }) : null;
+    if (!Setting.isMobile()) {
+      res.push({
+        key: "logo",
+        logo: logo ?? props.logo,
+        isLogo: true,
+      });
+    }
 
-    res.push(Setting.getItem(<Link style={{color: textColor}} to="/">{i18next.t("general:Home")}</Link>, "/home", <HomeTwoTone twoToneColor={twoToneColor} />, [
-      Setting.getItem(<Link to="/">{i18next.t("general:Dashboard")}</Link>, "/"),
-      Setting.getItem(<Link to="/shortcuts">{i18next.t("general:Shortcuts")}</Link>, "/shortcuts"),
-      Setting.getItem(<Link to="/apps">{i18next.t("general:Apps")}</Link>, "/apps"),
-    ]));
+    res.push({
+      key: "/home",
+      label: i18next.t("general:Home"),
+      href: "/",
+      icon: <Home className={iconClass} />,
+      children: [
+        {key: "/", label: i18next.t("general:Dashboard"), href: "/"},
+        {key: "/shortcuts", label: i18next.t("general:Shortcuts"), href: "/shortcuts"},
+        {key: "/apps", label: i18next.t("general:Apps"), href: "/apps"},
+      ],
+    });
 
     if (Setting.isLocalAdminUser(props.account) && Conf.ShowGithubCorner) {
-      res.push(Setting.getItem(<a href={"https://iam.com"}>
-        <span style={{fontWeight: "bold", backgroundColor: "rgba(87,52,211,0.4)", marginTop: "12px", paddingLeft: "5px", paddingRight: "5px", display: "flex", alignItems: "center", height: "40px", borderRadius: "5px"}}>
-          🚀 SaaS Hosting 🔥
-        </span>
-      </a>, "#"));
+      res.push({
+        key: "#",
+        isPromo: true,
+      });
     }
 
-    res.push(Setting.getItem(<Link style={{color: textColor}} to="/organizations">{i18next.t("general:User Management")}</Link>, "/orgs", <AppstoreTwoTone twoToneColor={twoToneColor} />, [
-      Setting.getItem(<Link to="/organizations">{i18next.t("general:Organizations")}</Link>, "/organizations"),
-      Setting.getItem(<Link to="/groups">{i18next.t("general:Groups")}</Link>, "/groups"),
-      Setting.getItem(<Link to="/users">{i18next.t("general:Users")}</Link>, "/users"),
-      Setting.getItem(<Link to="/invitations">{i18next.t("general:Invitations")}</Link>, "/invitations"),
-    ]));
+    res.push({
+      key: "/orgs",
+      label: i18next.t("general:User Management"),
+      href: "/organizations",
+      icon: <AppWindow className={iconClass} />,
+      children: [
+        {key: "/organizations", label: i18next.t("general:Organizations"), href: "/organizations"},
+        {key: "/groups", label: i18next.t("general:Groups"), href: "/groups"},
+        {key: "/users", label: i18next.t("general:Users"), href: "/users"},
+        {key: "/invitations", label: i18next.t("general:Invitations"), href: "/invitations"},
+      ],
+    });
 
-    res.push(Setting.getItem(<Link style={{color: textColor}} to="/applications">{i18next.t("general:Identity")}</Link>, "/identity", <LockTwoTone twoToneColor={twoToneColor} />, [
-      Setting.getItem(<Link to="/applications">{i18next.t("general:Applications")}</Link>, "/applications"),
-      Setting.getItem(<Link to="/providers">{i18next.t("application:Providers")}</Link>, "/providers"),
-      Setting.getItem(<Link to="/resources">{i18next.t("general:Resources")}</Link>, "/resources"),
-      Setting.getItem(<Link to="/certs">{i18next.t("general:Certs")}</Link>, "/certs"),
-      Setting.getItem(<Link to="/keys">{i18next.t("general:Keys")}</Link>, "/keys"),
-      Setting.getItem(<Link to="/sites">{i18next.t("general:Sites")}</Link>, "/sites"),
-      Setting.getItem(<Link to="/rules">{i18next.t("general:Rules")}</Link>, "/rules"),
-    ]));
+    res.push({
+      key: "/identity",
+      label: i18next.t("general:Identity"),
+      href: "/applications",
+      icon: <KeyRound className={iconClass} />,
+      children: [
+        {key: "/applications", label: i18next.t("general:Applications"), href: "/applications"},
+        {key: "/providers", label: i18next.t("application:Providers"), href: "/providers"},
+        {key: "/resources", label: i18next.t("general:Resources"), href: "/resources"},
+        {key: "/certs", label: i18next.t("general:Certs"), href: "/certs"},
+        {key: "/keys", label: i18next.t("general:Keys"), href: "/keys"},
+        {key: "/sites", label: i18next.t("general:Sites"), href: "/sites"},
+        {key: "/rules", label: i18next.t("general:Rules"), href: "/rules"},
+      ],
+    });
 
-    res.push(Setting.getItem(<Link style={{color: textColor}} to="/roles">{i18next.t("general:Authorization")}</Link>, "/auth", <SafetyCertificateTwoTone twoToneColor={twoToneColor} />, [
-      Setting.getItem(<Link to="/roles">{i18next.t("general:Roles")}</Link>, "/roles"),
-      Setting.getItem(<Link to="/permissions">{i18next.t("general:Permissions")}</Link>, "/permissions"),
-      Setting.getItem(<Link to="/models">{i18next.t("general:Models")}</Link>, "/models"),
-      Setting.getItem(<Link to="/adapters">{i18next.t("general:Adapters")}</Link>, "/adapters"),
-      Setting.getItem(<Link to="/enforcers">{i18next.t("general:Enforcers")}</Link>, "/enforcers"),
+    const authChildren = [
+      {key: "/roles", label: i18next.t("general:Roles"), href: "/roles"},
+      {key: "/permissions", label: i18next.t("general:Permissions"), href: "/permissions"},
+      {key: "/models", label: i18next.t("general:Models"), href: "/models"},
+      {key: "/adapters", label: i18next.t("general:Adapters"), href: "/adapters"},
+      {key: "/enforcers", label: i18next.t("general:Enforcers"), href: "/enforcers"},
     ].filter(item => {
       if (!Setting.isLocalAdminUser(props.account) && ["/models", "/adapters", "/enforcers"].includes(item.key)) {
         return false;
-      } else {
-        return true;
       }
-    })));
+      return true;
+    });
 
-    res.push(Setting.getItem(<Link style={{color: textColor}} to="/sites">{i18next.t("general:Gateway")}</Link>, "/gateway", <CheckCircleTwoTone twoToneColor={twoToneColor} />, [
-      Setting.getItem(<Link to="/servers">{i18next.t("general:MCP Servers")}</Link>, "/servers"),
-      Setting.getItem(<Link to="/sites">{i18next.t("general:Sites")}</Link>, "/sites"),
-      Setting.getItem(<Link to="/certs">{i18next.t("general:Certs")}</Link>, "/certs"),
-      Setting.getItem(<Link to="/rules">{i18next.t("general:Rules")}</Link>, "/rules"),
-    ]));
+    res.push({
+      key: "/auth",
+      label: i18next.t("general:Authorization"),
+      href: "/roles",
+      icon: <ShieldCheck className={iconClass} />,
+      children: authChildren,
+    });
 
-    res.push(Setting.getItem(<Link style={{color: textColor}} to="/sessions">{i18next.t("general:Logging & Auditing")}</Link>, "/logs", <WalletTwoTone twoToneColor={twoToneColor} />, [
-      Setting.getItem(<Link to="/sessions">{i18next.t("general:Sessions")}</Link>, "/sessions"),
-      Setting.getItem(<Link to="/records">{i18next.t("general:Records")}</Link>, "/records"),
-      Setting.getItem(<Link to="/tokens">{i18next.t("general:Tokens")}</Link>, "/tokens"),
-      Setting.getItem(<Link to="/verifications">{i18next.t("general:Verifications")}</Link>, "/verifications"),
-    ]));
+    res.push({
+      key: "/gateway",
+      label: i18next.t("general:Gateway"),
+      href: "/sites",
+      icon: <CircleCheck className={iconClass} />,
+      children: [
+        {key: "/servers", label: i18next.t("general:MCP Servers"), href: "/servers"},
+        {key: "/sites", label: i18next.t("general:Sites"), href: "/sites"},
+        {key: "/certs", label: i18next.t("general:Certs"), href: "/certs"},
+        {key: "/rules", label: i18next.t("general:Rules"), href: "/rules"},
+      ],
+    });
+
+    res.push({
+      key: "/logs",
+      label: i18next.t("general:Logging & Auditing"),
+      href: "/sessions",
+      icon: <Wallet className={iconClass} />,
+      children: [
+        {key: "/sessions", label: i18next.t("general:Sessions"), href: "/sessions"},
+        {key: "/records", label: i18next.t("general:Records"), href: "/records"},
+        {key: "/tokens", label: i18next.t("general:Tokens"), href: "/tokens"},
+        {key: "/verifications", label: i18next.t("general:Verifications"), href: "/verifications"},
+      ],
+    });
 
     if (Setting.isAdminUser(props.account)) {
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/sysinfo">{i18next.t("general:Admin")}</Link>, "/admin", <SettingTwoTone twoToneColor={twoToneColor} />, [
-        Setting.getItem(<Link to="/sysinfo">{i18next.t("general:System Info")}</Link>, "/sysinfo"),
-        Setting.getItem(<Link to="/forms">{i18next.t("general:Forms")}</Link>, "/forms"),
-        Setting.getItem(<Link to="/syncers">{i18next.t("general:Syncers")}</Link>, "/syncers"),
-        Setting.getItem(<Link to="/webhooks">{i18next.t("general:Webhooks")}</Link>, "/webhooks"),
-        Setting.getItem(<Link to="/tickets">{i18next.t("general:Tickets")}</Link>, "/tickets"),
-        Setting.getItem(<a target="_blank" rel="noreferrer" href={Setting.isLocalhost() ? `${Setting.ServerUrl}/swagger` : "/swagger"}>{i18next.t("general:Swagger")}</a>, "/swagger")]));
+      res.push({
+        key: "/admin",
+        label: i18next.t("general:Admin"),
+        href: "/sysinfo",
+        icon: <Settings className={iconClass} />,
+        children: [
+          {key: "/sysinfo", label: i18next.t("general:System Info"), href: "/sysinfo"},
+          {key: "/forms", label: i18next.t("general:Forms"), href: "/forms"},
+          {key: "/syncers", label: i18next.t("general:Syncers"), href: "/syncers"},
+          {key: "/webhooks", label: i18next.t("general:Webhooks"), href: "/webhooks"},
+          {key: "/tickets", label: i18next.t("general:Tickets"), href: "/tickets"},
+          {key: "/swagger", label: i18next.t("general:Swagger"), href: Setting.isLocalhost() ? `${Setting.ServerUrl}/swagger` : "/swagger", external: true},
+        ],
+      });
     } else {
-      res.push(Setting.getItem(<Link style={{color: textColor}} to="/syncers">{i18next.t("general:Admin")}</Link>, "/admin", <SettingTwoTone twoToneColor={twoToneColor} />, [
-        Setting.getItem(<Link to="/forms">{i18next.t("general:Forms")}</Link>, "/forms"),
-        Setting.getItem(<Link to="/syncers">{i18next.t("general:Syncers")}</Link>, "/syncers"),
-        Setting.getItem(<Link to="/webhooks">{i18next.t("general:Webhooks")}</Link>, "/webhooks"),
-        Setting.getItem(<Link to="/tickets">{i18next.t("general:Tickets")}</Link>, "/tickets")]));
+      res.push({
+        key: "/admin",
+        label: i18next.t("general:Admin"),
+        href: "/syncers",
+        icon: <Settings className={iconClass} />,
+        children: [
+          {key: "/forms", label: i18next.t("general:Forms"), href: "/forms"},
+          {key: "/syncers", label: i18next.t("general:Syncers"), href: "/syncers"},
+          {key: "/webhooks", label: i18next.t("general:Webhooks"), href: "/webhooks"},
+          {key: "/tickets", label: i18next.t("general:Tickets"), href: "/tickets"},
+        ],
+      });
     }
 
     if (navItemsIsAll()) {
@@ -386,15 +443,8 @@ function ManagementPage(props) {
       if (!Array.isArray(item.children)) {
         return item;
       }
-      const filteredChildren = [];
-      item.children.forEach(itemChild => {
-        if (navItems.includes(itemChild.key)) {
-          filteredChildren.push(itemChild);
-        }
-      });
-
-      item.children = filteredChildren;
-      return item;
+      const filteredChildren = item.children.filter(itemChild => navItems.includes(itemChild.key));
+      return {...item, children: filteredChildren};
     });
 
     const filteredResult = resFiltered.filter(item => {
@@ -402,7 +452,7 @@ function ManagementPage(props) {
       return Array.isArray(item.children) && item.children.length > 0;
     });
 
-    // Count total end items (leaf nodes)
+    // Count total end items (leaf nodes); flatten when <= MaxItemsForFlatMenu.
     let totalEndItems = 0;
     filteredResult.forEach(item => {
       if (Array.isArray(item.children)) {
@@ -410,23 +460,181 @@ function ManagementPage(props) {
       }
     });
 
-    // If total end items <= MaxItemsForFlatMenu, flatten the menu (show only one level)
     if (totalEndItems <= Conf.MaxItemsForFlatMenu) {
       const flattenedResult = [];
       filteredResult.forEach(item => {
         if (isSpecialMenuItem(item)) {
           flattenedResult.push(item);
         } else if (Array.isArray(item.children)) {
-          // Add children directly without parent group
-          item.children.forEach(child => {
-            flattenedResult.push(child);
-          });
+          item.children.forEach(child => flattenedResult.push(child));
         }
       });
       return flattenedResult;
     }
 
     return filteredResult;
+  }
+
+  function isItemSelected(item) {
+    const sel = props.selectedMenuKey;
+    if (!sel) {return false;}
+    if (item.key === sel) {return true;}
+    if (Array.isArray(item.children)) {
+      return item.children.some(c => c.key === sel);
+    }
+    return false;
+  }
+
+  function renderLeafLink(child, onNavigate?: () => void) {
+    const cls = cn(
+      "block w-full px-3 py-1.5 text-sm rounded hover:bg-accent",
+      props.selectedMenuKey === child.key && "bg-accent font-medium"
+    );
+    if (child.external) {
+      return (
+        <a
+          key={child.key}
+          href={child.href}
+          target="_blank"
+          rel="noreferrer"
+          className={cls}
+          onClick={onNavigate}
+        >
+          {child.label}
+        </a>
+      );
+    }
+    return (
+      <Link key={child.key} to={child.href} className={cls} onClick={onNavigate}>
+        {child.label}
+      </Link>
+    );
+  }
+
+  function renderDesktopMenu() {
+    const items = getMenuItems();
+    return (
+      <nav className="flex flex-1 items-center gap-1 overflow-hidden">
+        {items.map(item => {
+          if (item.key === "logo") {
+            return (
+              <Link key="logo" to="/" className="flex items-center pr-2">
+                <img className="logo h-8" src={item.logo} alt="logo" />
+              </Link>
+            );
+          }
+          if (item.key === "#") {
+            return (
+              <a key="#" href="https://iam.com" className="ml-1">
+                <span
+                  className="font-bold rounded px-1.5 flex items-center h-10"
+                  style={{backgroundColor: "rgba(87,52,211,0.4)"}}
+                >
+                  🚀 SaaS Hosting 🔥
+                </span>
+              </a>
+            );
+          }
+          // Leaf-after-flatten item (no children) — render as direct link.
+          if (!Array.isArray(item.children) || item.children.length === 0) {
+            return (
+              <Link
+                key={item.key}
+                to={item.href}
+                className={cn(
+                  "inline-flex items-center gap-2 px-3 h-10 rounded-md text-sm hover:bg-accent",
+                  props.selectedMenuKey === item.key && "bg-accent font-medium"
+                )}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </Link>
+            );
+          }
+          return (
+            <DropdownMenu key={item.key}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={cn(
+                    "inline-flex items-center gap-2 px-3 h-10 rounded-md text-sm hover:bg-accent focus:outline-none",
+                    isItemSelected(item) && "bg-accent font-medium"
+                  )}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                  <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[180px]">
+                {item.children.map(child => (
+                  <DropdownMenuItem key={child.key} asChild>
+                    {child.external ? (
+                      <a href={child.href} target="_blank" rel="noreferrer">{child.label}</a>
+                    ) : (
+                      <Link to={child.href}>{child.label}</Link>
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          );
+        })}
+      </nav>
+    );
+  }
+
+  function renderMobileMenu() {
+    const items = getMenuItems();
+    const onNavigate = () => setMenuVisible(false);
+    return (
+      <nav className="flex flex-col gap-1">
+        {items.map(item => {
+          if (item.key === "logo" || item.key === "#") {
+            return null;
+          }
+          if (!Array.isArray(item.children) || item.children.length === 0) {
+            return (
+              <Link
+                key={item.key}
+                to={item.href}
+                onClick={onNavigate}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-accent",
+                  props.selectedMenuKey === item.key && "bg-accent font-medium"
+                )}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </Link>
+            );
+          }
+          const expanded = openGroup === item.key || isItemSelected(item);
+          return (
+            <div key={item.key} className="flex flex-col">
+              <button
+                type="button"
+                onClick={() => setOpenGroup(expanded ? null : item.key)}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-accent text-left",
+                  isItemSelected(item) && "font-medium"
+                )}
+              >
+                {item.icon}
+                <span className="flex-1">{item.label}</span>
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-180")} />
+              </button>
+              {expanded && (
+                <ul className="ml-6 mt-1 flex flex-col gap-1 border-l border-border pl-2">
+                  {item.children.map(child => (
+                    <li key={child.key}>{renderLeafLink(child, onNavigate)}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+    );
   }
 
   function renderLoginIfNotLoggedIn(component) {
@@ -440,8 +648,9 @@ function ManagementPage(props) {
       }
     } else if (props.account === undefined) {
       return (
-        <div style={{display: "flex", justifyContent: "center", alignItems: "center", height: "100vh"}}>
-          <Spin size="large" tip="Loading..." />
+        <div className="flex items-center justify-center h-screen flex-col gap-2">
+          <Spinner size="lg" />
+          <div className="text-sm text-muted-foreground">Loading...</div>
         </div>
       );
     } else if (props.account.needUpdatePassword) {
@@ -525,7 +734,7 @@ function ManagementPage(props) {
             <div className="text-base text-neutral-500">
               {i18next.t("general:Sorry, the page you visited does not exist.")}
             </div>
-            <a href="/"><Button type="primary">{i18next.t("general:Back Home")}</Button></a>
+            <a href="/"><Button>{i18next.t("general:Back Home")}</Button></a>
           </div>
         )} />
       </Switch>
@@ -536,60 +745,50 @@ function ManagementPage(props) {
     return Setting.isMobile() || window.location.pathname.startsWith("/trees");
   }
 
-  const onClose = () => {
-    setMenuVisible(false);
-  };
-
-  const showMenu = () => {
-    setMenuVisible(true);
-  };
-
   return (
     <React.Fragment>
       <EnableMfaNotification account={props.account} />
-      <Header style={{display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0", marginBottom: "4px", backgroundColor: props.themeAlgorithm.includes("dark") ? "black" : "white"}} >
-        {
-          props.requiredEnableMfa || (Setting.isMobile() ? (
-            <React.Fragment>
-              <Drawer title={i18next.t("general:Close")} placement="left" open={menuVisible} onClose={onClose}>
-                <Menu
-                  items={getMenuItems()}
-                  mode={"inline"}
-                  selectedKeys={[props.selectedMenuKey]}
-                  style={{lineHeight: "64px"}}
-                  onClick={onClose}
-                >
-                </Menu>
-              </Drawer>
-              <Button icon={<BarsOutlined />} onClick={showMenu} type="text">
-                {i18next.t("general:Menu")}
-              </Button>
-            </React.Fragment>
-          ) : (
-            // Padding 1px for Menu Item Highlight border
-            <div style={{flex: 1, overflow: "hidden", paddingBottom: "1px"}}>
-              <Menu
-                onClick={onClose}
-                items={getMenuItems()}
-                mode={"horizontal"}
-                selectedKeys={[props.selectedMenuKey]}
-                style={{backgroundColor: props.themeAlgorithm.includes("dark") ? "black" : "white"}}
-              />
-            </div>
-          ))
-        }
-        <div style={{flexShrink: 0}}>
+      <header
+        className={cn(
+          "flex justify-between items-center px-0 mb-1 h-16",
+          isDark ? "bg-black text-white" : "bg-white text-black"
+        )}
+      >
+        {props.requiredEnableMfa ? null : (Setting.isMobile() ? (
+          <React.Fragment>
+            <Sheet open={menuVisible} onOpenChange={setMenuVisible}>
+              <SheetContent side="left" className="w-72 overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle>{i18next.t("general:Close")}</SheetTitle>
+                </SheetHeader>
+                <div className="mt-4">
+                  {renderMobileMenu()}
+                </div>
+              </SheetContent>
+            </Sheet>
+            <Button variant="ghost" onClick={() => setMenuVisible(true)} className="gap-2">
+              <MenuIcon className="h-4 w-4" />
+              {i18next.t("general:Menu")}
+            </Button>
+          </React.Fragment>
+        ) : (
+          // Padding 1px for menu item highlight border
+          <div className="flex-1 overflow-hidden pb-px">
+            {renderDesktopMenu()}
+          </div>
+        ))}
+        <div className="shrink-0 flex items-center gap-2 pr-2">
           {renderAccountMenu()}
         </div>
-      </Header>
-      <Content style={{display: "flex", flexDirection: "column"}} >
+      </header>
+      <main className="flex flex-col">
         {isWithoutCard() ?
           renderRouter() :
           <Card className="content-warp-card">
             {renderRouter()}
           </Card>
         }
-      </Content>
+      </main>
     </React.Fragment>
   );
 }
