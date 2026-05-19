@@ -14,8 +14,8 @@
 
 // @ts-nocheck
 import React from "react";
-import {Col, Input, Row} from "antd";
-import {LinkOutlined} from "@ant-design/icons";
+import {Link} from "lucide-react";
+import {Input} from "../components/ui/input";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
@@ -23,27 +23,33 @@ export function renderFaceIdProviderFields(provider, updateProviderField) {
   return (
     <>
       {["Alibaba Cloud Facebody"].includes(provider.type) ? null : (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={2}>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-2 mt-1">
             {Setting.getLabel(i18next.t("provider:Endpoint (Intranet)"), i18next.t("provider:Region endpoint for Intranet"))} :
-          </Col>
-          <Col span={22} >
-            <Input prefix={<LinkOutlined />} value={provider.intranetEndpoint} onChange={e => {
-              updateProviderField("intranetEndpoint", e.target.value);
-            }} />
-          </Col>
-        </Row>
+          </div>
+          <div className="col-span-10">
+            <div className="relative">
+              <Link className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input className="pl-9" value={provider.intranetEndpoint} onChange={e => {
+                updateProviderField("intranetEndpoint", e.target.value);
+              }} />
+            </div>
+          </div>
+        </div>
       )}
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={2}>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Endpoint"), i18next.t("provider:Region endpoint for Internet"))} :
-        </Col>
-        <Col span={22} >
-          <Input prefix={<LinkOutlined />} value={provider.endpoint} onChange={e => {
-            updateProviderField("endpoint", e.target.value);
-          }} />
-        </Col>
-      </Row>
+        </div>
+        <div className="col-span-10">
+          <div className="relative">
+            <Link className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input className="pl-9" value={provider.endpoint} onChange={e => {
+              updateProviderField("endpoint", e.target.value);
+            }} />
+          </div>
+        </div>
+      </div>
     </>
   );
 }
