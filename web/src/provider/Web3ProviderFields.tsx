@@ -14,7 +14,8 @@
 
 // @ts-nocheck
 import React from "react";
-import {Checkbox, Col, Row} from "antd";
+import {Checkbox} from "../components/ui/checkbox";
+import {Label} from "../components/ui/label";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import * as Web3Auth from "../auth/Web3Auth";
@@ -28,22 +29,40 @@ export function renderWeb3ProviderFields(provider, updateProviderField) {
     }
   };
 
+  if (provider.type !== "Web3Onboard") {
+    return null;
+  }
+
+  const selected = getWalletValue();
+  const toggle = (value, checked) => {
+    const next = checked
+      ? Array.from(new Set([...selected, value]))
+      : selected.filter((v) => v !== value);
+    updateProviderField("metadata", JSON.stringify(next));
+  };
+
   return (
-    provider.type === "Web3Onboard" ? (
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-          {Setting.getLabel(i18next.t("provider:Wallets"), i18next.t("provider:Wallets - Tooltip"))} :
-        </Col>
-        <Col span={22}>
-          <Checkbox.Group
-            options={Web3Auth.getWeb3OnboardWalletsOptions()}
-            value={getWalletValue()}
-            onChange={options => {
-              updateProviderField("metadata", JSON.stringify(options));
-            }}
-          />
-        </Col>
-      </Row>
-    ) : null
+    <div className="grid grid-cols-12 gap-4 items-start mt-5">
+      <div className="col-span-12 md:col-span-2 mt-1">
+        {Setting.getLabel(i18next.t("provider:Wallets"), i18next.t("provider:Wallets - Tooltip"))} :
+      </div>
+      <div className="col-span-12 md:col-span-10">
+        <div className="flex flex-wrap gap-4">
+          {Web3Auth.getWeb3OnboardWalletsOptions().map((opt) => {
+            const id = `web3-wallet-${opt.value}`;
+            return (
+              <div key={opt.value} className="flex items-center gap-2">
+                <Checkbox
+                  id={id}
+                  checked={selected.includes(opt.value)}
+                  onCheckedChange={(checked) => toggle(opt.value, checked === true)}
+                />
+                <Label htmlFor={id}>{opt.label}</Label>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
