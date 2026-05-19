@@ -15,8 +15,11 @@
 // @ts-nocheck
 import React from "react";
 import {Link} from "react-router-dom";
-import {Button, Select, Tag, Tooltip, message, theme} from "antd";
-import {QuestionCircleTwoTone} from "@ant-design/icons";
+import {HelpCircle} from "lucide-react";
+import {Button} from "./components/ui/button";
+import {Badge} from "./components/ui/badge";
+import {Tooltip, TooltipContent, TooltipTrigger} from "./components/ui/tooltip";
+import {toast} from "./lib/toast";
 import {isMobile as isMobileDevice} from "react-device-detect";
 import "./i18n";
 import i18next from "i18next";
@@ -28,8 +31,6 @@ import * as phoneNumber from "libphonenumber-js";
 import moment from "moment";
 import {MfaAuthVerifyForm, NextMfa, RequiredMfa} from "./auth/mfa/MfaAuthVerifyForm";
 import {EmailMfaType, SmsMfaType, TotpMfaType} from "./auth/MfaSetupPage";
-
-const {Option} = Select;
 
 export const ServerUrl = "";
 
@@ -74,16 +75,11 @@ export function getThemeData(organization, application) {
   }
 }
 
+// Legacy shim — antd theme algorithms are gone. Returns the same string
+// identifiers callers used to consume; nothing renders them anymore.
+// TODO(rip-antd): delete once no caller references this.
 export function getAlgorithm(themeAlgorithmNames) {
-  return themeAlgorithmNames.sort().reverse().map((algorithmName) => {
-    if (algorithmName === "dark") {
-      return theme.darkAlgorithm;
-    }
-    if (algorithmName === "compact") {
-      return theme.compactAlgorithm;
-    }
-    return theme.defaultAlgorithm;
-  });
+  return (themeAlgorithmNames ?? []).slice().sort().reverse();
 }
 
 export function getAlgorithmNames(themeData) {
@@ -703,9 +699,15 @@ export function getCountryCodeData(countryCodes = phoneNumber.getCountries()) {
     .sort((a, b) => a.phone - b.phone);
 }
 
+// Returns a plain {label, value, text} for the options= prop of an antd Select
+// (or any equivalent dropdown). Callers used to spread this as <Option> children;
+// they now must pass an array of these objects via the `options` prop.
 export function getCountryCodeOption(country) {
-  return (
-    <Option key={country.code} value={country.code} label={`+${country.phone}`} text={`${country.name}, ${country.code}, ${country.phone}`} >
+  return {
+    key: country.code,
+    value: country.code,
+    text: `${country.name}, ${country.code}, ${country.phone}`,
+    label: (
       <div style={{display: "flex", justifyContent: "space-between", marginRight: "10px"}}>
         <div>
           {country.code === "All" ? null : getCountryImage(country)}
@@ -713,8 +715,8 @@ export function getCountryCodeOption(country) {
         </div>
         {country.code === "All" ? null : `+${country.phone}`}
       </div>
-    </Option>
-  );
+    ),
+  };
 }
 
 export function getCountryImage(country) {
@@ -1033,11 +1035,13 @@ export function goToLinkSoftOrJumpSelf(ths, link) {
 
 export function showMessage(type, text) {
   if (type === "success") {
-    message.success(text);
+    toast.success(text);
   } else if (type === "error") {
-    message.error(text);
+    toast.error(text);
   } else if (type === "info") {
-    message.info(text);
+    toast.info(text);
+  } else if (type === "warning") {
+    toast.warning(text);
   }
 }
 
@@ -1670,8 +1674,11 @@ export function getLabel(text, tooltip) {
   return (
     <React.Fragment>
       <span style={{marginRight: 4}}>{text}</span>
-      <Tooltip placement="top" title={tooltip}>
-        <QuestionCircleTwoTone twoToneColor="rgb(45,120,213)" />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex align-middle text-blue-400 cursor-help"><HelpCircle className="w-3.5 h-3.5" /></span>
+        </TooltipTrigger>
+        <TooltipContent side="top">{tooltip}</TooltipContent>
       </Tooltip>
     </React.Fragment>
   );
@@ -1720,16 +1727,16 @@ export function getTags(tags, urlPrefix = null) {
   tags.forEach((tag, i) => {
     if (urlPrefix === null) {
       res.push(
-        <Tag color={getTagColor(tag)}>
+        <Badge key={i} variant="secondary" className="mr-1">
           {tag}
-        </Tag>
+        </Badge>
       );
     } else {
       res.push(
-        <Link to={`/${urlPrefix}/${tag}`}>
-          <Tag color={getTagColor(tag)}>
+        <Link key={i} to={`/${urlPrefix}/${tag}`}>
+          <Badge variant="secondary" className="mr-1">
             {tag}
-          </Tag>
+          </Badge>
         </Link>
       );
     }
@@ -1738,10 +1745,13 @@ export function getTags(tags, urlPrefix = null) {
 }
 
 export function getTag(color, text, icon) {
+  // color used to map to antd preset Tag colors; we ignore it and render a
+  // neutral Badge. Callers passing an icon get it inlined before the text.
   return (
-    <Tag color={color} icon={icon}>
+    <Badge variant="secondary" className="inline-flex items-center gap-1">
+      {icon}
       {text}
-    </Tag>
+    </Badge>
   );
 }
 
@@ -2260,7 +2270,7 @@ function renderMfaAuthVerifyForm(values, authParams, onSuccess, componentThis) {
             case TotpMfaType: mfaI18n = i18next.t("mfa:Use Authenticator App"); break ;
             case EmailMfaType: mfaI18n = i18next.t("mfa:Use Email") ;break;
             }
-            return <div key={mfa.mfaType}><Button type={"link"} onClick={() => {
+            return <div key={mfa.mfaType}><Button variant="link" onClick={() => {
               componentThis.setState({
                 selectedMfaProp: mfa,
               });

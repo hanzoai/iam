@@ -13,7 +13,6 @@
 // limitations under the License.
 
 // @ts-nocheck
-import {Form} from "antd";
 import i18next from "i18next";
 import * as MfaBackend from "../../backend/MfaBackend";
 import * as Setting from "../../Setting";
@@ -28,7 +27,6 @@ export const mfaAuth = "mfaAuth";
 export const mfaSetup = "mfaSetup";
 
 export function MfaVerifyForm({mfaProps, application, user, onSuccess, onFail}) {
-  const [form] = Form.useForm();
   const onFinish = ({passcode, countryCode, dest}) => {
     if (mfaProps.mfaType === "radius") {
       const radiusProvider = application.providers.find(el => el.provider.type === "RADIUS")?.provider;
@@ -53,9 +51,6 @@ export function MfaVerifyForm({mfaProps, application, user, onSuccess, onFail}) 
       })
       .catch((error) => {
         Setting.showMessage("error", `${i18next.t("general:Failed to connect to server")}: ${error}`);
-      })
-      .finally(() => {
-        form.setFieldsValue({passcode: ""});
       });
   };
 

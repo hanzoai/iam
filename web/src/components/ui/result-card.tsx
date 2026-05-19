@@ -49,4 +49,5 @@ const ResultCard = React.forwardRef<HTMLDivElement, ResultCardProps>(
 )
 ResultCard.displayName = "ResultCard"
 
-export { ResultCard, ResultCardProps, ResultStatus }
+export { ResultCard }
+export type { ResultCardProps, ResultStatus }

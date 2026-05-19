@@ -12,17 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// @ts-nocheck
 import React from "react";
-import {Button, Card, Col, Input, Row, Select} from "antd";
-import {LinkOutlined} from "@ant-design/icons";
+import {Link as LinkIcon} from "lucide-react";
 import * as ServerBackend from "./backend/ServerBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
 import * as OrganizationBackend from "./backend/OrganizationBackend";
 import * as ApplicationBackend from "./backend/ApplicationBackend";
 import ToolTable from "./ToolTable";
+import {Button} from "./components/ui/button";
+import {Card, CardContent, CardHeader, CardTitle} from "./components/ui/card";
+import {Input} from "./components/ui/input";
+import {Label} from "./components/ui/label";
 
-const {Option} = Select;
+const FIELD_LABEL = "text-sm text-muted-foreground md:text-right md:pr-4 md:pt-2";
+const FIELD_ROW = "grid grid-cols-1 md:grid-cols-[160px_1fr] gap-2 mb-4";
 
 class ServerEditPage extends React.Component {
   constructor(props) {
@@ -137,97 +142,83 @@ class ServerEditPage extends React.Component {
 
   renderServer() {
     return (
-      <Card size="small" title={
-        <div>
-          {this.state.mode === "add" ? i18next.t("server:New MCP Server") : i18next.t("server:Edit MCP Server")}&nbsp;&nbsp;&nbsp;&nbsp;
-          <Button onClick={() => this.submitServerEdit(false)}>{i18next.t("general:Save")}</Button>
-          <Button style={{marginLeft: "20px"}} type="primary" onClick={() => this.submitServerEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
-          {this.state.mode === "add" ? <Button style={{marginLeft: "20px"}} onClick={() => this.deleteServer()}>{i18next.t("general:Cancel")}</Button> : null}
-        </div>
-      } style={(Setting.isMobile()) ? {margin: "5px"} : {}} type="inner">
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} disabled={!Setting.isAdminUser(this.props.account)} value={this.state.server.owner} onChange={(value => {this.updateServerField("owner", value);})}>
-              {
-                this.state.organizations.map((organization, index) => <Option key={index} value={organization.name}>{organization.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {i18next.t("general:Name")}:
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.server.name} onChange={e => {
-              this.updateServerField("name", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {i18next.t("general:Display name")}:
-          </Col>
-          <Col span={22} >
-            <Input value={this.state.server.displayName} onChange={e => {
-              this.updateServerField("displayName", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:URL"), i18next.t("general:URL - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input prefix={<LinkOutlined />} value={this.state.server.url} onChange={e => {
-              this.updateServerField("url", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("token:Access token"), i18next.t("token:Access token - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input.Password placeholder={"***"} value={this.state.server.token} onChange={e => {
-              this.updateServerField("token", e.target.value);
-            }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Application"), i18next.t("general:Application - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.server.application} onChange={(value => {this.updateServerField("application", value);})}>
-              {
-                this.state.applications.map((application, index) => <Option key={index} value={application.name}>{application.name}</Option>)
-              }
-            </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("general:Tool"), i18next.t("general:Tool - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <CardTitle>
+              {this.state.mode === "add" ? i18next.t("server:New MCP Server") : i18next.t("server:Edit MCP Server")}
+            </CardTitle>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => this.submitServerEdit(false)}>{i18next.t("general:Save")}</Button>
+              <Button onClick={() => this.submitServerEdit(true)}>{i18next.t("general:Save & Exit")}</Button>
+              {this.state.mode === "add" && <Button variant="outline" onClick={() => this.deleteServer()}>{i18next.t("general:Cancel")}</Button>}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className={FIELD_ROW}>
+            <Label className={FIELD_LABEL}>{i18next.t("general:Organization")}</Label>
+            <select
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm disabled:opacity-50"
+              disabled={!Setting.isAdminUser(this.props.account)}
+              value={this.state.server.owner}
+              onChange={e => this.updateServerField("owner", e.target.value)}
+            >
+              {this.state.organizations.map((organization, index) => <option key={index} value={organization.name}>{organization.name}</option>)}
+            </select>
+          </div>
+
+          <div className={FIELD_ROW}>
+            <Label className={FIELD_LABEL}>{i18next.t("general:Name")}</Label>
+            <Input value={this.state.server.name} onChange={e => this.updateServerField("name", e.target.value)} />
+          </div>
+
+          <div className={FIELD_ROW}>
+            <Label className={FIELD_LABEL}>{i18next.t("general:Display name")}</Label>
+            <Input value={this.state.server.displayName} onChange={e => this.updateServerField("displayName", e.target.value)} />
+          </div>
+
+          <div className={FIELD_ROW}>
+            <Label className={FIELD_LABEL}>{i18next.t("general:URL")}</Label>
+            <div className="flex items-center gap-2">
+              <LinkIcon className="h-4 w-4 text-muted-foreground" />
+              <Input className="flex-1" value={this.state.server.url} onChange={e => this.updateServerField("url", e.target.value)} />
+            </div>
+          </div>
+
+          <div className={FIELD_ROW}>
+            <Label className={FIELD_LABEL}>{i18next.t("token:Access token")}</Label>
+            <Input type="password" placeholder="***" value={this.state.server.token} onChange={e => this.updateServerField("token", e.target.value)} />
+          </div>
+
+          <div className={FIELD_ROW}>
+            <Label className={FIELD_LABEL}>{i18next.t("general:Application")}</Label>
+            <select
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm"
+              value={this.state.server.application}
+              onChange={e => this.updateServerField("application", e.target.value)}
+            >
+              <option value=""></option>
+              {this.state.applications.map((application, index) => <option key={index} value={application.name}>{application.name}</option>)}
+            </select>
+          </div>
+
+          <div className={FIELD_ROW}>
+            <Label className={FIELD_LABEL}>{i18next.t("general:Tool")}</Label>
             <ToolTable
               tools={this.state.server?.tools || []}
-              onUpdateTable={(value) => {this.updateServerField("tools", value);}}
+              onUpdateTable={(value) => this.updateServerField("tools", value)}
             />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("provider:Base URL"), i18next.t("provider:Base URL - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input prefix={<LinkOutlined />} readonly value={`${window.location.origin}/v1/iam/server/${this.state.server.owner}/${this.state.server.name}`} />
-          </Col>
-        </Row>
+          </div>
+
+          <div className={FIELD_ROW}>
+            <Label className={FIELD_LABEL}>{i18next.t("provider:Base URL")}</Label>
+            <div className="flex items-center gap-2">
+              <LinkIcon className="h-4 w-4 text-muted-foreground" />
+              <Input className="flex-1" readOnly value={`${window.location.origin}/v1/iam/server/${this.state.server.owner}/${this.state.server.name}`} />
+            </div>
+          </div>
+        </CardContent>
       </Card>
     );
   }
