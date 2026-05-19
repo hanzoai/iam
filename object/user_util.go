@@ -1238,3 +1238,91 @@ func MoveUserToOrg(user *User, newOrg string) (bool, error) {
 	rows, _ := affected.RowsAffected()
 	return rows > 0, nil
 }
+
+// DomainPromotion describes the effect of an email-domain auto-promotion rule.
+// It carries the target org (where the user is moved) and whether the user
+// should become a global admin (i.e. owner == conf.AdminOrg) on promotion.
+//
+// In this IAM the global-admin status is computed from user.Owner == conf.AdminOrg.
+// "global admin + home-org membership" is therefore expressed as Owner=AdminOrg
+// for domains that should manage everything (hanzo, lux, zoo) and Owner=<homeOrg>
+// + IsAdmin=true for org-scoped admins (pars).
+type DomainPromotion struct {
+	// Org is the user's resulting owner field after promotion.
+	Org string
+	// GlobalAdmin reports whether the rule confers global-admin status
+	// (i.e. Org == conf.AdminOrg).
+	GlobalAdmin bool
+}
+
+// LookupDomainPromotion returns the promotion outcome for an email's domain
+// (case-insensitive), or (zero, false) if the domain is not configured.
+//
+// Pure (modulo brand.json read): no DB access. Safe for unit tests.
+//
+// Rule source: conf.LoadBrand() reads /etc/brand/brand.json (or
+// $IAM_BRAND_FILE). White-label deployments override the rule list there
+// — IAM itself ships no hardcoded brand-specific list.
+func LookupDomainPromotion(email string) (DomainPromotion, bool) {
+	rule, ok := conf.SuperadminRuleFor(email)
+	if !ok {
+		return DomainPromotion{}, false
+	}
+	return DomainPromotion{Org: rule.Org, GlobalAdmin: rule.GlobalAdmin}, true
+}
+
+// PromoteByEmailDomain applies the email-domain promotion rule to the given
+// user. It is idempotent: if the user is already in the target org with the
+// required IsAdmin flag, it is a no-op.
+//
+// Returns true if any DB mutation occurred. Callers (HandleLoggedIn etc.)
+// should log promotion events but MUST NOT fail the signin on promotion error
+// — promotion is best-effort; an unexpected DB error here must not lock the
+// user out of their session.
+func PromoteByEmailDomain(user *User) (bool, error) {
+	if user == nil {
+		return false, fmt.Errorf("user is nil")
+	}
+	if user.Email == "" {
+		return false, nil
+	}
+
+	rule, matched := LookupDomainPromotion(user.Email)
+	if !matched {
+		return false, nil
+	}
+
+	mutated := false
+
+	// 1) Move to the target org if needed. MoveUserToOrg also invalidates
+	//    in-memory caches keyed on (owner, name).
+	if user.Owner != rule.Org {
+		moved, err := MoveUserToOrg(user, rule.Org)
+		if err != nil {
+			return mutated, fmt.Errorf("PromoteByEmailDomain: %w", err)
+		}
+		if moved {
+			user.Owner = rule.Org
+			mutated = true
+		}
+	}
+
+	// 2) Ensure IsAdmin is set so the user has org-admin power in the
+	//    target org (org-OWNER semantics — they manage the org).
+	if !user.IsAdmin {
+		if ormer == nil || ormer.Engine == nil {
+			return mutated, fmt.Errorf("database not initialized")
+		}
+		_, err := ormer.Engine.Exec(
+			`UPDATE "user" SET is_admin = ? WHERE owner = ? AND name = ?`,
+			true, user.Owner, user.Name,
+		)
+		if err != nil {
+			return mutated, fmt.Errorf("PromoteByEmailDomain set is_admin: %w", err)
+		}
+		user.IsAdmin = true
+		mutated = true
+	}
+
+	return mutated, nil
+}
