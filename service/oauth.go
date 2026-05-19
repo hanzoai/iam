@@ -19,18 +19,18 @@ import (
 	"net/http"
 	"net/url"
 
+	iam "github.com/hanzoai/iam"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
-func getSigninUrl(iamClient *iamsdk.Client, callbackUrl string, originalPath string) string {
+func getSigninUrl(iamClient *iam.Client, callbackUrl string, originalPath string) string {
 	scope := "read"
 	return fmt.Sprintf("%s/oauth/authorize?client_id=%s&response_type=code&redirect_uri=%s&scope=%s&state=%s",
 		iamClient.Endpoint, iamClient.ClientId, url.QueryEscape(callbackUrl), scope, url.QueryEscape(originalPath))
 }
 
-func redirectToIAM(iamClient *iamsdk.Client, w http.ResponseWriter, r *http.Request) {
+func redirectToIAM(iamClient *iam.Client, w http.ResponseWriter, r *http.Request) {
 	scheme := getScheme(r)
 
 	callbackUrl := fmt.Sprintf("%s://%s/waf-handler", scheme, r.Host)
