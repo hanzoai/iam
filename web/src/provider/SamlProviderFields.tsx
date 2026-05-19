@@ -14,121 +14,126 @@
 
 // @ts-nocheck
 import React from "react";
-import {Button, Col, Input, Row, Switch} from "antd";
+import {Loader2} from "lucide-react";
+import {Button} from "../components/ui/button";
+import {Input} from "../components/ui/input";
+import {Switch} from "../components/ui/switch";
+import {Textarea} from "../components/ui/textarea";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 import {authConfig} from "../auth/Auth";
 import copy from "copy-to-clipboard";
 
-const {TextArea} = Input;
-
 export function renderSamlProviderFields(provider, updateProviderField, metadataConfig) {
   const {requestUrl, setRequestUrl, metadataLoading, fetchSamlMetadata, parseSamlMetadata} = metadataConfig;
   return (
     <React.Fragment>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Sign request"), i18next.t("provider:Sign request - Tooltip"))} :
-        </Col>
-        <Col span={22} >
-          <Switch checked={provider.enableSignAuthnRequest} onChange={checked => {
+        </div>
+        <div className="col-span-12 md:col-span-10">
+          <Switch checked={provider.enableSignAuthnRequest} onCheckedChange={checked => {
             updateProviderField("enableSignAuthnRequest", checked);
           }} />
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Metadata url"), i18next.t("provider:Metadata url - Tooltip"))} :
-        </Col>
-        <Col span={6} >
+        </div>
+        <div className="col-span-12 md:col-span-6">
           <Input value={requestUrl} onChange={e => {
             setRequestUrl(e.target.value);
           }} />
-        </Col>
-        <Col span={16} >
-          <Button style={{marginLeft: "10px"}} type="primary" loading={metadataLoading} onClick={() => {fetchSamlMetadata();}}>{i18next.t("general:Request")}</Button>
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        </div>
+        <div className="col-span-12 md:col-span-4">
+          <Button className="ml-2" disabled={metadataLoading} onClick={() => {fetchSamlMetadata();}}>
+            {metadataLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {i18next.t("general:Request")}
+          </Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-start mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Metadata"), i18next.t("provider:Metadata - Tooltip"))} :
-        </Col>
-        <Col span={22}>
-          <TextArea rows={4} value={provider.metadata} onChange={e => {
+        </div>
+        <div className="col-span-12 md:col-span-10">
+          <Textarea rows={4} value={provider.metadata} onChange={e => {
             updateProviderField("metadata", e.target.value);
           }} />
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}}>
-        <Col style={{marginTop: "5px"}} span={2} />
-        <Col span={2}>
-          <Button type="primary" onClick={() => {parseSamlMetadata();}}>
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-2" />
+        <div className="col-span-10">
+          <Button onClick={() => {parseSamlMetadata();}}>
             {i18next.t("provider:Parse")}
           </Button>
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Endpoint"), i18next.t("provider:SAML 2.0 Endpoint (HTTP)"))} :
-        </Col>
-        <Col span={22} >
+        </div>
+        <div className="col-span-12 md:col-span-10">
           <Input value={provider.endpoint} onChange={e => {
             updateProviderField("endpoint", e.target.value);
           }} />
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:IdP"), i18next.t("provider:IdP certificate"))} :
-        </Col>
-        <Col span={22} >
+        </div>
+        <div className="col-span-12 md:col-span-10">
           <Input value={provider.idP} onChange={e => {
             updateProviderField("idP", e.target.value);
           }} />
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:Issuer URL"), i18next.t("provider:Issuer URL - Tooltip"))} :
-        </Col>
-        <Col span={22} >
+        </div>
+        <div className="col-span-12 md:col-span-10">
           <Input value={provider.issuerUrl} onChange={e => {
             updateProviderField("issuerUrl", e.target.value);
           }} />
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:SP ACS URL"), i18next.t("provider:SP ACS URL - Tooltip"))} :
-        </Col>
-        <Col span={21} >
-          <Input value={`${authConfig.serverUrl}/v1/iam/acs`} readOnly="readonly" />
-        </Col>
-        <Col span={1}>
-          <Button type="primary" onClick={() => {
+        </div>
+        <div className="col-span-12 md:col-span-9">
+          <Input value={`${authConfig.serverUrl}/v1/iam/acs`} readOnly />
+        </div>
+        <div className="col-span-12 md:col-span-1">
+          <Button onClick={() => {
             copy(`${authConfig.serverUrl}/v1/iam/acs`);
             Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));
           }}>
             {i18next.t("general:Copy")}
           </Button>
-        </Col>
-      </Row>
-      <Row style={{marginTop: "20px"}} >
-        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+        <div className="col-span-12 md:col-span-2 mt-1">
           {Setting.getLabel(i18next.t("provider:SP Entity ID"), i18next.t("provider:SP Entity ID - Tooltip"))} :
-        </Col>
-        <Col span={21} >
-          <Input value={`${authConfig.serverUrl}/v1/iam/acs`} readOnly="readonly" />
-        </Col>
-        <Col span={1}>
-          <Button type="primary" onClick={() => {
+        </div>
+        <div className="col-span-12 md:col-span-9">
+          <Input value={`${authConfig.serverUrl}/v1/iam/acs`} readOnly />
+        </div>
+        <div className="col-span-12 md:col-span-1">
+          <Button onClick={() => {
             copy(`${authConfig.serverUrl}/v1/iam/acs`);
             Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));
           }}>
             {i18next.t("general:Copy")}
           </Button>
-        </Col>
-      </Row>
+        </div>
+      </div>
     </React.Fragment>
   );
 }

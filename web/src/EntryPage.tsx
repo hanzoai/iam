@@ -15,7 +15,7 @@
 // @ts-nocheck
 import React from "react";
 import {Redirect, Route, Switch} from "react-router-dom";
-import {Spin} from "antd";
+import {Spinner} from "./components/ui/spinner";
 import i18next from "i18next";
 import * as Setting from "./Setting";
 import * as Conf from "./Conf";
@@ -58,7 +58,7 @@ class EntryPage extends React.Component {
     } else if (this.props.account === undefined) {
       return (
         <div style={{display: "flex", justifyContent: "center", alignItems: "center", height: "100vh"}}>
-          <Spin size="large" tip="Loading..." />
+          <Spinner size="lg" />
         </div>
       );
     } else {
@@ -101,8 +101,11 @@ class EntryPage extends React.Component {
             style={{
               backgroundImage: bgUrl ? `url(${bgUrl})` : undefined,
             }}>
-            <Spin size="large" spinning={this.state.application === undefined} tip={i18next.t("login:Loading")}
-              style={{width: "100%", margin: "0 auto", position: "absolute"}} />
+            {this.state.application === undefined && (
+              <div style={{width: "100%", margin: "0 auto", position: "absolute", display: "flex", justifyContent: "center"}}>
+                <Spinner size="lg" />
+              </div>
+            )}
             <Switch>
               <Route exact path="/signup" render={(props) => this.renderHomeIfLoggedIn(<SignupPage {...this.props} application={this.state.application} applicationName={authConfig.appName} onUpdateApplication={onUpdateApplication} {...props} />)} />
               <Route exact path="/signup/:applicationName" render={(props) => this.renderHomeIfLoggedIn(<SignupPage {...this.props} application={this.state.application} onUpdateApplication={onUpdateApplication} {...props} />)} />

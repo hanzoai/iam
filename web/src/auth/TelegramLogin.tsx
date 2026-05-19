@@ -14,7 +14,7 @@
 
 // @ts-nocheck
 import React from "react";
-import {Card} from "antd";
+import {Card, CardContent, CardHeader, CardTitle} from "../components/ui/card";
 import {withRouter} from "react-router-dom";
 import * as Util from "./Util";
 import * as Setting from "../Setting";
@@ -93,38 +93,32 @@ class TelegramLogin extends React.Component {
 
   render() {
     return (
-      <div className="login-content" style={{margin: "auto"}}>
-        <div style={{marginBottom: "10px", textAlign: "center"}}>
-          <Card
-            style={{
-              width: "400px",
-              margin: "0 auto",
-              marginTop: "100px",
-            }}
-            title={
-              <div>
-                <img
-                  width={40}
-                  height={40}
-                  src={Setting.getProviderLogoURL({type: "Telegram", category: "OAuth"})}
-                  alt="Telegram"
-                  style={{marginRight: "10px"}}
+      <div className="login-content mx-auto">
+        <div className="mb-2.5 text-center">
+          <Card className="w-[400px] mx-auto mt-[100px]">
+            <CardHeader>
+              <CardTitle>
+                <div className="flex items-center">
+                  <img
+                    width={40}
+                    height={40}
+                    src={Setting.getProviderLogoURL({type: "Telegram", category: "OAuth"})}
+                    alt="Telegram"
+                    className="mr-2.5"
+                  />
+                  {i18next.t("login:Sign in with Telegram")}
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center p-5">
+                <p>{i18next.t("login:Click the button below to sign in with Telegram")}</p>
+                <div
+                  id="telegram-login-container"
+                  className="flex justify-center mt-5"
                 />
-                {i18next.t("login:Sign in with Telegram")}
               </div>
-            }
-          >
-            <div style={{textAlign: "center", padding: "20px"}}>
-              <p>{i18next.t("login:Click the button below to sign in with Telegram")}</p>
-              <div
-                id="telegram-login-container"
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  marginTop: "20px",
-                }}
-              />
-            </div>
+            </CardContent>
           </Card>
         </div>
       </div>
