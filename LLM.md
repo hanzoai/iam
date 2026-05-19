@@ -114,13 +114,22 @@ CI builds multi-arch Docker image (`hanzo-build-linux-amd64` + `hanzo-build-linu
 
 ```
 iam/
-├── cmd/iam/                 — main binary
+├── *.go                     — canonical Go SDK (package iam): Client, Claims,
+│                              User, Application, Cert, jwt parsing, …
+│                              import "github.com/hanzoai/iam"
+├── errors.go                — typed error vars (ErrTokenMissing, ErrTokenInvalid …)
+├── cmd/iam/                 — admin CLI binary
+├── cmd/iamd/                — server daemon (canonical entrypoint)
 ├── controllers/             — HTTP handlers
 ├── routers/
 │   ├── router.go            — route table (/api/* internal)
 │   └── v1_iam_rewrite.go    — /v1/iam/* → /api/* filter
 ├── object/                  — domain logic (users, apps, orgs, sessions)
 ├── service/                 — auth flows (oauth, oidc, saml, ldap)
+├── pkg/iam/                 — separate Go module: Embed() + Mount() entry
+│                              points for HIP-0106 fused cloud binary.
+│                              Carries cloud + zip deps; root SDK does not.
+│                              import "github.com/hanzoai/iam/pkg/iam"
 ├── migrations/              — Base schema migrations
 ├── notification/            — email/SMS/webhook fan-out adapters
 ├── storage/                 — pluggable file backends (S3, GCS, Azure, ...)
@@ -130,6 +139,24 @@ iam/
 ├── conf/                    — sample app.conf templates
 └── NOTICE                   — third-party license attributions
 ```
+
+### Canonical Go SDK (HIP-0117)
+
+The Go SDK lives at the module root — one canonical path, no drift:
+
+```go
+import iam "github.com/hanzoai/iam"
+
+c := iam.NewClient(endpoint, clientId, clientSecret, certPEM, org, app)
+claims, err := c.ParseJwtToken(token)
+```
+
+There is no `iam/sdk/`, no `iam/client/`, no `iam/v2`. The legacy
+`github.com/hanzoai/iamsdk/v2/iamsdk` upstream-fork module is retired —
+its consumers (ai, vm, visor, …) have been swept to the root path.
+
+Non-Go SDKs (TypeScript, Python, Rust) live in `github.com/hanzoiam/sdk`.
+That repo is the polyglot umbrella; Go stays in this repo.
 
 ## Integration points (across the stack)
 
