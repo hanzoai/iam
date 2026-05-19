@@ -1,3 +1,46 @@
+# iam
+
+Identity and Access Management for the Hanzo platform. OAuth 2.1, OIDC, SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA, RADIUS — multi-tenant, white-label.
+
+[![Status](https://img.shields.io/badge/status-stable-green)]()
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)]()
+
+## Quick start
+
+```bash
+docker run -p 8000:8000 ghcr.io/hanzoai/iam:latest
+```
+
+Open `http://localhost:8000`.
+
+## What this is
+
+`iam` is the canonical identity provider for every Hanzo deployment. Serves SSO across `hanzo.id`, `lux.id`, `zoo.id`, `pars.id`, and any white-label domain a tenant configures. Issues JWTs that every other Hanzo subsystem trusts via a single JWKS endpoint.
+
+## Specs
+
+Implements:
+- HIP-0026 IAM Standard (RFC 6749 / OIDC compliant endpoints)
+- HIP-0106 Unified Cloud Binary (iam subsystem)
+
+## Architecture
+
+```
+   user / app  ->  hanzo.id / {tenant}.id  ->  iam (zip.App)
+                                                  |
+                                          OAuth2/OIDC/SAML
+                                          users, orgs, apps, roles
+                                                  |
+                                       JWT signed with per-tenant key
+                                                  |
+                              every other Hanzo subsystem trusts via JWKS
+                              (gateway strips client-supplied identity
+                              headers, mints validated ones from the JWT)
+```
+
+
+---
+
 <h1 align="center" style="border-bottom: none;">Hanzo IAM</h1>
 <h3 align="center">An open-source AI-first Identity and Access Management (IAM) /AI MCP gateway and auth server with web UI supporting MCP, A2A, OAuth 2.1, OIDC, SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA, Face ID, Google Workspace, Azure AD</h3>
 <p align="center">
