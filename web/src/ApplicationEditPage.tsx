@@ -13,6 +13,16 @@
 // limitations under the License.
 
 // @ts-nocheck
+// TODO(rip-antd): ApplicationEditPage (1769 lines) still imports 19 antd
+// components plus ConfigProvider and message. The page is essentially a
+// large multi-section form with embedded UrlTable/ProviderTable/SignupTable
+// children that themselves embed antd Form.Item. Migration order:
+// 1) replace shell Layout/Tabs with Tailwind + components/ui/tabs,
+// 2) ConfigProvider -> drop (no longer needed without antd theme),
+// 3) message.X -> sonner toast.X,
+// 4) Radio.Group -> components/ui/radio-group,
+// 5) Popover -> components/ui/popover,
+// 6) Upload -> native <input type="file"> (see UserListPage pattern).
 import React from "react";
 import {
   Button,
