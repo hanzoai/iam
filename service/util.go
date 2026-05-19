@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"strings"
 
+	iam "github.com/hanzoai/iam"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
-	iamsdk "github.com/hanzoai/iamsdk/v2/iamsdk"
 )
 
 func joinPath(a string, b string) string {
@@ -116,7 +116,7 @@ func getX509CertByDomain(domain string) (*tls.Certificate, error) {
 	return &tlsCert, certErr
 }
 
-func getIAMClientFromSite(site *object.Site) (*iamsdk.Client, error) {
+func getIAMClientFromSite(site *object.Site) (*iam.Client, error) {
 	if site.ApplicationObj == nil {
 		return nil, fmt.Errorf("site.ApplicationObj is empty")
 	}
@@ -140,7 +140,7 @@ func getIAMClientFromSite(site *object.Site) (*iamsdk.Client, error) {
 		certificate = site.ApplicationObj.CertObj.Certificate
 	}
 
-	res := iamsdk.NewClient(iamEndpoint, clientId, clientSecret, certificate, site.ApplicationObj.Organization, site.IamApplication)
+	res := iam.NewClient(iamEndpoint, clientId, clientSecret, certificate, site.ApplicationObj.Organization, site.IamApplication)
 	return res, nil
 }
 
