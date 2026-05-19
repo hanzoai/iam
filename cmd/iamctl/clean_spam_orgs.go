@@ -31,9 +31,9 @@ import (
 type suspiciousReason string
 
 const (
-	reasonNumericSuffix  suspiciousReason = "numeric-suffix"   // e.g. "hanzo42", "myorg123"
-	reasonReservedWord   suspiciousReason = "reserved-word"    // e.g. "hanzowoo", "my-hanzo"
-	reasonFreshNoUsers   suspiciousReason = "fresh-no-users"   // age <24h AND zero users
+	reasonNumericSuffix suspiciousReason = "numeric-suffix" // e.g. "hanzo42", "myorg123"
+	reasonReservedWord  suspiciousReason = "reserved-word"  // e.g. "hanzowoo", "my-hanzo"
+	reasonFreshNoUsers  suspiciousReason = "fresh-no-users" // age <24h AND zero users
 )
 
 // numericSuffixRE matches names ending in one or more digits — a strong
