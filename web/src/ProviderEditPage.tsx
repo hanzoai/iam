@@ -14,8 +14,11 @@
 
 // @ts-nocheck
 import React from "react";
-import {Button, Card, Col, Input, Row, Select, Switch} from "antd";
 import {Link as LinkIcon} from "lucide-react";
+import {Input} from "./components/ui/input";
+import {Textarea} from "./components/ui/textarea";
+import {Switch} from "./components/ui/switch";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "./components/ui/select";
 import * as ProviderBackend from "./backend/ProviderBackend";
 import * as OrganizationBackend from "./backend/OrganizationBackend";
 import * as CertBackend from "./backend/CertBackend";
@@ -33,9 +36,6 @@ import {renderWeb3ProviderFields} from "./provider/Web3ProviderFields";
 import {renderStorageProviderFields} from "./provider/StorageProviderFields";
 import {renderFaceIdProviderFields} from "./provider/FaceIDProviderFields";
 import {renderIDVerificationProviderFields} from "./provider/IDVerificationProviderFields";
-
-const {Option} = Select;
-const {TextArea} = Input;
 
 const defaultUserMapping = {
   id: "id",
@@ -537,16 +537,16 @@ class ProviderEditPage extends React.Component {
       return null;
     } else {
       return (
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(text, tooltip)} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="col-span-12 md:col-span-10">
             <Input value={provider.appId} onChange={e => {
               this.updateProviderField("appId", e.target.value);
             }} />
-          </Col>
-        </Row>
+          </div>
+        </div>
       );
     }
   }
@@ -566,22 +566,22 @@ class ProviderEditPage extends React.Component {
     if (text === "" && tooltip === "") {
       return (
         <React.Fragment>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel("Test Notification", "Test Notification")} :
-          </Col>
+          </div>
         </React.Fragment>
       );
     } else {
       return (
         <React.Fragment>
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(text, tooltip)} :
-          </Col>
-          <Col span={6} >
+          </div>
+          <div className="col-span-12 md:col-span-6">
             <Input value={provider.receiver} onChange={e => {
               this.updateProviderField("receiver", e.target.value);
             }} />
-          </Col>
+          </div>
         </React.Fragment>
       );
     }
@@ -645,45 +645,50 @@ class ProviderEditPage extends React.Component {
             {this.state.mode === "add" ? <button className="px-4 py-2 border border-white/10 rounded-lg text-sm text-white hover:bg-white/[0.05]" onClick={() => this.deleteProvider()}>{i18next.t("general:Cancel")}</button> : null}
           </div>
         </div>
-        <Row style={{marginTop: "10px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="grid grid-cols-12 gap-4 items-center mt-2.5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("general:Name"), i18next.t("general:Name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="col-span-12 md:col-span-10">
             <Input value={this.state.provider.name} onChange={e => {
               this.updateProviderField("name", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("general:Display name"), i18next.t("general:Display name - Tooltip"))} :
-          </Col>
-          <Col span={22} >
+          </div>
+          <div className="col-span-12 md:col-span-10">
             <Input value={this.state.provider.displayName} onChange={e => {
               this.updateProviderField("displayName", e.target.value);
             }} />
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("general:Organization"), i18next.t("general:Organization - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} disabled={!Setting.isAdminUser(this.props.account)} value={this.state.provider.owner} onChange={(value => {this.updateProviderField("owner", value);})}>
-              {Setting.isAdminUser(this.props.account) ? <Option key={"admin"} value={"admin"}>{i18next.t("provider:admin (Shared)")}</Option> : null}
-              {
-                this.state.organizations.map((organization, index) => <Option key={index} value={organization.name}>{organization.name}</Option>)
-              }
+          </div>
+          <div className="col-span-12 md:col-span-10">
+            <Select disabled={!Setting.isAdminUser(this.props.account)} value={this.state.provider.owner} onValueChange={value => {this.updateProviderField("owner", value);}}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Setting.isAdminUser(this.props.account) ? <SelectItem key={"admin"} value={"admin"}>{i18next.t("provider:admin (Shared)")}</SelectItem> : null}
+                {
+                  this.state.organizations.map((organization, index) => <SelectItem key={index} value={organization.name}>{organization.name}</SelectItem>)
+                }
+              </SelectContent>
             </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("general:Category"), i18next.t("general:Category - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} value={this.state.provider.category} onChange={(value => {
+          </div>
+          <div className="col-span-12 md:col-span-10">
+            <Select value={this.state.provider.category} onValueChange={value => {
               this.updateProviderField("category", value);
               if (value === "OAuth") {
                 this.updateProviderField("type", "Google");
@@ -720,34 +725,39 @@ class ProviderEditPage extends React.Component {
                 this.updateProviderField("type", "Jumio");
                 this.updateProviderField("endpoint", "");
               }
-            })}>
-              {
-                [
-                  {id: "Captcha", name: "Captcha"},
-                  {id: "Email", name: "Email"},
-                  {id: "ID Verification", name: "ID Verification"},
-                  {id: "MFA", name: "MFA"},
-                  {id: "Notification", name: "Notification"},
-                  {id: "OAuth", name: "OAuth"},
-                  {id: "Payment", name: "Payment"},
-                  {id: "SAML", name: "SAML"},
-                  {id: "SMS", name: "SMS"},
-                  {id: "Storage", name: "Storage"},
-                  {id: "Web3", name: "Web3"},
-                  {id: "Face ID", name: "Face ID"},
-                ]
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((providerCategory, index) => <Option key={index} value={providerCategory.id}>{providerCategory.name}</Option>)
-              }
+            }}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {
+                  [
+                    {id: "Captcha", name: "Captcha"},
+                    {id: "Email", name: "Email"},
+                    {id: "ID Verification", name: "ID Verification"},
+                    {id: "MFA", name: "MFA"},
+                    {id: "Notification", name: "Notification"},
+                    {id: "OAuth", name: "OAuth"},
+                    {id: "Payment", name: "Payment"},
+                    {id: "SAML", name: "SAML"},
+                    {id: "SMS", name: "SMS"},
+                    {id: "Storage", name: "Storage"},
+                    {id: "Web3", name: "Web3"},
+                    {id: "Face ID", name: "Face ID"},
+                  ]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((providerCategory, index) => <SelectItem key={index} value={providerCategory.id}>{providerCategory.name}</SelectItem>)
+                }
+              </SelectContent>
             </Select>
-          </Col>
-        </Row>
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+          </div>
+        </div>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("general:Type"), i18next.t("general:Type - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Select virtual={false} style={{width: "100%"}} showSearch value={this.state.provider.type} onChange={(value => {
+          </div>
+          <div className="col-span-12 md:col-span-10">
+            <Select value={this.state.provider.type} onValueChange={value => {
               this.updateProviderField("type", value);
               if (value === "Local File System") {
                 this.updateProviderField("domain", Setting.getFullServerUrl());
@@ -767,78 +777,100 @@ class ProviderEditPage extends React.Component {
                 this.updateProviderField("method", "GET");
                 this.updateProviderField("title", "");
               }
-            })}>
-              {
-                Setting.getProviderTypeOptions(this.state.provider.category)
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((providerType, index) => <Option key={index} value={providerType.id}>
-                    <img width={20} height={20} style={{marginBottom: "3px", marginRight: "10px"}} src={Setting.getProviderLogoURL({category: this.state.provider.category, type: providerType.id})} alt={providerType.id} />
-                    {providerType.name}
-                  </Option>)
-              }
+            }}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {
+                  Setting.getProviderTypeOptions(this.state.provider.category)
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((providerType, index) => <SelectItem key={index} value={providerType.id}>
+                      <span className="inline-flex items-center gap-2">
+                        <img width={20} height={20} src={Setting.getProviderLogoURL({category: this.state.provider.category, type: providerType.id})} alt={providerType.id} />
+                        {providerType.name}
+                      </span>
+                    </SelectItem>)
+                }
+              </SelectContent>
             </Select>
-          </Col>
-        </Row>
+          </div>
+        </div>
         {
           this.state.provider.type !== "WeCom" && this.state.provider.type !== "Infoflow" && this.state.provider.type !== "WeChat" ? null : (
             <React.Fragment>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={2}>
+              <div className="grid grid-cols-12 gap-4 items-center mt-5">
+                <div className="col-span-12 md:col-span-2 mt-1">
                   {Setting.getLabel(i18next.t("provider:Sub type"), i18next.t("provider:Sub type - Tooltip"))} :
-                </Col>
-                <Col span={22} >
-                  <Select virtual={false} style={{width: "100%"}} value={this.state.provider.subType} onChange={value => {
+                </div>
+                <div className="col-span-12 md:col-span-10">
+                  <Select value={this.state.provider.subType} onValueChange={value => {
                     this.updateProviderField("subType", value);
                   }}>
-                    {
-                      this.getProviderSubTypeOptions(this.state.provider.type).map((providerSubType, index) => <Option key={index} value={providerSubType.id}>{providerSubType.name}</Option>)
-                    }
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {
+                        this.getProviderSubTypeOptions(this.state.provider.type).map((providerSubType, index) => <SelectItem key={index} value={providerSubType.id}>{providerSubType.name}</SelectItem>)
+                      }
+                    </SelectContent>
                   </Select>
-                </Col>
-              </Row>
+                </div>
+              </div>
               {
                 this.state.provider.type !== "WeCom" ? null : (
                   <React.Fragment>
-                    <Row style={{marginTop: "20px"}} >
-                      <Col style={{marginTop: "5px"}} span={2}>
+                    <div className="grid grid-cols-12 gap-4 items-center mt-5">
+                      <div className="col-span-12 md:col-span-2 mt-1">
                         {Setting.getLabel(i18next.t("general:Method"), i18next.t("provider:Method - Tooltip"))} :
-                      </Col>
-                      <Col span={22} >
-                        <Select virtual={false} style={{width: "100%"}} value={this.state.provider.method} onChange={value => {
+                      </div>
+                      <div className="col-span-12 md:col-span-10">
+                        <Select value={this.state.provider.method} onValueChange={value => {
                           this.updateProviderField("method", value);
                         }}>
-                          {
-                            [
-                              {id: "Normal", name: i18next.t("application:Normal")},
-                              {id: "Silent", name: i18next.t("provider:Silent")},
-                            ].map((method, index) => <Option key={index} value={method.id}>{method.name}</Option>)
-                          }
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {
+                              [
+                                {id: "Normal", name: i18next.t("application:Normal")},
+                                {id: "Silent", name: i18next.t("provider:Silent")},
+                              ].map((method, index) => <SelectItem key={index} value={method.id}>{method.name}</SelectItem>)
+                            }
+                          </SelectContent>
                         </Select>
-                      </Col>
-                    </Row>
-                    <Row style={{marginTop: "20px"}} >
-                      <Col style={{marginTop: "5px"}} span={2}>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-12 gap-4 items-center mt-5">
+                      <div className="col-span-12 md:col-span-2 mt-1">
                         {Setting.getLabel(i18next.t("provider:Scope"), i18next.t("provider:Scope - Tooltip"))} :
-                      </Col>
-                      <Col span={22} >
-                        <Select virtual={false} style={{width: "100%"}} value={this.state.provider.scopes} onChange={value => {
+                      </div>
+                      <div className="col-span-12 md:col-span-10">
+                        <Select value={this.state.provider.scopes} onValueChange={value => {
                           this.updateProviderField("scopes", value);
                         }}>
-                          <Option key="snsapi_userinfo" value="snsapi_userinfo">snsapi_userinfo</Option>
-                          <Option key="snsapi_privateinfo" value="snsapi_privateinfo">snsapi_privateinfo</Option>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem key="snsapi_userinfo" value="snsapi_userinfo">snsapi_userinfo</SelectItem>
+                            <SelectItem key="snsapi_privateinfo" value="snsapi_privateinfo">snsapi_privateinfo</SelectItem>
+                          </SelectContent>
                         </Select>
-                      </Col>
-                    </Row>
-                    <Row style={{marginTop: "20px"}} >
-                      <Col style={{marginTop: "5px"}} span={2}>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-12 gap-4 items-center mt-5">
+                      <div className="col-span-12 md:col-span-2 mt-1">
                         {Setting.getLabel(i18next.t("provider:Use id as name"), i18next.t("provider:Use id as name - Tooltip"))} :
-                      </Col>
-                      <Col span={22} >
-                        <Switch checked={this.state.provider.disableSsl} onChange={checked => {
+                      </div>
+                      <div className="col-span-12 md:col-span-10">
+                        <Switch checked={this.state.provider.disableSsl} onCheckedChange={checked => {
                           this.updateProviderField("disableSsl", checked);
                         }} />
-                      </Col>
-                    </Row>
+                      </div>
+                    </div>
                   </React.Fragment>)
               }
             </React.Fragment>
@@ -864,54 +896,54 @@ class ProviderEditPage extends React.Component {
                   (this.state.provider.category === "Storage" && this.state.provider.type === "Google Cloud Storage") ||
                   (this.state.provider.category === "Email" && (this.state.provider.type === "Azure ACS" || this.state.provider.type === "SendGrid" || this.state.provider.type === "Resend")) ||
                   (this.state.provider.category === "Notification" && (this.state.provider.type === "Line" || this.state.provider.type === "Telegram" || this.state.provider.type === "Bark" || this.state.provider.type === "Discord" || this.state.provider.type === "Slack" || this.state.provider.type === "Pushbullet" || this.state.provider.type === "Pushover" || this.state.provider.type === "Lark" || this.state.provider.type === "Microsoft Teams" || this.state.provider.type === "WeCom")) ? null : (
-                      <Row style={{marginTop: "20px"}} >
-                        <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+                      <div className="grid grid-cols-12 gap-4 items-center mt-5">
+                        <div className="col-span-12 md:col-span-2 mt-1">
                           {this.getClientIdLabel(this.state.provider)} :
-                        </Col>
-                        <Col span={22} >
+                        </div>
+                        <div className="col-span-12 md:col-span-10">
                           <Input value={this.state.provider.clientId} onChange={e => {
                             this.updateProviderField("clientId", e.target.value);
                           }} />
-                        </Col>
-                      </Row>
+                        </div>
+                      </div>
                     )
                 }
-                <Row style={{marginTop: "20px"}} >
-                  <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+                <div className="grid grid-cols-12 gap-4 items-center mt-5">
+                  <div className="col-span-12 md:col-span-2 mt-1">
                     {this.getClientSecretLabel(this.state.provider)} :
-                  </Col>
-                  <Col span={22} >
+                  </div>
+                  <div className="col-span-12 md:col-span-10">
                     <Input value={this.state.provider.clientSecret} onChange={e => {
                       this.updateProviderField("clientSecret", e.target.value);
                     }} />
-                  </Col>
-                </Row>
+                  </div>
+                </div>
               </React.Fragment>
             )
         }
         {
           this.state.provider.category !== "Email" && this.state.provider.type !== "WeChat" && this.state.provider.type !== "Apple" && this.state.provider.type !== "Aliyun Captcha" && this.state.provider.type !== "WeChat Pay" && this.state.provider.type !== "Twitter" && this.state.provider.type !== "Reddit" && this.state.provider.type !== "CUCloud" ? null : (
             <React.Fragment>
-              <Row style={{marginTop: "20px"}} >
-                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              <div className="grid grid-cols-12 gap-4 items-center mt-5">
+                <div className="col-span-12 md:col-span-2 mt-1">
                   {this.getClientId2Label(this.state.provider)} :
-                </Col>
-                <Col span={22} >
+                </div>
+                <div className="col-span-12 md:col-span-10">
                   <Input value={this.state.provider.clientId2} onChange={e => {
                     this.updateProviderField("clientId2", e.target.value);
                   }} />
-                </Col>
-              </Row>
+                </div>
+              </div>
               {
                 (this.state.provider.type === "WeChat Pay" || this.state.provider.type === "CUCloud") || (this.state.provider.category === "Email" && (this.state.provider.type === "Azure ACS")) ? null : (
-                  <Row style={{marginTop: "20px"}} >
-                    <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+                  <div className="grid grid-cols-12 gap-4 items-start mt-5">
+                    <div className="col-span-12 md:col-span-2 mt-1">
                       {this.getClientSecret2Label(this.state.provider)} :
-                    </Col>
-                    <Col span={22} >
+                    </div>
+                    <div className="col-span-12 md:col-span-10">
                       {
                         (this.state.provider.category === "OAuth" && this.state.provider.type === "Apple") ? (
-                          <TextArea autoSize={{minRows: 1, maxRows: 20}} value={this.state.provider.clientSecret2} onChange={e => {
+                          <Textarea rows={4} value={this.state.provider.clientSecret2} onChange={e => {
                             this.updateProviderField("clientSecret2", e.target.value);
                           }} />
                         ) : (
@@ -920,8 +952,8 @@ class ProviderEditPage extends React.Component {
                           }} />
                         )
                       }
-                    </Col>
-                  </Row>
+                    </div>
+                  </div>
                 )
               }
             </React.Fragment>
@@ -979,16 +1011,19 @@ class ProviderEditPage extends React.Component {
           this.state.provider,
           this.updateProviderField.bind(this)
         ) : null}
-        <Row style={{marginTop: "20px"}} >
-          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+        <div className="grid grid-cols-12 gap-4 items-center mt-5">
+          <div className="col-span-12 md:col-span-2 mt-1">
             {Setting.getLabel(i18next.t("provider:Provider URL"), i18next.t("provider:Provider URL - Tooltip"))} :
-          </Col>
-          <Col span={22} >
-            <Input prefix={<LinkOutlined />} value={this.state.provider.providerUrl} onChange={e => {
-              this.updateProviderField("providerUrl", e.target.value);
-            }} />
-          </Col>
-        </Row>
+          </div>
+          <div className="col-span-12 md:col-span-10">
+            <div className="relative">
+              <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input className="pl-9" value={this.state.provider.providerUrl} onChange={e => {
+                this.updateProviderField("providerUrl", e.target.value);
+              }} />
+            </div>
+          </div>
+        </div>
         {
           this.state.provider.category === "Captcha" ? renderCaptchaProviderFields(
             this.state.provider,

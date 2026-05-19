@@ -14,7 +14,11 @@
 
 // @ts-nocheck
 import React from "react";
-import {Select, Spin} from "antd";
+import {ChevronDown} from "lucide-react";
+import {Popover, PopoverContent, PopoverTrigger} from "../components/ui/popover";
+import {Input} from "../components/ui/input";
+import {Spinner} from "../components/ui/spinner";
+import {cn} from "../lib/utils";
 import * as Setting from "../Setting";
 
 const SCROLL_BOTTOM_OFFSET = 20;
@@ -45,18 +49,22 @@ function PaginateSelect(props) {
     onSearch: onSearchProp,
     onPopupScroll: onPopupScrollProp,
     showSearch = true,
-    filterOption = false,
     notFoundContent,
     loading: selectLoading,
-    dropdownMatchSelectWidth = false,
-    virtual = false,
     reloadKey,
-    ...restProps
+    value,
+    onChange,
+    placeholder,
+    disabled,
+    className,
+    style,
   } = props;
 
   const [options, setOptions] = React.useState([]);
   const [hasMore, setHasMore] = React.useState(true);
   const [loading, setLoading] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
+  const [searchText, setSearchText] = React.useState("");
 
   const debounceRef = React.useRef(null);
   const latestSearchRef = React.useRef("");
@@ -84,7 +92,6 @@ function PaginateSelect(props) {
       onError(error);
       return;
     }
-
     if (Setting?.showMessage) {
       Setting.showMessage("error", error?.message ?? String(error));
     }
@@ -226,13 +233,14 @@ function PaginateSelect(props) {
     };
   }, [resetAndLoad, reloadKey]);
 
-  const handleSearch = React.useCallback((value) => {
-    onSearchProp?.(value);
+  const handleSearch = React.useCallback((next) => {
+    setSearchText(next);
+    onSearchProp?.(next);
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
 
-    const triggerSearch = () => resetAndLoad(value || "");
+    const triggerSearch = () => resetAndLoad(next || "");
 
     if (!debounceMs) {
       triggerSearch();
@@ -242,7 +250,7 @@ function PaginateSelect(props) {
     debounceRef.current = setTimeout(triggerSearch, debounceMs);
   }, [debounceMs, onSearchProp, resetAndLoad]);
 
-  const handlePopupScroll = React.useCallback((event) => {
+  const handleScroll = React.useCallback((event) => {
     onPopupScrollProp?.(event);
     const target = event?.target;
     if (!target || loadingRef.current || !hasMore) {
@@ -257,21 +265,81 @@ function PaginateSelect(props) {
   }, [hasMore, loadPage, onPopupScrollProp]);
 
   const mergedLoading = selectLoading ?? loading;
-  const mergedNotFound = mergedLoading ? <Spin size="small" /> : notFoundContent;
+  const selectedOption = options.find((o) => o?.value === value);
+  const displayLabel = selectedOption?.label ?? value ?? "";
+
+  const handleSelect = (opt) => {
+    onChange?.(opt.value, opt);
+    setOpen(false);
+  };
 
   return (
-    <Select
-      {...restProps}
-      virtual={virtual}
-      showSearch={showSearch}
-      filterOption={filterOption}
-      options={options}
-      loading={mergedLoading}
-      notFoundContent={mergedNotFound}
-      onSearch={showSearch ? handleSearch : undefined}
-      onPopupScroll={handlePopupScroll}
-      dropdownMatchSelectWidth={dropdownMatchSelectWidth}
-    />
+    <Popover open={open && !disabled} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          className={cn(
+            "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm",
+            "ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+            className,
+          )}
+          style={style}
+        >
+          <span className={cn("truncate", !displayLabel && "text-muted-foreground")}>
+            {displayLabel || placeholder || ""}
+          </span>
+          <ChevronDown className="h-4 w-4 opacity-50 ml-2" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="p-0 w-[var(--radix-popover-trigger-width)]"
+        align="start"
+        sideOffset={4}
+      >
+        {showSearch && (
+          <div className="p-2 border-b border-border">
+            <Input
+              value={searchText}
+              onChange={(e) => handleSearch(e.target.value)}
+              placeholder={placeholder || ""}
+              className="h-8"
+              autoFocus
+            />
+          </div>
+        )}
+        <div
+          className="max-h-72 overflow-auto"
+          onScroll={handleScroll}
+        >
+          {options.length === 0 && !mergedLoading && (
+            <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+              {notFoundContent ?? "No data"}
+            </div>
+          )}
+          {options.map((opt) => (
+            <div
+              key={String(opt.value)}
+              role="option"
+              aria-selected={opt.value === value}
+              onClick={() => handleSelect(opt)}
+              className={cn(
+                "flex items-center px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground",
+                opt.value === value && "bg-accent text-accent-foreground",
+              )}
+            >
+              {opt.label}
+            </div>
+          ))}
+          {mergedLoading && (
+            <div className="flex items-center justify-center py-2">
+              <Spinner size="sm" />
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
