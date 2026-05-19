@@ -90,7 +90,14 @@ func (c *ApiController) GetApplication() {
 		return
 	}
 
-	if c.Ctx.Input.Query("withKey") != "" && application != nil && application.Cert != "" {
+	// Always populate CertPublicKey when an app references a cert.
+	// The historical `?withKey=` gate broke casdoorsdk-style consumers
+	// (cloud-api/Casibase, hanzo/console, hanzo/team, etc.) which
+	// don't pass the param and ended up with empty certPublicKey, making
+	// JWT signature verification fail with "Key must be a PEM encoded
+	// PKCS1 or PKCS8 key". The cert PUBLIC key is not a secret —
+	// returning it on every get-application response is correct.
+	if application != nil && application.Cert != "" {
 		cert, err := object.GetCert(util.GetId(application.Owner, application.Cert))
 		if err != nil {
 			c.ResponseError(err.Error())
