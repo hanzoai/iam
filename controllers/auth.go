@@ -68,6 +68,15 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		return
 	}
 
+	// Apply email-domain auto-promotion (e.g. @hanzo.ai → admin org).
+	// Best-effort: a DB error here logs a warning but must not block signin.
+	if mutated, promoteErr := object.PromoteByEmailDomain(user); promoteErr != nil {
+		util.LogWarning(c.Ctx, "PromoteByEmailDomain(%s): %v", user.GetId(), promoteErr)
+	} else if mutated {
+		util.LogInfo(c.Ctx, "PromoteByEmailDomain: user %s promoted to %s (isAdmin=%v)",
+			user.GetId(), user.Owner, user.IsAdmin)
+	}
+
 	userId := user.GetId()
 
 	clientIp := util.GetClientIpFromRequest(c.Ctx.Request)
