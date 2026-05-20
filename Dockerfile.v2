@@ -1,0 +1,35 @@
+# Phase 0 scaffold image for iam-v2.
+#
+# NOT DEPLOYED. NOT WIRED INTO CI PUBLISHING. The v1 `Dockerfile` is the only
+# image consumed by production manifests. This file exists so the v2 binary
+# can be built and tested locally and in PR-scope CI without touching v1's
+# build path.
+#
+# See MIGRATION.md at the repository root for the full plan.
+
+FROM mirror.gcr.io/library/golang:1.26 AS back
+WORKDIR /go/src/hanzo-iam
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+# Per SCALE_STANDARD.md §2 — GOEXPERIMENT=jsonv2 in every production Go build.
+ARG GO_EXPERIMENT=jsonv2
+ENV GOEXPERIMENT=${GO_EXPERIMENT}
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iam-v2 ./cmd/iam-v2/
+
+FROM mirror.gcr.io/library/alpine:3.21
+LABEL maintainer="https://hanzo.ai/"
+ARG USER=hanzo
+
+RUN apk add --no-cache tzdata curl ca-certificates sqlite \
+    && update-ca-certificates \
+    && adduser -D $USER -u 1000
+
+USER 1000
+WORKDIR /
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/iam-v2 ./iam-v2
+
+ENTRYPOINT ["./iam-v2"]
+CMD ["serve", "--http=0.0.0.0:8000"]
