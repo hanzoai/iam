@@ -1,0 +1,194 @@
+name: Release
+
+# Multi-arch release pipeline triggered by semver tags.
+#
+# Produces:
+#   * iam-linux-{amd64,arm64}    — cobra CLI (cmd/iam)
+#   * iamd-linux-{amd64,arm64}   — server daemon (cmd/iamd)
+#   * ghcr.io/hanzoai/iam:vX.Y.Z — multi-arch manifest (linux/amd64+arm64)
+#
+# Uses GitHub-hosted runners exclusively (ubuntu-24.04 for amd64,
+# ubuntu-24.04-arm for arm64). The hanzo ARC arm64 scale set was
+# uninstalled 2026-04-27 — public runners replace it without any DOKS
+# arm64 droplet dependency.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.15.0). Must already exist.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  binaries:
+    name: Build binaries (${{ matrix.goarch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            runner: ubuntu-24.04
+          - goarch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Resolve version
+        id: version
+        run: |
+          ref="${{ inputs.tag || github.ref_name }}"
+          echo "tag=${ref}" >> "$GITHUB_OUTPUT"
+
+      - name: Build iam + iamd (linux/${{ matrix.goarch }})
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          GOEXPERIMENT: jsonv2
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: |
+          mkdir -p dist
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o "dist/iam-linux-${GOARCH}" ./cmd/iam
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o "dist/iamd-linux-${GOARCH}" ./cmd/iamd
+          (cd dist && sha256sum "iam-linux-${GOARCH}" "iamd-linux-${GOARCH}" \
+            > "iam-linux-${GOARCH}.sha256")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-linux-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  github-release:
+    name: GitHub Release
+    needs: [binaries]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Resolve version
+        id: version
+        run: |
+          ref="${{ inputs.tag || github.ref_name }}"
+          echo "tag=${ref}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/iam-linux-amd64
+            dist/iam-linux-arm64
+            dist/iamd-linux-amd64
+            dist/iamd-linux-arm64
+            dist/iam-linux-amd64.sha256
+            dist/iam-linux-arm64.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    name: Multi-arch Docker (ghcr.io/hanzoai/iam)
+    needs: [binaries]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Resolve version
+        id: version
+        run: |
+          ref="${{ inputs.tag || github.ref_name }}"
+          echo "tag=${ref}" >> "$GITHUB_OUTPUT"
+          # Strip leading v for an additional :X.Y.Z tag
+          echo "semver=${ref#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: standard
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          push: true
+          tags: |
+            ghcr.io/hanzoai/iam:${{ steps.version.outputs.tag }}
+            ghcr.io/hanzoai/iam:${{ steps.version.outputs.semver }}
+            ghcr.io/hanzoai/iam:latest
+          build-args: |
+            GO_EXPERIMENT=jsonv2
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  notify-universe:
+    name: Notify universe (auto-bump pin)
+    needs: [docker]
+    runs-on: ubuntu-24.04
+    if: github.repository == 'hanzoai/iam'
+    steps:
+      - name: Resolve version
+        id: version
+        run: |
+          ref="${{ inputs.tag || github.ref_name }}"
+          echo "tag=${ref}" >> "$GITHUB_OUTPUT"
+
+      - name: Repository dispatch
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.UNIVERSE_DISPATCH_TOKEN }}
+          repository: hanzoai/universe
+          event-type: iam
+          client-payload: |
+            {
+              "service": "iam",
+              "version": "${{ steps.version.outputs.tag }}",
+              "image":   "ghcr.io/hanzoai/iam:${{ steps.version.outputs.tag }}",
+              "sha":     "${{ github.sha }}"
+            }
