@@ -22,6 +22,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# Per SCALE_STANDARD.md §2 — GOEXPERIMENT=jsonv2 in every production Go
+# build. IAM emits JSON at the OAuth/OIDC endpoints (login flow,
+# userinfo, JWKS); jsonv2 lands -12% time / -23% allocs on the edge.
+ARG GO_EXPERIMENT=jsonv2
+ENV GOEXPERIMENT=${GO_EXPERIMENT}
 RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iamd ./cmd/iamd/
 RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iam ./cmd/iam/
 RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iamctl ./cmd/iamctl/
