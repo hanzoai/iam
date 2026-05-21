@@ -1,10 +1,13 @@
-# Cloud Build — Hanzo IAM
+# Cloud Build — Hanzo IAM (lux/iam OSS)
 #
-#   gcloud builds submit . --project=liquidity-devnet \
-#     --substitutions=_IMAGE=us-docker.pkg.dev/liquidity-registry/liquidityio/iam:dev,_VITE_APP=liquidity-exchange
+# Downstream consumers (white-label tenants) override `_IMAGE` to point
+# at their own registry. Lux defaults to ghcr.io/luxfi so the build stays
+# generic; tenant-specific defaults are NEVER baked into this file.
+#
+#   gcloud builds submit . --substitutions=_IMAGE=<registry>/<org>/iam:<tag>,_VITE_APP=<app-id>
 
 substitutions:
-  _IMAGE: us-docker.pkg.dev/liquidity-registry/liquidityio/iam:dev
+  _IMAGE: ghcr.io/luxfi/iam:dev
   _VITE_APP: app-built-in
 
 steps:
