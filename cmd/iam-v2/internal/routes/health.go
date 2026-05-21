@@ -2,7 +2,10 @@
 //
 // Phase 0 only exposes /v1/iam/v2/health. Phase 1 adds resource handlers
 // for users, organizations, applications, roles, permissions, keys.
-// Phase 2 mounts the zitadel/oidc provider under /v1/iam/oauth/*.
+// Phase 2 ports the in-tree OIDC server (controllers/auth.go +
+// controllers/wellknown_* + object/jwt_mldsa65.go + object/jwks_cache.go)
+// from Beego to hanzoai/zip handlers under /v1/iam/oauth/* and
+// /v1/iam/.well-known/*. No external OIDC library.
 //
 // The /v1/iam/v2/* prefix is intentional during the transition: it makes
 // the scaffold's routes orthogonal to the live v1 mount at /v1/iam/*.
