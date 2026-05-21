@@ -1,10 +1,20 @@
 // Command iam-v2 is the Phase 0 scaffold for the IAM v2 binary
-// (Casdoor/Beego → native Go on hanzoai/base + hanzoai/zip).
+// (Beego/xorm → native Go on hanzoai/orm + hanzoai/base + hanzoai/zip
+// + hanzoai/authz, in-tree OIDC server, ZAP RPC for inter-service).
 //
 // NOT WIRED INTO PRODUCTION. Boots a base.App, registers the v2 collection
 // schema, mounts /v1/iam/v2/health, and exposes a `compare` subcommand that
-// performs a read‑only drift check between a v1 (Casdoor/xorm) database and
+// performs a read‑only drift check between a v1 (Beego/xorm) database and
 // the v2 (Base/SQLite) store.
+//
+// Stack (per MIGRATION.md §2):
+//   - HTTP: hanzoai/zip (Fiber v3), typed handlers, JSON-at-edge.
+//   - Storage: hanzoai/orm (typed Go records + KV cache) layered over
+//     hanzoai/base (collections + realtime + replicate-to-S3).
+//   - OIDC: in-tree port of controllers/auth.go + controllers/wellknown_*
+//     + object/jwt_mldsa65.go + object/jwks_cache.go (no external OIDC lib).
+//   - Authz: hanzoai/authz over ZAP RPC.
+//   - Inter-service: github.com/luxfi/zap (binary RPC) on :9653.
 //
 // See MIGRATION.md at the repository root for the full plan.
 //
@@ -23,6 +33,11 @@ import (
 	v2compare "github.com/hanzoai/iam/cmd/iam-v2/internal/compare"
 	v2routes "github.com/hanzoai/iam/cmd/iam-v2/internal/routes"
 	v2schema "github.com/hanzoai/iam/cmd/iam-v2/internal/schema"
+
+	// stack pins the canonical IAM v2 dependencies (hanzoai/orm,
+	// hanzoai/zip, hanzoai/authz) as direct deps even at Phase 0,
+	// before they're wired into request paths. See MIGRATION.md §2.
+	_ "github.com/hanzoai/iam/cmd/iam-v2/internal/stack"
 )
 
 var version = "(dev)"
