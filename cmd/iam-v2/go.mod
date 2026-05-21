@@ -1,17 +1,31 @@
 // Submodule for the IAM v2 scaffold binary (Phase 0).
 //
 // Kept separate from the root iam module so SDK consumers don't
-// transitively pull hanzoai/base — same precedent as pkg/iam.
+// transitively pull hanzoai/base, hanzoai/orm, hanzoai/zip, or
+// hanzoai/authz — same precedent as pkg/iam.
 //
-// Local replace points at the sibling base checkout while base
-// keeps minting patch tags; will switch to a pinned base@vX.Y.Z
-// once the v2 surface stabilises in Phase 1.
+// Local replace points at the sibling hanzo checkouts (orm, zip,
+// authz, base, cloud) while those modules keep minting patch tags
+// during the migration; will switch to pinned vX.Y.Z imports once
+// the v2 surface stabilises in Phase 1.
 module github.com/hanzoai/iam/cmd/iam-v2
 
 go 1.26.3
 
+// IAM v2 stack contract (MIGRATION.md §2):
+//   - hanzoai/orm   — typed Go records + KV cache (Phase 1)
+//   - hanzoai/zip   — Fiber v3 typed HTTP handlers (Phase 1)
+//   - hanzoai/authz — single canonical policy engine over ZAP RPC (Phase 1)
+//   - hanzoai/base  — collections + realtime + replicate-to-S3 (Phase 0)
+//
+// No external OIDC library — Phase 2 ports the in-tree OIDC server
+// (controllers/auth.go + controllers/wellknown_* + object/jwt_mldsa65.go
+// + object/jwks_cache.go) from Beego to hanzoai/zip handlers.
 require (
+	github.com/hanzoai/authz v1.10.0
 	github.com/hanzoai/base v1.3.0
+	github.com/hanzoai/orm v0.5.2
+	github.com/hanzoai/zip v0.2.0
 	github.com/spf13/cobra v1.10.2
 )
 
@@ -29,6 +43,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.54.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.54.0 // indirect
+	github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible // indirect
 	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20260311194731-d5b7577c683d // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
@@ -41,6 +56,7 @@ require (
 	github.com/consensys/gnark-crypto v0.20.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/domodwyer/mailyak/v3 v3.6.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -66,11 +82,11 @@ require (
 	github.com/googleapis/gax-go/v2 v2.17.0 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/grandcat/zeroconf v1.0.0 // indirect
-	github.com/hanzoai/cloud v0.0.0-00010101000000-000000000000 // indirect
+	github.com/hanzoai/cloud v0.1.0 // indirect
 	github.com/hanzoai/dbx v1.16.0 // indirect
+	github.com/hanzoai/kv-go/v9 v9.18.0 // indirect
 	github.com/hanzoai/pubsub-go v1.0.0 // indirect
 	github.com/hanzoai/tasks v1.40.0 // indirect
-	github.com/hanzoai/zip v0.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -127,6 +143,9 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/supranational/blst v0.3.16 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.70.0 // indirect
@@ -140,6 +159,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
@@ -168,13 +188,14 @@ require (
 	modernc.org/sqlite v1.50.0 // indirect
 )
 
-// Pinned to local base checkout during Phase 0 scaffolding so the
-// schema declarations stay in sync with base/core as it lands
-// collection-related patches. The base submodule has unpinned
-// cloud and zip in its own replace block; we inherit those here so
-// `go mod tidy` resolves cleanly.
+// Pinned to local checkouts during Phase 0 scaffolding so the v2 stack
+// stays in sync with patches landing across orm/zip/authz/base/cloud
+// during the migration. Switch to pinned vX.Y.Z imports once the v2
+// surface stabilises in Phase 1.
 replace (
+	github.com/hanzoai/authz => ../../../authz
 	github.com/hanzoai/base => ../../../base
 	github.com/hanzoai/cloud => ../../../cloud
+	github.com/hanzoai/orm => ../../../orm
 	github.com/hanzoai/zip => ../../../zip
 )
