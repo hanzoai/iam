@@ -1,4 +1,4 @@
-# IAM v2 Migration — Casdoor/Beego → Native Go on `hanzoai/base` + `hanzoai/zip` + `@hanzo/gui`
+# IAM v2 Migration — Beego/xorm → Native Go on `hanzoai/orm` + `hanzoai/base` + `hanzoai/zip` + `hanzoai/authz` + `@hanzo/gui`
 
 Status: **Phase 0 (scaffold)**. Phase 1 starts only after the decision points below are signed off.
 
@@ -6,14 +6,17 @@ Status: **Phase 0 (scaffold)**. Phase 1 starts only after the decision points be
 
 ## 1. Why
 
-`~/work/hanzo/iam` is a Beego-style fork of Casdoor: ~50k LOC backend (15k `controllers/` + 35k `object/`) + ~100k LOC React admin (Radix, not `@hanzo/gui`). 239 unique HTTP routes, all registered through Beego `// @router` annotations. xorm ORM (`hanzoai/xorm` v1.1.6). Mixed-vendor MySQL/Postgres support.
+`~/work/hanzo/iam` is a Beego-style codebase: ~50k LOC backend (15k `controllers/` + 35k `object/`) + ~100k LOC React admin (Radix, not `@hanzo/gui`). 239 unique HTTP routes, all registered through Beego `// @router` annotations. xorm ORM (`hanzoai/xorm` v1.1.6). Mixed-vendor MySQL/Postgres support. The OIDC/OAuth2/OIDC-discovery/JWKS/SAML protocol surfaces are already in-tree (see §3.2) and stay in-tree across the migration.
 
 The published policy in `LLM.md` already declares the target stack:
 
-- Storage: **`hanzoai/base` (embedded SQLite + WAL replicate to S3)**, no Postgres anywhere, no Redis.
+- Storage: **`hanzoai/orm` (typed Go records + KV cache) over `hanzoai/base` (embedded SQLite + WAL replicate to S3)**, no Postgres anywhere, no Redis.
+- HTTP framework: **`hanzoai/zip` (Fiber v3)** — typed handlers, JSON-at-edge, 1 goroutine per conn per `SCALE_STANDARD`. No Beego, no chi, no gin.
+- OIDC/OAuth2 protocol surface: **in-tree** (ported from `controllers/auth.go`, `controllers/wellknown_*`, `object/jwt_mldsa65.go`, `object/jwks_cache.go`, `object/wellknown_oidc_discovery.go`). No external OIDC library.
+- Authz: **`hanzoai/authz`** — single canonical policy engine, called over ZAP RPC.
 - Surface: **single `/v1/iam/*`** mount (HIP‑0026 RFC paths; legacy aliases rewritten).
-- Token signing: Argon2id passwords, RSA dual‑key JWKS rotation.
-- Inter‑service: ZAP RPC sibling on `:9653`.
+- Token signing: Argon2id passwords, ML-DSA-65 (FIPS 204) post-quantum JWTs with classical RSA dual track, JWKS rotation (current + previous).
+- Inter‑service: ZAP RPC (`github.com/luxfi/zap`) sibling on `:9653`. Native binary protocol, not HTTPS.
 - Admin UI: `@hanzo/gui` umbrella, not bespoke React.
 
 Today's repo only *speaks* that policy through `routers/path_rewrite_filter.go`; underneath, Beego + xorm + 239 hand‑annotated controllers carry the weight. v2's job is to make the implementation match the declared policy — one and only one way to do everything.
@@ -38,10 +41,11 @@ This document is the migration spec. Phase 0 is scaffolding *only*; everything b
   │ │  OpenAPI    │   │  └── collections (users/orgs/...)   ││
   │ └─────────────┘   └─────────────────────────────────────┘│
   │ ┌──────────────────────────────────────────────────────┐ │
-  │ │ internal/v2/oidc — github.com/zitadel/oidc/v3        │ │
+  │ │ internal/v2/oidc — IN-TREE (ported from v1)          │ │
   │ │   • /oauth/authorize, /token, /userinfo, /introspect │ │
   │ │   • /oauth/revoke, /device, /register, /logout       │ │
   │ │   • OIDC discovery + JWKS + OAuth2 RFC 8414 metadata │ │
+  │ │   • ML-DSA-65 (FIPS 204) post-quantum JWT signing    │ │
   │ └──────────────────────────────────────────────────────┘ │
   │ ┌────────────────────┐  ┌──────────────────────────────┐ │
   │ │ providers/         │  │ saml/ldap/scim/webauthn      │ │
@@ -55,9 +59,19 @@ This document is the migration spec. Phase 0 is scaffolding *only*; everything b
 
 Hard rules:
 
-1. **One framework**: `zip` for HTTP, no Beego, no chi, no gin, no net/http hand‑routing. Aliases live in zip middleware, not duplicated in two routers.
-2. **One ORM**: `base.App` + `hanzoai/dbx`. No xorm imports anywhere in v2.
-3. **One OIDC library**: `github.com/zitadel/oidc/v3`. Not hand‑rolled, not Hydra, not goth. Stays at v3 forever per "no v2 module path bumps" rule (zitadel's v3 line is patch‑bump only after we land it).
+1. **One HTTP framework**: `hanzoai/zip` (Fiber v3) for the entire HTTP surface. Typed handlers via `zip.Get[In, Out]` / `zip.Post[In, Out]`, JSON-at-edge, 1 goroutine per conn per `SCALE_STANDARD`. No Beego, no chi, no gin, no net/http hand-routing, no `AdaptNetHTTP` shims. Aliases live in zip middleware, not duplicated in two routers.
+2. **One storage stack, two orthogonal layers**:
+   - **`hanzoai/orm`** — typed Go records, KV cache, memory cache. Wraps SQLite/Postgres uniformly; v2 uses SQLite. All non-collection reads/writes (token store, JWKS cache, session probes, anything in the hot path of `/oauth/token`) go through `orm` so the KV cache covers them.
+   - **`hanzoai/base`** — collections, realtime feed, admin SPA mount, replicate-to-S3 sidecar. The 13 v2 collections live here.
+   Both, orthogonal, not one-or-the-other. No xorm, no `hanzoai/dbx` direct imports, no Postgres anywhere in v2.
+3. **One OIDC server — ours, in-tree**. Port the existing OIDC server logic from Beego to `hanzoai/zip` handlers:
+   - `controllers/auth.go` → `internal/v2/oidc/auth.go` (authorization endpoint, token endpoint, refresh, device, revoke, introspect, userinfo, end-session)
+   - `controllers/wellknown_oidc_discovery.go` → `internal/v2/oidc/discovery.go` (OIDC discovery doc)
+   - `controllers/wellknown_oauth_prm.go` → `internal/v2/oidc/prm.go` (RFC 9728 protected resource metadata)
+   - `object/wellknown_oidc_discovery.go` → `internal/v2/oidc/metadata.go` (RFC 8414 server metadata)
+   - `object/jwt_mldsa65.go` → `internal/v2/oidc/jwt.go` (ML-DSA-65 / FIPS 204 post-quantum JWT signing — keep classical RSA dual track for clients that don't yet validate PQ algorithms)
+   - `object/jwks_cache.go` → `internal/v2/oidc/jwks.go` (precomputed JSON bytes per app key; this is the cache that makes `/jwks` <1µs)
+   No external OIDC library, no third-party OAuth/OIDC SDK, no provider daemons. The protocol surface and the RFC behavior already live in our tree — the port is Beego→zip, not a rewrite.
 4. **One admin UI**: `@hanzo/gui` admin app under `gui/apps/admin-iam/`. The Radix tree under `web/` is decommissioned at Phase 4.
 5. **One binary**: `ghcr.io/hanzoai/iam:vX.Y.Z`. Same image runs solo (embedded SQLite) and multi‑tenant (per‑org SQLite shards). Same env contract.
 
@@ -67,35 +81,37 @@ Hard rules:
 
 These are the only open questions. Each has a recommendation; explicit "approved" is required before any Phase 1 code lands.
 
-### 3.1 Storage: Base/SQLite (already decided — confirming)
+### 3.1 Storage: `hanzoai/orm` + `hanzoai/base` (already decided — confirming)
 
-`LLM.md` already declares Base/SQLite. Question is whether the IAM instance at `hanzo.id` — federating identity for *the entire estate* — has a scale ceiling on SQLite.
+`LLM.md` already declares Base/SQLite. v2 nails down the layering: `hanzoai/orm` for typed Go records + KV cache, `hanzoai/base` for collections + realtime + admin SPA. Both, orthogonal.
 
-**Recommendation: keep Base/SQLite. Approve.**
-
-Reasoning:
-
-- Per‑org SQLite shard pattern (already specified in `LLM.md` §Storage) horizontally partitions write load. Even at 10k orgs the single‑node IO ceiling is read‑amplified through Quasar replication, not write‑amplified through one table.
-- The hot path at `hanzo.id` is `/oauth/token` (signature, no DB) and `/oauth/userinfo` (one indexed read). SQLite handles 50k QPS of indexed reads on a single VM; the workload is nowhere near that.
-- Sessions and short‑lived OAuth codes live in a separate SQLite file with WAL pragma `synchronous=NORMAL`; their durability window is short enough that the WAL fsync rate is not the bottleneck.
-- Postgres would be a second source of truth (Casdoor's xorm tables + our application layer) and re‑introduces network hops, connection pool tuning, and a separate backup path. Not worth it.
-
-**Trade‑off:** a single very‑hot IAM cell maxes at one node's IO. Mitigation: shard by org *now* (already specified), and add a Quasar read‑replica tier in Phase 5 if `hanzo.id` ever exceeds 10k QPS.
-
-### 3.2 OIDC server logic: library vs hand‑roll
-
-**Recommendation: `github.com/zitadel/oidc/v3`. Approve.**
+**Recommendation: `hanzoai/orm` (typed Go records, KV cache) layered with `hanzoai/base` (collections, realtime, replicate-to-S3). Approve.**
 
 Reasoning:
 
-- Hand‑rolling RFC 6749 + RFC 7009 + RFC 7662 + RFC 8628 + RFC 7591 + OIDC core + SAML IdP is what Casdoor did. The result is the 35k‑LOC `object/` tree we're trying to retire.
-- zitadel/oidc covers every RFC we list above, has an embeddable `Storage` interface that maps cleanly to Base collections, and ships an `op.OpenIDProvider` ready to be mounted under `/v1/iam/oauth/*`. It's the only Go OIDC library that is both library‑oriented (not a daemon) and RFC‑complete.
-- Lestrrat's `jwx` library (already in our `go.mod`) handles JWKS/JWT directly and slots in alongside zitadel/oidc.
-- The "operator complexity" we keep in‑house: org/app/role provisioning, password hashing, federation provider catalog, MFA factor enrollment, audit logging, custom claims. Those are *our* policy, not RFC.
+- `hanzoai/orm` (`~/work/hanzo/orm`) is the canonical Hanzo ORM — generics-based, KV-cache-aware, adapter-pluggable. Every hot-path read in v2 (`/oauth/token` cert lookup, `/oauth/userinfo` user-by-sub, JWKS-by-app, refresh-token-by-jti) goes through orm so the KV cache covers it. orm wraps SQLite and Postgres uniformly; v2 uses SQLite.
+- `hanzoai/base` (`~/work/hanzo/base`) brings the collection model, the realtime feed, the admin SPA mount point, and the replicate-to-S3 WAL sidecar. The 13 v2 collections (users, organizations, applications, providers, roles, permissions, certs, keys, sessions, tokens, webhooks, invitations, audit_logs) are Base collections. Base sits over the same SQLite file orm reads from — `base.App.DB()` and the orm DB handle point at the same database. The two layers are orthogonal: orm gives us type-safe Go records and KV caching; base gives us collection semantics, realtime, and admin tooling. There is no overlap to resolve.
+- Per-org SQLite shard pattern (already specified in `LLM.md` §Storage) horizontally partitions write load. Even at 10k orgs the single-node IO ceiling is read-amplified through Quasar replication, not write-amplified through one table.
+- The hot path at `hanzo.id` is `/oauth/token` (signature, no DB if the cert is in the orm KV cache) and `/oauth/userinfo` (one indexed orm read, cached). SQLite handles 50k QPS of indexed reads on a single VM; the workload is nowhere near that, and the KV cache shaves another order of magnitude.
+- Sessions and short-lived OAuth codes live in a separate SQLite file with WAL pragma `synchronous=NORMAL`; their durability window is short enough that the WAL fsync rate is not the bottleneck.
+- Postgres would be a second source of truth (Casdoor's xorm tables + our application layer) and re-introduces network hops, connection pool tuning, and a separate backup path. Not worth it.
 
-**Trade‑off:** locked into one external dep on the protocol layer. Mitigation: `internal/v2/oidc/storage.go` is our adapter; if zitadel/oidc ever does the unforgivable, we swap the implementation behind one interface.
+**Trade-off:** a single very-hot IAM cell maxes at one node's IO. Mitigation: shard by org *now* (already specified), rely on the orm KV cache for read amplification, and add a Quasar read-replica tier in Phase 5 if `hanzo.id` ever exceeds 10k QPS.
 
-**Out of scope for zitadel/oidc:** SAML IdP. We keep `crewjam/saml` (already de‑facto in the SAML controllers) under `internal/v2/saml/`.
+### 3.2 OIDC server logic: in-tree port (already decided — confirming)
+
+**Recommendation: port the existing in-tree OIDC server from Beego to `hanzoai/zip`. No external OIDC library. Approve.**
+
+Reasoning:
+
+- The IAM repo *already* contains a complete, working, deployed OIDC server. RFC 6749 (auth code, refresh, client credentials), RFC 7009 (revocation), RFC 7662 (introspection), RFC 8628 (device authorization), RFC 7591 (dynamic client registration), OIDC core, OIDC discovery, RFC 8414 (server metadata), RFC 9728 (protected resource metadata), RFC 7033 (WebFinger) — all served from the controllers + object trees enumerated in §2 above.
+- We ALSO carry value that no external library has: ML-DSA-65 (FIPS 204) post-quantum JWT signing via `object/jwt_mldsa65.go`, the precomputed-bytes JWKS cache in `object/jwks_cache.go`, the multi-org token signing-method gate, and the `hanzo.id` white-label discovery doc shape. Dropping any external library in would require us to either lose those features or maintain a heavy fork — both worse than the port.
+- The 35k-LOC `object/` tree we're retiring is the **xorm/CRUD/business-logic** layer, not the protocol layer. The protocol layer is ~3k LOC across `controllers/auth.go`, `controllers/wellknown_*`, `object/jwt_*`, `object/jwks_cache.go`, `object/wellknown_oidc_discovery.go`. That code is *good* — it's the Beego scaffolding around it that has to go.
+- Port path: each protocol handler becomes a typed `zip.Post[In, Out](app, "/v1/iam/oauth/token", handler)` over a thin storage adapter (`internal/v2/oidc/storage.go`) that reads/writes Base collections via `hanzoai/orm`. The handler bodies move verbatim modulo Beego→zip request/response idioms. No new RFC implementations.
+
+**Trade-off:** we own every RFC behavior ourselves. Mitigation: the protocol layer already passes the v1 e2e suite (`tests/iam-e2e.spec.ts`, `tests/iam-login.spec.ts`); Phase 2 reuses that suite as the parity gate. We are not writing new protocol code, we are moving existing protocol code from Beego routes to zip routes.
+
+**SAML IdP:** stays in-tree the same way. The current SAML controllers (with `crewjam/saml` as the wire-format dependency, same as today) port to `internal/v2/saml/` alongside the OIDC port. No new SAML implementation.
 
 ### 3.3 Migration data path: live vs side‑by‑side
 
@@ -134,7 +150,7 @@ Casdoor object (`object/*.go`) → Base collection. All names lowercase plural, 
 | `organization.go` | `organizations` | per‑org SQLite shard keyed by `slug`. |
 | `application.go` | `applications` | provider list moves out to `application_providers` join; redirect URIs and scopes become typed columns. |
 | `provider.go` | `providers` | one row per IdP (GitHub, Google, Microsoft, SAML, OIDC) with typed config blob. |
-| `role.go` | `roles` | Casbin model column is dropped — see 4.1 below. |
+| `role.go` | `roles` | authz policy column is dropped — see 4.1 below. |
 | `permission.go` | `permissions` | same shape; enforcement moves to `hanzoai/authz`. |
 | `cert.go` | `certs` | per‑org signing cert pairs; current + previous slots for JWKS rotation. |
 | `key.go` | `keys` | API keys + access tokens that never get refresh tokens (machine identity). |
@@ -142,9 +158,9 @@ Casdoor object (`object/*.go`) → Base collection. All names lowercase plural, 
 | `session.go` | `sessions` | server‑side session table (browser cookies); short TTL (24h max). |
 | `token.go` | `tokens` | OAuth access + refresh tokens. Refresh tokens persist; access tokens are JWTs and **not** stored (we verify via signature). |
 | `record.go` | `audit_logs` | append‑only; written via Base event hook on every state‑changing handler. |
-| `model.go` (Casbin) | **removed** | Casbin model lives in `hanzoai/authz` (already a separate service). v2 stores the model name only; the engine is remote. |
+| `model.go` (authz model) | **removed** | policy model lives in `hanzoai/authz` (already a separate service). v2 stores the model name only; the engine is remote. |
 | `enforcer.go` | `enforcers` | thin pointer to authz service. |
-| `adapter.go` | **removed** | xorm adapter for Casbin disappears with xorm. |
+| `adapter.go` | **removed** | xorm adapter for the v1 in-process authz engine disappears with xorm. |
 | `syncer*.go` (ldap, awsiam, dingtalk, …) | **deferred** | external identity sync is a Phase 3 problem; v2 ships without it and the v1 sync pipeline keeps running until then. |
 | `ticket.go` | `tickets` | invitations/recovery tickets; one row, 24h TTL. |
 | `invitation.go` | `invitations` | org‑to‑user join queue. |
@@ -155,10 +171,10 @@ Casdoor object (`object/*.go`) → Base collection. All names lowercase plural, 
 
 ### 4.1 Authz separation (decomplect)
 
-v1 has Casbin engine, model, adapter, enforcer all braided into the IAM binary. v2 splits cleanly:
+v1 has the policy engine, model, adapter, enforcer all braided into the IAM binary (descended from the fork that became `hanzoai/authz`). v2 splits cleanly:
 
 - IAM owns the **subjects** (users, roles, role membership).
-- `hanzoai/authz` owns the **policy engine** (Casbin model + decisions).
+- `hanzoai/authz` owns the **policy engine** (model + decisions). Single canonical authz library, same module path everywhere.
 - v2 IAM publishes role/membership changes to authz over ZAP RPC; authz answers `enforce(subject, object, action)` over ZAP RPC.
 
 This is the single most important value of the migration: authentication (who you are) stops being braided with authorization (what you can do). Each does one thing.
@@ -169,27 +185,29 @@ This is the single most important value of the migration: authentication (who yo
 
 Canonical surface stays at `/v1/iam/*`. Legacy v1 aliases keep working via the `pathRewrite` middleware (single rewrite table in `internal/v2/middleware/path_rewrite.go`, replacing the v1 `routers/path_rewrite_filter.go`).
 
-### 5.1 OIDC surface (mounted by zitadel/oidc)
+### 5.1 OIDC surface (in-tree, mounted on `hanzoai/zip`)
 
-| Endpoint | Method | Notes |
-|---|---|---|
-| `/v1/iam/oauth/authorize` | GET | PKCE supported; auth code flow only (implicit removed) |
-| `/v1/iam/oauth/token` | POST | grants: authorization_code, refresh_token, client_credentials, device_code |
-| `/v1/iam/oauth/userinfo` | GET/POST | bearer‑validated |
-| `/v1/iam/oauth/introspect` | POST | RFC 7662 |
-| `/v1/iam/oauth/revoke` | POST | RFC 7009 |
-| `/v1/iam/oauth/device` | POST | RFC 8628 |
-| `/v1/iam/oauth/register` | POST | RFC 7591 dynamic client registration |
-| `/v1/iam/oauth/logout` | POST | end‑session |
-| `/v1/iam/.well-known/openid-configuration` | GET | discovery |
-| `/v1/iam/.well-known/jwks` | GET | current + previous key |
-| `/v1/iam/.well-known/oauth-authorization-server` | GET | RFC 8414 |
-| `/v1/iam/.well-known/oauth-protected-resource` | GET | RFC 9728 |
-| `/v1/iam/.well-known/webfinger` | GET | RFC 7033 |
+Every handler below is the ported-to-zip form of an existing in-tree controller. Handler bodies move verbatim; the registration changes from a Beego `// @router` annotation to a typed zip mount. The post-quantum signing path (ML-DSA-65) and the precomputed-JSON JWKS cache come along untouched.
 
-### 5.2 Application surface (mounted by zip)
+| Endpoint | Method | Notes | v1 source |
+|---|---|---|---|
+| `/v1/iam/oauth/authorize` | GET | PKCE supported; auth code flow only (implicit removed) | `controllers/auth.go` |
+| `/v1/iam/oauth/token` | POST | grants: authorization_code, refresh_token, client_credentials, device_code | `controllers/auth.go` |
+| `/v1/iam/oauth/userinfo` | GET/POST | bearer‑validated | `controllers/auth.go` |
+| `/v1/iam/oauth/introspect` | POST | RFC 7662 | `controllers/auth.go` |
+| `/v1/iam/oauth/revoke` | POST | RFC 7009 | `controllers/auth.go` |
+| `/v1/iam/oauth/device` | POST | RFC 8628 | `controllers/auth.go` |
+| `/v1/iam/oauth/register` | POST | RFC 7591 dynamic client registration | `controllers/auth.go` |
+| `/v1/iam/oauth/logout` | POST | end‑session | `controllers/auth.go` |
+| `/v1/iam/.well-known/openid-configuration` | GET | discovery | `controllers/wellknown_oidc_discovery.go` + `object/wellknown_oidc_discovery.go` |
+| `/v1/iam/.well-known/jwks` | GET | current + previous key; ML-DSA-65 + RSA dual track; cache via `object/jwks_cache.go` (precomputed JSON bytes per app key) | `object/jwks_cache.go` |
+| `/v1/iam/.well-known/oauth-authorization-server` | GET | RFC 8414 | `object/wellknown_oidc_discovery.go` |
+| `/v1/iam/.well-known/oauth-protected-resource` | GET | RFC 9728 | `controllers/wellknown_oauth_prm.go` |
+| `/v1/iam/.well-known/webfinger` | GET | RFC 7033 | `controllers/` (existing) |
 
-The 239 v1 routes collapse to RESTful resources under `/v1/iam/<resource>`. The dash‑verb shape (`/get-user`, `/add-user`, `/update-user`, `/delete-user`) of Casdoor is dropped; rewrites in middleware preserve it during transition.
+### 5.2 Application surface (mounted on `hanzoai/zip`)
+
+The 239 v1 routes collapse to RESTful resources under `/v1/iam/<resource>`. Each handler is a typed `zip.Get[In, Out]` / `zip.Post[In, Out]` form so OpenAPI 3.1 spec auto-generates at `/v1/iam/v2/docs`. The dash‑verb shape (`/get-user`, `/add-user`, `/update-user`, `/delete-user`) of the v1 surface is dropped; rewrites in middleware preserve it during transition.
 
 | Resource | Verbs | v1 routes collapsed |
 |---|---|---|
@@ -214,16 +232,22 @@ The 239 v1 routes collapse to RESTful resources under `/v1/iam/<resource>`. The 
 Routes that **stay verb‑shaped** because they are RPC‑style, not REST‑style:
 `/login`, `/logout`, `/signup`, `/Callback`, `/grant-consent`, `/revoke-consent`, `/impersonation-user`, `/exit-impersonation-user`, `/enforce`, `/batch-enforce` (last two proxy to authz), `/sync-init-data`, `/sync-ldap-users`, `/run-syncer`, `/sso-logout`, `/kerberos-login`, `/userinfo` (the legacy alias of `/oauth/userinfo`).
 
-### 5.3 ZAP RPC surface
+### 5.3 ZAP RPC surface — inter-service is ZAP-native, not HTTP
 
-Bound on `:9653`, separate listener:
+All in-cluster service-to-service traffic between IAM and downstream services (commerce, gateway, KMS, MPC, ATS, anything that needs to look up a user/org/role) uses native ZAP binary RPC (`github.com/luxfi/zap`), not HTTPS. ZAP binds on `:9653`, a separate listener, registered via `app.ZAPRegistry()` on the same `*zip.App` as the HTTP listener. One binary, two listeners, one source of truth.
 
-- `AuthService.GetToken(req) → token` — client_credentials grant via binary RPC for in‑cluster service mesh
-- `AuthService.IntrospectToken(token) → claims`
-- `AuthService.GetJWKS() → keys`
-- `AdminService.GetUser(id) → user` — admin read‑only
+Why: HTTP for inter-service inside a cluster pays JSON-encode, JSON-decode, TLS handshake (when used), and connection setup costs on every hop. ZAP is the binary protocol the Lux/Hanzo stack already uses for in-cluster service mesh — it's faster, smaller, and the wire is type-checked. The HTTP `/v1/iam/*` surface stays the external interface; ZAP is the internal interface.
 
-ZAP RPC stays a sibling of HTTP, registered via `app.ZAPRegistry()` on the same `*zip.App`.
+Methods exposed on `:9653`:
+
+- `AuthService.GetToken(req) → token` — client_credentials grant via binary RPC for in-cluster service mesh
+- `AuthService.IntrospectToken(token) → claims` — validate a JWT and return claims; downstream services call this on every request (no shared secret)
+- `AuthService.GetJWKS() → keys` — fan-out the JWKS for downstream JWT validators that prefer a push over a pull
+- `AdminService.GetUser(id) → user` — admin read-only (e.g. commerce looking up a user record for invoice attribution)
+- `AdminService.GetOrg(slug) → org` — org lookup by slug
+- `AdminService.GetRoles(userId) → []role` — role membership read
+
+Downstream services consume these via the corresponding ZAP client stubs generated from the same RPC schema. No `/v1/iam/users/{id}` HTTP calls from inside the cluster.
 
 ---
 
@@ -249,14 +273,17 @@ Each phase ships as a separate PR. No phase merges to `main` until the previous 
 
 **Effort: 3 weeks.** Six resources × 3 days each, plus middleware extraction.
 
-### Phase 2 — OIDC server (zitadel/oidc)
+### Phase 2 — OIDC server (in-tree port from Beego to `hanzoai/zip`)
 
-- Implement `op.Storage` against Base collections (users, tokens, sessions, codes).
-- Mount `op.OpenIDProvider` under `/v1/iam/oauth/*`.
+- Port `controllers/auth.go` (authorize/token/userinfo/introspect/revoke/device/register/logout) from Beego routes to typed `zip.Get[In, Out]` / `zip.Post[In, Out]` handlers under `internal/v2/oidc/`. Handler bodies are copied verbatim; only the request/response surface changes.
+- Port `controllers/wellknown_oidc_discovery.go`, `controllers/wellknown_oauth_prm.go`, and `object/wellknown_oidc_discovery.go` to `internal/v2/oidc/discovery.go` + `prm.go` + `metadata.go`.
+- Port `object/jwt_mldsa65.go` (ML-DSA-65 / FIPS 204 post-quantum JWT signing) to `internal/v2/oidc/jwt.go`. Classical RSA dual track stays for clients that don't yet validate PQ algorithms.
+- Port `object/jwks_cache.go` (precomputed JSON bytes per app key) to `internal/v2/oidc/jwks.go`. The cache is the hot path of every JWT-validating consumer (KMS, MPC, gateway); the rewrite is byte-for-byte equivalent.
+- Build the storage adapter at `internal/v2/oidc/storage.go` that reads/writes Base collections (users, tokens, sessions, codes) via `hanzoai/orm`. The adapter is the only new code in this phase; everything else is a port.
 - Reuse v1 signing certs (read same KMS slot) so all outstanding JWTs continue to validate during transition.
-- Test plan: every OIDC RFC scenario in the v1 e2e suite (`tests/iam-e2e.spec.ts`, `tests/iam-login.spec.ts`) must pass against v2.
+- Test plan: every OIDC RFC scenario in the v1 e2e suite (`tests/iam-e2e.spec.ts`, `tests/iam-login.spec.ts`) must pass against v2 — same suite, new backend, same green.
 
-**Effort: 4 weeks.** OIDC is where the protocol surface is widest; we don't rush this.
+**Effort: 4 weeks.** OIDC is where the protocol surface is widest; we don't rush this. But because the protocol code already exists and works, this is a port, not a rewrite — most of the time is in the parity gate, not in fresh code.
 
 ### Phase 3 — Providers and federation
 
@@ -299,13 +326,13 @@ Each phase ships as a separate PR. No phase merges to `main` until the previous 
 
 | Risk | Mitigation |
 |---|---|
-| OIDC parity drift — clients break at cutover | Phase 2 has explicit e2e parity gate. zitadel/oidc + our storage must satisfy every existing client (KMS, gateway, all SPAs) before Phase 3 starts. |
+| OIDC parity drift — clients break at cutover | Phase 2 has explicit e2e parity gate. The Beego→zip port + the orm storage adapter must satisfy every existing client (KMS, gateway, all SPAs) before Phase 3 starts. Because the protocol handlers are ported verbatim, parity drift can only come from the storage adapter — narrowing the surface to test. |
 | Per‑org SQLite shards don't scale | Built‑in mitigation: Quasar read‑replica + S3 WAL replicate already designed. If `hanzo.id` exceeds 10k QPS post‑cutover, enable `BASE_NETWORK=quasar` peer fan‑out. |
 | Federation provider catalog is huge | Treat as feature flags. Phase 3 ships only the top 5 providers (GitHub, Google, Microsoft, Apple, LinkedIn); the long tail (DingTalk, Lark, WeCom, RADIUS, Kerberos) defers and v1 keeps serving those tenants until they request migration. |
 | Cutover window collides with peak traffic | Window is 30 min, scheduled Saturday 03:00 PT. Pre‑minted JWTs (1h TTL on hanzo.id, 24h on KMS service tokens) span the gap. |
 | Existing v1 has historical password hashes that aren't Argon2id | One‑shot rehash on first login: when a user authenticates with a bcrypt/md5 v1 hash, verify against the legacy hash, then immediately rewrite the column to Argon2id. After 90 days post‑cutover, force‑rotate any remaining non‑Argon2id hashes. |
-| Casbin model migration is non‑trivial | Decision §4.1 already extracted: the engine moves to `hanzoai/authz` *now*, not at cutover. Phase 1 includes the ZAP RPC adapter; Casbin code is deleted in Phase 5 along with everything else. |
-| External brand contamination in tests/data | `tests/` and `web/` carry Casdoor brand references in places. Scrub during Phase 4 along with UI port. |
+| authz model migration is non‑trivial | Decision §4.1 already extracted: the engine moves to `hanzoai/authz` *now*, not at cutover. Phase 1 includes the ZAP RPC adapter; the v1 in-process authz code is deleted in Phase 5 along with everything else. |
+| External brand contamination in tests/data | `tests/` and `web/` carry upstream-fork brand references in places. Scrub during Phase 4 along with UI port. |
 
 ---
 
@@ -325,17 +352,22 @@ Each phase ships as a separate PR. No phase merges to `main` until the previous 
 ```
 cmd/iam-v2/
   main.go                  — boots base.App, mounts /v1/iam/v2/*, prints config
-internal/v2/
-  schema/
-    schema.go              — 13 collections, idempotent register
-  routes/
-    health.go              — /v1/iam/v2/health
-  compare/
-    compare.go             — read‑only drift CLI (Casdoor xorm DB vs Base SQLite)
-Dockerfile.v2              — alpine + iam‑v2 binary; not deployed
+  go.mod                   — pins hanzoai/orm + hanzoai/zip + hanzoai/authz + hanzoai/base direct
+  internal/
+    stack/
+      stack.go              — declared-and-pinned stack imports (orm, zip, authz)
+    schema/
+      schema.go              — 13 collections, idempotent register
+    routes/
+      health.go              — /v1/iam/v2/health
+    compare/
+      compare.go             — read-only drift CLI (v1 Beego/xorm DB vs Base SQLite)
+Dockerfile.v2              — alpine + iam-v2 binary; not deployed
 MIGRATION.md               — this file
 ```
 
 Nothing in this scaffold is wired into the live IAM binary or production manifests. `iamd` (v1) is untouched. The v2 binary builds and runs locally; CI builds the v2 image alongside v1 but does not publish it.
+
+Stack dependencies are direct deps in `cmd/iam-v2/go.mod` from Phase 0 — `hanzoai/orm v0.5.2`, `hanzoai/zip v0.2.0`, `hanzoai/authz v1.10.0`, `hanzoai/base v1.3.0` — even though Phase 0 itself only exercises `hanzoai/base`. This is intentional: the stack contract is observable in `go.mod` from the moment this PR opens, and Phase 1 work can begin without touching `require` again.
 
 Sign‑off required before Phase 1 PR opens.

@@ -1,6 +1,6 @@
-// Package compare implements the Phase-0 drift CLI: opens a v1 Casdoor
-// (xorm) database read-only, opens the v2 Base store read-only, and prints
-// per-entity row counts plus the absolute drift between the two.
+// Package compare implements the Phase-0 drift CLI: opens a v1
+// (Beego/xorm) database read-only, opens the v2 Base store read-only,
+// and prints per-entity row counts plus the absolute drift between the two.
 //
 // This is the gate that keeps cutover honest. We run `iam-v2 compare`
 // continuously in dev/test against a v1 read replica; the drift number
@@ -32,9 +32,9 @@ type entity struct {
 
 // mapping is the v1 → v2 entity correspondence used by compare.
 //
-// Casdoor v1 tables that don't have a v2 counterpart (payment, plan,
-// product, order, subscription, transaction, pricing, model, adapter,
-// enforcer, syncer_*) are deliberately omitted — see MIGRATION.md §4.
+// v1 tables that don't have a v2 counterpart (payment, plan, product,
+// order, subscription, transaction, pricing, model, adapter, enforcer,
+// syncer_*) are deliberately omitted — see MIGRATION.md §4.
 var mapping = []entity{
 	{"user", "users"},
 	{"organization", "organizations"},
