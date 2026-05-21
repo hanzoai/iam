@@ -9,7 +9,7 @@
 // of this file is to claim the namespace so MIGRATION.md's mapping is
 // observable in the running binary — not to ship the final schema.
 //
-// See MIGRATION.md §4 for the domain model mapping rationale (v1 Casdoor
+// See MIGRATION.md §4 for the domain model mapping rationale (v1 xorm
 // object → v2 Base collection).
 package schema
 
