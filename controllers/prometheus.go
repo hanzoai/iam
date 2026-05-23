@@ -16,7 +16,7 @@ package controllers
 
 import (
 	"github.com/hanzoai/iam/object"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/luxfi/metric"
 )
 
 // GetPrometheusInfo
@@ -50,5 +50,5 @@ func (c *ApiController) GetMetrics() {
 	if !ok {
 		return
 	}
-	promhttp.Handler().ServeHTTP(c.Ctx.ResponseWriter, c.Ctx.Request)
+	metric.NewHTTPHandler(metric.DefaultRegistry, metric.HandlerOpts{}).ServeHTTP(c.Ctx.ResponseWriter, c.Ctx.Request)
 }
