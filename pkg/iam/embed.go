@@ -35,8 +35,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/beego/beego/v2/server/web"
-	"github.com/beego/beego/v2/server/web/session"
+	"github.com/hanzoai/beego/v2/server/web"
+	"github.com/hanzoai/beego/v2/server/web/session"
 
 	"github.com/hanzoai/iam/iamserver"
 )

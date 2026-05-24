@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/beego/beego/v2/server/web/context"
+	"github.com/hanzoai/beego/v2/server/web/context"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
