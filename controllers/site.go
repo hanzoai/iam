@@ -17,7 +17,7 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/beego/beego/v2/server/web/pagination"
+	"github.com/hanzoai/beego/v2/server/web/pagination"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )

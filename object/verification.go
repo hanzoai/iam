@@ -305,7 +305,13 @@ func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult
 	// When active, ANY phone or email accepts that single code without a
 	// real verification record. Production manifests must leave
 	// SANDBOX_GLOBAL_OTP empty (the guard enforces this).
-	if pinned := os.Getenv("SANDBOX_GLOBAL_OTP"); pinned != "" && code == pinned {
+	//
+	// Read-side double-check (defence in depth): even if SANDBOX_GLOBAL_OTP
+	// somehow leaks into an env that has flipped to real Twilio / SendGrid
+	// providers, SandboxOTPAllowed returns false and the bypass is refused.
+	// The boot-time guards (sandbox origin + OTP provider) are the
+	// authoritative gate; this is the belt to their suspenders.
+	if pinned := os.Getenv("SANDBOX_GLOBAL_OTP"); pinned != "" && code == pinned && SandboxOTPAllowed() {
 		return &VerifyResult{VerificationSuccess, ""}, nil
 	}
 

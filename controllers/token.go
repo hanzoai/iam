@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beego/beego/v2/core/utils/pagination"
+	"github.com/hanzoai/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )
