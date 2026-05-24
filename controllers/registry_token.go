@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beego/beego/v2/core/logs"
+	"github.com/hanzoai/beego/v2/core/logs"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
