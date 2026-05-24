@@ -19,7 +19,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/beego/beego/v2/server/web/context"
+	"github.com/hanzoai/beego/v2/server/web/context"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/idp"
 	"github.com/hanzoai/iam/idv"
