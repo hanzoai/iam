@@ -30,6 +30,13 @@ func TestSmtpServer(provider *Provider) error {
 }
 
 func SendEmail(provider *Provider, title string, content string, dest []string, sender string) error {
+	// Env-driven override: when IAM_EMAIL_PROVIDER=sendgrid is set (creds
+	// validated at boot), route every send through the env-built provider
+	// regardless of the per-application DB row.
+	if envProvider := EnvEmailProvider(); envProvider != nil {
+		provider = envProvider
+	}
+
 	sslMode := getSslMode(provider)
 	emailProvider := email.GetEmailProvider(provider.Type, provider.ClientId, provider.ClientSecret, provider.Host, provider.Port, sslMode, provider.Endpoint, provider.Method, provider.HttpHeaders, provider.UserMapping, provider.IssuerUrl, provider.EnableProxy)
 
