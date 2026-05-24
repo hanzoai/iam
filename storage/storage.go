@@ -35,8 +35,6 @@ func GetStorageProvider(providerType string, clientId string, clientSecret strin
 		return NewAzureBlobStorageProvider(clientId, clientSecret, region, bucket, endpoint), nil
 	case "Qiniu Cloud Kodo":
 		return NewQiniuCloudKodoStorageProvider(clientId, clientSecret, region, bucket, endpoint)
-	case "Google Cloud Storage":
-		return NewGoogleCloudStorageProvider(clientSecret, bucket, endpoint), nil
 	case "Synology":
 		return NewSynologyNasStorageProvider(clientId, clientSecret, endpoint), nil
 	case "IAM":
