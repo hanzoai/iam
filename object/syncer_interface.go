@@ -60,8 +60,6 @@ func GetSyncerProvider(syncer *Syncer) SyncerProvider {
 		return &WecomSyncerProvider{Syncer: syncer}
 	case "Azure AD":
 		return &AzureAdSyncerProvider{Syncer: syncer}
-	case "Google Workspace":
-		return &GoogleWorkspaceSyncerProvider{Syncer: syncer}
 	case "Active Directory":
 		return &ActiveDirectorySyncerProvider{Syncer: syncer}
 	case "DingTalk":
