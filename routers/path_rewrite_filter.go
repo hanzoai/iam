@@ -11,7 +11,7 @@ package routers
 import (
 	"strings"
 
-	"github.com/beego/beego/v2/server/web/context"
+	"github.com/hanzoai/beego/v2/server/web/context"
 )
 
 // PathRewriteFilter normalizes legacy/alias URLs to the one canonical form
