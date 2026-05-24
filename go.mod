@@ -16,7 +16,6 @@ require (
 	github.com/aliyun/credentials-go v1.3.10
 	github.com/aws/aws-sdk-go v1.55.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1
-	github.com/beego/beego/v2 v2.3.8
 	github.com/beevik/etree v1.1.0
 	github.com/corazawaf/coraza/v3 v3.3.3
 	github.com/dchest/captcha v0.0.0-20200903113550-03f5f0333e1f
@@ -35,6 +34,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hanzoai/authzstore v0.1.1
+	github.com/hanzoai/beego/v2 v2.3.9
 	github.com/hanzoai/builder v0.3.13
 	github.com/hanzoai/go-sms-sender v0.25.2
 	github.com/hanzoai/gomail/v2 v2.3.2
@@ -53,7 +53,7 @@ require (
 	github.com/likexian/whois-parser v1.24.9
 	github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3
 	github.com/luxfi/crypto v1.19.0
-	github.com/luxfi/metric v1.5.5
+	github.com/luxfi/metric v1.5.7
 	github.com/markbates/goth v1.82.0
 	github.com/microsoft/go-mssqldb v1.9.0
 	github.com/mitchellh/mapstructure v1.5.0
@@ -122,7 +122,6 @@ require (
 	github.com/atc0005/go-teams-notify/v2 v2.13.0 // indirect
 	github.com/aws/smithy-go v1.24.0 // indirect
 	github.com/baidubce/bce-sdk-go v0.9.156 // indirect
-	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blinkbean/dingtalk v1.1.3 // indirect
 	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bwmarrin/discordgo v0.28.1 // indirect
@@ -192,7 +191,6 @@ require (
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
-	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
@@ -217,7 +215,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/mrjones/oauth v0.0.0-20180629183705-f4e24b6d100c // indirect
-	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/onsi/gomega v1.39.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
@@ -230,10 +227,6 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
-	github.com/prometheus/client_golang v1.23.2 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.67.5 // indirect
-	github.com/prometheus/procfs v0.19.2 // indirect
 	github.com/qiniu/go-sdk/v7 v7.12.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
@@ -284,7 +277,6 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
-	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a // indirect
 	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/mod v0.34.0 // indirect

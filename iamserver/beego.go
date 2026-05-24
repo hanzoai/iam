@@ -21,8 +21,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/beego/beego/v2/core/logs"
-	"github.com/beego/beego/v2/server/web"
+	"github.com/hanzoai/beego/v2/core/logs"
+	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/hanzoai/iam/authz"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/controllers"
@@ -57,6 +57,11 @@ func Init() int {
 	// Refuse to boot if SANDBOX_GLOBAL_OTP is set on a non-sandbox origin.
 	// This is a hard fail — see iamserver/sandbox_guard.go.
 	EnforceSandboxOriginGuard()
+
+	// Refuse to boot if IAM_SMS_PROVIDER=twilio or IAM_EMAIL_PROVIDER=sendgrid
+	// is set but the required credentials are missing. Caches the resolved
+	// mode for the process lifetime — see object/otp_provider.go.
+	object.EnforceOTPProviderGuard()
 
 	web.BConfig.WebConfig.Session.SessionOn = true
 	web.BConfig.WebConfig.Session.SessionName = "iam_session_id"
