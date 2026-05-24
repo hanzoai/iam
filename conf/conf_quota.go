@@ -17,7 +17,7 @@ package conf
 import (
 	"encoding/json"
 
-	"github.com/beego/beego/v2/server/web"
+	"github.com/hanzoai/beego/v2/server/web"
 )
 
 type Quota struct {
