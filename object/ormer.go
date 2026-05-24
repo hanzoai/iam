@@ -25,7 +25,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/beego/beego/v2/server/web"
+	"github.com/hanzoai/beego/v2/server/web"
 	_ "github.com/go-sql-driver/mysql" // db = mysql
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
