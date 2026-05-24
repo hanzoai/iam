@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beego/beego/v2/server/web"
+	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/google/uuid"
 	"github.com/hanzoai/iam/captcha"
 	"github.com/hanzoai/iam/conf"

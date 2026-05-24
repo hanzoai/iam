@@ -47,6 +47,16 @@ func getSmsClient(provider *Provider) (sender.SmsClient, error) {
 }
 
 func SendSms(provider *Provider, content string, phoneNumbers ...string) error {
+	// Env-driven override: when IAM_SMS_PROVIDER=twilio is set (and creds
+	// validated at boot by EnforceOTPProviderGuard), every send routes
+	// through the env-built provider regardless of the per-application
+	// DB row. Keeps Twilio credentials in KMS-projected env vars and out
+	// of the IAM database, and gives operators a single switch for
+	// flipping a deployment from sandbox to real delivery.
+	if envProvider := EnvSMSProvider(); envProvider != nil {
+		provider = envProvider
+	}
+
 	client, err := getSmsClient(provider)
 	if err != nil {
 		return err

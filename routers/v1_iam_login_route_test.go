@@ -16,8 +16,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/beego/beego/v2/server/web"
-	"github.com/beego/beego/v2/server/web/context"
+	"github.com/hanzoai/beego/v2/server/web"
+	"github.com/hanzoai/beego/v2/server/web/context"
 )
 
 // TestV1IamLogin_POST_NotMethodNotAllowed verifies the canonical
