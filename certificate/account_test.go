@@ -21,7 +21,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/beego/beego/v2/server/web"
+	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/hanzoai/iam/proxy"
 	"github.com/hanzoai/iam/util"
 	"github.com/stretchr/testify/assert"

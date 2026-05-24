@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/beego/beego/v2/core/logs"
+	"github.com/hanzoai/beego/v2/core/logs"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/rule"
