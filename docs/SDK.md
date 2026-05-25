@@ -17,7 +17,7 @@ npm install @hanzo/sdk
 import { IAMClient } from '@hanzo/sdk/iam'
 
 const iam = new IAMClient({
-  baseUrl: 'https://iam.dev.',
+  baseUrl: 'https://iam.dev.example.com',
   token: process.env.IAM_SERVICE_TOKEN,
 })
 
@@ -37,8 +37,8 @@ await iam.applications.upsert({
   clientId: 'vcc-exchange-client-id',
   displayName: 'VCC Exchange',
   redirectUris: [
-    'https://vcc.dev./callback',
-    'https://vcc.dev./auth/callback',
+    'https://app.dev.example.com/callback',
+    'https://app.dev.example.com/auth/callback',
   ],
 })
 ```
@@ -89,4 +89,4 @@ try {
 
 - [`CLI.md`](CLI.md) — equivalent `iam` CLI binary
 - [`@hanzo/sdk` README](https://github.com/hanzo-js/sdk) — umbrella SDK covering KMS, Commerce, Billing, MPC, PaaS, Team
-- [`/cli`](https://github.com//cli) — env-aware `liquid iam …` wrapper
+- Downstream tenant CLIs wrap `iam …` with env-aware resolution
