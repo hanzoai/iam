@@ -1,15 +1,15 @@
 # Hanzo IAM — CLI Reference
 
 The `iam` binary is the canonical administrative CLI for Hanzo IAM. One
-source of truth: every operator tooling layer (Hanzo umbrella `hanzo`,
-Liquidity `liquid`, etc.) is a thin proxy that adds env-aware base-URL
-resolution and delegates to the same underlying REST surface that this
-CLI calls.
+source of truth: every operator tooling layer (the Hanzo umbrella `hanzo`
+CLI, downstream wrapper CLIs, etc.) is a thin proxy that adds env-aware
+base-URL resolution and delegates to the same underlying REST surface
+that this CLI calls.
 
-Wherever you see `iam <command>` here, the equivalent Liquidity-side
-invocation is `liquid iam <command>` (which adds `--env=dev|test|main`
-to resolve `iam.{env}.example.internal` automatically and fetches the
-service token from the cluster).
+Wherever you see `iam <command>` here, downstream tooling typically wraps
+it with `<wrapper> iam <command>` and an env flag that resolves the
+appropriate `iam.<env>.<your-domain>` and fetches the service token from
+the cluster.
 
 ## Install
 
@@ -31,12 +31,12 @@ once and export it for the session:
 ```bash
 # In a Hanzo cluster (e.g. running against id.hanzo.ai)
 export IAM_ADDR=https://id.hanzo.ai
-export IAM_TOKEN=<bearer from any liquid-iam pod env>
+export IAM_TOKEN=<bearer from any iam pod env>
 
-# In Liquidity dev
-export IAM_ADDR=https://iam.dev.example.internal
-export IAM_TOKEN=$(kubectl --context=gke_liquidity-devnet_us-central1_dev \
-                   -n liquidity exec deploy/liquid-iam -- printenv IAM_SERVICE_TOKEN)
+# In a downstream tenant's dev env (replace context/ns with your tenant's values)
+export IAM_ADDR=https://iam.dev.<your-domain>
+export IAM_TOKEN=$(kubectl --context=<your-cluster> \
+                   -n <your-ns> exec deploy/iam -- printenv IAM_SERVICE_TOKEN)
 ```
 
 ## Commands
@@ -56,10 +56,10 @@ status: 200
 List every application (OIDC client). Filter by owner (organization slug).
 
 ```bash
-$ iam app list --owner=liquidity
-liquidity-exchange      liquidity-exchange-client-id        admin
-liquidity-platform      liquidity-platform                  admin
-liquidity-console       liquidity-console                   admin
+$ iam app list --owner=exampleorg
+exampleorg-app1         exampleorg-app1-client-id           admin
+exampleorg-app2         exampleorg-app2                     admin
+exampleorg-app3         exampleorg-app3                     admin
 vcc-exchange            vcc-exchange-client-id              admin
 mlc-exchange            mlc-exchange-client-id              admin
 ```
@@ -75,8 +75,8 @@ $ iam app get vcc-exchange-client-id
   "name": "vcc-exchange",
   "clientId": "vcc-exchange-client-id",
   "redirectUris": [
-    "https://vcc.dev.example.internal/callback",
-    "https://vcc.dev.example.internal/auth/callback"
+    "https://app.dev.example.com/callback",
+    "https://app.dev.example.com/auth/callback"
   ],
   ...
 }
@@ -95,8 +95,8 @@ $ cat > /tmp/app.json << 'EOF'
   "name": "vcc-exchange",
   "clientId": "vcc-exchange-client-id",
   "redirectUris": [
-    "https://vcc.dev.example.internal/callback",
-    "https://vcc.dev.example.internal/auth/callback",
+    "https://app.dev.example.com/callback",
+    "https://app.dev.example.com/auth/callback",
     "http://vcc.localhost:3000/callback",
     "http://vcc.localhost:3000/auth/callback"
   ]
@@ -126,8 +126,8 @@ Print the current redirect-URI allow-list.
 
 ```bash
 $ iam app redirect list vcc-exchange-client-id
-https://vcc.dev.example.internal/callback
-https://vcc.dev.example.internal/auth/callback
+https://app.dev.example.com/callback
+https://app.dev.example.com/auth/callback
 http://vcc.localhost:3000/callback
 http://vcc.localhost:3000/auth/callback
 ```
@@ -183,11 +183,11 @@ CLI flags `--addr` and `--token` override the environment.
 
 - **REST surface**: [`routers/router.go`](../routers/router.go) — every endpoint the CLI calls is mapped there.
 - **TypeScript SDK**: [`@hanzo/sdk/iam`](https://github.com/hanzo-js/sdk/tree/main/src/iam) — identical operations, programmatic. `IAMClient.applications.redirectURIs.add()` is the API equivalent of `iam app redirect add`.
-- **Liquidity wrapper**: [`partner/cli`](https://github.com/partner/cli) — `liquid iam redirect add <client-id> <url> ...` adds `--env=dev|test|main` resolution on top of the upstream CLI.
+- **Downstream tenant CLI**: Tenants typically ship a wrapper (e.g., `tenantctl iam redirect add ...`) that resolves `--env=dev|test|main` against their domain.
 - **Server docs**: [`LOCAL_DEV.md`](LOCAL_DEV.md), [`CONVENTION.md`](CONVENTION.md), [`sdk/`](sdk/) — running IAM locally + on-the-wire conventions.
 
 ## Forbidden patterns
 
 - ❌ `UPDATE application SET redirect_uris = json_insert(...)` straight against the SQLite DB. Bypasses validation + audit; do not do this. Use `iam app upsert` or `iam app redirect add`.
 - ❌ Curl-and-pray against `/v1/iam/admin/applications/upsert` with hand-written JSON. The CLI does the read-modify-write atomically; raw curl will clobber unrelated fields.
-- ❌ Hand-rolled secret tokens. The bearer always comes from a deployed `liquid-iam` pod or the IAM admin login. Don't paste tokens into chat.
+- ❌ Hand-rolled secret tokens. The bearer always comes from a deployed `iam` pod or the IAM admin login. Don't paste tokens into chat.
