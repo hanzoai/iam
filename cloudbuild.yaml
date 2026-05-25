@@ -1,10 +1,11 @@
 # Cloud Build — Hanzo IAM
 #
-#   gcloud builds submit . --project=liquidity-devnet \
-#     --substitutions=_IMAGE=us-docker.pkg.dev/liquidity-registry/liquidityio/iam:dev,_VITE_APP=liquidity-exchange
+# Invoke with your tenant's registry + namespace:
+#   gcloud builds submit . --project=<your-gcp-project> \
+#     --substitutions=_IMAGE=<your-registry>/<your-namespace>/iam:dev,_VITE_APP=<your-app>
 
 substitutions:
-  _IMAGE: us-docker.pkg.dev/liquidity-registry/liquidityio/iam:dev
+  _IMAGE: ghcr.io/hanzoai/iam:dev
   _VITE_APP: app-built-in
 
 steps:

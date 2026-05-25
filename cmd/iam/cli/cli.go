@@ -5,7 +5,7 @@
 
 // Package cli is the cobra command surface for the `iam` administrative
 // CLI. main.go is a thin wrapper around Execute(); external consumers
-// (e.g. liquidityio/cli's `liquid iam ...`) can import the package and
+// (e.g. <tenant>/cli's `<tenantctl> iam ...`) can import the package and
 // mount NewRootCmd() under their own root command via cobra.AddCommand.
 package cli
 
