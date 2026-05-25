@@ -1,7 +1,7 @@
 # IAM Convention — Single Source of Truth
 
 **This document is canon.** Every consumer of Hanzo IAM (and every fork —
-`/iam`, `onyx-plus/iam`, `/iam`, …) must follow these
+`tenantio/iam`, `onyx-plus/iam`, `/iam`, …) must follow these
 rules. There is **one** way to do each thing. No aliases, no legacy
 prefixes, no hardcoded hostnames.
 
@@ -15,8 +15,8 @@ prefixes, no hardcoded hostnames.
 | Engine admin org | `admin` |
 | Engine self-app | `admin/iam` (owner/name in IAM-native form) |
 | Engine bootstrap user | `admin/root` |
-| **Consumer app slug** | **`<consumer-org>-<appname>`** — e.g. `hanzo-brain`, `liquidity-id`, `-verify`, `zoo-ngo`, `lux-cloud` |
-| Consumer org | `<consumer-org>` — e.g. `hanzo`, `liquidity`, ``, `zoo`, `lux` |
+| **Consumer app slug** | **`<consumer-org>-<appname>`** — e.g. `hanzo-brain`, `tenant-app`, `-verify`, `zoo-ngo`, `lux-cloud` |
+| Consumer org | `<consumer-org>` — e.g. `hanzo`, `tenant`, ``, `zoo`, `lux` |
 
 There is exactly one rule: **app slug = `<org>-<app>`**. If you're seeing
 `hanzo-foundation`, `zoo-foundation`, `app-computer`, fix them to match
@@ -147,7 +147,7 @@ getEffectiveHost()`.
 So a single deployment of `ghcr.io/hanzoai/iam:v1.14.29` can serve:
 
 - `iam.hanzo.ai`
-- `iam.dev.`
+- `iam.dev.example.com`
 - `iam..com`
 - `iam.zoo.ngo`
 - `iam.lux.network`
@@ -169,7 +169,7 @@ vars on the container; the SPA image renders `/config.json` accordingly.
 ONE place owns the hostname-fallback (the SPA's `loadConfig()`); every
 other consumer reads from `getConfig()`.
 
-See `~/work/liquidity/id/apps/web/src/lib/runtime.ts` for a reference
+See your tenant's runtime.ts (e.g., apps/web/src/lib/runtime.ts) for a reference
 implementation. To copy the pattern to another SPA:
 
 1. Use `ghcr.io/hanzoai/spa:v1.1.0+` as base image.
@@ -195,7 +195,7 @@ Pod env (SPA_*  or IAM_*) (container env from ConfigMap)
 ```
 
 There is no fourth path. No `VITE_*` build-time injection. No hardcoded
-TS hostname switches. No `if (host === 'iam.dev.')` anywhere.
+TS hostname switches. No `if (host === 'iam.dev.example.com')` anywhere.
 
 ## 8. SDK
 
