@@ -199,7 +199,7 @@ func TestEnforceOTPProviderGuard_SendgridFullCredsBoots(t *testing.T) {
 	defer resetOTPProviderCache()
 	t.Setenv(envIAMEmailProvider, "sendgrid")
 	t.Setenv(envSendgridAPIKey, "SG.xxx")
-	t.Setenv(envSendgridFromEmail, "no-reply@liquidity.io")
+	t.Setenv(envSendgridFromEmail, "no-reply@example.com")
 
 	EnforceOTPProviderGuard()
 	if EmailProviderMode() != OTPProviderSendgrid {
@@ -249,8 +249,8 @@ func TestEnvEmailProvider_ShapeMatchesSendgridAdapter(t *testing.T) {
 	defer resetOTPProviderCache()
 	t.Setenv(envIAMEmailProvider, "sendgrid")
 	t.Setenv(envSendgridAPIKey, "SG.xxx")
-	t.Setenv(envSendgridFromEmail, "no-reply@liquidity.io")
-	t.Setenv(envSendgridFromName, "Liquidity Verification")
+	t.Setenv(envSendgridFromEmail, "no-reply@example.com")
+	t.Setenv(envSendgridFromName, "Example Verification")
 	EnforceOTPProviderGuard()
 
 	p := EnvEmailProvider()
@@ -263,11 +263,11 @@ func TestEnvEmailProvider_ShapeMatchesSendgridAdapter(t *testing.T) {
 	if p.ClientSecret != "SG.xxx" {
 		t.Errorf("provider.ClientSecret = %q, want SG.xxx (api key)", p.ClientSecret)
 	}
-	if p.ClientId2 != "no-reply@liquidity.io" {
-		t.Errorf("provider.ClientId2 = %q, want no-reply@liquidity.io (fromAddress)", p.ClientId2)
+	if p.ClientId2 != "no-reply@example.com" {
+		t.Errorf("provider.ClientId2 = %q, want no-reply@example.com (fromAddress)", p.ClientId2)
 	}
-	if p.ClientSecret2 != "Liquidity Verification" {
-		t.Errorf("provider.ClientSecret2 = %q, want Liquidity Verification (fromName)", p.ClientSecret2)
+	if p.ClientSecret2 != "Example Verification" {
+		t.Errorf("provider.ClientSecret2 = %q, want Example Verification (fromName)", p.ClientSecret2)
 	}
 	if p.Category != "Email" {
 		t.Errorf("provider.Category = %q, want Email", p.Category)
@@ -278,7 +278,7 @@ func TestEnvEmailProvider_FromNameDefaults(t *testing.T) {
 	defer resetOTPProviderCache()
 	t.Setenv(envIAMEmailProvider, "sendgrid")
 	t.Setenv(envSendgridAPIKey, "SG.xxx")
-	t.Setenv(envSendgridFromEmail, "no-reply@liquidity.io")
+	t.Setenv(envSendgridFromEmail, "no-reply@example.com")
 	t.Setenv(envSendgridFromName, "")
 	EnforceOTPProviderGuard()
 
@@ -317,7 +317,7 @@ func TestSandboxOTPAllowed_FalseUnderEitherRealProvider(t *testing.T) {
 			}
 			if c.emailMode == "sendgrid" {
 				t.Setenv(envSendgridAPIKey, "SG.x")
-				t.Setenv(envSendgridFromEmail, "no-reply@liquidity.io")
+				t.Setenv(envSendgridFromEmail, "no-reply@example.com")
 			}
 			EnforceOTPProviderGuard()
 			if got := SandboxOTPAllowed(); got != c.want {

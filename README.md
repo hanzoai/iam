@@ -145,7 +145,7 @@ Operator quick-links:
 - [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md) — running IAM locally
 - [`docs/CONVENTION.md`](docs/CONVENTION.md) — on-the-wire conventions
 
-The CLI, TS SDK, and Liquidity's [`liquid iam`](https://github.com/liquidityio/cli)
+The CLI, TS SDK, and Liquidity's [`liquid iam`](https://github.com/<tenant>/cli)
 wrapper all call the same REST surface; pick the layer that fits your tool.
 
 ## License

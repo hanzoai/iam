@@ -58,8 +58,8 @@ func TestEmailEnvOverride_SendsToSendgridMock(t *testing.T) {
 	// SDK targets api.sendgrid.com.
 	t.Setenv(envIAMEmailProvider, "sendgrid")
 	t.Setenv(envSendgridAPIKey, "SG.fake_test_key")
-	t.Setenv(envSendgridFromEmail, "no-reply@liquidity.io")
-	t.Setenv(envSendgridFromName, "Liquidity Verification")
+	t.Setenv(envSendgridFromEmail, "no-reply@example.com")
+	t.Setenv(envSendgridFromName, "Example Verification")
 	t.Setenv(envSendgridHost, srv.URL)
 	t.Setenv(envSendgridEndpoint, "/v3/mail/send")
 	EnforceOTPProviderGuard()
@@ -77,7 +77,7 @@ func TestEmailEnvOverride_SendsToSendgridMock(t *testing.T) {
 	}
 
 	err := SendEmail(stubProvider, "Your verification code", "code=123456",
-		[]string{"alice@example.com"}, "Liquidity")
+		[]string{"alice@example.com"}, "Example")
 	if err != nil {
 		t.Fatalf("SendEmail under env override: %v", err)
 	}
@@ -111,11 +111,11 @@ func TestEmailEnvOverride_SendsToSendgridMock(t *testing.T) {
 	if err := json.Unmarshal([]byte(gotBody), &payload); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, gotBody)
 	}
-	if payload.From.Email != "no-reply@liquidity.io" {
-		t.Errorf("from.email = %s, want no-reply@liquidity.io", payload.From.Email)
+	if payload.From.Email != "no-reply@example.com" {
+		t.Errorf("from.email = %s, want no-reply@example.com", payload.From.Email)
 	}
-	if payload.From.Name != "Liquidity Verification" {
-		t.Errorf("from.name = %s, want Liquidity Verification", payload.From.Name)
+	if payload.From.Name != "Example Verification" {
+		t.Errorf("from.name = %s, want Example Verification", payload.From.Name)
 	}
 	if len(payload.Personalizations) == 0 {
 		t.Fatalf("no personalizations in body: %s", gotBody)
@@ -148,7 +148,7 @@ func TestSMSEnvOverride_BuildsTwilioProvider(t *testing.T) {
 	t.Setenv(envTwilioAccountSID, "ACtest123")
 	t.Setenv(envTwilioAuthToken, "test_token")
 	t.Setenv(envTwilioFromNumber, "+15005550006") // Twilio magic test number
-	t.Setenv(envTwilioTemplate, "Your Liquidity code is %s")
+	t.Setenv(envTwilioTemplate, "Your Example code is %s")
 	EnforceOTPProviderGuard()
 
 	envProv := EnvSMSProvider()
