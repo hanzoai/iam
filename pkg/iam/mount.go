@@ -87,14 +87,13 @@ func Mount(app *zip.App, deps cloud.Deps) error {
 	logger.Info("iam mounted", "data_dir", cfg.DataDir)
 
 	// IAM owns the entire /v1/iam/* surface plus a handful of root-level
-	// well-known paths (.well-known/openid-configuration etc). The
-	// PathRewriteFilter inside the Beego app folds /api/* and /oauth/*
-	// aliases into /v1/iam/*, so mounting at root captures all of them.
+	// well-known paths (.well-known/openid-configuration etc). One shape
+	// per endpoint — there is no rewrite layer; consumers must call
+	// /v1/iam/<endpoint> or /v1/iam/oauth/<endpoint> directly.
 	//
 	// zip.AdaptNetHTTP costs ~5% perf vs native fiber dispatch —
 	// acceptable migration cost. Subsequent passes can rewrite hot paths
-	// in native zip; for now the entire 150-route Beego surface is
-	// preserved verbatim.
+	// in native zip; for now the entire Beego surface is preserved verbatim.
 	app.Mount("/v1/iam", em.HTTPHandler())
 	app.Mount("/.well-known", em.HTTPHandler())
 
