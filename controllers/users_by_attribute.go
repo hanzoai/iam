@@ -39,9 +39,14 @@
 //   3. Org scope: owner is read from the JWT (via session/context) — the
 //      handler IGNORES any `owner=` query/body param. No cross-tenant
 //      lookups; never a way for caller A to probe org B.
-//   4. Rate limit: 10 req/min per (clientId, source IP) in-memory bucket.
-//      Excess → 429. IAM runs single-replica per cluster, so a global map
-//      suffices.
+//   4. Rate limit: 10 req/min per clientId in-memory bucket. Excess →
+//      429. IAM runs single-replica per cluster, so a global map
+//      suffices. IP is NOT in the key — X-Forwarded-For is
+//      client-controlled at this layer (the ingress does not pin
+//      trustedIPs), so IP-keyed buckets would be bypassable by header
+//      rotation. clientId alone is the right key because the attacker
+//      cannot rotate it without owning a separate allowlisted
+//      credential.
 //   5. Audit: every probe is logged via object.AddRecord (the existing
 //      tamper-evident audit pipeline) with caller clientId, source IP,
 //      attribute type, and result-count — NEVER the probed phone/email
@@ -57,7 +62,6 @@
 package controllers
 
 import (
-	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -75,8 +79,9 @@ import (
 // would defeat the enumeration mitigation.
 const byAttributeMaxResults = 25
 
-// byAttributeRateBurst / byAttributeRateWindow define the per-(clientId,
-// source IP) bucket: 10 probes per rolling 60 seconds.
+// byAttributeRateBurst / byAttributeRateWindow define the per-clientId
+// bucket: 10 probes per rolling 60 seconds. IP is intentionally NOT in
+// the key — see byAttributeRateLimit for the threat-model rationale.
 const (
 	byAttributeRateBurst  = 10
 	byAttributeRateWindow = 60 * time.Second
@@ -158,37 +163,37 @@ func byAttributeAllowedClients() map[string]struct{} {
 	return set
 }
 
-// byAttributeClientIP extracts the source IP from the request. Trusts
-// X-Forwarded-For (leftmost entry) and X-Real-IP — IAM always runs behind
-// the Hanzo ingress + gateway, which always sets these headers. Falls
-// back to RemoteAddr stripped of port.
-func (c *ApiController) byAttributeClientIP() string {
-	if xff := c.Ctx.Input.Header("X-Forwarded-For"); xff != "" {
-		if comma := strings.IndexByte(xff, ','); comma > 0 {
-			return strings.TrimSpace(xff[:comma])
-		}
-		return strings.TrimSpace(xff)
-	}
-	if xrip := c.Ctx.Input.Header("X-Real-IP"); xrip != "" {
-		return strings.TrimSpace(xrip)
-	}
-	host, _, err := net.SplitHostPort(c.Ctx.Request.RemoteAddr)
-	if err != nil {
-		return c.Ctx.Request.RemoteAddr
-	}
-	return host
-}
-
-// byAttributeRateLimit applies a sliding-window token bucket keyed by
-// (clientId, IP). Returns true if the request should be allowed, false if
-// it should be rejected with 429. clientId is included in the key so a
-// single noisy peer doesn't drown out a different legitimate service
-// running on the same node.
-func byAttributeRateLimit(clientId, ip string) bool {
-	if clientId == "" || ip == "" {
+// byAttributeRateLimit applies a sliding-window token bucket keyed
+// SOLELY on clientId. Returns true if the request should be allowed,
+// false if it should be rejected with 429.
+//
+// We deliberately do NOT key on IP. The IP would be sourced from
+// X-Forwarded-For / X-Real-IP headers, which are CLIENT-CONTROLLED.
+// The Hanzo ingress (Traefik fork) at the time
+// of writing does not set forwardedheaders.trustedIPs, so a malicious
+// caller can rotate XFF per request and bypass an IP-keyed limiter
+// trivially:
+//
+//	for i := 0; i < 1_000_000; i++ {
+//	    req.Header.Set("X-Forwarded-For", randIP()) // gets its own bucket
+//	}
+//
+// 10/min/clientId is sufficient on its own: an attacker cannot rotate
+// clientId because that requires owning a separate, allowlisted
+// client_credentials secret — they would need to have already breached
+// a second tenant service. The bucket key collapse also simplifies
+// the data structure (one entry per service principal, bounded by the
+// allowlist size).
+//
+// IP-based protection belongs at the ingress layer
+// (forwardedheaders.insecure=false + trustedIPs=<ingress CIDR>) and
+// is tracked as a follow-up issue in the universe repo. At THIS layer
+// IP is untrusted, so we ignore it.
+func byAttributeRateLimit(clientId string) bool {
+	if clientId == "" {
 		return false
 	}
-	key := clientId + "|" + ip
+	key := clientId
 	now := time.Now()
 	cutoff := now.Add(-byAttributeRateWindow)
 
@@ -610,9 +615,14 @@ func (c *ApiController) GetUsersByAttribute() {
 		return
 	}
 
-	// (3) Rate limit: 10/min per (clientId, source IP).
-	ip := c.byAttributeClientIP()
-	if !byAttributeRateLimit(clientId, ip) {
+	// (3) Rate limit: 10/min per clientId. IP is deliberately NOT in the
+	//     key — XFF is client-controlled at this layer (ingress does not
+	//     pin trustedIPs as of the version pinned in universe), so an
+	//     IP-keyed limiter is bypassable by header rotation. clientId
+	//     alone is sufficient because the caller cannot rotate it without
+	//     owning another allowlisted service credential. IP-based limits
+	//     belong at the ingress layer and are tracked as a follow-up.
+	if !byAttributeRateLimit(clientId) {
 		c.Ctx.Output.SetStatus(http.StatusTooManyRequests)
 		byAttrAudit(c, clientId, owner, "", 0, http.StatusTooManyRequests, "rate limit exceeded")
 		c.ResponseError("too many requests")

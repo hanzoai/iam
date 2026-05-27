@@ -12,6 +12,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -195,40 +196,33 @@ func TestByAttributeAllowedClients_ParsesCommaList(t *testing.T) {
 }
 
 // TestByAttributeRateLimit_BurstAndWindow verifies the 10/min cap fires
-// on the 11th call and that distinct (clientId, IP) tuples don't share
-// a bucket.
+// on the 11th call and that distinct clientIds don't share a bucket.
+// IP is NOT part of the key — see TestRateLimit_KeysOnClientIdOnly_IgnoresXFF
+// for the threat-model rationale.
 func TestByAttributeRateLimit_BurstAndWindow(t *testing.T) {
 	resetByAttrState(t)
 	const client = "liquidity-bd"
-	const ip = "10.0.0.1"
 	for i := 0; i < byAttributeRateBurst; i++ {
-		if !byAttributeRateLimit(client, ip) {
+		if !byAttributeRateLimit(client) {
 			t.Fatalf("call %d should be allowed (burst=%d)", i+1, byAttributeRateBurst)
 		}
 	}
-	if byAttributeRateLimit(client, ip) {
+	if byAttributeRateLimit(client) {
 		t.Fatal("call beyond burst must be denied")
 	}
-	// Distinct IP under same clientId — independent bucket.
-	if !byAttributeRateLimit(client, "10.0.0.2") {
-		t.Fatal("different IP must have its own bucket")
-	}
-	// Distinct clientId under same IP — independent bucket.
-	if !byAttributeRateLimit("liquidity-ats", ip) {
+	// Distinct clientId — independent bucket.
+	if !byAttributeRateLimit("liquidity-ats") {
 		t.Fatal("different clientId must have its own bucket")
 	}
 }
 
-// TestByAttributeRateLimit_RejectsEmptyKeys verifies that we never
-// create a "" bucket — that would coalesce every anonymous request into
-// a single global rate-limit.
-func TestByAttributeRateLimit_RejectsEmptyKeys(t *testing.T) {
+// TestByAttributeRateLimit_RejectsEmptyKey verifies that we never
+// create a "" bucket — that would coalesce every credential-less call
+// into a single global rate-limit.
+func TestByAttributeRateLimit_RejectsEmptyKey(t *testing.T) {
 	resetByAttrState(t)
-	if byAttributeRateLimit("", "10.0.0.1") {
+	if byAttributeRateLimit("") {
 		t.Fatal("empty clientId must be rejected")
-	}
-	if byAttributeRateLimit("svc", "") {
-		t.Fatal("empty IP must be rejected")
 	}
 }
 
@@ -260,37 +254,10 @@ func TestExtractBearerJWT_Variants(t *testing.T) {
 	}
 }
 
-// TestByAttributeClientIP_PrefersXForwardedFor verifies the gateway's
-// X-Forwarded-For wins (because IAM always runs behind the Hanzo
-// ingress, and RemoteAddr is the gateway pod IP).
-func TestByAttributeClientIP_PrefersXForwardedFor(t *testing.T) {
-	c, _ := newByAttrController(t, "", map[string]string{
-		"X-Forwarded-For": "203.0.113.5, 10.0.0.99",
-	})
-	if got := c.byAttributeClientIP(); got != "203.0.113.5" {
-		t.Fatalf("XFF leftmost should win, got %q", got)
-	}
-}
-
-// TestByAttributeClientIP_FallsBackToXRealIP verifies the X-Real-IP
-// fallback when XFF is absent.
-func TestByAttributeClientIP_FallsBackToXRealIP(t *testing.T) {
-	c, _ := newByAttrController(t, "", map[string]string{
-		"X-Real-IP": "203.0.113.7",
-	})
-	if got := c.byAttributeClientIP(); got != "203.0.113.7" {
-		t.Fatalf("X-Real-IP should win, got %q", got)
-	}
-}
-
-// TestByAttributeClientIP_FallsBackToRemoteAddr verifies the last-resort
-// path when no proxy headers are present.
-func TestByAttributeClientIP_FallsBackToRemoteAddr(t *testing.T) {
-	c, _ := newByAttrController(t, "", nil)
-	if got := c.byAttributeClientIP(); got != "10.0.0.1" {
-		t.Fatalf("RemoteAddr should be stripped of port, got %q", got)
-	}
-}
+// (Tests for byAttributeClientIP removed in Fix 3 — the function was
+// deleted because the rate-limiter no longer uses IP. The audit
+// pipeline derives ClientIp directly from NewRecord. See
+// TestRateLimit_KeysOnClientIdOnly_IgnoresXFF for the rationale.)
 
 // TestProjectUserForByAttribute_OmitsSecrets enforces the field
 // whitelist: under no circumstances may password / salt / TOTP / etc.
@@ -531,9 +498,9 @@ func TestHandler_RateLimit_Returns429(t *testing.T) {
 	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
 	byAttrResolveClaims = fakeClaims("liquidity-bd", "liquidity", false, true)
 
-	// Pre-fill the (clientId, IP) bucket so the next call exhausts it.
+	// Pre-fill the clientId bucket so the next call exhausts it.
 	for i := 0; i < byAttributeRateBurst; i++ {
-		if !byAttributeRateLimit("liquidity-bd", "203.0.113.10") {
+		if !byAttributeRateLimit("liquidity-bd") {
 			t.Fatalf("pre-fill call %d should be allowed", i+1)
 		}
 	}
@@ -568,12 +535,94 @@ func TestHandler_OneRequestConsumesOneToken(t *testing.T) {
 
 	// Now drain the remaining 9 slots; the 11th must 429.
 	for i := 0; i < byAttributeRateBurst-1; i++ {
-		if !byAttributeRateLimit("liquidity-bd", "203.0.113.11") {
+		if !byAttributeRateLimit("liquidity-bd") {
 			t.Fatalf("drain call %d should be allowed", i+1)
 		}
 	}
-	if byAttributeRateLimit("liquidity-bd", "203.0.113.11") {
+	if byAttributeRateLimit("liquidity-bd") {
 		t.Fatal("11th call must be denied — handler did not consume one slot")
+	}
+}
+
+// TestRateLimit_KeysOnClientIdOnly_IgnoresXFF — the core Fix-3 assertion.
+// The rate-limit bucket key is clientId ONLY. X-Forwarded-For is client-
+// controlled at this layer (the ingress does not pin trustedIPs in the
+// version pinned in universe), so an IP-keyed bucket would be bypassable
+// by header rotation:
+//
+//	for i := 0; i < N; i++ {
+//	    req.Header.Set("X-Forwarded-For", randIP())  // new bucket each time
+//	}
+//
+// Part 1: 11 probes from the SAME JWT with a DIFFERENT XFF per request
+//
+//	→ the 11th must 429. If IP were in the key, every request would land
+//	  in a fresh bucket and we would never hit the limit.
+//
+// Part 2: distinct clientIds must NOT share a bucket, even under the
+//
+//	same XFF — each service principal has its own 10/min quota.
+func TestRateLimit_KeysOnClientIdOnly_IgnoresXFF(t *testing.T) {
+	resetByAttrState(t)
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd,liquidity-ats")
+	byAttrResolveClaims = fakeClaims("liquidity-bd", "liquidity", false, true)
+
+	// Part 1: rotate XFF on every request. Each call carries a different
+	// IP; if the limiter were keyed on (clientId, IP) we'd never exhaust
+	// the bucket. With the Fix-3 single-key limiter, the 11th call MUST
+	// 429.
+	var lastCode int
+	for i := 0; i < byAttributeRateBurst+1; i++ {
+		c, rec := newByAttrController(t, "", map[string]string{
+			"Authorization":   "Bearer eyJ.svc.jwt",
+			"X-Forwarded-For": fmt.Sprintf("198.51.100.%d", i+1),
+		})
+		c.GetUsersByAttribute()
+		lastCode = rec.Code
+		if i < byAttributeRateBurst {
+			if rec.Code == http.StatusTooManyRequests {
+				t.Fatalf("call %d/%d (XFF=198.51.100.%d) must not be rate-limited yet — XFF rotation must not create fresh buckets",
+					i+1, byAttributeRateBurst+1, i+1)
+			}
+		}
+	}
+	if lastCode != http.StatusTooManyRequests {
+		t.Fatalf("call %d (one past burst) must 429 even under XFF rotation; got %d", byAttributeRateBurst+1, lastCode)
+	}
+
+	// Part 2: a DIFFERENT clientId must have its OWN bucket. Same XFF
+	// values as above, fresh clientId — must NOT inherit the exhausted
+	// quota from the first principal.
+	byAttrResolveClaims = fakeClaims("liquidity-ats", "liquidity", false, true)
+	c, rec := newByAttrController(t, "", map[string]string{
+		"Authorization":   "Bearer eyJ.svc2.jwt",
+		"X-Forwarded-For": "198.51.100.1", // same as the very first call above
+	})
+	c.GetUsersByAttribute()
+	if rec.Code == http.StatusTooManyRequests {
+		t.Fatalf("second clientId must have its own bucket — no cross-talk; got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestRateLimit_BucketKeyIsLiteralClientId is a unit-level companion to
+// TestRateLimit_KeysOnClientIdOnly_IgnoresXFF: it pokes the limiter
+// directly to prove the key contains no IP component, even when callers
+// at the handler layer would have wildly different IPs.
+func TestRateLimit_BucketKeyIsLiteralClientId(t *testing.T) {
+	resetByAttrState(t)
+	// Drain liquidity-bd to the cap.
+	for i := 0; i < byAttributeRateBurst; i++ {
+		if !byAttributeRateLimit("liquidity-bd") {
+			t.Fatalf("expected %d/min to be free, call %d was denied", byAttributeRateBurst, i+1)
+		}
+	}
+	// The 11th call denied.
+	if byAttributeRateLimit("liquidity-bd") {
+		t.Fatal("11th call must be denied")
+	}
+	// liquidity-ats unrelated.
+	if !byAttributeRateLimit("liquidity-ats") {
+		t.Fatal("different clientId must have its own bucket")
 	}
 }
 
