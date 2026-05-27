@@ -91,6 +91,14 @@ func InitAPI() {
 
 	web.Router("/v1/iam/get-global-users", &controllers.ApiController{}, "GET:GetGlobalUsers")
 	web.Router("/v1/iam/get-users", &controllers.ApiController{}, "GET:GetUsers")
+	// Server-to-server soft-signal: "does this phone/email belong to a
+	// user in my org?". Auth is enforced INSIDE the handler — must be a
+	// client_credentials JWT (user JWTs get 403) and the calling
+	// clientId must be on the IAM_BY_ATTRIBUTE_ALLOWLIST. See
+	// controllers/users_by_attribute.go for the full threat model.
+	// Bypasses the generic authz engine via authz_filter.go's
+	// isByAttributeRoute.
+	web.Router("/v1/iam/users/by-attribute", &controllers.ApiController{}, "GET:GetUsersByAttribute")
 	web.Router("/v1/iam/get-sorted-users", &controllers.ApiController{}, "GET:GetSortedUsers")
 	web.Router("/v1/iam/get-user-count", &controllers.ApiController{}, "GET:GetUserCount")
 	web.Router("/v1/iam/get-user", &controllers.ApiController{}, "GET:GetUser")
