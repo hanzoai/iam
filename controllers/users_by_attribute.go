@@ -315,6 +315,63 @@ func phoneCandidates(raw string) []string {
 	return out
 }
 
+// auditRequestUri is the SANITIZED RequestUri persisted to the audit row.
+// We deliberately strip the query string before persistence — the parent
+// pipeline at object/record.go::NewRecord captures the full RequestURI,
+// which on this endpoint would include `?phone=+19137779708&email=...`,
+// i.e. the very PII the threat model promises never to persist. The
+// path itself is the only identifying information we need in the audit
+// trail; the *value* probed is captured indirectly through
+// (attribute-type, result-count) on the Object field.
+const auditRequestUri = "/v1/iam/users/by-attribute"
+
+// buildByAttributeAuditRecord constructs the audit Record that will be
+// persisted for a single by-attribute probe. Extracted so unit tests can
+// assert the EXACT shape that hits the audit table without needing a
+// live xorm engine (which object.AddRecord requires).
+//
+// The two PII-stripping invariants live here:
+//   - RequestUri MUST be the bare path; the NewRecord default captures
+//     the query string which on THIS endpoint carries the probed value.
+//   - Object MUST be empty; NewRecord defaults it to the request body
+//     (GET = "") and we never re-populate it with a shape JSON that
+//     could trip a future writer into echoing the probed value.
+//
+// Both invariants are exercised in
+// TestAudit_DoesNotPersistProbedValues.
+func buildByAttributeAuditRecord(ctx *ApiController, callerClient, callerOrg, attrType string, resultCount, statusCode int, reason string) (*object.Record, error) {
+	rec, err := object.NewRecord(ctx.Ctx)
+	if err != nil {
+		return nil, err
+	}
+	rec.Organization = callerOrg
+	rec.User = callerClient
+	rec.Action = "users/by-attribute"
+	rec.StatusCode = statusCode
+	// CRITICAL: overwrite the RequestUri set by NewRecord. The default
+	// captures `ctx.Request.RequestURI` which includes the query string —
+	// for THIS endpoint that means the probed phone/email value would be
+	// persisted to the audit table, defeating the whole "never log the
+	// probed value" defense. Path only, no query string.
+	rec.RequestUri = auditRequestUri
+	// Object MUST stay empty. NewRecord defaults Object to the request
+	// body (GET requests have none, so the default is ""). We intentionally
+	// do NOT serialize {attribute, resultCount, reason} into Object — that
+	// would create a second persistence path adjacent to the RequestUri
+	// fix above. The shape information lives in Response (which is
+	// derived, not request-supplied) and Action.
+	rec.Object = ""
+	// Response carries the shape — derived from server-side state, never
+	// from a request-supplied value. Encodes {attribute-type, count,
+	// reason, status}. attribute-type is a closed enum ("phone"|"email"|"")
+	// not user-controlled text; reason is set by the handler itself.
+	rec.Response = "{status:\"" + statusOf(statusCode) +
+		"\", attribute:\"" + attrType +
+		"\", count:" + itoa(resultCount) +
+		", reason:\"" + escapeRecordString(reason) + "\"}"
+	return rec, nil
+}
+
 // defaultAuditByAttributeProbe writes an Object-level audit row via the
 // existing records pipeline. We do NOT include the probed phone/email
 // value (that would re-create the enumeration oracle inside our own
@@ -322,22 +379,12 @@ func phoneCandidates(raw string) []string {
 //
 // Bound to byAttrAudit at package init. Tests override the seam.
 func defaultAuditByAttributeProbe(ctx *ApiController, callerClient, callerOrg, attrType string, resultCount, statusCode int, reason string) {
-	rec, err := object.NewRecord(ctx.Ctx)
+	rec, err := buildByAttributeAuditRecord(ctx, callerClient, callerOrg, attrType, resultCount, statusCode, reason)
 	if err != nil {
 		// Best-effort. Audit failure must not block the response.
 		logs.Warning("by-attribute: audit NewRecord failed: %v", err)
 		return
 	}
-	rec.Organization = callerOrg
-	rec.User = callerClient
-	rec.Action = "users/by-attribute"
-	rec.StatusCode = statusCode
-	// Object is the probed shape — NOT the probed value. We deliberately
-	// log {attrType, resultCount, reason} only.
-	rec.Object = "{\"attribute\":\"" + attrType +
-		"\",\"resultCount\":" + itoa(resultCount) +
-		",\"reason\":\"" + escapeRecordString(reason) + "\"}"
-	rec.Response = "{status:\"" + statusOf(statusCode) + "\", count:" + itoa(resultCount) + "}"
 
 	util.SafeGoroutine(func() {
 		object.AddRecord(rec)
