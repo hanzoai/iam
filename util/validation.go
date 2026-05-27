@@ -78,41 +78,47 @@ func IsInvitationCodeMatch(pattern string, invitationCode string) (bool, error) 
 	return regexp.MatchString(pattern, invitationCode)
 }
 
+// NormalizeE164 is the one-and-only phone normalizer. Parses the input
+// against the supplied ISO alpha-2 country code (or empty when the phone
+// already carries a '+' prefix) and returns the canonical E.164 form
+// (e.g. "+16178888888"). The returned string ALWAYS starts with '+'
+// and contains only digits after it.
+//
+// Returns an error if the input cannot be parsed into a valid number for
+// the given region. There is no sandbox bypass — every phone that lands
+// in `User.Phone` must be a real, dialable E.164 string.
+//
+// Empty input is a special case: ("","") returns ("", nil) so callers
+// that pass through optional fields don't have to special-case nil.
+func NormalizeE164(phone string, countryCode string) (string, error) {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return "", nil
+	}
+	region := strings.ToUpper(strings.TrimSpace(countryCode))
+	// libphonenumber tolerates region="" when the input has a '+' prefix.
+	num, err := phonenumbers.Parse(phone, region)
+	if err != nil {
+		return "", fmt.Errorf("phone: cannot parse %q for region %q: %w", phone, region, err)
+	}
+	if !phonenumbers.IsValidNumber(num) {
+		return "", fmt.Errorf("phone: %q is not a valid number for region %q", phone, region)
+	}
+	return phonenumbers.Format(num, phonenumbers.E164), nil
+}
+
+// GetE164Number is the legacy two-value variant kept for callers in
+// controllers/account.go and controllers/verification.go that already
+// branch on `ok`. New code MUST use NormalizeE164 directly.
+//
+// Behaviour: identical to NormalizeE164, except errors are squashed to
+// ok=false and an empty E.164 string. No sandbox bypass.
 func GetE164Number(phone string, countryCode string) (string, bool) {
-	phoneNumber, _ := phonenumbers.Parse(phone, countryCode)
-	formatted := phonenumbers.Format(phoneNumber, phonenumbers.E164)
-	if phonenumbers.IsValidNumber(phoneNumber) {
-		return formatted, true
+	e164, err := NormalizeE164(phone, countryCode)
+	if err != nil || e164 == "" {
+		return "", false
 	}
-	// Sandbox bypass: when SANDBOX_SKIP_PHONE_VALIDATION is set (devnet+testnet
-	// only — must be hostname-guarded by the same boot check that gates
-	// SANDBOX_GLOBAL_OTP), accept any parseable phone shape so demo flows can
-	// use any number format without hitting libphonenumber's region rules.
-	// Production manifests must leave the env empty.
-	if os.Getenv("SANDBOX_SKIP_PHONE_VALIDATION") != "" {
-		// If phonenumbers.Parse returned a usable result, format it; else fall
-		// back to a synthetic E.164 string from the raw input.
-		if formatted == "" || formatted == "+0" {
-			cleaned := ""
-			for _, r := range phone {
-				if r >= '0' && r <= '9' {
-					cleaned += string(r)
-				}
-			}
-			cc := ""
-			for _, r := range countryCode {
-				if r >= '0' && r <= '9' {
-					cc += string(r)
-				}
-			}
-			if cc == "" {
-				cc = "1"
-			}
-			formatted = "+" + cc + cleaned
-		}
-		return formatted, true
-	}
-	return formatted, false
+	return e164, true
 }
 
 func GetCountryCode(prefix string, phone string) (string, error) {
