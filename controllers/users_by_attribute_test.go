@@ -577,6 +577,96 @@ func TestHandler_OneRequestConsumesOneToken(t *testing.T) {
 	}
 }
 
+// TestAudit_DoesNotPersistProbedValues exercises the Fix-1 invariant:
+// after the controller emits an audit record for a probe carrying
+// phone=+19137779708&email=secret@victim.com, the persisted Record must
+// contain NEITHER the phone nor the email — not in RequestUri (which
+// the upstream NewRecord captures wholesale from ctx.Request.RequestURI)
+// and not in Object (which NewRecord defaults to the request body, but
+// we additionally guarantee stays empty here).
+//
+// This is the "never log the probed value" defense; without it the
+// audit table becomes an enumeration oracle adjacent to the endpoint.
+func TestAudit_DoesNotPersistProbedValues(t *testing.T) {
+	// Build a controller whose context carries the dangerous query
+	// string. The query string is what NewRecord would otherwise persist
+	// into RequestUri verbatim.
+	const probedPhone = "+19137779708"
+	const probedEmail = "secret@victim.com"
+	q := url.Values{}
+	q.Set("phone", probedPhone)
+	q.Set("email", probedEmail)
+	c, _ := newByAttrController(t, q.Encode(), map[string]string{
+		"Authorization": "Bearer eyJ.svc.jwt",
+	})
+	// NewRecord reads `ctx.Input.Data()["json"]` and round-trips it. We
+	// must seed it with a marshallable value; an empty Response struct
+	// is the simplest.
+	c.Data["json"] = &object.Response{Status: "ok", Msg: ""}
+
+	rec, err := buildByAttributeAuditRecord(c, "liquidity-bd", "liquidity", "phone", 0, http.StatusOK, "")
+	if err != nil {
+		t.Fatalf("buildByAttributeAuditRecord: %v", err)
+	}
+	if rec == nil {
+		t.Fatal("nil record")
+	}
+
+	// Invariant 1: RequestUri is the bare path. No query string.
+	if rec.RequestUri != "/v1/iam/users/by-attribute" {
+		t.Fatalf("RequestUri = %q; want %q (no query string allowed)", rec.RequestUri, "/v1/iam/users/by-attribute")
+	}
+	if strings.Contains(rec.RequestUri, "phone=") {
+		t.Fatalf("RequestUri leaked phone= substring: %q", rec.RequestUri)
+	}
+	if strings.Contains(rec.RequestUri, "email=") {
+		t.Fatalf("RequestUri leaked email= substring: %q", rec.RequestUri)
+	}
+	if strings.Contains(rec.RequestUri, "?") {
+		t.Fatalf("RequestUri must have no query string at all: %q", rec.RequestUri)
+	}
+
+	// Invariant 2: Object stays empty. NewRecord's default for GET is
+	// "" because there's no request body; we deliberately do not write
+	// the {attribute,count,reason} shape into Object — that would create
+	// a second persistence path adjacent to RequestUri.
+	if rec.Object != "" {
+		t.Fatalf("Object must be empty (PII-free); got %q", rec.Object)
+	}
+
+	// Invariant 3: the probed values appear NOWHERE in the persisted
+	// record. Scan every textual field.
+	for fieldName, fieldValue := range map[string]string{
+		"RequestUri":   rec.RequestUri,
+		"Action":       rec.Action,
+		"Object":       rec.Object,
+		"Response":     rec.Response,
+		"User":         rec.User,
+		"Organization": rec.Organization,
+		"ClientIp":     rec.ClientIp,
+		"Method":       rec.Method,
+	} {
+		for _, leak := range []string{probedPhone, probedEmail, "9137779708", "secret"} {
+			if strings.Contains(fieldValue, leak) {
+				t.Fatalf("record field %s leaked %q (value: %q)", fieldName, leak, fieldValue)
+			}
+		}
+	}
+
+	// Sanity: the shape we DO want is still present. Response carries
+	// {attribute, count, status} — none of which are PII.
+	if !strings.Contains(rec.Response, "phone") { // "phone" appears as the attribute-type literal "phone", not as the value
+		t.Fatalf("Response should encode the attribute TYPE; got %q", rec.Response)
+	}
+	if !strings.Contains(rec.Response, "count:0") {
+		t.Fatalf("Response should encode result count; got %q", rec.Response)
+	}
+	// Action is the bucket identifier — fine.
+	if rec.Action != "users/by-attribute" {
+		t.Fatalf("Action = %q; want %q", rec.Action, "users/by-attribute")
+	}
+}
+
 // minimalUserWithSecrets returns an *object.User populated with a
 // representative set of secret-bearing fields. The projection helper
 // must drop ALL of them.
