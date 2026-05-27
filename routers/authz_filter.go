@@ -91,6 +91,16 @@ func isOrgAppManagementRoute(method, urlPath string) bool {
 	return false
 }
 
+// isByAttributeRoute is the server-to-server soft-signal lookup. Auth is
+// enforced by the controller itself (client_credentials JWT + env
+// allowlist + per-(clientId,IP) rate limit), so the generic authz engine
+// must not deny anonymous traffic here. The handler returns 401 on missing
+// JWT and 403 on user-grant or non-allowlisted JWTs — full coverage lives
+// in controllers/users_by_attribute.go.
+func isByAttributeRoute(method, urlPath string) bool {
+	return method == "GET" && urlPath == "/v1/iam/users/by-attribute"
+}
+
 type Object struct {
 	Owner string `json:"owner"`
 	Name  string `json:"name"`
@@ -391,6 +401,23 @@ func ApiFilter(ctx *context.Context) {
 		util.LogInfo(ctx, logLine)
 		return
 	}
+
+	// Server-to-server soft-signal route. Controller does the full auth
+	// dance (client_credentials JWT discriminator + env allowlist +
+	// per-(clientId,IP) rate limit). The generic authz engine has no
+	// useful policy here and would deny anonymous traffic at the wire —
+	// but we want anonymous traffic to reach the controller so it can
+	// return the right shape (401 with WWW-Authenticate vs 403 vs 429
+	// vs 200). Bypass with NO subject set; the handler reads the
+	// Authorization header directly.
+	if isByAttributeRoute(method, urlPath) {
+		logLine := fmt.Sprintf("subOwner = -, subName = -, method = %s, urlPath = %s, result = allow (by-attribute controller-enforced)",
+			method, urlPath)
+		fmt.Println(logLine)
+		util.LogInfo(ctx, logLine)
+		return
+	}
+
 	subOwner, subName := getSubject(ctx)
 
 	// Allow authenticated (non-anonymous) users to manage organizations and
