@@ -144,9 +144,20 @@ func GetUserByFields(organization string, field string) (*User, error) {
 		}
 	}
 
-	// check phone
-	phone := util.GetSeperatedPhone(field)
-	user, err = GetUserByField(organization, "phone", phone)
+	// check phone — try the canonical E.164 form first. The field may
+	// arrive as either a raw national number (controllers pass this in
+	// from form bodies) or an E.164 string (gateway/passthrough). The
+	// stored value is always E.164 after MigratePhoneToE164; if
+	// normalization fails (e.g. unknown country code in this codepath)
+	// we still attempt a verbatim match so legacy clients that send
+	// E.164 without a country code keep working.
+	if e164, err := util.NormalizeE164(field, ""); err == nil && e164 != "" {
+		user, lookupErr := GetUserByField(organization, "phone", e164)
+		if user != nil || lookupErr != nil {
+			return user, lookupErr
+		}
+	}
+	user, err = GetUserByField(organization, "phone", field)
 	if user != nil || err != nil {
 		return user, err
 	}
