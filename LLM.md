@@ -12,11 +12,14 @@ Data lives in Base (`hanzoai/base`) — embedded SQLite with auto-migrations and
 
 ```
 /v1/iam/login                       — username/password + MFA
-/v1/iam/login/oauth/authorize       — OAuth2 authorization endpoint
-/v1/iam/login/oauth/access_token    — OAuth2 token endpoint (incl. client_credentials)
-/v1/iam/login/oauth/refresh_token
-/v1/iam/login/oauth/introspect
-/v1/iam/login/oauth/revoke
+/v1/iam/oauth/authorize             — OAuth2 authorization endpoint
+/v1/iam/oauth/access_token          — OAuth2 token endpoint (incl. client_credentials)
+/v1/iam/oauth/refresh_token
+/v1/iam/oauth/introspect
+/v1/iam/oauth/revoke
+/v1/iam/oauth/userinfo
+/v1/iam/oauth/device
+/v1/iam/oauth/logout
 /v1/iam/oauth/register              — Dynamic Client Registration (RFC 7591)
 /v1/iam/.well-known/openid-configuration
 /v1/iam/.well-known/jwks
@@ -26,7 +29,7 @@ Data lives in Base (`hanzoai/base`) — embedded SQLite with auto-migrations and
 /v1/iam/...
 ```
 
-A request filter rewrites `/v1/iam/X` → internal `/api/X` for all non-OAuth paths. The internal `/api/*` paths exist but should not be relied on by external callers — they may move.
+One shape per endpoint. There is no rewrite layer, no `/api/*` alias, no `/login/oauth/*` back-compat. Anything off `/v1/iam/*` is 404.
 
 ZAP RPC runs on a separate port for service-to-service auth (`AuthService.GetToken`, `AuthService.IntrospectToken`).
 
@@ -45,14 +48,14 @@ For multi-tenant per-org isolation: each org gets a separate SQLite file under `
 1. Browser hits `https://iam.{env}.{deployment-domain}/v1/iam/login`
 2. Form submit → Base verifies password + MFA
 3. Sets session, redirects to OAuth `authorize` endpoint
-4. Returns code → SPA exchanges via `/v1/iam/login/oauth/access_token`
+4. Returns code → SPA exchanges via `/v1/iam/oauth/access_token`
 
 ### Service-to-service (client_credentials)
 
 For machine identity (e.g. KMS pulling from IAM, or a CI job calling internal APIs):
 
 ```bash
-curl -X POST https://iam.dev.{deployment-domain}/v1/iam/login/oauth/access_token \
+curl -X POST https://iam.dev.{deployment-domain}/v1/iam/oauth/access_token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials&client_id=<id>&client_secret=<secret>"
 ```
@@ -122,8 +125,7 @@ iam/
 ├── cmd/iamd/                — server daemon (canonical entrypoint)
 ├── controllers/             — HTTP handlers
 ├── routers/
-│   ├── router.go            — route table (/api/* internal)
-│   └── v1_iam_rewrite.go    — /v1/iam/* → /api/* filter
+│   └── router.go            — route table (canonical /v1/iam/* only)
 ├── object/                  — domain logic (users, apps, orgs, sessions)
 ├── service/                 — auth flows (oauth, oidc, saml, ldap)
 ├── pkg/iam/                 — separate Go module: Embed() + Mount() entry
@@ -161,7 +163,7 @@ That repo is the polyglot umbrella; Go stays in this repo.
 ## Integration points (across the stack)
 
 - **Gateway**: validates inbound JWTs against IAM JWKS
-- **KMS**: authenticates clients via `/v1/iam/login/oauth/access_token` (client_credentials), then mints short-lived bearer for KMS sessions
+- **KMS**: authenticates clients via `/v1/iam/oauth/access_token` (client_credentials), then mints short-lived bearer for KMS sessions
 - **Downstream services**: extract `sub` (user) and `owner` (org) from JWT claims
 - **Web consoles / SPA clients**: standard authorization_code + PKCE OAuth flow
 - **MPC**: WebAuthn challenges issued via IAM, completed in browser, then user shard authorized via JWT bound to NodeID
