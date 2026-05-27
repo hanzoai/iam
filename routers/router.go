@@ -300,14 +300,8 @@ func InitAPI() {
 	web.Router("/v1/iam/delete-ldap", &controllers.ApiController{}, "POST:DeleteLdap")
 	web.Router("/v1/iam/sync-ldap-users", &controllers.ApiController{}, "POST:SyncLdapUsers")
 
-	// OAuth surface — canonical published form is /v1/iam/oauth/* and is
-	// what the OIDC discovery doc advertises. /login/oauth/* exists as a
-	// strict-OAuth2-spec legacy back-compat registration; both shapes
-	// target the same controller methods so behavior is byte-identical.
-	// Aliases (/oauth/*, /v1/iam/login/oauth/*, /api/iam/oauth/*,
-	// /api/iam/login/oauth/*) collapse to /v1/iam/oauth/* via
-	// routers.PathRewriteFilter before dispatch. New alias prefixes go
-	// in path_rewrite_filter.go; new endpoints go here, once per shape.
+	// OAuth surface. One shape: /v1/iam/oauth/*. The OIDC discovery doc
+	// advertises exactly these URLs; new endpoints go here, once.
 	web.Router("/v1/iam/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
 	web.Router("/v1/iam/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
 	web.Router("/v1/iam/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
@@ -319,23 +313,6 @@ func InitAPI() {
 	web.Router("/v1/iam/oauth/device", &controllers.ApiController{}, "POST:DeviceAuth")
 	web.Router("/v1/iam/oauth/logout", &controllers.ApiController{}, "GET,POST:Logout")
 	web.Router("/v1/iam/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
-
-	// Legacy /login/oauth/* — exact OAuth2-spec literal paths. Kept for
-	// pre-cutover callers that hardcoded these URLs before the
-	// /v1/iam/oauth/* surface existed. Scheduled for removal in a
-	// later cut, AFTER every consumer has migrated to the discovery-
-	// doc-advertised /v1/iam/oauth/* form.
-	web.Router("/login/oauth/authorize", &controllers.ApiController{}, "GET:OAuthAuthorizeRedirect")
-	web.Router("/login/oauth/access_token", &controllers.ApiController{}, "POST:GetOAuthToken")
-	web.Router("/login/oauth/token", &controllers.ApiController{}, "POST:GetOAuthToken")
-	web.Router("/login/oauth/refresh_token", &controllers.ApiController{}, "POST:RefreshToken")
-	web.Router("/login/oauth/refresh", &controllers.ApiController{}, "POST:RefreshToken")
-	web.Router("/login/oauth/introspect", &controllers.ApiController{}, "POST:IntrospectToken")
-	web.Router("/login/oauth/revoke", &controllers.ApiController{}, "POST:RevokeToken")
-	web.Router("/login/oauth/userinfo", &controllers.ApiController{}, "GET:GetUserinfo")
-	web.Router("/login/oauth/device", &controllers.ApiController{}, "POST:DeviceAuth")
-	web.Router("/login/oauth/logout", &controllers.ApiController{}, "GET,POST:Logout")
-	web.Router("/login/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
 
 	web.Router("/v1/iam/get-records", &controllers.ApiController{}, "GET:GetRecords")
 	web.Router("/v1/iam/get-records-filter", &controllers.ApiController{}, "POST:GetRecordsByFilter")
