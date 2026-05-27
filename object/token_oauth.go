@@ -1154,7 +1154,7 @@ func ValidateJwtAssertion(clientAssertion string, application *Application, host
 		return false, nil, nil
 	}
 
-	if !slices.Contains(claims.Audience, fmt.Sprintf("%s/login/oauth/access_token", originBackend)) {
+	if !slices.Contains(claims.Audience, fmt.Sprintf("%s/v1/iam/oauth/access_token", originBackend)) {
 		return false, nil, nil
 	}
 
