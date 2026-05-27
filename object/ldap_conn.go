@@ -26,12 +26,17 @@ import (
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/i18n"
 	"github.com/hanzoai/iam/util"
-	"github.com/nyaruka/phonenumbers"
 	"github.com/thanhpk/randstr"
 	"golang.org/x/text/encoding/unicode"
 )
 
-// formatUserPhone processes phone number for a user based on their CountryCode
+// formatUserPhone processes phone number for a user based on their CountryCode.
+// Storage contract: User.Phone is canonical E.164 (e.g. "+16178888888").
+// LDAP / AD upstreams often deliver national digits + a country attribute;
+// this helper marries them via libphonenumber. On parse failure we leave
+// the raw value alone — the AddUser/UpdateUser gate will reject the write
+// at the boundary, which is the right place to surface the validation
+// error to the LDAP sync operator.
 func formatUserPhone(u *User) {
 	if u.Phone == "" {
 		return
@@ -46,12 +51,9 @@ func formatUserPhone(u *User) {
 		countryHint = "" // Only 2-letter codes are valid hints
 	}
 
-	// 2. Try parsing (Strictly using countryHint from LDAP)
-	num, err := phonenumbers.Parse(u.Phone, countryHint)
-
-	if err == nil && num != nil && phonenumbers.IsValidNumber(num) {
-		// Store a clean national number (digits only, without country prefix)
-		u.Phone = fmt.Sprint(num.GetNationalNumber())
+	// 2. Normalize to E.164 via the single canonical helper.
+	if e164, err := util.NormalizeE164(u.Phone, countryHint); err == nil && e164 != "" {
+		u.Phone = e164
 	}
 }
 

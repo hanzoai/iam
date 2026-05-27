@@ -384,6 +384,16 @@ func (a *Ormer) createTable() {
 		panic(err)
 	}
 
+	// One-shot phone canonicalization on the global engine. Per-org
+	// engines run their own pass inside syncOrgTables (orgdb.go). Both
+	// passes are required because under orgIsolation=none the global
+	// engine owns the user rows, and under orgIsolation=sqlite the
+	// global engine still holds the cross-org catalog the OTP path
+	// (GetUserByPhoneOnly) queries.
+	if _, _, err := MigratePhoneToE164(a.Engine); err != nil {
+		panic(fmt.Errorf("phone-e164 migration: %w", err))
+	}
+
 	err = a.Engine.Sync2(new(Invitation))
 	if err != nil {
 		panic(err)
