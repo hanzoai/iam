@@ -13,46 +13,38 @@ import (
 	"testing"
 )
 
-// TestGetUrlPath_NormalizesV1IamOAuth verifies that both the legacy bare
-// (/login/oauth/*, /oauth/*) and canonical /v1/iam/-prefixed OAuth surfaces
-// collapse to the same authz resource so the anonymous policy applies. Without
-// this, public OIDC clients hitting /v1/iam/login/oauth/access_token saw
+// TestGetUrlPath_OAuthResourceCollapse locks the canonical /v1/iam/oauth/*
+// surface to the authz resource keys the anonymous OIDC/OAuth policy already
+// grants. Without this collapse, public OIDC clients hitting
+// /v1/iam/oauth/access_token would see
 // `{"status":"error","msg":"Unauthorized operation"}` because the authz
-// engine matched the full prefixed path and no policy granted anonymous
-// access.
-func TestGetUrlPath_NormalizesV1IamOAuth(t *testing.T) {
+// engine would match the full URL and find no policy for the anonymous
+// principal.
+func TestGetUrlPath_OAuthResourceCollapse(t *testing.T) {
 	cases := []struct {
 		name string
 		path string
 		want string
 	}{
-		// /login/oauth surface — bare + /v1/iam-prefixed must both collapse.
-		{"login_oauth_authorize", "/login/oauth/authorize", "/login/oauth"},
-		{"v1_iam_login_oauth_authorize", "/v1/iam/login/oauth/authorize", "/login/oauth"},
-		{"v1_iam_login_oauth_access_token", "/v1/iam/login/oauth/access_token", "/login/oauth"},
-		{"v1_iam_login_oauth_refresh_token", "/v1/iam/login/oauth/refresh_token", "/login/oauth"},
-
-		// /oauth/* RFC aliases — bare + /v1/iam-prefixed must both collapse.
-		{"oauth_authorize", "/oauth/authorize", "/login/oauth"},
+		// OAuth/OIDC code+token flow → /login/oauth resource (anonymous-grantable).
 		{"v1_iam_oauth_authorize", "/v1/iam/oauth/authorize", "/login/oauth"},
-		{"oauth_token", "/oauth/token", "/login/oauth"},
 		{"v1_iam_oauth_token", "/v1/iam/oauth/token", "/login/oauth"},
-		{"oauth_access_token", "/oauth/access_token", "/login/oauth"},
 		{"v1_iam_oauth_access_token", "/v1/iam/oauth/access_token", "/login/oauth"},
-		{"oauth_introspect", "/oauth/introspect", "/login/oauth"},
+		{"v1_iam_oauth_refresh", "/v1/iam/oauth/refresh", "/login/oauth"},
+		{"v1_iam_oauth_refresh_token", "/v1/iam/oauth/refresh_token", "/login/oauth"},
 		{"v1_iam_oauth_introspect", "/v1/iam/oauth/introspect", "/login/oauth"},
-		{"oauth_revoke", "/oauth/revoke", "/login/oauth"},
 		{"v1_iam_oauth_revoke", "/v1/iam/oauth/revoke", "/login/oauth"},
+		{"v1_iam_oauth_register", "/v1/iam/oauth/register", "/login/oauth"},
 
-		// userinfo, device, logout collapse to their existing canonical /v1/iam/* paths.
-		{"oauth_userinfo", "/oauth/userinfo", "/v1/iam/userinfo"},
+		// userinfo / device / logout collapse to their existing canonical
+		// /v1/iam/* policy resource keys so the discovery doc's
+		// /v1/iam/oauth/* surface shares a single policy with the IAM
+		// API surface.
 		{"v1_iam_oauth_userinfo", "/v1/iam/oauth/userinfo", "/v1/iam/userinfo"},
-		{"oauth_device", "/oauth/device", "/v1/iam/device-auth"},
 		{"v1_iam_oauth_device", "/v1/iam/oauth/device", "/v1/iam/device-auth"},
-		{"oauth_logout", "/oauth/logout", "/v1/iam/logout"},
 		{"v1_iam_oauth_logout", "/v1/iam/oauth/logout", "/v1/iam/logout"},
 
-		// Non-OAuth paths must pass through unchanged.
+		// Non-OAuth paths pass through unchanged.
 		{"healthz", "/healthz", "/healthz"},
 		{"v1_iam_healthz", "/v1/iam/healthz", "/v1/iam/healthz"},
 		{"v1_iam_login", "/v1/iam/login", "/v1/iam/login"},
