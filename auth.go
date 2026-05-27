@@ -113,8 +113,8 @@ func (c *Client) GetOAuthToken(code string, state string, opts ...OAuthOption) (
 		ClientID:     c.ClientId,
 		ClientSecret: c.ClientSecret,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:   fmt.Sprintf("%s/api/login/oauth/authorize", c.Endpoint),
-			TokenURL:  fmt.Sprintf("%s/api/login/oauth/access_token", c.Endpoint),
+			AuthURL:   fmt.Sprintf("%s/v1/iam/oauth/authorize", c.Endpoint),
+			TokenURL:  fmt.Sprintf("%s/v1/iam/oauth/access_token", c.Endpoint),
 			AuthStyle: oauth2.AuthStyleInParams,
 		},
 		// RedirectURL: redirectUri,
@@ -149,8 +149,8 @@ func (c *Client) RefreshOAuthToken(refreshToken string, opts ...OAuthOption) (*o
 		ClientID:     c.ClientId,
 		ClientSecret: c.ClientSecret,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:   fmt.Sprintf("%s/api/login/oauth/authorize", c.Endpoint),
-			TokenURL:  fmt.Sprintf("%s/api/login/oauth/refresh_token", c.Endpoint),
+			AuthURL:   fmt.Sprintf("%s/v1/iam/oauth/authorize", c.Endpoint),
+			TokenURL:  fmt.Sprintf("%s/v1/iam/oauth/refresh_token", c.Endpoint),
 			AuthStyle: oauth2.AuthStyleInParams,
 		},
 		// RedirectURL: redirectUri,
