@@ -509,14 +509,51 @@ func defaultResolveServiceClaims(c *ApiController) (clientId, owner string, anon
 		return "", "", true, false
 	}
 
-	// **The discriminator**: client_credentials mints a JWT where the
-	// embedded User.Type is "application" (see GetClientCredentialsToken
-	// at object/token_oauth.go:1044-1049). authorization_code and
-	// password grants produce "normal-user". refresh_token rotation
-	// preserves the original Type. Anything other than "application" is
-	// a user JWT or a malformed claim — reject as not-a-service-caller
-	// (403, not 401).
+	// **The discriminator**: client_credentials mints a synthetic
+	// application-user with a specific shape (see GetClientCredentialsToken
+	// at object/token_oauth.go:1044-1049):
+	//
+	//   nullUser := &User{
+	//     Owner: application.Owner,
+	//     Id:    application.GetId(),
+	//     Name:  application.Name,   <-- KEY: name === app.name
+	//     Type:  "application",      <-- forgeable on its own
+	//   }
+	//
+	// And the JWT is generated via generateJwtToken(app, nullUser, "", "", "", scope, "", host) —
+	// the three empty strings are provider, providerType, signinMethod.
+	// So a *true* client_credentials claim has:
+	//   Type         == "application"
+	//   User.Name    == application.Name  (the registered ClientId is by
+	//                                       construction the app's name)
+	//   Provider     == ""
+	//   SigninMethod == ""
+	//
+	// User.Type ALONE is NOT sufficient: AddUser/UpdateUser persist
+	// arbitrary Type from the request body (object/user.go:928,934), so a
+	// tenant admin can create a user with Type="application", set a
+	// password, password-grant a JWT, and pass the bare Type discriminator.
+	// We now require ALL FOUR fields to match. The strongest is
+	// `claims.User.Name == app.Name` — a tenant-admin-promoted user can
+	// never have `name == app.name` without also owning the matching
+	// application name in the same org (which is the same as owning the
+	// client_credentials secret in the first place).
 	if claims.User.Type != "application" {
+		return "", "", false, false
+	}
+	if claims.User.Name != app.Name {
+		// A user JWT carrying Type="application" but whose user-name
+		// differs from the application name is the exact forgery shape.
+		return "", "", false, false
+	}
+	if claims.Provider != "" {
+		// client_credentials never has a Provider (no IdP involved).
+		// password / authorization_code grants do.
+		return "", "", false, false
+	}
+	if claims.SigninMethod != "" {
+		// client_credentials never has a SigninMethod (it's not a
+		// sign-in). Password / OIDC / WebAuthn etc. all set this.
 		return "", "", false, false
 	}
 
