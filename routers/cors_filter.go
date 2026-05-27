@@ -98,10 +98,7 @@ func CorsFilter(ctx *context.Context) {
 	// truly public discovery endpoints.
 	isPublicEndpoint := strings.HasPrefix(ctx.Request.RequestURI, "/.well-known/") ||
 		strings.HasPrefix(ctx.Request.RequestURI, "/v1/iam/.well-known/")
-	isOAuthEndpoint := strings.HasPrefix(ctx.Request.RequestURI, "/oauth/") ||
-		strings.HasPrefix(ctx.Request.RequestURI, "/login/oauth/") ||
-		strings.HasPrefix(ctx.Request.RequestURI, "/v1/iam/oauth/") ||
-		ctx.Request.RequestURI == "/v1/iam/userinfo" ||
+	isOAuthEndpoint := strings.HasPrefix(ctx.Request.RequestURI, "/v1/iam/oauth/") ||
 		(ctx.Request.Method == "POST" && ctx.Request.RequestURI == "/v1/iam/acs")
 
 	if isPublicEndpoint {
