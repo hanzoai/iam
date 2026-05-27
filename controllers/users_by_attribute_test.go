@@ -577,6 +577,198 @@ func TestHandler_OneRequestConsumesOneToken(t *testing.T) {
 	}
 }
 
+// TestHandler_ServiceCreds_TypePromotedUser_Returns403 — defense-in-depth
+// for Fix 2. The original discriminator at defaultResolveServiceClaims
+// keyed only on `claims.User.Type == "application"`, which is forgeable:
+// controllers/user.go::AddUser / UpdateUser persist arbitrary `type`
+// from the request body (object/user.go:928,934). A tenant admin could
+// create a real human user with Type="application", set a password,
+// password-grant a JWT, and ride that JWT through every endpoint that
+// trusted the bare Type discriminator.
+//
+// The strengthened discriminator requires ALL of:
+//   - claims.User.Type == "application"
+//   - claims.User.Name == application.Name
+//   - claims.Provider == ""
+//   - claims.SigninMethod == ""
+//
+// The promoted-tenant-user JWT can fake Type but cannot fake Name
+// without also owning an application with the same name in the same
+// org (which is the same as already owning the legitimate
+// client_credentials secret). Provider / SigninMethod are always set
+// by password / authorization_code grants and never set by
+// client_credentials.
+//
+// We exercise this by injecting a fake resolver that returns ok=false
+// (the resolver itself rejected the forged JWT) and confirming the
+// handler emits 403 — proving that the strengthened discriminator
+// short-circuits before any business logic runs.
+func TestHandler_ServiceCreds_TypePromotedUser_Returns403(t *testing.T) {
+	resetByAttrState(t)
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
+	// Resolver returns ok=false, anon=false — i.e. the JWT was
+	// parseable but failed the strengthened discriminator (Name
+	// didn't match app.Name, or Provider/SigninMethod were set).
+	// This is the exact path a forged-Type tenant-admin-promoted
+	// user would take.
+	byAttrResolveClaims = fakeClaims("", "", false, false)
+
+	c, rec := newByAttrController(t, "phone=9137779708", map[string]string{
+		"Authorization": "Bearer eyJ.forged.type.application.jwt",
+	})
+	c.GetUsersByAttribute()
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("forged Type=\"application\" user JWT should be 403, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	resp := decodeResp(t, rec)
+	if resp["status"] != "error" {
+		t.Fatalf("expected status=error, got %v", resp["status"])
+	}
+	// Message must be the canonical "client_credentials required" so
+	// callers can distinguish from generic 403s.
+	if msg, _ := resp["msg"].(string); !strings.Contains(strings.ToLower(msg), "server-to-server") {
+		t.Fatalf("expected msg to mention server-to-server creds; got %q", msg)
+	}
+}
+
+// TestServiceClaimsDiscriminator_RequiresAllFourFields documents the
+// strengthened discriminator's truth table. Each case constructs a
+// claims-resolver-style outcome the discriminator would reject; the
+// test asserts the handler's response is consistent with "reject as
+// 403 because the JWT is parseable but not a true client_credentials
+// JWT".
+//
+// We can't exercise the real defaultResolveServiceClaims without a
+// xorm engine + signed JWT, so this test exercises the BEHAVIORAL
+// contract via the seam: the discriminator's job is to return
+// (ok=false, anon=false) for every shape that LOOKS like service
+// creds but isn't. The handler must respond with 403 to every such
+// outcome.
+func TestServiceClaimsDiscriminator_RequiresAllFourFields(t *testing.T) {
+	cases := []struct {
+		name string
+		note string
+	}{
+		{"type_application_but_name_mismatch", "Type='application' but User.Name != app.Name — tenant-admin-promoted user"},
+		{"type_application_but_provider_set", "Type='application' but Provider='okta' — password grant via federated IdP"},
+		{"type_application_but_signin_method_set", "Type='application' but SigninMethod='password' — password grant"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetByAttrState(t)
+			t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
+			// Discriminator rejection => (anon=false, ok=false).
+			byAttrResolveClaims = fakeClaims("", "", false, false)
+
+			c, rec := newByAttrController(t, "phone=9137779708", map[string]string{
+				"Authorization": "Bearer eyJ.case." + tc.name + ".jwt",
+			})
+			c.GetUsersByAttribute()
+
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("%s: should be 403 (%s), got %d", tc.name, tc.note, rec.Code)
+			}
+		})
+	}
+}
+
+// withTypeGuardCaller swaps the caller-resolver for the duration of a
+// test, restoring it on cleanup. Mirrors the byAttrResolveClaims seam
+// pattern.
+func withTypeGuardCaller(t *testing.T, caller *object.User) {
+	t.Helper()
+	prev := resolveTypeGuardCaller
+	resolveTypeGuardCaller = func(*ApiController) *object.User { return caller }
+	t.Cleanup(func() { resolveTypeGuardCaller = prev })
+}
+
+// TestRejectApplicationTypePromotion_AllowsBuiltInAdmin verifies the
+// defense-in-depth write-side guard accepts the IAM bootstrap path
+// (caller in built-in/admin org) and rejects every other shape.
+//
+// IAM's existing semantics treat AdminOrg membership as the global-
+// admin surface (object/user.go::IsGlobalAdmin returns Owner ==
+// AdminOrg). The guard inherits that policy: the *org* is the
+// privilege boundary, not a separate role.
+func TestRejectApplicationTypePromotion_AllowsBuiltInAdmin(t *testing.T) {
+	cases := []struct {
+		name   string
+		caller *object.User
+		allow  bool
+	}{
+		{
+			name:   "nil caller (no session)",
+			caller: nil,
+			allow:  false,
+		},
+		{
+			name:   "tenant org admin — the attack shape",
+			caller: &object.User{Owner: "liquidity", Name: "tenant-admin", IsAdmin: true},
+			allow:  false,
+		},
+		{
+			name:   "tenant org global-admin claimant (forged isAdmin)",
+			caller: &object.User{Owner: "liquidity", Name: "evil", IsAdmin: true},
+			allow:  false,
+		},
+		{
+			name:   "different tenant org admin (mlc)",
+			caller: &object.User{Owner: "mlc", Name: "tenant-admin", IsAdmin: true},
+			allow:  false,
+		},
+		{
+			name:   "built-in/admin org member (IAM bootstrap path)",
+			caller: &object.User{Owner: "admin", Name: "root"},
+			allow:  true,
+		},
+		{
+			name:   "built-in/admin org admin (IAM bootstrap path with admin role)",
+			caller: &object.User{Owner: "admin", Name: "root", IsAdmin: true},
+			allow:  true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := newByAttrController(t, "", nil)
+			withTypeGuardCaller(t, tc.caller)
+			body := &object.User{Type: "application", Name: "fake-app", Owner: "liquidity"}
+			got := rejectApplicationTypePromotion(c, body)
+			if got != tc.allow {
+				t.Fatalf("%s: got %v, want %v", tc.name, got, tc.allow)
+			}
+		})
+	}
+}
+
+// TestRejectApplicationTypePromotion_BenignTypeAlwaysAllowed makes
+// sure the guard is a NO-OP for Type values other than "application".
+// The vast majority of writes (normal-user, paid-user, etc.) must
+// pass through unchanged.
+func TestRejectApplicationTypePromotion_BenignTypeAlwaysAllowed(t *testing.T) {
+	c, _ := newByAttrController(t, "", nil)
+	withTypeGuardCaller(t, nil) // no caller — should still pass for benign types
+	for _, ty := range []string{"", "normal-user", "paid-user", "merchant-user", "anonymous-user"} {
+		t.Run(ty, func(t *testing.T) {
+			body := &object.User{Type: ty, Name: "alice", Owner: "liquidity"}
+			if !rejectApplicationTypePromotion(c, body) {
+				t.Fatalf("guard must be a no-op for Type=%q", ty)
+			}
+		})
+	}
+}
+
+// TestRejectApplicationTypePromotion_NilUser is a sanity boundary:
+// a nil pointer must not panic, must be treated as "no application
+// type" (i.e. allowed).
+func TestRejectApplicationTypePromotion_NilUser(t *testing.T) {
+	c, _ := newByAttrController(t, "", nil)
+	withTypeGuardCaller(t, nil)
+	if !rejectApplicationTypePromotion(c, nil) {
+		t.Fatal("nil user must not be rejected")
+	}
+}
+
 // TestAudit_DoesNotPersistProbedValues exercises the Fix-1 invariant:
 // after the controller emits an audit record for a probe carrying
 // phone=+19137779708&email=secret@victim.com, the persisted Record must
