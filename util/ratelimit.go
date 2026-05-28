@@ -92,12 +92,12 @@ func (r *SignupRateLimiter) Cleanup() {
 // Global signup rate limiters. Limits are env-configurable so each
 // deployment can tune for its actual abuse profile without recompiling:
 //
-//   SIGNUP_IP_LIMIT_PER_HOUR     default 20  (was 3 — too aggressive,
-//                                            tripped on shared-NAT
-//                                            offices and Playwright runs)
-//   SIGNUP_DOMAIN_LIMIT_PER_HOUR default 100 (was 10 — locked out any
-//                                            company onboarding a team
-//                                            from the same email domain)
+//	SIGNUP_IP_LIMIT_PER_HOUR     default 20  (was 3 — too aggressive,
+//	                                         tripped on shared-NAT
+//	                                         offices and Playwright runs)
+//	SIGNUP_DOMAIN_LIMIT_PER_HOUR default 100 (was 10 — locked out any
+//	                                         company onboarding a team
+//	                                         from the same email domain)
 //
 // On sandbox envs (SANDBOX_GLOBAL_OTP set) the checks are skipped
 // entirely by the caller; these limits only fire in production.
