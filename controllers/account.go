@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/hanzoai/beego/v2/core/logs"
@@ -145,19 +146,28 @@ func (c *ApiController) Signup() {
 
 	clientIp := util.GetClientIpFromRequest(c.Ctx.Request)
 
-	// Per-IP signup rate limit: max 3 signups per hour
-	if err := util.IPSignupLimiter.Allow(clientIp); err != nil {
-		c.ResponseError(fmt.Sprintf("Too many signup attempts from this IP address. Please try again later."))
-		return
-	}
+	// Per-IP + per-domain signup rate limits — skip entirely when the
+	// SANDBOX_GLOBAL_OTP guard is active. Sandbox envs (dev/test) need
+	// to support repeated Playwright runs, demo replays, and CEO test
+	// drives without a 3/hour throttle locking the whole onboarding
+	// flow. The sandbox_guard at boot enforces that SANDBOX_GLOBAL_OTP
+	// is ONLY honoured when ORIGIN matches the allowlisted sandbox
+	// hostnames, so production stays rate-limited.
+	if os.Getenv("SANDBOX_GLOBAL_OTP") == "" {
+		// Per-IP signup rate limit: max 3 signups per hour
+		if err := util.IPSignupLimiter.Allow(clientIp); err != nil {
+			c.ResponseError(fmt.Sprintf("Too many signup attempts from this IP address. Please try again later."))
+			return
+		}
 
-	// Per-email-domain signup rate limit: max 10 signups per hour
-	if authForm.Email != "" {
-		parts := strings.SplitN(authForm.Email, "@", 2)
-		if len(parts) == 2 {
-			if err := util.DomainSignupLimiter.Allow(parts[1]); err != nil {
-				c.ResponseError(fmt.Sprintf("Too many signup attempts from this email domain. Please try again later."))
-				return
+		// Per-email-domain signup rate limit: max 10 signups per hour
+		if authForm.Email != "" {
+			parts := strings.SplitN(authForm.Email, "@", 2)
+			if len(parts) == 2 {
+				if err := util.DomainSignupLimiter.Allow(parts[1]); err != nil {
+					c.ResponseError(fmt.Sprintf("Too many signup attempts from this email domain. Please try again later."))
+					return
+				}
 			}
 		}
 	}
