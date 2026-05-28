@@ -16,6 +16,8 @@ package util
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -87,14 +89,35 @@ func (r *SignupRateLimiter) Cleanup() {
 	}
 }
 
-// Global signup rate limiters.
+// Global signup rate limiters. Limits are env-configurable so each
+// deployment can tune for its actual abuse profile without recompiling:
+//
+//   SIGNUP_IP_LIMIT_PER_HOUR     default 20  (was 3 — too aggressive,
+//                                            tripped on shared-NAT
+//                                            offices and Playwright runs)
+//   SIGNUP_DOMAIN_LIMIT_PER_HOUR default 100 (was 10 — locked out any
+//                                            company onboarding a team
+//                                            from the same email domain)
+//
+// On sandbox envs (SANDBOX_GLOBAL_OTP set) the checks are skipped
+// entirely by the caller; these limits only fire in production.
 var (
-	// IPSignupLimiter: max 3 signups per hour per IP address.
-	IPSignupLimiter = NewSignupRateLimiter(3, 1*time.Hour)
-
-	// DomainSignupLimiter: max 10 signups per hour per email domain.
-	DomainSignupLimiter = NewSignupRateLimiter(10, 1*time.Hour)
+	IPSignupLimiter     = NewSignupRateLimiter(intFromEnv("SIGNUP_IP_LIMIT_PER_HOUR", 20), 1*time.Hour)
+	DomainSignupLimiter = NewSignupRateLimiter(intFromEnv("SIGNUP_DOMAIN_LIMIT_PER_HOUR", 100), 1*time.Hour)
 )
+
+// intFromEnv reads an integer env var with a default fallback.
+func intFromEnv(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
+}
 
 func init() {
 	// Periodically clean up stale rate limit entries.
