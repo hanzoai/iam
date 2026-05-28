@@ -12,10 +12,10 @@ import (
 
 func TestUnionPreserveOrder(t *testing.T) {
 	tests := []struct {
-		name      string
-		a, b      []string
-		combined  []string
-		added     []string
+		name     string
+		a, b     []string
+		combined []string
+		added    []string
 	}{
 		{
 			name:     "empty + new",
