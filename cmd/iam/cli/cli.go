@@ -5,7 +5,7 @@
 
 // Package cli is the cobra command surface for the `iam` administrative
 // CLI. main.go is a thin wrapper around Execute(); external consumers
-// (e.g. <tenant>/cli's `liquid iam ...`) can import the package and
+// (downstream-tenant CLIs that wrap `iam`) can import the package and
 // mount NewRootCmd() under their own root command via cobra.AddCommand.
 package cli
 
@@ -31,7 +31,7 @@ func Execute() error {
 //
 //	import iamcli "github.com/hanzoai/iam/cmd/iam/cli"
 //
-//	root := &cobra.Command{Use: "liquid"}
+//	root := &cobra.Command{Use: "<tenant>"}
 //	root.AddCommand(iamcli.NewRootCmd())   // mounts the whole tree
 //	// — or to remount under a different name:
 //	iam := iamcli.NewRootCmd()
@@ -48,9 +48,9 @@ func NewRootCmd() *cobra.Command {
 		Short: "Hanzo IAM administrative CLI",
 		Long: `iam is the canonical administrative CLI for Hanzo IAM.
 
-Every Hanzo and downstream-tenant operator tooling layer (e.g. ` + "`liquid iam ...`" + `)
-is a thin proxy around this binary; the on-the-wire behaviour is identical.
-See docs/CLI.md for the full reference.`,
+Every Hanzo and downstream-tenant operator tooling layer that wraps this
+binary is a thin proxy; the on-the-wire behaviour is identical. See
+docs/CLI.md for the full reference.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
