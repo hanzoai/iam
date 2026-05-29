@@ -1,13 +1,13 @@
-# Cloud Build — Hanzo IAM (lux/iam OSS)
+# Cloud Build — Hanzo IAM
 #
 # Downstream consumers (white-label tenants) override `_IMAGE` to point
-# at their own registry. Lux defaults to ghcr.io/luxfi so the build stays
-# generic; tenant-specific defaults are NEVER baked into this file.
+# at their own registry. Default is ghcr.io/hanzoai (per-org registry
+# convention); tenant-specific defaults are NEVER baked into this file.
 #
 #   gcloud builds submit . --substitutions=_IMAGE=<registry>/<org>/iam:<tag>,_VITE_APP=<app-id>
 
 substitutions:
-  _IMAGE: ghcr.io/luxfi/iam:dev
+  _IMAGE: ghcr.io/hanzoai/iam:dev
   _VITE_APP: app-built-in
 
 steps:
