@@ -121,13 +121,13 @@ func InitAPI() {
 	web.Router("/v1/iam/delete-application", &controllers.ApiController{}, "POST:DeleteApplication")
 
 	// Operator-only bootstrap path. Auth via Authorization: Bootstrap <token>,
-	// where the token comes from $IAM_BOOTSTRAP_TOKEN env (set by liquid-operator).
-	// Used to wire service-account OAuth apps (KMS, BD signers, etc.) without
-	// a human admin in the loop. Disabled (503) when env unset.
+	// where the token comes from $IAM_BOOTSTRAP_TOKEN env (set by a deployment
+	// operator). Used to wire service-account OAuth apps (KMS, signers, etc.)
+	// without a human admin in the loop. Disabled (503) when env unset.
 	web.Router("/v1/iam/admin/applications/upsert", &controllers.ApiController{}, "POST:BootstrapApplicationUpsert")
-	// Same auth pipeline as applications/upsert. Used by liquid-operator to
-	// reconcile LiquidIAM.spec.users[] — passwords are argon2id-hashed at
-	// the controller before persistence (no plaintext at rest).
+	// Same auth pipeline as applications/upsert. Used by an operator to
+	// reconcile IAM users — passwords are argon2id-hashed at the controller
+	// before persistence (no plaintext at rest).
 	web.Router("/v1/iam/admin/users/upsert", &controllers.ApiController{}, "POST:BootstrapUserUpsert")
 
 	web.Router("/v1/iam/get-providers", &controllers.ApiController{}, "GET:GetProviders")
