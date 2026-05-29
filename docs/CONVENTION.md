@@ -182,7 +182,7 @@ implementation. To copy the pattern to another SPA:
 ## 7. Tenant runtime config flow
 
 ```
-LiquidApp / BaseApp CR    (kubectl-applied operator-managed CR)
+HanzoApp / BaseApp CR     (kubectl-applied operator-managed CR)
         │
         ▼
 ConfigMap                 (operator-rendered, namespace-scoped)
@@ -216,7 +216,7 @@ docker run --rm -d -p 8000:8000 --name iam ghcr.io/hanzoai/iam:v1.14.29
 # 2. Configure your consumer
 export IAM_URL=http://localhost:8000
 export IAM_ISSUER=http://localhost:8000
-export IAM_CLIENT_ID=<your-org>-<your-app>     # e.g. hanzo-brain, liquidity-id
+export IAM_CLIENT_ID=<your-org>-<your-app>     # e.g. hanzo-brain, hanzo-console
 export IAM_ORG=<your-org>
 export IAM_REDIRECT_URI=http://localhost:<your-port>/callback
 
