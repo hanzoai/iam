@@ -62,8 +62,8 @@ func isServiceTokenRoute(urlPath string) bool {
 		// pipeline used by sync-init-data.
 		return true
 	case "/v1/iam/admin/users/upsert":
-		// Operator-driven user provisioning (LiquidIAM.spec.users[]). Same
-		// service-token pipeline as applications/upsert.
+		// Operator-driven user provisioning. Same service-token pipeline
+		// as applications/upsert.
 		return true
 	default:
 		return false
