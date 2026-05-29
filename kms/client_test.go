@@ -107,7 +107,7 @@ func TestLoadConfig_RequiresOrgSlug(t *testing.T) {
 
 func TestLoadConfig_DefaultThreshold(t *testing.T) {
 	t.Setenv("BASE_KMS_NODES", "https://n0:9999,https://n1:9999,https://n2:9999")
-	t.Setenv("BASE_KMS_ORG_SLUG", "liquidity")
+	t.Setenv("BASE_KMS_ORG_SLUG", "hanzo")
 	t.Setenv("BASE_KMS_THRESHOLD", "")
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -119,8 +119,8 @@ func TestLoadConfig_DefaultThreshold(t *testing.T) {
 	if cfg.Threshold != 2 {
 		t.Fatalf("expected default threshold 2 (of 3), got %d", cfg.Threshold)
 	}
-	if cfg.OrgSlug != "liquidity" {
-		t.Fatalf("expected org liquidity, got %q", cfg.OrgSlug)
+	if cfg.OrgSlug != "hanzo" {
+		t.Fatalf("expected org hanzo, got %q", cfg.OrgSlug)
 	}
 }
 
