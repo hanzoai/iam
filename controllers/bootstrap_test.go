@@ -176,7 +176,7 @@ func TestIsUniqueConstraintErr_BootstrapUserPath(t *testing.T) {
 	}{
 		{"UNIQUE constraint failed: user.owner, user.name (1555)", true},
 		{"duplicate key value violates unique constraint \"user_pkey\"", true},
-		{"Error 1062: Duplicate entry 'liquidity-z' for key 'user.PRIMARY'", true},
+		{"Error 1062: Duplicate entry 'hanzo-z' for key 'user.PRIMARY'", true},
 		{"connection refused", false},
 		{"", false},
 	}
