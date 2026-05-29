@@ -142,8 +142,8 @@ func InitAdapter() {
 
 // resolveDataDir returns the directory used for IAM's on-disk state.
 // The DATA_DIR environment variable wins (that is how operators override
-// config — the Liquidity operator emits DATA_DIR=/data/iam on the Deployment,
-// and the Dockerfile sets WORKDIR /, so the relative `dataDir = data` in
+// config — operators emit DATA_DIR=/data/iam on the Deployment, and the
+// Dockerfile sets WORKDIR /, so the relative `dataDir = data` in
 // app.prod.conf would otherwise resolve to a read-only path and panic).
 // Falls back to the beego `dataDir` config key, then to "data".
 func resolveDataDir() string {

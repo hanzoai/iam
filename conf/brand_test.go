@@ -63,10 +63,10 @@ func TestSuperadminRuleFor_CustomBrand(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "brand.json")
 	body := `{
-	  "name": "Liquid",
-	  "domain": "liquid.example",
+	  "name": "Acme",
+	  "domain": "acme.example",
 	  "superadminDomains": [
-	    {"domain": "liquid.example", "org": "admin", "globalAdmin": true},
+	    {"domain": "acme.example", "org": "admin", "globalAdmin": true},
 	    {"domain": "vendor.example", "org": "vendor", "globalAdmin": false}
 	  ]
 	}`
@@ -77,9 +77,9 @@ func TestSuperadminRuleFor_CustomBrand(t *testing.T) {
 	t.Setenv("IAM_BRAND_FILE", path)
 
 	// Custom brand domain → admin org + global admin.
-	r1, ok := SuperadminRuleFor("ceo@liquid.example")
+	r1, ok := SuperadminRuleFor("ceo@acme.example")
 	if !ok || !r1.GlobalAdmin || r1.Org != AdminOrg {
-		t.Fatalf("expected liquid.example=global admin, got ok=%v rule=%+v", ok, r1)
+		t.Fatalf("expected acme.example=global admin, got ok=%v rule=%+v", ok, r1)
 	}
 	// Vendor → vendor org, NOT global admin.
 	r2, ok := SuperadminRuleFor("user@vendor.example")
