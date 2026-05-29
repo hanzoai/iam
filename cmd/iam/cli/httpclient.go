@@ -57,15 +57,11 @@ func (cfg *Config) RequireToken() error {
 
 Set IAM_TOKEN (or pass --token=...) before running authenticated commands.
 
-In a Liquidity cluster:
-  export IAM_TOKEN=$(kubectl --context=gke_liquidity-devnet_us-central1_dev \
-                     -n liquidity exec deploy/liquid-iam -- printenv IAM_SERVICE_TOKEN)
-
 In a Hanzo cluster:
   export IAM_TOKEN=$(kubectl -n hanzo exec deploy/hanzo-iam -- printenv IAM_SERVICE_TOKEN)
 
 Locally (compose / kind):
-  export IAM_TOKEN=$(docker compose exec liquid-iam printenv IAM_SERVICE_TOKEN)`)
+  export IAM_TOKEN=$(docker compose exec hanzo-iam printenv IAM_SERVICE_TOKEN)`)
 }
 
 // APIError is the error returned when IAM responds with a non-2xx, or
