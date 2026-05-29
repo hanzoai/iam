@@ -168,7 +168,7 @@ func EnvEmailProvider() *Provider {
 	}
 	fromName := strings.TrimSpace(os.Getenv(envSendgridFromName))
 	if fromName == "" {
-		fromName = "Liquidity"
+		fromName = "Hanzo"
 	}
 	return &Provider{
 		Owner:         "admin",
