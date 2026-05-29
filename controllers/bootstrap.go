@@ -30,9 +30,9 @@ import (
 //	where token is one of $HANZO_API_KEY / $KMS_SERVICE_TOKEN / $IAM_SERVICE_TOKEN.
 //	Validated by routers/auto_signin_filter.go before this handler runs.
 //
-// Idempotent operator-driven application provisioning. Used by liquid-operator
-// to wire service accounts (KMS, BD treasury signer, ATS settlement key, etc.)
-// into IAM with the right grant types — no human in the loop.
+// Idempotent operator-driven application provisioning. Used by a deployment
+// operator to wire service accounts (KMS, signers, etc.) into IAM with the
+// right grant types — no human in the loop.
 //
 // If the app exists by (owner, name) → update grants + rotate clientSecret.
 // If not → create.
@@ -43,13 +43,13 @@ import (
 // Body:
 //
 //	{
-//	  "organization": "liquidity",      // required
-//	  "name":         "liquidity-kms",  // required
+//	  "organization": "hanzo",          // required
+//	  "name":         "hanzo-kms",      // required
 //	  "clientId":     "kms-app",        // required
 //	  "clientSecret": "...",            // optional; generated if omitted (preferred)
 //	  "grantTypes":   ["client_credentials", "refresh_token"],
 //	  "redirectUris": ["..."]           // optional, for non-CC flows
-//	  "displayName":  "Liquidity KMS"   // optional
+//	  "displayName":  "Hanzo KMS"       // optional
 //	}
 //
 // Response on success:
@@ -177,8 +177,8 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		// xorm's per-org engine routing is asymmetric on the read/write sides
 		// for some org configurations: getApplication can return nil while
 		// AddApplication's INSERT lands in the global engine, where the row
-		// already exists from a prior call (or from the LiquidIAM tenant seed
-		// in init_data.json). When that happens the underlying SQLite raises
+		// already exists from a prior call (or from a tenant seed in
+		// init_data.json). When that happens the underlying SQLite raises
 		// UNIQUE on (owner, name). Treat it as "the row exists" and fall
 		// through to UpdateApplication so the operator's repeated upserts
 		// are actually idempotent.
@@ -227,8 +227,8 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 //	where token is one of $HANZO_API_KEY / $KMS_SERVICE_TOKEN / $IAM_SERVICE_TOKEN.
 //	Validated by routers/auto_signin_filter.go before this handler runs.
 //
-// Idempotent operator-driven user provisioning. Used by liquid-operator to
-// reconcile LiquidIAM.spec.users[] against IAM — no human admin in the loop.
+// Idempotent operator-driven user provisioning. Used by a deployment
+// operator to reconcile IAM users — no human admin in the loop.
 //
 // If the user exists by (owner, name) → update; else insert. Passwords are
 // always hashed at rest (argon2id by default; bcrypt rejected; "plain" passes
