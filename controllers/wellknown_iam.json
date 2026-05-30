@@ -1,0 +1,11 @@
+{
+  "brandId": "hanzo",
+  "appId": "iam",
+  "title": "Hanzo IAM",
+  "domain": "iam.hanzo.ai",
+  "url": "https://iam.hanzo.ai",
+  "github": "https://github.com/hanzoai/iam",
+  "peers": [],
+  "capabilities": ["oauth", "oidc", "mpc-keys"],
+  "apiVersion": "1"
+}
