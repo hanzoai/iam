@@ -20,39 +20,23 @@ import (
 	"testing"
 )
 
-// TestSuperadminRuleFor_DefaultBrand verifies the fallback defaults
-// when no brand.json file is present.
-func TestSuperadminRuleFor_DefaultBrand(t *testing.T) {
+// TestSuperadminRuleFor_DefaultBrand_FailSafe verifies the fallback
+// default contains NO auto-promotion entries. Production deploys MUST
+// mount their own brand.json explicitly; a missing/malformed mount
+// MUST NOT auto-grant global admin to any domain (was C-4 red team finding).
+func TestSuperadminRuleFor_DefaultBrand_FailSafe(t *testing.T) {
 	ReloadBrand()
 	t.Setenv("IAM_BRAND_FILE", "/nonexistent/brand.json")
 
-	rule, ok := SuperadminRuleFor("z@hanzo.ai")
-	if !ok {
-		t.Fatal("expected match for @hanzo.ai under default brand")
-	}
-	if !rule.GlobalAdmin {
-		t.Fatalf("expected GlobalAdmin=true, got %+v", rule)
-	}
-	if rule.Org != AdminOrg {
-		t.Fatalf("expected Org=AdminOrg (%s), got %s", AdminOrg, rule.Org)
-	}
-}
-
-// TestSuperadminRuleFor_ParsNoGlobalAdmin checks the pars override:
-// it must NOT confer global admin, only org membership in "pars".
-func TestSuperadminRuleFor_ParsNoGlobalAdmin(t *testing.T) {
-	ReloadBrand()
-	t.Setenv("IAM_BRAND_FILE", "/nonexistent/brand.json")
-
-	rule, ok := SuperadminRuleFor("carol@pars.network")
-	if !ok {
-		t.Fatal("expected match for @pars.network")
-	}
-	if rule.GlobalAdmin {
-		t.Fatalf("@pars.network must NOT be global admin: %+v", rule)
-	}
-	if rule.Org != "pars" {
-		t.Fatalf("expected Org=pars, got %s", rule.Org)
+	for _, email := range []string{
+		"z@hanzo.ai",
+		"a@zoo.ngo",
+		"b@lux.network",
+		"c@pars.network",
+	} {
+		if _, ok := SuperadminRuleFor(email); ok {
+			t.Errorf("FAIL-SAFE BROKEN: %s matched under default (empty) brand", email)
+		}
 	}
 }
 
@@ -93,10 +77,23 @@ func TestSuperadminRuleFor_CustomBrand(t *testing.T) {
 }
 
 // TestSuperadminRuleFor_CaseInsensitive covers RFC 5321 §2.4 domain
-// case-insensitivity.
+// case-insensitivity. Tests with a populated custom brand to exercise
+// the case-insensitive match path (default is now empty per C-4 fix).
 func TestSuperadminRuleFor_CaseInsensitive(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "brand.json")
+	body := `{
+	  "name": "Hanzo",
+	  "domain": "hanzo.ai",
+	  "superadminDomains": [
+	    {"domain": "hanzo.ai", "org": "admin", "globalAdmin": true}
+	  ]
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ReloadBrand()
-	t.Setenv("IAM_BRAND_FILE", "/nonexistent/brand.json")
+	t.Setenv("IAM_BRAND_FILE", path)
 
 	for _, email := range []string{"Z@HANZO.AI", "z@Hanzo.Ai", "z@hanzo.AI"} {
 		if _, ok := SuperadminRuleFor(email); !ok {
