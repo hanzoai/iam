@@ -63,15 +63,18 @@ type SuperadminDomainRule struct {
 
 // defaultBrand is the fallback shipped for hanzo-flavored deployments.
 // White-label users override by mounting their own /etc/brand/brand.json.
+//
+// SECURITY: SuperadminDomains is INTENTIONALLY EMPTY in the default.
+// Auto-promoting `@hanzo.ai` / `@zoo.ngo` / `@lux.network` to global admin
+// is appropriate for Hanzo's OWN deployment (operators run `hanzo iam
+// init` which writes the populated brand.json) but DANGEROUS as a fallback
+// — a white-label tenant (Liquidity, etc.) with a broken ConfigMap mount
+// would hand global admin to the wrong domains. The default must be
+// fail-safe (zero auto-promotion); operators populate explicitly.
 var defaultBrand = Brand{
-	Name:   "Hanzo",
-	Domain: "hanzo.ai",
-	SuperadminDomains: []SuperadminDomainRule{
-		{Domain: "hanzo.ai", Org: "admin", GlobalAdmin: true},
-		{Domain: "zoo.ngo", Org: "admin", GlobalAdmin: true},
-		{Domain: "lux.network", Org: "admin", GlobalAdmin: true},
-		{Domain: "pars.network", Org: "pars", GlobalAdmin: false},
-	},
+	Name:              "Hanzo",
+	Domain:            "hanzo.ai",
+	SuperadminDomains: []SuperadminDomainRule{},
 }
 
 var (
@@ -114,10 +117,11 @@ func LoadBrand() (Brand, error) {
 			brandMu.Unlock()
 			return
 		}
-		// Required field check: if no superadminDomains, fall back.
-		// (An empty list is fine; it means "no auto-promotion".)
+		// Nil superadminDomains is treated as an empty list (no auto-promotion).
+		// This is intentional fail-safe behavior — a brand.json that omits the
+		// field gets no auto-promotion, NOT the (now-empty) defaults.
 		if b.SuperadminDomains == nil {
-			b.SuperadminDomains = defaultBrand.SuperadminDomains
+			b.SuperadminDomains = []SuperadminDomainRule{}
 		}
 		brandMu.Lock()
 		brand = b
