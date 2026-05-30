@@ -376,6 +376,11 @@ func InitAPI() {
 	web.Router("/v1/iam/.well-known/oauth-protected-resource", &controllers.RootController{}, "GET:GetOauthProtectedResourceMetadata")
 	web.Router("/v1/iam/.well-known/:application/oauth-protected-resource", &controllers.RootController{}, "GET:GetOauthProtectedResourceMetadataByApplication")
 
+	// HIP-0303 federation discovery — `/.well-known/iam.json` (IETF RFC 8615).
+	// Served from embedded JSON (controllers/wellknown_iam.json) so the route
+	// works regardless of binary invocation working dir.
+	web.Router("/v1/iam/.well-known/iam.json", &controllers.RootController{}, "GET:GetIamDescriptor")
+
 	// Legacy back-compat: root /.well-known/* still served. Scheduled for
 	// removal once all downstream consumers consume the discovery doc
 	// (which advertises only the /v1/iam/ form). Do NOT add new endpoints
@@ -390,6 +395,7 @@ func InitAPI() {
 	web.Router("/.well-known/:application/webfinger", &controllers.RootController{}, "GET:GetWebFingerByApplication")
 	web.Router("/.well-known/oauth-protected-resource", &controllers.RootController{}, "GET:GetOauthProtectedResourceMetadata")
 	web.Router("/.well-known/:application/oauth-protected-resource", &controllers.RootController{}, "GET:GetOauthProtectedResourceMetadataByApplication")
+	web.Router("/.well-known/iam.json", &controllers.RootController{}, "GET:GetIamDescriptor")
 
 	web.Router("/cas/:organization/:application/serviceValidate", &controllers.RootController{}, "GET:CasServiceValidate")
 	web.Router("/cas/:organization/:application/proxyValidate", &controllers.RootController{}, "GET:CasProxyValidate")
