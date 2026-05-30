@@ -74,7 +74,14 @@ jobs:
           (cd dist && sha256sum "iam-linux-${GOARCH}" "iamd-linux-${GOARCH}" \
             > "iam-linux-${GOARCH}.sha256")
 
+      # Org-wide Actions artifact storage quota fills faster than the
+      # 6-12hr recalculation window can free it, so the upload step
+      # historically blocks every release path. github-release consumes
+      # these for the GitHub Release attachments, but the canonical
+      # container image is built independently by `docker:` and does NOT
+      # need the upload to succeed.
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: binaries-linux-${{ matrix.goarch }}
           path: dist/*
@@ -84,6 +91,10 @@ jobs:
   github-release:
     name: GitHub Release
     needs: [binaries]
+    # Don't fail the whole release pipeline if artifact storage was full
+    # and binaries couldn't be uploaded — docker still publishes the
+    # canonical image.
+    if: always() && needs.binaries.result == 'success'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -120,7 +131,10 @@ jobs:
 
   docker:
     name: Multi-arch Docker (ghcr.io/hanzoai/iam)
-    needs: [binaries]
+    # Decoupled from `binaries` because the Dockerfile builds the iam
+    # server itself; we don't need the standalone binary artifacts to
+    # ship the container image. This is the canonical artifact that
+    # ships to production.
     runs-on: ubuntu-24.04
     permissions:
       contents: read
