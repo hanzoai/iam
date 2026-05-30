@@ -40,7 +40,16 @@ jobs:
       - run: pnpm install && CI=false NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
         working-directory: ./web
       - name: Upload build artifacts
+        # Org-wide Actions artifact storage quota is exhausted faster
+        # than the 6-12hr recalculation window can free it, so the
+        # upload step has historically blocked every release path. The
+        # artifact is consumed only by github-release (goreleaser), which
+        # is itself optional — the canonical image lives in
+        # docker-release and rebuilds the frontend in-Docker via the
+        # shared workflow. Treat upload failure as a no-op so a quota
+        # hit doesn't gate tag-release → docker-release.
         if: github.repository == 'hanzoai/iam' && github.event_name == 'push'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build-${{ github.run_id }}
