@@ -464,8 +464,8 @@ func (c *ApiController) extractBearerJWT() string {
 // Returns:
 //   - clientId, owner, true: valid client_credentials JWT
 //   - "", "", false:        anon (no token), user JWT, expired, or signature
-//                            invalid. Caller decides 401 vs 403 by
-//                            inspecting `anon`.
+//     invalid. Caller decides 401 vs 403 by
+//     inspecting `anon`.
 func defaultResolveServiceClaims(c *ApiController) (clientId, owner string, anon, ok bool) {
 	tok := c.extractBearerJWT()
 	if tok == "" {
