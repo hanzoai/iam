@@ -200,6 +200,13 @@ func syncOrgTables(engine *xorm.Engine) error {
 			return err
 		}
 	}
+
+	// One-shot phone canonicalization. Runs after the User table is in
+	// place; cheap when there's nothing to migrate (a single indexed
+	// scan of `phone NOT LIKE '+%'`).
+	if _, _, err := MigratePhoneToE164(engine); err != nil {
+		return fmt.Errorf("phone-e164 migration: %w", err)
+	}
 	return nil
 }
 
