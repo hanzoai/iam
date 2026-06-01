@@ -327,6 +327,14 @@ func (c *ApiController) SendVerificationCode() {
 			}
 		}
 
+		// hanzoai/notify delivery path: no per-app Provider row required.
+		// notify resolves the per-tenant SendGrid/SMTP provider from its
+		// own KMS-backed config; IAM just hands it the OTP.
+		if object.NotifyDeliveryEnabled() {
+			sendResp = object.SendVerificationCodeToEmail(organization, user, nil, clientIp, vform.Dest, vform.Method, c.getEffectiveHost(), application.Name, application)
+			break
+		}
+
 		// Env-driven SendGrid override: when IAM_EMAIL_PROVIDER=sendgrid
 		// is set (creds validated at boot), the DB-lookup short-circuit
 		// on a missing per-application Provider row is bypassed.
@@ -399,6 +407,10 @@ func (c *ApiController) SendVerificationCode() {
 
 		// Per-user pinned OTP: skip SMS provider entirely.
 		hasPinnedCode := user != nil && user.VerificationCode != ""
+		// hanzoai/notify delivery path: no per-app Provider row required.
+		// notify resolves the per-tenant Plivo provider from its own
+		// KMS-backed config; IAM just hands it the OTP.
+		notifyOn := object.NotifyDeliveryEnabled()
 		// Env-driven Twilio override: when IAM_SMS_PROVIDER=twilio is set
 		// (creds validated at boot), the DB-lookup short-circuit on a
 		// missing per-application Provider row is bypassed. SendSms picks
@@ -406,6 +418,8 @@ func (c *ApiController) SendVerificationCode() {
 		envSMS := object.EnvSMSProvider()
 		switch {
 		case hasPinnedCode:
+			sendResp = object.SendVerificationCodeToPhone(organization, user, nil, clientIp, phone, application)
+		case notifyOn:
 			sendResp = object.SendVerificationCodeToPhone(organization, user, nil, clientIp, phone, application)
 		case envSMS != nil:
 			sendResp = object.SendVerificationCodeToPhone(organization, user, envSMS, clientIp, phone, application)
