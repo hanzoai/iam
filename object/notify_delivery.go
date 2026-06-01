@@ -1,0 +1,285 @@
+// Copyright 2026 The Hanzo Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package object
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Notify-driven OTP delivery.
+//
+// IAM has historically picked an SMS/email provider out of its per-application
+// `Provider` rows (or, more recently, env-built `*Provider` via
+// EnvSMSProvider/EnvEmailProvider). Both paths terminate inside IAM,
+// reaching go-sms-sender / SendGrid directly with credentials projected
+// into the IAM process.
+//
+// That model is wrong for a stack that has a canonical notification
+// service (`hanzoai/notify`). It duplicates provider plumbing, scatters
+// templates across services, hides metering, and forces every IAM
+// deployment to carry SMS/email creds inline.
+//
+// This file decomplects delivery from credential management. When
+// `IAM_NOTIFY_URL` is set to a notifyd base URL, every OTP send is a POST
+// to `/v1/notify/send` with `event=iam.otp_sent` and template vars
+// `{otp, recipient, app}`. Notifyd renders the per-tenant template,
+// dispatches via the tenant's resolved provider (Plivo for Liquidity),
+// records the message + meter row, and returns. IAM never touches Plivo
+// creds — they live in KMS under `shared/plivo/*`.
+//
+// The integration point is one bool: `NotifyDeliveryEnabled()`. When
+// true, SendSms and SendEmail short-circuit to `DeliverOTPViaNotify`
+// BEFORE either the env-provider or DB-provider lookup runs. When false,
+// the legacy paths fire unchanged so local dev / sandbox / non-Liquidity
+// deployments keep working.
+//
+// Env contract:
+//
+//   - IAM_NOTIFY_URL    = "http://notify.liquidity.svc.cluster.local:8080"
+//     | "stub" | ""    — stub/empty disables, falls back to existing path.
+//   - IAM_NOTIFY_TOKEN  = bearer token notify validates against IAM's JWKS.
+//                        Empty in local dev (notify accepts anonymous when
+//                        running with KMS_ENDPOINT="").
+//
+// One template name is hard-coded: `iam.otp_sent`. Notifyd looks it up
+// per tenant from `MessageTemplates`. If the template is missing,
+// notifyd returns 400 and IAM surfaces that to the caller.
+
+const (
+	envIAMNotifyURL      = "IAM_NOTIFY_URL"
+	envIAMNotifyToken    = "IAM_NOTIFY_TOKEN"
+	envIAMNotifyTenant   = "IAM_NOTIFY_TENANT"
+	envIAMNotifyTimeout  = "IAM_NOTIFY_TIMEOUT"
+	envIAMNotifyTemplate = "IAM_NOTIFY_TEMPLATE"
+
+	// NotifyOTPEvent is the event-catalog identifier notifyd routes on.
+	// Templates registered against this event for a tenant are picked up
+	// automatically when SendRequest.Event is set and TemplateID is
+	// omitted (notifyd resolves channel + template from the catalog).
+	NotifyOTPEvent = "iam.otp_sent"
+
+	// stubNotifyURL marks the explicit "no-op" sentinel — set
+	// IAM_NOTIFY_URL=stub on a local-dev manifest to keep the env knob
+	// honest (empty is also "off" but reads as "forgot to set").
+	stubNotifyURL = "stub"
+
+	// defaultNotifyTimeout bounds one HTTP attempt. 5s is enough for
+	// notifyd-sync mode (provider latency p99 ~700ms for Plivo); async
+	// mode is cheaper still.
+	defaultNotifyTimeout = 5 * time.Second
+)
+
+// notifyDeliveryCache pins the resolved notify config for the process
+// lifetime. Same rationale as otpProviderCache — a mid-flight env
+// mutation cannot flip the active sink under an in-flight request.
+var (
+	notifyDeliveryCacheMu sync.RWMutex
+	cachedNotifyEnabled   bool
+	cachedNotifyURL       string
+	cachedNotifyToken     string
+	cachedNotifyTenant    string
+	cachedNotifyTimeout   time.Duration
+	cachedNotifyTemplate  string
+)
+
+// notifyDeliverer is the seam unit tests swap in. Production paths fire
+// HTTPNotifyDeliverer; tests fire fake implementations that capture the
+// payload and assert it matches expectations.
+type notifyDeliverer interface {
+	Deliver(ctx context.Context, in NotifySendInput) error
+}
+
+var (
+	activeDelivererMu sync.RWMutex
+	activeDeliverer   notifyDeliverer
+)
+
+// NotifySendInput is the IAM-side shape of one OTP send. It carries the
+// rendered fields the notify template expects, plus enough context for
+// the notify server to attach the right tenant/event.
+type NotifySendInput struct {
+	// Channel is "sms" or "email" — matches hanzoai/notify/pkg/types.Channel.
+	Channel string
+
+	// Recipient is the E.164 phone number for SMS or the email address
+	// for email. Notifyd fans out per recipient; IAM always sends one.
+	Recipient string
+
+	// OTP is the 6-digit code generated by getVerificationCode.
+	OTP string
+
+	// AppName is the IAM application name (e.g. "liquidity-exchange").
+	// Surfaces in the template as `{{.app}}` for branding.
+	AppName string
+
+	// Tenant is the IAM organization owning this OTP. Notifyd uses it
+	// as the X-Org-Id scope for provider + template resolution. Empty
+	// → defaults to the env tenant.
+	Tenant string
+
+	// IdempotencyKey, when set, dedupes notify sends for retries on the
+	// same OTP. SHA256(phone || code || time-bucket) is a good source.
+	IdempotencyKey string
+}
+
+// EnforceNotifyDeliveryGuard runs at boot. Same idiom as
+// EnforceOTPProviderGuard — validate config once, cache, fail loud on
+// missing required env.
+//
+// IAM_NOTIFY_URL=stub or "" → disabled (legacy path runs).
+// IAM_NOTIFY_URL=<url>      → enabled; URL parsed for sanity at boot.
+//
+// IAM_NOTIFY_TOKEN may be empty for local dev (notify must run with
+// auth off in that mode). Production manifests MUST set both URL +
+// token; the operator wires them from KMS.
+func EnforceNotifyDeliveryGuard() {
+	raw := strings.TrimSpace(os.Getenv(envIAMNotifyURL))
+	if raw == "" || strings.EqualFold(raw, stubNotifyURL) {
+		notifyDeliveryCacheMu.Lock()
+		cachedNotifyEnabled = false
+		notifyDeliveryCacheMu.Unlock()
+		return
+	}
+
+	// Sanity-parse the URL so a typo fails at boot, not on first OTP.
+	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+		panic(fmt.Sprintf("%s=%q is not a valid base URL (must start with http:// or https://). "+
+			"Refusing to boot — either fix the env or set %s=stub.",
+			envIAMNotifyURL, raw, envIAMNotifyURL))
+	}
+
+	token := strings.TrimSpace(os.Getenv(envIAMNotifyToken))
+
+	tenant := strings.TrimSpace(os.Getenv(envIAMNotifyTenant))
+	// Liquidity always emits OTPs under the "liquidity" org. Empty env
+	// → fall back to "liquidity" so the operator doesn't have to set it
+	// on every IAM CR. Override only for white-label deployments.
+	if tenant == "" {
+		tenant = "liquidity"
+	}
+
+	timeout := defaultNotifyTimeout
+	if rawTO := strings.TrimSpace(os.Getenv(envIAMNotifyTimeout)); rawTO != "" {
+		if d, err := time.ParseDuration(rawTO); err == nil && d > 0 {
+			timeout = d
+		}
+	}
+
+	template := strings.TrimSpace(os.Getenv(envIAMNotifyTemplate))
+	if template == "" {
+		template = NotifyOTPEvent
+	}
+
+	notifyDeliveryCacheMu.Lock()
+	cachedNotifyEnabled = true
+	cachedNotifyURL = strings.TrimRight(raw, "/")
+	cachedNotifyToken = token
+	cachedNotifyTenant = tenant
+	cachedNotifyTimeout = timeout
+	cachedNotifyTemplate = template
+	notifyDeliveryCacheMu.Unlock()
+
+	// Install the default HTTP deliverer. Tests overwrite via
+	// SetNotifyDeliverer.
+	activeDelivererMu.Lock()
+	if activeDeliverer == nil {
+		activeDeliverer = newHTTPNotifyDeliverer(cachedNotifyURL, cachedNotifyToken, cachedNotifyTimeout)
+	}
+	activeDelivererMu.Unlock()
+
+	log.Printf("IAM OTP delivery: notify enabled url=%s tenant=%s event=%s timeout=%s",
+		cachedNotifyURL, cachedNotifyTenant, cachedNotifyTemplate, cachedNotifyTimeout)
+}
+
+// NotifyDeliveryEnabled returns true when EnforceNotifyDeliveryGuard
+// resolved IAM_NOTIFY_URL to something usable. SendSms / SendEmail
+// branch on this before any other provider lookup.
+func NotifyDeliveryEnabled() bool {
+	notifyDeliveryCacheMu.RLock()
+	defer notifyDeliveryCacheMu.RUnlock()
+	return cachedNotifyEnabled
+}
+
+// SetNotifyDeliverer is a test seam. Production code never calls this;
+// the boot guard installs the HTTP deliverer once. Returns the previous
+// deliverer so tests can restore via defer.
+func SetNotifyDeliverer(d notifyDeliverer) notifyDeliverer {
+	activeDelivererMu.Lock()
+	defer activeDelivererMu.Unlock()
+	prev := activeDeliverer
+	activeDeliverer = d
+	return prev
+}
+
+// DeliverOTPViaNotify is the entry point SendSms / SendEmail call when
+// NotifyDeliveryEnabled() is true. The OTP is `content` for SMS and
+// resolved out of the rendered email body for email. To keep the call
+// site simple, SendSms / SendEmail pre-extract the OTP code and pass it
+// here as `otp`.
+//
+// Returns nil on success, error on transport / 4xx / 5xx.
+func DeliverOTPViaNotify(ctx context.Context, in NotifySendInput) error {
+	if !NotifyDeliveryEnabled() {
+		return errors.New("notify delivery is disabled; callers must gate on NotifyDeliveryEnabled()")
+	}
+	if in.Channel != "sms" && in.Channel != "email" {
+		return fmt.Errorf("notify delivery: channel must be sms|email, got %q", in.Channel)
+	}
+	if in.Recipient == "" {
+		return errors.New("notify delivery: recipient is required")
+	}
+	if in.OTP == "" {
+		return errors.New("notify delivery: otp is required")
+	}
+
+	if in.Tenant == "" {
+		notifyDeliveryCacheMu.RLock()
+		in.Tenant = cachedNotifyTenant
+		notifyDeliveryCacheMu.RUnlock()
+	}
+
+	activeDelivererMu.RLock()
+	deliverer := activeDeliverer
+	activeDelivererMu.RUnlock()
+	if deliverer == nil {
+		return errors.New("notify delivery: no deliverer installed (boot guard did not run)")
+	}
+
+	// Default ctx timeout is the cached value; if the caller passed a
+	// shorter deadline, honor it.
+	notifyDeliveryCacheMu.RLock()
+	timeout := cachedNotifyTimeout
+	notifyDeliveryCacheMu.RUnlock()
+
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return deliverer.Deliver(cctx, in)
+}
+
+// notifyTemplateName returns the configured event slug. The notify
+// service is configured to map this event to channel+template per
+// tenant in MessageTemplates; IAM never hard-codes a template ID.
+func notifyTemplateName() string {
+	notifyDeliveryCacheMu.RLock()
+	defer notifyDeliveryCacheMu.RUnlock()
+	return cachedNotifyTemplate
+}
