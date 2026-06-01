@@ -44,6 +44,12 @@ import (
 // DB-driven lookup applies — the SANDBOX_GLOBAL_OTP read-side bypass at
 // CheckVerificationCode still works for E2E tests.
 //
+// Plivo delivery is NOT exposed here. Liquidity (the only deployment that
+// uses Plivo) routes OTP delivery through `hanzoai/notify`, which owns the
+// Plivo client + creds. See object/notify_delivery.go. IAM_NOTIFY_URL=<url>
+// short-circuits ahead of the env-provider lookup in
+// SendVerificationCodeToPhone / SendVerificationCodeToEmail.
+//
 // Boot-time guard (see EnforceOTPProviderGuard) panics if a non-sandbox
 // provider is selected but its required credentials are missing. That
 // keeps the failure loud — fail-closed, no silent fallback.
@@ -125,7 +131,8 @@ func normalizeMode(raw string) string {
 
 // EnvSMSProvider returns an env-built `*Provider` shaped for the Twilio
 // adapter in go-sms-sender via getSmsClient. nil when the mode is not
-// twilio (caller falls back to DB lookup).
+// twilio (caller falls back to DB lookup) or when required env is missing
+// (the boot guard normally prevents that, but be defensive).
 func EnvSMSProvider() *Provider {
 	if SMSProviderMode() != OTPProviderTwilio {
 		return nil
