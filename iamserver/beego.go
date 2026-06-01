@@ -63,6 +63,11 @@ func Init() int {
 	// mode for the process lifetime — see object/otp_provider.go.
 	object.EnforceOTPProviderGuard()
 
+	// Resolve IAM_NOTIFY_URL once. When set to a notifyd base URL, every
+	// OTP send routes through hanzoai/notify instead of go-sms-sender /
+	// SendGrid in-process. See object/notify_delivery.go.
+	object.EnforceNotifyDeliveryGuard()
+
 	web.BConfig.WebConfig.Session.SessionOn = true
 	web.BConfig.WebConfig.Session.SessionName = "iam_session_id"
 	web.BConfig.WebConfig.Session.SessionProvider = "memory"
