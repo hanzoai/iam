@@ -689,7 +689,17 @@ func autoCreateUserForVerification(application *object.Application, organization
 	var name string
 	switch {
 	case phone != "":
-		stored := util.GetSeperatedPhone(phone)
+		// Canonicalize before deriving the username suffix so two
+		// callers passing the same number in different shapes (raw
+		// national vs. E.164) generate username prefixes from the
+		// same digit string. AddUser will normalize again — that's
+		// fine, the second normalization is idempotent.
+		e164, normErr := util.NormalizeE164(phone, countryCode)
+		if normErr != nil {
+			return nil, fmt.Errorf("autoCreateUserForVerification: %w", normErr)
+		}
+		phone = e164
+		stored := strings.TrimPrefix(e164, "+")
 		var prefix string
 		if n := len(stored); n > 10 {
 			prefix = "user_" + stored[n-10:]
