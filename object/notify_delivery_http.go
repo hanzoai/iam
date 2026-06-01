@@ -69,10 +69,10 @@ type notifySendResponse struct {
 // 200 + task_id and the user would type into a code that never arrived.
 func (d *httpNotifyDeliverer) Deliver(ctx context.Context, in NotifySendInput) error {
 	body := notifySendBody{
-		To:             []string{in.Recipient},
-		Channel:        in.Channel,
-		Event:          notifyTemplateName(),
-		TemplateVars:   map[string]any{
+		To:      []string{in.Recipient},
+		Channel: in.Channel,
+		Event:   notifyTemplateName(),
+		TemplateVars: map[string]any{
 			"otp":       in.OTP,
 			"recipient": in.Recipient,
 			"app":       in.AppName,
