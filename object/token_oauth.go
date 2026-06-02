@@ -1041,8 +1041,16 @@ func GetClientCredentialsToken(application *Application, clientSecret string, sc
 		}, nil
 	}
 	scope = expandedScope
+	// JWT `owner` claim must equal the tenant org slug so downstream
+	// services (KMS, Gateway, etc.) can scope per-tenant via
+	// `owner == {org}` checks. `application.Owner` is the Casdoor
+	// maintainer namespace (always "admin" in our deployments) — using
+	// it leaks every machine identity into the admin namespace and
+	// breaks per-tenant org scoping (KMS canActOnOrg, F7 regression).
+	// `application.Organization` is the tenant slug per CLAUDE.md
+	// contract ("Downstream services extract owner from JWT claims").
 	nullUser := &User{
-		Owner: application.Owner,
+		Owner: application.Organization,
 		Id:    application.GetId(),
 		Name:  application.Name,
 		Type:  "application",

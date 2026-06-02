@@ -856,8 +856,8 @@ var validAppNamePattern = regexp.MustCompile(`^[a-z0-9]+-[a-z0-9]+(-[a-z0-9]+)*$
 func validateAppName(app *Application) error {
 	// System apps in the admin namespace bypass the org-prefix convention.
 	// init_data.json seeds the admin/admin app + the legacy admin/built-in
-	// app on first boot; tenant apps like liquidity/liquidity-exchange are
-	// the validated path.
+	// app on first boot; tenant apps like hanzo/hanzo-console are the
+	// validated path.
 	if app.Owner == conf.AdminOrg {
 		return nil
 	}
