@@ -570,14 +570,36 @@ func GetUserByEmailOnly(email string) (*User, error) {
 	}
 }
 
+// GetUserByPhone looks up a user by phone within an organization.
+//
+// Phone normalization: `phone` is normalized to E.164 before the query.
+// The caller MAY pass either a raw national number plus a separate
+// country code via GetUserByPhoneWithCountry, or a phone string that
+// already carries a '+' prefix. Inputs that cannot be normalized fall
+// back to a verbatim query so legacy callers that already passed E.164
+// continue to work; the stored row is authoritative E.164 after the
+// one-shot migration in object.MigratePhoneToE164.
 func GetUserByPhone(owner string, phone string) (*User, error) {
+	return GetUserByPhoneWithCountry(owner, phone, "")
+}
+
+// GetUserByPhoneWithCountry is the canonical phone lookup: normalizes
+// (phone, countryCode) to E.164 and queries `User.Phone` exactly. No
+// fallback to national-number matching — that is the collision path
+// that orphaned orders before this change. If the input cannot be
+// parsed, returns (nil, nil) — a non-normalizable phone never matches
+// a stored E.164 row.
+func GetUserByPhoneWithCountry(owner string, phone string, countryCode string) (*User, error) {
 	if owner == "" || phone == "" {
 		return nil, nil
 	}
 
-	phone = util.GetSeperatedPhone(phone)
+	e164, err := util.NormalizeE164(phone, countryCode)
+	if err != nil || e164 == "" {
+		return nil, nil
+	}
 
-	user := User{Owner: owner, Phone: phone}
+	user := User{Owner: owner, Phone: e164}
 	existed, err := orgEngine(owner).Get(&user)
 	if err != nil {
 		return nil, err
@@ -585,19 +607,23 @@ func GetUserByPhone(owner string, phone string) (*User, error) {
 
 	if existed {
 		return &user, nil
-	} else {
-		return nil, nil
 	}
+	return nil, nil
 }
 
+// GetUserByPhoneOnly is the cross-org variant used by the OTP
+// verification path. Same normalization invariant as GetUserByPhone.
 func GetUserByPhoneOnly(phone string) (*User, error) {
 	if phone == "" {
 		return nil, nil
 	}
 
-	phone = util.GetSeperatedPhone(phone)
+	e164, err := util.NormalizeE164(phone, "")
+	if err != nil || e164 == "" {
+		return nil, nil
+	}
 
-	user := User{Phone: phone}
+	user := User{Phone: e164}
 	existed, err := ormer.Engine.Get(&user)
 	if err != nil {
 		return nil, err
@@ -605,9 +631,8 @@ func GetUserByPhoneOnly(phone string) (*User, error) {
 
 	if existed {
 		return &user, nil
-	} else {
-		return nil, nil
 	}
+	return nil, nil
 }
 
 func GetUserByUserId(owner string, userId string) (*User, error) {
@@ -866,6 +891,19 @@ func UpdateUser(id string, user *User, columns []string, isAdmin bool) (bool, er
 		return false, fmt.Errorf("the user: %s is not found", id)
 	}
 
+	// Phone canonicalization — apply to every write, regardless of
+	// whether the caller listed "phone" in `columns`, because callers
+	// that pass len(columns)==0 fall through to the implicit set in
+	// updateUser. If the write doesn't actually touch phone, the value
+	// passes through unchanged (E.164→E.164 is idempotent).
+	if user.Phone != "" {
+		e164, err := util.NormalizeE164(user.Phone, user.CountryCode)
+		if err != nil {
+			return false, fmt.Errorf("invalid phone: %w", err)
+		}
+		user.Phone = e164
+	}
+
 	// Auto-upgrade guest users when they update their username or password
 	if oldUser.Tag == "guest-user" {
 		// Check if username is being changed from the generated guest username
@@ -1050,6 +1088,17 @@ func AddUser(user *User, lang string) (bool, error) {
 
 	if user.Owner == "" {
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "user:the user's owner and name should not be empty"))
+	}
+
+	// Phone canonicalization — one and only one stored form: E.164.
+	// Reject the insert if a phone is supplied but cannot be parsed for
+	// the supplied country code. `country_code` stays for display.
+	if user.Phone != "" {
+		e164, err := util.NormalizeE164(user.Phone, user.CountryCode)
+		if err != nil {
+			return false, fmt.Errorf("invalid phone: %w", err)
+		}
+		user.Phone = e164
 	}
 
 	// Auto-generate username if not provided (onboarding flows collect phone/email only).

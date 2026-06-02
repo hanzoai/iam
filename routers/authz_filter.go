@@ -22,11 +22,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beego/beego/v2/core/logs"
+	"github.com/hanzoai/beego/v2/core/logs"
 	"github.com/hanzoai/iam/controllers"
 	"github.com/hanzoai/iam/object"
 
-	"github.com/beego/beego/v2/server/web/context"
+	"github.com/hanzoai/beego/v2/server/web/context"
 	"github.com/hanzoai/iam/authz"
 	"github.com/hanzoai/iam/util"
 )
@@ -89,6 +89,16 @@ func isOrgAppManagementRoute(method, urlPath string) bool {
 		return true
 	}
 	return false
+}
+
+// isByAttributeRoute is the server-to-server soft-signal lookup. Auth is
+// enforced by the controller itself (client_credentials JWT + env
+// allowlist + per-(clientId,IP) rate limit), so the generic authz engine
+// must not deny anonymous traffic here. The handler returns 401 on missing
+// JWT and 403 on user-grant or non-allowlisted JWTs — full coverage lives
+// in controllers/users_by_attribute.go.
+func isByAttributeRoute(method, urlPath string) bool {
+	return method == "GET" && urlPath == "/v1/iam/users/by-attribute"
 }
 
 type Object struct {
@@ -267,6 +277,17 @@ func getUrlPath(ctx *context.Context) string {
 		return "/scim"
 	}
 
+	// /login/oauth/* — Casdoor-legacy OAuth surface. Both the bare prefix
+	// (e.g. /login/oauth/access_token) and the canonical /v1/iam/-prefixed
+	// variant (e.g. /v1/iam/login/oauth/access_token) collapse to the same
+	// /login/oauth resource so the anonymous policy applies. Without the
+	// /v1/iam/login/oauth case, IAM v1.13.0+ public clients hit
+	// "Unauthorized operation" because Casbin sees the full prefixed path.
+	if strings.HasPrefix(urlPath, "/login/oauth") ||
+		strings.HasPrefix(urlPath, "/v1/iam/login/oauth") {
+		return "/login/oauth"
+	}
+
 	// OAuth surface: collapse the canonical /v1/iam/oauth/* paths to the
 	// authz resource keys the anonymous OIDC/OAuth policy already grants.
 	// /v1/iam/oauth/authorize must be anonymous-reachable — the handler
@@ -378,6 +399,23 @@ func ApiFilter(ctx *context.Context) {
 		util.LogInfo(ctx, logLine)
 		return
 	}
+
+	// Server-to-server soft-signal route. Controller does the full auth
+	// dance (client_credentials JWT discriminator + env allowlist +
+	// per-(clientId,IP) rate limit). The generic authz engine has no
+	// useful policy here and would deny anonymous traffic at the wire —
+	// but we want anonymous traffic to reach the controller so it can
+	// return the right shape (401 with WWW-Authenticate vs 403 vs 429
+	// vs 200). Bypass with NO subject set; the handler reads the
+	// Authorization header directly.
+	if isByAttributeRoute(method, urlPath) {
+		logLine := fmt.Sprintf("subOwner = -, subName = -, method = %s, urlPath = %s, result = allow (by-attribute controller-enforced)",
+			method, urlPath)
+		fmt.Println(logLine)
+		util.LogInfo(ctx, logLine)
+		return
+	}
+
 	subOwner, subName := getSubject(ctx)
 
 	// Allow authenticated (non-anonymous) users to manage organizations and

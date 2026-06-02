@@ -19,7 +19,7 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/beego/beego/v2/server/web"
+	"github.com/hanzoai/beego/v2/server/web"
 	iamkms "github.com/hanzoai/iam/kms"
 )
 

@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/beego/beego/v2/server/web"
+	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 )
