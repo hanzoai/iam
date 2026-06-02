@@ -183,4 +183,3 @@ func filterOut(in []string, target string) (out []string, ok bool) {
 	}
 	return append([]string{}, in...), false
 }
-
