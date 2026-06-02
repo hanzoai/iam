@@ -799,7 +799,13 @@ func (c *ApiController) Login() {
 		}
 
 		providerItem := application.GetProviderItem(provider.Name)
-		if !providerItem.IsProviderVisible() {
+		// nil guard: GetProviderItem returns nil when the application's
+		// provider list has no item for this provider name (e.g. a seed
+		// or admin edit dropped it). IsProviderVisible dereferences the
+		// receiver, so calling it on nil panics — turning an anonymous
+		// POST /login into a guaranteed 500. Treat missing as
+		// not-enabled.
+		if providerItem == nil || !providerItem.IsProviderVisible() {
 			c.ResponseError(fmt.Sprintf(c.T("auth:The provider: %s is not enabled for the application"), provider.Name))
 			return
 		}
