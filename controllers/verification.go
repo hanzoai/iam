@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/beego/beego/v2/core/utils/pagination"
+	"github.com/hanzoai/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/captcha"
 	"github.com/hanzoai/iam/form"
 	"github.com/hanzoai/iam/object"
@@ -327,14 +327,29 @@ func (c *ApiController) SendVerificationCode() {
 			}
 		}
 
-		provider, err = application.GetEmailProvider(vform.Method)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
+		// hanzoai/notify delivery path: no per-app Provider row required.
+		// notify resolves the per-tenant SendGrid/SMTP provider from its
+		// own KMS-backed config; IAM just hands it the OTP.
+		if object.NotifyDeliveryEnabled() {
+			sendResp = object.SendVerificationCodeToEmail(organization, user, nil, clientIp, vform.Dest, vform.Method, c.getEffectiveHost(), application.Name, application)
+			break
 		}
-		if provider == nil {
-			c.ResponseError(fmt.Sprintf(c.T("verification:please add an Email provider to the \"Providers\" list for the application: %s"), application.Name))
-			return
+
+		// Env-driven SendGrid override: when IAM_EMAIL_PROVIDER=sendgrid
+		// is set (creds validated at boot), the DB-lookup short-circuit
+		// on a missing per-application Provider row is bypassed.
+		if envEmail := object.EnvEmailProvider(); envEmail != nil {
+			provider = envEmail
+		} else {
+			provider, err = application.GetEmailProvider(vform.Method)
+			if err != nil {
+				c.ResponseError(err.Error())
+				return
+			}
+			if provider == nil {
+				c.ResponseError(fmt.Sprintf(c.T("verification:please add an Email provider to the \"Providers\" list for the application: %s"), application.Name))
+				return
+			}
 		}
 
 		sendResp = object.SendVerificationCodeToEmail(organization, user, provider, clientIp, vform.Dest, vform.Method, c.getEffectiveHost(), application.Name, application)
@@ -392,9 +407,23 @@ func (c *ApiController) SendVerificationCode() {
 
 		// Per-user pinned OTP: skip SMS provider entirely.
 		hasPinnedCode := user != nil && user.VerificationCode != ""
-		if hasPinnedCode {
+		// hanzoai/notify delivery path: no per-app Provider row required.
+		// notify resolves the per-tenant Plivo provider from its own
+		// KMS-backed config; IAM just hands it the OTP.
+		notifyOn := object.NotifyDeliveryEnabled()
+		// Env-driven Twilio override: when IAM_SMS_PROVIDER=twilio is set
+		// (creds validated at boot), the DB-lookup short-circuit on a
+		// missing per-application Provider row is bypassed. SendSms picks
+		// up the env-built provider regardless of what's passed in here.
+		envSMS := object.EnvSMSProvider()
+		switch {
+		case hasPinnedCode:
 			sendResp = object.SendVerificationCodeToPhone(organization, user, nil, clientIp, phone, application)
-		} else {
+		case notifyOn:
+			sendResp = object.SendVerificationCodeToPhone(organization, user, nil, clientIp, phone, application)
+		case envSMS != nil:
+			sendResp = object.SendVerificationCodeToPhone(organization, user, envSMS, clientIp, phone, application)
+		default:
 			provider, err = application.GetSmsProvider(vform.Method, vform.CountryCode)
 			if err != nil {
 				c.ResponseError(err.Error())
@@ -674,7 +703,17 @@ func autoCreateUserForVerification(application *object.Application, organization
 	var name string
 	switch {
 	case phone != "":
-		stored := util.GetSeperatedPhone(phone)
+		// Canonicalize before deriving the username suffix so two
+		// callers passing the same number in different shapes (raw
+		// national vs. E.164) generate username prefixes from the
+		// same digit string. AddUser will normalize again — that's
+		// fine, the second normalization is idempotent.
+		e164, normErr := util.NormalizeE164(phone, countryCode)
+		if normErr != nil {
+			return nil, fmt.Errorf("autoCreateUserForVerification: %w", normErr)
+		}
+		phone = e164
+		stored := strings.TrimPrefix(e164, "+")
 		var prefix string
 		if n := len(stored); n > 10 {
 			prefix = "user_" + stored[n-10:]
