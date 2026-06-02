@@ -15,6 +15,7 @@
 package object
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -107,9 +108,39 @@ func IsAllowSend(user *User, remoteAddr, recordType string, application *Applica
 }
 
 func SendVerificationCodeToEmail(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, method string, host string, applicationName string, application *Application) error {
+	code := getVerificationCode(user, organization)
+
+	// hanzoai/notify delivery path. When IAM_NOTIFY_URL is set, notify
+	// owns the subject + body template; IAM just hands it the OTP and
+	// recipient. Bypass SendEmail (and its provider lookup) entirely.
+	// Rate limit + verification record bookkeeping still runs locally
+	// so DB consistency does not depend on notify's response shape.
+	if NotifyDeliveryEnabled() {
+		category := "Email"
+		var providerName string
+		if provider != nil {
+			if provider.Category != "" {
+				category = provider.Category
+			}
+			providerName = provider.Name
+		}
+		if err := IsAllowSend(user, remoteAddr, category, application); err != nil {
+			return err
+		}
+		if err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
+			Channel:   "email",
+			Recipient: dest,
+			OTP:       code,
+			AppName:   organization.DisplayName,
+			Tenant:    organization.Name,
+		}); err != nil {
+			return err
+		}
+		return AddToVerificationRecord(user, &Provider{Name: providerName, Category: category}, organization, remoteAddr, category, dest, code)
+	}
+
 	sender := organization.DisplayName
 	title := provider.Title
-	code := getVerificationCode(user, organization)
 
 	// "You have requested a verification code at Hanzo IAM. Here is your code: %s, please enter in 5 minutes."
 	content := strings.Replace(provider.Content, "%s", code, 1)
@@ -165,6 +196,35 @@ func SendVerificationCodeToPhone(organization *Organization, user *User, provide
 			category = provider.Category
 		}
 		return AddToVerificationRecord(user, provider, organization, remoteAddr, category, dest, code)
+	}
+
+	// hanzoai/notify delivery path. notify resolves the per-tenant Plivo
+	// provider, renders the iam.otp_sent template, sends, and records a
+	// meter row. IAM still owns the verification record + rate limiting.
+	// When IAM_NOTIFY_URL is unset, this branch is skipped and the
+	// existing SendSms path (DB row / env Plivo / env Twilio) runs.
+	if NotifyDeliveryEnabled() {
+		category := "phone"
+		var providerName string
+		if provider != nil {
+			if provider.Category != "" {
+				category = provider.Category
+			}
+			providerName = provider.Name
+		}
+		if err := IsAllowSend(user, remoteAddr, category, application); err != nil {
+			return err
+		}
+		if err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
+			Channel:   "sms",
+			Recipient: dest,
+			OTP:       code,
+			AppName:   organization.DisplayName,
+			Tenant:    organization.Name,
+		}); err != nil {
+			return err
+		}
+		return AddToVerificationRecord(user, &Provider{Name: providerName, Category: category}, organization, remoteAddr, category, dest, code)
 	}
 
 	err := IsAllowSend(user, remoteAddr, provider.Category, application)
@@ -305,7 +365,13 @@ func CheckVerificationCode(dest string, code string, lang string) (*VerifyResult
 	// When active, ANY phone or email accepts that single code without a
 	// real verification record. Production manifests must leave
 	// SANDBOX_GLOBAL_OTP empty (the guard enforces this).
-	if pinned := os.Getenv("SANDBOX_GLOBAL_OTP"); pinned != "" && code == pinned {
+	//
+	// Read-side double-check (defence in depth): even if SANDBOX_GLOBAL_OTP
+	// somehow leaks into an env that has flipped to real Twilio / SendGrid
+	// providers, SandboxOTPAllowed returns false and the bypass is refused.
+	// The boot-time guards (sandbox origin + OTP provider) are the
+	// authoritative gate; this is the belt to their suspenders.
+	if pinned := os.Getenv("SANDBOX_GLOBAL_OTP"); pinned != "" && code == pinned && SandboxOTPAllowed() {
 		return &VerifyResult{VerificationSuccess, ""}, nil
 	}
 
