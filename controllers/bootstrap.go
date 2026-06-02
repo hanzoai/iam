@@ -16,7 +16,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
@@ -30,9 +29,9 @@ import (
 //	where token is one of $HANZO_API_KEY / $KMS_SERVICE_TOKEN / $IAM_SERVICE_TOKEN.
 //	Validated by routers/auto_signin_filter.go before this handler runs.
 //
-// Idempotent operator-driven application provisioning. Used by liquid-operator
-// to wire service accounts (KMS, BD treasury signer, ATS settlement key, etc.)
-// into IAM with the right grant types — no human in the loop.
+// Idempotent operator-driven application provisioning. Used by a deployment
+// operator to wire service accounts (KMS, signers, etc.) into IAM with the
+// right grant types — no human in the loop.
 //
 // If the app exists by (owner, name) → update grants + rotate clientSecret.
 // If not → create.
@@ -43,13 +42,13 @@ import (
 // Body:
 //
 //	{
-//	  "organization": "liquidity",      // required
-//	  "name":         "liquidity-kms",  // required
+//	  "organization": "hanzo",          // required
+//	  "name":         "hanzo-kms",      // required
 //	  "clientId":     "kms-app",        // required
 //	  "clientSecret": "...",            // optional; generated if omitted (preferred)
 //	  "grantTypes":   ["client_credentials", "refresh_token"],
 //	  "redirectUris": ["..."]           // optional, for non-CC flows
-//	  "displayName":  "Liquidity KMS"   // optional
+//	  "displayName":  "Hanzo KMS"       // optional
 //	}
 //
 // Response on success:
@@ -177,8 +176,8 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		// xorm's per-org engine routing is asymmetric on the read/write sides
 		// for some org configurations: getApplication can return nil while
 		// AddApplication's INSERT lands in the global engine, where the row
-		// already exists from a prior call (or from the LiquidIAM tenant seed
-		// in init_data.json). When that happens the underlying SQLite raises
+		// already exists from a prior call (or from a tenant seed in
+		// init_data.json). When that happens the underlying SQLite raises
 		// UNIQUE on (owner, name). Treat it as "the row exists" and fall
 		// through to UpdateApplication so the operator's repeated upserts
 		// are actually idempotent.
@@ -237,17 +236,17 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 // Body:
 //
 //	{
-//	  "owner":             "example-org",      // required
+//	  "owner":             "liquidity",        // required
 //	  "name":              "z",                // required
 //	  "displayName":       "Z",
-//	  "email":             "z@example.org",
-//	  "phone":             "5550001234",
+//	  "email":             "z@liquidity.io",
+//	  "phone":             "9137779708",
 //	  "countryCode":       "US",
 //	  "password":          "...",
 //	  "passwordType":      "argon2id"|"plain", // default argon2id; bcrypt rejected
 //	  "type":              "normal-user",      // default normal-user
 //	  "isAdmin":           false,
-//	  "signupApplication": "example-app",
+//	  "signupApplication": "liquidity-app",
 //	  "emailVerified":     true,
 //	  "properties":        { "...": "..." }    // future-proof free-form
 //	}
@@ -280,11 +279,6 @@ func (c *ApiController) BootstrapUserUpsert() {
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Owner == "" || req.Name == "" {
 		c.ResponseError("owner and name are required")
-		return
-	}
-
-	if err := ensureOrganization(req.Owner); err != nil {
-		c.ResponseError(err.Error())
 		return
 	}
 
