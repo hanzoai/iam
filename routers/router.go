@@ -133,9 +133,9 @@ func InitAPI() {
 	// operator). Used to wire service-account OAuth apps (KMS, signers, etc.)
 	// without a human admin in the loop. Disabled (503) when env unset.
 	web.Router("/v1/iam/admin/applications/upsert", &controllers.ApiController{}, "POST:BootstrapApplicationUpsert")
-	// Same auth pipeline as applications/upsert. Used by an operator to
-	// reconcile IAM users — passwords are argon2id-hashed at the controller
-	// before persistence (no plaintext at rest).
+	// Same auth pipeline as applications/upsert. Used by liquid-operator to
+	// reconcile LiquidIAM.spec.users[] — passwords are argon2id-hashed at
+	// the controller before persistence (no plaintext at rest).
 	web.Router("/v1/iam/admin/users/upsert", &controllers.ApiController{}, "POST:BootstrapUserUpsert")
 
 	web.Router("/v1/iam/get-providers", &controllers.ApiController{}, "GET:GetProviders")
