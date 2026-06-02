@@ -146,7 +146,7 @@ func FilterField(field string) bool {
 // allowedOriginSuffixes is loaded from $IAM_TRUSTED_ORIGIN_SUFFIXES
 // (comma-separated). Empty by default — the image ships tenant-neutral
 // and the deployer pins the apex list (e.g.
-// `satschel.com,liquidity.io` for Liquidity, `hanzo.ai,hanzo.app` for
+// `example.com,example-tenant.io` for a tenant, `hanzo.ai,hanzo.app` for
 // Hanzo, etc.). An origin passes if its hostname equals or is a subdomain
 // of one of these entries.
 var allowedOriginSuffixes = loadTrustedOriginSuffixes()
