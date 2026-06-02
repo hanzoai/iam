@@ -40,7 +40,15 @@ jobs:
       - run: pnpm install && CI=false NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
         working-directory: ./web
       - name: Upload build artifacts
+        # continue-on-error: when the org-level Actions storage quota
+        # is exhausted (24h rolling window), the upload returns 403 but
+        # the build itself is fine. Don't gate Docker Release on artifact
+        # storage being available — only github-release downstream
+        # actually needs the artifact, and its own job already gates on
+        # tag-release output.
+        continue-on-error: true
         if: github.repository == 'hanzoai/iam' && github.event_name == 'push'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build-${{ github.run_id }}

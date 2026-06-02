@@ -1,8 +1,10 @@
 # Cloud Build — Hanzo IAM
 #
-# Invoke with your tenant's registry + namespace:
-#   gcloud builds submit . --project=<your-gcp-project> \
-#     --substitutions=_IMAGE=<your-registry>/<your-namespace>/iam:dev,_VITE_APP=<your-app>
+# Downstream consumers (white-label tenants) override `_IMAGE` to point
+# at their own registry. Default is ghcr.io/hanzoai (per-org registry
+# convention); tenant-specific defaults are NEVER baked into this file.
+#
+#   gcloud builds submit . --substitutions=_IMAGE=<registry>/<org>/iam:<tag>,_VITE_APP=<app-id>
 
 substitutions:
   _IMAGE: ghcr.io/hanzoai/iam:dev
