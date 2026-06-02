@@ -24,7 +24,7 @@
 package routers
 
 import (
-	"github.com/beego/beego/v2/server/web"
+	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/hanzoai/iam/controllers"
 	"github.com/hanzoai/iam/mcpself"
 )
@@ -91,6 +91,14 @@ func InitAPI() {
 
 	web.Router("/v1/iam/get-global-users", &controllers.ApiController{}, "GET:GetGlobalUsers")
 	web.Router("/v1/iam/get-users", &controllers.ApiController{}, "GET:GetUsers")
+	// Server-to-server soft-signal: "does this phone/email belong to a
+	// user in my org?". Auth is enforced INSIDE the handler — must be a
+	// client_credentials JWT (user JWTs get 403) and the calling
+	// clientId must be on the IAM_BY_ATTRIBUTE_ALLOWLIST. See
+	// controllers/users_by_attribute.go for the full threat model.
+	// Bypasses the generic authz engine via authz_filter.go's
+	// isByAttributeRoute.
+	web.Router("/v1/iam/users/by-attribute", &controllers.ApiController{}, "GET:GetUsersByAttribute")
 	web.Router("/v1/iam/get-sorted-users", &controllers.ApiController{}, "GET:GetSortedUsers")
 	web.Router("/v1/iam/get-user-count", &controllers.ApiController{}, "GET:GetUserCount")
 	web.Router("/v1/iam/get-user", &controllers.ApiController{}, "GET:GetUser")
@@ -121,9 +129,9 @@ func InitAPI() {
 	web.Router("/v1/iam/delete-application", &controllers.ApiController{}, "POST:DeleteApplication")
 
 	// Operator-only bootstrap path. Auth via Authorization: Bootstrap <token>,
-	// where the token comes from $IAM_BOOTSTRAP_TOKEN env (set by liquid-operator).
-	// Used to wire service-account OAuth apps (KMS, BD signers, etc.) without
-	// a human admin in the loop. Disabled (503) when env unset.
+	// where the token comes from $IAM_BOOTSTRAP_TOKEN env (set by a deployment
+	// operator). Used to wire service-account OAuth apps (KMS, signers, etc.)
+	// without a human admin in the loop. Disabled (503) when env unset.
 	web.Router("/v1/iam/admin/applications/upsert", &controllers.ApiController{}, "POST:BootstrapApplicationUpsert")
 	// Same auth pipeline as applications/upsert. Used by liquid-operator to
 	// reconcile LiquidIAM.spec.users[] — passwords are argon2id-hashed at
@@ -223,6 +231,8 @@ func InitAPI() {
 	web.Router("/v1/iam/get-all-objects", &controllers.ApiController{}, "GET:GetAllObjects")
 	web.Router("/v1/iam/get-all-actions", &controllers.ApiController{}, "GET:GetAllActions")
 	web.Router("/v1/iam/get-all-roles", &controllers.ApiController{}, "GET:GetAllRoles")
+
+	web.Router("/v1/iam/run-authz-command", &controllers.ApiController{}, "GET:RunAuthzCommand")
 
 	web.Router("/v1/iam/get-sessions", &controllers.ApiController{}, "GET:GetSessions")
 	web.Router("/v1/iam/get-session", &controllers.ApiController{}, "GET:GetSingleSession")
@@ -353,6 +363,11 @@ func InitAPI() {
 	web.Router("/v1/iam/.well-known/oauth-protected-resource", &controllers.RootController{}, "GET:GetOauthProtectedResourceMetadata")
 	web.Router("/v1/iam/.well-known/:application/oauth-protected-resource", &controllers.RootController{}, "GET:GetOauthProtectedResourceMetadataByApplication")
 
+	// HIP-0303 federation discovery — `/.well-known/iam.json` (IETF RFC 8615).
+	// Served from embedded JSON (controllers/wellknown_iam.json) so the route
+	// works regardless of binary invocation working dir.
+	web.Router("/v1/iam/.well-known/iam.json", &controllers.RootController{}, "GET:GetIamDescriptor")
+
 	// Legacy back-compat: root /.well-known/* still served. Scheduled for
 	// removal once all downstream consumers consume the discovery doc
 	// (which advertises only the /v1/iam/ form). Do NOT add new endpoints
@@ -367,6 +382,7 @@ func InitAPI() {
 	web.Router("/.well-known/:application/webfinger", &controllers.RootController{}, "GET:GetWebFingerByApplication")
 	web.Router("/.well-known/oauth-protected-resource", &controllers.RootController{}, "GET:GetOauthProtectedResourceMetadata")
 	web.Router("/.well-known/:application/oauth-protected-resource", &controllers.RootController{}, "GET:GetOauthProtectedResourceMetadataByApplication")
+	web.Router("/.well-known/iam.json", &controllers.RootController{}, "GET:GetIamDescriptor")
 
 	web.Router("/cas/:organization/:application/serviceValidate", &controllers.RootController{}, "GET:CasServiceValidate")
 	web.Router("/cas/:organization/:application/proxyValidate", &controllers.RootController{}, "GET:CasProxyValidate")

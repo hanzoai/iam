@@ -13,14 +13,13 @@ import (
 	"testing"
 )
 
-// TestGetUrlPath_OAuthResourceCollapse locks the canonical /v1/iam/oauth/*
-// surface to the authz resource keys the anonymous OIDC/OAuth policy already
-// grants. Without this collapse, public OIDC clients hitting
-// /v1/iam/oauth/access_token would see
-// `{"status":"error","msg":"Unauthorized operation"}` because the authz
-// engine would match the full URL and find no policy for the anonymous
-// principal.
-func TestGetUrlPath_OAuthResourceCollapse(t *testing.T) {
+// TestGetUrlPath_NormalizesV1IamOAuth verifies that both the legacy bare
+// (/login/oauth/*, /oauth/*) and canonical /v1/iam/-prefixed OAuth surfaces
+// collapse to the same authz resource so the anonymous policy applies. Without
+// this, public OIDC clients hitting /v1/iam/login/oauth/access_token saw
+// `{"status":"error","msg":"Unauthorized operation"}` because Casbin matched
+// against the full prefixed path and no policy granted anonymous access.
+func TestGetUrlPath_NormalizesV1IamOAuth(t *testing.T) {
 	cases := []struct {
 		name string
 		path string

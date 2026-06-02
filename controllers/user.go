@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/beego/beego/v2/core/utils/pagination"
+	"github.com/hanzoai/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
@@ -286,6 +286,21 @@ func (c *ApiController) UpdateUser() {
 		return
 	}
 
+	// Defense-in-depth for the by-attribute discriminator: the synthetic
+	// "application" Type is reserved for users minted by
+	// GetClientCredentialsToken (object/token_oauth.go:1044-1049). A
+	// tenant admin must not be able to persist Type="application" on a
+	// real human user — doing so would (a) bypass the by-attribute
+	// endpoint's Type-based discriminator and (b) generally let a normal
+	// user impersonate a service principal. The only legitimate writer
+	// of Type="application" is the bootstrap path inside the built-in
+	// org (where IAM itself seeds its own admin app's user). The full
+	// defense lives in users_by_attribute.go (4-field check); this is
+	// the second wall.
+	if !rejectApplicationTypePromotion(c, &user) {
+		return
+	}
+
 	if id == "" && userId == "" {
 		id = c.GetSessionUsername()
 		if id == "" {
@@ -392,6 +407,13 @@ func (c *ApiController) AddUser() {
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &user)
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+
+	// Defense-in-depth: see UpdateUser. Type="application" is the
+	// client_credentials discriminator and must not be settable by a
+	// tenant-admin-created user.
+	if !rejectApplicationTypePromotion(c, &user) {
 		return
 	}
 
