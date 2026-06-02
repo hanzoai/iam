@@ -65,6 +65,25 @@ func isServiceTokenRoute(urlPath string) bool {
 		// Operator-driven user provisioning (LiquidIAM.spec.users[]). Same
 		// service-token pipeline as applications/upsert.
 		return true
+	case "/v1/iam/admin/providers/upsert":
+		// Operator-driven OAuth/OIDC/Web3 provider provisioning for
+		// per-tenant org seeding. Same service-token pipeline as
+		// applications/upsert.
+		return true
+	case "/v1/iam/admin/organizations/upsert":
+		// Operator-driven tenant organization provisioning. Must run
+		// before applications/upsert because org rows must exist before
+		// apps can reference them.
+		return true
+	case "/v1/iam/get-application":
+		// Operator existence-probe before applications/upsert. Without
+		// this the probe fails ("Access token doesn't exist in
+		// database") and operators that correctly short-circuit on the
+		// auth error (to avoid clientSecret-rotation storms) can never
+		// complete a tenant sync — observed as a reconcile hot-loop.
+		// Read-only; the service token is already all-powerful for the
+		// upsert routes above, so read access is strictly narrower.
+		return true
 	default:
 		return false
 	}
