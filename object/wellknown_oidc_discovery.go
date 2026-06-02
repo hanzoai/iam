@@ -174,9 +174,7 @@ func getOriginFromHost(host string) (string, string) {
 
 // Canonical public OIDC paths. The IAM service publishes its discovery doc
 // using ONLY these — external consumers (IdPs, SDKs, OIDC libraries) see
-// exactly one shape per endpoint. Legacy /oauth/*, /login/oauth/*, and
-// /api/* aliases are accepted by routers.PathRewriteFilter but never
-// advertised. /v1/iam/* is the law.
+// exactly one shape per endpoint. /v1/iam/* is the law.
 const (
 	OidcPathAuthorize     = "/v1/iam/oauth/authorize"
 	OidcPathToken         = "/v1/iam/oauth/token"

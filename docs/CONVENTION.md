@@ -110,15 +110,14 @@ Postgres, no Redis — anywhere, ever.
 
 ## 4. API surface
 
-Only one path-prefix is supported for new integrations:
+One path-prefix. No aliases. No rewrites.
 
 ```
 /v1/iam/*
 ```
 
 The legacy aliases (`/api/*`, `/api/iam/*`, `/login/oauth/*`, bare `/oauth/*`)
-still resolve via `routers.PathRewriteFilter` for backwards-compat, but
-are not advertised in the OIDC discovery doc and will be removed.
+are gone. The IAM server returns 404 for anything off the canonical surface.
 
 ### Canonical endpoints
 
