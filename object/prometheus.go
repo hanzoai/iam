@@ -18,9 +18,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_model/go"
+	"github.com/luxfi/metric"
 )
 
 type PrometheusInfo struct {
@@ -43,34 +41,33 @@ type HistogramVecInfo struct {
 }
 
 var (
-	ApiThroughput = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	ApiThroughput = metric.NewGaugeVec(metric.GaugeOpts{
 		Name: "iam_api_throughput",
 		Help: "The throughput of each api access",
 	}, []string{"path", "method"})
 
-	ApiLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	ApiLatency = metric.NewHistogramVec(metric.HistogramOpts{
 		Name: "iam_api_latency",
 		Help: "API processing latency in milliseconds",
 	}, []string{"path", "method"})
 
-	CpuUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	CpuUsage = metric.NewGaugeVec(metric.GaugeOpts{
 		Name: "iam_cpu_usage",
 		Help: "IAM cpu usage",
 	}, []string{"cpuNum"})
 
-	MemoryUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	MemoryUsage = metric.NewGaugeVec(metric.GaugeOpts{
 		Name: "iam_memory_usage",
 		Help: "IAM memory usage in Byte",
 	}, []string{"type"})
 
-	TotalThroughput = promauto.NewGauge(prometheus.GaugeOpts{
+	TotalThroughput = metric.NewGauge(metric.GaugeOpts{
 		Name: "iam_total_throughput",
 		Help: "The total throughput of iam",
 	})
 )
 
 func ClearThroughputPerSecond() {
-	// Clear the throughput every second
 	ticker := time.NewTicker(time.Second)
 	for range ticker.C {
 		ApiThroughput.Reset()
@@ -80,50 +77,59 @@ func ClearThroughputPerSecond() {
 
 func GetPrometheusInfo() (*PrometheusInfo, error) {
 	res := &PrometheusInfo{}
-	metricFamilies, err := prometheus.DefaultGatherer.Gather()
+	families, err := metric.DefaultRegistry.Gather()
 	if err != nil {
 		return nil, err
 	}
-	for _, metricFamily := range metricFamilies {
-		switch metricFamily.GetName() {
+	for _, family := range families {
+		switch family.Name {
 		case "iam_api_throughput":
-			res.ApiThroughput = getGaugeVecInfo(metricFamily)
+			res.ApiThroughput = getGaugeVecInfo(family)
 		case "iam_api_latency":
-			res.ApiLatency = getHistogramVecInfo(metricFamily)
+			res.ApiLatency = getHistogramVecInfo(family)
 		case "iam_total_throughput":
-			res.TotalThroughput = metricFamily.GetMetric()[0].GetGauge().GetValue()
+			if len(family.Metrics) > 0 {
+				res.TotalThroughput = family.Metrics[0].Value.Value
+			}
 		}
 	}
-
 	return res, nil
 }
 
-func getHistogramVecInfo(metricFamily *io_prometheus_client.MetricFamily) []HistogramVecInfo {
-	var histogramVecInfos []HistogramVecInfo
-	for _, metric := range metricFamily.GetMetric() {
-		sampleCount := metric.GetHistogram().GetSampleCount()
-		sampleSum := metric.GetHistogram().GetSampleSum()
-		latency := sampleSum / float64(sampleCount)
-		histogramVecInfo := HistogramVecInfo{
-			Method:  metric.Label[0].GetValue(),
-			Name:    metric.Label[1].GetValue(),
+func getHistogramVecInfo(family *metric.MetricFamily) []HistogramVecInfo {
+	out := make([]HistogramVecInfo, 0, len(family.Metrics))
+	for _, m := range family.Metrics {
+		sampleCount := m.Value.SampleCount
+		sampleSum := m.Value.SampleSum
+		var latency float64
+		if sampleCount > 0 {
+			latency = sampleSum / float64(sampleCount)
+		}
+		out = append(out, HistogramVecInfo{
+			Method:  labelValue(m.Labels, 0),
+			Name:    labelValue(m.Labels, 1),
 			Count:   sampleCount,
 			Latency: fmt.Sprintf("%.3f", latency),
-		}
-		histogramVecInfos = append(histogramVecInfos, histogramVecInfo)
+		})
 	}
-	return histogramVecInfos
+	return out
 }
 
-func getGaugeVecInfo(metricFamily *io_prometheus_client.MetricFamily) []GaugeVecInfo {
-	var counterVecInfos []GaugeVecInfo
-	for _, metric := range metricFamily.GetMetric() {
-		counterVecInfo := GaugeVecInfo{
-			Method:     metric.Label[0].GetValue(),
-			Name:       metric.Label[1].GetValue(),
-			Throughput: metric.Gauge.GetValue(),
-		}
-		counterVecInfos = append(counterVecInfos, counterVecInfo)
+func getGaugeVecInfo(family *metric.MetricFamily) []GaugeVecInfo {
+	out := make([]GaugeVecInfo, 0, len(family.Metrics))
+	for _, m := range family.Metrics {
+		out = append(out, GaugeVecInfo{
+			Method:     labelValue(m.Labels, 0),
+			Name:       labelValue(m.Labels, 1),
+			Throughput: m.Value.Value,
+		})
 	}
-	return counterVecInfos
+	return out
+}
+
+func labelValue(labels []metric.LabelPair, idx int) string {
+	if idx < 0 || idx >= len(labels) {
+		return ""
+	}
+	return labels[idx].Value
 }

@@ -25,8 +25,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/beego/beego/v2/server/web"
 	_ "github.com/go-sql-driver/mysql" // db = mysql
+	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 	"github.com/hanzoai/xorm"
@@ -142,8 +142,8 @@ func InitAdapter() {
 
 // resolveDataDir returns the directory used for IAM's on-disk state.
 // The DATA_DIR environment variable wins (that is how operators override
-// config — the Liquidity operator emits DATA_DIR=/data/iam on the Deployment,
-// and the Dockerfile sets WORKDIR /, so the relative `dataDir = data` in
+// config — operators emit DATA_DIR=/data/iam on the Deployment, and the
+// Dockerfile sets WORKDIR /, so the relative `dataDir = data` in
 // app.prod.conf would otherwise resolve to a read-only path and panic).
 // Falls back to the beego `dataDir` config key, then to "data".
 func resolveDataDir() string {
@@ -382,6 +382,16 @@ func (a *Ormer) createTable() {
 	err = a.Engine.Sync2(new(User))
 	if err != nil {
 		panic(err)
+	}
+
+	// One-shot phone canonicalization on the global engine. Per-org
+	// engines run their own pass inside syncOrgTables (orgdb.go). Both
+	// passes are required because under orgIsolation=none the global
+	// engine owns the user rows, and under orgIsolation=sqlite the
+	// global engine still holds the cross-org catalog the OTP path
+	// (GetUserByPhoneOnly) queries.
+	if _, _, err := MigratePhoneToE164(a.Engine); err != nil {
+		panic(fmt.Errorf("phone-e164 migration: %w", err))
 	}
 
 	err = a.Engine.Sync2(new(Invitation))

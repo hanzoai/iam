@@ -17,7 +17,7 @@ package routers
 import (
 	"encoding/json"
 
-	"github.com/beego/beego/v2/server/web/context"
+	"github.com/hanzoai/beego/v2/server/web/context"
 	"github.com/hanzoai/iam/util"
 )
 

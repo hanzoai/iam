@@ -137,22 +137,29 @@ func initAdminOrganization() bool {
 		return true
 	}
 
-	org.CreatedTime = util.GetCurrentTime()
-	org.DisplayName = "Admin"
-	org.PasswordType = "bcrypt"
-	org.PasswordOptions = []string{"AtLeast6"}
-	org.CountryCodes = []string{"US", "ES", "FR", "DE", "GB", "CN", "JP", "KR", "VN", "ID", "SG", "IN"}
-	org.UserTypes = []string{}
-	org.Tags = []string{}
-	org.Languages = []string{"en", "es", "fr", "de", "ja", "zh", "vi", "pt", "tr", "pl", "uk"}
-	org.InitScore = 2000
-	org.AccountItems = getAdminAccountItems()
-	org.EnableSoftDeletion = false
-	org.IsProfilePublic = false
-	org.UseEmailAsUsername = false
-	org.EnableTour = true
-
-	if _, err := AddOrganization(org); err != nil {
+	organization = &Organization{
+		Owner:              "admin",
+		Name:               "superuser",
+		CreatedTime:        util.GetCurrentTime(),
+		DisplayName:        "Superuser",
+		WebsiteUrl:         "",
+		Favicon:            "",
+		PasswordType:       "bcrypt",
+		PasswordOptions:    []string{"AtLeast6"},
+		CountryCodes:       []string{"US", "ES", "FR", "DE", "GB", "CN", "JP", "KR", "VN", "ID", "SG", "IN"},
+		DefaultAvatar:      "",
+		UserTypes:          []string{},
+		Tags:               []string{},
+		Languages:          []string{"en", "es", "fr", "de", "ja", "zh", "vi", "pt", "tr", "pl", "uk"},
+		InitScore:          2000,
+		AccountItems:       getBuiltInAccountItems(),
+		EnableSoftDeletion: false,
+		IsProfilePublic:    false,
+		UseEmailAsUsername: false,
+		EnableTour:         true,
+	}
+	_, err = AddOrganization(organization)
+	if err != nil {
 		panic(err)
 	}
 	return false
@@ -168,25 +175,33 @@ func initAdminUser() {
 		return
 	}
 
-	user.CreatedTime = util.GetCurrentTime()
-	user.Id = util.GenerateId()
-	user.Type = "normal-user"
-	user.Password = bootstrapAdminPassword()
-	user.DisplayName = "Admin"
-	user.Email = conf.AdminUser + "@localhost"
-	user.CountryCode = "US"
-	user.Address = []string{}
-	user.Tag = "staff"
-	user.Score = 2000
-	user.Ranking = 1
-	user.IsAdmin = true
-	user.SignupApplication = conf.AdminApp
-	user.RegisterType = "Add User"
-	user.RegisterSource = conf.AdminOrg + "/" + conf.AdminUser
-	user.CreatedIp = "127.0.0.1"
-	user.Properties = make(map[string]string)
-
-	if _, err := AddUser(user, "en"); err != nil {
+	user = &User{
+		Owner:             "superuser",
+		Name:              "admin",
+		CreatedTime:       util.GetCurrentTime(),
+		Id:                util.GenerateId(),
+		Type:              "normal-user",
+		Password:          "admin",
+		DisplayName:       "Admin",
+		Avatar:            "",
+		Email:             "admin@localhost",
+		CountryCode:       "US",
+		Address:           []string{},
+		Affiliation:       "",
+		Tag:               "staff",
+		Score:             2000,
+		Ranking:           1,
+		IsAdmin:           true,
+		IsForbidden:       false,
+		IsDeleted:         false,
+		SignupApplication: "app-superuser",
+		RegisterType:      "Add User",
+		RegisterSource:    "superuser/admin",
+		CreatedIp:         "127.0.0.1",
+		Properties:        make(map[string]string),
+	}
+	_, err = AddUser(user, "en")
+	if err != nil {
 		panic(err)
 	}
 }
