@@ -20,7 +20,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/beego/beego/v2/server/web/pagination"
+	"github.com/hanzoai/beego/v2/server/web/pagination"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 	"github.com/hsluoyz/modsecurity-go/seclang/parser"
