@@ -197,7 +197,7 @@ func (c *ApiController) DeleteToken() {
 // @Success 200 {object} object.TokenWrapper The Response object
 // @Success 400 {object} object.TokenError The Response object
 // @Success 401 {object} object.TokenError The Response object
-// @router /login/oauth/access_token [post]
+// @router /v1/iam/oauth/access_token [post]
 func (c *ApiController) GetOAuthToken() {
 	clientId := c.Ctx.Input.Query("client_id")
 	clientSecret := c.Ctx.Input.Query("client_secret")
@@ -435,7 +435,7 @@ func (c *ApiController) GetOAuthToken() {
 // @Success 200 {object} object.TokenWrapper The Response object
 // @Success 400 {object} object.TokenError The Response object
 // @Success 401 {object} object.TokenError The Response object
-// @router /login/oauth/refresh_token [post]
+// @router /v1/iam/oauth/refresh_token [post]
 func (c *ApiController) RefreshToken() {
 	grantType := c.Ctx.Input.Query("grant_type")
 	refreshToken := c.Ctx.Input.Query("refresh_token")
@@ -586,7 +586,7 @@ func (c *ApiController) ValidateOAuth(ignoreValidSecret bool) (ok bool, applicat
 // @Param client_secret formData string false "OAuth client secret (if not using Basic Auth)"
 // @Success 200 {object} object.Response Success (RFC 7009 requires 200 even for invalid tokens)
 // @Success 401 {object} object.TokenError Invalid client credentials
-// @router /login/oauth/revoke [post]
+// @router /v1/iam/oauth/revoke [post]
 func (c *ApiController) RevokeToken() {
 	tokenValue := c.Ctx.Input.Query("token")
 	tokenTypeHint := c.Ctx.Input.Query("token_type_hint")
@@ -683,7 +683,7 @@ func (c *ApiController) RevokeToken() {
 // @Success 200 {object} object.IntrospectionResponse The Response object
 // @Success 400 {object} object.TokenError The Response object
 // @Success 401 {object} object.TokenError The Response object
-// @router /login/oauth/introspect [post]
+// @router /v1/iam/oauth/introspect [post]
 func (c *ApiController) IntrospectToken() {
 	tokenValue := c.Ctx.Input.Query("token")
 
