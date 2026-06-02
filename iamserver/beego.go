@@ -136,10 +136,6 @@ func Init() int {
 	web.SetStaticPath("/files", "files")
 	web.SetStaticPath("/_/iam", "ui/dist")
 	web.InsertFilter("*", web.BeforeStatic, routers.SecureCookieFilter)
-	// PathRewriteFilter MUST run first so every other filter (and the
-	// router itself) sees the canonical path. /v1/iam/foo, /api/iam/foo,
-	// and /oauth/* all resolve to one set of routes registered in router.go.
-	web.InsertFilter("*", web.BeforeRouter, routers.PathRewriteFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.StaticFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.AutoSigninFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.CorsFilter)
