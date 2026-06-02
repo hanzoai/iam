@@ -1,9 +1,11 @@
 # ── Frontend build ─────────────────────────────────────────────
-# Base images pinned to AWS public ECR mirror (public.ecr.aws/docker/library)
-# to dodge Docker Hub's 100/6h unauthenticated pull cap that periodically
-# wedges CI. AWS public ECR mirrors Docker Hub library/* with no rate
-# limit. Tags match upstream verbatim.
-FROM mirror.gcr.io/library/node:18.19.0 AS front
+# Base images pulled from Docker Hub directly. The previous
+# `mirror.gcr.io/library/*` references are dropped — we don't use any
+# gcr.io path inside the Hanzo/Lux/Zoo ecosystems. DockerHub library/*
+# is public and works without auth for these well-known upstreams; if
+# the unauth pull cap becomes an issue, swap to public.ecr.aws/docker/library
+# instead, never gcr.io.
+FROM docker.io/library/node:18.19.0 AS front
 WORKDIR /web
 ARG VITE_DEFAULT_APP=app-built-in
 
@@ -15,7 +17,7 @@ ENV VITE_DEFAULT_APP=$VITE_DEFAULT_APP
 RUN NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
 
 # ── Go build ──────────────────────────────────────────────────
-FROM mirror.gcr.io/library/golang:1.26 AS back
+FROM docker.io/library/golang:1.26 AS back
 WORKDIR /go/src/hanzo-iam
 
 COPY go.mod go.sum ./
@@ -32,7 +34,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iam ./cmd/iam/
 RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iamctl ./cmd/iamctl/
 
 # ── Production image ──────────────────────────────────────────
-FROM mirror.gcr.io/library/alpine:3.21 AS standard
+FROM docker.io/library/alpine:3.21 AS standard
 LABEL maintainer="https://hanzo.ai/"
 ARG USER=hanzo
 
