@@ -16,7 +16,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
@@ -227,8 +226,8 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 //	where token is one of $HANZO_API_KEY / $KMS_SERVICE_TOKEN / $IAM_SERVICE_TOKEN.
 //	Validated by routers/auto_signin_filter.go before this handler runs.
 //
-// Idempotent operator-driven user provisioning. Used by a deployment
-// operator to reconcile IAM users — no human admin in the loop.
+// Idempotent operator-driven user provisioning. Used by liquid-operator to
+// reconcile LiquidIAM.spec.users[] against IAM — no human admin in the loop.
 //
 // If the user exists by (owner, name) → update; else insert. Passwords are
 // always hashed at rest (argon2id by default; bcrypt rejected; "plain" passes
@@ -237,17 +236,17 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 // Body:
 //
 //	{
-//	  "owner":             "example-org",      // required
+//	  "owner":             "liquidity",        // required
 //	  "name":              "z",                // required
 //	  "displayName":       "Z",
-//	  "email":             "z@example.org",
-//	  "phone":             "5550001234",
+//	  "email":             "z@liquidity.io",
+//	  "phone":             "9137779708",
 //	  "countryCode":       "US",
 //	  "password":          "...",
 //	  "passwordType":      "argon2id"|"plain", // default argon2id; bcrypt rejected
 //	  "type":              "normal-user",      // default normal-user
 //	  "isAdmin":           false,
-//	  "signupApplication": "example-app",
+//	  "signupApplication": "liquidity-app",
 //	  "emailVerified":     true,
 //	  "properties":        { "...": "..." }    // future-proof free-form
 //	}
@@ -280,11 +279,6 @@ func (c *ApiController) BootstrapUserUpsert() {
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Owner == "" || req.Name == "" {
 		c.ResponseError("owner and name are required")
-		return
-	}
-
-	if err := ensureOrganization(req.Owner); err != nil {
-		c.ResponseError(err.Error())
 		return
 	}
 
