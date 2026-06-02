@@ -288,28 +288,27 @@ func getUrlPath(ctx *context.Context) string {
 		return "/login/oauth"
 	}
 
-	// Normalize /oauth/* aliases (and their /v1/iam/-prefixed canonical
-	// variants) to existing authz paths so the anonymous OIDC/OAuth policy
-	// applies. /oauth/authorize is the OIDC-advertised authorize endpoint;
-	// it must be reachable by anonymous users (the Beego handler 302s to the
-	// SPA login at /login/oauth/authorize). Without this, authz denies
-	// before OAuthAuthorizeRedirect can run and the client sees
-	// `{status:"error",msg:"Unauthorized operation"}`.
+	// OAuth surface: collapse the canonical /v1/iam/oauth/* paths to the
+	// authz resource keys the anonymous OIDC/OAuth policy already grants.
+	// /v1/iam/oauth/authorize must be anonymous-reachable — the handler
+	// 302s to the SPA login at /login/oauth/authorize, and a denial here
+	// surfaces as `{status:"error",msg:"Unauthorized operation"}` before
+	// the redirect can run.
 	switch urlPath {
-	// TODO(red-2026-04-30,finding-C): /oauth/introspect and /oauth/revoke
-	// are aliased to the anonymous /login/oauth policy here so the OIDC
-	// metadata endpoints work, but introspect leaks a token-validity
-	// oracle and revoke is a free unauthenticated mutation. Re-evaluate
-	// post-demo: split these out and require client_credentials (RFC 7662
-	// §2.1, RFC 7009 §2.1) before they hit this normalizer.
-	case "/oauth/authorize", "/oauth/token", "/oauth/access_token", "/oauth/refresh", "/oauth/introspect", "/oauth/revoke",
-		"/v1/iam/oauth/authorize", "/v1/iam/oauth/token", "/v1/iam/oauth/access_token", "/v1/iam/oauth/refresh", "/v1/iam/oauth/introspect", "/v1/iam/oauth/revoke":
+	// TODO(red-2026-04-30,finding-C): introspect and revoke share the
+	// anonymous /login/oauth policy so the OIDC metadata endpoints work,
+	// but introspect leaks a token-validity oracle and revoke is a free
+	// unauthenticated mutation. Re-evaluate post-demo: split these out
+	// and require client_credentials (RFC 7662 §2.1, RFC 7009 §2.1).
+	case "/v1/iam/oauth/authorize", "/v1/iam/oauth/token", "/v1/iam/oauth/access_token",
+		"/v1/iam/oauth/refresh", "/v1/iam/oauth/refresh_token",
+		"/v1/iam/oauth/introspect", "/v1/iam/oauth/revoke", "/v1/iam/oauth/register":
 		return "/login/oauth"
-	case "/oauth/userinfo", "/v1/iam/oauth/userinfo":
+	case "/v1/iam/oauth/userinfo":
 		return "/v1/iam/userinfo"
-	case "/oauth/device", "/v1/iam/oauth/device":
+	case "/v1/iam/oauth/device":
 		return "/v1/iam/device-auth"
-	case "/oauth/logout", "/v1/iam/oauth/logout":
+	case "/v1/iam/oauth/logout":
 		return "/v1/iam/logout"
 	}
 
