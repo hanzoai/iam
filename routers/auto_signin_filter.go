@@ -27,12 +27,14 @@ import (
 
 func AutoSigninFilter(ctx *context.Context) {
 	urlPath := ctx.Request.URL.Path
-	if strings.HasPrefix(urlPath, "/login/oauth/access_token") {
-		return
-	}
-	// Skip auto-signin for OAuth token endpoints (they use client auth, not session auth).
-	// But allow /oauth/userinfo and /oauth/logout through — they need Bearer→session translation.
-	if strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize" && urlPath != "/oauth/userinfo" && urlPath != "/oauth/logout" {
+	// OAuth token endpoints use client auth, not session auth. /v1/iam/oauth/authorize
+	// runs through auto-signin so an already-logged-in user lands in the redirect-back
+	// path without re-entering creds. /v1/iam/oauth/userinfo and /v1/iam/oauth/logout
+	// also need session translation from Bearer tokens.
+	if strings.HasPrefix(urlPath, "/v1/iam/oauth/") &&
+		urlPath != "/v1/iam/oauth/authorize" &&
+		urlPath != "/v1/iam/oauth/userinfo" &&
+		urlPath != "/v1/iam/oauth/logout" {
 		return
 	}
 	if urlPath == "/v1/iam/mcp" {

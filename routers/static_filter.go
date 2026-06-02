@@ -129,13 +129,14 @@ func StaticFilter(ctx *context.Context) {
 		http.ServeContent(ctx.ResponseWriter, ctx.Request, "acme-challenge", time.Now(), strings.NewReader("content"))
 	}
 
-	// /oauth/* and /login/oauth/* routes are registered directly in router.go — skip to Beego router.
-	// Exceptions: /oauth/authorize and /login/oauth/authorize are frontend SPA
-	// routes, NOT backend APIs. router.go registers OAuthAuthorizeRedirect on both
-	// paths, but for /login/oauth/authorize the redirect target is itself — that
-	// produces an infinite 302 loop. Both paths fall through to the static-filter
-	// special case below, which 302s autosignin or serves the SPA index.html.
-	if strings.HasPrefix(urlPath, "/v1/iam/") || strings.HasPrefix(urlPath, "/.well-known/") || (strings.HasPrefix(urlPath, "/login/oauth/") && urlPath != "/login/oauth/authorize") || (strings.HasPrefix(urlPath, "/oauth/") && urlPath != "/oauth/authorize") {
+	// API surfaces — let Beego route or 404. Never fall through to SPA
+	// HTML for an API call; that is the silent-mux bug we keep killing.
+	// /login/oauth/authorize is the SOLE exception: it is the SPA login
+	// page (the OAuth authorize handler 302s to it), so it must reach the
+	// SPA index.html below.
+	if strings.HasPrefix(urlPath, "/v1/iam/") ||
+		strings.HasPrefix(urlPath, "/.well-known/") ||
+		(strings.HasPrefix(urlPath, "/login/oauth/") && urlPath != "/login/oauth/authorize") {
 		return
 	}
 	// Let Beego's static file handler serve the new admin UI at /_/iam/.
@@ -155,7 +156,10 @@ func StaticFilter(ctx *context.Context) {
 		return
 	}
 
-	if urlPath == "/login/oauth/authorize" || urlPath == "/oauth/authorize" {
+	// /login/oauth/authorize is the SPA login page. Fast-path an autosignin
+	// redirect when a session already exists; otherwise serve the SPA so the
+	// login form mounts.
+	if urlPath == "/login/oauth/authorize" {
 		redirectUrl, err := fastAutoSignin(ctx)
 		if err != nil {
 			responseError(ctx, err.Error())
@@ -168,17 +172,6 @@ func StaticFilter(ctx *context.Context) {
 		}
 
 		if serveProviderHintRedirectPage(ctx) {
-			return
-		}
-
-		// /oauth/authorize is the OIDC-advertised endpoint but the SPA mounts
-		// the login form at /login/oauth/authorize. Hand off to the Beego
-		// router so OAuthAuthorizeRedirect can 302 to the SPA route — serving
-		// index.html here drops the request on App.tsx's catch-all 404 because
-		// isEntryPages() only matches /login/*, /signup/*, etc. This regressed
-		// non-default-brand tenants whose OIDC clients hit /oauth/authorize
-		// directly (default brand tends to enter via /login/oauth/authorize).
-		if urlPath == "/oauth/authorize" {
 			return
 		}
 	}

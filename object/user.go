@@ -969,7 +969,7 @@ func UpdateUser(id string, user *User, columns []string, isAdmin bool) (bool, er
 		}
 	}
 	if isAdmin {
-		columns = append(columns, "name", "id", "email", "phone", "country_code", "type", "balance", "balance_credit", "balance_currency", "mfa_items", "register_type", "register_source")
+		columns = append(columns, "name", "id", "email", "phone", "country_code", "type", "balance", "balance_credit", "balance_currency", "mfa_items", "register_type", "register_source", "verification_code")
 	}
 
 	columns = append(columns, "updated_time")
