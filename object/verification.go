@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -107,89 +106,74 @@ func IsAllowSend(user *User, remoteAddr, recordType string, application *Applica
 	return nil
 }
 
-func SendVerificationCodeToEmail(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, method string, host string, applicationName string, application *Application) error {
+// SendVerificationCodeToEmail generates an OTP and dispatches it via
+// hanzoai/notify. The notify service owns the per-tenant template, the
+// SendGrid/SMTP/Resend provider selection, retry, and metering — IAM
+// only hands it the OTP and the recipient. The IAM-side verification
+// record + rate limit run locally so DB consistency does not depend on
+// notify's response shape.
+//
+// `provider` is preserved in the signature for call-site source
+// compatibility with the controller. Its Name/Category are recorded in
+// the local verification record; everything else (Title, Content,
+// ClientId/ClientSecret) is ignored — notify holds the canonical
+// template + credentials.
+//
+// Returns an error if notify delivery is disabled. There is no
+// in-process fallback; refusing to send is the correct behaviour when
+// the canonical send path is unavailable.
+func SendVerificationCodeToEmail(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, _ string, _ string, _ string, application *Application) error {
+	if !NotifyDeliveryEnabled() {
+		return errors.New("IAM_NOTIFY_URL is not configured; notify is the only OTP delivery path")
+	}
+
 	code := getVerificationCode(user, organization)
 
-	// hanzoai/notify delivery path. When IAM_NOTIFY_URL is set, notify
-	// owns the subject + body template; IAM just hands it the OTP and
-	// recipient. Bypass SendEmail (and its provider lookup) entirely.
-	// Rate limit + verification record bookkeeping still runs locally
-	// so DB consistency does not depend on notify's response shape.
-	if NotifyDeliveryEnabled() {
-		category := "Email"
-		var providerName string
-		if provider != nil {
-			if provider.Category != "" {
-				category = provider.Category
-			}
-			providerName = provider.Name
+	category := "Email"
+	var providerName string
+	if provider != nil {
+		if provider.Category != "" {
+			category = provider.Category
 		}
-		if err := IsAllowSend(user, remoteAddr, category, application); err != nil {
-			return err
-		}
-		if err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
-			Channel:   "email",
-			Recipient: dest,
-			OTP:       code,
-			AppName:   organization.DisplayName,
-			Tenant:    organization.Name,
-		}); err != nil {
-			return err
-		}
-		return AddToVerificationRecord(user, &Provider{Name: providerName, Category: category}, organization, remoteAddr, category, dest, code)
+		providerName = provider.Name
 	}
 
-	sender := organization.DisplayName
-	title := provider.Title
-
-	// "You have requested a verification code at Hanzo IAM. Here is your code: %s, please enter in 5 minutes."
-	content := strings.Replace(provider.Content, "%s", code, 1)
-
-	if method == "forget" {
-		originFrontend, _ := getOriginFromHost(host)
-
-		query := url.Values{}
-		query.Add("code", code)
-		query.Add("username", user.Name)
-		query.Add("dest", util.GetMaskedEmail(dest))
-		forgetURL := originFrontend + "/forget/" + applicationName + "?" + query.Encode()
-
-		content = strings.Replace(content, "%link", forgetURL, -1)
-		content = strings.Replace(content, "<reset-link>", "", -1)
-		content = strings.Replace(content, "</reset-link>", "", -1)
-	} else {
-		matchContent := ResetLinkReg.Find([]byte(content))
-		content = strings.Replace(content, string(matchContent), "", -1)
-	}
-
-	userString := "Hi"
-	if user != nil {
-		userString = user.GetFriendlyName()
-	}
-	content = strings.Replace(content, "%{user.friendlyName}", userString, 1)
-
-	err := IsAllowSend(user, remoteAddr, provider.Category, application)
-	if err != nil {
+	if err := IsAllowSend(user, remoteAddr, category, application); err != nil {
 		return err
 	}
-
-	err = SendEmail(provider, title, content, []string{dest}, sender)
-	if err != nil {
+	if err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
+		Channel:   "email",
+		Recipient: dest,
+		OTP:       code,
+		AppName:   organization.DisplayName,
+		Tenant:    organization.Name,
+	}); err != nil {
 		return err
 	}
-
-	err = AddToVerificationRecord(user, provider, organization, remoteAddr, provider.Category, dest, code)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return AddToVerificationRecord(user, &Provider{Name: providerName, Category: category}, organization, remoteAddr, category, dest, code)
 }
 
+// SendVerificationCodeToPhone generates an OTP and dispatches it via
+// hanzoai/notify. notify resolves the per-tenant SMS provider, renders
+// the iam.otp_sent template, sends, and records a meter row. IAM owns
+// the verification record + rate limiting.
+//
+// Per-user pinned OTP (user.VerificationCode set, e.g. for sandbox
+// users) skips the send entirely and just records the code — the
+// pinned-OTP demo path is intentionally provider-independent.
+//
+// `provider` is preserved in the signature for call-site source
+// compatibility with the controller. Its Name/Category are recorded in
+// the local verification record; everything else is ignored.
+//
+// Returns an error if notify delivery is disabled and the user is not
+// using a pinned OTP. There is no in-process fallback.
 func SendVerificationCodeToPhone(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, application *Application) error {
-	// Per-user pinned OTP or org master code: skip SMS entirely, just record the code.
-	// This allows test/sandbox users to have a permanent OTP without needing an SMS provider.
 	code := getVerificationCode(user, organization)
+
+	// Per-user pinned OTP: skip SMS entirely, just record the code.
+	// Allows test/sandbox users to have a permanent OTP without depending
+	// on any provider being configured.
 	if user != nil && user.VerificationCode != "" {
 		category := "phone"
 		if provider != nil {
@@ -198,51 +182,32 @@ func SendVerificationCodeToPhone(organization *Organization, user *User, provide
 		return AddToVerificationRecord(user, provider, organization, remoteAddr, category, dest, code)
 	}
 
-	// hanzoai/notify delivery path. notify resolves the per-tenant Plivo
-	// provider, renders the iam.otp_sent template, sends, and records a
-	// meter row. IAM still owns the verification record + rate limiting.
-	// When IAM_NOTIFY_URL is unset, this branch is skipped and the
-	// existing SendSms path (DB row / env Plivo / env Twilio) runs.
-	if NotifyDeliveryEnabled() {
-		category := "phone"
-		var providerName string
-		if provider != nil {
-			if provider.Category != "" {
-				category = provider.Category
-			}
-			providerName = provider.Name
-		}
-		if err := IsAllowSend(user, remoteAddr, category, application); err != nil {
-			return err
-		}
-		if err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
-			Channel:   "sms",
-			Recipient: dest,
-			OTP:       code,
-			AppName:   organization.DisplayName,
-			Tenant:    organization.Name,
-		}); err != nil {
-			return err
-		}
-		return AddToVerificationRecord(user, &Provider{Name: providerName, Category: category}, organization, remoteAddr, category, dest, code)
+	if !NotifyDeliveryEnabled() {
+		return errors.New("IAM_NOTIFY_URL is not configured; notify is the only OTP delivery path")
 	}
 
-	err := IsAllowSend(user, remoteAddr, provider.Category, application)
-	if err != nil {
+	category := "phone"
+	var providerName string
+	if provider != nil {
+		if provider.Category != "" {
+			category = provider.Category
+		}
+		providerName = provider.Name
+	}
+
+	if err := IsAllowSend(user, remoteAddr, category, application); err != nil {
 		return err
 	}
-
-	err = SendSms(provider, code, dest)
-	if err != nil {
+	if err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
+		Channel:   "sms",
+		Recipient: dest,
+		OTP:       code,
+		AppName:   organization.DisplayName,
+		Tenant:    organization.Name,
+	}); err != nil {
 		return err
 	}
-
-	err = AddToVerificationRecord(user, provider, organization, remoteAddr, provider.Category, dest, code)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return AddToVerificationRecord(user, &Provider{Name: providerName, Category: category}, organization, remoteAddr, category, dest, code)
 }
 
 func AddToVerificationRecord(user *User, provider *Provider, organization *Organization, remoteAddr, recordType, dest, code string) error {
