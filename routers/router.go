@@ -328,8 +328,9 @@ func InitAPI() {
 	web.Router("/v1/iam/get-records-filter", &controllers.ApiController{}, "POST:GetRecordsByFilter")
 	web.Router("/v1/iam/add-record", &controllers.ApiController{}, "POST:AddRecord")
 
-	web.Router("/v1/iam/send-email", &controllers.ApiController{}, "POST:SendEmail")
-	web.Router("/v1/iam/send-sms", &controllers.ApiController{}, "POST:SendSms")
+	// /v1/iam/send-email and /v1/iam/send-sms were removed in favor of
+	// hanzoai/notify (POST /v1/notify/send). SDK consumers should call
+	// notify directly. See controllers/service.go.
 	web.Router("/v1/iam/send-notification", &controllers.ApiController{}, "POST:SendNotification")
 
 	web.Router("/v1/iam/webauthn/signup/begin", &controllers.ApiController{}, "GET:WebAuthnSignupBegin")
