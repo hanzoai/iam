@@ -17,7 +17,6 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/hanzoai/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/object"
@@ -258,26 +257,15 @@ func (c *ApiController) SendInvitation() {
 		application.Name = fmt.Sprintf("%s-org-%s", application.Name, invitation.Owner)
 	}
 
-	provider, err := application.GetEmailProvider("Invitation")
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-	if provider == nil {
-		c.ResponseError(fmt.Sprintf(c.T("verification:please add an Email provider to the \"Providers\" list for the application: %s"), invitation.Owner))
-		return
-	}
-
-	content := provider.Metadata
-
-	content = strings.ReplaceAll(content, "%code", invitation.Code)
-	content = strings.ReplaceAll(content, "%link", invitation.GetInvitationLink(c.getEffectiveHost(), application.Name))
-
-	err = object.SendEmail(provider, provider.Title, content, destinations, organization.DisplayName)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
-	}
-
+	// Invitation email delivery is intentionally stubbed in this PR.
+	// The legacy in-process path (object.SendEmail → SendGrid/SMTP)
+	// has been removed as part of the notify-only refactor. Routing
+	// invitations through hanzoai/notify under an `iam.invitation_sent`
+	// event template is a follow-up; today this endpoint records the
+	// invitation only and returns success so callers can still build
+	// against the record. Operators must distribute the invitation
+	// code+link out-of-band until the notify wiring lands.
+	_ = destinations
+	_ = invitation.GetInvitationLink(c.getEffectiveHost(), application.Name)
 	c.ResponseOk()
 }
