@@ -137,11 +137,15 @@ func initAdminOrganization() bool {
 		return true
 	}
 
-	organization = &Organization{
-		Owner:              "admin",
-		Name:               "superuser",
+	displayName := org.DisplayName
+	if displayName == "" {
+		displayName = org.Name
+	}
+	org = &Organization{
+		Owner:              org.Owner,
+		Name:               org.Name,
 		CreatedTime:        util.GetCurrentTime(),
-		DisplayName:        "Superuser",
+		DisplayName:        displayName,
 		WebsiteUrl:         "",
 		Favicon:            "",
 		PasswordType:       "bcrypt",
@@ -152,13 +156,13 @@ func initAdminOrganization() bool {
 		Tags:               []string{},
 		Languages:          []string{"en", "es", "fr", "de", "ja", "zh", "vi", "pt", "tr", "pl", "uk"},
 		InitScore:          2000,
-		AccountItems:       getBuiltInAccountItems(),
+		AccountItems:       getAdminAccountItems(),
 		EnableSoftDeletion: false,
 		IsProfilePublic:    false,
 		UseEmailAsUsername: false,
 		EnableTour:         true,
 	}
-	_, err = AddOrganization(organization)
+	_, err = AddOrganization(org)
 	if err != nil {
 		panic(err)
 	}

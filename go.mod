@@ -11,7 +11,6 @@ require (
 	github.com/alibabacloud-go/openapi-util v0.1.0
 	github.com/alibabacloud-go/tea v1.3.2
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.7
-	github.com/aliyun/alibaba-cloud-sdk-go v1.63.107
 	github.com/aliyun/aliyun-oss-go-sdk v2.2.2+incompatible
 	github.com/aliyun/credentials-go v1.3.10
 	github.com/aws/aws-sdk-go v1.55.6
@@ -36,8 +35,6 @@ require (
 	github.com/hanzoai/authzstore v0.1.1
 	github.com/hanzoai/beego/v2 v2.3.9
 	github.com/hanzoai/builder v0.3.13
-	github.com/hanzoai/go-sms-sender v0.25.2
-	github.com/hanzoai/gomail/v2 v2.3.2
 	github.com/hanzoai/idv v1.0.0
 	github.com/hanzoai/kms/sdk/go v1.0.0
 	github.com/hanzoai/ldapserver v1.2.1
@@ -60,11 +57,9 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/nyaruka/phonenumbers v1.2.2
 	github.com/pquerna/otp v1.5.0
-	github.com/resend/resend-go/v3 v3.1.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/russellhaering/gosaml2 v0.9.0
 	github.com/russellhaering/goxmldsig v1.2.0
-	github.com/sendgrid/sendgrid-go v3.16.1+incompatible
 	github.com/shirou/gopsutil/v4 v4.25.9
 	github.com/siddontang/go-log v0.0.0-20190221022429-1e957dd83bed
 	github.com/spf13/cobra v1.10.2
@@ -107,10 +102,9 @@ require (
 	github.com/alibabacloud-go/tea-oss-utils v1.1.0 // indirect
 	github.com/alibabacloud-go/tea-utils v1.3.6 // indirect
 	github.com/alibabacloud-go/tea-xml v1.1.3 // indirect
-	github.com/apistd/uni-go-sdk v0.0.2 // indirect
+	github.com/aliyun/alibaba-cloud-sdk-go v1.63.107 // indirect
 	github.com/atc0005/go-teams-notify/v2 v2.13.0 // indirect
 	github.com/aws/smithy-go v1.24.0 // indirect
-	github.com/baidubce/bce-sdk-go v0.9.156 // indirect
 	github.com/blinkbean/dingtalk v1.1.3 // indirect
 	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bwmarrin/discordgo v0.28.1 // indirect
@@ -211,20 +205,16 @@ require (
 	github.com/scim2/filter-parser/v2 v2.2.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.3 // indirect
-	github.com/sendgrid/rest v2.6.9+incompatible // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/shiena/ansicolor v0.0.0-20200904210342-c7312218db18 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/siddontang/go v0.0.0-20180604090527-bdc77568d726 // indirect
-	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/slack-go/slack v0.15.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220614013038-64ee5596c38a // indirect
 	github.com/technoweenie/multipartstreamer v1.0.1 // indirect
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.744 // indirect
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms v1.0.744 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
@@ -232,11 +222,8 @@ require (
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
-	github.com/twilio/twilio-go v1.13.0 // indirect
-	github.com/ucloud/ucloud-sdk-go v0.22.5 // indirect
 	github.com/utahta/go-linenotify v0.5.0 // indirect
 	github.com/valllabh/ocsf-schema-golang v1.0.3 // indirect
-	github.com/volcengine/volc-sdk-golang v1.0.117 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
@@ -252,7 +239,6 @@ require (
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/tools v0.43.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect

@@ -286,7 +286,6 @@ func (c *ApiController) SendVerificationCode() {
 	}
 
 	sendResp := errors.New("invalid dest type")
-	var provider *object.Provider
 
 	switch vform.Type {
 	case object.VerifyTypeEmail:
@@ -327,32 +326,11 @@ func (c *ApiController) SendVerificationCode() {
 			}
 		}
 
-		// hanzoai/notify delivery path: no per-app Provider row required.
-		// notify resolves the per-tenant SendGrid/SMTP provider from its
-		// own KMS-backed config; IAM just hands it the OTP.
-		if object.NotifyDeliveryEnabled() {
-			sendResp = object.SendVerificationCodeToEmail(organization, user, nil, clientIp, vform.Dest, vform.Method, c.getEffectiveHost(), application.Name, application)
-			break
-		}
-
-		// Env-driven SendGrid override: when IAM_EMAIL_PROVIDER=sendgrid
-		// is set (creds validated at boot), the DB-lookup short-circuit
-		// on a missing per-application Provider row is bypassed.
-		if envEmail := object.EnvEmailProvider(); envEmail != nil {
-			provider = envEmail
-		} else {
-			provider, err = application.GetEmailProvider(vform.Method)
-			if err != nil {
-				c.ResponseError(err.Error())
-				return
-			}
-			if provider == nil {
-				c.ResponseError(fmt.Sprintf(c.T("verification:please add an Email provider to the \"Providers\" list for the application: %s"), application.Name))
-				return
-			}
-		}
-
-		sendResp = object.SendVerificationCodeToEmail(organization, user, provider, clientIp, vform.Dest, vform.Method, c.getEffectiveHost(), application.Name, application)
+		// hanzoai/notify is the only OTP delivery path. notify resolves
+		// the per-tenant SendGrid/SMTP/Resend provider from its own
+		// KMS-backed config; IAM just hands it the OTP and the
+		// recipient. No per-app Provider row is consulted.
+		sendResp = object.SendVerificationCodeToEmail(organization, user, nil, clientIp, vform.Dest, vform.Method, c.getEffectiveHost(), application.Name, application)
 	case object.VerifyTypePhone:
 		if vform.Method == LoginVerification || vform.Method == ForgetVerification {
 			if user != nil && util.GetMaskedPhone(user.Phone) == vform.Dest {
@@ -405,36 +383,12 @@ func (c *ApiController) SendVerificationCode() {
 			}
 		}
 
-		// Per-user pinned OTP: skip SMS provider entirely.
-		hasPinnedCode := user != nil && user.VerificationCode != ""
-		// hanzoai/notify delivery path: no per-app Provider row required.
-		// notify resolves the per-tenant Plivo provider from its own
-		// KMS-backed config; IAM just hands it the OTP.
-		notifyOn := object.NotifyDeliveryEnabled()
-		// Env-driven Twilio override: when IAM_SMS_PROVIDER=twilio is set
-		// (creds validated at boot), the DB-lookup short-circuit on a
-		// missing per-application Provider row is bypassed. SendSms picks
-		// up the env-built provider regardless of what's passed in here.
-		envSMS := object.EnvSMSProvider()
-		switch {
-		case hasPinnedCode:
-			sendResp = object.SendVerificationCodeToPhone(organization, user, nil, clientIp, phone, application)
-		case notifyOn:
-			sendResp = object.SendVerificationCodeToPhone(organization, user, nil, clientIp, phone, application)
-		case envSMS != nil:
-			sendResp = object.SendVerificationCodeToPhone(organization, user, envSMS, clientIp, phone, application)
-		default:
-			provider, err = application.GetSmsProvider(vform.Method, vform.CountryCode)
-			if err != nil {
-				c.ResponseError(err.Error())
-				return
-			}
-			if provider == nil {
-				c.ResponseError(fmt.Sprintf(c.T("verification:please add a SMS provider to the \"Providers\" list for the application: %s"), application.Name))
-				return
-			}
-			sendResp = object.SendVerificationCodeToPhone(organization, user, provider, clientIp, phone, application)
-		}
+		// hanzoai/notify is the only OTP delivery path. notify resolves
+		// the per-tenant Plivo/Twilio provider from its own KMS-backed
+		// config; IAM just hands it the OTP. Per-user pinned OTP is
+		// handled inside SendVerificationCodeToPhone — when set, the
+		// send is skipped and only the verification record is written.
+		sendResp = object.SendVerificationCodeToPhone(organization, user, nil, clientIp, phone, application)
 	}
 
 	if sendResp != nil {
