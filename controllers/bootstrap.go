@@ -16,6 +16,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
