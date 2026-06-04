@@ -60,6 +60,9 @@ p, *, *, POST, /v1/iam/device-auth, *, *
 p, *, *, GET, /v1/iam/get-account, *, *
 p, *, *, GET, /v1/iam/userinfo, *, *
 p, *, *, GET, /v1/iam/user, *, *
+p, *, !anonymous, GET, /v1/iam/me/profile, *, *
+p, *, !anonymous, PUT, /v1/iam/me/profile, *, *
+p, *, !anonymous, POST, /v1/iam/me/avatar, *, *
 p, *, *, GET, /healthz, *, *
 p, *, *, *, /v1/iam/webhook, *, *
 p, *, *, GET, /v1/iam/get-qrcode, *, *
