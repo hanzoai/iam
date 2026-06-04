@@ -129,6 +129,15 @@ func StaticFilter(ctx *context.Context) {
 		http.ServeContent(ctx.ResponseWriter, ctx.Request, "acme-challenge", time.Now(), strings.NewReader("content"))
 	}
 
+	// /static/avatars/<file> — first-party avatar files uploaded via
+	// /v1/iam/me/avatar. Served from the same on-disk dir the controller
+	// writes to; the URL path component is constrained to a single
+	// filename, no traversal allowed.
+	if strings.HasPrefix(urlPath, "/static/avatars/") {
+		serveAvatarFile(ctx, urlPath)
+		return
+	}
+
 	// API surfaces — let Beego route or 404. Never fall through to SPA
 	// HTML for an API call; that is the silent-mux bug we keep killing.
 	// /login/oauth/authorize is the SOLE exception: it is the SPA login
@@ -267,4 +276,46 @@ func makeGzipResponse(w http.ResponseWriter, r *http.Request, path string, organ
 	defer gz.Close()
 	gzw := gzipResponseWriter{Writer: gz, ResponseWriter: w}
 	serveFileWithReplace(gzw, r, path, organizationThemeCookie)
+}
+
+// avatarDirForServing mirrors controllers.avatarDir() — we cannot import
+// the controllers package from routers without a cycle, so the small
+// const+conf lookup is duplicated here.
+func avatarDirForServing() string {
+	dir := conf.GetConfigString("avatarDir")
+	if dir == "" {
+		dir = "/data/iam/avatars"
+	}
+	return dir
+}
+
+// serveAvatarFile serves a single avatar file from disk. The URL path
+// component is restricted to a single filename — no traversal, no
+// nested directories. Unknown files return 404, NOT the SPA index.
+func serveAvatarFile(ctx *context.Context, urlPath string) {
+	filename := strings.TrimPrefix(urlPath, "/static/avatars/")
+	if filename == "" ||
+		strings.ContainsAny(filename, "/\\") ||
+		strings.Contains(filename, "..") {
+		ctx.ResponseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+	path := filepath.Join(avatarDirForServing(), filename)
+	if !util.FileExist(path) {
+		ctx.ResponseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+	f, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		ctx.ResponseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		ctx.ResponseWriter.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	ctx.ResponseWriter.Header().Set("Cache-Control", "public, max-age=3600")
+	http.ServeContent(ctx.ResponseWriter, ctx.Request, filename, stat.ModTime(), f)
 }
