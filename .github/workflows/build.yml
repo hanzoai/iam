@@ -48,7 +48,6 @@ jobs:
         # tag-release output.
         continue-on-error: true
         if: github.repository == 'hanzoai/iam' && github.event_name == 'push'
-        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build-${{ github.run_id }}
