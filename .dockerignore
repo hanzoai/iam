@@ -26,7 +26,6 @@ SECURITY.md
 CLAUDE.md
 LLM.md
 AGENTS.md
-crowdin.yml
 
 # ── Node.js (root-level, not needed) ──
 node_modules/
