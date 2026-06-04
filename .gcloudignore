@@ -22,7 +22,6 @@ SECURITY.md
 CLAUDE.md
 LLM.md
 AGENTS.md
-crowdin.yml
 
 # Heavy node_modules
 node_modules/
