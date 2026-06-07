@@ -237,11 +237,11 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 // Body:
 //
 //	{
-//	  "owner":             "liquidity",        // required
-//	  "name":              "z",                // required
-//	  "displayName":       "Z",
-//	  "email":             "z@partner",
-//	  "phone":             "9137779708",
+//	  "owner":             "<tenant>",         // required
+//	  "name":              "admin",            // required
+//	  "displayName":       "Admin",
+//	  "email":             "admin@example.com",
+//	  "phone":             "5555550100",
 //	  "countryCode":       "US",
 //	  "password":          "...",
 //	  "passwordType":      "argon2id"|"plain", // default argon2id; bcrypt rejected
