@@ -60,6 +60,15 @@ func InitAPI() {
 	// the migration window; see capauth/ + controllers/whoami.go + CAP_MIGRATION.md.
 	web.Router("/v1/iam/whoami", &controllers.ApiController{}, "GET:Whoami")
 	web.Router("/v1/iam/whoami/zap", &controllers.ApiController{}, "GET:WhoamiZAP")
+	// /v1/iam/cap/* — ZAP capability lifecycle. Issue mints a root cap
+	// for an authenticated user; issuer-keys advertises the active
+	// signing public keys for resource servers to populate their
+	// IssuerRegistry; revoke appends to the local revocation store
+	// (production gossip via PubSub topic "iam.cap.revocation" is a
+	// follow-up). See capauth/ + controllers/cap.go + CAP_MIGRATION.md.
+	web.Router("/v1/iam/cap/issue", &controllers.ApiController{}, "POST:IssueCap")
+	web.Router("/v1/iam/cap/issuer-keys", &controllers.ApiController{}, "GET:IssuerKeys")
+	web.Router("/v1/iam/cap/revoke", &controllers.ApiController{}, "POST:RevokeCap")
 	// "Me" — settings-page surface for the signed-in user. Auth is the
 	// same JWT/session enforced by /v1/iam/get-account.
 	web.Router("/v1/iam/me/profile", &controllers.ApiController{}, "GET:GetMeProfile")
