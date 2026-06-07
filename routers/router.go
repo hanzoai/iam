@@ -54,6 +54,12 @@ func InitAPI() {
 	web.Router("/v1/iam/get-account", &controllers.ApiController{}, "GET:GetAccount")
 	web.Router("/v1/iam/userinfo", &controllers.ApiController{}, "GET:GetUserinfo")
 	web.Router("/v1/iam/user", &controllers.ApiController{}, "GET:GetUserinfo2")
+	// /v1/iam/whoami — first production use of ZAP object-capability auth.
+	// Dispatches on Authorization scheme: ZAP cap header → cap.Verifier
+	// path; Bearer JWT header → legacy session lookup. Peer paths during
+	// the migration window; see capauth/ + controllers/whoami.go + CAP_MIGRATION.md.
+	web.Router("/v1/iam/whoami", &controllers.ApiController{}, "GET:Whoami")
+	web.Router("/v1/iam/whoami/zap", &controllers.ApiController{}, "GET:WhoamiZAP")
 	// "Me" — settings-page surface for the signed-in user. Auth is the
 	// same JWT/session enforced by /v1/iam/get-account.
 	web.Router("/v1/iam/me/profile", &controllers.ApiController{}, "GET:GetMeProfile")
