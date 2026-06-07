@@ -252,11 +252,12 @@ func TestZAP_Verify_TamperedSig(t *testing.T) {
 
 	tampered := make([]byte, len(c.Bytes()))
 	copy(tampered, c.Bytes())
-	// Flip a bit inside the active 64-byte ed25519 signature. The cap's
-	// 96-byte sig footer pads the trailing 32 bytes with zero, so flipping
-	// in the padding zone wouldn't catch — we target byte (len - 96 + 0),
-	// the first byte of the real signature.
-	sigStart := len(tampered) - 96
+	// Flip a bit inside the active ed25519 signature. The cap's
+	// cap.SigSize footer puts the 64-byte ed25519 signature at the
+	// leading bytes; the bytes between the signature and the tag byte
+	// at cap.AlgTagOffset are zero pad. We target byte (len - SigSize)
+	// which is the first byte of the real signature on the wire.
+	sigStart := len(tampered) - cap.SigSize
 	tampered[sigStart] ^= 0x01
 
 	hdr := "ZAP " + base64.StdEncoding.EncodeToString(tampered)
