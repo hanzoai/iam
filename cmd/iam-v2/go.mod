@@ -22,8 +22,8 @@ go 1.26.3
 // (controllers/auth.go + controllers/wellknown_* + object/jwt_mldsa65.go
 // + object/jwks_cache.go) from Beego to hanzoai/zip handlers.
 require (
-	github.com/hanzoai/authz v1.10.0
-	github.com/hanzoai/base v1.3.0
+	github.com/hanzoai/authz v1.10.1
+	github.com/hanzoai/base v1.3.1
 	github.com/hanzoai/orm v0.5.2
 	github.com/hanzoai/zip v0.2.0
 	github.com/spf13/cobra v1.10.2
@@ -82,7 +82,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.17.0 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/grandcat/zeroconf v1.0.0 // indirect
-	github.com/hanzoai/cloud v0.1.0 // indirect
+	github.com/hanzoai/cloud v0.1.1 // indirect
 	github.com/hanzoai/dbx v1.16.0 // indirect
 	github.com/hanzoai/kv-go/v9 v9.18.0 // indirect
 	github.com/hanzoai/pubsub-go v1.0.0 // indirect
@@ -186,16 +186,4 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.50.0 // indirect
-)
-
-// Pinned to local checkouts during Phase 0 scaffolding so the v2 stack
-// stays in sync with patches landing across orm/zip/authz/base/cloud
-// during the migration. Switch to pinned vX.Y.Z imports once the v2
-// surface stabilises in Phase 1.
-replace (
-	github.com/hanzoai/authz => ../../../authz
-	github.com/hanzoai/base => ../../../base
-	github.com/hanzoai/cloud => ../../../cloud
-	github.com/hanzoai/orm => ../../../orm
-	github.com/hanzoai/zip => ../../../zip
 )
