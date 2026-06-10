@@ -112,7 +112,7 @@ func TestValidateCurrency(t *testing.T) {
 
 func TestUserToMeProfile_DefaultsForNewUser(t *testing.T) {
 	u := &object.User{
-		Owner:         "liquidity",
+		Owner:         "acme",
 		Name:          "alice",
 		Id:            "u_abc",
 		DisplayName:   "Alice",
@@ -124,7 +124,7 @@ func TestUserToMeProfile_DefaultsForNewUser(t *testing.T) {
 	if p.UserID != "u_abc" {
 		t.Fatalf("UserID: got %q", p.UserID)
 	}
-	if p.OrgID != "liquidity" {
+	if p.OrgID != "acme" {
 		t.Fatalf("OrgID: got %q", p.OrgID)
 	}
 	if p.Timezone != "UTC" {
