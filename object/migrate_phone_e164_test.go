@@ -68,13 +68,13 @@ func TestMigratePhoneToE164_RewritesLegacyRows(t *testing.T) {
 
 	// Seed the exact shape that orphaned the original user. The fixture
 	// mirrors devnet user f5aace76-364a-4dc1-b3d7-57a92fd129c3.
-	rawInsertUser(t, engine, "liquidity", "u16178888888", "6178888888", "US")
-	rawInsertUser(t, engine, "liquidity", "u-uk-test", "7911123456", "GB")
-	rawInsertUser(t, engine, "liquidity", "u-jp-test", "9012345678", "JP")
+	rawInsertUser(t, engine, "acme", "u16178888888", "6178888888", "US")
+	rawInsertUser(t, engine, "acme", "u-uk-test", "7911123456", "GB")
+	rawInsertUser(t, engine, "acme", "u-jp-test", "9012345678", "JP")
 	// Already-canonical row — must pass through unchanged.
-	rawInsertUser(t, engine, "liquidity", "u-already-e164", "+14155551212", "US")
+	rawInsertUser(t, engine, "acme", "u-already-e164", "+14155551212", "US")
 	// Fixture noise: not a real number. Should be skipped, not blow up.
-	rawInsertUser(t, engine, "liquidity", "u-fixture", "1337000001", "US")
+	rawInsertUser(t, engine, "acme", "u-fixture", "1337000001", "US")
 
 	updated, skipped, err := MigratePhoneToE164(engine)
 	if err != nil {
@@ -90,11 +90,11 @@ func TestMigratePhoneToE164_RewritesLegacyRows(t *testing.T) {
 	cases := []struct {
 		owner, name, want string
 	}{
-		{"liquidity", "u16178888888", "+16178888888"},
-		{"liquidity", "u-uk-test", "+447911123456"},
-		{"liquidity", "u-jp-test", "+819012345678"},
-		{"liquidity", "u-already-e164", "+14155551212"},
-		{"liquidity", "u-fixture", "1337000001"},
+		{"acme", "u16178888888", "+16178888888"},
+		{"acme", "u-uk-test", "+447911123456"},
+		{"acme", "u-jp-test", "+819012345678"},
+		{"acme", "u-already-e164", "+14155551212"},
+		{"acme", "u-fixture", "1337000001"},
 	}
 	for _, c := range cases {
 		var got User
@@ -112,7 +112,7 @@ func TestMigratePhoneToE164_RewritesLegacyRows(t *testing.T) {
 // no-op.
 func TestMigratePhoneToE164_Idempotent(t *testing.T) {
 	engine := newTestEngine(t)
-	rawInsertUser(t, engine, "liquidity", "u1", "6178888888", "US")
+	rawInsertUser(t, engine, "acme", "u1", "6178888888", "US")
 
 	u1, _, err := MigratePhoneToE164(engine)
 	if err != nil {
@@ -157,7 +157,7 @@ func TestGetUserByPhoneAfterMigration(t *testing.T) {
 	}
 
 	// Seed legacy row, then migrate.
-	rawInsertUser(t, engine, "liquidity", "u16178888888", "6178888888", "US")
+	rawInsertUser(t, engine, "acme", "u16178888888", "6178888888", "US")
 	if _, _, err := MigratePhoneToE164(engine); err != nil {
 		t.Fatalf("MigratePhoneToE164: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestGetUserByPhoneAfterMigration(t *testing.T) {
 		{"dashes_with_country", "617-888-8888", "US"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			u, err := GetUserByPhoneWithCountry("liquidity", tc.phone, tc.countryCode)
+			u, err := GetUserByPhoneWithCountry("acme", tc.phone, tc.countryCode)
 			if err != nil {
 				t.Fatalf("GetUserByPhoneWithCountry: %v", err)
 			}
@@ -210,7 +210,7 @@ func TestAddUserNormalizesPhone(t *testing.T) {
 	// (organizations table, applications, avatars). The contract we
 	// pin here is the same one AddUser enforces at the top.
 	u := &User{
-		Owner:       "liquidity",
+		Owner:       "acme",
 		Name:        "alice",
 		Id:          "alice-id",
 		Phone:       "6178888888",
@@ -232,7 +232,7 @@ func TestAddUserNormalizesPhone(t *testing.T) {
 	if _, err := engine.Insert(u); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	got, err := GetUserByPhoneWithCountry("liquidity", "+16178888888", "")
+	got, err := GetUserByPhoneWithCountry("acme", "+16178888888", "")
 	if err != nil || got == nil {
 		t.Fatalf("lookup after insert: got=%v err=%v", got, err)
 	}
