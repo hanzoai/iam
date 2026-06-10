@@ -8,7 +8,7 @@ All outbound user messaging (OTP, password resets, account alerts) now goes thro
 
 **PR #41: /v1/iam/me/profile + /v1/iam/me/avatar endpoints** (5dfeeeea)
 
-Exposes two self-service endpoints under the existing `/v1/iam/me/*` namespace. `PATCH /me/profile` accepts the editable subset of user fields (display name, locale, timezone, marketing-consent flags) and persists through the canonical user-update path; `PUT /me/avatar` accepts multipart upload and stores the image via the configured object store (Hanzos3 in production). Both endpoints respect the JWT-derived `sub` claim — there is no admin override. Consumed by the Liquidity Exchange profile page (/exchange PR #153).
+Exposes two self-service endpoints under the existing `/v1/iam/me/*` namespace. `PATCH /me/profile` accepts the editable subset of user fields (display name, locale, timezone, marketing-consent flags) and persists through the canonical user-update path; `PUT /me/avatar` accepts multipart upload and stores the image via the configured object store (Hanzos3 in production). Both endpoints respect the JWT-derived `sub` claim — there is no admin override.
 
 **PR #42: Fix build.yml duplicate continue-on-error YAML key** (ee8284e0)
 

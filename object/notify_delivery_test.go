@@ -86,7 +86,7 @@ func TestEnforceNotifyDeliveryGuard_EnabledOnValidURL(t *testing.T) {
 	defer resetNotifyDeliveryCache()
 	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
 	t.Setenv(envIAMNotifyToken, "tok-xxx")
-	t.Setenv(envIAMNotifyTenant, "liquidity")
+	t.Setenv(envIAMNotifyTenant, "acme")
 	EnforceNotifyDeliveryGuard()
 	if !NotifyDeliveryEnabled() {
 		t.Fatal("notify delivery should be enabled when IAM_NOTIFY_URL is set")
@@ -99,8 +99,8 @@ func TestEnforceNotifyDeliveryGuard_EnabledOnValidURL(t *testing.T) {
 	if cachedNotifyToken != "tok-xxx" {
 		t.Fatalf("cachedNotifyToken=%q, want tok-xxx", cachedNotifyToken)
 	}
-	if cachedNotifyTenant != "liquidity" {
-		t.Fatalf("cachedNotifyTenant=%q, want liquidity", cachedNotifyTenant)
+	if cachedNotifyTenant != "acme" {
+		t.Fatalf("cachedNotifyTenant=%q, want acme", cachedNotifyTenant)
 	}
 	if cachedNotifyTimeout != defaultNotifyTimeout {
 		t.Fatalf("cachedNotifyTimeout=%v, want %v", cachedNotifyTimeout, defaultNotifyTimeout)
@@ -128,8 +128,8 @@ func TestEnforceNotifyDeliveryGuard_TenantDefaultsToLiquidity(t *testing.T) {
 	EnforceNotifyDeliveryGuard()
 	notifyDeliveryCacheMu.RLock()
 	defer notifyDeliveryCacheMu.RUnlock()
-	if cachedNotifyTenant != "liquidity" {
-		t.Fatalf("cachedNotifyTenant=%q, want liquidity (default when env unset)", cachedNotifyTenant)
+	if cachedNotifyTenant != "hanzo" {
+		t.Fatalf("cachedNotifyTenant=%q, want hanzo (default when env unset)", cachedNotifyTenant)
 	}
 }
 
@@ -326,7 +326,7 @@ func TestHTTPDeliverer_HappyPath(t *testing.T) {
 		Recipient: "+15551234567",
 		OTP:       "987654",
 		AppName:   "Liquidity",
-		Tenant:    "liquidity",
+		Tenant:    "acme",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -343,7 +343,7 @@ func TestHTTPDeliverer_HappyPath(t *testing.T) {
 	if gotAuth != "Bearer tok-xxx" {
 		t.Errorf("Authorization=%q, want 'Bearer tok-xxx'", gotAuth)
 	}
-	if gotOrgID != "liquidity" {
+	if gotOrgID != "acme" {
 		t.Errorf("X-Org-Id=%q, want liquidity", gotOrgID)
 	}
 	if len(gotBody.To) != 1 || gotBody.To[0] != "+15551234567" {
@@ -381,7 +381,7 @@ func TestHTTPDeliverer_4xxReturnsError(t *testing.T) {
 		Channel:   "sms",
 		Recipient: "+15551234567",
 		OTP:       "111111",
-		Tenant:    "liquidity",
+		Tenant:    "acme",
 	})
 	if err == nil {
 		t.Fatal("expected error on 4xx")
