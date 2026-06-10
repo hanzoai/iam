@@ -63,9 +63,9 @@ func defaultResolveTypeGuardCaller(c *ApiController) *object.User {
 // conf.AdminOrg may set Type=="application". IAM's semantics already
 // treat the entire bootstrap (AdminOrg) tenant as the global-admin
 // surface (see object/user.go::IsGlobalAdmin == "Owner == AdminOrg"),
-// so org membership IS the privilege. Tenant org admins (e.g.
-// liquidity, mlc, vcc) are rejected. Anonymous / unauthenticated
-// callers are rejected.
+// so org membership IS the privilege. Tenant org admins (any non-
+// AdminOrg tenant) are rejected. Anonymous / unauthenticated callers
+// are rejected.
 //
 // Per the threat model in users_by_attribute.go: the goal is to keep
 // the synthetic-application-user shape exclusive to client_credentials
