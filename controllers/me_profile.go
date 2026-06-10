@@ -80,8 +80,8 @@ var displayNameRegexp = regexp.MustCompile(`^[\p{L}\p{N} '\-.]+$`)
 var currencyRegexp = regexp.MustCompile(`^[A-Z]{3}$`)
 
 // MeProfile is the wire shape returned by GET /v1/iam/me/profile and
-// updated by PUT /v1/iam/me/profile. Snake-case to match the consumer
-// (/exchange profile page) which is already snake-case.
+// updated by PUT /v1/iam/me/profile. Snake-case for SDK-consumer
+// friendliness (REST clients, mobile apps).
 type MeProfile struct {
 	UserID            string `json:"user_id"`
 	OrgID             string `json:"org_id"`
