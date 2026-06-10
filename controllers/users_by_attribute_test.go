@@ -180,9 +180,9 @@ func TestByAttributeAllowedClients_EmptyEnvRejectsAll(t *testing.T) {
 // TestByAttributeAllowedClients_ParsesCommaList verifies the CSV parse
 // trims whitespace, drops empty entries, and produces an exact set.
 func TestByAttributeAllowedClients_ParsesCommaList(t *testing.T) {
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", " liquidity-bd ,liquidity-ats,,liquidity-ta ")
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", " acme-bd ,acme-ats,,acme-ta ")
 	got := byAttributeAllowedClients()
-	for _, want := range []string{"liquidity-bd", "liquidity-ats", "liquidity-ta"} {
+	for _, want := range []string{"acme-bd", "acme-ats", "acme-ta"} {
 		if _, ok := got[want]; !ok {
 			t.Fatalf("expected %q in allowlist, got %v", want, got)
 		}
@@ -201,7 +201,7 @@ func TestByAttributeAllowedClients_ParsesCommaList(t *testing.T) {
 // for the threat-model rationale.
 func TestByAttributeRateLimit_BurstAndWindow(t *testing.T) {
 	resetByAttrState(t)
-	const client = "liquidity-bd"
+	const client = "acme-bd"
 	for i := 0; i < byAttributeRateBurst; i++ {
 		if !byAttributeRateLimit(client) {
 			t.Fatalf("call %d should be allowed (burst=%d)", i+1, byAttributeRateBurst)
@@ -211,7 +211,7 @@ func TestByAttributeRateLimit_BurstAndWindow(t *testing.T) {
 		t.Fatal("call beyond burst must be denied")
 	}
 	// Distinct clientId — independent bucket.
-	if !byAttributeRateLimit("liquidity-ats") {
+	if !byAttributeRateLimit("acme-ats") {
 		t.Fatal("different clientId must have its own bucket")
 	}
 }
@@ -263,7 +263,7 @@ func TestExtractBearerJWT_Variants(t *testing.T) {
 // whitelist: under no circumstances may password / salt / TOTP / etc.
 // leak through. We assert the projection has only the 7 declared fields.
 func TestProjectUserForByAttribute_OmitsSecrets(t *testing.T) {
-	u := minimalUserWithSecrets("liquidity", "alice")
+	u := minimalUserWithSecrets("acme", "alice")
 	got := projectUserForByAttribute(u)
 	if got == nil {
 		t.Fatal("projection returned nil")
@@ -352,7 +352,7 @@ func fakeClaims(clientId, owner string, anon, ok bool) func(*ApiController) (str
 // canonical error shape. The handler must NEVER 404 the route.
 func TestHandler_Anonymous_Returns401(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
 	byAttrResolveClaims = fakeClaims("", "", true, false)
 
 	c, rec := newByAttrController(t, "phone=9137779708", nil)
@@ -373,7 +373,7 @@ func TestHandler_Anonymous_Returns401(t *testing.T) {
 // categorically the wrong credential type for this endpoint.
 func TestHandler_UserJWT_Returns403(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
 	// anon=false means a valid token WAS parsed, but ok=false means it
 	// failed the client_credentials discriminator (Type!="application").
 	byAttrResolveClaims = fakeClaims("", "", false, false)
@@ -393,8 +393,8 @@ func TestHandler_UserJWT_Returns403(t *testing.T) {
 // IAM_BY_ATTRIBUTE_ALLOWLIST must be denied. This is the second layer.
 func TestHandler_ServiceCreds_NotAllowlisted_Returns403(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
-	byAttrResolveClaims = fakeClaims("not-allowlisted-svc", "liquidity", false, true)
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
+	byAttrResolveClaims = fakeClaims("not-allowlisted-svc", "acme", false, true)
 
 	c, rec := newByAttrController(t, "phone=9137779708", map[string]string{
 		"Authorization": "Bearer eyJ.svc.jwt",
@@ -411,8 +411,8 @@ func TestHandler_ServiceCreds_NotAllowlisted_Returns403(t *testing.T) {
 // we did NOT short-circuit on the missing attr before auth.
 func TestHandler_ServiceCreds_Allowlisted_BadRequest_NoAttr(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
-	byAttrResolveClaims = fakeClaims("liquidity-bd", "liquidity", false, true)
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
+	byAttrResolveClaims = fakeClaims("acme-bd", "acme", false, true)
 
 	c, rec := newByAttrController(t, "", map[string]string{
 		"Authorization": "Bearer eyJ.svc.jwt",
@@ -428,8 +428,8 @@ func TestHandler_ServiceCreds_Allowlisted_BadRequest_NoAttr(t *testing.T) {
 // email together must be rejected (we want exactly one).
 func TestHandler_ServiceCreds_Allowlisted_BadRequest_BothAttrs(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
-	byAttrResolveClaims = fakeClaims("liquidity-bd", "liquidity", false, true)
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
+	byAttrResolveClaims = fakeClaims("acme-bd", "acme", false, true)
 
 	q := url.Values{}
 	q.Set("phone", "9137779708")
@@ -445,16 +445,16 @@ func TestHandler_ServiceCreds_Allowlisted_BadRequest_BothAttrs(t *testing.T) {
 }
 
 // TestHandler_CrossOrgOwner_Returns403 — caller's JWT binds owner=mlc,
-// but they send ?owner=liquidity (probing another tenant). Must 403,
+// but they send ?owner=acme (probing another tenant). Must 403,
 // not silently rewrite, not silently return mlc data with a misleading
 // echoed owner. This is the cross-tenant probe defense.
 func TestHandler_CrossOrgOwner_Returns403(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
-	byAttrResolveClaims = fakeClaims("liquidity-bd", "mlc", false, true)
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
+	byAttrResolveClaims = fakeClaims("acme-bd", "mlc", false, true)
 
 	q := url.Values{}
-	q.Set("owner", "liquidity") // attempting to escape into another tenant
+	q.Set("owner", "acme") // attempting to escape into another tenant
 	q.Set("phone", "9137779708")
 	c, rec := newByAttrController(t, q.Encode(), map[string]string{
 		"Authorization": "Bearer eyJ.svc.jwt",
@@ -467,13 +467,13 @@ func TestHandler_CrossOrgOwner_Returns403(t *testing.T) {
 }
 
 // TestHandler_SameOwnerEcho_Allowed — passing the SAME owner the JWT
-// already binds (?owner=liquidity when JWT.owner=liquidity) is fine.
+// already binds (?owner=acme when JWT.owner=acme) is fine.
 // This matters for SDK ergonomics: callers can echo the value back
 // without tripping the cross-org guard.
 func TestHandler_SameOwnerEcho_Allowed(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
-	byAttrResolveClaims = fakeClaims("liquidity-bd", "liquidity", false, true)
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
+	byAttrResolveClaims = fakeClaims("acme-bd", "acme", false, true)
 	// Email lookup needs the DB — short-circuit with a missing attr to
 	// take the path that doesn't hit object.GetUserByEmail.
 	// Instead use phone= with empty result via no-DB? The phone path
@@ -482,7 +482,7 @@ func TestHandler_SameOwnerEcho_Allowed(t *testing.T) {
 	// Easiest: send neither attr, get 400 — proves the owner check
 	// did not interfere. Different from the previous case where the
 	// resolver passed but no attr was sent.
-	c, rec := newByAttrController(t, "owner=liquidity", map[string]string{
+	c, rec := newByAttrController(t, "owner=acme", map[string]string{
 		"Authorization": "Bearer eyJ.svc.jwt",
 	})
 	c.GetUsersByAttribute()
@@ -501,12 +501,12 @@ func TestHandler_SameOwnerEcho_Allowed(t *testing.T) {
 // rate-limit runs BEFORE the attr validation; we can ride that.
 func TestHandler_RateLimit_Returns429(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
-	byAttrResolveClaims = fakeClaims("liquidity-bd", "liquidity", false, true)
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
+	byAttrResolveClaims = fakeClaims("acme-bd", "acme", false, true)
 
 	// Pre-fill the clientId bucket so the next call exhausts it.
 	for i := 0; i < byAttributeRateBurst; i++ {
-		if !byAttributeRateLimit("liquidity-bd") {
+		if !byAttributeRateLimit("acme-bd") {
 			t.Fatalf("pre-fill call %d should be allowed", i+1)
 		}
 	}
@@ -526,8 +526,8 @@ func TestHandler_RateLimit_Returns429(t *testing.T) {
 // increments by exactly 1 per accepted request — not 0, not 2.
 func TestHandler_OneRequestConsumesOneToken(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
-	byAttrResolveClaims = fakeClaims("liquidity-bd", "liquidity", false, true)
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
+	byAttrResolveClaims = fakeClaims("acme-bd", "acme", false, true)
 
 	c, rec := newByAttrController(t, "", map[string]string{
 		"Authorization":   "Bearer eyJ.svc.jwt",
@@ -541,11 +541,11 @@ func TestHandler_OneRequestConsumesOneToken(t *testing.T) {
 
 	// Now drain the remaining 9 slots; the 11th must 429.
 	for i := 0; i < byAttributeRateBurst-1; i++ {
-		if !byAttributeRateLimit("liquidity-bd") {
+		if !byAttributeRateLimit("acme-bd") {
 			t.Fatalf("drain call %d should be allowed", i+1)
 		}
 	}
-	if byAttributeRateLimit("liquidity-bd") {
+	if byAttributeRateLimit("acme-bd") {
 		t.Fatal("11th call must be denied — handler did not consume one slot")
 	}
 }
@@ -570,8 +570,8 @@ func TestHandler_OneRequestConsumesOneToken(t *testing.T) {
 //	same XFF — each service principal has its own 10/min quota.
 func TestRateLimit_KeysOnClientIdOnly_IgnoresXFF(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd,liquidity-ats")
-	byAttrResolveClaims = fakeClaims("liquidity-bd", "liquidity", false, true)
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd,acme-ats")
+	byAttrResolveClaims = fakeClaims("acme-bd", "acme", false, true)
 
 	// Part 1: rotate XFF on every request. Each call carries a different
 	// IP; if the limiter were keyed on (clientId, IP) we'd never exhaust
@@ -599,7 +599,7 @@ func TestRateLimit_KeysOnClientIdOnly_IgnoresXFF(t *testing.T) {
 	// Part 2: a DIFFERENT clientId must have its OWN bucket. Same XFF
 	// values as above, fresh clientId — must NOT inherit the exhausted
 	// quota from the first principal.
-	byAttrResolveClaims = fakeClaims("liquidity-ats", "liquidity", false, true)
+	byAttrResolveClaims = fakeClaims("acme-ats", "acme", false, true)
 	c, rec := newByAttrController(t, "", map[string]string{
 		"Authorization":   "Bearer eyJ.svc2.jwt",
 		"X-Forwarded-For": "198.51.100.1", // same as the very first call above
@@ -616,18 +616,18 @@ func TestRateLimit_KeysOnClientIdOnly_IgnoresXFF(t *testing.T) {
 // at the handler layer would have wildly different IPs.
 func TestRateLimit_BucketKeyIsLiteralClientId(t *testing.T) {
 	resetByAttrState(t)
-	// Drain liquidity-bd to the cap.
+	// Drain acme-bd to the cap.
 	for i := 0; i < byAttributeRateBurst; i++ {
-		if !byAttributeRateLimit("liquidity-bd") {
+		if !byAttributeRateLimit("acme-bd") {
 			t.Fatalf("expected %d/min to be free, call %d was denied", byAttributeRateBurst, i+1)
 		}
 	}
 	// The 11th call denied.
-	if byAttributeRateLimit("liquidity-bd") {
+	if byAttributeRateLimit("acme-bd") {
 		t.Fatal("11th call must be denied")
 	}
-	// liquidity-ats unrelated.
-	if !byAttributeRateLimit("liquidity-ats") {
+	// acme-ats unrelated.
+	if !byAttributeRateLimit("acme-ats") {
 		t.Fatal("different clientId must have its own bucket")
 	}
 }
@@ -660,7 +660,7 @@ func TestRateLimit_BucketKeyIsLiteralClientId(t *testing.T) {
 // short-circuits before any business logic runs.
 func TestHandler_ServiceCreds_TypePromotedUser_Returns403(t *testing.T) {
 	resetByAttrState(t)
-	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
+	t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
 	// Resolver returns ok=false, anon=false — i.e. the JWT was
 	// parseable but failed the strengthened discriminator (Name
 	// didn't match app.Name, or Provider/SigninMethod were set).
@@ -712,7 +712,7 @@ func TestServiceClaimsDiscriminator_RequiresAllFourFields(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			resetByAttrState(t)
-			t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "liquidity-bd")
+			t.Setenv("IAM_BY_ATTRIBUTE_ALLOWLIST", "acme-bd")
 			// Discriminator rejection => (anon=false, ok=false).
 			byAttrResolveClaims = fakeClaims("", "", false, false)
 
@@ -759,12 +759,12 @@ func TestRejectApplicationTypePromotion_AllowsBuiltInAdmin(t *testing.T) {
 		},
 		{
 			name:   "tenant org admin — the attack shape",
-			caller: &object.User{Owner: "liquidity", Name: "tenant-admin", IsAdmin: true},
+			caller: &object.User{Owner: "acme", Name: "tenant-admin", IsAdmin: true},
 			allow:  false,
 		},
 		{
 			name:   "tenant org global-admin claimant (forged isAdmin)",
-			caller: &object.User{Owner: "liquidity", Name: "evil", IsAdmin: true},
+			caller: &object.User{Owner: "acme", Name: "evil", IsAdmin: true},
 			allow:  false,
 		},
 		{
@@ -787,7 +787,7 @@ func TestRejectApplicationTypePromotion_AllowsBuiltInAdmin(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c, _ := newByAttrController(t, "", nil)
 			withTypeGuardCaller(t, tc.caller)
-			body := &object.User{Type: "application", Name: "fake-app", Owner: "liquidity"}
+			body := &object.User{Type: "application", Name: "fake-app", Owner: "acme"}
 			got := rejectApplicationTypePromotion(c, body)
 			if got != tc.allow {
 				t.Fatalf("%s: got %v, want %v", tc.name, got, tc.allow)
@@ -805,7 +805,7 @@ func TestRejectApplicationTypePromotion_BenignTypeAlwaysAllowed(t *testing.T) {
 	withTypeGuardCaller(t, nil) // no caller — should still pass for benign types
 	for _, ty := range []string{"", "normal-user", "paid-user", "merchant-user", "anonymous-user"} {
 		t.Run(ty, func(t *testing.T) {
-			body := &object.User{Type: ty, Name: "alice", Owner: "liquidity"}
+			body := &object.User{Type: ty, Name: "alice", Owner: "acme"}
 			if !rejectApplicationTypePromotion(c, body) {
 				t.Fatalf("guard must be a no-op for Type=%q", ty)
 			}
@@ -851,7 +851,7 @@ func TestAudit_DoesNotPersistProbedValues(t *testing.T) {
 	// is the simplest.
 	c.Data["json"] = &object.Response{Status: "ok", Msg: ""}
 
-	rec, err := buildByAttributeAuditRecord(c, "liquidity-bd", "liquidity", "phone", 0, http.StatusOK, "")
+	rec, err := buildByAttributeAuditRecord(c, "acme-bd", "acme", "phone", 0, http.StatusOK, "")
 	if err != nil {
 		t.Fatalf("buildByAttributeAuditRecord: %v", err)
 	}
