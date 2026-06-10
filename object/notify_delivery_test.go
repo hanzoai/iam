@@ -148,12 +148,12 @@ func TestEnforceNotifyDeliveryGuard_CustomTimeout(t *testing.T) {
 func TestEnforceNotifyDeliveryGuard_CustomTemplate(t *testing.T) {
 	defer resetNotifyDeliveryCache()
 	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
-	t.Setenv(envIAMNotifyTemplate, "liquidity.iam.otp")
+	t.Setenv(envIAMNotifyTemplate, "hanzo.iam.otp")
 	EnforceNotifyDeliveryGuard()
 	notifyDeliveryCacheMu.RLock()
 	defer notifyDeliveryCacheMu.RUnlock()
-	if cachedNotifyTemplate != "liquidity.iam.otp" {
-		t.Fatalf("cachedNotifyTemplate=%q, want liquidity.iam.otp", cachedNotifyTemplate)
+	if cachedNotifyTemplate != "hanzo.iam.otp" {
+		t.Fatalf("cachedNotifyTemplate=%q, want hanzo.iam.otp", cachedNotifyTemplate)
 	}
 }
 
@@ -325,7 +325,7 @@ func TestHTTPDeliverer_HappyPath(t *testing.T) {
 		Channel:   "sms",
 		Recipient: "+15551234567",
 		OTP:       "987654",
-		AppName:   "Liquidity",
+		AppName:   "Hanzo",
 		Tenant:    "acme",
 	})
 	if err != nil {
@@ -344,7 +344,7 @@ func TestHTTPDeliverer_HappyPath(t *testing.T) {
 		t.Errorf("Authorization=%q, want 'Bearer tok-xxx'", gotAuth)
 	}
 	if gotOrgID != "acme" {
-		t.Errorf("X-Org-Id=%q, want liquidity", gotOrgID)
+		t.Errorf("X-Org-Id=%q, want acme", gotOrgID)
 	}
 	if len(gotBody.To) != 1 || gotBody.To[0] != "+15551234567" {
 		t.Errorf("body.to=%v, want [+15551234567]", gotBody.To)
@@ -361,8 +361,8 @@ func TestHTTPDeliverer_HappyPath(t *testing.T) {
 	if gotBody.TemplateVars["recipient"] != "+15551234567" {
 		t.Errorf("body.template_vars[recipient]=%v, want +15551234567", gotBody.TemplateVars["recipient"])
 	}
-	if gotBody.TemplateVars["app"] != "Liquidity" {
-		t.Errorf("body.template_vars[app]=%v, want Liquidity", gotBody.TemplateVars["app"])
+	if gotBody.TemplateVars["app"] != "Hanzo" {
+		t.Errorf("body.template_vars[app]=%v, want Hanzo", gotBody.TemplateVars["app"])
 	}
 }
 

@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Server-to-server soft-signal lookup: "does a user row with this
-// phone/email already exist in my org?" Used by /ATS/TA during
-// onboarding so the caller can decide whether to attach to an existing
+// phone/email already exist in my org?" Used by tenant onboarding
+// services so the caller can decide whether to attach to an existing
 // user or mint a new one — WITHOUT exposing user enumeration to anyone
 // holding a user JWT.
 //
@@ -147,7 +147,7 @@ func init() {
 // into a set. Empty/unset env = empty set = reject all (fail-secure).
 // Whitespace trimmed; empty entries dropped.
 //
-//	IAM_BY_ATTRIBUTE_ALLOWLIST=liquidity-bd,liquidity-ats,liquidity-ta
+//	IAM_BY_ATTRIBUTE_ALLOWLIST=svc-a,svc-b,svc-c
 func byAttributeAllowedClients() map[string]struct{} {
 	raw := strings.TrimSpace(os.Getenv("IAM_BY_ATTRIBUTE_ALLOWLIST"))
 	set := map[string]struct{}{}
@@ -486,9 +486,8 @@ func defaultResolveServiceClaims(c *ApiController) (clientId, owner string, anon
 	// its owner. Compose the owner/name id directly — GetApplication
 	// parses via util.GetOwnerAndNameFromIdWithError which requires the
 	// two-token form. The mcpself/authz_filter call sites that bare-name
-	// it work only for system apps; we must support tenant apps
-	// (liquidity-bd, liquidity-ats, liquidity-ta) which live under the
-	// tenant org.
+	// it work only for system apps; we must support tenant apps which
+	// live under the tenant org.
 	appOwner := rec.Organization
 	if appOwner == "" {
 		// Fall back to Owner field, which is what xorm reads as pk.
