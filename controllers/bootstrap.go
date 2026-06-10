@@ -227,8 +227,8 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 //	where token is one of $HANZO_API_KEY / $KMS_SERVICE_TOKEN / $IAM_SERVICE_TOKEN.
 //	Validated by routers/auto_signin_filter.go before this handler runs.
 //
-// Idempotent operator-driven user provisioning. Used by liquid-operator to
-// reconcile LiquidIAM.spec.users[] against IAM — no human admin in the loop.
+// Idempotent operator-driven user provisioning. Used by the K8s operator
+// to reconcile IAM.spec.users[] against IAM — no human admin in the loop.
 //
 // If the user exists by (owner, name) → update; else insert. Passwords are
 // always hashed at rest (argon2id by default; bcrypt rejected; "plain" passes
@@ -247,7 +247,7 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 //	  "passwordType":      "argon2id"|"plain", // default argon2id; bcrypt rejected
 //	  "type":              "normal-user",      // default normal-user
 //	  "isAdmin":           false,
-//	  "signupApplication": "liquidity-app",
+//	  "signupApplication": "<tenant>-app",
 //	  "emailVerified":     true,
 //	  "properties":        { "...": "..." }    // future-proof free-form
 //	}
