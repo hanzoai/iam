@@ -121,7 +121,7 @@ func TestEnforceNotifyDeliveryGuard_TrimsTrailingSlash(t *testing.T) {
 	}
 }
 
-func TestEnforceNotifyDeliveryGuard_TenantDefaultsToLiquidity(t *testing.T) {
+func TestEnforceNotifyDeliveryGuard_TenantDefaultsToHanzo(t *testing.T) {
 	defer resetNotifyDeliveryCache()
 	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
 	t.Setenv(envIAMNotifyTenant, "")
