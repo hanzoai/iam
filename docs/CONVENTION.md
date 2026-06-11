@@ -32,7 +32,7 @@ the historical mess where `HANZO_IAM_URL` / `HANZO_CLIENT_ID` /
 |---|---|---|
 | `IAM_*` | The auth/OIDC engine (user identity, JWT issuance, session) | `IAM_URL`, `IAM_CLIENT_ID`, `IAM_CLIENT_SECRET`, `IAM_AUDIENCE`, `IAM_ORG`, `IAM_REDIRECT_URI` |
 | `HANZO_*` | Hanzo **product** API access at `api.hanzo.ai` / `llm.hanzo.ai` / `chat.hanzo.ai` etc — your developer credentials to *use* Hanzo as a paid service | `HANZO_API_KEY`, `HANZO_OAUTH_CLIENT_ID`, `HANZO_OAUTH_CLIENT_SECRET`, `HANZO_OAUTH_REDIRECT_URI` |
-| `IDV_*` | Identity-verification providers ( biometric, future KYC vendors) | `IDV_URL`, `IDV_CLIENT_ID`, `IDV_CLIENT_SECRET` |
+| `IDV_*` | Identity-verification providers (biometric, KYC vendors) | `IDV_URL`, `IDV_CLIENT_ID`, `IDV_CLIENT_SECRET` |
 | `CASDOOR_*` | **DEAD** — engine isn't Casdoor-branded anymore | (delete) |
 
 A bot that **authenticates users via Hanzo IAM** AND **calls api.hanzo.ai for
@@ -82,7 +82,7 @@ where the value is consumed:
   hits `/v1/iam/oauth/*`           →  IAM_*
 - Used by `@hanzo/api` (or raw fetch) against `https://api.hanzo.ai` /
   `https://llm.hanzo.ai` for LLM/Chat/MCP                          →  HANZO_*
-- Used by a biometric / KYC IDV provider ( etc)            →  IDV_*
+- Used by a biometric / KYC IDV provider                          →  IDV_*
 
 A single app can (and often does) carry env vars from all three
 namespaces. They don't merge.
