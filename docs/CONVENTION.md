@@ -1,7 +1,7 @@
 # IAM Convention — Single Source of Truth
 
 **This document is canon.** Every consumer of Hanzo IAM (and every fork —
-`tenantio/iam`, `onyx-plus/iam`, `/iam`, …) must follow these
+`tenantio/iam`, `acme/iam`, `example/iam`, …) must follow these
 rules. There is **one** way to do each thing. No aliases, no legacy
 prefixes, no hardcoded hostnames.
 
@@ -15,8 +15,8 @@ prefixes, no hardcoded hostnames.
 | Engine admin org | `admin` |
 | Engine self-app | `admin/iam` (owner/name in IAM-native form) |
 | Engine bootstrap user | `admin/root` |
-| **Consumer app slug** | **`<consumer-org>-<appname>`** — e.g. `hanzo-brain`, `tenant-app`, `-verify`, `zoo-ngo`, `lux-cloud` |
-| Consumer org | `<consumer-org>` — e.g. `hanzo`, `tenant`, ``, `zoo`, `lux` |
+| **Consumer app slug** | **`<consumer-org>-<appname>`** — e.g. `hanzo-brain`, `tenant-app`, `acme-verify`, `zoo-ngo`, `lux-cloud` |
+| Consumer org | `<consumer-org>` — e.g. `hanzo`, `tenant`, `acme`, `zoo`, `lux` |
 
 There is exactly one rule: **app slug = `<org>-<app>`**. If you're seeing
 `hanzo-foundation`, `zoo-foundation`, `app-computer`, fix them to match
@@ -147,7 +147,7 @@ So a single deployment of `ghcr.io/hanzoai/iam:v1.14.29` can serve:
 
 - `iam.hanzo.ai`
 - `iam.dev.example.com`
-- `iam..com`
+- `iam.acme.com`
 - `iam.zoo.ngo`
 - `iam.lux.network`
 
