@@ -434,6 +434,14 @@ func (a *Ormer) createTable() {
 		panic(err)
 	}
 
+	// Repair any Postgres array-literal residue ({admin/*} -> ["admin/*"]) in
+	// the JSON-backed []string columns of the permission/role tables. A single
+	// such row crashes the Casbin enforcer for ALL authz (see
+	// SanitizePolicyJsonArrays). Best-effort and idempotent: never aborts boot.
+	if _, sErr := SanitizePolicyJsonArrays(a.Engine); sErr != nil {
+		fmt.Printf("[sanitize-policy-json] non-fatal: %v\n", sErr)
+	}
+
 	err = a.Engine.Sync2(new(Model))
 	if err != nil {
 		panic(err)
