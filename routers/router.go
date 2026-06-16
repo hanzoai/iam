@@ -26,7 +26,6 @@ package routers
 import (
 	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/hanzoai/iam/controllers"
-	"github.com/hanzoai/iam/mcpself"
 )
 
 func InitAPI() {
@@ -252,7 +251,6 @@ func InitAPI() {
 	web.Router("/v1/iam/get-all-actions", &controllers.ApiController{}, "GET:GetAllActions")
 	web.Router("/v1/iam/get-all-roles", &controllers.ApiController{}, "GET:GetAllRoles")
 
-	web.Router("/v1/iam/run-authz-command", &controllers.ApiController{}, "GET:RunAuthzCommand")
 
 	web.Router("/v1/iam/get-sessions", &controllers.ApiController{}, "GET:GetSessions")
 	web.Router("/v1/iam/get-session", &controllers.ApiController{}, "GET:GetSingleSession")
@@ -416,7 +414,6 @@ func InitAPI() {
 
 	web.Router("/scim/*", &controllers.RootController{}, "*:HandleScim")
 
-	web.Router("/v1/iam/mcp", &mcpself.McpController{}, "POST:HandleMcp")
 
 	web.Router("/v1/iam/faceid-signin-begin", &controllers.ApiController{}, "GET:FaceIDSigninBegin")
 
