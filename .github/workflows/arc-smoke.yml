@@ -1,0 +1,9 @@
+name: arc-smoke
+on:
+  push:
+    branches: [ci/arc-smoke]
+jobs:
+  smoke:
+    runs-on: hanzo-build-linux-amd64
+    steps:
+      - run: echo "ARC self-hosted runner OK on $(hostname) arch=$(uname -m)"
