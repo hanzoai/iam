@@ -24,7 +24,7 @@ func NewOrg(name string) *Organization {
 
 // NewAdminOrg returns the admin organization placeholder (owner=name=admin).
 func NewAdminOrg() *Organization {
-	return &Organization{Owner: conf.AdminOrg, Name: conf.AdminOrg}
+	return &Organization{Owner: "admin", Name: conf.AdminOrg}
 }
 
 // NewAdminApp returns the IAM application placeholder owned by the admin org.
