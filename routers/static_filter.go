@@ -52,6 +52,61 @@ func getWebBuildFolder() string {
 	return path
 }
 
+// adminUIPrefixes are the SPA routes that make up the raw admin shell —
+// the management surfaces a brand-org tenant must not see. The set mirrors
+// the "User Management", "Identity", "Authorization", "Logging & Auditing"
+// and "Admin" menu groups in web/src/App.tsx (validMenuItems). The
+// non-admin landing surfaces (/, /account, /apps, /shortcuts) and the
+// auth/login/callback paths are deliberately absent so they stay reachable.
+var adminUIPrefixes = []string{
+	"/organizations", "/groups", "/trees", "/users", "/invitations",
+	"/applications", "/providers", "/resources", "/certs", "/keys",
+	"/roles", "/permissions", "/models", "/adapters", "/enforcers",
+	"/sessions", "/records", "/tokens", "/verifications",
+	"/sysinfo", "/forms", "/syncers", "/webhooks", "/tickets",
+	"/servers", "/sites", "/rules", "/ldap", "/swagger",
+}
+
+// isAdminUIPath reports whether urlPath addresses the raw admin shell. It
+// matches an exact admin route or a sub-path of one (e.g. /users and
+// /users/admin/root), but never a mere prefix of a longer unrelated word.
+func isAdminUIPath(urlPath string) bool {
+	for _, p := range adminUIPrefixes {
+		if urlPath == p || strings.HasPrefix(urlPath, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// isNonAdminSession reports whether the request carries a logged-in user
+// session that is NOT a global admin. It defers entirely to the canonical
+// admin definition (object.User.IsGlobalAdmin == "Owner == conf.AdminOrg"),
+// mirroring controllers.ApiController.isGlobalAdmin: app/* principals and
+// AdminOrg members are admins; everyone else with a session is a tenant.
+// Anonymous requests (no session user) are NOT treated as non-admin — they
+// fall through to the SPA so the login page can mount.
+func isNonAdminSession(ctx *context.Context) bool {
+	if ctx.Input.CruSession == nil {
+		return false
+	}
+	userId := getSessionUser(ctx)
+	if userId == "" {
+		return false
+	}
+	if object.IsAppUser(userId) {
+		return false
+	}
+	user, err := object.GetUser(userId)
+	if err != nil || user == nil {
+		// Unknown/erroring session — fail closed for the admin UI by
+		// treating it as a non-admin (redirect to /account, never the
+		// admin shell). The API surface enforces its own checks anyway.
+		return true
+	}
+	return !user.IsGlobalAdmin()
+}
+
 func fastAutoSignin(ctx *context.Context) (string, error) {
 	userId := getSessionUser(ctx)
 	if userId == "" {
@@ -186,6 +241,20 @@ func StaticFilter(ctx *context.Context) {
 	}
 
 	if serveAuthCallbackPage(ctx) {
+		return
+	}
+
+	// Lock the raw admin UI to the global-admin (AdminOrg) scope. The React
+	// SPA ships one bundle whose router exposes every management surface
+	// (/users, /applications, /organizations, /resources, …) gated only by
+	// "logged in", so a brand-org tenant could otherwise reach the admin
+	// shell. We enforce the tenancy boundary server-side, at the single hook
+	// that hands out index.html: a logged-in non-global-admin requesting an
+	// admin-UI path is redirected to its own account console (/account).
+	// Anonymous users fall through to the SPA (login). This is a UI-surface
+	// guard only — the /v1/iam/* API keeps its own IsGlobalAdmin checks.
+	if isAdminUIPath(urlPath) && isNonAdminSession(ctx) {
+		http.Redirect(ctx.ResponseWriter, ctx.Request, "/account", http.StatusFound)
 		return
 	}
 
