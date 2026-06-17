@@ -549,12 +549,45 @@ func mergeApplicationOAuthDefaults(existing *Application, desired *Application) 
 	}
 }
 
+// isSeedSuperuser reports whether u is a convention-seeded superuser
+// (z@<org>, global admin) whose password init_data owns as the single
+// source of truth. Such accounts are infrastructure, not user accounts:
+// their password is fixed by convention (Ilove<App>2026!!) and is
+// reconciled from init_data on every boot, so it can never drift.
+func isSeedSuperuser(u *User) bool {
+	return u != nil && u.Name == "z" && u.IsAdmin && u.Password != ""
+}
+
 func initDefinedUser(user *User) {
 	existed, err := getUser(user.Owner, user.Name)
 	if err != nil {
 		panic(err)
 	}
 	if existed != nil {
+		// EXCEPTION: a convention-seeded superuser (z@<org>, global admin) is
+		// infrastructure, not a user account. Its password is fixed by convention
+		// and init_data is the single source of truth, so reconcile it on every
+		// boot — the credential is then deterministic and self-healing, can never
+		// drift from init_data, and needs no manual DB surgery. Real users fall
+		// through to the skip below, untouched.
+		if isSeedSuperuser(user) && strings.HasPrefix(user.Password, "$") &&
+			(existed.Password != user.Password ||
+				existed.PasswordType != user.PasswordType ||
+				existed.SigninWrongTimes != 0) {
+			existed.Password = user.Password
+			existed.PasswordType = user.PasswordType
+			existed.SigninWrongTimes = 0
+			_, uerr := ormer.Engine.Where("owner = ? AND name = ?", existed.Owner, existed.Name).
+				Cols("password", "password_type", "signin_wrong_times").
+				Update(existed)
+			if uerr != nil {
+				fmt.Printf("[init_data] reconcile superuser %s/%s FAILED: %v\n", user.Owner, user.Name, uerr)
+			} else {
+				fmt.Printf("[init_data] reconciled superuser %s/%s password from init_data (single source of truth)\n",
+					user.Owner, user.Name)
+			}
+			return
+		}
 		// SAFETY: Never delete/recreate existing users regardless of initDataNewOnly.
 		// Users may have changed their passwords, profile data, MFA settings, etc.
 		// Deleting and recreating would destroy all of that.
