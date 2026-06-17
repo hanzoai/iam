@@ -180,12 +180,12 @@ func initAdminUser() {
 	}
 
 	user = &User{
-		Owner:             "superuser",
-		Name:              "admin",
+		Owner:             conf.AdminOrg,
+		Name:              conf.AdminUser,
 		CreatedTime:       util.GetCurrentTime(),
 		Id:                util.GenerateId(),
 		Type:              "normal-user",
-		Password:          "admin",
+		Password:          bootstrapAdminPassword(),
 		DisplayName:       "Admin",
 		Avatar:            "",
 		Email:             "admin@localhost",
@@ -198,9 +198,9 @@ func initAdminUser() {
 		IsAdmin:           true,
 		IsForbidden:       false,
 		IsDeleted:         false,
-		SignupApplication: "app-superuser",
+		SignupApplication: conf.AdminApp,
 		RegisterType:      "Add User",
-		RegisterSource:    "superuser/admin",
+		RegisterSource:    conf.AdminOrg + "/" + conf.AdminUser,
 		CreatedIp:         "127.0.0.1",
 		Properties:        make(map[string]string),
 	}
