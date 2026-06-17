@@ -395,7 +395,7 @@ github.com/hanzoai/iamsdk/v2 v2.1.0 h1:BuU3323zi6Jx7mgNo/wao4iuYoQsfviVgzRUNjmFd
 github.com/hanzoai/iamsdk/v2 v2.1.0/go.mod h1:oBI91+bAbrIt2MEPYuXUM6NinpjwcREz85sccdDkUY4=
 github.com/hanzoai/idv v1.0.0 h1:z+z5KS3cZnM7ndtlLB2mmuh7hc+p78hJNa+zVSD8pIE=
 github.com/hanzoai/idv v1.0.0/go.mod h1:vujJF4DQmwRrdh2UxnpCjWLkYKJ1bbgp10thlo4xZYQ=
-github.com/hanzoai/kms/sdk/go v1.0.0 h1:hWesdEBZxv8twmuDuvXy8ddFAB1BFXw+VTK/4wBETQ4=
+github.com/hanzoai/kms/sdk/go v1.0.0 h1:rY7LDkRvjPotwJ4ydqDfRkQ+2Ob4QW3ptRydAa52x9g=
 github.com/hanzoai/kms/sdk/go v1.0.0/go.mod h1:kPPvEuE3K+fcOY+S6hiNO8nffxDNChvC1Uc4fR5Y+xk=
 github.com/hanzoai/ldapserver v1.2.1 h1:H+AFuntREWo1n96cCUBnrzNeb07npTEUyvqXZRH4x20=
 github.com/hanzoai/ldapserver v1.2.1/go.mod h1:mPwAbPBw9YeXfC2hfg1QSAw6CiGt6o2oF2pi9VR+j3U=
