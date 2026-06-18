@@ -7,6 +7,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // Match tsconfig (ES2022). esbuild >=0.28 refuses to downlevel
+    // destructuring in dependency code to vite's legacy default
+    // baseline; this admin dashboard targets modern browsers only.
+    target: 'es2022',
     rollupOptions: {
       output: { manualChunks: undefined },
     },

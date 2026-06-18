@@ -59,7 +59,7 @@
     "libphonenumber-js": "^1.10.19",
     "lucide-react": "^0.468.0",
     "moment": "^2.29.1",
-    "postcss": "^8.4.49",
+    "postcss": "^8.5.10",
     "qrcode.react": "^3.1.0",
     "react": "^18.2.0",
     "react-cropper": "^2.1.7",
@@ -103,7 +103,7 @@
     "stylelint": "^14.11.0",
     "stylelint-config-standard": "^28.0.0",
     "typescript": "^5.9.3",
-    "vite": "^6.3.5"
+    "vite": "^6.4.3"
   },
   "lint-staged": {
     "src/**/*.{css}": [
