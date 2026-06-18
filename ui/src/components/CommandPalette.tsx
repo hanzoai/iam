@@ -64,7 +64,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const [entities, setEntities] = useState<Result[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const [, navigate] = useLocation()
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     if (open) {
