@@ -669,8 +669,13 @@ func (c *ApiController) SetPassword() {
 		return
 	}
 
+	// Set the plaintext only. object.UpdateUser is the single place that
+	// hashes a changed password (via UpdateUserPassword). Pre-hashing here
+	// made UpdateUser hash the already-hashed value a SECOND time —
+	// argon2id(argon2id(pw)) / bcrypt(bcrypt(pw)) — which no login can ever
+	// verify, silently locking every password reset out. One password,
+	// hashed exactly once, in one place.
 	targetUser.Password = newPassword
-	targetUser.UpdateUserPassword(organization)
 	targetUser.NeedUpdatePassword = false
 	targetUser.LastChangePasswordTime = util.GetCurrentTime()
 
