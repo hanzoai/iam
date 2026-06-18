@@ -5,11 +5,11 @@
 # is public and works without auth for these well-known upstreams; if
 # the unauth pull cap becomes an issue, swap to public.ecr.aws/docker/library
 # instead, never gcr.io.
-FROM docker.io/library/node:18.19.0 AS front
+FROM --platform=$BUILDPLATFORM docker.io/library/node:18.19.0 AS front
 WORKDIR /web
 ARG VITE_DEFAULT_APP=app-built-in
 
-COPY ./web/package.json ./web/pnpm-lock.yaml ./web/.npmrc ./
+COPY ./web/package.json ./web/pnpm-lock.yaml ./web/pnpm-workspace.yaml ./web/.npmrc ./
 RUN corepack enable && pnpm install --frozen-lockfile
 
 COPY ./web .
@@ -17,7 +17,8 @@ ENV VITE_DEFAULT_APP=$VITE_DEFAULT_APP
 RUN NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
 
 # ── Go build ──────────────────────────────────────────────────
-FROM docker.io/library/golang:1.26 AS back
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26 AS back
+ARG TARGETOS TARGETARCH
 WORKDIR /go/src/hanzo-iam
 
 COPY go.mod go.sum ./
@@ -29,9 +30,9 @@ COPY . .
 # userinfo, JWKS); jsonv2 lands -12% time / -23% allocs on the edge.
 ARG GO_EXPERIMENT=jsonv2
 ENV GOEXPERIMENT=${GO_EXPERIMENT}
-RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iamd ./cmd/iamd/
-RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iam ./cmd/iam/
-RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o iamctl ./cmd/iamctl/
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamd ./cmd/iamd/
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iam ./cmd/iam/
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamctl ./cmd/iamctl/
 
 # ── Production image ──────────────────────────────────────────
 FROM docker.io/library/alpine:3.21 AS standard
