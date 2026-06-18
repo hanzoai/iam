@@ -1,0 +1,21 @@
+# Security overrides — pin vulnerable transitive deps to their minimal
+# patched versions (Dependabot advisories). Within-major patches only.
+#   vite        GHSA-fx2h-pf6j-xcff / GHSA-v6wh-96g9-6wx3  -> 6.4.3
+#   esbuild     GHSA-gv7w-rqvm-qjhr                        -> 0.28.1
+#   ws          GHSA-96hv-2xvq-fx4p                        -> 7.5.11
+#   shell-quote GHSA-w7jw-789q-3m8p                        -> 1.8.4
+#   @babel/core GHSA-4x5r-pxfx-6jf8                        -> 7.29.6
+overrides:
+  vite: 6.4.3
+  esbuild: 0.28.1
+  ws: 7.5.11
+  shell-quote: 1.8.4
+  "@babel/core": 7.29.6
+
+# esbuild runs a postinstall (install.js) to place its native binary;
+# allow it so vite's bundler works during `pnpm run build`.
+onlyBuiltDependencies:
+  - esbuild
+
+allowBuilds:
+  esbuild: true
