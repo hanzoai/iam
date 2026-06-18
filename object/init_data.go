@@ -455,17 +455,32 @@ func initDefinedApplication(application *Application) {
 // fields if they are empty/default but the init_data definition has values.
 // This ensures apps created before init_data.json changes still get essential
 // configuration like redirectUris, grantTypes, enablePassword, etc.
+// allBlank reports whether s is empty or contains only blank strings.
+// Casdoor-created apps frequently persist redirectUris/grantTypes as [""]
+// (a single empty string), which len(s) > 0 would wrongly treat as
+// "already configured" — so the additive merge would skip a genuinely
+// unconfigured app and the seed could never backfill it. Treat an
+// all-blank slice as empty.
+func allBlank(s []string) bool {
+	for _, v := range s {
+		if strings.TrimSpace(v) != "" {
+			return false
+		}
+	}
+	return true
+}
+
 func mergeApplicationOAuthDefaults(existing *Application, desired *Application) {
 	var updateCols []string
 
-	// Merge redirectUris if existing has none but desired has values
-	if len(existing.RedirectUris) == 0 && len(desired.RedirectUris) > 0 {
+	// Merge redirectUris if existing has none (or only blanks) but desired has values
+	if allBlank(existing.RedirectUris) && !allBlank(desired.RedirectUris) {
 		existing.RedirectUris = desired.RedirectUris
 		updateCols = append(updateCols, "redirect_uris")
 	}
 
-	// Merge grantTypes if existing has none
-	if len(existing.GrantTypes) == 0 && len(desired.GrantTypes) > 0 {
+	// Merge grantTypes if existing has none (or only blanks)
+	if allBlank(existing.GrantTypes) && !allBlank(desired.GrantTypes) {
 		existing.GrantTypes = desired.GrantTypes
 		updateCols = append(updateCols, "grant_types")
 	}
