@@ -455,33 +455,53 @@ func initDefinedApplication(application *Application) {
 // fields if they are empty/default but the init_data definition has values.
 // This ensures apps created before init_data.json changes still get essential
 // configuration like redirectUris, grantTypes, enablePassword, etc.
-// allBlank reports whether s is empty or contains only blank strings.
-// Casdoor-created apps frequently persist redirectUris/grantTypes as [""]
-// (a single empty string), which len(s) > 0 would wrongly treat as
-// "already configured" — so the additive merge would skip a genuinely
-// unconfigured app and the seed could never backfill it. Treat an
-// all-blank slice as empty.
-func allBlank(s []string) bool {
-	for _, v := range s {
-		if strings.TrimSpace(v) != "" {
-			return false
+// unionDropBlank returns cur with every non-blank entry of want that isn't
+// already present appended, and blank entries (the "" Casdoor seeds) removed.
+// The bool reports whether the result differs from cur (i.e. an UPDATE is
+// needed). Used to reconcile redirectUris/grantTypes as a UNION with the
+// seed so an app created with an empty OR a partial/stale list (e.g. a
+// console missing its NextAuth callback) gets the seed's entries added —
+// without ever removing operator-added ones.
+func unionDropBlank(cur, want []string) ([]string, bool) {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(cur)+len(want))
+	add := func(list []string) {
+		for _, v := range list {
+			if strings.TrimSpace(v) == "" || seen[v] {
+				continue
+			}
+			seen[v] = true
+			out = append(out, v)
 		}
 	}
-	return true
+	add(cur)
+	add(want)
+	if len(out) != len(cur) {
+		return out, true
+	}
+	for i := range out {
+		if out[i] != cur[i] {
+			return out, true
+		}
+	}
+	return out, false
 }
 
 func mergeApplicationOAuthDefaults(existing *Application, desired *Application) {
 	var updateCols []string
 
-	// Merge redirectUris if existing has none (or only blanks) but desired has values
-	if allBlank(existing.RedirectUris) && !allBlank(desired.RedirectUris) {
-		existing.RedirectUris = desired.RedirectUris
+	// Reconcile redirectUris as a UNION with the seed: add any seed URI not
+	// already present and drop blank placeholders. Repairs apps created with
+	// an empty OR a partial/stale list — the old fill-if-empty guard skipped a
+	// non-empty-but-wrong list (e.g. console missing its NextAuth callback).
+	if merged, changed := unionDropBlank(existing.RedirectUris, desired.RedirectUris); changed {
+		existing.RedirectUris = merged
 		updateCols = append(updateCols, "redirect_uris")
 	}
 
-	// Merge grantTypes if existing has none (or only blanks)
-	if allBlank(existing.GrantTypes) && !allBlank(desired.GrantTypes) {
-		existing.GrantTypes = desired.GrantTypes
+	// Reconcile grantTypes as a union too.
+	if merged, changed := unionDropBlank(existing.GrantTypes, desired.GrantTypes); changed {
+		existing.GrantTypes = merged
 		updateCols = append(updateCols, "grant_types")
 	}
 
