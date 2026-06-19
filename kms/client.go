@@ -12,37 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package kms wraps the native-ZAP base/plugins/kms client for IAM.
+// Package kms connects IAM to the canonical Lux KMS (github.com/luxfi/kms)
+// over the native ZAP protocol.
 //
-// IAM fetches infrastructure secrets (DB URL, OAuth client secrets, OTP
-// seeds, signing keys) through the MPC cluster at boot. All encryption /
-// decryption is client-side; the MPC nodes only store encrypted blobs.
+// Separation of concerns: a consumer points at ONE KMS endpoint; the KMS
+// deployment owns its MPC node set, threshold, and unlock — none of those
+// are a consumer's concern. (This replaces the old BASE_KMS_NODES /
+// _THRESHOLD / _ORG_SLUG / _PASSPHRASE contract, which leaked KMS-cluster
+// internals into every consumer.)
 //
-// Configuration is environment-only (no conf/*.conf variables):
+//	KMS_ADDR   KMS endpoint host:port (default zap.kms.svc.cluster.local:9999)
+//	KMS_PATH   secret path prefix     (default "/")
+//	KMS_ENV    secret environment     (default "default")
 //
-//	BASE_KMS_NODES       CSV of MPC node addrs, e.g.
-//	                     "https://pod-0.svc:9999,https://pod-1.svc:9999,https://pod-2.svc:9999"
-//	BASE_KMS_ORG_SLUG    Organization identifier for CEK derivation
-//	BASE_KMS_THRESHOLD   t-of-n threshold (defaults to ceil(n/2)+1)
-//	BASE_KMS_PASSPHRASE  Bootstrap passphrase (injected from K8s secret)
+// When KMS_ADDR is unset the client is disabled and callers fall back to
+// plain os.Getenv — local dev / sandbox keep working with no KMS. IAM is a
+// READER: writing secrets is the KMS service's responsibility, so there is
+// no Set here (matches the canonical luxfi/kms top-level API).
 package kms
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	sdk "github.com/hanzoai/kms/sdk/go"
+	luxkms "github.com/luxfi/kms"
 )
 
-// Client is a process-wide singleton that fronts the base KMS plugin's SDK.
+// Client is a process-wide singleton that fronts the canonical luxfi/kms
+// client. It holds only the single-endpoint Config — no node list, threshold,
+// org, or passphrase.
 type Client struct {
-	mu    sync.RWMutex
-	inner *sdk.Client
-	org   string
-	ready bool
+	cfg     luxkms.Config
+	enabled bool
 }
 
 var (
@@ -50,62 +55,27 @@ var (
 	global   *Client
 )
 
-// Config is parsed from environment by Init. Exposed for tests.
-type Config struct {
-	Nodes      []string
-	OrgSlug    string
-	Threshold  int
-	Passphrase string // optional; if empty Init leaves the client locked
-}
+// Config is the single-endpoint luxfi/kms config (Addr/Path/Env). Aliased so
+// callers and tests don't import luxfi/kms directly.
+type Config = luxkms.Config
 
-// LoadConfig parses BASE_KMS_* environment variables. Returns (nil, nil)
-// when BASE_KMS_NODES is empty — the caller should treat that as
-// "KMS disabled" and fall back to plain env vars.
+// LoadConfig reads KMS_ADDR/KMS_PATH/KMS_ENV. Returns (nil, nil) when
+// KMS_ADDR is unset — the caller treats that as "KMS disabled" and falls
+// back to plain env vars.
 func LoadConfig() (*Config, error) {
-	nodesRaw := strings.TrimSpace(os.Getenv("BASE_KMS_NODES"))
-	if nodesRaw == "" {
+	addr := strings.TrimSpace(os.Getenv("KMS_ADDR"))
+	if addr == "" {
 		return nil, nil
 	}
-
-	var nodes []string
-	for _, n := range strings.Split(nodesRaw, ",") {
-		if n = strings.TrimSpace(n); n != "" {
-			nodes = append(nodes, n)
-		}
-	}
-	if len(nodes) == 0 {
-		return nil, fmt.Errorf("kms: BASE_KMS_NODES set but empty after parse")
-	}
-
-	org := strings.TrimSpace(os.Getenv("BASE_KMS_ORG_SLUG"))
-	if org == "" {
-		return nil, fmt.Errorf("kms: BASE_KMS_ORG_SLUG is required when BASE_KMS_NODES is set")
-	}
-
-	threshold := len(nodes)/2 + 1
-	if raw := strings.TrimSpace(os.Getenv("BASE_KMS_THRESHOLD")); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			return nil, fmt.Errorf("kms: invalid BASE_KMS_THRESHOLD %q: %w", raw, err)
-		}
-		if parsed < 1 || parsed > len(nodes) {
-			return nil, fmt.Errorf("kms: BASE_KMS_THRESHOLD %d out of range [1, %d]", parsed, len(nodes))
-		}
-		threshold = parsed
-	}
-
 	return &Config{
-		Nodes:      nodes,
-		OrgSlug:    org,
-		Threshold:  threshold,
-		Passphrase: os.Getenv("BASE_KMS_PASSPHRASE"),
+		Addr: addr,
+		Path: strings.TrimSpace(os.Getenv("KMS_PATH")),
+		Env:  strings.TrimSpace(os.Getenv("KMS_ENV")),
 	}, nil
 }
 
-// Init parses env, constructs the client, optionally unlocks with
-// BASE_KMS_PASSPHRASE, and stores it as the process-wide singleton.
-// Returns (nil, nil) when KMS is not configured — the caller decides
-// whether that is acceptable for the current deployment.
+// Init parses env and stores the process-wide singleton. Returns (nil, nil)
+// when KMS is not configured.
 func Init() (*Client, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -117,31 +87,13 @@ func Init() (*Client, error) {
 	return InitWithConfig(*cfg)
 }
 
-// InitWithConfig is the same as Init but takes an explicit Config. Tests
-// use this to wire the client to a stub MPC server without touching the
-// process environment.
+// InitWithConfig is Init with an explicit Config (tests point Addr at a stub
+// KMS endpoint).
 func InitWithConfig(cfg Config) (*Client, error) {
-	inner, err := sdk.NewClient(sdk.Config{
-		Nodes:     cfg.Nodes,
-		OrgSlug:   cfg.OrgSlug,
-		Threshold: cfg.Threshold,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("kms: new client: %w", err)
-	}
-
-	c := &Client{inner: inner, org: cfg.OrgSlug}
-	if cfg.Passphrase != "" {
-		if err := inner.Unlock(cfg.Passphrase); err != nil {
-			return nil, fmt.Errorf("kms: unlock: %w", err)
-		}
-		c.ready = true
-	}
-
+	c := &Client{cfg: cfg, enabled: strings.TrimSpace(cfg.Addr) != ""}
 	globalMu.Lock()
 	global = c
 	globalMu.Unlock()
-
 	return c, nil
 }
 
@@ -152,56 +104,41 @@ func Global() *Client {
 	return global
 }
 
-// Ready reports whether the client is unlocked and ready to serve secrets.
+// Ready reports whether a KMS endpoint is configured. The MPC unlock is the
+// KMS server's concern, so there is no consumer-side lock state.
 func (c *Client) Ready() bool {
-	if c == nil {
-		return false
-	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.ready && c.inner.IsUnlocked()
+	return c != nil && c.enabled
 }
 
-// Get returns the plaintext value for key, decrypted client-side.
-// Returns an error if the client is locked or the key does not exist.
+// Get returns the plaintext value for key at the configured path/env.
 func (c *Client) Get(key string) (string, error) {
-	if c == nil {
-		return "", fmt.Errorf("kms: client not configured")
+	if c == nil || !c.enabled {
+		return "", fmt.Errorf("kms: client not configured (KMS_ADDR unset)")
 	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if !c.ready || !c.inner.IsUnlocked() {
-		return "", fmt.Errorf("kms: client locked — set BASE_KMS_PASSPHRASE at boot")
-	}
-	val, err := c.inner.Get(key)
-	if err != nil {
-		return "", err
-	}
-	return string(val), nil
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return luxkms.GetWith(ctx, c.cfg, key)
 }
 
-// Set encrypts value client-side and stores it in the MPC cluster. Used
-// by tests and by bootstrap flows; IAM request handlers should not call
-// Set — that is the KMS service's responsibility.
-func (c *Client) Set(key, value string) error {
-	if c == nil {
-		return fmt.Errorf("kms: client not configured")
+// GetAll fetches every secret at the configured path/env in one round-trip —
+// used by the boot bootstrap to warm the cache.
+func (c *Client) GetAll() (map[string]string, error) {
+	if c == nil || !c.enabled {
+		return nil, fmt.Errorf("kms: client not configured (KMS_ADDR unset)")
 	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if !c.ready || !c.inner.IsUnlocked() {
-		return fmt.Errorf("kms: client locked")
-	}
-	return c.inner.Set(key, []byte(value))
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return luxkms.GetSecretsWith(ctx, c.cfg)
 }
 
-// Org returns the configured org slug (used by callers that need it to
-// scope derived state such as KMS-stored session keys).
-func (c *Client) Org() string {
+// Env returns the configured environment slug (replaces the old Org(); the
+// KMS env is the only scoping a consumer sees).
+func (c *Client) Env() string {
 	if c == nil {
 		return ""
 	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.org
+	if c.cfg.Env == "" {
+		return "default"
+	}
+	return c.cfg.Env
 }
