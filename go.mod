@@ -36,7 +36,6 @@ require (
 	github.com/hanzoai/beego/v2 v2.3.9
 	github.com/hanzoai/builder v0.3.13
 	github.com/hanzoai/idv v1.0.0
-	github.com/hanzoai/kms/sdk/go v1.0.0
 	github.com/hanzoai/ldapserver v1.2.1
 	github.com/hanzoai/notify2 v1.6.3
 	github.com/hanzoai/oss v1.8.5
@@ -50,6 +49,7 @@ require (
 	github.com/likexian/whois-parser v1.24.9
 	github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3
 	github.com/luxfi/crypto v1.19.0
+	github.com/luxfi/kms v1.11.3
 	github.com/luxfi/metric v1.5.7
 	github.com/markbates/goth v1.82.0
 	github.com/microsoft/go-mssqldb v1.9.0
@@ -82,7 +82,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	dario.cat/mergo v1.0.0 // indirect
 	filippo.io/edwards25519 v1.1.1 // indirect
-	filippo.io/hpke v0.4.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/Azure/azure-storage-blob-go v0.15.0 // indirect
 	github.com/Azure/go-ntlmssp v0.1.1 // indirect
@@ -108,6 +107,7 @@ require (
 	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bwmarrin/discordgo v0.28.1 // indirect
 	github.com/caarlos0/go-reddit/v3 v3.0.1 // indirect
+	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/clbanning/mxj/v2 v2.7.0 // indirect
@@ -116,7 +116,7 @@ require (
 	github.com/cschomburg/go-pushbullet v0.0.0-20171206132031-67759df45fbb // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/dghubble/oauth1 v0.7.3 // indirect
 	github.com/dghubble/sling v1.4.2 // indirect
 	github.com/di-wu/parser v0.2.2 // indirect
@@ -147,6 +147,7 @@ require (
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/gorilla/sessions v1.4.0 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
+	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/gregdel/pushover v1.3.1 // indirect
 	github.com/hanzoai/iamsdk/v2 v2.1.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
@@ -174,8 +175,12 @@ require (
 	github.com/likexian/gokit v0.25.13 // indirect
 	github.com/line/line-bot-sdk-go v7.8.0+incompatible // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
-	github.com/luxfi/accel v1.0.7 // indirect
-	github.com/luxfi/age v1.4.0 // indirect
+	github.com/luxfi/accel v1.1.8 // indirect
+	github.com/luxfi/codec v1.1.4 // indirect
+	github.com/luxfi/ids v1.2.13 // indirect
+	github.com/luxfi/mdns v0.1.0 // indirect
+	github.com/luxfi/mock v0.1.1 // indirect
+	github.com/luxfi/zap v0.2.0 // indirect
 	github.com/magefile/mage v1.15.1-0.20241126214340-bdc92f694516 // indirect
 	github.com/markbates/going v1.0.0 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
@@ -187,6 +192,7 @@ require (
 	github.com/mileusna/viber v1.0.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
+	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/mrjones/oauth v0.0.0-20180629183705-f4e24b6d100c // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/onsi/gomega v1.39.1 // indirect
@@ -210,7 +216,7 @@ require (
 	github.com/siddontang/go v0.0.0-20180604090527-bdc77568d726 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/slack-go/slack v0.23.1 // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220614013038-64ee5596c38a // indirect
 	github.com/technoweenie/multipartstreamer v1.0.1 // indirect
@@ -229,6 +235,7 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.mau.fi/util v0.8.3 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
