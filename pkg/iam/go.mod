@@ -26,17 +26,21 @@ require (
 	github.com/gofiber/utils/v2 v2.0.4 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/luxfi/ids v1.2.15 // indirect
+	github.com/luxfi/kms v1.11.3 // indirect
+	github.com/luxfi/mock v0.1.1 // indirect
+	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.70.0 // indirect
+	go.uber.org/mock v0.6.0 // indirect
 )
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
-	filippo.io/hpke v0.4.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/Azure/azure-storage-blob-go v0.15.0 // indirect
 	github.com/Azure/go-ntlmssp v0.1.1 // indirect
@@ -131,7 +135,6 @@ require (
 	github.com/hanzoai/builder v0.3.13 // indirect
 	github.com/hanzoai/iamsdk/v2 v2.1.0 // indirect
 	github.com/hanzoai/idv v1.0.0 // indirect
-	github.com/hanzoai/kms/sdk/go v1.0.0 // indirect
 	github.com/hanzoai/ldapserver v1.2.1 // indirect
 	github.com/hanzoai/notify2 v1.6.3 // indirect
 	github.com/hanzoai/oss v1.8.5 // indirect
@@ -165,7 +168,6 @@ require (
 	github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3 // indirect
 	github.com/lufia/plan9stats v0.0.0-20251013123823-9fd1530e3ec3 // indirect
 	github.com/luxfi/accel v1.1.9 // indirect
-	github.com/luxfi/age v1.5.0 // indirect
 	github.com/luxfi/crypto v1.19.17 // indirect
 	github.com/luxfi/log v1.4.3 // indirect
 	github.com/luxfi/mdns v0.1.1 // indirect
