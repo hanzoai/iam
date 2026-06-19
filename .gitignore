@@ -5,7 +5,10 @@
 *.so
 *.dylib
 *.swp
-server_*
+# Compiled server binary at repo root (anchored so it never shadows Go source
+# like ldap/server_disabled.go or radius/server_test.go in subpackages).
+/server_*
+!*.go
 
 # Test binary, built with `go test -c`
 *.test
