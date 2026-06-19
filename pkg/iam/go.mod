@@ -27,7 +27,7 @@ require (
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/luxfi/ids v1.2.15 // indirect
-	github.com/luxfi/kms v1.11.3 // indirect
+	github.com/luxfi/kms v1.11.6 // indirect
 	github.com/luxfi/mock v0.1.1 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
