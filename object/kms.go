@@ -49,9 +49,9 @@ var kmsBootstrapKeys = []string{
 // bootstrap secrets, and overrides Beego config values for infrastructure
 // secrets (e.g. dataSourceName). Must be called before InitAdapter().
 //
-// When BASE_KMS_NODES is unset, KMS is disabled and this function is a
-// no-op. The caller is expected to fall back to plain environment
-// variables in that case.
+// When KMS_ADDR is unset, KMS is disabled and this function is a no-op.
+// The caller is expected to fall back to plain environment variables in
+// that case.
 func InitKMS() {
 	client, err := iamkms.Init()
 	if err != nil {
@@ -88,7 +88,7 @@ func InitKMS() {
 		}
 	}
 
-	fmt.Printf("[KMS] loaded %d bootstrap secrets from org=%s\n", len(kmsSecretCache), client.Org())
+	fmt.Printf("[KMS] loaded %d bootstrap secrets from env=%s\n", len(kmsSecretCache), client.Env())
 }
 
 // resolveSecrets replaces ${SECRET_NAME} patterns in the input string with
