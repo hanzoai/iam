@@ -309,7 +309,18 @@ func GetJsonWebKeySet(applicationName string) (JsonWebKeySet, error) {
 	// follows the protocol rfc 7517(draft)
 	// link here: https://self-issued.info/docs/draft-ietf-jose-json-web-key.html
 	// or https://datatracker.ietf.org/doc/html/draft-ietf-jose-json-web-key
+	// Dedupe by kid (cert.Name): an identical cert can be collected from
+	// multiple owners (e.g. a global "admin" cert plus an org-scoped copy of
+	// the same key), which would emit two JWKS entries with the same kid.
+	// go-jose rejects a duplicate kid with JWKSMultipleMatchingKeys, which
+	// fails JWT verification for every app that signs with that kid. One key
+	// per kid, always.
+	seen := make(map[string]bool)
 	for _, cert := range certs {
+		if seen[cert.Name] {
+			continue
+		}
+		seen[cert.Name] = true
 		if cert.Certificate == "" {
 			return jwks, fmt.Errorf("the certificate field should not be empty for the cert: %v", cert)
 		}
