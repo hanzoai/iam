@@ -36,7 +36,7 @@ jobs:
       matrix:
         include:
           - goarch: amd64
-            runner: ubuntu-24.04
+            runner: hanzo-build-linux-amd64
           - goarch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
@@ -95,7 +95,7 @@ jobs:
     # and binaries couldn't be uploaded — docker still publishes the
     # canonical image.
     if: always() && needs.binaries.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: hanzo-build-linux-amd64
     steps:
       - uses: actions/checkout@v4
         with:
@@ -135,7 +135,7 @@ jobs:
     # server itself; we don't need the standalone binary artifacts to
     # ship the container image. This is the canonical artifact that
     # ships to production.
-    runs-on: ubuntu-24.04
+    runs-on: hanzo-build-linux-amd64
     permissions:
       contents: read
       packages: write
@@ -184,7 +184,7 @@ jobs:
   notify-universe:
     name: Notify universe (auto-bump pin)
     needs: [docker]
-    runs-on: ubuntu-24.04
+    runs-on: hanzo-build-linux-amd64
     if: github.repository == 'hanzoai/iam'
     steps:
       - name: Resolve version
