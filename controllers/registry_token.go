@@ -17,6 +17,7 @@ package controllers
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/subtle"
 	"crypto/x509"
 	"encoding/base32"
 	"encoding/base64"
@@ -240,7 +241,12 @@ func (c *ApiController) GetRegistryToken() {
 		return
 	}
 
-	// Authenticate against IAM — try the admin org first, then "hanzo".
+	// Authenticate, two ways:
+	//  1. As an IAM user (Basic auth: username + password). Admins get push.
+	//  2. As an application's service credentials (client_id : client_secret).
+	//     This is the machine/CI path — a trusted credential distributed via KMS
+	//     (e.g. app `hanzo-registry`), granted the requested actions (push) so
+	//     builds can push without a human user.
 	var user *object.User
 	var err error
 	for _, org := range []string{conf.AdminOrg, "hanzo"} {
@@ -249,7 +255,17 @@ func (c *ApiController) GetRegistryToken() {
 			break
 		}
 	}
-	if err != nil || user == nil {
+
+	isServiceAccount := false
+	if user == nil {
+		if app, aerr := object.GetApplicationByClientId(username); aerr == nil && app != nil &&
+			app.ClientSecret != "" &&
+			subtle.ConstantTimeCompare([]byte(app.ClientSecret), []byte(password)) == 1 {
+			isServiceAccount = true
+		}
+	}
+
+	if !isServiceAccount && user == nil {
 		c.Ctx.Output.SetStatus(401)
 		c.Ctx.Output.Header("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, service))
 		c.Data["json"] = map[string]string{"error": "invalid credentials"}
@@ -264,8 +280,10 @@ func (c *ApiController) GetRegistryToken() {
 			parts := strings.SplitN(s, ":", 3)
 			if len(parts) == 3 {
 				actions := strings.Split(parts[2], ",")
-				// Admin users get all requested actions; regular users get pull only
-				if !user.IsAdmin && !user.IsGlobalAdmin() {
+				// Service accounts and admin users get all requested actions
+				// (incl. push); regular users get pull only.
+				privileged := isServiceAccount || (user != nil && (user.IsAdmin || user.IsGlobalAdmin()))
+				if !privileged {
 					filtered := []string{}
 					for _, a := range actions {
 						if a == "pull" {
@@ -291,10 +309,15 @@ func (c *ApiController) GetRegistryToken() {
 	rand.Read(jtiBytes)
 	jti := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(jtiBytes)
 
+	subject := username // service account: the application's client_id
+	if user != nil {
+		subject = fmt.Sprintf("%s/%s", user.Owner, user.Name)
+	}
+
 	claims := RegistryTokenClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "hanzo-iam",
-			Subject:   fmt.Sprintf("%s/%s", user.Owner, user.Name),
+			Subject:   subject,
 			Audience:  jwt.ClaimStrings{service},
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(expiresIn) * time.Second)),
 			NotBefore: jwt.NewNumericDate(now),
