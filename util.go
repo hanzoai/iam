@@ -34,7 +34,11 @@ func (c *Client) GetUrl(action string, queryMap map[string]string) string {
 	}
 	query = strings.TrimRight(query, "&")
 
-	return fmt.Sprintf("%s/api/%s?%s", c.Endpoint, action, query)
+	// Hanzo IAM serves its API under /v1/iam/ only — the casdoor /api/ prefix is
+	// retired (externally it 404s / returns the SPA). Match the canonical surface
+	// so SDK calls (GetApplication, GetCert, …) reach the JSON API, consistent
+	// with the OAuth URLs in auth.go which already use /v1/iam/.
+	return fmt.Sprintf("%s/v1/iam/%s?%s", c.Endpoint, action, query)
 }
 
 func (c *Client) GetId(name string) string {
