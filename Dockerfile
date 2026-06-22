@@ -22,7 +22,21 @@ ARG TARGETOS TARGETARCH
 WORKDIR /go/src/hanzo-iam
 
 COPY go.mod go.sum ./
-RUN go mod download
+# Private Go modules (github.com/luxfi/*, github.com/hanzoai/*) need git auth.
+# CI passes a GIT_AUTH_TOKEN buildkit secret; mark those prefixes private (so go
+# fetches via git, not the public proxy/sumdb that can't see them) and configure
+# git to present the token for github.com. The token rides a --mount secret, so
+# it never lands in an image layer. No token → public-only build still works.
+ARG GOPRIVATE=github.com/luxfi/*,github.com/hanzoai/*
+ENV GOPRIVATE=${GOPRIVATE}
+RUN --mount=type=secret,id=GIT_AUTH_TOKEN \
+    sh -c 'set -e; \
+      if [ -s /run/secrets/GIT_AUTH_TOKEN ]; then \
+        export GIT_CONFIG_GLOBAL=/tmp/gitconfig; \
+        git config --global url."https://x-access-token:$(cat /run/secrets/GIT_AUTH_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+      fi; \
+      go mod download; \
+      rm -f /tmp/gitconfig'
 
 COPY . .
 # Per SCALE_STANDARD.md §2 — GOEXPERIMENT=jsonv2 in every production Go
