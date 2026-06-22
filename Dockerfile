@@ -44,9 +44,21 @@ COPY . .
 # userinfo, JWKS); jsonv2 lands -12% time / -23% allocs on the edge.
 ARG GO_EXPERIMENT=jsonv2
 ENV GOEXPERIMENT=${GO_EXPERIMENT}
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamd ./cmd/iamd/
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iam ./cmd/iam/
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamctl ./cmd/iamctl/
+# -mod=mod lets the build resolve a module graph that needs a go.mod update
+# (Go's default -mod=readonly hard-fails with "updates to go.mod needed"). The
+# build can fetch a require not pre-downloaded, so re-present the private-module
+# git auth here too — same tmp GIT_CONFIG_GLOBAL that never persists to a layer.
+ENV GOFLAGS=-mod=mod
+RUN --mount=type=secret,id=GIT_AUTH_TOKEN \
+    sh -c 'set -e; \
+      if [ -s /run/secrets/GIT_AUTH_TOKEN ]; then \
+        export GIT_CONFIG_GLOBAL=/tmp/gitconfig; \
+        git config --global url."https://x-access-token:$(cat /run/secrets/GIT_AUTH_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+      fi; \
+      CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamd ./cmd/iamd/; \
+      CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iam ./cmd/iam/; \
+      CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamctl ./cmd/iamctl/; \
+      rm -f /tmp/gitconfig'
 
 # ── Production image ──────────────────────────────────────────
 FROM docker.io/library/alpine:3.21 AS standard
