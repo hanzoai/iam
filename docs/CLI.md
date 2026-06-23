@@ -60,8 +60,8 @@ $ iam app list --owner=exampleorg
 exampleorg-app1         exampleorg-app1-client-id           admin
 exampleorg-app2         exampleorg-app2                     admin
 exampleorg-app3         exampleorg-app3                     admin
-vcc-exchange            vcc-exchange-client-id              admin
-mlc-exchange            mlc-exchange-client-id              admin
+acme-app            acme-app-client-id              admin
+acme-portal            acme-portal-client-id              admin
 ```
 
 ### `iam app get <client-id>`
@@ -69,11 +69,11 @@ mlc-exchange            mlc-exchange-client-id              admin
 Fetch one application by client ID.
 
 ```bash
-$ iam app get vcc-exchange-client-id
+$ iam app get acme-app-client-id
 {
   "organization": "vcc",
-  "name": "vcc-exchange",
-  "clientId": "vcc-exchange-client-id",
+  "name": "acme-app",
+  "clientId": "acme-app-client-id",
   "redirectUris": [
     "https://app.dev.example.com/callback",
     "https://app.dev.example.com/auth/callback"
@@ -92,13 +92,13 @@ overwrites, fetch the current state, modify, then upsert.
 $ cat > /tmp/app.json << 'EOF'
 {
   "organization": "vcc",
-  "name": "vcc-exchange",
-  "clientId": "vcc-exchange-client-id",
+  "name": "acme-app",
+  "clientId": "acme-app-client-id",
   "redirectUris": [
     "https://app.dev.example.com/callback",
     "https://app.dev.example.com/auth/callback",
-    "http://vcc.localhost:3000/callback",
-    "http://vcc.localhost:3000/auth/callback"
+    "http://acme.localhost:3000/callback",
+    "http://acme.localhost:3000/auth/callback"
   ]
 }
 EOF
@@ -112,12 +112,12 @@ Most-asked-for operation: add one or more redirect URIs to an OIDC
 client's allow-list. Idempotent — re-adding the same URI is a no-op.
 
 ```bash
-$ iam app redirect add vcc-exchange-client-id \
-    http://vcc.localhost:3000/auth/callback \
-    http://vcc.localhost:3000/callback
-added 2 redirect URI(s) to vcc-exchange-client-id:
-  + http://vcc.localhost:3000/auth/callback
-  + http://vcc.localhost:3000/callback
+$ iam app redirect add acme-app-client-id \
+    http://acme.localhost:3000/auth/callback \
+    http://acme.localhost:3000/callback
+added 2 redirect URI(s) to acme-app-client-id:
+  + http://acme.localhost:3000/auth/callback
+  + http://acme.localhost:3000/callback
 ```
 
 ### `iam app redirect list <client-id>`
@@ -125,11 +125,11 @@ added 2 redirect URI(s) to vcc-exchange-client-id:
 Print the current redirect-URI allow-list.
 
 ```bash
-$ iam app redirect list vcc-exchange-client-id
+$ iam app redirect list acme-app-client-id
 https://app.dev.example.com/callback
 https://app.dev.example.com/auth/callback
-http://vcc.localhost:3000/callback
-http://vcc.localhost:3000/auth/callback
+http://acme.localhost:3000/callback
+http://acme.localhost:3000/auth/callback
 ```
 
 ### `iam app redirect remove <client-id> <url>`
@@ -137,9 +137,9 @@ http://vcc.localhost:3000/auth/callback
 Remove a single redirect URI. No-op if not present.
 
 ```bash
-$ iam app redirect remove vcc-exchange-client-id http://vcc.localhost:3000/callback
-removed redirect URI from vcc-exchange-client-id:
-  - http://vcc.localhost:3000/callback
+$ iam app redirect remove acme-app-client-id http://acme.localhost:3000/callback
+removed redirect URI from acme-app-client-id:
+  - http://acme.localhost:3000/callback
 ```
 
 ### `iam user list [--owner=<slug>]`
