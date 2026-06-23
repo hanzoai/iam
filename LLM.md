@@ -192,9 +192,46 @@ That repo is the polyglot umbrella; Go stays in this repo.
 
 - All secrets land in KMS first, synced to k8s `Secret` via `KMSSecret` CR — never push raw key bytes through `kubectl apply`
 - Argon2id password hashing (NEVER plaintext, NEVER bcrypt)
-- Per-org DEK derived from a master key stored in KMS — encrypted-at-rest tables
 - TLS termination at the deployment ingress; IAM serves plain HTTP internally
 - JWKS rotation: keys are dual-published (current + previous) for graceful rollover
+
+### Encryption at rest — envelope model (`object/orgdb.go`, `github.com/hanzoai/sqlite` ≥ v0.1.3)
+
+The master key is sourced from ONE env var: **`IAM_KMS_MASTER_KEY`** (64 hex =
+32 bytes), KMS-sourced via a KMSSecret CR. The earlier `ENCRYPTION_MASTER_KEY`
+name was a bug (it existed nowhere else, so the key was always nil → silent
+plaintext). **The operator/universe Deployment MUST inject `IAM_KMS_MASTER_KEY`
+from KMS** for any env storing real data — encryption is OFF until it is set, and
+a CGO+libsqlcipher build refuses to start with the var set but no codec rather
+than writing plaintext.
+
+- **Envelope, not page-key-from-master.** Each db (global + per-org) has its own
+  random DEK (SQLCipher page key), wrapped (AES-256-GCM) under a KEK =
+  `HKDF(master, lp(principal)||lp(id))` and stored in a `<db>.dek` sidecar (0600).
+  The raw DEK is never written. **Master-key rotation = rewrap the sidecars**
+  (`OrgDBManager.Rewrap`) — pages are never rewritten, so rotation is O(1) and
+  cannot brick a file. (The old HKDF-direct page key made rotation = data loss.)
+- **Global db encrypted too.** `{dataDir}/iam.db` holds the JWT signing private
+  keys (`Cert`) and `Application.ClientSecret` — the forge-any-token material.
+  Under `orgIsolation=sqlite` + master key it is opened enveloped (principal
+  `global`), not via the plaintext conf DSN.
+- **Per-org isolation, fail-closed.** Every org owner is canonicalized to a
+  safe, injective slug (`orgSlug`: lowercase + illegal→`-`, disambiguated by an
+  8-hex SHA-256 suffix when changed) so EVERY org maps to its own encrypted file
+  — never rejected, never falling back to the shared engine. `orgEngine` fails
+  CLOSED under isolation (a genuine open failure 500s; it never silently routes
+  org data to the global engine).
+- **HKDF info is length-prefixed** → injective (`(org,"a:b") ≠ ("org:a","b")`).
+- **Key hygiene.** DEKs are zeroized after open; `RLIMIT_CORE=0` is set on Linux
+  (`object/coredump_linux.go`) so a core dump can't leak keys; the SQLCipher key
+  rides the driver open call (never a DSN xorm logs); DSN paths are percent-
+  escaped so `?`/`#` can't strip `key=`; `cache=shared` is never set on an
+  encrypted db (shared cache leaks decrypted pages across keys).
+- **Per-USER files are DEFERRED.** The canonical layout reserves
+  `orgs/{slug}/users/{userId}.db` with a DEK derived per-user FROM the per-org
+  KEK (hierarchy primitive `sqlitedrv.DeriveChildKey` is implemented). No code
+  routes to a user-level engine yet (`ProvisionOrg` is unused; org DBs are lazy),
+  so there is no plaintext-user exposure today — wiring user files is future work.
 
 ## Testing
 

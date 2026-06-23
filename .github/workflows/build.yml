@@ -30,6 +30,17 @@ jobs:
           go-version: '1.26'
           cache-dependency-path: ./go.mod
       - name: Tests
+        # CGO_ENABLED=0 is REQUIRED here. The hanzo self-hosted runner ships gcc,
+        # so Go would default to CGO=1 and link the mattn backend WITHOUT
+        # libsqlcipher (this job does not install sqlcipher-dev) — EncryptionAvailable()
+        # would report true while silently writing PLAINTEXT, failing the
+        # encryption posture tests on a plaintext header. Pinning CGO=0 selects
+        # the pure-Go backend, which proves the fail-closed (refuse-key) path;
+        # the REAL ciphertext gate runs in the Dockerfile build (CGO=1 +
+        # libsqlcipher). The posture/proof tests SKIP under any CGO build that
+        # lacks the linked codec, so they never produce a false failure.
+        env:
+          CGO_ENABLED: '0'
         run: |
           go test -v $(go list ./...) -tags skipCi
         working-directory: ./

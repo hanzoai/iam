@@ -15,6 +15,8 @@
 package object
 
 import (
+	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -32,17 +34,26 @@ import (
 //
 // Directory layout:
 //
-//	{DataDir}/platform.db                ← Cross-org: certs, syncer, system config
-//	{DataDir}/orgs/{orgSlug}/iam.db      ← Per-org: users, apps, providers, tokens
+//	{DataDir}/iam.db                     ← Global: certs (JWT signing keys),
+//	                                       providers, admin org/app/user catalog.
+//	{DataDir}/iam.db.dek                 ← Wrapped DEK for the global db.
+//	{DataDir}/orgs/{orgSlug}/iam.db      ← Per-org: users, apps, providers, tokens.
+//	{DataDir}/orgs/{orgSlug}/iam.db.dek  ← Wrapped DEK for that org's db.
 //
 // When orgIsolation is "none" (default), this manager is nil and all queries
 // go through the global ormer.Engine as before.
 //
-// Encryption at rest is per-org: when a 32-byte master key is configured
-// (ENCRYPTION_MASTER_KEY, 64 hex chars), each org's file is encrypted with a
-// per-org DEK = HKDF-SHA256(masterKey, "org:{slug}") via SQLCipher. Directory
-// isolation separates org data on disk; the per-org DEK ensures one org's file
-// cannot be read with another org's key even if the file is exfiltrated.
+// ENCRYPTION AT REST (envelope model — rotation-safe):
+//
+// When a 32-byte master key is configured (IAM_KMS_MASTER_KEY, 64 hex chars),
+// each database has its OWN random DEK (SQLCipher page key), generated once at
+// creation and wrapped (AES-256-GCM) under a KEK = HKDF(masterKey, "org:{slug}").
+// The wrapped DEK lives in the `<db>.dek` sidecar; the raw DEK is never written.
+// Rotating the master key only rewraps the sidecar (see Rewrap) — the DEK is
+// unchanged, so the encrypted pages are never rewritten and no file is bricked.
+//
+// Directory isolation separates org data on disk; the per-org DEK ensures one
+// org's file cannot be read with another org's key even if exfiltrated.
 type OrgDBManager struct {
 	mu        sync.RWMutex
 	dataDir   string
@@ -50,15 +61,53 @@ type OrgDBManager struct {
 	engines   map[string]*xorm.Engine // orgSlug -> engine
 }
 
+// masterKeyEnv is the single canonical environment variable that supplies the
+// per-org/global encryption master key. It MUST match the operator/universe
+// Deployment, KMS, .env.example, compose.yml and docs/CONVENTION.md — all of
+// which use IAM_KMS_MASTER_KEY. (The earlier ENCRYPTION_MASTER_KEY existed
+// nowhere else, so the master key was always nil and every DB silently shipped
+// plaintext.)
+const masterKeyEnv = "IAM_KMS_MASTER_KEY"
+
+// dekSuffix is appended to a database path to locate its wrapped-DEK sidecar.
+const dekSuffix = ".dek"
+
+// resolveMasterKey reads IAM_KMS_MASTER_KEY and validates it. It returns:
+//
+//   - (nil, nil)      when the var is unset → unencrypted dev/CI mode.
+//   - (key, nil)      when set, 64 hex chars, AND this build can encrypt.
+//   - (nil, error)    when set but malformed, OR set on a non-encrypting
+//     (pure-Go) build — we refuse to run rather than silently write plaintext.
+//
+// This is the ONE place the master key is sourced, so the global engine and the
+// per-org manager share an identical posture decision.
+func resolveMasterKey() ([]byte, error) {
+	mkHex := os.Getenv(masterKeyEnv)
+	if mkHex == "" {
+		return nil, nil
+	}
+	if !sqlitedrv.EncryptionAvailable() {
+		return nil, fmt.Errorf("%s is set but this build cannot encrypt (pure-Go sqlite); rebuild with CGO_ENABLED=1 -tags \"libsqlite3 sqlite_fts5\" linked against libsqlcipher, or unset the variable for an unencrypted dev build", masterKeyEnv)
+	}
+	mk, err := hex.DecodeString(mkHex)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be hex-encoded: %w", masterKeyEnv, err)
+	}
+	if len(mk) != 32 {
+		return nil, fmt.Errorf("%s must decode to 32 bytes, got %d", masterKeyEnv, len(mk))
+	}
+	return mk, nil
+}
+
 // NewOrgDBManager creates a new per-org database manager.
 //
-// Encryption posture is decided once, here, from ENCRYPTION_MASTER_KEY:
+// Encryption posture is decided once, here, from IAM_KMS_MASTER_KEY:
 //
 //   - unset           → unencrypted per-org files (dev / CGO-off CI).
 //   - set + cgo build → per-org SQLCipher encryption (production).
-//   - set + !cgo build → hard error. We refuse to run: a master key was
-//     supplied but this binary cannot encrypt, and silently writing plaintext
-//     org databases would violate the security contract.
+//   - set + !cgo build → hard error (resolveMasterKey). We refuse to run: a
+//     master key was supplied but this binary cannot encrypt, and silently
+//     writing plaintext org databases would violate the security contract.
 //
 // Directory permissions are 0700.
 func NewOrgDBManager(dataDir string) (*OrgDBManager, error) {
@@ -66,19 +115,9 @@ func NewOrgDBManager(dataDir string) (*OrgDBManager, error) {
 		return nil, fmt.Errorf("dataDir cannot be empty")
 	}
 
-	var masterKey []byte
-	if mkHex := os.Getenv("ENCRYPTION_MASTER_KEY"); mkHex != "" {
-		if !sqlitedrv.EncryptionAvailable() {
-			return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY is set but this build cannot encrypt (pure-Go sqlite); rebuild with CGO_ENABLED=1 -tags \"libsqlite3 sqlite_fts5\" linked against libsqlcipher, or unset the variable for an unencrypted dev build")
-		}
-		mk, err := hex.DecodeString(mkHex)
-		if err != nil {
-			return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY must be hex-encoded: %w", err)
-		}
-		if len(mk) != 32 {
-			return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY must decode to 32 bytes, got %d", len(mk))
-		}
-		masterKey = mk
+	masterKey, err := resolveMasterKey()
+	if err != nil {
+		return nil, err
 	}
 
 	orgsDir := filepath.Join(dataDir, "orgs")
@@ -93,8 +132,50 @@ func NewOrgDBManager(dataDir string) (*OrgDBManager, error) {
 	}, nil
 }
 
-// validateSlug rejects slugs containing path traversal characters.
-// Only lowercase alphanumeric and hyphens allowed.
+// Encrypted reports whether this manager encrypts org databases at rest.
+func (m *OrgDBManager) Encrypted() bool {
+	return m != nil && m.masterKey != nil
+}
+
+// orgSlug canonicalizes an arbitrary org owner/name into a filesystem- and
+// DEK-safe slug, DETERMINISTICALLY and INJECTIVELY, so that EVERY org maps to
+// its own isolated file instead of being rejected (which previously caused a
+// silent fall-back to the shared global engine — an isolation bypass).
+//
+// Rules:
+//
+//   - If the owner is already a valid slug (lowercase a-z0-9-, non-empty, not
+//     "."/".."), it is used verbatim. Existing orgs (admin, built-in, …) keep
+//     their current filenames — no migration.
+//   - Otherwise the owner is lowercased with every illegal rune replaced by '-',
+//     then disambiguated with "-" + first 8 hex of SHA-256(owner). The hash is
+//     of the ORIGINAL owner, so two distinct owners that canonicalize to the
+//     same prefix (e.g. "Acme" and "acme!") still get distinct files.
+//
+// This is a pure function of the owner, so the slug — and therefore the per-org
+// DEK derivation — is stable across restarts.
+func orgSlug(owner string) string {
+	if validateOrgSlug(owner) == nil {
+		return owner
+	}
+	canon := make([]rune, 0, len(owner))
+	for _, c := range owner {
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '-':
+			canon = append(canon, c)
+		case c >= 'A' && c <= 'Z':
+			canon = append(canon, c+('a'-'A'))
+		default:
+			canon = append(canon, '-')
+		}
+	}
+	sum := sha256.Sum256([]byte(owner))
+	return string(canon) + "-" + hex.EncodeToString(sum[:4]) // 8 hex chars
+}
+
+// validateOrgSlug rejects slugs containing path-traversal characters.
+// Only lowercase alphanumeric and hyphens allowed. After orgSlug() this always
+// passes; it remains a defense-in-depth assertion at the file-path boundary.
 func validateOrgSlug(s string) error {
 	if s == "" {
 		return fmt.Errorf("org slug cannot be empty")
@@ -110,25 +191,30 @@ func validateOrgSlug(s string) error {
 	return nil
 }
 
-// orgDir returns the directory for an org's database.
+// orgDir returns the directory for an org's database (slug already canonical).
 func (m *OrgDBManager) orgDir(orgSlug string) string {
 	return filepath.Join(m.dataDir, "orgs", orgSlug)
 }
 
-// orgDBPath returns the SQLite database path for an org.
+// orgDBPath returns the SQLite database path for an org (slug already canonical).
 func (m *OrgDBManager) orgDBPath(orgSlug string) string {
 	return filepath.Join(m.orgDir(orgSlug), "iam.db")
 }
 
-// GetEngine returns the xorm engine for an org, creating it on demand.
-func (m *OrgDBManager) GetEngine(orgSlug string) (*xorm.Engine, error) {
-	if err := validateOrgSlug(orgSlug); err != nil {
-		return nil, fmt.Errorf("invalid org slug: %w", err)
+// GetEngine returns the xorm engine for an org, creating it on demand. The
+// caller passes the RAW org owner; canonicalization to a slug happens here, so
+// no caller can route to the wrong file or be rejected for a "weird" name.
+func (m *OrgDBManager) GetEngine(owner string) (*xorm.Engine, error) {
+	slug := orgSlug(owner)
+	if err := validateOrgSlug(slug); err != nil {
+		// Unreachable for any input (orgSlug always yields a valid slug); a
+		// failure here means orgSlug itself is broken — fail closed.
+		return nil, fmt.Errorf("canonical org slug invalid for owner %q: %w", owner, err)
 	}
 
 	// Fast path: check cache under read lock.
 	m.mu.RLock()
-	if eng, ok := m.engines[orgSlug]; ok {
+	if eng, ok := m.engines[slug]; ok {
 		m.mu.RUnlock()
 		return eng, nil
 	}
@@ -139,64 +225,111 @@ func (m *OrgDBManager) GetEngine(orgSlug string) (*xorm.Engine, error) {
 	defer m.mu.Unlock()
 
 	// Double-check after acquiring write lock.
-	if eng, ok := m.engines[orgSlug]; ok {
+	if eng, ok := m.engines[slug]; ok {
 		return eng, nil
 	}
 
-	eng, err := m.createEngine(orgSlug)
+	eng, err := m.createEngine(slug)
 	if err != nil {
 		return nil, err
 	}
-	m.engines[orgSlug] = eng
+	m.engines[slug] = eng
 	return eng, nil
 }
 
 // ProvisionOrg creates the org directory, database, and syncs org-scoped tables.
-func (m *OrgDBManager) ProvisionOrg(orgSlug string) error {
-	if err := validateOrgSlug(orgSlug); err != nil {
-		return fmt.Errorf("invalid org slug: %w", err)
-	}
-
-	dir := m.orgDir(orgSlug)
+func (m *OrgDBManager) ProvisionOrg(owner string) error {
+	slug := orgSlug(owner)
+	dir := m.orgDir(slug)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create org dir %q: %w", dir, err)
 	}
-
-	_, err := m.GetEngine(orgSlug)
+	_, err := m.GetEngine(owner)
 	return err
 }
 
-// createEngine opens a SQLite engine for the org and syncs org-scoped tables.
+// openEncrypted opens (creating if needed) an enveloped SQLite database at
+// dbPath for the given principal, returning a keyed *sql.DB. The DEK is wrapped
+// under KEK = DeriveKey(masterKey, principalType, principalID) and persisted in
+// the `<dbPath>.dek` sidecar. On open the DEK is unwrapped from the sidecar; if
+// the sidecar is absent a fresh random DEK is generated, wrapped, and written
+// (atomically) before the database is created with it.
 //
-// When a master key is configured, the org file is opened with a per-org DEK
-// (HKDF-SHA256(masterKey, "org:{slug}")) through SQLCipher; otherwise it is an
-// unencrypted file. The pragma form is built by the driver helper to match the
-// active backend.
+// A db file that exists WITHOUT a sidecar is refused (fail-closed): it is either
+// an unencrypted legacy file or corruption, and silently treating it as
+// encrypted — or falling back to plaintext — would be wrong. (There are no such
+// files in production: encryption was never actually deployed, and the migration
+// tool writes fresh enveloped files.)
+func openEncrypted(dbPath string, masterKey []byte, principalType sqlitedrv.PrincipalType, principalID string) (*sql.DB, error) {
+	kek, err := sqlitedrv.DeriveKey(masterKey, principalType, principalID)
+	if err != nil {
+		return nil, fmt.Errorf("derive KEK for %s:%s: %w", principalType, principalID, err)
+	}
+
+	dekPath := dbPath + dekSuffix
+	dbExists := fileExists(dbPath)
+	dekExists := fileExists(dekPath)
+
+	var dek []byte
+	switch {
+	case dekExists:
+		blob, err := os.ReadFile(dekPath)
+		if err != nil {
+			return nil, fmt.Errorf("read wrapped DEK %q: %w", dekPath, err)
+		}
+		dek, err = sqlitedrv.UnwrapDEK(kek, blob)
+		if err != nil {
+			// Wrong master key or tampered sidecar. Fail closed — never open
+			// with a derived key (would brick) or fall back to plaintext.
+			return nil, fmt.Errorf("unwrap DEK for %q (wrong master key or corrupt sidecar): %w", dbPath, err)
+		}
+	case dbExists:
+		// DB without a sidecar: refuse rather than guess.
+		return nil, fmt.Errorf("encrypted db %q has no DEK sidecar %q; refusing to open (would lose data or expose plaintext)", dbPath, dekPath)
+	default:
+		// Fresh database: mint a DEK, wrap it, persist the sidecar first.
+		dek, err = sqlitedrv.NewDEK()
+		if err != nil {
+			return nil, err
+		}
+		blob, err := sqlitedrv.WrapDEK(kek, dek)
+		if err != nil {
+			return nil, err
+		}
+		if err := writeFileAtomic(dekPath, blob, 0o600); err != nil {
+			return nil, fmt.Errorf("write wrapped DEK %q: %w", dekPath, err)
+		}
+	}
+
+	sqlDB, err := sqlitedrv.OpenDB(dbPath, dek)
+	zero(dek) // defense in depth; SQLCipher has copied the key into its own state
+	if err != nil {
+		return nil, fmt.Errorf("open encrypted db %q: %w", dbPath, err)
+	}
+	return sqlDB, nil
+}
+
+// createEngine opens a SQLite engine for the org (slug already canonical) and
+// syncs org-scoped tables.
 //
-// The key never leaks to a log: on the encrypted path we open a *sql.DB via
-// sqlite.OpenDB (the key rides that open call) and hand it to NewEngineWithDB,
-// so xorm never sees a DSN — even ShowSQL(true) only logs SQL statements, which
-// never contain the key. On the unencrypted path the DSN carries no key.
-func (m *OrgDBManager) createEngine(orgSlug string) (*xorm.Engine, error) {
-	dir := m.orgDir(orgSlug)
+// When a master key is configured, the org file is opened enveloped (per-org
+// DEK wrapped under an org KEK); otherwise it is an unencrypted file. The key
+// never leaks to a log: on the encrypted path the DEK rides the driver's open
+// call inside a *sql.DB handed to NewEngineWithDB, so xorm never sees a DSN —
+// even ShowSQL(true) only logs SQL statements, which never contain the key.
+func (m *OrgDBManager) createEngine(slug string) (*xorm.Engine, error) {
+	dir := m.orgDir(slug)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create org dir %q: %w", dir, err)
 	}
 
-	dbPath := m.orgDBPath(orgSlug)
+	dbPath := m.orgDBPath(slug)
 
 	var engine *xorm.Engine
 	if m.masterKey != nil {
-		// Encrypted path: derive the per-org DEK and open via SQLCipher. We use
-		// OpenDB (a *sql.DB) + NewEngineWithDB so the SQLCipher key rides the
-		// driver's open call, never a DSN string we hand to xorm by name.
-		dek, err := sqlitedrv.DeriveKey(m.masterKey, sqlitedrv.PrincipalOrg, orgSlug)
+		sqlDB, err := openEncrypted(dbPath, m.masterKey, sqlitedrv.PrincipalOrg, slug)
 		if err != nil {
-			return nil, fmt.Errorf("derive org DEK for %q: %w", orgSlug, err)
-		}
-		sqlDB, err := sqlitedrv.OpenDB(dbPath, dek)
-		if err != nil {
-			return nil, fmt.Errorf("open encrypted org db %q: %w", dbPath, err)
+			return nil, err
 		}
 		engine, err = xorm.NewEngineWithDB("sqlite", "", core.FromDB(sqlDB))
 		if err != nil {
@@ -204,7 +337,6 @@ func (m *OrgDBManager) createEngine(orgSlug string) (*xorm.Engine, error) {
 			return nil, fmt.Errorf("wrap encrypted org db %q: %w", dbPath, err)
 		}
 	} else {
-		// Unencrypted path (dev / CGO-off CI). DSN form matches the backend.
 		var err error
 		engine, err = xorm.NewEngine("sqlite", sqlitedrv.DSN(dbPath, nil))
 		if err != nil {
@@ -223,10 +355,90 @@ func (m *OrgDBManager) createEngine(orgSlug string) (*xorm.Engine, error) {
 	// Sync org-scoped tables.
 	if err := syncOrgTables(engine); err != nil {
 		engine.Close()
-		return nil, fmt.Errorf("sync org tables for %q: %w", orgSlug, err)
+		return nil, fmt.Errorf("sync org tables for %q: %w", slug, err)
 	}
 
 	return engine, nil
+}
+
+// rewrapTarget is one database whose DEK sidecar must be rewrapped during a
+// master-key rotation (the db path plus its KEK-derivation principal).
+type rewrapTarget struct {
+	path string
+	pt   sqlitedrv.PrincipalType
+	id   string
+}
+
+// Rewrap rotates the master key for every provisioned org database (and is the
+// mechanism that makes KMS master-key rotation non-destructive). For each org
+// sidecar it unwraps the DEK with the OLD master's KEK and rewraps it with the
+// NEW master's KEK, replacing the sidecar atomically. The DEK — and therefore
+// every encrypted page — is never touched, so rotation cannot brick a file.
+//
+// Call with the CURRENTLY-configured master key as oldMaster and the incoming
+// key as newMaster. On success the manager's in-memory master key is updated;
+// callers should re-open engines (or restart) to pick up the new posture. Any
+// per-file failure aborts BEFORE mutating that file, so a partial rotation never
+// loses data (already-rewrapped files remain readable under newMaster; the rest
+// remain readable under oldMaster — operators re-run with the appropriate pair).
+func (m *OrgDBManager) Rewrap(oldMaster, newMaster []byte) error {
+	if len(oldMaster) != 32 || len(newMaster) != 32 {
+		return fmt.Errorf("rewrap: master keys must be 32 bytes")
+	}
+	slugs, err := m.ListOrgs()
+	if err != nil {
+		return fmt.Errorf("rewrap: list orgs: %w", err)
+	}
+
+	// Build the rewrap target set: the global db (if encrypted) + every org db.
+	var targets []rewrapTarget
+	globalPath := filepath.Join(m.dataDir, "iam.db")
+	if fileExists(globalPath + dekSuffix) {
+		targets = append(targets, rewrapTarget{globalPath, sqlitedrv.PrincipalGlobal, globalPrincipalID})
+	}
+	for _, slug := range slugs {
+		targets = append(targets, rewrapTarget{m.orgDBPath(slug), sqlitedrv.PrincipalOrg, slug})
+	}
+
+	for _, t := range targets {
+		if err := rewrapSidecar(t.path+dekSuffix, oldMaster, newMaster, t.pt, t.id); err != nil {
+			return fmt.Errorf("rewrap %q: %w", t.path, err)
+		}
+	}
+
+	m.mu.Lock()
+	m.masterKey = append([]byte(nil), newMaster...)
+	m.mu.Unlock()
+	return nil
+}
+
+// rewrapSidecar rewraps a single wrapped-DEK sidecar from oldMaster to newMaster.
+func rewrapSidecar(dekPath string, oldMaster, newMaster []byte, pt sqlitedrv.PrincipalType, id string) error {
+	oldKEK, err := sqlitedrv.DeriveKey(oldMaster, pt, id)
+	if err != nil {
+		return err
+	}
+	newKEK, err := sqlitedrv.DeriveKey(newMaster, pt, id)
+	if err != nil {
+		return err
+	}
+	blob, err := os.ReadFile(dekPath)
+	if err != nil {
+		return fmt.Errorf("read sidecar: %w", err)
+	}
+	dek, err := sqlitedrv.UnwrapDEK(oldKEK, blob)
+	if err != nil {
+		return fmt.Errorf("unwrap with old master: %w", err)
+	}
+	newBlob, err := sqlitedrv.WrapDEK(newKEK, dek)
+	zero(dek)
+	if err != nil {
+		return err
+	}
+	if err := writeFileAtomic(dekPath, newBlob, 0o600); err != nil {
+		return fmt.Errorf("write rewrapped sidecar: %w", err)
+	}
+	return nil
 }
 
 // syncOrgTables creates/migrates the org-scoped tables in the given engine.
@@ -296,7 +508,7 @@ func (m *OrgDBManager) ListOrgs() ([]string, error) {
 	for _, e := range entries {
 		if e.IsDir() {
 			dbPath := m.orgDBPath(e.Name())
-			if _, err := os.Stat(dbPath); err == nil {
+			if fileExists(dbPath) {
 				slugs = append(slugs, e.Name())
 			}
 		}
@@ -305,17 +517,57 @@ func (m *OrgDBManager) ListOrgs() ([]string, error) {
 }
 
 // DeleteOrg removes an org's engine from the pool and deletes its directory.
-func (m *OrgDBManager) DeleteOrg(orgSlug string) error {
-	if err := validateOrgSlug(orgSlug); err != nil {
-		return fmt.Errorf("invalid org slug: %w", err)
-	}
+func (m *OrgDBManager) DeleteOrg(owner string) error {
+	slug := orgSlug(owner)
 
 	m.mu.Lock()
-	if eng, ok := m.engines[orgSlug]; ok {
+	if eng, ok := m.engines[slug]; ok {
 		eng.Close()
-		delete(m.engines, orgSlug)
+		delete(m.engines, slug)
 	}
 	m.mu.Unlock()
 
-	return os.RemoveAll(m.orgDir(orgSlug))
+	return os.RemoveAll(m.orgDir(slug))
+}
+
+// --- small helpers (no third-party deps) ---
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// writeFileAtomic writes data to a temp file in the same directory and renames
+// it into place, so a crash never leaves a half-written sidecar.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".dek-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op after a successful rename
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
+
+// zero overwrites a key buffer in place.
+func zero(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
 }
