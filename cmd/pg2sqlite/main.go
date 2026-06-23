@@ -36,11 +36,11 @@ import (
 	"github.com/hanzoai/authzstore"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
+	sqlitedrv "github.com/hanzoai/sqlite" // dual-backend "sqlite" driver (cgo SQLCipher / !cgo modernc)
 	"github.com/hanzoai/xorm"
 	xormLog "github.com/hanzoai/xorm/log"
 	"github.com/hanzoai/xorm/names"
 	_ "github.com/lib/pq"
-	_ "modernc.org/sqlite"
 )
 
 // authzTables enumerates the runtime-allocated authz adapter tables IAM
@@ -122,11 +122,11 @@ func main() {
 	}
 	defer srcEng.Close()
 
-	// SQLite DSN uses the file: pragma form so we apply the same
-	// busy-timeout + WAL knobs the running server will. Keeping the
-	// pragmas identical avoids a divergence between the file we copy
-	// and the file IAM later opens.
-	dstDSN := fmt.Sprintf("file:%s?cache=shared&_busy_timeout=10000&_journal_mode=WAL", *dst)
+	// Build the destination DSN via the driver's own helper so the pragma
+	// params match the ACTIVE backend (mattn `_busy_timeout=` under cgo vs
+	// modernc `_pragma=` under !cgo — modernc silently ignores the mattn form).
+	// nil key => unencrypted staging file; operators encrypt per-org at runtime.
+	dstDSN := sqlitedrv.DSN(*dst, nil)
 	dstEng, err := openEngine("sqlite", dstDSN)
 	if err != nil {
 		log.Fatalf("open destination: %v", err)

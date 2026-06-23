@@ -15,15 +15,17 @@
 package object
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/hanzoai/iam/conf"
+	sqlitedrv "github.com/hanzoai/sqlite"
 	"github.com/hanzoai/xorm"
+	"github.com/hanzoai/xorm/core"
 	"github.com/hanzoai/xorm/names"
-	_ "modernc.org/sqlite"
 )
 
 // OrgDBManager manages per-org SQLite databases for IAM.
@@ -35,30 +37,59 @@ import (
 //
 // When orgIsolation is "none" (default), this manager is nil and all queries
 // go through the global ormer.Engine as before.
+//
+// Encryption at rest is per-org: when a 32-byte master key is configured
+// (ENCRYPTION_MASTER_KEY, 64 hex chars), each org's file is encrypted with a
+// per-org DEK = HKDF-SHA256(masterKey, "org:{slug}") via SQLCipher. Directory
+// isolation separates org data on disk; the per-org DEK ensures one org's file
+// cannot be read with another org's key even if the file is exfiltrated.
 type OrgDBManager struct {
-	mu      sync.RWMutex
-	dataDir string
-	engines map[string]*xorm.Engine // orgSlug -> engine
+	mu        sync.RWMutex
+	dataDir   string
+	masterKey []byte                  // 32-byte KMS master key; nil => unencrypted (dev/CI)
+	engines   map[string]*xorm.Engine // orgSlug -> engine
 }
 
 // NewOrgDBManager creates a new per-org database manager.
-// Per-org databases use modernc.org/sqlite (pure Go). Directory-level isolation
-// separates org data; file permissions are set to 0700.
+//
+// Encryption posture is decided once, here, from ENCRYPTION_MASTER_KEY:
+//
+//   - unset           → unencrypted per-org files (dev / CGO-off CI).
+//   - set + cgo build → per-org SQLCipher encryption (production).
+//   - set + !cgo build → hard error. We refuse to run: a master key was
+//     supplied but this binary cannot encrypt, and silently writing plaintext
+//     org databases would violate the security contract.
+//
+// Directory permissions are 0700.
 func NewOrgDBManager(dataDir string) (*OrgDBManager, error) {
 	if dataDir == "" {
 		return nil, fmt.Errorf("dataDir cannot be empty")
 	}
+
+	var masterKey []byte
 	if mkHex := os.Getenv("ENCRYPTION_MASTER_KEY"); mkHex != "" {
-		return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY is set but per-org database encryption requires a CGO build with sqlcipher; unset the variable or build with CGO_ENABLED=1")
+		if !sqlitedrv.EncryptionAvailable() {
+			return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY is set but this build cannot encrypt (pure-Go sqlite); rebuild with CGO_ENABLED=1 -tags \"libsqlite3 sqlite_fts5\" linked against libsqlcipher, or unset the variable for an unencrypted dev build")
+		}
+		mk, err := hex.DecodeString(mkHex)
+		if err != nil {
+			return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY must be hex-encoded: %w", err)
+		}
+		if len(mk) != 32 {
+			return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY must decode to 32 bytes, got %d", len(mk))
+		}
+		masterKey = mk
 	}
+
 	orgsDir := filepath.Join(dataDir, "orgs")
 	if err := os.MkdirAll(orgsDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create orgs dir %q: %w", orgsDir, err)
 	}
 
 	return &OrgDBManager{
-		dataDir: dataDir,
-		engines: make(map[string]*xorm.Engine),
+		dataDir:   dataDir,
+		masterKey: masterKey,
+		engines:   make(map[string]*xorm.Engine),
 	}, nil
 }
 
@@ -136,8 +167,16 @@ func (m *OrgDBManager) ProvisionOrg(orgSlug string) error {
 }
 
 // createEngine opens a SQLite engine for the org and syncs org-scoped tables.
-// Uses modernc.org/sqlite (pure Go, no CGO). Per-org directory isolation provides
-// data separation; file-level encryption requires a CGO build with sqlcipher.
+//
+// When a master key is configured, the org file is opened with a per-org DEK
+// (HKDF-SHA256(masterKey, "org:{slug}")) through SQLCipher; otherwise it is an
+// unencrypted file. The pragma form is built by the driver helper to match the
+// active backend.
+//
+// The key never leaks to a log: on the encrypted path we open a *sql.DB via
+// sqlite.OpenDB (the key rides that open call) and hand it to NewEngineWithDB,
+// so xorm never sees a DSN — even ShowSQL(true) only logs SQL statements, which
+// never contain the key. On the unencrypted path the DSN carries no key.
 func (m *OrgDBManager) createEngine(orgSlug string) (*xorm.Engine, error) {
 	dir := m.orgDir(orgSlug)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -145,10 +184,32 @@ func (m *OrgDBManager) createEngine(orgSlug string) (*xorm.Engine, error) {
 	}
 
 	dbPath := m.orgDBPath(orgSlug)
-	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=5000", dbPath)
-	engine, err := xorm.NewEngine("sqlite", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("open org db %q: %w", dbPath, err)
+
+	var engine *xorm.Engine
+	if m.masterKey != nil {
+		// Encrypted path: derive the per-org DEK and open via SQLCipher. We use
+		// OpenDB (a *sql.DB) + NewEngineWithDB so the SQLCipher key rides the
+		// driver's open call, never a DSN string we hand to xorm by name.
+		dek, err := sqlitedrv.DeriveKey(m.masterKey, sqlitedrv.PrincipalOrg, orgSlug)
+		if err != nil {
+			return nil, fmt.Errorf("derive org DEK for %q: %w", orgSlug, err)
+		}
+		sqlDB, err := sqlitedrv.OpenDB(dbPath, dek)
+		if err != nil {
+			return nil, fmt.Errorf("open encrypted org db %q: %w", dbPath, err)
+		}
+		engine, err = xorm.NewEngineWithDB("sqlite", "", core.FromDB(sqlDB))
+		if err != nil {
+			sqlDB.Close()
+			return nil, fmt.Errorf("wrap encrypted org db %q: %w", dbPath, err)
+		}
+	} else {
+		// Unencrypted path (dev / CGO-off CI). DSN form matches the backend.
+		var err error
+		engine, err = xorm.NewEngine("sqlite", sqlitedrv.DSN(dbPath, nil))
+		if err != nil {
+			return nil, fmt.Errorf("open org db %q: %w", dbPath, err)
+		}
 	}
 
 	// Match the table name prefix from config.

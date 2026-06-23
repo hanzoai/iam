@@ -29,12 +29,12 @@ import (
 	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
+	_ "github.com/hanzoai/sqlite" // db = sqlite (dual-backend: cgo SQLCipher / !cgo modernc)
 	"github.com/hanzoai/xorm"
 	"github.com/hanzoai/xorm/core"
 	"github.com/hanzoai/xorm/names"
 	_ "github.com/lib/pq"               // db = postgres
 	_ "github.com/microsoft/go-mssqldb" // db = mssql
-	_ "modernc.org/sqlite"              // db = sqlite
 )
 
 const (

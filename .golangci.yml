@@ -7,3 +7,11 @@ linters:
 run:
   timeout: 5m
   modules-download-mode: mod
+  # Production links the system libsqlcipher (the `libsqlite3` tag). Match it so
+  # the lint typecheck sees the same build the Docker image uses. No CGO-blind
+  # exclude rules are needed: hanzoai/sqlite is dual-backend, so under the CGO-off
+  # linter its pure-Go (!cgo) files typecheck cleanly and register the same
+  # "sqlite" driver — the encrypted (cgo) files simply aren't compiled here.
+  build-tags:
+    - libsqlite3
+    - sqlite_fts5
