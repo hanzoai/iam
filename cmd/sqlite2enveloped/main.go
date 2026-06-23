@@ -478,7 +478,12 @@ func readRows(db *sql.DB, table string, cols []string) ([]map[string]any, error)
 // reads the migrated table back, selecting exactly `cols`, with the same
 // NULL-faithful per-column scan, so source and destination row hashes are
 // computed over identical column sets and types. For the per-org User table it
-// reads every org engine and concatenates.
+// reads every org engine (via ListOrgs over orgs/<slug>/) and concatenates.
+//
+// DEFERRED-LAYOUT NOTE (Red L3): this assumes User lives in per-ORG files. If the
+// deferred per-USER layout (orgs/<slug>/users/<id>.db) is ever wired, this
+// read-back must descend into the per-user files too, or it would under-count and
+// falsely FAIL parity. Not applicable today (no per-user routing exists).
 func readBackDest(target *object.MigrationTarget, table string, cols []string) ([]map[string]any, error) {
 	if table == object.MigrationUserTable {
 		slugs, err := target.Mgr.ListOrgs()
@@ -549,6 +554,13 @@ func hashRows(rows []map[string]any, cols []string) []string {
 // distinct NULL sentinel, so the hash distinguishes NULL from "" from 0 from
 // false from an empty BLOB — exactly the distinctions a faithful migration must
 // keep and a count/xorm migration loses.
+//
+// SAFE FAILURE DIRECTION (Red L2): the tag is storage-class-STRICT —
+// int64(5) ≠ float64(5), string ≠ []byte. So if the source read and the
+// destination read-back ever disagreed on a value's Go type (e.g. a driver
+// representation drift), parity would FAIL (stopping the cutover) rather than
+// silently coerce. A false-FAIL is recoverable; silent loss is not. Both reads
+// use the same driver here, so no false-FAIL occurs in practice.
 func hashRow(row map[string]any, orderedCols []string) string {
 	h := sha256.New()
 	var tagBuf [9]byte

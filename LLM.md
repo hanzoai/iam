@@ -173,6 +173,18 @@ Hard preconditions (identical to the pg2sqlite runbook, PLUS):
   `DATA_DIR` first, then conf `dataDir`; `IAM_DATA_DIR` alone is NOT honoured) —
   set `DATA_DIR=/data/iam`.
 
+Red sign-off (against the real 112-user snapshot): **SAFE — full data fidelity, 0
+critical/high/medium.** Red proved the content-parity gate is not vacuous
+(injected a NULL→"" coercion on a non-censused column → parity correctly FAILED),
+and that the mixed REAL/BLOB `balance` values, the 4 true-BLOB MFA/WebAuthn
+columns, the 3-column-PK `session`, and `record` (222k rows) all round-trip
+byte-identically with 0 drops / 0 slug collisions / 0 orphans. One LOW
+follow-up, NOT a cutover blocker (zero data impact): the migrator's bogus
+`enforcer.enforcer` column drop is undone at the next daemon boot because
+`ormer.go` `Sync2(new(Enforcer))` re-adds the all-NULL column — fix by dropping
+it on the boot path or tagging the upstream embed `xorm:"-"` (a daemon-image
+follow-up, the column carries no data).
+
 Exact gated cutover sequence (run ONLY after this is Red-approved; lowest-risk env
 first). The migrator runs against a **COPY** of the live db on the PVC, never the
 live writer's open file:
