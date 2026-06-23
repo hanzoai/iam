@@ -78,3 +78,5 @@ web/cypress/videos/
 /iam-server
 /server
 /server_darwin_arm64
+/pg2sqlite
+/sqlite2enveloped
