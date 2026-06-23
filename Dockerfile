@@ -17,8 +17,12 @@ ENV VITE_DEFAULT_APP=$VITE_DEFAULT_APP
 RUN NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
 
 # ── Go build ──────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26 AS back
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26-alpine AS back
 ARG TARGETOS TARGETARCH
+# CGO + SQLCipher toolchain for the hanzoai/sqlite embedded driver (mattn-based).
+# Built CGO-native per-arch on the native build runners (no cross-compile), musl
+# throughout so the binary runs on the alpine runtime below.
+RUN apk add --no-cache git gcc musl-dev sqlcipher-dev pkgconfig
 WORKDIR /go/src/hanzo-iam
 
 COPY go.mod go.sum ./
@@ -67,9 +71,9 @@ RUN --mount=type=secret,id=gh_token --mount=type=secret,id=GIT_AUTH_TOKEN \
         export GIT_CONFIG_GLOBAL=/tmp/gitconfig; \
         git config --global url."https://x-access-token:${TOK}@github.com/".insteadOf "https://github.com/"; \
       fi; \
-      CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamd ./cmd/iamd/; \
-      CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iam ./cmd/iam/; \
-      CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamctl ./cmd/iamctl/; \
+      CGO_ENABLED=1 go build -tags "sqlcipher sqlite_fts5" -ldflags="-w -s" -o iamd ./cmd/iamd/; \
+      CGO_ENABLED=1 go build -tags "sqlcipher sqlite_fts5" -ldflags="-w -s" -o iam ./cmd/iam/; \
+      CGO_ENABLED=1 go build -tags "sqlcipher sqlite_fts5" -ldflags="-w -s" -o iamctl ./cmd/iamctl/; \
       rm -f /tmp/gitconfig'
 
 # ── Production image ──────────────────────────────────────────
@@ -77,7 +81,7 @@ FROM docker.io/library/alpine:3.21 AS standard
 LABEL maintainer="https://hanzo.ai/"
 ARG USER=hanzo
 
-RUN apk add --no-cache tzdata curl ca-certificates sqlite \
+RUN apk add --no-cache tzdata curl ca-certificates sqlite sqlcipher \
     && update-ca-certificates \
     && adduser -D $USER -u 1000 \
     && mkdir logs \
