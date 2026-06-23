@@ -23,17 +23,26 @@ WORKDIR /go/src/hanzo-iam
 
 COPY go.mod go.sum ./
 # Private Go modules (github.com/luxfi/*, github.com/hanzoai/*) need git auth.
-# CI passes a GIT_AUTH_TOKEN buildkit secret; mark those prefixes private (so go
-# fetches via git, not the public proxy/sumdb that can't see them) and configure
-# git to present the token for github.com. The token rides a --mount secret, so
-# it never lands in an image layer. No token → public-only build still works.
+# CI passes a buildkit secret; mark those prefixes private (so go fetches via
+# git, not the public proxy/sumdb that can't see them) and configure git to
+# present the token for github.com. The token rides a --mount secret, so it
+# never lands in an image layer. No token → public-only build still works.
+#
+# Secret name: the canonical hanzoai/.github docker-build.yml reusable provides
+# it as `gh_token`; the in-cluster Kaniko path uses `GIT_AUTH_TOKEN`. Accept
+# either so BOTH build paths authenticate (this is what makes the GHA pipeline
+# build — the old id=GIT_AUTH_TOKEN-only mount silently got nothing from the
+# reusable and the private fetch failed).
 ARG GOPRIVATE=github.com/luxfi/*,github.com/hanzoai/*
 ENV GOPRIVATE=${GOPRIVATE}
-RUN --mount=type=secret,id=GIT_AUTH_TOKEN \
+RUN --mount=type=secret,id=gh_token --mount=type=secret,id=GIT_AUTH_TOKEN \
     sh -c 'set -e; \
-      if [ -s /run/secrets/GIT_AUTH_TOKEN ]; then \
+      TOK=""; \
+      if [ -s /run/secrets/gh_token ]; then TOK="$(cat /run/secrets/gh_token)"; \
+      elif [ -s /run/secrets/GIT_AUTH_TOKEN ]; then TOK="$(cat /run/secrets/GIT_AUTH_TOKEN)"; fi; \
+      if [ -n "$TOK" ]; then \
         export GIT_CONFIG_GLOBAL=/tmp/gitconfig; \
-        git config --global url."https://x-access-token:$(cat /run/secrets/GIT_AUTH_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+        git config --global url."https://x-access-token:${TOK}@github.com/".insteadOf "https://github.com/"; \
       fi; \
       go mod download; \
       rm -f /tmp/gitconfig'
@@ -49,11 +58,14 @@ ENV GOEXPERIMENT=${GO_EXPERIMENT}
 # build can fetch a require not pre-downloaded, so re-present the private-module
 # git auth here too — same tmp GIT_CONFIG_GLOBAL that never persists to a layer.
 ENV GOFLAGS=-mod=mod
-RUN --mount=type=secret,id=GIT_AUTH_TOKEN \
+RUN --mount=type=secret,id=gh_token --mount=type=secret,id=GIT_AUTH_TOKEN \
     sh -c 'set -e; \
-      if [ -s /run/secrets/GIT_AUTH_TOKEN ]; then \
+      TOK=""; \
+      if [ -s /run/secrets/gh_token ]; then TOK="$(cat /run/secrets/gh_token)"; \
+      elif [ -s /run/secrets/GIT_AUTH_TOKEN ]; then TOK="$(cat /run/secrets/GIT_AUTH_TOKEN)"; fi; \
+      if [ -n "$TOK" ]; then \
         export GIT_CONFIG_GLOBAL=/tmp/gitconfig; \
-        git config --global url."https://x-access-token:$(cat /run/secrets/GIT_AUTH_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+        git config --global url."https://x-access-token:${TOK}@github.com/".insteadOf "https://github.com/"; \
       fi; \
       CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamd ./cmd/iamd/; \
       CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iam ./cmd/iam/; \
