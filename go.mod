@@ -264,4 +264,4 @@ require github.com/hanzoai/authz v1.10.0
 // modernc on its !cgo path). Build prod with:
 //   CGO_ENABLED=1 -tags "libsqlite3 sqlite_fts5"
 //   CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 …" CGO_LDFLAGS="-lsqlcipher"
-require github.com/hanzoai/sqlite v0.1.3
+require github.com/hanzoai/sqlite v0.1.4
