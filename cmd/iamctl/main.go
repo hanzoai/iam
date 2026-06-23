@@ -20,6 +20,8 @@
 //
 // Subcommands:
 //
+//	init-apps           Reconcile the per-brand orgs + desktop OAuth
+//	                    applications (hanzo/zoo/lux) into IAM (idempotent).
 //	init-providers      Upsert OAuth provider rows (GitHub, Google, …)
 //	                    from environment variables sourced from KMS.
 //	wire-providers      Attach the GitHub + Google providers to every
@@ -58,6 +60,11 @@ USAGE
     iamctl <subcommand> [flags]
 
 SUBCOMMANDS
+    init-apps           Reconcile per-brand orgs + desktop OAuth apps
+                        (hanzo/zoo/lux) into IAM: stable client_ids,
+                        deep-link redirect URIs, password + code signin.
+                        Idempotent — missing rows are created, never mutated.
+
     init-providers      Upsert OAuth provider rows from KMS-sourced env.
                         Reads GITHUB_CLIENT_ID/SECRET and GOOGLE_CLIENT_ID/SECRET
                         and upserts provider rows owned by admin org.
@@ -78,8 +85,9 @@ ENVIRONMENT
     IAM_ADMIN_ORG       Admin org name (default: admin)
 
 EXAMPLES
-    # In an init-job that runs once per IAM deploy:
-    iamctl init-providers && iamctl wire-providers
+    # In an init-job that runs once per IAM deploy (order matters — apps
+    # must exist before providers can be wired to them):
+    iamctl init-apps && iamctl init-providers && iamctl wire-providers
 
     # Periodic cleanup CronJob (dry-run, alerts on findings):
     iamctl clean-spam-orgs
@@ -103,6 +111,8 @@ func main() {
 	args := os.Args[2:]
 
 	switch sub {
+	case "init-apps":
+		os.Exit(runInitApps(args))
 	case "init-providers":
 		os.Exit(runInitProviders(args))
 	case "wire-providers":
