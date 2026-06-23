@@ -146,11 +146,11 @@ func hasApp(apps []app, name string) bool {
 //
 // Algorithm:
 //
-//	1. GET /v1/iam/get-organizations — which orgs already exist.
-//	2. For each brandSpec:
-//	   a. POST /v1/iam/add-organization if its org is missing.
-//	   b. GET /v1/iam/get-applications?organization=<org>; POST
-//	      /v1/iam/add-application if its app (by name) is missing.
+//  1. GET /v1/iam/get-organizations — which orgs already exist.
+//  2. For each brandSpec:
+//     a. POST /v1/iam/add-organization if its org is missing.
+//     b. GET /v1/iam/get-applications?organization=<org>; POST
+//     /v1/iam/add-application if its app (by name) is missing.
 func runInitApps(args []string) int {
 	fs := flag.NewFlagSet("init-apps", flag.ContinueOnError)
 	verbose := fs.Bool("v", false, "verbose logging")
