@@ -1,16 +1,16 @@
 name: Release
 
-# Multi-arch release pipeline triggered by semver tags.
+# Release pipeline triggered by semver tags.
 #
-# Produces:
-#   * iam-linux-{amd64,arm64}    — cobra CLI (cmd/iam)
-#   * iamd-linux-{amd64,arm64}   — server daemon (cmd/iamd)
-#   * ghcr.io/hanzoai/iam:vX.Y.Z — multi-arch manifest (linux/amd64+arm64)
+# Produces ONE canonical artifact:
+#   * ghcr.io/hanzoai/iam:vX.Y.Z — multi-arch image (linux/amd64+arm64),
+#     built CGO_ENABLED=1 + libsqlcipher via the Dockerfile, so at-rest
+#     encryption is REAL and the Dockerfile's ciphertext gate must pass.
 #
-# Uses GitHub-hosted runners exclusively (ubuntu-24.04 for amd64,
-# ubuntu-24.04-arm for arm64). The hanzo ARC arm64 scale set was
-# uninstalled 2026-04-27 — public runners replace it without any DOKS
-# arm64 droplet dependency.
+# We intentionally do NOT ship standalone iam/iamd binaries: a CGO_ENABLED=0
+# binary links the pure-Go backend, which CANNOT encrypt — running it with
+# IAM_KMS_MASTER_KEY set would hard-error (good) but shipping a plaintext-only
+# binary alongside the encrypted image is misleading. The image is the artifact.
 
 on:
   push:
@@ -29,72 +29,8 @@ permissions:
   id-token: write
 
 jobs:
-  binaries:
-    name: Build binaries (${{ matrix.goarch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goarch: amd64
-            runner: hanzo-build-linux-amd64
-          - goarch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag || github.ref }}
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-
-      - name: Resolve version
-        id: version
-        run: |
-          ref="${{ inputs.tag || github.ref_name }}"
-          echo "tag=${ref}" >> "$GITHUB_OUTPUT"
-
-      - name: Build iam + iamd (linux/${{ matrix.goarch }})
-        env:
-          CGO_ENABLED: '0'
-          GOOS: linux
-          GOARCH: ${{ matrix.goarch }}
-          GOEXPERIMENT: jsonv2
-          VERSION: ${{ steps.version.outputs.tag }}
-        run: |
-          mkdir -p dist
-          go build -trimpath \
-            -ldflags="-s -w -X main.version=${VERSION}" \
-            -o "dist/iam-linux-${GOARCH}" ./cmd/iam
-          go build -trimpath \
-            -ldflags="-s -w -X main.version=${VERSION}" \
-            -o "dist/iamd-linux-${GOARCH}" ./cmd/iamd
-          (cd dist && sha256sum "iam-linux-${GOARCH}" "iamd-linux-${GOARCH}" \
-            > "iam-linux-${GOARCH}.sha256")
-
-      # Org-wide Actions artifact storage quota fills faster than the
-      # 6-12hr recalculation window can free it, so the upload step
-      # historically blocks every release path. github-release consumes
-      # these for the GitHub Release attachments, but the canonical
-      # container image is built independently by `docker:` and does NOT
-      # need the upload to succeed.
-      - uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: binaries-linux-${{ matrix.goarch }}
-          path: dist/*
-          if-no-files-found: error
-          retention-days: 7
-
   github-release:
-    name: GitHub Release
-    needs: [binaries]
-    # Don't fail the whole release pipeline if artifact storage was full
-    # and binaries couldn't be uploaded — docker still publishes the
-    # canonical image.
-    if: always() && needs.binaries.result == 'success'
+    name: GitHub Release (notes only)
     runs-on: hanzo-build-linux-amd64
     steps:
       - uses: actions/checkout@v4
@@ -102,39 +38,29 @@ jobs:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
       - name: Resolve version
         id: version
         run: |
           ref="${{ inputs.tag || github.ref_name }}"
           echo "tag=${ref}" >> "$GITHUB_OUTPUT"
 
+      # Release notes only — no binary attachments. The canonical, encryption-
+      # capable artifact is the ghcr image built by the `docker` job below.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
-          files: |
-            dist/iam-linux-amd64
-            dist/iam-linux-arm64
-            dist/iamd-linux-amd64
-            dist/iamd-linux-arm64
-            dist/iam-linux-amd64.sha256
-            dist/iam-linux-arm64.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   docker:
     name: Multi-arch Docker (ghcr.io/hanzoai/iam)
-    # Decoupled from `binaries` because the Dockerfile builds the iam
-    # server itself; we don't need the standalone binary artifacts to
-    # ship the container image. This is the canonical artifact that
-    # ships to production.
+    # The Dockerfile builds the iam server itself (CGO_ENABLED=1 + libsqlcipher),
+    # so this is the canonical, encryption-capable artifact that ships to
+    # production. Its encryption gate (TestEncryptionProof + TestOrgDBEncryptionPosture)
+    # fails the image build if at-rest encryption is not real.
     runs-on: hanzo-build-linux-amd64
     permissions:
       contents: read
