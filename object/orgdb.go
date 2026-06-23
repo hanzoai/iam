@@ -72,6 +72,13 @@ const masterKeyEnv = "IAM_KMS_MASTER_KEY"
 // dekSuffix is appended to a database path to locate its wrapped-DEK sidecar.
 const dekSuffix = ".dek"
 
+// createLockSuffix is appended to a database path to locate its per-db
+// create-lock file. The lock is held (flock LOCK_EX) only around the
+// mint-DEK + create-db critical section, so concurrent first-touch of a fresh
+// org can never produce a mismatched .db/.dek pair (V1 TOCTOU). It is per-db,
+// so different orgs never serialize against each other.
+const createLockSuffix = ".create.lock"
+
 // resolveMasterKey reads IAM_KMS_MASTER_KEY and validates it. It returns:
 //
 //   - (nil, nil)      when the var is unset → unencrypted dev/CI mode.
@@ -148,9 +155,15 @@ func (m *OrgDBManager) Encrypted() bool {
 //     "."/".."), it is used verbatim. Existing orgs (admin, built-in, …) keep
 //     their current filenames — no migration.
 //   - Otherwise the owner is lowercased with every illegal rune replaced by '-',
-//     then disambiguated with "-" + first 8 hex of SHA-256(owner). The hash is
+//     then disambiguated with "-" + first 16 hex of SHA-256(owner). The hash is
 //     of the ORIGINAL owner, so two distinct owners that canonicalize to the
 //     same prefix (e.g. "Acme" and "acme!") still get distinct files.
+//
+// The suffix is 64 bits (16 hex). Two distinct owners that canonicalize to the
+// SAME prefix collide (and would share a file → cross-tenant) only on a 64-bit
+// hash collision: ~2³² same-prefix owners for ~50% odds (V2). At any realistic
+// org count that is effectively impossible; the earlier 32-bit suffix had a
+// ~2¹⁶ birthday cliff, so this removes it cheaply.
 //
 // This is a pure function of the owner, so the slug — and therefore the per-org
 // DEK derivation — is stable across restarts.
@@ -170,7 +183,7 @@ func orgSlug(owner string) string {
 		}
 	}
 	sum := sha256.Sum256([]byte(owner))
-	return string(canon) + "-" + hex.EncodeToString(sum[:4]) // 8 hex chars
+	return string(canon) + "-" + hex.EncodeToString(sum[:8]) // 16 hex chars (64-bit)
 }
 
 // validateOrgSlug rejects slugs containing path-traversal characters.
@@ -260,6 +273,18 @@ func (m *OrgDBManager) ProvisionOrg(owner string) error {
 // encrypted — or falling back to plaintext — would be wrong. (There are no such
 // files in production: encryption was never actually deployed, and the migration
 // tool writes fresh enveloped files.)
+//
+// CONCURRENCY (V1 fix). IAM is single-writer by design (one pod on an RWO PVC;
+// the universe HPA was removed) — but minting a fresh DEK and creating its db is
+// a multi-step read-decide-write, so two processes sharing the data dir (an
+// accidental re-scale, or the migration tool running beside the daemon) could
+// race: both observe "no sidecar", both mint a DIFFERENT DEK, both write the .db
+// keyed with their own DEK, and the surviving .db/.dek pair mismatches →
+// "file is not a database" forever (the org is bricked). To make that impossible
+// the create path runs under an exclusive cross-process lock and RE-CHECKS the
+// sidecar inside the lock: the loser of the race finds the winner's sidecar and
+// opens with it instead of minting a second DEK. The common path (sidecar
+// already present) takes no lock.
 func openEncrypted(dbPath string, masterKey []byte, principalType sqlitedrv.PrincipalType, principalID string) (*sql.DB, error) {
 	kek, err := sqlitedrv.DeriveKey(masterKey, principalType, principalID)
 	if err != nil {
@@ -267,40 +292,82 @@ func openEncrypted(dbPath string, masterKey []byte, principalType sqlitedrv.Prin
 	}
 
 	dekPath := dbPath + dekSuffix
-	dbExists := fileExists(dbPath)
-	dekExists := fileExists(dekPath)
+	aad := sqlitedrv.PrincipalAAD(principalType, principalID)
 
-	var dek []byte
-	switch {
-	case dekExists:
-		blob, err := os.ReadFile(dekPath)
-		if err != nil {
-			return nil, fmt.Errorf("read wrapped DEK %q: %w", dekPath, err)
-		}
-		dek, err = sqlitedrv.UnwrapDEK(kek, blob)
-		if err != nil {
-			// Wrong master key or tampered sidecar. Fail closed — never open
-			// with a derived key (would brick) or fall back to plaintext.
-			return nil, fmt.Errorf("unwrap DEK for %q (wrong master key or corrupt sidecar): %w", dbPath, err)
-		}
-	case dbExists:
-		// DB without a sidecar: refuse rather than guess.
+	// Fast path: sidecar present → unwrap and open, no lock needed.
+	if fileExists(dekPath) {
+		return openWithSidecar(dbPath, dekPath, kek, aad)
+	}
+	if fileExists(dbPath) {
+		// DB without a sidecar: refuse rather than guess. (Checked here too so
+		// the no-sidecar/db-present case fails fast without taking the lock.)
 		return nil, fmt.Errorf("encrypted db %q has no DEK sidecar %q; refusing to open (would lose data or expose plaintext)", dbPath, dekPath)
-	default:
-		// Fresh database: mint a DEK, wrap it, persist the sidecar first.
-		dek, err = sqlitedrv.NewDEK()
-		if err != nil {
-			return nil, err
-		}
-		blob, err := sqlitedrv.WrapDEK(kek, dek)
-		if err != nil {
-			return nil, err
-		}
-		if err := writeFileAtomic(dekPath, blob, 0o600); err != nil {
-			return nil, fmt.Errorf("write wrapped DEK %q: %w", dekPath, err)
-		}
 	}
 
+	// Create path: serialize the mint+create critical section across processes,
+	// then RE-CHECK under the lock so a racing first-touch can never produce a
+	// mismatched .db/.dek pair.
+	lockPath := dbPath + createLockSuffix
+	var sqlDB *sql.DB
+	lockErr := withExclusiveFileLock(lockPath, func() error {
+		// Re-check inside the lock: another process may have created the
+		// sidecar (and the db) while we waited.
+		if fileExists(dekPath) {
+			db, err := openWithSidecar(dbPath, dekPath, kek, aad)
+			if err != nil {
+				return err
+			}
+			sqlDB = db
+			return nil
+		}
+		if fileExists(dbPath) {
+			return fmt.Errorf("encrypted db %q has no DEK sidecar %q; refusing to open (would lose data or expose plaintext)", dbPath, dekPath)
+		}
+
+		// Genuinely fresh: mint a DEK, persist the sidecar, then create the db
+		// with that DEK — all while holding the lock, so the pair is atomic
+		// w.r.t. any other process.
+		dek, err := sqlitedrv.NewDEK()
+		if err != nil {
+			return err
+		}
+		blob, err := sqlitedrv.WrapDEK(kek, dek, sqlitedrv.PrincipalAAD(principalType, principalID))
+		if err != nil {
+			zero(dek)
+			return err
+		}
+		if err := writeFileAtomic(dekPath, blob, 0o600); err != nil {
+			zero(dek)
+			return fmt.Errorf("write wrapped DEK %q: %w", dekPath, err)
+		}
+		db, err := sqlitedrv.OpenDB(dbPath, dek)
+		zero(dek) // SQLCipher has copied the key into its own state
+		if err != nil {
+			return fmt.Errorf("open encrypted db %q: %w", dbPath, err)
+		}
+		sqlDB = db
+		return nil
+	})
+	if lockErr != nil {
+		return nil, lockErr
+	}
+	return sqlDB, nil
+}
+
+// openWithSidecar unwraps the DEK from an existing sidecar and opens the db.
+// aad is the principal-binding context (sqlitedrv.PrincipalAAD) — it MUST match
+// the value used at wrap time or the GCM tag check fails (fail-closed).
+func openWithSidecar(dbPath, dekPath string, kek, aad []byte) (*sql.DB, error) {
+	blob, err := os.ReadFile(dekPath)
+	if err != nil {
+		return nil, fmt.Errorf("read wrapped DEK %q: %w", dekPath, err)
+	}
+	dek, err := sqlitedrv.UnwrapDEK(kek, blob, aad)
+	if err != nil {
+		// Wrong master key or tampered sidecar. Fail closed — never open with a
+		// derived key (would brick) or fall back to plaintext.
+		return nil, fmt.Errorf("unwrap DEK for %q (wrong master key or corrupt sidecar): %w", dbPath, err)
+	}
 	sqlDB, err := sqlitedrv.OpenDB(dbPath, dek)
 	zero(dek) // defense in depth; SQLCipher has copied the key into its own state
 	if err != nil {
@@ -413,24 +480,49 @@ func (m *OrgDBManager) Rewrap(oldMaster, newMaster []byte) error {
 }
 
 // rewrapSidecar rewraps a single wrapped-DEK sidecar from oldMaster to newMaster.
+//
+// IDEMPOTENT / RESUMABLE (V3 fix). Rewrap iterates many sidecars without a
+// global journal, so a crash mid-rotation leaves some sidecars already on
+// newMaster and the rest on oldMaster. Re-running the rotation must converge,
+// not abort on the first already-done sidecar. So this tries the NEW KEK first:
+// if the sidecar already unwraps under newMaster it is already rotated → skip
+// (a no-op). Only when newMaster does NOT unwrap do we unwrap with oldMaster and
+// rewrap. The sidecar write is already atomic (temp + rename), so a sidecar is
+// never left half-written; combined with this skip, the whole Rewrap is safely
+// re-runnable after a crash until every sidecar is on newMaster.
+//
+// AAD note: the GCM AAD binds (pt,id) (see sqlitedrv.PrincipalAAD), so a sidecar
+// from a DIFFERENT principal can never silently unwrap here even under the same
+// master — the new-KEK probe is specific to THIS sidecar's principal.
 func rewrapSidecar(dekPath string, oldMaster, newMaster []byte, pt sqlitedrv.PrincipalType, id string) error {
-	oldKEK, err := sqlitedrv.DeriveKey(oldMaster, pt, id)
-	if err != nil {
-		return err
-	}
 	newKEK, err := sqlitedrv.DeriveKey(newMaster, pt, id)
 	if err != nil {
 		return err
 	}
+	aad := sqlitedrv.PrincipalAAD(pt, id)
+
 	blob, err := os.ReadFile(dekPath)
 	if err != nil {
 		return fmt.Errorf("read sidecar: %w", err)
 	}
-	dek, err := sqlitedrv.UnwrapDEK(oldKEK, blob)
-	if err != nil {
-		return fmt.Errorf("unwrap with old master: %w", err)
+
+	// Already on newMaster? Then this sidecar was rotated by a prior (possibly
+	// crashed) run — skip. This is what makes a crashed rotation re-runnable.
+	if dek, err := sqlitedrv.UnwrapDEK(newKEK, blob, aad); err == nil {
+		zero(dek)
+		return nil
 	}
-	newBlob, err := sqlitedrv.WrapDEK(newKEK, dek)
+
+	// Not yet rotated: unwrap with oldMaster, rewrap under newMaster.
+	oldKEK, err := sqlitedrv.DeriveKey(oldMaster, pt, id)
+	if err != nil {
+		return err
+	}
+	dek, err := sqlitedrv.UnwrapDEK(oldKEK, blob, aad)
+	if err != nil {
+		return fmt.Errorf("unwrap with old master (sidecar not readable under old or new master — wrong key pair?): %w", err)
+	}
+	newBlob, err := sqlitedrv.WrapDEK(newKEK, dek, aad)
 	zero(dek)
 	if err != nil {
 		return err
