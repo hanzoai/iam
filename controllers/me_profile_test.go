@@ -241,11 +241,11 @@ func TestSniffAvatarMime_Rejects(t *testing.T) {
 	for _, data := range [][]byte{
 		nil,
 		[]byte(""),
-		[]byte("GIF89a..."),                              // GIF — not allowed
+		[]byte("GIF89a..."), // GIF — not allowed
 		[]byte("<svg xmlns=\"http://www.w3.org/...\"/>"), // SVG — not allowed (XSS surface)
-		[]byte("BM..."),                                  // BMP
-		[]byte("\x00\x00\x01\x00"),                       // ICO
-		[]byte("HTTP/1.1 200 OK\r\n"),                    // arbitrary text
+		[]byte("BM..."),               // BMP
+		[]byte("\x00\x00\x01\x00"),    // ICO
+		[]byte("HTTP/1.1 200 OK\r\n"), // arbitrary text
 	} {
 		if _, _, ok := sniffAvatarMime(data); ok {
 			t.Errorf("sniffAvatarMime accepted disallowed payload prefix %q", string(data[:min(len(data), 16)]))

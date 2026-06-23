@@ -137,7 +137,8 @@ func Attenuate(in AttenuateInput) (AttenuateOutput, error) {
 		raw2, err2 := base64.RawStdEncoding.DecodeString(in.Cap)
 		if err2 != nil {
 			return AttenuateOutput{}, fmt.Errorf(
-				"capauth/sdk: parent cap is not valid base64: %w", err)
+				"capauth/sdk: parent cap is not valid base64: %w", err,
+			)
 		}
 		raw = raw2
 	}
@@ -145,7 +146,8 @@ func Attenuate(in AttenuateInput) (AttenuateOutput, error) {
 	parent, err := zapcap.Wrap(raw)
 	if err != nil {
 		return AttenuateOutput{}, fmt.Errorf(
-			"capauth/sdk: parent cap is not a valid ZAP capability: %w", err)
+			"capauth/sdk: parent cap is not a valid ZAP capability: %w", err,
+		)
 	}
 
 	// Build the implicit Issuer. The signer's Public() must equal
@@ -153,7 +155,8 @@ func Attenuate(in AttenuateInput) (AttenuateOutput, error) {
 	// error here too so the caller knows BEFORE we hit the cap layer.
 	if in.Signer.Public() != parent.Holder() {
 		return AttenuateOutput{}, errors.New(
-			"capauth/sdk: Signer.Public() != parent.Holder() — wrong key for this cap")
+			"capauth/sdk: Signer.Public() != parent.Holder() — wrong key for this cap",
+		)
 	}
 
 	iss := &capauth.Issuer{
