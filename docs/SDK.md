@@ -25,16 +25,16 @@ const iam = new IAMClient({
 const apps = await iam.applications.list({ owner: 'vcc' })
 
 // Add redirect URIs (the most-asked-for op)
-await iam.applications.redirectURIs.add('vcc-exchange-client-id', [
-  'http://vcc.localhost:3000/auth/callback',
-  'http://vcc.localhost:3000/callback',
+await iam.applications.redirectURIs.add('acme-app-client-id', [
+  'http://acme.localhost:3000/auth/callback',
+  'http://acme.localhost:3000/callback',
 ])
 
 // Upsert any field
 await iam.applications.upsert({
   organization: 'vcc',
-  name: 'vcc-exchange',
-  clientId: 'vcc-exchange-client-id',
+  name: 'acme-app',
+  clientId: 'acme-app-client-id',
   displayName: 'VCC Exchange',
   redirectUris: [
     'https://app.dev.example.com/callback',
