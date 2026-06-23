@@ -12,7 +12,7 @@
 //   - Storage: hanzoai/orm (typed Go records + KV cache) layered over
 //     hanzoai/base (collections + realtime + replicate-to-S3).
 //   - OIDC: in-tree port of controllers/auth.go + controllers/wellknown_*
-//     + object/jwt_mldsa65.go + object/jwks_cache.go (no external OIDC lib).
+//   - object/jwt_mldsa65.go + object/jwks_cache.go (no external OIDC lib).
 //   - Authz: hanzoai/authz over ZAP RPC.
 //   - Inter-service: github.com/luxfi/zap (binary RPC) on :9653.
 //

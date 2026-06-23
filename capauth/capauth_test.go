@@ -191,9 +191,9 @@ func TestLib_Attenuate_Narrow_OK(t *testing.T) {
 
 	child, err := childIss.Attenuate(parent, AttenuateParams{
 		NewHolder:   childHolder.Public(),
-		Permissions: 0b011,                              // subset of parent's 0b111
-		ExpiresAt:   f.now.Add(1 * time.Hour).Unix(),    // tighter than parent's 2h
-		MaxDepth:    0,                                   // inherit (parent's 4) - 1 = 3
+		Permissions: 0b011,                           // subset of parent's 0b111
+		ExpiresAt:   f.now.Add(1 * time.Hour).Unix(), // tighter than parent's 2h
+		MaxDepth:    0,                               // inherit (parent's 4) - 1 = 3
 	})
 	if err != nil {
 		t.Fatalf("Attenuate narrow: %v", err)
@@ -718,7 +718,7 @@ func TestMLDSA65_LoadFromKMS_Roundtrip(t *testing.T) {
 // LoadEd25519FromKMS / LoadMLDSA65FromKMS paths end-to-end without a real
 // KMS dependency.
 type fakeKMS struct {
-	ed25519Seed   []byte
+	ed25519Seed    []byte
 	mldsa65SkBytes []byte
 }
 

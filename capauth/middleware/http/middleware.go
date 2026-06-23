@@ -49,12 +49,10 @@ import (
 // with our context-key namespace. Mirrors net/http.contextKey style.
 type contextKey struct{ name string }
 
-var (
-	// IdentityContextKey is the request-context key under which the
-	// middleware stashes the verified Identity. Handlers read it with
-	// `idt, ok := r.Context().Value(IdentityContextKey).(*capauth.Identity)`.
-	IdentityContextKey = &contextKey{name: "capauth.Identity"}
-)
+// IdentityContextKey is the request-context key under which the
+// middleware stashes the verified Identity. Handlers read it with
+// `idt, ok := r.Context().Value(IdentityContextKey).(*capauth.Identity)`.
+var IdentityContextKey = &contextKey{name: "capauth.Identity"}
 
 // Identity is what the middleware hands the handler after a successful
 // verification. The principal is the holder hex; scopes is the resolved

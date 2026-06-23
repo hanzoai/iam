@@ -99,7 +99,8 @@ func fetchRegistrySigningKeyFromKMS(secretName string) (*rsa.PrivateKey, error) 
 		environment = "production"
 	}
 
-	url := fmt.Sprintf("%s/api/v4/secrets/%s?projectId=%s&environment=%s",
+	url := fmt.Sprintf(
+		"%s/api/v4/secrets/%s?projectId=%s&environment=%s",
 		endpoint,
 		url.PathEscape(secretName),
 		url.QueryEscape(projectID),
