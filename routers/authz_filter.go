@@ -91,6 +91,21 @@ func isOrgAppManagementRoute(method, urlPath string) bool {
 	return false
 }
 
+// isProjectManagementRoute reports whether the request targets a project
+// CRUD/read endpoint. Any authenticated user may manage projects (e.g. create
+// their first project during registration), the same posture as org/app CRUD;
+// the IsAdmin-based Casbin path is unreliable here (xorm bool deserialization),
+// the same rationale as isOrgAppManagementRoute above.
+func isProjectManagementRoute(method, urlPath string) bool {
+	switch urlPath {
+	case "/v1/iam/add-project", "/v1/iam/update-project", "/v1/iam/delete-project":
+		return method == "POST"
+	case "/v1/iam/get-projects", "/v1/iam/get-project", "/v1/iam/get-organization-projects":
+		return method == "GET"
+	}
+	return false
+}
+
 // isByAttributeRoute is the server-to-server soft-signal lookup. Auth is
 // enforced by the controller itself (client_credentials JWT + env
 // allowlist + per-(clientId,IP) rate limit), so the generic authz engine
@@ -429,6 +444,21 @@ func ApiFilter(ctx *context.Context) {
 			username := fmt.Sprintf("%s/%s", subOwner, subName)
 			ctx.Input.SetData("currentUserId", username)
 			logLine := fmt.Sprintf("subOwner = %s, subName = %s, method = %s, urlPath = %s, result = allow (org/app management bypass)",
+				subOwner, subName, method, urlPath)
+			fmt.Println(logLine)
+			util.LogInfo(ctx, logLine)
+			return
+		}
+	}
+	// Allow any authenticated user to create/manage projects (e.g. create their
+	// first project during registration) — same posture as the org/app bypass
+	// above. NOTE: projects created via the onboarding currently target the
+	// shared "hanzo" org; per-tenant org creation is the follow-up.
+	if subOwner != "anonymous" && subName != "anonymous" {
+		if isProjectManagementRoute(method, urlPath) {
+			username := fmt.Sprintf("%s/%s", subOwner, subName)
+			ctx.Input.SetData("currentUserId", username)
+			logLine := fmt.Sprintf("subOwner = %s, subName = %s, method = %s, urlPath = %s, result = allow (project management bypass)",
 				subOwner, subName, method, urlPath)
 			fmt.Println(logLine)
 			util.LogInfo(ctx, logLine)
