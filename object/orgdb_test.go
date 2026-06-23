@@ -17,6 +17,7 @@ package object
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -166,25 +167,64 @@ func TestOrgDBManagerDeleteOrg(t *testing.T) {
 	}
 }
 
-func TestOrgDBManagerInvalidSlug(t *testing.T) {
-	dir := t.TempDir()
+// TestOrgSlugCanonicalization asserts the B2 contract: arbitrary org owners are
+// CANONICALIZED to safe, valid, INJECTIVE slugs — never rejected (rejection was
+// the root cause of the silent fall-back to the shared global engine). The
+// critical security property is that no input can produce a slug that escapes
+// the orgs directory.
+func TestOrgSlugCanonicalization(t *testing.T) {
+	cases := []struct{ owner string }{
+		{"../escape"},
+		{"Bad-Slug"},
+		{"Acme"},
+		{"my.org"},
+		{"tenant_1"},
+		{"Built-in"},
+		{"org name"},
+		{"a/b/c"},
+		{"..."},
+		{"DROP TABLE users;--"},
+	}
+	seen := map[string]string{}
+	for _, c := range cases {
+		slug := orgSlug(c.owner)
+		// Always a valid slug (no traversal/illegal chars).
+		if err := validateOrgSlug(slug); err != nil {
+			t.Errorf("orgSlug(%q)=%q is not a valid slug: %v", c.owner, slug, err)
+		}
+		// Injective: distinct owners never collide on a slug.
+		if prev, ok := seen[slug]; ok {
+			t.Errorf("slug collision: %q and %q both -> %q", prev, c.owner, slug)
+		}
+		seen[slug] = c.owner
+		// Path containment: the resolved file must stay under {dir}/orgs.
+		m := &OrgDBManager{dataDir: "/data/iam"}
+		p := m.orgDBPath(slug)
+		if !strings.HasPrefix(filepath.Clean(p), filepath.Clean("/data/iam/orgs")+string(filepath.Separator)) {
+			t.Errorf("orgSlug(%q)=%q escapes orgs dir: %q", c.owner, slug, p)
+		}
+	}
 
+	// Already-valid slugs are preserved verbatim (no migration of existing files).
+	for _, ok := range []string{"admin", "built-in", "acme", "org-123"} {
+		if got := orgSlug(ok); got != ok {
+			t.Errorf("orgSlug(%q) changed an already-valid slug to %q", ok, got)
+		}
+	}
+
+	// Provisioning a path-traversal owner succeeds (canonicalized) and stays
+	// contained — it must NOT create a directory outside orgs/.
+	dir := t.TempDir()
 	mgr, err := NewOrgDBManager(dir)
 	if err != nil {
 		t.Fatalf("NewOrgDBManager: %v", err)
 	}
 	defer mgr.ReleasePools()
-
-	if err := mgr.ProvisionOrg("../escape"); err == nil {
-		t.Error("expected error for path traversal slug, got nil")
+	if err := mgr.ProvisionOrg("../escape"); err != nil {
+		t.Fatalf("ProvisionOrg(../escape) should canonicalize, not fail: %v", err)
 	}
-
-	if _, err := mgr.GetEngine(""); err == nil {
-		t.Error("expected error for empty slug, got nil")
-	}
-
-	if _, err := mgr.GetEngine("Bad-Slug"); err == nil {
-		t.Error("expected error for uppercase slug, got nil")
+	if _, err := os.Stat(filepath.Join(dir, "escape")); err == nil {
+		t.Error("path traversal escaped the orgs directory")
 	}
 }
 

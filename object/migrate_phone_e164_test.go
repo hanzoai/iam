@@ -15,14 +15,13 @@
 package object
 
 import (
-	"fmt"
 	"path/filepath"
 	"testing"
 
 	"github.com/hanzoai/iam/util"
+	sqlitedrv "github.com/hanzoai/sqlite"
 	"github.com/hanzoai/xorm"
 	"github.com/hanzoai/xorm/names"
-	_ "modernc.org/sqlite"
 )
 
 // newTestEngine spins up an empty per-test SQLite DB with the same
@@ -30,8 +29,7 @@ import (
 func newTestEngine(t *testing.T) *xorm.Engine {
 	t.Helper()
 	dir := t.TempDir()
-	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=5000",
-		filepath.Join(dir, "test.db"))
+	dsn := sqlitedrv.DSN(filepath.Join(dir, "test.db"), nil)
 	engine, err := xorm.NewEngine("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("xorm.NewEngine: %v", err)
