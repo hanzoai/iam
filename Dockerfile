@@ -17,7 +17,12 @@ ENV VITE_DEFAULT_APP=$VITE_DEFAULT_APP
 RUN NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
 
 # ── Go build ──────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26-alpine AS back
+# Pinned to alpine3.22 to MATCH the runtime base below — so the libsqlcipher the
+# binary links against here is byte-identical to the one it loads at runtime
+# (build==runtime by construction, not by hope). A version skew could leave the
+# binary's DT_NEEDED satisfied by a different libsqlcipher than the codec proof
+# tested against.
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26-alpine3.22 AS back
 ARG TARGETOS TARGETARCH
 # CGO + SQLCipher toolchain for the hanzoai/sqlite embedded driver.
 #
@@ -32,6 +37,18 @@ ARG TARGETOS TARGETARCH
 # Built CGO-native per-arch on the native build runners (no cross-compile), musl
 # throughout so the binary runs on the alpine runtime below.
 RUN apk add --no-cache git gcc musl-dev sqlcipher-dev pkgconfig
+# mattn/go-sqlite3's `libsqlite3` tag hard-codes `#cgo linux LDFLAGS: -lsqlite3`,
+# but alpine's sqlcipher-dev ships ONLY libsqlcipher (no libsqlite3.so) → the link
+# fails with `ld: cannot find -lsqlite3`. SQLCipher *is* sqlite + the codec and
+# exports the full sqlite3_* ABI, so point `-lsqlite3` at it via a dev symlink.
+# This is deliberate: we want -lsqlite3 to resolve to the CODEC library, never to
+# a plaintext libsqlite3 (which would silently disable encryption — exactly what
+# the TestEncryptionProof gate below catches). Do NOT `apk add sqlite-dev`.
+RUN set -e; \
+    SC="$(find /usr/lib -name 'libsqlcipher.so*' | sort | head -1)"; \
+    test -n "$SC" || { echo "libsqlcipher not found after sqlcipher-dev install" >&2; exit 1; }; \
+    ln -sf "$SC" /usr/lib/libsqlite3.so; \
+    ln -sf "$SC" /usr/lib/libsqlite3.so.0
 # Codec + URI keying for SQLCipher, on top of alpine's sqlcipher.pc include/lib.
 ENV CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 -I/usr/include/sqlcipher"
 ENV CGO_LDFLAGS="-lsqlcipher"
@@ -94,15 +111,44 @@ RUN --mount=type=secret,id=gh_token --mount=type=secret,id=GIT_AUTH_TOKEN \
 # image ships. A regression that links plain sqlite (e.g. dropping the
 # libsqlite3 tag / codec flags) makes these tests fail -> no image is produced,
 # instead of silently shipping plaintext databases.
-RUN CGO_ENABLED=1 go test -tags "libsqlite3 sqlite_fts5" -run TestEncryptionProof github.com/hanzoai/sqlite \
- && CGO_ENABLED=1 go test -tags "libsqlite3 sqlite_fts5" -run TestOrgDBEncryptionPosture ./object/
+# SQLITE_REQUIRE_CODEC=1 turns TestEncryptionProof's "codec not linked" SKIP into
+# a HARD FAILURE — without it, a build that links plain sqlite (CodecLinked()=false)
+# goes GREEN by skipping, shipping plaintext (the "CI-theater" footgun). With the
+# codec actually linked (libsqlite3.so -> libsqlcipher above), the test runs its
+# full on-disk-ciphertext + wrong-key-rejected assertions instead of skipping.
+# -count=1 defeats Go's test cache: a cached PASS from a prior layer could
+# otherwise mask a codec regression. readelf/ldd below then prove the LINKED
+# binary (not just the test) binds sqlite3_* to libsqlcipher.
+RUN SQLITE_REQUIRE_CODEC=1 CGO_ENABLED=1 go test -count=1 -tags "libsqlite3 sqlite_fts5" -run TestEncryptionProof github.com/hanzoai/sqlite \
+ && SQLITE_REQUIRE_CODEC=1 CGO_ENABLED=1 go test -count=1 -tags "libsqlite3 sqlite_fts5" -run TestOrgDBEncryptionPosture ./object/
+# Prove the SHIPPED binary's sqlite3_* symbols come from libsqlcipher (not a
+# plaintext libsqlite3). The DT_NEEDED string ld emits for the symlink chain can
+# be libsqlcipher.so.0 OR libsqlite3.so.0; either must resolve to libsqlcipher,
+# and there must be NO plaintext sqlite provider. Fail the build otherwise.
+RUN set -e; \
+    apk add --no-cache binutils >/dev/null; \
+    echo "=== iamd DT_NEEDED ==="; readelf -d ./iamd | grep -E 'NEEDED.*(sqlite3|sqlcipher)' || true; \
+    readelf -d ./iamd | grep -qE 'NEEDED.*(sqlcipher|sqlite3)' || { echo "FATAL: iamd links no sqlite/sqlcipher .so" >&2; exit 1; }; \
+    ! ldd ./iamd 2>/dev/null | grep -E 'libsqlite3' | grep -vq 'libsqlcipher' || { echo "FATAL: iamd resolves a NON-sqlcipher libsqlite3 (plaintext risk)" >&2; exit 1; }
 
 # ── Production image ──────────────────────────────────────────
-FROM docker.io/library/alpine:3.21 AS standard
+# alpine:3.22 — same as the build base above, so libsqlcipher is identical
+# build-side and runtime-side (the codec proof in `back` then transitively proves
+# this image, since it's the same library version).
+FROM docker.io/library/alpine:3.22 AS standard
 LABEL maintainer="https://hanzo.ai/"
 ARG USER=hanzo
 
-RUN apk add --no-cache tzdata curl ca-certificates sqlite sqlcipher \
+# Runtime needs libsqlcipher (the codec the binary is linked against). It must
+# NOT also carry a plaintext libsqlite3 — the binary's `-lsqlite3` DT_NEEDED would
+# then resolve sqlite3_* to plaintext sqlite at runtime and silently disable the
+# codec (PRAGMA key becomes a no-op), the exact build-vs-runtime mismatch the
+# encryption gate cannot see. So install sqlcipher only, and alias libsqlite3.so.0
+# to it (same as the build stage) so the loader binds sqlite3_* to the codec lib.
+RUN apk add --no-cache tzdata curl ca-certificates sqlcipher \
+    && SC="$(find /usr/lib -name 'libsqlcipher.so*' | sort | head -1)" \
+    && test -n "$SC" \
+    && ln -sf "$SC" /usr/lib/libsqlite3.so.0 \
     && update-ca-certificates \
     && adduser -D $USER -u 1000 \
     && mkdir logs \
