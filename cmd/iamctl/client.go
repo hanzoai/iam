@@ -64,7 +64,7 @@ func envOrDefault(key, def string) string {
 
 // iamClient is a thin HTTP wrapper around the canonical /v1/iam/* API.
 //
-// Auth model: IAM (Casdoor-derived) accepts service-to-service auth via
+// Auth model: IAM accepts service-to-service auth via
 // clientId/clientSecret query parameters appended to every request. We
 // inject them on every call rather than holding a session — Jobs are
 // short-lived and stateless.
