@@ -111,6 +111,12 @@ jobs:
     permissions:
       contents: write
       issues: write
+      # semantic-release's @semantic-release/github success step comments on the
+      # released PRs; without pull-requests:write that POST returns "Resource not
+      # accessible by integration", failing the job AFTER the tag is cut — which
+      # then skips docker-release (no image). Grant it so the release completes
+      # end-to-end.
+      pull-requests: write
     if: github.repository == 'hanzoai/iam' && github.event_name == 'push'
     needs: [ frontend, backend, linter ]
     outputs:
