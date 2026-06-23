@@ -71,6 +71,7 @@ require (
 	golang.org/x/image v0.38.0
 	golang.org/x/net v0.55.0
 	golang.org/x/oauth2 v0.36.0
+	golang.org/x/sys v0.45.0
 	golang.org/x/text v0.37.0
 	golang.org/x/time v0.15.0
 	layeh.com/radius v0.0.0-20231213012653-1006025d24f8
@@ -237,7 +238,6 @@ require (
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/tools v0.45.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/ini.v1 v1.67.1 // indirect
@@ -264,4 +264,4 @@ require github.com/hanzoai/authz v1.10.0
 // modernc on its !cgo path). Build prod with:
 //   CGO_ENABLED=1 -tags "libsqlite3 sqlite_fts5"
 //   CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 …" CGO_LDFLAGS="-lsqlcipher"
-require github.com/hanzoai/sqlite v0.1.2
+require github.com/hanzoai/sqlite v0.1.3

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -29,7 +30,7 @@ import (
 	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
-	_ "github.com/hanzoai/sqlite" // db = sqlite (dual-backend: cgo SQLCipher / !cgo modernc)
+	sqlitedrv "github.com/hanzoai/sqlite" // db = sqlite (dual-backend: cgo SQLCipher / !cgo modernc); also envelope principals
 	"github.com/hanzoai/xorm"
 	"github.com/hanzoai/xorm/core"
 	"github.com/hanzoai/xorm/names"
@@ -49,6 +50,23 @@ var (
 	exportData            = false
 	exportFilePath        = defaultExportFilePath
 )
+
+// globalMasterKey holds the resolved IAM_KMS_MASTER_KEY for the GLOBAL iam.db
+// when running on the sqlite driver under orgIsolation=sqlite. It is set once in
+// InitAdapter BEFORE the global engine is opened, so the global database — which
+// holds the most sensitive rows in the system (JWT signing private keys in Cert,
+// Application.ClientSecret) — is encrypted at rest too, not just the per-org
+// files. nil ⇒ unencrypted global db (dev/CI, or non-sqlite driver).
+var globalMasterKey []byte
+
+// globalIsolationSqlite mirrors `orgIsolation == "sqlite"`, captured at
+// InitAdapter time so the open path and orgEngine() agree on posture.
+var globalIsolationSqlite bool
+
+// globalPrincipalID is the principal id for the cross-org global database's KEK
+// derivation (sqlitedrv.PrincipalGlobal). A fixed literal — the global db is a
+// singleton.
+const globalPrincipalID = "iam"
 
 // initFlagOnce guards the flag registration. Re-entry (e.g. a second
 // in-process Embed in the same test binary) would panic at flag.Bool
@@ -120,6 +138,19 @@ func InitAdapter() {
 		}
 	}
 
+	// Decide the GLOBAL db encryption posture ONCE, before NewAdapter opens it.
+	// Only the sqlite driver under orgIsolation=sqlite is encryptable here; for
+	// postgres/mysql the master key is irrelevant to the global engine.
+	globalIsolationSqlite = conf.GetConfigString("orgIsolation") == "sqlite"
+	driverName := conf.GetConfigString("driverName")
+	if globalIsolationSqlite && (driverName == "sqlite" || driverName == "sqlite3") {
+		mk, err := resolveMasterKey()
+		if err != nil {
+			panic(fmt.Errorf("resolve %s for global db: %w", masterKeyEnv, err))
+		}
+		globalMasterKey = mk
+	}
+
 	var err error
 	ormer, err = NewAdapter(conf.GetConfigString("driverName"), conf.GetConfigDataSourceName(), conf.GetConfigString("dbName"))
 	if err != nil {
@@ -183,15 +214,29 @@ func OrgIsolationEnabled() bool {
 }
 
 // orgEngine returns the org-scoped xorm engine for the given owner.
-// If org isolation is disabled or owner is empty, returns the global engine.
+//
+// When org isolation is OFF (OrgDBManager == nil) the global engine owns all
+// rows, so it is returned. An empty owner has no org file and likewise uses the
+// global engine (the cross-org catalog the global engine legitimately holds
+// under isolation=sqlite — tokens, the OTP phone lookup, etc.).
+//
+// Under isolation=sqlite, a non-empty owner MUST resolve to its own encrypted
+// org file. If GetEngine fails (a genuine IO/derivation failure — never a
+// "weird name", which orgSlug canonicalizes), we FAIL CLOSED: org-scoped data
+// must NEVER be silently routed to the shared global engine, which would both
+// break tenant isolation and (when the global db is encrypted) co-mingle rows
+// across orgs. A panic here is recovered by the router into a 500 — that is the
+// correct fail-closed behavior (deny), not a silent plaintext/co-mingled write.
+// Because orgSlug() always yields a valid slug, this path is unreachable for any
+// caller input; it only fires on catastrophic disk/key failure, where a 500 is
+// the only safe answer.
 func orgEngine(owner string) *xorm.Engine {
-	if owner == "" || ormer.OrgDBManager == nil {
+	if ormer.OrgDBManager == nil || owner == "" {
 		return ormer.Engine
 	}
 	eng, err := ormer.OrgDBManager.GetEngine(owner)
 	if err != nil {
-		// Fallback to global engine on error (org might not be provisioned yet).
-		return ormer.Engine
+		panic(fmt.Errorf("orgEngine: cannot open isolated db for owner %q; failing closed rather than using the shared engine: %w", owner, err))
 	}
 	return eng
 }
@@ -318,6 +363,29 @@ func (a *Ormer) open() error {
 	dataSourceName := a.dataSourceName + a.dbName
 	if a.driverName != "mysql" {
 		dataSourceName = a.dataSourceName
+	}
+
+	// Encrypted global db: when running on sqlite under orgIsolation=sqlite with
+	// a master key, open the GLOBAL iam.db enveloped (its own DEK wrapped under
+	// the global KEK) instead of the plaintext conf DSN. This protects the JWT
+	// signing keys (Cert) and Application.ClientSecret, which live ONLY in the
+	// global db, at rest. The canonical path is {dataDir}/iam.db.
+	if globalMasterKey != nil {
+		globalPath := filepath.Join(resolveDataDir(), "iam.db")
+		if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
+			return fmt.Errorf("create data dir for global db: %w", err)
+		}
+		sqlDB, err := openEncrypted(globalPath, globalMasterKey, sqlitedrv.PrincipalGlobal, globalPrincipalID)
+		if err != nil {
+			return fmt.Errorf("open encrypted global db: %w", err)
+		}
+		engine, err := xorm.NewEngineWithDB(a.driverName, "", core.FromDB(sqlDB))
+		if err != nil {
+			sqlDB.Close()
+			return fmt.Errorf("wrap encrypted global db: %w", err)
+		}
+		a.Engine = engine
+		return nil
 	}
 
 	engine, err := xorm.NewEngine(a.driverName, dataSourceName)
