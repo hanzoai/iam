@@ -10,6 +10,7 @@ import {SendCodeInput} from "../../common/SendCodeInput";
 import * as Setting from "../../Setting";
 import {EmailMfaType, SmsMfaType} from "../MfaSetupPage";
 import {mfaAuth} from "./MfaVerifyForm";
+import {SmsConsentNotice} from "../SmsConsent";
 
 export const MfaVerifySmsForm = ({mfaProps, application, onFinish, method, user}) => {
   const [dest, setDest] = useState("");
@@ -98,6 +99,7 @@ export const MfaVerifySmsForm = ({mfaProps, application, onFinish, method, user}
         application={application}
       />
       {errors.passcode && <p className="text-sm text-red-500 mt-1">{errors.passcode}</p>}
+      {!isEmail() && <SmsConsentNotice className="mt-3" />}
       <div className="flex items-center gap-2 mt-3">
         <Checkbox id="sms-mfa-remember" checked={enableMfaRemember} onCheckedChange={(v) => setEnableMfaRemember(!!v)} />
         <label htmlFor="sms-mfa-remember" className="text-sm">

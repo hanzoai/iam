@@ -43,6 +43,7 @@ import * as ProviderButton from "./ProviderButton";
 import {createFormAndSubmit, goToLink} from "../Setting";
 import WeChatLoginPanel from "./WeChatLoginPanel";
 import {CountryCodeSelect} from "../common/select/CountryCodeSelect";
+import {SmsConsentNotice} from "./SmsConsent";
 const FaceRecognitionCommonModal = lazy(() => import("../common/modal/FaceRecognitionCommonModal"));
 const FaceRecognitionModal = lazy(() => import("../common/modal/FaceRecognitionModal"));
 
@@ -971,6 +972,7 @@ function LoginPage(props) {
               />
             </div>
             {formErrors.username && <p className="text-sm text-red-500 mt-1">{formErrors.username}</p>}
+            <SmsConsentNotice className="mt-2" />
           </div>
         );
       }
@@ -1020,6 +1022,9 @@ function LoginPage(props) {
               )}
             </div>
             {formErrors.username && <p className="text-sm text-red-500 mt-1">{formErrors.username}</p>}
+            {loginMethod?.includes("verificationCode") && loginMethod !== "verificationCodeEmail" && !validEmail && (
+              <SmsConsentNotice className="mt-2" />
+            )}
           </div>
         </div>
       );
