@@ -344,6 +344,15 @@ func InitAPI() {
 	web.Router("/v1/iam/oauth/logout", &controllers.ApiController{}, "GET,POST:Logout")
 	web.Router("/v1/iam/oauth/register", &controllers.ApiController{}, "POST:DynamicClientRegister")
 
+	// Multi-chain wallet login (HIP-0111). One canonical, signature-verifying
+	// flow over EVM / Solana / Bitcoin / TON / XRP via
+	// github.com/luxwallet/wallet-connect/go. Replaces the unverified
+	// idp/{metamask,web3onboard}.go path. See controllers/web3_auth.go.
+	//   GET  /v1/iam/web3/nonce  -> mint a single-use CAIP-122 challenge
+	//   POST /v1/iam/web3/verify -> verify a SignedProof, burn the nonce, log in
+	web.Router("/v1/iam/web3/nonce", &controllers.ApiController{}, "GET:GetWeb3Nonce")
+	web.Router("/v1/iam/web3/verify", &controllers.ApiController{}, "POST:VerifyWeb3")
+
 	web.Router("/v1/iam/get-records", &controllers.ApiController{}, "GET:GetRecords")
 	web.Router("/v1/iam/get-records-filter", &controllers.ApiController{}, "POST:GetRecordsByFilter")
 	web.Router("/v1/iam/add-record", &controllers.ApiController{}, "POST:AddRecord")
