@@ -1182,21 +1182,29 @@ func AddUser(user *User, lang string) (bool, error) {
 		user.Ranking = int(count + 1)
 	}
 
-	if user.Groups != nil && len(user.Groups) > 0 {
-		_, err = userEnforcer.UpdateGroupsForUser(user.GetId(), user.Groups)
-		if err != nil {
-			return false, err
-		}
-	}
-
+	// Finalize the username BEFORE both the insert and the group write so they
+	// agree on user.GetId().
 	isUsernameLowered := conf.GetConfigBool("isUsernameLowered")
 	if isUsernameLowered {
 		user.Name = strings.ToLower(user.Name)
 	}
 
+	// Insert the user row FIRST, then write group/policy rows. The old order
+	// (policy write before the per-org Insert) left an ORPHANED policy row for a
+	// user that was never inserted if the Insert failed (e.g. orgEngine open
+	// failure under isolation). User-then-policy keeps the failure mode safe: a
+	// failed insert never wrote a policy; a failed policy write surfaces the
+	// error with the user present (a retry or subsequent group update
+	// reconciles it), never a dangling authz grant for a missing user.
 	affected, err := orgEngine(user.Owner).Insert(user)
 	if err != nil {
 		return false, err
+	}
+
+	if len(user.Groups) > 0 {
+		if _, err = userEnforcer.UpdateGroupsForUser(user.GetId(), user.Groups); err != nil {
+			return false, err
+		}
 	}
 
 	return affected != 0, nil
