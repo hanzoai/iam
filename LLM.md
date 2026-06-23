@@ -61,6 +61,76 @@ boot; WAL streamed to S3 (age-encrypted) via replicate.
 > build with CGO + `mattn/go-sqlite3`), then return to per-org/per-user SQLite above.
 > See memory `hanzo_iam_db_postgres_landmine` + `feedback_no_postgres_anywhere.md`.
 
+### Cutover runbook — Postgres → encrypted SQLite (per env, NEVER in place on a live writer)
+
+The exit from the Postgres stopgap is the `cmd/pg2sqlite` migrator, which writes
+the **enveloped per-org layout** the runtime opens (global `iam.db` + per-org
+`orgs/<slug>/iam.db`, each with its own wrapped-DEK `.dek` sidecar). Run it
+**once per environment**, lowest-risk env first (devnet → testnet → mainnet),
+and only flip `driverName=sqlite` after row-count parity is proven. Encryption is
+mandatory: the migrator and the runtime both FAIL CLOSED without
+`IAM_KMS_MASTER_KEY`, and a CGO+libsqlcipher build refuses to start with the key
+set but no codec linked (`CodecLinked()=false`) rather than writing plaintext.
+
+Hard preconditions (all required, no shortcuts):
+
+- **Image** = the CGO + SQLCipher build (`-tags "libsqlite3 sqlite_fts5"`,
+  `CGO_LDFLAGS=-lsqlcipher`). The Dockerfile gates this with
+  `TestEncryptionProof` + `TestOrgDBEncryptionPosture` under CGO — no image is
+  produced if the codec isn't linked. A pure-Go (`CGO_ENABLED=0`) image CANNOT
+  encrypt and MUST NOT be used for any env holding real data.
+- **`IAM_KMS_MASTER_KEY`** = 64 hex chars (32 bytes), KMS-sourced via a KMSSecret
+  CR. Never in git, never logged, never `kubectl apply`-ed as raw bytes.
+- **Single-writer** during and after cutover: `replicas: 1` + `strategy: Recreate`
+  + an RWO PVC for `IAM_DATA_DIR`, and **no HPA**. Two pods on one volume corrupt
+  the SQLite files. (The operator CR `crs/iam-v1.yaml` already pins this; the
+  universe kustomize has no HPA.)
+
+Steps:
+
+1. **Quiesce the writer.** Scale IAM to 0 (`kubectl -n <ns> scale deploy/iam
+   --replicas=0`) so nothing writes Postgres or the data dir mid-copy. (Reads stop
+   too — schedule a short window.)
+2. **Verify source row counts first** — no writes, just a census of the live
+   Postgres so you have a parity baseline:
+   ```bash
+   IAM_KMS_MASTER_KEY=<64hex> \
+     pg2sqlite -verify \
+       -src "user=iam host=sql-0.sql.<ns>.svc dbname=iam sslmode=disable password=<pw>"
+   # prints per-table source row counts to stderr
+   ```
+3. **Migrate** into the enveloped layout on the RWO PVC (mount it, e.g. via a Job
+   or an exec into a paused pod that has the volume):
+   ```bash
+   IAM_KMS_MASTER_KEY=<64hex> \
+     pg2sqlite \
+       -src "user=iam host=sql-0.sql.<ns>.svc dbname=iam sslmode=disable password=<pw>" \
+       -dst /data/iam            # DATA DIR, not a file
+   # writes /data/iam/iam.db + /data/iam/orgs/<slug>/iam.db (+ .dek each)
+   ```
+   Use `-overwrite` only on a known-empty/seed destination (it deletes
+   `dst/iam.db*` and `dst/orgs`). The migrator mints a DEK and writes the `.dek`
+   per file via the SAME `openEncrypted`/`OrgDBManager` the runtime uses, routing
+   User rows per-org and everything else to the encrypted global db.
+4. **Prove parity** BEFORE flipping the driver: confirm the migrator's destination
+   per-table counts equal the step-2 source counts (the run reports both; any
+   mismatch = stop and investigate, do not flip). Spot-check that
+   `/data/iam/iam.db` and each `orgs/<slug>/iam.db` are **ciphertext** (no
+   `SQLite format 3` magic in `hexdump -C ... | head`) and that every `.dek`
+   sidecar exists.
+5. **Flip `driverName=sqlite`** (+ `orgIsolation=sqlite`) in the env's IAM config
+   and bring the single writer back up (`--replicas=1`, `strategy: Recreate`).
+   Keep `IAM_KMS_MASTER_KEY` injected. Do NOT keep a Postgres fallback wired — the
+   destination is now source of truth.
+6. **Validate live**: `POST /v1/iam/login` (env superuser) → 200; OIDC discovery +
+   `/v1/iam/.well-known/jwks` → 200; a real browser login completes. Confirm the
+   pod is `replicas: 1` / `Recreate`. Keep the Postgres db read-only as a rollback
+   safety net for one cycle, then decommission.
+
+Rollback: if validation fails, scale to 0, flip `driverName` back to `postgres`,
+scale to 1. Postgres was untouched (the migrator only reads it), so rollback is
+immediate. Never run the migrator against the data dir of a running writer.
+
 ## Auth flows
 
 ### User login
