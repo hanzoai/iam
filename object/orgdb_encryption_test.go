@@ -81,6 +81,14 @@ func TestOrgDBEncryptionPosture(t *testing.T) {
 		return
 	}
 	if !sqlitedrv.CodecLinked() {
+		// SQLITE_REQUIRE_CODEC=1 turns this skip into a HARD FAILURE — the image
+		// build sets it so a CGO build that advertises encryption but did NOT
+		// link libsqlcipher (CodecLinked()=false → would ship PLAINTEXT) fails
+		// here instead of silently skipping (the CI-theater footgun). Mirrors
+		// hanzoai/sqlite's TestEncryptionProof gate.
+		if os.Getenv("SQLITE_REQUIRE_CODEC") == "1" {
+			t.Fatal("SQLITE_REQUIRE_CODEC=1 but CodecLinked()=false: this build advertises encryption (cgo) yet did NOT link libsqlcipher — per-org databases would be PLAINTEXT. Build with -tags \"libsqlite3 sqlite_fts5\" + CGO_CFLAGS=-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 + CGO_LDFLAGS=-lsqlcipher")
+		}
 		t.Skip("cgo build without libsqlcipher linked; encryption assertions skipped (Dockerfile build is the hard gate)")
 	}
 
