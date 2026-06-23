@@ -103,6 +103,7 @@ RUN --mount=type=secret,id=gh_token --mount=type=secret,id=GIT_AUTH_TOKEN \
       CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iamd ./cmd/iamd/; \
       CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iam ./cmd/iam/; \
       CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iamctl ./cmd/iamctl/; \
+      CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o sqlite2enveloped ./cmd/sqlite2enveloped/; \
       rm -f /tmp/gitconfig'
 
 # ENCRYPTION GATE — fail the image build if at-rest encryption is not real.
@@ -163,6 +164,11 @@ WORKDIR /
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/iamd ./iamd
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/iam ./iam
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/iamctl ./iamctl
+# sqlite2enveloped: the plaintext-SQLite → enveloped-encrypted migrator (prod
+# at-rest cutover). Shipped in the same CGO + libsqlcipher image so the migration
+# runs against the SAME codec the daemon opens; invoked by the cutover Job, never
+# by the default ENTRYPOINT.
+COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/sqlite2enveloped ./sqlite2enveloped
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/swagger ./swagger
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/conf/app.prod.conf ./conf/app.conf
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/init_data.json ./init_data.json
