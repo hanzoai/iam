@@ -11,21 +11,21 @@
 //
 //   - HTTP framework:   github.com/hanzoai/zip  (Fiber v3; typed handlers).
 //   - ORM + KV cache:   github.com/hanzoai/orm  (typed Go records, KV cache,
-//                                                 adapter-pluggable; v2 uses
-//                                                 SQLite via Base).
+//     adapter-pluggable; v2 uses
+//     SQLite via Base).
 //   - Authz engine:     github.com/hanzoai/authz (single canonical policy
-//                                                 engine, called over ZAP RPC).
+//     engine, called over ZAP RPC).
 //   - Collections,
 //     realtime,
 //     admin SPA:        github.com/hanzoai/base (sibling layer over the
-//                                                 same SQLite file orm reads).
+//     same SQLite file orm reads).
 //   - In-tree OIDC:     ported from controllers/auth.go,
-//                       controllers/wellknown_*,
-//                       object/jwt_mldsa65.go, object/jwks_cache.go,
-//                       object/wellknown_oidc_discovery.go.
-//                       No external OIDC library.
+//     controllers/wellknown_*,
+//     object/jwt_mldsa65.go, object/jwks_cache.go,
+//     object/wellknown_oidc_discovery.go.
+//     No external OIDC library.
 //   - Inter-service:    github.com/luxfi/zap (binary RPC) on :9653.
-//                       HTTPS is the EXTERNAL surface only.
+//     HTTPS is the EXTERNAL surface only.
 package stack
 
 import (

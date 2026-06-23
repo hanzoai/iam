@@ -344,7 +344,8 @@ func orderClauseFor(eng *xorm.Engine, table string) string {
 	hasUpdated := false
 	rows, err := eng.QueryInterface(
 		`SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND lower(table_name)=lower($1) AND column_name='updated_time'`,
-		table)
+		table,
+	)
 	if err == nil && len(rows) > 0 {
 		hasUpdated = true
 	}
@@ -464,5 +465,7 @@ func coerceForSQLite(v interface{}) interface{} {
 }
 
 // Compile-time prove sql is used (lib/pq import side effect).
-var _ = sql.ErrNoRows
-var _ = io.EOF
+var (
+	_ = sql.ErrNoRows
+	_ = io.EOF
+)
