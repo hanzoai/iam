@@ -192,9 +192,77 @@ That repo is the polyglot umbrella; Go stays in this repo.
 
 - All secrets land in KMS first, synced to k8s `Secret` via `KMSSecret` CR — never push raw key bytes through `kubectl apply`
 - Argon2id password hashing (NEVER plaintext, NEVER bcrypt)
-- Per-org DEK derived from a master key stored in KMS — encrypted-at-rest tables
 - TLS termination at the deployment ingress; IAM serves plain HTTP internally
 - JWKS rotation: keys are dual-published (current + previous) for graceful rollover
+
+### Encryption at rest — envelope model (`object/orgdb.go`, `github.com/hanzoai/sqlite` ≥ v0.1.3)
+
+The master key is sourced from ONE env var: **`IAM_KMS_MASTER_KEY`** (64 hex =
+32 bytes), KMS-sourced via a KMSSecret CR. The earlier `ENCRYPTION_MASTER_KEY`
+name was a bug (it existed nowhere else, so the key was always nil → silent
+plaintext). **The operator/universe Deployment MUST inject `IAM_KMS_MASTER_KEY`
+from KMS** for any env storing real data — encryption is OFF until it is set, and
+a CGO+libsqlcipher build refuses to start with the var set but no codec rather
+than writing plaintext.
+
+- **Envelope, not page-key-from-master.** Each db (global + per-org) has its own
+  random DEK (SQLCipher page key), wrapped (AES-256-GCM) under a KEK =
+  `HKDF(master, lp(principal)||lp(id))` and stored in a `<db>.dek` sidecar (0600).
+  The raw DEK is never written. The wrap also binds the principal as GCM AAD
+  (`sqlitedrv.PrincipalAAD`), so a sidecar moved to another principal fails the
+  tag — defense-in-depth atop the per-principal KEK.
+- **Master-key rotation = rewrap the sidecars** (`OrgDBManager.Rewrap`) — pages
+  are never rewritten, so rotation is O(1) and cannot brick a file. (The old
+  HKDF-direct page key made rotation = data loss.) Rotation is **idempotent /
+  crash-resumable**: `rewrapSidecar` tries the new KEK first and skips an
+  already-rotated sidecar, so a rotation that dies after `k` of `N` files
+  converges on a clean re-run instead of aborting on the first done one.
+- **Global db encrypted too.** `{dataDir}/iam.db` holds the JWT signing private
+  keys (`Cert`) and `Application.ClientSecret` — the forge-any-token material.
+  Under `orgIsolation=sqlite` + master key it is opened enveloped (principal
+  `global`), not via the plaintext conf DSN.
+- **Per-org isolation, fail-closed.** Every org owner is canonicalized to a
+  safe, injective slug (`orgSlug`: lowercase + illegal→`-`, disambiguated by a
+  16-hex (64-bit) SHA-256 suffix when changed) so EVERY org maps to its own
+  encrypted file — never rejected, never falling back to the shared engine.
+  `orgEngine` fails CLOSED under isolation (a genuine open failure 500s; it never
+  silently routes org data to the global engine).
+- **SCOPE OF PER-ORG ENCRYPTION — read this, don't overclaim.** Only the **User**
+  table is per-org (`orgEngine` is called only from `user.go`). Tokens, sessions,
+  certs, applications, providers, roles, permissions, groups, keys, etc. all live
+  on the **global** engine (`{dataDir}/iam.db`), co-mingled across orgs. The
+  global db IS encrypted at rest (principal `global`), which protects the JWT
+  signing keys / ClientSecrets against disk theft — but the "one org's file can't
+  be read with another org's key" guarantee applies to **usernames/profiles
+  only**. Compromise of the global DEK or the live process exposes every org's
+  tokens, secrets, and authz. Routing tokens/sessions per-org is future work; do
+  not describe the current state as full per-tenant cryptographic isolation.
+- **Single-writer by design (concurrency).** Embedded SQLite on an RWO PVC means
+  exactly ONE pod writes the data dir — the operator CR pins `replicas: 1` +
+  `strategy: Recreate`, and the universe kustomize has **no HPA** (an HPA would
+  scale to multiple writers on one volume → corruption). HA = fast Recreate
+  restart + replicate-to-S3, NOT horizontal write scaling. As a backstop against
+  an accidental re-scale, `openEncrypted` takes an exclusive cross-process file
+  lock (flock on `<db>.create.lock`) around the DEK-mint + db-create critical
+  section and re-checks the sidecar under the lock, so two processes
+  first-touching a fresh org can never mint divergent DEKs and brick the file.
+- **HKDF info is length-prefixed** → injective (`(org,"a:b") ≠ ("org:a","b")`).
+- **Key hygiene.** DEKs are zeroized after open; `RLIMIT_CORE=0` is set on Linux
+  (`object/coredump_linux.go`) so a core dump can't leak keys; the SQLCipher key
+  rides the driver open call (never a DSN xorm logs); DSN paths are percent-
+  escaped so `?`/`#` can't strip `key=`; `cache=shared` is never set on an
+  encrypted db (shared cache leaks decrypted pages across keys).
+- **Postgres → SQLite migration** (`cmd/pg2sqlite`) emits the enveloped layout
+  the runtime opens: `-dst` is a DATA DIR; it requires `IAM_KMS_MASTER_KEY`,
+  mints a DEK + writes the `.dek` per file (reusing `object.NewMigrationTarget` →
+  the runtime's `openEncrypted` + `OrgDBManager`), and routes User rows per-org +
+  everything else to the encrypted global db. It FAILS CLOSED without the key
+  (never writes a plaintext destination).
+- **Per-USER files are DEFERRED.** The canonical layout reserves
+  `orgs/{slug}/users/{userId}.db` with a DEK derived per-user FROM the per-org
+  KEK (hierarchy primitive `sqlitedrv.DeriveChildKey` is implemented). No code
+  routes to a user-level engine yet (`ProvisionOrg` is unused; org DBs are lazy),
+  so there is no plaintext-user exposure today — wiring user files is future work.
 
 ## Testing
 
