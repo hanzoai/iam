@@ -241,6 +241,53 @@ CGO_ENABLED=1 CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 -I$SC/include/sq
   go test -count=1 -tags "libsqlite3 sqlite_fts5" ./cmd/sqlite2enveloped/
 ```
 
+### CUTOVER EXECUTED — prod hanzo-k8s is now ENCRYPTED at rest (DONE)
+
+The plaintext→enveloped cutover ran on `do-sfo3-hanzo-k8s` ns `hanzo` and is
+**live + verified**. End state: IAM serves from per-org SQLCipher-encrypted
+SQLite; auth is healthy (login/OIDC/JWKS 200 on `hanzo.id` + `iam.hanzo.ai`).
+
+- **Image**: `ghcr.io/hanzoai/iam:sha-a298046` — the Red-approved server commit
+  `5b62a0e` (iamd byte-identical: the only delta is the ADDITIVE
+  `cmd/sqlite2enveloped` migrator + `object/migration_copy.go`, referenced ONLY
+  by the migrator, never by the boot path) PLUS a one-line Dockerfile COPY that
+  ships the migrator binary at `/sqlite2enveloped`. Built via **platform/arcd
+  in-cluster buildkit** (`POST arcd-control.hanzo.svc:3000/v1/arcd/enqueue`,
+  target=standard, linux/amd64) — NO GitHub Actions. ONE image runs both the
+  migration Job and the server.
+- **Key**: `IAM_KMS_MASTER_KEY` (32B/64-hex) minted via KMS canonical write
+  (`POST /v1/kms/orgs/hanzo/secrets` with `{path:"iam",name:"IAM_KMS_MASTER_KEY",
+  value,env:"prod"}` after `POST /v1/kms/auth/login` with `hanzo-platform`
+  creds — the IAM-direct token 401s, the KMS login-proxy token writes). Value
+  never logged. Synced down via KMSSecret `iam-master-key-kms-sync`
+  (`secretsPath:/iam`, `envSlug:prod`, `creationPolicy:Orphan`) →
+  Secret `iam-master-key`. **GOTCHA: the KMS POST is env-scoped by the body
+  `env` field; a POST with no `env` lands env-less and is invisible to the
+  operator's `envSlug:prod` read.**
+- **Config**: the cutover REQUIRES `orgIsolation=sqlite` in the `iam-conf`
+  ConfigMap (ormer.go InitAdapter gates the enveloped global-db open on
+  `orgIsolation=="sqlite" && driverName=="sqlite"` + a resolvable master key;
+  otherwise it opens the plaintext DSN on a now-ciphertext file → panic). The CR
+  alone is NOT sufficient — apply BOTH the ConfigMap (orgIsolation=sqlite,
+  dataDir=/data/iam) AND the operator CR (image + DATA_DIR + master-key
+  secretRef). Both live in `universe/infra/k8s/iam/`.
+- **Sequence run**: scale CR `replicas:0` (operator drains, RWO PVC freed) →
+  Job `iam-encryption-cutover` (cp live db → `_plain.db`; `sqlite2enveloped`
+  → `enc/`; content-parity gate PASS; ciphertext+`.dek` verify; atomic swap
+  keeping `iam.db.preenc.bak`) → apply ConfigMap + CR (`replicas:1`).
+- **Evidence**: parity OK every table incl. user 112/112 → 7 org files,
+  record 222752/222752; counts intact 112u/42o/213a/9p/10c (API-verified);
+  global + 8 per-org dbs are ciphertext (no `SQLite format 3` magic) with `.dek`
+  sidecars; pod Running 1/1 0 restarts; Playwright real login z@hanzo.ai →
+  `/onboarding`.
+- **Rollback nets retained**: `/data/iam/iam.db.preenc.bak` +
+  `iam.db.rollback-snapshot-20260623T165417Z` (on-PVC) + off-cluster
+  `~/work/hanzo/.iam-rollback/iam.db.prod-plaintext-rollback-…`; CR + ConfigMap
+  pre-enc backups in `~/work/hanzo/.iam-rollback/*.PREENC.*.yaml`. Rollback =
+  scale 0, restore preenc.bak→iam.db (+rm orgs), re-apply OLD CR
+  (`1.19.7-projfix`, no master-key env) + OLD ConfigMap (no orgIsolation),
+  scale 1.
+
 ## Auth flows
 
 ### User login
