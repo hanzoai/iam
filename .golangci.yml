@@ -7,3 +7,19 @@ linters:
 run:
   timeout: 5m
   modules-download-mode: mod
+  # The embedded SQLite driver (hanzoai/sqlite → mattn + SQLCipher) is gated on
+  # these tags; include them so the lint typecheck matches the real build.
+  build-tags:
+    - sqlcipher
+    - sqlite_fts5
+
+issues:
+  exclude-rules:
+    # golangci-lint runs CGO-off in shared CI, so its typecheck can't see mattn's
+    # cgo-gated methods (e.g. SQLiteConn.Exec) behind the SQLCipher driver. The
+    # real Docker build (CGO_ENABLED=1 -tags sqlcipher) compiles it for real and
+    # the unit tests exercise it — suppress only these CGO-blind false-positives.
+    - linters: [typecheck]
+      text: "could not import (modernc.org/sqlite|github.com/hanzoai/sqlite)"
+    - linters: [typecheck]
+      text: "SQLiteConn has no field or method"
