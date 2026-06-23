@@ -29,13 +29,16 @@ import (
 )
 
 func InitAPI() {
-	ns := web.NewNamespace("/",
-		web.NSNamespace("/v1/iam",
+	ns := web.NewNamespace(
+		"/",
+		web.NSNamespace(
+			"/v1/iam",
 			web.NSInclude(
 				&controllers.ApiController{},
 			),
 		),
-		web.NSNamespace("",
+		web.NSNamespace(
+			"",
 			web.NSInclude(
 				&controllers.RootController{},
 			),
@@ -251,7 +254,6 @@ func InitAPI() {
 	web.Router("/v1/iam/get-all-actions", &controllers.ApiController{}, "GET:GetAllActions")
 	web.Router("/v1/iam/get-all-roles", &controllers.ApiController{}, "GET:GetAllRoles")
 
-
 	web.Router("/v1/iam/get-sessions", &controllers.ApiController{}, "GET:GetSessions")
 	web.Router("/v1/iam/get-session", &controllers.ApiController{}, "GET:GetSingleSession")
 	web.Router("/v1/iam/update-session", &controllers.ApiController{}, "POST:UpdateSession")
@@ -413,7 +415,6 @@ func InitAPI() {
 	web.Router("/cas/:organization/:application/samlValidate", &controllers.RootController{}, "POST:SamlValidate")
 
 	web.Router("/scim/*", &controllers.RootController{}, "*:HandleScim")
-
 
 	web.Router("/v1/iam/faceid-signin-begin", &controllers.ApiController{}, "GET:FaceIDSigninBegin")
 

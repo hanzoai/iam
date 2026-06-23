@@ -193,7 +193,8 @@ func Embed(ctx context.Context, cfg EmbedConfig) (*Embedded, error) {
 		}
 	}()
 
-	logger.Info("iam.Embed: server up",
+	logger.Info(
+		"iam.Embed: server up",
 		"http_addr", em.cfg.HTTPAddr,
 		"data_dir", cfg.DataDir,
 		"skip_listen", cfg.SkipListen,

@@ -122,12 +122,12 @@ type capIssueResponse struct {
 // in higher positions.
 var scopeBit = map[uint32]map[string]uint64{
 	uint32(cap.KindIAMSession): {
-		"iam:whoami:read":    1 << 0,
-		"iam:userinfo:read":  1 << 1,
-		"iam:profile:read":   1 << 2,
-		"iam:profile:write":  1 << 3,
-		"iam:org:read":       1 << 4,
-		"iam:org:write":      1 << 5,
+		"iam:whoami:read":   1 << 0,
+		"iam:userinfo:read": 1 << 1,
+		"iam:profile:read":  1 << 2,
+		"iam:profile:write": 1 << 3,
+		"iam:org:read":      1 << 4,
+		"iam:org:write":     1 << 5,
 	},
 	uint32(cap.KindKMSAccess): {
 		"kms:secret:read":  1 << 0,
@@ -136,17 +136,17 @@ var scopeBit = map[uint32]map[string]uint64{
 		"kms:audit:read":   1 << 3,
 	},
 	uint32(cap.KindKMSSign): {
-		"kms:sign:ed25519": 1 << 0,
+		"kms:sign:ed25519":   1 << 0,
 		"kms:sign:secp256k1": 1 << 1,
-		"kms:sign:bls":      1 << 2,
-		"kms:sign:mldsa":    1 << 3,
+		"kms:sign:bls":       1 << 2,
+		"kms:sign:mldsa":     1 << 3,
 	},
 	uint32(cap.KindATSOrder): {
-		"ats:order:create": 1 << 0,
-		"ats:order:cancel": 1 << 1,
-		"ats:order:read":   1 << 2,
+		"ats:order:create":  1 << 0,
+		"ats:order:cancel":  1 << 1,
+		"ats:order:read":    1 << 2,
 		"ats:position:read": 1 << 3,
-		"ats:account:read": 1 << 4,
+		"ats:account:read":  1 << 4,
 	},
 	uint32(cap.KindMPCSign): {
 		"mpc:wallet:sign":   1 << 0,
