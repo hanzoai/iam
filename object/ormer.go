@@ -536,4 +536,16 @@ func (a *Ormer) createTable() {
 	if err != nil {
 		panic(err)
 	}
+
+	// Multi-chain wallet login (HIP-0111): single-use login nonces and the
+	// (chain,address) -> user binding. See object/web3_store.go.
+	err = a.Engine.Sync2(new(Web3Nonce))
+	if err != nil {
+		panic(err)
+	}
+
+	err = a.Engine.Sync2(new(WalletLink))
+	if err != nil {
+		panic(err)
+	}
 }
