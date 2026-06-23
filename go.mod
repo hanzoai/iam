@@ -187,7 +187,7 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
-	github.com/mattn/go-sqlite3 v1.14.28 // indirect
+	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mileusna/viber v1.0.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -258,8 +258,3 @@ require (
 // in v1.10.0 (commit d59807e); workspace consumers import this directly.
 // The upstream ACME fork was likewise swapped for go-acme/lego.
 require github.com/hanzoai/authz v1.10.0
-
-// Use our SQLCipher-encrypted CGO fork instead of pure-Go modernc, whose
-// open-time "out of memory (14)" panic blocks IAM in-cluster. Drop-in: the
-// fork registers the "sqlite" driver name. Build with CGO_ENABLED=1 -tags sqlcipher.
-replace modernc.org/sqlite => github.com/hanzoai/sqlite v0.1.0
