@@ -72,7 +72,8 @@ func NewClient(endpoint string, clientId string, clientSecret string, certificat
 			Certificate:      certificate,
 			OrganizationName: organizationName,
 			ApplicationName:  applicationName,
-		})
+		},
+	)
 }
 
 func NewClientWithConf(config *AuthConfig) *Client {
