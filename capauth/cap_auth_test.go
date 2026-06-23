@@ -65,7 +65,8 @@ func freshTestState(t *testing.T) (*cap.Ed25519Signer, ed25519.PublicKey) {
 // mintTestCap builds a valid IAMSession cap with the supplied tweaks.
 // expiresInSec=0 means "never expires"; positive means now+sec.
 func mintTestCap(t *testing.T, signer *cap.Ed25519Signer, kind cap.CapKind,
-	holder [32]byte, expiresInSec int64) cap.Cap {
+	holder [32]byte, expiresInSec int64,
+) cap.Cap {
 	t.Helper()
 	exp := int64(0)
 	if expiresInSec != 0 {
@@ -278,7 +279,7 @@ func TestZAP_HasHeader(t *testing.T) {
 		{"", false},
 		{"Bearer x.y.z", false},
 		{"ZAP abc", true},
-		{"ZAP ", true},          // present but empty payload; Verify will reject downstream
+		{"ZAP ", true},           // present but empty payload; Verify will reject downstream
 		{"zap lowercase", false}, // case-sensitive; clients must emit "ZAP"
 		{"ZAPnotPrefixed", false},
 	}

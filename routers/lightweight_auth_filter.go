@@ -37,7 +37,8 @@ func getLightweightAuthScriptPath(scriptName string) string {
 	}
 
 	if frontendBaseDir != "" {
-		candidates = append(candidates,
+		candidates = append(
+			candidates,
 			filepath.Join(frontendBaseDir, "public", scriptName),
 			filepath.Join(filepath.Dir(frontendBaseDir), "public", scriptName),
 		)
