@@ -131,6 +131,104 @@ Rollback: if validation fails, scale to 0, flip `driverName` back to `postgres`,
 scale to 1. Postgres was untouched (the migrator only reads it), so rollback is
 immediate. Never run the migrator against the data dir of a running writer.
 
+### Cutover runbook — PLAINTEXT SQLite → enveloped encrypted (the PROD path, `cmd/sqlite2enveloped`)
+
+PROD IAM at-rest is **plaintext SQLite** (not Postgres — the live image
+`1.19.7-projfix` is a pure-Go `CGO_ENABLED=0` build that gates on the *deprecated*
+`ENCRYPTION_MASTER_KEY` and physically cannot encrypt). The keystone that closes
+the gap is **`cmd/sqlite2enveloped`**, which migrates the live plaintext `iam.db`
+into the SAME enveloped layout the runtime opens (global `iam.db` + per-org
+`orgs/<slug>/iam.db`, each with a wrapped-DEK `.dek`), preserving every SQL NULL.
+
+Why a separate tool from `pg2sqlite`: `pg2sqlite` is Postgres-only and reads via
+`xorm.QueryInterface`, which coerces SQL NULL → `""`/`0`/`false` at the READ step.
+Proven on the real 112-user prod snapshot: it turns the 12 NULL JSON-TEXT `roles`
+into `""` (boot-killer: "unexpected end of JSON input") and the NULL
+`mfa_*`/`balance` into `0`. **Count parity cannot detect this.** `sqlite2enveloped`
+instead reads with a per-column `database/sql` `*any` scan (SQL NULL → Go `nil`),
+routes via the shared `object.InsertRows`/`object.CopyUsersPerOrg` write path
+(`database/sql` honours `nil` as NULL), drops the bogus `enforcer.enforcer`
+column, and gates on **CONTENT/hash parity** (per-table row-hash multisets with a
+NULL sentinel + storage-class tag), not counts. It even preserves the legacy
+BLOB-in-REAL-affinity `balance` values byte-identically.
+
+Hard preconditions (identical to the pg2sqlite runbook, PLUS):
+
+- **Image** = the CGO + SQLCipher build that gates on `IAM_KMS_MASTER_KEY`:
+  `ghcr.io/hanzoai/iam:sha-5b62a0e` (built from the exact commit, Dockerfile
+  `target=standard`, gated by `TestEncryptionProof` + `TestOrgDBEncryptionPosture`
+  + the DT_NEEDED `readelf` proof — a plaintext build cannot be produced). The
+  live `1.19.7-projfix` MUST be replaced; it is pure-Go and gates on the wrong var.
+- **`IAM_KMS_MASTER_KEY`** = 32 bytes (64 hex), KMS-sourced via a KMSSecret
+  (`secrets.lux.network/v1alpha1`, kind `KMSSecret`, hostAPI `http://kms.hanzo.svc`)
+  that produces Secret `iam-master-key` with key `IAM_KMS_MASTER_KEY` — which the
+  operator CR already references. Provision:
+  `openssl rand -hex 32 | kms put /iam-secrets/IAM_KMS_MASTER_KEY --stdin --org hanzo --env prod`
+  (never in git/logs/argv; versioned + recoverable in KMS; `creationPolicy: Orphan`
+  so deleting the CR never GCs the key). **Key loss = permanent lockout of all 42
+  orgs incl JWT-signing Certs** — confirm KMS itself is backed up first.
+- **Single-writer**: `replicas: 1` + `strategy: Recreate` + RWO PVC for the data
+  dir, **no HPA**. The live CR + universe kustomize already pin this.
+- **`DATA_DIR`** is the authoritative env the binary reads (`resolveDataDir()` reads
+  `DATA_DIR` first, then conf `dataDir`; `IAM_DATA_DIR` alone is NOT honoured) —
+  set `DATA_DIR=/data/iam`.
+
+Exact gated cutover sequence (run ONLY after this is Red-approved; lowest-risk env
+first). The migrator runs against a **COPY** of the live db on the PVC, never the
+live writer's open file:
+
+```bash
+CTX=do-sfo3-hanzo-k8s; NS=hanzo
+# 0. Prereqs already in place: KMSSecret → Secret iam-master-key synced; the
+#    reconciled CR (services.hanzo.ai/iam, image sha-5b62a0e, DATA_DIR=/data/iam,
+#    orgIsolation=sqlite, driverName=sqlite, IAM_KMS_MASTER_KEY env) staged but
+#    NOT yet applied; a fresh rollback snapshot of /data/iam taken.
+# 1. Quiesce the writer (short window — reads stop too).
+kubectl --context $CTX -n $NS scale deploy/iam --replicas=0
+kubectl --context $CTX -n $NS rollout status deploy/iam --timeout=120s  # wait for 0
+# 2. In a maintenance pod mounting the SAME PVC (the iam image, sleep), with the
+#    master key injected, COPY the live plaintext db and migrate the copy:
+#    cp /data/iam/iam.db /data/iam/_plain.db   (copy; never migrate the live file)
+#    IAM_KMS_MASTER_KEY=$KEY sqlite2enveloped -src /data/iam/_plain.db -dst /data/iam/enc
+# 3. CONTENT-PARITY gate: the tool exits non-zero on ANY parity miss. Also verify
+#    counts (112u/42o/213a/9p/10c) and ciphertext (no "SQLite format 3" header)
+#    on /data/iam/enc/iam.db and each orgs/<slug>/iam.db; confirm every .dek exists.
+#    If anything is off → STOP (do not swap), scale back to 1 on the old image.
+# 4. Swap the enveloped layout into place atomically (still scaled to 0):
+#    mv /data/iam/iam.db{,.preenc.bak}; rm -rf /data/iam/orgs
+#    mv /data/iam/enc/iam.db /data/iam/iam.db; mv /data/iam/enc/iam.db.dek /data/iam/
+#    mv /data/iam/enc/orgs /data/iam/orgs; rm -rf /data/iam/enc /data/iam/_plain.db
+# 5. Apply the reconciled CR (image sha-5b62a0e + DATA_DIR + orgIsolation=sqlite +
+#    IAM_KMS_MASTER_KEY) and bring the single writer up:
+kubectl --context $CTX -n $NS apply -f <reconciled-iam-Service-CR>.yaml
+kubectl --context $CTX -n $NS scale deploy/iam --replicas=1
+kubectl --context $CTX -n $NS rollout status deploy/iam --timeout=180s
+# 6. Validate live: login + OIDC + JWKS 200, ciphertext at rest, browser e2e:
+#    curl -sf https://hanzo.id/v1/iam/.well-known/openid-configuration → 200
+#    curl -sf https://hanzo.id/v1/iam/.well-known/jwks → 200
+#    POST /v1/iam/login (z@hanzo.ai) → 200; Playwright real-browser login completes.
+#    Confirm replicas:1 / Recreate; confirm /data/iam/iam.db has no plaintext header.
+```
+
+INSTANT ROLLBACK (the auth authority stays plaintext+healthy until this flip, so
+rollback is immediate and total): scale to 0, restore `/data/iam` from the
+rollback snapshot (`iam.db.rollback-snapshot-…`), re-apply the OLD CR
+(`1.19.7-projfix`, no encryption env), scale to 1. The off-cluster copy at
+`/Users/a/work/hanzo/.iam-rollback/iam.db.prod-plaintext-rollback-…` is the last
+resort. The plaintext source is only ever read (migration runs on a copy), so no
+forward step is destructive until step 4's swap — and step 4 keeps
+`iam.db.preenc.bak` on the PVC too.
+
+Run/test the migrator (CGO + SQLCipher; the shared `CGO_ENABLED=0` job skips the
+encryption assertions, the Dockerfile build is the hard gate):
+
+```bash
+SC=/opt/homebrew/opt/sqlcipher   # or the alpine sqlcipher-dev in the image
+CGO_ENABLED=1 CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 -I$SC/include/sqlcipher" \
+  CGO_LDFLAGS="-L$SC/lib -lsqlcipher" \
+  go test -count=1 -tags "libsqlite3 sqlite_fts5" ./cmd/sqlite2enveloped/
+```
+
 ## Auth flows
 
 ### User login
