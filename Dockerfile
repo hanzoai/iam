@@ -17,8 +17,24 @@ ENV VITE_DEFAULT_APP=$VITE_DEFAULT_APP
 RUN NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
 
 # ── Go build ──────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26 AS back
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26-alpine AS back
 ARG TARGETOS TARGETARCH
+# CGO + SQLCipher toolchain for the hanzoai/sqlite embedded driver.
+#
+# REAL at-rest encryption requires linking the SYSTEM libsqlcipher (NOT mattn's
+# vendored amalgamation) with the SQLCipher codec enabled. mainline mattn has no
+# `sqlcipher` build tag — that tag is INERT and silently produces PLAINTEXT. The
+# correct recipe is the `libsqlite3` tag + libsqlcipher + -DSQLITE_HAS_CODEC +
+# -DSQLITE_USE_URI=1 (the URI `key` param is how the driver keys a DB so it can
+# be reopened). hanzoai/sqlite's TestEncryptionProof fails the build if this is
+# mis-linked, so a regression to plaintext cannot ship.
+#
+# Built CGO-native per-arch on the native build runners (no cross-compile), musl
+# throughout so the binary runs on the alpine runtime below.
+RUN apk add --no-cache git gcc musl-dev sqlcipher-dev pkgconfig
+# Codec + URI keying for SQLCipher, on top of alpine's sqlcipher.pc include/lib.
+ENV CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 -I/usr/include/sqlcipher"
+ENV CGO_LDFLAGS="-lsqlcipher"
 WORKDIR /go/src/hanzo-iam
 
 COPY go.mod go.sum ./
@@ -67,17 +83,26 @@ RUN --mount=type=secret,id=gh_token --mount=type=secret,id=GIT_AUTH_TOKEN \
         export GIT_CONFIG_GLOBAL=/tmp/gitconfig; \
         git config --global url."https://x-access-token:${TOK}@github.com/".insteadOf "https://github.com/"; \
       fi; \
-      CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamd ./cmd/iamd/; \
-      CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iam ./cmd/iam/; \
-      CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o iamctl ./cmd/iamctl/; \
+      CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iamd ./cmd/iamd/; \
+      CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iam ./cmd/iam/; \
+      CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iamctl ./cmd/iamctl/; \
       rm -f /tmp/gitconfig'
+
+# ENCRYPTION GATE — fail the image build if at-rest encryption is not real.
+# The shared CI `go test` job runs CGO_ENABLED=0, so the ciphertext assertions in
+# these proofs only execute here, under the SAME CGO + libsqlcipher build the
+# image ships. A regression that links plain sqlite (e.g. dropping the
+# libsqlite3 tag / codec flags) makes these tests fail -> no image is produced,
+# instead of silently shipping plaintext databases.
+RUN CGO_ENABLED=1 go test -tags "libsqlite3 sqlite_fts5" -run TestEncryptionProof github.com/hanzoai/sqlite \
+ && CGO_ENABLED=1 go test -tags "libsqlite3 sqlite_fts5" -run TestOrgDBEncryptionPosture ./object/
 
 # ── Production image ──────────────────────────────────────────
 FROM docker.io/library/alpine:3.21 AS standard
 LABEL maintainer="https://hanzo.ai/"
 ARG USER=hanzo
 
-RUN apk add --no-cache tzdata curl ca-certificates sqlite \
+RUN apk add --no-cache tzdata curl ca-certificates sqlite sqlcipher \
     && update-ca-certificates \
     && adduser -D $USER -u 1000 \
     && mkdir logs \
