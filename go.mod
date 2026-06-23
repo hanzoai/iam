@@ -75,7 +75,6 @@ require (
 	golang.org/x/time v0.15.0
 	layeh.com/radius v0.0.0-20231213012653-1006025d24f8
 	maunium.net/go/mautrix v0.22.1
-	modernc.org/sqlite v1.48.0
 )
 
 require (
@@ -142,7 +141,6 @@ require (
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/go-tpm v0.9.0 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
-	github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/gorilla/sessions v1.4.0 // indirect
@@ -176,7 +174,6 @@ require (
 	github.com/line/line-bot-sdk-go v7.8.0+incompatible // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/luxfi/accel v1.1.9 // indirect
-	github.com/luxfi/codec v1.1.4 // indirect
 	github.com/luxfi/ids v1.2.15 // indirect
 	github.com/luxfi/mdns v0.1.1 // indirect
 	github.com/luxfi/mock v0.1.1 // indirect
@@ -187,7 +184,7 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
-	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
+	github.com/mattn/go-sqlite3 v1.14.47 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mileusna/viber v1.0.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -195,7 +192,6 @@ require (
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/mrjones/oauth v0.0.0-20180629183705-f4e24b6d100c // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/onsi/gomega v1.39.1 // indirect
 	github.com/petar-dambovaliev/aho-corasick v0.0.0-20240411101913-e07a1f0e8eb4 // indirect
 	github.com/pingcap/errors v0.11.5-0.20210425183316-da1aaba5fb63 // indirect
 	github.com/pingcap/log v0.0.0-20210625125904-98ed8e2eb1c7 // indirect
@@ -251,6 +247,7 @@ require (
 	modernc.org/libc v1.70.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
+	modernc.org/sqlite v1.48.0 // indirect
 	rsc.io/binaryregexp v0.2.0 // indirect
 )
 
@@ -258,3 +255,13 @@ require (
 // in v1.10.0 (commit d59807e); workspace consumers import this directly.
 // The upstream ACME fork was likewise swapped for go-acme/lego.
 require github.com/hanzoai/authz v1.10.0
+
+// hanzoai/sqlite is the dual-backend driver: it registers the "sqlite"
+// database/sql driver under BOTH build configs. CGO (prod) => mattn +
+// SQLCipher (encrypted at rest, reopen-safe via the URI key param); !CGO
+// (CI tests/lint/dev) => pure-Go modernc. Imported directly (NOT via a
+// `replace modernc.org/sqlite => …`, which was circular — the fork imports
+// modernc on its !cgo path). Build prod with:
+//   CGO_ENABLED=1 -tags "libsqlite3 sqlite_fts5"
+//   CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 …" CGO_LDFLAGS="-lsqlcipher"
+require github.com/hanzoai/sqlite v0.1.2
