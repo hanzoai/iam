@@ -481,7 +481,7 @@ func assertContentParityAllTables(t *testing.T, srcPath string, target *object.M
 	}
 	for _, tbl := range tables {
 		// Resolve the destination engine + column set the same way migrateTable does.
-		var destEng = target.Global
+		destEng := target.Global
 		if tbl == object.MigrationUserTable {
 			eng, err := target.OrgEngine("admin")
 			if err != nil {
