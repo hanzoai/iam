@@ -45,7 +45,7 @@ RUN apk add --no-cache git gcc musl-dev sqlcipher-dev pkgconfig
 # a plaintext libsqlite3 (which would silently disable encryption — exactly what
 # the TestEncryptionProof gate below catches). Do NOT `apk add sqlite-dev`.
 RUN set -e; \
-    SC="$(find /usr/lib -name 'libsqlcipher.so*' | sort | head -1)"; \
+    SC="$(find /usr/lib /lib -name 'libsqlcipher.so*' 2>/dev/null | sort | head -1)"; \
     test -n "$SC" || { echo "libsqlcipher not found after sqlcipher-dev install" >&2; exit 1; }; \
     ln -sf "$SC" /usr/lib/libsqlite3.so; \
     ln -sf "$SC" /usr/lib/libsqlite3.so.0
@@ -145,8 +145,12 @@ ARG USER=hanzo
 # codec (PRAGMA key becomes a no-op), the exact build-vs-runtime mismatch the
 # encryption gate cannot see. So install sqlcipher only, and alias libsqlite3.so.0
 # to it (same as the build stage) so the loader binds sqlite3_* to the codec lib.
-RUN apk add --no-cache tzdata curl ca-certificates sqlcipher \
-    && SC="$(find /usr/lib -name 'libsqlcipher.so*' | sort | head -1)" \
+# sqlcipher-libs ships the shared object /usr/lib/libsqlcipher.so.0 (the codec the
+# binary loads at runtime); the `sqlcipher` CLI package alone does NOT carry it.
+# sqlite (CLI) is for ops/debug only and is plaintext — its libsqlite3 is NOT
+# installed (we alias libsqlite3.so.0 to the codec lib so sqlite3_* binds there).
+RUN apk add --no-cache tzdata curl ca-certificates sqlcipher-libs \
+    && SC="$(find /usr/lib /lib -name 'libsqlcipher.so*' 2>/dev/null | sort | head -1)" \
     && test -n "$SC" \
     && ln -sf "$SC" /usr/lib/libsqlite3.so.0 \
     && update-ca-certificates \
