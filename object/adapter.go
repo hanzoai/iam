@@ -150,6 +150,23 @@ func (adapter *Adapter) InitAdapter() error {
 		return nil
 	}
 
+	// Same-DB / built-in adapter under encrypted SQLite (orgIsolation=sqlite +
+	// IAM_KMS_MASTER_KEY): the global iam.db is SQLCipher-encrypted and already
+	// open (keyed) as ormer.Engine. Opening a SECOND, plaintext engine on it
+	// (the conf DSN path below) reads the encrypted bytes without the key ->
+	// "file is not a database". Bind the adapter to the shared keyed engine
+	// instead. authzstore borrows sessions only (never closes the engine), so
+	// sharing is safe — mirrors newXormEngineForAuthz.
+	if (adapter.UseSameDb || adapter.isBuiltIn()) && globalMasterKey != nil && ormer != nil && ormer.Engine != nil {
+		xa, err := authzstore.New(ormer.Engine, adapter.Table, "")
+		if err != nil {
+			return err
+		}
+		adapter.Adapter = xa
+		adapter.engine = ormer.Engine
+		return nil
+	}
+
 	var driverName string
 	var dataSourceName string
 	if adapter.UseSameDb || adapter.isBuiltIn() {
