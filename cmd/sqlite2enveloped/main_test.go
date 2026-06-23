@@ -248,6 +248,53 @@ func TestNullVsEmptyVsZeroDistinction(t *testing.T) {
 	}
 }
 
+// TestFailsClosedOnSilentDataLoss proves the report gate FAILS (does not exit 0)
+// when a migration would silently lose data: (a) a source table with rows that
+// has no runtime model (SKIPPED-with-data) and (b) a real source column the
+// destination schema lacks. This is the "partial success but reports OK" attack —
+// the gate must refuse. The known-bogus enforcer.enforcer drop must NOT trip it.
+func TestFailsClosedOnSilentDataLoss(t *testing.T) {
+	// (a) SKIPPED table with rows → LOSS. (migrateTable records the reason in
+	// parityMsg, NOT errStr — errStr is reserved for genuine errors.)
+	skipReports := []tableReport{
+		{name: "legacy_orphan", dest: "SKIPPED", srcRows: 5, parityMsg: "destination table missing (no matching Go model)"},
+	}
+	if !printReportAndParity(devNull(t), skipReports, 0) {
+		t.Error("gate passed a SKIPPED table with 5 rows — silent data loss not caught")
+	}
+	// SKIPPED with 0 rows is fine (not data loss).
+	skipEmpty := []tableReport{{name: "empty", dest: "SKIPPED", srcRows: 0, parityMsg: "no model"}}
+	if printReportAndParity(devNull(t), skipEmpty, 0) {
+		t.Error("gate failed a SKIPPED table with 0 rows — should be benign")
+	}
+	// (b) a real source-only column → LOSS.
+	lostReports := []tableReport{
+		{name: "user", dest: "per-org", srcRows: 1, copied: 1, parityOK: true, lostCols: []string{"secret_legacy_col"}},
+	}
+	if !printReportAndParity(devNull(t), lostReports, 0) {
+		t.Error("gate passed a table dropping a real source column — silent data loss not caught")
+	}
+	// the known-bogus enforcer.enforcer drop is NOT recorded in lostCols, so a
+	// clean enforcer report (lostCols empty) must PASS.
+	okReports := []tableReport{
+		{name: "enforcer", dest: "global", srcRows: 8, copied: 8, parityOK: true, parityMsg: "source-only cols not in runtime schema: enforcer"},
+	}
+	if printReportAndParity(devNull(t), okReports, 0) {
+		t.Error("gate failed a clean enforcer report (only the bogus column dropped) — should pass")
+	}
+}
+
+// devNull returns an *os.File the report can be written to and discarded.
+func devNull(t *testing.T) *os.File {
+	t.Helper()
+	f, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open devnull: %v", err)
+	}
+	t.Cleanup(func() { f.Close() })
+	return f
+}
+
 // ------------------------- helpers -------------------------
 
 func runMigration(t *testing.T, srcPath, dstDir string) {
@@ -274,7 +321,7 @@ func runMigration(t *testing.T, srcPath, dstDir string) {
 	if err != nil {
 		t.Fatalf("listTables: %v", err)
 	}
-	var hardFail, parityFail int
+	var hardFail, parityFail, lossFail int
 	for _, tbl := range tables {
 		r := migrateTable(srcDB, target, tbl)
 		if r.errStr != "" {
@@ -282,14 +329,23 @@ func runMigration(t *testing.T, srcPath, dstDir string) {
 			hardFail++
 			continue
 		}
+		if r.dest == "SKIPPED" && r.srcRows > 0 {
+			t.Errorf("table %s: DATA LOSS — SKIPPED but has %d rows", tbl, r.srcRows)
+			lossFail++
+			continue
+		}
+		if len(r.lostCols) > 0 {
+			t.Errorf("table %s: DATA LOSS — source cols dropped: %v", tbl, r.lostCols)
+			lossFail++
+		}
 		if r.dest != "SKIPPED" && !r.parityOK {
 			t.Errorf("table %s: CONTENT PARITY FAIL: %s", tbl, r.parityMsg)
 			parityFail++
 		}
 	}
 	target.Close()
-	if hardFail > 0 || parityFail > 0 {
-		t.Fatalf("migration failed: %d errors, %d parity failures", hardFail, parityFail)
+	if hardFail > 0 || parityFail > 0 || lossFail > 0 {
+		t.Fatalf("migration failed: %d errors, %d parity failures, %d data-loss", hardFail, parityFail, lossFail)
 	}
 }
 

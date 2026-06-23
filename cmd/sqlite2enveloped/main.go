@@ -145,6 +145,12 @@ func main() {
 	fmt.Fprintf(os.Stderr, "OK: enveloped layout written to %s (global iam.db + per-org orgs/<slug>/iam.db, encrypted at rest); content parity verified\n", *dst)
 }
 
+// knownBogusDropped is the ONLY source column the migrator is allowed to drop
+// silently: the spurious `enforcer.enforcer` column xorm Sync2 adds from the
+// anonymous *authz.Enforcer embed. Any OTHER source-only column is real data with
+// no home in the runtime schema → a hard failure (we refuse to silently lose it).
+var knownBogusDropped = map[string]string{"enforcer": "enforcer"}
+
 // tableReport captures one source table's migration outcome incl. the parity
 // verdict computed against the REOPENED encrypted destination.
 type tableReport struct {
@@ -157,6 +163,10 @@ type tableReport struct {
 	parityOK  bool
 	parityMsg string
 	errStr    string
+	// lostCols are source columns NOT migrated and NOT the known-bogus
+	// enforcer.enforcer — i.e. real data with no destination home. Non-empty =
+	// hard failure (silent data loss is never acceptable for the cutover).
+	lostCols []string
 }
 
 // migrateTable copies one source table into the enveloped destination and then
@@ -185,8 +195,11 @@ func migrateTable(srcDB *sql.DB, target *object.MigrationTarget, table string) t
 			r.errStr = fmt.Sprintf("dst IsTableExist: %v", eerr)
 			return r
 		} else if !exists {
+			// No runtime model for this table. Reserve errStr for genuine errors;
+			// record the reason in parityMsg. The gate turns SKIPPED-with-rows into
+			// a hard DATA-LOSS failure, but SKIPPED-with-0-rows is benign.
 			r.dest = "SKIPPED"
-			r.errStr = "destination table missing (no matching Go model)"
+			r.parityMsg = "destination table missing (no matching Go model)"
 			return r
 		}
 		r.dest = "global"
@@ -223,9 +236,16 @@ func migrateTable(srcDB *sql.DB, target *object.MigrationTarget, table string) t
 	// dropped enforcer.enforcer, or a legacy column) is reported as drift and not
 	// copied — it has no home in the runtime schema.
 	cols, srcOnly := intersectColumns(destCols, srcCols)
+	for _, c := range srcOnly {
+		if knownBogusDropped[table] == c {
+			continue // the intentional enforcer.enforcer drop — expected, benign.
+		}
+		// A real source column with no destination home: refuse to silently lose
+		// it. Recorded as lostCols → hard failure in the report gate.
+		r.lostCols = append(r.lostCols, c)
+	}
 	if len(srcOnly) > 0 {
-		// Not fatal: these columns are not part of the runtime model. Surface them.
-		r.parityMsg = fmt.Sprintf("source-only cols dropped: %s", strings.Join(srcOnly, ","))
+		r.parityMsg = fmt.Sprintf("source-only cols not in runtime schema: %s", strings.Join(srcOnly, ","))
 	}
 	if len(cols) == 0 {
 		r.errStr = "no shared columns between source and destination"
@@ -280,14 +300,23 @@ func migrateTable(srcDB *sql.DB, target *object.MigrationTarget, table string) t
 func printReportAndParity(w *os.File, reports []tableReport, dur time.Duration) bool {
 	fmt.Fprintf(w, "\n=== sqlite2enveloped report (%s) ===\n", dur.Round(time.Millisecond))
 	fmt.Fprintf(w, "%-28s %-8s %8s %8s %8s %-7s  %s\n", "table", "dest", "src", "copied", "dropped", "parity", "note")
-	var hardFail, parityFail int
+	var hardFail, parityFail, skippedWithData, lostColTables int
 	for _, r := range reports {
+		// A SKIPPED table that actually HAS rows is silent data loss — fail closed.
+		skipLoss := r.dest == "SKIPPED" && r.srcRows > 0
+		// Real (non-bogus) source columns with no destination home — fail closed.
+		colLoss := len(r.lostCols) > 0
+
 		parity := "-"
 		switch {
-		case r.dest == "SKIPPED":
-			parity = "skip"
 		case r.errStr != "":
 			parity = "ERR"
+		case skipLoss:
+			parity = "LOSS"
+		case r.dest == "SKIPPED":
+			parity = "skip"
+		case colLoss:
+			parity = "LOSS"
 		case r.parityOK:
 			parity = "OK"
 		default:
@@ -295,11 +324,14 @@ func printReportAndParity(w *os.File, reports []tableReport, dur time.Duration) 
 		}
 		note := r.parityMsg
 		switch {
-		case r.dest == "SKIPPED":
-			note = "SKIPPED: " + r.errStr
 		case r.errStr != "":
 			note = "ERROR: " + r.errStr
 			hardFail++
+		case skipLoss:
+			note = fmt.Sprintf("DATA LOSS: SKIPPED but has %d rows (no matching Go model)", r.srcRows)
+			skippedWithData++
+		case r.dest == "SKIPPED":
+			note = "SKIPPED (0 rows): " + r.parityMsg
 		case r.dest == "per-org":
 			pn := fmt.Sprintf("→ %d org file(s)", r.orgCount)
 			if note != "" {
@@ -308,7 +340,11 @@ func printReportAndParity(w *os.File, reports []tableReport, dur time.Duration) 
 				note = pn
 			}
 		}
-		if r.errStr == "" && r.dest != "SKIPPED" && !r.parityOK {
+		if colLoss {
+			lostColTables++
+			note = strings.TrimSpace(note + fmt.Sprintf(" [DATA LOSS: source cols dropped: %s]", strings.Join(r.lostCols, ",")))
+		}
+		if r.errStr == "" && !skipLoss && r.dest != "SKIPPED" && !r.parityOK {
 			parityFail++
 		}
 		if r.dropped > 0 && r.errStr == "" {
@@ -323,7 +359,13 @@ func printReportAndParity(w *os.File, reports []tableReport, dur time.Duration) 
 	if parityFail > 0 {
 		fmt.Fprintf(w, "FAIL: %d table(s) FAILED CONTENT PARITY — a NULL/value was not preserved; destination is NOT safe to deploy\n", parityFail)
 	}
-	return hardFail > 0 || parityFail > 0
+	if skippedWithData > 0 {
+		fmt.Fprintf(w, "FAIL: %d source table(s) with rows were SKIPPED (no runtime model) — data would be lost; destination is NOT safe to deploy\n", skippedWithData)
+	}
+	if lostColTables > 0 {
+		fmt.Fprintf(w, "FAIL: %d table(s) had real source columns with no destination home — data would be lost; destination is NOT safe to deploy\n", lostColTables)
+	}
+	return hardFail > 0 || parityFail > 0 || skippedWithData > 0 || lostColTables > 0
 }
 
 // ------------------------- source reading (NULL-faithful) -------------------------
