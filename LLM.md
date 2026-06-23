@@ -33,13 +33,33 @@ One shape per endpoint. There is no rewrite layer, no `/api/*` alias, no `/login
 
 ZAP RPC runs on a separate port for service-to-service auth (`AuthService.GetToken`, `AuthService.IntrospectToken`).
 
-## Storage
+## Storage — Base/SQLite ONLY, per-org + per-user files. NO Postgres. NO Redis. Ever.
 
-Base under the hood. Each deployment gets its own SQLite file at `${IAM_DATA_DIR}/iam.db`. Per-org encrypted tables with a master key from KMS. WAL streamed to S3 via the replicate sidecar.
+IAM persists to embedded SQLite (modernc, pure-Go, CGO-free) under the canonical
+Hanzo Base model. **One SQLite file per tenant boundary** — so any org or user can
+be dropped/recreated independently, deterministically, again and again:
 
-Schema migrations are managed by Base (Goose-style migration files in `migrations/`). On boot, IAM applies any pending migrations against its SQLite file.
+- **Global rows** (certs, providers, admin org/app/user) → `${IAM_DATA_DIR}/iam.db`.
+- **Per-org**: each org → its own file `${IAM_DATA_DIR}/orgs/{orgSlug}.db`, HKDF-derived
+  per-org DEK (`object/orgdb.go`).
+- **Per-user**: each user → its own file `${IAM_DATA_DIR}/orgs/{orgSlug}/users/{userId}.db`,
+  DEK derived per-user from the per-org key. User-scoped data never shares a table.
 
-For multi-tenant per-org isolation: each org gets a separate SQLite file under `${IAM_DATA_DIR}/orgs/{orgSlug}.db` with a HKDF-derived per-org DEK. See `feedback_no_postgres_anywhere.md` in memory for the broader policy.
+Directory isolation = deterministic recreation: delete a file → that tenant is gone;
+re-seed from `init_data.json` → it's back. No shared multi-tenant table, no leader
+election, no external DB. Migrations via Base (Goose-style, `migrations/`), applied on
+boot; WAL streamed to S3 (age-encrypted) via replicate.
+
+> ⚠️ **CURRENT STOPGAP (2026-06) — Postgres, to be removed.** Prod IAM in hanzo-k8s
+> is temporarily on Postgres (`driverName=postgres`, `sql-0.sql.hanzo.svc`, db `iam`)
+> because the `CGO_ENABLED=0` build's `modernc.org/sqlite` v1.48 **panics at open** in
+> this cluster — `unable to open database file: out of memory (14)` at
+> `object/ormer.go` `createTable`/`Sync2` — across file / emptyDir / in-memory /
+> PVC+fsGroup / 4Gi+GOMEMLIMIT. This is NOT the policy; it's a fallback that kept auth
+> up after a restart surfaced the never-validated sqlite switch. **The fix is to make
+> the embedded driver open reliably** (root-cause the modernc arena/RLIMIT failure, or
+> build with CGO + `mattn/go-sqlite3`), then return to per-org/per-user SQLite above.
+> See memory `hanzo_iam_db_postgres_landmine` + `feedback_no_postgres_anywhere.md`.
 
 ## Auth flows
 
