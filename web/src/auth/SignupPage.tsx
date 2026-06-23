@@ -33,6 +33,7 @@ import LanguageSelect from "../common/select/LanguageSelect";
 import {withRouter} from "react-router-dom";
 import {CountryCodeSelect} from "../common/select/CountryCodeSelect";
 import * as PasswordChecker from "../common/PasswordChecker";
+import {SmsConsentCheckbox} from "./SmsConsent";
 import * as InvitationBackend from "../backend/InvitationBackend";
 
 // Field wrapper: label, error, and child input.
@@ -228,6 +229,12 @@ function SignupPage(props) {
         if (required && !get("phone")) {next.phone = i18next.t("signup:Please input your phone number!");}
         else if (get("phone") && !Setting.isValidPhone(get("phone"), get("countryCode"))) {next.phone = i18next.t("signup:The input is not valid Phone!");}
         if (signupItem.rule !== "No verification" && required && !get("phoneCode")) {next.phoneCode = i18next.t("code:Please input your phone verification code!");}
+        if (!get("smsConsent")) {next.smsConsent = i18next.t("signup:Please agree to receive SMS to continue.");}
+      } else if (name === "Email or Phone" || name === "Phone or Email") {
+        // Consent is required only when the phone sub-mode is the active one
+        // (the same condition under which renderPhoneItem shows the checkbox).
+        const activeMode = emailOrPhoneMode !== "" ? emailOrPhoneMode : (name === "Email or Phone" ? "Email" : "Phone");
+        if (activeMode === "Phone" && !get("smsConsent")) {next.smsConsent = i18next.t("signup:Please agree to receive SMS to continue.");}
       } else if (name === "Password") {
         const err = PasswordChecker.checkPasswordComplexity(get("password"), application.organizationObj?.passwordOptions ?? []);
         if (err) {next.password = err;}
@@ -419,6 +426,11 @@ function SignupPage(props) {
               />
             </Field>
           )}
+          <SmsConsentCheckbox
+            checked={values.smsConsent}
+            onChange={(v) => setField("smsConsent", v)}
+            error={errors.smsConsent}
+          />
         </React.Fragment>
       );
       if (signupItem.name === "Email") {return <React.Fragment key="email-grp">{renderEmailItem()}</React.Fragment>;}
