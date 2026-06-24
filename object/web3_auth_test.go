@@ -15,12 +15,16 @@
 package object
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"testing"
 	"time"
 
 	"github.com/hanzoai/xorm"
 	"github.com/hanzoai/xorm/names"
+	"github.com/mr-tron/base58"
 
 	luxcrypto "github.com/luxfi/crypto"
 	wc "github.com/luxwallet/connect/go/walletconnect"
@@ -86,6 +90,34 @@ func mintEvmProof(t *testing.T, challenge *wc.LoginChallenge) (address, message,
 	}
 	sig[64] += 27 // wallets emit V as 27/28; the verifier normalises it back
 	signature = "0x" + hex.EncodeToString(sig)
+	return address, message, signature
+}
+
+// mintSolanaProof signs the CAIP-122 message with a fresh ed25519 key and returns
+// the base58 address (the public key), the canonical message, and the base64
+// signature -- exactly what a Solana wallet's signMessage emits. Proves the IAM
+// login wiring is genuinely chain-agnostic: a different scheme (ed25519, not
+// secp256k1) and a different address format (base58 pubkey, not a hashed
+// 0x-address) flow through the SAME VerifyWalletLogin path as EVM.
+func mintSolanaProof(t *testing.T, challenge *wc.LoginChallenge) (address, message, signature string) {
+	t.Helper()
+
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("ed25519.GenerateKey: %v", err)
+	}
+	address = base58.Encode(pub)
+
+	message, err = wc.BuildSiwxMessage(wc.BuildParams{
+		Challenge: *challenge,
+		Address:   address,
+		Chain:     wc.ChainSolana,
+	})
+	if err != nil {
+		t.Fatalf("BuildSiwxMessage: %v", err)
+	}
+
+	signature = base64.StdEncoding.EncodeToString(ed25519.Sign(priv, []byte(message)))
 	return address, message, signature
 }
 
@@ -396,5 +428,72 @@ func TestVerifyWalletLogin_DomainMismatch(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("a host that doesn't match the minted nonce domain must be rejected")
+	}
+}
+
+// TestVerifyWalletLogin_Solana_HappyPath_And_Replay proves a NON-EVM chain logs
+// in end-to-end through the real server path: mint nonce -> ed25519 sign ->
+// VerifyWalletLogin (burn + VerifyProof + resolve linked user) -> replay reject.
+// EVM is secp256k1/EIP-191; this is ed25519/base58 — a fundamentally different
+// scheme + address, exercising the same wiring, so the per-chain crypto (proven
+// for all 7 in connect/go) reaches a real IAM login for the non-EVM families too.
+func TestVerifyWalletLogin_Solana_HappyPath_And_Replay(t *testing.T) {
+	newWeb3TestOrmer(t)
+
+	domain := "hanzo.id"
+
+	// 1. Mint a challenge for Solana (persists the nonce).
+	_, challenge, err := MintWeb3Challenge(domain, wc.ChainSolana, "")
+	if err != nil {
+		t.Fatalf("MintWeb3Challenge: %v", err)
+	}
+
+	// 2. Sign it with a real ed25519 key -> valid Solana proof.
+	address, message, signature := mintSolanaProof(t, challenge)
+
+	// 3. Seed an existing user linked to that (chain=solana) address.
+	user := &User{
+		Owner:       "hanzo",
+		Name:        "wallet_sol",
+		Id:          "00000000-0000-0000-0000-000000000002",
+		Type:        "normal-user",
+		CreatedTime: "2026-01-01T00:00:00Z",
+	}
+	if _, err := ormer.Engine.Insert(user); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	if ok, err := AddWalletLink(&WalletLink{
+		Owner: "hanzo", User: "wallet_sol", Chain: "solana", Address: address, Scheme: "ed25519",
+	}); err != nil || !ok {
+		t.Fatalf("AddWalletLink: ok=%v err=%v", ok, err)
+	}
+
+	app := &Application{Owner: "admin", Name: "app-hanzo", Organization: "hanzo", EnableSignUp: false}
+	org := &Organization{Owner: "admin", Name: "hanzo"}
+
+	in := WalletLoginInput{
+		Domain:       domain,
+		Chain:        wc.ChainSolana,
+		Scheme:       string(wc.SchemeEd25519),
+		Address:      address,
+		Message:      message,
+		Signature:    signature,
+		Method:       "login",
+		Application:  app,
+		Organization: org,
+	}
+
+	// Happy path: ed25519 verify, burn nonce, resolve the linked user.
+	got, err := VerifyWalletLogin(in)
+	if err != nil {
+		t.Fatalf("VerifyWalletLogin (solana happy): %v", err)
+	}
+	if got == nil || got.Name != "wallet_sol" {
+		t.Fatalf("resolved wrong user: %+v", got)
+	}
+
+	// Replay: same nonce burned -> reject.
+	if _, err := VerifyWalletLogin(in); err == nil {
+		t.Fatal("replay of a burned-nonce Solana proof must be rejected")
 	}
 }
