@@ -21,7 +21,7 @@
 // unit-testable (no beego/session/i18n needed) and keeps "what the login does"
 // separate from "how HTTP delivers it".
 //
-// Verification runs github.com/luxwallet/wallet-connect/go -- the SAME VerifyProof
+// Verification runs github.com/luxwallet/connect/go -- the SAME VerifyProof
 // the TypeScript SDK runs -- so Go and TS verify identically. The legacy
 // idp/metamask.go + idp/web3onboard.go path trusted a client-supplied address
 // with NO signature check; this path is fail-closed at every step and the
@@ -37,7 +37,7 @@ import (
 
 	"github.com/hanzoai/iam/util"
 
-	wc "github.com/luxwallet/wallet-connect/go/walletconnect"
+	wc "github.com/luxwallet/connect/go/walletconnect"
 )
 
 // web3NonceTTL is how long a minted login challenge stays valid.
