@@ -51,7 +51,7 @@ require (
 	github.com/luxfi/crypto v1.19.21
 	github.com/luxfi/kms v1.11.6
 	github.com/luxfi/metric v1.5.7
-	github.com/luxwallet/wallet-connect/go v0.1.0
+	github.com/luxwallet/connect/go v0.1.1
 	github.com/markbates/goth v1.82.0
 	github.com/microsoft/go-mssqldb v1.9.0
 	github.com/mitchellh/mapstructure v1.5.0
