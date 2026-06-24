@@ -98,7 +98,6 @@ import OpenTour from "./common/OpenTour";
 import OrganizationSelect from "./common/select/OrganizationSelect";
 import AccountAvatar from "./account/AccountAvatar";
 import * as AuthBackend from "./auth/AuthBackend";
-import {clearWeb3AuthToken} from "./auth/Web3Auth";
 import VerificationListPage from "./VerificationListPage";
 import TicketListPage from "./TicketListPage";
 import TicketEditPage from "./TicketEditPage";
@@ -125,7 +124,6 @@ function ManagementPage(props) {
         if (res.status === "ok") {
           const owner = props.account.owner;
           props.setLogoutState();
-          clearWeb3AuthToken();
           Setting.showMessage("success", i18next.t("application:Logged out successfully"));
           const redirectUri = res.data2;
           if (redirectUri !== null && redirectUri !== undefined && redirectUri !== "") {
