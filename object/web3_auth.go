@@ -77,9 +77,13 @@ func MintWeb3Challenge(domain string, chain wc.Chain, address string) (*Web3Nonc
 	now := time.Now().UTC()
 	expire := now.Add(web3NonceTTL)
 
-	// GenerateSimpleTimeId yields 36 hex chars -- well above the CAIP-122
-	// minimum of 8 and unguessable.
-	nonce := util.GenerateSimpleTimeId()
+	// Crypto-random nonce: a v4 UUID (122 bits) with hyphens stripped → 32
+	// alphanumerics, well above the CAIP-122 minimum of 8. MUST be random, not
+	// time-derived: a per-second timestamp (the prior GenerateSimpleTimeId)
+	// both COLLIDES on the (owner,name) PK when two logins land in the same
+	// second (→ "UNIQUE constraint failed: web3_nonce.owner,name") AND is
+	// guessable, weakening replay protection. Random + single-use burn = guard.
+	nonce := strings.ReplaceAll(util.GenerateId(), "-", "")
 	uri := fmt.Sprintf("https://%s/login", domain)
 
 	rec := &Web3Nonce{
