@@ -24,12 +24,20 @@ require (
 	github.com/gofiber/fiber/v3 v3.2.0 // indirect
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.4 // indirect
+	github.com/hanzoai/sqlite v0.1.4 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/luxfi/cache v1.2.1 // indirect
+	github.com/luxfi/container v0.0.4 // indirect
 	github.com/luxfi/ids v1.2.15 // indirect
 	github.com/luxfi/kms v1.11.6 // indirect
+	github.com/luxfi/math v1.4.1 // indirect
+	github.com/luxfi/math/big v0.1.0 // indirect
 	github.com/luxfi/mock v0.1.1 // indirect
-	github.com/mr-tron/base58 v1.2.0 // indirect
+	github.com/luxwallet/connect/go v0.1.3 // indirect
+	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
+	github.com/mr-tron/base58 v1.3.0 // indirect
+	github.com/oasisprotocol/curve25519-voi v0.0.0-20251114093237-2ab5a27a1729 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
@@ -134,7 +142,7 @@ require (
 	github.com/hanzoai/authzstore v0.1.1 // indirect
 	github.com/hanzoai/builder v0.3.13 // indirect
 	github.com/hanzoai/iamsdk/v2 v2.1.0 // indirect
-	github.com/hanzoai/idv v1.0.0 // indirect
+	github.com/hanzoai/idv v1.0.2 // indirect
 	github.com/hanzoai/ldapserver v1.2.1 // indirect
 	github.com/hanzoai/notify2 v1.6.3 // indirect
 	github.com/hanzoai/oss v1.8.5 // indirect
@@ -167,8 +175,8 @@ require (
 	github.com/line/line-bot-sdk-go v7.8.0+incompatible // indirect
 	github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3 // indirect
 	github.com/lufia/plan9stats v0.0.0-20251013123823-9fd1530e3ec3 // indirect
-	github.com/luxfi/accel v1.1.9 // indirect
-	github.com/luxfi/crypto v1.19.17 // indirect
+	github.com/luxfi/accel v1.2.4 // indirect
+	github.com/luxfi/crypto v1.19.21 // indirect
 	github.com/luxfi/log v1.4.3 // indirect
 	github.com/luxfi/mdns v0.1.1 // indirect
 	github.com/luxfi/metric v1.5.8 // indirect
@@ -232,15 +240,15 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zap-proto/go v1.1.0 // indirect
 	go.mau.fi/util v0.8.3 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.45.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
