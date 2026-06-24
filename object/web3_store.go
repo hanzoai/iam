@@ -113,8 +113,8 @@ func PurgeExpiredWeb3Nonces() (int64, error) {
 type WalletLink struct {
 	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"` // organization
 	User        string `xorm:"varchar(100) notnull pk" json:"user"`  // user.Name
-	Chain       string `xorm:"varchar(20) notnull pk" json:"chain"`
-	Address     string `xorm:"varchar(128) notnull pk" json:"address"`
+	Chain       string `xorm:"varchar(20) notnull pk unique(chain_addr)" json:"chain"`
+	Address     string `xorm:"varchar(128) notnull pk unique(chain_addr)" json:"address"`
 	Scheme      string `xorm:"varchar(40)" json:"scheme"`
 	PublicKey   string `xorm:"varchar(256)" json:"publicKey"`
 	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
