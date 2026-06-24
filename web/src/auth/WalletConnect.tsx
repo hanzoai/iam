@@ -52,6 +52,8 @@ const CHAIN_LABEL: Record<Chain, string> = {
   bitcoin: "Bitcoin",
   ton: "TON",
   xrp: "XRP Ledger",
+  polkadot: "Polkadot",
+  cardano: "Cardano",
 };
 
 // Backend verifiers live in IAM via connect/go v0.1.1 VerifyProof — all five are
@@ -74,6 +76,11 @@ const TYPE_TO_CHAIN: Record<string, Chain> = {
   ton: "ton",
   xrp: "xrp",
   xrpl: "xrp",
+  polkadot: "polkadot",
+  dot: "polkadot",
+  substrate: "polkadot",
+  cardano: "cardano",
+  ada: "cardano",
 };
 
 export function providerChain(provider): Chain {
