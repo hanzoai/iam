@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Multi-chain wallet login for IAM, built on github.com/luxwallet/wallet-connect/go.
+// Multi-chain wallet login for IAM, built on github.com/luxwallet/connect/go.
 //
 // HTTP shell only -- the auth logic (nonce burn, signature verify, user
 // resolution) lives in object/web3_auth.go so it stays unit-testable and
@@ -36,7 +36,7 @@ import (
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 
-	wc "github.com/luxwallet/wallet-connect/go/walletconnect"
+	wc "github.com/luxwallet/connect/go/walletconnect"
 )
 
 // web3Domain is the RFC-4501 dnsauthority the wallet signs against. It MUST equal
