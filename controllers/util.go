@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/hanzoai/iam/conf"
@@ -85,6 +86,27 @@ func (c *ApiController) getEffectiveHost() string {
 		return fwdHost
 	}
 	return c.Ctx.Request.Host
+}
+
+// isSameSiteRequest reports whether the request's Origin (or, failing that,
+// Referer) is the SAME host the request arrived on (getEffectiveHost). Used to
+// gate ambient-authority (session-cookie) branches against CSRF: a cross-site
+// forged request carries a foreign Origin and is rejected. A request with no
+// Origin/Referer (e.g. a non-browser client) is treated as same-site — CSRF
+// needs a browser context, which always sends Origin on a cross-site POST.
+func (c *ApiController) isSameSiteRequest() bool {
+	host := c.getEffectiveHost()
+	src := c.Ctx.Request.Header.Get("Origin")
+	if src == "" {
+		src = c.Ctx.Request.Header.Get("Referer")
+	}
+	if src == "" {
+		return true // no browser cross-site context to abuse
+	}
+	if u, err := url.Parse(src); err == nil && u.Host != "" {
+		return strings.EqualFold(u.Host, host)
+	}
+	return false // malformed Origin/Referer → fail closed (treat as cross-site)
 }
 
 // GetAcceptLanguage ...

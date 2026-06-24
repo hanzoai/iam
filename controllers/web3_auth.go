@@ -147,6 +147,22 @@ func (c *ApiController) VerifyWeb3() {
 		return
 	}
 
+	// DoS guard (defense-in-depth): bound every attacker-controlled field BEFORE
+	// it reaches a per-chain parser. A real proof's signature/message/key are a
+	// few hundred bytes; a multi-MB field is the CBOR/parser-bomb vector (e.g. a
+	// deeply-nested Cardano COSE blob whose decode can fatally overflow the Go
+	// stack — uncatchable by recover, taking down the IdP). Reject early, cheap.
+	const (
+		maxField   = 8 * 1024  // signature/message
+		maxKey     = 1024      // publicKey
+		maxAddress = 256       // address
+	)
+	if len(f.Signature) > maxField || len(f.Message) > maxField ||
+		len(f.PublicKey) > maxKey || len(f.Address) > maxAddress {
+		c.ResponseError("web3: oversized proof field")
+		return
+	}
+
 	chain := wc.Chain(strings.TrimSpace(f.Chain))
 	if !object.IsSupportedWeb3Chain(chain) {
 		c.ResponseError(fmt.Sprintf("web3: unsupported chain: %s", chain))
@@ -175,7 +191,19 @@ func (c *ApiController) VerifyWeb3() {
 
 	// An authenticated caller is linking a new wallet to their existing
 	// identity. getCurrentUser returns nil when anonymous.
+	//
+	// CSRF guard (account-takeover defense): the "link this wallet to my
+	// session user" branch is the only part of this flow that carries ambient
+	// authority (the session cookie). A cross-site forged POST must NOT be able
+	// to attach an attacker's verified wallet to a victim's logged-in session.
+	// So we only honor the session identity when the request is same-site:
+	// Origin (or Referer) host must equal the brand host the request arrived on.
+	// Anonymous login/signup branches are unaffected (no ambient authority to
+	// abuse); a cross-site caller simply falls through to those.
 	sessionUser := c.getCurrentUser()
+	if sessionUser != nil && !c.isSameSiteRequest() {
+		sessionUser = nil
+	}
 
 	user, err := object.VerifyWalletLogin(object.WalletLoginInput{
 		Domain:       c.web3Domain(),
