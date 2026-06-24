@@ -130,20 +130,16 @@ function goToSamlUrl(provider, location) {
   });
 }
 
+// goToWeb3Url drives the ONE native multi-chain wallet login path
+// (WalletConnect.tsx -> /v1/iam/web3/{nonce,verify}). Every Web3 provider button
+// funnels here; provider.type is mapped onto a chain inside authViaProvider
+// (MetaMask/Web3Onboard/Web3 -> evm; Solana/Phantom -> solana; etc.). The legacy
+// @web3-onboard / MetaMask eth-sig-util path is gone.
 export function goToWeb3Url(application, provider, method) {
-  if (provider.type === "MetaMask") {
-    import("./Web3Auth")
-      .then(module => {
-        const authViaMetaMask = module.authViaMetaMask;
-        authViaMetaMask(application, provider, method);
-      });
-  } else if (provider.type === "Web3Onboard") {
-    import("./Web3Auth")
-      .then(module => {
-        const authViaWeb3Onboard = module.authViaWeb3Onboard;
-        authViaWeb3Onboard(application, provider, method);
-      });
-  }
+  import("./WalletConnect")
+    .then(module => {
+      module.authViaProvider(application, provider, method);
+    });
 }
 
 export function renderProviderLogo(provider, application, width, margin, size, location) {
