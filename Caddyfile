@@ -39,6 +39,7 @@ iam.hanzo.ai {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-Proto {scheme}
+		header_up -X-Forwarded-Host
 	}
 
 	log {
@@ -60,6 +61,7 @@ hanzo.id {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-Proto {scheme}
+		header_up -X-Forwarded-Host
 		header_up X-Org-Name "hanzo"
 	}
 
@@ -82,6 +84,7 @@ zoo.id {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-Proto {scheme}
+		header_up -X-Forwarded-Host
 		header_up X-Org-Name "zoo"
 	}
 
@@ -104,6 +107,7 @@ lux.id {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-Proto {scheme}
+		header_up -X-Forwarded-Host
 		header_up X-Org-Name "lux"
 	}
 
@@ -126,6 +130,7 @@ pars.id {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-Proto {scheme}
+		header_up -X-Forwarded-Host
 		header_up X-Org-Name "pars"
 	}
 
@@ -148,6 +153,7 @@ id.ad.nexus {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-Proto {scheme}
+		header_up -X-Forwarded-Host
 		header_up X-Org-Name "adnexus"
 	}
 
@@ -170,6 +176,7 @@ id.bootno.de {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-Proto {scheme}
+		header_up -X-Forwarded-Host
 		header_up X-Org-Name "bootnode"
 	}
 
