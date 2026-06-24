@@ -124,10 +124,11 @@ func GetIdProvider(idpInfo *ProviderInfo, redirectUrl string) (IdProvider, error
 		return NewKwaiIdProvider(idpInfo.ClientId, idpInfo.ClientSecret, redirectUrl), nil
 	case "Bilibili":
 		return NewBilibiliIdProvider(idpInfo.ClientId, idpInfo.ClientSecret, redirectUrl), nil
-	case "MetaMask":
-		return NewMetaMaskIdProvider(), nil
-	case "Web3Onboard":
-		return NewWeb3OnboardIdProvider(), nil
+	// Native multi-chain wallet login (EVM/Solana/TON/XRP/Bitcoin) is handled by
+	// the verified SIWx controller flow — GET /v1/iam/web3/nonce + POST
+	// /v1/iam/web3/verify (controllers/web3_auth.go, VerifyProof). The legacy
+	// unverified idp/{metamask,web3onboard}.go providers were removed; SIWx is
+	// challenge/response and does not fit the OAuth-redirect IdProvider model.
 	case "Twitter":
 		provider := NewTwitterIdProvider(idpInfo.ClientId, idpInfo.ClientSecret, redirectUrl)
 		provider.CodeVerifier = idpInfo.CodeVerifier
