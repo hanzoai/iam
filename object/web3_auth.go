@@ -231,6 +231,16 @@ func VerifyWalletLogin(in WalletLoginInput) (*User, error) {
 	}
 
 	if user == nil {
+		// Enforce the global one-wallet-one-identity invariant FIRST — before any
+		// provisioning — so a wallet already linked elsewhere can never create an
+		// orphan user row (read-then-write leak Red flagged). The DB also carries
+		// a UNIQUE(chain,address) backstop on WalletLink for the concurrent race.
+		if existing, gerr := GetWalletLinkGlobal(string(in.Chain), verifiedAddress); gerr != nil {
+			return nil, gerr
+		} else if existing != nil {
+			return nil, errors.New("web3: this wallet is already linked to another account")
+		}
+
 		// No wallet on file in this org. If the caller is already authenticated
 		// (linking a new wallet to an existing identity), attach to that
 		// session's user. We NEVER link by address alone across identities --
@@ -248,14 +258,6 @@ func VerifyWalletLogin(in WalletLoginInput) (*User, error) {
 			if err != nil {
 				return nil, err
 			}
-		}
-
-		// Enforce the global one-wallet-one-identity invariant before linking:
-		// the (chain,address) pair is unique across all orgs.
-		if existing, gerr := GetWalletLinkGlobal(string(in.Chain), verifiedAddress); gerr != nil {
-			return nil, gerr
-		} else if existing != nil {
-			return nil, errors.New("web3: this wallet is already linked to another account")
 		}
 
 		if _, err = AddWalletLink(&WalletLink{
