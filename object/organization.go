@@ -87,6 +87,14 @@ type Organization struct {
 	UserNavItems           []string   `xorm:"mediumtext" json:"userNavItems"`
 	WidgetItems            []string   `xorm:"mediumtext" json:"widgetItems"`
 
+	// DefaultProviders is the org-wide unified set of auth providers. Any
+	// application in this org whose own Providers list is EMPTY inherits this
+	// set (resolved in extendApplicationWithProviders). Declaring providers
+	// once at the org level — instead of repeating the same block on every app
+	// — is the one way to give all of an org's apps the same single sign-on
+	// surface. An app may still pin its own Providers to override.
+	DefaultProviders []*ProviderItem `xorm:"mediumtext" json:"defaultProviders"`
+
 	MfaItems           []*MfaItem     `xorm:"mediumtext" json:"mfaItems"`
 	MfaRememberInHours int            `json:"mfaRememberInHours"`
 	AccountMenu        string         `xorm:"varchar(20)" json:"accountMenu"`

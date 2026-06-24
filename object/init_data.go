@@ -285,6 +285,23 @@ func initDefinedOrganization(organization *Organization) {
 
 	if existed != nil {
 		if initDataNewOnly {
+			// Reconcile org-wide default providers (the unified-login set)
+			// additively: if the live org has none but init_data declares a set,
+			// adopt it so every app that inherits (empty Providers) gets one SSO
+			// surface — without overwriting an org that already set its own.
+			if len(existed.DefaultProviders) == 0 && len(organization.DefaultProviders) > 0 {
+				existed.DefaultProviders = organization.DefaultProviders
+				if _, updateErr := ormer.Engine.Where("owner = ? AND name = ?",
+					existed.Owner, existed.Name).
+					Cols("default_providers").
+					Update(existed); updateErr != nil {
+					fmt.Printf("[init_data] WARNING: failed to set defaultProviders for org %s: %v\n",
+						existed.Name, updateErr)
+				} else {
+					fmt.Printf("[init_data] org %s: set %d default providers (unified login)\n",
+						existed.Name, len(organization.DefaultProviders))
+				}
+			}
 			// Merge languages: ensure all init_data languages are enabled (additive only)
 			if len(organization.Languages) > len(existed.Languages) {
 				langSet := make(map[string]bool, len(existed.Languages))
