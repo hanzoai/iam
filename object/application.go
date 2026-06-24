@@ -271,6 +271,15 @@ func extendApplicationWithProviders(application *Application) (err error) {
 		return err
 	}
 
+	// Unified login: an application that declares NO providers of its own
+	// inherits its organization's DefaultProviders. This is the single place
+	// the org-wide provider set is applied, so every app in the org shares one
+	// SSO surface without repeating the block per app. An app with its own
+	// Providers list is left untouched (explicit override wins).
+	if len(application.Providers) == 0 {
+		application.Providers = orgDefaultProviderItems(application.Organization)
+	}
+
 	for _, providerItem := range application.Providers {
 		if provider, ok := m[providerItem.Name]; ok {
 			providerItem.Provider = provider
@@ -278,6 +287,39 @@ func extendApplicationWithProviders(application *Application) (err error) {
 	}
 
 	return
+}
+
+// orgDefaultProviderItems returns a deep copy of an org's DefaultProviders so
+// the resolution step (which sets .Provider on each item) never mutates the
+// shared org row. Returns nil when the org has no defaults or cannot be read —
+// fail soft: an app with no providers simply shows none, never errors.
+func orgDefaultProviderItems(organizationName string) []*ProviderItem {
+	organization, err := getOrganization("admin", organizationName)
+	if err != nil || organization == nil {
+		return nil
+	}
+	return cloneProviderItems(organization.DefaultProviders)
+}
+
+// cloneProviderItems deep-copies a provider-item list, clearing the resolved
+// .Provider on each clone (it is re-resolved per application). Pure + DB-free
+// so the inheritance copy semantics are unit-testable: the returned items must
+// never alias the source rows, or resolving one app's providers would leak a
+// resolved record into the shared org defaults.
+func cloneProviderItems(src []*ProviderItem) []*ProviderItem {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]*ProviderItem, 0, len(src))
+	for _, item := range src {
+		if item == nil {
+			continue
+		}
+		clone := *item
+		clone.Provider = nil
+		out = append(out, &clone)
+	}
+	return out
 }
 
 func extendApplicationWithOrg(application *Application) (err error) {
