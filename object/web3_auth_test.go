@@ -25,7 +25,13 @@ import (
 	luxcrypto "github.com/luxfi/crypto"
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
-	_ "modernc.org/sqlite" // db = sqlite (pure-Go driver, matches object/ormer.go)
+	// Register the canonical "sqlite" driver via hanzoai/sqlite — the SAME
+	// dual-backend driver object/ormer.go uses (CGO → SQLCipher, !CGO →
+	// modernc). Importing modernc directly here registers "sqlite" a SECOND
+	// time under the CGO encryption build (hanzoai/sqlite already registers it),
+	// panicking the codec-proof test step with `sql: Register called twice for
+	// driver sqlite`. One driver registration, one way.
+	_ "github.com/hanzoai/sqlite"
 )
 
 // newWeb3TestOrmer wires the package-level `ormer` global to a fresh in-memory
