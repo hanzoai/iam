@@ -31,6 +31,7 @@
 // TON @tonconnect/sdk; XRP @crossmarkio/sdk. Per-chain peer libs are loaded
 // lazily by the SDK connector only when that chain is used.
 
+import React from "react";
 import i18next from "i18next";
 import {goToLink, showMessage} from "../Setting";
 import {
@@ -41,6 +42,7 @@ import {
   type SignedProof,
   type WalletConnector,
 } from "@luxwallet/connect";
+import {ChainIcon} from "./ChainIcon";
 
 export type {Chain} from "@luxwallet/connect";
 
@@ -209,13 +211,15 @@ export function authViaProvider(application, provider, method: string) {
 
 /**
  * The multi-chain picker the login page can render. Returns one entry per ENABLED
- * chain with metadata + an onClick. Only server-verified chains are returned so
- * the UI never shows a dead button.
+ * chain with metadata, a ready-to-render `icon` (the chain's real SVG logo), and
+ * an onClick. Only server-verified chains are returned so the UI never shows a
+ * dead button. Every returned chain is enabled by construction.
  */
 export function getWalletChains() {
   return CHAINS.filter((c) => ENABLED_CHAINS.includes(c)).map((c) => ({
     chain: c,
     label: CHAIN_LABEL[c],
+    icon: React.createElement(ChainIcon, {chain: c, size: 20}),
     onClick: (application, provider, method) => authViaWallet(application, provider, method, c),
   }));
 }
