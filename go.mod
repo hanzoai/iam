@@ -51,7 +51,7 @@ require (
 	github.com/luxfi/crypto v1.19.21
 	github.com/luxfi/kms v1.11.6
 	github.com/luxfi/metric v1.5.7
-	github.com/luxwallet/connect/go v0.1.1
+	github.com/luxwallet/connect/go v0.1.2
 	github.com/markbates/goth v1.82.0
 	github.com/microsoft/go-mssqldb v1.9.0
 	github.com/mitchellh/mapstructure v1.5.0
@@ -77,7 +77,6 @@ require (
 	golang.org/x/time v0.15.0
 	layeh.com/radius v0.0.0-20231213012653-1006025d24f8
 	maunium.net/go/mautrix v0.22.1
-	modernc.org/sqlite v1.48.0
 )
 
 require (
@@ -199,6 +198,7 @@ require (
 	github.com/mr-tron/base58 v1.3.0 // indirect
 	github.com/mrjones/oauth v0.0.0-20180629183705-f4e24b6d100c // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/oasisprotocol/curve25519-voi v0.0.0-20251114093237-2ab5a27a1729 // indirect
 	github.com/petar-dambovaliev/aho-corasick v0.0.0-20240411101913-e07a1f0e8eb4 // indirect
 	github.com/pingcap/errors v0.11.5-0.20210425183316-da1aaba5fb63 // indirect
 	github.com/pingcap/log v0.0.0-20210625125904-98ed8e2eb1c7 // indirect
@@ -253,6 +253,7 @@ require (
 	modernc.org/libc v1.70.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
+	modernc.org/sqlite v1.48.0 // indirect
 	rsc.io/binaryregexp v0.2.0 // indirect
 )
 
