@@ -51,7 +51,7 @@ const web3Statement = "Sign in to Hanzo. This request will not trigger a blockch
 // list); an enabled-but-unverifiable chain fails closed in VerifyProof.
 func IsSupportedWeb3Chain(chain wc.Chain) bool {
 	switch chain {
-	case wc.ChainEVM, wc.ChainSolana, wc.ChainBitcoin, wc.ChainTON, wc.ChainXRP:
+	case wc.ChainEVM, wc.ChainSolana, wc.ChainBitcoin, wc.ChainTON, wc.ChainXRP, wc.ChainPolkadot:
 		return true
 	default:
 		return false
