@@ -692,14 +692,20 @@ func GetUserByAccessKey(accessKey string) (*User, error) {
 		return nil, nil
 	}
 
-	// 1. Check User.AccessKey (legacy per-user keys, hk- prefix)
-	user := User{AccessKey: accessKey}
-	existed, err := ormer.Engine.Get(&user)
-	if err != nil {
+	// 1. Check User.AccessKey (legacy per-user keys, hk- prefix).
+	//
+	// Under org isolation (orgIsolation=sqlite) every User row lives in its own
+	// per-org encrypted database, NOT in the global ormer.Engine — so a lookup
+	// keyed only by AccessKey (which has no owner) must fan out across each org's
+	// engine. Without isolation, all users share the global engine and a single
+	// Get suffices. This mirrors getUser/GetUserByEmail, which already route via
+	// orgEngine(owner); GetUserByAccessKey was the lone holdout still hitting the
+	// global engine, which is why hk- keys resolved to nil after the per-org
+	// encryption cutover.
+	if user, err := getUserByAccessKey(accessKey); err != nil {
 		return nil, err
-	}
-	if existed {
-		return &user, nil
+	} else if user != nil {
+		return user, nil
 	}
 
 	// 2. Check Key table (pk-/sk- prefixed keys)
@@ -724,6 +730,48 @@ func GetUserByAccessKey(accessKey string) (*User, error) {
 		}, nil
 	}
 
+	return nil, nil
+}
+
+// getUserByAccessKey resolves a user by its per-user User.AccessKey (hk- keys).
+//
+//   - No org isolation (OrgDBManager == nil): all users share the global engine,
+//     so one Get keyed by AccessKey suffices.
+//   - Org isolation (OrgDBManager != nil): User rows are partitioned into per-org
+//     encrypted databases. AccessKey carries no owner, so we fan out over every
+//     org's engine and return the first match. AccessKeys are globally unique
+//     (minted as UUIDs), so at most one org matches.
+//
+// Returns (nil, nil) when no user holds the key.
+func getUserByAccessKey(accessKey string) (*User, error) {
+	if ormer.OrgDBManager == nil {
+		user := User{AccessKey: accessKey}
+		existed, err := ormer.Engine.Get(&user)
+		if err != nil {
+			return nil, err
+		}
+		if existed {
+			return &user, nil
+		}
+		return nil, nil
+	}
+
+	// Org isolation: scan each org's per-org engine. Organizations live on the
+	// global engine and are all owned by the admin org.
+	orgs, err := GetOrganizations(conf.AdminOrg)
+	if err != nil {
+		return nil, err
+	}
+	for _, org := range orgs {
+		user := User{AccessKey: accessKey}
+		existed, err := orgEngine(org.Name).Get(&user)
+		if err != nil {
+			return nil, err
+		}
+		if existed {
+			return &user, nil
+		}
+	}
 	return nil, nil
 }
 
