@@ -44,7 +44,7 @@ import {
 
 export type {Chain} from "@luxwallet/connect";
 
-export const CHAINS: Chain[] = ["evm", "solana", "bitcoin", "ton", "xrp", "polkadot"];
+export const CHAINS: Chain[] = ["evm", "solana", "bitcoin", "ton", "xrp", "polkadot", "cardano"];
 
 const CHAIN_LABEL: Record<Chain, string> = {
   evm: "Ethereum / EVM",
@@ -57,7 +57,7 @@ const CHAIN_LABEL: Record<Chain, string> = {
 // Backend verifiers live in IAM via connect/go v0.1.1 VerifyProof — all five are
 // real (evm/solana + ton.go/xrp.go/bitcoin.go, 67 Go tests), dispatched in
 // object/web3_auth.go. The full bridge login set is enabled out of the box.
-const ENABLED_CHAINS: Chain[] = ["evm", "solana", "bitcoin", "ton", "xrp", "polkadot"];
+const ENABLED_CHAINS: Chain[] = ["evm", "solana", "bitcoin", "ton", "xrp", "polkadot", "cardano"];
 
 // Map an admin-configured provider.type onto a chain. EVM is the default for the
 // generic wallet button (MetaMask/Web3Onboard/Web3 all imply EVM); a provider
