@@ -207,7 +207,13 @@ func VerifyWalletLogin(in WalletLoginInput) (*User, error) {
 		// res.Reason is a stable machine code (bad-signature, expired, ...).
 		return nil, fmt.Errorf("web3: verification failed: %s", res.Reason)
 	}
-	verifiedAddress := res.Address // canonicalized by the verifier
+	// Canonicalize the verified address before it becomes an identity key. The
+	// SDK verifier accepts whitespace/case variants of the same key (the binding
+	// holds for all of them), so without this one key could mint N identities
+	// (uniqueness bypass — Red H1 / CTO R1). EVM addresses are case-insensitive
+	// hex → lowercase; all chains → trim. Every downstream store/lookup
+	// (GetWalletLink, GetWalletLinkGlobal, AddWalletLink) keys off this value.
+	verifiedAddress := canonicalWeb3Address(in.Chain, res.Address)
 
 	// --- 4. Resolve / provision the user. ---
 	org := in.Application.Organization
@@ -287,6 +293,20 @@ func VerifyWalletLogin(in WalletLoginInput) (*User, error) {
 // is chain-qualified -- "<chain>_<address>" -- so the same address on two chains
 // is two distinct identities. No password is set (wallet-only identity); the
 // user can add email/password later from account settings.
+// canonicalWeb3Address normalizes a verified address into the single canonical
+// form used as an identity key, so whitespace/case variants of one key resolve
+// to one identity (defeats the uniqueness bypass). EVM addresses are
+// case-insensitive hex → lowercase; base58/bech32/SS58 chains are
+// case-SENSITIVE, so only surrounding whitespace is trimmed (the crypto binding
+// already proved the address derives from the signing key).
+func canonicalWeb3Address(chain wc.Chain, addr string) string {
+	a := strings.TrimSpace(addr)
+	if chain == wc.ChainEVM {
+		a = strings.ToLower(a)
+	}
+	return a
+}
+
 func provisionWalletUser(app *Application, org *Organization, chain wc.Chain, address string) (*User, error) {
 	// user.Name is the PK (varchar(100)). A raw "<chain>_<address>" overflows for
 	// long-address chains (Cardano addr1 ≈ 103 chars). Use a bounded, stable,
