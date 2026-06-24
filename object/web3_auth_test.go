@@ -23,7 +23,7 @@ import (
 	"github.com/hanzoai/xorm/names"
 
 	luxcrypto "github.com/luxfi/crypto"
-	wc "github.com/luxwallet/wallet-connect/go/walletconnect"
+	wc "github.com/luxwallet/connect/go/walletconnect"
 
 	_ "modernc.org/sqlite" // db = sqlite (pure-Go driver, matches object/ormer.go)
 )
