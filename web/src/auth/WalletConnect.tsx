@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Multi-chain wallet login (HIP-0111) -- the canonical path that talks to
-// /v1/iam/web3/{nonce,verify}. Added ALONGSIDE the legacy Web3Auth.tsx
-// (@web3-onboard, EVM-only, signature-UNVERIFIED) path; that path + the dead
-// idp/{metamask,web3onboard}.go are removed in a follow-up once this is live.
+// Multi-chain wallet login (HIP-0111) -- the ONE canonical path that talks to
+// /v1/iam/web3/{nonce,verify}. This is the only wallet login path in the app;
+// the legacy @web3-onboard / @metamask/eth-sig-util Web3Auth.tsx is deleted.
 //
-// Flow per chain (orthogonal -- connection is browser-side, verification is the
-// server's; the server runs the SAME walletconnect.VerifyProof Go + TS share):
+// Flow per chain (orthogonal -- connection is browser-side via @luxwallet/connect,
+// verification is the server's; the server runs the SAME walletconnect.VerifyProof
+// Go that the TS verifier mirrors):
 //   1. connector.connect()           -> Account {chain,address,publicKey?}
 //   2. GET  /v1/iam/web3/nonce        -> LoginChallenge {domain,uri,nonce,...}
 //   3. connector.signLogin(acct, ch)  -> SignedProof {chain,scheme,...,signature}
@@ -26,65 +26,25 @@
 //
 // HIP-0111: hit /v1/iam/web3/* directly. NEVER /api/, NEVER /oauth.
 //
-// ----------------------------------------------------------------------------
-// INTEGRATION SEAM (TODO): the browser connectors live in
-// @luxwallet/connect/connectors -- being built in parallel (the Go/TS verifiers
-// are done; the connectors are the next SDK milestone). Until that package is a
-// dependency, CONNECTORS is empty and a wallet button throws a clear
-// "connector not wired yet" error rather than silently no-op'ing. When the SDK
-// ships, replace registerConnectors() below with the real imports; nothing else
-// here changes -- the server flow (nonce/verify) is complete and tested.
-//
-// Wiring (one line once @luxwallet/connect is added to web/package.json):
-//   import {EvmConnector, SolanaConnector, ...} from "@luxwallet/connect/connectors";
-//   registerConnectors({evm: new EvmConnector(), solana: new SolanaConnector(), ...});
-// ----------------------------------------------------------------------------
+// Connectors come from @luxwallet/connect (MIT, zero GPL, no WalletConnect /
+// projectId). EVM uses viem; Solana the injected provider; Bitcoin sats-connect;
+// TON @tonconnect/sdk; XRP @crossmarkio/sdk. Per-chain peer libs are loaded
+// lazily by the SDK connector only when that chain is used.
 
 import i18next from "i18next";
 import {goToLink, showMessage} from "../Setting";
+import {
+  getConnector,
+  type Account,
+  type Chain,
+  type LoginChallenge,
+  type SignedProof,
+  type WalletConnector,
+} from "@luxwallet/connect";
 
-// --- Types (mirror @luxwallet/connect; defined locally so this compiles before
-// the SDK is a dependency). Keep in lockstep with the SDK's TS types. ---------
-
-export type Chain = "evm" | "solana" | "bitcoin" | "ton" | "xrp";
+export type {Chain} from "@luxwallet/connect";
 
 export const CHAINS: Chain[] = ["evm", "solana", "bitcoin", "ton", "xrp"];
-
-export interface Account {
-  chain: Chain;
-  address: string;
-  publicKey?: string;
-  walletId?: string;
-}
-
-export interface LoginChallenge {
-  domain: string;
-  uri: string;
-  statement?: string;
-  nonce: string;
-  issuedAt: string;
-  expirationTime?: string;
-  notBefore?: string;
-  requestId?: string;
-  version?: string;
-  resources?: string[];
-}
-
-export interface SignedProof {
-  chain: Chain;
-  scheme: string;
-  address: string;
-  publicKey?: string;
-  message: string;
-  signature: string;
-  extra?: Record<string, unknown>;
-}
-
-export interface WalletConnector {
-  connect(): Promise<Account>;
-  signLogin(account: Account, challenge: LoginChallenge): Promise<SignedProof>;
-  disconnect(): Promise<void>;
-}
 
 const CHAIN_LABEL: Record<Chain, string> = {
   evm: "Ethereum / EVM",
@@ -95,33 +55,45 @@ const CHAIN_LABEL: Record<Chain, string> = {
 };
 
 // Backend verifiers that are live today. Bitcoin/TON/XRP Go ports are stubs that
-// fail closed, so the picker is gated to the verified set (PLAN.md risk 5).
-// Widen this only when BOTH the chain's TS and Go verifiers are green AND its
-// connector is registered below.
+// fail closed, so the picker is gated to the verified set. Widen this only when
+// BOTH the chain's TS and Go verifiers are green.
 const ENABLED_CHAINS: Chain[] = ["evm", "solana"];
 
-// --- Connector registry (the integration seam). Empty until the SDK ships. ---
+// Map an admin-configured provider.type onto a chain. EVM is the default for the
+// generic wallet button (MetaMask/Web3Onboard/Web3 all imply EVM); a provider
+// MAY encode an explicit chain via provider.type or provider.metadata.
+const TYPE_TO_CHAIN: Record<string, Chain> = {
+  metamask: "evm",
+  web3onboard: "evm",
+  web3: "evm",
+  evm: "evm",
+  ethereum: "evm",
+  solana: "solana",
+  phantom: "solana",
+  bitcoin: "bitcoin",
+  ton: "ton",
+  xrp: "xrp",
+  xrpl: "xrp",
+};
 
-const CONNECTORS: Partial<Record<Chain, WalletConnector>> = {};
-
-/**
- * registerConnectors wires the @luxwallet/connect browser connectors. Call once
- * at app init when the SDK is available. See the INTEGRATION SEAM note above.
- */
-export function registerConnectors(connectors: Partial<Record<Chain, WalletConnector>>) {
-  Object.assign(CONNECTORS, connectors);
-}
-
-function getConnector(chain: Chain): WalletConnector {
-  const c = CONNECTORS[chain];
-  if (!c) {
-    // Loud, actionable failure -- never a silent no-op.
-    throw new Error(
-      `wallet connector for "${chain}" is not wired yet ` +
-        "(@luxwallet/connect/connectors pending; call registerConnectors())",
-    );
+export function providerChain(provider): Chain {
+  const raw = (provider?.type ?? "").toString().toLowerCase();
+  if (TYPE_TO_CHAIN[raw]) {
+    return TYPE_TO_CHAIN[raw];
   }
-  return c;
+  // provider.metadata may carry {"chain":"solana"}; honor it if present.
+  try {
+    if (provider?.metadata) {
+      const meta = JSON.parse(provider.metadata);
+      const c = (meta?.chain ?? "").toString().toLowerCase();
+      if (TYPE_TO_CHAIN[c]) {
+        return TYPE_TO_CHAIN[c];
+      }
+    }
+  } catch (_) {
+    /* metadata is free-form admin text; ignore parse errors */
+  }
+  return "evm";
 }
 
 // --- Server flow (complete + matches the Go handlers) ------------------------
@@ -166,8 +138,9 @@ async function postVerify(application, organization, method: string, proof: Sign
 
 /**
  * Drive one chain end-to-end: connect -> nonce -> sign -> verify -> redirect.
- * Used by the picker; also callable directly for a single-chain button. Mirrors
- * the success handling of the password/OAuth path (Web3Auth.tsx).
+ * Mirrors the success handling of the password/OAuth path: HandleLoggedIn on the
+ * server returns either a redirect target or a logged-in payload the SPA
+ * consumes, exactly like an OAuth callback.
  */
 export async function authViaWallet(application, provider, method: string, chain: Chain) {
   let connector: WalletConnector;
@@ -219,13 +192,21 @@ export async function authViaWallet(application, provider, method: string, chain
 }
 
 /**
- * The multi-chain picker the login page renders. Returns one entry per ENABLED
- * chain with metadata + an onClick, so SelfLoginButton / LoginPage can render
- * buttons. Only chains that are BOTH enabled (server-verified) AND have a
- * registered connector are returned, so the UI never shows a dead button.
+ * authViaProvider is the entrypoint ProviderButton calls for any Web3 provider
+ * button. It maps the admin-configured provider onto a chain, then runs the
+ * native flow. One way: every wallet button funnels through here.
+ */
+export function authViaProvider(application, provider, method: string) {
+  return authViaWallet(application, provider, method, providerChain(provider));
+}
+
+/**
+ * The multi-chain picker the login page can render. Returns one entry per ENABLED
+ * chain with metadata + an onClick. Only server-verified chains are returned so
+ * the UI never shows a dead button.
  */
 export function getWalletChains() {
-  return CHAINS.filter((c) => ENABLED_CHAINS.includes(c) && Boolean(CONNECTORS[c])).map((c) => ({
+  return CHAINS.filter((c) => ENABLED_CHAINS.includes(c)).map((c) => ({
     chain: c,
     label: CHAIN_LABEL[c],
     onClick: (application, provider, method) => authViaWallet(application, provider, method, c),
@@ -233,9 +214,8 @@ export function getWalletChains() {
 }
 
 /**
- * isWalletLoginReady reports whether at least one chain is enabled AND wired, so
- * callers can decide whether to render the picker at all (avoids an empty group
- * while the connectors are still being built in parallel).
+ * isWalletLoginReady reports whether at least one chain is enabled, so callers
+ * can decide whether to render the picker at all.
  */
 export function isWalletLoginReady(): boolean {
   return getWalletChains().length > 0;
