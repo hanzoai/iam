@@ -1,0 +1,5 @@
+# Screenshots and Playwright artifacts are generated; never commit them.
+screenshots/
+test-results/
+playwright-report/
+.playwright/
