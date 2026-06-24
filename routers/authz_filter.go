@@ -331,6 +331,18 @@ func getUrlPath(ctx *context.Context) string {
 		return "/v1/iam/webauthn"
 	}
 
+	// /v1/iam/web3/* — multi-chain wallet Sign-In-With-X (@luxwallet/connect).
+	// Both endpoints MUST be anonymous-reachable: the nonce is minted BEFORE any
+	// token exists, and verify IS the login (it mints the session/JWT). Phishing
+	// safety rides on the request-host-derived domain bound into the signed
+	// CAIP-122 message + the single-use nonce burn, not on a pre-existing grant.
+	// Without this, the authz engine default-denies the unmapped path and the
+	// wallet flow returns `{status:"error",msg:"Unauthorized operation"}` before
+	// the handler runs (same failure mode the /login/oauth case fixed).
+	if strings.HasPrefix(urlPath, "/v1/iam/web3") {
+		return "/login/oauth"
+	}
+
 	if strings.HasPrefix(urlPath, "/v1/iam/saml/redirect") {
 		return "/v1/iam/saml/redirect"
 	}
