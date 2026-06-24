@@ -30,6 +30,8 @@
 package object
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -178,6 +180,13 @@ func VerifyWalletLogin(in WalletLoginInput) (*User, error) {
 	if rec.Domain != in.Domain {
 		return nil, errors.New("web3: domain mismatch")
 	}
+	// Pin the burned nonce to the chain it was minted for. Without this the
+	// chain label is decorative — a nonce minted for chain A could be redeemed
+	// with a (valid) proof on chain B, making the signed "sign in with your X
+	// account" statement meaningless and muddying identity resolution.
+	if rec.Chain != "" && rec.Chain != string(in.Chain) {
+		return nil, errors.New("web3: chain mismatch for this nonce")
+	}
 
 	// --- 3. Cryptographic verification via the shared SDK. ---
 	res := wc.VerifyProof(wc.Proof{
@@ -277,7 +286,12 @@ func VerifyWalletLogin(in WalletLoginInput) (*User, error) {
 // is two distinct identities. No password is set (wallet-only identity); the
 // user can add email/password later from account settings.
 func provisionWalletUser(app *Application, org *Organization, chain wc.Chain, address string) (*User, error) {
-	username := fmt.Sprintf("%s_%s", chain, address)
+	// user.Name is the PK (varchar(100)). A raw "<chain>_<address>" overflows for
+	// long-address chains (Cardano addr1 ≈ 103 chars). Use a bounded, stable,
+	// collision-resistant name: "wallet_<chain>_<sha256(chain||address)[:16]>".
+	// The full address remains the source of truth in WalletLink.Address.
+	sum := sha256.Sum256([]byte(string(chain) + ":" + address))
+	username := fmt.Sprintf("wallet_%s_%s", chain, hex.EncodeToString(sum[:8]))
 	user := &User{
 		Owner:             app.Organization,
 		Name:              username,
