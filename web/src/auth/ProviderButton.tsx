@@ -17,6 +17,8 @@ import React from "react";
 import i18next from "i18next";
 import * as Provider from "./Provider";
 import {getProviderLogoURL} from "../Setting";
+import {ChainIcon} from "./ChainIcon";
+import {providerChain} from "./WalletConnect";
 import {GithubLoginButton, GoogleLoginButton} from "react-social-login-buttons";
 import QqLoginButton from "./QqLoginButton";
 import FacebookLoginButton from "./FacebookLoginButton";
@@ -142,6 +144,15 @@ export function goToWeb3Url(application, provider, method) {
     });
 }
 
+// web3ChainIcon renders the real chain logo for a Web3 provider, mapping the
+// admin provider.type onto a chain the SAME way authViaProvider does. The mark
+// inherits the brand text color (monochrome lux.id / hanzo.id theme), so the
+// wallet button shows its chain identity without an admin-uploaded image.
+export function web3ChainIcon(provider, size = 20) {
+  const chain = providerChain(provider);
+  return <ChainIcon chain={chain} size={size} />;
+}
+
 export function renderProviderLogo(provider, application, width, margin, size, location) {
   if (size === "small") {
     if (provider.category === "OAuth") {
@@ -186,7 +197,7 @@ export function renderProviderLogo(provider, application, width, margin, size, l
             fontSize: "14px", fontWeight: 500, marginBottom: "8px",
             cursor: "pointer",
           }}>
-          <img width={20} height={20} src={getProviderLogoURL(provider)} alt={provider.displayName} style={{borderRadius: "3px"}} />
+          {web3ChainIcon(provider, 20)}
           <span>{provider.displayName || "Connect Wallet"}</span>
         </a>
       );
