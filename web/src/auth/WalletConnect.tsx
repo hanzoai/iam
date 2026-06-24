@@ -54,10 +54,10 @@ const CHAIN_LABEL: Record<Chain, string> = {
   xrp: "XRP Ledger",
 };
 
-// Backend verifiers that are live today. Bitcoin/TON/XRP Go ports are stubs that
-// fail closed, so the picker is gated to the verified set. Widen this only when
-// BOTH the chain's TS and Go verifiers are green.
-const ENABLED_CHAINS: Chain[] = ["evm", "solana"];
+// Backend verifiers live in IAM via connect/go v0.1.1 VerifyProof — all five are
+// real (evm/solana + ton.go/xrp.go/bitcoin.go, 67 Go tests), dispatched in
+// object/web3_auth.go. The full bridge login set is enabled out of the box.
+const ENABLED_CHAINS: Chain[] = ["evm", "solana", "bitcoin", "ton", "xrp"];
 
 // Map an admin-configured provider.type onto a chain. EVM is the default for the
 // generic wallet button (MetaMask/Web3Onboard/Web3 all imply EVM); a provider
