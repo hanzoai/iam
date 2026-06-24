@@ -52,8 +52,8 @@ importers:
         specifier: ^3.9.1
         version: 3.10.0(react-hook-form@7.71.2(react@18.3.1))
       '@luxwallet/connect':
-        specifier: file:../../../lux/wallet-connect
-        version: file:../../../lux/wallet-connect(@crossmarkio/sdk@0.4.0)(@tonconnect/sdk@4.0.0)(sats-connect@4.2.1(typescript@5.9.3))(viem@2.53.1(typescript@5.9.3)(zod@3.25.76))
+        specifier: ^0.1.0
+        version: 0.1.0(@crossmarkio/sdk@0.4.0)(@polkadot/util-crypto@14.0.3(@polkadot/util@14.0.3))(@polkadot/util@14.0.3)(@tonconnect/sdk@4.0.0)(sats-connect@4.2.1(typescript@5.9.3))(viem@2.53.1(typescript@5.9.3)(zod@3.25.76))
       '@polkadot/util':
         specifier: ^14.0.0
         version: 14.0.3
@@ -845,15 +845,21 @@ packages:
   '@lezer/yaml@1.0.4':
     resolution: {integrity: sha512-2lrrHqxalACEbxIbsjhqGpSW8kWpUKuY6RHgnSAFZa6qK62wvnPxA8hGOwOoDbwHcOFs5M4o27mjGu+P7TvBmw==}
 
-  '@luxwallet/connect@file:../../../lux/wallet-connect':
-    resolution: {directory: ../../../lux/wallet-connect, type: directory}
+  '@luxwallet/connect@0.1.0':
+    resolution: {integrity: sha512-teLWEOqM7XIUeEo9NPmsPV/1wlzwBmRXT56W5SOxkWk1o+6UqiaTRJZFn5AKAXXEdRMkaGqzCuTNkVVAA997Bg==}
     peerDependencies:
       '@crossmarkio/sdk': ^0.4.0
+      '@polkadot/util': ^14.0.0
+      '@polkadot/util-crypto': ^14.0.0
       '@tonconnect/sdk': ^4.0.0
       sats-connect: ^4.2.1
       viem: ^2.53.1
     peerDependenciesMeta:
       '@crossmarkio/sdk':
+        optional: true
+      '@polkadot/util':
+        optional: true
+      '@polkadot/util-crypto':
         optional: true
       '@tonconnect/sdk':
         optional: true
@@ -5567,13 +5573,15 @@ snapshots:
       '@lezer/highlight': 1.2.3
       '@lezer/lr': 1.4.8
 
-  '@luxwallet/connect@file:../../../lux/wallet-connect(@crossmarkio/sdk@0.4.0)(@tonconnect/sdk@4.0.0)(sats-connect@4.2.1(typescript@5.9.3))(viem@2.53.1(typescript@5.9.3)(zod@3.25.76))':
+  '@luxwallet/connect@0.1.0(@crossmarkio/sdk@0.4.0)(@polkadot/util-crypto@14.0.3(@polkadot/util@14.0.3))(@polkadot/util@14.0.3)(@tonconnect/sdk@4.0.0)(sats-connect@4.2.1(typescript@5.9.3))(viem@2.53.1(typescript@5.9.3)(zod@3.25.76))':
     dependencies:
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       bs58: 6.0.0
     optionalDependencies:
       '@crossmarkio/sdk': 0.4.0
+      '@polkadot/util': 14.0.3
+      '@polkadot/util-crypto': 14.0.3(@polkadot/util@14.0.3)
       '@tonconnect/sdk': 4.0.0
       sats-connect: 4.2.1(typescript@5.9.3)
       viem: 2.53.1(typescript@5.9.3)(zod@3.25.76)
@@ -6382,7 +6390,7 @@ snapshots:
 
   '@scure/bip32@1.7.0':
     dependencies:
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
 
@@ -9081,7 +9089,7 @@ snapshots:
 
   ripple-keypairs@2.0.0:
     dependencies:
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@xrplf/isomorphic': 1.0.2
       ripple-address-codec: 5.0.1
     transitivePeerDependencies:
