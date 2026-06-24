@@ -85,27 +85,12 @@ const OAuthWidget = (props: OAuthWidgetProps) => {
   };
 
   const unlinkUser = (providerType: string, linkedValue: string) => {
+    // Native wallet login keeps no client-side token (cookie session only),
+    // so unlinking is purely a server call for every provider type.
     const body = {
       providerType: providerType,
       user: user,
     };
-    if (providerType === "MetaMask" || providerType === "Web3Onboard") {
-      import("../auth/Web3Auth")
-        .then(module => {
-          const delWeb3AuthToken = module.delWeb3AuthToken;
-          delWeb3AuthToken(linkedValue);
-          AuthBackend.unlink(body)
-            .then((res: any) => {
-              if (res.status === "ok") {
-                Setting.showMessage("success", "Unlinked successfully");
-                onUnlinked();
-              } else {
-                Setting.showMessage("error", `${i18next.t("general:Failed to unlink")}: ${res.msg}`);
-              }
-            });
-        });
-      return;
-    }
     AuthBackend.unlink(body)
       .then((res: any) => {
         if (res.status === "ok") {
