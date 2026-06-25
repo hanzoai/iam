@@ -102,7 +102,6 @@ RUN --mount=type=secret,id=gh_token --mount=type=secret,id=GIT_AUTH_TOKEN \
       fi; \
       CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iamd ./cmd/iamd/; \
       CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iam ./cmd/iam/; \
-      CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iamctl ./cmd/iamctl/; \
       CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o sqlite2enveloped ./cmd/sqlite2enveloped/; \
       rm -f /tmp/gitconfig'
 
@@ -162,8 +161,11 @@ RUN apk add --no-cache tzdata curl ca-certificates sqlcipher-libs \
 USER 1000
 WORKDIR /
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/iamd ./iamd
+# iam: the administrative CLI. Provisioning subcommands (init-apps,
+# init-providers, wire-providers, clean-spam-orgs) run as one-shot Jobs off
+# this same image; the interactive app/user/org tree is also here. One CLI,
+# one binary, one way.
 COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/iam ./iam
-COPY --from=back --chown=$USER:$USER /go/src/hanzo-iam/iamctl ./iamctl
 # sqlite2enveloped: the plaintext-SQLite → enveloped-encrypted migrator (prod
 # at-rest cutover). Shipped in the same CGO + libsqlcipher image so the migration
 # runs against the SAME codec the daemon opens; invoked by the cutover Job, never

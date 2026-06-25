@@ -6,13 +6,13 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=1 go build -trimpath -o /iamd ./cmd/iamd/
-RUN CGO_ENABLED=0 go build -trimpath -o /iamctl ./cmd/iamctl/
+RUN CGO_ENABLED=0 go build -trimpath -o /iam ./cmd/iam/
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata
 RUN adduser -D -u 65532 appuser
 COPY --from=builder /iamd /app/iamd
-COPY --from=builder /iamctl /app/iamctl
+COPY --from=builder /iam /app/iam
 WORKDIR /app
 USER appuser
 EXPOSE 8000
