@@ -515,3 +515,39 @@ E2E tests live at `tests/iam-e2e.spec.ts` and `tests/iam-login.spec.ts`. They ru
   - `feedback_no_postgres_anywhere.md` — Base/SQLite only
   - `feedback_keys_from_mnemonic.md` — keys derive from mnemonic + KMS
   - `feedback_seed_credentials.md` — fixed dev seed users
+
+## Self-serve hk- Cloud API key minting (2026-06-25) — `mint-user-keys`
+
+Two new endpoints so a confidential client (the console, auth'd via clientId+secret
+→ Casbin subject `app/hanzo-console`, allowed by `p, app, *, *, *, *, *`) can
+(re)generate / clear a user's per-user hk- Cloud API key on behalf of its
+authenticated end-user:
+
+- `POST /v1/iam/mint-user-keys?id=<owner>/<name>` → `MintUserKeys` →
+  `object.AddUserKeys` → returns `{owner,name,accessKey}` (the hk- key, shown once).
+- `POST /v1/iam/revoke-user-keys?id=<owner>/<name>` → `RevokeUserKeys` →
+  `object.RevokeUserKeys` (clears both).
+
+**Keystone fix for email-named tenants:** `AddUserKeys`/`RevokeUserKeys` now do a
+COLUMN-SCOPED `UpdateUser(..., []string{"access_key","access_secret"}, isAdmin)`
+(was unscoped `[]string{}`). The bug: the unscoped path re-validated the user's
+`name` and Casdoor's `ReUserName` regex forbids `+`/`@`, so minting failed for every
+email-as-username tenant. Even more decisive: the router-level `FieldValidationFilter`
+(routers/field_validation_filter.go) rejects ANY POST to `/v1/iam/add-*`||`/update-*`
+whose body has a `name` with forbidden chars `/?:#&%=+;` — so the endpoints are
+DELIBERATELY named `mint-user-keys`/`revoke-user-keys` (NOT add-/update-) to skip that
+filter. Verified live: `update-user` on `hanzo/newdev+163948@hanzotest.dev` →
+"Field 'name' contains forbidden characters"; `mint-user-keys` on the same → ok.
+
+`object.GetUserByAccessKey` (object/user.go:690) already resolves hk- keys via
+`User.AccessKey` with per-org fan-out (orgIsolation=sqlite), so cloud-api's
+`get-user?accessKey=hk-…` validation side was already complete.
+
+Build: moby/buildkit (NOT kaniko — IAM has private go deps; kaniko's `go mod
+download` has no GIT_AUTH_TOKEN and 401s on hanzoai/authz). Clone the
+`arcbuild-iam-*` Job: `--opt=context=git://…#<sha>`, `--opt=target=standard`,
+`--secret=id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN` (from `console-git-token:token`),
+DOCKER_CONFIG from `kaniko-ghcr`, privileged, `dedicated=ci-runner` toleration.
+Deploy: patch operator CR `services.hanzo.ai/iam` `spec.image.tag` (encryption env
+DATA_DIR=/data/iam + IAM_KMS_MASTER_KEY + Recreate/replicas:1 preserved). Image
+sha-4ca7edaa LIVE; login/JWKS 200 (encryption intact).
