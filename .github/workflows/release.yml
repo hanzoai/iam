@@ -126,11 +126,11 @@ jobs:
         with:
           token: ${{ secrets.UNIVERSE_DISPATCH_TOKEN }}
           repository: hanzoai/universe
-          event-type: iam
+          event-type: image-update
           client-payload: |
             {
               "service": "iam",
-              "version": "${{ steps.version.outputs.tag }}",
               "image":   "ghcr.io/hanzoai/iam:${{ steps.version.outputs.tag }}",
-              "sha":     "${{ github.sha }}"
+              "sha":     "${{ github.sha }}",
+              "env":     "all"
             }
