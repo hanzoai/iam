@@ -551,3 +551,29 @@ DOCKER_CONFIG from `kaniko-ghcr`, privileged, `dedicated=ci-runner` toleration.
 Deploy: patch operator CR `services.hanzo.ai/iam` `spec.image.tag` (encryption env
 DATA_DIR=/data/iam + IAM_KMS_MASTER_KEY + Recreate/replicas:1 preserved). Image
 sha-4ca7edaa LIVE; login/JWKS 200 (encryption intact).
+
+### Security hardening (Red review) — caller→target binding (sha-cf8d8f68)
+
+The first cut of mint-user-keys/revoke-user-keys had a CROSS-TENANT KEY-HARVEST
+hole: Casbin `p, app, *, *, *, *, *` grants every `app/<name>` subject every
+route, and the controller did NO caller→target binding — so ANY confidential
+client (kms, gateway, any SDK clientId+secret) could `POST mint-user-keys?id=<victim>`
+and mint a working hk- billing key for an arbitrary user in any org. PROVEN live
+(hanzo-cloud creds harvested a tenant key) before the fix.
+
+`resolveTargetUserForKeys` now binds explicitly. GOTCHA that bit the first fix:
+`c.IsAdmin()` / `isGlobalAdmin()` (controllers/base.go) returns TRUE for EVERY
+app principal (`if IsAppUser(username) { return true }`), so gating behind
+`if !c.IsAdmin()` was vacuous for apps. The working fix branches on caller kind:
+  - app caller → allowed ONLY if in `IAM_KEY_MINT_ALLOWED_APPS` (env, comma-sep,
+    fail-secure empty). Set on the iam CR: `hanzo-console,lux-console,zoo-console,
+    pars-console`. A non-allowlisted app → 403.
+  - human caller → own id only, unless a REAL global-admin USER (checked via the
+    loaded User.IsGlobalAdmin()/IsAdmin, NOT the app-blanket IsAdmin()).
+VERIFIED live: hanzo-cloud (non-allowlisted) harvest → Unauthorized; end-user
+cross-user mint → Unauthorized; hanzo-console (allowlisted) → ok. GetSessionUsername
+is server-synthesized (currentUserId from verified client-creds/Bearer), not
+caller-injectable. KNOWN minor gap (unused by the feature): an end-user minting
+their OWN key via a raw Bearer token currently 403s (the console mints server-side
+as app/hanzo-console, which works) — Bearer self-mint path needs the token in
+GetTokenByAccessToken; out of scope for the UI flow.
