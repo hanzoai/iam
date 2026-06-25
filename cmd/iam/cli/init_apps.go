@@ -2,30 +2,21 @@
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 
-package main
+package cli
 
 import (
-	"flag"
 	"fmt"
-	"os"
+
+	"github.com/spf13/cobra"
 )
 
-// brandSpec is the canonical definition of one brand's desktop OAuth
-// client. brandSpecs (below) is the SINGLE source of truth — adding a brand
-// there is the only change needed to provision its desktop login (one way).
+// brandSpec is the canonical definition of one brand's desktop OAuth client.
+// brandSpecs (below) is the SINGLE source of truth — adding a brand there is
+// the only change needed to provision its desktop login (one way).
 type brandSpec struct {
 	Org         string // organization name, e.g. "hanzo"
-	DisplayName string // human label shown on the login page, e.g. "Hanzo"
+	DisplayName string // human label on the login page, e.g. "Hanzo"
 	AppName     string // application row name, e.g. "app-hanzo"
 	ClientID    string // stable, human-readable OAuth client_id
 	RedirectURI string // native deep-link callback the desktop registers
@@ -33,9 +24,9 @@ type brandSpec struct {
 }
 
 // brandSpecs enumerates every brand whose desktop app authenticates through
-// IAM. The ClientID values are the stable, human-readable ids the desktop
-// apps ship in brand-config (NOT server-generated) — keep them in lockstep
-// with libs/brand-config so "Login with <Brand>" resolves.
+// IAM. The ClientID values are the stable, human-readable ids the desktop apps
+// ship in brand-config (NOT server-generated) — keep them in lockstep with
+// libs/brand-config so "Login with <Brand>" resolves.
 var brandSpecs = []brandSpec{
 	{Org: "hanzo", DisplayName: "Hanzo", AppName: "app-hanzo", ClientID: "hanzo-app-client-id", RedirectURI: "hanzo://oauth/hanzo", Homepage: "https://hanzo.ai"},
 	{Org: "zoo", DisplayName: "Zoo", AppName: "app-zoo", ClientID: "zoo-app-client-id", RedirectURI: "zoo://oauth/zoo", Homepage: "https://zoo.ngo"},
@@ -66,7 +57,7 @@ type signinMethod struct {
 
 // appCreate is the subset of object.Application that init-apps POSTs to
 // /v1/iam/add-application. Providers stays empty on purpose — wire-providers
-// attaches GitHub + Google afterward (separation of concerns).
+// attaches the admin defaults afterward (separation of concerns).
 type appCreate struct {
 	Owner            string          `json:"owner"`
 	Name             string          `json:"name"`
@@ -138,37 +129,39 @@ func hasApp(apps []app, name string) bool {
 	return false
 }
 
+// newInitAppsCmd builds `iam init-apps`.
+func newInitAppsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "init-apps",
+		Short: "Reconcile per-brand orgs + desktop OAuth apps (hanzo/zoo/lux) into IAM",
+		Long: `Reconcile the per-brand orgs + desktop OAuth applications
+(hanzo/zoo/lux) into IAM: stable client_ids, deep-link redirect URIs, password
++ code signin. Idempotent — existing rows are left untouched; only missing ones
+are created.
+
+Run BEFORE init-providers / wire-providers so the apps exist for the providers
+to attach to. Environment is the same admin-app credential set as the other
+provisioning commands (IAM_ENDPOINT, IAM_CLIENT_ID, IAM_CLIENT_SECRET,
+IAM_ADMIN_ORG).`,
+		Args: cobra.NoArgs,
+	}
+	verbose := newProvisionVerboseFlag(cmd)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		cfg, err := loadProvEnv()
+		if err != nil {
+			return fmt.Errorf("init-apps: %w", err)
+		}
+		client := newProvClient(cfg)
+		return runInitApps(client, cfg, *verbose)
+	}
+	return cmd
+}
+
 // runInitApps reconciles the brand orgs + desktop login apps into IAM.
-//
-// Idempotent: existing orgs/apps are left untouched; only missing ones are
-// created. Run BEFORE init-providers/wire-providers so the apps exist for
-// GitHub/Google to attach to.
-//
-// Algorithm:
-//
-//  1. GET /v1/iam/get-organizations — which orgs already exist.
-//  2. For each brandSpec:
-//     a. POST /v1/iam/add-organization if its org is missing.
-//     b. GET /v1/iam/get-applications?organization=<org>; POST
-//     /v1/iam/add-application if its app (by name) is missing.
-func runInitApps(args []string) int {
-	fs := flag.NewFlagSet("init-apps", flag.ContinueOnError)
-	verbose := fs.Bool("v", false, "verbose logging")
-	if err := fs.Parse(args); err != nil {
-		return 1
-	}
-
-	cfg, err := loadEnv()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "iamctl init-apps:", err)
-		return 1
-	}
-	client := newClient(cfg)
-
+func runInitApps(client *provClient, cfg *provConfig, verbose bool) error {
 	orgs, err := listOrgs(client, cfg.AdminOrg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "iamctl init-apps: list orgs:", err)
-		return 2
+		return fmt.Errorf("init-apps: list orgs: %w", err)
 	}
 	orgSet := map[string]bool{}
 	for _, o := range orgs {
@@ -179,46 +172,43 @@ func runInitApps(args []string) int {
 	for _, b := range brandSpecs {
 		if !orgSet[b.Org] {
 			if err := addOrg(client, buildOrg(b)); err != nil {
-				fmt.Fprintf(os.Stderr, "iamctl init-apps: add org %s: %v\n", b.Org, err)
-				return 2
+				return fmt.Errorf("init-apps: add org %s: %w", b.Org, err)
 			}
 			orgSet[b.Org] = true
 			newOrgs++
-			if *verbose {
+			if verbose {
 				fmt.Printf("[org]  created %s\n", b.Org)
 			}
 		}
 
 		apps, err := listAppsForOrg(client, cfg.AdminOrg, b.Org)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "iamctl init-apps: list apps for %s: %v\n", b.Org, err)
-			return 2
+			return fmt.Errorf("init-apps: list apps for %s: %w", b.Org, err)
 		}
 		if hasApp(apps, b.AppName) {
 			haveApps++
-			if *verbose {
+			if verbose {
 				fmt.Printf("[skip] %s/%s — app already present\n", b.Org, b.AppName)
 			}
 			continue
 		}
 		if err := addApp(client, buildApp(b)); err != nil {
-			fmt.Fprintf(os.Stderr, "iamctl init-apps: add app %s: %v\n", b.AppName, err)
-			return 2
+			return fmt.Errorf("init-apps: add app %s: %w", b.AppName, err)
 		}
 		newApps++
-		if *verbose {
+		if verbose {
 			fmt.Printf("[app]  created %s/%s (clientId=%s)\n", b.Org, b.AppName, b.ClientID)
 		}
 	}
 
 	fmt.Printf("init-apps: orgs +%d, apps +%d, %d apps already present\n", newOrgs, newApps, haveApps)
-	return 0
+	return nil
 }
 
-func addOrg(c *iamClient, o *orgCreate) error {
+func addOrg(c *provClient, o *orgCreate) error {
 	return c.postJSON("/v1/iam/add-organization", nil, o, nil)
 }
 
-func addApp(c *iamClient, a *appCreate) error {
+func addApp(c *provClient, a *appCreate) error {
 	return c.postJSON("/v1/iam/add-application", nil, a, nil)
 }

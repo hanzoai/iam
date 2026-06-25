@@ -19,7 +19,7 @@ package object
 import "golang.org/x/sys/unix"
 
 // init disables core dumps (RLIMIT_CORE = 0) for any process that links this
-// package — iamd, iamctl, pg2sqlite. The master key, derived KEKs and unwrapped
+// package — iamd, iam, pg2sqlite. The master key, derived KEKs and unwrapped
 // DEKs transit process memory; a core dump would write them to disk in the
 // clear. Best-effort: a failure to set the limit must not stop the daemon
 // (containers usually disable cores anyway), so the error is intentionally

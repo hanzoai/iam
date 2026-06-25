@@ -140,5 +140,5 @@ secret exposure.
 2. PATCH the KMS secret (see Phase 2 runbook).
 3. Restart the IAM deployment (`kubectl rollout restart deploy/iam`) to
     pull the new value into the init-providers Job's env.
-4. Revoke the old secret only after `iamctl init-providers -v` reports
+4. Revoke the old secret only after `iam init-providers -v` reports
     `[upd ] provider-github` (or google) cleanly.

@@ -1,0 +1,184 @@
+# iam-provision-providers — the no-hardcode live fix for prod social/email/sms/
+# web3 login.
+#
+# Runs `iam init-providers && iam wire-providers` off the IAM image:
+#   1. init-providers upserts the admin-org provider rows (GitHub, Google, SMS,
+#      Email, Web3) from credentials read at RUNTIME from k8s Secrets / KMS —
+#      ZERO hardcoded creds in this manifest.
+#   2. wire-providers attaches those five admin-default providers to every
+#      real-org application (hanzo/lux/zoo/pars/…) so every brand inherits the
+#      ONE shared credential set.
+#
+# Both subcommands are idempotent: re-running after convergence is a no-op.
+#
+# AUTH MODEL. The provisioning subcommands authenticate to IAM with an admin
+# application's clientId/clientSecret (query-param S2S scheme). IAM's
+# auto-signin filter resolves a matching pair to user "app/<name>", which is
+# global-admin — exactly the privilege add/update-provider + update-application
+# require. We use the `hanzo-social` app:
+#   - IAM_CLIENT_ID     = "hanzo-social"  (from the `social` ConfigMap key
+#                          IAM_CLIENT_ID — infra/k8s/social/configmap.yaml)
+#   - IAM_CLIENT_SECRET = from the KMS-synced `social-secrets` Secret key
+#                          IAM_CLIENT_SECRET (infra/k8s/social/kms-secrets.yaml)
+#
+# SECRETS THIS JOB CONSUMES (verify these exist in ns hanzo before applying):
+#
+#   social-secrets        Secret  key IAM_CLIENT_SECRET  (KMSSecret social-kms-sync)
+#   social                ConfigMap key IAM_CLIENT_ID    (infra/k8s/social/configmap.yaml)
+#   github-oauth          Secret  keys CLIENT_ID, CLIENT_SECRET (KMSSecret github-oauth-kms-sync)
+#   google-oauth          Secret  keys CLIENT_ID, CLIENT_SECRET (OPTIONAL — Job
+#                                  skips Google if this Secret/keys are absent;
+#                                  init-providers is bootstrap-tolerant)
+#   iam-twilio            Secret  keys ACCOUNT_SID, AUTH_TOKEN, SENDER
+#                                  (KMSSecret iam-twilio-kms-sync — co-located below)
+#   iam-smtp              Secret  keys HOST, PORT, USER, PASS, FROM
+#                                  (KMSSecret iam-smtp-kms-sync — co-located below)
+#
+# Apply (operator, after review):
+#   kubectl apply -f manifests/iam-provision-providers-job.yaml
+#   kubectl -n hanzo wait --for=condition=complete --timeout=5m job/iam-provision-providers
+#   kubectl -n hanzo logs job/iam-provision-providers
+#
+# If a re-run is needed, delete the finished Job first (Jobs are immutable):
+#   kubectl -n hanzo delete job iam-provision-providers --ignore-not-found
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: iam-provision-providers
+  namespace: hanzo
+  labels:
+    app.kubernetes.io/name: iam
+    app.kubernetes.io/part-of: universe
+    app.kubernetes.io/component: iam-provisioning
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iam
+        app.kubernetes.io/part-of: universe
+        app.kubernetes.io/component: iam-provisioning
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: provision
+          # Same IAM image the daemon runs — it ships the `iam` CLI.
+          # Bump in lockstep with infra/k8s/operator/crs/iam-v1.yaml.
+          image: ghcr.io/hanzoai/iam:sha-a298046
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              echo "==> iam init-providers (admin-org defaults from KMS-sourced env)"
+              /iam init-providers -v
+              echo "==> iam wire-providers (attach defaults to every real-org app)"
+              /iam wire-providers -v
+              echo "==> provisioning complete"
+          env:
+            # ---- IAM endpoint + admin-app S2S credentials (NO hardcode) ----
+            # In-cluster IAM service. The canonical /v1/iam/* API listens on :80
+            # of the iam Service (containerPort 8000 → servicePort 80).
+            - name: IAM_ENDPOINT
+              value: "http://iam.hanzo.svc"
+            - name: IAM_ADMIN_ORG
+              value: "admin"
+            - name: IAM_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: social
+                  key: IAM_CLIENT_ID
+            - name: IAM_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: social-secrets
+                  key: IAM_CLIENT_SECRET
+            # ---- GitHub OAuth (required path; the live-login fix) ----
+            - name: GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: github-oauth
+                  key: CLIENT_ID
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: github-oauth
+                  key: CLIENT_SECRET
+            # ---- Google OAuth (OPTIONAL; bootstrap-tolerant skip if absent) ----
+            # `optional: true` lets the Job start even when the google-oauth
+            # Secret/keys do not exist yet; init-providers then skips Google.
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: google-oauth
+                  key: CLIENT_ID
+                  optional: true
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: google-oauth
+                  key: CLIENT_SECRET
+                  optional: true
+            # ---- Twilio SMS (KMS-synced; iam-twilio Secret) ----
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: iam-twilio
+                  key: ACCOUNT_SID
+                  optional: true
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: iam-twilio
+                  key: AUTH_TOKEN
+                  optional: true
+            - name: TWILIO_SENDER
+              valueFrom:
+                secretKeyRef:
+                  name: iam-twilio
+                  key: SENDER
+                  optional: true
+            # ---- SMTP email (KMS-synced; iam-smtp Secret) ----
+            - name: SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: iam-smtp
+                  key: HOST
+                  optional: true
+            - name: SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: iam-smtp
+                  key: PORT
+                  optional: true
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: iam-smtp
+                  key: USER
+                  optional: true
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: iam-smtp
+                  key: PASS
+                  optional: true
+            - name: SMTP_FROM
+              valueFrom:
+                secretKeyRef:
+                  name: iam-smtp
+                  key: FROM
+                  optional: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
