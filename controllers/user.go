@@ -504,15 +504,29 @@ func (c *ApiController) resolveTargetUserForKeys() (*object.User, bool) {
 		return nil, false
 	}
 
-	// Enforce the binding unless the caller is a global admin.
-	if !c.IsAdmin() {
-		callerIsTarget := caller == id
-		callerIsAllowedApp := false
-		if object.IsAppUser(caller) {
-			appName := strings.TrimPrefix(caller, "app/")
-			_, callerIsAllowedApp = keyMintAllowedApps()[appName]
+	// Authorization binding. NOTE: c.IsAdmin() / isGlobalAdmin() treat EVERY app
+	// principal as a global admin (controllers/base.go: `if IsAppUser(username)
+	// { return true }`) — so it CANNOT be used to gate apps here, or every
+	// confidential client would pass. We branch on the caller kind explicitly:
+	//
+	//   - app caller  → must be in IAM_KEY_MINT_ALLOWED_APPS (fail-secure). A
+	//     non-allowlisted app (kms, gateway, any SDK client) is rejected, which
+	//     closes the cross-tenant key-harvest the blanket Casbin `p, app, *…`
+	//     grant otherwise allows.
+	//   - human caller → allowed only on their OWN identity (caller == id),
+	//     UNLESS they are a real global-admin USER.
+	if object.IsAppUser(caller) {
+		appName := strings.TrimPrefix(caller, "app/")
+		if _, ok := keyMintAllowedApps()[appName]; !ok {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return nil, false
 		}
-		if !callerIsTarget && !callerIsAllowedApp {
+	} else {
+		realAdmin := false
+		if u, err := object.GetUser(caller); err == nil && u != nil {
+			realAdmin = u.IsGlobalAdmin() || u.IsAdmin
+		}
+		if caller != id && !realAdmin {
 			c.ResponseError(c.T("auth:Unauthorized operation"))
 			return nil, false
 		}
