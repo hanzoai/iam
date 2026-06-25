@@ -397,7 +397,7 @@ github.com/hanzoai/builder v0.3.13/go.mod h1:TWZaiP0Y9tCMwtLH2EvQqBAeT1f3aJI5Y0X
 github.com/hanzoai/iamsdk/v2 v2.1.0 h1:BuU3323zi6Jx7mgNo/wao4iuYoQsfviVgzRUNjmFduk=
 github.com/hanzoai/iamsdk/v2 v2.1.0/go.mod h1:oBI91+bAbrIt2MEPYuXUM6NinpjwcREz85sccdDkUY4=
 github.com/hanzoai/idv v1.0.2 h1:X+1p7Q6HG/+dXouuks3LH/sN0qqbiEY0fV7CAa1/q1k=
-github.com/hanzoai/idv v1.0.2/go.mod h1:Hd9GHe6GC8ln53qu6idP8oWAsLrEdZxw65bifCvskfg=
+github.com/hanzoai/idv v1.0.2/go.mod h1:oB3+04CkiQhNz+3tKnpBGUc1jr9BYc0EPJMJSKh4K8k=
 github.com/hanzoai/ldapserver v1.2.1 h1:H+AFuntREWo1n96cCUBnrzNeb07npTEUyvqXZRH4x20=
 github.com/hanzoai/ldapserver v1.2.1/go.mod h1:mPwAbPBw9YeXfC2hfg1QSAw6CiGt6o2oF2pi9VR+j3U=
 github.com/hanzoai/notify2 v1.6.3 h1:E0yE3mhwpCPLYAY7AAKJIzf+XL2yXcyxXD7/tK9giLs=
