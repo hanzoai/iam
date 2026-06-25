@@ -1,0 +1,38 @@
+# Canonical CI/CD config for hanzoai/iam — read by both the hanzoai/ci
+# reusable workflow (.github/workflows/cicd.yml) and platform.hanzo.ai
+# (webhook → BuildScheduler → arcd → operator rollout).
+#
+# This is the "one way" build+deploy contract: platform.hanzo.ai owns the
+# durable build_job system-of-record and the deploy decision; the build
+# muscle runs on our self-hosted arcd pool. Escapes GitHub Actions as a
+# single point of failure (the GHA billing-freeze / arc-wedge problem).
+#
+# The production image is the multi-stage root Dockerfile: it builds the web
+# frontend, the Go binaries (iamd/iam/iamctl/sqlite2enveloped), and enforces
+# the at-rest encryption gate at build time. Entrypoint is `/iamd serve`.
+images:
+  - name: iam
+    context: .
+    dockerfile: Dockerfile
+    repo: ghcr.io/hanzoai/iam
+
+# Deploy: roll the freshly-built image onto the IAM operator Service CR.
+# Fires only on `main` (and tags), and only when KMS hands back a kubeconfig —
+# so PRs and forks never deploy. IAM runs in the `hanzo` namespace on
+# do-sfo3-hanzo-k8s (operator hanzo.ai/v1 Service named `iam`, Base/SQLite
+# encrypted-at-rest backend).
+deploy:
+  cluster: do-sfo3-hanzo-k8s
+  namespace: hanzo
+  # Quoted to dodge YAML 1.1 boolean coercion of a bare `on:` key.
+  "on": [main]
+  services:
+    - name: iam
+      image: iam
+
+# KMS (kms.hanzo.ai, Universal Auth) supplies the GHCR push token and the
+# target kubeconfig at run time. Only KMS_CLIENT_ID / KMS_CLIENT_SECRET live in
+# GitHub (org-level secrets); KMS_WORKSPACE is a repo/org var.
+kms:
+  path: /deploy
+  environment: prod
