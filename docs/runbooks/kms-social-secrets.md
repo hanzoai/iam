@@ -31,7 +31,7 @@ IAM_GOOGLE_CLIENT_SECRET
 
 The `IAM_*` prefix isolates them from other env vars in the synced
 Secret. The init-providers Job below strips the prefix when handing
-values to `iamctl init-providers` (which reads `GITHUB_*`/`GOOGLE_*`).
+values to `iam init-providers` (which reads `GITHUB_*`/`GOOGLE_*`).
 
 > Previous draft of this runbook referenced workspace `credentials`
 > at `/iam/social/<env>/*`. That was wrong — `credentials` is reserved
@@ -109,7 +109,7 @@ Expect four entries per env: `IAM_GITHUB_CLIENT_ID`,
 
 ## KMSSecret CR — wire into the iam Deployment
 
-The Job that runs `iamctl init-providers` reads the values from the
+The Job that runs `iam init-providers` reads the values from the
 existing K8s Secret `iam-secrets` (already synced from KMS project
 `hanzo-iam`/`/` via `iam-kms-sync` KMSSecret CR — see
 `infra/k8s/iam/secret.yaml`). The deploy flow is:
@@ -126,7 +126,7 @@ Job env: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET,
          GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
         │
         ▼
-iamctl init-providers
+iam init-providers
         │
         ▼
 provider rows in admin org now have valid clientId+clientSecret
