@@ -2,17 +2,8 @@
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 
-package main
+package cli
 
 import "testing"
 
@@ -25,14 +16,13 @@ func TestProtectedOrgs(t *testing.T) {
 			t.Errorf("expected %q to be protected", name)
 		}
 	}
-	// Sanity: not all names protected.
 	if p["spamco42"] {
 		t.Error("non-protected name flagged as protected")
 	}
 }
 
-// TestNumericSuffixDetection checks the regex matches the canonical
-// spam pattern but not legitimate names.
+// TestNumericSuffixDetection checks the regex matches the canonical spam
+// pattern but not legitimate names.
 func TestNumericSuffixDetection(t *testing.T) {
 	cases := map[string]bool{
 		"hanzo42":   true,
@@ -59,7 +49,6 @@ func TestReservedWordCollisions(t *testing.T) {
 			t.Errorf("expected %q in reserved-word collisions", name)
 		}
 	}
-	// Confirm legitimate names are NOT in the list.
 	for _, name := range []string{"hanzo", "myorg"} {
 		if reservedWordCollisions[name] {
 			t.Errorf("unexpected: %q in reserved-word collisions", name)

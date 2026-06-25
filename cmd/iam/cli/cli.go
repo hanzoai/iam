@@ -66,6 +66,15 @@ docs/CLI.md for the full reference.`,
 		newAppCmd(cfg),
 		newUserCmd(cfg),
 		newOrgCmd(cfg),
+		// Provisioning subcommands. These run as one-shot Kubernetes Jobs
+		// reconciling IAM from KMS-sourced config and authenticate via the
+		// admin app's clientId/clientSecret (env: IAM_CLIENT_ID/SECRET,
+		// IAM_ENDPOINT, IAM_ADMIN_ORG) — NOT the --addr/--token flags above.
+		// See provclient.go for the two-auth-model rationale.
+		newInitAppsCmd(),
+		newInitProvidersCmd(),
+		newWireProvidersCmd(),
+		newCleanSpamOrgsCmd(),
 	)
 	return root
 }
