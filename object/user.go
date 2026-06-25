@@ -1602,7 +1602,25 @@ func AddUserKeys(user *User, isAdmin bool) (bool, error) {
 	user.AccessKey = "hk-" + util.GenerateId()
 	user.AccessSecret = "hk-" + util.GenerateId()
 
-	return UpdateUser(user.GetId(), user, []string{}, isAdmin)
+	// Column-scoped update so the write touches ONLY the access-key columns.
+	// This is load-bearing for self-serve minting on email-named users
+	// (name = "alice+tag@example.com"): an unscoped update re-runs the full
+	// column set and re-validates `name` against Casdoor's ReUserName regex,
+	// which forbids `+`/`@` → the mint would fail for every email-as-username
+	// tenant. Scoping to access_key/access_secret never touches `name`.
+	return UpdateUser(user.GetId(), user, []string{"access_key", "access_secret"}, isAdmin)
+}
+
+// RevokeUserKeys clears a user's per-user hk- AccessKey/AccessSecret (the
+// self-serve Cloud API key). Column-scoped for the same reason as AddUserKeys —
+// it must never re-validate the (possibly email-named) `name`.
+func RevokeUserKeys(user *User, isAdmin bool) (bool, error) {
+	if user == nil {
+		return false, fmt.Errorf("the user is not found")
+	}
+	user.AccessKey = ""
+	user.AccessSecret = ""
+	return UpdateUser(user.GetId(), user, []string{"access_key", "access_secret"}, isAdmin)
 }
 
 func (user *User) IsApplicationAdmin(application *Application) bool {

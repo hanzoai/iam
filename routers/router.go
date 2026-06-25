@@ -125,6 +125,8 @@ func InitAPI() {
 	web.Router("/v1/iam/get-user-count", &controllers.ApiController{}, "GET:GetUserCount")
 	web.Router("/v1/iam/get-user", &controllers.ApiController{}, "GET:GetUser")
 	web.Router("/v1/iam/update-user", &controllers.ApiController{}, "POST:UpdateUser")
+	web.Router("/v1/iam/mint-user-keys", &controllers.ApiController{}, "POST:MintUserKeys")
+	web.Router("/v1/iam/revoke-user-keys", &controllers.ApiController{}, "POST:RevokeUserKeys")
 	web.Router("/v1/iam/add-user", &controllers.ApiController{}, "POST:AddUser")
 	web.Router("/v1/iam/delete-user", &controllers.ApiController{}, "POST:DeleteUser")
 	web.Router("/v1/iam/upload-users", &controllers.ApiController{}, "POST:UploadUsers")
