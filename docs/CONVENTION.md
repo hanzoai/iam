@@ -139,7 +139,7 @@ are gone. The IAM server returns 404 for anything off the canonical surface.
 
 **One IAM image serves many hosts simultaneously.** The OIDC discovery
 doc, issuer claim, JWKS URL, authorize/token URLs are all rewritten
-per-request based on `X-Forwarded-Host` (set by the ingress / CF / Caddy
+per-request based on `X-Forwarded-Host` (set by the hanzoai/ingress + hanzoai/gateway
 in front of IAM). See `controllers/wellknown_oidc_discovery.go ::
 getEffectiveHost()`.
 
