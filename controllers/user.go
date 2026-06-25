@@ -401,12 +401,14 @@ func (c *ApiController) UpdateUser() {
 // @Description (re)generate the per-user hk- Cloud API key (User.AccessKey /
 //
 //	User.AccessSecret) for the target user and return the new accessKey. This is
-//	the self-serve minting primitive: a confidential client (e.g. the console,
-//	authenticated by clientId+clientSecret) calls it on behalf of its
-//	authenticated end-user. It is deliberately NOT routed under /add-*//update-*
-//	so the name-character FieldValidationFilter does not reject email-named users,
-//	and the object-layer mint (object.AddUserKeys) writes ONLY the two access-key
-//	columns, never re-validating the (possibly email-named) `name`.
+//	the self-serve minting primitive: an allowlisted confidential client (e.g.
+//	the console, authenticated by clientId+clientSecret) calls it on behalf of
+//	its authenticated end-user — authorization is enforced in
+//	resolveTargetUserForKeys (admin OR self OR IAM_KEY_MINT_ALLOWED_APPS). It is
+//	deliberately NOT routed under the add-/update- prefixes so the name-character
+//	FieldValidationFilter does not reject email-named users, and the object-layer
+//	mint (object.AddUserKeys) writes ONLY the two access-key columns, never
+//	re-validating the (possibly email-named) `name`.
 //
 // @Param   id    query   string  true  "The user ID (<org>/<name>)"
 // @Success 200 {object} controllers.Response The Response object
@@ -452,18 +454,68 @@ func (c *ApiController) RevokeUserKeys() {
 	c.ResponseOk(map[string]string{"owner": user.Owner, "name": user.Name})
 }
 
-// resolveTargetUserForKeys loads the user the key operation targets. The id is
-// taken from the `id` query param (<org>/<name>); when absent it falls back to
-// the authenticated session user. Returns (nil,false) — having already written
-// an error response — when the user can't be resolved.
+// keyMintAllowedApps returns the set of application names explicitly trusted to
+// mint/revoke ANY user's hk- key on behalf of that user (the per-tenant
+// isolation layer is enforced by the caller, e.g. the console's org-scoped tRPC
+// procedure). Sourced from IAM_KEY_MINT_ALLOWED_APPS (comma-separated). Empty =
+// fail-secure: NO app may mint for another user; only a global admin or the
+// target user acting on themselves can.
+func keyMintAllowedApps() map[string]struct{} {
+	set := map[string]struct{}{}
+	raw := conf.GetConfigString("IAM_KEY_MINT_ALLOWED_APPS")
+	for _, a := range strings.Split(raw, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			set[a] = struct{}{}
+		}
+	}
+	return set
+}
+
+// resolveTargetUserForKeys loads the user the key operation targets AND enforces
+// the caller→target authorization binding (the security boundary for the hk-
+// minting primitive). Without this, the blanket `p, app, *, *, *, *, *` Casbin
+// grant would let ANY confidential client mint a working billing key for ANY
+// user in ANY org. Authorization, in order:
+//
+//   - global admin: may act on any user.
+//   - the target user themselves (session/Bearer sub == target id): may act on
+//     their own key.
+//   - an allowlisted app (IAM_KEY_MINT_ALLOWED_APPS, e.g. hanzo-console): may act
+//     on any user — it is a trusted tenant-isolation layer that has already
+//     verified the end-user owns the target id.
+//
+// Any other caller (a non-allowlisted app, an anonymous request) → 403.
+// Returns (nil,false) — having written the error response — on any failure.
 func (c *ApiController) resolveTargetUserForKeys() (*object.User, bool) {
+	caller := c.GetSessionUsername()
+	if caller == "" {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return nil, false
+	}
+
 	id := c.Ctx.Input.Query("id")
 	if id == "" {
-		id = c.GetSessionUsername()
+		// No explicit target → operate on the caller's own identity (only valid
+		// for a real end-user caller, not an app principal).
+		id = caller
 	}
 	if id == "" || object.IsAppUser(id) {
 		c.ResponseError(c.T("general:Missing parameter"), "Missing parameter")
 		return nil, false
+	}
+
+	// Enforce the binding unless the caller is a global admin.
+	if !c.IsAdmin() {
+		callerIsTarget := caller == id
+		callerIsAllowedApp := false
+		if object.IsAppUser(caller) {
+			appName := strings.TrimPrefix(caller, "app/")
+			_, callerIsAllowedApp = keyMintAllowedApps()[appName]
+		}
+		if !callerIsTarget && !callerIsAllowedApp {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return nil, false
+		}
 	}
 
 	user, err := object.GetUser(id)
