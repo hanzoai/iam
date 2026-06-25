@@ -396,7 +396,7 @@ github.com/hanzoai/builder v0.3.13 h1:tAOJ+0Q0xrrovk7lkvaZxuKZ4lqENIB6tE0Rr9+6Bo
 github.com/hanzoai/builder v0.3.13/go.mod h1:TWZaiP0Y9tCMwtLH2EvQqBAeT1f3aJI5Y0XPM8S0wcE=
 github.com/hanzoai/iamsdk/v2 v2.1.0 h1:BuU3323zi6Jx7mgNo/wao4iuYoQsfviVgzRUNjmFduk=
 github.com/hanzoai/iamsdk/v2 v2.1.0/go.mod h1:oBI91+bAbrIt2MEPYuXUM6NinpjwcREz85sccdDkUY4=
-github.com/hanzoai/idv v1.0.2 h1:Pt3xmIqnchtfdenQk/xsxAK1VoDNC0v+nX/fV4BZ9tQ=
+github.com/hanzoai/idv v1.0.2 h1:X+1p7Q6HG/+dXouuks3LH/sN0qqbiEY0fV7CAa1/q1k=
 github.com/hanzoai/idv v1.0.2/go.mod h1:Hd9GHe6GC8ln53qu6idP8oWAsLrEdZxw65bifCvskfg=
 github.com/hanzoai/ldapserver v1.2.1 h1:H+AFuntREWo1n96cCUBnrzNeb07npTEUyvqXZRH4x20=
 github.com/hanzoai/ldapserver v1.2.1/go.mod h1:mPwAbPBw9YeXfC2hfg1QSAw6CiGt6o2oF2pi9VR+j3U=
@@ -532,7 +532,7 @@ github.com/luxfi/go-bip39 v1.1.2 h1:p+wLMPGs6MLQh7q0YIsmy2EhHL7LHiELEGTJko6t/Jg=
 github.com/luxfi/go-bip39 v1.1.2/go.mod h1:96de9VkR2kY/ASAnhMtvt3TSh+PZkAFAngNj0GjRGDo=
 github.com/luxfi/ids v1.2.15 h1:omE+E4+0Poj9DzM11ejSFgteaSQ3KDHi5g54iH6jcxI=
 github.com/luxfi/ids v1.2.15/go.mod h1:Fj73K5xcblvdE0SxU/ip+jE8VqNdu+80548su5KJ7xI=
-github.com/luxfi/keys v1.1.0 h1:D3s754vT+01G6TSdxkwb+skwsIqCgPuJizPypjzj78I=
+github.com/luxfi/keys v1.1.0 h1:/3mQflSCTMy/bTGbYXh2xJ+NhYDKRoBMimYpj2/d3XM=
 github.com/luxfi/keys v1.1.0/go.mod h1:U3tZNDmv3nXkPoZwLtq9RNjwyN0XyoN29worigfT+c0=
 github.com/luxfi/kms v1.11.6 h1:qLcPjurqr/GA2rC9PEDPfTNn6hEPsccuJy2gKLkqA/k=
 github.com/luxfi/kms v1.11.6/go.mod h1:XhLUVqN4RBv6j4Bj3MNgTZmHCnm74jH7RqqK0b9xbzw=
