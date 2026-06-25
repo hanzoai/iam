@@ -49,12 +49,19 @@ type app struct {
 	preserveRest map[string]interface{} `json:"-"`
 }
 
-// providersToWire is the canonical set of OAuth IdPs that every real-org
-// application should expose to users at signin. Order matters for the
-// rendered UI — keep GitHub first per CTO directive.
+// providersToWire is the canonical set of admin-org IdPs that every real-org
+// application inherits by default — one shared set of credentials (defined in
+// the admin org) reused across ALL brands (hanzo/lux/zoo/pars/…). A brand
+// overrides simply by adding its own provider to its app later; until then it
+// re-uses the admin defaults. Order matters for the rendered UI — keep GitHub
+// first per CTO directive. (Social = GitHub/Google OAuth; web3 = the multi-chain
+// SIWx login; email/sms = the shared verification providers.)
 var providersToWire = []string{
 	"provider-github",
 	"provider-google",
+	"provider-web3",
+	"provider-email",
+	"provider-sms",
 }
 
 // runWireProviders attaches providersToWire to every application in every
