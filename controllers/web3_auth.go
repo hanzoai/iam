@@ -153,9 +153,9 @@ func (c *ApiController) VerifyWeb3() {
 	// deeply-nested Cardano COSE blob whose decode can fatally overflow the Go
 	// stack — uncatchable by recover, taking down the IdP). Reject early, cheap.
 	const (
-		maxField   = 8 * 1024  // signature/message
-		maxKey     = 1024      // publicKey
-		maxAddress = 256       // address
+		maxField   = 8 * 1024 // signature/message
+		maxKey     = 1024     // publicKey
+		maxAddress = 256      // address
 	)
 	if len(f.Signature) > maxField || len(f.Message) > maxField ||
 		len(f.PublicKey) > maxKey || len(f.Address) > maxAddress {
