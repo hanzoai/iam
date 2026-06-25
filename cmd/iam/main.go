@@ -18,6 +18,14 @@
 //	iam org create <file.json>              Create an organization
 //	iam org delete <name>                   Delete an organization
 //
+// Provisioning subcommands (run as one-shot Kubernetes Jobs; authenticate via
+// the admin app's IAM_CLIENT_ID/IAM_CLIENT_SECRET + IAM_ENDPOINT, NOT --token):
+//
+//	iam init-apps                           Reconcile per-brand orgs + desktop apps
+//	iam init-providers                      Upsert admin-org OAuth/SMS/Email/Web3 providers
+//	iam wire-providers                      Attach admin providers to every real-org app
+//	iam clean-spam-orgs [--apply]           Prune spam orgs (dry-run by default)
+//
 // See docs/CLI.md for the full reference.
 package main
 
