@@ -153,11 +153,15 @@ type UserWithoutThirdIdp struct {
 
 type ClaimsShort struct {
 	*UserShort
-	TokenType string `json:"tokenType,omitempty"`
-	Nonce     string `json:"nonce,omitempty"`
-	Scope     string `json:"scope,omitempty"`
-	Azp       string `json:"azp,omitempty"`
-	Provider  string `json:"provider,omitempty"`
+	// Organization mirrors the embedded user's `owner` under the standard OIDC
+	// claim name. `owner` is the canonical org claim (gateway → X-Org-Id); this
+	// alias lets consumers read either, identically across every token format.
+	Organization string `json:"organization,omitempty"`
+	TokenType    string `json:"tokenType,omitempty"`
+	Nonce        string `json:"nonce,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+	Azp          string `json:"azp,omitempty"`
+	Provider     string `json:"provider,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -174,12 +178,14 @@ type OIDCAddress struct {
 
 type ClaimsWithoutThirdIdp struct {
 	*UserWithoutThirdIdp
-	TokenType string `json:"tokenType,omitempty"`
-	Nonce     string `json:"nonce,omitempty"`
-	Tag       string `json:"tag"`
-	Scope     string `json:"scope,omitempty"`
-	Azp       string `json:"azp,omitempty"`
-	Provider  string `json:"provider,omitempty"`
+	// Organization mirrors the embedded user's `owner` (see ClaimsShort).
+	Organization string `json:"organization,omitempty"`
+	TokenType    string `json:"tokenType,omitempty"`
+	Nonce        string `json:"nonce,omitempty"`
+	Tag          string `json:"tag"`
+	Scope        string `json:"scope,omitempty"`
+	Azp          string `json:"azp,omitempty"`
+	Provider     string `json:"provider,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -308,6 +314,7 @@ func getUserWithoutThirdIdp(user *User) *UserWithoutThirdIdp {
 func getShortClaims(claims Claims) ClaimsShort {
 	res := ClaimsShort{
 		UserShort:        getShortUser(claims.User),
+		Organization:     claims.User.Owner,
 		TokenType:        claims.TokenType,
 		Nonce:            claims.Nonce,
 		Scope:            claims.Scope,
@@ -322,6 +329,7 @@ func getShortClaims(claims Claims) ClaimsShort {
 func getClaimsWithoutThirdIdp(claims Claims) ClaimsWithoutThirdIdp {
 	res := ClaimsWithoutThirdIdp{
 		UserWithoutThirdIdp: getUserWithoutThirdIdp(claims.User),
+		Organization:        claims.User.Owner,
 		TokenType:           claims.TokenType,
 		Nonce:               claims.Nonce,
 		Tag:                 claims.Tag,
@@ -394,6 +402,18 @@ func getClaimsCustom(claims Claims, tokenField []string, tokenAttributes []*JwtI
 
 	// Always include tokenType (essential metadata)
 	res["tokenType"] = claims.TokenType
+
+	// Always include the org claim, independent of the application's selected
+	// token fields. `owner` is the canonical org/tenant claim that the gateway
+	// maps to X-Org-Id (2026-03-27 header convention) and that migrated clients
+	// read; `organization` mirrors it under the standard name. The other JWT
+	// formats (JWT/JWT-Empty/JWT-Standard) already carry `owner` via the
+	// embedded user struct — JWT-Custom only emits explicitly-selected fields,
+	// so the org would otherwise be dropped here.
+	if claims.User != nil {
+		res["owner"] = claims.User.Owner
+		res["organization"] = claims.User.Owner
+	}
 
 	// Always include azp if present (authorized party)
 	if claims.Azp != "" {
