@@ -259,9 +259,16 @@ type User struct {
 }
 
 type Userinfo struct {
-	Sub           string   `json:"sub"`
-	Iss           string   `json:"iss"`
-	Aud           string   `json:"aud"`
+	Sub string `json:"sub"`
+	Iss string `json:"iss"`
+	Aud string `json:"aud"`
+	// Owner is the tenant/org slug (the org the user belongs to). It is the
+	// canonical org claim across IAM's OIDC surface and JWTs — the gateway
+	// derives X-Org-Id from it (see the 2026-03-27 header convention), and
+	// migrated clients read it to scope tenancy. Organization mirrors it under
+	// the standard OIDC-friendly name so consumers can read either.
+	Owner         string   `json:"owner"`
+	Organization  string   `json:"organization,omitempty"`
 	Name          string   `json:"preferred_username,omitempty"`
 	DisplayName   string   `json:"name,omitempty"`
 	Email         string   `json:"email,omitempty"`
@@ -1382,6 +1389,11 @@ func GetUserInfo(user *User, scope string, aud string, host string) (*Userinfo, 
 		Sub: user.Id,
 		Iss: originBackend,
 		Aud: aud,
+		// Always emit the org claim, independent of the requested scopes, so a
+		// client reading `owner` (or `organization`) off userinfo always gets
+		// the real tenant rather than silently falling back to "default".
+		Owner:        user.Owner,
+		Organization: user.Owner,
 	}
 
 	if strings.Contains(scope, "profile") {

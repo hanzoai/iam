@@ -253,7 +253,7 @@ func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 		IntrospectionEndpointAuthMethodsSupported: authMethods,
 		RevocationEndpointAuthMethodsSupported:    authMethods,
 		CodeChallengeMethodsSupported:             []string{"S256"},
-		ClaimsSupported:                           []string{"iss", "ver", "sub", "aud", "iat", "exp", "id", "type", "displayName", "avatar", "permanentAvatar", "email", "phone", "location", "affiliation", "title", "homepage", "bio", "tag", "region", "language", "score", "ranking", "isOnline", "isAdmin", "isForbidden", "signupApplication", "ldap"},
+		ClaimsSupported:                           []string{"iss", "ver", "sub", "aud", "iat", "exp", "id", "type", "owner", "organization", "groups", "displayName", "avatar", "permanentAvatar", "email", "phone", "location", "affiliation", "title", "homepage", "bio", "tag", "region", "language", "score", "ranking", "isOnline", "isAdmin", "isForbidden", "signupApplication", "ldap"},
 		RequestParameterSupported:                 true,
 		RequestObjectSigningAlgValuesSupported:    []string{"HS256", "HS384", "HS512"},
 		EndSessionEndpoint:                        fmt.Sprintf("%s%s", originBackend, OidcPathEndSession),
