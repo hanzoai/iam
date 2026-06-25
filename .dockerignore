@@ -62,7 +62,6 @@ logs/
 # ── Deploy / infra (not part of build) ──
 deployment/
 k8s.yaml
-Caddyfile
 app-spec*.yaml
 compose*.yml
 scripts/
