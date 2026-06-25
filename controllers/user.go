@@ -395,6 +395,89 @@ func (c *ApiController) UpdateUser() {
 	c.ServeJSON()
 }
 
+// MintUserKeys
+// @Title MintUserKeys
+// @Tag User API
+// @Description (re)generate the per-user hk- Cloud API key (User.AccessKey /
+//
+//	User.AccessSecret) for the target user and return the new accessKey. This is
+//	the self-serve minting primitive: a confidential client (e.g. the console,
+//	authenticated by clientId+clientSecret) calls it on behalf of its
+//	authenticated end-user. It is deliberately NOT routed under /add-*//update-*
+//	so the name-character FieldValidationFilter does not reject email-named users,
+//	and the object-layer mint (object.AddUserKeys) writes ONLY the two access-key
+//	columns, never re-validating the (possibly email-named) `name`.
+//
+// @Param   id    query   string  true  "The user ID (<org>/<name>)"
+// @Success 200 {object} controllers.Response The Response object
+// @router /mint-user-keys [post]
+func (c *ApiController) MintUserKeys() {
+	user, ok := c.resolveTargetUserForKeys()
+	if !ok {
+		return
+	}
+
+	if _, err := object.AddUserKeys(user, c.IsAdmin()); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	// Return ONLY the public-facing accessKey (the hk- key the caller presents in
+	// `Authorization: Bearer hk-…`). The accessSecret stays server-side.
+	c.ResponseOk(map[string]string{
+		"owner":     user.Owner,
+		"name":      user.Name,
+		"accessKey": user.AccessKey,
+	})
+}
+
+// RevokeUserKeys
+// @Title RevokeUserKeys
+// @Tag User API
+// @Description clear the per-user hk- Cloud API key for the target user.
+// @Param   id    query   string  true  "The user ID (<org>/<name>)"
+// @Success 200 {object} controllers.Response The Response object
+// @router /revoke-user-keys [post]
+func (c *ApiController) RevokeUserKeys() {
+	user, ok := c.resolveTargetUserForKeys()
+	if !ok {
+		return
+	}
+
+	if _, err := object.RevokeUserKeys(user, c.IsAdmin()); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	c.ResponseOk(map[string]string{"owner": user.Owner, "name": user.Name})
+}
+
+// resolveTargetUserForKeys loads the user the key operation targets. The id is
+// taken from the `id` query param (<org>/<name>); when absent it falls back to
+// the authenticated session user. Returns (nil,false) — having already written
+// an error response — when the user can't be resolved.
+func (c *ApiController) resolveTargetUserForKeys() (*object.User, bool) {
+	id := c.Ctx.Input.Query("id")
+	if id == "" {
+		id = c.GetSessionUsername()
+	}
+	if id == "" || object.IsAppUser(id) {
+		c.ResponseError(c.T("general:Missing parameter"), "Missing parameter")
+		return nil, false
+	}
+
+	user, err := object.GetUser(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return nil, false
+	}
+	if user == nil {
+		c.ResponseError(fmt.Sprintf(c.T("general:The user: %s doesn't exist"), id))
+		return nil, false
+	}
+	return user, true
+}
+
 // AddUser
 // @Title AddUser
 // @Tag User API
