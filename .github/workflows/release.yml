@@ -104,6 +104,8 @@ jobs:
             ghcr.io/hanzoai/iam:latest
           build-args: |
             GO_EXPERIMENT=jsonv2
+          secrets: |
+            gh_token=${{ secrets.GH_PAT || secrets.UNIVERSE_PAT || secrets.GITHUB_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
