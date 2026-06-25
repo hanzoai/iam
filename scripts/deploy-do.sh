@@ -98,7 +98,6 @@ deploy_to_droplet() {
 
   # Copy configuration files
   scp -i "$ssh_key" "$PROJECT_DIR/compose.yml" "root@$DO_DROPLET_IP:/opt/hanzo/iam/"
-  scp -i "$ssh_key" "$PROJECT_DIR/Caddyfile" "root@$DO_DROPLET_IP:/opt/hanzo/iam/"
   scp -i "$ssh_key" "$PROJECT_DIR/init_data.json" "root@$DO_DROPLET_IP:/opt/hanzo/iam/"
 
   # Copy .env if it exists
