@@ -164,6 +164,13 @@ func (c *ApiController) requireProviderPermission(provider *object.Provider) boo
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-provider [post]
 func (c *ApiController) UpdateProvider() {
+	// Providers hold OAuth/SMS/email/Web3 client secrets; gate app/<name>
+	// mutation on IAM_PROVIDER_ADMIN_APPS (empty/deny-all). Boot seeding uses
+	// the in-process object layer, not this controller, so it is unaffected.
+	if !c.requireAppCapability(object.CapProviderAdmin) {
+		return
+	}
+
 	id := c.Ctx.Input.Query("id")
 
 	var provider object.Provider
@@ -190,6 +197,10 @@ func (c *ApiController) UpdateProvider() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-provider [post]
 func (c *ApiController) AddProvider() {
+	if !c.requireAppCapability(object.CapProviderAdmin) {
+		return
+	}
+
 	var provider object.Provider
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &provider)
 	if err != nil {
@@ -226,6 +237,10 @@ func (c *ApiController) AddProvider() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-provider [post]
 func (c *ApiController) DeleteProvider() {
+	if !c.requireAppCapability(object.CapProviderAdmin) {
+		return
+	}
+
 	var provider object.Provider
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &provider)
 	if err != nil {
