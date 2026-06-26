@@ -135,6 +135,13 @@ func (c *ApiController) GetToken() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-token [post]
 func (c *ApiController) UpdateToken() {
+	// Forging a Token row mints a bearer token out of band; gate app/<name>
+	// mutation on IAM_TOKEN_ADMIN_APPS (empty/deny-all). Normal token issuance
+	// via the OAuth grant endpoints is a different path and is unaffected.
+	if !c.requireAppCapability(object.CapTokenAdmin) {
+		return
+	}
+
 	id := c.Ctx.Input.Query("id")
 
 	var token object.Token
@@ -156,6 +163,10 @@ func (c *ApiController) UpdateToken() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-token [post]
 func (c *ApiController) AddToken() {
+	if !c.requireAppCapability(object.CapTokenAdmin) {
+		return
+	}
+
 	var token object.Token
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &token)
 	if err != nil {
@@ -175,6 +186,10 @@ func (c *ApiController) AddToken() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-token [post]
 func (c *ApiController) DeleteToken() {
+	if !c.requireAppCapability(object.CapTokenAdmin) {
+		return
+	}
+
 	var token object.Token
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &token)
 	if err != nil {
