@@ -17,11 +17,13 @@ package object
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
 
 	goldap "github.com/go-ldap/ldap/v3"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/cred"
 	"github.com/hanzoai/iam/form"
 	"github.com/hanzoai/iam/i18n"
@@ -223,6 +225,42 @@ func checkSigninErrorTimes(user *User, lang string) error {
 	return nil
 }
 
+// passwordMatches reports whether the plaintext password verifies against the
+// user's stored hash (or the org master password). It is PURE — no DB writes,
+// no signin-error/lockout accounting — so it serves both CheckPassword (which
+// layers the side effects on top) and org-agnostic collision resolution, which
+// must probe several candidate rows WITHOUT mutating any of them.
+func passwordMatches(user *User, password string, lang string) (bool, error) {
+	organization, err := GetOrganizationByUser(user)
+	if err != nil {
+		return false, err
+	}
+	if organization == nil {
+		return false, fmt.Errorf("%s", i18n.Translate(lang, "check:Organization does not exist"))
+	}
+
+	passwordType := user.PasswordType
+	if passwordType == "" {
+		passwordType = organization.PasswordType
+	}
+
+	credManager := cred.GetCredManager(passwordType)
+	if credManager == nil {
+		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "check:unsupported password type: %s"), passwordType))
+	}
+
+	if organization.MasterPassword != "" {
+		if credManager.IsPasswordCorrect(password, organization.MasterPassword, organization.PasswordSalt) {
+			return true, nil
+		}
+	}
+
+	if credManager.IsPasswordCorrect(password, user.Password, organization.PasswordSalt) {
+		return true, nil
+	}
+	return credManager.IsPasswordCorrect(password, user.Password, user.PasswordSalt), nil
+}
+
 func CheckPassword(user *User, password string, lang string, options ...bool) error {
 	if password == "" {
 		return fmt.Errorf("%s", i18n.Translate(lang, "check:Password cannot be empty"))
@@ -241,33 +279,11 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 		}
 	}
 
-	organization, err := GetOrganizationByUser(user)
+	ok, err := passwordMatches(user, password, lang)
 	if err != nil {
 		return err
 	}
-	if organization == nil {
-		return fmt.Errorf("%s", i18n.Translate(lang, "check:Organization does not exist"))
-	}
-
-	passwordType := user.PasswordType
-	if passwordType == "" {
-		passwordType = organization.PasswordType
-	}
-
-	credManager := cred.GetCredManager(passwordType)
-	if credManager == nil {
-		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "check:unsupported password type: %s"), passwordType))
-	}
-
-	if organization.MasterPassword != "" {
-		if credManager.IsPasswordCorrect(password, organization.MasterPassword, organization.PasswordSalt) {
-			return resetUserSigninErrorTimes(user)
-		}
-	}
-
-	matchOrgSalt := credManager.IsPasswordCorrect(password, user.Password, organization.PasswordSalt)
-	matchUserSalt := credManager.IsPasswordCorrect(password, user.Password, user.PasswordSalt)
-	if !matchOrgSalt && !matchUserSalt {
+	if !ok {
 		return recordSigninErrorInfo(user, lang, enableCaptcha)
 	}
 
@@ -405,7 +421,27 @@ func CheckUserPassword(organization string, username string, password string, la
 	} else {
 		err = CheckPassword(user, password, lang, enableCaptcha)
 		if err != nil {
-			return nil, err
+			// Org-agnostic login (organization omitted): the identity can
+			// exist in several orgs with DIFFERENT password hashes (e.g. a
+			// superuser present in both its home org and the global-admin
+			// org). GetUserByFields above resolves only the FIRST such row;
+			// if that row's password didn't verify, the matching hash may
+			// live in another org. Probe the other colliding rows and adopt
+			// the one whose password verifies, preferring the global-admin
+			// org so a global admin keeps their full multi-org session.
+			var alt *User
+			if organization == "" {
+				alt = findVerifyingCollisionRow(user, password, lang)
+			}
+			if alt == nil {
+				return nil, err
+			}
+			// Re-run the full check on the winning row so its lockout counter
+			// is reset and password-expiry is enforced consistently.
+			if e := CheckPassword(alt, password, lang, enableCaptcha); e != nil {
+				return nil, err
+			}
+			user = alt
 		}
 
 		err = checkPasswordExpired(user, lang)
@@ -415,6 +451,86 @@ func CheckUserPassword(organization string, username string, password string, la
 	}
 
 	return user, nil
+}
+
+// findVerifyingCollisionRow resolves an org-agnostic login when the identity
+// collides across organizations. `resolved` is the row the normal lookup
+// returned (whose password already failed). It gathers every OTHER row sharing
+// the same email/username and returns the one whose password verifies,
+// preferring the global-admin org (conf.AdminOrg) so global-admin sessions are
+// preserved. It performs no DB writes (uses the pure passwordMatches), so
+// probing wrong rows never trips their lockout counters. Returns nil when no
+// other colliding row authenticates.
+func findVerifyingCollisionRow(resolved *User, password string, lang string) *User {
+	if ormer.OrgDBManager == nil {
+		// orgIsolation=none: a single global engine already holds one row per
+		// identity, so there is nothing to disambiguate.
+		return nil
+	}
+
+	candidates := collectCollisionCandidates(resolved)
+	return selectVerifyingRow(resolved, candidates, func(u *User) bool {
+		ok, _ := passwordMatches(u, password, lang)
+		return ok
+	})
+}
+
+// selectVerifyingRow chooses, among colliding candidate rows, the one whose
+// password verifies — preferring the global-admin org (conf.AdminOrg) so a
+// global admin keeps their full multi-org session. `resolved` is skipped (its
+// password already failed), as are deleted/forbidden/LDAP/guest rows. It is
+// PURE: the DB + crypto work is injected via verify, so the ordering/preference
+// logic is unit-testable on its own. Returns nil when no candidate verifies.
+func selectVerifyingRow(resolved *User, candidates []*User, verify func(*User) bool) *User {
+	ordered := make([]*User, len(candidates))
+	copy(ordered, candidates)
+	// Prefer the global-admin org so a colliding global admin lands on their
+	// admin-org row (full session) rather than a single-org row.
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].Owner == conf.AdminOrg && ordered[j].Owner != conf.AdminOrg
+	})
+
+	for _, u := range ordered {
+		if u.Owner == resolved.Owner && u.Name == resolved.Name {
+			continue // already tried above
+		}
+		if u.IsDeleted || u.IsForbidden || u.Ldap != "" || u.Tag == "guest-user" {
+			continue
+		}
+		if verify(u) {
+			return u
+		}
+	}
+	return nil
+}
+
+// collectCollisionCandidates returns every user row across all orgs that shares
+// the resolved user's email (the stable identity) or username. Deduplicated by
+// (owner, name).
+func collectCollisionCandidates(resolved *User) []*User {
+	var out []*User
+	seen := map[string]bool{}
+	add := func(users []*User) {
+		for _, u := range users {
+			id := u.Owner + "/" + u.Name
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, u)
+			}
+		}
+	}
+
+	if resolved.Email != "" {
+		if users, err := GetUsersByFieldCrossOrg("email", strings.ToLower(resolved.Email)); err == nil {
+			add(users)
+		}
+	}
+	if resolved.Name != "" {
+		if users, err := GetUsersByFieldCrossOrg("name", resolved.Name); err == nil {
+			add(users)
+		}
+	}
+	return out
 }
 
 func CheckUserPermission(requestUserId, userId string, strict bool, lang string) (bool, error) {
