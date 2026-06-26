@@ -154,6 +154,13 @@ func (c *ApiController) GetKey() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-key [post]
 func (c *ApiController) UpdateKey() {
+	// An app/<name> credential may mutate Key objects only if allowlisted
+	// (IAM_KEY_ADMIN_APPS, empty/deny-all). The existing owner check below still
+	// governs human principals. (Distinct from hk- key minting — CapKeyMint.)
+	if !c.requireAppCapability(object.CapKeyAdmin) {
+		return
+	}
+
 	id := c.Ctx.Input.Query("id")
 
 	oldKey, err := object.GetKey(id)
@@ -191,6 +198,10 @@ func (c *ApiController) UpdateKey() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-key [post]
 func (c *ApiController) AddKey() {
+	if !c.requireAppCapability(object.CapKeyAdmin) {
+		return
+	}
+
 	var key object.Key
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &key)
 	if err != nil {
@@ -210,6 +221,10 @@ func (c *ApiController) AddKey() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-key [post]
 func (c *ApiController) DeleteKey() {
+	if !c.requireAppCapability(object.CapKeyAdmin) {
+		return
+	}
+
 	var key object.Key
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &key)
 	if err != nil {
