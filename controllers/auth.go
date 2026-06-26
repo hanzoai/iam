@@ -126,7 +126,22 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		// may include them in the JSON body instead — both should work.
 		clientId := c.Ctx.Input.Query("clientId")
 		if clientId == "" {
+			// OIDC standard snake_case (the SPA's social providerLogin sends
+			// `client_id` on the query, not camelCase `clientId`).
+			clientId = c.Ctx.Input.Query("client_id")
+		}
+		if clientId == "" {
 			clientId = form.ClientId
+		}
+		if clientId == "" && application != nil {
+			// Authoritative fallback: the application is already resolved (by
+			// clientId OR by name) before HandleLoggedIn — so the minted OAuth
+			// code MUST carry its real clientId. Without this, the social-login
+			// path (which sends neither camelCase query nor body clientId) mints
+			// a code with an empty client_id → the downstream token exchange
+			// does GetApplicationByClientId("") → "Invalid client_id". One
+			// source of truth: the resolved application.
+			clientId = application.ClientId
 		}
 		responseType := c.Ctx.Input.Query("responseType")
 		if responseType == "" {
