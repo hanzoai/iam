@@ -274,6 +274,14 @@ func (c *ApiController) GetUser() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-user [post]
 func (c *ApiController) UpdateUser() {
+	// An app/<name> credential may mutate another user's record (password,
+	// is_admin, owner, email, phone, type, balance, access_key, ...) ONLY if
+	// allowlisted for the user-admin capability (fail-secure). Humans keep the
+	// existing self / org-admin / global-admin authorization below.
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	id := c.Ctx.Input.Query("id")
 	userId := c.Ctx.Input.Query("userId")
 	owner := c.Ctx.Input.Query("owner")
@@ -395,6 +403,140 @@ func (c *ApiController) UpdateUser() {
 	c.ServeJSON()
 }
 
+// MintUserKeys
+// @Title MintUserKeys
+// @Tag User API
+// @Description (re)generate the per-user hk- Cloud API key (User.AccessKey /
+//
+//	User.AccessSecret) for the target user and return the new accessKey. This is
+//	the self-serve minting primitive: an allowlisted confidential client (e.g.
+//	the console, authenticated by clientId+clientSecret) calls it on behalf of
+//	its authenticated end-user — authorization is enforced in
+//	resolveTargetUserForKeys (admin OR self OR IAM_KEY_MINT_ALLOWED_APPS). It is
+//	deliberately NOT routed under the add-/update- prefixes so the name-character
+//	FieldValidationFilter does not reject email-named users, and the object-layer
+//	mint (object.AddUserKeys) writes ONLY the two access-key columns, never
+//	re-validating the (possibly email-named) `name`.
+//
+// @Param   id    query   string  true  "The user ID (<org>/<name>)"
+// @Success 200 {object} controllers.Response The Response object
+// @router /mint-user-keys [post]
+func (c *ApiController) MintUserKeys() {
+	user, ok := c.resolveTargetUserForKeys()
+	if !ok {
+		return
+	}
+
+	if _, err := object.AddUserKeys(user, c.IsAdmin()); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	// Return ONLY the public-facing accessKey (the hk- key the caller presents in
+	// `Authorization: Bearer hk-…`). The accessSecret stays server-side.
+	c.ResponseOk(map[string]string{
+		"owner":     user.Owner,
+		"name":      user.Name,
+		"accessKey": user.AccessKey,
+	})
+}
+
+// RevokeUserKeys
+// @Title RevokeUserKeys
+// @Tag User API
+// @Description clear the per-user hk- Cloud API key for the target user.
+// @Param   id    query   string  true  "The user ID (<org>/<name>)"
+// @Success 200 {object} controllers.Response The Response object
+// @router /revoke-user-keys [post]
+func (c *ApiController) RevokeUserKeys() {
+	user, ok := c.resolveTargetUserForKeys()
+	if !ok {
+		return
+	}
+
+	if _, err := object.RevokeUserKeys(user, c.IsAdmin()); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	c.ResponseOk(map[string]string{"owner": user.Owner, "name": user.Name})
+}
+
+// resolveTargetUserForKeys loads the user the key operation targets AND enforces
+// the caller→target authorization binding (the security boundary for the hk-
+// minting primitive). Without this, the blanket `p, app, *, *, *, *, *` Casbin
+// grant would let ANY confidential client mint a working billing key for ANY
+// user in ANY org. Authorization, in order:
+//
+//   - global admin: may act on any user.
+//   - the target user themselves (session/Bearer sub == target id): may act on
+//     their own key.
+//   - an allowlisted app (IAM_KEY_MINT_ALLOWED_APPS, e.g. hanzo-console): may act
+//     on any user — it is a trusted tenant-isolation layer that has already
+//     verified the end-user owns the target id.
+//
+// Any other caller (a non-allowlisted app, an anonymous request) → 403.
+// Returns (nil,false) — having written the error response — on any failure.
+func (c *ApiController) resolveTargetUserForKeys() (*object.User, bool) {
+	caller := c.GetSessionUsername()
+	if caller == "" {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return nil, false
+	}
+
+	id := c.Ctx.Input.Query("id")
+	if id == "" {
+		// No explicit target → operate on the caller's own identity (only valid
+		// for a real end-user caller, not an app principal).
+		id = caller
+	}
+	if id == "" || object.IsAppUser(id) {
+		c.ResponseError(c.T("general:Missing parameter"), "Missing parameter")
+		return nil, false
+	}
+
+	// Authorization binding. NOTE: c.IsAdmin() / isGlobalAdmin() treat EVERY app
+	// principal as a global admin (controllers/base.go: `if IsAppUser(username)
+	// { return true }`) — so it CANNOT be used to gate apps here, or every
+	// confidential client would pass. We branch on the caller kind explicitly:
+	//
+	//   - app caller  → must be in IAM_KEY_MINT_ALLOWED_APPS (fail-secure). A
+	//     non-allowlisted app (kms, gateway, any SDK client) is rejected, which
+	//     closes the cross-tenant key-harvest the blanket Casbin `p, app, *…`
+	//     grant otherwise allows.
+	//   - human caller → allowed only on their OWN identity (caller == id),
+	//     UNLESS they are a real global-admin USER.
+	if object.IsAppUser(caller) {
+		// Folded into the one app-capability helper (object.AppAllowedForCapability)
+		// so key-mint shares the same fail-secure IAM_KEY_MINT_ALLOWED_APPS
+		// allowlist mechanism as password/user/app mutations.
+		if !object.AppAllowedForCapability(caller, object.CapKeyMint) {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return nil, false
+		}
+	} else {
+		realAdmin := false
+		if u, err := object.GetUser(caller); err == nil && u != nil {
+			realAdmin = u.IsGlobalAdmin() || u.IsAdmin
+		}
+		if caller != id && !realAdmin {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return nil, false
+		}
+	}
+
+	user, err := object.GetUser(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return nil, false
+	}
+	if user == nil {
+		c.ResponseError(fmt.Sprintf(c.T("general:The user: %s doesn't exist"), id))
+		return nil, false
+	}
+	return user, true
+}
+
 // AddUser
 // @Title AddUser
 // @Tag User API
@@ -403,6 +545,14 @@ func (c *ApiController) UpdateUser() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-user [post]
 func (c *ApiController) AddUser() {
+	// An app/<name> credential may create users (incl. privileged ones, e.g.
+	// owner=admin == global admin) ONLY if allowlisted for the user-admin
+	// capability (fail-secure). Humans keep their existing authorization
+	// (Casbin + per-field checks); self-service registration uses /signup.
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	var user object.User
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &user)
 	if err != nil {
@@ -452,6 +602,14 @@ func (c *ApiController) AddUser() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-user [post]
 func (c *ApiController) DeleteUser() {
+	// An app/<name> credential may delete users ONLY if allowlisted for the
+	// user-admin capability (fail-secure). Humans keep their existing
+	// authorization (Casbin). This handler had no controller-level admin
+	// check, so the blanket app privilege was the only gate.
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	var user object.User
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &user)
 	if err != nil {
@@ -526,6 +684,15 @@ func (c *ApiController) GetEmailAndPhone() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /set-password [post]
 func (c *ApiController) SetPassword() {
+	// A confidential-client (app/<name>) principal is NOT a blanket global
+	// admin: resetting another user's password requires the password-admin
+	// capability allowlist (fail-secure). Humans are unaffected and remain
+	// gated below by CheckUserPermission (self / org-admin / global-admin) or
+	// the verification-code self-service path.
+	if !c.requireAppCapability(object.CapUserPasswordAdmin) {
+		return
+	}
+
 	userOwner := c.Ctx.Request.Form.Get("userOwner")
 	userName := c.Ctx.Request.Form.Get("userName")
 	oldPassword := c.Ctx.Request.Form.Get("oldPassword")
