@@ -81,6 +81,57 @@ var (
 	// app-capability checks share a single mechanism. Allowlist:
 	// IAM_KEY_MINT_ALLOWED_APPS.
 	CapKeyMint = AppAdminCapability{Name: "key-mint", EnvVar: "IAM_KEY_MINT_ALLOWED_APPS"}
+
+	// CapCertAdmin gates certificate mutations: add/update/delete-cert. This is
+	// the HIGHEST-severity surface — a Cert holds the JWT *signing* private key,
+	// so an app that could add/rotate/replace a cert could forge a token for any
+	// user in any org (full account takeover, org-wide). Allowlist:
+	// IAM_CERT_ADMIN_APPS. Deliberately EMPTY/unset in every environment
+	// (fail-secure deny-all): NO confidential client should ever touch signing
+	// material via an app credential — cert rotation is a real-global-admin USER
+	// (human, User.IsGlobalAdmin()) operation, and that human path is unaffected
+	// by this gate.
+	CapCertAdmin = AppAdminCapability{Name: "cert", EnvVar: "IAM_CERT_ADMIN_APPS"}
+
+	// CapKeyAdmin gates Key-object mutations: add/update/delete-key. (Distinct
+	// from CapKeyMint, which gates per-user hk- Cloud API key minting.) Allowlist:
+	// IAM_KEY_ADMIN_APPS (empty/unset = deny all).
+	CapKeyAdmin = AppAdminCapability{Name: "key", EnvVar: "IAM_KEY_ADMIN_APPS"}
+
+	// CapOrgAdmin gates organization mutations: add/update/delete-organization.
+	// Moving a user into the admin org == granting global admin, and deleting an
+	// org is destructive, so org mutation is gated. UNLIKE the other new caps
+	// this one is NOT empty by default: the brand consoles legitimately create
+	// orgs via their app credential during onboarding, so the deploy allowlists
+	// them (IAM_ORG_ADMIN_APPS=hanzo-console,lux-console,zoo-console,pars-console).
+	// Note: project mutation (add/update/delete-project) is a SEPARATE,
+	// un-gated surface — console onboarding's project creation is unaffected.
+	CapOrgAdmin = AppAdminCapability{Name: "organization", EnvVar: "IAM_ORG_ADMIN_APPS"}
+
+	// CapProviderAdmin gates provider mutations: add/update/delete-provider.
+	// Providers hold OAuth/SMS/email/Web3 client secrets; a rogue provider can
+	// redirect or intercept auth. Seeding at boot uses the in-process object
+	// layer (object/init.go, init_data.json), NOT this HTTP controller, so the
+	// deny-all default does not affect bootstrap. Allowlist: IAM_PROVIDER_ADMIN_APPS
+	// (empty/unset = deny all; the optional init-providers reconcile Job, if used,
+	// must be explicitly allowlisted here).
+	CapProviderAdmin = AppAdminCapability{Name: "provider", EnvVar: "IAM_PROVIDER_ADMIN_APPS"}
+
+	// CapSyncerAdmin gates syncer mutations: add/update/delete-syncer. A syncer
+	// has DB credentials and can read/write the user store on a schedule.
+	// Allowlist: IAM_SYNCER_ADMIN_APPS (empty/unset = deny all).
+	CapSyncerAdmin = AppAdminCapability{Name: "syncer", EnvVar: "IAM_SYNCER_ADMIN_APPS"}
+
+	// CapWebhookAdmin gates webhook mutations: add/update/delete-webhook. A
+	// webhook can exfiltrate auth events to an attacker-controlled endpoint.
+	// Allowlist: IAM_WEBHOOK_ADMIN_APPS (empty/unset = deny all).
+	CapWebhookAdmin = AppAdminCapability{Name: "webhook", EnvVar: "IAM_WEBHOOK_ADMIN_APPS"}
+
+	// CapTokenAdmin gates OAuth Token-object mutations: add/update/delete-token.
+	// Forging a Token row mints a bearer token out of band. Allowlist:
+	// IAM_TOKEN_ADMIN_APPS (empty/unset = deny all). (Normal token issuance via
+	// the OAuth grant endpoints is unaffected — this gates only the admin CRUD.)
+	CapTokenAdmin = AppAdminCapability{Name: "token", EnvVar: "IAM_TOKEN_ADMIN_APPS"}
 )
 
 // AppNameFromPrincipal returns the bare application name from an "app/<name>"
