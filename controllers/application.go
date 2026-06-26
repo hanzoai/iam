@@ -230,6 +230,14 @@ func (c *ApiController) GetOrganizationApplications() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-application [post]
 func (c *ApiController) UpdateApplication() {
+	// An app/<name> credential may mutate OAuth clients (incl. rotating
+	// another app's clientSecret — the escalation path into the capability
+	// allowlists) ONLY if allowlisted for the application-admin capability
+	// (fail-secure). Humans (org admins via console) are unaffected.
+	if !c.requireAppCapability(object.CapAppAdmin) {
+		return
+	}
+
 	id := c.Ctx.Input.Query("id")
 
 	var application object.Application
@@ -256,6 +264,10 @@ func (c *ApiController) UpdateApplication() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-application [post]
 func (c *ApiController) AddApplication() {
+	if !c.requireAppCapability(object.CapAppAdmin) {
+		return
+	}
+
 	var application object.Application
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &application)
 	if err != nil {
@@ -291,6 +303,10 @@ func (c *ApiController) AddApplication() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-application [post]
 func (c *ApiController) DeleteApplication() {
+	if !c.requireAppCapability(object.CapAppAdmin) {
+		return
+	}
+
 	var application object.Application
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &application)
 	if err != nil {

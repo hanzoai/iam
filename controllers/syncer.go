@@ -95,6 +95,12 @@ func (c *ApiController) GetSyncer() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-syncer [post]
 func (c *ApiController) UpdateSyncer() {
+	// A syncer carries DB credentials and reads/writes the user store on a
+	// schedule; gate app/<name> mutation on IAM_SYNCER_ADMIN_APPS (empty/deny-all).
+	if !c.requireAppCapability(object.CapSyncerAdmin) {
+		return
+	}
+
 	id := c.Ctx.Input.Query("id")
 
 	var syncer object.Syncer
@@ -116,6 +122,10 @@ func (c *ApiController) UpdateSyncer() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-syncer [post]
 func (c *ApiController) AddSyncer() {
+	if !c.requireAppCapability(object.CapSyncerAdmin) {
+		return
+	}
+
 	var syncer object.Syncer
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &syncer)
 	if err != nil {
@@ -135,6 +145,10 @@ func (c *ApiController) AddSyncer() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-syncer [post]
 func (c *ApiController) DeleteSyncer() {
+	if !c.requireAppCapability(object.CapSyncerAdmin) {
+		return
+	}
+
 	var syncer object.Syncer
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &syncer)
 	if err != nil {
