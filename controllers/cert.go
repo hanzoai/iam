@@ -133,6 +133,15 @@ func (c *ApiController) GetCert() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-cert [post]
 func (c *ApiController) UpdateCert() {
+	// A Cert holds the JWT signing private key. An app/<name> credential could
+	// otherwise add/rotate/replace a signing cert and forge a token for ANY
+	// user in ANY org. Gate on the cert capability (IAM_CERT_ADMIN_APPS,
+	// deliberately empty/deny-all). Real global-admin USERS (human principals)
+	// are unaffected and remain the only ones who may rotate certs.
+	if !c.requireAppCapability(object.CapCertAdmin) {
+		return
+	}
+
 	id := c.Ctx.Input.Query("id")
 
 	var cert object.Cert
@@ -154,6 +163,10 @@ func (c *ApiController) UpdateCert() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-cert [post]
 func (c *ApiController) AddCert() {
+	if !c.requireAppCapability(object.CapCertAdmin) {
+		return
+	}
+
 	var cert object.Cert
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &cert)
 	if err != nil {
@@ -173,6 +186,10 @@ func (c *ApiController) AddCert() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-cert [post]
 func (c *ApiController) DeleteCert() {
+	if !c.requireAppCapability(object.CapCertAdmin) {
+		return
+	}
+
 	var cert object.Cert
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &cert)
 	if err != nil {

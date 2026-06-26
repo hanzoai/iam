@@ -114,6 +114,13 @@ func (c *ApiController) GetOrganization() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-organization [post]
 func (c *ApiController) UpdateOrganization() {
+	// An app/<name> credential may mutate organizations only if allowlisted
+	// (IAM_ORG_ADMIN_APPS = the brand consoles, which create orgs during
+	// onboarding). Humans (org admins / real global admins) are unaffected.
+	if !c.requireAppCapability(object.CapOrgAdmin) {
+		return
+	}
+
 	id := c.Ctx.Input.Query("id")
 
 	var organization object.Organization
@@ -146,6 +153,10 @@ func (c *ApiController) UpdateOrganization() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-organization [post]
 func (c *ApiController) AddOrganization() {
+	if !c.requireAppCapability(object.CapOrgAdmin) {
+		return
+	}
+
 	var organization object.Organization
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &organization)
 	if err != nil {
@@ -185,6 +196,10 @@ func (c *ApiController) AddOrganization() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-organization [post]
 func (c *ApiController) DeleteOrganization() {
+	if !c.requireAppCapability(object.CapOrgAdmin) {
+		return
+	}
+
 	var organization object.Organization
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &organization)
 	if err != nil {
