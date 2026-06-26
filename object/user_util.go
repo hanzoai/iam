@@ -113,6 +113,60 @@ func GetUserByFieldCrossOrg(field string, value string) (*User, error) {
 	return nil, nil
 }
 
+// GetUsersByFieldCrossOrg returns ALL users matching field=value across every
+// organization — the global engine plus each per-org SQLite under
+// orgIsolation=sqlite. GetUserByFieldCrossOrg stops at the first match (fine for
+// a plain lookup); the auth layer needs the full colliding set so it can select
+// the row whose password verifies. Deduplicated by (owner, name).
+func GetUsersByFieldCrossOrg(field string, value string) ([]*User, error) {
+	if field == "" || value == "" {
+		return nil, nil
+	}
+
+	var users []*User
+	seen := map[string]bool{}
+	collect := func(rows []User) {
+		for i := range rows {
+			u := rows[i]
+			id := u.Owner + "/" + u.Name
+			if !seen[id] {
+				seen[id] = true
+				users = append(users, &u)
+			}
+		}
+	}
+
+	// Global engine: orgIsolation=none default + the global catalog under
+	// orgIsolation=sqlite.
+	var globalRows []User
+	if err := ormer.Engine.Where(fmt.Sprintf("%s=?", strings.ToLower(field)), value).Find(&globalRows); err != nil {
+		return nil, err
+	}
+	collect(globalRows)
+
+	if ormer.OrgDBManager == nil {
+		return users, nil
+	}
+
+	// orgIsolation=sqlite: walk each tenant DB.
+	owners, err := ormer.OrgDBManager.ListOrgs()
+	if err != nil {
+		return nil, err
+	}
+	for _, owner := range owners {
+		eng, err := ormer.OrgDBManager.GetEngine(owner)
+		if err != nil {
+			continue
+		}
+		var rows []User
+		if err := eng.Where(fmt.Sprintf("%s=?", strings.ToLower(field)), value).Find(&rows); err != nil {
+			return nil, err
+		}
+		collect(rows)
+	}
+	return users, nil
+}
+
 func HasUserByField(organizationName string, field string, value string) bool {
 	user, err := GetUserByField(organizationName, field, value)
 	if err != nil {
