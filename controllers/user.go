@@ -274,6 +274,14 @@ func (c *ApiController) GetUser() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /update-user [post]
 func (c *ApiController) UpdateUser() {
+	// An app/<name> credential may mutate another user's record (password,
+	// is_admin, owner, email, phone, type, balance, access_key, ...) ONLY if
+	// allowlisted for the user-admin capability (fail-secure). Humans keep the
+	// existing self / org-admin / global-admin authorization below.
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	id := c.Ctx.Input.Query("id")
 	userId := c.Ctx.Input.Query("userId")
 	owner := c.Ctx.Input.Query("owner")
@@ -454,23 +462,6 @@ func (c *ApiController) RevokeUserKeys() {
 	c.ResponseOk(map[string]string{"owner": user.Owner, "name": user.Name})
 }
 
-// keyMintAllowedApps returns the set of application names explicitly trusted to
-// mint/revoke ANY user's hk- key on behalf of that user (the per-tenant
-// isolation layer is enforced by the caller, e.g. the console's org-scoped tRPC
-// procedure). Sourced from IAM_KEY_MINT_ALLOWED_APPS (comma-separated). Empty =
-// fail-secure: NO app may mint for another user; only a global admin or the
-// target user acting on themselves can.
-func keyMintAllowedApps() map[string]struct{} {
-	set := map[string]struct{}{}
-	raw := conf.GetConfigString("IAM_KEY_MINT_ALLOWED_APPS")
-	for _, a := range strings.Split(raw, ",") {
-		if a = strings.TrimSpace(a); a != "" {
-			set[a] = struct{}{}
-		}
-	}
-	return set
-}
-
 // resolveTargetUserForKeys loads the user the key operation targets AND enforces
 // the caller→target authorization binding (the security boundary for the hk-
 // minting primitive). Without this, the blanket `p, app, *, *, *, *, *` Casbin
@@ -516,8 +507,10 @@ func (c *ApiController) resolveTargetUserForKeys() (*object.User, bool) {
 	//   - human caller → allowed only on their OWN identity (caller == id),
 	//     UNLESS they are a real global-admin USER.
 	if object.IsAppUser(caller) {
-		appName := strings.TrimPrefix(caller, "app/")
-		if _, ok := keyMintAllowedApps()[appName]; !ok {
+		// Folded into the one app-capability helper (object.AppAllowedForCapability)
+		// so key-mint shares the same fail-secure IAM_KEY_MINT_ALLOWED_APPS
+		// allowlist mechanism as password/user/app mutations.
+		if !object.AppAllowedForCapability(caller, object.CapKeyMint) {
 			c.ResponseError(c.T("auth:Unauthorized operation"))
 			return nil, false
 		}
@@ -552,6 +545,14 @@ func (c *ApiController) resolveTargetUserForKeys() (*object.User, bool) {
 // @Success 200 {object} controllers.Response The Response object
 // @router /add-user [post]
 func (c *ApiController) AddUser() {
+	// An app/<name> credential may create users (incl. privileged ones, e.g.
+	// owner=admin == global admin) ONLY if allowlisted for the user-admin
+	// capability (fail-secure). Humans keep their existing authorization
+	// (Casbin + per-field checks); self-service registration uses /signup.
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	var user object.User
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &user)
 	if err != nil {
@@ -601,6 +602,14 @@ func (c *ApiController) AddUser() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /delete-user [post]
 func (c *ApiController) DeleteUser() {
+	// An app/<name> credential may delete users ONLY if allowlisted for the
+	// user-admin capability (fail-secure). Humans keep their existing
+	// authorization (Casbin). This handler had no controller-level admin
+	// check, so the blanket app privilege was the only gate.
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	var user object.User
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &user)
 	if err != nil {
@@ -675,6 +684,15 @@ func (c *ApiController) GetEmailAndPhone() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /set-password [post]
 func (c *ApiController) SetPassword() {
+	// A confidential-client (app/<name>) principal is NOT a blanket global
+	// admin: resetting another user's password requires the password-admin
+	// capability allowlist (fail-secure). Humans are unaffected and remain
+	// gated below by CheckUserPermission (self / org-admin / global-admin) or
+	// the verification-code self-service path.
+	if !c.requireAppCapability(object.CapUserPasswordAdmin) {
+		return
+	}
+
 	userOwner := c.Ctx.Request.Form.Get("userOwner")
 	userName := c.Ctx.Request.Form.Get("userName")
 	oldPassword := c.Ctx.Request.Form.Get("oldPassword")
