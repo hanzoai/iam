@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/hanzoai/iam/cmd/iam/cli"
 	"github.com/hanzoai/iam/iamserver"
 )
 
@@ -23,6 +24,18 @@ func main() {
 
 	switch cmd {
 	case "serve":
+		// Convergent provisioning: when IAM_PROVISION_ON_BOOT is set, reconcile
+		// the per-brand desktop OAuth apps + social/email/sms providers against
+		// our own API as soon as it is serving. Idempotent and self-healing —
+		// every deploy re-converges with zero out-of-band kubectl/Jobs. Runs in
+		// the background so it cannot delay or block the server starting.
+		if cli.ProvisionOnBootEnabled() {
+			go func() {
+				if err := cli.ProvisionOnBoot(true); err != nil {
+					fmt.Fprintf(os.Stderr, "iamd: provision-on-boot: %v\n", err)
+				}
+			}()
+		}
 		iamserver.Run()
 	case "version":
 		fmt.Printf("iamd %s\n", version)
