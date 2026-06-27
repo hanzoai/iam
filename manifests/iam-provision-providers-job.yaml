@@ -1,7 +1,11 @@
 # iam-provision-providers — the no-hardcode live fix for prod social/email/sms/
 # web3 login.
 #
-# Runs `iam init-providers && iam wire-providers` off the IAM image:
+# Runs `iam init-apps && iam init-providers && iam wire-providers` off the IAM
+# image. init-apps MUST run first: it registers the per-brand desktop OAuth apps
+# (hanzo/zoo/lux -app-client-id) — without them get-app-login returns
+# "Invalid client_id", the desktop login page renders no providers, and
+# wire-providers has no apps to attach providers to. The init-apps step:
 #   1. init-providers upserts the admin-org provider rows (GitHub, Google, SMS,
 #      Email, Web3) from credentials read at RUNTIME from k8s Secrets / KMS —
 #      ZERO hardcoded creds in this manifest.
@@ -70,12 +74,14 @@ spec:
         - name: provision
           # Same IAM image the daemon runs — it ships the `iam` CLI.
           # Bump in lockstep with infra/k8s/operator/crs/iam-v1.yaml.
-          image: ghcr.io/hanzoai/iam:sha-a298046
+          image: ghcr.io/hanzoai/iam:v1.25.5-authz
           imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "-c"]
           args:
             - |
               set -eu
+              echo "==> iam init-apps (register the per-brand desktop OAuth apps)"
+              /iam init-apps -v
               echo "==> iam init-providers (admin-org defaults from KMS-sourced env)"
               /iam init-providers -v
               echo "==> iam wire-providers (attach defaults to every real-org app)"
