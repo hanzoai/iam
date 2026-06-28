@@ -227,3 +227,22 @@ func TestParseId(t *testing.T) {
 		})
 	}
 }
+
+// TestGenerateDeviceUserCode pins the RFC 8628 user_code security properties:
+// fixed length, an unambiguous alphabet (no I L O 0 1), and crypto-grade
+// uniqueness (a predictable code is a takeover vector).
+func TestGenerateDeviceUserCode(t *testing.T) {
+	const allowed = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	seen := make(map[string]struct{}, 4096)
+	for i := 0; i < 4096; i++ {
+		code, err := GenerateDeviceUserCode()
+		assert.Nil(t, err)
+		assert.Len(t, code, 8)
+		for _, r := range code {
+			assert.Contains(t, allowed, string(r), "user_code must use only the unambiguous alphabet")
+		}
+		_, dup := seen[code]
+		assert.False(t, dup, "user_code must not repeat within a small sample")
+		seen[code] = struct{}{}
+	}
+}
