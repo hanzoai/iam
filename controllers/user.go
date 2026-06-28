@@ -441,6 +441,71 @@ func (c *ApiController) MintUserKeys() {
 	})
 }
 
+// IssueUserToken
+// @Title IssueUserToken
+// @Tag User API
+// @Description Issue a short-lived, user-bound IAM JWT for a target user, to a
+//
+//	confidential trusted client (e.g. hanzo-console) that forwards it to a
+//	resource server (e.g. commerce) which derives the user's org from the
+//	verified `owner` claim. This is the SSR analogue of a browser presenting
+//	its own IAM token: a server-side app that holds only an identity REFERENCE
+//	(the session sub) — not a forwardable token — gets a per-user token to act
+//	on the user's behalf, so the resource server enforces tenant isolation
+//	server-side instead of trusting a shared, all-org service token.
+//
+// Authorization is IDENTICAL to MintUserKeys (resolveTargetUserForKeys): a
+// global admin, the target user themselves, or an app in
+// IAM_KEY_MINT_ALLOWED_APPS (CapKeyMint). Both primitives produce a credential
+// that bills the user's org, so they share ONE trust boundary — issuing a token
+// is no more privileged than minting that user's hk- key, which the same
+// callers already do.
+//
+// @Param   id    query   string  true   "The user ID (<org>/<name>)"
+// @Param   aud   query   string  false  "Explicit token audience (RFC 8707). Set to a value the resource server accepts; defaults to the minting app's clientId."
+// @Param   scope query   string  false  "OAuth scope (default: profile)"
+// @Success 200 {object} controllers.Response The Response object
+// @router /issue-user-token [post]
+func (c *ApiController) IssueUserToken() {
+	user, ok := c.resolveTargetUserForKeys()
+	if !ok {
+		return
+	}
+
+	audience := c.Ctx.Input.Query("aud")
+	scope := c.Ctx.Input.Query("scope")
+	if scope == "" {
+		scope = "profile"
+	}
+
+	application, err := object.GetApplicationByUser(user)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if application == nil {
+		c.ResponseError(fmt.Sprintf("the application for user %s is not found", user.Id))
+		return
+	}
+
+	token, err := object.GetUserTokenForAudience(application, user, audience, scope, c.getEffectiveHost())
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	// Return ONLY the access token + its lifetime. No refresh token: this is a
+	// short-lived, forward-and-discard credential — the caller re-issues from
+	// the user's session when it expires (fail-closed), never persists it.
+	c.ResponseOk(map[string]interface{}{
+		"owner":       user.Owner,
+		"name":        user.Name,
+		"accessToken": token.AccessToken,
+		"expiresIn":   token.ExpiresIn,
+		"tokenType":   "Bearer",
+	})
+}
+
 // RevokeUserKeys
 // @Title RevokeUserKeys
 // @Tag User API
