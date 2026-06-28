@@ -79,13 +79,21 @@ func getUsernameFromBearerToken(ctx *context.Context) string {
 // endpoints that authenticated users should be able to access without authz
 // evaluation. Mutation routes (add/update/delete) are NOT bypassed — they
 // must pass through the authz enforcer to prevent privilege escalation.
+//
+// SECURITY (Red H-5): the single-application read (get-application) is
+// DELIBERATELY excluded from this bypass. It returns one specific app keyed by
+// `id=<org>/<name>`, so bypassing authz let any authenticated user fetch
+// another org's application config cross-tenant. It now falls through to
+// authz.IsAllowed, which scopes by the object owner (own org or the admin org)
+// — a non-owner is denied. The plural/org reads stay bypassed: they are broad,
+// always masked (GetMaskedApplications), and needed for multi-tenant onboarding.
 func isOrgAppManagementRoute(method, urlPath string) bool {
 	if method != "GET" {
 		return false
 	}
 	switch urlPath {
 	case "/v1/iam/get-organizations", "/v1/iam/get-organization",
-		"/v1/iam/get-applications", "/v1/iam/get-application":
+		"/v1/iam/get-applications":
 		return true
 	}
 	return false
