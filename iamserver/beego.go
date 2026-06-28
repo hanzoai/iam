@@ -141,6 +141,7 @@ func Init() int {
 	web.InsertFilter("*", web.BeforeRouter, routers.AutoSigninFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.TimeoutFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.VerificationRateLimitFilter)
+	web.InsertFilter("*", web.BeforeRouter, routers.LoginRateLimitFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.ApiFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.PrometheusFilter)
 	web.InsertFilter("*", web.BeforeRouter, routers.RecordMessage)
