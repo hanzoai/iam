@@ -456,11 +456,11 @@ func CheckUserPassword(organization string, username string, password string, la
 // findVerifyingCollisionRow resolves an org-agnostic login when the identity
 // collides across organizations. `resolved` is the row the normal lookup
 // returned (whose password already failed). It gathers every OTHER row sharing
-// the same email/username and returns the one whose password verifies,
-// preferring the global-admin org (conf.AdminOrg) so global-admin sessions are
-// preserved. It performs no DB writes (uses the pure passwordMatches), so
-// probing wrong rows never trips their lockout counters. Returns nil when no
-// other colliding row authenticates.
+// the same email/username and returns the one whose password verifies, EXCLUDING
+// the global-admin org (conf.AdminOrg) so a tenant login can never silently
+// escalate to a global-admin session (Red H-3). It performs no DB writes (uses
+// the pure passwordMatches), so probing wrong rows never trips their lockout
+// counters. Returns nil when no other (non-admin) colliding row authenticates.
 func findVerifyingCollisionRow(resolved *User, password string, lang string) *User {
 	if ormer.OrgDBManager == nil {
 		// orgIsolation=none: a single global engine already holds one row per
@@ -476,18 +476,28 @@ func findVerifyingCollisionRow(resolved *User, password string, lang string) *Us
 }
 
 // selectVerifyingRow chooses, among colliding candidate rows, the one whose
-// password verifies — preferring the global-admin org (conf.AdminOrg) so a
-// global admin keeps their full multi-org session. `resolved` is skipped (its
-// password already failed), as are deleted/forbidden/LDAP/guest rows. It is
-// PURE: the DB + crypto work is injected via verify, so the ordering/preference
-// logic is unit-testable on its own. Returns nil when no candidate verifies.
+// password verifies. `resolved` is skipped (its password already failed), as
+// are deleted/forbidden/LDAP/guest rows. It is PURE: the DB + crypto work is
+// injected via verify, so the ordering logic is unit-testable on its own.
+// Returns nil when no usable candidate verifies.
+//
+// SECURITY (Red H-3): rows in the global-admin org (conf.AdminOrg) are NEVER
+// selected here. An org-agnostic password collision must not silently escalate
+// a tenant login to a full global-admin session; authenticating as global admin
+// requires an explicit organization == conf.AdminOrg (resolved by the within-org
+// primary lookup, never by this collision fallback). Counterpart of the
+// GetUserByFields cross-org admin-org exclusion (pickCrossOrgLoginUser).
 func selectVerifyingRow(resolved *User, candidates []*User, verify func(*User) bool) *User {
 	ordered := make([]*User, len(candidates))
 	copy(ordered, candidates)
-	// Prefer the global-admin org so a colliding global admin lands on their
-	// admin-org row (full session) rather than a single-org row.
+	// Deterministic order (by owner, then name) so a colliding identity resolves
+	// to the same tenant row every time, regardless of map/engine iteration
+	// order. No admin-org preference — see the security note above.
 	sort.SliceStable(ordered, func(i, j int) bool {
-		return ordered[i].Owner == conf.AdminOrg && ordered[j].Owner != conf.AdminOrg
+		if ordered[i].Owner != ordered[j].Owner {
+			return ordered[i].Owner < ordered[j].Owner
+		}
+		return ordered[i].Name < ordered[j].Name
 	})
 
 	for _, u := range ordered {
@@ -495,6 +505,10 @@ func selectVerifyingRow(resolved *User, candidates []*User, verify func(*User) b
 			continue // already tried above
 		}
 		if u.IsDeleted || u.IsForbidden || u.Ldap != "" || u.Tag == "guest-user" {
+			continue
+		}
+		// Never escalate an org-agnostic collision to the global-admin org.
+		if u.Owner == conf.AdminOrg {
 			continue
 		}
 		if verify(u) {

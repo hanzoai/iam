@@ -374,8 +374,9 @@ func (c *ApiController) UpdateUser() {
 	}
 
 	isAdmin := c.IsAdmin()
+	isGlobalAdmin := c.IsGlobalAdmin()
 	allowDisplayNameEmpty := c.Ctx.Input.Query("allowEmpty") != ""
-	if pass, err := object.CheckPermissionForUpdateUser(oldUser, &user, isAdmin, allowDisplayNameEmpty, c.GetAcceptLanguage()); !pass {
+	if pass, err := object.CheckPermissionForUpdateUser(oldUser, &user, isAdmin, isGlobalAdmin, allowDisplayNameEmpty, c.GetAcceptLanguage()); !pass {
 		c.ResponseError(err)
 		return
 	}
