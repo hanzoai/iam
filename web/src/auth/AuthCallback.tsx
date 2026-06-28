@@ -219,6 +219,17 @@ class AuthCallback extends React.Component {
 
   UNSAFE_componentWillMount() {
     const params = new URLSearchParams(this.props.location.search);
+
+    // GitHub App installation redirect (?installation_id=…&setup_action=install|update)
+    // is NOT an OIDC login — GitHub sends a `code` but no `state`/PKCE verifier, so the
+    // login path below would fail and render a cryptic error. Detect it first and show
+    // an install-success screen instead.
+    const setupAction = params.get("setup_action");
+    if (setupAction === "install" || setupAction === "update" || params.get("installation_id")) {
+      this.setState({install: {id: params.get("installation_id"), action: setupAction || "install"}});
+      return;
+    }
+
     const queryString = Util.getQueryParamsFromState(params.get("state"));
     const isSteam = params.get("openid.mode");
     let code = params.get("code");
@@ -350,6 +361,22 @@ class AuthCallback extends React.Component {
   }
 
   render() {
+    if (this.state.install) {
+      // GitHub App installation success — not a login, so render a friendly
+      // confirmation rather than the "signing in" spinner / error message.
+      return (
+        <div className="flex justify-center items-center">
+          <div className="flex flex-col items-center gap-3 pt-[10%] text-center">
+            <div className="text-5xl text-green-500">✓</div>
+            <span className="text-lg font-medium">App installed</span>
+            <span className="text-sm text-muted-foreground">
+              The GitHub App was installed successfully. You can close this tab.
+            </span>
+          </div>
+        </div>
+      );
+    }
+
     if (this.state.samlResponse !== "") {
       return <RedirectForm samlResponse={this.state.samlResponse} redirectUrl={this.state.redirectUrl} relayState={this.state.relayState} />;
     }
