@@ -16,10 +16,23 @@ package object
 
 import "testing"
 
-// prodFront mirrors the prod originFrontend CSV (hanzo.id is first).
+// prodFront / prodOrigin mirror the LIVE prod originFrontend / origin CSVs
+// (hanzo.id is first in both) — see the iam-conf ConfigMap. The brand-fold
+// allowlist is derived from BOTH, so the tests must use the real backend
+// (API) hosts (iam.hanzo.ai, id.lux.network, ...) too.
 var prodFront = []string{
 	"https://hanzo.id", "https://lux.id", "https://zoo.id", "https://zoolabs.id",
-	"https://pars.id", "https://osage.id", "https://id.ad.nexus", "https://id.bootno.de",
+	"https://www.zoolabs.id", "https://pars.id", "https://osage.id",
+	"https://www.osage.id", "https://id.ad.nexus", "https://id.bootno.de",
+}
+
+var prodOrigin = []string{
+	"https://hanzo.id", "https://hanzo.ai", "https://lux.id", "https://zoo.id",
+	"https://zoolabs.id", "https://www.zoolabs.id", "https://pars.id",
+	"https://osage.id", "https://www.osage.id", "https://id.ad.nexus",
+	"https://id.bootno.de", "https://id.hanzo.ai", "https://id.lux.network",
+	"https://id.zoo.network", "https://id.pars.network", "https://iam.hanzo.ai",
+	"https://auth.hanzo.ai", "https://auth.zoo.ngo", "https://auth.pars.ai",
 }
 
 // TestResolveCanonicalIssuer asserts every host of a brand maps to that brand's
@@ -46,22 +59,84 @@ func TestResolveCanonicalIssuer(t *testing.T) {
 		{"id.ad.nexus", "https://id.ad.nexus"},
 	}
 	for _, tc := range cases {
-		if got := resolveCanonicalIssuer(tc.host, prodFront, "https://"+originHostname(tc.host)); got != tc.want {
+		if got := resolveCanonicalIssuer(tc.host, prodFront, prodOrigin, "https://"+originHostname(tc.host)); got != tc.want {
 			t.Errorf("resolveCanonicalIssuer(%q) = %q, want %q", tc.host, got, tc.want)
 		}
 	}
 }
 
-// TestResolveCanonicalIssuerUnknownBrand: an unconfigured brand falls back to the
-// host-derived backend origin (no incorrect fold into hanzo).
+// TestResolveCanonicalIssuerUnknownBrand: an UNSERVED host must NEVER yield a
+// host-derived (attacker-influenceable) issuer — it falls back to the configured
+// primary login origin. With an empty front list there is nothing to fall back
+// to, so the host-derived backend is the only (and unavoidable) option.
 func TestResolveCanonicalIssuerUnknownBrand(t *testing.T) {
-	got := resolveCanonicalIssuer("iam.example.com", prodFront, "https://iam.example.com")
-	if got != "https://iam.example.com" {
-		t.Errorf("unknown brand = %q, want host-derived https://iam.example.com", got)
+	got := resolveCanonicalIssuer("iam.example.com", prodFront, prodOrigin, "https://iam.example.com")
+	if got != "https://hanzo.id" {
+		t.Errorf("unknown brand = %q, want safe default https://hanzo.id (never host-derived)", got)
 	}
-	// Empty front list -> always host-derived fallback.
-	if got := resolveCanonicalIssuer("iam.hanzo.ai", nil, "https://iam.hanzo.ai"); got != "https://iam.hanzo.ai" {
+	// Empty front list -> host-derived fallback (no configured default exists).
+	if got := resolveCanonicalIssuer("iam.hanzo.ai", nil, nil, "https://iam.hanzo.ai"); got != "https://iam.hanzo.ai" {
 		t.Errorf("empty frontList = %q, want fallback", got)
+	}
+}
+
+// TestResolveCanonicalIssuerHostCollisions locks the defense against host
+// look-alikes that share a brand's first label but are NOT served by IAM (the
+// brandLabel collision class). None may fold into a real brand issuer; each gets
+// the safe configured default. Un-exploitable today only because ingress strips
+// X-Forwarded-Host and the gateway pins iss — this makes it robust regardless.
+func TestResolveCanonicalIssuerHostCollisions(t *testing.T) {
+	const safe = "https://hanzo.id" // frontList[0], the configured primary
+	for _, host := range []string{
+		"hanzo.evil.com",        // brand label "hanzo", registrable evil.com
+		"hanzo.id.attacker.com", // registrable attacker.com (NOT hanzo.id)
+		"iam.hanzo.evil",        // strip iam. -> hanzo.evil, registrable hanzo.evil
+		"xn--hanzo-7b7c.id",     // punycode homoglyph, registrable xn--hanzo-7b7c.id
+		"lux.hanzo.ai",          // cross-brand label on a real (served) hanzo.ai domain
+	} {
+		got := resolveCanonicalIssuer(host, prodFront, prodOrigin, "https://"+originHostname(host))
+		if got != safe {
+			t.Errorf("collision host %q folded to %q, want safe default %q", host, got, safe)
+		}
+	}
+}
+
+func TestRegistrableDomain(t *testing.T) {
+	cases := map[string]string{
+		"iam.hanzo.ai":          "hanzo.ai",
+		"hanzo.id":              "hanzo.id",
+		"id.lux.network":        "lux.network",
+		"https://auth.pars.ai":  "pars.ai",
+		"hanzo.id.attacker.com": "attacker.com",
+		"localhost":             "localhost",
+		"iam.hanzo.ai:443":      "hanzo.ai",
+	}
+	for host, want := range cases {
+		if got := registrableDomain(host); got != want {
+			t.Errorf("registrableDomain(%q) = %q, want %q", host, got, want)
+		}
+	}
+}
+
+// TestIsServedHostAllowlist pins the X-Forwarded-Host / host-trust allowlist.
+func TestIsServedHostAllowlist(t *testing.T) {
+	served := append(append([]string{}, prodFront...), prodOrigin...)
+	for _, rd := range []string{"hanzo.ai", "hanzo.id", "lux.network", "zoo.ngo", "pars.ai", "ad.nexus"} {
+		if !isServedRegistrable(rd, served) {
+			t.Errorf("isServedRegistrable(%q) = false, want true", rd)
+		}
+	}
+	for _, rd := range []string{"evil.com", "attacker.com", "hanzo.evil", ""} {
+		if isServedRegistrable(rd, served) {
+			t.Errorf("isServedRegistrable(%q) = true, want false", rd)
+		}
+	}
+	// brandServesRegistrable binds a brand label to its configured domains.
+	if !brandServesRegistrable("hanzo", "hanzo.ai", served) {
+		t.Error("brandServesRegistrable(hanzo, hanzo.ai) = false, want true")
+	}
+	if brandServesRegistrable("lux", "hanzo.ai", served) {
+		t.Error("brandServesRegistrable(lux, hanzo.ai) = true, want false (cross-brand)")
 	}
 }
 

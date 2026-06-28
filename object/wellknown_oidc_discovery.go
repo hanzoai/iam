@@ -155,6 +155,80 @@ func brandLabel(host string) string {
 	return h
 }
 
+// registrableDomain returns the last two dot-labels of a hostname — its
+// registrable domain under a single-label public suffix, which is ALL the Hanzo
+// brands use (.ai/.id/.network/.ngo/.nexus/.de). "iam.hanzo.ai" -> "hanzo.ai",
+// "hanzo.id" -> "hanzo.id", "localhost" -> "localhost". It exists solely to gate
+// brand folding to hosts IAM is actually configured to serve, so a look-alike
+// such as "hanzo.id.attacker.com" (registrable "attacker.com") or
+// "iam.hanzo.evil" (registrable "hanzo.evil") can never fold into a real brand's
+// canonical issuer.
+func registrableDomain(host string) string {
+	h := originHostname(host)
+	labels := strings.Split(h, ".")
+	if len(labels) <= 2 {
+		return h
+	}
+	return strings.Join(labels[len(labels)-2:], ".")
+}
+
+// brandServesRegistrable reports whether brand label `want` is configured on the
+// registrable domain `rd` among the served origins — the EXPLICIT allowlist for
+// brand folding. A host folds to a brand only if BOTH its brand label and its
+// registrable domain were configured together (so a cross-brand label on a real
+// domain, e.g. "lux.hanzo.ai", does not fold into the lux issuer).
+func brandServesRegistrable(want, rd string, served []string) bool {
+	if want == "" || rd == "" {
+		return false
+	}
+	for _, o := range served {
+		if brandLabel(o) == want && registrableDomain(o) == rd {
+			return true
+		}
+	}
+	return false
+}
+
+// isServedRegistrable reports whether `rd` is the registrable domain of any
+// served origin (origin ∪ originFrontend). Used to decide whether a host is one
+// IAM knows about at all.
+func isServedRegistrable(rd string, served []string) bool {
+	if rd == "" {
+		return false
+	}
+	for _, o := range served {
+		if registrableDomain(o) == rd {
+			return true
+		}
+	}
+	return false
+}
+
+// servedOrigins is the full set of origins IAM is configured to serve —
+// origin (API/backend hosts) ∪ originFrontend (login origins). It is the
+// authoritative allowlist for host-derived trust decisions.
+func servedOrigins() []string {
+	out := SplitOriginList(conf.GetConfigString("origin"))
+	return append(out, SplitOriginList(conf.GetConfigString("originFrontend"))...)
+}
+
+// IsServedHost reports whether `host` belongs to a domain IAM is configured to
+// serve. When no allowlist is configured (e.g. local dev) it returns true so
+// behavior is unchanged. Used to reject an attacker-supplied X-Forwarded-Host.
+func IsServedHost(host string) bool {
+	served := servedOrigins()
+	if len(served) == 0 {
+		return true
+	}
+	hostOnly := originHostname(host)
+	for _, o := range served {
+		if strings.EqualFold(originHostname(o), hostOnly) {
+			return true
+		}
+	}
+	return isServedRegistrable(registrableDomain(hostOnly), served)
+}
+
 // canonicalIssuer resolves the ONE canonical token issuer for the brand serving
 // `host`. The JWT `iss`, the OIDC discovery issuer, and OAuth audience checks all
 // use it so a brand's issuer is STABLE regardless of which host minted the token
@@ -169,14 +243,15 @@ func brandLabel(host string) string {
 func canonicalIssuer(host string) string {
 	_, originBackend := getOriginFromHost(host)
 	frontList := SplitOriginList(conf.GetConfigString("originFrontend"))
-	return resolveCanonicalIssuer(host, frontList, originBackend)
+	originList := SplitOriginList(conf.GetConfigString("origin"))
+	return resolveCanonicalIssuer(host, frontList, originList, originBackend)
 }
 
 // resolveCanonicalIssuer is the pure core of canonicalIssuer (no config lookup,
 // so it is unit-testable): given the request host, the configured per-brand login
 // origins, and the host-derived backend fallback, it returns the brand's
 // canonical issuer.
-func resolveCanonicalIssuer(host string, frontList []string, originBackend string) string {
+func resolveCanonicalIssuer(host string, frontList, originList []string, originBackend string) string {
 	if len(frontList) == 0 {
 		return originBackend
 	}
@@ -187,16 +262,32 @@ func resolveCanonicalIssuer(host string, frontList []string, originBackend strin
 			return o
 		}
 	}
-	// Brand-label match: fold iam.hanzo.ai / id.hanzo.ai / hanzo.ai -> hanzo.id.
-	if want := brandLabel(host); want != "" {
+	// Brand-label fold (iam.hanzo.ai / id.hanzo.ai / hanzo.ai -> hanzo.id) — but
+	// ONLY through the EXPLICIT allowlist: the host's brand label AND registrable
+	// domain must have been configured TOGETHER on a served origin. This stops a
+	// look-alike host (hanzo.evil.com, hanzo.id.attacker.com, iam.hanzo.evil,
+	// a punycode homoglyph) or a cross-brand label on a real domain
+	// (lux.hanzo.ai) from folding into another brand's canonical issuer.
+	served := append(append([]string{}, frontList...), originList...)
+	if want := brandLabel(hostOnly); brandServesRegistrable(want, registrableDomain(hostOnly), served) {
 		for _, o := range frontList {
 			if brandLabel(o) == want {
 				return o
 			}
 		}
 	}
-	// Unknown brand: preserve the host-derived behavior (no cross-brand leak).
-	return originBackend
+	// No brand fold. Only a host that EXACTLY matches a configured origin keeps its
+	// own (configured, non-attacker) origin as the issuer. Any other host — an
+	// unconfigured subdomain of a served domain (lux.hanzo.ai), or a wholly
+	// foreign host — must NEVER echo an attacker-influenced host-derived issuer;
+	// it falls back to the configured primary login origin. Downstream pins `iss`,
+	// so this fixed default fails closed.
+	for _, o := range served {
+		if strings.EqualFold(originHostname(o), hostOnly) {
+			return originBackend
+		}
+	}
+	return frontList[0]
 }
 
 func getOriginFromHostInternal(host string) (string, string) {
