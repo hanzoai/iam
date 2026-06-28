@@ -333,6 +333,9 @@ const (
 	OidcPathToken         = "/v1/iam/oauth/token"
 	OidcPathUserinfo      = "/v1/iam/oauth/userinfo"
 	OidcPathDevice        = "/v1/iam/oauth/device"
+	// User-facing device-approval page (the SPA route), NOT the API path. RFC 8628
+	// verification_uri must be a page a human opens, not the token-API endpoint.
+	OidcPathDeviceVerify = "/login/oauth/device"
 	OidcPathRegister      = "/v1/iam/oauth/register"
 	OidcPathIntrospect    = "/v1/iam/oauth/introspect"
 	OidcPathRevoke        = "/v1/iam/oauth/revoke"
@@ -557,16 +560,19 @@ func GetWebFinger(resource string, rels []string, host string, applicationName s
 func GetDeviceAuthResponse(deviceCode string, userCode string, host string) DeviceAuthResponse {
 	originFrontend, _ := getOriginFromHost(host)
 
-	// The verification URI already embeds the user_code, so it doubles as the
-	// RFC 8628 `verification_uri_complete` (one-click approval — what the `dev`
-	// CLI and IDE plugins render as a clickable link on a headless box).
-	verificationUri := fmt.Sprintf("%s%s/%s", originFrontend, OidcPathDevice, userCode)
+	// verification_uri is the user-facing SPA approval page (a human opens it and
+	// signs in); verification_uri_complete is the same page with the user_code
+	// prefilled for one-click approval — what the `dev` CLI / IDE plugins render
+	// as a clickable link on a headless box. Both point at the SPA page, NOT the
+	// token API (which returns JSON and cannot be approved in a browser).
+	verificationUri := fmt.Sprintf("%s%s", originFrontend, OidcPathDeviceVerify)
+	verificationUriComplete := fmt.Sprintf("%s%s?user_code=%s", originFrontend, OidcPathDeviceVerify, userCode)
 
 	return DeviceAuthResponse{
 		DeviceCode:              deviceCode,
 		UserCode:                userCode,
 		VerificationUri:         verificationUri,
-		VerificationUriComplete: verificationUri,
+		VerificationUriComplete: verificationUriComplete,
 		ExpiresIn:               DeviceCodeExpirySeconds,
 		Interval:                DeviceCodePollInterval,
 	}
