@@ -76,8 +76,15 @@ func (c *ApiController) IsAdminOrSelf(user2 *object.User) bool {
 func (c *ApiController) isGlobalAdmin() (bool, *object.User) {
 	username := c.GetSessionUsername()
 	if object.IsAppUser(username) {
-		// e.g., "app/app-casnode"
-		return true, nil
+		// SECURITY (Red R-1): an app/<name> (M2M client_credentials) principal is
+		// NOT a global admin. It has no User row; its authority is granted per
+		// capability (object.AppAllowedForCapability) for mutations and via
+		// explicit cross-org read permission (object.CheckUserPermission) for
+		// reads. Returning false makes the H-4 privileged-field wall
+		// (CheckPermissionForUpdateUser) deny owner/is_admin mutation by an app
+		// and the get-application/get-user responses fall to the masked,
+		// non-admin view for app callers.
+		return false, nil
 	}
 
 	user := c.getCurrentUser()

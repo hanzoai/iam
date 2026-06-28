@@ -147,7 +147,11 @@ func (c *ApiController) requireProviderPermission(provider *object.Provider) boo
 		return true
 	}
 
-	if provider.Owner == "admin" || user.Owner != provider.Owner {
+	// Red R-1: an app/<name> principal is no longer a global admin and has no
+	// User row (user == nil). Fail secure — deny here. (App provider mutation is
+	// already deny-all by default via CapProviderAdmin, which gates before this;
+	// this is the defense-in-depth guard against a nil dereference.)
+	if user == nil || provider.Owner == "admin" || user.Owner != provider.Owner {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return false
 	}
