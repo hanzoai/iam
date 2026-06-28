@@ -47,3 +47,19 @@ subcommands. See provclient.go for the rationale.`,
 	}
 	return cmd
 }
+
+// runInitApps bridges the on-boot reconciler (provision_boot.go) to the
+// brand-neutral provision package. The legacy client/cfg handles the boot loop
+// builds are unused here (the provision package loads its own IAM_* env); they
+// are accepted only to satisfy the existing boot call signature — one app path.
+func runInitApps(_ *provClient, _ *provConfig, verbose bool) error {
+	res, err := provision.RunFromEnv(verbose)
+	if err != nil {
+		return err
+	}
+	if verbose {
+		fmt.Printf("init-apps: orgs +%d, apps +%d, %d present\n",
+			res.OrgsCreated, res.AppsCreated, res.AppsPresent)
+	}
+	return nil
+}
