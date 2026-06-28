@@ -15,7 +15,7 @@ FROM golang:1.26 AS back
 WORKDIR /go/src/hanzo-iam
 
 ARG GITHUB_TOKEN
-ENV GOPRIVATE=github.com/hanzoai/*,github.com/luxfi/*
+# No GOPRIVATE — public modules resolve via the immutable public proxy + sumdb.
 RUN git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
 
 COPY go.mod go.sum ./
