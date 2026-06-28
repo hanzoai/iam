@@ -28,7 +28,6 @@ import (
 	"github.com/hanzoai/iam/controllers"
 	"github.com/hanzoai/iam/ldap"
 	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/provision"
 	"github.com/hanzoai/iam/proxy"
 	"github.com/hanzoai/iam/radius"
 	"github.com/hanzoai/iam/routers"
@@ -180,12 +179,9 @@ func Init() int {
 	go radius.StartRadiusServer()
 	go object.ClearThroughputPerSecond()
 
-	// Convergent provisioning: when IAM_PROVISION_ON_BOOT is set, reconcile the
-	// declarative org/app document at IAM_PROVISION_CONFIG against this server's
-	// own API once it is healthy. Idempotent, best-effort and a no-op when no
-	// config is mounted — never blocks serving. The reconcile mechanism is
-	// brand-neutral; the apps are operator data. See package provision.
-	go provision.ProvisionOnBoot()
+	// Convergent provisioning runs from cmd/iamd/main.go (cli.ProvisionOnBoot — a
+	// background goroutine reconciling apps via the brand-neutral provision package
+	// AND the social/email/sms providers). Single boot path; intentionally not here.
 
 	if len(object.SiteMap) != 0 {
 		service.Start()
