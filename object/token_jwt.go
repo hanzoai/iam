@@ -525,6 +525,29 @@ func refineUser(user *User) *User {
 	return user
 }
 
+// tokenAudience decides the JWT `aud` claim — a pure decision decomplected from
+// JWT assembly so it can be reasoned about and unit-tested in isolation:
+//
+//   - an explicit RFC 8707 `resource` wins: the caller names the resource
+//     server the token is for (e.g. hanzo-console issuing a token for commerce
+//     to consume — commerce's fixed audience allowlist then matches
+//     deterministically, independent of WHICH app minted the token);
+//   - otherwise a SHARED application gets a per-org audience
+//     (`<clientId>-org-<owner>`) so one shared app's tokens stay org-scoped;
+//   - otherwise the audience is the minting app's own clientId (the default,
+//     unchanged for every existing login/OAuth flow).
+//
+// `userOwner` is the user's org slug, used only for the shared-app branch.
+func tokenAudience(resource string, application *Application, userOwner string) []string {
+	if resource != "" {
+		return []string{resource}
+	}
+	if application.IsShared {
+		return []string{application.ClientId + "-org-" + userOwner}
+	}
+	return []string{application.ClientId}
+}
+
 func generateJwtToken(application *Application, user *User, provider string, signinMethod string, nonce string, scope string, resource string, host string) (string, string, string, error) {
 	nowTime := time.Now()
 	expireTime := nowTime.Add(time.Duration(application.ExpireInHours * float64(time.Hour)))
@@ -561,19 +584,12 @@ func generateJwtToken(application *Application, user *User, provider string, sig
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    originBackend,
 			Subject:   user.Id,
-			Audience:  []string{application.ClientId},
+			Audience:  tokenAudience(resource, application, user.Owner),
 			ExpiresAt: jwt.NewNumericDate(expireTime),
 			NotBefore: jwt.NewNumericDate(nowTime),
 			IssuedAt:  jwt.NewNumericDate(nowTime),
 			ID:        jti,
 		},
-	}
-
-	// RFC 8707: Use resource as audience when provided
-	if resource != "" {
-		claims.Audience = []string{resource}
-	} else if application.IsShared {
-		claims.Audience = []string{application.ClientId + "-org-" + user.Owner}
 	}
 
 	var token *jwt.Token
