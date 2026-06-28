@@ -75,17 +75,36 @@ func (c *ApiController) responseBearerError(errorCode string, description string
 	c.ServeJSON()
 }
 
-// getEffectiveHost returns the original client-facing hostname.
-// Prefers X-Forwarded-Host (set by reverse proxies / CF Workers)
-// over the standard Host header.
+// getEffectiveHost returns the original client-facing hostname. It prefers
+// X-Forwarded-Host (set by trusted reverse proxies / CF Workers) over the
+// standard Host header — but ONLY when the forwarded value names a host IAM is
+// configured to serve (see effectiveHost).
 func (c *ApiController) getEffectiveHost() string {
-	if fwdHost := c.Ctx.Request.Header.Get("X-Forwarded-Host"); fwdHost != "" {
-		if i := strings.IndexByte(fwdHost, ','); i >= 0 {
-			fwdHost = strings.TrimSpace(fwdHost[:i])
-		}
+	return effectiveHost(
+		c.Ctx.Request.Host,
+		c.Ctx.Request.Header.Get("X-Forwarded-Host"),
+		object.IsServedHost,
+	)
+}
+
+// effectiveHost picks the client-facing host. X-Forwarded-Host is honored only
+// when `served` accepts it; an attacker-supplied header for a foreign domain is
+// ignored in favour of the real connection Host, so a forged header can never
+// steer host-derived behavior (canonical issuer, OAuth redirect host,
+// same-site/CSRF gate). `served` is injected so the policy is unit-testable; in
+// production it is object.IsServedHost, which trusts everything only when no
+// origin allowlist is configured (local dev).
+func effectiveHost(realHost, fwdHost string, served func(string) bool) string {
+	if fwdHost == "" {
+		return realHost
+	}
+	if i := strings.IndexByte(fwdHost, ','); i >= 0 {
+		fwdHost = strings.TrimSpace(fwdHost[:i])
+	}
+	if served(fwdHost) {
 		return fwdHost
 	}
-	return c.Ctx.Request.Host
+	return realHost
 }
 
 // isSameSiteRequest reports whether the request's Origin (or, failing that,
