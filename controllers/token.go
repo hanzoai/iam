@@ -387,49 +387,113 @@ func (c *ApiController) GetOAuthToken() {
 	}
 
 	host := c.getEffectiveHost()
-	if deviceCode != "" {
-		deviceAuthCache, ok := object.DeviceAuthMap.Load(deviceCode)
-		if !ok {
-			c.Data["json"] = &object.TokenError{
-				Error:            "expired_token",
-				ErrorDescription: "token is expired",
-			}
-			c.SetTokenErrorHttpStatus()
-			c.ServeJSON()
-			c.SetTokenErrorHttpStatus()
-			return
-		}
 
-		deviceAuthCacheCast := deviceAuthCache.(object.DeviceAuthCache)
-		if !deviceAuthCacheCast.UserSignIn {
-			c.Data["json"] = &object.TokenError{
-				Error:            "authorization_pending",
-				ErrorDescription: "authorization pending",
-			}
-			c.SetTokenErrorHttpStatus()
-			c.ServeJSON()
-			c.SetTokenErrorHttpStatus()
-			return
-		}
-
-		if deviceAuthCacheCast.RequestAt.Add(time.Second * 120).Before(time.Now()) {
-			c.Data["json"] = &object.TokenError{
-				Error:            "expired_token",
-				ErrorDescription: "token is expired",
-			}
-			c.SetTokenErrorHttpStatus()
-			c.ServeJSON()
-			c.SetTokenErrorHttpStatus()
-			return
-		}
-		object.DeviceAuthMap.Delete(deviceCode)
-
-		username = deviceAuthCacheCast.UserName
+	// Device Authorization Grant (RFC 8628) is handled self-contained: identity
+	// comes ONLY from the approved device-auth cache (keyed by device_code),
+	// never from a request `username`, and the generic token path refuses it.
+	if grantType == "urn:ietf:params:oauth:grant-type:device_code" {
+		c.handleDeviceCodeToken(deviceCode, clientId, nonce, host)
+		return
 	}
 
 	token, err := object.GetOAuthToken(grantType, clientId, clientSecret, code, verifier, scope, nonce, username, password, host, refreshToken, tag, avatar, c.GetAcceptLanguage(), subjectToken, subjectTokenType, assertion, clientAssertion, clientAssertionType, audience, resource, accessKey, accessSecretKey)
 	if err != nil {
 		c.ResponseTokenError("server_error", err.Error())
+		return
+	}
+
+	c.Data["json"] = token
+	c.SetTokenErrorHttpStatus()
+	c.ServeJSON()
+}
+
+// handleDeviceCodeToken redeems an approved device authorization (RFC 8628) for
+// a token. The approving user's identity is taken SOLELY from the device-auth
+// cache entry keyed by deviceCode — never from a request `username` — so a
+// missing/unknown device_code, or one not yet approved, can never yield a token.
+// The approved entry is consumed atomically (LoadAndDelete) so one approval
+// issues at most one token even under concurrent polls.
+func (c *ApiController) handleDeviceCodeToken(deviceCode string, clientId string, nonce string, host string) {
+	if deviceCode == "" {
+		c.Data["json"] = &object.TokenError{
+			Error:            "invalid_request",
+			ErrorDescription: "device_code is required",
+		}
+		c.SetTokenErrorHttpStatus()
+		c.ServeJSON()
+		return
+	}
+
+	cached, ok := object.DeviceAuthMap.Load(deviceCode)
+	if !ok {
+		c.Data["json"] = &object.TokenError{
+			Error:            "expired_token",
+			ErrorDescription: "token is expired",
+		}
+		c.SetTokenErrorHttpStatus()
+		c.ServeJSON()
+		return
+	}
+	deviceAuth := cached.(object.DeviceAuthCache)
+
+	if !deviceAuth.UserSignIn {
+		// Not approved yet — leave the entry in place so the client keeps polling.
+		c.Data["json"] = &object.TokenError{
+			Error:            "authorization_pending",
+			ErrorDescription: "authorization pending",
+		}
+		c.SetTokenErrorHttpStatus()
+		c.ServeJSON()
+		return
+	}
+
+	if deviceAuth.RequestAt.Add(time.Second * object.DeviceCodeExpirySeconds).Before(time.Now()) {
+		object.DeviceAuthMap.Delete(deviceCode)
+		c.Data["json"] = &object.TokenError{
+			Error:            "expired_token",
+			ErrorDescription: "token is expired",
+		}
+		c.SetTokenErrorHttpStatus()
+		c.ServeJSON()
+		return
+	}
+
+	// Approved: consume the code atomically. Only the goroutine that wins the
+	// delete issues a token, so a single approval can never mint two tokens.
+	if _, consumed := object.DeviceAuthMap.LoadAndDelete(deviceCode); !consumed {
+		c.Data["json"] = &object.TokenError{
+			Error:            "expired_token",
+			ErrorDescription: "token is expired",
+		}
+		c.SetTokenErrorHttpStatus()
+		c.ServeJSON()
+		return
+	}
+
+	application, err := object.GetApplicationByClientId(clientId)
+	if err != nil {
+		c.ResponseTokenError("server_error", err.Error())
+		return
+	}
+	if application == nil {
+		c.Data["json"] = &object.TokenError{
+			Error:            "invalid_client",
+			ErrorDescription: "client_id is invalid",
+		}
+		c.SetTokenErrorHttpStatus()
+		c.ServeJSON()
+		return
+	}
+
+	token, tokenError, err := object.GetDeviceCodeToken(application, &deviceAuth, nonce, host)
+	if err != nil {
+		c.ResponseTokenError("server_error", err.Error())
+		return
+	}
+	if tokenError != nil {
+		c.Data["json"] = tokenError
+		c.SetTokenErrorHttpStatus()
+		c.ServeJSON()
 		return
 	}
 

@@ -88,12 +88,29 @@ type DeviceAuthCache struct {
 }
 
 type DeviceAuthResponse struct {
-	DeviceCode      string `json:"device_code"`
-	UserCode        string `json:"user_code"`
-	VerificationUri string `json:"verification_uri"`
-	ExpiresIn       int    `json:"expires_in"`
-	Interval        int    `json:"interval"`
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationUri         string `json:"verification_uri"`
+	VerificationUriComplete string `json:"verification_uri_complete"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
 }
+
+// deviceCodeGrantType is the RFC 8628 device authorization grant identifier.
+const deviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+
+const (
+	// DeviceCodeExpirySeconds bounds how long a device_code / user_code pair is
+	// valid (RFC 8628 `expires_in`). It is the SINGLE source of truth for the
+	// device grant's lifetime — the authorization handler, the token poll, and
+	// the discovery response all read it, so they can never drift. 15 minutes
+	// gives a human time to open the verification URL, authenticate via SSO,
+	// and approve on a second device.
+	DeviceCodeExpirySeconds = 900
+	// DeviceCodePollInterval is the minimum seconds a client must wait between
+	// token-endpoint polls (RFC 8628 `interval`).
+	DeviceCodePollInterval = 5
+)
 
 // validateResourceURI validates that the resource parameter is a valid absolute URI
 // according to RFC 8707 Section 2
@@ -270,6 +287,22 @@ func GetOAuthCode(userId string, clientId string, provider string, signinMethod 
 	}, nil
 }
 
+// isPermanentlyDisabledGrant reports whether grantType is a front-channel,
+// token-issuing flow this IdP never allows under any application configuration:
+// the implicit grant and the bare token / id_token response types. It is the
+// single, pure policy point for that decision (decomplected from GetOAuthToken,
+// which is DB-coupled). The device authorization grant (RFC 8628) is
+// deliberately ABSENT — it is supported and gated per-application via
+// GrantTypes, not globally banned.
+func isPermanentlyDisabledGrant(grantType string) bool {
+	switch grantType {
+	case "implicit", "token", "id_token":
+		return true
+	default:
+		return false
+	}
+}
+
 func GetOAuthToken(grantType string, clientId string, clientSecret string, code string, verifier string, scope string, nonce string, username string, password string, host string, refreshToken string, tag string, avatar string, lang string, subjectToken string, subjectTokenType string, assertion string, clientAssertion string, clientAssertionType string, audience string, resource string, accessKey string, accessSecret string) (interface{}, error) {
 	var (
 		application *Application
@@ -306,12 +339,28 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 		}, nil
 	}
 
-	// SECURITY: Hard-reject deprecated grant types (implicit, device_code).
-	// Password grant is allowed when explicitly enabled on the application.
-	if grantType == "implicit" || grantType == "token" || grantType == "id_token" || grantType == "urn:ietf:params:oauth:grant-type:device_code" {
+	// SECURITY: implicit and the bare token/id_token response types stay
+	// permanently disabled — no front-channel token issuance, ever. The device
+	// authorization grant (RFC 8628) is SUPPORTED and gated per-application via
+	// GrantTypes below; it is the headless/CLI login path (the `dev` CLI, IDE
+	// plugins) and never returns a token over a redirect.
+	if isPermanentlyDisabledGrant(grantType) {
 		return &TokenError{
 			Error:            UnsupportedGrantType,
 			ErrorDescription: "This grant type has been permanently disabled",
+		}, nil
+	}
+
+	// SECURITY: the device authorization grant is redeemed ONLY through the
+	// device-authorization controller path (handleDeviceCodeToken), which proves
+	// the user approved at the verification URI and derives the identity solely
+	// from the device-auth cache. This generic path takes a request-supplied
+	// username, so it must never mint a device token (doing so would let a caller
+	// impersonate any user by sending grant_type=device_code&username=<victim>).
+	if grantType == deviceCodeGrantType {
+		return &TokenError{
+			Error:            InvalidGrant,
+			ErrorDescription: "device_code must be redeemed via the device authorization flow",
 		}, nil
 	}
 
@@ -332,7 +381,6 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 		token, tokenError, err = GetClientCredentialsToken(application, clientSecret, scope, host)
 	case "urn:ietf:params:oauth:grant-type:jwt-bearer":
 		token, tokenError, err = GetJwtBearerToken(application, assertion, scope, nonce, host)
-	// device_code is hard-rejected above; no case needed
 	case "urn:ietf:params:oauth:grant-type:token-exchange": // Token Exchange Grant (RFC 8693)
 		token, tokenError, err = GetTokenExchangeToken(application, clientSecret, subjectToken, subjectTokenType, audience, scope, host)
 	case "password": // Resource Owner Password Credentials
@@ -1233,6 +1281,111 @@ func GetTokenByUser(application *Application, user *User, scope string, nonce st
 	}
 
 	return token, nil
+}
+
+// GetDeviceCodeToken issues a token for the user who approved a device
+// authorization request (RFC 8628). Identity, scope, and approval all come from
+// deviceAuth — the device-auth cache entry the controller consumed — and NEVER
+// from request parameters: a caller cannot pass a username. The function is
+// fail-closed and safe regardless of caller — it re-asserts the authorization
+// was approved (deviceAuthApprovedError) before minting, so the "the controller
+// already verified this" precondition is enforced here, not merely assumed.
+// There is deliberately no secret/password check: the human authenticating and
+// approving interactively at the verification URI is the authentication.
+func GetDeviceCodeToken(application *Application, deviceAuth *DeviceAuthCache, nonce string, host string) (*Token, *TokenError, error) {
+	if te := deviceAuthApprovedError(deviceAuth); te != nil {
+		return nil, te, nil
+	}
+
+	// RFC 8628 §3.4: a device_code is bound to the client it was issued to.
+	// Reject redemption by a different client — otherwise an approval for app A
+	// could be redeemed as app B (confused deputy: wrong audience, and via a
+	// cross-org name collision, e.g. the same-named superuser in every brand,
+	// a different/elevated principal).
+	if te := deviceClientMismatchError(application, deviceAuth); te != nil {
+		return nil, te, nil
+	}
+
+	// Per-application grant gate, enforced here directly (not via the generic
+	// path's tag-bypassable check) so an app that never enabled device_code
+	// cannot mint device tokens.
+	if !IsGrantTypeValid(deviceCodeGrantType, application.GrantTypes) {
+		return nil, &TokenError{
+			Error:            UnsupportedGrantType,
+			ErrorDescription: fmt.Sprintf("grant_type: %s is not supported in this application", deviceCodeGrantType),
+		}, nil
+	}
+
+	expandedScope, ok := IsScopeValidAndExpand(deviceAuth.Scope, application)
+	if !ok {
+		return nil, &TokenError{
+			Error:            InvalidScope,
+			ErrorDescription: "the requested scope is invalid or not defined in the application",
+		}, nil
+	}
+
+	user, err := GetUserByFields(application.Organization, deviceAuth.UserName)
+	if err != nil {
+		return nil, nil, err
+	}
+	if te := deviceCodeUserError(user); te != nil {
+		return nil, te, nil
+	}
+
+	token, err := GetTokenByUser(application, user, expandedScope, nonce, host)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return token, nil, nil
+}
+
+// deviceClientMismatchError enforces RFC 8628 §3.4: the device_code must be
+// redeemed by the same client it was issued to. deviceAuth.ApplicationId is
+// captured at the device-authorization request; reject when the redeeming
+// application differs. Pure (no DB) so the binding is unit-testable.
+func deviceClientMismatchError(application *Application, deviceAuth *DeviceAuthCache) *TokenError {
+	if application == nil || deviceAuth == nil || application.GetId() != deviceAuth.ApplicationId {
+		return &TokenError{
+			Error:            InvalidGrant,
+			ErrorDescription: "the device_code was not issued to this client",
+		}
+	}
+	return nil
+}
+
+// deviceAuthApprovedError returns a TokenError unless deviceAuth represents a
+// completed, approved device authorization (signed in, with a resolved user).
+// Pure (no DB) so the approval gate is unit-testable. This is the defense that
+// makes GetDeviceCodeToken safe regardless of how it is reached.
+func deviceAuthApprovedError(deviceAuth *DeviceAuthCache) *TokenError {
+	if deviceAuth == nil || !deviceAuth.UserSignIn || deviceAuth.UserName == "" {
+		return &TokenError{
+			Error:            InvalidGrant,
+			ErrorDescription: "the device authorization has not been approved",
+		}
+	}
+	return nil
+}
+
+// deviceCodeUserError returns the TokenError that forbids issuing a device-grant
+// token for user (unknown or sign-in-forbidden), or nil when issuance may
+// proceed. Pure (no DB) so the issuance policy is unit-testable independently of
+// GetUserByFields's storage coupling.
+func deviceCodeUserError(user *User) *TokenError {
+	if user == nil {
+		return &TokenError{
+			Error:            InvalidGrant,
+			ErrorDescription: "the user does not exist",
+		}
+	}
+	if user.IsForbidden {
+		return &TokenError{
+			Error:            InvalidGrant,
+			ErrorDescription: "the user is forbidden to sign in, please contact the administrator",
+		}
+	}
+	return nil
 }
 
 // GetWechatMiniProgramToken
