@@ -28,6 +28,7 @@ import (
 	"github.com/hanzoai/iam/controllers"
 	"github.com/hanzoai/iam/ldap"
 	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam/provision"
 	"github.com/hanzoai/iam/proxy"
 	"github.com/hanzoai/iam/radius"
 	"github.com/hanzoai/iam/routers"
@@ -178,6 +179,13 @@ func Init() int {
 	go ldap.StartLdapServer()
 	go radius.StartRadiusServer()
 	go object.ClearThroughputPerSecond()
+
+	// Convergent provisioning: when IAM_PROVISION_ON_BOOT is set, reconcile the
+	// declarative org/app document at IAM_PROVISION_CONFIG against this server's
+	// own API once it is healthy. Idempotent, best-effort and a no-op when no
+	// config is mounted — never blocks serving. The reconcile mechanism is
+	// brand-neutral; the apps are operator data. See package provision.
+	go provision.ProvisionOnBoot()
 
 	if len(object.SiteMap) != 0 {
 		service.Start()
