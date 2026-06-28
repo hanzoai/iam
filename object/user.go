@@ -1635,12 +1635,22 @@ func RevokeUserKeys(user *User, isAdmin bool) (bool, error) {
 	return UpdateUser(user.GetId(), user, []string{"access_key", "access_secret"}, isAdmin)
 }
 
+// IsApplicationAdmin reports whether the user may administer (and therefore see
+// the unmasked clientSecret/Cert of) the application. This is the sole gate
+// GetMaskedApplication uses to decide secret reveal.
+//
+// SECURITY (Red H-5): IsShared MUST NOT widen this. A shared application is
+// VISIBLE to other orgs for login, but its credentials belong to the owning org
+// only. Reveal is limited to the owning-org admin and the global admin
+// (conf.AdminOrg). A non-owning org admin reading a shared app gets a MASKED
+// app — the previous `(user.IsAdmin && application.IsShared)` clause leaked
+// every shared app's clientSecret/Cert to any org admin.
 func (user *User) IsApplicationAdmin(application *Application) bool {
 	if user == nil {
 		return false
 	}
 
-	return (user.Owner == application.Organization && user.IsAdmin) || user.IsGlobalAdmin() || (user.IsAdmin && application.IsShared)
+	return (user.Owner == application.Organization && user.IsAdmin) || user.IsGlobalAdmin()
 }
 
 func (user *User) IsGlobalAdmin() bool {
