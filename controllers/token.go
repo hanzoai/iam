@@ -485,7 +485,7 @@ func (c *ApiController) handleDeviceCodeToken(deviceCode string, clientId string
 		return
 	}
 
-	token, tokenError, err := object.GetDeviceCodeToken(application, &deviceAuth, nonce, host)
+	tokenWrapper, tokenError, err := object.GetDeviceCodeToken(application, &deviceAuth, nonce, host)
 	if err != nil {
 		c.ResponseTokenError("server_error", err.Error())
 		return
@@ -497,7 +497,8 @@ func (c *ApiController) handleDeviceCodeToken(deviceCode string, clientId string
 		return
 	}
 
-	c.Data["json"] = token
+	// *TokenWrapper → SetTokenErrorHttpStatus emits 200 + no-store (RFC 6749 §5.1).
+	c.Data["json"] = tokenWrapper
 	c.SetTokenErrorHttpStatus()
 	c.ServeJSON()
 }
