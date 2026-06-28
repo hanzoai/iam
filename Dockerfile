@@ -150,6 +150,13 @@ RUN set -e; \
 # this image, since it's the same library version).
 FROM docker.io/library/alpine:3.22 AS standard
 LABEL maintainer="https://hanzo.ai/"
+# Image provenance: the exact git commit this image was built from. Passed via
+# `--opt build-arg:REVISION=<sha>` from the arcd BuildKit job so the live image
+# is bindable to a git tag — `crane config` exposes this label and it MUST equal
+# the commit the matching vX.Y.Z git tag points at.
+ARG REVISION=unknown
+LABEL org.opencontainers.image.revision="${REVISION}"
+LABEL org.opencontainers.image.source="https://github.com/hanzoai/iam"
 ARG USER=hanzo
 
 # Runtime needs libsqlcipher (the codec the binary is linked against). It must
