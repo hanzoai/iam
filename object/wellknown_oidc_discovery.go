@@ -401,10 +401,17 @@ func GetWebFinger(resource string, rels []string, host string, applicationName s
 func GetDeviceAuthResponse(deviceCode string, userCode string, host string) DeviceAuthResponse {
 	originFrontend, _ := getOriginFromHost(host)
 
+	// The verification URI already embeds the user_code, so it doubles as the
+	// RFC 8628 `verification_uri_complete` (one-click approval — what the `dev`
+	// CLI and IDE plugins render as a clickable link on a headless box).
+	verificationUri := fmt.Sprintf("%s%s/%s", originFrontend, OidcPathDevice, userCode)
+
 	return DeviceAuthResponse{
-		DeviceCode:      deviceCode,
-		UserCode:        userCode,
-		VerificationUri: fmt.Sprintf("%s%s/%s", originFrontend, OidcPathDevice, userCode),
-		ExpiresIn:       120,
+		DeviceCode:              deviceCode,
+		UserCode:                userCode,
+		VerificationUri:         verificationUri,
+		VerificationUriComplete: verificationUri,
+		ExpiresIn:               DeviceCodeExpirySeconds,
+		Interval:                DeviceCodePollInterval,
 	}
 }

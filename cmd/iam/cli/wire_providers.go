@@ -6,6 +6,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"sort"
@@ -28,12 +29,35 @@ type providerItem struct {
 	ApplicationOwner string `json:"applicationOwner"`
 }
 
-// app is a thin shape over object.Application — only the fields we read/write.
+// app is a typed view over object.Application exposing only the fields the
+// provisioning reconcilers read or mutate (Providers — wire-providers;
+// GrantTypes — init-apps). Every OTHER field of the row is preserved verbatim
+// in raw across a read-modify-write, because update-application is a full-row
+// replace (AllCols): handing back only the typed subset would zero unsent
+// fields (clientSecret, redirectUris, tokenFormat, …). raw is nil for apps
+// built in-memory — those go through the create path (appCreate), never update.
 type app struct {
 	Owner        string         `json:"owner"`
 	Name         string         `json:"name"`
 	Organization string         `json:"organization"`
+	GrantTypes   []string       `json:"grantTypes"`
 	Providers    []providerItem `json:"providers"`
+
+	raw map[string]json.RawMessage
+}
+
+// UnmarshalJSON decodes the typed view AND captures the complete row into raw
+// so updateApp can write every field back untouched. The `alias` indirection
+// breaks app's method set, so the inner decode does not recurse into this.
+func (a *app) UnmarshalJSON(b []byte) error {
+	type alias app
+	var v alias
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	*a = app(v)
+	a.raw = map[string]json.RawMessage{}
+	return json.Unmarshal(b, &a.raw)
 }
 
 // providersToWire is the canonical set of admin-org IdPs/channels that every
@@ -184,12 +208,46 @@ func listAppsForOrg(c *provClient, adminOrg, organization string) ([]app, error)
 	return rows, nil
 }
 
-// updateApp posts the application back to /v1/iam/update-application. IAM
-// requires the full row — we hand back exactly what we got with our Providers
-// mutation applied.
+// updateApp posts the application back to /v1/iam/update-application, which is a
+// full-row replace (AllCols). We start from raw — the complete row exactly as
+// IAM returned it — and overwrite ONLY the keys the reconcilers converge
+// (providers, grantTypes) from their mutated typed values. Every other field
+// round-trips byte-for-byte, so no field is wiped.
 func updateApp(c *provClient, a *app) error {
+	// Defensive: the provisioning client is global-admin and reads the UNMASKED
+	// secret, so updateBody round-trips it verbatim. If a masking/perms
+	// regression ever returned "***", writing it back (an AllCols full-row
+	// replace) would silently corrupt the client secret — fail loudly instead.
+	if maskedSecret(a.raw["clientSecret"]) {
+		return fmt.Errorf("refusing to update %s/%s: clientSecret is masked (%q); the provisioning client must read it unmasked", a.Owner, a.Name, "***")
+	}
 	q := url.Values{}
 	q.Set("id", fmt.Sprintf("%s/%s", a.Owner, a.Name))
 	var ok string
-	return c.postJSON("/v1/iam/update-application", q, a, &ok)
+	return c.postJSON("/v1/iam/update-application", q, a.updateBody(), &ok)
+}
+
+// maskedSecret reports whether raw is IAM's secret mask sentinel ("***").
+func maskedSecret(raw json.RawMessage) bool {
+	var s string
+	return json.Unmarshal(raw, &s) == nil && s == "***"
+}
+
+// updateBody builds the full-row payload for update-application: the complete
+// row as IAM returned it (raw), with ONLY the converged keys (providers,
+// grantTypes) overwritten from the mutated typed values. Every other field is
+// preserved byte-for-byte, so a full-row replace wipes nothing. Pure — the
+// field-wipe regression guard tests it directly.
+func (a *app) updateBody() map[string]json.RawMessage {
+	body := map[string]json.RawMessage{}
+	for k, v := range a.raw {
+		body[k] = v
+	}
+	if b, err := json.Marshal(a.Providers); err == nil {
+		body["providers"] = b
+	}
+	if b, err := json.Marshal(a.GrantTypes); err == nil {
+		body["grantTypes"] = b
+	}
+	return body
 }
