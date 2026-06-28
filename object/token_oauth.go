@@ -1388,6 +1388,57 @@ func deviceCodeUserError(user *User) *TokenError {
 	return nil
 }
 
+// GetUserTokenForAudience mints a short-lived, user-bound JWT for an EXPLICIT
+// audience. It is the server-side primitive a confidential, trusted client
+// (e.g. hanzo-console) uses to obtain a token it forwards to a resource server
+// (e.g. commerce) that derives the user's org from the verified `owner` claim
+// — the SSR analogue of a browser holding its own IAM token.
+//
+// It is identical to GetTokenByUser except the audience is set explicitly via
+// the RFC 8707 `resource` claim instead of defaulting to the minting
+// application's clientId. This decouples the token's audience from WHICH app
+// minted it, so the resource server's fixed audience allowlist
+// (commerce IAM_ACCEPTED_AUDIENCES) matches deterministically. An empty
+// `audience` falls back to the default (clientId / shared-org) audience, so
+// callers that don't care get GetTokenByUser's behavior.
+//
+// The token carries the user's real `owner` (org) claim, so the resource
+// server scopes strictly to THAT org — there is no cross-tenant widening here:
+// the audience only names the trusted client, never the billed subject.
+func GetUserTokenForAudience(application *Application, user *User, audience string, scope string, host string) (*Token, error) {
+	err := ExtendUserWithRolesAndPermissions(user)
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken, refreshToken, tokenName, err := generateJwtToken(application, user, "", "", "", scope, audience, host)
+	if err != nil {
+		return nil, err
+	}
+
+	token := &Token{
+		Owner:        application.Owner,
+		Name:         tokenName,
+		CreatedTime:  util.GetCurrentTime(),
+		Application:  application.Name,
+		Organization: user.Owner,
+		User:         user.Name,
+		Code:         util.GenerateClientId(),
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresIn:    int(application.ExpireInHours * float64(hourSeconds)),
+		Scope:        scope,
+		TokenType:    "Bearer",
+		CodeIsUsed:   true,
+	}
+	_, err = AddToken(token)
+	if err != nil {
+		return nil, err
+	}
+
+	return token, nil
+}
+
 // GetWechatMiniProgramToken
 // Wechat Mini Program flow
 func GetWechatMiniProgramToken(application *Application, code string, host string, username string, avatar string, lang string) (*Token, *TokenError, error) {
