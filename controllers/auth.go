@@ -211,7 +211,7 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		}
 
 		authCacheCast := authCache.(object.DeviceAuthCache)
-		if authCacheCast.RequestAt.Add(time.Second * 120).Before(time.Now()) {
+		if authCacheCast.RequestAt.Add(time.Second * object.DeviceCodeExpirySeconds).Before(time.Now()) {
 			c.ResponseError(c.T("auth:UserCode Expired"))
 			return
 		}
@@ -223,6 +223,23 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		}
 
 		deviceAuthCacheDeviceCodeCast := deviceAuthCacheDeviceCode.(object.DeviceAuthCache)
+
+		// Consent parity with the authorization-code flow: do not silently grant
+		// the app's (custom) scopes on a device approval. For first-party apps
+		// with no custom scopes this is a no-op (CheckConsentRequired == false).
+		consentRequired, err := object.CheckConsentRequired(user, application, deviceAuthCacheDeviceCodeCast.Scope)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		if consentRequired {
+			// The LoadAndDelete above consumed the user_code; restore it so the
+			// user can re-approve after granting consent on the frontend.
+			object.DeviceAuthMap.Store(form.UserCode, authCacheCast)
+			resp = &Response{Status: "ok", Data: map[string]bool{"required": true}, Data3: user.NeedUpdatePassword}
+			return
+		}
+
 		deviceAuthCacheDeviceCodeCast.UserName = user.Name
 		deviceAuthCacheDeviceCodeCast.UserSignIn = true
 
