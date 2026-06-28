@@ -224,10 +224,49 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 
 		deviceAuthCacheDeviceCodeCast := deviceAuthCacheDeviceCode.(object.DeviceAuthCache)
 
+		// DECOMPLECT: the approval binds to the device_code's OWN application and
+		// scope — captured at the device-authorization request (DeviceAuthCache),
+		// resolved from ApplicationId here — and NEVER the portal app the browser
+		// happens to be on. Identity comes from the session (user); the app +
+		// scope come from the device code. So every authorization gate below runs
+		// against THIS device app: the portal's form.Application is irrelevant to
+		// WHAT gets approved. Self-contained and fail-closed regardless of caller.
+		deviceApp, err := object.GetApplication(deviceAuthCacheDeviceCodeCast.ApplicationId)
+		if err != nil {
+			// Transient resolution error: restore the consumed user_code so the
+			// human can retry within the TTL.
+			object.DeviceAuthMap.Store(form.UserCode, authCacheCast)
+			c.ResponseError(err.Error())
+			return
+		}
+		if deviceApp == nil {
+			c.ResponseError(c.T("auth:DeviceCode Invalid"))
+			return
+		}
+
+		// Tenant boundary: a user in org A must not approve a device sign-in
+		// bound to an app in org B (cross-tenant confused deputy — e.g. the
+		// same-named superuser seeded in every brand).
+		if tenantErr := object.DeviceApprovalCrossTenantError(user, deviceApp); tenantErr != nil {
+			c.ResponseError(tenantErr.Error())
+			return
+		}
+
+		// Login permission, evaluated against the DEVICE app (not the portal app).
+		allowed, err := object.CheckLoginPermission(userId, deviceApp)
+		if err != nil {
+			c.ResponseError(err.Error(), nil)
+			return
+		}
+		if !allowed {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return
+		}
+
 		// Consent parity with the authorization-code flow: do not silently grant
-		// the app's (custom) scopes on a device approval. For first-party apps
-		// with no custom scopes this is a no-op (CheckConsentRequired == false).
-		consentRequired, err := object.CheckConsentRequired(user, application, deviceAuthCacheDeviceCodeCast.Scope)
+		// the DEVICE app's (custom) scopes on a device approval. For first-party
+		// apps with no custom scopes this is a no-op (CheckConsentRequired == false).
+		consentRequired, err := object.CheckConsentRequired(user, deviceApp, deviceAuthCacheDeviceCodeCast.Scope)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
@@ -399,18 +438,19 @@ func (c *ApiController) GetApplicationLogin() {
 			return
 		}
 	} else if loginType == "device" {
-		deviceAuthCache, ok := object.DeviceAuthMap.Load(userCode)
+		// Anonymous, unauthenticated endpoint. ResolveDeviceApprovalApp is
+		// non-differential: unknown, expired, and unresolvable user_codes all
+		// return ok=false, so this maps every failure to ONE generic error —
+		// never leaking exists-vs-not or the bound app/org to a caller grinding
+		// codes. A valid, unexpired code resolves the app (RFC 8628: holding the
+		// user_code IS the legit SPA's proof); the 40-bit crypto user_code and
+		// the per-IP throttle are the backstops against guessing one.
+		deviceApp, ok := object.ResolveDeviceApprovalApp(userCode)
 		if !ok {
 			c.ResponseError(c.T("auth:UserCode Invalid"))
 			return
 		}
-
-		deviceAuthCacheCast := deviceAuthCache.(object.DeviceAuthCache)
-		application, err = object.GetApplication(deviceAuthCacheCast.ApplicationId)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
+		application = deviceApp
 	}
 
 	clientIp := util.GetClientIpFromRequest(c.Ctx.Request)
@@ -1521,24 +1561,33 @@ func (c *ApiController) DeviceAuth() {
 	}
 
 	deviceCode := util.GenerateId()
-	userCode := util.GetRandomName()
 
-	generateTime := 0
-	for {
-		if generateTime > 5 {
+	// Mint an unguessable user_code (crypto/rand, RFC 8628) and retry on the
+	// astronomically-unlikely collision. Each attempt regenerates — the prior
+	// loop reused one code, so a collision could never clear.
+	var userCode string
+	for attempt := 0; ; attempt++ {
+		if attempt > 5 {
 			c.Data["json"] = object.TokenError{
-				Error:            "userCode gen",
-				ErrorDescription: c.T("token:Invalid client_id"),
+				Error:            "server_error",
+				ErrorDescription: c.T("token:Failed to generate user_code"),
 			}
 			c.ServeJSON()
 			return
 		}
-		_, ok := object.DeviceAuthMap.Load(userCode)
-		if !ok {
+		code, genErr := util.GenerateDeviceUserCode()
+		if genErr != nil {
+			c.Data["json"] = object.TokenError{
+				Error:            "server_error",
+				ErrorDescription: genErr.Error(),
+			}
+			c.ServeJSON()
+			return
+		}
+		if _, exists := object.DeviceAuthMap.Load(code); !exists {
+			userCode = code
 			break
 		}
-
-		generateTime++
 	}
 
 	deviceAuthCache := object.DeviceAuthCache{
