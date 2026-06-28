@@ -739,7 +739,16 @@ func GetMaskedApplication(application *Application, userId string) *Application 
 	}
 
 	application.ClientSecret = "***"
-	application.Cert = "***"
+	// The application's signing certificate is PUBLIC key material (the same is served
+	// via JWKS) — the browser SDK (@hanzo/iam-js-sdk) reads it from the login config to
+	// verify ID tokens and fails init with "not valid PEM" if it is masked. Expose the
+	// PUBLIC certificate PEM (resolved from the cert name); the private key is NEVER
+	// returned. Masking it to "***" broke every SPA login (console, admin, all brands).
+	if cert, certErr := getCertByName(application.Cert); certErr == nil && cert != nil && cert.Certificate != "" {
+		application.Cert = cert.Certificate
+	} else {
+		application.Cert = ""
+	}
 	// Keep enablePassword, enableSignUp, enableCodeSignin, enableWebAuthn visible —
 	// the public login page needs these to decide which auth methods to render.
 	application.EnableSigninSession = false
