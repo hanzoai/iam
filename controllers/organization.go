@@ -40,13 +40,22 @@ func (c *ApiController) GetOrganizations() {
 	organizationName := c.Ctx.Input.Query("organizationName")
 
 	isGlobalAdmin := c.IsGlobalAdmin()
+	// Non-global-admin callers are scoped to their own org. An app/<name>
+	// principal (Red R-1: no longer a global admin) has no User row, so resolve
+	// the scope nil-safely instead of dereferencing a nil getCurrentUser() — an
+	// empty scope matches no organization (GetOrganizations returns []), which is
+	// the correct least-privilege answer for a confidential client.
+	callerOwner := ""
+	if cu := c.getCurrentUser(); cu != nil {
+		callerOwner = cu.Owner
+	}
 	if limit == "" || page == "" {
 		var organizations []*object.Organization
 		var err error
 		if isGlobalAdmin {
 			organizations, err = object.GetMaskedOrganizations(object.GetOrganizations(owner))
 		} else {
-			organizations, err = object.GetMaskedOrganizations(object.GetOrganizations(owner, c.getCurrentUser().Owner))
+			organizations, err = object.GetMaskedOrganizations(object.GetOrganizations(owner, callerOwner))
 		}
 
 		if err != nil {
@@ -57,7 +66,7 @@ func (c *ApiController) GetOrganizations() {
 		c.ResponseOk(organizations)
 	} else {
 		if !isGlobalAdmin {
-			organizations, err := object.GetMaskedOrganizations(object.GetOrganizations(owner, c.getCurrentUser().Owner))
+			organizations, err := object.GetMaskedOrganizations(object.GetOrganizations(owner, callerOwner))
 			if err != nil {
 				c.ResponseError(err.Error())
 				return
