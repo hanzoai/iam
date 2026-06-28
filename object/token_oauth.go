@@ -418,7 +418,14 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 		return nil, err
 	}
 
-	tokenWrapper := &TokenWrapper{
+	return tokenWrapperFromToken(token), nil
+}
+
+// tokenWrapperFromToken builds the RFC 6749 token response — the single OAuth
+// success shape EVERY grant returns. One source, so the device_code, code, and
+// refresh grants can never drift in what a client receives.
+func tokenWrapperFromToken(token *Token) *TokenWrapper {
+	return &TokenWrapper{
 		AccessToken:  token.AccessToken,
 		IdToken:      token.AccessToken,
 		RefreshToken: token.RefreshToken,
@@ -426,8 +433,6 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 		ExpiresIn:    token.ExpiresIn,
 		Scope:        token.Scope,
 	}
-
-	return tokenWrapper, nil
 }
 
 func RefreshToken(application *Application, grantType string, refreshToken string, scope string, clientId string, clientSecret string, host string) (interface{}, error) {
@@ -567,15 +572,7 @@ func RefreshToken(application *Application, grantType string, refreshToken strin
 		return nil, err
 	}
 
-	tokenWrapper := &TokenWrapper{
-		AccessToken:  newToken.AccessToken,
-		IdToken:      newToken.AccessToken,
-		RefreshToken: newToken.RefreshToken,
-		TokenType:    newToken.TokenType,
-		ExpiresIn:    newToken.ExpiresIn,
-		Scope:        newToken.Scope,
-	}
-	return tokenWrapper, nil
+	return tokenWrapperFromToken(newToken), nil
 }
 
 // PkceChallenge: base64-URL-encoded SHA256 hash of verifier, per rfc 7636
@@ -1292,7 +1289,7 @@ func GetTokenByUser(application *Application, user *User, scope string, nonce st
 // already verified this" precondition is enforced here, not merely assumed.
 // There is deliberately no secret/password check: the human authenticating and
 // approving interactively at the verification URI is the authentication.
-func GetDeviceCodeToken(application *Application, deviceAuth *DeviceAuthCache, nonce string, host string) (*Token, *TokenError, error) {
+func GetDeviceCodeToken(application *Application, deviceAuth *DeviceAuthCache, nonce string, host string) (*TokenWrapper, *TokenError, error) {
 	if te := deviceAuthApprovedError(deviceAuth); te != nil {
 		return nil, te, nil
 	}
@@ -1337,7 +1334,9 @@ func GetDeviceCodeToken(application *Application, deviceAuth *DeviceAuthCache, n
 		return nil, nil, err
 	}
 
-	return token, nil, nil
+	// Return the standard OAuth response shape (access_token/token_type/…), not
+	// the raw Token record — the dev CLI / any RFC 8628 client parses this.
+	return tokenWrapperFromToken(token), nil, nil
 }
 
 // deviceClientMismatchError enforces RFC 8628 §3.4: the device_code must be
