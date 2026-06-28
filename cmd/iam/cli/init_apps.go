@@ -6,14 +6,36 @@
 package cli
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/spf13/cobra"
 )
 
-// brandSpec is the canonical definition of one brand's desktop OAuth client.
-// brandSpecs (below) is the SINGLE source of truth — adding a brand there is
-// the only change needed to provision its desktop login (one way).
+// kmsOIDCSalt is the compiled-in domain separator for deriving every brand's
+// "<org>-kms" confidential client secret. It is NOT a secret on its own — the
+// strength is HMAC-SHA256; this only namespaces the derivation. Bump the suffix
+// to rotate the KMS SSO secret for ALL brands at once.
+const kmsOIDCSalt = "hanzo-kms-oidc/v1"
+
+// KMSOIDCClientSecret derives the confidential client secret for "<org>-kms"
+// deterministically. IAM (which provisions the client) and KMS (which consumes
+// it as KMS_OIDC_CLIENT_SECRET) compute the IDENTICAL value from the org name
+// alone — no env var, no stored secret, no manual copy, no coordination. Same
+// org -> same secret, every boot. This is exported so KMS can reuse the exact
+// derivation; see docs/KMS-ACCESS.md in the universe repos.
+func KMSOIDCClientSecret(org string) string {
+	mac := hmac.New(sha256.New, []byte(kmsOIDCSalt))
+	mac.Write([]byte(org + "-kms"))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// brandSpec is the canonical definition of one brand's IAM surface: its desktop
+// OAuth client (public) AND its KMS SSO client (confidential). brandSpecs (below)
+// is the SINGLE source of truth — adding a brand there is the only change needed
+// to provision its desktop login AND its KMS admin SSO (one way, no env sprawl).
 type brandSpec struct {
 	Org         string // organization name, e.g. "hanzo"
 	DisplayName string // human label on the login page, e.g. "Hanzo"
@@ -21,6 +43,8 @@ type brandSpec struct {
 	ClientID    string // stable, human-readable OAuth client_id
 	RedirectURI string // native deep-link callback the desktop registers
 	Homepage    string // brand homepage (login-page link)
+	KMSHost     string // brand KMS host, e.g. "kms.hanzo.ai" — derives the
+	// "<org>-kms" confidential SSO client (redirect https://<KMSHost>/v1/sso/oidc/callback)
 }
 
 // brandSpecs enumerates every brand whose desktop/CLI app authenticates through
@@ -30,9 +54,9 @@ type brandSpec struct {
 // `dev` CLI ship these same ids in brand-config so "Login with <Brand>" and the
 // device flow resolve to one client per brand.
 var brandSpecs = []brandSpec{
-	{Org: "hanzo", DisplayName: "Hanzo", AppName: "hanzo-app", ClientID: "hanzo-app", RedirectURI: "hanzo://oauth/hanzo", Homepage: "https://hanzo.ai"},
-	{Org: "zoo", DisplayName: "Zoo", AppName: "zoo-app", ClientID: "zoo-app", RedirectURI: "zoo://oauth/zoo", Homepage: "https://zoo.ngo"},
-	{Org: "lux", DisplayName: "Lux", AppName: "lux-app", ClientID: "lux-app", RedirectURI: "lux://oauth/lux", Homepage: "https://lux.network"},
+	{Org: "hanzo", DisplayName: "Hanzo", AppName: "hanzo-app", ClientID: "hanzo-app", RedirectURI: "hanzo://oauth/hanzo", Homepage: "https://hanzo.ai", KMSHost: "kms.hanzo.ai"},
+	{Org: "zoo", DisplayName: "Zoo", AppName: "zoo-app", ClientID: "zoo-app", RedirectURI: "zoo://oauth/zoo", Homepage: "https://zoo.ngo", KMSHost: "kms.zoo.network"},
+	{Org: "lux", DisplayName: "Lux", AppName: "lux-app", ClientID: "lux-app", RedirectURI: "lux://oauth/lux", Homepage: "https://lux.network", KMSHost: "kms.lux.network"},
 }
 
 // defaultLanguages mirrors the admin org so brand login pages localize.
@@ -80,6 +104,7 @@ type appCreate struct {
 	HomepageUrl      string          `json:"homepageUrl"`
 	Cert             string          `json:"cert"`
 	ClientId         string          `json:"clientId"`
+	ClientSecret     string          `json:"clientSecret,omitempty"`
 	RedirectUris     []string        `json:"redirectUris"`
 	GrantTypes       []string        `json:"grantTypes"`
 	TokenFormat      string          `json:"tokenFormat"`
@@ -130,6 +155,35 @@ func buildApp(b brandSpec) *appCreate {
 		EnableCodeSignin: true,
 		SigninMethods:    signinMethodsForBrand(),
 		Providers:        []providerItem{},
+	}
+}
+
+// kmsGrantTypes — KMS admin SSO is the browser authorization-code flow only
+// (GET /v1/sso/oidc/login -> IAM -> /v1/sso/oidc/callback). No device/CLI grant.
+var kmsGrantTypes = []string{"authorization_code", "refresh_token"}
+
+// buildKmsApp builds the confidential "<org>-kms" SSO client for brand b, derived
+// entirely from the brand spec: client_id "<org>-kms", redirect to the brand KMS
+// callback, secret = KMSOIDCClientSecret(org). One brand row -> one KMS admin SSO
+// client, reconciled on every boot. KMS uses the same id + derived secret with
+// zero coordination — that is what removes the env-var sprawl.
+func buildKmsApp(b brandSpec) *appCreate {
+	return &appCreate{
+		Owner:          "admin",
+		Name:           b.Org + "-kms",
+		Organization:   b.Org,
+		DisplayName:    b.DisplayName + " KMS",
+		HomepageUrl:    "https://" + b.KMSHost,
+		Cert:           "cert-built-in",
+		ClientId:       b.Org + "-kms",
+		ClientSecret:   KMSOIDCClientSecret(b.Org),
+		RedirectUris:   []string{"https://" + b.KMSHost + "/v1/sso/oidc/callback"},
+		GrantTypes:     append([]string(nil), kmsGrantTypes...),
+		TokenFormat:    "JWT",
+		EnablePassword: true,
+		EnableSignUp:   false,
+		SigninMethods:  signinMethodsForBrand(),
+		Providers:      []providerItem{},
 	}
 }
 
@@ -275,8 +329,37 @@ func runInitApps(client *provClient, cfg *provConfig, verbose bool) error {
 		}
 	}
 
-	fmt.Printf("init-apps: orgs +%d, apps +%d, grants converged %d, %d already converged\n",
-		newOrgs, newApps, convergedApps, haveApps)
+	// KMS admin SSO clients — the confidential "<org>-kms" client per brand,
+	// derived from the SAME brandSpecs. Idempotent: created only if absent. This
+	// is what makes KMS "Sign in with IAM" work on a fresh cluster with zero env
+	// coordination (KMS computes the same id + derived secret). The orgs were
+	// already ensured by the desktop-app pass above.
+	newKms := 0
+	for _, b := range brandSpecs {
+		if b.KMSHost == "" {
+			continue
+		}
+		apps, err := listAppsForOrg(client, cfg.AdminOrg, b.Org)
+		if err != nil {
+			return fmt.Errorf("init-apps: list apps for %s: %w", b.Org, err)
+		}
+		if hasApp(apps, b.Org+"-kms") {
+			if verbose {
+				fmt.Printf("[skip] %s/%s-kms — already present\n", b.Org, b.Org)
+			}
+			continue
+		}
+		if err := addApp(client, buildKmsApp(b)); err != nil {
+			return fmt.Errorf("init-apps: add kms client %s-kms: %w", b.Org, err)
+		}
+		newKms++
+		if verbose {
+			fmt.Printf("[kms]  created %s/%s-kms (confidential SSO client)\n", b.Org, b.Org)
+		}
+	}
+
+	fmt.Printf("init-apps: orgs +%d, apps +%d, kms-clients +%d, grants converged %d, %d already converged\n",
+		newOrgs, newApps, newKms, convergedApps, haveApps)
 	return nil
 }
 
