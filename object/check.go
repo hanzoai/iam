@@ -385,6 +385,25 @@ func CheckUserPassword(organization string, username string, password string, la
 		return nil, err
 	}
 
+	// SECURITY (Red R-3): an org-agnostic login (organization == "") resolves its
+	// primary row via GetUserByField, which filters by name/email but NOT owner
+	// (orgEngine("") is the global engine). DB row order can therefore surface a
+	// global-admin (conf.AdminOrg) row as the primary — and CheckPassword below
+	// would then confer a full global-admin session on a tenant login. Treat that
+	// as a collision: re-resolve to the verifying NON-admin row via
+	// selectVerifyingRow, which never selects conf.AdminOrg. A global admin must
+	// authenticate with an explicit organization == conf.AdminOrg (the within-org
+	// primary lookup is unaffected). Mirrors the cross-org fallback's admin
+	// exclusion (pickCrossOrgLoginUser) and the collision fallback below.
+	// collectCollisionCandidates is used (not findVerifyingCollisionRow) so this
+	// works under orgIsolation=none too, where the latter intentionally no-ops.
+	if organization == "" && user != nil && user.Owner == conf.AdminOrg {
+		user = selectVerifyingRow(user, collectCollisionCandidates(user), func(u *User) bool {
+			ok, _ := passwordMatches(u, password, lang)
+			return ok
+		})
+	}
+
 	if user == nil || user.IsDeleted {
 		return nil, fmt.Errorf(i18n.Translate(lang, "general:The user: %s doesn't exist"), util.GetId(organization, username))
 	}
