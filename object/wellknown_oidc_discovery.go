@@ -101,6 +101,24 @@ func SplitOriginList(s string) []string {
 	return out
 }
 
+// originHostname extracts the bare hostname (no scheme, path, or port) from an
+// origin URL ("https://hanzo.id:443/x" -> "hanzo.id") or a bare Host header
+// ("iam.hanzo.ai:443" -> "iam.hanzo.ai"). One implementation, shared by every
+// host-matching path below.
+func originHostname(s string) string {
+	h := s
+	if i := strings.Index(h, "://"); i >= 0 {
+		h = h[i+3:]
+	}
+	if i := strings.IndexByte(h, '/'); i >= 0 {
+		h = h[:i]
+	}
+	if i := strings.IndexByte(h, ':'); i >= 0 {
+		h = h[:i]
+	}
+	return h
+}
+
 // selectOriginForHost picks the origin whose host (without scheme/port) matches
 // the incoming Host header. Falls back to the first entry if no match.
 // Empty input returns "".
@@ -108,33 +126,77 @@ func selectOriginForHost(originList []string, host string) string {
 	if len(originList) == 0 {
 		return ""
 	}
-	// Strip port from host: "iam.hanzo.ai:443" -> "iam.hanzo.ai".
-	hostOnly := host
-	if i := strings.IndexByte(host, ':'); i >= 0 {
-		hostOnly = host[:i]
-	}
+	hostOnly := originHostname(host)
 	for _, o := range originList {
-		// o is like "https://hanzo.id" — extract hostname for comparison.
-		oHost := o
-		// strip scheme
-		if i := strings.Index(oHost, "://"); i >= 0 {
-			oHost = oHost[i+3:]
-		}
-		// strip path
-		if i := strings.IndexByte(oHost, '/'); i >= 0 {
-			oHost = oHost[:i]
-		}
-		// strip port
-		if i := strings.IndexByte(oHost, ':'); i >= 0 {
-			oHost = oHost[:i]
-		}
-		if strings.EqualFold(oHost, hostOnly) {
+		if strings.EqualFold(originHostname(o), hostOnly) {
 			return o
 		}
 	}
 	// No match: fall back to the first entry. This is the
 	// expected path when origin is single-valued.
 	return originList[0]
+}
+
+// brandLabel reduces a host to its brand label so every host of one brand maps
+// to the same canonical issuer: the service prefix (iam/id/auth/www/api) is
+// stripped, then the first label of the remaining registrable domain is taken.
+// "iam.hanzo.ai" -> "hanzo", "hanzo.id" -> "hanzo", "id.lux.network" -> "lux".
+func brandLabel(host string) string {
+	h := strings.ToLower(originHostname(host))
+	for _, p := range []string{"iam.", "id.", "auth.", "www.", "api."} {
+		if strings.HasPrefix(h, p) {
+			h = h[len(p):]
+			break
+		}
+	}
+	if i := strings.IndexByte(h, '.'); i >= 0 {
+		return h[:i]
+	}
+	return h
+}
+
+// canonicalIssuer resolves the ONE canonical token issuer for the brand serving
+// `host`. The JWT `iss`, the OIDC discovery issuer, and OAuth audience checks all
+// use it so a brand's issuer is STABLE regardless of which host minted the token
+// — a token minted via iam.hanzo.ai (the API host) carries iss=https://hanzo.id
+// (the login origin), which is exactly what the gateway and cloud-api validate.
+//
+// White-label by construction: the canonical issuer is the matching entry from
+// originFrontend (the per-brand login origins), selected by exact host first,
+// then by brand label (so iam./id./auth. API hosts fold into their brand's login
+// origin). It NEVER returns another brand's origin, and falls back to the
+// host-derived backend origin only when no brand frontend is configured.
+func canonicalIssuer(host string) string {
+	_, originBackend := getOriginFromHost(host)
+	frontList := SplitOriginList(conf.GetConfigString("originFrontend"))
+	return resolveCanonicalIssuer(host, frontList, originBackend)
+}
+
+// resolveCanonicalIssuer is the pure core of canonicalIssuer (no config lookup,
+// so it is unit-testable): given the request host, the configured per-brand login
+// origins, and the host-derived backend fallback, it returns the brand's
+// canonical issuer.
+func resolveCanonicalIssuer(host string, frontList []string, originBackend string) string {
+	if len(frontList) == 0 {
+		return originBackend
+	}
+	hostOnly := originHostname(host)
+	// Exact frontend host match: a login origin is its own issuer.
+	for _, o := range frontList {
+		if strings.EqualFold(originHostname(o), hostOnly) {
+			return o
+		}
+	}
+	// Brand-label match: fold iam.hanzo.ai / id.hanzo.ai / hanzo.ai -> hanzo.id.
+	if want := brandLabel(host); want != "" {
+		for _, o := range frontList {
+			if brandLabel(o) == want {
+				return o
+			}
+		}
+	}
+	// Unknown brand: preserve the host-derived behavior (no cross-brand leak).
+	return originBackend
 }
 
 func getOriginFromHostInternal(host string) (string, string) {
@@ -205,7 +267,10 @@ func buildIssuerAndJwks(origin, applicationName string) (issuer, jwksUri string)
 func GetOidcDiscovery(host string, applicationName string) OidcDiscovery {
 	originFrontend, originBackend := getOriginFromHost(host)
 
-	issuer, jwksUri := buildIssuerAndJwks(originBackend, applicationName)
+	// Issuer + JWKS are brand-canonical (e.g. https://hanzo.id) so the discovery
+	// doc's issuer matches the JWT `iss` and the JWKS URI the gateway validates
+	// against, regardless of which host served the request.
+	issuer, jwksUri := buildIssuerAndJwks(canonicalIssuer(host), applicationName)
 
 	// Default OIDC scopes
 	scopes := []string{"openid", "email", "profile", "address", "phone", "offline_access"}
