@@ -112,10 +112,20 @@ func TestIsApplicationAdminScoping(t *testing.T) {
 		t.Fatal("hanzo org admin must be admin of hanzo application")
 	}
 
-	// Shared app should work for any admin
+	// SECURITY (Red H-5): a SHARED app must NOT confer application-admin (secret
+	// reveal) on a non-owning org admin. IsShared makes the app usable for login
+	// across orgs; it does not hand the owning org's clientSecret/Cert to every
+	// other org's admin. The owning-org admin and the global admin still qualify
+	// (covered above and below); a non-owner gets a masked app.
 	sharedApp := &Application{Organization: "lux", IsShared: true}
-	if !hanzoAdmin.IsApplicationAdmin(sharedApp) {
-		t.Fatal("org admin should be admin of shared application")
+	if hanzoAdmin.IsApplicationAdmin(sharedApp) {
+		t.Fatal("H-5: non-owning org admin must NOT be admin of a shared application (would unmask clientSecret/Cert)")
+	}
+
+	// The owning org's admin DOES administer its own shared app.
+	luxAdmin := &User{Owner: "lux", Name: "admin", IsAdmin: true}
+	if !luxAdmin.IsApplicationAdmin(sharedApp) {
+		t.Fatal("owning-org admin must be admin of its own shared application")
 	}
 
 	// admin org user should be admin of everything

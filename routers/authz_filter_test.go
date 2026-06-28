@@ -13,6 +13,35 @@ import (
 	"testing"
 )
 
+// TestOrgAppManagementBypass_ExcludesGetApplication is the H-5 authz-widening
+// finding: the org/app "management" fast-path lets ANY authenticated user GET a
+// route without the authz enforcer's owner scoping. The single-application read
+// (get-application) must NOT ride this bypass — it must fall through to authz so
+// a non-owner cannot reach another org's application config. The list/org reads
+// remain bypassed (broad, masked, multi-tenant onboarding).
+func TestOrgAppManagementBypass_ExcludesGetApplication(t *testing.T) {
+	if isOrgAppManagementRoute("GET", "/v1/iam/get-application") {
+		t.Fatal("H-5: get-application must NOT be in the authz bypass (must fall through to owner-scoped authz)")
+	}
+
+	// The remaining management reads stay on the bypass (unchanged behavior).
+	stillBypassed := []string{
+		"/v1/iam/get-organizations",
+		"/v1/iam/get-organization",
+		"/v1/iam/get-applications",
+	}
+	for _, p := range stillBypassed {
+		if !isOrgAppManagementRoute("GET", p) {
+			t.Fatalf("expected %s to remain on the management bypass", p)
+		}
+	}
+
+	// Mutations are never bypassed regardless of route.
+	if isOrgAppManagementRoute("POST", "/v1/iam/get-application") {
+		t.Fatal("non-GET must never be bypassed")
+	}
+}
+
 // TestGetUrlPath_NormalizesV1IamOAuth verifies that both the legacy bare
 // (/login/oauth/*, /oauth/*) and canonical /v1/iam/-prefixed OAuth surfaces
 // collapse to the same authz resource so the anonymous policy applies. Without

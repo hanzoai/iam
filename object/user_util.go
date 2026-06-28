@@ -64,60 +64,31 @@ func GetUserByField(organizationName string, field string, value string) (*User,
 	}
 }
 
-// GetUserByFieldCrossOrg looks up a user by field across ALL organizations.
-// Used as a fallback when the org-scoped lookup fails, enabling multi-tenant
-// login where users may belong to a different org than the app's org.
-//
-// With orgIsolation=sqlite each org's user rows live in a separate DB file,
-// so a single global query cannot see them. We iterate per-org engines for
-// the configured tenant orgs; the global engine still answers when isolation
-// is disabled.
-func GetUserByFieldCrossOrg(field string, value string) (*User, error) {
-	if field == "" || value == "" {
-		return nil, nil
-	}
-	// Try the global engine first (orgIsolation=none default + the global
-	// row catalog under orgIsolation=sqlite).
-	var user User
-	existed, err := ormer.Engine.Where(fmt.Sprintf("%s=?", strings.ToLower(field)), value).Get(&user)
-	if err != nil {
-		return nil, err
-	}
-	if existed {
-		userCache.set(userCacheKey(user.Owner, user.Name), user, 10*time.Minute)
-		return &user, nil
-	}
-	if ormer.OrgDBManager == nil {
-		return nil, nil
-	}
-	// orgIsolation=sqlite: walk each tenant DB.
-	owners, err := ormer.OrgDBManager.ListOrgs()
-	if err != nil {
-		return nil, err
-	}
-	for _, owner := range owners {
-		eng, err := ormer.OrgDBManager.GetEngine(owner)
-		if err != nil {
+// pickCrossOrgLoginUser returns the first cross-org row to use for login
+// resolution. When allowAdminOrg is false (the login targets a non-admin org,
+// or is org-agnostic) global-admin-org (conf.AdminOrg) rows are SKIPPED so a
+// tenant-app login can never silently resolve to a global-admin identity
+// (Red H-3). Global-admin login requires an explicit organization ==
+// conf.AdminOrg, which the within-org primary lookups satisfy directly. PURE:
+// no DB, unit-testable. Counterpart of selectVerifyingRow in check.go.
+func pickCrossOrgLoginUser(users []*User, allowAdminOrg bool) *User {
+	for _, u := range users {
+		if u == nil {
 			continue
 		}
-		var u User
-		ok, err := eng.Where(fmt.Sprintf("%s=?", strings.ToLower(field)), value).Get(&u)
-		if err != nil {
-			return nil, err
+		if !allowAdminOrg && u.Owner == conf.AdminOrg {
+			continue
 		}
-		if ok {
-			userCache.set(userCacheKey(u.Owner, u.Name), u, 10*time.Minute)
-			return &u, nil
-		}
+		return u
 	}
-	return nil, nil
+	return nil
 }
 
 // GetUsersByFieldCrossOrg returns ALL users matching field=value across every
 // organization — the global engine plus each per-org SQLite under
-// orgIsolation=sqlite. GetUserByFieldCrossOrg stops at the first match (fine for
-// a plain lookup); the auth layer needs the full colliding set so it can select
-// the row whose password verifies. Deduplicated by (owner, name).
+// orgIsolation=sqlite. The auth layer needs the full colliding set so it can
+// select the row whose password verifies (and so it can skip the global-admin
+// row for tenant logins). Deduplicated by (owner, name).
 func GetUsersByFieldCrossOrg(field string, value string) ([]*User, error) {
 	if field == "" || value == "" {
 		return nil, nil
@@ -229,21 +200,37 @@ func GetUserByFields(organization string, field string) (*User, error) {
 	}
 
 	// Cross-org fallback: if not found in the specified org, try to find the
-	// user in any org by email. This supports multi-tenant login where users
-	// may belong to a different org than the app's org (e.g., a user in their
-	// personal org logging into a shared app in the "hanzo" org).
+	// user in any OTHER org by email then username. This supports multi-tenant
+	// login where a user may live in a different (e.g. personal) org than the
+	// app's org — e.g. a user in their personal org logging into a shared app.
+	//
+	// SECURITY (Red H-3): the global-admin org (conf.AdminOrg) is NEVER reachable
+	// via this fallback for a login that targets any other org (or is
+	// org-agnostic, organization==""). Otherwise a tenant-app login whose
+	// email/username collides with a global-admin row would silently resolve to
+	// that row and confer a full global-admin session. Global-admin login
+	// requires an explicit organization == conf.AdminOrg, which the within-org
+	// lookups above satisfy directly. Counterpart of selectVerifyingRow.
+	allowAdminOrg := organization == conf.AdminOrg
+
 	if strings.Contains(field, "@") {
 		normalizedEmail := strings.ToLower(field)
-		user, err = GetUserByFieldCrossOrg("email", normalizedEmail)
-		if user != nil || err != nil {
-			return user, err
+		users, lookupErr := GetUsersByFieldCrossOrg("email", normalizedEmail)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if u := pickCrossOrgLoginUser(users, allowAdminOrg); u != nil {
+			return u, nil
 		}
 	}
 
 	// Cross-org by username
-	user, err = GetUserByFieldCrossOrg("name", field)
-	if user != nil || err != nil {
-		return user, err
+	users, lookupErr := GetUsersByFieldCrossOrg("name", field)
+	if lookupErr != nil {
+		return nil, lookupErr
+	}
+	if u := pickCrossOrgLoginUser(users, allowAdminOrg); u != nil {
+		return u, nil
 	}
 
 	return nil, nil
@@ -607,10 +594,46 @@ func userVisible(isAdmin bool, item *AccountItem) bool {
 	return true
 }
 
-func CheckPermissionForUpdateUser(oldUser, newUser *User, isAdmin bool, allowDisplayNameEmpty bool, lang string) (bool, string) {
+// canMutatePrivilegedUserFields reports whether a caller with the given
+// authority may apply the owner/IsAdmin delta between oldUser and newUser.
+//
+// SECURITY (Red H-4): the two privilege-critical mutations are
+//   - Owner (the user's organization membership) — moving a row to conf.AdminOrg
+//     IS the act of becoming a global admin; and
+//   - granting the IsAdmin flag (false → true).
+//
+// Both require GLOBAL-admin authority (membership in conf.AdminOrg) and are
+// NEVER self-service: a non-global-admin can change neither on ANY record,
+// including their own. This is the hard, deny-by-default wall that sits ABOVE
+// the weaker per-field account-item visibility checks (which key on org-level
+// isAdmin and on operator-configurable rules). PURE — no DB — so it is
+// unit-testable; the caller resolves oldIsAdmin authoritatively.
+func canMutatePrivilegedUserFields(oldUser, newUser *User, oldIsAdmin, isGlobalAdmin bool) bool {
+	if isGlobalAdmin {
+		return true
+	}
+	if newUser.Owner != oldUser.Owner {
+		return false
+	}
+	if newUser.IsAdmin && !oldIsAdmin {
+		return false
+	}
+	return true
+}
+
+func CheckPermissionForUpdateUser(oldUser, newUser *User, isAdmin bool, isGlobalAdmin bool, allowDisplayNameEmpty bool, lang string) (bool, string) {
 	organization, err := GetOrganizationByUser(oldUser)
 	if err != nil {
 		return false, err.Error()
+	}
+
+	// SECURITY (Red H-4): deny-by-default wall for privilege-critical fields.
+	// Resolve the authoritative prior admin state first (oldUser.IsAdmin can be
+	// misread by xorm bool deserialization — the same fallback the authz engine
+	// uses), then refuse any owner move or admin grant by a non-global-admin.
+	oldIsAdmin := oldUser.IsAdmin || CheckUserIsAdminRaw(oldUser.Owner, oldUser.Name)
+	if !canMutatePrivilegedUserFields(oldUser, newUser, oldIsAdmin, isGlobalAdmin) {
+		return false, i18n.Translate(lang, "auth:Unauthorized operation")
 	}
 
 	var itemsChanged []*AccountItem
