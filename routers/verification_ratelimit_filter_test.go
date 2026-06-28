@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/beego/v2/server/web/context"
 )
@@ -28,7 +28,13 @@ func newTestCtx(method, path, ip string) *context.Context {
 }
 
 func resetVerifyBuckets() {
-	verifyBuckets = sync.Map{}
+	// Mirror resetLoginBuckets: walk-and-delete, never reassign the sync.Map — a
+	// prior test's detached sweep goroutine may still Range it via the package
+	// global, and overwriting the struct races that LoadPointer (go test -race).
+	verifyJanitorMu.Lock()
+	verifyLastSweep = time.Now()
+	verifyJanitorMu.Unlock()
+	verifyBuckets.Range(func(k, _ interface{}) bool { verifyBuckets.Delete(k); return true })
 }
 
 func TestVerificationRateLimit_NoOpForOtherPaths(t *testing.T) {

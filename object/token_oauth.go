@@ -1388,6 +1388,57 @@ func deviceCodeUserError(user *User) *TokenError {
 	return nil
 }
 
+// DeviceApprovalCrossTenantError refuses a device approval when the approving
+// user's organization differs from the organization that owns the device
+// authorization's application. The device_code carries the app it was issued
+// for (DeviceAuthCache.ApplicationId, resolved to deviceApp); the approving
+// identity comes from the browser session. A user in org A must never be able
+// to approve a device sign-in bound to an app in org B (cross-tenant confused
+// deputy — e.g. the same-named superuser seeded in every brand). This is also
+// the invariant the downstream token mint depends on: GetDeviceCodeToken looks
+// the approver up via GetUserByFields(deviceApp.Organization, UserName), which
+// only resolves when the approver actually belongs to that org. Pure (no DB) so
+// the tenant boundary is unit-testable. Fail-closed: a nil user/app, or an app
+// with an empty organization, refuses.
+func DeviceApprovalCrossTenantError(user *User, deviceApp *Application) error {
+	if user == nil || deviceApp == nil || deviceApp.Organization == "" {
+		return fmt.Errorf("the device authorization could not be resolved")
+	}
+	if user.Owner != deviceApp.Organization {
+		return fmt.Errorf("cross-tenant device approval refused: your organization may not approve this device sign-in")
+	}
+	return nil
+}
+
+// ResolveDeviceApprovalApp resolves the application a pending device user_code
+// is bound to, for the anonymous GET /v1/iam/get-app-login device lookup. It is
+// deliberately NON-DIFFERENTIAL: every failure mode — unknown code, expired
+// code, or an unresolvable/absent application — collapses to (nil, false) so the
+// caller can render ONE generic error and never leak exists-vs-not or the bound
+// app/org to a caller grinding user_codes. Holding a valid, unexpired user_code
+// IS the RFC 8628 proof the legit SPA presents to render the approval page, so
+// the (app, true) path returns the app; the 40-bit crypto user_code and the
+// per-IP throttle are the backstops against guessing one. The load and expiry
+// checks are pure (no DB), so the non-differential contract is unit-testable.
+func ResolveDeviceApprovalApp(userCode string) (*Application, bool) {
+	cached, ok := DeviceAuthMap.Load(userCode)
+	if !ok {
+		return nil, false
+	}
+	deviceAuth, ok := cached.(DeviceAuthCache)
+	if !ok {
+		return nil, false
+	}
+	if deviceAuth.RequestAt.Add(time.Second * DeviceCodeExpirySeconds).Before(time.Now()) {
+		return nil, false
+	}
+	application, err := GetApplication(deviceAuth.ApplicationId)
+	if err != nil || application == nil {
+		return nil, false
+	}
+	return application, true
+}
+
 // GetUserTokenForAudience mints a short-lived, user-bound JWT for an EXPLICIT
 // audience. It is the server-side primitive a confidential, trusted client
 // (e.g. hanzo-console) uses to obtain a token it forwards to a resource server

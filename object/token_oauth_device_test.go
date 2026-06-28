@@ -17,6 +17,7 @@ package object
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 const deviceCodeGrant = "urn:ietf:params:oauth:grant-type:device_code"
@@ -89,11 +90,15 @@ func TestGetDeviceAuthResponse_RFC8628(t *testing.T) {
 	if resp.Interval != DeviceCodePollInterval {
 		t.Errorf("interval = %d, want %d", resp.Interval, DeviceCodePollInterval)
 	}
-	if !strings.Contains(resp.VerificationUri, OidcPathDevice) {
-		t.Errorf("verification_uri %q must point at %q", resp.VerificationUri, OidcPathDevice)
+	// Per #79 the verification_uri is the user-facing SPA approval page
+	// (OidcPathDeviceVerify), NOT the token API — a human signs in and approves
+	// there. The bare URI carries NO user_code (display-only); only the
+	// _complete variant prefills it for one-click on a headless box.
+	if !strings.Contains(resp.VerificationUri, OidcPathDeviceVerify) {
+		t.Errorf("verification_uri %q must point at the SPA page %q", resp.VerificationUri, OidcPathDeviceVerify)
 	}
-	if !strings.Contains(resp.VerificationUri, "WDJB-MJHT") {
-		t.Errorf("verification_uri %q must embed the user_code", resp.VerificationUri)
+	if strings.Contains(resp.VerificationUri, "WDJB-MJHT") {
+		t.Errorf("verification_uri %q must NOT embed the user_code (that is verification_uri_complete's job)", resp.VerificationUri)
 	}
 	if resp.VerificationUriComplete == "" || !strings.Contains(resp.VerificationUriComplete, "WDJB-MJHT") {
 		t.Errorf("verification_uri_complete %q must embed the user_code", resp.VerificationUriComplete)
@@ -153,5 +158,54 @@ func TestDeviceClientMismatchError(t *testing.T) {
 	}
 	if deviceClientMismatchError(nil, &DeviceAuthCache{ApplicationId: "admin/hanzo-app"}) == nil {
 		t.Fatal("nil application must be rejected (fail-closed)")
+	}
+}
+
+// TestDeviceApprovalCrossTenantError is the regression guard for H1: the
+// approving user's org MUST equal the org that owns the device app, or the
+// approval is refused. A user in org A approving an app in org B is the
+// cross-tenant confused deputy (and the downstream token mint, which looks the
+// user up in deviceApp.Organization, would resolve a different principal).
+func TestDeviceApprovalCrossTenantError(t *testing.T) {
+	hanzoApp := &Application{Owner: "admin", Name: "hanzo-app", Organization: "hanzo"}
+
+	if err := DeviceApprovalCrossTenantError(&User{Owner: "hanzo", Name: "z"}, hanzoApp); err != nil {
+		t.Fatalf("same-org approval must pass, got %v", err)
+	}
+	if err := DeviceApprovalCrossTenantError(&User{Owner: "zoo", Name: "z"}, hanzoApp); err == nil {
+		t.Fatal("cross-org approval must be refused (org A user, org B app)")
+	}
+	if DeviceApprovalCrossTenantError(nil, hanzoApp) == nil {
+		t.Fatal("nil user must be refused (fail-closed)")
+	}
+	if DeviceApprovalCrossTenantError(&User{Owner: "hanzo"}, nil) == nil {
+		t.Fatal("nil app must be refused (fail-closed)")
+	}
+	if DeviceApprovalCrossTenantError(&User{Owner: ""}, &Application{Owner: "admin", Name: "x", Organization: ""}) == nil {
+		t.Fatal("an app with no organization must be refused (fail-closed), even against an empty-org user")
+	}
+}
+
+// TestResolveDeviceApprovalApp_NonDifferential is the regression guard for R2:
+// the anonymous get-app-login device lookup must not be a hit/miss oracle. An
+// unknown user_code and an expired user_code MUST both collapse to ok=false with
+// no application — indistinguishable from each other. (The valid, unexpired path
+// resolves the app via GetApplication, which needs a DB and is covered by the
+// router/integration tests; here we pin the two pure failure modes that gate it.)
+func TestResolveDeviceApprovalApp_NonDifferential(t *testing.T) {
+	const unknown = "ZZZZ-UNKNOWN"
+	const expired = "EXPD-CODE0"
+	DeviceAuthMap.Delete(unknown)
+	DeviceAuthMap.Store(expired, DeviceAuthCache{
+		ApplicationId: "admin/hanzo-app",
+		RequestAt:     time.Now().Add(-time.Second * (DeviceCodeExpirySeconds + 1)),
+	})
+	t.Cleanup(func() { DeviceAuthMap.Delete(expired) })
+
+	if app, ok := ResolveDeviceApprovalApp(unknown); ok || app != nil {
+		t.Fatalf("unknown user_code must resolve (nil,false), got (%v,%v)", app, ok)
+	}
+	if app, ok := ResolveDeviceApprovalApp(expired); ok || app != nil {
+		t.Fatalf("expired user_code must resolve (nil,false) like an unknown one, got (%v,%v)", app, ok)
 	}
 }

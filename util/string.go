@@ -16,6 +16,7 @@ package util
 
 import (
 	"bytes"
+	crand "crypto/rand"
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
@@ -197,6 +198,27 @@ func GetRandomName() string {
 		result[i] = charset[rand.Intn(len(charset))]
 	}
 	return string(result)
+}
+
+// GenerateDeviceUserCode returns an RFC 8628 user_code. Unlike GetRandomName
+// (math/rand, reseeded per call — predictable, fine only for non-security
+// names), a user_code is a security token: an attacker who can guess one within
+// the device-code TTL can hijack a pending sign-in. So it is drawn from
+// crypto/rand. The alphabet is 32 unambiguous glyphs (no I L O 0 1) because a
+// human reads the code off one device and types it into another; 8 chars over
+// 32 symbols ≈ 40 bits, infeasible to brute-force inside the TTL. The 32-symbol
+// set is a power of two, so masking the random byte with 0x1f is unbiased.
+func GenerateDeviceUserCode() (string, error) {
+	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	const length = 8
+	buf := make([]byte, length)
+	if _, err := crand.Read(buf); err != nil {
+		return "", err
+	}
+	for i := range buf {
+		buf[i] = charset[buf[i]&0x1f]
+	}
+	return string(buf), nil
 }
 
 func GetId(owner, name string) string {
