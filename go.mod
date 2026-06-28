@@ -35,7 +35,7 @@ require (
 	github.com/hanzoai/authzstore v0.1.1
 	github.com/hanzoai/beego/v2 v2.3.9
 	github.com/hanzoai/builder v0.3.13
-	github.com/hanzoai/idv v1.0.2
+	github.com/hanzoai/idv v1.0.3
 	github.com/hanzoai/ldapserver v1.2.1
 	github.com/hanzoai/notify2 v1.6.3
 	github.com/hanzoai/oss v1.8.5
