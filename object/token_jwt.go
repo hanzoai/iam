@@ -566,7 +566,10 @@ func generateJwtToken(application *Application, user *User, provider string, sig
 	}
 	user = refineUser(user)
 
-	_, originBackend := getOriginFromHost(host)
+	// Canonical, brand-stable issuer (e.g. iam.hanzo.ai mints carry
+	// iss=https://hanzo.id) so the gateway and cloud-api — which validate a
+	// single fixed issuer per brand — accept every mint regardless of host.
+	issuer := canonicalIssuer(host)
 
 	name := util.GenerateId()
 	jti := util.GetId(application.Owner, name)
@@ -582,7 +585,7 @@ func generateJwtToken(application *Application, user *User, provider string, sig
 		Provider:     provider,
 		SigninMethod: signinMethod,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    originBackend,
+			Issuer:    issuer,
 			Subject:   user.Id,
 			Audience:  tokenAudience(resource, application, user.Owner),
 			ExpiresAt: jwt.NewNumericDate(expireTime),
