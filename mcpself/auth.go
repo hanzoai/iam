@@ -86,8 +86,12 @@ func (c *McpController) isGlobalAdmin() (bool, *object.User) {
 	username := c.GetSessionUsername()
 
 	if object.IsAppUser(username) {
-		// e.g., "app/app-casnode"
-		return true, nil
+		// SECURITY (Red R-1): an app/<name> (M2M client_credentials) principal is
+		// NOT a global admin — same invariant as controllers/base.go. Without this
+		// the MCP surface (e.g. UpdateApplication) would treat every confidential
+		// client as a global admin, re-opening the cross-tenant escalation over
+		// /v1/iam/mcp. App authority is the per-capability allowlist, never global.
+		return false, nil
 	}
 
 	user := c.getCurrentUser()
