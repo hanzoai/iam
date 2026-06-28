@@ -48,10 +48,14 @@ func TestSelectVerifyingRow_PrefersOtherOrgWhenResolvedFails(t *testing.T) {
 	}
 }
 
-// TestSelectVerifyingRow_PrefersGlobalAdminAmongVerifiers proves the 45-org
-// session is preserved: when several rows verify, the global-admin org wins so
-// the user keeps their global session rather than a single-org one.
-func TestSelectVerifyingRow_PrefersGlobalAdminAmongVerifiers(t *testing.T) {
+// TestSelectVerifyingRow_ExcludesGlobalAdminAmongVerifiers is the H-3 fix
+// (this test previously asserted the VULNERABLE behavior — that the global-admin
+// org "wins" a collision). When several rows verify INCLUDING the global-admin
+// row, the admin row must NOT be selected: an org-agnostic collision must never
+// silently escalate a tenant login to a global-admin session. Resolution lands
+// on the deterministic non-admin tenant row. Global-admin login requires an
+// explicit organization == conf.AdminOrg instead.
+func TestSelectVerifyingRow_ExcludesGlobalAdminAmongVerifiers(t *testing.T) {
 	resolved := &User{Owner: "built-in", Name: "z", Email: "z@hanzo.ai"}
 	candidates := []*User{
 		{Owner: "hanzo", Name: "z", Email: "z@hanzo.ai"},
@@ -59,10 +63,17 @@ func TestSelectVerifyingRow_PrefersGlobalAdminAmongVerifiers(t *testing.T) {
 		{Owner: "lux", Name: "z", Email: "z@hanzo.ai"},
 	}
 
-	// Both admin/z and hanzo/z verify; admin (global) must win.
-	got := selectVerifyingRow(resolved, candidates, verifyOnly(conf.AdminOrg+"/z", "hanzo/z"))
-	if got == nil || got.Owner != conf.AdminOrg {
-		t.Fatalf("want %s/z (global admin preserved), got %v", conf.AdminOrg, got)
+	// admin/z, hanzo/z and lux/z all verify; admin must be refused and the
+	// deterministic non-admin winner (hanzo/z, by owner sort) returned.
+	got := selectVerifyingRow(resolved, candidates, verifyOnly(conf.AdminOrg+"/z", "hanzo/z", "lux/z"))
+	if got == nil {
+		t.Fatal("want a non-admin tenant row, got nil")
+	}
+	if got.Owner == conf.AdminOrg {
+		t.Fatalf("H-3: collision must never resolve to global-admin org, got %s/%s", got.Owner, got.Name)
+	}
+	if got.Owner != "hanzo" {
+		t.Fatalf("want deterministic hanzo/z, got %s/%s", got.Owner, got.Name)
 	}
 }
 
