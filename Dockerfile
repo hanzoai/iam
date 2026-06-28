@@ -66,21 +66,12 @@ COPY go.mod go.sum ./
 # either so BOTH build paths authenticate (this is what makes the GHA pipeline
 # build — the old id=GIT_AUTH_TOKEN-only mount silently got nothing from the
 # reusable and the private fetch failed).
-ARG GOPRIVATE=github.com/luxfi/*,github.com/hanzoai/*
-# GOPRIVATE marks our FIRST-PARTY orgs (we own luxfi/* and hanzoai/*; now public)
-# so go fetches them via git, not the public proxy/sumdb. But GOPRIVATE alone does
-# NOT stop the DEFAULT GOPROXY=proxy.golang.org from answering for these PUBLIC
-# paths and serving a tag's FIRST-seen content, which sum.golang.org pins forever.
-# After one of our tags is re-pointed to a newer commit, that cached stream no
-# longer matches current origin → `verifying github.com/hanzoai/idv@…: checksum
-# mismatch · SECURITY ERROR` at `go mod download`. First-party-scoped fix (NEVER
-# global GONOSUMDB=* / GOINSECURE): GOPROXY=direct routes our orgs straight to git,
-# GONOSUMDB skips the public sumdb for them only — the build then verifies our
-# modules against the committed go.sum (re-recorded to live content) + origin.
-ENV GOPRIVATE=${GOPRIVATE} \
-    GONOSUMDB=${GOPRIVATE} \
-    GOSUMDB=off \
-    GOPROXY=direct
+# No GOPRIVATE — public modules resolve via the immutable public proxy + sumdb.
+# luxfi/* and hanzoai/* are PUBLIC, so the default GOPROXY (proxy.golang.org) +
+# GOSUMDB (sum.golang.org) serve canonical, immutable hashes that match go.sum —
+# a force-republished tag can no longer break the build. The old GOPROXY=direct +
+# GOSUMDB=off routed fetches `direct` and skipped sumdb, re-poisoning go.sum after
+# such a republish. The git-auth secret below stays for the `,direct` fallback.
 RUN --mount=type=secret,id=gh_token --mount=type=secret,id=GIT_AUTH_TOKEN \
     sh -c 'set -e; \
       TOK=""; \
