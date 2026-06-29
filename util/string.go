@@ -16,8 +16,8 @@ package util
 
 import (
 	"bytes"
-	crand "crypto/rand"
 	"crypto/md5"
+	crand "crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
