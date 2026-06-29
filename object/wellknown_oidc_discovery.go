@@ -329,13 +329,13 @@ func getOriginFromHost(host string) (string, string) {
 // using ONLY these — external consumers (IdPs, SDKs, OIDC libraries) see
 // exactly one shape per endpoint. /v1/iam/* is the law.
 const (
-	OidcPathAuthorize     = "/v1/iam/oauth/authorize"
-	OidcPathToken         = "/v1/iam/oauth/token"
-	OidcPathUserinfo      = "/v1/iam/oauth/userinfo"
-	OidcPathDevice        = "/v1/iam/oauth/device"
+	OidcPathAuthorize = "/v1/iam/oauth/authorize"
+	OidcPathToken     = "/v1/iam/oauth/token"
+	OidcPathUserinfo  = "/v1/iam/oauth/userinfo"
+	OidcPathDevice    = "/v1/iam/oauth/device"
 	// User-facing device-approval page (the SPA route), NOT the API path. RFC 8628
 	// verification_uri must be a page a human opens, not the token-API endpoint.
-	OidcPathDeviceVerify = "/login/oauth/device"
+	OidcPathDeviceVerify  = "/login/oauth/device"
 	OidcPathRegister      = "/v1/iam/oauth/register"
 	OidcPathIntrospect    = "/v1/iam/oauth/introspect"
 	OidcPathRevoke        = "/v1/iam/oauth/revoke"
