@@ -1,3 +1,5 @@
+<p align="center"><img src=".github/hero.svg" alt="iam" width="880"></p>
+
 # iam
 
 Identity and Access Management for the Hanzo platform. OAuth 2.1, OIDC, SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA, RADIUS — multi-tenant, white-label.
