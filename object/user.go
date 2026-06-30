@@ -783,6 +783,13 @@ func getUserByAccessKey(accessKey string) (*User, error) {
 }
 
 func GetUser(id string) (*User, error) {
+	// OIDC issues a JWT whose `sub` is the bare user UUID (no owner prefix). Every
+	// `?id=<sub>` resolver — get-user, mint-user-keys, the console catalog — funnels
+	// through here, so tolerate a bare id by resolving on Id alone instead of failing
+	// with "wrong token count for ID". An owner/name composite still splits as before.
+	if !strings.Contains(id, "/") {
+		return GetUserByUserIdOnly(id)
+	}
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
 		return nil, err
@@ -1460,8 +1467,19 @@ func (user *User) GetFriendlyName() string {
 	}
 }
 
+// isUserIdGlobalAdmin reports whether a principal id is a GLOBAL admin — the
+// gate GetMaskedApplication(s)/GetAllowedApplications use to reveal an app's
+// clientSecret/Cert and that the user-mutation wall consults.
+//
+// SECURITY (Red R-1): an app/<name> (M2M client_credentials) principal is NEVER
+// a global admin. Admitting it here let any confidential client — reachable by
+// an ordinary org admin who can read their OWN app's clientSecret — read EVERY
+// other org's application secrets (a full cross-tenant IdP compromise). Only a
+// real USER row in conf.AdminOrg is a global admin; an app's authority is the
+// per-capability allowlist (app_authz.go) for mutations and explicit cross-org
+// read permission (check.go CheckUserPermission) for reads.
 func isUserIdGlobalAdmin(userId string) bool {
-	return strings.HasPrefix(userId, conf.AdminOrg+"/") || IsAppUser(userId)
+	return strings.HasPrefix(userId, conf.AdminOrg+"/")
 }
 
 // permsSnapshot is the cached representation of a user's roles/permissions.
