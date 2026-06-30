@@ -72,6 +72,7 @@ docs/CLI.md for the full reference.`,
 		// IAM_ENDPOINT, IAM_ADMIN_ORG) — NOT the --addr/--token flags above.
 		// See provclient.go for the two-auth-model rationale.
 		newInitAppsCmd(),
+		newOrgDBCmd(),
 		newInitProvidersCmd(),
 		newWireProvidersCmd(),
 		newCleanSpamOrgsCmd(),
