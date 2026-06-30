@@ -783,6 +783,13 @@ func getUserByAccessKey(accessKey string) (*User, error) {
 }
 
 func GetUser(id string) (*User, error) {
+	// OIDC issues a JWT whose `sub` is the bare user UUID (no owner prefix). Every
+	// `?id=<sub>` resolver — get-user, mint-user-keys, the console catalog — funnels
+	// through here, so tolerate a bare id by resolving on Id alone instead of failing
+	// with "wrong token count for ID". An owner/name composite still splits as before.
+	if !strings.Contains(id, "/") {
+		return GetUserByUserIdOnly(id)
+	}
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
 		return nil, err
