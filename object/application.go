@@ -739,7 +739,12 @@ func GetMaskedApplication(application *Application, userId string) *Application 
 	}
 
 	application.ClientSecret = "***"
-	application.Cert = "***"
+	// application.Cert is the cert NAME (e.g. "cert-built-in"), a public, non-secret
+	// reference — NOT key material. Consumers (the iamsdk / cloud-api /v1/signin path)
+	// resolve it to the signing PEM themselves via GetCert(name). Masking it to "***"
+	// OR rewriting it to the resolved PEM both BREAK that name lookup
+	// (GetOwnerAndNameFromId "wrong token count") -> "iamsdk: not valid PEM" -> every
+	// hanzo-cloud/hanzo-console SPA login failed. Leave the name untouched.
 	// Keep enablePassword, enableSignUp, enableCodeSignin, enableWebAuthn visible —
 	// the public login page needs these to decide which auth methods to render.
 	application.EnableSigninSession = false

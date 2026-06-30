@@ -63,6 +63,19 @@ func (c *Client) ParseJwtToken(token string) (*Claims, error) {
 		switch token.Method.Alg() {
 		case jwt.SigningMethodES256.Alg(), jwt.SigningMethodES512.Alg(),
 			jwt.SigningMethodRS256.Alg(), jwt.SigningMethodRS512.Alg():
+			// Prefer JWKS (proper OIDC): the published keys are canonical and
+			// public, independent of how Client.Certificate was configured. The
+			// IAM API exposes the app cert inconsistently — masked "***" for
+			// public callers, the cert NAME ("cert-built-in") for global-admin
+			// callers — so a configured Certificate is often not a parseable
+			// PEM, the cause of "iamsdk: not valid PEM" on /v1/signin. Fall back
+			// to the cert PEM when JWKS is unreachable or Endpoint is unset.
+			if c.Endpoint != "" {
+				kid, _ := token.Header["kid"].(string)
+				if pk, jwksErr := jwksPublicKey(c.Endpoint, kid); jwksErr == nil {
+					return pk, nil
+				}
+			}
 			return publicKeyFromPEM([]byte(c.Certificate))
 		default:
 			return nil, fmt.Errorf("unsupported signing method: %v", token.Header["alg"])
