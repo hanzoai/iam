@@ -143,6 +143,49 @@ func AppNameFromPrincipal(principal string) string {
 	return strings.TrimPrefix(principal, "app/")
 }
 
+// allCapabilities is every confidential-client capability. Each keys on the
+// bare application NAME (AppAllowedForCapability), and an application's Name is
+// NOT globally unique — the DB primary key is composite (Owner, Name). So a
+// capability-allowlisted name may ONLY be held by the admin-owned platform app
+// that legitimately carries it.
+var allCapabilities = []AppAdminCapability{
+	CapUserPasswordAdmin, CapUserAdmin, CapAppAdmin, CapKeyMint, CapCertAdmin,
+	CapKeyAdmin, CapOrgAdmin, CapProviderAdmin, CapSyncerAdmin, CapWebhookAdmin,
+	CapTokenAdmin,
+}
+
+// AppNameIsCapabilityReserved reports whether appName appears in ANY capability
+// allowlist. Such a name is reserved for the admin-owned platform app; the
+// client-credentials login path (getUsernameByClientIdSecret) refuses to mint
+// an app principal for a NON-admin-owned application that collides one.
+//
+// V5/Red#4 (capability name-collision escalation): without this, any
+// authenticated customer could register <theirOrg>/<cap-app-name> (a fresh
+// composite-PK row that passes validateAppName's "<org>-…" rule, e.g.
+// organization=hanzo => name hanzo-console), authenticate with THEIR OWN
+// clientSecret, resolve to principal "app/hanzo-console", and inherit the
+// admin app's CapUserAdmin/CapKeyMint — reading any tenant's users + live hk-
+// credentials cross-tenant. Reserving the name to admin-owned apps closes it:
+// the admin-owned (admin, hanzo-console) row already occupies that identity,
+// and a customer cannot create an admin-owned app.
+func AppNameIsCapabilityReserved(appName string) bool {
+	if appName == "" {
+		return false
+	}
+	for _, capability := range allCapabilities {
+		raw := strings.TrimSpace(conf.GetConfigString(capability.EnvVar))
+		if raw == "" {
+			continue
+		}
+		for _, item := range strings.Split(raw, ",") {
+			if strings.TrimSpace(item) == appName {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // AppAllowedForCapability reports whether the confidential-client principal
 // ("app/<name>") is explicitly allowlisted for capability cap.
 //
