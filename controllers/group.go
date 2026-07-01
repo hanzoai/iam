@@ -30,6 +30,13 @@ import (
 // @Success 200 {array} object.Group The Response object
 // @router /get-groups [get]
 func (c *ApiController) GetGroups() {
+	// V5/Red#3: an app/M2M principal is waved past wire authz (subOwner=="app"),
+	// so gate the group enumeration on the user-admin capability — otherwise a
+	// tenant app could enumerate any org's groups. Humans keep normal authz.
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	owner := c.Ctx.Input.Query("owner")
 	limit := c.Ctx.Input.Query("pageSize")
 	page := c.Ctx.Input.Query("p")

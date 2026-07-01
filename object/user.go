@@ -816,6 +816,19 @@ func GetMaskedUser(user *User, isAdminOrSelf bool, errs ...error) (*User, error)
 	}
 
 	if !isAdminOrSelf {
+		// V5/Red#3 (cross-tenant credential disclosure): accessKey/accessSecret
+		// ARE the user's hk- Cloud API credential — a usable bearer token at
+		// api.hanzo.ai. They must NEVER be returned to a caller that is not the
+		// user themselves or an admin. (A credential-capable platform app that
+		// legitimately resolves a user's key — hanzo-chat CapKeyMint — re-reveals
+		// ONLY these two fields at the controller after this mask.) Mirrors the
+		// OriginalToken treatment below.
+		if user.AccessKey != "" {
+			user.AccessKey = "***"
+		}
+		if user.AccessSecret != "" {
+			user.AccessSecret = "***"
+		}
 		if user.OriginalToken != "" {
 			user.OriginalToken = "***"
 		}

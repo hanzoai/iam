@@ -240,9 +240,18 @@ func TestV5AppCredentialCannotReadAdminRoster(t *testing.T) {
 	}
 	basic := base64.StdEncoding.EncodeToString([]byte(cid + ":" + sec))
 	for _, path := range []string{
+		// N4 — admin roster (list) via every door
 		"/v1/iam/get-users?owner=admin",
 		"/v1/iam/get-sorted-users?owner=admin&sorter=createdTime&limit=25",
 		"/v1/iam/get-user?id=admin/z",
+		// Red#3 — cross-tenant SINGLE read (leaked email/passwordSalt + live hk-
+		// accessKey/accessSecret before the fix)
+		"/v1/iam/get-user?id=maxpower/davelorenzini",
+		"/v1/iam/get-user?owner=hanzo&name=z",
+		// Red#3 — enumerate-class + count oracle
+		"/v1/iam/get-user-count?owner=admin",
+		"/v1/iam/get-groups?owner=admin",
+		"/v1/iam/get-invitations?owner=admin",
 	} {
 		req, _ := http.NewRequest(http.MethodGet, base+path, nil)
 		req.Header.Set("Authorization", "Basic "+basic)
@@ -252,12 +261,17 @@ func TestV5AppCredentialCannotReadAdminRoster(t *testing.T) {
 		}
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		// Belt-and-suspenders: even if a path is not outright denied, the response
+		// must NEVER carry a live hk- credential to a non-user-admin tenant app.
+		if b := strings.ToLower(string(body)); strings.Contains(b, "accesssecret") && strings.Contains(b, "hk-") {
+			t.Fatalf("Red#3 OPEN: %s response carries an hk- accessKey/secret to a tenant app: %s", path, string(body[:min(len(body), 240)]))
+		}
 		var out map[string]any
 		_ = json.Unmarshal(body, &out)
 		sig := strings.ToLower(v5asString(out["status"]) + " " + v5asString(out["msg"]))
 		if !strings.Contains(sig, "unauthorized") {
-			t.Fatalf("N4 OPEN: tenant app-cred read %s NOT denied (status/msg=%q, data=%v)", path, sig, out["data"])
+			t.Fatalf("Red#3 OPEN: tenant app-cred read %s NOT denied (status/msg=%q, data=%v)", path, sig, out["data"])
 		}
 	}
-	t.Logf("N4 CLOSED: tenant app credential denied on get-users/get-sorted-users/get-user?id=admin/*")
+	t.Logf("N4/Red#3 CLOSED: tenant app credential denied on user roster/single/count/groups/invitations; no hk- credential exposed")
 }

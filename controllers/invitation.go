@@ -31,6 +31,13 @@ import (
 // @Success 200 {array} object.Invitation The Response object
 // @router /get-invitations [get]
 func (c *ApiController) GetInvitations() {
+	// V5/Red#3: gate the invitation enumeration (invitee email/identity) on the
+	// user-admin capability so a tenant app/M2M principal can't read another
+	// org's invitations via the subOwner=="app" blanket. Humans keep authz.
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	owner := c.Ctx.Input.Query("owner")
 	limit := c.Ctx.Input.Query("pageSize")
 	page := c.Ctx.Input.Query("p")
