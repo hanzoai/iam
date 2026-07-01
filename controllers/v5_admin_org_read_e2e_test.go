@@ -202,5 +202,62 @@ func TestV5SiblingEndpointsScoped(t *testing.T) {
 	if v5asString(ownApps["status"]) != "ok" {
 		t.Fatalf("LOCKOUT: get-organization-applications?organization=%s (own org) denied: %v", callerOrg, ownApps)
 	}
-	t.Logf("N1/N2 CLOSED: anon+non-global org-names scoped to own org; cross-tenant get-organization-applications denied; own org readable")
+
+	// N3: get-organization single-item read — org name == customer email. A
+	// non-global caller must be denied reading another tenant's org by id, but
+	// may read its OWN org.
+	for _, org := range []string{"admin", "lux", "zoo", "pars"} {
+		if org == callerOrg {
+			continue
+		}
+		r := v5Get(t, base, token, "/v1/iam/get-organization?id=admin/"+org)
+		if sig := strings.ToLower(v5asString(r["status"]) + " " + v5asString(r["msg"])); !strings.Contains(sig, "unauthorized") {
+			if d, ok := r["data"].(map[string]any); ok && v5asString(d["name"]) != "" && v5asString(d["name"]) != callerOrg {
+				t.Fatalf("N3 OPEN: get-organization?id=admin/%s leaked cross-tenant org name=%q (caller org=%q)", org, v5asString(d["name"]), callerOrg)
+			}
+		}
+	}
+	ownOrg := v5Get(t, base, token, "/v1/iam/get-organization?id=admin/"+callerOrg)
+	if v5asString(ownOrg["status"]) != "ok" {
+		t.Fatalf("LOCKOUT: get-organization?id=admin/%s (own org) denied: %v", callerOrg, ownOrg)
+	}
+	t.Logf("N1/N2/N3 CLOSED: anon+non-global org-names scoped; cross-tenant get-organization-applications + get-organization denied; own org readable")
+}
+
+// TestV5AppCredentialCannotReadAdminRoster covers Red re-review #2 finding N4:
+// a NON-user-admin app/M2M principal (client_credentials) must NOT be able to
+// enumerate the global-admin org's user roster (the subOwner=="app" authz
+// blanket previously waved it through). Runs only when given a TENANT app's
+// clientId/secret that is NOT in IAM_USER_ADMIN_APPS:
+//
+//	IAM_E2E_URL=... IAM_E2E_TENANT_APP_ID=<cid> IAM_E2E_TENANT_APP_SECRET=<sec> go test -run TestV5AppCredential ...
+func TestV5AppCredentialCannotReadAdminRoster(t *testing.T) {
+	base := strings.TrimRight(os.Getenv("IAM_E2E_URL"), "/")
+	cid := os.Getenv("IAM_E2E_TENANT_APP_ID")
+	sec := os.Getenv("IAM_E2E_TENANT_APP_SECRET")
+	if base == "" || cid == "" || sec == "" {
+		t.Skip("skipping: set IAM_E2E_URL + IAM_E2E_TENANT_APP_ID/SECRET (a NON-user-admin tenant app)")
+	}
+	basic := base64.StdEncoding.EncodeToString([]byte(cid + ":" + sec))
+	for _, path := range []string{
+		"/v1/iam/get-users?owner=admin",
+		"/v1/iam/get-sorted-users?owner=admin&sorter=createdTime&limit=25",
+		"/v1/iam/get-user?id=admin/z",
+	} {
+		req, _ := http.NewRequest(http.MethodGet, base+path, nil)
+		req.Header.Set("Authorization", "Basic "+basic)
+		resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var out map[string]any
+		_ = json.Unmarshal(body, &out)
+		sig := strings.ToLower(v5asString(out["status"]) + " " + v5asString(out["msg"]))
+		if !strings.Contains(sig, "unauthorized") {
+			t.Fatalf("N4 OPEN: tenant app-cred read %s NOT denied (status/msg=%q, data=%v)", path, sig, out["data"])
+		}
+	}
+	t.Logf("N4 CLOSED: tenant app credential denied on get-users/get-sorted-users/get-user?id=admin/*")
 }
