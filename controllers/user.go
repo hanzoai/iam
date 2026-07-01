@@ -207,16 +207,27 @@ func (c *ApiController) GetUser() {
 			owner = util.GetOwnerFromId(id)
 		}
 
-		// V5/N4: a single-user read targeting the global-admin org (e.g.
-		// get-user?id=admin/z — the admin usernames are guessable) must not be
-		// reachable by an app/M2M principal that lacks the user-admin
-		// capability. Humans keep normal authz (bearer non-global is already
-		// denied owner=admin by authz.IsAllowed); platform apps (hanzo-cloud /
-		// *-console) pass; a tenant app is denied. Tenant-scoped reads
-		// (chat resolves owner=<tenant>+email; the accessKey billing path)
-		// are unaffected because owner != AdminOrg there.
-		if owner == conf.AdminOrg && !c.requireAppCapability(object.CapUserAdmin) {
-			return
+		// V5/N4/Red#3 (cross-tenant disclosure): the authz-layer subOwner=="app"
+		// blanket lets an app/M2M principal past wire authz, so a tenant app
+		// (whose own clientSecret its admin can read) could otherwise read ANY
+		// user by id/owner/email/phone — email, passwordSalt, and the hk-
+		// accessKey — across the tenant boundary. Gate app single-reads on a
+		// user-read capability: the global-admin org (guessable admin/z etc.)
+		// needs CapUserAdmin; any other org needs CapUserAdmin OR CapKeyMint
+		// (hanzo-chat resolves each user's hk- key by org+email). The
+		// accessKey-lookup branch is exempt — it already requires possessing the
+		// secret value (the LLM billing gate). Humans keep normal authz (bearer
+		// non-global is already denied owner=admin by authz.IsAllowed).
+		if accessKey == "" && object.IsAppUser(c.GetSessionUsername()) {
+			caller := c.GetSessionUsername()
+			allowed := object.AppAllowedForCapability(caller, object.CapUserAdmin)
+			if !allowed && owner != conf.AdminOrg {
+				allowed = object.AppAllowedForCapability(caller, object.CapKeyMint)
+			}
+			if !allowed {
+				c.ResponseError(c.T("auth:Unauthorized operation"))
+				return
+			}
 		}
 
 		switch {
@@ -272,10 +283,25 @@ func (c *ApiController) GetUser() {
 	}
 
 	isAdminOrSelf := c.IsAdminOrSelf(user)
+	// V5/Red#3: GetMaskedUser masks accessKey/accessSecret (the hk- credential)
+	// for every non-admin/non-self caller. A credential-capable PLATFORM app
+	// still needs the user's key (hanzo-chat CapKeyMint meters LLM calls per
+	// user; cloud/console CapUserAdmin) — re-reveal ONLY these two fields for
+	// such apps, never OriginalToken/OAuth.
+	revealCredToApp := !isAdminOrSelf && user != nil && object.IsAppUser(c.GetSessionUsername()) &&
+		(object.AppAllowedForCapability(c.GetSessionUsername(), object.CapKeyMint) ||
+			object.AppAllowedForCapability(c.GetSessionUsername(), object.CapUserAdmin))
+	var keptAccessKey, keptAccessSecret string
+	if revealCredToApp {
+		keptAccessKey, keptAccessSecret = user.AccessKey, user.AccessSecret
+	}
 	user, err = object.GetMaskedUser(user, isAdminOrSelf)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
+	}
+	if revealCredToApp && user != nil {
+		user.AccessKey, user.AccessSecret = keptAccessKey, keptAccessSecret
 	}
 
 	if organization != nil && user != nil {
@@ -1020,6 +1046,12 @@ func (c *ApiController) GetSortedUsers() {
 // @Success 200 {int} int The count of filtered users for an organization
 // @router /get-user-count [get]
 func (c *ApiController) GetUserCount() {
+	// V5/Red#3: per-org user cardinality is a count oracle (incl the admin org).
+	// Gate app/M2M principals on the user-admin capability; humans keep authz.
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	owner := c.Ctx.Input.Query("owner")
 	isOnline := c.Ctx.Input.Query("isOnline")
 
