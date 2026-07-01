@@ -16,6 +16,17 @@ images:
     dockerfile: Dockerfile
     repo: ghcr.io/hanzoai/iam
 
+# CI gates run by the hanzoai/ci reusable workflow. The web frontend + Go
+# binaries are compiled inside the multi-stage Dockerfile (the image build
+# above), so `test:` only carries the unit + lint gates the image build can't.
+test:
+  - name: go-test
+    run: CGO_ENABLED=0 go test $(go list ./...) -tags skipCi
+  - name: go-lint
+    run: |
+      go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+      golangci-lint run --timeout 5m --modules-download-mode=mod
+
 # Deploy: roll the freshly-built image onto the IAM operator Service CR.
 # Fires only on `main` (and tags), and only when KMS hands back a kubeconfig —
 # so PRs and forks never deploy. IAM runs in the `hanzo` namespace on
