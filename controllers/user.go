@@ -80,6 +80,20 @@ func (c *ApiController) GetGlobalUsers() {
 // @Success 200 {array} object.User The Response object
 // @router /get-users [get]
 func (c *ApiController) GetUsers() {
+	// V5/N4 (cross-tenant disclosure, defense in depth): the user LIST is the
+	// crown-jewel roster (name/email/passwordSalt). The authz layer still waves
+	// through an app/M2M principal (subOwner=="app"), so a tenant admin who
+	// reads its own org's app clientSecret could mint an app token and
+	// enumerate owner=admin (the 9 superusers) here — reproducing the V5 leak.
+	// Gate the enumeration on the SAME user-admin capability the mutations use:
+	// a human keeps normal authz (owner=admin already denied for non-global by
+	// authz.IsAllowed); a platform app in IAM_USER_ADMIN_APPS (hanzo-cloud /
+	// *-console — the superadmin console backend) passes; a tenant app is
+	// denied. (Point lookups by accessKey/userId use get-user, not this.)
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	owner := c.Ctx.Input.Query("owner")
 	groupName := c.Ctx.Input.Query("groupName")
 	limit := c.Ctx.Input.Query("pageSize")
@@ -191,6 +205,18 @@ func (c *ApiController) GetUser() {
 	} else {
 		if owner == "" {
 			owner = util.GetOwnerFromId(id)
+		}
+
+		// V5/N4: a single-user read targeting the global-admin org (e.g.
+		// get-user?id=admin/z — the admin usernames are guessable) must not be
+		// reachable by an app/M2M principal that lacks the user-admin
+		// capability. Humans keep normal authz (bearer non-global is already
+		// denied owner=admin by authz.IsAllowed); platform apps (hanzo-cloud /
+		// *-console) pass; a tenant app is denied. Tenant-scoped reads
+		// (chat resolves owner=<tenant>+email; the accessKey billing path)
+		// are unaffected because owner != AdminOrg there.
+		if owner == conf.AdminOrg && !c.requireAppCapability(object.CapUserAdmin) {
+			return
 		}
 
 		switch {
@@ -965,6 +991,13 @@ func (c *ApiController) CheckUserPassword() {
 // @Success 200 {array} object.User The Response object
 // @router /get-sorted-users [get]
 func (c *ApiController) GetSortedUsers() {
+	// V5/N4: same crown-jewel roster as GetUsers, via the sorted variant —
+	// gate app/M2M principals on the user-admin capability (humans + platform
+	// apps pass; tenant apps denied).
+	if !c.requireAppCapability(object.CapUserAdmin) {
+		return
+	}
+
 	owner := c.Ctx.Input.Query("owner")
 	sorter := c.Ctx.Input.Query("sorter")
 	limit := util.ParseInt(c.Ctx.Input.Query("limit"))
