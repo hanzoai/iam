@@ -205,6 +205,24 @@ func (c *ApiController) GetOrganizationApplications() {
 		return
 	}
 
+	// V5/N2 (cross-tenant disclosure): a non-global admin may list applications
+	// ONLY within its OWN organization. Applications are stored under
+	// owner==AdminOrg with an `organization` field; without this a non-global
+	// admin could pass organization=admin (or organization=<any tenant>) and
+	// GetAllowedApplications' user.IsAdmin branch would return that org's apps
+	// — incl the per-user app-<email> seeds (cross-tenant email enumeration).
+	// Pin the org to the caller's own; global admins are unrestricted.
+	if !c.IsGlobalAdmin() {
+		callerOwner := ""
+		if cu := c.getCurrentUser(); cu != nil {
+			callerOwner = cu.Owner
+		}
+		if organization != callerOwner {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return
+		}
+	}
+
 	if limit == "" || page == "" {
 		applications, err := object.GetOrganizationApplications(owner, organization)
 		if err != nil {
