@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hanzoai/iam/conf"
 )
 
 const deviceCodeGrant = "urn:ietf:params:oauth:grant-type:device_code"
@@ -161,19 +163,24 @@ func TestDeviceClientMismatchError(t *testing.T) {
 	}
 }
 
-// TestDeviceApprovalCrossTenantError is the regression guard for H1: the
-// approving user's org MUST equal the org that owns the device app, or the
-// approval is refused. A user in org A approving an app in org B is the
-// cross-tenant confused deputy (and the downstream token mint, which looks the
-// user up in deviceApp.Organization, would resolve a different principal).
+// TestDeviceApprovalCrossTenantError is the regression guard for H1: a TENANT
+// user's org MUST equal the org that owns the device app, or the approval is
+// refused. A user in tenant org A approving an app in tenant org B is the
+// cross-tenant confused deputy. The one exception is a GLOBAL admin (conf.AdminOrg):
+// godmode may approve any org's app, and the mint then resolves them in their
+// own (admin) org via DeviceAuthCache.UserOwner.
 func TestDeviceApprovalCrossTenantError(t *testing.T) {
 	hanzoApp := &Application{Owner: "admin", Name: "hanzo-app", Organization: "hanzo"}
 
 	if err := DeviceApprovalCrossTenantError(&User{Owner: "hanzo", Name: "z"}, hanzoApp); err != nil {
 		t.Fatalf("same-org approval must pass, got %v", err)
 	}
+	// Godmode: a global admin (conf.AdminOrg) approves any org's app.
+	if err := DeviceApprovalCrossTenantError(&User{Owner: conf.AdminOrg, Name: "z"}, hanzoApp); err != nil {
+		t.Fatalf("global-admin approval must pass (godmode), got %v", err)
+	}
 	if err := DeviceApprovalCrossTenantError(&User{Owner: "zoo", Name: "z"}, hanzoApp); err == nil {
-		t.Fatal("cross-org approval must be refused (org A user, org B app)")
+		t.Fatal("cross-org approval must be refused (tenant org A user, org B app)")
 	}
 	if DeviceApprovalCrossTenantError(nil, hanzoApp) == nil {
 		t.Fatal("nil user must be refused (fail-closed)")
