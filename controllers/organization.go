@@ -101,6 +101,26 @@ func (c *ApiController) GetOrganizations() {
 // @router /get-organization [get]
 func (c *ApiController) GetOrganization() {
 	id := c.Ctx.Input.Query("id")
+
+	// V5/N3 (cross-tenant disclosure): an org's name IS the customer's email in
+	// the per-user-org model, so a single-item read is a customer-identity leak
+	// (and existence oracle). A non-global caller may read ONLY its own org
+	// (the org whose name == the caller's owner). Global admins are
+	// unrestricted; the pre-auth login path reads app config via
+	// get-application/get-app-login, not this endpoint. Mirrors
+	// GetOrganizationNames' scoping.
+	if !c.IsGlobalAdmin() {
+		callerOwner := ""
+		if cu := c.getCurrentUser(); cu != nil {
+			callerOwner = cu.Owner
+		}
+		_, name, err := util.GetOwnerAndNameFromIdWithError(id)
+		if err != nil || name == "" || name != callerOwner {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return
+		}
+	}
+
 	organization, err := object.GetMaskedOrganization(object.GetOrganization(id))
 	if err != nil {
 		c.ResponseError(err.Error())
