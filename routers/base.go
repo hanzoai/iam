@@ -223,6 +223,17 @@ func getUsernameByClientIdSecret(ctx *context.Context) (string, error) {
 		return "", fmt.Errorf("Incorrect client secret for application: %s", application.Name)
 	}
 
+	// V5/Red#4 (capability name-collision): the app-principal is "app/<Name>"
+	// and the capability allowlists key on that bare Name — but Name is NOT
+	// globally unique (application PK is (Owner, Name)). A capability-reserved
+	// name is legitimate ONLY on the admin-owned platform app. Refuse to mint an
+	// app principal for a NON-admin-owned application whose Name collides one, so
+	// a tenant cannot register <theirOrg>/hanzo-console (etc.) and inherit
+	// CapUserAdmin/CapKeyMint to read any tenant's users + hk- credentials.
+	if application.Owner != conf.AdminOrg && object.AppNameIsCapabilityReserved(application.Name) {
+		return "", fmt.Errorf("application name is reserved: %s", application.Name)
+	}
+
 	return fmt.Sprintf("app/%s", application.Name), nil
 }
 
