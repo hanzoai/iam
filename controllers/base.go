@@ -48,25 +48,38 @@ func (c *ApiController) IsGlobalAdmin() bool {
 	return isGlobalAdmin
 }
 
-// appMutationScopeAllowed enforces that a NON-global HUMAN caller may only
-// create / modify / delete an application within its OWN organization.
+// appMutationAllowed decides whether the caller may create / modify / delete
+// the given application.
 //
-// V5/Red#6 (availability): app-mutation authz is org-unscoped (Casbin
-// objOwner=*), so a customer org-admin could delete the seeded
-// admin/hanzo-console platform app -> platform-wide auth DoS, or inject apps
-// into arbitrary org namespaces. App/M2M principals are already
-// capability-gated (requireAppCapability(CapAppAdmin)) by every mutation
-// handler — they are trusted platform managers here; global admins are
-// unrestricted.
-func (c *ApiController) appMutationScopeAllowed(appOrg string) bool {
+// V5/Red#6 (availability) + Red#7: app-mutation authz is org-unscoped (Casbin
+// objOwner=*, any authenticated principal reaches the handler with no isAdmin
+// check). The rule:
+//   - global admin: unrestricted.
+//   - app/M2M principal: already capability-gated (requireAppCapability
+//     CapAppAdmin) upstream — trusted platform manager here.
+//   - a capability-RESERVED app (the platform login/capability apps:
+//     hanzo-console, hanzo-cloud, hanzo-chat, *-console, ...) may ONLY be
+//     mutated by a global admin, REGARDLESS of its tenant Organization. This is
+//     the Red#7 fix: admin/hanzo-console is Owner=admin, Organization=hanzo, so
+//     an Organization-only scope let ANY hanzo-org principal (hanzo is the
+//     default signup org) delete/rewrite the platform login app -> auth DoS /
+//     OAuth-client takeover.
+//   - otherwise: the caller must be an ADMIN of the app's OWN organization.
+func (c *ApiController) appMutationAllowed(app *object.Application) bool {
 	if c.IsGlobalAdmin() {
 		return true
 	}
 	if object.IsAppUser(c.GetSessionUsername()) {
 		return true
 	}
+	if app == nil {
+		return false
+	}
+	if object.AppNameIsCapabilityReserved(app.Name) {
+		return false
+	}
 	cu := c.getCurrentUser()
-	return cu != nil && appOrg != "" && appOrg == cu.Owner
+	return cu != nil && cu.IsAdmin && app.Organization != "" && app.Organization == cu.Owner
 }
 
 func (c *ApiController) IsAdmin() bool {
