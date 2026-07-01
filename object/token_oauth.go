@@ -82,6 +82,12 @@ type IntrospectionResponse struct {
 type DeviceAuthCache struct {
 	UserSignIn    bool
 	UserName      string
+	// UserOwner is the approving user's org, captured at approval. The token
+	// mint resolves the user in THIS org (not the app's) so a global admin —
+	// who lives in conf.AdminOrg, not the app's tenant — resolves to their real
+	// godmode identity. Empty on older entries: the mint falls back to the app
+	// org, preserving pre-existing single-tenant behavior.
+	UserOwner     string
 	ApplicationId string
 	Scope         string
 	RequestAt     time.Time
@@ -1321,7 +1327,18 @@ func GetDeviceCodeToken(application *Application, deviceAuth *DeviceAuthCache, n
 		}, nil
 	}
 
-	user, err := GetUserByFields(application.Organization, deviceAuth.UserName)
+	// Resolve the approver in the org captured at approval (deviceAuth.UserOwner),
+	// falling back to the app's org for older cache entries. For a normal
+	// single-tenant approval the two are identical; for a global admin the
+	// captured org is conf.AdminOrg, so the mint finds their godmode identity
+	// instead of failing to find a non-existent same-named user in the app org.
+	// This is safe because DeviceApprovalCrossTenantError already gated approval:
+	// a non-global-admin only reaches here with UserOwner == application.Organization.
+	lookupOrg := deviceAuth.UserOwner
+	if lookupOrg == "" {
+		lookupOrg = application.Organization
+	}
+	user, err := GetUserByFields(lookupOrg, deviceAuth.UserName)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1402,6 +1419,15 @@ func deviceCodeUserError(user *User) *TokenError {
 func DeviceApprovalCrossTenantError(user *User, deviceApp *Application) error {
 	if user == nil || deviceApp == nil || deviceApp.Organization == "" {
 		return fmt.Errorf("the device authorization could not be resolved")
+	}
+	// Godmode: a GLOBAL admin (a user in conf.AdminOrg) may approve a device
+	// sign-in for any org's app — acting across every tenant is exactly what
+	// global-admin means, and it is precisely the account operators use to sign
+	// a CLI into any brand's app. This is NOT the same as the org-scoped
+	// same-named superuser (e.g. zoo's "z") the guard blocks: that user is in a
+	// TENANT org, IsGlobalAdmin() is false for it, and it stays refused below.
+	if user.IsGlobalAdmin() {
+		return nil
 	}
 	if user.Owner != deviceApp.Organization {
 		return fmt.Errorf("cross-tenant device approval refused: your organization may not approve this device sign-in")
