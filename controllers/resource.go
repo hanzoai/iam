@@ -366,7 +366,11 @@ func (c *ApiController) UploadResource() {
 		}
 
 		applicationObj.TermsOfUse = fileUrl
-		_, err = object.UpdateApplication(applicationId, applicationObj, true, c.GetAcceptLanguage())
+		// V5/Red#8: pass the REAL caller privilege (was hardcoded true) so
+		// object.UpdateApplication's reserved-app + org-scope invariants apply —
+		// a non-global admin can no longer set TermsOfUse on a platform app
+		// (e.g. admin/hanzo-console's consent page) via an upload-resource path.
+		_, err = object.UpdateApplication(applicationId, applicationObj, c.IsGlobalAdmin(), c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
