@@ -487,7 +487,11 @@ func unionDropBlank(cur, want []string) ([]string, bool) {
 	return out, false
 }
 
-func mergeApplicationOAuthDefaults(existing *Application, desired *Application) {
+// reconcileApplicationOAuthDefaults applies the seed→existing OAuth merge policy
+// to the in-memory application and returns the changed column names. It is PURE
+// (no DB, no cache) so the reconcile policy is unit-testable in isolation;
+// mergeApplicationOAuthDefaults wraps it with persistence + cache eviction.
+func reconcileApplicationOAuthDefaults(existing *Application, desired *Application) []string {
 	var updateCols []string
 
 	// Reconcile redirectUris as a UNION with the seed: add any seed URI not
@@ -541,8 +545,17 @@ func mergeApplicationOAuthDefaults(existing *Application, desired *Application) 
 		updateCols = append(updateCols, "refresh_expire_in_hours")
 	}
 
-	// Merge cert if existing is empty
-	if existing.Cert == "" && desired.Cert != "" {
+	// Reconcile cert to the declared cert NAME (authoritative from the seed).
+	// The application.cert field is a REFERENCE — a bare name ("cert-hanzo") or
+	// "owner/name" — NEVER an inline PEM. A PEM lands here when an upstream
+	// write or an old get-application expansion stamps the certificate body into
+	// the field; consumers then call GetOwnerAndNameFromId(org + "/" + cert),
+	// which fails ("wrong token count") on the PEM's slashes/newlines, so the
+	// signing cert never loads and OAuth-callback JWT verification dies for every
+	// SDK consumer (cloud-api /v1/signin, console, team, …). The old guard was
+	// fill-if-empty, so such drift (or a stale/wrong name) never healed.
+	// Reconcile on ANY difference so a universe redeploy repairs the cert field.
+	if desired.Cert != "" && existing.Cert != desired.Cert {
 		existing.Cert = desired.Cert
 		updateCols = append(updateCols, "cert")
 	}
@@ -565,6 +578,11 @@ func mergeApplicationOAuthDefaults(existing *Application, desired *Application) 
 		updateCols = append(updateCols, "terms_of_use")
 	}
 
+	return updateCols
+}
+
+func mergeApplicationOAuthDefaults(existing *Application, desired *Application) {
+	updateCols := reconcileApplicationOAuthDefaults(existing, desired)
 	if len(updateCols) == 0 {
 		return
 	}
