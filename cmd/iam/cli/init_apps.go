@@ -74,16 +74,37 @@ var brandGrantTypes = []string{
 	"urn:ietf:params:oauth:grant-type:device_code",
 }
 
+// mfaItem mirrors object.MfaItem — one MFA method + its enforcement rule.
+type mfaItem struct {
+	Name string `json:"name"`
+	Rule string `json:"rule"`
+}
+
+// nonForcingMfaItems is the canonical brand-org MFA policy: every method is
+// AVAILABLE for users to self-enroll (app / sms / email), but NONE is forced —
+// each rule is "Optional", so IsNeedPromptMfa never gates login. This makes
+// "MFA off by default, but offer it" an explicit, declared value (not an
+// accident of an empty list). An org admin turns enforcement on per-org from
+// Settings → Organization → MFA items (Optional → Prompt/Required); that live
+// setting is the source of truth — init-apps only guarantees brand orgs never
+// SHIP forced. Method names match object.{TotpType,SmsType,EmailType}.
+var nonForcingMfaItems = []*mfaItem{
+	{Name: "app", Rule: "Optional"},
+	{Name: "sms", Rule: "Optional"},
+	{Name: "email", Rule: "Optional"},
+}
+
 // orgCreate is the subset of object.Organization that init-apps writes.
 type orgCreate struct {
-	Owner              string   `json:"owner"`
-	Name               string   `json:"name"`
-	DisplayName        string   `json:"displayName"`
-	PasswordType       string   `json:"passwordType"`
-	Languages          []string `json:"languages"`
-	Tags               []string `json:"tags"`
-	EnableSoftDeletion bool     `json:"enableSoftDeletion"`
-	IsProfilePublic    bool     `json:"isProfilePublic"`
+	Owner              string     `json:"owner"`
+	Name               string     `json:"name"`
+	DisplayName        string     `json:"displayName"`
+	PasswordType       string     `json:"passwordType"`
+	Languages          []string   `json:"languages"`
+	Tags               []string   `json:"tags"`
+	MfaItems           []*mfaItem `json:"mfaItems"`
+	EnableSoftDeletion bool       `json:"enableSoftDeletion"`
+	IsProfilePublic    bool       `json:"isProfilePublic"`
 }
 
 // signinMethod mirrors object.SigninMethod.
@@ -133,6 +154,7 @@ func buildOrg(b brandSpec) *orgCreate {
 		PasswordType:       "argon2id",
 		Languages:          defaultLanguages,
 		Tags:               []string{},
+		MfaItems:           nonForcingMfaItems,
 		EnableSoftDeletion: false,
 		IsProfilePublic:    false,
 	}
@@ -274,7 +296,7 @@ func runInitApps(client *provClient, cfg *provConfig, verbose bool) error {
 		orgSet[o] = true
 	}
 
-	newOrgs, newApps, convergedApps, haveApps := 0, 0, 0, 0
+	newOrgs, newApps, convergedApps, haveApps, unforcedOrgs := 0, 0, 0, 0, 0
 	for _, b := range brandSpecs {
 		if !orgSet[b.Org] {
 			if err := addOrg(client, buildOrg(b)); err != nil {
@@ -284,6 +306,17 @@ func runInitApps(client *provClient, cfg *provConfig, verbose bool) error {
 			newOrgs++
 			if verbose {
 				fmt.Printf("[org]  created %s\n", b.Org)
+			}
+		} else {
+			// Already present: un-force MFA. Newly-created orgs ship non-forcing
+			// from buildOrg; existing ones may still carry the forced "app"
+			// Required rule (the forced-authenticator bug) — converge them.
+			unforced, err := ensureOrgMfaNonForcing(client, cfg.AdminOrg, b.Org, verbose)
+			if err != nil {
+				return fmt.Errorf("init-apps: %w", err)
+			}
+			if unforced {
+				unforcedOrgs++
 			}
 		}
 
@@ -358,8 +391,8 @@ func runInitApps(client *provClient, cfg *provConfig, verbose bool) error {
 		}
 	}
 
-	fmt.Printf("init-apps: orgs +%d, apps +%d, kms-clients +%d, grants converged %d, %d already converged\n",
-		newOrgs, newApps, newKms, convergedApps, haveApps)
+	fmt.Printf("init-apps: orgs +%d, apps +%d, kms-clients +%d, grants converged %d, %d already converged, MFA un-forced %d\n",
+		newOrgs, newApps, newKms, convergedApps, haveApps, unforcedOrgs)
 	return nil
 }
 
