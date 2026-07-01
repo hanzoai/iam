@@ -48,6 +48,27 @@ func (c *ApiController) IsGlobalAdmin() bool {
 	return isGlobalAdmin
 }
 
+// appMutationScopeAllowed enforces that a NON-global HUMAN caller may only
+// create / modify / delete an application within its OWN organization.
+//
+// V5/Red#6 (availability): app-mutation authz is org-unscoped (Casbin
+// objOwner=*), so a customer org-admin could delete the seeded
+// admin/hanzo-console platform app -> platform-wide auth DoS, or inject apps
+// into arbitrary org namespaces. App/M2M principals are already
+// capability-gated (requireAppCapability(CapAppAdmin)) by every mutation
+// handler — they are trusted platform managers here; global admins are
+// unrestricted.
+func (c *ApiController) appMutationScopeAllowed(appOrg string) bool {
+	if c.IsGlobalAdmin() {
+		return true
+	}
+	if object.IsAppUser(c.GetSessionUsername()) {
+		return true
+	}
+	cu := c.getCurrentUser()
+	return cu != nil && appOrg != "" && appOrg == cu.Owner
+}
+
 func (c *ApiController) IsAdmin() bool {
 	isGlobalAdmin, user := c.isGlobalAdmin()
 	if !isGlobalAdmin && user == nil {
