@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/hanzoai/beego/v2/core/utils/pagination"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 	"github.com/hanzoai/iam/util"
 )
@@ -33,6 +34,20 @@ import (
 func (c *ApiController) GetApplications() {
 	userId := c.GetSessionUsername()
 	owner := c.Ctx.Input.Query("owner")
+
+	// V5: only a GLOBAL admin may enumerate the admin (superuser) org's
+	// applications — owner==AdminOrg is the "list every tenant's app" query (all
+	// apps are stored under owner==admin). Non-global callers are hard-denied
+	// here (same guard get-users uses), covering BOTH the list and the paginated
+	// branch. Safe: the SPA app-list uses get-organization-applications for
+	// non-default orgs (isDefaultOrganizationSelected is false for a non-global
+	// admin), so no non-global console path depends on this; a non-global admin
+	// reads its OWN org's apps via get-organization-applications (org-scoped).
+	if owner == conf.AdminOrg && !c.IsGlobalAdmin() {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return
+	}
+
 	limit := c.Ctx.Input.Query("pageSize")
 	page := c.Ctx.Input.Query("p")
 	field := c.Ctx.Input.Query("field")
