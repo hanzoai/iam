@@ -290,6 +290,14 @@ func (c *ApiController) UpdateApplication() {
 		return
 	}
 
+	// V5/Red#5 (defense in depth): a non-global caller must never rename an app
+	// TO a capability-reserved name (that identity belongs to the admin-owned
+	// platform app). Mirrors the AddApplication guard.
+	if !c.IsGlobalAdmin() && object.AppNameIsCapabilityReserved(application.Name) {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return
+	}
+
 	if err = object.CheckIpWhitelist(application.IpWhitelist, c.GetAcceptLanguage()); err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -315,6 +323,17 @@ func (c *ApiController) AddApplication() {
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &application)
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+
+	// V5/Red#5 (defense in depth): a capability-allowlisted app Name is reserved
+	// for the admin-owned platform app. A non-global caller must never create an
+	// application with such a Name — this removes the reliance on the implicit
+	// (admin,<name>) PK-collision (which only holds while the platform app is
+	// seeded) and permanently forecloses the owner=admin injection into the
+	// capability allowlists. Global admins (who seed/manage platform apps) pass.
+	if !c.IsGlobalAdmin() && object.AppNameIsCapabilityReserved(application.Name) {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
 
