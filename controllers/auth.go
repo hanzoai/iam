@@ -280,6 +280,9 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 		}
 
 		deviceAuthCacheDeviceCodeCast.UserName = user.Name
+		// Carry the approver's org so the mint resolves them in their OWN org —
+		// required for a global admin (conf.AdminOrg), a no-op for a same-org user.
+		deviceAuthCacheDeviceCodeCast.UserOwner = user.Owner
 		deviceAuthCacheDeviceCodeCast.UserSignIn = true
 
 		object.DeviceAuthMap.Store(authCacheCast.UserName, deviceAuthCacheDeviceCodeCast)
