@@ -142,3 +142,40 @@ secret exposure.
     pull the new value into the init-providers Job's env.
 4. Revoke the old secret only after `iam init-providers -v` reports
     `[upd ] provider-github` (or google) cleanly.
+
+## Troubleshooting — "password or code is incorrect" on GitHub/Google
+
+This one message covers several distinct causes. Diagnose by the IAM pod log
+(`kubectl -n hanzo logs deploy/iam`), NOT the browser text — the browser wraps
+every provider failure in the same generic string.
+
+| IAM log line | Real cause | Fix |
+|---|---|---|
+| GitHub token endpoint returns `incorrect_client_credentials` | The provider row's `clientSecret` is wrong/stale | Re-provision the secret (Rotation, above). Confirm with a direct probe (below). |
+| `GithubIdProvider.GetUserInfo: GET /user/emails returned 403` | **GitHub App** (client id starts with `Iv…`) lacks the "Email addresses" permission | Login is now **seamless anyway** — IAM falls back to `<id>+<login>@users.noreply.github.com` (see `idp/github.go`). Grant the read-only "Email addresses" account permission on the App only if you want the user's *real* address. |
+| `GitHub rejected GET /user (status 403)` | The GitHub App lacks the **user profile** account permission (can't identify the user at all) | Grant the App read-only account permissions for the user profile (App settings → Permissions → Account permissions), then sign in again. This one is fatal — there is no identity to fall back to. |
+| `redirect_uri_mismatch` at authorize | The app's registered callback ≠ what IAM sends | Register `https://iam.hanzo.ai/callback` on the provider app (see Verification). |
+
+**GitHub App vs OAuth App.** A GitHub *App* client id starts with `Iv…`; a
+classic *OAuth App* is 20 hex chars. OAuth Apps get broad scopes
+(`read:user`, `user:email`) automatically, so `/user` and `/user/emails` just
+work. GitHub *Apps* expose only the endpoints their granular permissions
+allow — so they need the account-level **user profile** (fatal if missing) and
+**Email addresses** (now non-fatal, noreply fallback) permissions.
+
+**Direct credential probe** — distinguishes a bad secret from a permission
+issue without touching the browser flow:
+
+```bash
+# valid creds ⇒ "bad_verification_code" (the dummy code is what's rejected)
+# wrong secret ⇒ "incorrect_client_credentials"
+curl -s -H 'Accept: application/json' https://github.com/login/oauth/access_token \
+  -d client_id=<client-id> -d client_secret=<client-secret> -d code=dummy
+```
+
+**Provider secret write path.** `provider-github` / `provider-google` are
+admin-org rows; updating them requires a **global-admin** session
+(`isGlobalAdmin: true`), not an org-admin. The canonical writer is
+`iam init-providers` (run by the `iam-init-brand-apps` Job with the
+`iam-kms-auth` admin machine identity). IAM caches provider rows in memory, so
+`kubectl rollout restart deploy/iam` after any out-of-band write.

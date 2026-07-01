@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -219,6 +220,22 @@ func (idp *GithubIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error)
 		return nil, err
 	}
 
+	// A GitHub App (client id starts with "Iv…") only exposes the endpoints its
+	// configured permissions allow. If it lacks the "Read-only" account
+	// permission for the user profile, GET /user returns 403 "Resource not
+	// accessible by integration" — fail with a CLEAR, actionable message rather
+	// than parsing an error body into an empty user that later dies as the
+	// generic "password or code is incorrect".
+	if resp.StatusCode != 200 {
+		var e GitHubErrorInfo
+		_ = json.Unmarshal(body, &e)
+		return nil, fmt.Errorf("GitHub rejected GET /user (status %d): %s. "+
+			"If this OAuth client is a GitHub App, grant it the read-only "+
+			"account permissions for the user profile and email in the App "+
+			"settings (Permissions → Account permissions), then sign in again",
+			resp.StatusCode, e.Message)
+	}
+
 	var githubUserInfo GitHubUserInfo
 	err = json.Unmarshal(body, &githubUserInfo)
 	if err != nil {
@@ -244,12 +261,19 @@ func (idp *GithubIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error)
 
 		if respEmail.StatusCode != 200 {
 			var errMessage GitHubErrorInfo
-			err = json.Unmarshal(emailBody, &errMessage)
-			if err != nil {
-				return nil, err
-			}
-
-			fmt.Printf("GithubIdProvider:GetUserInfo() error, status code = %d, error message = %v\n", respEmail.StatusCode, errMessage)
+			_ = json.Unmarshal(emailBody, &errMessage)
+			// The account has no public email AND we can't read /user/emails
+			// (typically a GitHub App without the "Email addresses" permission).
+			// Keep sign-in SEAMLESS by falling back to GitHub's canonical
+			// noreply address <id>+<login>@users.noreply.github.com — a stable,
+			// unique identifier that satisfies the email-required signup path —
+			// instead of failing login. Grant the App the "Email addresses"
+			// permission to receive the user's real address.
+			log.Printf("GithubIdProvider.GetUserInfo: GET /user/emails returned %d (%s); "+
+				"using noreply fallback. Grant the GitHub App the read-only "+
+				"'Email addresses' account permission to get real emails.",
+				respEmail.StatusCode, errMessage.Message)
+			githubUserInfo.Email = fmt.Sprintf("%d+%s@users.noreply.github.com", githubUserInfo.Id, githubUserInfo.Login)
 		} else {
 			var userEmails []GitHubUserEmailInfo
 			err = json.Unmarshal(emailBody, &userEmails)
