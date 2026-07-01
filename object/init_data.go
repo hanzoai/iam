@@ -590,7 +590,20 @@ func mergeApplicationOAuthDefaults(existing *Application, desired *Application) 
 // their password is fixed by convention (Ilove<App>2026!!) and is
 // reconciled from init_data on every boot, so it can never drift.
 func isSeedSuperuser(u *User) bool {
-	return u != nil && u.Name == "z" && u.IsAdmin && u.Password != ""
+	// Convention-seeded global-admin superusers (a@/z@/woo@<org>) whose identity
+	// init_data owns as the single source of truth: password AND the
+	// isGlobalAdmin/isAdmin flags are reconciled from the seed on every boot, so
+	// they can never drift and need no manual DB surgery (the DB is SQLCipher-
+	// encrypted — there is no other deterministic way to set the flags).
+	if u == nil || !u.IsGlobalAdmin || u.Password == "" {
+		return false
+	}
+	switch u.Name {
+	case "a", "z", "woo":
+		return true
+	default:
+		return false
+	}
 }
 
 func initDefinedUser(user *User) {
@@ -608,17 +621,21 @@ func initDefinedUser(user *User) {
 		if isSeedSuperuser(user) && strings.HasPrefix(user.Password, "$") &&
 			(existed.Password != user.Password ||
 				existed.PasswordType != user.PasswordType ||
-				existed.SigninWrongTimes != 0) {
+				existed.SigninWrongTimes != 0 ||
+				existed.IsGlobalAdmin != user.IsGlobalAdmin ||
+				existed.IsAdmin != user.IsAdmin) {
 			existed.Password = user.Password
 			existed.PasswordType = user.PasswordType
 			existed.SigninWrongTimes = 0
+			existed.IsGlobalAdmin = user.IsGlobalAdmin
+			existed.IsAdmin = user.IsAdmin
 			_, uerr := ormer.Engine.Where("owner = ? AND name = ?", existed.Owner, existed.Name).
-				Cols("password", "password_type", "signin_wrong_times").
+				Cols("password", "password_type", "signin_wrong_times", "is_global_admin", "is_admin").
 				Update(existed)
 			if uerr != nil {
 				fmt.Printf("[init_data] reconcile superuser %s/%s FAILED: %v\n", user.Owner, user.Name, uerr)
 			} else {
-				fmt.Printf("[init_data] reconciled superuser %s/%s password from init_data (single source of truth)\n",
+				fmt.Printf("[init_data] reconciled superuser %s/%s identity (password+isGlobalAdmin+isAdmin) from init_data (single source of truth)\n",
 					user.Owner, user.Name)
 			}
 			return
