@@ -904,6 +904,16 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 
+	// V5/Red#8 (decomplect — one gate, all paths): a capability-reserved
+	// platform app (the login/capability apps: hanzo-console, *-console,
+	// hanzo-cloud, hanzo-chat, ...) may ONLY be mutated by a global admin,
+	// enforced at the DATA layer so EVERY caller is uniformly protected — the
+	// controller, mcpself, resource.go's termsOfUse writer, and any future one.
+	// Guards both the persisted identity and the requested new name.
+	if !isGlobalAdmin && (AppNameIsCapabilityReserved(oldApplication.Name) || AppNameIsCapabilityReserved(application.Name)) {
+		return false, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
+	}
+
 	if name == "hanzo-app" {
 		application.Name = name
 	}
@@ -1065,9 +1075,17 @@ func deleteApplication(application *Application) (bool, error) {
 	return affected != 0, nil
 }
 
-func DeleteApplication(application *Application) (bool, error) {
+func DeleteApplication(application *Application, isGlobalAdmin bool) (bool, error) {
 	if application.Name == "hanzo-app" {
 		return false, nil
+	}
+
+	// V5/Red#8 (decomplect — one gate, all paths): a capability-reserved
+	// platform login/capability app may ONLY be deleted by a global admin,
+	// enforced at the DATA layer so every caller (controller, mcpself, ...) is
+	// uniformly protected against deleting e.g. admin/hanzo-console (auth DoS).
+	if !isGlobalAdmin && AppNameIsCapabilityReserved(application.Name) {
+		return false, fmt.Errorf("Unauthorized operation")
 	}
 
 	return deleteApplication(application)
