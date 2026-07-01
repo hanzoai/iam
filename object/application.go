@@ -822,7 +822,17 @@ func GetAllowedApplications(applications []*Application, userId string, lang str
 	}
 
 	if user.IsAdmin {
-		return applications, nil
+		// V5/N2 (cross-tenant disclosure): an ORG admin is NOT a global admin
+		// (that case returned above via isUserIdGlobalAdmin). It may see only
+		// applications in its OWN organization (+ is_shared platform apps) —
+		// never another tenant's apps, incl the per-user app-<email> seeds.
+		res := []*Application{}
+		for _, application := range applications {
+			if application.Organization == user.Owner || application.IsShared {
+				res = append(res, application)
+			}
+		}
+		return res, nil
 	}
 
 	res := []*Application{}

@@ -250,6 +250,29 @@ func (c *ApiController) GetDefaultApplication() {
 // @router /get-organization-names [get]
 func (c *ApiController) GetOrganizationNames() {
 	owner := c.Ctx.Input.Query("owner")
+
+	// V5/N1 (cross-tenant disclosure): in the per-user-org model an org's
+	// name/displayName IS the customer's email, so an unscoped list is a
+	// cross-tenant customer-email roster (Red proved it was readable with NO
+	// auth). A non-global admin may enumerate ONLY its own organization;
+	// anonymous / unresolved callers get an empty list; only a global admin
+	// gets the full set. Mirrors GetOrganizations' isGlobalAdmin/callerOwner
+	// scoping — one pattern. (The only anon consumer is the optional
+	// orgMode=="Select" login org-picker, which IS this leak surface.)
+	if !c.IsGlobalAdmin() {
+		callerOwner := ""
+		if cu := c.getCurrentUser(); cu != nil {
+			callerOwner = cu.Owner
+		}
+		organizations, err := object.GetMaskedOrganizations(object.GetOrganizations(owner, callerOwner))
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		c.ResponseOk(organizations)
+		return
+	}
+
 	organizationNames, err := object.GetOrganizationsByFields(owner, []string{"name", "display_name"}...)
 	if err != nil {
 		c.ResponseError(err.Error())
