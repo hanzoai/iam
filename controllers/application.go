@@ -431,6 +431,6 @@ func (c *ApiController) DeleteApplication() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.DeleteApplication(&application))
+	c.Data["json"] = wrapActionResponse(object.DeleteApplication(&application, c.IsGlobalAdmin()))
 	c.ServeJSON()
 }
