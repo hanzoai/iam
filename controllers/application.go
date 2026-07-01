@@ -298,6 +298,16 @@ func (c *ApiController) UpdateApplication() {
 		return
 	}
 
+	// V5/Red#6: a non-global caller may modify an app ONLY within its own org —
+	// both the persisted row and the requested result must be the caller's org
+	// (never touch or move another org's app).
+	if existing, e := object.GetApplication(id); e == nil && existing != nil {
+		if !c.appMutationScopeAllowed(existing.Organization) || !c.appMutationScopeAllowed(application.Organization) {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return
+		}
+	}
+
 	if err = object.CheckIpWhitelist(application.IpWhitelist, c.GetAcceptLanguage()); err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -333,6 +343,14 @@ func (c *ApiController) AddApplication() {
 	// seeded) and permanently forecloses the owner=admin injection into the
 	// capability allowlists. Global admins (who seed/manage platform apps) pass.
 	if !c.IsGlobalAdmin() && object.AppNameIsCapabilityReserved(application.Name) {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return
+	}
+
+	// V5/Red#6: a non-global caller may create an app ONLY in its own org —
+	// closes the org-unscoped add-application over-permission (customer injecting
+	// apps into arbitrary org namespaces / brand orgs).
+	if !c.appMutationScopeAllowed(application.Organization) {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
@@ -373,6 +391,16 @@ func (c *ApiController) DeleteApplication() {
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &application)
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+
+	// V5/Red#6 (auth DoS): resolve the app by its REAL identity and scope the
+	// delete to the caller's own org — a non-global caller must NOT delete
+	// another org's app (e.g. the seeded admin/hanzo-console login app, whose
+	// loss breaks platform-wide auth). The body's org is attacker-controlled, so
+	// scope on the persisted row.
+	if existing, e := object.GetApplication(application.GetId()); e == nil && existing != nil && !c.appMutationScopeAllowed(existing.Organization) {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
 
