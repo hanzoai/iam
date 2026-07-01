@@ -124,21 +124,36 @@ func TestV5AdminOrgReadClosed(t *testing.T) {
 		t.Fatalf("LOCKOUT: get-users?owner=%s (own org) denied: %v", callerOrg, own)
 	}
 
-	// 3) get-applications?owner=admin MUST be scoped: every returned app belongs
-	//    to the caller's org OR is a shared platform app — never another
-	//    tenant's per-user seed.
+	// 3) get-applications?owner=admin — a non-global admin is HARD-DENIED. All
+	//    apps are stored under owner==admin, so this is the "enumerate every
+	//    tenant's app" query; only a global admin may run it. A non-global admin
+	//    reads its OWN org's apps via get-organization-applications (org-scoped).
+	//    Belt-and-suspenders: even if not denied, the body must carry no
+	//    cross-tenant app.
 	ga := v5Get(t, base, token, "/v1/iam/get-applications?owner=admin")
-	data, _ := ga["data"].([]any)
-	for _, it := range data {
-		app, _ := it.(map[string]any)
-		org := v5asString(app["organization"])
-		shared, _ := app["isShared"].(bool)
-		if org != callerOrg && !shared {
-			t.Fatalf("V5 OPEN: get-applications?owner=admin leaked cross-tenant app name=%q organization=%q isShared=%v (caller org=%q)",
-				v5asString(app["name"]), org, shared, callerOrg)
+	if sig := strings.ToLower(v5asString(ga["status"]) + " " + v5asString(ga["msg"])); !strings.Contains(sig, "unauthorized") {
+		for _, it := range asSlice(ga["data"]) {
+			app, _ := it.(map[string]any)
+			org := v5asString(app["organization"])
+			shared, _ := app["isShared"].(bool)
+			if org != callerOrg && !shared {
+				t.Fatalf("V5 OPEN: get-applications?owner=admin leaked cross-tenant app name=%q organization=%q isShared=%v (caller org=%q)",
+					v5asString(app["name"]), org, shared, callerOrg)
+			}
 		}
+		t.Fatalf("V5 OPEN: get-applications?owner=admin NOT denied for non-global admin (status/msg=%q, count=%d)", sig, len(asSlice(ga["data"])))
 	}
-	t.Logf("V5 CLOSED: admin-org users denied; own org (%s) readable; %d applications all scoped to caller-org/shared", callerOrg, len(data))
+	// own-org apps stay readable via the org-scoped endpoint (no lockout).
+	ownApps := v5Get(t, base, token, "/v1/iam/get-organization-applications?organization="+callerOrg)
+	if v5asString(ownApps["status"]) != "ok" {
+		t.Fatalf("LOCKOUT: get-organization-applications?organization=%s (own org) denied: %v", callerOrg, ownApps)
+	}
+	t.Logf("V5 CLOSED: admin-org users + get-applications?owner=admin denied; own org (%s) apps readable via get-organization-applications", callerOrg)
+}
+
+func asSlice(v any) []any {
+	s, _ := v.([]any)
+	return s
 }
 
 // TestV5SiblingEndpointsScoped covers Red's re-review findings N1/N2 — the same
