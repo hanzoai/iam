@@ -41,6 +41,31 @@ func (c *ApiController) GetApplications() {
 	sortOrder := c.Ctx.Input.Query("sortOrder")
 	organization := c.Ctx.Input.Query("organization")
 	var err error
+
+	// V5 (cross-tenant disclosure): applications are stored under
+	// owner==AdminOrg with an `organization` field naming the tenant, so
+	// get-applications?owner=admin would otherwise enumerate EVERY tenant's
+	// apps — including the per-user app-<email> seeds (customer email
+	// enumeration). A non-global admin is scoped to its OWN organization's
+	// applications (+ is_shared platform apps), regardless of the caller-
+	// supplied owner/organization/pageSize. Fail closed when the caller's org
+	// can't be resolved (app/M2M principal, no User row) — an empty scope
+	// yields only shared apps. Mirrors GetOrganizations' isGlobalAdmin/
+	// callerOwner scoping: one pattern, applied consistently.
+	if !c.IsGlobalAdmin() {
+		callerOwner := ""
+		if cu := c.getCurrentUser(); cu != nil {
+			callerOwner = cu.Owner
+		}
+		applications, err := object.GetOrganizationApplications(owner, callerOwner)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		c.ResponseOk(object.GetMaskedApplications(applications, userId))
+		return
+	}
+
 	if limit == "" || page == "" {
 		var applications []*object.Application
 		if organization == "" {
