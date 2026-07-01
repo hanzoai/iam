@@ -140,3 +140,67 @@ func TestV5AdminOrgReadClosed(t *testing.T) {
 	}
 	t.Logf("V5 CLOSED: admin-org users denied; own org (%s) readable; %d applications all scoped to caller-org/shared", callerOrg, len(data))
 }
+
+// TestV5SiblingEndpointsScoped covers Red's re-review findings N1/N2 — the same
+// cross-tenant-disclosure objective reached via sibling endpoints of the two
+// V5-fixed ones. Same env gating as TestV5AdminOrgReadClosed.
+func TestV5SiblingEndpointsScoped(t *testing.T) {
+	base := strings.TrimRight(os.Getenv("IAM_E2E_URL"), "/")
+	token := os.Getenv("IAM_E2E_ORGADMIN_TOKEN")
+	if base == "" || token == "" {
+		t.Skip("skipping: set IAM_E2E_URL + IAM_E2E_ORGADMIN_TOKEN (non-global org-admin bearer)")
+	}
+	callerOrg := v5TokenOwner(t, token)
+
+	// N1: get-organization-names — org name == customer email. An UNAUTHENTICATED
+	// caller must NOT get the full customer-email roster; a non-global admin gets
+	// only its own org. Assert neither anon nor the non-global token can see any
+	// org other than the caller's own.
+	anon := v5Get(t, base, "", "/v1/iam/get-organization-names")
+	if names, ok := anon["data"].([]any); ok {
+		for _, it := range names {
+			o, _ := it.(map[string]any)
+			if n := v5asString(o["name"]); n != "" && n != callerOrg {
+				t.Fatalf("N1 OPEN: anonymous get-organization-names leaked cross-tenant org name=%q (customer email roster)", n)
+			}
+		}
+	}
+	authed := v5Get(t, base, token, "/v1/iam/get-organization-names")
+	if names, ok := authed["data"].([]any); ok {
+		for _, it := range names {
+			o, _ := it.(map[string]any)
+			if n := v5asString(o["name"]); n != "" && n != callerOrg {
+				t.Fatalf("N1 OPEN: non-global get-organization-names leaked org name=%q (caller org=%q)", n, callerOrg)
+			}
+		}
+	}
+
+	// N2: get-organization-applications?organization=<other> — a non-global admin
+	// must be denied when requesting another org (incl the admin org); its OWN
+	// org stays readable.
+	for _, org := range []string{"admin", "lux", "zoo", "pars"} {
+		if org == callerOrg {
+			continue
+		}
+		r := v5Get(t, base, token, "/v1/iam/get-organization-applications?organization="+org)
+		if sig := strings.ToLower(v5asString(r["status"]) + " " + v5asString(r["msg"])); !strings.Contains(sig, "unauthorized") {
+			// Not denied outright — then it MUST be empty / caller-scoped (no cross-tenant app).
+			if data, ok := r["data"].([]any); ok {
+				for _, it := range data {
+					app, _ := it.(map[string]any)
+					ao := v5asString(app["organization"])
+					shared, _ := app["isShared"].(bool)
+					if ao != callerOrg && !shared {
+						t.Fatalf("N2 OPEN: get-organization-applications?organization=%s leaked cross-tenant app name=%q organization=%q (caller org=%q)",
+							org, v5asString(app["name"]), ao, callerOrg)
+					}
+				}
+			}
+		}
+	}
+	ownApps := v5Get(t, base, token, "/v1/iam/get-organization-applications?organization="+callerOrg)
+	if v5asString(ownApps["status"]) != "ok" {
+		t.Fatalf("LOCKOUT: get-organization-applications?organization=%s (own org) denied: %v", callerOrg, ownApps)
+	}
+	t.Logf("N1/N2 CLOSED: anon+non-global org-names scoped to own org; cross-tenant get-organization-applications denied; own org readable")
+}
