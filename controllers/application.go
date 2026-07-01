@@ -17,6 +17,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/hanzoai/beego/v2/core/utils/pagination"
 	"github.com/hanzoai/iam/conf"
@@ -313,11 +314,13 @@ func (c *ApiController) UpdateApplication() {
 		return
 	}
 
-	// V5/Red#6: a non-global caller may modify an app ONLY within its own org —
-	// both the persisted row and the requested result must be the caller's org
-	// (never touch or move another org's app).
+	// V5/Red#6/#7: the PERSISTED app must be mutable by the caller (platform/
+	// capability-reserved apps require global admin regardless of Organization;
+	// otherwise org-admin of the app's own org) AND the requested result must
+	// stay in the caller's own org (never touch or move another org's app, and
+	// never rename INTO a reserved platform identity).
 	if existing, e := object.GetApplication(id); e == nil && existing != nil {
-		if !c.appMutationScopeAllowed(existing.Organization) || !c.appMutationScopeAllowed(application.Organization) {
+		if !c.appMutationAllowed(existing) || !c.appMutationAllowed(&application) {
 			c.ResponseError(c.T("auth:Unauthorized operation"))
 			return
 		}
@@ -362,12 +365,20 @@ func (c *ApiController) AddApplication() {
 		return
 	}
 
-	// V5/Red#6: a non-global caller may create an app ONLY in its own org —
-	// closes the org-unscoped add-application over-permission (customer injecting
-	// apps into arbitrary org namespaces / brand orgs).
-	if !c.appMutationScopeAllowed(application.Organization) {
+	// V5/Red#6/#7: a non-global caller may create an app ONLY as an admin of its
+	// own org, may not create a capability-reserved platform app, and may not
+	// inject into the admin namespace (Owner==AdminOrg with a non-<org>-prefixed
+	// name — validateAppName skips the prefix rule for Owner==admin).
+	if !c.appMutationAllowed(&application) {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
+	}
+	if !c.IsGlobalAdmin() && application.Owner == conf.AdminOrg {
+		cu := c.getCurrentUser()
+		if cu == nil || !strings.HasPrefix(application.Name, cu.Owner+"-") {
+			c.ResponseError(c.T("auth:Unauthorized operation"))
+			return
+		}
 	}
 
 	count, err := object.GetApplicationCount("", "", "")
@@ -409,12 +420,13 @@ func (c *ApiController) DeleteApplication() {
 		return
 	}
 
-	// V5/Red#6 (auth DoS): resolve the app by its REAL identity and scope the
-	// delete to the caller's own org — a non-global caller must NOT delete
-	// another org's app (e.g. the seeded admin/hanzo-console login app, whose
-	// loss breaks platform-wide auth). The body's org is attacker-controlled, so
-	// scope on the persisted row.
-	if existing, e := object.GetApplication(application.GetId()); e == nil && existing != nil && !c.appMutationScopeAllowed(existing.Organization) {
+	// V5/Red#6/#7 (auth DoS): resolve the app by its REAL identity and scope the
+	// delete on the PERSISTED row — a capability-reserved platform app (e.g. the
+	// seeded admin/hanzo-console login app, whose loss breaks platform-wide auth)
+	// requires a global admin regardless of its Organization; any other app
+	// requires org-admin of the app's own org. The body's org is
+	// attacker-controlled, so we never trust it.
+	if existing, e := object.GetApplication(application.GetId()); e == nil && existing != nil && !c.appMutationAllowed(existing) {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
