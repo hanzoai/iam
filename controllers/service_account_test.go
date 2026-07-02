@@ -31,6 +31,7 @@ import (
 	"testing"
 
 	beecontext "github.com/hanzoai/beego/v2/server/web/context"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/object"
 )
 
@@ -95,6 +96,67 @@ func TestAuthorizeServiceAccountAdmin_Anonymous(t *testing.T) {
 	c := newSAController(t, "")
 	if _, ok := c.authorizeServiceAccountAdmin("hanzo"); ok {
 		t.Fatal("an anonymous caller must be denied")
+	}
+}
+
+// TestServiceAccountHumanAdminAllowed is the pure human-caller policy: a real
+// global-admin USER may provision in ANY org; a tenant admin ONLY in their OWN
+// org; everyone else (non-admin, other-org admin, nil) is denied. This is the
+// cross-tenant guard for the human path — a hanzo org admin can NEVER provision
+// a service account in the zoo org.
+func TestServiceAccountHumanAdminAllowed(t *testing.T) {
+	admin := conf.AdminOrg // the global-admin org (default "admin")
+
+	cases := []struct {
+		name string
+		user *object.User
+		org  string
+		want bool
+	}{
+		// Real global admin (row in the admin org) → any org.
+		{"global-admin → own admin org", &object.User{Owner: admin, Name: "root", IsAdmin: true}, admin, true},
+		{"global-admin → other org", &object.User{Owner: admin, Name: "root", IsAdmin: true}, "hanzo", true},
+		{"global-admin (IsAdmin=false) still global by owner", &object.User{Owner: admin, Name: "root"}, "zoo", true},
+
+		// Tenant admin → ONLY their own org.
+		{"tenant admin → own org", &object.User{Owner: "hanzo", Name: "alice", IsAdmin: true}, "hanzo", true},
+		{"tenant admin → OTHER org (cross-tenant DENY)", &object.User{Owner: "hanzo", Name: "alice", IsAdmin: true}, "zoo", false},
+
+		// Non-admin human → denied everywhere.
+		{"tenant non-admin → own org", &object.User{Owner: "hanzo", Name: "bob"}, "hanzo", false},
+		{"tenant non-admin → other org", &object.User{Owner: "hanzo", Name: "bob"}, "zoo", false},
+
+		// No resolved user → denied.
+		{"nil user", nil, "hanzo", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := serviceAccountHumanAdminAllowed(tc.user, tc.org); got != tc.want {
+				t.Fatalf("serviceAccountHumanAdminAllowed(%+v, %q) = %v, want %v", tc.user, tc.org, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAuthorizeServiceAccountAdmin_NormalizedAppSubject: a confidential-client
+// JWT now reaches this gate as the canonical "app/<name>" subject (normalized in
+// routers/authz_filter.go), NOT "<org>/<app>". The gate must therefore treat it
+// as an app caller: allowlisted → allowed, unlisted → denied. This is the exact
+// principal shape the enforcer app short-circuit passes through to the gate.
+func TestAuthorizeServiceAccountAdmin_NormalizedAppSubject(t *testing.T) {
+	t.Setenv(object.CapKeyMint.EnvVar, "hanzo-console")
+
+	ok1 := newSAController(t, "app/hanzo-console")
+	if _, ok := ok1.authorizeServiceAccountAdmin("hanzo"); !ok {
+		t.Fatal("normalized allowlisted app subject must be authorized")
+	}
+
+	// A confidential client that is NOT CapKeyMint-allowlisted is denied even
+	// though it authenticated successfully (reached the gate).
+	deny := newSAController(t, "app/agents-runtime")
+	if _, ok := deny.authorizeServiceAccountAdmin("hanzo"); ok {
+		t.Fatal("a non-CapKeyMint app subject must be denied at the gate")
 	}
 }
 
