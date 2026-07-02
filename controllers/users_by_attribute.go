@@ -537,27 +537,10 @@ func defaultResolveServiceClaims(c *ApiController) (clientId, owner string, anon
 	// arbitrary Type from the request body (object/user.go:928,934), so a
 	// tenant admin can create a user with Type="application", set a
 	// password, password-grant a JWT, and pass the bare Type discriminator.
-	// We now require ALL FOUR fields to match. The strongest is
-	// `claims.User.Name == app.Name` — a tenant-admin-promoted user can
-	// never have `name == app.name` without also owning the matching
-	// application name in the same org (which is the same as owning the
-	// client_credentials secret in the first place).
-	if claims.User.Type != "application" {
-		return "", "", false, false
-	}
-	if claims.User.Name != app.Name {
-		// A user JWT carrying Type="application" but whose user-name
-		// differs from the application name is the exact forgery shape.
-		return "", "", false, false
-	}
-	if claims.Provider != "" {
-		// client_credentials never has a Provider (no IdP involved).
-		// password / authorization_code grants do.
-		return "", "", false, false
-	}
-	if claims.SigninMethod != "" {
-		// client_credentials never has a SigninMethod (it's not a
-		// sign-in). Password / OIDC / WebAuthn etc. all set this.
+	// The full client_credentials shape (all four fields) is the single
+	// discriminator, shared with routers/authz_filter.go's confidential-client
+	// subject normalization — one and only one client_credentials check.
+	if !object.IsClientCredentialsClaim(claims, app) {
 		return "", "", false, false
 	}
 
