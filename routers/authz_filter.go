@@ -82,32 +82,15 @@ func getUsernameFromBearerToken(ctx *context.Context) string {
 		return ""
 	}
 
-	// TEMP DIAGNOSTIC (remove after live confirm): expose the exact inputs to the
-	// client_credentials discriminator so the deployed decision is verifiable from
-	// the pod log without a rebuild.
-	if claims != nil && claims.User != nil {
-		logs.Info("getUsernameFromBearerToken.diag: app.Owner=%q app.Name=%q user.Type=%q user.Name=%q provider=%q signinMethod=%q isCC=%v",
-			application.Owner, application.Name, claims.User.Type, claims.User.Name, claims.Provider, claims.SigninMethod,
-			object.IsClientCredentialsClaim(claims, application))
-	} else {
-		logs.Info("getUsernameFromBearerToken.diag: app.Owner=%q app.Name=%q claims.User=nil", application.Owner, application.Name)
-	}
-
-	// A confidential-client (client_credentials) JWT resolves to the SAME
-	// canonical "app/<name>" subject as the Basic-auth transport
-	// (routers/base.go getUsernameByClientIdSecret), so every "app/<name>"-keyed
-	// control (authz app short-circuit, IsAppUser, per-capability allowlists,
-	// R-1 non-global-admin downgrade) applies uniformly regardless of transport.
-	// Mirrors the Red#4 reservation guard: a capability-reserved name is
-	// legitimate ONLY on the admin-owned platform app, so a tenant cannot
-	// register <theirOrg>/hanzo-console, client_credentials-grant a JWT, and
-	// inherit CapKeyMint/CapUserAdmin cross-tenant.
-	if object.IsClientCredentialsClaim(claims, application) {
-		if application.Owner != conf.AdminOrg && object.AppNameIsCapabilityReserved(application.Name) {
-			logs.Warning("getUsernameFromBearerToken: reserved app name %q on non-admin owner %q — refused", application.Name, application.Owner)
-			return ""
-		}
-		return "app/" + application.Name
+	// A confidential-client (client_credentials) JWT resolves to the canonical
+	// "app/<name>" subject via the ONE shared rule (confidentialClientSubject) —
+	// the same subject the Basic-auth transport (routers/base.go
+	// getUsernameByClientIdSecret) and the AutoSigninFilter session seed produce,
+	// so every "app/<name>"-keyed control (authz app short-circuit, IsAppUser,
+	// per-capability allowlists, R-1 non-global-admin downgrade) applies uniformly
+	// regardless of transport.
+	if sub, isCC := confidentialClientSubject(claims, application); isCC {
+		return sub
 	}
 
 	// Human user JWT (authorization_code / password): resolve to <owner>/<name>.
@@ -115,6 +98,32 @@ func getUsernameFromBearerToken(ctx *context.Context) string {
 		return fmt.Sprintf("%s/%s", claims.User.Owner, claims.User.Name)
 	}
 	return ""
+}
+
+// confidentialClientSubject is the ONE canonical rule mapping a VERIFIED
+// client_credentials confidential-client JWT to its authz subject. It is shared
+// by getUsernameFromBearerToken (ApiFilter) and AutoSigninFilter — the latter
+// runs first and seeds the session, so BOTH transports must agree or the
+// normalization is silently bypassed (the SA-keystone bug).
+//
+//   - Not a confidential-client token (human user JWT): returns ("", false) so
+//     the caller keeps its <owner>/<name> resolution unchanged.
+//   - Genuine confidential-client token: returns isCC=true and subject
+//     "app/<name>". Fail-secure Red#4 reservation guard — a capability-reserved
+//     name is legitimate ONLY on the admin-owned platform app; on any other
+//     owner it returns ("", true) so the caller treats the request as anonymous,
+//     NEVER as the (non-privileged but non-anonymous) human <org>/<app> form,
+//     closing the "register <theirOrg>/hanzo-console then client_credentials-
+//     grant" cross-tenant escalation.
+func confidentialClientSubject(claims *object.Claims, application *object.Application) (subject string, isCC bool) {
+	if !object.IsClientCredentialsClaim(claims, application) {
+		return "", false
+	}
+	if application.Owner != conf.AdminOrg && object.AppNameIsCapabilityReserved(application.Name) {
+		logs.Warning("confidentialClientSubject: reserved app name %q on non-admin owner %q — refused", application.Name, application.Owner)
+		return "", true
+	}
+	return "app/" + application.Name, true
 }
 
 // isOrgAppManagementRoute returns true for organization and application read
