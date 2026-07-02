@@ -331,7 +331,9 @@ func wrapErrorResponse(err error) *Response {
 }
 
 func (c *ApiController) Finish() {
-	if strings.HasPrefix(c.Ctx.Input.URL(), "/api") {
+	// API-latency metric is scoped to the canonical /v1/iam/* surface —
+	// the only shape IAM serves. There is no /api prefix (HIP-0111).
+	if strings.HasPrefix(c.Ctx.Input.URL(), "/v1/iam") {
 		startTime := c.Ctx.Input.GetData("startTime")
 		if startTime != nil {
 			latency := time.Since(startTime.(time.Time)).Milliseconds()
