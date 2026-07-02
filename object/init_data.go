@@ -1015,7 +1015,11 @@ func initDefinedEnforcer(enforcer *Enforcer, policies [][]string) {
 	}
 
 	for _, policy := range policies {
-		if enforcer.HasPolicy(policy) {
+		hasPolicy, err := enforcer.HasPolicy(policy)
+		if err != nil {
+			panic(err)
+		}
+		if hasPolicy {
 			continue
 		}
 
