@@ -315,3 +315,14 @@ require github.com/hanzoai/authz v1.10.4
 //   CGO_ENABLED=1 -tags "libsqlite3 sqlite_fts5"
 //   CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 …" CGO_LDFLAGS="-lsqlcipher"
 require github.com/hanzoai/sqlite v0.1.4
+
+// cloud/audit blank-imported modernc.org/sqlite directly, which self-registers
+// the "sqlite" driver. iam links cloud/audit transitively (iam/authz -> authz ->
+// cloud -> cloud/audit) AND registers "sqlite" via hanzoai/sqlite's CGO/SQLCipher
+// backend — two registrations => `panic: sql: Register called twice for driver
+// sqlite` at init (the object encryption-posture gate caught it; v1.31.3-6 could
+// not build). This pins cloud to the surgical one-line fix on top of the exact
+// v1.786.14 tree iam already resolves (audit now uses the org-canonical
+// hanzoai/sqlite driver) — ZERO other cloud drift. Drop this replace once the fix
+// lands in a released cloud tag (hanzoai/cloud fix/audit-canonical-sqlite-driver).
+replace github.com/hanzoai/cloud => github.com/hanzoai/cloud v1.786.15-0.20260702215130-701639a3b26f
