@@ -58,21 +58,20 @@ func getUsernameFromBearerToken(ctx *context.Context) string {
 		return ""
 	}
 
-	// Resolve the application by its composite id (owner/name). Token.Application
-	// stores the BARE app name and Token.Organization its owner org; a bare name
-	// fails GetApplication's owner/name parse for every tenant-owned app (the
-	// steady state for all non-system apps). Compose the id — same fix as
-	// controllers/users_by_attribute.go:defaultResolveServiceClaims.
-	appOwner := tokenRecord.Organization
-	if appOwner == "" {
-		appOwner = tokenRecord.Owner
-	}
-	if appOwner == "" {
-		return ""
-	}
-	application, err := object.GetApplication(appOwner + "/" + tokenRecord.Application)
+	// Resolve the application that minted this token. Token.Application stores the
+	// BARE app name (see object/token_oauth.go); its owner is the Casdoor
+	// maintainer namespace (conf.AdminOrg == "admin" for every platform app),
+	// while Token.Organization is the TENANT slug — for an admin-owned platform
+	// app (hanzo-console, hanzo-cloud, …) the two DIFFER (owner=admin,
+	// organization=hanzo). Composing organization/name therefore points at a
+	// non-existent "hanzo/hanzo-console" row, so the app never resolves to its
+	// real admin-owned record and the client_credentials discriminator below
+	// never fires. FindApplicationByName is the canonical resolver for exactly
+	// this: it tries the tenant org, then conf.AdminOrg, then a global by-name
+	// lookup — the one and only way to resolve an app from a bare name + org hint.
+	application, err := object.FindApplicationByName(tokenRecord.Application, tokenRecord.Organization)
 	if err != nil || application == nil {
-		logs.Warning("getUsernameFromBearerToken: application lookup failed for %s/%s: %v", appOwner, tokenRecord.Application, err)
+		logs.Warning("getUsernameFromBearerToken: application lookup failed for name=%q orgHint=%q owner=%q: %v", tokenRecord.Application, tokenRecord.Organization, tokenRecord.Owner, err)
 		return ""
 	}
 
@@ -80,6 +79,17 @@ func getUsernameFromBearerToken(ctx *context.Context) string {
 	if err != nil {
 		logs.Warning("getUsernameFromBearerToken: JWT verification failed: %v", err)
 		return ""
+	}
+
+	// TEMP DIAGNOSTIC (remove after live confirm): expose the exact inputs to the
+	// client_credentials discriminator so the deployed decision is verifiable from
+	// the pod log without a rebuild.
+	if claims != nil && claims.User != nil {
+		logs.Info("getUsernameFromBearerToken.diag: app.Owner=%q app.Name=%q user.Type=%q user.Name=%q provider=%q signinMethod=%q isCC=%v",
+			application.Owner, application.Name, claims.User.Type, claims.User.Name, claims.Provider, claims.SigninMethod,
+			object.IsClientCredentialsClaim(claims, application))
+	} else {
+		logs.Info("getUsernameFromBearerToken.diag: app.Owner=%q app.Name=%q claims.User=nil", application.Owner, application.Name)
 	}
 
 	// A confidential-client (client_credentials) JWT resolves to the SAME
