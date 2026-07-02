@@ -27,7 +27,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/cloud"
-	"github.com/hanzoai/zip"
+	"github.com/zap-proto/zip"
 )
 
 // Mount registers IAM routes with the shared cloud zip.App per HIP-0106.
