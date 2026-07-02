@@ -1,14 +1,14 @@
 Hanzo IAM
-Copyright 2025 Hanzo AI, Inc.
+Copyright (c) 2025 Hanzo AI, Inc.
 
-This product includes software originally developed by upstream open-source
-projects (Apache-2.0 licensed unless otherwise noted). Their copyright
-notices are preserved in source-file headers where applicable; the upstream
-projects retain their respective rights.
+This product includes software from Casdoor (https://github.com/casdoor/casdoor), licensed under Apache-2.0:
 
-The integrations below are imported as standard Go modules at upstream paths
-because forking them under a different vendor namespace would impose
-maintenance overhead without functional benefit:
+    Copyright (c) The Casdoor Authors
+
+This product also includes software from the following Apache-2.0 licensed
+Go modules, imported at their upstream paths. Their copyright notices are
+preserved in source-file headers where applicable; the upstream projects
+retain their respective rights:
 
 - github.com/casbin/casbin/v2 — RBAC policy engine
 - github.com/casdoor/notify2 — multi-provider notification fan-out
@@ -17,6 +17,3 @@ maintenance overhead without functional benefit:
 - github.com/casdoor/go-sms-sender — SMS provider adapters
 - github.com/casdoor/gomail/v2 — SMTP send
 - github.com/casdoor/ldapserver — LDAP server framework
-
-These imports are mechanical dependencies. Hanzo IAM's data model, API
-surface, deployment shape, and operational posture are independent.
