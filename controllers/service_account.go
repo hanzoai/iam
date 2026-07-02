@@ -76,22 +76,30 @@ func (c *ApiController) authorizeServiceAccountAdmin(org string) (string, bool) 
 		return caller, true
 	}
 
-	// Human caller. c.IsAdmin()/isGlobalAdmin treat every app as global admin,
-	// but caller here is a human, so it is safe. A real global admin may act on
-	// any org; otherwise the caller must be an admin whose OWN org is `org`.
+	// Human caller. The app branch above already returned for every app
+	// principal (now uniformly "app/<name>" across both auth transports), so the
+	// caller here is a genuine human user; the pure policy below decides.
 	u := c.getCurrentUser()
-	if u == nil {
+	if !serviceAccountHumanAdminAllowed(u, org) {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return "", false
 	}
+	return caller, true
+}
+
+// serviceAccountHumanAdminAllowed is the pure human-caller policy for
+// service-account administration: a real global-admin USER may act on ANY org;
+// otherwise the caller must be an admin whose OWN org is exactly `org`. A nil
+// user (no session / unresolved) is denied. This is org-scoped by construction —
+// a tenant admin can NEVER provision a service account in another org.
+func serviceAccountHumanAdminAllowed(u *object.User, org string) bool {
+	if u == nil {
+		return false
+	}
 	if u.IsGlobalAdmin() {
-		return caller, true
+		return true
 	}
-	if u.IsAdmin && u.Owner == org {
-		return caller, true
-	}
-	c.ResponseError(c.T("auth:Unauthorized operation"))
-	return "", false
+	return u.IsAdmin && u.Owner == org
 }
 
 // resolveServiceAccountName maps a (org, name) request pair to the canonical
