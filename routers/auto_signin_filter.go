@@ -94,6 +94,24 @@ func AutoSigninFilter(ctx *context.Context) {
 			return
 		}
 
+		// Confidential-client (client_credentials) tokens resolve to the canonical
+		// "app/<name>" subject so the capability gates apply on the Bearer transport
+		// exactly as on Basic-auth. This filter runs BEFORE ApiFilter and seeds the
+		// session that ApiFilter's getUsername reads FIRST, so the normalization must
+		// happen here too — otherwise getUsernameFromBearerToken (where the same rule
+		// lives) never runs and the app caller stays pinned to <org>/<app> (the SA-
+		// keystone bug). Human-user tokens are left unchanged (isCC=false).
+		if claims, perr := object.ParseJwtTokenByApplication(accessToken, application); perr == nil {
+			// `sub != ""` is defense-in-depth: on the live path `application` is
+			// admin-only (GetApplicationByUserId forces conf.AdminOrg), so the
+			// reserved-name guard never returns ("",true) here — but if resolution
+			// is ever changed to non-admin-first, never seed an EMPTY session; keep
+			// the human default and let getUsernameFromBearerToken re-refuse.
+			if sub, isCC := confidentialClientSubject(claims, application); isCC && sub != "" {
+				userId = sub
+			}
+		}
+
 		setSessionUser(ctx, userId)
 		setSessionOidc(ctx, token.Scope, application.ClientId)
 		return
