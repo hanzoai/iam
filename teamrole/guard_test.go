@@ -179,6 +179,25 @@ func TestCheckAssignment(t *testing.T) {
 			Assignment{CallerKeys: nil, CallerIsGlobalAdmin: true, CallerOrg: "admin", TargetOrg: other, TargetKey: "org:owner"},
 			nil,
 		},
+		{
+			// Org admin holding NO catalog role still manages their own org's
+			// team (the primary path: IAM's authz filter gates on org-admin).
+			"org admin (no catalog role) grants console admin in own org",
+			Assignment{CallerKeys: nil, CallerIsOrgAdmin: true, CallerOrg: org, TargetOrg: org, TargetKey: "console:admin"},
+			nil,
+		},
+		{
+			"org admin grants org owner in own org",
+			Assignment{CallerKeys: nil, CallerIsOrgAdmin: true, CallerOrg: org, TargetOrg: org, TargetKey: "org:owner"},
+			nil,
+		},
+		{
+			// Org-admin authority is STRICTLY own-org — the cross-org check runs
+			// before the org-admin allow, so it cannot reach another tenant.
+			"org admin of acme CANNOT manage globex",
+			Assignment{CallerKeys: nil, CallerIsOrgAdmin: true, CallerOrg: org, TargetOrg: other, TargetKey: "billing:viewer"},
+			ErrCrossOrg,
+		},
 
 		// -- VERTICAL privilege escalation (the headline Red vector) --------
 		{
@@ -296,21 +315,23 @@ func TestRankCeilingIsReachable(t *testing.T) {
 func TestAssignableKeys(t *testing.T) {
 	const org = "acme"
 	cases := []struct {
-		name  string
-		keys  []string
-		admin bool
-		want  []string
+		name     string
+		keys     []string
+		admin    bool
+		orgAdmin bool
+		want     []string
 	}{
-		{"viewer assigns nothing", []string{"billing:viewer"}, false, []string{}},
-		{"billing admin assigns billing tiers up to admin", []string{"billing:admin"}, false, []string{"billing:viewer", "billing:admin"}},
-		{"console admin assigns console viewer+admin (not owner)", []string{"console:admin"}, false, []string{"console:viewer", "console:admin"}},
-		{"console owner assigns all console", []string{"console:owner"}, false, []string{"console:viewer", "console:admin", "console:owner"}},
-		{"org owner assigns everything", []string{"org:owner"}, false, []string{"billing:viewer", "billing:admin", "console:viewer", "console:admin", "console:owner", "org:owner"}},
-		{"superuser assigns everything", nil, true, []string{"billing:viewer", "billing:admin", "console:viewer", "console:admin", "console:owner", "org:owner"}},
+		{"viewer assigns nothing", []string{"billing:viewer"}, false, false, []string{}},
+		{"billing admin assigns billing tiers up to admin", []string{"billing:admin"}, false, false, []string{"billing:viewer", "billing:admin"}},
+		{"console admin assigns console viewer+admin (not owner)", []string{"console:admin"}, false, false, []string{"console:viewer", "console:admin"}},
+		{"console owner assigns all console", []string{"console:owner"}, false, false, []string{"console:viewer", "console:admin", "console:owner"}},
+		{"org owner assigns everything", []string{"org:owner"}, false, false, []string{"billing:viewer", "billing:admin", "console:viewer", "console:admin", "console:owner", "org:owner"}},
+		{"superuser assigns everything", nil, true, false, []string{"billing:viewer", "billing:admin", "console:viewer", "console:admin", "console:owner", "org:owner"}},
+		{"org admin assigns everything in own org", nil, false, true, []string{"billing:viewer", "billing:admin", "console:viewer", "console:admin", "console:owner", "org:owner"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := AssignableKeys(tc.keys, org, tc.admin)
+			got := AssignableKeys(tc.keys, org, tc.admin, tc.orgAdmin)
 			if !equalStrings(got, tc.want) {
 				t.Errorf("AssignableKeys = %v, want %v", got, tc.want)
 			}

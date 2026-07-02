@@ -54,6 +54,12 @@ type Assignment struct {
 	// CallerIsGlobalAdmin is true only for a platform superuser
 	// (User.IsGlobalAdmin via session/JWT, never a client-supplied flag).
 	CallerIsGlobalAdmin bool
+	// CallerIsOrgAdmin is true when the caller is an ADMIN of CallerOrg
+	// (User.IsAdmin). An org admin has org-wide authority WITHIN THEIR OWN ORG:
+	// IAM's authz filter already vets them to reach a role mutation, and they
+	// own their org's team. It grants no cross-org power — the org-equality
+	// check below still fully applies. Never a client-supplied flag.
+	CallerIsOrgAdmin bool
 	// TargetOrg owns the role being managed (IAM Role.Owner). For an invitation
 	// it is the org the invite is scoped to.
 	TargetOrg string
@@ -135,7 +141,17 @@ func CheckAssignment(a Assignment) error {
 		return fmt.Errorf("%w: caller org %q may not manage roles in org %q", ErrCrossOrg, a.CallerOrg, a.TargetOrg)
 	}
 
-	// (3) Authority in the target app (org:owner counts everywhere).
+	// (2.5) Org admin: org-wide authority within their OWN org (cross-org is
+	// already blocked above). This is the primary manage path today — IAM's
+	// authz filter gates role mutation on org-admin, so the caller reaching
+	// here in their own org is authorized to assign any catalog role in it.
+	if a.CallerIsOrgAdmin {
+		return nil
+	}
+
+	// (3) Authority in the target app (org:owner counts everywhere). This path
+	// governs non-org-admin callers granted explicit route access (forward-
+	// compatible with app-admins managing their own app's team).
 	eff := EffectiveRank(a.CallerKeys, target.App)
 	if eff < RankAdmin {
 		return fmt.Errorf("%w %q: need admin+ (rank>=%d), caller has rank %d", ErrInsufficientAuthority, target.App, RankAdmin, eff)
@@ -149,17 +165,18 @@ func CheckAssignment(a Assignment) error {
 	return nil
 }
 
-// AssignableKeys returns the catalog keys a caller holding callerKeys in
-// callerOrg is permitted to assign — i.e. every catalog role that passes
-// CheckAssignment for the SAME org. The client renders exactly these in the
-// role picker. Order matches the canonical catalog (by rank).
-func AssignableKeys(callerKeys []string, callerOrg string, callerIsGlobalAdmin bool) []string {
+// AssignableKeys returns the catalog keys a caller is permitted to assign in
+// their own org — i.e. every catalog role that passes CheckAssignment for the
+// SAME org. The client renders exactly these in the role picker. Order matches
+// the canonical catalog (by rank).
+func AssignableKeys(callerKeys []string, callerOrg string, callerIsGlobalAdmin, callerIsOrgAdmin bool) []string {
 	out := []string{}
 	for _, r := range catalog {
 		if CanAssign(Assignment{
 			CallerKeys:          callerKeys,
 			CallerOrg:           callerOrg,
 			CallerIsGlobalAdmin: callerIsGlobalAdmin,
+			CallerIsOrgAdmin:    callerIsOrgAdmin,
 			TargetOrg:           callerOrg, // assignable within the caller's own org
 			TargetKey:           r.Key,
 		}) {
