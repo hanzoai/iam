@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/beego/v2/core/logs"
+	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/controllers"
 	"github.com/hanzoai/iam/object"
 
@@ -57,9 +58,21 @@ func getUsernameFromBearerToken(ctx *context.Context) string {
 		return ""
 	}
 
-	application, err := object.GetApplication(tokenRecord.Application)
+	// Resolve the application by its composite id (owner/name). Token.Application
+	// stores the BARE app name and Token.Organization its owner org; a bare name
+	// fails GetApplication's owner/name parse for every tenant-owned app (the
+	// steady state for all non-system apps). Compose the id — same fix as
+	// controllers/users_by_attribute.go:defaultResolveServiceClaims.
+	appOwner := tokenRecord.Organization
+	if appOwner == "" {
+		appOwner = tokenRecord.Owner
+	}
+	if appOwner == "" {
+		return ""
+	}
+	application, err := object.GetApplication(appOwner + "/" + tokenRecord.Application)
 	if err != nil || application == nil {
-		logs.Warning("getUsernameFromBearerToken: application lookup failed for %s: %v", tokenRecord.Application, err)
+		logs.Warning("getUsernameFromBearerToken: application lookup failed for %s/%s: %v", appOwner, tokenRecord.Application, err)
 		return ""
 	}
 
@@ -69,6 +82,24 @@ func getUsernameFromBearerToken(ctx *context.Context) string {
 		return ""
 	}
 
+	// A confidential-client (client_credentials) JWT resolves to the SAME
+	// canonical "app/<name>" subject as the Basic-auth transport
+	// (routers/base.go getUsernameByClientIdSecret), so every "app/<name>"-keyed
+	// control (authz app short-circuit, IsAppUser, per-capability allowlists,
+	// R-1 non-global-admin downgrade) applies uniformly regardless of transport.
+	// Mirrors the Red#4 reservation guard: a capability-reserved name is
+	// legitimate ONLY on the admin-owned platform app, so a tenant cannot
+	// register <theirOrg>/hanzo-console, client_credentials-grant a JWT, and
+	// inherit CapKeyMint/CapUserAdmin cross-tenant.
+	if object.IsClientCredentialsClaim(claims, application) {
+		if application.Owner != conf.AdminOrg && object.AppNameIsCapabilityReserved(application.Name) {
+			logs.Warning("getUsernameFromBearerToken: reserved app name %q on non-admin owner %q — refused", application.Name, application.Owner)
+			return ""
+		}
+		return "app/" + application.Name
+	}
+
+	// Human user JWT (authorization_code / password): resolve to <owner>/<name>.
 	if claims.User != nil && claims.User.Owner != "" && claims.User.Name != "" {
 		return fmt.Sprintf("%s/%s", claims.User.Owner, claims.User.Name)
 	}
