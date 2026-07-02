@@ -102,7 +102,12 @@ func AutoSigninFilter(ctx *context.Context) {
 		// lives) never runs and the app caller stays pinned to <org>/<app> (the SA-
 		// keystone bug). Human-user tokens are left unchanged (isCC=false).
 		if claims, perr := object.ParseJwtTokenByApplication(accessToken, application); perr == nil {
-			if sub, isCC := confidentialClientSubject(claims, application); isCC {
+			// `sub != ""` is defense-in-depth: on the live path `application` is
+			// admin-only (GetApplicationByUserId forces conf.AdminOrg), so the
+			// reserved-name guard never returns ("",true) here — but if resolution
+			// is ever changed to non-admin-first, never seed an EMPTY session; keep
+			// the human default and let getUsernameFromBearerToken re-refuse.
+			if sub, isCC := confidentialClientSubject(claims, application); isCC && sub != "" {
 				userId = sub
 			}
 		}
