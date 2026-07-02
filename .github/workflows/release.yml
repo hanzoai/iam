@@ -95,7 +95,12 @@ jobs:
           context: .
           file: Dockerfile
           target: standard
-          platforms: linux/amd64,linux/arm64
+          # amd64-only: the arm64 leg builds under QEMU emulation where
+          # `go mod download` (many private-module git fetches) is flaky and fails
+          # the whole build (v1.31.3-8). Prod (hanzo-k8s) is amd64, so this unblocks
+          # the release. Re-add linux/arm64 once a NATIVE arm64 arc runner is wired
+          # (no QEMU) — see hanzo_ci_arm64 follow-up.
+          platforms: linux/amd64
           provenance: false
           push: true
           tags: |
