@@ -9,7 +9,7 @@
 //
 // Stack contract (MIGRATION.md §2):
 //
-//   - HTTP framework:   github.com/hanzoai/zip  (Fiber v3; typed handlers).
+//   - HTTP framework:   github.com/zap-proto/zip  (Fiber v3; typed handlers).
 //   - ORM + KV cache:   github.com/hanzoai/orm  (typed Go records, KV cache,
 //     adapter-pluggable; v2 uses
 //     SQLite via Base).
@@ -38,7 +38,7 @@ import (
 	// hanzoai/zip — Fiber v3 HTTP framework with typed handlers
 	// (zip.Get[In, Out] / zip.Post[In, Out]) and built-in OpenAPI 3.1
 	// emission. Phase 1 mounts every IAM v2 handler on a *zip.App.
-	_ "github.com/hanzoai/zip"
+	_ "github.com/zap-proto/zip"
 
 	// hanzoai/authz — single canonical policy engine. Phase 1 lifts the
 	// requireRole(...) middleware out to call authz over ZAP RPC, fully

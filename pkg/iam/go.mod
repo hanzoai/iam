@@ -147,7 +147,6 @@ require (
 	github.com/hanzoai/notify2 v1.6.3 // indirect
 	github.com/hanzoai/oss v1.8.5 // indirect
 	github.com/hanzoai/xorm v1.1.6 // indirect
-	github.com/hanzoai/zip v0.2.0
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hsluoyz/modsecurity-go v0.0.7 // indirect
@@ -239,6 +238,7 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zap-proto/go v1.1.0 // indirect
+	github.com/zap-proto/zip v1.0.0
 	go.mau.fi/util v0.8.3 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect

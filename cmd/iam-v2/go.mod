@@ -25,7 +25,6 @@ require (
 	github.com/hanzoai/authz v1.10.1
 	github.com/hanzoai/base v1.3.2
 	github.com/hanzoai/orm v0.5.2
-	github.com/hanzoai/zip v0.2.0
 	github.com/spf13/cobra v1.10.2
 )
 
@@ -159,6 +158,7 @@ require (
 	github.com/valyala/fasthttp v1.70.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zap-proto/go v1.3.0 // indirect
+	github.com/zap-proto/zip v1.0.0
 	github.com/zeebo/blake3 v0.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.39.0 // indirect
