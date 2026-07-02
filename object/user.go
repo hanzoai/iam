@@ -108,25 +108,34 @@ type User struct {
 	Karma           int        `json:"karma"`
 	Ranking         int        `json:"ranking"`
 	// DEPRECATED: Balance is managed by Commerce (billing.hanzo.ai). Do not write to these fields.
-	Balance              float64 `json:"balance"`
-	BalanceCredit        float64 `json:"balanceCredit"`
-	Currency             string  `xorm:"varchar(100)" json:"currency"`
-	BalanceCurrency      string  `xorm:"varchar(100)" json:"balanceCurrency"`
-	IsDefaultAvatar      bool    `xorm:"bool default false" json:"isDefaultAvatar"`
-	IsOnline             bool    `xorm:"bool default false" json:"isOnline"`
-	IsAdmin              bool    `xorm:"bool default false" json:"isAdmin"`
-	IsForbidden          bool    `xorm:"bool default false" json:"isForbidden"`
-	IsDeleted            bool    `xorm:"bool default false" json:"isDeleted"`
-	SignupApplication    string  `xorm:"varchar(100)" json:"signupApplication"`
-	Hash                 string  `xorm:"varchar(100)" json:"hash"`
-	PreHash              string  `xorm:"varchar(100)" json:"preHash"`
-	RegisterType         string  `xorm:"varchar(100)" json:"registerType"`
-	RegisterSource       string  `xorm:"varchar(100)" json:"registerSource"`
-	AccessKey            string  `xorm:"varchar(100)" json:"accessKey"`
-	AccessSecret         string  `xorm:"varchar(100)" json:"accessSecret"`
-	AccessToken          string  `xorm:"mediumtext" json:"accessToken"`
-	OriginalToken        string  `xorm:"mediumtext" json:"originalToken"`
-	OriginalRefreshToken string  `xorm:"mediumtext" json:"originalRefreshToken"`
+	Balance           float64 `json:"balance"`
+	BalanceCredit     float64 `json:"balanceCredit"`
+	Currency          string  `xorm:"varchar(100)" json:"currency"`
+	BalanceCurrency   string  `xorm:"varchar(100)" json:"balanceCurrency"`
+	IsDefaultAvatar   bool    `xorm:"bool default false" json:"isDefaultAvatar"`
+	IsOnline          bool    `xorm:"bool default false" json:"isOnline"`
+	IsAdmin           bool    `xorm:"bool default false" json:"isAdmin"`
+	IsForbidden       bool    `xorm:"bool default false" json:"isForbidden"`
+	IsDeleted         bool    `xorm:"bool default false" json:"isDeleted"`
+	SignupApplication string  `xorm:"varchar(100)" json:"signupApplication"`
+	Hash              string  `xorm:"varchar(100)" json:"hash"`
+	PreHash           string  `xorm:"varchar(100)" json:"preHash"`
+	RegisterType      string  `xorm:"varchar(100)" json:"registerType"`
+	RegisterSource    string  `xorm:"varchar(100)" json:"registerSource"`
+	AccessKey         string  `xorm:"varchar(100)" json:"accessKey"`
+	AccessSecret      string  `xorm:"varchar(100)" json:"accessSecret"`
+	// AccessSecretHash holds the argon2id hash of a service-account's API
+	// secret. Service accounts (Type=="service-account") authenticate ONLY by
+	// an API key and MUST NOT store the secret in plaintext, so their secret is
+	// hashed here and the plaintext AccessSecret column is left empty. json:"-"
+	// guarantees the hash never serializes through ANY response path (masked or
+	// not) — it is verify-only material. Legacy hk- user keys (which predate
+	// this) keep using the plaintext AccessSecret column; see
+	// VerifyUserAccessSecret for the single verification choke point.
+	AccessSecretHash     string `xorm:"varchar(150)" json:"-"`
+	AccessToken          string `xorm:"mediumtext" json:"accessToken"`
+	OriginalToken        string `xorm:"mediumtext" json:"originalToken"`
+	OriginalRefreshToken string `xorm:"mediumtext" json:"originalRefreshToken"`
 
 	CreatedIp      string `xorm:"varchar(100)" json:"createdIp"`
 	LastSigninTime string `xorm:"varchar(100)" json:"lastSigninTime"`

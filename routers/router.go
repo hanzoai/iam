@@ -128,6 +128,18 @@ func InitAPI() {
 	web.Router("/v1/iam/mint-user-keys", &controllers.ApiController{}, "POST:MintUserKeys")
 	web.Router("/v1/iam/revoke-user-keys", &controllers.ApiController{}, "POST:RevokeUserKeys")
 	web.Router("/v1/iam/issue-user-token", &controllers.ApiController{}, "POST:IssueUserToken")
+
+	// Service accounts — agent/bot IAM identities (Type=service-account). A
+	// service account is a User of Type "service-account" (no password;
+	// API-key-only auth, secret argon2id-hashed at rest). Create/rotate return
+	// the raw key ONCE; list returns names+metadata only. Org-scoped; gated by
+	// CapKeyMint (same trust boundary as mint-user-keys). RESTful shape — one
+	// resource, standard verbs.
+	web.Router("/v1/iam/service-accounts", &controllers.ApiController{}, "POST:CreateServiceAccount")
+	web.Router("/v1/iam/service-accounts", &controllers.ApiController{}, "GET:GetServiceAccounts")
+	web.Router("/v1/iam/service-accounts/:name/keys", &controllers.ApiController{}, "POST:RotateServiceAccountKey")
+	web.Router("/v1/iam/service-accounts/:name", &controllers.ApiController{}, "DELETE:DeleteServiceAccount")
+
 	web.Router("/v1/iam/add-user", &controllers.ApiController{}, "POST:AddUser")
 	web.Router("/v1/iam/delete-user", &controllers.ApiController{}, "POST:DeleteUser")
 	web.Router("/v1/iam/upload-users", &controllers.ApiController{}, "POST:UploadUsers")
