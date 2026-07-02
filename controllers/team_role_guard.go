@@ -31,6 +31,7 @@ func (c *ApiController) teamCallerContext() *object.CallerContext {
 		UserId:        util.GetId(user.Owner, user.Name),
 		Org:           user.Owner,
 		IsGlobalAdmin: c.IsGlobalAdmin(),
+		IsOrgAdmin:    user.IsAdmin,
 	}
 }
 
