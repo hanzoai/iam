@@ -152,6 +152,17 @@ func (c *ApiController) AddInvitation() {
 		return
 	}
 
+	// App-scoped team-role guard. A team invitation carries the role it grants
+	// on accept in SignupGroup (the catalog key, e.g. "billing:viewer"). The
+	// caller may only invite into their own org and only at/below their own
+	// rank in that app — so a billing:admin cannot mint an org:owner invite or
+	// invite into another org. Non-team invitations (SignupGroup not a managed
+	// key) fall through unchanged. newUsers is non-empty (one invitee) so the
+	// org:owner orphan check never trips on an invite.
+	if !c.guardManagedRoleWrite(invitation.Owner, invitation.SignupGroup, []string{invitation.Email}, false) {
+		return
+	}
+
 	c.Data["json"] = wrapActionResponse(object.AddInvitation(&invitation, c.GetAcceptLanguage()))
 	c.ServeJSON()
 }
