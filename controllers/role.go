@@ -102,6 +102,21 @@ func (c *ApiController) UpdateRole() {
 		return
 	}
 
+	// App-scoped team-role guard. Authorize BOTH the new identity (what the
+	// role becomes) and the old identity (what is being changed) so a
+	// rename-to-escalate (e.g. rewriting billing:viewer into org:owner) or a
+	// membership rewrite that adds the caller to a higher role is denied. A
+	// rename away from a managed role is treated as a removal of the old.
+	oldOwner, oldName := util.GetOwnerAndNameFromIdNoCheck(id)
+	if !c.guardManagedRoleWrite(role.Owner, role.Name, role.Users, false) {
+		return
+	}
+	if oldOwner != role.Owner || oldName != role.Name {
+		if !c.guardManagedRoleWrite(oldOwner, oldName, role.Users, oldName != role.Name) {
+			return
+		}
+	}
+
 	c.Data["json"] = wrapActionResponse(object.UpdateRole(id, &role))
 	c.ServeJSON()
 }
@@ -121,6 +136,12 @@ func (c *ApiController) AddRole() {
 		return
 	}
 
+	// App-scoped team-role guard: a caller may only create a managed role in
+	// their own org and at/below their own rank (superuser exempt).
+	if !c.guardManagedRoleWrite(role.Owner, role.Name, role.Users, false) {
+		return
+	}
+
 	c.Data["json"] = wrapActionResponse(object.AddRole(&role))
 	c.ServeJSON()
 }
@@ -137,6 +158,12 @@ func (c *ApiController) DeleteRole() {
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &role)
 	if err != nil {
 		c.ResponseError(err.Error())
+		return
+	}
+
+	// App-scoped team-role guard: deleting a managed role requires the same
+	// authority as granting it, plus the org:owner orphan protection.
+	if !c.guardManagedRoleWrite(role.Owner, role.Name, nil, true) {
 		return
 	}
 
