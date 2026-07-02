@@ -534,14 +534,25 @@ func reconcileApplicationOAuthDefaults(existing *Application, desired *Applicati
 		updateCols = append(updateCols, "token_format")
 	}
 
-	// Merge expireInHours if existing is invalid (0 or negative)
-	if existing.ExpireInHours <= 0 && desired.ExpireInHours > 0 {
+	// Reconcile expireInHours (access-token TTL) AUTHORITATIVELY from the seed.
+	// Token lifetime is a SECURITY POLICY owned by the declared seed, not
+	// drift-prone runtime state. The old fill-if-invalid guard (existing <= 0)
+	// could fill a missing value but could NEVER tighten an over-long one: a
+	// stored 168h (7-day) access token persisted forever even after the seed
+	// declared 1h, leaving a week-long standing-risk window on every stateless
+	// JWT. Reconcile on ANY positive difference (exactly like `cert` below) so a
+	// universe redeploy converges the access-token TTL to the declared policy.
+	// desired == 0 means "seed does not declare a TTL" → preserve existing (never
+	// zero a live app). Safe because the wrapper persists ONLY changed columns
+	// (Cols(...).Update), never a full-object replace.
+	if desired.ExpireInHours > 0 && existing.ExpireInHours != desired.ExpireInHours {
 		existing.ExpireInHours = desired.ExpireInHours
 		updateCols = append(updateCols, "expire_in_hours")
 	}
 
-	// Merge refreshExpireInHours if existing is invalid
-	if existing.RefreshExpireInHours <= 0 && desired.RefreshExpireInHours > 0 {
+	// Reconcile refreshExpireInHours the same way — the refresh-token TTL is the
+	// retention backstop (rotating, one-time-use) and is likewise seed-owned.
+	if desired.RefreshExpireInHours > 0 && existing.RefreshExpireInHours != desired.RefreshExpireInHours {
 		existing.RefreshExpireInHours = desired.RefreshExpireInHours
 		updateCols = append(updateCols, "refresh_expire_in_hours")
 	}
