@@ -199,11 +199,17 @@ func GetPolicies(id string) ([]*util.AuthzRule, error) {
 		return nil, err
 	}
 
-	pRules := enforcer.GetPolicy()
+	pRules, err := enforcer.GetPolicy()
+	if err != nil {
+		return nil, err
+	}
 	res := util.MatrixToAuthzRules("p", pRules)
 
 	if enforcer.GetModel()["g"] != nil {
-		gRules := enforcer.GetGroupingPolicy()
+		gRules, err := enforcer.GetGroupingPolicy()
+		if err != nil {
+			return nil, err
+		}
 		res2 := util.MatrixToAuthzRules("g", gRules)
 		res = append(res, res2...)
 	}
@@ -228,19 +234,25 @@ func GetFilteredPolicies(id string, ptype string, fieldIndex int, fieldValues ..
 
 	if len(fieldValues) == 0 {
 		if ptype == "g" {
-			allRules = enforcer.GetFilteredGroupingPolicy(fieldIndex)
+			allRules, err = enforcer.GetFilteredGroupingPolicy(fieldIndex)
 		} else {
-			allRules = enforcer.GetFilteredPolicy(fieldIndex)
+			allRules, err = enforcer.GetFilteredPolicy(fieldIndex)
+		}
+		if err != nil {
+			return nil, err
 		}
 	} else {
 		for _, value := range fieldValues {
+			var rules [][]string
 			if ptype == "g" {
-				rules := enforcer.GetFilteredGroupingPolicy(fieldIndex, value)
-				allRules = append(allRules, rules...)
+				rules, err = enforcer.GetFilteredGroupingPolicy(fieldIndex, value)
 			} else {
-				rules := enforcer.GetFilteredPolicy(fieldIndex, value)
-				allRules = append(allRules, rules...)
+				rules, err = enforcer.GetFilteredPolicy(fieldIndex, value)
 			}
+			if err != nil {
+				return nil, err
+			}
+			allRules = append(allRules, rules...)
 		}
 	}
 
