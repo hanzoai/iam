@@ -80,8 +80,8 @@ type IntrospectionResponse struct {
 }
 
 type DeviceAuthCache struct {
-	UserSignIn    bool
-	UserName      string
+	UserSignIn bool
+	UserName   string
 	// UserOwner is the approving user's org, captured at approval. The token
 	// mint resolves the user in THIS org (not the app's) so a global admin —
 	// who lives in conf.AdminOrg, not the app's tenant — resolves to their real
@@ -1026,7 +1026,11 @@ func GetApiKeyToken(application *Application, accessKey string, accessSecret str
 		}, nil
 	}
 
-	if subtle.ConstantTimeCompare([]byte(user.AccessSecret), []byte(accessSecret)) != 1 {
+	// VerifyUserAccessSecret is the single choke point for secret verification:
+	// argon2id compare for a service account (hashed secret at rest), or
+	// constant-time plaintext compare for a legacy hk- user. Both are
+	// constant-time; a revoked/empty credential fails closed.
+	if !VerifyUserAccessSecret(user, accessSecret) {
 		return nil, &TokenError{
 			Error:            InvalidGrant,
 			ErrorDescription: "invalid access_secret",
