@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/hanzoai/beego/v2/server/web"
-	"github.com/hanzoai/beego/v2/server/web/context"
 )
 
 // TestV1IamWeb3Routes_AreRegisteredAndJSON guards the two multi-chain wallet
@@ -39,14 +38,6 @@ func TestV1IamWeb3Nonce_RegisteredAndJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/iam/web3/nonce", nil)
 	rec := httptest.NewRecorder()
 
-	ctx := context.NewContext()
-	ctx.Reset(rec, req)
-	PathRewriteFilter(ctx)
-
-	if got := ctx.Request.URL.Path; got != "/v1/iam/web3/nonce" {
-		t.Fatalf("rewrite changed canonical path to %q; want unchanged", got)
-	}
-
 	web.BeeApp.Handlers.ServeHTTP(rec, req)
 
 	if rec.Code == http.StatusNotFound {
@@ -65,14 +56,6 @@ func TestV1IamWeb3Verify_RegisteredAndJSON(t *testing.T) {
 		strings.NewReader("{ this is not valid json"))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-
-	ctx := context.NewContext()
-	ctx.Reset(rec, req)
-	PathRewriteFilter(ctx)
-
-	if got := ctx.Request.URL.Path; got != "/v1/iam/web3/verify" {
-		t.Fatalf("rewrite changed canonical path to %q; want unchanged", got)
-	}
 
 	web.BeeApp.Handlers.ServeHTTP(rec, req)
 

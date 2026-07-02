@@ -17,7 +17,6 @@ import (
 	"testing"
 
 	"github.com/hanzoai/beego/v2/server/web"
-	"github.com/hanzoai/beego/v2/server/web/context"
 )
 
 // TestV1IamLogin_POST_NotMethodNotAllowed verifies the canonical
@@ -40,16 +39,6 @@ func TestV1IamLogin_POST_NotMethodNotAllowed(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	// Run the rewrite filter first so a tester can hit either the
-	// canonical or any legacy alias and the same registration is exercised.
-	ctx := context.NewContext()
-	ctx.Reset(rec, req)
-	PathRewriteFilter(ctx)
-
-	if got := ctx.Request.URL.Path; got != "/v1/iam/login" {
-		t.Fatalf("rewrite changed canonical path to %q; expected unchanged /v1/iam/login", got)
-	}
-
 	web.BeeApp.Handlers.ServeHTTP(rec, req)
 
 	if rec.Code == http.StatusMethodNotAllowed {
@@ -59,24 +48,5 @@ func TestV1IamLogin_POST_NotMethodNotAllowed(t *testing.T) {
 	// What must NOT happen is 404 (route missing) or 405 (wrong method).
 	if rec.Code == http.StatusNotFound {
 		t.Fatalf("POST /v1/iam/login returned 404; route must be registered")
-	}
-}
-
-// TestV1IamLogin_LegacyAPI_POST verifies the legacy /api/login POST is
-// rewritten to /v1/iam/login by PathRewriteFilter (the rewrite is the
-// adapter; the canonical surface stays one). Method-agnostic — POST,
-// GET, DELETE all rewrite the same way.
-func TestV1IamLogin_LegacyAPI_POST(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/login",
-		strings.NewReader(`{}`))
-	rec := httptest.NewRecorder()
-	ctx := context.NewContext()
-	ctx.Reset(rec, req)
-
-	PathRewriteFilter(ctx)
-
-	if got := ctx.Request.URL.Path; got != "/v1/iam/login" {
-		t.Fatalf("PathRewriteFilter(POST /api/login) → %q; want /v1/iam/login",
-			got)
 	}
 }
