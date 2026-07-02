@@ -146,11 +146,21 @@ func HasUserByField(organizationName string, field string, value string) bool {
 	return user != nil
 }
 
-func GetUserByFields(organization string, field string) (*User, error) {
-	isUsernameLowered := conf.GetConfigBool("isUsernameLowered")
-	if isUsernameLowered {
-		field = strings.ToLower(field)
+// normalizeUsername applies the deployment's canonical username casing rule. It
+// is the SINGLE definition of "what final form does a username take" — the write
+// path (AddUser), the pre-insert collision probe (CreateServiceAccount), and the
+// lookup path (GetUserByFields) all funnel through it so a case-sensitive DB can
+// never disagree between the name that is stored and the name that is checked or
+// looked up. When isUsernameLowered is unset (the Hanzo default) it is identity.
+func normalizeUsername(name string) string {
+	if conf.GetConfigBool("isUsernameLowered") {
+		return strings.ToLower(name)
 	}
+	return name
+}
+
+func GetUserByFields(organization string, field string) (*User, error) {
+	field = normalizeUsername(field)
 
 	field = strings.TrimSpace(field)
 
