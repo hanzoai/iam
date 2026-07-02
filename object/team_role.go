@@ -38,7 +38,8 @@ import (
 type CallerContext struct {
 	UserId        string // "org/name"
 	Org           string // caller's org (User.Owner)
-	IsGlobalAdmin bool   // platform superuser
+	IsGlobalAdmin bool   // platform superuser (User.IsGlobalAdmin)
+	IsOrgAdmin    bool   // admin of Org (User.IsAdmin) — org-wide authority in own org
 }
 
 // TeamRoleFor builds (does not persist) the IAM Role row for a catalog role in
@@ -183,6 +184,7 @@ func AuthorizeManagedRoleWrite(caller CallerContext, targetOrg, targetName strin
 		CallerKeys:          callerKeys,
 		CallerOrg:           caller.Org,
 		CallerIsGlobalAdmin: caller.IsGlobalAdmin,
+		CallerIsOrgAdmin:    caller.IsOrgAdmin,
 		TargetOrg:           targetOrg,
 		TargetKey:           targetName,
 	})
