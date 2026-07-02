@@ -112,6 +112,16 @@ func CreateServiceAccount(org, name, agentRef string, isAdmin bool) (*User, stri
 		return nil, "", "", fmt.Errorf("%s", msg)
 	}
 
+	// Normalize the name to the SAME final form AddUser will persist, BEFORE the
+	// collision check, so the check and the insert agree on the identity. AddUser
+	// lowercases the name when isUsernameLowered is set (object/user.go); without
+	// mirroring it here the collision probe would run against the mixed-case name
+	// (a case-sensitive DB miss) while AddUser inserts the lowercased name —
+	// letting SA "Acme-Bot" slip past the check and then collide at the DB PK
+	// with a human "acme-bot" (Red vector 5: name-collision hijack). Compute the
+	// canonical name ONCE.
+	name = normalizeUsername(name)
+
 	// Reject collision with any existing principal (human or bot) in the org so
 	// a service account can never silently hijack or be hijacked by a username.
 	if existing, err := getUser(org, name); err != nil {
