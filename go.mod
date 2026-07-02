@@ -68,7 +68,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tealeg/xlsx v1.0.5
 	github.com/thanhpk/randstr v1.0.4
-	github.com/zap-proto/go v1.1.0
+	github.com/zap-proto/go v1.3.0
 	golang.org/x/crypto v0.53.0
 	golang.org/x/image v0.38.0
 	golang.org/x/net v0.55.0
