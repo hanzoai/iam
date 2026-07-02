@@ -1265,11 +1265,10 @@ func AddUser(user *User, lang string) (bool, error) {
 	}
 
 	// Finalize the username BEFORE both the insert and the group write so they
-	// agree on user.GetId().
-	isUsernameLowered := conf.GetConfigBool("isUsernameLowered")
-	if isUsernameLowered {
-		user.Name = strings.ToLower(user.Name)
-	}
+	// agree on user.GetId(). normalizeUsername is the single definition of that
+	// rule, so a pre-insert collision probe (e.g. CreateServiceAccount) can match
+	// the exact name this insert will persist.
+	user.Name = normalizeUsername(user.Name)
 
 	// Insert the user row FIRST, then write group/policy rows. The old order
 	// (policy write before the per-org Insert) left an ORPHANED policy row for a
@@ -1646,6 +1645,18 @@ func (user *User) GetPreferredMfaProps(masked bool) *MfaProps {
 func AddUserKeys(user *User, isAdmin bool) (bool, error) {
 	if user == nil {
 		return false, fmt.Errorf("the user is not found")
+	}
+
+	// A service account's secret is HASHED at rest (AccessSecretHash), never
+	// plaintext. This legacy path writes a plaintext AccessSecret and does NOT
+	// touch AccessSecretHash — running it on an SA would persist a plaintext
+	// secret for a hash-only principal (breaking the no-plaintext-SA-secret
+	// invariant) AND leave the old hash winning in VerifyUserAccessSecret, so the
+	// newly "minted" key would silently never authenticate. There is exactly ONE
+	// way to (re)mint an SA key: MintServiceAccountKey (POST /service-accounts/
+	// :name/keys). Refuse SA rows here so the two paths never braid.
+	if IsServiceAccount(user) {
+		return false, fmt.Errorf("%q is a service account; rotate its key via the service-account key endpoint", user.GetId())
 	}
 
 	// Generate API keys with hk- prefix for Hanzo API key identification.
