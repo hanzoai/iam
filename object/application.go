@@ -1096,31 +1096,38 @@ func (application *Application) GetId() string {
 	return fmt.Sprintf("%s/%s", application.Owner, application.Name)
 }
 
+// IsRedirectUriValid reports whether redirectUri is EXACTLY one of the
+// application's registered redirect URIs (RFC 6749 §3.1.2.3). It is the sole
+// authority for OAuth redirect_uri, SAML AuthnRequest Issuer, and CAS service
+// validation.
+//
+// Match is exact string equality and NOTHING else — deliberately de-braided
+// from origin/CORS trust (util.IsValidOrigin):
+//
+//   - A trusted origin means "this host may make a credentialed cross-origin
+//     request". It must NEVER imply "OAuth codes/tokens may be delivered to any
+//     URL on that host". The prior IsValidOrigin short-circuit made every app's
+//     registered redirectUris DECORATIVE: any authenticated user could host a
+//     page on a trusted-suffix subdomain (e.g. s3.hanzo.ai/hanzo-sites/*),
+//     point authorize's redirect_uri at it, and receive another user's
+//     authorization code — a one-click SSO account takeover across every brand.
+//   - The prior strings.Contains fallback accepted attacker URLs that merely
+//     embedded a registered URI (e.g. https://attacker.com/https://app/callback).
+//   - The prior regexp.Compile("^"+uri+"$") treated every "." in a registered
+//     host as "any char", so https://cloudXhanzo.ai/cb matched a
+//     https://cloud.hanzo.ai/cb entry, and an unescaped "*"→".*" allowed
+//     path/host-crossing open redirects.
+//
+// Registered redirect URIs are the only allowlist. New callbacks are added by
+// registering the exact URI (init_data.json / IAM admin API) — never by trusting
+// a host suffix or a substring. Localhost dev callbacks are registered exactly
+// too (host+port+path), never blanket-allowed.
 func (application *Application) IsRedirectUriValid(redirectUri string) bool {
-	isValid, err := util.IsValidOrigin(redirectUri)
-	if err == nil && isValid {
-		return true
+	if redirectUri == "" {
+		return false
 	}
-
-	for _, targetUri := range application.RedirectUris {
-		if targetUri == "" {
-			continue
-		}
-		// Convert glob wildcards to regex: "*" → ".*"
-		// This lets init_data use "*" (match all) or "https://*.example.com/*"
-		pattern := targetUri
-		if strings.Contains(pattern, "*") && !strings.Contains(pattern, ".*") {
-			pattern = strings.ReplaceAll(pattern, "*", ".*")
-		}
-		targetUriRegex, err := regexp.Compile("^" + pattern + "$")
-		if err != nil {
-			// Not valid regex — treat as literal substring match
-			if strings.Contains(redirectUri, targetUri) {
-				return true
-			}
-			continue
-		}
-		if targetUriRegex.MatchString(redirectUri) || strings.Contains(redirectUri, targetUri) {
+	for _, registered := range application.RedirectUris {
+		if registered != "" && registered == redirectUri {
 			return true
 		}
 	}
@@ -1208,12 +1215,11 @@ func IsOriginAllowed(origin string) (bool, error) {
 	}
 
 	for _, application := range applications {
-		if application.IsRedirectUriValid(origin) {
-			return true, nil
-		}
-
-		// CORS origins are bare scheme+host (no path). Check if the origin
-		// matches the scheme+host of any configured redirect URI.
+		// CORS origins are bare scheme+host (no path). Allow an origin iff it
+		// matches the scheme+host of some registered redirect URI. This is a
+		// CORS concern (may this host send us a credentialed request) and is
+		// intentionally NOT IsRedirectUriValid (may we deliver a code to this
+		// exact URL) — the two are de-braided.
 		for _, redirectUri := range application.RedirectUris {
 			if redirectUri == "" {
 				continue
