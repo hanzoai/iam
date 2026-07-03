@@ -64,92 +64,26 @@ type UserStandard struct {
 	Phone         string `xorm:"varchar(100) index" json:"phone,omitempty"`
 }
 
+// UserWithoutThirdIdp is the identity projection embedded in the default "JWT"
+// access token. It is deliberately MINIMAL: identity (sub/name/owner/email) is
+// all a resource server needs. Org travels in the wrapper's `organization`
+// claim; authorization (roles/permissions/groups) is resolved against IAM,
+// never carried in the bearer token. Two properties fall out by construction:
+// (1) the token is BOUNDED in size — a user with many roles/permissions/
+// properties can no longer inflate it past the gateway's request-header limit
+// (api.hanzo.ai rejects oversized headers with HTTP 431); and (2) it never
+// leaks credential material (passwordSalt/passwordType/totpSecret/
+// recoveryCodes) or the full user record.
 type UserWithoutThirdIdp struct {
-	Owner       string `xorm:"varchar(100) notnull pk" json:"owner"`
-	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
-	CreatedTime string `xorm:"varchar(100) index" json:"createdTime"`
-	UpdatedTime string `xorm:"varchar(100)" json:"updatedTime"`
-	DeletedTime string `xorm:"varchar(100)" json:"deletedTime"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
 
-	Id                string   `xorm:"varchar(100) index" json:"id"`
-	Type              string   `xorm:"varchar(100)" json:"type"`
-	Password          string   `xorm:"varchar(150)" json:"password"`
-	PasswordSalt      string   `xorm:"varchar(100)" json:"passwordSalt"`
-	PasswordType      string   `xorm:"varchar(100)" json:"passwordType"`
-	DisplayName       string   `xorm:"varchar(100)" json:"displayName"`
-	FirstName         string   `xorm:"varchar(100)" json:"firstName"`
-	LastName          string   `xorm:"varchar(100)" json:"lastName"`
-	Avatar            string   `xorm:"varchar(500)" json:"avatar"`
-	AvatarType        string   `xorm:"varchar(100)" json:"avatarType"`
-	PermanentAvatar   string   `xorm:"varchar(500)" json:"permanentAvatar"`
-	Email             string   `xorm:"varchar(100) index" json:"email"`
-	EmailVerified     bool     `json:"email_verified"`
-	Phone             string   `xorm:"varchar(100) index" json:"phone"`
-	CountryCode       string   `xorm:"varchar(6)" json:"countryCode"`
-	Region            string   `xorm:"varchar(100)" json:"region"`
-	Location          string   `xorm:"varchar(100)" json:"location"`
-	Address           []string `json:"address"`
-	Affiliation       string   `xorm:"varchar(100)" json:"affiliation"`
-	Title             string   `xorm:"varchar(100)" json:"title"`
-	IdCardType        string   `xorm:"varchar(100)" json:"idCardType"`
-	IdCard            string   `xorm:"varchar(100) index" json:"idCard"`
-	Homepage          string   `xorm:"varchar(100)" json:"homepage"`
-	Bio               string   `xorm:"varchar(100)" json:"bio"`
-	Tag               string   `xorm:"varchar(100)" json:"tag"`
-	Language          string   `xorm:"varchar(100)" json:"language"`
-	Gender            string   `xorm:"varchar(100)" json:"gender"`
-	Birthday          string   `xorm:"varchar(100)" json:"birthday"`
-	Education         string   `xorm:"varchar(100)" json:"education"`
-	Score             int      `json:"score"`
-	Karma             int      `json:"karma"`
-	Ranking           int      `json:"ranking"`
-	IsDefaultAvatar   bool     `json:"isDefaultAvatar"`
-	IsOnline          bool     `json:"isOnline"`
-	IsAdmin           bool     `json:"isAdmin"`
-	IsForbidden       bool     `json:"isForbidden"`
-	IsDeleted         bool     `json:"isDeleted"`
-	SignupApplication string   `xorm:"varchar(100)" json:"signupApplication"`
-	Hash              string   `xorm:"varchar(100)" json:"hash"`
-	PreHash           string   `xorm:"varchar(100)" json:"preHash"`
-	RegisterType      string   `xorm:"varchar(100)" json:"registerType"`
-	RegisterSource    string   `xorm:"varchar(100)" json:"registerSource"`
-
-	GitHub   string `xorm:"github varchar(100)" json:"github"`
-	Google   string `xorm:"varchar(100)" json:"google"`
-	QQ       string `xorm:"qq varchar(100)" json:"qq"`
-	WeChat   string `xorm:"wechat varchar(100)" json:"wechat"`
-	Facebook string `xorm:"facebook varchar(100)" json:"facebook"`
-	DingTalk string `xorm:"dingtalk varchar(100)" json:"dingtalk"`
-	Weibo    string `xorm:"weibo varchar(100)" json:"weibo"`
-	Gitee    string `xorm:"gitee varchar(100)" json:"gitee"`
-	LinkedIn string `xorm:"linkedin varchar(100)" json:"linkedin"`
-	Wecom    string `xorm:"wecom varchar(100)" json:"wecom"`
-	Lark     string `xorm:"lark varchar(100)" json:"lark"`
-	Gitlab   string `xorm:"gitlab varchar(100)" json:"gitlab"`
-
-	CreatedIp      string `xorm:"varchar(100)" json:"createdIp"`
-	LastSigninTime string `xorm:"varchar(100)" json:"lastSigninTime"`
-	LastSigninIp   string `xorm:"varchar(100)" json:"lastSigninIp"`
-
-	// WebauthnCredentials []webauthn.Credential `xorm:"webauthnCredentials blob" json:"webauthnCredentials"`
-	PreferredMfaType string   `xorm:"varchar(100)" json:"preferredMfaType"`
-	RecoveryCodes    []string `xorm:"mediumtext" json:"recoveryCodes"`
-	TotpSecret       string   `xorm:"varchar(100)" json:"totpSecret"`
-	MfaPhoneEnabled  bool     `json:"mfaPhoneEnabled"`
-	MfaEmailEnabled  bool     `json:"mfaEmailEnabled"`
-	// MultiFactorAuths    []*MfaProps           `xorm:"-" json:"multiFactorAuths,omitempty"`
-
-	Ldap       string            `xorm:"ldap varchar(100)" json:"ldap"`
-	Properties map[string]string `json:"properties"`
-
-	Roles       []*Role       `json:"roles"`
-	Permissions []*Permission `json:"permissions"`
-	Groups      []string      `xorm:"groups varchar(1000)" json:"groups"`
-
-	LastSigninWrongTime string `xorm:"varchar(100)" json:"lastSigninWrongTime"`
-	SigninWrongTimes    int    `json:"signinWrongTimes"`
-
-	ManagedAccounts []ManagedAccount `xorm:"managedAccounts blob" json:"managedAccounts"`
+	Id            string `json:"id,omitempty"`
+	Type          string `json:"type,omitempty"`
+	DisplayName   string `json:"displayName,omitempty"`
+	Email         string `json:"email,omitempty"`
+	EmailVerified bool   `json:"email_verified,omitempty"`
+	Phone         string `json:"phone,omitempty"`
 }
 
 type ClaimsShort struct {
@@ -223,93 +157,17 @@ func getStandardUser(user *User) *UserStandard {
 }
 
 func getUserWithoutThirdIdp(user *User) *UserWithoutThirdIdp {
-	res := &UserWithoutThirdIdp{
-		Owner:       user.Owner,
-		Name:        user.Name,
-		CreatedTime: user.CreatedTime,
-		UpdatedTime: user.UpdatedTime,
-		DeletedTime: user.DeletedTime,
+	return &UserWithoutThirdIdp{
+		Owner: user.Owner,
+		Name:  user.Name,
 
-		Id:                user.Id,
-		Type:              user.Type,
-		Password:          user.Password,
-		PasswordSalt:      user.PasswordSalt,
-		PasswordType:      user.PasswordType,
-		DisplayName:       user.DisplayName,
-		FirstName:         user.FirstName,
-		LastName:          user.LastName,
-		Avatar:            user.Avatar,
-		AvatarType:        user.AvatarType,
-		PermanentAvatar:   user.PermanentAvatar,
-		Email:             user.Email,
-		EmailVerified:     user.EmailVerified,
-		Phone:             user.Phone,
-		CountryCode:       user.CountryCode,
-		Region:            user.Region,
-		Location:          user.Location,
-		Address:           user.Address,
-		Affiliation:       user.Affiliation,
-		Title:             user.Title,
-		IdCardType:        user.IdCardType,
-		IdCard:            user.IdCard,
-		Homepage:          user.Homepage,
-		Bio:               user.Bio,
-		Tag:               user.Tag,
-		Language:          user.Language,
-		Gender:            user.Gender,
-		Birthday:          user.Birthday,
-		Education:         user.Education,
-		Score:             user.Score,
-		Karma:             user.Karma,
-		Ranking:           user.Ranking,
-		IsDefaultAvatar:   user.IsDefaultAvatar,
-		IsOnline:          user.IsOnline,
-		IsAdmin:           user.IsAdmin,
-		IsForbidden:       user.IsForbidden,
-		IsDeleted:         user.IsDeleted,
-		SignupApplication: user.SignupApplication,
-		Hash:              user.Hash,
-		PreHash:           user.PreHash,
-		RegisterType:      user.RegisterType,
-		RegisterSource:    user.RegisterSource,
-
-		GitHub:   user.GitHub,
-		Google:   user.Google,
-		QQ:       user.QQ,
-		WeChat:   user.WeChat,
-		Facebook: user.Facebook,
-		DingTalk: user.DingTalk,
-		Weibo:    user.Weibo,
-		Gitee:    user.Gitee,
-		LinkedIn: user.LinkedIn,
-		Wecom:    user.Wecom,
-		Lark:     user.Lark,
-		Gitlab:   user.Gitlab,
-
-		CreatedIp:      user.CreatedIp,
-		LastSigninTime: user.LastSigninTime,
-		LastSigninIp:   user.LastSigninIp,
-
-		PreferredMfaType: user.PreferredMfaType,
-		RecoveryCodes:    user.RecoveryCodes,
-		TotpSecret:       user.TotpSecret,
-		MfaPhoneEnabled:  user.MfaPhoneEnabled,
-		MfaEmailEnabled:  user.MfaEmailEnabled,
-
-		Ldap:       user.Ldap,
-		Properties: user.Properties,
-
-		Roles:       user.Roles,
-		Permissions: user.Permissions,
-		Groups:      user.Groups,
-
-		LastSigninWrongTime: user.LastSigninWrongTime,
-		SigninWrongTimes:    user.SigninWrongTimes,
-
-		ManagedAccounts: user.ManagedAccounts,
+		Id:            user.Id,
+		Type:          user.Type,
+		DisplayName:   user.DisplayName,
+		Email:         user.Email,
+		EmailVerified: user.EmailVerified,
+		Phone:         user.Phone,
 	}
-
-	return res
 }
 
 func getShortClaims(claims Claims) ClaimsShort {
