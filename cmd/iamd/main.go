@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -24,6 +25,10 @@ func main() {
 
 	switch cmd {
 	case "serve":
+		ctx := context.Background()
+		shutdown := initTelemetry(ctx, "hanzo-iam")
+		defer shutdown(ctx)
+
 		// Convergent provisioning: when IAM_PROVISION_ON_BOOT is set, reconcile
 		// the per-brand desktop OAuth apps + social/email/sms providers against
 		// our own API as soon as it is serving. Idempotent and self-healing —
