@@ -349,6 +349,38 @@ constructors when seeding — never spell the values inline.
 There are no upstream-brand env vars, aliases, or fallbacks — `IAM_*`
 everywhere, period.
 
+### App-capability allowlists (fail-secure)
+
+A confidential-client principal (`app/<name>`, minted by the `client_credentials`
+grant) is NOT a blanket admin. Each sensitive, app-gated capability is a
+per-capability comma-separated allowlist of application **names**
+(`object/app_authz.go`); **empty/unset = deny all**. `conf.GetConfigString` reads
+the env var first, so the operator/universe Deployment (KMS-injected env) is the
+grant surface — one mechanism, least privilege (an app trusted to reset passwords
+is not implicitly trusted to mint keys). Names in ANY allowlist are reserved to
+the **admin-owned** platform app (a tenant cannot register `<theirOrg>/<name>` to
+inherit the grant).
+
+Service-account surface (`/v1/iam/service-accounts`), read/write split:
+
+| Env | Capability | Gates |
+|---|---|---|
+| `IAM_KEY_MINT_ALLOWED_APPS` | `CapKeyMint` | **create / rotate / delete** SAs + per-user hk- key mint (mint-admin) |
+| `IAM_SA_LIST_ALLOWED_APPS` | `CapServiceAccountRead` | **read-only** `GET` list — names + metadata, NEVER secrets |
+
+`CapServiceAccountRead` is the least-privilege grant for a bots-as-members sync
+(e.g. `hanzo-team`): it lists SAs WITHOUT the mint-admin, so a leaked reader
+credential can never create/rotate/delete. A read grant is also strictly
+org-scoped by the `<org>-<app>` naming convention — `app/hanzo-team` may list
+ONLY `organization=hanzo`, never another tenant's. A `CapKeyMint` app is a
+superset (it can list too), so existing consoles need no separate read entry.
+Grant `hanzo-team` list-only via `IAM_SA_LIST_ALLOWED_APPS=hanzo-team` — do NOT
+add it to `IAM_KEY_MINT_ALLOWED_APPS`. (The other mutation caps —
+`IAM_USER_ADMIN_APPS`, `IAM_APP_ADMIN_APPS`, `IAM_ORG_ADMIN_APPS`,
+`IAM_CERT_ADMIN_APPS`, `IAM_KEY_ADMIN_APPS`, `IAM_PROVIDER_ADMIN_APPS`,
+`IAM_SYNCER_ADMIN_APPS`, `IAM_WEBHOOK_ADMIN_APPS`, `IAM_TOKEN_ADMIN_APPS`,
+`IAM_PASSWORD_ADMIN_APPS` — follow the identical fail-secure pattern.)
+
 ## Build
 
 ```bash
