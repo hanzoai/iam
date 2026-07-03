@@ -64,16 +64,23 @@ type UserStandard struct {
 	Phone         string `xorm:"varchar(100) index" json:"phone,omitempty"`
 }
 
-// UserWithoutThirdIdp is the identity projection embedded in the default "JWT"
-// access token. It is deliberately MINIMAL: identity (sub/name/owner/email) is
-// all a resource server needs. Org travels in the wrapper's `organization`
-// claim; authorization (roles/permissions/groups) is resolved against IAM,
-// never carried in the bearer token. Two properties fall out by construction:
-// (1) the token is BOUNDED in size — a user with many roles/permissions/
-// properties can no longer inflate it past the gateway's request-header limit
-// (api.hanzo.ai rejects oversized headers with HTTP 431); and (2) it never
-// leaks credential material (passwordSalt/passwordType/totpSecret/
-// recoveryCodes) or the full user record.
+// UserWithoutThirdIdp is the identity + authorization projection embedded in the
+// default "JWT" access token. It carries exactly what a bearer needs: identity
+// (sub/name/owner/email), the org (owner + the wrapper's `organization` claim),
+// the authorization grant (isAdmin + roles/permissions/groups) and the billing
+// tier (Properties, filtered to billingProps). Everything else is dropped:
+// credential material (password/passwordSalt/passwordType/totpSecret/
+// recoveryCodes/hash), the full profile (avatar/address/education/social-IdP
+// links), audit + gamification fields, managedAccounts and the console
+// UI-preferences blob that otherwise dominated Properties.
+//
+// Two invariants fall out by construction: (1) the token never leaks
+// credentials, and (2) it stays inside the edge request-header buffer —
+// api.hanzo.ai answers HTTP 431 "Too big request header" on oversized headers,
+// which locked tenants out of /v1/chat/completions, billing CRUD and search.
+// Roles and permissions stay wire-typed as objects so IAM's own
+// refresh/introspect re-parse into Claims{*User} keeps working and commerce
+// (FlexRoles) keeps reading them.
 type UserWithoutThirdIdp struct {
 	Owner string `json:"owner"`
 	Name  string `json:"name"`
@@ -84,6 +91,13 @@ type UserWithoutThirdIdp struct {
 	Email         string `json:"email,omitempty"`
 	EmailVerified bool   `json:"email_verified,omitempty"`
 	Phone         string `json:"phone,omitempty"`
+
+	IsAdmin bool `json:"isAdmin,omitempty"`
+
+	Roles       []*Role           `json:"roles,omitempty"`
+	Permissions []*Permission     `json:"permissions,omitempty"`
+	Groups      []string          `json:"groups,omitempty"`
+	Properties  map[string]string `json:"properties,omitempty"`
 }
 
 type ClaimsShort struct {
@@ -156,6 +170,26 @@ func getStandardUser(user *User) *UserStandard {
 	return res
 }
 
+// billingProps is the allowlist of user Properties a bearer token carries. The
+// console UI-preferences blob and other free-form properties are dropped to keep
+// the token bounded; `tier` is read by commerce for plan gating.
+var billingProps = map[string]bool{"tier": true}
+
+// filterProps returns only the allowlisted Properties, or nil so the claim is
+// omitted entirely when none are present.
+func filterProps(in map[string]string) map[string]string {
+	var out map[string]string
+	for k := range billingProps {
+		if v, ok := in[k]; ok {
+			if out == nil {
+				out = make(map[string]string, len(billingProps))
+			}
+			out[k] = v
+		}
+	}
+	return out
+}
+
 func getUserWithoutThirdIdp(user *User) *UserWithoutThirdIdp {
 	return &UserWithoutThirdIdp{
 		Owner: user.Owner,
@@ -167,6 +201,13 @@ func getUserWithoutThirdIdp(user *User) *UserWithoutThirdIdp {
 		Email:         user.Email,
 		EmailVerified: user.EmailVerified,
 		Phone:         user.Phone,
+
+		IsAdmin: user.IsAdmin,
+
+		Roles:       user.Roles,
+		Permissions: user.Permissions,
+		Groups:      user.Groups,
+		Properties:  filterProps(user.Properties),
 	}
 }
 
