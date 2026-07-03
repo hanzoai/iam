@@ -87,6 +87,63 @@ func (c *ApiController) authorizeServiceAccountAdmin(org string) (string, bool) 
 	return caller, true
 }
 
+// authorizeServiceAccountRead enforces the caller→org authorization binding for
+// LISTING service accounts — the READ path (GetServiceAccounts) — and returns the
+// resolved caller username. It writes the error response and returns ("", false)
+// on denial.
+//
+// Least privilege: the list surface returns names + metadata ONLY (accessKey /
+// accessSecret masked by GetMaskedUsers, AccessSecretHash is json:"-"), so it does
+// NOT require the full CapKeyMint mint-admin. An app caller is authorized when it
+// is allowlisted for EITHER:
+//
+//   - CapKeyMint (IAM_KEY_MINT_ALLOWED_APPS) → a trusted platform orchestrator
+//     (e.g. hanzo-console) that already creates/rotates/deletes SAs and keeps its
+//     cross-org reach (it enforces tenant isolation itself). Mint is a superset of
+//     read, so existing consoles need no separate read allowlisting; OR
+//   - CapServiceAccountRead (IAM_SA_LIST_ALLOWED_APPS) → a read-only, per-tenant
+//     reader (e.g. hanzo-team syncing bots-as-members). This grant is org-scoped
+//     by the <org>-<app> naming convention: app/<org>-<app> may list ONLY
+//     organization=<org>, never another tenant's (appPrincipalBoundToOrg). A read
+//     cap can NEVER mint, rotate, or delete a credential — those stay on
+//     authorizeServiceAccountAdmin (CapKeyMint).
+//
+// The human-caller policy is IDENTICAL to the admin path
+// (serviceAccountHumanAdminAllowed): org-scoped by construction — a real global
+// admin any org, a tenant admin only its own. This change widens ONLY the app
+// surface (adds a read-only cap); it grants humans no new access.
+func (c *ApiController) authorizeServiceAccountRead(org string) (string, bool) {
+	caller := c.GetSessionUsername()
+	if caller == "" {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return "", false
+	}
+
+	if object.IsAppUser(caller) {
+		// Trusted mint-admin orchestrator: cross-org read allowed (unchanged from
+		// the admin gate — a console that can provision in any org can list it).
+		if object.AppAllowedForCapability(caller, object.CapKeyMint) {
+			return caller, true
+		}
+		// Org-scoped read-only reader: must be allowlisted AND bound to `org` by
+		// the <org>-<app> naming convention. Both conditions required (fail-secure).
+		if object.AppAllowedForCapability(caller, object.CapServiceAccountRead) &&
+			appPrincipalBoundToOrg(caller, org) {
+			return caller, true
+		}
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return "", false
+	}
+
+	// Human caller — same org-scoped policy as the admin path.
+	u := c.getCurrentUser()
+	if !serviceAccountHumanAdminAllowed(u, org) {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return "", false
+	}
+	return caller, true
+}
+
 // serviceAccountHumanAdminAllowed is the pure human-caller policy for
 // service-account administration: a real global-admin USER may act on ANY org;
 // otherwise the caller must be an admin whose OWN org is exactly `org`. A nil
@@ -124,6 +181,25 @@ func resolveServiceAccountName(org, name string) string {
 func isCanonicalForOrg(org, name string) bool {
 	prefix := org + "-"
 	return len(name) > len(prefix) && name[:len(prefix)] == prefix
+}
+
+// appPrincipalBoundToOrg reports whether the confidential-client principal
+// ("app/<name>") is bound to org by the <org>-<app> naming convention — i.e. its
+// application name carries the "<org>-" prefix with a non-empty app segment. This
+// is the tenant binding for an org-scoped SA reader: app/hanzo-team may list ONLY
+// organization=hanzo, never another tenant's SAs. The org is derived from the
+// (capability-reserved, admin-owned) app NAME, so the binding holds regardless of
+// the app row's DB owner — reusing the SAME <org>-<app> prefix rule as the
+// service-account names it reads (isCanonicalForOrg).
+func appPrincipalBoundToOrg(principal, org string) bool {
+	if org == "" {
+		return false
+	}
+	name := object.AppNameFromPrincipal(principal)
+	if name == "" {
+		return false
+	}
+	return isCanonicalForOrg(org, name)
 }
 
 // CreateServiceAccount
@@ -196,7 +272,10 @@ func (c *ApiController) GetServiceAccounts() {
 		return
 	}
 
-	if _, ok := c.authorizeServiceAccountAdmin(org); !ok {
+	// READ path: gated by the read-only capability (CapServiceAccountRead) OR the
+	// mint-admin superset (CapKeyMint) — NOT the full mint-admin alone. Create /
+	// rotate / delete keep requiring authorizeServiceAccountAdmin (CapKeyMint).
+	if _, ok := c.authorizeServiceAccountRead(org); !ok {
 		return
 	}
 

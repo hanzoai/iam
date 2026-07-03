@@ -132,6 +132,21 @@ var (
 	// IAM_TOKEN_ADMIN_APPS (empty/unset = deny all). (Normal token issuance via
 	// the OAuth grant endpoints is unaffected — this gates only the admin CRUD.)
 	CapTokenAdmin = AppAdminCapability{Name: "token", EnvVar: "IAM_TOKEN_ADMIN_APPS"}
+
+	// CapServiceAccountRead gates LISTING service accounts — GET
+	// /v1/iam/service-accounts?organization=<org> — which returns names +
+	// metadata ONLY (accessKey/accessSecret masked by GetMaskedUsers, the
+	// argon2id AccessSecretHash is json:"-" and never serializes). It is the
+	// READ-ONLY counterpart to CapKeyMint: an app that only needs to enumerate
+	// bots to sync them as hanzo.team members (hanzo-team) gets this instead of
+	// the full mint-admin, so a leaked reader credential can never create,
+	// rotate, or delete a service-account credential. Least privilege.
+	//
+	// A read grant is ALSO strictly org-scoped by the <org>-<app> naming
+	// convention (controllers/service_account.go authorizeServiceAccountRead):
+	// app/<org>-<app> may list ONLY organization=<org>, never another tenant's.
+	// Allowlist: IAM_SA_LIST_ALLOWED_APPS (empty/unset = deny all, fail-secure).
+	CapServiceAccountRead = AppAdminCapability{Name: "service-account-read", EnvVar: "IAM_SA_LIST_ALLOWED_APPS"}
 )
 
 // AppNameFromPrincipal returns the bare application name from an "app/<name>"
@@ -143,15 +158,19 @@ func AppNameFromPrincipal(principal string) string {
 	return strings.TrimPrefix(principal, "app/")
 }
 
-// allCapabilities is every confidential-client capability. Each keys on the
-// bare application NAME (AppAllowedForCapability), and an application's Name is
-// NOT globally unique — the DB primary key is composite (Owner, Name). So a
+// allCapabilities is every confidential-client capability (both the sensitive
+// mutations and the read-only CapServiceAccountRead). Each keys on the bare
+// application NAME (AppAllowedForCapability), and an application's Name is NOT
+// globally unique — the DB primary key is composite (Owner, Name). So a
 // capability-allowlisted name may ONLY be held by the admin-owned platform app
-// that legitimately carries it.
+// that legitimately carries it. CapServiceAccountRead is included so that its
+// allowlisted reader name (e.g. hanzo-team) is likewise reserved to the
+// admin-owned app — a tenant cannot register <theirOrg>/hanzo-team and inherit
+// the read grant to enumerate another org's bots (name-collision escalation).
 var allCapabilities = []AppAdminCapability{
 	CapUserPasswordAdmin, CapUserAdmin, CapAppAdmin, CapKeyMint, CapCertAdmin,
 	CapKeyAdmin, CapOrgAdmin, CapProviderAdmin, CapSyncerAdmin, CapWebhookAdmin,
-	CapTokenAdmin,
+	CapTokenAdmin, CapServiceAccountRead,
 }
 
 // AppNameIsCapabilityReserved reports whether appName appears in ANY capability
