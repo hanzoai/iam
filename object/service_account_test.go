@@ -15,6 +15,7 @@
 package object
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -304,8 +305,14 @@ func TestListServiceAccounts_StripsSecretsAndScopesByOrg(t *testing.T) {
 
 	// Two SAs in hanzo (one with a minted key), one human in hanzo, one SA in zoo.
 	saA := seedSA(t, engine, "hanzo", "hanzo-slackbot")
-	if _, _, err := MintServiceAccountKey(saA, true); err != nil {
+	accessKey, rawSecret, err := MintServiceAccountKey(saA, true)
+	if err != nil {
 		t.Fatalf("mint saA: %v", err)
+	}
+	// The persisted argon2id hash — the reader must NEVER see it on the wire.
+	stored := &User{Owner: "hanzo", Name: "hanzo-slackbot"}
+	if _, err := engine.Get(stored); err != nil {
+		t.Fatalf("re-read saA: %v", err)
 	}
 	seedSA(t, engine, "hanzo", "hanzo-ci")
 	if _, err := engine.Insert(&User{Owner: "hanzo", Name: "bob", Id: "bob-id", Type: "normal-user"}); err != nil {
@@ -335,6 +342,56 @@ func TestListServiceAccounts_StripsSecretsAndScopesByOrg(t *testing.T) {
 		if sa.AccessSecret != "" && sa.AccessSecret != "***" {
 			t.Errorf("SECURITY: unmasked AccessSecret %q returned in list", sa.AccessSecret)
 		}
+	}
+
+	// Wire-level guarantee: the EXACT JSON bytes a reader receives must contain
+	// NO secret material — not the raw secret, not the real access key, not the
+	// argon2id hash, and not even the "accessSecretHash" field name (json:"-").
+	wire, err := json.Marshal(list)
+	if err != nil {
+		t.Fatalf("marshal list: %v", err)
+	}
+	blob := string(wire)
+	if strings.Contains(blob, rawSecret) {
+		t.Fatal("SECURITY: the raw access secret appears in the listed JSON")
+	}
+	if strings.Contains(blob, accessKey) {
+		t.Fatal("SECURITY: the unmasked access key appears in the listed JSON")
+	}
+	if stored.AccessSecretHash != "" && strings.Contains(blob, stored.AccessSecretHash) {
+		t.Fatal("SECURITY: the argon2id secret hash appears in the listed JSON")
+	}
+	if strings.Contains(blob, "accessSecretHash") {
+		t.Fatal(`SECURITY: the accessSecretHash field serialized (must be json:"-")`)
+	}
+}
+
+// TestCapServiceAccountRead_ReservedAndScoped covers the two object-layer
+// invariants the read cap relies on:
+//
+//  1. CapServiceAccountRead is part of allCapabilities, so its allowlisted
+//     reader name is reserved to the admin-owned platform app — a tenant cannot
+//     register <theirOrg>/hanzo-team and inherit the read grant.
+//  2. The read allowlist is fail-secure: reserved only when the env names the app.
+func TestCapServiceAccountRead_ReservedAndScoped(t *testing.T) {
+	// Fail-secure: with the allowlist unset, the name is NOT reserved.
+	t.Setenv(CapServiceAccountRead.EnvVar, "")
+	if AppNameIsCapabilityReserved("hanzo-team") {
+		t.Fatal("with the read allowlist empty, hanzo-team must not be reserved")
+	}
+
+	// Once allowlisted, the reader name is reserved (name-collision escalation
+	// defense) and the app is recognized for the read capability.
+	t.Setenv(CapServiceAccountRead.EnvVar, "hanzo-team")
+	if !AppNameIsCapabilityReserved("hanzo-team") {
+		t.Fatal("an allowlisted read-cap app name must be reserved to admin-owned apps")
+	}
+	if !AppAllowedForCapability("app/hanzo-team", CapServiceAccountRead) {
+		t.Fatal("app/hanzo-team must be allowed for CapServiceAccountRead when allowlisted")
+	}
+	// The read cap grants NOTHING on the mint gate.
+	if AppAllowedForCapability("app/hanzo-team", CapKeyMint) {
+		t.Fatal("SECURITY: the read allowlist must not grant CapKeyMint")
 	}
 }
 

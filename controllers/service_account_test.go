@@ -197,3 +197,126 @@ func TestIsCanonicalForOrg(t *testing.T) {
 		t.Error("a bare name is not canonical")
 	}
 }
+
+// ── read-only capability (CapServiceAccountRead) — the least-privilege split ──
+
+// TestAuthorizeServiceAccountRead_ReadCapOrgScoped is the core least-privilege
+// property: hanzo-team, allowlisted ONLY for the read cap (NOT CapKeyMint), may
+// LIST service accounts for its OWN org (hanzo) and is DENIED for any other org
+// (zoo) — org-scoped by the <org>-<app> naming convention, never cross-tenant.
+func TestAuthorizeServiceAccountRead_ReadCapOrgScoped(t *testing.T) {
+	t.Setenv(object.CapKeyMint.EnvVar, "")                        // NOT a mint app
+	t.Setenv(object.CapServiceAccountRead.EnvVar, "hanzo-team")   // read-only grant
+
+	own := newSAController(t, "app/hanzo-team")
+	caller, ok := own.authorizeServiceAccountRead("hanzo")
+	if !ok {
+		t.Fatal("read-cap app must be authorized to LIST its own org (hanzo)")
+	}
+	if caller != "app/hanzo-team" {
+		t.Fatalf("caller = %q, want app/hanzo-team", caller)
+	}
+
+	// Cross-tenant: the SAME credential must NOT list another org's SAs.
+	cross := newSAController(t, "app/hanzo-team")
+	if _, ok := cross.authorizeServiceAccountRead("zoo"); ok {
+		t.Fatal("cross-tenant DENY: app/hanzo-team must NOT list org=zoo")
+	}
+	// And a would-be prefix-confusion org ("han") is not the app's org either.
+	confuse := newSAController(t, "app/hanzo-team")
+	if _, ok := confuse.authorizeServiceAccountRead("han"); ok {
+		t.Fatal("prefix-confusion DENY: app/hanzo-team is bound to org=hanzo, not han")
+	}
+}
+
+// TestAuthorizeServiceAccountRead_ReadCapCannotMint pins the deny path that
+// makes this least-privilege: an app holding ONLY the read cap (CapKeyMint
+// empty) is REJECTED by authorizeServiceAccountAdmin — so create / rotate /
+// delete remain mint-admin-only. A reader can never mint, rotate, or delete.
+func TestAuthorizeServiceAccountRead_ReadCapCannotMint(t *testing.T) {
+	t.Setenv(object.CapKeyMint.EnvVar, "")                      // NOT a mint app
+	t.Setenv(object.CapServiceAccountRead.EnvVar, "hanzo-team") // read-only grant
+
+	c := newSAController(t, "app/hanzo-team")
+	if _, ok := c.authorizeServiceAccountAdmin("hanzo"); ok {
+		t.Fatal("SECURITY: a read-only app must NOT pass the mint-admin gate (create/rotate/delete)")
+	}
+}
+
+// TestAuthorizeServiceAccountRead_MintAppSuperset: a CapKeyMint orchestrator
+// (hanzo-console) can LIST too — mint is a superset of read — and keeps its
+// cross-org reach, without being re-added to the read allowlist.
+func TestAuthorizeServiceAccountRead_MintAppSuperset(t *testing.T) {
+	t.Setenv(object.CapKeyMint.EnvVar, "hanzo-console")
+	t.Setenv(object.CapServiceAccountRead.EnvVar, "") // NOT on the read list
+
+	c := newSAController(t, "app/hanzo-console")
+	if _, ok := c.authorizeServiceAccountRead("hanzo"); !ok {
+		t.Fatal("a CapKeyMint app must be able to LIST (mint ⊇ read)")
+	}
+	// Cross-org read is allowed for the trusted mint orchestrator (unchanged).
+	if _, ok := c.authorizeServiceAccountRead("zoo"); !ok {
+		t.Fatal("a CapKeyMint app keeps its cross-org LIST reach")
+	}
+}
+
+// TestAuthorizeServiceAccountRead_FailSecure: with BOTH allowlists empty, every
+// app principal is denied the read path (fail-secure default).
+func TestAuthorizeServiceAccountRead_FailSecure(t *testing.T) {
+	t.Setenv(object.CapKeyMint.EnvVar, "")
+	t.Setenv(object.CapServiceAccountRead.EnvVar, "")
+
+	for _, p := range []string{"app/hanzo-team", "app/hanzo-console", "app/evil"} {
+		c := newSAController(t, p)
+		if _, ok := c.authorizeServiceAccountRead("hanzo"); ok {
+			t.Fatalf("empty allowlists must deny app principal %q (fail-secure)", p)
+		}
+	}
+}
+
+// TestAuthorizeServiceAccountRead_NonAllowlistedDenied: an app on NEITHER list is
+// denied even when other apps are allowlisted, and even for its own org prefix.
+func TestAuthorizeServiceAccountRead_NonAllowlistedDenied(t *testing.T) {
+	t.Setenv(object.CapKeyMint.EnvVar, "hanzo-console")
+	t.Setenv(object.CapServiceAccountRead.EnvVar, "hanzo-team")
+
+	// zoo-rogue is well-formed for org zoo but on NEITHER allowlist → denied.
+	c := newSAController(t, "app/zoo-rogue")
+	if _, ok := c.authorizeServiceAccountRead("zoo"); ok {
+		t.Fatal("a non-allowlisted app must be denied even for its own org prefix")
+	}
+}
+
+// TestAuthorizeServiceAccountRead_Anonymous: no principal → denied.
+func TestAuthorizeServiceAccountRead_Anonymous(t *testing.T) {
+	t.Setenv(object.CapServiceAccountRead.EnvVar, "hanzo-team")
+	c := newSAController(t, "")
+	if _, ok := c.authorizeServiceAccountRead("hanzo"); ok {
+		t.Fatal("an anonymous caller must be denied on the read path")
+	}
+}
+
+// TestAppPrincipalBoundToOrg is the pure org-binding predicate: an app principal
+// is bound to org iff its bare name carries the "<org>-" prefix with a non-empty
+// app segment. This is the tenant scoping that keeps a read-only reader single-org.
+func TestAppPrincipalBoundToOrg(t *testing.T) {
+	cases := []struct {
+		principal, org string
+		want           bool
+	}{
+		{"app/hanzo-team", "hanzo", true},   // bound to its org
+		{"app/hanzo-team", "zoo", false},    // cross-tenant
+		{"app/hanzo-team", "han", false},    // prefix confusion (separator guards it)
+		{"app/hanzo-team", "hanzo-", false}, // malformed org
+		{"app/hanzo-", "hanzo", false},      // empty app segment
+		{"app/hanzo", "hanzo", false},       // no separator → not <org>-<app>
+		{"hanzo-team", "hanzo", false},      // not an app/ principal (human/plain)
+		{"app/", "hanzo", false},            // empty name
+		{"app/hanzo-team", "", false},       // empty org
+	}
+	for _, tc := range cases {
+		if got := appPrincipalBoundToOrg(tc.principal, tc.org); got != tc.want {
+			t.Errorf("appPrincipalBoundToOrg(%q,%q) = %v, want %v", tc.principal, tc.org, got, tc.want)
+		}
+	}
+}

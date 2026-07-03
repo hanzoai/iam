@@ -133,8 +133,11 @@ func InitAPI() {
 	// Service accounts — agent/bot IAM identities (Type=service-account). A
 	// service account is a User of Type "service-account" (no password;
 	// API-key-only auth, secret argon2id-hashed at rest). Create/rotate return
-	// the raw key ONCE; list returns names+metadata only. Org-scoped; gated by
-	// CapKeyMint (same trust boundary as mint-user-keys). RESTful shape — one
+	// the raw key ONCE; list returns names+metadata only. Least-privilege split:
+	// create/rotate/delete (mutations) require CapKeyMint (IAM_KEY_MINT_ALLOWED_APPS,
+	// same trust boundary as mint-user-keys); the read-only GET is gated by the
+	// weaker CapServiceAccountRead (IAM_SA_LIST_ALLOWED_APPS) — org-scoped by the
+	// <org>-<app> app name — OR CapKeyMint as a superset. RESTful shape — one
 	// resource, standard verbs.
 	web.Router("/v1/iam/service-accounts", &controllers.ApiController{}, "POST:CreateServiceAccount")
 	web.Router("/v1/iam/service-accounts", &controllers.ApiController{}, "GET:GetServiceAccounts")
