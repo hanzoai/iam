@@ -584,6 +584,22 @@ func getExistUserByBindingRule(providerItem *object.ProviderItem, application *o
 	return user, nil
 }
 
+// loginOrgForApp returns the organization a login must resolve its user in.
+// It is the RESOLVED application's organization — never the client-supplied
+// authForm.Organization. The SPA sets authForm.organization from the loaded
+// application for every flow, so the two normally agree; when they disagree it
+// is because the OAuth-authorize login path arrived without a correct org, and
+// the application is the authoritative source of truth (getApplication already
+// applies the shared-org override, so shared login stays correct). It falls back
+// to formOrg only when the application or its org is unexpectedly empty,
+// preserving prior behavior for that degenerate case.
+func loginOrgForApp(application *object.Application, formOrg string) string {
+	if application != nil && application.Organization != "" {
+		return application.Organization
+	}
+	return formOrg
+}
+
 // Login ...
 // @Title Login
 // @Tag Login API
@@ -756,10 +772,16 @@ func (c *ApiController) Login() {
 				return
 			}
 
+			// Resolve the login org from the application, not the client-supplied
+			// authForm.Organization: an app registered in the global-admin org (e.g.
+			// hanzo-admin-guard) must resolve admin/<user>, not the user's home org,
+			// even when the OAuth-authorize flow omits or mis-sends organization.
+			loginOrg := loginOrgForApp(application, authForm.Organization)
+
 			clientIp := util.GetClientIpFromRequest(c.Ctx.Request)
 
 			var enableCaptcha bool
-			if enableCaptcha, err = object.CheckToEnableCaptcha(application, authForm.Organization, authForm.Username, clientIp); err != nil {
+			if enableCaptcha, err = object.CheckToEnableCaptcha(application, loginOrg, authForm.Username, clientIp); err != nil {
 				c.ResponseError(err.Error())
 				return
 			} else if enableCaptcha {
@@ -803,7 +825,7 @@ func (c *ApiController) Login() {
 			} else {
 				isPasswordWithLdapEnabled = false
 			}
-			user, err = object.CheckUserPassword(authForm.Organization, authForm.Username, password, c.GetAcceptLanguage(), enableCaptcha, isSigninViaLdap, isPasswordWithLdapEnabled)
+			user, err = object.CheckUserPassword(loginOrg, authForm.Username, password, c.GetAcceptLanguage(), enableCaptcha, isSigninViaLdap, isPasswordWithLdapEnabled)
 		}
 
 		if err != nil {
