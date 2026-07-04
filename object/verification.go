@@ -125,7 +125,7 @@ func IsAllowSend(user *User, remoteAddr, recordType string, application *Applica
 // the canonical send path is unavailable.
 func SendVerificationCodeToEmail(organization *Organization, user *User, provider *Provider, remoteAddr string, dest string, _ string, _ string, _ string, application *Application) error {
 	if !NotifyDeliveryEnabled() {
-		return errors.New("IAM_NOTIFY_URL is not configured; notify is the only OTP delivery path")
+		return errors.New("IAM_NOTIFY_ZAP_ADDR is not configured; notify (ZAP) is the only OTP delivery path")
 	}
 
 	code := getVerificationCode(user, organization)
@@ -184,7 +184,7 @@ func SendVerificationCodeToPhone(organization *Organization, user *User, provide
 	}
 
 	if !NotifyDeliveryEnabled() {
-		return errors.New("IAM_NOTIFY_URL is not configured; notify is the only OTP delivery path")
+		return errors.New("IAM_NOTIFY_ZAP_ADDR is not configured; notify (ZAP) is the only OTP delivery path")
 	}
 
 	category := "phone"

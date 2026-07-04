@@ -385,7 +385,17 @@ func GetOAuthToken(grantType string, clientId string, clientSecret string, code 
 	case "authorization_code": // Authorization Code Grant
 		token, tokenError, err = GetAuthorizationCodeToken(application, clientSecret, code, verifier, resource)
 	case "client_credentials": // Client Credentials Grant
-		token, tokenError, err = GetClientCredentialsToken(application, clientSecret, scope, host)
+		// Internal machine identities ("<org>-iam") are minted ONLY in-process by
+		// object.serviceTokenSource (IAM is the issuer). Refuse the grant on this
+		// PUBLIC endpoint so a leaked/guessed app secret cannot mint the token from
+		// outside the cluster — the app secret is deliberately non-load-bearing.
+		if IsInternalServiceApplication(application) {
+			return &TokenError{
+				Error:            InvalidClient,
+				ErrorDescription: "client_credentials is not available for this identity on the public token endpoint",
+			}, nil
+		}
+		token, tokenError, err = GetClientCredentialsToken(application, clientSecret, scope, resource, host)
 	case "urn:ietf:params:oauth:grant-type:jwt-bearer":
 		token, tokenError, err = GetJwtBearerToken(application, assertion, scope, nonce, host)
 	case "urn:ietf:params:oauth:grant-type:token-exchange": // Token Exchange Grant (RFC 8693)
@@ -1082,7 +1092,14 @@ func GetApiKeyToken(application *Application, accessKey string, accessSecret str
 
 // GetClientCredentialsToken
 // Client Credentials flow
-func GetClientCredentialsToken(application *Application, clientSecret string, scope string, host string) (*Token, *TokenError, error) {
+// GetClientCredentialsToken mints an OAuth2 client_credentials access token for a
+// confidential client. `resource` is the RFC 8707 resource indicator: when set it
+// becomes the token's sole `aud`, so a machine client can request a token scoped
+// to a SPECIFIC resource server (e.g. IAM minting a token whose aud is "hanzo-cloud"
+// to call cloud's notify surface) that lands deterministically in that server's
+// fixed audience allowlist, independent of which app minted it. Empty `resource`
+// preserves the default aud == the app's own clientId.
+func GetClientCredentialsToken(application *Application, clientSecret string, scope string, resource string, host string) (*Token, *TokenError, error) {
 	if subtle.ConstantTimeCompare([]byte(application.ClientSecret), []byte(clientSecret)) != 1 {
 		return nil, &TokenError{
 			Error:            InvalidClient,
@@ -1112,7 +1129,7 @@ func GetClientCredentialsToken(application *Application, clientSecret string, sc
 		Type:  "application",
 	}
 
-	accessToken, _, tokenName, err := generateJwtToken(application, nullUser, "", "", "", scope, "", host)
+	accessToken, _, tokenName, err := generateJwtToken(application, nullUser, "", "", "", scope, resource, host)
 	if err != nil {
 		return nil, &TokenError{
 			Error:            EndpointError,
