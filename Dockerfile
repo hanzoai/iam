@@ -104,6 +104,15 @@ RUN --mount=type=secret,id=gh_token --mount=type=secret,id=GIT_AUTH_TOKEN \
         export GIT_CONFIG_GLOBAL=/tmp/gitconfig; \
         git config --global url."https://x-access-token:${TOK}@github.com/".insteadOf "https://github.com/"; \
       fi; \
+      # GATE: iamd links SQLCipher (hanzoai/sqlite → mattn, registers "sqlite") \
+      # under CGO=1. If ANY package also links modernc.org/sqlite it ALSO \
+      # registers "sqlite" → `panic: sql: Register called twice for driver \
+      # sqlite` at init (this is what the cloud replace + old sqlite v0.1.4 pin \
+      # hold closed). Fail the build BEFORE shipping such an image. Do NOT bump \
+      # hanzoai/sqlite or drop the cloud replace until cloud/audit is on the \
+      # canonical driver in a RELEASED cloud tag. \
+      MODERNC="$(CGO_ENABLED=1 go list -tags "libsqlite3 sqlite_fts5" -deps ./cmd/iamd/ 2>/dev/null | grep -c "modernc.org/sqlite" || true)"; \
+      [ "$MODERNC" = "0" ] || { echo "SQLITE-GATE FAIL: cmd/iamd links modernc.org/sqlite ($MODERNC pkgs) under CGO=1 — double-registers \"sqlite\" with hanzoai/sqlite(mattn) and panics at init."; exit 1; }; \
       CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iamd ./cmd/iamd/; \
       CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o iam ./cmd/iam/; \
       CGO_ENABLED=1 go build -tags "libsqlite3 sqlite_fts5" -ldflags="-w -s" -o sqlite2enveloped ./cmd/sqlite2enveloped/; \
