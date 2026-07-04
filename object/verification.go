@@ -143,11 +143,12 @@ func SendVerificationCodeToEmail(organization *Organization, user *User, provide
 		return err
 	}
 	if err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
-		Channel:   "email",
-		Recipient: dest,
-		OTP:       code,
-		AppName:   organization.DisplayName,
-		Tenant:    organization.Name,
+		Channel:        "email",
+		Recipient:      dest,
+		OTP:            code,
+		AppName:        organization.DisplayName,
+		Tenant:         organization.Name,
+		IdempotencyKey: NotifyIdempotencyKey(organization.Name, dest, code),
 	}); err != nil {
 		return err
 	}
@@ -200,11 +201,12 @@ func SendVerificationCodeToPhone(organization *Organization, user *User, provide
 		return err
 	}
 	if err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
-		Channel:   "sms",
-		Recipient: dest,
-		OTP:       code,
-		AppName:   organization.DisplayName,
-		Tenant:    organization.Name,
+		Channel:        "sms",
+		Recipient:      dest,
+		OTP:            code,
+		AppName:        organization.DisplayName,
+		Tenant:         organization.Name,
+		IdempotencyKey: NotifyIdempotencyKey(organization.Name, dest, code),
 	}); err != nil {
 		return err
 	}

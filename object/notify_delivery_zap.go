@@ -48,6 +48,12 @@ func newZAPNotifyDeliverer(addr, template string, timeout time.Duration, tokens 
 	t := zaphttp.NewTransport(addr)
 	t.SetDialTimeout(timeout)
 	t.SetReadTimeout(timeout)
+	// No idle connection pooling. OTP sends are idle-heavy (often >60s apart) and
+	// cloud closes idle ZAP conns (~65s); the pool has no idle-TTL, so a reused conn
+	// past that window is dead → `read response: EOF` (the G4 17/18 failure). Dialing
+	// fresh each send removes the stale-conn root cause; the transport retry remains
+	// as backstop for any mid-flight blip.
+	t.SetMaxIdleConns(0)
 	return &zapNotifyDeliverer{addr: addr, template: template, transport: t, tokens: tokens}
 }
 
