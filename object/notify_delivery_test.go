@@ -244,9 +244,11 @@ func staticTokenSource(tok string) *serviceTokenSource {
 func TestZAPDeliverer_HappyPath(t *testing.T) {
 	addr, captured := startZAPNotifyServer(t, "sent")
 
+	idem := NotifyIdempotencyKey("acme", "+15551234567", "987654")
 	d := newZAPNotifyDeliverer(addr, NotifyOTPEvent, 5*time.Second, staticTokenSource("tok-xxx"))
 	if err := d.Deliver(context.Background(), NotifySendInput{
 		Channel: "sms", Recipient: "+15551234567", OTP: "987654", AppName: "Hanzo", Tenant: "acme",
+		IdempotencyKey: idem,
 	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -280,6 +282,26 @@ func TestZAPDeliverer_HappyPath(t *testing.T) {
 	}
 	if c.body.TemplateVars["app"] != "Hanzo" {
 		t.Errorf("body.template_vars[app]=%v, want Hanzo", c.body.TemplateVars["app"])
+	}
+	// The idempotency key must reach cloud (which dedupes a retry to at-most-once).
+	if c.body.IdempotencyKey != idem {
+		t.Errorf("body.idempotency_key=%q, want %q", c.body.IdempotencyKey, idem)
+	}
+}
+
+func TestNotifyIdempotencyKey(t *testing.T) {
+	a := NotifyIdempotencyKey("hanzo", "+15551234567", "483920")
+	if a == "" || a != NotifyIdempotencyKey("hanzo", "+15551234567", "483920") {
+		t.Fatalf("key must be stable + non-empty, got %q", a)
+	}
+	if !strings.HasPrefix(a, "iam.otp.") {
+		t.Errorf("unexpected key shape: %q", a)
+	}
+	// Distinct code, recipient, or tenant → distinct key (never merge two OTPs).
+	if a == NotifyIdempotencyKey("hanzo", "+15551234567", "999999") ||
+		a == NotifyIdempotencyKey("hanzo", "+15550000000", "483920") ||
+		a == NotifyIdempotencyKey("lux", "+15551234567", "483920") {
+		t.Error("distinct (tenant,recipient,code) must yield distinct keys")
 	}
 }
 
