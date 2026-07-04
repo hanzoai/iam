@@ -600,6 +600,46 @@ func loginOrgForApp(application *object.Application, formOrg string) string {
 	return formOrg
 }
 
+// authorizeClientId returns the authoritative OAuth client of a login request:
+// the query clientId/client_id (what the SPA carries through the authorize flow
+// and what the minted code is bound to in HandleLoggedIn), falling back to the
+// JSON body. It is empty for the direct, non-authorize /v1/iam/login API call.
+func (c *ApiController) authorizeClientId(authForm *form.AuthForm) string {
+	clientId := c.Ctx.Input.Query("clientId")
+	if clientId == "" {
+		clientId = c.Ctx.Input.Query("client_id")
+	}
+	if clientId == "" {
+		clientId = authForm.ClientId
+	}
+	return clientId
+}
+
+// resolveLoginApplication returns the application a login must be bound to. In
+// the OAuth-authorize flow the authoritative client is the request clientId —
+// the OAuth client the code is minted against (HandleLoggedIn) and the relying
+// party will exchange. The SPA-supplied authForm.Application can DIVERGE from it
+// (e.g. a stale login page posting the org-default app while the authorize is
+// for hanzo-admin-guard); trusting the form there authenticates the user in the
+// wrong org (hanzo/z instead of admin/z) yet still mints a hanzo-admin-guard
+// code, so the guard callback fails. Prefer the clientId-resolved app; fall back
+// to the form's application/organization for the direct-login API (no clientId).
+// It never widens auth: loginOrgForApp still resolves the app's org and
+// CheckUserPassword must match that org's user row, so a user without an
+// admin-org row cannot become admin.
+func (c *ApiController) resolveLoginApplication(authForm *form.AuthForm) (*object.Application, error) {
+	if clientId := c.authorizeClientId(authForm); clientId != "" {
+		application, err := object.GetApplicationByClientId(clientId)
+		if err != nil {
+			return nil, err
+		}
+		if application != nil {
+			return application, nil
+		}
+	}
+	return object.FindApplicationByName(authForm.Application, authForm.Organization)
+}
+
 // Login ...
 // @Title Login
 // @Tag Login API
@@ -753,7 +793,7 @@ func (c *ApiController) Login() {
 			}
 		} else {
 			var application *object.Application
-			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
+			application, err = c.resolveLoginApplication(&authForm)
 			if err != nil {
 				c.ResponseError(err.Error(), nil)
 				return
@@ -833,7 +873,7 @@ func (c *ApiController) Login() {
 			return
 		} else {
 			var application *object.Application
-			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
+			application, err = c.resolveLoginApplication(&authForm)
 			if err != nil {
 				c.ResponseError(err.Error())
 				return
