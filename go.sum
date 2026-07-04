@@ -447,8 +447,6 @@ github.com/hanzoai/beego/v2 v2.3.10 h1:WtLq1e/YD2SsFmlVds8JLyD/SQHJMqRXKixn1Xumz
 github.com/hanzoai/beego/v2 v2.3.10/go.mod h1:eDGRL/NJSqjoYHtWa5eMb2ze0gnlEabs1UO/naIfuX0=
 github.com/hanzoai/builder v0.3.13 h1:tAOJ+0Q0xrrovk7lkvaZxuKZ4lqENIB6tE0Rr9+6Bo8=
 github.com/hanzoai/builder v0.3.13/go.mod h1:TWZaiP0Y9tCMwtLH2EvQqBAeT1f3aJI5Y0XPM8S0wcE=
-github.com/hanzoai/cloud v1.786.14 h1:Ky8laUyQJMxd0rNU10yc4hWR59O64j8YCtJVBmQ7/Wc=
-github.com/hanzoai/cloud v1.786.14/go.mod h1:5y+azqS6mjnCZ85ItygTz+2QjSiH9mekjKDqhPy0zUQ=
 github.com/hanzoai/cloud v1.786.15-0.20260702215130-701639a3b26f h1:/T/VXjwr6454Vl7SmMw/vPjfyCL5v86wvH56gfF+Iyo=
 github.com/hanzoai/cloud v1.786.15-0.20260702215130-701639a3b26f/go.mod h1:8LlpL6c47Cifpqc1B7D6q2UGvi/yICWfd7z1uJm+dPY=
 github.com/hanzoai/commerce/metering v0.1.0 h1:qKK5eqHbZwiWVZLzxvQh+rWI/h+yIt6BJlCWTEE7feI=

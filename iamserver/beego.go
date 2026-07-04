@@ -63,9 +63,10 @@ func Init() int {
 	// mode for the process lifetime — see object/otp_provider.go.
 	object.EnforceOTPProviderGuard()
 
-	// Resolve IAM_NOTIFY_URL once. When set to a notifyd base URL, every
-	// OTP send routes through hanzoai/notify instead of go-sms-sender /
-	// SendGrid in-process. See object/notify_delivery.go.
+	// Resolve IAM_NOTIFY_ZAP_ADDR once. When set to cloud's ZAP listener, every
+	// OTP send routes to the canonical notify surface over ZAP with an IAM-minted
+	// M2M token — never go-sms-sender / SendGrid in-process. See
+	// object/notify_delivery.go.
 	object.EnforceNotifyDeliveryGuard()
 
 	web.BConfig.WebConfig.Session.SessionOn = true
