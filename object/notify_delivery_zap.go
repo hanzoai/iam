@@ -96,15 +96,24 @@ func (d *zapNotifyDeliverer) Deliver(ctx context.Context, in NotifySendInput) er
 		return fmt.Errorf("notify deliver: marshal: %w", err)
 	}
 
+	// One retry on a TRANSIENT failure — the 20-min steady-state loop showed a
+	// lone `read response: EOF` after ~65s idle: a pooled ZAP connection the peer
+	// closed between sends, or a one-off network blip. Two transient classes:
+	//   - transport error (err != nil): the pooled conn is discarded on error, so
+	//     the retry dials a FRESH connection.
+	//   - 401/403: the cached bearer was rejected — drop it and re-mint first.
+	// An OTP send repeats safely (same code; at worst a duplicate SMS the user
+	// ignores), so one retry trades a rare double-send for reliable login.
 	status, respBody, err := d.send(ctx, raw)
+	switch {
+	case err != nil:
+		status, respBody, err = d.send(ctx, raw)
+	case status == fasthttp.StatusUnauthorized || status == fasthttp.StatusForbidden:
+		d.tokens.Invalidate()
+		status, respBody, err = d.send(ctx, raw)
+	}
 	if err != nil {
 		return err
-	}
-	if status == fasthttp.StatusUnauthorized || status == fasthttp.StatusForbidden {
-		d.tokens.Invalidate()
-		if status, respBody, err = d.send(ctx, raw); err != nil {
-			return err
-		}
 	}
 
 	if status >= 400 {
