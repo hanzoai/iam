@@ -7,6 +7,7 @@ package cli
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -122,10 +123,12 @@ type appCreate struct {
 	Name             string          `json:"name"`
 	Organization     string          `json:"organization"`
 	DisplayName      string          `json:"displayName"`
+	Description      string          `json:"description,omitempty"`
 	HomepageUrl      string          `json:"homepageUrl"`
 	Cert             string          `json:"cert"`
 	ClientId         string          `json:"clientId"`
 	ClientSecret     string          `json:"clientSecret,omitempty"`
+	ExpireInHours    float64         `json:"expireInHours,omitempty"`
 	RedirectUris     []string        `json:"redirectUris"`
 	GrantTypes       []string        `json:"grantTypes"`
 	TokenFormat      string          `json:"tokenFormat"`
@@ -203,6 +206,68 @@ func buildKmsApp(b brandSpec) *appCreate {
 		GrantTypes:     append([]string(nil), kmsGrantTypes...),
 		TokenFormat:    "JWT",
 		EnablePassword: true,
+		EnableSignUp:   false,
+		SigninMethods:  signinMethodsForBrand(),
+		Providers:      []providerItem{},
+	}
+}
+
+// notifyServiceGrantTypes — IAM's machine identity authenticates ONLY via the
+// client_credentials grant (no browser, no refresh token). Least privilege.
+var notifyServiceGrantTypes = []string{"client_credentials"}
+
+// internalServiceMarker mirrors object.InternalServiceAppMarker. Written to the
+// "<org>-iam" app's Description so the PUBLIC token endpoint (GetOAuthToken) can
+// REFUSE its client_credentials grant — the token is minted in-process only. Kept
+// as a local literal so the CLI stays independent of the object package; the two
+// MUST stay in sync (there is a test that asserts it).
+const internalServiceMarker = "hanzo:internal-service-identity"
+
+// iamServiceExpireInHours is the machine token's lifetime: SHORT (30 min). The
+// in-process minter caches by the token's real exp and re-mints before it lapses;
+// a short TTL bounds the replay window of any single minted token. Explicit
+// because add-application defaults ExpireInHours to 0 (exp==iat → dead on arrival).
+const iamServiceExpireInHours = 0.5
+
+// randomServiceSecret returns a 32-byte cryptographically-random client secret
+// (hex). It is NOT derived from any compiled-in constant (so `strings` on the
+// binary reveals nothing) and is deliberately non-load-bearing: the public token
+// endpoint refuses client_credentials for this identity (object
+// .IsInternalServiceApplication), and the in-process minter self-mints. Generated
+// once, on create (buildIAMServiceApp runs only when the app is absent).
+func randomServiceSecret() string {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("init-apps: crypto/rand failed generating iam-service secret: " + err.Error())
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// buildIAMServiceApp builds the confidential "<org>-iam" machine identity for
+// brand b: IAM's OWN service client for authenticating to downstream Hanzo
+// services. First consumer: OTP delivery to cloud's notify surface over ZAP
+// (object/notify_delivery_token.go mints a client_credentials token as this app,
+// RFC 8707 resource-scoped to "<org>-cloud"). client_credentials only, no redirect
+// URIs, RANDOM secret (never derived/env), SHORT token TTL, marked internal so the
+// public token endpoint refuses the grant. One brand row -> one machine identity.
+func buildIAMServiceApp(b brandSpec) *appCreate {
+	return &appCreate{
+		Owner:        "admin",
+		Name:         b.Org + "-iam",
+		Organization: b.Org,
+		DisplayName:  b.DisplayName + " IAM Service",
+		Description:  internalServiceMarker,
+		HomepageUrl:  b.Homepage,
+		// Brand signing cert (cert-hanzo/cert-lux/cert-zoo) — published in IAM's
+		// JWKS, so cloud validates the mint; brand-specific, not the shared default.
+		Cert:           "cert-" + b.Org,
+		ClientId:       b.Org + "-iam",
+		ClientSecret:   randomServiceSecret(),
+		ExpireInHours:  iamServiceExpireInHours,
+		RedirectUris:   []string{},
+		GrantTypes:     append([]string(nil), notifyServiceGrantTypes...),
+		TokenFormat:    "JWT",
+		EnablePassword: false,
 		EnableSignUp:   false,
 		SigninMethods:  signinMethodsForBrand(),
 		Providers:      []providerItem{},
@@ -391,8 +456,33 @@ func runInitApps(client *provClient, cfg *provConfig, verbose bool) error {
 		}
 	}
 
-	fmt.Printf("init-apps: orgs +%d, apps +%d, kms-clients +%d, grants converged %d, %d already converged, MFA un-forced %d\n",
-		newOrgs, newApps, newKms, convergedApps, haveApps, unforcedOrgs)
+	// IAM machine identities — the confidential "<org>-iam" client per brand: IAM's
+	// OWN service identity for authenticating to downstream services
+	// (client_credentials only). First consumer: OTP delivery to cloud's notify
+	// over ZAP with an IAM-minted M2M token. Idempotent: created only if absent.
+	newSvc := 0
+	for _, b := range brandSpecs {
+		apps, err := listAppsForOrg(client, cfg.AdminOrg, b.Org)
+		if err != nil {
+			return fmt.Errorf("init-apps: list apps for %s: %w", b.Org, err)
+		}
+		if hasApp(apps, b.Org+"-iam") {
+			if verbose {
+				fmt.Printf("[skip] %s/%s-iam — already present\n", b.Org, b.Org)
+			}
+			continue
+		}
+		if err := addApp(client, buildIAMServiceApp(b)); err != nil {
+			return fmt.Errorf("init-apps: add iam service client %s-iam: %w", b.Org, err)
+		}
+		newSvc++
+		if verbose {
+			fmt.Printf("[iam]  created %s/%s-iam (confidential machine identity)\n", b.Org, b.Org)
+		}
+	}
+
+	fmt.Printf("init-apps: orgs +%d, apps +%d, kms-clients +%d, iam-svc +%d, grants converged %d, %d already converged, MFA un-forced %d\n",
+		newOrgs, newApps, newKms, newSvc, convergedApps, haveApps, unforcedOrgs)
 	return nil
 }
 
