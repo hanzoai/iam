@@ -22,6 +22,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -405,6 +406,48 @@ func TestZAPDeliverer_Persistent401ErrorsNoLoop(t *testing.T) {
 	}
 	if ts.calls != 2 { // exactly one retry — no infinite loop
 		t.Errorf("Token calls=%d, want 2 (one retry only)", ts.calls)
+	}
+}
+
+// flakyListener drops the FIRST accepted connection (client sees EOF/reset), then
+// passes every subsequent connection through — models a pooled ZAP connection the
+// peer closed between sends (the lone `read response: EOF` the 20-min G4 loop hit).
+type flakyListener struct {
+	net.Listener
+	dropped atomic.Bool
+}
+
+func (l *flakyListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	if l.dropped.CompareAndSwap(false, true) {
+		_ = c.Close()   // first connection: drop it → the client's send errors
+		return l.Accept() // block for the retry's fresh connection
+	}
+	return c, nil
+}
+
+func TestZAPDeliverer_RetriesTransientTransportError(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	srv := &zaphttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		ctx.SetContentType("application/json")
+		_, _ = ctx.Write([]byte(`{"message_id":"m","status":"sent"}`))
+	}}
+	go func() { _ = srv.Serve(&flakyListener{Listener: ln}) }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	// staticTokenSource never invalidates on this path, so a success here proves the
+	// retry fired for the TRANSPORT error (not the 401 path).
+	d := newZAPNotifyDeliverer(ln.Addr().String(), NotifyOTPEvent, 5*time.Second, staticTokenSource("tok"))
+	if err := d.Deliver(context.Background(), NotifySendInput{
+		Channel: "sms", Recipient: "+15551234567", OTP: "1", AppName: "Hanzo",
+	}); err != nil {
+		t.Fatalf("expected success after a transient-EOF retry, got %v", err)
 	}
 }
 
