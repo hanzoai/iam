@@ -16,6 +16,8 @@ package object
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -256,6 +258,16 @@ func DeliverOTPViaNotify(ctx context.Context, in NotifySendInput) error {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return deliverer.Deliver(cctx, in)
+}
+
+// NotifyIdempotencyKey derives a stable per-OTP idempotency key from the tenant,
+// recipient, and one-time code. The code is fresh per SendVerificationCode call, so
+// this uniquely identifies ONE OTP send — and is identical across the deliverer's
+// transport retry (same body), so cloud's notify dedupes the retry to AT-MOST-ONCE
+// delivery (no duplicate SMS). Distinct OTPs get distinct keys and are never merged.
+func NotifyIdempotencyKey(tenant, recipient, otp string) string {
+	sum := sha256.Sum256([]byte(tenant + "|" + recipient + "|" + otp))
+	return "iam.otp." + hex.EncodeToString(sum[:])
 }
 
 // envOrDefault returns the trimmed env value for key, or def when unset/empty.
