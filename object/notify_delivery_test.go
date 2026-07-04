@@ -16,25 +16,25 @@ package object
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
+	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	fasthttp "github.com/valyala/fasthttp"
+	zaphttp "github.com/zap-proto/http"
 )
 
-// resetNotifyDeliveryCache wipes the cached config so a test can re-run
-// the guard against fresh env. Defer this in every test that touches
-// IAM_NOTIFY_* env so leakage between tests is bounded.
+// resetNotifyDeliveryCache wipes the cached config so a test can re-run the guard
+// against fresh env. Defer this in every test that touches IAM_NOTIFY_* env.
 func resetNotifyDeliveryCache() {
 	notifyDeliveryCacheMu.Lock()
 	cachedNotifyEnabled = false
-	cachedNotifyURL = ""
-	cachedNotifyToken = ""
-	cachedNotifyTenant = ""
+	cachedNotifyZAPAddr = ""
 	cachedNotifyTimeout = 0
 	cachedNotifyTemplate = ""
 	notifyDeliveryCacheMu.Unlock()
@@ -46,61 +46,44 @@ func resetNotifyDeliveryCache() {
 
 func TestEnforceNotifyDeliveryGuard_DisabledByDefault(t *testing.T) {
 	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "")
+	t.Setenv(envIAMNotifyZAPAddr, "")
 	EnforceNotifyDeliveryGuard()
 	if NotifyDeliveryEnabled() {
-		t.Fatal("notify delivery should be disabled when IAM_NOTIFY_URL is unset")
+		t.Fatal("notify delivery should be disabled when IAM_NOTIFY_ZAP_ADDR is unset")
 	}
 }
 
 func TestEnforceNotifyDeliveryGuard_StubDisables(t *testing.T) {
 	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "stub")
+	t.Setenv(envIAMNotifyZAPAddr, "STUB")
 	EnforceNotifyDeliveryGuard()
 	if NotifyDeliveryEnabled() {
-		t.Fatal("notify delivery should be disabled when IAM_NOTIFY_URL=stub")
+		t.Fatal("notify delivery should be disabled when IAM_NOTIFY_ZAP_ADDR=STUB")
 	}
 }
 
-func TestEnforceNotifyDeliveryGuard_StubCaseInsensitive(t *testing.T) {
+func TestEnforceNotifyDeliveryGuard_RejectsURLScheme(t *testing.T) {
 	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "STUB")
-	EnforceNotifyDeliveryGuard()
-	if NotifyDeliveryEnabled() {
-		t.Fatal("notify delivery should be disabled when IAM_NOTIFY_URL=STUB")
-	}
-}
-
-func TestEnforceNotifyDeliveryGuard_RejectsNonHTTPURL(t *testing.T) {
-	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "notify.example.com")
+	t.Setenv(envIAMNotifyZAPAddr, "http://cloud.hanzo.svc:9653")
 	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic on non-http URL")
+		if recover() == nil {
+			t.Fatal("expected panic when IAM_NOTIFY_ZAP_ADDR carries a URL scheme (ZAP is a raw transport)")
 		}
 	}()
 	EnforceNotifyDeliveryGuard()
 }
 
-func TestEnforceNotifyDeliveryGuard_EnabledOnValidURL(t *testing.T) {
+func TestEnforceNotifyDeliveryGuard_EnabledOnBareAddr(t *testing.T) {
 	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
-	t.Setenv(envIAMNotifyToken, "tok-xxx")
-	t.Setenv(envIAMNotifyTenant, "acme")
+	t.Setenv(envIAMNotifyZAPAddr, "cloud.hanzo.svc:9653")
 	EnforceNotifyDeliveryGuard()
 	if !NotifyDeliveryEnabled() {
-		t.Fatal("notify delivery should be enabled when IAM_NOTIFY_URL is set")
+		t.Fatal("notify delivery should be enabled on a bare host:port ZAP address")
 	}
 	notifyDeliveryCacheMu.RLock()
 	defer notifyDeliveryCacheMu.RUnlock()
-	if cachedNotifyURL != "http://notify.svc.local:8080" {
-		t.Fatalf("cachedNotifyURL=%q, want http://notify.svc.local:8080", cachedNotifyURL)
-	}
-	if cachedNotifyToken != "tok-xxx" {
-		t.Fatalf("cachedNotifyToken=%q, want tok-xxx", cachedNotifyToken)
-	}
-	if cachedNotifyTenant != "acme" {
-		t.Fatalf("cachedNotifyTenant=%q, want acme", cachedNotifyTenant)
+	if cachedNotifyZAPAddr != "cloud.hanzo.svc:9653" {
+		t.Fatalf("cachedNotifyZAPAddr=%q, want cloud.hanzo.svc:9653", cachedNotifyZAPAddr)
 	}
 	if cachedNotifyTimeout != defaultNotifyTimeout {
 		t.Fatalf("cachedNotifyTimeout=%v, want %v", cachedNotifyTimeout, defaultNotifyTimeout)
@@ -110,56 +93,24 @@ func TestEnforceNotifyDeliveryGuard_EnabledOnValidURL(t *testing.T) {
 	}
 }
 
-func TestEnforceNotifyDeliveryGuard_TrimsTrailingSlash(t *testing.T) {
+func TestEnforceNotifyDeliveryGuard_CustomTimeoutAndTemplate(t *testing.T) {
 	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080/")
-	EnforceNotifyDeliveryGuard()
-	notifyDeliveryCacheMu.RLock()
-	defer notifyDeliveryCacheMu.RUnlock()
-	if cachedNotifyURL != "http://notify.svc.local:8080" {
-		t.Fatalf("cachedNotifyURL=%q, want http://notify.svc.local:8080 (trailing slash should be trimmed)", cachedNotifyURL)
-	}
-}
-
-func TestEnforceNotifyDeliveryGuard_TenantDefaultsToHanzo(t *testing.T) {
-	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
-	t.Setenv(envIAMNotifyTenant, "")
-	EnforceNotifyDeliveryGuard()
-	notifyDeliveryCacheMu.RLock()
-	defer notifyDeliveryCacheMu.RUnlock()
-	if cachedNotifyTenant != "hanzo" {
-		t.Fatalf("cachedNotifyTenant=%q, want hanzo (default when env unset)", cachedNotifyTenant)
-	}
-}
-
-func TestEnforceNotifyDeliveryGuard_CustomTimeout(t *testing.T) {
-	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
+	t.Setenv(envIAMNotifyZAPAddr, "cloud.hanzo.svc:9653")
 	t.Setenv(envIAMNotifyTimeout, "2s")
+	t.Setenv(envIAMNotifyTemplate, "hanzo.iam.otp")
 	EnforceNotifyDeliveryGuard()
 	notifyDeliveryCacheMu.RLock()
 	defer notifyDeliveryCacheMu.RUnlock()
 	if cachedNotifyTimeout != 2*time.Second {
 		t.Fatalf("cachedNotifyTimeout=%v, want 2s", cachedNotifyTimeout)
 	}
-}
-
-func TestEnforceNotifyDeliveryGuard_CustomTemplate(t *testing.T) {
-	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
-	t.Setenv(envIAMNotifyTemplate, "hanzo.iam.otp")
-	EnforceNotifyDeliveryGuard()
-	notifyDeliveryCacheMu.RLock()
-	defer notifyDeliveryCacheMu.RUnlock()
 	if cachedNotifyTemplate != "hanzo.iam.otp" {
 		t.Fatalf("cachedNotifyTemplate=%q, want hanzo.iam.otp", cachedNotifyTemplate)
 	}
 }
 
-// fakeDeliverer captures DeliverOTPViaNotify calls so tests can assert
-// the wire shape without standing up an HTTP server. Used to exercise
-// the verification.go integration paths.
+// fakeDeliverer captures DeliverOTPViaNotify calls so tests can assert the seam
+// without a transport.
 type fakeDeliverer struct {
 	mu    sync.Mutex
 	calls []NotifySendInput
@@ -182,284 +133,295 @@ func (f *fakeDeliverer) lastCall() NotifySendInput {
 	return f.calls[len(f.calls)-1]
 }
 
+func enableWithFake(t *testing.T) *fakeDeliverer {
+	t.Helper()
+	t.Setenv(envIAMNotifyZAPAddr, "cloud.hanzo.svc:9653")
+	EnforceNotifyDeliveryGuard()
+	fake := &fakeDeliverer{}
+	SetNotifyDeliverer(fake)
+	return fake
+}
+
 func TestDeliverOTPViaNotify_RejectsBadChannel(t *testing.T) {
 	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
-	EnforceNotifyDeliveryGuard()
-
+	enableWithFake(t)
 	err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
-		Channel:   "push",
-		Recipient: "+15551234567",
-		OTP:       "123456",
+		Channel: "push", Recipient: "+15551234567", OTP: "123456",
 	})
-	if err == nil {
-		t.Fatal("expected error for unsupported channel")
-	}
-	if !strings.Contains(err.Error(), "channel must be sms|email") {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "channel must be sms|email") {
+		t.Fatalf("expected unsupported-channel error, got %v", err)
 	}
 }
 
 func TestDeliverOTPViaNotify_RejectsEmptyRecipient(t *testing.T) {
 	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
-	EnforceNotifyDeliveryGuard()
-
-	err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
-		Channel: "sms",
-		OTP:     "123456",
-	})
+	enableWithFake(t)
+	err := DeliverOTPViaNotify(context.Background(), NotifySendInput{Channel: "sms", OTP: "123456"})
 	if err == nil || !strings.Contains(err.Error(), "recipient is required") {
-		t.Fatalf("expected recipient required error, got %v", err)
+		t.Fatalf("expected recipient-required error, got %v", err)
 	}
 }
 
 func TestDeliverOTPViaNotify_RejectsEmptyOTP(t *testing.T) {
 	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
-	EnforceNotifyDeliveryGuard()
-
-	err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
-		Channel:   "sms",
-		Recipient: "+15551234567",
-	})
+	enableWithFake(t)
+	err := DeliverOTPViaNotify(context.Background(), NotifySendInput{Channel: "sms", Recipient: "+15551234567"})
 	if err == nil || !strings.Contains(err.Error(), "otp is required") {
-		t.Fatalf("expected otp required error, got %v", err)
+		t.Fatalf("expected otp-required error, got %v", err)
 	}
 }
 
 func TestDeliverOTPViaNotify_DisabledReturnsError(t *testing.T) {
 	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "")
+	t.Setenv(envIAMNotifyZAPAddr, "")
 	EnforceNotifyDeliveryGuard()
-
 	err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
-		Channel:   "sms",
-		Recipient: "+15551234567",
-		OTP:       "123456",
+		Channel: "sms", Recipient: "+15551234567", OTP: "123456",
 	})
 	if err == nil {
 		t.Fatal("expected error when delivery is disabled")
 	}
 }
 
-func TestDeliverOTPViaNotify_DefaultsTenant(t *testing.T) {
+func TestDeliverOTPViaNotify_PassesInputThrough(t *testing.T) {
 	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
-	t.Setenv(envIAMNotifyTenant, "myorg")
-	EnforceNotifyDeliveryGuard()
-
-	fake := &fakeDeliverer{}
-	SetNotifyDeliverer(fake)
-
-	err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
-		Channel:   "sms",
-		Recipient: "+15551234567",
-		OTP:       "123456",
-	})
-	if err != nil {
+	fake := enableWithFake(t)
+	if err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
+		Channel: "sms", Recipient: "+15551234567", OTP: "123456", AppName: "Hanzo", Tenant: "acme",
+	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got := fake.lastCall()
-	if got.Tenant != "myorg" {
-		t.Fatalf("tenant=%q, want myorg (default applied)", got.Tenant)
+	if got.Recipient != "+15551234567" || got.OTP != "123456" || got.AppName != "Hanzo" {
+		t.Fatalf("input not passed through: %+v", got)
 	}
 }
 
-func TestDeliverOTPViaNotify_HonorsExplicitTenant(t *testing.T) {
-	defer resetNotifyDeliveryCache()
-	t.Setenv(envIAMNotifyURL, "http://notify.svc.local:8080")
-	t.Setenv(envIAMNotifyTenant, "default-tenant")
-	EnforceNotifyDeliveryGuard()
+// startZAPNotifyServer stands up a real ZAP server (zap-proto/http) that captures
+// one request and replies with a fixed notify body. It returns the bound addr and
+// a getter for the captured request. Proves the ZAP transport carries method,
+// path, query, Authorization header, and JSON body end-to-end.
+type capturedReq struct {
+	method, path, query, auth string
+	body                      notifySendBody
+}
 
-	fake := &fakeDeliverer{}
-	SetNotifyDeliverer(fake)
-
-	err := DeliverOTPViaNotify(context.Background(), NotifySendInput{
-		Channel:   "sms",
-		Recipient: "+15551234567",
-		OTP:       "123456",
-		Tenant:    "explicit-tenant",
-	})
+func startZAPNotifyServer(t *testing.T, replyStatus string) (addr string, captured func() capturedReq) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	var mu sync.Mutex
+	var cap capturedReq
+	srv := &zaphttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		mu.Lock()
+		cap.method = string(ctx.Method())
+		cap.path = string(ctx.Path())
+		cap.query = string(ctx.QueryArgs().QueryString())
+		cap.auth = string(ctx.Request.Header.Peek("Authorization"))
+		_ = json.Unmarshal(ctx.PostBody(), &cap.body)
+		mu.Unlock()
+		ctx.SetContentType("application/json")
+		_, _ = ctx.Write([]byte(`{"message_id":"m1","status":"` + replyStatus + `"}`))
+	}}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	return ln.Addr().String(), func() capturedReq {
+		mu.Lock()
+		defer mu.Unlock()
+		return cap
+	}
+}
+
+// staticTokenSource returns a serviceTokenSource whose token is pre-cached, so
+// Deliver does not touch the DB-backed mint path in a unit test.
+func staticTokenSource(tok string) *serviceTokenSource {
+	return &serviceTokenSource{token: tok, expires: time.Now().Add(time.Hour)}
+}
+
+func TestZAPDeliverer_HappyPath(t *testing.T) {
+	addr, captured := startZAPNotifyServer(t, "sent")
+
+	d := newZAPNotifyDeliverer(addr, NotifyOTPEvent, 5*time.Second, staticTokenSource("tok-xxx"))
+	if err := d.Deliver(context.Background(), NotifySendInput{
+		Channel: "sms", Recipient: "+15551234567", OTP: "987654", AppName: "Hanzo", Tenant: "acme",
+	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	got := fake.lastCall()
-	if got.Tenant != "explicit-tenant" {
-		t.Fatalf("tenant=%q, want explicit-tenant (explicit should win over default)", got.Tenant)
+
+	c := captured()
+	if c.method != fasthttp.MethodPost {
+		t.Errorf("method=%q, want POST", c.method)
+	}
+	if c.path != "/v1/notify/send" {
+		t.Errorf("path=%q, want /v1/notify/send", c.path)
+	}
+	if c.query != "sync=true" {
+		t.Errorf("query=%q, want sync=true", c.query)
+	}
+	if c.auth != "Bearer tok-xxx" {
+		t.Errorf("Authorization=%q, want 'Bearer tok-xxx'", c.auth)
+	}
+	// The tenant is NEVER sent as a client header — cloud derives org from the
+	// validated M2M token. The body carries only the send payload.
+	if len(c.body.To) != 1 || c.body.To[0] != "+15551234567" {
+		t.Errorf("body.to=%v, want [+15551234567]", c.body.To)
+	}
+	if c.body.Channel != "sms" {
+		t.Errorf("body.channel=%q, want sms", c.body.Channel)
+	}
+	if c.body.Event != NotifyOTPEvent {
+		t.Errorf("body.event=%q, want %q", c.body.Event, NotifyOTPEvent)
+	}
+	if c.body.TemplateVars["otp"] != "987654" {
+		t.Errorf("body.template_vars[otp]=%v, want 987654", c.body.TemplateVars["otp"])
+	}
+	if c.body.TemplateVars["app"] != "Hanzo" {
+		t.Errorf("body.template_vars[app]=%v, want Hanzo", c.body.TemplateVars["app"])
 	}
 }
 
-// TestHTTPDeliverer_HappyPath stands up a fake notifyd, runs the HTTP
-// deliverer against it, and asserts the wire shape: POST /v1/notify/send
-// ?sync=true, JSON body with event/channel/to/template_vars, Authorization
-// bearer header, X-Org-Id header.
-func TestHTTPDeliverer_HappyPath(t *testing.T) {
-	var (
-		gotMethod, gotPath, gotQuery string
-		gotAuth, gotOrgID            string
-		gotBody                      notifySendBody
-	)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod = r.Method
-		gotPath = r.URL.Path
-		gotQuery = r.URL.RawQuery
-		gotAuth = r.Header.Get("Authorization")
-		gotOrgID = r.Header.Get("X-Org-Id")
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"message_id":"m1","status":"sent"}`))
-	}))
-	defer srv.Close()
-
-	d := newHTTPNotifyDeliverer(srv.URL, "tok-xxx", 5*time.Second)
-	defer resetNotifyDeliveryCache()
-	// notifyTemplateName() reads cachedNotifyTemplate; install it directly
-	// without going through the guard so we don't need a full env setup.
-	notifyDeliveryCacheMu.Lock()
-	cachedNotifyTemplate = NotifyOTPEvent
-	notifyDeliveryCacheMu.Unlock()
-
+func TestZAPDeliverer_ProviderFailedIsError(t *testing.T) {
+	addr, _ := startZAPNotifyServer(t, "failed")
+	d := newZAPNotifyDeliverer(addr, NotifyOTPEvent, 5*time.Second, staticTokenSource("tok-xxx"))
 	err := d.Deliver(context.Background(), NotifySendInput{
-		Channel:   "sms",
-		Recipient: "+15551234567",
-		OTP:       "987654",
-		AppName:   "Hanzo",
-		Tenant:    "acme",
+		Channel: "sms", Recipient: "+15551234567", OTP: "1", AppName: "Hanzo",
 	})
+	if err == nil || !strings.Contains(err.Error(), "provider failed") {
+		t.Fatalf("expected provider-failed error, got %v", err)
+	}
+}
+
+// craftJWT builds an unsigned compact JWS carrying only `exp` — enough to exercise
+// jwtExpiry (which never verifies the signature).
+func craftJWT(exp int64) string {
+	h := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
+	p := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"exp":%d,"owner":"hanzo"}`, exp)))
+	return h + "." + p + ".sig"
+}
+
+func TestJWTExpiryDecode(t *testing.T) {
+	want := time.Now().Add(30 * time.Minute).Unix()
+	got, ok := jwtExpiry(craftJWT(want))
+	if !ok || got.Unix() != want {
+		t.Fatalf("jwtExpiry = %v,%v; want unix %d", got.Unix(), ok, want)
+	}
+	// Malformed / no-exp tokens must report !ok so the source falls back to a SHORT
+	// re-mint interval rather than trusting a bogus long lifetime.
+	for _, bad := range []string{"", "a.b", "a.b.c.d", "not-base64!.@#.$%", craftNoExpJWT()} {
+		if _, ok := jwtExpiry(bad); ok {
+			t.Errorf("jwtExpiry(%q) = ok; want !ok", bad)
+		}
+	}
+}
+
+func craftNoExpJWT() string {
+	h := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
+	p := base64.RawURLEncoding.EncodeToString([]byte(`{"owner":"hanzo"}`))
+	return h + "." + p + ".sig"
+}
+
+// seqTokenSource returns tokens in sequence; Invalidate advances to the next. Lets
+// a test model "stale token rejected, fresh token accepted".
+type seqTokenSource struct {
+	mu          sync.Mutex
+	toks        []string
+	idx         int
+	calls       int
+	invalidated int
+}
+
+func (s *seqTokenSource) Token(context.Context) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	i := s.idx
+	if i >= len(s.toks) {
+		i = len(s.toks) - 1
+	}
+	return s.toks[i], nil
+}
+func (s *seqTokenSource) Invalidate() {
+	s.mu.Lock()
+	s.invalidated++
+	if s.idx < len(s.toks)-1 {
+		s.idx++
+	}
+	s.mu.Unlock()
+}
+
+// startAuthZAPServer replies 401 unless the request bearer equals wantBearer, in
+// which case it replies 200 {status:sent}. Models cloud rejecting a stale token.
+func startAuthZAPServer(t *testing.T, wantBearer string) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("listen: %v", err)
 	}
-	if gotMethod != http.MethodPost {
-		t.Errorf("method=%q, want POST", gotMethod)
+	srv := &zaphttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		if string(ctx.Request.Header.Peek("Authorization")) != "Bearer "+wantBearer {
+			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
+			ctx.SetContentType("application/json")
+			_, _ = ctx.Write([]byte(`{"status":"error","error":"unauthorized"}`))
+			return
+		}
+		ctx.SetContentType("application/json")
+		_, _ = ctx.Write([]byte(`{"message_id":"m","status":"sent"}`))
+	}}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	return ln.Addr().String()
+}
+
+func TestZAPDeliverer_ReMintsOn401(t *testing.T) {
+	addr := startAuthZAPServer(t, "fresh")
+	ts := &seqTokenSource{toks: []string{"stale", "fresh"}}
+	d := newZAPNotifyDeliverer(addr, NotifyOTPEvent, 5*time.Second, ts)
+
+	if err := d.Deliver(context.Background(), NotifySendInput{
+		Channel: "sms", Recipient: "+15551234567", OTP: "1", AppName: "Hanzo",
+	}); err != nil {
+		t.Fatalf("expected success after re-mint, got %v", err)
 	}
-	if gotPath != "/v1/notify/send" {
-		t.Errorf("path=%q, want /v1/notify/send", gotPath)
+	if ts.invalidated != 1 {
+		t.Errorf("invalidated=%d, want 1 (cache dropped on 401)", ts.invalidated)
 	}
-	if gotQuery != "sync=true" {
-		t.Errorf("query=%q, want sync=true", gotQuery)
-	}
-	if gotAuth != "Bearer tok-xxx" {
-		t.Errorf("Authorization=%q, want 'Bearer tok-xxx'", gotAuth)
-	}
-	if gotOrgID != "acme" {
-		t.Errorf("X-Org-Id=%q, want acme", gotOrgID)
-	}
-	if len(gotBody.To) != 1 || gotBody.To[0] != "+15551234567" {
-		t.Errorf("body.to=%v, want [+15551234567]", gotBody.To)
-	}
-	if gotBody.Channel != "sms" {
-		t.Errorf("body.channel=%q, want sms", gotBody.Channel)
-	}
-	if gotBody.Event != NotifyOTPEvent {
-		t.Errorf("body.event=%q, want %q", gotBody.Event, NotifyOTPEvent)
-	}
-	if gotBody.TemplateVars["otp"] != "987654" {
-		t.Errorf("body.template_vars[otp]=%v, want 987654", gotBody.TemplateVars["otp"])
-	}
-	if gotBody.TemplateVars["recipient"] != "+15551234567" {
-		t.Errorf("body.template_vars[recipient]=%v, want +15551234567", gotBody.TemplateVars["recipient"])
-	}
-	if gotBody.TemplateVars["app"] != "Hanzo" {
-		t.Errorf("body.template_vars[app]=%v, want Hanzo", gotBody.TemplateVars["app"])
+	if ts.calls != 2 {
+		t.Errorf("Token calls=%d, want 2 (stale + fresh)", ts.calls)
 	}
 }
 
-// TestHTTPDeliverer_4xxReturnsError verifies failure surface — a 400 from
-// notifyd (e.g. template missing for tenant) propagates back to IAM with
-// the body in the error string so operators can diagnose.
-func TestHTTPDeliverer_4xxReturnsError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(`{"error":"template not found"}`))
-	}))
-	defer srv.Close()
+func TestZAPDeliverer_Persistent401ErrorsNoLoop(t *testing.T) {
+	addr := startAuthZAPServer(t, "never-matches") // every request 401s
+	ts := &seqTokenSource{toks: []string{"a", "b"}}
+	d := newZAPNotifyDeliverer(addr, NotifyOTPEvent, 5*time.Second, ts)
 
-	d := newHTTPNotifyDeliverer(srv.URL, "tok-xxx", 5*time.Second)
 	err := d.Deliver(context.Background(), NotifySendInput{
-		Channel:   "sms",
-		Recipient: "+15551234567",
-		OTP:       "111111",
-		Tenant:    "acme",
+		Channel: "sms", Recipient: "+15551234567", OTP: "1", AppName: "Hanzo",
 	})
-	if err == nil {
-		t.Fatal("expected error on 4xx")
+	if err == nil || !strings.Contains(err.Error(), "status=401") {
+		t.Fatalf("expected surfaced 401 error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "status=400") {
-		t.Errorf("error should mention status=400, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "template not found") {
-		t.Errorf("error should propagate body, got %v", err)
+	if ts.calls != 2 { // exactly one retry — no infinite loop
+		t.Errorf("Token calls=%d, want 2 (one retry only)", ts.calls)
 	}
 }
 
-// TestHTTPDeliverer_FailedStatusReturnsError verifies the sync-mode
-// failure path: notifyd returns 200 with status="failed", error="...".
-func TestHTTPDeliverer_FailedStatusReturnsError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"message_id":"m1","status":"failed","error":"plivo: bad number"}`))
-	}))
-	defer srv.Close()
-
-	d := newHTTPNotifyDeliverer(srv.URL, "", 5*time.Second)
-	err := d.Deliver(context.Background(), NotifySendInput{
-		Channel:   "sms",
-		Recipient: "+15551234567",
-		OTP:       "111111",
-	})
-	if err == nil {
-		t.Fatal("expected error on status=failed")
+func TestIsInternalServiceApplication(t *testing.T) {
+	// Explicit marker → internal.
+	if !IsInternalServiceApplication(&Application{Name: "x", Organization: "hanzo", Description: InternalServiceAppMarker}) {
+		t.Error("marker app should be internal")
 	}
-	if !strings.Contains(err.Error(), "plivo: bad number") {
-		t.Errorf("error should propagate provider error, got %v", err)
+	// Reserved <org>-iam naming → internal (fallback even if Description stripped).
+	if !IsInternalServiceApplication(&Application{Name: "hanzo-iam", Organization: "hanzo"}) {
+		t.Error("hanzo-iam should be internal by naming")
 	}
-}
-
-// TestHTTPDeliverer_UnexpectedStatusReturnsError covers the case where
-// notifyd returns 200 + a non-terminal status — IAM must NOT treat that
-// as success because sync mode promised a terminal result.
-func TestHTTPDeliverer_UnexpectedStatusReturnsError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"message_id":"m1","status":"queued"}`))
-	}))
-	defer srv.Close()
-
-	d := newHTTPNotifyDeliverer(srv.URL, "", 5*time.Second)
-	err := d.Deliver(context.Background(), NotifySendInput{
-		Channel:   "sms",
-		Recipient: "+15551234567",
-		OTP:       "111111",
-	})
-	if err == nil {
-		t.Fatal("expected error on unexpected sync-mode status")
+	// A normal public client_credentials app (e.g. hanzo-cloud) is NOT internal.
+	if IsInternalServiceApplication(&Application{Name: "hanzo-cloud", Organization: "hanzo"}) {
+		t.Error("hanzo-cloud must NOT be internal (legit public client_credentials)")
 	}
-	if !strings.Contains(err.Error(), "unexpected status") {
-		t.Errorf("error should mention unexpected status, got %v", err)
-	}
-}
-
-func TestHTTPDeliverer_OmitsAuthHeaderWhenTokenEmpty(t *testing.T) {
-	var gotAuth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"message_id":"m1","status":"sent"}`))
-	}))
-	defer srv.Close()
-
-	d := newHTTPNotifyDeliverer(srv.URL, "", 5*time.Second)
-	err := d.Deliver(context.Background(), NotifySendInput{
-		Channel:   "sms",
-		Recipient: "+15551234567",
-		OTP:       "111111",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if gotAuth != "" {
-		t.Errorf("Authorization header should be omitted when token is empty, got %q", gotAuth)
+	if IsInternalServiceApplication(nil) {
+		t.Error("nil app must not be internal")
 	}
 }
