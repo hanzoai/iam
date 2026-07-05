@@ -46,14 +46,78 @@ func Run() {
 	web.Run(fmt.Sprintf(":%v", port))
 }
 
-// Init runs the full IAM bootstrap (config, DB, controllers, filters,
-// background loops) but does NOT bind a listener. It returns the
-// configured HTTP port from app.conf.
-//
-// This is the entry point for in-process embedding (see
-// github.com/hanzoai/iam/pkg/iam.Embed). The standalone iamd binary
-// uses Run, which is Init + web.Run.
+// bootConfig selects the standalone-daemon-only side effects the shared
+// bootstrap runs. The identity runtime itself — config, DB, controllers,
+// filters, and the background sync/monitor loops — is IDENTICAL in both modes;
+// only process-management and network-listener steps that make sense ONLY for
+// the standalone iamd daemon are gated, so in-process embedding cannot inherit a
+// standalone side effect that would crash or endanger the shared parent process.
+type bootConfig struct {
+	// reapOldInstance runs util.StopOldInstance(httpport): it finds the PID
+	// holding the HTTP port and kills it. STANDALONE-ONLY — it shells out to
+	// `lsof` (absent on distroless/scratch → *exec.Error → panic) and would
+	// SIGKILL a co-resident process sharing the netns. The embed owns process
+	// lifecycle; there is no prior IAM instance to reap.
+	reapOldInstance bool
+	// startDirectoryListeners starts the LDAP + RADIUS network servers.
+	// STANDALONE-ONLY — RADIUS has no port guard and binds an ephemeral UDP
+	// socket with an EMPTY shared secret that is never torn down: an unmanaged
+	// credential channel inside a shared auth process. The embed serves only the
+	// HTTP handler; a deployment that needs LDAP/RADIUS runs standalone iamd.
+	startDirectoryListeners bool
+	// allowExportAndExit honors the IAM export envelope by dumping the DB and
+	// calling os.Exit(0). STANDALONE-ONLY — an embed must never terminate its
+	// parent binary.
+	allowExportAndExit bool
+}
+
+// Init runs the full IAM bootstrap for the STANDALONE iamd server (config, DB,
+// controllers, filters, background loops) but does NOT bind the HTTP listener —
+// Run adds that. Standalone contract unchanged: it reaps any old instance on the
+// HTTP port and starts the LDAP/RADIUS listeners. Returns the configured HTTP
+// port from app.conf.
 func Init() int {
+	return bootstrap(bootConfig{
+		reapOldInstance:         true,
+		startDirectoryListeners: true,
+		allowExportAndExit:      true,
+	})
+}
+
+// InitEmbed runs the IAM bootstrap for IN-PROCESS embedding inside a parent
+// binary (hanzoai/cloud), returning an error instead of panicking so the
+// embedding subsystem can degrade to fail-closed health-only rather than crash
+// every co-resident subsystem (KMS, o11y, …). It is Init WITHOUT the
+// standalone-daemon side effects that are wrong or dangerous in a shared
+// multi-subsystem process:
+//
+//   - NO StopOldInstance — the reaper shells `lsof` (panics on distroless) and
+//     would SIGKILL whatever holds :8000 on a shared netns.
+//   - NO LDAP/RADIUS listeners — they bind unmanaged network sockets (RADIUS: an
+//     ephemeral UDP port with an empty shared secret) with no teardown.
+//   - NO export/os.Exit — an embed must never terminate its parent.
+//   - NO HTTP listener (same as Init) — the parent serves web.BeeApp.Handlers.
+//
+// The parent obtains the routed handler via web.BeeApp.Handlers and must also
+// register the Beego session manager (web.Run does this; the embed path skips
+// it, so the parent wires it explicitly).
+func InitEmbed() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("iamserver.InitEmbed: bootstrap panicked: %v", r)
+		}
+	}()
+	bootstrap(bootConfig{
+		reapOldInstance:         false,
+		startDirectoryListeners: false,
+		allowExportAndExit:      false,
+	})
+	return nil
+}
+
+// bootstrap is the shared IAM boot body. Both Init (standalone) and InitEmbed
+// (in-process) call it; cfg gates the standalone-daemon-only side effects.
+func bootstrap(cfg bootConfig) int {
 	// Refuse to boot if SANDBOX_GLOBAL_OTP is set on a non-sandbox origin.
 	// This is a hard fail — see iamserver/sandbox_guard.go.
 	EnforceSandboxOriginGuard()
@@ -85,12 +149,11 @@ func Init() int {
 
 	object.InitDb()
 
-	// Handle export command. We exit the process here rather than
-	// returning a port, because the standalone iamd binary's contract is
-	// "init then run", and the embedded path never sets the export
-	// envelope. This keeps the Init() return type honest: a real,
-	// listenable port for every successful return.
-	if object.ShouldExportData() {
+	// Handle export command (standalone only). We exit the process here rather
+	// than returning a port, because the standalone iamd binary's contract is
+	// "init then run". The embedded path never sets the export envelope AND must
+	// never call os.Exit on its parent, so it is gated off entirely.
+	if cfg.allowExportAndExit && object.ShouldExportData() {
 		exportPath := object.GetExportFilePath()
 		err := object.DumpToFile(exportPath)
 		if err != nil {
@@ -172,13 +235,23 @@ func Init() int {
 	port := web.AppConfig.DefaultInt("httpport", 8000)
 	logs.SetLogFuncCall(false)
 
-	err = util.StopOldInstance(port)
-	if err != nil {
-		panic(err)
+	// Reap a stale instance holding the HTTP port (standalone only): shells `lsof`
+	// and kills the PID. Skipped when embedded — the parent owns process lifecycle
+	// and `lsof` is absent on distroless (its *exec.Error would panic the parent).
+	if cfg.reapOldInstance {
+		err = util.StopOldInstance(port)
+		if err != nil {
+			panic(err)
+		}
 	}
 
-	go ldap.StartLdapServer()
-	go radius.StartRadiusServer()
+	// Directory-protocol listeners (standalone only). Skipped when embedded:
+	// RADIUS binds an unmanaged ephemeral UDP socket with an empty shared secret
+	// and is never torn down; a deployment needing LDAP/RADIUS runs standalone iamd.
+	if cfg.startDirectoryListeners {
+		go ldap.StartLdapServer()
+		go radius.StartRadiusServer()
+	}
 	go object.ClearThroughputPerSecond()
 
 	if len(object.SiteMap) != 0 {
