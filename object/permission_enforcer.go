@@ -32,10 +32,22 @@ func getPermissionEnforcer(p *Permission, permissionIDs ...string) (*authz.Enfor
 	// Init an enforcer instance without specifying a model or adapter.
 	// If you specify an adapter, it will load all policies, which is a
 	// heavy process that can slow down the application.
-	enforcer, err := authz.NewEnforcer(&authzlog.DefaultLogger{}, false)
+	//
+	// authz.NewEnforcer's variadic API does NOT accept a (Logger, enableLog-bool)
+	// form: a 2-arg call type-switches params[1] to persist.Adapter, so a trailing
+	// bool panics ("bool is not persist.Adapter: missing method AddPolicy"). That
+	// panic is latent in prod (a pre-seeded DB skips seeding via initDataNewOnly and
+	// never reaches this path) but fires the moment IAM runs InitEmbed against a FRESH
+	// store — e.g. the unified hanzoai/cloud iam subsystem. Create the empty enforcer
+	// (zero-arg → no model/adapter, exactly as the comment intends; model+adapter are
+	// attached below by setEnforcerModel/setEnforcerAdapter) and set the logger
+	// explicitly. A zero-value DefaultLogger enables no event types, matching the
+	// original enableLog=false intent (no logging).
+	enforcer, err := authz.NewEnforcer()
 	if err != nil {
 		return nil, err
 	}
+	enforcer.SetLogger(&authzlog.DefaultLogger{})
 
 	err = p.setEnforcerModel(enforcer)
 	if err != nil {
