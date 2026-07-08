@@ -52,8 +52,8 @@ OAuth 2.0, OIDC, SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA, and RADIUS.
 </p>
 
 <p align="center">
-  <a href="https://github.com/hanzoai/iam/actions/workflows/build.yml">
-    <img alt="Build" src="https://github.com/hanzoai/iam/workflows/Build/badge.svg">
+  <a href="https://github.com/hanzoai/iam/actions/workflows/cicd.yml">
+    <img alt="CI/CD" src="https://github.com/hanzoai/iam/actions/workflows/cicd.yml/badge.svg">
   </a>
   <a href="https://github.com/hanzoai/iam/releases/latest">
     <img alt="GitHub Release" src="https://img.shields.io/github/v/release/hanzoai/iam">
