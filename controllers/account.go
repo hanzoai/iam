@@ -325,6 +325,17 @@ func (c *ApiController) Signup() {
 		user.Groups = []string{application.DefaultGroup}
 	}
 
+	// Waitlist gate: a self-service signup lands PENDING (on the waitlist, no
+	// access until an admin approves). An invited signup (invitation present or
+	// an invitation code supplied) is auto-approved — the invite IS the approval.
+	// Admin users are always approved (IsApproved short-circuits) but we still
+	// stamp the property for auditability.
+	if invitation != nil || strings.TrimSpace(authForm.InvitationCode) != "" || user.IsAdmin {
+		user.SetApprovalStatus(object.ApprovalApproved)
+	} else {
+		user.SetApprovalStatus(object.ApprovalPending)
+	}
+
 	affected, err := object.AddUser(user, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
