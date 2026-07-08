@@ -109,6 +109,7 @@ type Application struct {
 	EnableSamlAssertionSignature bool            `xorm:"bool" json:"enableSamlAssertionSignature"`
 	UseEmailAsSamlNameId         bool            `xorm:"bool" json:"useEmailAsSamlNameId"`
 	EnableWebAuthn               bool            `xorm:"bool" json:"enableWebAuthn"`
+	EnableGuestSignin            bool            `xorm:"bool" json:"enableGuestSignin"`
 	EnableLinkWithEmail          bool            `xorm:"bool" json:"enableLinkWithEmail"`
 	OrgChoiceMode                string          `json:"orgChoiceMode"`
 	SamlReplyUrl                 string          `xorm:"varchar(500)" json:"samlReplyUrl"`
@@ -178,20 +179,21 @@ type Application struct {
 func fixApplicationBooleans(app *Application) {
 	row := ormer.Engine.DB().QueryRow(
 		`SELECT enable_password, enable_sign_up, enable_signin_session,
-		        enable_code_signin, enable_web_authn, enable_auto_signin,
-		        enable_link_with_email, enable_exclusive_signin,
+		        enable_code_signin, enable_web_authn, enable_guest_signin,
+		        enable_auto_signin, enable_link_with_email, enable_exclusive_signin,
 		        disable_signin, is_shared
 		 FROM application WHERE owner=? AND name=?`,
 		app.Owner, app.Name,
 	)
-	var ep, esu, ess, ecs, ewa, eas, ele, ees, ds, ish bool
-	if err := row.Scan(&ep, &esu, &ess, &ecs, &ewa, &eas, &ele, &ees, &ds, &ish); err != nil {
+	var ep, esu, ess, ecs, ewa, egs, eas, ele, ees, ds, ish bool
+	if err := row.Scan(&ep, &esu, &ess, &ecs, &ewa, &egs, &eas, &ele, &ees, &ds, &ish); err != nil {
 	} else {
 		app.EnablePassword = ep
 		app.EnableSignUp = esu
 		app.EnableSigninSession = ess
 		app.EnableCodeSignin = ecs
 		app.EnableWebAuthn = ewa
+		app.EnableGuestSignin = egs
 		app.EnableAutoSignin = eas
 		app.EnableLinkWithEmail = ele
 		app.EnableExclusiveSignin = ees
