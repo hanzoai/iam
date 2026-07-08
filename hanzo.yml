@@ -23,9 +23,19 @@ test:
   - name: go-test
     run: CGO_ENABLED=0 go test $(go list ./...) -tags skipCi
   - name: go-lint
+    # Run the two checks the lint gate has always enforced — `go vet` + `gofumpt`
+    # — through the NATIVE Go 1.26 toolchain. golangci-lint's last v1 release
+    # (v1.64.8; v2 is off-limits per policy) can't type-check this module under
+    # Go 1.26: its bundled importer mis-reads the toolchain's export data and
+    # phantom-fails on methods promoted from embedded external types
+    # (object.Enforcer←authz, ApiController←beego web) — while `go build`, `go
+    # vet`, and `go test` are all green. The native toolchain's type-checker has
+    # no such bug, so it is both correct and the source of truth. Match the
+    # production build tags; pin gofumpt to the version the old gate used.
     run: |
-      go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-      golangci-lint run --timeout 5m --modules-download-mode=mod
+      CGO_ENABLED=0 go vet -tags "libsqlite3 sqlite_fts5" ./...
+      go install mvdan.cc/gofumpt@v0.7.0
+      test -z "$(gofumpt -l .)" || { echo "gofumpt: files need formatting:"; gofumpt -l .; exit 1; }
 
 # Deploy: roll the freshly-built image onto the IAM operator Service CR.
 # Fires only on `main` (and tags), and only when KMS hands back a kubeconfig —
