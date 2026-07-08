@@ -17,6 +17,7 @@ package controllers
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
 	"encoding/base32"
@@ -30,6 +31,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -198,10 +200,47 @@ type RegistryAccess struct {
 	Actions []string `json:"actions"`
 }
 
-// RegistryTokenClaims extends standard JWT claims with Docker registry access.
-type RegistryTokenClaims struct {
-	jwt.RegisteredClaims
-	Access []RegistryAccess `json:"access"`
+// registrySigningKeyID memoizes the Docker/libtrust key ID of the signing key.
+var (
+	registrySigningKeyID     string
+	registrySigningKeyIDOnce sync.Once
+)
+
+// registryKID returns the Docker/libtrust key ID of the current registry signing
+// key. Docker Distribution keys its rootcertbundle trust set by this ID and
+// matches the JWT header `kid` against it — without a matching `kid` (or an
+// `x5c` chain) the registry rejects the token as "signed by untrusted key",
+// even when the RSA signature verifies against the mounted cert.
+func registryKID() string {
+	registrySigningKeyIDOnce.Do(func() {
+		if registrySigningKey != nil {
+			registrySigningKeyID = libtrustKeyID(&registrySigningKey.PublicKey)
+		}
+	})
+	return registrySigningKeyID
+}
+
+// libtrustKeyID computes the Docker/libtrust key ID of an RSA public key: the
+// first 240 bits of SHA-256(PKIX DER of the public key), base32-encoded (no
+// padding) and grouped into colon-separated quads (AAAA:BBBB:...). This is the
+// exact scheme github.com/docker/libtrust uses, so the ID matches the one the
+// registry derives from its rootcertbundle cert (same public key → same ID).
+func libtrustKeyID(pub *rsa.PublicKey) string {
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(der)
+	s := strings.TrimRight(base32.StdEncoding.EncodeToString(sum[:30]), "=")
+	parts := make([]string, 0, len(s)/4)
+	for i := 0; i < len(s); i += 4 {
+		end := i + 4
+		if end > len(s) {
+			end = len(s)
+		}
+		parts = append(parts, s[i:end])
+	}
+	return strings.Join(parts, ":")
 }
 
 // RegistryTokenResponse is the JSON response for the token endpoint.
@@ -315,20 +354,24 @@ func (c *ApiController) GetRegistryToken() {
 		subject = fmt.Sprintf("%s/%s", user.Owner, user.Name)
 	}
 
-	claims := RegistryTokenClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    "hanzo-iam",
-			Subject:   subject,
-			Audience:  jwt.ClaimStrings{service},
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(expiresIn) * time.Second)),
-			NotBefore: jwt.NewNumericDate(now),
-			IssuedAt:  jwt.NewNumericDate(now),
-			ID:        jti,
-		},
-		Access: access,
+	// Docker Distribution's token ClaimSet types `aud` as a STRING (not the
+	// RFC 7519 string-or-array), and `exp`/`nbf`/`iat` as integer seconds. Mint
+	// a MapClaims that serializes to exactly that shape — golang-jwt's
+	// RegisteredClaims would emit `aud` as an array and the registry rejects it
+	// with `cannot unmarshal array into ClaimSet.aud`.
+	claims := jwt.MapClaims{
+		"iss":    "hanzo-iam",
+		"sub":    subject,
+		"aud":    service,
+		"exp":    now.Add(time.Duration(expiresIn) * time.Second).Unix(),
+		"nbf":    now.Unix(),
+		"iat":    now.Unix(),
+		"jti":    jti,
+		"access": access,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = registryKID()
 	tokenString, err := token.SignedString(registrySigningKey)
 	if err != nil {
 		c.Ctx.Output.SetStatus(500)
@@ -364,6 +407,7 @@ func (c *ApiController) GetRegistryPublicKey() {
 				"kty": "RSA",
 				"alg": "RS256",
 				"use": "sig",
+				"kid": registryKID(),
 				"n":   base64.RawURLEncoding.EncodeToString(pubKey.N.Bytes()),
 				"e":   base64.RawURLEncoding.EncodeToString(e.Bytes()),
 			},
