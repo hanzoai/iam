@@ -254,7 +254,23 @@ func (c *ApiController) GetSessionOidc() (string, string) {
 }
 
 // SetSessionUsername ...
+// SetSessionUsername records the authenticated user on the session. On the
+// authentication transition (a non-empty user) it FIRST regenerates the session
+// id — issuing a fresh sid and destroying the one the browser presented — so a
+// session id planted before login (session fixation) can never survive the
+// sign-in and be replayed by an attacker. This is the single chokepoint every
+// sign-in path funnels through (password, SSO/social, OTP verification, WebAuthn,
+// web3), so the defense cannot be bypassed per-path — the same reason the
+// approval stamp had to live on the common AddUser path, not each caller.
+//
+// SessionRegenerateID migrates existing session data to the new sid and deletes
+// the old sid (provider.SessionRegenerate), so pre-auth state is preserved while
+// the pre-auth id is invalidated. De-authentication (empty user) already
+// regenerates in ClearUserSession, so we skip the redundant regen here.
 func (c *ApiController) SetSessionUsername(user string) {
+	if user != "" {
+		_ = c.SessionRegenerateID()
+	}
 	c.SetSession("username", user)
 }
 
