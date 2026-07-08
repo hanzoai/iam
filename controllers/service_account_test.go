@@ -205,8 +205,8 @@ func TestIsCanonicalForOrg(t *testing.T) {
 // LIST service accounts for its OWN org (hanzo) and is DENIED for any other org
 // (zoo) — org-scoped by the <org>-<app> naming convention, never cross-tenant.
 func TestAuthorizeServiceAccountRead_ReadCapOrgScoped(t *testing.T) {
-	t.Setenv(object.CapKeyMint.EnvVar, "")                        // NOT a mint app
-	t.Setenv(object.CapServiceAccountRead.EnvVar, "hanzo-team")   // read-only grant
+	t.Setenv(object.CapKeyMint.EnvVar, "")                      // NOT a mint app
+	t.Setenv(object.CapServiceAccountRead.EnvVar, "hanzo-team") // read-only grant
 
 	own := newSAController(t, "app/hanzo-team")
 	caller, ok := own.authorizeServiceAccountRead("hanzo")
