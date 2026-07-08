@@ -68,6 +68,11 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		GrantTypes   []string `json:"grantTypes"`
 		RedirectUris []string `json:"redirectUris"`
 		DisplayName  string   `json:"displayName"`
+		// EnableSignUp is an explicit tri-state: nil = "use the safe default"
+		// (see resolveBootstrapSignUp), true/false = honor verbatim EXCEPT that
+		// admin-org apps can never be opened for self-signup. The operator sends
+		// this to lock (false) an app it provisions.
+		EnableSignUp *bool `json:"enableSignUp"`
 	}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
 		c.ResponseError(err.Error())
@@ -119,6 +124,15 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		if req.DisplayName != "" {
 			existing.DisplayName = req.DisplayName
 		}
+		// Signup on the update path: honor an explicit request (so the operator
+		// can lock an already-provisioned app), and ALWAYS force admin-org apps
+		// closed regardless of their prior stored value — bootstrap must never
+		// leave an admin-org app open for self-signup (fail-secure). When the
+		// caller says nothing and the app is non-admin, the stored value is
+		// preserved (unchanged behavior).
+		if req.EnableSignUp != nil || existing.Organization == conf.AdminOrg {
+			existing.EnableSignUp = resolveBootstrapSignUp(existing.Organization, req.EnableSignUp)
+		}
 		// Bootstrap is system-level — bypass org-membership gate.
 		ok, err := object.UpdateApplication(id, existing, true, c.GetAcceptLanguage())
 		if err != nil {
@@ -161,7 +175,12 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		ExpireInHours:  24,
 		TokenFormat:    "JWT",
 		EnablePassword: true,
-		EnableSignUp:   true,
+		// Self-signup is fail-secure: admin-org apps are ALWAYS created closed
+		// (self-registering into the admin org = instant global admin, since
+		// IsGlobalAdmin()=user.Owner==conf.AdminOrg). Non-admin tenant apps keep
+		// the historical "immediately login+signup usable" default unless the
+		// caller explicitly overrides via req.EnableSignUp.
+		EnableSignUp: resolveBootstrapSignUp(owner, req.EnableSignUp),
 		// Sign JWTs with the admin-seeded cert by default. init.go puts
 		// the IAM cert (RSA keypair) in the admin namespace; every tenant
 		// app can reference it to mint tokens. Per-tenant certs are an
@@ -475,6 +494,32 @@ func isUniqueConstraintErr(err error) bool {
 	return strings.Contains(msg, "UNIQUE constraint failed") ||
 		strings.Contains(msg, "duplicate key") ||
 		strings.Contains(msg, "Duplicate entry")
+}
+
+// resolveBootstrapSignUp decides the effective enableSignUp for an app the
+// operator provisions via BootstrapApplicationUpsert.
+//
+// Fail-secure rule that overrides everything: an app in the admin org is NEVER
+// self-signup-open. IsGlobalAdmin() is user.Owner == conf.AdminOrg, so a single
+// self-registration into the admin org mints a global admin. Bootstrap is
+// operator-trusted, but "trusted" must not mean "able to open the god-org to the
+// public" — so admin-org always resolves to false, even if the caller explicitly
+// asked for true.
+//
+// For non-admin orgs:
+//   - explicit request (req != nil): honor it verbatim.
+//   - unset (req == nil): default true, preserving the historical contract that
+//     a freshly-provisioned tenant app is immediately usable for login+signup
+//     without a follow-up admin tweak. (Customer-facing signup policy is governed
+//     separately from machine provisioning.)
+func resolveBootstrapSignUp(org string, req *bool) bool {
+	if org == conf.AdminOrg {
+		return false
+	}
+	if req != nil {
+		return *req
+	}
+	return true
 }
 
 // generateBootstrapSecret returns a 32-byte URL-safe random secret.
