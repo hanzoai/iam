@@ -163,16 +163,27 @@ ARG USER=hanzo
 # NOT also carry a plaintext libsqlite3 — the binary's `-lsqlite3` DT_NEEDED would
 # then resolve sqlite3_* to plaintext sqlite at runtime and silently disable the
 # codec (PRAGMA key becomes a no-op), the exact build-vs-runtime mismatch the
-# encryption gate cannot see. So install sqlcipher only, and alias libsqlite3.so.0
-# to it (same as the build stage) so the loader binds sqlite3_* to the codec lib.
-# sqlcipher-libs ships the shared object /usr/lib/libsqlcipher.so.0 (the codec the
-# binary loads at runtime); the `sqlcipher` CLI package alone does NOT carry it.
-# sqlite (CLI) is for ops/debug only and is plaintext — its libsqlite3 is NOT
-# installed (we alias libsqlite3.so.0 to the codec lib so sqlite3_* binds there).
-RUN apk add --no-cache tzdata curl ca-certificates sqlcipher-libs \
+# encryption gate cannot see. So the codec is the ONLY libsqlite3 provider: we
+# alias libsqlite3.so.0 to libsqlcipher (same as the build stage) so the loader
+# binds sqlite3_* to the codec lib. sqlcipher-libs ships the shared object
+# /usr/lib/libsqlcipher.so.0; the `sqlcipher` CLI package alone does NOT carry it.
+#
+# Debug/ops tooling (CTO directive — every pod must ship sqlite3 + python3):
+#   * sqlcipher — the sqlite3 shell WITH the codec. The IAM store is
+#     SQLCipher-encrypted; a PLAINTEXT sqlite3 CLI physically cannot open it
+#     (it needs `PRAGMA key`). So the debug CLI IS sqlcipher, exposed under the
+#     canonical name `sqlite3` via a symlink. NEVER `apk add sqlite` here — that
+#     pulls the plaintext sqlite-libs libsqlite3.so.0 and reintroduces the
+#     silent-plaintext footgun above.
+#   * python3 — runtime only (no build toolchain). If apk drags in the plaintext
+#     sqlite-libs as a python3 dependency, the `ln -sf` below runs AFTER apk and
+#     re-asserts the codec alias, so libsqlite3.so.0 still resolves to the codec
+#     (python3's own sqlite3 module then also opens the encrypted DB via PRAGMA key).
+RUN apk add --no-cache tzdata curl ca-certificates sqlcipher-libs sqlcipher python3 \
     && SC="$(find /usr/lib /lib -name 'libsqlcipher.so*' 2>/dev/null | sort | head -1)" \
     && test -n "$SC" \
     && ln -sf "$SC" /usr/lib/libsqlite3.so.0 \
+    && ln -sf /usr/bin/sqlcipher /usr/bin/sqlite3 \
     && update-ca-certificates \
     && adduser -D $USER -u 1000 \
     && mkdir logs \
