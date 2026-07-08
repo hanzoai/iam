@@ -19,6 +19,14 @@
 
 package capauth
 
+// ScopeMask isolates the per-kind operation bits — the low 32 — of a cap's
+// Permissions. Per github.com/zap-proto/go/cap perms.go, each CapKind owns
+// the bottom 32 bits (its scopes) while the top 32 are cross-cutting
+// authority markers (PermAttenuate 1<<32, PermAudit 1<<33, PermRoot 1<<63)
+// that are NOT scopes. ScopesBits masks with this so handler-side scope
+// gating never sees a delegation/audit/root bit as if it were an op.
+const ScopeMask uint64 = 1<<32 - 1
+
 // IdentityCtx is the verified identity attached to a request after the
 // middleware accepts a cap.
 //
@@ -34,9 +42,11 @@ type IdentityCtx struct {
 	// logging, audit trails, and "who am I" responses.
 	PrincipalHex string
 
-	// ScopesBits is the cap's Permissions field. Handlers that need to
-	// enforce per-route gating beyond what the middleware checked
-	// inspect this bitmask.
+	// ScopesBits is the cap's per-kind scope bits — its Permissions field
+	// masked to the low 32 (ScopeMask), so the cross-cutting authority
+	// markers (PermAttenuate/PermAudit/PermRoot) never leak in as ops.
+	// Handlers that need per-route gating beyond what the middleware
+	// checked inspect this bitmask.
 	ScopesBits uint64
 
 	// CapKind is the cap.CapKind the holder presented. Useful for
