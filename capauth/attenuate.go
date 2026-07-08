@@ -189,7 +189,13 @@ func (iss *Issuer) Attenuate(parent cap.Cap, p AttenuateParams) (cap.Cap, error)
 	// cap.Attenuate enforces signer.Public() == parent.Holder(); on
 	// success the child's Issuer field becomes signer.Public(), which is
 	// the parent's Holder, satisfying the chain-link rule at verify time.
-	return cap.Attenuate(parent, p.NewHolder, p.Permissions, caveats, p.ExpiresAt, iss.Signer)
+	//
+	// Re-grant PermAttenuate on the child so it too may delegate further
+	// down the chain (bounded by MaxDepth + ChainDepthMax). cap.Attenuate
+	// intersects with the parent's permissions, so this bit only survives
+	// when the parent itself carried it — a non-delegable parent still
+	// yields a non-delegable child.
+	return cap.Attenuate(parent, p.NewHolder, p.Permissions|cap.PermAttenuate, caveats, p.ExpiresAt, iss.Signer)
 }
 
 // _ unused-suppression sentinel for the binary import.
