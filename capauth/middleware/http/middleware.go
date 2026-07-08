@@ -185,7 +185,7 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 
 			ident := &capauth.IdentityCtx{
 				PrincipalHex: capauth.Hex32(holder),
-				ScopesBits:   c.Permissions(),
+				ScopesBits:   c.Permissions() & capauth.ScopeMask,
 				CapKind:      c.Kind(),
 				ChainDepth:   1,
 				CapID:        c.ID(),
