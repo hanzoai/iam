@@ -43,10 +43,19 @@ type SessionData struct {
 	ExpireTime int64
 }
 
-func (c *ApiController) IsGlobalAdmin() bool {
-	isGlobalAdmin, _ := c.isGlobalAdmin()
+// IsSuperAdmin reports whether the request's session principal is a Hanzo super
+// admin (a member of conf.AdminOrg). This is the CANONICAL name for the gate.
+func (c *ApiController) IsSuperAdmin() bool {
+	isSuperAdmin, _ := c.isGlobalAdmin()
 
-	return isGlobalAdmin
+	return isSuperAdmin
+}
+
+// IsGlobalAdmin is the DEPRECATED alias of IsSuperAdmin, kept so existing call
+// sites keep compiling during the SuperAdmin rename. New code MUST call
+// IsSuperAdmin. It delegates — one derivation, one truth.
+func (c *ApiController) IsGlobalAdmin() bool {
+	return c.IsSuperAdmin()
 }
 
 // appMutationAllowed decides whether the caller may create / modify / delete
