@@ -1,17 +1,58 @@
-linters:
-  disable-all: true
-  enable:
-    - govet
-    - gofumpt
+# golangci-lint config — v2 schema.
+#
+# Why v2: the CI install used `@latest` on the pre-v2 module path, which pins to
+# the LAST v1 release (v1.64.8). That release predates Go 1.26 and, on a
+# cache-cold amd64 CI runner, its bundled type-checker mis-loads the export data
+# of module dependencies — dropping the method set of the casbin fork embedded
+# in object.Enforcer (`*authz.Enforcer`) and reporting every promoted method
+# (GetPolicy/AddPolicy/UpdatePolicy/…) as a phantom "undefined" typecheck error,
+# even though `go build`/`go vet`/`go test` are all green. golangci-lint v2 is
+# the maintained line built for the current Go toolchain and loads that export
+# data correctly. hanzo.yml pins the exact v2 patch (deterministic; never
+# `@latest`, which is what floated us onto the broken v1 in the first place).
+version: "2"
 
 run:
-  timeout: 5m
   modules-download-mode: mod
   # Production links the system libsqlcipher (the `libsqlite3` tag). Match it so
-  # the lint typecheck sees the same build the Docker image uses. No CGO-blind
-  # exclude rules are needed: hanzoai/sqlite is dual-backend, so under the CGO-off
-  # linter its pure-Go (!cgo) files typecheck cleanly and register the same
-  # "sqlite" driver — the encrypted (cgo) files simply aren't compiled here.
+  # the lint typecheck sees the same build the Docker image uses. hanzoai/sqlite
+  # is dual-backend: under the CGO-off linter its pure-Go (!cgo) files typecheck
+  # cleanly and register the same "sqlite" driver — the encrypted (cgo) files
+  # simply aren't compiled here, so no CGO-blind exclude rules are needed.
   build-tags:
     - libsqlite3
     - sqlite_fts5
+
+linters:
+  default: none
+  enable:
+    - govet
+  settings:
+    govet:
+      # `inline` is new in v2's govet (suggests modernizing deprecated stdlib
+      # aliases, e.g. ioutil.ReadFile → os.ReadFile). v1 never ran it; leaving it
+      # off keeps this a pure tool-version fix with identical lint coverage.
+      # Enable it in a dedicated modernization pass, not here.
+      disable:
+        - inline
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+formatters:
+  enable:
+    - gofumpt
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
