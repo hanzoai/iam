@@ -1237,6 +1237,19 @@ func AddUser(user *User, lang string) (bool, error) {
 		user.UpdatedTime = user.CreatedTime
 	}
 
+	// Waitlist gate — stamped HERE, at the ONE common creation path, so EVERY
+	// self-service route is gated at once: password signup, SSO/social first
+	// login, wallet (web3) SIWE, email/phone-code signup, OAuth guest/token. The
+	// controllers/account.go Signup stamp alone left the non-password routes
+	// unstamped → IsApproved fail-open let them straight through the guard (Red).
+	//
+	// applyDefaultApprovalStatus stamps "pending" for a genuine end-user whose
+	// status the caller hasn't already decided, and leaves trusted/provisioned
+	// identities (admins, service accounts, admin-org, invited — already stamped,
+	// LDAP/syncer/seed) approved. Fail-open stays intact for EXISTING users
+	// (untouched rows have no property); only NEW self-registrations are gated.
+	user.applyDefaultApprovalStatus()
+
 	err = user.UpdateUserHash()
 	if err != nil {
 		return false, err
@@ -1748,6 +1761,51 @@ func (user *User) SetApprovalStatus(status string) {
 		user.Properties = map[string]string{}
 	}
 	user.Properties[ApprovalStatusProperty] = status
+}
+
+// hasApprovalStatus reports whether the caller already decided the approval
+// (e.g. account.go stamps "approved" for an invited signup before AddUser).
+func (user *User) hasApprovalStatus() bool {
+	if user.Properties == nil {
+		return false
+	}
+	_, ok := user.Properties[ApprovalStatusProperty]
+	return ok
+}
+
+// applyDefaultApprovalStatus is the single default-setter called from AddUser. It
+// stamps "pending" (waitlist, no access) for a genuine self-registering end-user,
+// and stamps "approved" for provisioned/trusted identities so they are never
+// waitlisted. It NEVER overrides a status the caller already set, and biases to
+// "approved" when in doubt so a legit provisioned user is never accidentally
+// waitlisted (fail-open bias — the gate only fires on an EXPLICIT pending).
+//
+// EXEMPT (approved) — never waitlisted:
+//   - the caller already set the property (invited signup → "approved", etc.)
+//   - admins (IsAdmin) and admin-org users (always approved anyway)
+//   - service accounts (Type == "service-account") — M2M identities
+//   - LDAP/directory-synced users (Ldap != "") — enterprise SSO provisioning
+//   - admin-provisioned rows (RegisterType "Add User") and seed/import users
+//   - anonymous guests (RegisterType "Guest Signup") — ephemeral chat, not a
+//     console/product customer; gating them would break anonymous chat
+//
+// GATED ("pending") — the customer self-service routes: password signup, SSO/
+// social first login, wallet (web3) SIWE, email/phone-code signup, OAuth token.
+func (user *User) applyDefaultApprovalStatus() {
+	if user == nil || user.hasApprovalStatus() {
+		return
+	}
+	switch {
+	case user.IsAdmin,
+		user.Owner == conf.AdminOrg,
+		user.Type == "service-account",
+		user.Ldap != "",
+		user.RegisterType == "Add User",
+		user.RegisterType == "Guest Signup":
+		user.SetApprovalStatus(ApprovalApproved)
+	default:
+		user.SetApprovalStatus(ApprovalPending)
+	}
 }
 
 func (user *User) CheckUserFace(faceIdImage []string, provider *Provider) (bool, error) {
