@@ -365,6 +365,7 @@ func (s *seqTokenSource) Token(context.Context) (string, error) {
 	}
 	return s.toks[i], nil
 }
+
 func (s *seqTokenSource) Invalidate() {
 	s.mu.Lock()
 	s.invalidated++
@@ -445,7 +446,7 @@ func (l *flakyListener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 	if l.dropped.CompareAndSwap(false, true) {
-		_ = c.Close()   // first connection: drop it → the client's send errors
+		_ = c.Close()     // first connection: drop it → the client's send errors
 		return l.Accept() // block for the retry's fresh connection
 	}
 	return c, nil

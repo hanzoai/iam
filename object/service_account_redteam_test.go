@@ -26,8 +26,8 @@ import (
 	"strings"
 	"testing"
 
-	sqlitedrv "github.com/hanzoai/sqlite"
 	"github.com/hanzoai/iam/conf"
+	sqlitedrv "github.com/hanzoai/sqlite"
 	"github.com/hanzoai/xorm"
 	"github.com/hanzoai/xorm/names"
 )
