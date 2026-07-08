@@ -1714,12 +1714,24 @@ func (user *User) IsApplicationAdmin(application *Application) bool {
 	return (user.Owner == application.Organization && user.IsAdmin) || user.IsGlobalAdmin()
 }
 
-func (user *User) IsGlobalAdmin() bool {
+// IsSuperAdmin reports whether the user is a Hanzo super admin: a member of the
+// admin organization (owner == conf.AdminOrg, the IAM_ADMIN_ORG). This is the ONE
+// fact behind every "global admin" gate — there is no stored is_super_admin
+// column; the authority is derived from org membership, so it can never drift
+// from the org the user actually belongs to. This is the CANONICAL name.
+func (user *User) IsSuperAdmin() bool {
 	if user == nil {
 		return false
 	}
 
 	return user.Owner == conf.AdminOrg
+}
+
+// IsGlobalAdmin is the DEPRECATED alias of IsSuperAdmin, kept so existing call
+// sites keep compiling during the SuperAdmin rename. New code MUST call
+// IsSuperAdmin. It delegates — one derivation, one truth.
+func (user *User) IsGlobalAdmin() bool {
+	return user.IsSuperAdmin()
 }
 
 // ApprovalStatusProperty is the single authoritative user property that gates
