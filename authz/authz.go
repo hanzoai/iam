@@ -48,6 +48,10 @@ p, *, !anonymous, POST, /v1/iam/add-application, *, *
 p, *, !anonymous, POST, /v1/iam/update-application, *, *
 p, *, !anonymous, POST, /v1/iam/delete-application, *, *
 p, *, !anonymous, GET, /v1/iam/get-applications, *, *
+p, *, !anonymous, GET, /v1/iam/get-pending-users, *, *
+p, *, !anonymous, POST, /v1/iam/approve-user, *, *
+p, *, !anonymous, POST, /v1/iam/reject-user, *, *
+p, *, !anonymous, GET, /v1/iam/approval-status, *, *
 p, *, *, POST, /v1/iam/signup, *, *
 p, *, *, GET, /v1/iam/get-email-and-phone, *, *
 p, *, *, POST, /v1/iam/login, *, *
