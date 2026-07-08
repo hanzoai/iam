@@ -325,12 +325,20 @@ require github.com/hanzoai/authz v1.10.4
 require github.com/hanzoai/sqlite v0.1.4
 
 // cloud/audit blank-imported modernc.org/sqlite directly, which self-registers
-// the "sqlite" driver. iam links cloud/audit transitively (iam/authz -> authz ->
-// cloud -> cloud/audit) AND registers "sqlite" via hanzoai/sqlite's CGO/SQLCipher
-// backend — two registrations => `panic: sql: Register called twice for driver
-// sqlite` at init (the object encryption-posture gate caught it; v1.31.3-6 could
-// not build). This pins cloud to the surgical one-line fix on top of the exact
-// v1.786.14 tree iam already resolves (audit now uses the org-canonical
-// hanzoai/sqlite driver) — ZERO other cloud drift. Drop this replace once the fix
-// lands in a released cloud tag (hanzoai/cloud fix/audit-canonical-sqlite-driver).
-replace github.com/hanzoai/cloud => github.com/hanzoai/cloud v1.786.15-0.20260702215130-701639a3b26f
+// the "sqlite" driver. iam links cloud/audit transitively AND registers "sqlite"
+// via hanzoai/sqlite's CGO/SQLCipher backend — two registrations => `panic: sql:
+// Register called twice for driver sqlite` at init. The Dockerfile SQLITE-GATE
+// fails the build before shipping such an image. This pins cloud to the surgical
+// one-line fix (audit uses the org-canonical hanzoai/sqlite driver) on top of the
+// exact v1.786.14 tree iam resolves — ZERO other cloud drift.
+//
+// This CANNOT be dropped for a released cloud tag: every release past v1.786.14
+// drags in modern hanzoai/ai, whose hanzoai/ai/object package blank-imports
+// modernc.org/sqlite back into cmd/iamd and re-trips the SQLITE-GATE. Retire it
+// only once that importer is off modernc.
+//
+// The pin is a valid v0.0.0 pseudo-version (the commit descends from no tag, so a
+// v1.786.15-0 base is rejected as "not a descendent"). The commit is kept
+// reachable by the cloud tag `iam-audit-sqlite-driver-fix` — do not delete it, or
+// `go mod download` fails with "unknown revision".
+replace github.com/hanzoai/cloud => github.com/hanzoai/cloud v0.0.0-20260702215130-701639a3b26f

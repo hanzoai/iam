@@ -130,6 +130,14 @@ func InitAPI() {
 	web.Router("/v1/iam/revoke-user-keys", &controllers.ApiController{}, "POST:RevokeUserKeys")
 	web.Router("/v1/iam/issue-user-token", &controllers.ApiController{}, "POST:IssueUserToken")
 
+	// Waitlist approval control plane (admin.hanzo.ai). approval.go enforces
+	// org-scoped authz (global admin any org; org admin own org). approval-status
+	// is the caller's own read (any authenticated user) used by the gate/SPA.
+	web.Router("/v1/iam/get-pending-users", &controllers.ApiController{}, "GET:GetPendingUsers")
+	web.Router("/v1/iam/approve-user", &controllers.ApiController{}, "POST:ApproveUser")
+	web.Router("/v1/iam/reject-user", &controllers.ApiController{}, "POST:RejectUser")
+	web.Router("/v1/iam/approval-status", &controllers.ApiController{}, "GET:GetApprovalStatus")
+
 	// Service accounts — agent/bot IAM identities (Type=service-account). A
 	// service account is a User of Type "service-account" (no password;
 	// API-key-only auth, secret argon2id-hashed at rest). Create/rotate return
