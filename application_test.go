@@ -84,7 +84,7 @@ func TestApplication(t *testing.T) {
 	}
 
 	// Delete the object
-	_, err = DeleteApplication(application, true)
+	_, err = DeleteApplication(application)
 	if err != nil {
 		t.Fatalf("Failed to delete object: %v", err)
 	}
