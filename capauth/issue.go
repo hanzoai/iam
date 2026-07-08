@@ -102,10 +102,16 @@ func (iss *Issuer) Issue(p IssueParams) (cap.Cap, error) {
 	}
 	now := iss.clockNow().Unix()
 	in := cap.Issuance{
-		Kind:        uint32(p.Kind),
-		Target:      p.Target,
-		Holder:      p.Holder,
-		Permissions: p.Permissions,
+		Kind:   uint32(p.Kind),
+		Target: p.Target,
+		Holder: p.Holder,
+		// Set the cross-cutting PermAttenuate bit (cap SPEC §2.3 step 3d):
+		// without it the wire runtime refuses any attenuation off this cap
+		// (ErrNotDelegable) at BOTH mint and verify time. capauth caps are
+		// delegable by construction; the delegation budget is bounded by the
+		// MaxDepth caveat + the package ChainDepthMax ceiling, not by
+		// withholding this bit.
+		Permissions: p.Permissions | cap.PermAttenuate,
 		Parent:      [32]byte{}, // root
 		IssuedAt:    now,
 		ExpiresAt:   p.ExpiresAt,
