@@ -689,6 +689,14 @@ func IsScopeValid(scope string, application *Application) bool {
 	return ok
 }
 
+// guestSigninAllowed reports whether an application permits the anonymous
+// guest-token grant (authorization code == "guest-user"). It is OPT-IN and
+// FAIL-CLOSED: the application must explicitly set EnableGuestSignin, so a real
+// user's login can never be silently downgraded to an auto-provisioned guest.
+func guestSigninAllowed(application *Application) bool {
+	return application != nil && application.EnableGuestSignin
+}
+
 // createGuestUserToken creates a new guest user and returns a token for them
 func createGuestUserToken(application *Application, clientSecret string, verifier string) (*Token, *TokenError, error) {
 	// Verify client secret if provided
@@ -843,8 +851,21 @@ func GetAuthorizationCodeToken(application *Application, clientSecret string, co
 		}, nil
 	}
 
-	// Handle guest user creation
+	// Guest sign-in (code == "guest-user") mints an anonymous, auto-provisioned
+	// guest user. It is OPT-IN and FAIL-CLOSED: the application MUST explicitly
+	// enable it (EnableGuestSignin). Without this gate the sentinel was honored
+	// for EVERY application, so a real login that reached this grant with the
+	// guest sentinel was silently downgraded to a throwaway guest principal
+	// (owner-scoped, non-admin) — the u-<n> guest that made every admin surface
+	// 403. Apps that intentionally offer anonymous access opt in; all others
+	// refuse the grant.
 	if code == "guest-user" {
+		if !guestSigninAllowed(application) {
+			return nil, &TokenError{
+				Error:            InvalidGrant,
+				ErrorDescription: "guest sign-in is not enabled for this application",
+			}, nil
+		}
 		return createGuestUserToken(application, clientSecret, verifier)
 	}
 
