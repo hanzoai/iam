@@ -1713,6 +1713,43 @@ func (user *User) IsGlobalAdmin() bool {
 	return user.Owner == conf.AdminOrg
 }
 
+// ApprovalStatusProperty is the single authoritative user property that gates
+// customer access behind the waitlist. Value "pending" ⇒ on the waitlist, no
+// access; anything else (incl. absent/"approved") ⇒ approved. Absent defaults
+// to APPROVED so every pre-existing user passes with no migration — only a user
+// EXPLICITLY marked pending at waitlist-signup is gated. Set once at signup,
+// flipped to "approved" by an admin from the waitlist queue.
+const (
+	ApprovalStatusProperty = "approvalStatus"
+	ApprovalPending        = "pending"
+	ApprovalApproved       = "approved"
+)
+
+// IsApproved reports whether the user may access customer surfaces. Fail-open by
+// default (absent ⇒ approved) so existing users are never locked out; only an
+// explicit "pending" tag (set at waitlist signup) gates access. Global admins are
+// always approved regardless of the property.
+func (user *User) IsApproved() bool {
+	if user == nil {
+		return false
+	}
+	if user.IsGlobalAdmin() || user.IsAdmin {
+		return true
+	}
+	if user.Properties == nil {
+		return true
+	}
+	return user.Properties[ApprovalStatusProperty] != ApprovalPending
+}
+
+// SetApprovalStatus sets the approval property, allocating the map if needed.
+func (user *User) SetApprovalStatus(status string) {
+	if user.Properties == nil {
+		user.Properties = map[string]string{}
+	}
+	user.Properties[ApprovalStatusProperty] = status
+}
+
 func (user *User) CheckUserFace(faceIdImage []string, provider *Provider) (bool, error) {
 	faceIdChecker := faceId.GetFaceIdProvider(provider.Type, provider.ClientId, provider.ClientSecret, provider.Endpoint)
 	httpClient := proxy.DefaultHttpClient
