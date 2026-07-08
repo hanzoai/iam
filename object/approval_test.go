@@ -44,6 +44,51 @@ func TestIsApproved(t *testing.T) {
 	}
 }
 
+// TestApplyDefaultApprovalStatus is the guard-leak tripwire. AddUser is the ONE
+// common creation path; every self-service route (password / SSO / social / web3
+// wallet / email-code / OAuth token) flows through it. If a self-registering
+// end-user does NOT get stamped "pending" here, IsApproved fail-open treats them
+// as approved and they walk straight through the waitlist-guard (Red's finding).
+// Trusted/provisioned identities must stay approved so they are never waitlisted.
+func TestApplyDefaultApprovalStatus(t *testing.T) {
+	adm := conf.AdminOrg
+	cases := []struct {
+		name string
+		u    *User
+		want string // expected approvalStatus after applyDefaultApprovalStatus
+	}{
+		// GATED — the customer self-service routes must all land pending.
+		{"password/SSO self-signup (normal user)", &User{Owner: "hanzo", Name: "x", Type: "normal-user", RegisterType: "Application Signup"}, ApprovalPending},
+		{"web3 wallet signup", &User{Owner: "lux", Name: "w", Type: "normal-user", RegisterType: "Web3 Signup"}, ApprovalPending},
+		{"email-code signup, no register type", &User{Owner: "zoo", Name: "e", Type: "normal-user"}, ApprovalPending},
+		// EXEMPT — provisioned/trusted identities stay approved.
+		{"caller already decided approved (invited)", &User{Owner: "hanzo", Properties: map[string]string{ApprovalStatusProperty: ApprovalApproved}}, ApprovalApproved},
+		{"caller already decided pending is preserved", &User{Owner: "hanzo", Properties: map[string]string{ApprovalStatusProperty: ApprovalPending}}, ApprovalPending},
+		{"admin user", &User{Owner: "hanzo", IsAdmin: true}, ApprovalApproved},
+		{"admin-org user", &User{Owner: adm, Name: "z"}, ApprovalApproved},
+		{"service account", &User{Owner: "hanzo", Type: "service-account"}, ApprovalApproved},
+		{"LDAP-synced user", &User{Owner: "hanzo", Ldap: "ldap-server-1"}, ApprovalApproved},
+		{"admin-provisioned (Add User)", &User{Owner: "hanzo", RegisterType: "Add User"}, ApprovalApproved},
+		{"anonymous guest", &User{Owner: "hanzo", RegisterType: "Guest Signup"}, ApprovalApproved},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.u.applyDefaultApprovalStatus()
+			got := ""
+			if tc.u.Properties != nil {
+				got = tc.u.Properties[ApprovalStatusProperty]
+			}
+			if got != tc.want {
+				t.Fatalf("applyDefaultApprovalStatus -> %q; want %q", got, tc.want)
+			}
+			wantApproved := tc.want != ApprovalPending
+			if tc.u.IsApproved() != wantApproved {
+				t.Fatalf("IsApproved()=%v; want %v (status=%q)", tc.u.IsApproved(), wantApproved, got)
+			}
+		})
+	}
+}
+
 // TestSetApprovalStatus verifies the setter allocates the map and is a plain
 // upsert.
 func TestSetApprovalStatus(t *testing.T) {
