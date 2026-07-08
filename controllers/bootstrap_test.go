@@ -15,7 +15,58 @@ import (
 	"testing"
 
 	"github.com/alexedwards/argon2id"
+	"github.com/hanzoai/iam/conf"
 )
+
+// ptr is a tiny helper to build the *bool tri-state in table tests.
+func ptr(b bool) *bool { return &b }
+
+// TestResolveBootstrapSignUp locks the fail-secure contract for operator-driven
+// application provisioning (BootstrapApplicationUpsert):
+//
+//   - admin-org apps are NEVER self-signup-open, even when the caller explicitly
+//     asks for true — self-registration into the admin org mints a global admin
+//     (IsGlobalAdmin() == user.Owner == conf.AdminOrg). This is the P0 that let
+//     anyone reaching admin-console's signup URL become god.
+//   - non-admin orgs honor an explicit request verbatim, and default to true
+//     when unset (preserving the "freshly provisioned tenant app is immediately
+//     usable" contract for machine-driven onboarding).
+func TestResolveBootstrapSignUp(t *testing.T) {
+	adminOrg := conf.AdminOrg // "admin" by default at package init
+	cases := []struct {
+		name string
+		org  string
+		req  *bool
+		want bool
+	}{
+		{"admin org, unset -> closed", adminOrg, nil, false},
+		{"admin org, explicit true -> STILL closed (fail-secure)", adminOrg, ptr(true), false},
+		{"admin org, explicit false -> closed", adminOrg, ptr(false), false},
+		{"tenant org, unset -> open (provisioning default)", "hanzo", nil, true},
+		{"tenant org, explicit false -> closed (operator lock)", "hanzo", ptr(false), false},
+		{"tenant org, explicit true -> open", "hanzo", ptr(true), true},
+		{"other tenant, unset -> open", "lux", nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveBootstrapSignUp(tc.org, tc.req)
+			if got != tc.want {
+				t.Fatalf("resolveBootstrapSignUp(%q, %v) = %v; want %v", tc.org, tc.req, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveBootstrapSignUp_AdminOrgNeverOpens is the explicit anti-regression
+// guard for the escalation: no matter what the request carries, an admin-org app
+// resolves closed. If a future edit lets true through here, the P0 reopens.
+func TestResolveBootstrapSignUp_AdminOrgNeverOpens(t *testing.T) {
+	for _, req := range []*bool{nil, ptr(true), ptr(false)} {
+		if resolveBootstrapSignUp(conf.AdminOrg, req) {
+			t.Fatalf("admin-org app must never be signup-open (req=%v)", req)
+		}
+	}
+}
 
 // TestHashBootstrapPassword_DefaultArgon2id verifies that an empty
 // passwordType defaults to argon2id and produces a verifiable argon2id hash.
