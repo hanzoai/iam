@@ -91,6 +91,15 @@ func InitKMS() {
 	fmt.Printf("[KMS] loaded %d bootstrap secrets from env=%s\n", len(kmsSecretCache), client.Env())
 }
 
+// hasUnresolvedSecret reports whether s still contains a ${NAME} placeholder.
+// resolveSecrets leaves a placeholder untouched when its backing KMS/env secret
+// is missing, so a surviving match means the value was never resolved. Callers
+// that would otherwise persist s (e.g. hash it into a credential) use this to
+// fail closed rather than store the literal "${NAME}" string.
+func hasUnresolvedSecret(s string) bool {
+	return secretPattern.MatchString(s)
+}
+
 // resolveSecrets replaces ${SECRET_NAME} patterns in the input string with
 // values from the KMS secret cache, falling back to environment variables.
 // Unresolved placeholders are left as-is.
