@@ -653,6 +653,22 @@ func initDefinedUser(user *User) {
 
 	fmt.Printf("[init_data] user %s/%s NOT FOUND, creating with pwdType=%q, pwdLen=%d\n",
 		user.Owner, user.Name, user.PasswordType, len(user.Password))
+
+	// Fail closed on an unresolved ${SECRET} password. readInitDataFromFile runs
+	// resolveSecrets over the whole init_data before we get here, rewriting every
+	// ${NAME} from KMS/env; a surviving placeholder means the backing secret was
+	// missing at boot. Creating the user anyway would hash the literal "${NAME}"
+	// string into its credential — for a seeded superadmin (owner=admin) that is a
+	// silent backdoor whose password is the placeholder text. Skip instead: the
+	// account is simply not created until the secret is wired, and the gap is loud
+	// in the logs. Existing users already returned above, so this only guards
+	// first-time (fresh-DB) creation.
+	if hasUnresolvedSecret(user.Password) {
+		fmt.Printf("[init_data] user %s/%s SKIPPED: password references an unresolved ${SECRET} placeholder (KMS/env not wired) — refusing to create with a literal placeholder credential\n",
+			user.Owner, user.Name)
+		return
+	}
+
 	user.CreatedTime = util.GetCurrentTime()
 	if user.Id == "" {
 		user.Id = util.GenerateId()
