@@ -1357,33 +1357,6 @@ function LoginPage(props) {
     return (<div dangerouslySetInnerHTML={{__html: application.signinHtml}} />);
   }
 
-  // One-click federation: an authorize request carrying `?provider_hint=<provider>`
-  // (e.g. the console's "Continue with GitHub") advances straight to that upstream
-  // provider instead of rendering hanzo.id's password page. hanzo.id stays the
-  // broker — getAuthUrl points the provider's OAuth callback back here, so this is
-  // the SAME redirect the on-page provider button performs, minus the intermediate
-  // page. The hint matches a provider by name or type (`provider-github`, `github`,
-  // and `GitHub` all resolve); an unknown or disabled hint falls through to the
-  // normal login page rather than dead-ending.
-  const providerHint = new URLSearchParams(props.location?.search ?? "").get("provider_hint");
-  if (props.preview !== "auto" && providerHint) {
-    const hint = providerHint.trim().toLowerCase();
-    const hintedProviderItem = (application.providers ?? []).find(providerItem => {
-      if (!isProviderVisible(providerItem) || providerItem.provider?.category === "SAML") {return false;}
-      const name = (providerItem.provider?.name ?? "").toLowerCase();
-      const type = (providerItem.provider?.type ?? "").toLowerCase();
-      return name === hint || type === hint || name === `provider-${hint}`;
-    });
-    if (hintedProviderItem) {
-      Setting.goToLink(Provider.getAuthUrl(application, hintedProviderItem.provider, "signup"));
-      return (
-        <div className="flex items-center justify-center w-full min-h-[60vh]">
-          <Loader2 className="w-8 h-8 animate-spin text-white" />
-        </div>
-      );
-    }
-  }
-
   const visibleOAuthProviderItems = (application.providers === null) ? [] : application.providers.filter(providerItem => isProviderVisible(providerItem) && providerItem.provider?.category !== "SAML");
   if (props.preview !== "auto" && !Setting.isPasswordEnabled(application) && !Setting.isCodeSigninEnabled(application) && !Setting.isWebAuthnEnabled(application) && !Setting.isLdapEnabled(application) && visibleOAuthProviderItems.length === 1) {
     Setting.goToLink(Provider.getAuthUrl(application, visibleOAuthProviderItems[0].provider, "signup"));
