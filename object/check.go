@@ -16,9 +16,10 @@
 package object
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -513,11 +514,11 @@ func selectVerifyingRow(resolved *User, candidates []*User, verify func(*User) b
 	// Deterministic order (by owner, then name) so a colliding identity resolves
 	// to the same tenant row every time, regardless of map/engine iteration
 	// order. No admin-org preference — see the security note above.
-	sort.SliceStable(ordered, func(i, j int) bool {
-		if ordered[i].Owner != ordered[j].Owner {
-			return ordered[i].Owner < ordered[j].Owner
-		}
-		return ordered[i].Name < ordered[j].Name
+	slices.SortStableFunc(ordered, func(a, b *User) int {
+		return cmp.Or(
+			cmp.Compare(a.Owner, b.Owner),
+			cmp.Compare(a.Name, b.Name),
+		)
 	})
 
 	for _, u := range ordered {
