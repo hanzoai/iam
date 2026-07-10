@@ -6,10 +6,11 @@
 package cli
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"sort"
+	"slices"
 
 	"github.com/spf13/cobra"
 )
@@ -171,7 +172,7 @@ func ensureProviders(a *app, want []string) int {
 		added++
 	}
 	// Deterministic order for diff-stable output.
-	sort.Slice(a.Providers, func(i, j int) bool { return a.Providers[i].Name < a.Providers[j].Name })
+	slices.SortFunc(a.Providers, func(x, y providerItem) int { return cmp.Compare(x.Name, y.Name) })
 	return added
 }
 
@@ -191,7 +192,7 @@ func listOrgs(c *provClient, adminOrg string) ([]string, error) {
 			out = append(out, r.Name)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out, nil
 }
 
