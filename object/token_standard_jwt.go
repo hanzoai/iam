@@ -26,7 +26,9 @@ import (
 type ClaimsStandard struct {
 	*UserStandard
 	// Organization mirrors the embedded user's `owner` (see ClaimsShort).
-	Organization        string      `json:"organization,omitempty"`
+	Organization string `json:"organization,omitempty"`
+	// Project is the org's default project; see Claims.Project.
+	Project             string      `json:"project,omitempty"`
 	EmailVerified       bool        `json:"email_verified,omitempty"`
 	PhoneNumber         string      `json:"phone_number,omitempty"`
 	PhoneNumberVerified bool        `json:"phone_number_verified,omitempty"`
@@ -53,6 +55,7 @@ func getStandardClaims(claims Claims) ClaimsStandard {
 	res := ClaimsStandard{
 		UserStandard:     getStandardUser(claims.User),
 		Organization:     claims.User.Owner,
+		Project:          claims.Project,
 		EmailVerified:    claims.User.EmailVerified,
 		TokenType:        claims.TokenType,
 		Nonce:            claims.Nonce,
