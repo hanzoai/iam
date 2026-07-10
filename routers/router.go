@@ -77,6 +77,7 @@ func InitAPI() {
 	web.Router("/v1/iam/me/profile", &controllers.ApiController{}, "GET:GetMeProfile")
 	web.Router("/v1/iam/me/profile", &controllers.ApiController{}, "PUT:UpdateMeProfile")
 	web.Router("/v1/iam/me/avatar", &controllers.ApiController{}, "POST:UploadMeAvatar")
+	web.Router("/v1/iam/update-preferences", &controllers.ApiController{}, "POST:UpdatePreferences")
 	web.Router("/v1/iam/unlink", &controllers.ApiController{}, "POST:Unlink")
 	web.Router("/v1/iam/get-saml-login", &controllers.ApiController{}, "GET:GetSamlLogin")
 	web.Router("/v1/iam/acs", &controllers.ApiController{}, "POST:HandleSamlLogin")
