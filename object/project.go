@@ -68,6 +68,28 @@ func GetOrganizationProjects(organization string) ([]*Project, error) {
 	return projects, nil
 }
 
+// GetDefaultProject returns an organization's default project — the row whose
+// Organization matches and IsDefault is true — or nil when the org has none.
+// It is read at token-mint time to stamp the `project` claim, so it queries the
+// indexed Organization column and never falls back to a non-default project.
+func GetDefaultProject(organization string) (*Project, error) {
+	if organization == "" {
+		return nil, nil
+	}
+
+	project := Project{}
+	existed, err := ormer.Engine.Where("organization = ?", organization).And("is_default = ?", true).Get(&project)
+	if err != nil {
+		return nil, err
+	}
+
+	if existed {
+		return &project, nil
+	}
+
+	return nil, nil
+}
+
 func getProject(owner string, name string) (*Project, error) {
 	if owner == "" || name == "" {
 		return nil, nil
