@@ -24,7 +24,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -328,8 +328,8 @@ func GetWechatOfficialAccountQRCode(clientId string, clientSecret string, provid
 
 func VerifyWechatSignature(token string, nonce string, timestamp string, signature string) bool {
 	// verify the signature
-	tmpArr := sort.StringSlice{token, timestamp, nonce}
-	sort.Sort(tmpArr)
+	tmpArr := []string{token, timestamp, nonce}
+	slices.Sort(tmpArr)
 
 	tmpStr := ""
 	for _, str := range tmpArr {
