@@ -169,28 +169,37 @@ func resolveRegistrySigningKey() (*rsa.PrivateKey, error) {
 
 func isProductionRuntime() bool { return conf.IsProduction() }
 
-func init() {
-	key, err := resolveRegistrySigningKey()
-	if err == nil {
-		registrySigningKey = key
-		logs.Info("registry signing key loaded from configured secret source")
-		return
-	}
+// registrySigningKeyOnce guards the one-time resolution of registrySigningKey.
+var registrySigningKeyOnce sync.Once
 
-	requirePersistent := isProductionRuntime() || strings.EqualFold(strings.TrimSpace(os.Getenv("REGISTRY_REQUIRE_PERSISTENT_SIGNING_KEY")), "true")
-	if requirePersistent {
-		panic(fmt.Sprintf("failed to initialize registry signing key: %v", err))
-	}
+// EnsureRegistrySigningKey resolves the registry-token signing key exactly once
+// per process, lazily. The IAM server bootstrap calls it so a misconfigured
+// production runtime still fails fast at boot; every registry-token code path
+// calls it too. Because it is NOT a package init(), a process that merely LINKS
+// this controllers package without serving IAM — e.g. the hanzo control CLI,
+// which pulls the whole subsystem graph — never touches KMS, generates no key,
+// and emits no startup chatter. Resolution work happens only where it is used.
+func EnsureRegistrySigningKey() {
+	registrySigningKeyOnce.Do(func() {
+		key, err := resolveRegistrySigningKey()
+		if err == nil {
+			registrySigningKey = key
+			logs.Info("registry signing key loaded from configured secret source")
+			return
+		}
 
-	logs.Warn("failed to load persistent registry signing key: %v", err)
-	logs.Warn("generating ephemeral registry signing key for non-production runtime")
-	{
-		var err error
+		requirePersistent := isProductionRuntime() || strings.EqualFold(strings.TrimSpace(os.Getenv("REGISTRY_REQUIRE_PERSISTENT_SIGNING_KEY")), "true")
+		if requirePersistent {
+			panic(fmt.Sprintf("failed to initialize registry signing key: %v", err))
+		}
+
+		logs.Warn("failed to load persistent registry signing key: %v", err)
+		logs.Warn("generating ephemeral registry signing key for non-production runtime")
 		registrySigningKey, err = rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
 			panic(fmt.Sprintf("failed to generate registry signing key: %v", err))
 		}
-	}
+	})
 }
 
 // RegistryAccess represents a single access entry in a Docker registry token.
@@ -212,6 +221,7 @@ var (
 // `x5c` chain) the registry rejects the token as "signed by untrusted key",
 // even when the RSA signature verifies against the mounted cert.
 func registryKID() string {
+	EnsureRegistrySigningKey()
 	registrySigningKeyIDOnce.Do(func() {
 		if registrySigningKey != nil {
 			registrySigningKeyID = libtrustKeyID(&registrySigningKey.PublicKey)
@@ -268,6 +278,7 @@ type RegistryTokenResponse struct {
 // @Failure 401 Unauthorized
 // @router /v1/iam/registry/token [get]
 func (c *ApiController) GetRegistryToken() {
+	EnsureRegistrySigningKey()
 	service := c.GetString("service")
 	scope := c.GetString("scope")
 
@@ -396,6 +407,7 @@ func (c *ApiController) GetRegistryToken() {
 // @Success 200 {object} map[string]interface{}
 // @router /v1/iam/registry/jwks [get]
 func (c *ApiController) GetRegistryPublicKey() {
+	EnsureRegistrySigningKey()
 	pubKey := registrySigningKey.Public().(*rsa.PublicKey)
 
 	// Encode exponent as base64url big-endian bytes
