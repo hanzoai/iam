@@ -16,11 +16,11 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -64,7 +64,8 @@ func IsHostIntranet(ip string) bool {
 func ResolveDomainToIp(domain string) string {
 	ips, err := net.LookupIP(domain)
 	if err != nil {
-		if strings.Contains(err.Error(), "no such host") {
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
 			return "(empty)"
 		}
 
