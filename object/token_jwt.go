@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/hanzoai/beego/v2/core/logs"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/util"
 )
@@ -35,6 +36,11 @@ type Claims struct {
 	// the `azp` (Authorized Party) claim. Optional. See https://openid.net/specs/openid-connect-core-1_0.html#IDToken
 	Azp      string `json:"azp,omitempty"`
 	Provider string `json:"provider,omitempty"`
+	// Project is the caller's org DEFAULT project (the Project row with
+	// IsDefault=true for the user's org). The gateway mints X-Project-Id from it
+	// (empty ⟹ default scope ⟹ header omitted). Resolved once at mint time and
+	// threaded into every token format alongside `organization`.
+	Project string `json:"project,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -103,11 +109,13 @@ type ClaimsShort struct {
 	// claim name. `owner` is the canonical org claim (gateway → X-Org-Id); this
 	// alias lets consumers read either, identically across every token format.
 	Organization string `json:"organization,omitempty"`
-	TokenType    string `json:"tokenType,omitempty"`
-	Nonce        string `json:"nonce,omitempty"`
-	Scope        string `json:"scope,omitempty"`
-	Azp          string `json:"azp,omitempty"`
-	Provider     string `json:"provider,omitempty"`
+	// Project is the org's default project; see Claims.Project.
+	Project   string `json:"project,omitempty"`
+	TokenType string `json:"tokenType,omitempty"`
+	Nonce     string `json:"nonce,omitempty"`
+	Scope     string `json:"scope,omitempty"`
+	Azp       string `json:"azp,omitempty"`
+	Provider  string `json:"provider,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -126,12 +134,14 @@ type ClaimsWithoutThirdIdp struct {
 	*UserWithoutThirdIdp
 	// Organization mirrors the embedded user's `owner` (see ClaimsShort).
 	Organization string `json:"organization,omitempty"`
-	TokenType    string `json:"tokenType,omitempty"`
-	Nonce        string `json:"nonce,omitempty"`
-	Tag          string `json:"tag"`
-	Scope        string `json:"scope,omitempty"`
-	Azp          string `json:"azp,omitempty"`
-	Provider     string `json:"provider,omitempty"`
+	// Project is the org's default project; see Claims.Project.
+	Project   string `json:"project,omitempty"`
+	TokenType string `json:"tokenType,omitempty"`
+	Nonce     string `json:"nonce,omitempty"`
+	Tag       string `json:"tag"`
+	Scope     string `json:"scope,omitempty"`
+	Azp       string `json:"azp,omitempty"`
+	Provider  string `json:"provider,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -250,6 +260,7 @@ func getShortClaims(claims Claims) ClaimsShort {
 	res := ClaimsShort{
 		UserShort:        getShortUser(claims.User),
 		Organization:     claims.User.Owner,
+		Project:          claims.Project,
 		TokenType:        claims.TokenType,
 		Nonce:            claims.Nonce,
 		Scope:            claims.Scope,
@@ -265,6 +276,7 @@ func getClaimsWithoutThirdIdp(claims Claims) ClaimsWithoutThirdIdp {
 	res := ClaimsWithoutThirdIdp{
 		UserWithoutThirdIdp: getUserWithoutThirdIdp(claims.User),
 		Organization:        claims.User.Owner,
+		Project:             claims.Project,
 		TokenType:           claims.TokenType,
 		Nonce:               claims.Nonce,
 		Tag:                 claims.Tag,
@@ -348,6 +360,13 @@ func getClaimsCustom(claims Claims, tokenField []string, tokenAttributes []*JwtI
 	if claims.User != nil {
 		res["owner"] = claims.User.Owner
 		res["organization"] = claims.User.Owner
+	}
+
+	// Include the org's default project when set. Omitted when empty so the
+	// gateway's absent-⟹-default contract holds (mirrors the omitempty struct
+	// formats and matches how `owner`/`organization` ride here for JWT-Custom).
+	if claims.Project != "" {
+		res["project"] = claims.Project
 	}
 
 	// Always include azp if present (authorized party)
@@ -509,6 +528,17 @@ func generateJwtToken(application *Application, user *User, provider string, sig
 	name := util.GenerateId()
 	jti := util.GetId(application.Owner, name)
 
+	// Resolve the caller's org DEFAULT project for the `project` claim.
+	// Best-effort and non-fatal: a lookup failure omits the claim (the gateway
+	// then falls back to the default scope) rather than breaking token minting —
+	// auth availability wins. Empty for guest/null users with no org.
+	project := ""
+	if defaultProject, err := GetDefaultProject(user.Owner); err != nil {
+		logs.Warning("generateJwtToken: default project lookup for org %q failed: %v", user.Owner, err)
+	} else if defaultProject != nil {
+		project = defaultProject.Name
+	}
+
 	claims := Claims{
 		User:      user,
 		TokenType: "access-token",
@@ -518,6 +548,7 @@ func generateJwtToken(application *Application, user *User, provider string, sig
 		Scope:        scope,
 		Azp:          application.ClientId,
 		Provider:     provider,
+		Project:      project,
 		SigninMethod: signinMethod,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
