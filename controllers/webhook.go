@@ -112,7 +112,7 @@ func (c *ApiController) UpdateWebhook() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.UpdateWebhook(id, &webhook, c.IsGlobalAdmin(), c.GetAcceptLanguage()))
+	c.Data["json"] = wrapActionResponse(object.UpdateWebhook(id, &webhook, c.IsSuperAdmin(), c.GetAcceptLanguage()))
 	c.ServeJSON()
 }
 

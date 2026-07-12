@@ -30,17 +30,17 @@ func TestSuperadminRuleFor_DefaultBrand(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match for @hanzo.ai under default brand")
 	}
-	if !rule.GlobalAdmin {
-		t.Fatalf("expected GlobalAdmin=true, got %+v", rule)
+	if !rule.SuperAdmin {
+		t.Fatalf("expected SuperAdmin=true, got %+v", rule)
 	}
 	if rule.Org != AdminOrg {
 		t.Fatalf("expected Org=AdminOrg (%s), got %s", AdminOrg, rule.Org)
 	}
 }
 
-// TestSuperadminRuleFor_ParsNoGlobalAdmin checks the pars override:
+// TestSuperadminRuleFor_ParsNoSuperAdmin checks the pars override:
 // it must NOT confer global admin, only org membership in "pars".
-func TestSuperadminRuleFor_ParsNoGlobalAdmin(t *testing.T) {
+func TestSuperadminRuleFor_ParsNoSuperAdmin(t *testing.T) {
 	ReloadBrand()
 	t.Setenv("IAM_BRAND_FILE", "/nonexistent/brand.json")
 
@@ -48,7 +48,7 @@ func TestSuperadminRuleFor_ParsNoGlobalAdmin(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match for @pars.network")
 	}
-	if rule.GlobalAdmin {
+	if rule.SuperAdmin {
 		t.Fatalf("@pars.network must NOT be global admin: %+v", rule)
 	}
 	if rule.Org != "pars" {
@@ -66,8 +66,8 @@ func TestSuperadminRuleFor_CustomBrand(t *testing.T) {
 	  "name": "Liquid",
 	  "domain": "liquid.example",
 	  "superadminDomains": [
-	    {"domain": "liquid.example", "org": "admin", "globalAdmin": true},
-	    {"domain": "vendor.example", "org": "vendor", "globalAdmin": false}
+	    {"domain": "liquid.example", "org": "admin", "superAdmin": true},
+	    {"domain": "vendor.example", "org": "vendor", "superAdmin": false}
 	  ]
 	}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
@@ -78,12 +78,12 @@ func TestSuperadminRuleFor_CustomBrand(t *testing.T) {
 
 	// Custom brand domain → admin org + global admin.
 	r1, ok := SuperadminRuleFor("ceo@liquid.example")
-	if !ok || !r1.GlobalAdmin || r1.Org != AdminOrg {
+	if !ok || !r1.SuperAdmin || r1.Org != AdminOrg {
 		t.Fatalf("expected liquid.example=global admin, got ok=%v rule=%+v", ok, r1)
 	}
 	// Vendor → vendor org, NOT global admin.
 	r2, ok := SuperadminRuleFor("user@vendor.example")
-	if !ok || r2.GlobalAdmin || r2.Org != "vendor" {
+	if !ok || r2.SuperAdmin || r2.Org != "vendor" {
 		t.Fatalf("expected vendor.example=vendor-org no-global, got ok=%v rule=%+v", ok, r2)
 	}
 	// hanzo.ai is NOT in the custom brand — should not match.

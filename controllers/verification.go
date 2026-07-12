@@ -60,7 +60,7 @@ func (c *ApiController) GetVerifications() {
 	owner := c.Ctx.Input.Query("owner")
 	// For global admin with organizationName parameter, use it to filter
 	// For org admin, use their organization
-	if c.IsGlobalAdmin() && owner != "" {
+	if c.IsSuperAdmin() && owner != "" {
 		organization = owner
 	}
 

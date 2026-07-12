@@ -62,7 +62,7 @@ func defaultResolveTypeGuardCaller(c *ApiController) *object.User {
 // The check is intentionally strict: ONLY a user whose own Owner is
 // conf.AdminOrg may set Type=="application". IAM's semantics already
 // treat the entire bootstrap (AdminOrg) tenant as the global-admin
-// surface (see object/user.go::IsGlobalAdmin == "Owner == AdminOrg"),
+// surface (see object/user.go::IsSuperAdmin == "Owner == AdminOrg"),
 // so org membership IS the privilege. Tenant org admins (any non-
 // AdminOrg tenant) are rejected. Anonymous / unauthenticated callers
 // are rejected.

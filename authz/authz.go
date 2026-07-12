@@ -178,7 +178,7 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 			return false
 		}
 
-		if user.IsGlobalAdmin() {
+		if user.IsSuperAdmin() {
 			return true
 		}
 
@@ -193,12 +193,12 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 		// V5 (cross-tenant disclosure): a non-global admin's management access is
 		// pinned to its OWN organization. The global-admin org (conf.AdminOrg) is
 		// NOT special-cased readable here — only a real global admin (returned
-		// above by user.IsGlobalAdmin()) may read/enumerate it. The former
+		// above by user.IsSuperAdmin()) may read/enumerate it. The former
 		// `|| objOwner == conf.AdminOrg` branch let ANY org admin read the admin
 		// org: get-users?owner=admin leaked the 9-superuser roster (name, email,
 		// passwordSalt). Org self-management POSTs that legitimately target
 		// objOwner==AdminOrg (add/update/delete-organization) keep their own
-		// Casbin grants + handler-level IsGlobalAdmin guards; this removes only
+		// Casbin grants + handler-level IsSuperAdmin guards; this removes only
 		// the blanket admin-org access.
 		if isAdmin && subOwner == objOwner {
 			return true

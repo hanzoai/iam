@@ -18,7 +18,7 @@
 // service-account HTTP surface.
 //
 // The app-credential branch of authorizeServiceAccountAdmin returns BEFORE any
-// DB/session access (like app_not_global_admin_test.go's R-1 bridge), so it is
+// DB/session access (like app_not_super_admin_test.go's R-1 bridge), so it is
 // pure: an app principal is authorized to provision service accounts ONLY when
 // allowlisted for CapKeyMint. Everything else (empty allowlist, unlisted app,
 // anonymous) is denied. The human branch needs a live user store and is covered

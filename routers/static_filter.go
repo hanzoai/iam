@@ -82,8 +82,8 @@ func isAdminUIPath(urlPath string) bool {
 
 // isNonAdminSession reports whether the request carries a logged-in user
 // session that is NOT a global admin. It defers entirely to the canonical
-// admin definition (object.User.IsGlobalAdmin == "Owner == conf.AdminOrg"),
-// mirroring controllers.ApiController.isGlobalAdmin: app/* principals and
+// admin definition (object.User.IsSuperAdmin == "Owner == conf.AdminOrg"),
+// mirroring controllers.ApiController.isSuperAdmin: app/* principals and
 // AdminOrg members are admins; everyone else with a session is a tenant.
 // Anonymous requests (no session user) are NOT treated as non-admin — they
 // fall through to the SPA so the login page can mount.
@@ -105,7 +105,7 @@ func isNonAdminSession(ctx *context.Context) bool {
 		// admin shell). The API surface enforces its own checks anyway.
 		return true
 	}
-	return !user.IsGlobalAdmin()
+	return !user.IsSuperAdmin()
 }
 
 func fastAutoSignin(ctx *context.Context) (string, error) {
@@ -253,7 +253,7 @@ func StaticFilter(ctx *context.Context) {
 	// that hands out index.html: a logged-in non-global-admin requesting an
 	// admin-UI path is redirected to its own account console (/account).
 	// Anonymous users fall through to the SPA (login). This is a UI-surface
-	// guard only — the /v1/iam/* API keeps its own IsGlobalAdmin checks.
+	// guard only — the /v1/iam/* API keeps its own IsSuperAdmin checks.
 	if isAdminUIPath(urlPath) && isNonAdminSession(ctx) {
 		http.Redirect(ctx.ResponseWriter, ctx.Request, "/account", http.StatusFound)
 		return

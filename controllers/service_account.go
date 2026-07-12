@@ -153,7 +153,7 @@ func serviceAccountHumanAdminAllowed(u *object.User, org string) bool {
 	if u == nil {
 		return false
 	}
-	if u.IsGlobalAdmin() {
+	if u.IsSuperAdmin() {
 		return true
 	}
 	return u.IsAdmin && u.Owner == org

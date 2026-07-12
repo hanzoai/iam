@@ -17,7 +17,7 @@
 // Privilege-escalation regression suite (Red findings H-3, H-4, H-5).
 //
 // THREAT MODEL: one IAM instance, many orgs. Global-admin authority is
-// membership in conf.AdminOrg (the isGlobalAdmin field is unused here). An identity
+// membership in conf.AdminOrg (the isSuperAdmin field is unused here). An identity
 // may exist as TWO rows — e.g. hanzo/a (tenant, argon2id) and admin/a
 // (global-admin, bcrypt). App logins, secret reveals, and user mutations MUST
 // resolve within the requesting context and NEVER silently confer global-admin.
@@ -125,60 +125,60 @@ func TestIsApplicationAdmin_OwningAndGlobalStillReveal(t *testing.T) {
 
 func TestCanMutatePrivilegedUserFields_NonGlobalCannotEscalate(t *testing.T) {
 	cases := []struct {
-		name          string
-		old           *User
-		new           *User
-		oldIsAdmin    bool
-		isGlobalAdmin bool
-		want          bool
+		name         string
+		old          *User
+		new          *User
+		oldIsAdmin   bool
+		isSuperAdmin bool
+		want         bool
 	}{
 		{
 			name:       "self-grant admin is refused",
 			old:        &User{Owner: "hanzo", Name: "a", IsAdmin: false},
 			new:        &User{Owner: "hanzo", Name: "a", IsAdmin: true},
-			oldIsAdmin: false, isGlobalAdmin: false, want: false,
+			oldIsAdmin: false, isSuperAdmin: false, want: false,
 		},
 		{
 			name:       "self-move to admin org is refused",
 			old:        &User{Owner: "hanzo", Name: "a", IsAdmin: false},
 			new:        &User{Owner: conf.AdminOrg, Name: "a", IsAdmin: false},
-			oldIsAdmin: false, isGlobalAdmin: false, want: false,
+			oldIsAdmin: false, isSuperAdmin: false, want: false,
 		},
 		{
 			name:       "org-admin granting admin to another user is refused",
 			old:        &User{Owner: "hanzo", Name: "bob", IsAdmin: false},
 			new:        &User{Owner: "hanzo", Name: "bob", IsAdmin: true},
-			oldIsAdmin: false, isGlobalAdmin: false, want: false,
+			oldIsAdmin: false, isSuperAdmin: false, want: false,
 		},
 		{
 			name:       "benign self edit (no owner/admin change) is allowed",
 			old:        &User{Owner: "hanzo", Name: "a", IsAdmin: false, DisplayName: "A"},
 			new:        &User{Owner: "hanzo", Name: "a", IsAdmin: false, DisplayName: "Alice"},
-			oldIsAdmin: false, isGlobalAdmin: false, want: true,
+			oldIsAdmin: false, isSuperAdmin: false, want: true,
 		},
 		{
 			name:       "existing admin keeping admin (no grant) is allowed",
 			old:        &User{Owner: "hanzo", Name: "a", IsAdmin: true},
 			new:        &User{Owner: "hanzo", Name: "a", IsAdmin: true},
-			oldIsAdmin: true, isGlobalAdmin: false, want: true,
+			oldIsAdmin: true, isSuperAdmin: false, want: true,
 		},
 		{
 			name:       "global admin may grant admin",
 			old:        &User{Owner: "hanzo", Name: "a", IsAdmin: false},
 			new:        &User{Owner: "hanzo", Name: "a", IsAdmin: true},
-			oldIsAdmin: false, isGlobalAdmin: true, want: true,
+			oldIsAdmin: false, isSuperAdmin: true, want: true,
 		},
 		{
 			name:       "global admin may move user between orgs",
 			old:        &User{Owner: "hanzo", Name: "a", IsAdmin: false},
 			new:        &User{Owner: conf.AdminOrg, Name: "a", IsAdmin: true},
-			oldIsAdmin: false, isGlobalAdmin: true, want: true,
+			oldIsAdmin: false, isSuperAdmin: true, want: true,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := canMutatePrivilegedUserFields(tc.old, tc.new, tc.oldIsAdmin, tc.isGlobalAdmin)
+			got := canMutatePrivilegedUserFields(tc.old, tc.new, tc.oldIsAdmin, tc.isSuperAdmin)
 			if got != tc.want {
 				t.Fatalf("canMutatePrivilegedUserFields = %v, want %v", got, tc.want)
 			}

@@ -17,7 +17,7 @@
 // A confidential-client principal — "app/<name>", minted by the
 // client_credentials grant (routers/base.go getUsernameByClientIdSecret) — was
 // historically treated as a blanket global admin (controllers/base.go
-// isGlobalAdmin, object/check.go CheckUserPermission, authz/authz.go IsAllowed
+// isSuperAdmin, object/check.go CheckUserPermission, authz/authz.go IsAllowed
 // all short-circuit on IsAppUser/subOwner=="app"). That let ANY registered
 // confidential client (kms, gateway, any SDK clientId+secret) perform
 // global-admin-gated mutations — reset/overwrite ANY user's password, flip
@@ -34,7 +34,7 @@
 //
 // Human principals are NOT governed by this gate — they keep being authorized
 // by the per-endpoint checks (self / org IsAdmin / real global-admin USER via
-// User.IsGlobalAdmin()). This function concerns app credentials only.
+// User.IsSuperAdmin()). This function concerns app credentials only.
 
 package object
 
@@ -89,7 +89,7 @@ var (
 	// IAM_CERT_ADMIN_APPS. Deliberately EMPTY/unset in every environment
 	// (fail-secure deny-all): NO confidential client should ever touch signing
 	// material via an app credential — cert rotation is a real-global-admin USER
-	// (human, User.IsGlobalAdmin()) operation, and that human path is unaffected
+	// (human, User.IsSuperAdmin()) operation, and that human path is unaffected
 	// by this gate.
 	CapCertAdmin = AppAdminCapability{Name: "cert", EnvVar: "IAM_CERT_ADMIN_APPS"}
 
