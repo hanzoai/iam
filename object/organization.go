@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/hanzoai/beego/v2/core/logs"
 	"github.com/hanzoai/builder"
 	"github.com/hanzoai/iam/conf"
 	"github.com/hanzoai/iam/cred"
@@ -371,6 +372,14 @@ func AddOrganization(organization *Organization) (bool, error) {
 		return false, err
 	}
 
+	// Seed the org's default project so the `project` claim resolves from
+	// creation. Best-effort: a seed hiccup must never fail org creation — the
+	// boot backfill guarantees it, and an absent claim just means the default
+	// (soft) scope until then.
+	if _, err := EnsureDefaultProject(organization.Name); err != nil {
+		logs.Warning("AddOrganization: seed default project for %q failed (backfill will retry): %v", organization.Name, err)
+	}
+
 	return affected != 0, nil
 }
 
@@ -421,6 +430,14 @@ func CreatePersonalOrganization(username, displayName string) (*Organization, er
 
 	if err := session.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Seed the org's default project so the `project` claim resolves from the
+	// user's first token. Best-effort: never fail signup on a seed hiccup — the
+	// boot backfill guarantees it, and an absent claim just means the default
+	// (soft) scope until then.
+	if _, err := EnsureDefaultProject(username); err != nil {
+		logs.Warning("CreatePersonalOrganization: seed default project for %q failed (backfill will retry): %v", username, err)
 	}
 
 	return org, nil

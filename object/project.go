@@ -90,6 +90,87 @@ func GetDefaultProject(organization string) (*Project, error) {
 	return nil, nil
 }
 
+// DefaultProjectName is the canonical name of an organization's default
+// project. cloud's principal.IsDefaultProject treats an absent / "" / "default"
+// project claim as the ONE default scope and keeps keys un-suffixed; any OTHER
+// name is minted as a real NAMED claim and — once caps are seeded — hard-402
+// enforced. So this name is load-bearing: every org's seeded default MUST use it
+// verbatim to keep the principal SOFT until someone creates a NAMED project.
+const DefaultProjectName = "default"
+
+// newDefaultProject builds an organization's default project. Owner AND
+// Organization are BOTH the org slug: the `project` claim resolves on the
+// Organization column (GetDefaultProject) while CRUD lists by the Owner PK
+// (GetProjects) — they must not diverge. IsDefault marks it the token-mint
+// target for GetDefaultProject.
+func newDefaultProject(organization string) *Project {
+	return &Project{
+		Owner:        organization,
+		Name:         DefaultProjectName,
+		CreatedTime:  util.GetCurrentTime(),
+		DisplayName:  "Default",
+		Organization: organization,
+		IsDefault:    true,
+	}
+}
+
+// EnsureDefaultProject seeds an organization's default project when it lacks
+// one. It is the ONE way an org gets its default project — composed into every
+// org-creation path and the boot backfill. Idempotent and live-safe: it ADDS a
+// row only when the org has neither an IsDefault project nor a "default"-named
+// project (which would collide on the (Owner, Name) PK); it NEVER modifies an
+// existing project. Returns whether it created a row.
+func EnsureDefaultProject(organization string) (bool, error) {
+	if organization == "" {
+		return false, nil
+	}
+
+	existing, err := GetDefaultProject(organization)
+	if err != nil {
+		return false, err
+	}
+	if existing != nil {
+		return false, nil
+	}
+
+	named, err := getProject(organization, DefaultProjectName)
+	if err != nil {
+		return false, err
+	}
+	if named != nil {
+		return false, nil
+	}
+
+	return AddProject(newDefaultProject(organization))
+}
+
+// BackfillDefaultProjects seeds a default project for every organization that
+// lacks one. One-shot, idempotent and live-safe — safe to run on every boot:
+// orgs already carrying a default (or "default"-named) project are skipped and
+// no existing project is ever touched. Returns the number of projects created.
+func BackfillDefaultProjects() (int, error) {
+	organizations := []*Organization{}
+	if err := ormer.Engine.Find(&organizations); err != nil {
+		return 0, err
+	}
+
+	created := 0
+	for _, org := range organizations {
+		added, err := EnsureDefaultProject(org.Name)
+		if err != nil {
+			return created, fmt.Errorf("backfill default project for org %q: %w", org.Name, err)
+		}
+		if added {
+			created++
+		}
+	}
+
+	if created > 0 {
+		fmt.Printf("[backfill-default-project] created=%d\n", created)
+	}
+	return created, nil
+}
+
 func getProject(owner string, name string) (*Project, error) {
 	if owner == "" || name == "" {
 		return nil, nil
