@@ -1468,8 +1468,8 @@ func DeviceApprovalCrossTenantError(user *User, deviceApp *Application) error {
 	// global-admin means, and it is precisely the account operators use to sign
 	// a CLI into any brand's app. This is NOT the same as the org-scoped
 	// same-named superuser (e.g. zoo's "z") the guard blocks: that user is in a
-	// TENANT org, IsGlobalAdmin() is false for it, and it stays refused below.
-	if user.IsGlobalAdmin() {
+	// TENANT org, IsSuperAdmin() is false for it, and it stays refused below.
+	if user.IsSuperAdmin() {
 		return nil
 	}
 	if user.Owner != deviceApp.Organization {

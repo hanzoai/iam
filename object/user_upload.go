@@ -99,7 +99,7 @@ func UploadUsers(owner string, path string, userObj *User, lang string) (bool, e
 	}
 
 	organizationName := uploadedUsers[0].Owner
-	if organizationName == "" || !userObj.IsGlobalAdmin() {
+	if organizationName == "" || !userObj.IsSuperAdmin() {
 		organizationName = owner
 	}
 

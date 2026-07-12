@@ -22,7 +22,7 @@ import (
 
 // TestGetUserByFields_ResolvesUserInAppOrg is the end-to-end proof of the
 // operator-panel fix. The same username lives in BOTH the global-admin org
-// (admin/z, the isGlobalAdmin identity) and a tenant org (hanzo/z). The login
+// (admin/z, the isSuperAdmin identity) and a tenant org (hanzo/z). The login
 // user is resolved in the org the login TARGETS — the resolved application's
 // organization, which controllers/auth.go now passes via loginOrgForApp:
 //

@@ -371,7 +371,7 @@ func (c *ApiController) UploadResource() {
 		// object.UpdateApplication's reserved-app + org-scope invariants apply —
 		// a non-global admin can no longer set TermsOfUse on a platform app
 		// (e.g. admin/hanzo-console's consent page) via an upload-resource path.
-		_, err = object.UpdateApplication(applicationId, applicationObj, c.IsGlobalAdmin(), c.GetAcceptLanguage())
+		_, err = object.UpdateApplication(applicationId, applicationObj, c.IsSuperAdmin(), c.GetAcceptLanguage())
 		if err != nil {
 			c.ResponseError(err.Error())
 			return

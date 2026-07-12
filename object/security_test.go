@@ -58,12 +58,12 @@ func TestValidPasswordTypesPassThrough(t *testing.T) {
 	}
 }
 
-// TestAdminOrgIsGlobalAdmin verifies that only users in conf.AdminOrg are
+// TestAdminOrgIsSuperAdmin verifies that only users in conf.AdminOrg are
 // treated as global admins. Users in customer-facing orgs (hanzo, lux, zoo,
 // etc.) must never get global admin privileges regardless of IsAdmin.
-func TestAdminOrgIsGlobalAdmin(t *testing.T) {
+func TestAdminOrgIsSuperAdmin(t *testing.T) {
 	root := &User{Owner: conf.AdminOrg, Name: conf.AdminUser, IsAdmin: true}
-	if !root.IsGlobalAdmin() {
+	if !root.IsSuperAdmin() {
 		t.Fatal("admin org user must be global admin")
 	}
 
@@ -73,16 +73,16 @@ func TestAdminOrgIsGlobalAdmin(t *testing.T) {
 			continue
 		}
 		u := &User{Owner: org, Name: "test-user", IsAdmin: true}
-		if u.IsGlobalAdmin() {
+		if u.IsSuperAdmin() {
 			t.Fatalf("user in org %q must NOT be global admin (IsAdmin=true is org-scoped)", org)
 		}
 	}
 }
 
-// TestNilUserIsNotGlobalAdmin verifies that nil user check is safe.
-func TestNilUserIsNotGlobalAdmin(t *testing.T) {
+// TestNilUserIsNotSuperAdmin verifies that nil user check is safe.
+func TestNilUserIsNotSuperAdmin(t *testing.T) {
 	var user *User
-	if user.IsGlobalAdmin() {
+	if user.IsSuperAdmin() {
 		t.Fatal("nil user must not be global admin")
 	}
 }

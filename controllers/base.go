@@ -46,16 +46,9 @@ type SessionData struct {
 // IsSuperAdmin reports whether the request's session principal is a Hanzo super
 // admin (a member of conf.AdminOrg). This is the CANONICAL name for the gate.
 func (c *ApiController) IsSuperAdmin() bool {
-	isSuperAdmin, _ := c.isGlobalAdmin()
+	isSuperAdmin, _ := c.isSuperAdmin()
 
 	return isSuperAdmin
-}
-
-// IsGlobalAdmin is the DEPRECATED alias of IsSuperAdmin, kept so existing call
-// sites keep compiling during the SuperAdmin rename. New code MUST call
-// IsSuperAdmin. It delegates — one derivation, one truth.
-func (c *ApiController) IsGlobalAdmin() bool {
-	return c.IsSuperAdmin()
 }
 
 // appMutationAllowed decides whether the caller may create / modify / delete
@@ -76,7 +69,7 @@ func (c *ApiController) IsGlobalAdmin() bool {
 //     OAuth-client takeover.
 //   - otherwise: the caller must be an ADMIN of the app's OWN organization.
 func (c *ApiController) appMutationAllowed(app *object.Application) bool {
-	if c.IsGlobalAdmin() {
+	if c.IsSuperAdmin() {
 		return true
 	}
 	if object.IsAppUser(c.GetSessionUsername()) {
@@ -93,17 +86,17 @@ func (c *ApiController) appMutationAllowed(app *object.Application) bool {
 }
 
 func (c *ApiController) IsAdmin() bool {
-	isGlobalAdmin, user := c.isGlobalAdmin()
-	if !isGlobalAdmin && user == nil {
+	isSuperAdmin, user := c.isSuperAdmin()
+	if !isSuperAdmin && user == nil {
 		return false
 	}
 
-	return isGlobalAdmin || user.IsAdmin
+	return isSuperAdmin || user.IsAdmin
 }
 
 func (c *ApiController) IsAdminOrSelf(user2 *object.User) bool {
-	isGlobalAdmin, user := c.isGlobalAdmin()
-	if isGlobalAdmin || (user != nil && user.IsAdmin) {
+	isSuperAdmin, user := c.isSuperAdmin()
+	if isSuperAdmin || (user != nil && user.IsAdmin) {
 		return true
 	}
 
@@ -117,7 +110,7 @@ func (c *ApiController) IsAdminOrSelf(user2 *object.User) bool {
 	return false
 }
 
-func (c *ApiController) isGlobalAdmin() (bool, *object.User) {
+func (c *ApiController) isSuperAdmin() (bool, *object.User) {
 	username := c.GetSessionUsername()
 	if object.IsAppUser(username) {
 		// SECURITY (Red R-1): an app/<name> (M2M client_credentials) principal is
@@ -136,7 +129,7 @@ func (c *ApiController) isGlobalAdmin() (bool, *object.User) {
 		return false, nil
 	}
 
-	return user.IsGlobalAdmin(), user
+	return user.IsSuperAdmin(), user
 }
 
 func (c *ApiController) getCurrentUser() *object.User {

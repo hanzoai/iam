@@ -26,7 +26,7 @@ func ptr(b bool) *bool { return &b }
 //
 //   - admin-org apps are NEVER self-signup-open, even when the caller explicitly
 //     asks for true — self-registration into the admin org mints a global admin
-//     (IsGlobalAdmin() == user.Owner == conf.AdminOrg). This is the P0 that let
+//     (IsSuperAdmin() == user.Owner == conf.AdminOrg). This is the P0 that let
 //     anyone reaching admin-console's signup URL become god.
 //   - non-admin orgs honor an explicit request verbatim, and default to true
 //     when unset (preserving the "freshly provisioned tenant app is immediately
