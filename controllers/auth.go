@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"github.com/beego/beego/logs"
 	"io"
 	"net/http"
 	"net/url"
@@ -81,6 +82,16 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
 	userId := user.GetId()
 
 	clientIp := util.GetClientIpFromRequest(c.Ctx.Request)
+	// Abuse forensics: persist WHERE each signin came from. The column existed but
+	// nothing wrote it, so lastSigninIp was always "" — a bot farm reusing one host
+	// looked identical to real founders. Best-effort: never fail a valid login on a
+	// bookkeeping write.
+	if user != nil && clientIp != "" && user.LastSigninIp != clientIp {
+		user.LastSigninIp = clientIp
+		if _, updErr := object.UpdateUser(user.GetId(), user, []string{"last_signin_ip"}, true); updErr != nil {
+			logs.Warning("failed to record last_signin_ip for %s: %v", user.GetId(), updErr)
+		}
+	}
 	err := object.CheckEntryIp(clientIp, user, application, application.OrganizationObj, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
