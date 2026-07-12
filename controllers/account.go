@@ -268,8 +268,18 @@ func (c *ApiController) Signup() {
 		return
 	}
 
+	// Tenancy: on a PLATFORM org (SignupCreatesTenant) the founder gets their OWN org,
+	// parented to the platform. Commerce namespaces by org and the balance gate reads
+	// the user's org, so without this every signup lived in "hanzo" and a brand-new $0
+	// account read HANZO's balance — we enforced our own wallet instead of theirs.
+	signupOrg, err := object.TenantOrgForSignup(authForm.Organization, username)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
 	user := &object.User{
-		Owner:             authForm.Organization,
+		Owner:             signupOrg,
 		Name:              username,
 		CreatedTime:       util.GetCurrentTime(),
 		Id:                id,

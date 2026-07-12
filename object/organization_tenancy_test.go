@@ -152,3 +152,89 @@ func TestCheckOrgParent_RejectsCycleAndSelf(t *testing.T) {
 		t.Fatalf("empty parent (top-level tenant) must be allowed: %v", err)
 	}
 }
+
+// withUserSubtree fakes both seams the login resolver reads: the ancestry graph and
+// the per-tenant user lookup.
+func withUserSubtree(t *testing.T, parents map[string]string, usersByOrg map[string]*User) {
+	t.Helper()
+	withOrgGraph(t, parents)
+
+	prevExact := getUserByFieldsFn
+	getUserByFieldsFn = func(org, field string) (*User, error) {
+		u := usersByOrg[org]
+		if u != nil && (u.Name == field || u.Email == field) {
+			return u, nil
+		}
+		return nil, nil
+	}
+	prev := findUsersUnderOrgFn
+	findUsersUnderOrgFn = func(appOrg, field string) ([]*User, error) {
+		out := []*User{}
+		for org, u := range usersByOrg {
+			if org == appOrg || u == nil {
+				continue
+			}
+			if u.Name == field || u.Email == field {
+				out = append(out, u)
+			}
+		}
+		return out, nil
+	}
+	t.Cleanup(func() { findUsersUnderOrgFn, getUserByFieldsFn = prev, prevExact })
+}
+
+func TestGetUserForLogin_FindsFounderInOwnTenant(t *testing.T) {
+	// The founder signed up against the platform's app but lives in their own org.
+	founder := &User{Owner: "acme", Name: "root", Email: "root@acme.test"}
+	withUserSubtree(t, map[string]string{"acme": "hanzo"}, map[string]*User{"acme": founder})
+
+	got, err := GetUserForLogin("hanzo", "root@acme.test")
+	if err != nil {
+		t.Fatalf("GetUserForLogin: %v", err)
+	}
+	if got == nil || got.Owner != "acme" {
+		t.Fatalf("GetUserForLogin = %v, want the founder in tenant acme", got)
+	}
+}
+
+func TestGetUserForLogin_RefusesUserOutsideTheSubtree(t *testing.T) {
+	// A user in an unrelated org must NEVER authenticate against this app, even though
+	// the identifier matches — that would be cross-tenant authentication.
+	stranger := &User{Owner: "other", Name: "root", Email: "root@other.test"}
+	withUserSubtree(t, map[string]string{"acme": "hanzo"}, map[string]*User{"other": stranger})
+
+	got, err := GetUserForLogin("hanzo", "root@other.test")
+	if err != nil {
+		t.Fatalf("GetUserForLogin: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("resolved %v from OUTSIDE the app org's subtree", got)
+	}
+}
+
+func TestGetUserForLogin_RefusesAmbiguousIdentityAcrossTenants(t *testing.T) {
+	// Two tenants under the same platform share an identifier. Picking one arbitrarily
+	// would let whoever signed up second shadow the first, so refuse.
+	a := &User{Owner: "acme", Name: "root", Email: "root@shared.test"}
+	b := &User{Owner: "beta", Name: "root", Email: "root@shared.test"}
+	withUserSubtree(t, map[string]string{"acme": "hanzo", "beta": "hanzo"},
+		map[string]*User{"acme": a, "beta": b})
+
+	if _, err := GetUserForLogin("hanzo", "root@shared.test"); err == nil {
+		t.Fatal("an identifier shared by two tenants must be refused, not resolved")
+	}
+}
+
+func TestSlugForTenant(t *testing.T) {
+	cases := map[string]string{
+		"Founder@Acme.io": "founder",
+		"jane.doe":        "jane-doe",
+		"  ACME  ":        "acme",
+		"@@@":             "",
+	}
+	for in, want := range cases {
+		if got := slugForTenant(in); got != want {
+			t.Errorf("slugForTenant(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
