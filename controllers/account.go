@@ -293,13 +293,19 @@ func (c *ApiController) Signup() {
 		IsForbidden:       false,
 		IsDeleted:         false,
 		SignupApplication: application.Name,
-		Properties:        map[string]string{},
-		Karma:             0,
-		Invitation:        invitationName,
-		InvitationCode:    authForm.InvitationCode,
-		EmailVerified:     userEmailVerified,
-		RegisterType:      "Application Signup",
-		RegisterSource:    fmt.Sprintf("%s/%s", authForm.Organization, application.Name),
+		// Abuse forensics: record the origin of every signup. The field existed on
+		// the model but nothing ever populated it, so every account had createdIp=""
+		// — no way to spot a bot farm minting accounts (and, with the welcome credit,
+		// minting money). Behind CF+ingress the real client is in X-Forwarded-For,
+		// which util.GetClientIp already prefers.
+		CreatedIp:      util.GetClientIpFromRequest(c.Ctx.Request),
+		Properties:     map[string]string{},
+		Karma:          0,
+		Invitation:     invitationName,
+		InvitationCode: authForm.InvitationCode,
+		EmailVerified:  userEmailVerified,
+		RegisterType:   "Application Signup",
+		RegisterSource: fmt.Sprintf("%s/%s", authForm.Organization, application.Name),
 	}
 
 	if len(organization.Tags) > 0 {
