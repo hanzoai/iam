@@ -722,7 +722,7 @@ func GetMaskedApplication(application *Application, userId string) *Application 
 
 	isOrgUser := false
 	if userId != "" {
-		if isUserIdGlobalAdmin(userId) {
+		if isUserIdSuperAdmin(userId) {
 			return application
 		}
 
@@ -797,7 +797,7 @@ func GetMaskedApplication(application *Application, userId string) *Application 
 }
 
 func GetMaskedApplications(applications []*Application, userId string) []*Application {
-	if isUserIdGlobalAdmin(userId) {
+	if isUserIdSuperAdmin(userId) {
 		return applications
 	}
 
@@ -812,7 +812,7 @@ func GetAllowedApplications(applications []*Application, userId string, lang str
 		return nil, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 
-	if isUserIdGlobalAdmin(userId) {
+	if isUserIdSuperAdmin(userId) {
 		return applications, nil
 	}
 
@@ -826,7 +826,7 @@ func GetAllowedApplications(applications []*Application, userId string, lang str
 
 	if user.IsAdmin {
 		// V5/N2 (cross-tenant disclosure): an ORG admin is NOT a global admin
-		// (that case returned above via isUserIdGlobalAdmin). It may see only
+		// (that case returned above via isUserIdSuperAdmin). It may see only
 		// applications in its OWN organization (+ is_shared platform apps) —
 		// never another tenant's apps, incl the per-user app-<email> seeds.
 		res := []*Application{}
@@ -893,7 +893,7 @@ func validateAppName(app *Application) error {
 	return nil
 }
 
-func UpdateApplication(id string, application *Application, isGlobalAdmin bool, lang string) (bool, error) {
+func UpdateApplication(id string, application *Application, isSuperAdmin bool, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
 		return false, err
@@ -903,7 +903,7 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 		return false, err
 	}
 
-	if !isGlobalAdmin && oldApplication.Organization != application.Organization {
+	if !isSuperAdmin && oldApplication.Organization != application.Organization {
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 
@@ -913,7 +913,7 @@ func UpdateApplication(id string, application *Application, isGlobalAdmin bool, 
 	// enforced at the DATA layer so EVERY caller is uniformly protected — the
 	// controller, mcpself, resource.go's termsOfUse writer, and any future one.
 	// Guards both the persisted identity and the requested new name.
-	if !isGlobalAdmin && (AppNameIsCapabilityReserved(oldApplication.Name) || AppNameIsCapabilityReserved(application.Name)) {
+	if !isSuperAdmin && (AppNameIsCapabilityReserved(oldApplication.Name) || AppNameIsCapabilityReserved(application.Name)) {
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 
@@ -1078,7 +1078,7 @@ func deleteApplication(application *Application) (bool, error) {
 	return affected != 0, nil
 }
 
-func DeleteApplication(application *Application, isGlobalAdmin bool) (bool, error) {
+func DeleteApplication(application *Application, isSuperAdmin bool) (bool, error) {
 	if application.Name == "hanzo-app" {
 		return false, nil
 	}
@@ -1087,7 +1087,7 @@ func DeleteApplication(application *Application, isGlobalAdmin bool) (bool, erro
 	// platform login/capability app may ONLY be deleted by a global admin,
 	// enforced at the DATA layer so every caller (controller, mcpself, ...) is
 	// uniformly protected against deleting e.g. admin/hanzo-console (auth DoS).
-	if !isGlobalAdmin && AppNameIsCapabilityReserved(application.Name) {
+	if !isSuperAdmin && AppNameIsCapabilityReserved(application.Name) {
 		return false, fmt.Errorf("Unauthorized operation")
 	}
 

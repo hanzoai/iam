@@ -48,14 +48,14 @@ func TestSelectVerifyingRow_PrefersOtherOrgWhenResolvedFails(t *testing.T) {
 	}
 }
 
-// TestSelectVerifyingRow_ExcludesGlobalAdminAmongVerifiers is the H-3 fix
+// TestSelectVerifyingRow_ExcludesSuperAdminAmongVerifiers is the H-3 fix
 // (this test previously asserted the VULNERABLE behavior — that the global-admin
 // org "wins" a collision). When several rows verify INCLUDING the global-admin
 // row, the admin row must NOT be selected: an org-agnostic collision must never
 // silently escalate a tenant login to a global-admin session. Resolution lands
 // on the deterministic non-admin tenant row. Global-admin login requires an
 // explicit organization == conf.AdminOrg instead.
-func TestSelectVerifyingRow_ExcludesGlobalAdminAmongVerifiers(t *testing.T) {
+func TestSelectVerifyingRow_ExcludesSuperAdminAmongVerifiers(t *testing.T) {
 	resolved := &User{Owner: "built-in", Name: "z", Email: "z@hanzo.ai"}
 	candidates := []*User{
 		{Owner: "hanzo", Name: "z", Email: "z@hanzo.ai"},

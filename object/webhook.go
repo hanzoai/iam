@@ -108,7 +108,7 @@ func GetWebhook(id string) (*Webhook, error) {
 	return getWebhook(owner, name)
 }
 
-func UpdateWebhook(id string, webhook *Webhook, isGlobalAdmin bool, lang string) (bool, error) {
+func UpdateWebhook(id string, webhook *Webhook, isSuperAdmin bool, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
 		return false, err
@@ -117,7 +117,7 @@ func UpdateWebhook(id string, webhook *Webhook, isGlobalAdmin bool, lang string)
 		return false, err
 	} else if w == nil {
 		return false, nil
-	} else if !isGlobalAdmin && w.Organization != webhook.Organization {
+	} else if !isSuperAdmin && w.Organization != webhook.Organization {
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 

@@ -159,7 +159,7 @@ func GetMaskedSyncers(syncers []*Syncer, errs ...error) ([]*Syncer, error) {
 	return syncers, nil
 }
 
-func UpdateSyncer(id string, syncer *Syncer, isGlobalAdmin bool, lang string) (bool, error) {
+func UpdateSyncer(id string, syncer *Syncer, isSuperAdmin bool, lang string) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
 		return false, err
@@ -169,7 +169,7 @@ func UpdateSyncer(id string, syncer *Syncer, isGlobalAdmin bool, lang string) (b
 		return false, err
 	} else if s == nil {
 		return false, nil
-	} else if !isGlobalAdmin && s.Organization != syncer.Organization {
+	} else if !isSuperAdmin && s.Organization != syncer.Organization {
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 

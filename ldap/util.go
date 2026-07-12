@@ -331,14 +331,14 @@ func GetFilteredUsers(m *ldap.Message) (filteredUsers []*object.User, code int) 
 	}
 
 	if name == "*" { // get all users from organization 'org'
-		if m.Client.IsGlobalAdmin && org == "*" {
+		if m.Client.IsSuperAdmin && org == "*" {
 			filteredUsers, err = object.GetGlobalUsersWithFilter(buildSafeCondition(r.Filter()))
 			if err != nil {
 				panic(err)
 			}
 			return filteredUsers, ldap.LDAPResultSuccess
 		}
-		if m.Client.IsGlobalAdmin || (m.Client.IsOrgAdmin && org == m.Client.OrgName) {
+		if m.Client.IsSuperAdmin || (m.Client.IsOrgAdmin && org == m.Client.OrgName) {
 			filteredUsers, err = object.GetUsersWithFilter(org, buildSafeCondition(r.Filter()))
 			if err != nil {
 				panic(err)
@@ -401,12 +401,12 @@ func GetFilteredGroups(m *ldap.Message, baseDN string, filterStr string) ([]*obj
 	var err error
 
 	if name == "*" {
-		if m.Client.IsGlobalAdmin && org == "*" {
+		if m.Client.IsSuperAdmin && org == "*" {
 			groups, err = object.GetGlobalGroups()
 			if err != nil {
 				panic(err)
 			}
-		} else if m.Client.IsGlobalAdmin || (m.Client.IsOrgAdmin && org == m.Client.OrgName) {
+		} else if m.Client.IsSuperAdmin || (m.Client.IsOrgAdmin && org == m.Client.OrgName) {
 			groups, err = object.GetGroups(org)
 			if err != nil {
 				panic(err)
@@ -422,7 +422,7 @@ func GetFilteredGroups(m *ldap.Message, baseDN string, filterStr string) ([]*obj
 }
 
 func GetFilteredOrganizations(m *ldap.Message) ([]*object.Organization, int) {
-	if m.Client.IsGlobalAdmin {
+	if m.Client.IsSuperAdmin {
 		organizations, err := object.GetOrganizations("")
 		if err != nil {
 			panic(err)
