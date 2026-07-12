@@ -382,7 +382,11 @@ func CheckUserPassword(organization string, username string, password string, la
 		isSigninViaLdap = options[1]
 		isPasswordWithLdapEnabled = options[2]
 	}
-	user, err := GetUserByFields(organization, username)
+	// The app's org may be a PLATFORM whose founders live in their own child tenants
+	// (SignupCreatesTenant). GetUserForLogin keeps the exact-org fast path and, only
+	// then, accepts a user in an org the app's org is an ANCESTOR of — never sideways,
+	// never upward, and never when two tenants share the identifier.
+	user, err := GetUserForLogin(organization, username)
 	if err != nil {
 		return nil, err
 	}
