@@ -54,6 +54,18 @@ type Organization struct {
 	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
 	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
 
+	// Parent is the tenancy edge: the org that RESELLS/hosts this one. Empty for a
+	// top-level tenant. A reseller (white-label partner building on the stack) is the
+	// parent of the orgs it onboards, so its admins administer them and its account
+	// can roll their usage up. Orgs were flat before this, which made a reseller
+	// indistinguishable from an unrelated customer.
+	//
+	// Every read of this edge MUST go through the ancestry helpers below — they bound
+	// the walk and refuse cycles. A cycle in a parent chain that authz trusts is a
+	// privilege-escalation primitive (A parent of B, B parent of A ⇒ each administers
+	// the other), so the write path rejects cycles and the read path never loops.
+	Parent string `xorm:"varchar(100)" json:"parent"`
+
 	DisplayName            string     `xorm:"varchar(100)" json:"displayName"`
 	WebsiteUrl             string     `xorm:"varchar(100)" json:"websiteUrl"`
 	Logo                   string     `xorm:"varchar(200)" json:"logo"`
@@ -283,6 +295,13 @@ func UpdateOrganization(id string, organization *Organization, isSuperAdmin bool
 	organization.PasswordType = sanitizeOrgPasswordType(organization.PasswordType)
 	clampSigninRateLimits(organization)
 
+	// Tenancy forest invariant. A cycle in the parent chain is a privilege-escalation
+	// primitive (A parent of B and B parent of A ⇒ each org's admins administer the
+	// other), so it is refused HERE, at the only place it can be persisted.
+	if err := CheckOrgParent(organization.Name, organization.Parent); err != nil {
+		return false, err
+	}
+
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
 		return false, err
@@ -356,6 +375,12 @@ func UpdateOrganization(id string, organization *Organization, isSuperAdmin bool
 
 func AddOrganization(organization *Organization) (bool, error) {
 	organization.PasswordType = sanitizeOrgPasswordType(organization.PasswordType)
+
+	// Same forest invariant as the update path: a new org may name an EXISTING parent,
+	// never a missing one and never itself.
+	if err := CheckOrgParent(organization.Name, organization.Parent); err != nil {
+		return false, err
+	}
 
 	credManager := cred.GetCredManager(organization.PasswordType)
 	if credManager != nil {
