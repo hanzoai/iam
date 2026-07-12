@@ -177,7 +177,7 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		EnablePassword: true,
 		// Self-signup is fail-secure: admin-org apps are ALWAYS created closed
 		// (self-registering into the admin org = instant global admin, since
-		// IsGlobalAdmin()=user.Owner==conf.AdminOrg). Non-admin tenant apps keep
+		// IsSuperAdmin()=user.Owner==conf.AdminOrg). Non-admin tenant apps keep
 		// the historical "immediately login+signup usable" default unless the
 		// caller explicitly overrides via req.EnableSignUp.
 		EnableSignUp: resolveBootstrapSignUp(owner, req.EnableSignUp),
@@ -500,7 +500,7 @@ func isUniqueConstraintErr(err error) bool {
 // operator provisions via BootstrapApplicationUpsert.
 //
 // Fail-secure rule that overrides everything: an app in the admin org is NEVER
-// self-signup-open. IsGlobalAdmin() is user.Owner == conf.AdminOrg, so a single
+// self-signup-open. IsSuperAdmin() is user.Owner == conf.AdminOrg, so a single
 // self-registration into the admin org mints a global admin. Bootstrap is
 // operator-trusted, but "trusted" must not mean "able to open the god-org to the
 // public" — so admin-org always resolves to false, even if the caller explicitly

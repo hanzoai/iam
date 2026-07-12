@@ -85,7 +85,7 @@ func (c *McpController) handleUpdateApplicationTool(id interface{}, args UpdateA
 		return
 	}
 
-	affected, err := object.UpdateApplication(args.Id, &args.Application, c.IsGlobalAdmin(), c.GetAcceptLanguage())
+	affected, err := object.UpdateApplication(args.Id, &args.Application, c.IsSuperAdmin(), c.GetAcceptLanguage())
 	if err != nil {
 		c.SendToolErrorResult(id, err.Error())
 		return
@@ -96,7 +96,7 @@ func (c *McpController) handleUpdateApplicationTool(id interface{}, args UpdateA
 
 // handleDeleteApplicationTool handles the delete_application MCP tool
 func (c *McpController) handleDeleteApplicationTool(id interface{}, args DeleteApplicationArgs) {
-	affected, err := object.DeleteApplication(&args.Application, c.IsGlobalAdmin())
+	affected, err := object.DeleteApplication(&args.Application, c.IsSuperAdmin())
 	if err != nil {
 		c.SendToolErrorResult(id, err.Error())
 		return

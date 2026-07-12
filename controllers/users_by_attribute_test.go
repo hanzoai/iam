@@ -743,7 +743,7 @@ func withTypeGuardCaller(t *testing.T, caller *object.User) {
 // (caller in built-in/admin org) and rejects every other shape.
 //
 // IAM's existing semantics treat AdminOrg membership as the global-
-// admin surface (object/user.go::IsGlobalAdmin returns Owner ==
+// admin surface (object/user.go::IsSuperAdmin returns Owner ==
 // AdminOrg). The guard inherits that policy: the *org* is the
 // privilege boundary, not a separate role.
 func TestRejectApplicationTypePromotion_AllowsBuiltInAdmin(t *testing.T) {

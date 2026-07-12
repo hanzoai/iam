@@ -45,7 +45,7 @@ func (c *ApiController) GetApplications() {
 	// non-default orgs (isDefaultOrganizationSelected is false for a non-global
 	// admin), so no non-global console path depends on this; a non-global admin
 	// reads its OWN org's apps via get-organization-applications (org-scoped).
-	if owner == conf.AdminOrg && !c.IsGlobalAdmin() {
+	if owner == conf.AdminOrg && !c.IsSuperAdmin() {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
@@ -67,9 +67,9 @@ func (c *ApiController) GetApplications() {
 	// applications (+ is_shared platform apps), regardless of the caller-
 	// supplied owner/organization/pageSize. Fail closed when the caller's org
 	// can't be resolved (app/M2M principal, no User row) — an empty scope
-	// yields only shared apps. Mirrors GetOrganizations' isGlobalAdmin/
+	// yields only shared apps. Mirrors GetOrganizations' isSuperAdmin/
 	// callerOwner scoping: one pattern, applied consistently.
-	if !c.IsGlobalAdmin() {
+	if !c.IsSuperAdmin() {
 		callerOwner := ""
 		if cu := c.getCurrentUser(); cu != nil {
 			callerOwner = cu.Owner
@@ -229,7 +229,7 @@ func (c *ApiController) GetOrganizationApplications() {
 	// GetAllowedApplications' user.IsAdmin branch would return that org's apps
 	// — incl the per-user app-<email> seeds (cross-tenant email enumeration).
 	// Pin the org to the caller's own; global admins are unrestricted.
-	if !c.IsGlobalAdmin() {
+	if !c.IsSuperAdmin() {
 		callerOwner := ""
 		if cu := c.getCurrentUser(); cu != nil {
 			callerOwner = cu.Owner
@@ -310,7 +310,7 @@ func (c *ApiController) UpdateApplication() {
 	// V5/Red#5 (defense in depth): a non-global caller must never rename an app
 	// TO a capability-reserved name (that identity belongs to the admin-owned
 	// platform app). Mirrors the AddApplication guard.
-	if !c.IsGlobalAdmin() && object.AppNameIsCapabilityReserved(application.Name) {
+	if !c.IsSuperAdmin() && object.AppNameIsCapabilityReserved(application.Name) {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
@@ -332,7 +332,7 @@ func (c *ApiController) UpdateApplication() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.UpdateApplication(id, &application, c.IsGlobalAdmin(), c.GetAcceptLanguage()))
+	c.Data["json"] = wrapActionResponse(object.UpdateApplication(id, &application, c.IsSuperAdmin(), c.GetAcceptLanguage()))
 	c.ServeJSON()
 }
 
@@ -361,7 +361,7 @@ func (c *ApiController) AddApplication() {
 	// (admin,<name>) PK-collision (which only holds while the platform app is
 	// seeded) and permanently forecloses the owner=admin injection into the
 	// capability allowlists. Global admins (who seed/manage platform apps) pass.
-	if !c.IsGlobalAdmin() && object.AppNameIsCapabilityReserved(application.Name) {
+	if !c.IsSuperAdmin() && object.AppNameIsCapabilityReserved(application.Name) {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
@@ -374,7 +374,7 @@ func (c *ApiController) AddApplication() {
 		c.ResponseError(c.T("auth:Unauthorized operation"))
 		return
 	}
-	if !c.IsGlobalAdmin() && application.Owner == conf.AdminOrg {
+	if !c.IsSuperAdmin() && application.Owner == conf.AdminOrg {
 		cu := c.getCurrentUser()
 		if cu == nil || !strings.HasPrefix(application.Name, cu.Owner+"-") {
 			c.ResponseError(c.T("auth:Unauthorized operation"))
@@ -432,6 +432,6 @@ func (c *ApiController) DeleteApplication() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.DeleteApplication(&application, c.IsGlobalAdmin()))
+	c.Data["json"] = wrapActionResponse(object.DeleteApplication(&application, c.IsSuperAdmin()))
 	c.ServeJSON()
 }

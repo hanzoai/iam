@@ -28,7 +28,7 @@ import "github.com/hanzoai/iam/object"
 //
 // Human principals (interactive sessions and forwarded user JWTs) are NOT
 // affected — they remain governed by the per-endpoint authorization
-// (self / org IsAdmin / real global-admin USER via User.IsGlobalAdmin()) plus
+// (self / org IsAdmin / real global-admin USER via User.IsSuperAdmin()) plus
 // Casbin. This keeps the legitimate console password reset, self-service
 // password change (verification-code path), and real global-admin operations
 // working untouched.

@@ -40,7 +40,7 @@ func (c *ApiController) GetOrganizations() {
 	sortOrder := c.Ctx.Input.Query("sortOrder")
 	organizationName := c.Ctx.Input.Query("organizationName")
 
-	isGlobalAdmin := c.IsGlobalAdmin()
+	isSuperAdmin := c.IsSuperAdmin()
 	// Non-global-admin callers are scoped to their own org. An app/<name>
 	// principal (Red R-1: no longer a global admin) has no User row, so resolve
 	// the scope nil-safely instead of dereferencing a nil getCurrentUser() — an
@@ -53,7 +53,7 @@ func (c *ApiController) GetOrganizations() {
 	if limit == "" || page == "" {
 		var organizations []*object.Organization
 		var err error
-		if isGlobalAdmin {
+		if isSuperAdmin {
 			organizations, err = object.GetMaskedOrganizations(object.GetOrganizations(owner))
 		} else {
 			organizations, err = object.GetMaskedOrganizations(object.GetOrganizations(owner, callerOwner))
@@ -66,7 +66,7 @@ func (c *ApiController) GetOrganizations() {
 
 		c.ResponseOk(organizations)
 	} else {
-		if !isGlobalAdmin {
+		if !isSuperAdmin {
 			organizations, err := object.GetMaskedOrganizations(object.GetOrganizations(owner, callerOwner))
 			if err != nil {
 				c.ResponseError(err.Error())
@@ -110,7 +110,7 @@ func (c *ApiController) GetOrganization() {
 	// unrestricted; the pre-auth login path reads app config via
 	// get-application/get-app-login, not this endpoint. Mirrors
 	// GetOrganizationNames' scoping.
-	if !c.IsGlobalAdmin() {
+	if !c.IsSuperAdmin() {
 		callerOwner := ""
 		if cu := c.getCurrentUser(); cu != nil {
 			callerOwner = cu.Owner
@@ -165,13 +165,13 @@ func (c *ApiController) UpdateOrganization() {
 		return
 	}
 
-	isGlobalAdmin, _ := c.isGlobalAdmin()
+	isSuperAdmin, _ := c.isSuperAdmin()
 
 	if organization.BalanceCurrency == "" {
 		organization.BalanceCurrency = "USD"
 	}
 
-	c.Data["json"] = wrapActionResponse(object.UpdateOrganization(id, &organization, isGlobalAdmin))
+	c.Data["json"] = wrapActionResponse(object.UpdateOrganization(id, &organization, isSuperAdmin))
 	c.ServeJSON()
 }
 
@@ -277,10 +277,10 @@ func (c *ApiController) GetOrganizationNames() {
 	// cross-tenant customer-email roster (Red proved it was readable with NO
 	// auth). A non-global admin may enumerate ONLY its own organization;
 	// anonymous / unresolved callers get an empty list; only a global admin
-	// gets the full set. Mirrors GetOrganizations' isGlobalAdmin/callerOwner
+	// gets the full set. Mirrors GetOrganizations' isSuperAdmin/callerOwner
 	// scoping — one pattern. (The only anon consumer is the optional
 	// orgMode=="Select" login org-picker, which IS this leak surface.)
-	if !c.IsGlobalAdmin() {
+	if !c.IsSuperAdmin() {
 		callerOwner := ""
 		if cu := c.getCurrentUser(); cu != nil {
 			callerOwner = cu.Owner

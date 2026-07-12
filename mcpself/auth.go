@@ -77,13 +77,13 @@ func (c *McpController) ClearUserSession() {
 	_ = c.SessionRegenerateID()
 }
 
-// IsGlobalAdmin checks if the current user is a global admin
-func (c *McpController) IsGlobalAdmin() bool {
-	isGlobalAdmin, _ := c.isGlobalAdmin()
-	return isGlobalAdmin
+// IsSuperAdmin checks if the current user is a global admin
+func (c *McpController) IsSuperAdmin() bool {
+	isSuperAdmin, _ := c.isSuperAdmin()
+	return isSuperAdmin
 }
 
-func (c *McpController) isGlobalAdmin() (bool, *object.User) {
+func (c *McpController) isSuperAdmin() (bool, *object.User) {
 	username := c.GetSessionUsername()
 
 	if object.IsAppUser(username) {
@@ -100,7 +100,7 @@ func (c *McpController) isGlobalAdmin() (bool, *object.User) {
 		return false, nil
 	}
 
-	return user.IsGlobalAdmin(), user
+	return user.IsSuperAdmin(), user
 }
 
 func (c *McpController) getCurrentUser() *object.User {

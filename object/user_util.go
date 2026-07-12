@@ -619,8 +619,8 @@ func userVisible(isAdmin bool, item *AccountItem) bool {
 // the weaker per-field account-item visibility checks (which key on org-level
 // isAdmin and on operator-configurable rules). PURE — no DB — so it is
 // unit-testable; the caller resolves oldIsAdmin authoritatively.
-func canMutatePrivilegedUserFields(oldUser, newUser *User, oldIsAdmin, isGlobalAdmin bool) bool {
-	if isGlobalAdmin {
+func canMutatePrivilegedUserFields(oldUser, newUser *User, oldIsAdmin, isSuperAdmin bool) bool {
+	if isSuperAdmin {
 		return true
 	}
 	if newUser.Owner != oldUser.Owner {
@@ -632,7 +632,7 @@ func canMutatePrivilegedUserFields(oldUser, newUser *User, oldIsAdmin, isGlobalA
 	return true
 }
 
-func CheckPermissionForUpdateUser(oldUser, newUser *User, isAdmin bool, isGlobalAdmin bool, allowDisplayNameEmpty bool, lang string) (bool, string) {
+func CheckPermissionForUpdateUser(oldUser, newUser *User, isAdmin bool, isSuperAdmin bool, allowDisplayNameEmpty bool, lang string) (bool, string) {
 	organization, err := GetOrganizationByUser(oldUser)
 	if err != nil {
 		return false, err.Error()
@@ -643,7 +643,7 @@ func CheckPermissionForUpdateUser(oldUser, newUser *User, isAdmin bool, isGlobal
 	// misread by xorm bool deserialization — the same fallback the authz engine
 	// uses), then refuse any owner move or admin grant by a non-global-admin.
 	oldIsAdmin := oldUser.IsAdmin || CheckUserIsAdminRaw(oldUser.Owner, oldUser.Name)
-	if !canMutatePrivilegedUserFields(oldUser, newUser, oldIsAdmin, isGlobalAdmin) {
+	if !canMutatePrivilegedUserFields(oldUser, newUser, oldIsAdmin, isSuperAdmin) {
 		return false, i18n.Translate(lang, "auth:Unauthorized operation")
 	}
 
@@ -1106,7 +1106,7 @@ func (user *User) IsAdminUser() bool {
 		return false
 	}
 
-	return user.IsAdmin || user.IsGlobalAdmin()
+	return user.IsAdmin || user.IsSuperAdmin()
 }
 
 func IsAppUser(userId string) bool {
@@ -1349,9 +1349,9 @@ func MoveUserToOrg(user *User, newOrg string) (bool, error) {
 type DomainPromotion struct {
 	// Org is the user's resulting owner field after promotion.
 	Org string
-	// GlobalAdmin reports whether the rule confers global-admin status
+	// SuperAdmin reports whether the rule confers global-admin status
 	// (i.e. Org == conf.AdminOrg).
-	GlobalAdmin bool
+	SuperAdmin bool
 }
 
 // LookupDomainPromotion returns the promotion outcome for an email's domain
@@ -1367,7 +1367,7 @@ func LookupDomainPromotion(email string) (DomainPromotion, bool) {
 	if !ok {
 		return DomainPromotion{}, false
 	}
-	return DomainPromotion{Org: rule.Org, GlobalAdmin: rule.GlobalAdmin}, true
+	return DomainPromotion{Org: rule.Org, SuperAdmin: rule.SuperAdmin}, true
 }
 
 // PromoteByEmailDomain applies the email-domain promotion rule to the given

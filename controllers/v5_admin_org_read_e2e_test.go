@@ -71,14 +71,14 @@ func v5TokenOwner(t *testing.T, token string) string {
 		t.Fatalf("decode JWT payload: %v", err)
 	}
 	var claims struct {
-		Owner         string `json:"owner"`
-		IsGlobalAdmin bool   `json:"isGlobalAdmin"`
+		Owner        string `json:"owner"`
+		IsSuperAdmin bool   `json:"isSuperAdmin"`
 	}
 	if err := json.Unmarshal(payload, &claims); err != nil {
 		t.Fatalf("unmarshal JWT claims: %v", err)
 	}
-	if claims.IsGlobalAdmin {
-		t.Fatalf("IAM_E2E_ORGADMIN_TOKEN must be a NON-global admin; got isGlobalAdmin=true")
+	if claims.IsSuperAdmin {
+		t.Fatalf("IAM_E2E_ORGADMIN_TOKEN must be a NON-global admin; got isSuperAdmin=true")
 	}
 	if claims.Owner == "" || claims.Owner == "admin" {
 		t.Fatalf("IAM_E2E_ORGADMIN_TOKEN owner must be a real non-admin org, got %q", claims.Owner)

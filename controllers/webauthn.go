@@ -102,8 +102,8 @@ func (c *ApiController) WebAuthnSignupFinish() {
 		c.ResponseError(err.Error())
 		return
 	}
-	isGlobalAdmin := c.IsGlobalAdmin()
-	_, err = user.AddCredentials(*credential, isGlobalAdmin)
+	isSuperAdmin := c.IsSuperAdmin()
+	_, err = user.AddCredentials(*credential, isSuperAdmin)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

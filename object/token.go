@@ -188,7 +188,7 @@ func (token *Token) popularHashes() {
 	}
 }
 
-func UpdateToken(id string, token *Token, isGlobalAdmin bool) (bool, error) {
+func UpdateToken(id string, token *Token, isSuperAdmin bool) (bool, error) {
 	owner, name, err := util.GetOwnerAndNameFromIdWithError(id)
 	if err != nil {
 		return false, err
@@ -197,7 +197,7 @@ func UpdateToken(id string, token *Token, isGlobalAdmin bool) (bool, error) {
 		return false, err
 	} else if t == nil {
 		return false, nil
-	} else if !isGlobalAdmin && t.Organization != token.Organization {
+	} else if !isSuperAdmin && t.Organization != token.Organization {
 		return false, nil
 	}
 

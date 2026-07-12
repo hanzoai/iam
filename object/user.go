@@ -1498,7 +1498,7 @@ func (user *User) GetFriendlyName() string {
 	}
 }
 
-// isUserIdGlobalAdmin reports whether a principal id is a GLOBAL admin — the
+// isUserIdSuperAdmin reports whether a principal id is a GLOBAL admin — the
 // gate GetMaskedApplication(s)/GetAllowedApplications use to reveal an app's
 // clientSecret/Cert and that the user-mutation wall consults.
 //
@@ -1509,7 +1509,7 @@ func (user *User) GetFriendlyName() string {
 // real USER row in conf.AdminOrg is a global admin; an app's authority is the
 // per-capability allowlist (app_authz.go) for mutations and explicit cross-org
 // read permission (check.go CheckUserPermission) for reads.
-func isUserIdGlobalAdmin(userId string) bool {
+func isUserIdSuperAdmin(userId string) bool {
 	return strings.HasPrefix(userId, conf.AdminOrg+"/")
 }
 
@@ -1711,7 +1711,7 @@ func (user *User) IsApplicationAdmin(application *Application) bool {
 		return false
 	}
 
-	return (user.Owner == application.Organization && user.IsAdmin) || user.IsGlobalAdmin()
+	return (user.Owner == application.Organization && user.IsAdmin) || user.IsSuperAdmin()
 }
 
 // IsSuperAdmin reports whether the user is a Hanzo super admin: a member of the
@@ -1725,13 +1725,6 @@ func (user *User) IsSuperAdmin() bool {
 	}
 
 	return user.Owner == conf.AdminOrg
-}
-
-// IsGlobalAdmin is the DEPRECATED alias of IsSuperAdmin, kept so existing call
-// sites keep compiling during the SuperAdmin rename. New code MUST call
-// IsSuperAdmin. It delegates — one derivation, one truth.
-func (user *User) IsGlobalAdmin() bool {
-	return user.IsSuperAdmin()
 }
 
 // ApprovalStatusProperty is the single authoritative user property that gates
@@ -1754,7 +1747,7 @@ func (user *User) IsApproved() bool {
 	if user == nil {
 		return false
 	}
-	if user.IsGlobalAdmin() || user.IsAdmin {
+	if user.IsSuperAdmin() || user.IsAdmin {
 		return true
 	}
 	if user.Properties == nil {

@@ -36,10 +36,10 @@ import (
 //	  "name": "Hanzo",
 //	  "domain": "hanzo.ai",
 //	  "superadminDomains": [
-//	    { "domain": "hanzo.ai",    "org": "admin", "globalAdmin": true  },
-//	    { "domain": "zoo.ngo",     "org": "admin", "globalAdmin": true  },
-//	    { "domain": "lux.network", "org": "admin", "globalAdmin": true  },
-//	    { "domain": "pars.network","org": "pars",  "globalAdmin": false }
+//	    { "domain": "hanzo.ai",    "org": "admin", "superAdmin": true  },
+//	    { "domain": "zoo.ngo",     "org": "admin", "superAdmin": true  },
+//	    { "domain": "lux.network", "org": "admin", "superAdmin": true  },
+//	    { "domain": "pars.network","org": "pars",  "superAdmin": false }
 //	  ]
 //	}
 //
@@ -54,11 +54,11 @@ type Brand struct {
 // SuperadminDomainRule maps one email domain to a promotion outcome.
 // Org="admin" is a sentinel — resolved against the live AdminOrg.
 // Org="<orgName>" means "user is moved into that org but does not get
-// global admin (unless GlobalAdmin is also true)".
+// global admin (unless SuperAdmin is also true)".
 type SuperadminDomainRule struct {
-	Domain      string `json:"domain"`
-	Org         string `json:"org"`
-	GlobalAdmin bool   `json:"globalAdmin"`
+	Domain     string `json:"domain"`
+	Org        string `json:"org"`
+	SuperAdmin bool   `json:"superAdmin"`
 }
 
 // defaultBrand is the fallback shipped for hanzo-flavored deployments.
@@ -67,10 +67,10 @@ var defaultBrand = Brand{
 	Name:   "Hanzo",
 	Domain: "hanzo.ai",
 	SuperadminDomains: []SuperadminDomainRule{
-		{Domain: "hanzo.ai", Org: "admin", GlobalAdmin: true},
-		{Domain: "zoo.ngo", Org: "admin", GlobalAdmin: true},
-		{Domain: "lux.network", Org: "admin", GlobalAdmin: true},
-		{Domain: "pars.network", Org: "pars", GlobalAdmin: false},
+		{Domain: "hanzo.ai", Org: "admin", SuperAdmin: true},
+		{Domain: "zoo.ngo", Org: "admin", SuperAdmin: true},
+		{Domain: "lux.network", Org: "admin", SuperAdmin: true},
+		{Domain: "pars.network", Org: "pars", SuperAdmin: false},
 	},
 }
 
@@ -154,7 +154,7 @@ func SuperadminRuleFor(email string) (SuperadminDomainRule, bool) {
 	for _, r := range b.SuperadminDomains {
 		if strings.EqualFold(r.Domain, domain) {
 			// Resolve "admin" sentinel against the live AdminOrg.
-			if r.Org == "admin" || (r.GlobalAdmin && r.Org == "") {
+			if r.Org == "admin" || (r.SuperAdmin && r.Org == "") {
 				r.Org = AdminOrg
 			}
 			return r, true

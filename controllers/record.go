@@ -55,7 +55,7 @@ func (c *ApiController) GetRecords() {
 		c.ResponseOk(records)
 	} else {
 		limit := util.ParseInt(limit)
-		if c.IsGlobalAdmin() && organizationName != "" {
+		if c.IsSuperAdmin() && organizationName != "" {
 			organization = organizationName
 		}
 		filterRecord := &object.Record{Organization: organization}

@@ -427,9 +427,9 @@ func (c *ApiController) UpdateUser() {
 	}
 
 	isAdmin := c.IsAdmin()
-	isGlobalAdmin := c.IsGlobalAdmin()
+	isSuperAdmin := c.IsSuperAdmin()
 	allowDisplayNameEmpty := c.Ctx.Input.Query("allowEmpty") != ""
-	if pass, err := object.CheckPermissionForUpdateUser(oldUser, &user, isAdmin, isGlobalAdmin, allowDisplayNameEmpty, c.GetAcceptLanguage()); !pass {
+	if pass, err := object.CheckPermissionForUpdateUser(oldUser, &user, isAdmin, isSuperAdmin, allowDisplayNameEmpty, c.GetAcceptLanguage()); !pass {
 		c.ResponseError(err)
 		return
 	}
@@ -614,7 +614,7 @@ func (c *ApiController) resolveTargetUserForKeys() (*object.User, bool) {
 		return nil, false
 	}
 
-	// Authorization binding. NOTE: c.IsAdmin() / isGlobalAdmin() treat EVERY app
+	// Authorization binding. NOTE: c.IsAdmin() / isSuperAdmin() treat EVERY app
 	// principal as a global admin (controllers/base.go: `if IsAppUser(username)
 	// { return true }`) — so it CANNOT be used to gate apps here, or every
 	// confidential client would pass. We branch on the caller kind explicitly:
@@ -636,7 +636,7 @@ func (c *ApiController) resolveTargetUserForKeys() (*object.User, bool) {
 	} else {
 		realAdmin := false
 		if u, err := object.GetUser(caller); err == nil && u != nil {
-			realAdmin = u.IsGlobalAdmin() || u.IsAdmin
+			realAdmin = u.IsSuperAdmin() || u.IsAdmin
 		}
 		if caller != id && !realAdmin {
 			c.ResponseError(c.T("auth:Unauthorized operation"))

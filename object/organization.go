@@ -279,7 +279,7 @@ func clampSigninRateLimits(org *Organization) {
 	}
 }
 
-func UpdateOrganization(id string, organization *Organization, isGlobalAdmin bool) (bool, error) {
+func UpdateOrganization(id string, organization *Organization, isSuperAdmin bool) (bool, error) {
 	organization.PasswordType = sanitizeOrgPasswordType(organization.PasswordType)
 	clampSigninRateLimits(organization)
 
@@ -321,7 +321,7 @@ func UpdateOrganization(id string, organization *Organization, isGlobalAdmin boo
 		}
 	}
 
-	if !isGlobalAdmin {
+	if !isSuperAdmin {
 		organization.NavItems = org.NavItems
 		organization.UserNavItems = org.UserNavItems
 		organization.WidgetItems = org.WidgetItems
