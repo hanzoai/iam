@@ -169,6 +169,14 @@ func bootstrap(cfg bootConfig) int {
 	authz.InitApi()
 	object.InitUserManager()
 	object.InitFromFile()
+
+	// Seed a default project for every org that lacks one (idempotent, live-safe).
+	// Runs after all orgs are seeded. Best-effort: a failure just leaves the
+	// `project` claim absent (default scope) — it must never crash boot.
+	if _, err := object.BackfillDefaultProjects(); err != nil {
+		logs.Warning("BackfillDefaultProjects failed (default `project` claim will be absent until reseed): %v", err)
+	}
+
 	object.InitCleanupTokens()
 
 	object.InitSiteMap()
