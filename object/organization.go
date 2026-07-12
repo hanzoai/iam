@@ -66,6 +66,18 @@ type Organization struct {
 	// the other), so the write path rejects cycles and the read path never loops.
 	Parent string `xorm:"varchar(100)" json:"parent"`
 
+	// SignupCreatesTenant makes this org a PLATFORM rather than a tenant: a signup
+	// against one of its applications lands the user in a NEW child org (Parent =
+	// this org) instead of in this org itself.
+	//
+	// This is what makes billing honest. Commerce namespaces by org, and the balance
+	// gate reads the user's org — so while every founder was created inside "hanzo",
+	// a brand-new $0 account read HANZO's balance and sailed through the gate. We were
+	// enforcing our own wallet. With their own org, the gate reads theirs.
+	//
+	// Opt-in per org, so a white-label deployment does not silently change shape.
+	SignupCreatesTenant bool `xorm:"bool" json:"signupCreatesTenant"`
+
 	DisplayName            string     `xorm:"varchar(100)" json:"displayName"`
 	WebsiteUrl             string     `xorm:"varchar(100)" json:"websiteUrl"`
 	Logo                   string     `xorm:"varchar(200)" json:"logo"`
