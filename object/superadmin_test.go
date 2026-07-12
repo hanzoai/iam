@@ -44,19 +44,3 @@ func TestSuperAdmin_DerivedFromAdminOrg(t *testing.T) {
 		})
 	}
 }
-
-// TestGlobalAdminAliasesSuperAdmin proves the deprecated IsGlobalAdmin alias is a
-// pure delegator — it MUST agree with the canonical IsSuperAdmin for every input,
-// so no call site changes behavior during the rename migration.
-func TestGlobalAdminAliasesSuperAdmin(t *testing.T) {
-	for _, u := range []*User{
-		{Owner: conf.AdminOrg, Name: "z"},
-		{Owner: "hanzo", Name: "alice", IsAdmin: true},
-		nil,
-	} {
-		if u.IsGlobalAdmin() != u.IsSuperAdmin() {
-			t.Fatalf("IsGlobalAdmin (%v) must equal IsSuperAdmin (%v) for user=%+v",
-				u.IsGlobalAdmin(), u.IsSuperAdmin(), u)
-		}
-	}
-}

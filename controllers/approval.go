@@ -28,7 +28,7 @@ import (
 // `org`. Global admins: any org. Org admins: only their own org. Returns the
 // caller for logging; ok=false means the caller already got an error response.
 func (c *ApiController) canAdministerOrg(org string) (*object.User, bool) {
-	isGlobal, user := c.isGlobalAdmin()
+	isGlobal, user := c.isSuperAdmin()
 	if isGlobal {
 		return user, true
 	}
@@ -49,7 +49,7 @@ func (c *ApiController) canAdministerOrg(org string) (*object.User, bool) {
 func (c *ApiController) GetPendingUsers() {
 	owner := c.Ctx.Input.Query("owner")
 
-	isGlobal, caller := c.isGlobalAdmin()
+	isGlobal, caller := c.isSuperAdmin()
 	if !isGlobal {
 		if caller == nil || !caller.IsAdmin {
 			c.ResponseError(c.T("auth:Unauthorized operation"))

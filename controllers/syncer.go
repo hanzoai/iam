@@ -111,7 +111,7 @@ func (c *ApiController) UpdateSyncer() {
 		return
 	}
 
-	c.Data["json"] = wrapActionResponse(object.UpdateSyncer(id, &syncer, c.IsGlobalAdmin(), c.GetAcceptLanguage()))
+	c.Data["json"] = wrapActionResponse(object.UpdateSyncer(id, &syncer, c.IsSuperAdmin(), c.GetAcceptLanguage()))
 	c.ServeJSON()
 }
 

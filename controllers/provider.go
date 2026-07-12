@@ -143,8 +143,8 @@ func (c *ApiController) GetProvider() {
 }
 
 func (c *ApiController) requireProviderPermission(provider *object.Provider) bool {
-	isGlobalAdmin, user := c.isGlobalAdmin()
-	if isGlobalAdmin {
+	isSuperAdmin, user := c.isSuperAdmin()
+	if isSuperAdmin {
 		return true
 	}
 

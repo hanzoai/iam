@@ -29,7 +29,7 @@
 //
 // These are PURE unit tests (no DB, no Beego) over the decision functions the
 // fix changes; the controller bridge is covered in
-// controllers/app_not_global_admin_test.go and the live integration paths in the
+// controllers/app_not_super_admin_test.go and the live integration paths in the
 // deployment verification.
 package object
 
@@ -41,25 +41,25 @@ import (
 
 // ── R-1: an app/<name> principal is NEVER a global admin (the unmask gate) ────
 //
-// isUserIdGlobalAdmin is the sole gate GetMaskedApplication / GetMaskedApplications
+// isUserIdSuperAdmin is the sole gate GetMaskedApplication / GetMaskedApplications
 // / GetAllowedApplications use to decide whether to reveal an application's
 // clientSecret/Cert. Including app principals there is the get-application leak:
 // any confidential client could read every org's app secrets. After R-1 the gate
 // admits ONLY real global-admin USERS (rows in conf.AdminOrg).
-func TestIsUserIdGlobalAdmin_AppPrincipalIsNeverGlobalAdmin(t *testing.T) {
+func TestIsUserIdSuperAdmin_AppPrincipalIsNeverSuperAdmin(t *testing.T) {
 	// Every app principal — including one literally named "admin" and one in the
 	// admin namespace — must be denied global-admin status.
 	for _, p := range []string{
 		"app/hanzo-cloud", "app/maxpower-assistant", "app/evil", "app/admin",
 		"app/" + conf.AdminOrg, "app/",
 	} {
-		if isUserIdGlobalAdmin(p) {
+		if isUserIdSuperAdmin(p) {
 			t.Fatalf("R-1: app principal %q must NOT be a global admin (would unmask cross-tenant app secrets)", p)
 		}
 	}
 
 	// Preserved: a real global-admin USER (a row in conf.AdminOrg) still reveals.
-	if !isUserIdGlobalAdmin(conf.AdminOrg + "/root") {
+	if !isUserIdSuperAdmin(conf.AdminOrg + "/root") {
 		t.Fatalf("regression: a real global-admin user (%s/root) must remain a global admin", conf.AdminOrg)
 	}
 
@@ -67,7 +67,7 @@ func TestIsUserIdGlobalAdmin_AppPrincipalIsNeverGlobalAdmin(t *testing.T) {
 	// are not global admins (the operator's get-application is a masked existence
 	// probe; secrets flow only through the service-token upsert write path).
 	for _, p := range []string{"hanzo/dave", "maxpower/dave", "lux/z", "service/token", ""} {
-		if isUserIdGlobalAdmin(p) {
+		if isUserIdSuperAdmin(p) {
 			t.Fatalf("regression: non-admin principal %q must not be a global admin", p)
 		}
 	}
@@ -75,12 +75,12 @@ func TestIsUserIdGlobalAdmin_AppPrincipalIsNeverGlobalAdmin(t *testing.T) {
 
 // ── R-1: the H-4 field wall applies to app principals ─────────────────────────
 //
-// An app principal now carries isGlobalAdmin=false (controllers/base.go and
+// An app principal now carries isSuperAdmin=false (controllers/base.go and
 // mcpself/auth.go). canMutatePrivilegedUserFields — the deny-by-default wall in
 // CheckPermissionForUpdateUser — therefore refuses every owner move and is_admin
 // grant by an app, on its own synthetic record, another user's, or cross-org.
 func TestCanMutatePrivilegedUserFields_AppPrincipalCannotEscalate(t *testing.T) {
-	const appIsGlobalAdmin = false // the authority value an app/<name> now carries
+	const appIsSuperAdmin = false // the authority value an app/<name> now carries
 
 	cases := []struct {
 		name     string
@@ -104,7 +104,7 @@ func TestCanMutatePrivilegedUserFields_AppPrincipalCannotEscalate(t *testing.T) 
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if canMutatePrivilegedUserFields(tc.old, tc.new, false, appIsGlobalAdmin) {
+			if canMutatePrivilegedUserFields(tc.old, tc.new, false, appIsSuperAdmin) {
 				t.Fatalf("R-1: an app principal must NOT be able to: %s", tc.name)
 			}
 		})
@@ -115,7 +115,7 @@ func TestCanMutatePrivilegedUserFields_AppPrincipalCannotEscalate(t *testing.T) 
 	// wall, decides whether an app may call update-user at all).
 	benignOld := &User{Owner: "hanzo", Name: "bob", IsAdmin: false, DisplayName: "Bob"}
 	benignNew := &User{Owner: "hanzo", Name: "bob", IsAdmin: false, DisplayName: "Bobby"}
-	if !canMutatePrivilegedUserFields(benignOld, benignNew, false, appIsGlobalAdmin) {
+	if !canMutatePrivilegedUserFields(benignOld, benignNew, false, appIsSuperAdmin) {
 		t.Fatal("a benign (non-privileged) field edit must still be permitted (no blanket app deny)")
 	}
 }

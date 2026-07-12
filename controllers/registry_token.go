@@ -333,7 +333,7 @@ func (c *ApiController) GetRegistryToken() {
 				actions := strings.Split(parts[2], ",")
 				// Service accounts and admin users get all requested actions
 				// (incl. push); regular users get pull only.
-				privileged := isServiceAccount || (user != nil && (user.IsAdmin || user.IsGlobalAdmin()))
+				privileged := isServiceAccount || (user != nil && (user.IsAdmin || user.IsSuperAdmin()))
 				if !privileged {
 					filtered := []string{}
 					for _, a := range actions {

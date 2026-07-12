@@ -14,7 +14,7 @@
 
 //go:build !skipCi
 
-// app_not_global_admin_test.go — Red R-1 controller bridge.
+// app_not_super_admin_test.go — Red R-1 controller bridge.
 //
 // An app/<name> (M2M client_credentials) session principal must resolve to
 // NON-global-admin in the controller authority helpers. This is what makes the
@@ -41,12 +41,12 @@ func newPrincipalController(principal string) *ApiController {
 	return c
 }
 
-func TestAppPrincipal_IsNotGlobalAdmin(t *testing.T) {
+func TestAppPrincipal_IsNotSuperAdmin(t *testing.T) {
 	for _, p := range []string{"app/hanzo-cloud", "app/evil", "app/admin", "app/maxpower-assistant"} {
 		c := newPrincipalController(p)
 
-		if c.IsGlobalAdmin() {
-			t.Fatalf("R-1: app principal %q must NOT be IsGlobalAdmin", p)
+		if c.IsSuperAdmin() {
+			t.Fatalf("R-1: app principal %q must NOT be IsSuperAdmin", p)
 		}
 		if c.IsAdmin() {
 			t.Fatalf("R-1: app principal %q must NOT be IsAdmin", p)

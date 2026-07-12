@@ -604,7 +604,7 @@ func CheckUserPermission(requestUserId, userId string, strict bool, lang string)
 		if requestUser == nil {
 			return false, fmt.Errorf("%s", i18n.Translate(lang, "check:Session outdated, please login again"))
 		}
-		if requestUser.IsGlobalAdmin() {
+		if requestUser.IsSuperAdmin() {
 			hasPermission = true
 		} else if requestUserId == userId {
 			hasPermission = true

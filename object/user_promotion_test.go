@@ -29,8 +29,8 @@ func TestLookupDomainPromotion_HanzoAi(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match for @hanzo.ai")
 	}
-	if !rule.GlobalAdmin {
-		t.Fatalf("expected GlobalAdmin=true for @hanzo.ai, got rule=%+v", rule)
+	if !rule.SuperAdmin {
+		t.Fatalf("expected SuperAdmin=true for @hanzo.ai, got rule=%+v", rule)
 	}
 	if rule.Org != conf.AdminOrg {
 		t.Fatalf("expected Org=%q (conf.AdminOrg), got %q", conf.AdminOrg, rule.Org)
@@ -44,7 +44,7 @@ func TestLookupDomainPromotion_ZooNgo(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match for @zoo.ngo")
 	}
-	if !rule.GlobalAdmin || rule.Org != conf.AdminOrg {
+	if !rule.SuperAdmin || rule.Org != conf.AdminOrg {
 		t.Fatalf("expected admin-org+global, got %+v", rule)
 	}
 }
@@ -56,7 +56,7 @@ func TestLookupDomainPromotion_LuxNetwork(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match for @lux.network")
 	}
-	if !rule.GlobalAdmin || rule.Org != conf.AdminOrg {
+	if !rule.SuperAdmin || rule.Org != conf.AdminOrg {
 		t.Fatalf("expected admin-org+global, got %+v", rule)
 	}
 }
@@ -68,7 +68,7 @@ func TestLookupDomainPromotion_ParsNetwork(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match for @pars.network")
 	}
-	if rule.GlobalAdmin {
+	if rule.SuperAdmin {
 		t.Fatalf("@pars.network must NOT confer global admin, got %+v", rule)
 	}
 	if rule.Org != "pars" {
@@ -85,8 +85,8 @@ func TestLookupDomainPromotion_CaseInsensitive(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected match for %q (case-insensitive)", c)
 		}
-		if !rule.GlobalAdmin {
-			t.Fatalf("expected GlobalAdmin=true for %q", c)
+		if !rule.SuperAdmin {
+			t.Fatalf("expected SuperAdmin=true for %q", c)
 		}
 	}
 }
@@ -121,10 +121,10 @@ func TestLookupDomainPromotion_NoMatch(t *testing.T) {
 // regressions on the canonical 4 domains in the directive.
 func TestLookupDomainPromotion_AllDomainsCovered(t *testing.T) {
 	want := map[string]DomainPromotion{
-		"hanzo.ai":     {Org: conf.AdminOrg, GlobalAdmin: true},
-		"zoo.ngo":      {Org: conf.AdminOrg, GlobalAdmin: true},
-		"lux.network":  {Org: conf.AdminOrg, GlobalAdmin: true},
-		"pars.network": {Org: "pars", GlobalAdmin: false},
+		"hanzo.ai":     {Org: conf.AdminOrg, SuperAdmin: true},
+		"zoo.ngo":      {Org: conf.AdminOrg, SuperAdmin: true},
+		"lux.network":  {Org: conf.AdminOrg, SuperAdmin: true},
+		"pars.network": {Org: "pars", SuperAdmin: false},
 	}
 	for domain, expected := range want {
 		got, ok := LookupDomainPromotion("user@" + domain)
