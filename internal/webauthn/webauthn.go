@@ -1,0 +1,179 @@
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+
+// Package webauthn is the Phase-1 typed CRUD surface for the
+// `webauthn_credentials` entity (a registered passkey), owner-scoped by the
+// (owner, name) natural key.
+//
+// The five operations are typed zip handlers over orm: reads are zip.Get,
+// writes are zip.Post. zip decodes the request body into the In struct for
+// every non-GET method (and, over the MCP projection, for GET too); the REST
+// GET projection carries no body, so any op that needs the (owner, name) key
+// from the caller is a POST. Each op is also an MCP tool and an OpenAPI 3.1
+// operation from this one registration.
+package webauthn
+
+import (
+	"context"
+	"errors"
+
+	"github.com/hanzoai/orm"
+	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam2/internal/schema"
+)
+
+// webauthnCredentialId renders the (owner, name) pair as the orm row id so Get,
+// Update, and Delete resolve by natural key without a secondary lookup.
+func webauthnCredentialId(owner, name string) string { return owner + "/" + name }
+
+// webauthnCredentialKey is the (owner, name) selector for get and delete.
+type webauthnCredentialKey struct {
+	Owner string `json:"owner" validate:"required"`
+	Name  string `json:"name"  validate:"required"`
+}
+
+// listWebauthnCredentialsIn scopes a list to one owner. An empty owner lists
+// every credential (superuser view); a set owner filters to that tenant.
+type listWebauthnCredentialsIn struct {
+	Owner string `json:"owner"`
+}
+
+type listWebauthnCredentialsOut struct {
+	WebauthnCredentials []*schema.WebauthnCredential `json:"webauthnCredentials"`
+}
+
+type webauthnCredentialResult struct {
+	WebauthnCredential *schema.WebauthnCredential `json:"webauthnCredential"`
+}
+
+// webauthnCredentialMutationResult mirrors v1's Affected/Unaffected action
+// response and carries the resulting row on a successful write.
+type webauthnCredentialMutationResult struct {
+	Affected           bool                       `json:"affected"`
+	WebauthnCredential *schema.WebauthnCredential `json:"webauthnCredential,omitempty"`
+}
+
+// Mount registers the passkey surface on app, closing over the entity store.
+func Mount(app *zip.App, db orm.DB) {
+	zip.Get[listWebauthnCredentialsIn, listWebauthnCredentialsOut](app, "/v1/iam/v2/webauthn-credentials", listWebauthnCredentials(db),
+		zip.WithOperationID("listWebauthnCredentials"),
+		zip.WithSummary("List webauthn credentials in an owner scope"),
+		zip.WithTags("webauthn_credentials"))
+
+	zip.Post[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/v2/webauthn-credentials/get", getWebauthnCredential(db),
+		zip.WithOperationID("getWebauthnCredential"),
+		zip.WithSummary("Get one webauthn credential by (owner, name)"),
+		zip.WithTags("webauthn_credentials"))
+
+	zip.Post[schema.WebauthnCredential, webauthnCredentialResult](app, "/v1/iam/v2/webauthn-credentials", addWebauthnCredential(db),
+		zip.WithOperationID("addWebauthnCredential"),
+		zip.WithSummary("Create a webauthn credential"),
+		zip.WithTags("webauthn_credentials"))
+
+	zip.Post[schema.WebauthnCredential, webauthnCredentialMutationResult](app, "/v1/iam/v2/webauthn-credentials/update", updateWebauthnCredential(db),
+		zip.WithOperationID("updateWebauthnCredential"),
+		zip.WithSummary("Update an existing webauthn credential"),
+		zip.WithTags("webauthn_credentials"))
+
+	zip.Post[webauthnCredentialKey, webauthnCredentialMutationResult](app, "/v1/iam/v2/webauthn-credentials/delete", deleteWebauthnCredential(db),
+		zip.WithOperationID("deleteWebauthnCredential"),
+		zip.WithSummary("Delete a webauthn credential by (owner, name)"),
+		zip.WithTags("webauthn_credentials"))
+}
+
+// listWebauthnCredentials returns every credential in the owner scope, newest
+// first.
+func listWebauthnCredentials(db orm.DB) zip.TypedHandler[listWebauthnCredentialsIn, listWebauthnCredentialsOut] {
+	return func(ctx context.Context, in *listWebauthnCredentialsIn) (*listWebauthnCredentialsOut, error) {
+		q := orm.TypedQuery[schema.WebauthnCredential](db)
+		if in.Owner != "" {
+			q = q.Filter("Owner=", in.Owner)
+		}
+		rows, err := q.Order("-CreatedTime").GetAll(ctx)
+		if err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		return &listWebauthnCredentialsOut{WebauthnCredentials: rows}, nil
+	}
+}
+
+// getWebauthnCredential resolves one credential by its (owner, name) key.
+func getWebauthnCredential(db orm.DB) zip.TypedHandler[webauthnCredentialKey, webauthnCredentialResult] {
+	return func(_ context.Context, in *webauthnCredentialKey) (*webauthnCredentialResult, error) {
+		c, err := orm.Get[schema.WebauthnCredential](db, webauthnCredentialId(in.Owner, in.Name))
+		if errors.Is(err, orm.ErrNotFound) {
+			return nil, zip.ErrNotFound("webauthn credential not found: " + webauthnCredentialId(in.Owner, in.Name))
+		}
+		if err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		return &webauthnCredentialResult{WebauthnCredential: c}, nil
+	}
+}
+
+// addWebauthnCredential creates a credential from the request body, keyed by
+// (owner, name).
+func addWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredential, webauthnCredentialResult] {
+	return func(ctx context.Context, in *schema.WebauthnCredential) (*webauthnCredentialResult, error) {
+		if in.Owner == "" || in.Name == "" {
+			return nil, zip.ErrBadRequest("owner and name are required")
+		}
+		// orm.New wires the store and applies defaults; copy the decoded domain
+		// fields over it, then restore the wired Model so its db handle and key
+		// survive the assignment.
+		c := orm.New[schema.WebauthnCredential](db)
+		model := c.Model
+		*c = *in
+		c.Model = model
+		c.SetId(webauthnCredentialId(in.Owner, in.Name))
+		if err := c.CreateCtx(ctx); err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		return &webauthnCredentialResult{WebauthnCredential: c}, nil
+	}
+}
+
+// updateWebauthnCredential read-modify-writes a credential in place. A missing
+// row is reported as Unaffected (v1 returns false), not an error.
+func updateWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredential, webauthnCredentialMutationResult] {
+	return func(ctx context.Context, in *schema.WebauthnCredential) (*webauthnCredentialMutationResult, error) {
+		if in.Owner == "" || in.Name == "" {
+			return nil, zip.ErrBadRequest("owner and name are required")
+		}
+		c, err := orm.Get[schema.WebauthnCredential](db, webauthnCredentialId(in.Owner, in.Name))
+		if errors.Is(err, orm.ErrNotFound) {
+			return &webauthnCredentialMutationResult{Affected: false}, nil
+		}
+		if err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		// Overlay the decoded domain fields onto the loaded row, keeping the
+		// loaded Model (id, createdAt, key, snapshot) so the write targets the
+		// existing key and preserves creation metadata.
+		model := c.Model
+		*c = *in
+		c.Model = model
+		if err := c.UpdateCtx(ctx); err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		return &webauthnCredentialMutationResult{Affected: true, WebauthnCredential: c}, nil
+	}
+}
+
+// deleteWebauthnCredential removes a credential by key. A missing row is
+// Unaffected.
+func deleteWebauthnCredential(db orm.DB) zip.TypedHandler[webauthnCredentialKey, webauthnCredentialMutationResult] {
+	return func(ctx context.Context, in *webauthnCredentialKey) (*webauthnCredentialMutationResult, error) {
+		c, err := orm.Get[schema.WebauthnCredential](db, webauthnCredentialId(in.Owner, in.Name))
+		if errors.Is(err, orm.ErrNotFound) {
+			return &webauthnCredentialMutationResult{Affected: false}, nil
+		}
+		if err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		if err := c.DeleteCtx(ctx); err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		return &webauthnCredentialMutationResult{Affected: true}, nil
+	}
+}
