@@ -1,0 +1,290 @@
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+
+// Package users mounts the Phase-1 typed CRUD surface for the IAM v2 user
+// entity on a zip App, backed by hanzoai/orm. Every operation is owner-scoped
+// by the (owner, name) natural key.
+//
+// This is the authentication entity, so the credential invariant is absolute:
+// the plaintext password rides in on the create/update request, is hashed with
+// bcrypt exactly once, and is discarded. Only the one-way digest reaches the
+// store (schema.User.PasswordHash, json:"-"), and no response ever carries the
+// digest or any other secret material — reads pass through redact() first.
+package users
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/hanzoai/orm"
+	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam2/internal/schema"
+)
+
+// API binds the user handlers to an orm store. Construct once at boot and mount.
+type API struct{ db orm.DB }
+
+// Mount registers the typed user CRUD handlers on app. Reads use zip.Get and
+// writes use zip.Post; both project the same transport-agnostic handler to REST
+// and MCP, so the (owner, name) identity in each typed request is honored on
+// every transport.
+func Mount(app *zip.App, db orm.DB) {
+	a := &API{db: db}
+	zip.Post(app, "/v1/iam/v2/users", a.Create, zip.WithTags("users"), zip.WithSummary("Create a user"))
+	zip.Get(app, "/v1/iam/v2/users", a.List, zip.WithTags("users"), zip.WithSummary("List users in an org"))
+	zip.Get(app, "/v1/iam/v2/users/get", a.Get, zip.WithTags("users"), zip.WithSummary("Get a user by (owner, name)"))
+	zip.Post(app, "/v1/iam/v2/users/update", a.Update, zip.WithTags("users"), zip.WithSummary("Update a user"))
+	zip.Post(app, "/v1/iam/v2/users/delete", a.Delete, zip.WithTags("users"), zip.WithSummary("Delete a user"))
+}
+
+// Ref identifies one user by its natural key.
+type Ref struct {
+	Owner string `json:"owner" validate:"required"`
+	Name  string `json:"name" validate:"required"`
+}
+
+// CreateInput carries a full user profile plus a write-only plaintext password.
+// Password is never persisted — it is hashed into schema.User.PasswordHash.
+type CreateInput struct {
+	User     schema.User `json:"user"`
+	Password string      `json:"password,omitempty"`
+}
+
+// UpdateInput carries the desired user state plus an optional new plaintext
+// password. An empty Password leaves the stored digest untouched.
+type UpdateInput struct {
+	User     schema.User `json:"user"`
+	Password string      `json:"password,omitempty"`
+}
+
+// ListInput is an owner-scoped, paged listing request.
+type ListInput struct {
+	Owner  string `json:"owner" validate:"required"`
+	Limit  int    `json:"limit,omitempty"`
+	Offset int    `json:"offset,omitempty"`
+}
+
+// ListOutput is a page of redacted users plus the owner-scoped total.
+type ListOutput struct {
+	Users []*schema.User `json:"users"`
+	Total int            `json:"total"`
+}
+
+// DeleteOutput reports the outcome of a delete.
+type DeleteOutput struct {
+	Deleted bool `json:"deleted"`
+}
+
+// Create inserts a new owner-scoped user, hashing the plaintext password.
+func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error) {
+	owner := strings.TrimSpace(in.User.Owner)
+	name := strings.TrimSpace(in.User.Name)
+	if owner == "" || name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+
+	existing, err := a.lookup(ctx, owner, name)
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if existing != nil {
+		return nil, zip.ErrConflict("user " + owner + "/" + name + " already exists")
+	}
+
+	u := &in.User
+	u.Owner, u.Name = owner, name
+	// Never trust a client-supplied digest; the hash is derived here or nowhere.
+	u.PasswordHash, u.PasswordSalt = "", ""
+	u.PasswordType = ""
+	if in.Password != "" {
+		hash, err := hashPassword(in.Password)
+		if err != nil {
+			return nil, zip.ErrInternal("hash password: " + err.Error())
+		}
+		u.PasswordHash = hash
+		u.PasswordType = "bcrypt"
+	}
+	now := nowRFC3339()
+	u.CreatedTime, u.UpdatedTime = now, now
+
+	u.Init(a.db)
+	if err := u.Create(); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return view(u), nil
+}
+
+// Get returns one user by (owner, name), redacted.
+func (a *API) Get(ctx context.Context, in *Ref) (*schema.User, error) {
+	u, err := a.lookup(ctx, in.Owner, in.Name)
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if u == nil {
+		return nil, zip.ErrNotFound("user " + in.Owner + "/" + in.Name + " not found")
+	}
+	return view(u), nil
+}
+
+// List returns a redacted page of users within one owner.
+func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+	if strings.TrimSpace(in.Owner) == "" {
+		return nil, zip.ErrBadRequest("owner is required")
+	}
+	total, err := orm.TypedQuery[schema.User](a.db).Filter("Owner=", in.Owner).Count(ctx)
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+
+	q := orm.TypedQuery[schema.User](a.db).Filter("Owner=", in.Owner).Order("Name")
+	if in.Limit > 0 {
+		q = q.Limit(in.Limit)
+	}
+	if in.Offset > 0 {
+		q = q.Offset(in.Offset)
+	}
+	list, err := q.GetAll(ctx)
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	for _, u := range list {
+		redact(u)
+	}
+	return &ListOutput{Users: list, Total: total}, nil
+}
+
+// Update replaces the mutable fields of an existing user. Immutable identity
+// (orm id, creation time) and the stored digest are preserved unless a new
+// plaintext password is supplied.
+func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error) {
+	owner := strings.TrimSpace(in.User.Owner)
+	name := strings.TrimSpace(in.User.Name)
+	if owner == "" || name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+
+	existing, err := a.lookup(ctx, owner, name)
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if existing == nil {
+		return nil, zip.ErrNotFound("user " + owner + "/" + name + " not found")
+	}
+
+	u := &in.User
+	u.Owner, u.Name = owner, name
+	// Preserve immutable identity and creation provenance.
+	u.CreatedTime = existing.CreatedTime
+	u.UpdatedTime = nowRFC3339()
+	// Preserve the existing digest unless a new plaintext password is supplied.
+	u.PasswordHash = existing.PasswordHash
+	u.PasswordType = existing.PasswordType
+	u.PasswordSalt = existing.PasswordSalt
+	if in.Password != "" {
+		hash, err := hashPassword(in.Password)
+		if err != nil {
+			return nil, zip.ErrInternal("hash password: " + err.Error())
+		}
+		u.PasswordHash = hash
+		u.PasswordType = "bcrypt"
+		u.PasswordSalt = ""
+	}
+
+	// Retarget the decoded value at the stored row (same orm key), then update.
+	u.Init(a.db)
+	u.SetKey(existing.Key())
+	if err := u.Update(); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return view(u), nil
+}
+
+// Delete removes a user by (owner, name).
+func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
+	existing, err := a.lookup(ctx, in.Owner, in.Name)
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if existing == nil {
+		return nil, zip.ErrNotFound("user " + in.Owner + "/" + in.Name + " not found")
+	}
+	if err := existing.Delete(); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return &DeleteOutput{Deleted: true}, nil
+}
+
+// lookup resolves a single user by its (owner, name) natural key. It returns
+// (nil, nil) when no row matches — a not-found is not an error here.
+func (a *API) lookup(ctx context.Context, owner, name string) (*schema.User, error) {
+	u, err := orm.TypedQuery[schema.User](a.db).
+		Filter("Owner=", owner).
+		Filter("Name=", name).
+		First()
+	if err != nil {
+		if errors.Is(err, orm.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return u, nil
+}
+
+// hashPassword derives a one-way bcrypt digest from a plaintext password.
+func hashPassword(plaintext string) (string, error) {
+	b, err := bcrypt.GenerateFromPassword([]byte(plaintext), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// VerifyPassword reports whether plaintext matches the user's stored digest.
+// It is the single verify choke point for the login path — the digest itself
+// never leaves the store, so verification happens here, against the row.
+func VerifyPassword(u *schema.User, plaintext string) bool {
+	if u == nil || u.PasswordHash == "" {
+		return false
+	}
+	return bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(plaintext)) == nil
+}
+
+// view redacts u in place and returns it, ready to serialize.
+func view(u *schema.User) *schema.User {
+	redact(u)
+	return u
+}
+
+// redact strips every secret/bearer field from a user before it is returned.
+// PasswordHash and AccessSecretHash are already json:"-"; this zeros the
+// remaining sensitive material for defense in depth.
+func redact(u *schema.User) {
+	u.PasswordHash = ""
+	u.PasswordSalt = ""
+	u.AccessSecret = ""
+	u.AccessSecretHash = ""
+	u.AccessToken = ""
+	u.OriginalToken = ""
+	u.OriginalRefreshToken = ""
+	u.TotpSecret = ""
+	u.RecoveryCodes = nil
+	for i := range u.ManagedAccounts {
+		u.ManagedAccounts[i].Password = ""
+	}
+	for i := range u.MfaAccounts {
+		u.MfaAccounts[i].SecretKey = ""
+	}
+	for _, m := range u.MultiFactorAuths {
+		if m != nil {
+			m.Secret = ""
+			m.RecoveryCodes = nil
+		}
+	}
+}
+
+// nowRFC3339 is the single timestamp format for v1-compatible string times.
+func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }

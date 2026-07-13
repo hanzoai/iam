@@ -87,7 +87,7 @@ func serve(ctx context.Context, store, dbPath, zapAddr, httpAddr string) error {
 	defer db.Close()
 
 	app := zip.New(zip.Config{AppName: "iam2"})
-	routes.Mount(app)
+	routes.Mount(app, db)
 	app.OnShutdown(func(context.Context) error { return db.Close() })
 
 	// Translate ctx cancellation (SIGINT/SIGTERM) into a graceful shutdown.
