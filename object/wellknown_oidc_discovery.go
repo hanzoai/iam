@@ -329,13 +329,13 @@ func getOriginFromHost(host string) (string, string) {
 // using ONLY these — external consumers (IdPs, SDKs, OIDC libraries) see
 // exactly one shape per endpoint. /v1/iam/* is the law.
 const (
-	OidcPathAuthorize     = "/v1/iam/oauth/authorize"
-	OidcPathToken         = "/v1/iam/oauth/token"
-	OidcPathUserinfo      = "/v1/iam/oauth/userinfo"
-	OidcPathDevice        = "/v1/iam/oauth/device"
+	OidcPathAuthorize = "/v1/iam/oauth/authorize"
+	OidcPathToken     = "/v1/iam/oauth/token"
+	OidcPathUserinfo  = "/v1/iam/oauth/userinfo"
+	OidcPathDevice    = "/v1/iam/oauth/device"
 	// User-facing device-approval page (the SPA route), NOT the API path. RFC 8628
 	// verification_uri must be a page a human opens, not the token-API endpoint.
-	OidcPathDeviceVerify = "/login/oauth/device"
+	OidcPathDeviceVerify  = "/login/oauth/device"
 	OidcPathRegister      = "/v1/iam/oauth/register"
 	OidcPathIntrospect    = "/v1/iam/oauth/introspect"
 	OidcPathRevoke        = "/v1/iam/oauth/revoke"
@@ -563,10 +563,16 @@ func GetDeviceAuthResponse(deviceCode string, userCode string, host string) Devi
 	// verification_uri is the user-facing SPA approval page (a human opens it and
 	// signs in); verification_uri_complete is the same page with the user_code
 	// prefilled for one-click approval — what the `dev` CLI / IDE plugins render
-	// as a clickable link on a headless box. Both point at the SPA page, NOT the
-	// token API (which returns JSON and cannot be approved in a browser).
+	// as a clickable link on a headless box, and what a device (e.g. console) QR
+	// encodes for a phone to scan. Both point at the SPA page, NOT the token API
+	// (which returns JSON and cannot be approved in a browser).
+	//
+	// The complete form is the SPA PATH route (/login/oauth/device/<user_code>),
+	// the shape EntryPage's `/login/oauth/device/:userCode` route matches — a scanned
+	// QR then deep-links straight to the prefilled approval page. The query form
+	// (?user_code=) has no path segment and would 404 in the SPA.
 	verificationUri := fmt.Sprintf("%s%s", originFrontend, OidcPathDeviceVerify)
-	verificationUriComplete := fmt.Sprintf("%s%s?user_code=%s", originFrontend, OidcPathDeviceVerify, userCode)
+	verificationUriComplete := fmt.Sprintf("%s%s/%s", originFrontend, OidcPathDeviceVerify, userCode)
 
 	return DeviceAuthResponse{
 		DeviceCode:              deviceCode,
