@@ -1,9 +1,14 @@
 Hanzo IAM
 Copyright (c) 2025 Hanzo AI, Inc.
 
+Forked from https://github.com/casdoor/casdoor at v1.31.24.
+
 This product includes software from Casdoor (https://github.com/casdoor/casdoor), licensed under Apache-2.0:
 
     Copyright (c) The Casdoor Authors
+
+Upstream Casdoor ships no NOTICE file (only LICENSE); there are no Apache-2.0
+§4(d) attributions to propagate from upstream.
 
 This product also includes software from the following Apache-2.0 licensed
 Go modules, imported at their upstream paths. Their copyright notices are
@@ -17,3 +22,29 @@ retain their respective rights:
 - github.com/casdoor/go-sms-sender — SMS provider adapters
 - github.com/casdoor/gomail/v2 — SMTP send
 - github.com/casdoor/ldapserver — LDAP server framework
+
+DEVIATIONS
+
+This fork diverges from upstream Casdoor. Notable changes:
+
+- Rebranded to "Hanzo IAM"; the Go module path is github.com/hanzoai/iam, and
+  upstream "Casdoor" product naming is removed from product-facing surfaces
+  (README, package.json, web UI titles).
+- SuperAdmin / reserved `admin` org model: platform-wide privilege is membership
+  in the reserved `admin` organization (User.IsSuperAdmin()), kept distinct from
+  per-org admin. See object/organization_tenancy.go, object/check.go, and
+  object/superadmin_test.go / object/security_test.go.
+- White-label branding resolved by request domain (conf/brand.go,
+  object/organization.go): one deployment serves hanzo.id and tenant white-label
+  domains, each with its own branding and user pool.
+- `<org>-<app>` application-naming convention enforced (object/application.go,
+  validAppNamePattern).
+- luxfi/* dependencies: github.com/luxfi/crypto, github.com/luxfi/kms (KMS-backed
+  signing-key custody), and github.com/luxfi/metric.
+- Capability-based authentication added (capauth package): typed, attenuable,
+  revocable ZAP object-capability tokens replacing bearer-JWT on /v1/iam/whoami
+  and follow-on endpoints.
+- MCP and A2A identity surfaces added (mcp/, mcpself/) for AI-agent authentication.
+- On-the-wire routes use the /v1/iam/* prefix (no /api/ prefix).
+</content>
+</invoke>
