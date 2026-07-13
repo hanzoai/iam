@@ -1,0 +1,49 @@
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+
+package schema
+
+import "github.com/hanzoai/orm"
+
+// AuditLog is an append-only action record (v1 Casdoor `record`, v2 kind
+// "audit_logs"). One row captures a single request against the IAM surface:
+// who acted (Organization, User, ClientIp), what they invoked (Method,
+// RequestUri, Action), the request payload and the server's answer (Object,
+// Response, StatusCode), and whether the row fired its registered webhooks
+// (IsTriggered). It is written once at request time and is not mutated in
+// normal operation; the CRUD update path exists only for administrative
+// correction.
+//
+// Identity is the (Owner, Name) pair — Name is a generated unique id and Owner
+// is the acting organization — so the orm string key is "owner/name". v1's
+// integer autoincrement primary key (`id`) is a per-store surrogate with no
+// cross-store meaning; it is superseded by the orm string key rather than
+// carried as a colliding `id` field, since orm.Model already persists its own
+// `id`. Every semantically meaningful v1 column is carried so no actor,
+// endpoint, payload, or status is lost on migration.
+//
+// Object and Response are unbounded text in v1 (mediumtext): Object holds the
+// password-masked request body and Response a compact status/message envelope.
+// Both carry no orm index. The audit query dimensions — Organization, User, and
+// Action — are indexed alongside the (Owner, Name) key and the CreatedTime sort
+// column.
+type AuditLog struct {
+	orm.Model[AuditLog]
+
+	Owner       string `json:"owner" orm:"index"`
+	Name        string `json:"name" orm:"index"`
+	CreatedTime string `json:"createdTime" orm:"index"`
+
+	Organization string `json:"organization" orm:"index"`
+	ClientIp     string `json:"clientIp"`
+	User         string `json:"user" orm:"index"`
+	Method       string `json:"method"`
+	RequestUri   string `json:"requestUri"`
+	Action       string `json:"action" orm:"index"`
+	Language     string `json:"language"`
+
+	Object     string `json:"object"`
+	Response   string `json:"response"`
+	StatusCode int    `json:"statusCode"`
+
+	IsTriggered bool `json:"isTriggered"`
+}
