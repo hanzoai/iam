@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"github.com/hanzoai/beego/v2/core/logs"
 	"io"
 	"net/http"
 	"net/url"
@@ -29,6 +28,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hanzoai/beego/v2/core/logs"
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/beego/v2/server/web"
