@@ -1,0 +1,22 @@
+Hanzo IAM v2 — Proprietary Software License
+
+Copyright 2026 Hanzo AI, Inc. All rights reserved.
+
+This software and its source code (the "Software") are the confidential and
+proprietary property of Hanzo AI, Inc. ("Hanzo"). The Software is licensed,
+not sold, and only under an express written agreement signed by Hanzo.
+
+Except as granted by such an agreement, no license, right, or interest in the
+Software is conveyed. You may not use, copy, modify, merge, publish, distribute,
+sublicense, reverse engineer, or create derivative works of the Software, in
+whole or in part, by any means.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL HANZO BE LIABLE
+FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT, OR OTHERWISE, ARISING FROM OR IN CONNECTION WITH THE SOFTWARE.
+
+This is a clean-room implementation. It contains no Casdoor, Apache-2.0, or
+other third-party licensed source code. Third-party dependencies are consumed
+under their own licenses as declared in go.mod.
