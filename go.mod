@@ -9,6 +9,7 @@ require (
 	github.com/hanzoai/orm v0.6.1
 	github.com/spf13/cobra v1.10.2
 	github.com/zap-proto/zip v1.6.0
+	golang.org/x/crypto v0.50.0
 )
 
 // Migration-only: linked solely in `go build -tags migration` so `iam2 compare`
@@ -56,7 +57,6 @@ require (
 	github.com/zap-proto/go v1.3.0 // indirect
 	github.com/zap-proto/http v0.2.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect

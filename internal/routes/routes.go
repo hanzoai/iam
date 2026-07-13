@@ -2,27 +2,62 @@
 
 // Package routes mounts the IAM v2 HTTP surface on a zip App.
 //
-// Phase 0 serves only GET /v1/iam/v2/health. Resource handlers for users,
-// organizations, applications, roles, permissions, and keys land in Phase 1
-// as typed zip handlers (zip.Get[In,Out]); the OIDC/OAuth2 surface
-// (/v1/iam/oauth/*, /v1/iam/.well-known/*) lands in Phase 2.
+// Phase 1 serves GET /v1/iam/v2/health plus the typed CRUD surface for all
+// thirteen identity entities (users, organizations, applications, providers,
+// roles, permissions, certs, keys, webauthn credentials, sessions, tokens,
+// audit logs, invitations). Each entity owns its own package under internal/;
+// every package exposes one uniform entry point — Mount(app, db) — so this
+// file is the single place the whole resource surface is wired.
 //
-// The /v1/iam/v2 prefix keeps these routes orthogonal to the live v1 mount at
-// /v1/iam/* during the transition; it collapses at Phase 5 cutover.
+// The OIDC/OAuth2 surface (/v1/iam/oauth/*, /v1/iam/.well-known/*) lands in
+// Phase 2. The /v1/iam/v2 prefix keeps these routes orthogonal to the live v1
+// mount at /v1/iam/* during the transition; it collapses at Phase 5 cutover.
 package routes
 
-import "github.com/zap-proto/zip"
+import (
+	"github.com/hanzoai/orm"
+	"github.com/zap-proto/zip"
 
-// Mount registers every Phase-0 route on app.
-func Mount(app *zip.App) {
+	"github.com/hanzoai/iam2/internal/applications"
+	"github.com/hanzoai/iam2/internal/auditlogs"
+	"github.com/hanzoai/iam2/internal/certs"
+	"github.com/hanzoai/iam2/internal/invitations"
+	"github.com/hanzoai/iam2/internal/keys"
+	"github.com/hanzoai/iam2/internal/organizations"
+	"github.com/hanzoai/iam2/internal/permission"
+	"github.com/hanzoai/iam2/internal/providers"
+	"github.com/hanzoai/iam2/internal/roles"
+	"github.com/hanzoai/iam2/internal/sessions"
+	"github.com/hanzoai/iam2/internal/tokens"
+	"github.com/hanzoai/iam2/internal/users"
+	"github.com/hanzoai/iam2/internal/webauthn"
+)
+
+// Mount registers every Phase-1 route on app, threading the entity store db
+// into each entity's typed CRUD handlers.
+func Mount(app *zip.App, db orm.DB) {
 	app.Get("/v1/iam/v2/health", health)
+
+	users.Mount(app, db)
+	organizations.Mount(app, db)
+	applications.Mount(app, db)
+	providers.Mount(app, db)
+	roles.Mount(app, db)
+	permission.Mount(app, db)
+	certs.Mount(app, db)
+	keys.Mount(app, db)
+	webauthn.Mount(app, db)
+	sessions.Mount(app, db)
+	tokens.Mount(app, db)
+	auditlogs.Mount(app, db)
+	invitations.Mount(app, db)
 }
 
-// health is the Phase-0 liveness probe.
+// health is the Phase-1 liveness probe.
 func health(c *zip.Ctx) error {
 	return c.JSON(200, map[string]string{
 		"status": "ok",
-		"phase":  "0",
+		"phase":  "1",
 		"binary": "iam2",
 	})
 }
