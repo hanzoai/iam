@@ -41,7 +41,7 @@ func (c *ApiController) GetOrganizations() {
 	organizationName := c.Ctx.Input.Query("organizationName")
 
 	isSuperAdmin := c.IsSuperAdmin()
-	// Non-global-admin callers are scoped to their own org. An app/<name>
+	// Non-super-admin callers are scoped to their own org. An app/<name>
 	// principal (Red R-1: no longer a global admin) has no User row, so resolve
 	// the scope nil-safely instead of dereferencing a nil getCurrentUser() — an
 	// empty scope matches no organization (GetOrganizations returns []), which is
