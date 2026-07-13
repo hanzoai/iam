@@ -69,10 +69,13 @@ var defaultLanguages = []string{"en", "es", "fr", "de", "it", "nl", "pt", "ru", 
 // refresh_token are the browser/desktop deep-link login; the device
 // authorization grant (RFC 8628) is the headless/CLI login — the `dev` CLI and
 // IDE plugins on hanzo.id / lux.id / zoolabs.id.
+// deviceGrantType is the RFC 8628 device authorization grant identifier.
+const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+
 var brandGrantTypes = []string{
 	"authorization_code",
 	"refresh_token",
-	"urn:ietf:params:oauth:grant-type:device_code",
+	deviceGrantType,
 }
 
 // mfaItem mirrors object.MfaItem — one MFA method + its enforcement rule.
@@ -388,6 +391,22 @@ func runInitApps(client *provClient, cfg *provConfig, verbose bool) error {
 		apps, err := listAppsForOrg(client, cfg.AdminOrg, b.Org)
 		if err != nil {
 			return fmt.Errorf("init-apps: list apps for %s: %w", b.Org, err)
+		}
+
+		// The "<org>-cloud" WEB app (console.<brand>) gains the device grant the
+		// same converge-only way: its row (redirects, providers, secret) is
+		// console-owned, so boot reconciliation never creates it — it only adds
+		// the QR/device sign-in grant when the row exists. Idempotent.
+		if web := findApp(apps, b.Org+"-cloud"); web != nil {
+			if added := ensureGrantTypes(web, []string{deviceGrantType}); added > 0 {
+				if err := updateApp(client, web); err != nil {
+					return fmt.Errorf("init-apps: converge grants %s/%s: %w", b.Org, web.Name, err)
+				}
+				convergedApps++
+				if verbose {
+					fmt.Printf("[grant] %s/%s — added device_code\n", b.Org, web.Name)
+				}
+			}
 		}
 
 		// Already present: converge its grant types (the brand apps shipped
