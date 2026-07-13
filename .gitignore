@@ -1,0 +1,18 @@
+# binaries
+/iam2
+/iam-v2
+iam2
+iam-v2
+
+# base / sqlite data
+/data
+/pb_data
+*.db
+*.db-shm
+*.db-wal
+
+# env / local
+.env
+.env.*
+*.local
+.DS_Store
