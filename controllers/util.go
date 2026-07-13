@@ -225,7 +225,11 @@ func (c *ApiController) IsOrgAdmin() (bool, bool) {
 	}
 
 	if object.IsAppUser(userId) {
-		return true, true
+		// Red R-1/R-3: an app/<name> M2M principal is NOT an org admin. (It has
+		// no User row.) Treat it as a non-admin and proceed without error;
+		// privileged mutations are denied by the route-level app policy
+		// (object.AppRouteAllowed) and the per-capability controller gates.
+		return false, true
 	}
 
 	user, err := object.GetUser(userId)

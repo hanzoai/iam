@@ -395,6 +395,7 @@ func (c *ApiController) Signup() {
 	}
 
 	c.SetSessionUsername(user.GetId())
+	c.stashSessionAccessToken(application, user)
 
 	if authForm.Email != "" {
 		err = object.DisableVerificationCode(authForm.Email)
@@ -563,6 +564,7 @@ func (c *ApiController) signinExistingPhoneUser(application *object.Application,
 
 	// Set server session (cookie-based login).
 	c.SetSessionUsername(user.GetId())
+	c.stashSessionAccessToken(application, user)
 
 	userId := user.GetId()
 	util.LogInfo(c.Ctx, "API: [%s] signed in via phone-OTP (existing user, signup short-circuit)", userId)
