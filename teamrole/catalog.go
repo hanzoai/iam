@@ -92,37 +92,37 @@ var catalog = []Role{
 		Key: "billing:viewer", App: AppBilling, Tier: TierViewer, Rank: 10,
 		Resource: "billing:*", Actions: []string{"read"},
 		DisplayName: "Billing Viewer",
-		Description:  "Read-only access to billing: invoices, usage, and team members.",
+		Description: "Read-only access to billing: invoices, usage, and team members.",
 	},
 	{
 		Key: "billing:admin", App: AppBilling, Tier: TierAdmin, Rank: 20,
 		Resource: "billing:*", Actions: []string{"read", "write", "manage"},
 		DisplayName: "Billing Admin",
-		Description:  "Manage billing: payment methods, plans, spend limits, and the billing team.",
+		Description: "Manage billing: payment methods, plans, spend limits, and the billing team.",
 	},
 	{
 		Key: "console:viewer", App: AppConsole, Tier: TierViewer, Rank: 10,
 		Resource: "console:*", Actions: []string{"read"},
 		DisplayName: "Console Viewer",
-		Description:  "Read-only access to console projects and resources.",
+		Description: "Read-only access to console projects and resources.",
 	},
 	{
 		Key: "console:admin", App: AppConsole, Tier: TierAdmin, Rank: 20,
 		Resource: "console:*", Actions: []string{"read", "write", "manage"},
 		DisplayName: "Console Admin",
-		Description:  "Manage console resources and the console team.",
+		Description: "Manage console resources and the console team.",
 	},
 	{
 		Key: "console:owner", App: AppConsole, Tier: TierOwner, Rank: 30,
 		Resource: "console:*", Actions: []string{"read", "write", "manage", "own"},
 		DisplayName: "Console Owner",
-		Description:  "Full ownership of the console surface, including owner assignment.",
+		Description: "Full ownership of the console surface, including owner assignment.",
 	},
 	{
 		Key: "org:owner", App: AppOrg, Tier: TierOwner, Rank: 100,
 		Resource: "*", Actions: []string{"*"},
 		DisplayName: "Organization Owner",
-		Description:  "Full ownership of the organization: every app, billing, team, and ownership transfer.",
+		Description: "Full ownership of the organization: every app, billing, team, and ownership transfer.",
 	},
 }
 
