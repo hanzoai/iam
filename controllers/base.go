@@ -280,6 +280,57 @@ func (c *ApiController) SetSessionToken(accessToken string) {
 	c.SetSession("accessToken", accessToken)
 }
 
+// sessionTokenMinter is the seam the session-access-token stash uses to obtain
+// the JWT it stores server-side. It defaults to minting a fresh access token for
+// the LOGIN application (aud = application.ClientId) on behalf of the
+// authenticated user. It is a package var ONLY so stashSessionAccessToken is
+// unit-testable without a DB/cert; production always uses this default.
+var sessionTokenMinter = func(application *object.Application, user *object.User, host string) (string, error) {
+	token, err := object.GetTokenByUser(application, user, "profile", "", host)
+	if err != nil {
+		return "", err
+	}
+	return token.AccessToken, nil
+}
+
+// stashSessionAccessToken mints an access-token JWT for `application` — the app
+// the caller is logging INTO (aud = application.ClientId), NOT the user's default
+// app (object.GetApplicationByUser) — and stores it in the first-party session
+// under "accessToken", beside the username the login handler set.
+//
+// WHY. The cloud-embed console (console.hanzo.ai served by the fused
+// hanzoai/cloud binary) authenticates against this in-process IAM, which sets an
+// opaque, httpOnly session id — never a bearer. cloud's cookie→principal bridge
+// (middleware_identity.sessionAccessToken) resolves a same-origin, cookie-only
+// money call (billing/balance, console key mint) by mapping that session id to
+// the JWT stored HERE, then re-validating it (sig/iss/aud/exp) independently. The
+// aud MUST be the login app's client_id so it lands in the consumer's audience
+// allowlist (e.g. hanzo-cloud); the user's default app produces the wrong aud and
+// the bridge fails closed. This is the ONLY writer of a non-empty session
+// "accessToken" for the embed login flow (the sole other writer,
+// routers/timeout_filter, sets it to "" on inactivity).
+//
+// The stored token is ALWAYS the session owner's own, freshly minted from the
+// authenticated `user`; a forged/other-principal token can never be stashed. It
+// is never logged. Best-effort: a mint failure logs and returns without touching
+// the session, so a token-minting hiccup never blocks the login (the username is
+// already set).
+func (c *ApiController) stashSessionAccessToken(application *object.Application, user *object.User) {
+	if application == nil || user == nil {
+		return
+	}
+	token, err := sessionTokenMinter(application, user, c.getEffectiveHost())
+	if err != nil {
+		logs.Warning("stashSessionAccessToken: mint for user=%s app=%s failed: %s",
+			user.GetId(), application.Name, err.Error())
+		return
+	}
+	if token == "" {
+		return
+	}
+	c.SetSessionToken(token)
+}
+
 // GetSessionData ...
 func (c *ApiController) GetSessionData() *SessionData {
 	session := c.GetSession("SessionData")
