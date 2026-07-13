@@ -143,10 +143,12 @@ func TestStashSessionAccessToken_SafeNoops(t *testing.T) {
 			minter: func(*object.Application, *object.User, string) (string, error) { return "should.not.mint", nil },
 		},
 		{
-			name:   "mint error",
-			app:    loginApp,
-			user:   user,
-			minter: func(*object.Application, *object.User, string) (string, error) { return "", errors.New("no signing cert") },
+			name: "mint error",
+			app:  loginApp,
+			user: user,
+			minter: func(*object.Application, *object.User, string) (string, error) {
+				return "", errors.New("no signing cert")
+			},
 		},
 		{
 			name:   "empty mint, no error",

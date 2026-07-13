@@ -108,10 +108,10 @@ func TestAppTiers(t *testing.T) {
 
 func TestEffectiveRank(t *testing.T) {
 	cases := []struct {
-		name    string
-		keys    []string
-		app     App
-		want    int
+		name string
+		keys []string
+		app  App
+		want int
 	}{
 		{"no roles", nil, AppBilling, 0},
 		{"billing admin in billing", []string{"billing:admin"}, AppBilling, 20},
