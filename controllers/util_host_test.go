@@ -22,10 +22,10 @@ import "testing"
 func TestEffectiveHost(t *testing.T) {
 	served := func(h string) bool { return h == "hanzo.id" || h == "iam.hanzo.ai" }
 	cases := []struct{ real, fwd, want string }{
-		{"iam.hanzo.ai", "", "iam.hanzo.ai"},                   // no fwd -> real host
-		{"iam.hanzo.ai", "hanzo.id", "hanzo.id"},               // served fwd -> trusted
-		{"iam.hanzo.ai", "evil.com", "iam.hanzo.ai"},           // foreign fwd -> ignored
-		{"iam.hanzo.ai", "hanzo.id , x.com", "hanzo.id"},       // CSV first, served
+		{"iam.hanzo.ai", "", "iam.hanzo.ai"},                    // no fwd -> real host
+		{"iam.hanzo.ai", "hanzo.id", "hanzo.id"},                // served fwd -> trusted
+		{"iam.hanzo.ai", "evil.com", "iam.hanzo.ai"},            // foreign fwd -> ignored
+		{"iam.hanzo.ai", "hanzo.id , x.com", "hanzo.id"},        // CSV first, served
 		{"iam.hanzo.ai", "evil.com , hanzo.id", "iam.hanzo.ai"}, // CSV first not served -> real
 	}
 	for _, tc := range cases {
