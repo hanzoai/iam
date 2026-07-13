@@ -105,6 +105,13 @@ func TestGetDeviceAuthResponse_RFC8628(t *testing.T) {
 	if resp.VerificationUriComplete == "" || !strings.Contains(resp.VerificationUriComplete, "WDJB-MJHT") {
 		t.Errorf("verification_uri_complete %q must embed the user_code", resp.VerificationUriComplete)
 	}
+	// It must embed the code as a PATH segment (…/device/<user_code>) — the shape the
+	// SPA's /login/oauth/device/:userCode route matches — so a scanned QR deep-links to
+	// the prefilled approval page. The query form (?user_code=) has no path segment and
+	// would 404 in the SPA.
+	if !strings.HasSuffix(resp.VerificationUriComplete, OidcPathDeviceVerify+"/WDJB-MJHT") {
+		t.Errorf("verification_uri_complete %q must deep-link the SPA path route %q/<user_code>", resp.VerificationUriComplete, OidcPathDeviceVerify)
+	}
 }
 
 // TestDeviceCodeUserError pins the device-grant issuance policy — the only
