@@ -33,13 +33,13 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hanzoai/authzstore v0.1.1
-	github.com/hanzoai/beego/v2 v2.3.10
+	github.com/hanzoai/beego/v2 v2.4.2
 	github.com/hanzoai/builder v0.3.13
 	github.com/hanzoai/idv v1.0.3
 	github.com/hanzoai/ldapserver v1.2.1
 	github.com/hanzoai/notify2 v1.6.3
 	github.com/hanzoai/oss v1.8.5
-	github.com/hanzoai/xorm v1.1.6
+	github.com/hanzoai/xorm v1.4.1
 	github.com/hsluoyz/modsecurity-go v0.0.7
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/json-iterator/go v1.1.13-0.20220915233716-71ac16282d12
@@ -48,7 +48,7 @@ require (
 	github.com/likexian/whois v1.15.1
 	github.com/likexian/whois-parser v1.24.9
 	github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3
-	github.com/luxfi/crypto v1.19.21
+	github.com/luxfi/crypto v1.19.26
 	github.com/luxfi/kms v1.11.8
 	github.com/luxfi/metric v1.5.8
 	github.com/luxwallet/connect/go v0.1.3
@@ -268,6 +268,7 @@ require (
 	github.com/hanzoai/ai v1.800.9 // indirect
 	github.com/hanzoai/cloud v1.786.112 // indirect
 	github.com/hanzoai/commerce/metering v0.1.4 // indirect
+	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/dashscope-go-sdk v0.0.2 // indirect
 	github.com/hanzoai/dashscopego v0.6.0 // indirect
 	github.com/hanzoai/dbx v1.16.0 // indirect
@@ -347,7 +348,6 @@ require (
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-runewidth v0.0.21 // indirect
-	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mileusna/viber v1.0.1 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
@@ -505,7 +505,7 @@ require github.com/hanzoai/authz v1.10.4
 // modernc on its !cgo path). Build prod with:
 //   CGO_ENABLED=1 -tags "libsqlite3 sqlite_fts5"
 //   CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 …" CGO_LDFLAGS="-lsqlcipher"
-require github.com/hanzoai/sqlite v0.1.5
+require github.com/hanzoai/sqlite v0.3.0
 
 // SQLITE-GATE history: cloud/audit once blank-imported modernc.org/sqlite
 // directly, self-registering a second "sqlite" driver alongside iam's own
