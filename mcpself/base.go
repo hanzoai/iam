@@ -321,6 +321,15 @@ func (c *McpController) handleToolsCall(req McpRequest) {
 		return
 	}
 
+	// App/<name> (client_credentials M2M) principals: a MUTATING tool requires
+	// the same capability allowlist as the HTTP controller (defense in depth;
+	// closes the latent alternate-R-1 where an app could reach
+	// object.UpdateApplication over MCP with no capability check). Read tools
+	// fall through; human principals are governed by checkToolPermission.
+	if !c.requireAppCapabilityForTool(req.ID, params.Name) {
+		return // Error already sent by requireAppCapabilityForTool
+	}
+
 	// Check scope-tool permission
 	if !c.checkToolPermission(req.ID, params.Name) {
 		return // Error already sent by checkToolPermission
@@ -377,13 +386,19 @@ func (c *McpController) checkToolPermission(id interface{}, toolName string) boo
 	// If no token is present, check if the user is authenticated via session
 	if claims == nil {
 		username := c.GetSessionUsername()
-		// If user is authenticated via session (e.g., session cookie), allow access
-		// This maintains backward compatibility with existing session-based auth
-		if username != "" {
+		// If a human is authenticated via session (e.g., session cookie), allow
+		// access — backward compatibility with existing session-based auth.
+		//
+		// An app/<name> (client_credentials) principal is NOT a human session
+		// and must NOT be blanket-allowed here: that was the latent alternate-R-1
+		// (an app mutating applications over MCP with no capability check). Apps
+		// are authorized by requireAppCapabilityForTool (capability allowlist),
+		// never by this session fallback.
+		if username != "" && !object.IsAppUser(username) {
 			return true
 		}
 
-		// No authentication present - deny access
+		// No (human) authentication present - deny access
 		c.sendInsufficientScopeError(id, toolName, []string{})
 		return false
 	}

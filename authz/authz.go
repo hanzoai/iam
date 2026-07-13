@@ -37,7 +37,6 @@ func InitApi() {
 	if true {
 		ruleText := `
 p, ` + conf.AdminOrg + `, *, *, *, *, *
-p, app, *, *, *, *, *
 p, *, !anonymous, POST, /v1/iam/add-organization, admin, *
 p, *, !anonymous, POST, /v1/iam/update-organization, admin, *
 p, *, !anonymous, POST, /v1/iam/delete-organization, admin, *
@@ -158,13 +157,22 @@ func IsAllowed(subOwner string, subName string, method string, urlPath string, o
 		}
 	}
 
+	// Red R-1/R-3: an app/<name> (client_credentials M2M) principal is NOT an
+	// admin. A single coherent policy decides what it may do — read + speak the
+	// OAuth/identity protocol + ONLY its capability-allowlisted mutations, and no
+	// other mutation (the residual privileged cluster or any future one). It
+	// never reaches the user-admin checks or the Casbin policy below, and it has
+	// no User row, so the GetUser lookup is skipped entirely. The legacy
+	// blanket (this branch returning true, backed by a Casbin `p, app, *…`
+	// grant, both removed) made every confidential client an admin over every
+	// route.
+	if subOwner == "app" {
+		return object.AppRouteAllowed(subName, method, urlPath)
+	}
+
 	user, err := object.GetUser(util.GetId(subOwner, subName))
 	if err != nil {
 		panic(err)
-	}
-
-	if subOwner == "app" {
-		return true
 	}
 
 	if user != nil {
