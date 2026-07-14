@@ -177,6 +177,14 @@ func bootstrap(cfg bootConfig) int {
 		logs.Warning("BackfillDefaultProjects failed (default `project` claim will be absent until reseed): %v", err)
 	}
 
+	// Record the HOME-org membership for every user that lacks one (idempotent,
+	// live-safe), so the `orgs` claim and org rosters have real rows. Best-effort:
+	// a failure just leaves the token relying on the synthesized home org — it
+	// must never crash boot.
+	if _, err := object.BackfillMemberships(); err != nil {
+		logs.Warning("BackfillMemberships failed (home membership rows will be seeded on next boot): %v", err)
+	}
+
 	object.InitCleanupTokens()
 
 	object.InitSiteMap()
