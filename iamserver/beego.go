@@ -170,13 +170,6 @@ func bootstrap(cfg bootConfig) int {
 	object.InitUserManager()
 	object.InitFromFile()
 
-	// Seed a default project for every org that lacks one (idempotent, live-safe).
-	// Runs after all orgs are seeded. Best-effort: a failure just leaves the
-	// `project` claim absent (default scope) — it must never crash boot.
-	if _, err := object.BackfillDefaultProjects(); err != nil {
-		logs.Warning("BackfillDefaultProjects failed (default `project` claim will be absent until reseed): %v", err)
-	}
-
 	// Record the HOME-org membership for every user that lacks one (idempotent,
 	// live-safe), so the `orgs` claim and org rosters have real rows. Best-effort:
 	// a failure just leaves the token relying on the synthesized home org — it

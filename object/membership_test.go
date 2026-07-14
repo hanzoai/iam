@@ -25,7 +25,7 @@ import (
 
 // newMembershipTestOrmer wires the package `ormer` to a fresh in-memory sqlite
 // engine with exactly the tables the membership plane touches. Mirrors
-// newSeedTestOrmer; restores the previous ormer on cleanup.
+// newProjectTestOrmer; restores the previous ormer on cleanup.
 func newMembershipTestOrmer(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
