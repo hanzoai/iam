@@ -23,6 +23,7 @@ import (
 	"github.com/hanzoai/iam2/internal/certs"
 	"github.com/hanzoai/iam2/internal/invitations"
 	"github.com/hanzoai/iam2/internal/keys"
+	"github.com/hanzoai/iam2/internal/oidc"
 	"github.com/hanzoai/iam2/internal/organizations"
 	"github.com/hanzoai/iam2/internal/permission"
 	"github.com/hanzoai/iam2/internal/providers"
@@ -37,6 +38,9 @@ import (
 // into each entity's typed CRUD handlers.
 func Mount(app *zip.App, db orm.DB) {
 	app.Get("/v1/iam/v2/health", health)
+
+	// Phase 2 — the OIDC surface at the canonical /v1/iam/* paths (SDK contract).
+	oidc.Mount(app)
 
 	users.Mount(app, db)
 	organizations.Mount(app, db)
