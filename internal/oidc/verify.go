@@ -24,6 +24,15 @@ import (
 // verification path that trusts attacker-controlled material.
 var acceptedAlgs = []string{"RS256", "RS512", "ES256", "ES384", "ES512", algMLDSA65}
 
+// VerifyToken is the exported bearer-verification primitive the authz layer
+// reuses to gate the CRUD surface: it is verifyToken, so a bearer presented to a
+// protected route is trusted under the exact same closed algorithm allowlist,
+// trusted signing-cert kid resolution, and time validation as every OIDC route.
+// One verification path, one trust model — no second, weaker check.
+func VerifyToken(ctx context.Context, db orm.DB, tokenStr string) (*Claims, error) {
+	return verifyToken(ctx, db, tokenStr)
+}
+
 // verifyToken parses tokenStr, verifies its signature against the Cert named by
 // the token's kid, and returns the validated claims. It fails closed on an
 // unknown kid, a disallowed algorithm, a bad signature, or an expired token.
