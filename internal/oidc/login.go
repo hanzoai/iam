@@ -67,9 +67,14 @@ func loginHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		// The hash algorithm is a property of the ROW, not a constant: use the
+		// user's PasswordType, falling back to the organization's (v1's
+		// object/check.go contract). Every live v1 row is argon2id — a bcrypt-only
+		// verify would fail every real login at cutover.
+		orgPasswordType := loginOrgPasswordType(ctx, db, f.Organization)
 		// One opaque failure for "no such user" and "wrong password" — no oracle
 		// that reveals whether the account exists.
-		if user == nil || !users.VerifyPassword(user, f.Password) {
+		if user == nil || !users.VerifyPassword(user, f.Password, orgPasswordType) {
 			return httpx.Err(c, "the username or password is incorrect")
 		}
 
@@ -151,4 +156,16 @@ func resolveLoginApp(ctx context.Context, db orm.DB, f loginForm) (*schema.Appli
 		return store.GetApplicationByName(ctx, db, "admin", f.Application)
 	}
 	return nil, nil
+}
+
+// loginOrgPasswordType returns the organization's PasswordType — the fallback
+// when a user row carries none. A missing org yields "" (the user's own type
+// then decides; if neither is set, cred.Verify fails closed rather than guessing
+// an algorithm).
+func loginOrgPasswordType(ctx context.Context, db orm.DB, org string) string {
+	o, err := store.GetOrganizationByName(ctx, db, org)
+	if err != nil || o == nil {
+		return ""
+	}
+	return o.PasswordType
 }
