@@ -22,12 +22,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/hanzoai/iam/util"
 	"github.com/nyaruka/phonenumbers"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/idtoken"
 )
 
 const GoogleIdTokenKey = "GoogleIdToken"
@@ -35,6 +37,14 @@ const GoogleIdTokenKey = "GoogleIdToken"
 type GoogleIdProvider struct {
 	Client *http.Client
 	Config *oauth2.Config
+	// verifyIdToken verifies a Google OneTap ID token (a raw JWT) against the
+	// provider's OAuth client ID as the audience and returns its verified claims.
+	// It is the ONLY trusted source of OneTap claims: the client-supplied token is
+	// never trusted without this signature/issuer/audience/expiry check, so an
+	// account-linking decision (object.MayLinkByVerifiedEmail, which keys on
+	// UserInfo.EmailVerified) can only ever see a cryptographically verified email.
+	// Defaults to Google's JWKS-backed validator; tests inject a seam.
+	verifyIdToken func(ctx context.Context, rawIdToken string, audience string) (*GoogleIdToken, error)
 }
 
 // https://developers.google.com/identity/sign-in/web/backend-auth#calling-the-tokeninfo-endpoint
@@ -64,6 +74,7 @@ func NewGoogleIdProvider(clientId string, clientSecret string, redirectUrl strin
 	config.ClientSecret = clientSecret
 	config.RedirectURL = redirectUrl
 	idp.Config = config
+	idp.verifyIdToken = verifyGoogleIdToken
 
 	return idp
 }
@@ -87,11 +98,17 @@ func (idp *GoogleIdProvider) getConfig() *oauth2.Config {
 }
 
 func (idp *GoogleIdProvider) GetToken(code string) (*oauth2.Token, error) {
-	// Obtained the GoogleIdToken through Google OneTap authorization.
+	// Google OneTap delivers the raw ID token (a signed JWT) prefixed with
+	// GoogleIdTokenKey. The remainder is that JWT verbatim; base64url payloads may
+	// contain '-', and TrimPrefix removes only the leading key so the token is left
+	// intact. Verify it server-side before trusting ANY claim — the account-linking
+	// gate (object.MayLinkByVerifiedEmail) keys on the resulting EmailVerified, so a
+	// forged blob must never reach it. On any verification failure this returns an
+	// error rather than a token, so the login is refused (fail closed).
 	if strings.HasPrefix(code, GoogleIdTokenKey) {
-		code = strings.TrimPrefix(code, GoogleIdTokenKey+"-")
-		var googleIdToken GoogleIdToken
-		if err := json.Unmarshal([]byte(code), &googleIdToken); err != nil {
+		rawIdToken := strings.TrimPrefix(code, GoogleIdTokenKey+"-")
+		googleIdToken, err := idp.verifyIdToken(context.Background(), rawIdToken, idp.Config.ClientID)
+		if err != nil {
 			return nil, err
 		}
 		expiry := int64(util.ParseInt(googleIdToken.Exp))
@@ -101,13 +118,81 @@ func (idp *GoogleIdProvider) GetToken(code string) (*oauth2.Token, error) {
 			Expiry:      time.Unix(expiry, 0),
 		}
 		token = token.WithExtra(map[string]interface{}{
-			GoogleIdTokenKey: googleIdToken,
+			GoogleIdTokenKey: *googleIdToken,
 		})
 		return token, nil
 	}
 
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, idp.Client)
 	return idp.Config.Exchange(ctx, code)
+}
+
+// verifyGoogleIdToken cryptographically verifies a Google OneTap ID token (a raw
+// JWT) and returns its VERIFIED claims. idtoken.Validate checks the RS256/ES256
+// signature against Google's published JWKS, that the audience equals this
+// provider's OAuth client ID, and that the token has not expired; the issuer is
+// checked here because idtoken.Validate does not. A forged, wrong-audience,
+// wrong-issuer, or expired token yields an error and no claims — the caller must
+// never fall through to trusting an unverified blob.
+func verifyGoogleIdToken(ctx context.Context, rawIdToken string, audience string) (*GoogleIdToken, error) {
+	if strings.TrimSpace(audience) == "" {
+		// Without a configured client ID we cannot bind the token to THIS
+		// application's audience, and idtoken.Validate silently skips the aud check
+		// when the audience is empty. Fail closed instead of accepting a token minted
+		// for some other relying party.
+		return nil, errors.New("idtoken: google provider has no client ID to verify the token audience against")
+	}
+	payload, err := idtoken.Validate(ctx, rawIdToken, audience)
+	if err != nil {
+		return nil, fmt.Errorf("idtoken: google OneTap token verification failed: %w", err)
+	}
+	if !acceptableGoogleIssuer(payload.Issuer) {
+		return nil, fmt.Errorf("idtoken: unexpected google OneTap issuer %q", payload.Issuer)
+	}
+	return googleIdTokenFromClaims(payload), nil
+}
+
+// acceptableGoogleIssuer reports whether iss is one of Google's two published
+// issuer identifiers for ID tokens.
+func acceptableGoogleIssuer(iss string) bool {
+	return iss == "accounts.google.com" || iss == "https://accounts.google.com"
+}
+
+// googleIdTokenFromClaims projects a verified idtoken payload onto the
+// GoogleIdToken claims struct. email_verified is a JSON boolean in a real Google
+// ID token (the tokeninfo REST endpoint stringifies it); both forms normalise to
+// the struct's string field and only a genuine true survives.
+func googleIdTokenFromClaims(payload *idtoken.Payload) *GoogleIdToken {
+	claim := func(key string) string {
+		if s, ok := payload.Claims[key].(string); ok {
+			return s
+		}
+		return ""
+	}
+	emailVerified := "false"
+	switch v := payload.Claims["email_verified"].(type) {
+	case bool:
+		if v {
+			emailVerified = "true"
+		}
+	case string:
+		if v == "true" {
+			emailVerified = "true"
+		}
+	}
+	return &GoogleIdToken{
+		Iss:           payload.Issuer,
+		Sub:           payload.Subject,
+		Aud:           payload.Audience,
+		Exp:           strconv.FormatInt(payload.Expires, 10),
+		Email:         claim("email"),
+		EmailVerified: emailVerified,
+		Name:          claim("name"),
+		Picture:       claim("picture"),
+		GivenName:     claim("given_name"),
+		FamilyName:    claim("family_name"),
+		Locale:        claim("locale"),
+	}
 }
 
 //{
