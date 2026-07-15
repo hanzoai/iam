@@ -8,7 +8,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
+	"github.com/luxfi/crypto/pq/mldsa/mldsa65"
 
 	"github.com/hanzoai/orm"
 
