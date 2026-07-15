@@ -26,15 +26,15 @@ type Handlers struct {
 // from routes.Mount once the store is open.
 func Mount(app *zip.App, db orm.DB) {
 	h := &Handlers{db: db}
-	zip.Get(app, "/v1/iam/v2/permissions", h.List,
+	zip.Get(app, "/v1/iam/permissions", h.List,
 		zip.WithSummary("List permissions for an owner"), zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/v2/permissions", h.Add,
+	zip.Post(app, "/v1/iam/permissions", h.Add,
 		zip.WithSummary("Create a permission"), zip.WithTags("permissions"))
-	zip.Get(app, "/v1/iam/v2/permissions/get", h.Get,
+	zip.Get(app, "/v1/iam/permissions/get", h.Get,
 		zip.WithSummary("Get one permission by owner and name"), zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/v2/permissions/update", h.Update,
+	zip.Post(app, "/v1/iam/permissions/update", h.Update,
 		zip.WithSummary("Update a permission"), zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/v2/permissions/delete", h.Delete,
+	zip.Post(app, "/v1/iam/permissions/delete", h.Delete,
 		zip.WithSummary("Delete a permission"), zip.WithTags("permissions"))
 }
 

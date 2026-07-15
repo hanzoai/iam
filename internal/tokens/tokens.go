@@ -57,27 +57,27 @@ type tokenMutation struct {
 
 // Mount registers the token surface on app, closing over the entity store.
 func Mount(app *zip.App, db orm.DB) {
-	zip.Get[listTokensIn, listTokensOut](app, "/v1/iam/v2/tokens", listTokens(db),
+	zip.Get[listTokensIn, listTokensOut](app, "/v1/iam/tokens", listTokens(db),
 		zip.WithOperationID("listTokens"),
 		zip.WithSummary("List tokens in an owner scope"),
 		zip.WithTags("tokens"))
 
-	zip.Post[tokenKey, tokenResult](app, "/v1/iam/v2/tokens/get", getToken(db),
+	zip.Post[tokenKey, tokenResult](app, "/v1/iam/tokens/get", getToken(db),
 		zip.WithOperationID("getToken"),
 		zip.WithSummary("Get one token by (owner, name)"),
 		zip.WithTags("tokens"))
 
-	zip.Post[schema.Token, tokenResult](app, "/v1/iam/v2/tokens", addToken(db),
+	zip.Post[schema.Token, tokenResult](app, "/v1/iam/tokens", addToken(db),
 		zip.WithOperationID("addToken"),
 		zip.WithSummary("Create a token"),
 		zip.WithTags("tokens"))
 
-	zip.Post[schema.Token, tokenMutation](app, "/v1/iam/v2/tokens/update", updateToken(db),
+	zip.Post[schema.Token, tokenMutation](app, "/v1/iam/tokens/update", updateToken(db),
 		zip.WithOperationID("updateToken"),
 		zip.WithSummary("Update an existing token"),
 		zip.WithTags("tokens"))
 
-	zip.Post[tokenKey, tokenMutation](app, "/v1/iam/v2/tokens/delete", deleteToken(db),
+	zip.Post[tokenKey, tokenMutation](app, "/v1/iam/tokens/delete", deleteToken(db),
 		zip.WithOperationID("deleteToken"),
 		zip.WithSummary("Delete a token by (owner, name)"),
 		zip.WithTags("tokens"))

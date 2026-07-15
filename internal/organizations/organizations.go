@@ -17,7 +17,7 @@ import (
 	"github.com/hanzoai/iam2/internal/schema"
 )
 
-const orgBase = "/v1/iam/v2/organizations"
+const orgBase = "/v1/iam/organizations"
 
 // Mount registers the organization CRUD surface on app, backed by db.
 func Mount(app *zip.App, db orm.DB) {

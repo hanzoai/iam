@@ -50,15 +50,15 @@ type DeleteResult struct {
 // use GET, create POST, update PUT, delete DELETE — every one a zip typed
 // handler.
 func Mount(app *zip.App, db orm.DB) {
-	zip.Get(app, "/v1/iam/v2/applications", listApplications(db),
+	zip.Get(app, "/v1/iam/applications", listApplications(db),
 		zip.WithSummary("List applications for an owner"), zip.WithTags("applications"))
-	zip.Get(app, "/v1/iam/v2/application", getApplication(db),
+	zip.Get(app, "/v1/iam/application", getApplication(db),
 		zip.WithSummary("Get one application by owner and name"), zip.WithTags("applications"))
-	zip.Post(app, "/v1/iam/v2/application", createApplication(db),
+	zip.Post(app, "/v1/iam/application", createApplication(db),
 		zip.WithSummary("Create an application"), zip.WithTags("applications"))
-	zip.Put(app, "/v1/iam/v2/application", updateApplication(db),
+	zip.Put(app, "/v1/iam/application", updateApplication(db),
 		zip.WithSummary("Update an application"), zip.WithTags("applications"))
-	zip.Delete(app, "/v1/iam/v2/application", deleteApplication(db),
+	zip.Delete(app, "/v1/iam/application", deleteApplication(db),
 		zip.WithSummary("Delete an application"), zip.WithTags("applications"))
 }
 

@@ -54,27 +54,27 @@ type mutationResult struct {
 
 // Mount registers the provider surface on app, closing over the entity store.
 func Mount(app *zip.App, db orm.DB) {
-	zip.Get[listProvidersIn, listProvidersOut](app, "/v1/iam/v2/providers", listProviders(db),
+	zip.Get[listProvidersIn, listProvidersOut](app, "/v1/iam/providers", listProviders(db),
 		zip.WithOperationID("listProviders"),
 		zip.WithSummary("List providers in an owner scope"),
 		zip.WithTags("providers"))
 
-	zip.Post[providerKey, providerResult](app, "/v1/iam/v2/providers/get", getProvider(db),
+	zip.Post[providerKey, providerResult](app, "/v1/iam/providers/get", getProvider(db),
 		zip.WithOperationID("getProvider"),
 		zip.WithSummary("Get one provider by (owner, name)"),
 		zip.WithTags("providers"))
 
-	zip.Post[schema.Provider, providerResult](app, "/v1/iam/v2/providers", addProvider(db),
+	zip.Post[schema.Provider, providerResult](app, "/v1/iam/providers", addProvider(db),
 		zip.WithOperationID("addProvider"),
 		zip.WithSummary("Create a provider"),
 		zip.WithTags("providers"))
 
-	zip.Post[schema.Provider, mutationResult](app, "/v1/iam/v2/providers/update", updateProvider(db),
+	zip.Post[schema.Provider, mutationResult](app, "/v1/iam/providers/update", updateProvider(db),
 		zip.WithOperationID("updateProvider"),
 		zip.WithSummary("Update an existing provider"),
 		zip.WithTags("providers"))
 
-	zip.Post[providerKey, mutationResult](app, "/v1/iam/v2/providers/delete", deleteProvider(db),
+	zip.Post[providerKey, mutationResult](app, "/v1/iam/providers/delete", deleteProvider(db),
 		zip.WithOperationID("deleteProvider"),
 		zip.WithSummary("Delete a provider by (owner, name)"),
 		zip.WithTags("providers"))
