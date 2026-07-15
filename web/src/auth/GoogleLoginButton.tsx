@@ -40,17 +40,27 @@ export function GoogleOneTapLoginVirtualButton(prop) {
   useGoogleOneTapLogin({
     googleAccountConfigs: {
       client_id: providerConf.provider.clientId,
+      // Google Identity Services invokes this callback with the raw ID token
+      // (response.credential — a signed JWT). Forward it verbatim so the backend
+      // can verify its signature, issuer, audience, and expiry (idp/google.go
+      // verifyGoogleIdToken) before trusting any claim. Sending decoded claims
+      // instead would let a caller forge email_verified and take over the account
+      // that address belongs to.
+      callback: (response) => {
+        if (!response || !response.credential) {
+          Setting.showMessage("error", "Google One Tap sign-in failed");
+          return;
+        }
+        const code = "GoogleIdToken-" + response.credential;
+        const authUrlParams = new URLSearchParams(Provider.getAuthUrl(application, providerConf.provider, "signup"));
+        const state = authUrlParams.get("state");
+        let redirectUri = authUrlParams.get("redirect_uri");
+        redirectUri = `${redirectUri}?state=${state}&code=${encodeURIComponent(code)}`;
+        Setting.goToLink(redirectUri);
+      },
     },
     onError: (error) => {
       Setting.showMessage("error", error);
-    },
-    onSuccess: (response) => {
-      const code = "GoogleIdToken-" + JSON.stringify(response);
-      const authUrlParams = new URLSearchParams(Provider.getAuthUrl(application, providerConf.provider, "signup"));
-      const state = authUrlParams.get("state");
-      let redirectUri = authUrlParams.get("redirect_uri");
-      redirectUri = `${redirectUri}?state=${state}&code=${encodeURIComponent(code)}`;
-      Setting.goToLink(redirectUri);
     },
     disableCancelOnUnmount: false,
   });
