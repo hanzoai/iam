@@ -20,7 +20,7 @@ identity binary carries no upstream copyright or license obligations.
 ## Status
 
 Phase 0. The binary boots Base, registers the v2 collection schema, serves
-`/v1/iam/health`, and ships a read-only drift CLI. Cutover off `hanzoai/iam`
+`/healthz`, and ships a read-only drift CLI. Cutover off `hanzoai/iam`
 is gated on `iam2 compare` reading **drift = 0** against a v1 replica.
 
 See [MIGRATION.md](./MIGRATION.md) for the full phased plan.
@@ -29,7 +29,7 @@ See [MIGRATION.md](./MIGRATION.md) for the full phased plan.
 
 ```sh
 go build ./...
-go run . serve                              # Base + v2 schema + /v1/iam/health
+go run . serve                              # Base + v2 schema + /healthz
 go run . compare --legacy postgres://…/iam  # read-only v1 ↔ v2 drift report
 ```
 

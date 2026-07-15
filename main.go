@@ -16,7 +16,7 @@
 // (hanzoai/datastore over ZAP). Every handler and the drift tool are written
 // once against orm.DB, never against a driver.
 //
-// Phase 0 serves /v1/iam/health and claims the entity namespace; the
+// Phase 0 serves /healthz and claims the entity namespace; the
 // resource, OIDC, and authz surfaces land in Phases 1-3. See MIGRATION.md.
 package main
 

@@ -2,7 +2,7 @@
 
 // Package routes mounts the IAM v2 HTTP surface on a zip App.
 //
-// Phase 1 serves GET /v1/iam/health plus the typed CRUD surface for all
+// Phase 1 serves GET /healthz plus the typed CRUD surface for all
 // thirteen identity entities (users, organizations, applications, providers,
 // roles, permissions, certs, keys, webauthn credentials, sessions, tokens,
 // audit logs, invitations). Each entity owns its own package under internal/;
@@ -37,7 +37,7 @@ import (
 // Mount registers every Phase-1 route on app, threading the entity store db
 // into each entity's typed CRUD handlers.
 func Mount(app *zip.App, db orm.DB) {
-	app.Get("/v1/iam/health", health)
+	app.Get("/healthz", health)
 
 	// Phase 2 — the OIDC surface at the canonical /v1/iam/* paths (SDK contract):
 	// discovery + JWKS, plus the read-only front-door (get-app-login, auth/methods)
