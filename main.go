@@ -37,6 +37,7 @@ import (
 	"github.com/hanzoai/iam2/internal/compare"
 	"github.com/hanzoai/iam2/internal/routes"
 	_ "github.com/hanzoai/iam2/internal/schema" // registers the v2 entity kinds
+	"github.com/hanzoai/iam2/internal/seed"
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".
@@ -63,28 +64,42 @@ func main() {
 }
 
 func serveCmd() *cobra.Command {
-	var store, dbPath, zapAddr, httpAddr string
+	var storeBackend, dbPath, zapAddr, httpAddr, initData string
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Open the entity store and serve the IAM v2 API",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return serve(cmd.Context(), store, dbPath, zapAddr, httpAddr)
+			return serve(cmd.Context(), storeBackend, dbPath, zapAddr, httpAddr, initData)
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&store, "store", "sqlite", "storage backend: sqlite | sql | datastore")
+	f.StringVar(&storeBackend, "store", "sqlite", "storage backend: sqlite | sql | datastore")
 	f.StringVar(&dbPath, "db", "data/iam2.db", "SQLite database path (store=sqlite)")
 	f.StringVar(&zapAddr, "zap", ":9653", "ZAP primary listen address")
 	f.StringVar(&httpAddr, "http", "http://:8080", "HTTP edge listen address")
+	f.StringVar(&initData, "init-data", "", "path to init_data.json to seed on boot (new-only; ${VAR} from env)")
 	return cmd
 }
 
-func serve(ctx context.Context, store, dbPath, zapAddr, httpAddr string) error {
-	db, err := openStore(store, dbPath)
+func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initData string) error {
+	db, err := openStore(storeBackend, dbPath)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
+
+	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
+	// same file the Casdoor iam uses — so a fresh store comes up with the real
+	// application/provider/cert set instead of empty. New-only + idempotent.
+	if initData != "" {
+		sum, err := seed.FromInitData(ctx, db, initData)
+		if err != nil {
+			return fmt.Errorf("serve: seed: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "iam2: seeded from %s — created orgs=%d apps=%d providers=%d certs=%d\n",
+			initData, sum.Created["organizations"], sum.Created["applications"],
+			sum.Created["providers"], sum.Created["certs"])
+	}
 
 	app := zip.New(zip.Config{AppName: "iam2"})
 	routes.Mount(app, db)
