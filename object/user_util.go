@@ -259,7 +259,16 @@ func GetUserByFields(organization string, field string) (*User, error) {
 // unverified provider email is attacker-controllable, so it must never resolve a
 // login to an account that merely shares the address. This is the OAuth
 // analogue of the wallet rule in web3_auth.go, which refuses to bind an identity
-// by address alone. PURE — no DB — so it is unit-testable.
+// by address alone.
+//
+// DEPLOYMENT: emailVerified is only as trustworthy as the provider that asserts
+// it (each idp/*.go sets it from its own verified-email signal — Google verifies
+// its ID token's signature/issuer/audience, GitHub reads /user/emails verified).
+// Enable EnableLinkWithEmail only for providers that actually confirm address
+// ownership. A self-hosted OIDC/GitLab instance with email confirmation disabled
+// can stamp a confirmed flag on an address its user never proved they own, which
+// would then link into a matching local account; scope email linking to
+// providers whose verification you trust. PURE — no DB — so it is unit-testable.
 func MayLinkByVerifiedEmail(enableLinkWithEmail bool, email string, emailVerified bool) bool {
 	return enableLinkWithEmail && emailVerified && strings.TrimSpace(email) != ""
 }
