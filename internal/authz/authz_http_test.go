@@ -32,6 +32,7 @@ import (
 
 	"github.com/hanzoai/iam2/internal/routes"
 	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 const signingKid = "cert-hanzo" // the seeded admin signing cert's name = JWKS kid
@@ -58,11 +59,46 @@ func mustRSA() *rsa.PrivateKey {
 	return k
 }
 
-// harness holds the mounted app plus the RSA key the signing cert holds, so a
-// test can mint a token any principal would carry.
+// harness holds the mounted app, the RSA key the signing cert holds (so a test
+// can mint a token any principal would carry), and the store (so a test can
+// assert that a refused write persisted NOTHING — the real security property, not
+// just a status code).
 type harness struct {
 	app *zip.App
 	key *rsa.PrivateKey
+	db  orm.DB
+}
+
+// userExists reports whether a user row (owner, name) is persisted — used to
+// prove a refused create/update wrote nothing.
+func (h *harness) userExists(t *testing.T, owner, name string) bool {
+	t.Helper()
+	u, err := store.GetUserByName(context.Background(), h.db, owner, name)
+	if err != nil {
+		t.Fatalf("lookup user %s/%s: %v", owner, name, err)
+	}
+	return u != nil
+}
+
+// certExists reports whether a cert row (owner, name) is persisted.
+func (h *harness) certExists(t *testing.T, owner, name string) bool {
+	t.Helper()
+	c, err := store.GetCert(context.Background(), h.db, owner, name)
+	if err != nil {
+		t.Fatalf("lookup cert %s/%s: %v", owner, name, err)
+	}
+	return c != nil
+}
+
+// userIsAdmin reports the persisted isAdmin flag of (owner, name) — used to prove
+// a refused update did NOT flip a victim's privilege.
+func (h *harness) userIsAdmin(t *testing.T, owner, name string) bool {
+	t.Helper()
+	u, err := store.GetUserByName(context.Background(), h.db, owner, name)
+	if err != nil || u == nil {
+		t.Fatalf("expected user %s/%s to exist: %v", owner, name, err)
+	}
+	return u.IsAdmin
 }
 
 // newHarness opens a fresh SQLite store, seeds the trust anchor (an admin-owned
@@ -98,7 +134,12 @@ func newHarness(t *testing.T) *harness {
 
 	app := zip.New(zip.Config{AppName: "authz-test", DisableStartupMessage: true})
 	routes.Mount(app, db)
-	return &harness{app: app, key: key}
+	// Install the deferred framework projections (/mcp, /openapi) for real, so the
+	// side-door tests drive the ACTUAL routes — the same surface a served app
+	// exposes — not a route that never got registered. MCP is left ENABLED here
+	// (unlike prod) so the tests prove the guard, not a disabled feature, closes it.
+	app.Prepare()
+	return &harness{app: app, key: key, db: db}
 }
 
 // mint signs an RS256 bearer for subject `sub` (an "owner/name") with the given
@@ -151,6 +192,44 @@ func (h *harness) do(t *testing.T, method, path, bearer string, body any) int {
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
 	return resp.StatusCode
+}
+
+// mcpEnvelope builds a JSON-RPC 2.0 tools/call for the framework tool `tool`
+// (its real op id, e.g. "post_v1_iam_certs") with `args` as the tool arguments —
+// the same body an MCP agent would POST to /mcp.
+func mcpEnvelope(tool string, args any) map[string]any {
+	return map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": tool, "arguments": args},
+	}
+}
+
+// mcpToolCall fires an MCP tools/call for `tool` with `args` through the REAL
+// mounted /mcp route and reports the HTTP status plus whether the op-invoke
+// authorizer refused it. A refusal at the op seam surfaces as an isError result
+// with HTTP 200 (MCP reports handler errors in-band), never a transport 403, so
+// a refused write shows up as isError==true — the status stays 200.
+func (h *harness) mcpToolCall(t *testing.T, bearer, tool string, args any) (status int, isError bool) {
+	t.Helper()
+	b, _ := json.Marshal(mcpEnvelope(tool, args))
+	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(b))
+	req.Host = "hanzo.id"
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := h.app.Fiber().Test(req)
+	if err != nil {
+		t.Fatalf("mcp tools/call %s: %v", tool, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out struct {
+		Result struct {
+			IsError bool `json:"isError"`
+		} `json:"result"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp.StatusCode, out.Result.IsError
 }
 
 // ---- seed helpers ----------------------------------------------------------

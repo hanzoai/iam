@@ -315,25 +315,135 @@ func TestPhantomSubjectHasNoAuthority(t *testing.T) {
 }
 
 // The framework's generic side doors (MCP tool-call, OpenAPI doc) are gated by
-// the same fail-closed default: the guard runs first as global middleware, so a
-// bearer-less hit is 401 (the guard), never 404 or an unauthorized invocation.
+// the same fail-closed default — proven on a REAL, installed route and a REAL
+// tool INVOCATION, not just the envelope path. newHarness calls app.Prepare(), so
+// /mcp and /openapi are actually registered (the old test hit a route that was
+// never mounted, so the guard's 401 masked the fact the invocation was untested),
+// and the tool id is the framework's real one (post_v1_iam_certs), so a
+// regression that let a tool arguments-mask through would FAIL here, not pass.
 func TestFrameworkSideDoorsAreGated(t *testing.T) {
 	h := newHarness(t)
-	// tools/call that would create an admin cert if MCP were an open door.
-	mcp := map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "createCert", "arguments": cert("admin", "cert-forge")},
+	forge := cert("admin", "cert-forge") // {owner:"admin", …} — the poisoning target
+
+	// No bearer reaches /mcp at all: the guard authenticates the envelope before
+	// any dispatch, so it is 401 — never an unauthorized invocation, never a 404.
+	if got := h.do(t, "POST", "/mcp", "", mcpEnvelope("post_v1_iam_certs", forge)); got != http.StatusUnauthorized {
+		t.Fatalf("POST /mcp no bearer = %d, want 401 (guard fail-closed)", got)
 	}
-	if got := h.do(t, "POST", "/mcp", "", mcp); got != http.StatusUnauthorized {
-		t.Fatalf("POST /mcp no bearer = %d, want 401 (guard fail-closed, not an open door)", got)
-	}
-	// A non-SuperAdmin bearer cannot drive /mcp either: the tool arguments hide
-	// the owner, so the guard sees an empty owner and refuses a non-super.
-	boss := h.token(t, "hanzo/boss")
-	if got := h.do(t, "POST", "/mcp", boss, mcp); got != http.StatusForbidden {
-		t.Fatalf("POST /mcp non-super = %d, want 403", got)
-	}
+	// The OpenAPI doc — now a real installed route — is gated too.
 	if got := h.do(t, "GET", "/.well-known/openapi.json", "", nil); got != http.StatusUnauthorized {
 		t.Fatalf("GET openapi.json no bearer = %d, want 401", got)
+	}
+
+	// A non-SuperAdmin driving the REAL cert tool is refused at the op-invoke seam
+	// (isError), and — the assertion that matters — NOTHING is written.
+	boss := h.token(t, "hanzo/boss")
+	if status, isErr := h.mcpToolCall(t, boss, "post_v1_iam_certs", forge); status != http.StatusOK || !isErr {
+		t.Fatalf("MCP post_v1_iam_certs (non-super) = status %d isError %v, want 200/true (refused at op seam)", status, isErr)
+	}
+	if h.certExists(t, "admin", "cert-forge") {
+		t.Fatal("MCP cert-forge PERSISTED an admin-owned cert — the /mcp side door is OPEN")
+	}
+}
+
+// THE critical bug (finding #1), proven closed at the REST seam. The users entity
+// is the one input that nests its owner, so an org admin who masks a benign
+// top-level owner over a nested admin/isAdmin record must NOT create a platform
+// SuperAdmin. The write is refused (403) AND — the assertion the vacuous test
+// lacked — the store holds no such row afterward. Query the store, not the status.
+func TestUserOwnerMaskIsRefused(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss") // org admin of hanzo — authorized for "hanzo" only
+
+	// The PoC verbatim: top-level owner is the attacker's OWN org (which the guard
+	// would authorize), the nested record targets the reserved admin org with
+	// isAdmin — a platform SuperAdmin (owner=="admin" IS the predicate) if it landed.
+	createMask := map[string]any{
+		"owner":    "hanzo",
+		"user":     map[string]any{"owner": "admin", "name": "red-super", "isAdmin": true},
+		"password": "x",
+	}
+	if got := h.do(t, "POST", "/v1/iam/users", boss, createMask); got != http.StatusForbidden {
+		t.Fatalf("users create owner-mask = %d, want 403", got)
+	}
+	if h.userExists(t, "admin", "red-super") {
+		t.Fatal("owner-mask PERSISTED admin/red-super — total-account-takeover path is OPEN")
+	}
+
+	// The same mask, aimed cross-tenant: inject a user into a foreign org.
+	crossOrgMask := map[string]any{
+		"owner":    "hanzo",
+		"user":     map[string]any{"owner": "orgb", "name": "mole"},
+		"password": "x",
+	}
+	if got := h.do(t, "POST", "/v1/iam/users", boss, crossOrgMask); got != http.StatusForbidden {
+		t.Fatalf("users create cross-org mask = %d, want 403", got)
+	}
+	if h.userExists(t, "orgb", "mole") {
+		t.Fatal("owner-mask injected a user into orgb (cross-tenant)")
+	}
+
+	// Hijack an EXISTING admin-org user via /users/update (nested owner=admin):
+	// refused, and the victim's privilege/credentials are untouched.
+	hijack := map[string]any{
+		"user":     map[string]any{"owner": "admin", "name": "root", "isAdmin": true},
+		"password": "attacker-chosen",
+	}
+	if got := h.do(t, "POST", "/v1/iam/users/update", boss, hijack); got != http.StatusForbidden {
+		t.Fatalf("users update hijack of admin/root = %d, want 403", got)
+	}
+	if h.userIsAdmin(t, "admin", "root") {
+		t.Fatal("update hijack flipped admin/root.isAdmin — privilege takeover via /users/update")
+	}
+}
+
+// The MCP arguments-mask (finding #2), proven closed at the SAME op-invoke seam —
+// the design claim "the guard gates /mcp" made real, independent of the prod
+// MCP.Disabled flag (this harness leaves MCP ENABLED). A non-SuperAdmin driving
+// the real tools with admin-targeted arguments is refused and writes nothing; a
+// SuperAdmin drives the same tool successfully, so the seam refuses by AUTHORITY,
+// not by blanket-denying every MCP call.
+func TestMCPArgumentsMaskIsRefused(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss")
+	attackerPEM := rsaKeyToPEM(t, genRSA(t))
+
+	// a) cert-forge over MCP arguments: an admin signing cert with an attacker key.
+	forge := map[string]any{
+		"owner": "admin", "name": "cert-forge",
+		"cryptoAlgorithm": "RS256", "privateKey": attackerPEM,
+	}
+	if status, isErr := h.mcpToolCall(t, boss, "post_v1_iam_certs", forge); status != http.StatusOK || !isErr {
+		t.Fatalf("MCP cert-forge (non-super) = status %d isError %v, want 200/true (refused)", status, isErr)
+	}
+	if h.certExists(t, "admin", "cert-forge") {
+		t.Fatal("MCP cert-forge PERSISTED an admin signing cert with an attacker key")
+	}
+
+	// b) the users owner-mask over MCP arguments: a nested admin SuperAdmin record.
+	userMask := map[string]any{
+		"owner":    "hanzo",
+		"user":     map[string]any{"owner": "admin", "name": "red-super", "isAdmin": true},
+		"password": "x",
+	}
+	if status, isErr := h.mcpToolCall(t, boss, "post_v1_iam_users", userMask); status != http.StatusOK || !isErr {
+		t.Fatalf("MCP users owner-mask (non-super) = status %d isError %v, want 200/true (refused)", status, isErr)
+	}
+	if h.userExists(t, "admin", "red-super") {
+		t.Fatal("MCP users owner-mask PERSISTED admin/red-super — total takeover via /mcp")
+	}
+
+	// Control: a SuperAdmin drives the SAME cert tool successfully — the seam
+	// discriminates by authority; it does not just refuse everything over MCP.
+	root := h.token(t, "admin/root")
+	legit := map[string]any{
+		"owner": "admin", "name": "cert-legit",
+		"cryptoAlgorithm": "RS256", "privateKey": rsaKeyToPEM(t, h.key),
+	}
+	if status, isErr := h.mcpToolCall(t, root, "post_v1_iam_certs", legit); status != http.StatusOK || isErr {
+		t.Fatalf("MCP cert create by SuperAdmin = status %d isError %v, want 200/false (allowed)", status, isErr)
+	}
+	if !h.certExists(t, "admin", "cert-legit") {
+		t.Fatal("SuperAdmin MCP cert create did not persist — the seam is over-refusing")
 	}
 }

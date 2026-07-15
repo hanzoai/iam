@@ -1,11 +1,27 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package authz is the IAM v2 authorization seam: ONE middleware, mounted once
-// and first on the whole HTTP surface, that turns every gated request into an
-// authenticated, tenant-scoped one before any CRUD handler runs. It is the
-// enforcement point Phase 3 puts in front of the Phase-1 entity CRUD, which is
-// otherwise unauthenticated — the door an attacker would otherwise walk through
-// to overwrite an admin-owned signing cert and forge tokens.
+// Package authz is the IAM v2 authorization seam in front of the Phase-1 entity
+// CRUD, which is otherwise unauthenticated — the door an attacker would walk
+// through to overwrite an admin-owned signing cert and forge tokens. It is two
+// orthogonal decisions, never braided:
+//
+//   - AUTHENTICATION — the Guard middleware, mounted ONCE and FIRST via app.Use.
+//     Every non-public request must carry a verified bearer; the resolved
+//     Principal is attached to the request context for the authorization decision
+//     and audit. Public routes pass straight through. Fails closed (401).
+//
+//   - AUTHORIZATION — the Authorize hook, installed ONCE via app.Authorize. It
+//     runs at the framework's op-invoke seam, on the DECODED typed input the
+//     handler will act on, for REST and MCP alike. The value it authorizes is by
+//     construction the value the handler binds: there is no second parse of the
+//     body for it to diverge from. Fails closed (403).
+//
+// Splitting the two removes the defect a single body-reparsing middleware had:
+// authorizing a target extracted from the raw bytes divergently from where the
+// handler binds it. A write's target now comes from the one decode the handler
+// itself runs on. A read's target rides in the query string (a GET has no body
+// for the op seam to decode), so the Guard authorizes reads there; a read invoked
+// over MCP DOES decode a target into its input, and the op seam authorizes that.
 //
 // Three scopes, never conflated (conflation is privilege escalation):
 //
@@ -30,8 +46,8 @@ package authz
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -110,13 +126,21 @@ func isPublic(path string) bool {
 	return publicPaths[path]
 }
 
-// Guard is the authorization middleware. Mount it ONCE and FIRST, via app.Use,
+// isRead reports whether a method addresses its target through the query string
+// rather than a body: a GET (or HEAD) has no body for the op-invoke seam to
+// decode, so its target is authorized in the Guard. Every other method carries a
+// body decoded once by the op and is authorized at that seam.
+func isRead(method string) bool { return method == "GET" || method == "HEAD" }
+
+// Guard is the AUTHENTICATION middleware. Mount it ONCE and FIRST, via app.Use,
 // so it wraps every route — the typed CRUD handlers and the framework's /mcp and
-// /openapi surfaces alike, which project those same handlers and must not become
-// an unguarded side door. Public routes pass straight through; every other route
-// requires a valid bearer and an affirmative authorization decision, and fails
-// closed (401 on authentication, 403 on authorization) otherwise. The principal
-// is attached to the request context for downstream handlers and audit.
+// /openapi surfaces alike. Public routes pass straight through; every other route
+// requires a valid bearer (401 otherwise) whose Principal is attached to the
+// request context for the authorization hook downstream. A read's authorization
+// target rides in the query string, so reads are authorized here; a write's rides
+// in the body, decoded once by the op and authorized at the op-invoke seam
+// (Authorize) on that exact decoded value — this middleware never re-parses a
+// write body, which is what let the old target extraction diverge from execution.
 func Guard(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		if isPublic(c.Path()) {
@@ -126,13 +150,126 @@ func Guard(db orm.DB) zip.Handler {
 		if err != nil {
 			return zip.ErrUnauthorized("authentication required")
 		}
-		owner, name := target(c)
-		if !authorize(p, c.Method(), entityOf(c.Path()), owner, name) {
+		if isRead(c.Method()) && !authorize(p, c.Method(), entityOf(c.Path()), c.Query("owner"), c.Query("name")) {
 			return zip.ErrForbidden("forbidden")
 		}
 		c.SetContext(context.WithValue(c.Context(), ctxKey{}, p))
 		return c.Continue()
 	}
+}
+
+// Authorize is the AUTHORIZATION hook, installed via app.Authorize so the
+// framework runs it at every typed op's invoke seam — after the request is
+// decoded into its typed In and validated, before the handler runs, for REST and
+// MCP alike. It authorizes the DECODED target: the exact (owner, name) the
+// handler will bind, read from the same struct the handler runs on, so the value
+// authorized cannot diverge from the value written.
+//
+// A REST read carries its target in the query string, not the body, so its
+// decoded In is empty and the Guard already authorized it there — such a call is
+// admitted here (owner == ""). Every write, and any read invoked over MCP (whose
+// arguments DO decode a target into In), is authorized against authorize().
+func Authorize(ctx context.Context, op zip.Op, in any) error {
+	if isPublic(op.Path) {
+		return nil // pre-auth surface; the Guard admitted it without a principal
+	}
+	owner, name := decodedTarget(in)
+	if owner == "" && isRead(op.Method) {
+		return nil // REST read: target rode in the query, authorized by the Guard
+	}
+	p, present := From(ctx)
+	if !present {
+		return zip.ErrForbidden("forbidden") // gated op with no principal: fail closed
+	}
+	if !authorize(p, op.Method, entityOf(op.Path), owner, name) {
+		return zip.ErrForbidden("forbidden")
+	}
+	return nil
+}
+
+// authorize is the pure authorization decision: may p act on a resource owned by
+// `owner` (named `name`) on the given entity? The order IS the policy:
+//
+//  1. SuperAdmin may do anything — the only cross-tenant scope.
+//  2. A platform-owned resource (admin/built-in — the reserved owners the token
+//     verifier trusts to sign) is writable only by a SuperAdmin. This single
+//     rule is the signing-cert poisoning gate, the admin-scoped app/provider
+//     registration gate, AND the built-in-org gap, all at once: a built-in-org
+//     principal is not SuperAdmin (that is admin only), so it cannot write a
+//     built-in-owned signing cert either.
+//  3. Tenant isolation: a normal principal may act only within its OWN org. An
+//     empty or foreign owner is refused — the target org is bound to the
+//     principal, never trusted from the request.
+//  4. Inside its own org, an org admin manages everything; a regular user may
+//     only READ its own user record (self-service). The users entity serves
+//     reads as GET and writes as POST, so gating the self clause to GET keeps a
+//     regular user from writing its own record — a raw entity write would
+//     otherwise let it carry isAdmin and self-promote. Privileged self-mutation
+//     is the Phase-5 provision-don't-promote concern; here it is closed by
+//     denial.
+func authorize(p *Principal, method, entity, owner, name string) bool {
+	if p.Super {
+		return true
+	}
+	if store.IsSigningCertOwner(owner) {
+		return false
+	}
+	if owner == "" || owner != p.Org {
+		return false
+	}
+	if p.Admin {
+		return true
+	}
+	return method == "GET" && entity == "users" && name != "" && name == p.User
+}
+
+// owned is implemented by a typed input whose authorization target is NOT its
+// top-level Owner/Name. The user create/update body nests the record under
+// `user`, so its owner is in.User.Owner, not a top-level field; its AuthzTarget
+// returns exactly what the handler binds — the handler calls the same method — so
+// the value authorized is by construction the value written. Any future input
+// that nests its owner implements this too: it is the ONE contract for nesting,
+// so the seam never guesses which field the handler uses and never mistakes a
+// read-only enrichment sub-struct (e.g. an application's resolved certObj, which
+// carries its OWN owner) for the target.
+type owned interface {
+	AuthzTarget() (owner, name string)
+}
+
+// decodedTarget returns the (owner, name) a decoded request addresses — exactly
+// the values the handler will bind, read from the SAME decoded struct the handler
+// runs on, so there is no second parse to diverge from. An input that nests its
+// owner declares it via owned; every other input files its owner at the top level
+// (directly, or promoted from an embedded record), read reflectively so no entity
+// needs bespoke wiring and an attacker-supplied nested sub-struct is never a
+// target.
+func decodedTarget(in any) (owner, name string) {
+	if o, ok := in.(owned); ok {
+		return o.AuthzTarget()
+	}
+	v := reflect.ValueOf(in)
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return "", ""
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return "", ""
+	}
+	return stringField(v, "Owner"), stringField(v, "Name")
+}
+
+// stringField returns the string value of the named field (traversing embedded
+// anonymous fields via FieldByName), or "" when the field is absent or not a
+// string. FieldByName does not descend named sub-fields, so it reads the record's
+// own owner, never one nested under an unrelated field.
+func stringField(v reflect.Value, name string) string {
+	f := v.FieldByName(name)
+	if f.IsValid() && f.Kind() == reflect.String {
+		return f.String()
+	}
+	return ""
 }
 
 // principal resolves the verified bearer into a Principal, failing closed on a
@@ -176,78 +313,6 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 	return &Principal{Org: owner}, nil
 }
 
-// authorize is the pure authorization decision: may p act on a resource owned by
-// `owner` (named `name`) on the given entity? The order IS the policy:
-//
-//  1. SuperAdmin may do anything — the only cross-tenant scope.
-//  2. A platform-owned resource (admin/built-in — the reserved owners the token
-//     verifier trusts to sign) is writable only by a SuperAdmin. This single
-//     rule is the signing-cert poisoning gate, the admin-scoped app/provider
-//     registration gate, AND the built-in-org gap, all at once: a built-in-org
-//     principal is not SuperAdmin (that is admin only), so it cannot write a
-//     built-in-owned signing cert either.
-//  3. Tenant isolation: a normal principal may act only within its OWN org. An
-//     empty or foreign owner is refused — the target org is bound to the
-//     principal, never trusted from the request.
-//  4. Inside its own org, an org admin manages everything; a regular user may
-//     only READ its own user record (self-service). The users entity serves
-//     reads as GET and writes as POST, so gating the self clause to GET keeps a
-//     regular user from writing its own record — a raw entity write would
-//     otherwise let it carry isAdmin and self-promote. Privileged self-mutation
-//     is the Phase-5 provision-don't-promote concern; here it is closed by
-//     denial.
-func authorize(p *Principal, method, entity, owner, name string) bool {
-	if p.Super {
-		return true
-	}
-	if store.IsSigningCertOwner(owner) {
-		return false
-	}
-	if owner == "" || owner != p.Org {
-		return false
-	}
-	if p.Admin {
-		return true
-	}
-	return method == "GET" && entity == "users" && name != "" && name == p.User
-}
-
-// ref is the minimal projection of any CRUD request the guard needs to authorize
-// it: the target owner and name. Every entity carries `owner`/`name` at the top
-// level; only the user create/update body nests them under `user`, so both
-// shapes are read and the top level wins.
-type ref struct {
-	Owner string `json:"owner"`
-	Name  string `json:"name"`
-	User  struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
-	} `json:"user"`
-}
-
-// target extracts the (owner, name) a request addresses, from the JSON body
-// (writes and the POST-shaped reads) or the query string (the GET reads). The
-// body is read via c.Body() WITHOUT consuming it — the handler re-reads the same
-// buffered bytes — so this never disturbs the downstream decode. A body the
-// guard cannot parse yields an empty owner, which a non-SuperAdmin cannot act on
-// (fail-closed); the handler then returns its own 400.
-func target(c *zip.Ctx) (owner, name string) {
-	if body := c.Body(); len(body) > 0 {
-		var r ref
-		if json.Unmarshal(body, &r) == nil {
-			owner = firstNonEmpty(r.Owner, r.User.Owner)
-			name = firstNonEmpty(r.Name, r.User.Name)
-		}
-	}
-	if owner == "" {
-		owner = c.Query("owner")
-	}
-	if name == "" {
-		name = c.Query("name")
-	}
-	return owner, name
-}
-
 // entityOf returns the resource segment of an /v1/iam/<entity>[/verb] path, or
 // "" for anything else (e.g. /mcp). Only the users entity needs distinguishing —
 // its regular-user self-service rule — so every other segment is treated
@@ -262,12 +327,4 @@ func entityOf(path string) string {
 		return rest[:i]
 	}
 	return rest
-}
-
-// firstNonEmpty returns a when it is non-empty, else b.
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
