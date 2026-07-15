@@ -1,0 +1,196 @@
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+
+package oidc
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"math/big"
+	"testing"
+
+	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
+
+	"github.com/hanzoai/orm"
+
+	"github.com/hanzoai/iam2/internal/schema"
+)
+
+// seedMLDSACert creates an ML-DSA-65 signing cert (raw base64 private key).
+func seedMLDSACert(t *testing.T, db orm.DB, name string) {
+	t.Helper()
+	_, sk, err := mldsa65.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("mldsa keygen: %v", err)
+	}
+	c := orm.New[schema.Cert](db)
+	c.Owner = "admin"
+	c.Name = name
+	c.CryptoAlgorithm = "MLDSA65"
+	c.PrivateKey = base64.StdEncoding.EncodeToString(sk.Bytes())
+	c.SetId("admin/" + name)
+	if err := c.CreateCtx(tctx()); err != nil {
+		t.Fatalf("seed mldsa cert: %v", err)
+	}
+}
+
+// A fresh server with no signing certs still serves a well-formed, empty key set
+// — the guard against the earlier bug where JWKS was empty yet discovery
+// advertised signing algorithms, so verifiers could never resolve a key.
+func TestJWKS_EmptyButWellFormed(t *testing.T) {
+	app, _ := newServer(t)
+	resp, body := do(t, app, formReqNoBody("GET", PathJWKS))
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	set := decode(t, body)
+	if keys, ok := set["keys"].([]any); !ok || len(keys) != 0 {
+		t.Fatalf("empty JWKS = %v, want an empty keys array", set["keys"])
+	}
+}
+
+// The RSA signing key is published with the exact shape RS256 verifiers read —
+// kty/alg/use/kid/n/e — and never any private material.
+func TestJWKS_PublishesRSAPublicKey(t *testing.T) {
+	app, db := newServer(t)
+	seedRSACert(t, db, "cert-hanzo")
+
+	resp, body := do(t, app, formReqNoBody("GET", PathJWKS))
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "public, max-age=60" {
+		t.Errorf("Cache-Control = %q", cc)
+	}
+	if resp.Header.Get("ETag") == "" {
+		t.Error("JWKS must carry a strong ETag")
+	}
+
+	k := jwkByKid(t, body, "cert-hanzo")
+	if k["kty"] != "RSA" || k["alg"] != "RS256" || k["use"] != "sig" {
+		t.Errorf("jwk header wrong: %v", k)
+	}
+	// n encodes the real modulus.
+	nb, err := base64.RawURLEncoding.DecodeString(k["n"].(string))
+	if err != nil {
+		t.Fatalf("decode n: %v", err)
+	}
+	if new(big.Int).SetBytes(nb).Cmp(sharedKey(t).N) != 0 {
+		t.Error("jwk modulus does not match the signing key")
+	}
+	// Private material must never appear.
+	for _, secret := range []string{"d", "p", "q", "dp", "dq", "qi"} {
+		if _, bad := k[secret]; bad {
+			t.Fatalf("JWKS leaked private RSA parameter %q", secret)
+		}
+	}
+}
+
+// A conditional GET with the current ETag is answered 304 (parity with live).
+func TestJWKS_ETag304(t *testing.T) {
+	app, db := newServer(t)
+	seedRSACert(t, db, "cert-hanzo")
+
+	resp, _ := do(t, app, formReqNoBody("GET", PathJWKS))
+	etag := resp.Header.Get("ETag")
+	req := formReqNoBody("GET", PathJWKS)
+	req.Header.Set("If-None-Match", etag)
+	resp2, _ := do(t, app, req)
+	if resp2.StatusCode != 304 {
+		t.Fatalf("conditional GET status = %d, want 304", resp2.StatusCode)
+	}
+}
+
+// A post-quantum ML-DSA-65 cert is published as {kty:MLDSA, alg:MLDSA65, x}.
+func TestJWKS_PublishesMLDSAKey(t *testing.T) {
+	app, db := newServer(t)
+	seedMLDSACert(t, db, "cert-pq")
+
+	_, body := do(t, app, formReqNoBody("GET", PathJWKS))
+	k := jwkByKid(t, body, "cert-pq")
+	if k["kty"] != "MLDSA" || k["alg"] != "MLDSA65" || k["use"] != "sig" {
+		t.Errorf("mldsa jwk header wrong: %v", k)
+	}
+	if x, _ := k["x"].(string); x == "" {
+		t.Error("mldsa jwk missing raw public key x")
+	}
+}
+
+// A TLS/SSL certificate is not a token-signing key and is excluded.
+func TestJWKS_ExcludesTLSCert(t *testing.T) {
+	app, db := newServer(t)
+	seedRSACert(t, db, "cert-hanzo")
+	c := orm.New[schema.Cert](db)
+	c.Owner = "admin"
+	c.Name = "cert-tls"
+	c.Type = "SSL"
+	c.CryptoAlgorithm = "RS256"
+	c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
+	c.SetId("admin/cert-tls")
+	if err := c.CreateCtx(tctx()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, body := do(t, app, formReqNoBody("GET", PathJWKS))
+	if hasKid(t, body, "cert-tls") {
+		t.Fatal("TLS cert must not appear in the JWKS")
+	}
+	if !hasKid(t, body, "cert-hanzo") {
+		t.Fatal("signing cert missing from JWKS")
+	}
+}
+
+// Keys are deduplicated by kid so a name reused across owners publishes once.
+func TestJWKS_DedupesByKid(t *testing.T) {
+	app, db := newServer(t)
+	for _, owner := range []string{"admin", "hanzo"} {
+		c := orm.New[schema.Cert](db)
+		c.Owner = owner
+		c.Name = "cert-shared"
+		c.CryptoAlgorithm = "RS256"
+		c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
+		c.SetId(owner + "/cert-shared")
+		if err := c.CreateCtx(tctx()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, body := do(t, app, formReqNoBody("GET", PathJWKS))
+	set := decode(t, body)
+	keys, _ := set["keys"].([]any)
+	count := 0
+	for _, k := range keys {
+		if k.(map[string]any)["kid"] == "cert-shared" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("kid cert-shared published %d times, want 1", count)
+	}
+}
+
+// --- helpers ---
+
+func jwkByKid(t *testing.T, body []byte, kid string) map[string]any {
+	t.Helper()
+	set := decode(t, body)
+	keys, _ := set["keys"].([]any)
+	for _, k := range keys {
+		m := k.(map[string]any)
+		if m["kid"] == kid {
+			return m
+		}
+	}
+	t.Fatalf("kid %q not found in JWKS %s", kid, string(body))
+	return nil
+}
+
+func hasKid(t *testing.T, body []byte, kid string) bool {
+	t.Helper()
+	set := decode(t, body)
+	keys, _ := set["keys"].([]any)
+	for _, k := range keys {
+		if k.(map[string]any)["kid"] == kid {
+			return true
+		}
+	}
+	return false
+}

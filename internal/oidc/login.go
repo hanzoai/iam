@@ -41,6 +41,7 @@ type loginForm struct {
 	RedirectUri         string `json:"redirectUri"`
 	State               string `json:"state"`
 	Scope               string `json:"scope"`
+	Nonce               string `json:"nonce"`
 	CodeChallenge       string `json:"codeChallenge"`
 	CodeChallengeMethod string `json:"codeChallengeMethod"`
 	Resource            string `json:"resource"`
@@ -89,13 +90,28 @@ func loginHandler(db orm.DB) zip.Handler {
 		if app == nil {
 			return httpx.Err(c, "the application does not exist")
 		}
-		if f.CodeChallenge != "" && f.CodeChallengeMethod != "S256" {
+		// Bind the code to an EXACTLY-registered redirect URI (RFC 6749 §3.1.2.3);
+		// the token endpoint re-checks it. A supplied-but-unregistered URI is
+		// refused — never minted against.
+		if f.RedirectUri != "" && !app.IsRedirectUriValid(f.RedirectUri) {
+			return httpx.Err(c, "invalid redirect_uri")
+		}
+		method := normalizeChallengeMethod(f.CodeChallenge, f.CodeChallengeMethod)
+		if f.CodeChallenge != "" && method != "S256" {
 			return httpx.Err(c, "only S256 PKCE is supported")
 		}
-		code, err := MintCode(app, userID, f.Scope, f.CodeChallenge, f.CodeChallengeMethod, f.Resource, nowFunc())
+		// A public client (no secret) must use PKCE — no downgrade.
+		if app.ClientSecret == "" && f.CodeChallenge == "" {
+			return httpx.Err(c, "PKCE is required for public clients")
+		}
+		code, err := MintCode(app, userID, f.Scope, f.CodeChallenge, method, f.Resource, nowFunc())
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		// Bind the redirect_uri and nonce onto the code so the token exchange can
+		// re-verify the redirect and echo the nonce into the id_token.
+		code.RedirectUri = f.RedirectUri
+		code.Nonce = f.Nonce
 		if err := store.PersistToken(ctx, db, code); err != nil {
 			return httpx.Err(c, err.Error())
 		}

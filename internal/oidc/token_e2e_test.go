@@ -99,7 +99,7 @@ func TestTokenExchange_EndToEnd(t *testing.T) {
 	if err := IssueAccessToken(got, int(ttl.Seconds()), now); err != nil {
 		t.Fatal(err)
 	}
-	signed, err := signAccessToken(ctx, db, app, got, ttl, now)
+	signed, err := signAccessToken(ctx, db, app, got, "https://iam.hanzo.ai", ttl, now)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
