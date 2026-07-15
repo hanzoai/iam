@@ -22,6 +22,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam2/internal/cred"
 	"github.com/hanzoai/iam2/internal/schema"
 )
 
@@ -258,14 +259,23 @@ func hashPassword(plaintext string) (string, error) {
 	return string(b), nil
 }
 
-// VerifyPassword reports whether plaintext matches the user's stored digest.
+// VerifyPassword reports whether plaintext matches the user's stored digest,
+// resolving the hash algorithm FROM THE ROW (never a constant).
+//
+// orgPasswordType is the owning organization's PasswordType, used as the
+// fallback when the user row carries none — the same resolution v1 does
+// (object/check.go: user.PasswordType → organization.PasswordType → dispatch).
+// This matters at cutover: every live v1 row is argon2id, and a bcrypt-only
+// verifier handed an argon2id PHC digest fails EVERY real login. Fails closed on
+// an unknown/unsupported scheme (see internal/cred).
+//
 // It is the single verify choke point for the login path — the digest itself
 // never leaves the store, so verification happens here, against the row.
-func VerifyPassword(u *schema.User, plaintext string) bool {
+func VerifyPassword(u *schema.User, plaintext, orgPasswordType string) bool {
 	if u == nil || u.PasswordHash == "" {
 		return false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(plaintext)) == nil
+	return cred.Verify(cred.Resolve(u.PasswordType, orgPasswordType), plaintext, u.PasswordHash)
 }
 
 // view redacts u in place and returns it, ready to serialize.
