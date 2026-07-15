@@ -101,7 +101,11 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initDat
 			sum.Created["providers"], sum.Created["certs"])
 	}
 
-	app := zip.New(zip.Config{AppName: "iam2"})
+	// MCP projects every typed CRUD handler onto one generic /mcp tool-call
+	// endpoint. The authz Guard gates it like any other route (fail-closed), but
+	// an identity service has no need to expose its admin CRUD as an agent tool
+	// surface, so it is disabled outright — one fewer surface to defend.
+	app := zip.New(zip.Config{AppName: "iam2", MCP: zip.MCPConfig{Disabled: true}})
 	routes.Mount(app, db)
 	app.OnShutdown(func(context.Context) error { return db.Close() })
 
