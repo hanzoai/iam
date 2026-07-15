@@ -44,6 +44,7 @@ func Mount(app *zip.App, db orm.DB) {
 	// the @hanzo/iam <Login> calls to self-configure.
 	oidc.Mount(app)
 	oidc.MountFrontDoor(app, db)
+	oidc.MountToken(app, db)
 
 	users.Mount(app, db)
 	organizations.Mount(app, db)
