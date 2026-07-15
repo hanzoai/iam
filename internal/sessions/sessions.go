@@ -34,19 +34,19 @@ type Sessions struct{ db orm.DB }
 // Mount registers the session operations on app against db.
 func Mount(app *zip.App, db orm.DB) {
 	h := &Sessions{db: db}
-	zip.Post(app, "/v1/iam/v2/sessions/list", h.List,
+	zip.Post(app, "/v1/iam/sessions/list", h.List,
 		zip.WithSummary("List an owner's sessions, newest first"),
 		zip.WithTags("sessions"), zip.WithOperationID("listSessions"))
-	zip.Post(app, "/v1/iam/v2/sessions/get", h.Get,
+	zip.Post(app, "/v1/iam/sessions/get", h.Get,
 		zip.WithSummary("Get one session by owner/name/application"),
 		zip.WithTags("sessions"), zip.WithOperationID("getSession"))
-	zip.Post(app, "/v1/iam/v2/sessions/create", h.Create,
+	zip.Post(app, "/v1/iam/sessions/create", h.Create,
 		zip.WithSummary("Create or merge a session (upsert)"),
 		zip.WithTags("sessions"), zip.WithOperationID("createSession"))
-	zip.Post(app, "/v1/iam/v2/sessions/update", h.Update,
+	zip.Post(app, "/v1/iam/sessions/update", h.Update,
 		zip.WithSummary("Replace a session's cookie list"),
 		zip.WithTags("sessions"), zip.WithOperationID("updateSession"))
-	zip.Post(app, "/v1/iam/v2/sessions/delete", h.Delete,
+	zip.Post(app, "/v1/iam/sessions/delete", h.Delete,
 		zip.WithSummary("Delete a session"),
 		zip.WithTags("sessions"), zip.WithOperationID("deleteSession"))
 }

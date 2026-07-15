@@ -27,11 +27,11 @@ type Handler struct {
 // Mount registers the audit-log CRUD routes on app against db.
 func Mount(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/v2/audit-logs", h.List, zip.WithSummary("List audit logs for an owner"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/v2/audit-logs", h.Create, zip.WithSummary("Create an audit log"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/v2/audit-logs/get", h.Get, zip.WithSummary("Get one audit log"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/v2/audit-logs/update", h.Update, zip.WithSummary("Update an audit log"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/v2/audit-logs/delete", h.Delete, zip.WithSummary("Delete an audit log"), zip.WithTags("audit-logs"))
+	zip.Get(app, "/v1/iam/audit-logs", h.List, zip.WithSummary("List audit logs for an owner"), zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs", h.Create, zip.WithSummary("Create an audit log"), zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs/get", h.Get, zip.WithSummary("Get one audit log"), zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs/update", h.Update, zip.WithSummary("Update an audit log"), zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs/delete", h.Delete, zip.WithSummary("Delete an audit log"), zip.WithTags("audit-logs"))
 }
 
 // Ref addresses one audit log by its owner-scoped natural key.

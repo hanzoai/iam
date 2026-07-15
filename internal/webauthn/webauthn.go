@@ -55,27 +55,27 @@ type webauthnCredentialMutationResult struct {
 
 // Mount registers the passkey surface on app, closing over the entity store.
 func Mount(app *zip.App, db orm.DB) {
-	zip.Get[listWebauthnCredentialsIn, listWebauthnCredentialsOut](app, "/v1/iam/v2/webauthn-credentials", listWebauthnCredentials(db),
+	zip.Get[listWebauthnCredentialsIn, listWebauthnCredentialsOut](app, "/v1/iam/webauthn-credentials", listWebauthnCredentials(db),
 		zip.WithOperationID("listWebauthnCredentials"),
 		zip.WithSummary("List webauthn credentials in an owner scope"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/v2/webauthn-credentials/get", getWebauthnCredential(db),
+	zip.Post[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials/get", getWebauthnCredential(db),
 		zip.WithOperationID("getWebauthnCredential"),
 		zip.WithSummary("Get one webauthn credential by (owner, name)"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[schema.WebauthnCredential, webauthnCredentialResult](app, "/v1/iam/v2/webauthn-credentials", addWebauthnCredential(db),
+	zip.Post[schema.WebauthnCredential, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials", addWebauthnCredential(db),
 		zip.WithOperationID("addWebauthnCredential"),
 		zip.WithSummary("Create a webauthn credential"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[schema.WebauthnCredential, webauthnCredentialMutationResult](app, "/v1/iam/v2/webauthn-credentials/update", updateWebauthnCredential(db),
+	zip.Post[schema.WebauthnCredential, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/update", updateWebauthnCredential(db),
 		zip.WithOperationID("updateWebauthnCredential"),
 		zip.WithSummary("Update an existing webauthn credential"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[webauthnCredentialKey, webauthnCredentialMutationResult](app, "/v1/iam/v2/webauthn-credentials/delete", deleteWebauthnCredential(db),
+	zip.Post[webauthnCredentialKey, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/delete", deleteWebauthnCredential(db),
 		zip.WithOperationID("deleteWebauthnCredential"),
 		zip.WithSummary("Delete a webauthn credential by (owner, name)"),
 		zip.WithTags("webauthn_credentials"))
