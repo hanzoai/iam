@@ -1072,33 +1072,22 @@ func (c *ApiController) Login() {
 
 				c.Ctx.Input.SetParam("recordUserId", user.GetId())
 			} else if provider.Category == "OAuth" || provider.Category == "Web3" || provider.Category == "SAML" {
-				// Sign up via OAuth
-				if application.EnableLinkWithEmail {
-					if userInfo.Email != "" {
-						// Find existing user with Email
-						user, err = object.GetUserByField(application.Organization, "email", userInfo.Email)
-						if err != nil {
-							c.ResponseError(err.Error())
-							return
-						}
-					}
-
-					if user == nil && userInfo.Phone != "" {
-						// Find existing user with phone number
-						user, err = object.GetUserByField(application.Organization, "phone", userInfo.Phone)
-						if err != nil {
-							c.ResponseError(err.Error())
-							return
-						}
-					}
-				}
-
-				// Try to find existing user by username (case-insensitive)
-				// This allows OAuth providers (e.g., Wecom) to automatically associate with
-				// existing users when usernames match, particularly useful for enterprise
-				// scenarios where signup is disabled and users already exist in IAM
-				if user == nil && userInfo.Username != "" {
-					user, err = object.GetUserByFields(application.Organization, userInfo.Username)
+				// Sign up via OAuth. The provider identity (userInfo.Id) is NOT
+				// yet linked to any account, so attaching it to an EXISTING
+				// account and signing in as that account requires CONSENT — just
+				// as object.VerifyWalletLogin refuses to bind a wallet to an
+				// account by address alone. The ONLY consent a social login can
+				// carry here is a provider-VERIFIED email that matches an existing
+				// account (EnableLinkWithEmail — the standard verified-email
+				// account-linking flow). A username / display name / phone
+				// collision is public and provider-chosen, so it is NEVER consent
+				// and can never select an existing account (Red CRITICAL-1); an
+				// unverified provider email is attacker-controllable and is
+				// likewise refused (Red HIGH-2). Anything else provisions a NEW
+				// account below (a colliding username is de-duplicated into a
+				// fresh account, never a hijack of the colliding user).
+				if user == nil && object.MayLinkByVerifiedEmail(application.EnableLinkWithEmail, userInfo.Email, userInfo.EmailVerified) {
+					user, err = object.GetUserByField(application.Organization, "email", userInfo.Email)
 					if err != nil {
 						c.ResponseError(err.Error())
 						return
@@ -1242,6 +1231,16 @@ func (c *ApiController) Login() {
 				_, err = object.LinkUserAccount(user, provider.Type, userInfo.Id)
 				if err != nil {
 					c.ResponseError(err.Error())
+					return
+				}
+
+				// MFA runs before authenticating on ANY path that reaches an
+				// existing account (Red FIX #2), matching the already-linked path
+				// (~checkMfaEnable above) and the password path. For a
+				// freshly-provisioned account this is a no-op (no factor
+				// configured) unless the org REQUIRES enrollment, in which case
+				// the prompt is the org's policy — identical to the sibling paths.
+				if checkMfaEnable(c, user, organization, verificationType) {
 					return
 				}
 
