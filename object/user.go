@@ -153,7 +153,7 @@ type User struct {
 	LinkedIn        string `xorm:"linkedin varchar(100)" json:"linkedin"`
 	Wecom           string `xorm:"wecom varchar(100)" json:"wecom"`
 	Lark            string `xorm:"lark varchar(100)" json:"lark"`
-	Gitlab          string `xorm:"gitlab varchar(100)" json:"gitlab"`
+	GitLab          string `xorm:"gitlab varchar(100)" json:"gitlab"`
 	Adfs            string `xorm:"adfs varchar(100)" json:"adfs"`
 	Baidu           string `xorm:"baidu varchar(100)" json:"baidu"`
 	Alipay          string `xorm:"alipay varchar(100)" json:"alipay"`

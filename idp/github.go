@@ -243,6 +243,12 @@ func (idp *GithubIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error)
 		return nil, err
 	}
 
+	// GitHub only lets a user publish a VERIFIED address as their public profile
+	// email, so a non-empty githubUserInfo.Email is already verified. When it is
+	// empty we resolve one from /user/emails (filtered to Verified) or fall back
+	// to the GitHub-issued noreply address, which is uniquely bound to this
+	// authenticated account.
+	emailVerified := githubUserInfo.Email != ""
 	if githubUserInfo.Email == "" {
 		reqEmail, err := http.NewRequest("GET", "https://api.github.com/user/emails", nil)
 		if err != nil {
@@ -275,6 +281,7 @@ func (idp *GithubIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error)
 				"'Email addresses' account permission to get real emails.",
 				respEmail.StatusCode, errMessage.Message)
 			githubUserInfo.Email = fmt.Sprintf("%d+%s@users.noreply.github.com", githubUserInfo.Id, githubUserInfo.Login)
+			emailVerified = true
 		} else {
 			var userEmails []GitHubUserEmailInfo
 			err = json.Unmarshal(emailBody, &userEmails)
@@ -282,16 +289,17 @@ func (idp *GithubIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error)
 				return nil, err
 			}
 
-			githubUserInfo.Email = idp.getEmailFromEmailsResult(userEmails)
+			githubUserInfo.Email, emailVerified = idp.getEmailFromEmailsResult(userEmails)
 		}
 	}
 
 	userInfo := UserInfo{
-		Id:          strconv.Itoa(githubUserInfo.Id),
-		Username:    githubUserInfo.Login,
-		DisplayName: githubUserInfo.Name,
-		Email:       githubUserInfo.Email,
-		AvatarUrl:   githubUserInfo.AvatarUrl,
+		Id:            strconv.Itoa(githubUserInfo.Id),
+		Username:      githubUserInfo.Login,
+		DisplayName:   githubUserInfo.Name,
+		Email:         githubUserInfo.Email,
+		EmailVerified: emailVerified,
+		AvatarUrl:     githubUserInfo.AvatarUrl,
 	}
 	return &userInfo, nil
 }
@@ -323,7 +331,11 @@ func (idp *GithubIdProvider) postWithBody(body interface{}, url string) ([]byte,
 	return data, nil
 }
 
-func (idp *GithubIdProvider) getEmailFromEmailsResult(emailInfo []GitHubUserEmailInfo) string {
+// getEmailFromEmailsResult returns the user's best VERIFIED email from the
+// /user/emails result and whether one was found. Only addresses GitHub reports
+// as Verified are considered (noreply addresses are skipped), so a non-empty
+// return is always verified — the caller uses the bool to gate account linking.
+func (idp *GithubIdProvider) getEmailFromEmailsResult(emailInfo []GitHubUserEmailInfo) (string, bool) {
 	primaryEmail := ""
 	verifiedEmail := ""
 
@@ -341,8 +353,12 @@ func (idp *GithubIdProvider) getEmailFromEmailsResult(emailInfo []GitHubUserEmai
 	}
 
 	if primaryEmail != "" {
-		return primaryEmail
+		return primaryEmail, true
 	}
 
-	return verifiedEmail
+	if verifiedEmail != "" {
+		return verifiedEmail, true
+	}
+
+	return "", false
 }

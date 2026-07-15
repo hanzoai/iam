@@ -29,10 +29,17 @@ type UserInfo struct {
 	DisplayName string
 	UnionId     string
 	Email       string
-	Phone       string
-	CountryCode string
-	AvatarUrl   string
-	Extra       map[string]string
+	// EmailVerified reports whether the PROVIDER asserts it has verified the
+	// user controls Email. It gates account linking by email: an unverified
+	// provider email is attacker-controllable, so it must never resolve a login
+	// to an existing account that happens to share that address. Each provider
+	// populates this from its own verified-email signal; the zero value (false)
+	// is the safe default for providers that do not surface one.
+	EmailVerified bool
+	Phone         string
+	CountryCode   string
+	AvatarUrl     string
+	Extra         map[string]string
 }
 
 type ProviderInfo struct {
