@@ -69,10 +69,14 @@ func jwksHandler(db orm.DB) zip.Handler {
 }
 
 // isSigningCert reports whether a Cert is a token-signing key that belongs in the
-// JWKS: it must carry key material and a recognized signing algorithm, and must
-// not be a TLS/SSL certificate.
+// JWKS: it must be owned by a reserved platform org (so a tenant cannot publish a
+// key under a colliding kid), carry key material and a recognized signing
+// algorithm, and not be a TLS/SSL certificate.
 func isSigningCert(cert *schema.Cert) bool {
 	if cert == nil || cert.Name == "" {
+		return false
+	}
+	if !store.IsSigningCertOwner(cert.Owner) {
 		return false
 	}
 	if cert.PrivateKey == "" && cert.Certificate == "" {

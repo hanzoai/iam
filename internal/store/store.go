@@ -82,17 +82,42 @@ func GetCert(_ context.Context, db orm.DB, owner, name string) (*schema.Cert, er
 	return c, err
 }
 
-// FindCertByName resolves a signing certificate by name alone (the JWKS `kid`),
-// across owners. Returns (nil, nil) when no cert carries the name.
-func FindCertByName(_ context.Context, db orm.DB, name string) (*schema.Cert, error) {
+// signingCertOwners are the reserved platform organizations that own
+// token-signing certificates. A signing cert is trusted ONLY under these
+// owners, so a tenant can never shadow a platform signing key by creating a cert
+// with the same name (the JWKS `kid`) under its own org and forging tokens.
+var signingCertOwners = []string{"admin", "built-in"}
+
+// IsSigningCertOwner reports whether owner is a reserved platform signing-cert
+// owner — the trust boundary the JWKS and token verification enforce.
+func IsSigningCertOwner(owner string) bool {
+	for _, o := range signingCertOwners {
+		if o == owner {
+			return true
+		}
+	}
+	return false
+}
+
+// GetSigningCert resolves a TRUSTED signing certificate by name (the JWKS
+// `kid`), searching only the reserved platform owners in order. A cert owned by
+// any other org is never returned, so an attacker-created cert with a colliding
+// name can neither sign a token iam2 will verify nor be published in the JWKS.
+// Returns (nil, nil) when no trusted cert carries the name.
+func GetSigningCert(ctx context.Context, db orm.DB, name string) (*schema.Cert, error) {
 	if name == "" {
 		return nil, nil
 	}
-	c, err := orm.TypedQuery[schema.Cert](db).Filter("Name=", name).First()
-	if err == orm.ErrNotFound {
-		return nil, nil
+	for _, owner := range signingCertOwners {
+		c, err := GetCert(ctx, db, owner, name)
+		if err != nil {
+			return nil, err
+		}
+		if c != nil {
+			return c, nil
+		}
 	}
-	return c, err
+	return nil, nil
 }
 
 // PersistToken wires a domain Token onto the store and creates it. Used to

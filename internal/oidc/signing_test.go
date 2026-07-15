@@ -7,6 +7,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -153,6 +154,59 @@ func TestVerifyToken_RejectsUnknownKid(t *testing.T) {
 	tok, _ := s.Sign(testApp(), "hanzo/alice", "", "", "openid", time.Hour, now)
 	if _, err := verifyToken(context.Background(), db, tok); err == nil {
 		t.Fatal("token with an unknown kid was accepted")
+	}
+}
+
+// A tenant cannot shadow a platform signing key: a cert created under a
+// non-platform owner with a colliding name (kid) never verifies a forged token,
+// even when a real platform cert of the same name also exists.
+func TestVerify_TenantCannotShadowSigningKey(t *testing.T) {
+	db := openTestDB(t)
+	base := time.Unix(1_800_000_000, 0)
+	nowFuncSet(t, base.Add(time.Minute))
+
+	// Legit platform signing cert (admin owner, shared key), kid = cert-hanzo.
+	persistCert(t, db, rsaCert(t, "cert-hanzo"))
+
+	// Attacker creates a cert with the SAME name under their own org + their key.
+	attackerKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ac := &schema.Cert{CryptoAlgorithm: "RS256", PrivateKey: rsaKeyToPEM(t, attackerKey)}
+	ac.Owner, ac.Name = "attacker-org", "cert-hanzo"
+	persistCert(t, db, ac)
+
+	// Attacker forges a token signed with THEIR key, kid=cert-hanzo, claiming admin.
+	forger := NewRSASigner(attackerKey, "cert-hanzo", "https://hanzo.id")
+	forged, err := forger.Sign(&schema.Application{ClientId: "victim"}, "admin/superadmin", "", "", "openid", time.Hour, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifyToken(context.Background(), db, forged); err == nil {
+		t.Fatal("FORGERY ACCEPTED: a tenant cert shadowed a platform signing key")
+	}
+}
+
+// A cert under a non-platform owner is never a trusted signing key, even when it
+// is the only cert with that name.
+func TestVerify_NonPlatformCertNeverTrusted(t *testing.T) {
+	db := openTestDB(t)
+	base := time.Unix(1_800_000_000, 0)
+	nowFuncSet(t, base.Add(time.Minute))
+
+	attackerKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ac := &schema.Cert{CryptoAlgorithm: "RS256", PrivateKey: rsaKeyToPEM(t, attackerKey)}
+	ac.Owner, ac.Name = "attacker-org", "cert-evil"
+	persistCert(t, db, ac)
+
+	forger := NewRSASigner(attackerKey, "cert-evil", "https://hanzo.id")
+	forged, _ := forger.Sign(&schema.Application{ClientId: "victim"}, "admin/superadmin", "", "", "openid", time.Hour, base)
+	if _, err := verifyToken(context.Background(), db, forged); err == nil {
+		t.Fatal("a non-platform cert must never verify a token")
 	}
 }
 

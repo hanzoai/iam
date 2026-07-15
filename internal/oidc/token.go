@@ -337,21 +337,17 @@ func refreshTTL(app *schema.Application) time.Duration {
 	return appTTL(app)
 }
 
-// signerFor loads the application's signing cert (its own org first, then the
-// admin org) and builds a Signer with the given canonical issuer.
+// signerFor loads the application's signing cert from the trusted platform
+// signing-cert owners and builds a Signer with the given canonical issuer. Using
+// the same trusted resolution as the JWKS and verification keeps the three
+// consistent: a token is signed by a key iam2 will also publish and verify.
 func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer string) (*Signer, error) {
-	cert, err := store.GetCert(ctx, db, app.Organization, app.Cert)
+	cert, err := store.GetSigningCert(ctx, db, app.Cert)
 	if err != nil {
 		return nil, err
 	}
 	if cert == nil {
-		cert, err = store.GetCert(ctx, db, "admin", app.Cert)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if cert == nil {
-		return nil, errors.New("token: application has no signing cert")
+		return nil, errors.New("token: application has no trusted signing cert")
 	}
 	return NewSignerFromCert(cert, app, issuer)
 }

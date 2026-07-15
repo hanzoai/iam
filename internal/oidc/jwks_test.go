@@ -139,10 +139,36 @@ func TestJWKS_ExcludesTLSCert(t *testing.T) {
 	}
 }
 
+// A cert owned by a non-platform org is never published, so a tenant cannot
+// inject a signing key under a chosen kid.
+func TestJWKS_ExcludesNonPlatformCert(t *testing.T) {
+	app, db := newServer(t)
+	seedRSACert(t, db, "cert-hanzo") // admin-owned, trusted
+	c := orm.New[schema.Cert](db)
+	c.Owner = "attacker-org"
+	c.Name = "cert-evil"
+	c.CryptoAlgorithm = "RS256"
+	c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
+	c.SetId("attacker-org/cert-evil")
+	if err := c.CreateCtx(tctx()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, body := do(t, app, formReqNoBody("GET", PathJWKS))
+	if hasKid(t, body, "cert-evil") {
+		t.Fatal("a non-platform cert must not appear in the JWKS")
+	}
+	if !hasKid(t, body, "cert-hanzo") {
+		t.Fatal("platform signing cert missing from JWKS")
+	}
+}
+
 // Keys are deduplicated by kid so a name reused across owners publishes once.
 func TestJWKS_DedupesByKid(t *testing.T) {
 	app, db := newServer(t)
-	for _, owner := range []string{"admin", "hanzo"} {
+	// Two TRUSTED platform owners hold a cert of the same name; the JWKS must
+	// publish that kid exactly once.
+	for _, owner := range []string{"admin", "built-in"} {
 		c := orm.New[schema.Cert](db)
 		c.Owner = owner
 		c.Name = "cert-shared"
