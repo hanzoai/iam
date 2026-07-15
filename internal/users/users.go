@@ -61,6 +61,21 @@ type UpdateInput struct {
 	Password string      `json:"password,omitempty"`
 }
 
+// AuthzTarget reports the (owner, name) this create binds — the user entity is
+// the ONE input that nests its record under `user`, so its authorization target
+// is in.User.Owner, not a top-level field. Create binds the same values via this
+// method, so the value the authorization seam authorizes is exactly the value
+// written (internal/authz reads the same method through its owned interface).
+func (in *CreateInput) AuthzTarget() (owner, name string) {
+	return strings.TrimSpace(in.User.Owner), strings.TrimSpace(in.User.Name)
+}
+
+// AuthzTarget reports the (owner, name) this update binds, from the nested record
+// — the same values Update writes, so authorization and execution never diverge.
+func (in *UpdateInput) AuthzTarget() (owner, name string) {
+	return strings.TrimSpace(in.User.Owner), strings.TrimSpace(in.User.Name)
+}
+
 // ListInput is an owner-scoped, paged listing request.
 type ListInput struct {
 	Owner  string `json:"owner" validate:"required"`
@@ -79,10 +94,11 @@ type DeleteOutput struct {
 	Deleted bool `json:"deleted"`
 }
 
-// Create inserts a new owner-scoped user, hashing the plaintext password.
+// Create inserts a new owner-scoped user, hashing the plaintext password. The
+// (owner, name) it binds is in.AuthzTarget() — the exact pair the authorization
+// seam authorized, so execution cannot address a different owner than was checked.
 func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error) {
-	owner := strings.TrimSpace(in.User.Owner)
-	name := strings.TrimSpace(in.User.Name)
+	owner, name := in.AuthzTarget()
 	if owner == "" || name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
@@ -161,8 +177,7 @@ func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 // (orm id, creation time) and the stored digest are preserved unless a new
 // plaintext password is supplied.
 func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error) {
-	owner := strings.TrimSpace(in.User.Owner)
-	name := strings.TrimSpace(in.User.Name)
+	owner, name := in.AuthzTarget()
 	if owner == "" || name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
