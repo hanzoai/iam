@@ -39,8 +39,11 @@ import (
 func Mount(app *zip.App, db orm.DB) {
 	app.Get("/v1/iam/v2/health", health)
 
-	// Phase 2 — the OIDC surface at the canonical /v1/iam/* paths (SDK contract).
+	// Phase 2 — the OIDC surface at the canonical /v1/iam/* paths (SDK contract):
+	// discovery + JWKS, plus the read-only front-door (get-app-login, auth/methods)
+	// the @hanzo/iam <Login> calls to self-configure.
 	oidc.Mount(app)
+	oidc.MountFrontDoor(app, db)
 
 	users.Mount(app, db)
 	organizations.Mount(app, db)
