@@ -90,6 +90,13 @@ func loginHandler(db orm.DB) zip.Handler {
 		if app == nil {
 			return httpx.Err(c, "the application does not exist")
 		}
+		// Tenant isolation: the authenticated user's organization must be
+		// permitted for this application — its own org, a shared app, or an app
+		// that lets users choose their org. Without this a user in one tenant
+		// could obtain a token whose `organization` claim names another tenant.
+		if f.Organization != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
+			return httpx.Err(c, "the user is not permitted to sign in to this application")
+		}
 		// Bind the code to an EXACTLY-registered redirect URI (RFC 6749 §3.1.2.3);
 		// the token endpoint re-checks it. A supplied-but-unregistered URI is
 		// refused — never minted against.
