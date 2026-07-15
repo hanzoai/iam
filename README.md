@@ -12,24 +12,26 @@ identity binary carries no upstream copyright or license obligations.
 | Concern        | Component | Notes |
 |----------------|-----------|-------|
 | HTTP           | [`zap-proto/zip`](https://github.com/zap-proto/zip) | Typed handlers (`zip.Get[In,Out]`) on the `zap-proto/fiber/v3` engine; specificity routing; OpenAPI 3.1 |
-| Storage        | [`hanzoai/orm`](https://github.com/hanzoai/orm) over [`hanzoai/base`](https://github.com/hanzoai/base) | Typed Go records + KV cache; collections + realtime + replicate-to-S3; SQLite (no Postgres) |
+| Storage        | [`hanzoai/orm`](https://github.com/hanzoai/orm) (embedded SQLite via hanzoai/sqlite) | Typed Go records + KV cache; typed Go records + KV cache; embedded SQLite (no Postgres), ZAP backends pluggable |
 | Authorization  | [`hanzoai/authz`](https://github.com/hanzoai/authz) | One canonical policy engine, called over ZAP RPC |
 | OIDC / OAuth2  | in-tree | ML-DSA-65 hybrid JWT; no external OIDC library |
-| Inter-service  | `luxfi/zap` | Binary RPC. HTTPS is the external surface only |
+| Inter-service  | `zap-proto` | Binary RPC. HTTPS is the external surface only |
 
 ## Status
 
-Phase 0. The binary boots Base, registers the v2 collection schema, serves
-`/healthz`, and ships a read-only drift CLI. Cutover off `hanzoai/iam`
-is gated on `iam2 compare` reading **drift = 0** against a v1 replica.
+OAuth2/OIDC core is live and tested (login → PKCE code → token → JWT): OIDC
+discovery + JWKS, get-app-login + auth/methods, credential login (bcrypt,
+email/username), the token endpoint (RS256 JWT), and init_data bootstrap that
+seeds the real config (79 apps / 9 orgs). Embeddable via `server.Mount`. Builds
+on Hanzo CI (`ghcr.io/hanzoai/iam2`).
 
-See [MIGRATION.md](./MIGRATION.md) for the full phased plan.
+See [MIGRATION.md](./MIGRATION.md) for the phased plan.
 
 ## Build & run
 
 ```sh
 go build ./...
-go run . serve                              # Base + v2 schema + /healthz
+go run . serve --init-data init_data.json   # seed config + serve OIDC/login
 go run . compare --legacy postgres://…/iam  # read-only v1 ↔ v2 drift report
 ```
 
