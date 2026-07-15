@@ -1,8 +1,11 @@
 # IAM v2 Migration
 
 Casdoor fork (`hanzoai/iam`: Beego + xorm, Apache-2.0) → `hanzoai/iam2`:
-clean-room, proprietary, on the native Hanzo stack. Phased and drift-gated —
-the identity binary is never rewritten in one shot.
+clean-room, proprietary, on the native Hanzo stack. Phased and additive — the
+identity binary is never rewritten in one shot, and v1 stays live and
+authoritative until the supervised cutover. Parity is proven by tests + golden
+vectors captured from v1's own code + a route-level parity audit, and by a
+shadow deployment against real traffic — not by a swap on faith.
 
 ## §1 Why
 
@@ -15,100 +18,93 @@ own framework — we own it, and it collapses to one way of doing each thing.
 
 - **HTTP** — `github.com/zap-proto/zip` (typed `zip.Get[In,Out]` handlers on the
   `zap-proto/fiber/v3` engine, specificity routing, OpenAPI 3.1 at the edge).
-- **Storage** — `github.com/hanzoai/orm` (typed Go records + KV cache) over
-  `github.com/hanzoai/base` (collections, realtime, replicate-to-S3). SQLite —
-  never Postgres for the local/default path.
-- **Authz** — `github.com/hanzoai/authz`, one canonical policy engine, called
-  over ZAP RPC. No in-process copy.
-- **OIDC/OAuth2** — in-tree port (no external OIDC library). ML-DSA-65 hybrid
-  JWT signing; JWKS cache.
-- **Inter-service** — `github.com/luxfi/zap` binary RPC. HTTPS is the external
-  edge only; all service↔service is ZAP (platform law).
+- **Storage** — `github.com/hanzoai/orm` (typed Go records + KV cache). Default
+  is embedded SQLite (`hanzoai/sqlite`, pure-Go, WAL) — never Postgres. The same
+  `orm.DB` abstraction pluggably targets `hanzoai/sql` / `hanzoai/datastore` over
+  ZAP (`--store sql|datastore`), so iam2 gains ZAP-native persistence + snapshots
+  with zero code change once orm's ZAP backend is enabled.
+- **OIDC/OAuth2** — in-tree (no external OIDC library). RS256 today; ML-DSA-65
+  hybrid JWT signing + real JWKS from the Cert entity.
+- **Password verify** — algorithm resolved from the stored row (`internal/cred`):
+  argon2id (every live v1 row) + bcrypt (new iam2 rows), verify-only, fail-closed.
+- **Inter-service** — `zap-proto` binary RPC. HTTPS is the external edge only; all
+  service↔service is ZAP (platform law).
+- **Authz** — `github.com/hanzoai/authz` policy engine (`internal/authz` gate).
 
 ## §3 Phases
 
-| Phase | Scope | Gate to exit |
-|------:|-------|--------------|
-| 0 | Scaffold: Base boots, v2 collection namespace claimed, `/healthz`, `compare` CLI. | Binary builds and boots. |
-| 1 | Entity schemas (fields + indexes) + CRUD handlers on `zip` + `orm`, per resource. | Per-entity field parity vs v1; handlers pass tests. |
-| 2 | In-tree OIDC/OAuth2 server: `/v1/iam/oauth/*`, `/v1/iam/.well-known/*`, JWT (ML-DSA-65), JWKS. | Token/userinfo/authorize parity vs v1. |
-| 3 | Authz via `hanzoai/authz` over ZAP RPC; retire in-process authz. | Policy decisions match v1. |
-| 4 | Parity: run `iam2 compare` continuously against a v1 read replica. | **drift = 0** (or a known v1-only residual v2 does not model). |
-| 5 | Cutover: import v1 data, promote `iam2` to the `iam` mount, archive the fork. | Green in prod; rollback path proven. |
+| Phase | Scope | Exit |
+|------:|-------|------|
+| 1 | Entity schemas (full fields) + owner-scoped CRUD on `zip`+`orm`, 13 identity entities. | ✅ Field-complete vs v1; handlers tested. |
+| 2 | In-tree OIDC/OAuth2: discovery, JWKS, authorize, token (PKCE S256 + JWT), refresh, userinfo, logout; front-door login/get-app-login/auth-methods. | ✅ Core flow (login→code→token→JWT) tested; front-door residual in progress (below). |
+| 3 | Authz via `hanzoai/authz` gate over the entity CRUD. | ✅ In `internal/authz`. |
+| — | ~~Drift gate~~ **DROPPED.** Parity is proven by tests + golden vectors (a real v1 argon2id digest verifies) + a route-level parity audit + a shadow deployment — not a row-count diff. The read-only `compare` CLI remains as a diagnostic, not a gate. | — |
+| 4 | **Bootstrap + embed.** Seed the real config (orgs/apps/providers/certs) from the same `init_data.json` v1 uses (`internal/seed` — 79 apps / 9 orgs). Embed in `hanzoai/cloud` via `server.Mount`, SHADOW-FIRST (own prefix, alongside live Casdoor, non-destructive). | Shadow serves real `get-app-login`/login against seeded config. |
+| 5 | **Cutover.** Import the user rows (password hashes verify as-is — see §5), flip iam2 onto the canonical `/v1/iam/*`, archive the fork. | Green in prod; rollback proven. |
 
-Phases 0–4 are additive and non-destructive — v1 stays live and authoritative
-until Phase 5. Routes carry a `/v1/iam/*` prefix through the transition so
-they are orthogonal to the live `/v1/iam/*` mount; the prefix collapses at §6.
+## §4 Front-door residual (gates cutover)
 
-**Phase 1 blocker — password hashes are `argon2id`, not bcrypt (breaks EVERY login).**
-`users.VerifyPassword` (`internal/users/users.go`) calls `bcrypt.CompareHashAndPassword`
-unconditionally, and it is the only path credential login takes (`internal/oidc/login.go`).
-Every live v1 row is `argon2id`: `object/organization.go sanitizeOrgPasswordType`
-rewrites `""`/`bcrypt`/`plain` → `argon2id` on both AddOrganization and
-UpdateOrganization, `CreatePersonalOrganization` inserts it, `init_data.json`
-declares it, and `object/user_cred.go UpdateUserPassword` stamps it. Handed an
-argon2id PHC string, bcrypt returns `ErrHashTooShort` — so on cutover **100% of
-credential logins fail**, for every existing user, immediately. v1 resolves the
-algorithm per row: `object/check.go` reads `user.PasswordType`, falling back to
-`organization.PasswordType`, then dispatches through `cred.GetCredManager`.
-iam2 must do the same — the hash algorithm is a property of the stored row, never
-a constant. Verify-only (never re-hash on read); a rehash-on-login upgrade is a
-separate, deliberate decision. This is the sharpest reason parity is proven by
-`compare` against real rows, not by tests over rows iam2 wrote itself.
-
-**Phase 2 residual — the front door (blocks Phase 5).** The OIDC/OAuth2 protocol
-surface is complete, but HIP-0111 §6's *native front-door* surface — what the
-hosted portal at `hanzo.id` itself calls, as distinct from the OIDC surface
-client apps use — is not. Present: `get-app-login`, `login`. Missing: `signup`,
-`send-verification-code`, `get-account`, `userinfo` (native), `logout` (native).
-A backend swap without these takes the portal's signup, email verification,
-account page, and sign-out with it, so cutover is gated on them regardless of
-drift. Serve them under `/v1/iam/*` per HIP-0111 §6 — no `/api/`, no new prefix.
+The OIDC/OAuth2 protocol surface is complete. HIP-0111 §6's *native front-door* —
+what the hosted `hanzo.id` portal itself calls, distinct from the OIDC surface
+client apps use — is being finished. Present: `get-app-login`, `login`,
+`auth/methods`, `userinfo`, `logout`, `refresh`, `authorize`. In progress:
+`get-account`, `send-verification-code`, `signup`. A backend swap without these
+takes the portal's account page, email verification, and signup with it, so
+cutover is gated on them. Serve under `/v1/iam/*` (no `/api/`, no new prefix).
 
 Three facts the port must honour, each verified against live v1:
-- `get-account` is not just the portal's session read — the gateway's admin-guard
-  derives the **SuperAdmin predicate** from it (`gateway/cmd/admin-guard/main.go`)
-  and waitlist-guard derives **approval** from it. Its response shape is a
-  security contract, not a convenience.
-- `send-verification-code` takes **multipart/form-data**, not JSON.
-- Native `userinfo` and `logout` are **aliases** of the `oauth/*` handlers
-  (`routers/router.go` + `authz_filter.go` collapse them onto one handler each) —
-  register the alias, never fork a second implementation.
+- **`get-account` is a security contract, not a convenience.** The gateway's
+  admin-guard derives the **SuperAdmin predicate** from it
+  (`gateway/cmd/admin-guard/main.go`); waitlist-guard derives **approval**. Its
+  response shape (owner/isAdmin/… + no secret material) must match exactly.
+- **`send-verification-code` takes `multipart/form-data`, not JSON.**
+- Native **`userinfo`/`logout` are aliases** of the `oauth/*` handlers
+  (`routers/router.go` + `authz_filter.go` collapse them) — register the alias,
+  never fork a second implementation.
 
-## §4 Domain model (v1 xorm table → v2 Base collection)
+## §5 Credential parity (the cutover landmine, RESOLVED)
 
-Thirteen identity entities. Field-completeness is mandatory — a dropped column
-is lost auth data.
+Every live v1 row is **argon2id** (`object/organization.go sanitizeOrgPasswordType`
+rewrites `""`/`bcrypt`/`plain` → `argon2id`; `UpdateUserPassword` stamps it per
+user). A bcrypt-only verifier handed an argon2id PHC digest returns
+`ErrHashTooShort` → **100% of logins fail at cutover.** Fixed: `internal/cred`
+resolves the algorithm **from the row** (`user.PasswordType` → fallback
+`organization.PasswordType`), matching v1's `object/check.go`, and verifies
+argon2id + bcrypt, verify-only, fail-closed on any unknown scheme. Proven by a
+**golden vector** — a digest produced by v1's *own* `Argon2idCredManager`
+verifies under iam2 (`internal/cred/golden_v1_test.go`), across the v0→v1.0.0
+library-version gap. So existing users' hashes verify unchanged at import — no
+password reset, no re-hash on read.
 
-| v1 table (xorm)       | v2 collection (Base)   | Base kind |
-|-----------------------|------------------------|-----------|
-| `user`                | `users`                | auth      |
-| `organization`        | `organizations`        | base      |
-| `application`         | `applications`         | base      |
-| `provider`            | `providers`            | base      |
-| `role`                | `roles`                | base      |
-| `permission`          | `permissions`          | base      |
-| `cert`                | `certs`                | base      |
-| `key`                 | `keys`                 | base      |
-| `webauthn_credential` | `webauthn_credentials` | base      |
-| `session`             | `sessions`             | base      |
-| `token`               | `tokens`               | base      |
-| `record`              | `audit_logs`           | base      |
-| `invitation`          | `invitations`          | base      |
+## §6 Domain model (v1 xorm table → v2 orm kind)
 
-**Deliberately not modeled by iam2** (they belong to commerce/other services,
-not identity): `payment`, `plan`, `product`, `subscription`, `pricing`,
-`model`, `adapter`, `enforcer`, `syncer_*`.
+Thirteen identity entities. Field-completeness is mandatory — a dropped column is
+lost auth data.
 
-## §5 Drift gate
+| v1 table (xorm)       | v2 orm kind            |
+|-----------------------|------------------------|
+| `user`                | `users` (auth)         |
+| `organization`        | `organizations`        |
+| `application`         | `applications`         |
+| `provider`            | `providers`            |
+| `role`                | `roles`                |
+| `permission`          | `permissions`          |
+| `cert`                | `certs`                |
+| `key`                 | `keys`                 |
+| `webauthn_credential` | `webauthn_credentials` |
+| `session`             | `sessions`             |
+| `token`               | `tokens`               |
+| `record`              | `audit_logs`           |
+| `invitation`          | `invitations`          |
 
-`iam2 compare --legacy <v1-dsn>` opens the v1 database **read-only** (only
-`SELECT COUNT(*)`), opens the v2 Base store read-only, and prints per-entity
-row counts plus absolute drift. This is the gate that keeps cutover honest:
-drift must be 0 before Phase 5 import goes live. No writes, no DDL, ever.
+**Deliberately NOT modeled by iam2** (they belong to other services or are
+replaced by `hanzoai/authz`): `payment`, `plan`, `product`, `subscription`,
+`pricing`, `model`, `adapter`, `enforcer`, `syncer_*`, LDAP.
 
-## §6 Cutover
+## §7 Build & deploy
 
-At Phase 5, with drift proven 0: import v1 rows into v2 collections, repoint the `iam` image /
-operator CR / DNS to `iam2`, and archive `hanzoai/iam`. One identity binary,
-one way, no Casdoor.
+Builds CGO-free (`hanzoai/sqlite` is pure-Go), pinned to published `hanzoai/orm`
++ `zap-proto/zip` (no local replaces). Native CI at `.gitea/workflows/build.yaml`
+(git.hanzo.ai act_runner) + a mirror `.github/workflows/build.yml`, both
+self-contained (no reusable-workflow dependency). Canonical pipeline is
+**git.hanzo.ai + Hanzo GitOps**; GitHub is a downstream mirror.
