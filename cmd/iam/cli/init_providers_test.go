@@ -20,7 +20,7 @@ func specByName(t *testing.T, name string) providerSpec {
 }
 
 // TestSupportedProviders_AdminDefaults locks the canonical admin-default set:
-// the five providers every brand inherits, with their canonical Casdoor
+// the six providers every brand inherits, with their canonical Casdoor
 // categories/types. A change here is a deliberate product decision.
 func TestSupportedProviders_AdminDefaults(t *testing.T) {
 	want := map[string]struct {
@@ -29,6 +29,7 @@ func TestSupportedProviders_AdminDefaults(t *testing.T) {
 	}{
 		"provider-github": {"OAuth", "GitHub"},
 		"provider-google": {"OAuth", "Google"},
+		"provider-gitlab": {"OAuth", "GitLab"},
 		"provider-sms":    {"SMS", "Twilio SMS"},
 		"provider-email":  {"Email", "Default"},
 		"provider-web3":   {"Web3", "MetaMask"},
