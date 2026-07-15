@@ -43,6 +43,7 @@ import {
   type WalletConnector,
 } from "@luxwallet/connect";
 import {ChainIcon} from "./ChainIcon";
+import * as Util from "./Util";
 
 export type {Chain} from "@luxwallet/connect";
 
@@ -125,22 +126,43 @@ async function fetchNonce(chain: Chain, address: string): Promise<LoginChallenge
 }
 
 async function postVerify(application, organization, method: string, proof: SignedProof) {
+  const body: Record<string, unknown> = {
+    organization,
+    application,
+    method,
+    chain: proof.chain,
+    scheme: proof.scheme,
+    address: proof.address,
+    publicKey: proof.publicKey,
+    message: proof.message,
+    signature: proof.signature,
+    extra: proof.extra,
+  };
+
+  // OAuth authorize passthrough. When this login page was reached as an OAuth
+  // authorize request (an app like the console redirected here with client_id +
+  // redirect_uri + PKCE), forward those params so the server completes the SAME
+  // authorization-code flow the password/social buttons do — HandleLoggedIn then
+  // returns a code to the app's redirect_uri instead of only setting a same-origin
+  // session. Absent an authorize request (a direct hanzo.id login) type is omitted
+  // and the server defaults to a session-cookie login — today's behavior, unchanged.
+  const oauth = Util.getOAuthGetParameters();
+  if (oauth && oauth.responseType && oauth.redirectUri) {
+    body.type = oauth.responseType;
+    body.clientId = oauth.clientId;
+    body.redirectUri = oauth.redirectUri;
+    body.state = oauth.state;
+    body.scope = oauth.scope;
+    body.nonce = oauth.nonce;
+    body.codeChallenge = oauth.codeChallenge;
+    body.codeChallengeMethod = oauth.challengeMethod;
+  }
+
   const res = await fetch(`${apiBase()}/web3/verify`, {
     method: "POST",
     credentials: "include",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      organization,
-      application,
-      method,
-      chain: proof.chain,
-      scheme: proof.scheme,
-      address: proof.address,
-      publicKey: proof.publicKey,
-      message: proof.message,
-      signature: proof.signature,
-      extra: proof.extra,
-    }),
+    body: JSON.stringify(body),
   });
   return res.json();
 }
@@ -177,9 +199,17 @@ export async function authViaWallet(application, provider, method: string, chain
     );
 
     if (result.status === "ok") {
-      // Mirror the password/OAuth success path: HandleLoggedIn returns either a
-      // redirect target or a logged-in payload the SPA consumes.
-      if (typeof result.data === "string" && result.data.startsWith("http")) {
+      // Mirror the password/OAuth success path (postCodeLoginAction). In an OAuth
+      // authorize context the server returns the authorization code in result.data;
+      // hand it back to the app's redirect_uri exactly like the password flow does.
+      // Otherwise HandleLoggedIn returns a redirect target or a session payload the
+      // SPA consumes (direct hanzo.id login → reload).
+      const oauth = Util.getOAuthGetParameters();
+      if (oauth && oauth.responseType === "code" && oauth.redirectUri &&
+          typeof result.data === "string" && result.data && !result.data.startsWith("http")) {
+        const sep = oauth.redirectUri.includes("?") ? "&" : "?";
+        goToLink(`${oauth.redirectUri}${sep}code=${result.data}&state=${oauth.state}`);
+      } else if (typeof result.data === "string" && result.data.startsWith("http")) {
         goToLink(result.data);
       } else if (result.data?.redirectUrl) {
         goToLink(result.data.redirectUrl);
