@@ -160,7 +160,9 @@ func (idp *GoogleIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error)
 			Username:    googleIdToken.Email,
 			DisplayName: googleIdToken.Name,
 			Email:       googleIdToken.Email,
-			AvatarUrl:   googleIdToken.Picture,
+			// Google encodes email_verified as the string "true" in the ID token.
+			EmailVerified: googleIdToken.EmailVerified == "true",
+			AvatarUrl:     googleIdToken.Picture,
 		}
 		return &userInfo, nil
 	}
@@ -222,13 +224,14 @@ func (idp *GoogleIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error)
 	}
 
 	userInfo := UserInfo{
-		Id:          googleUserInfo.Id,
-		Username:    googleUserInfo.Email,
-		DisplayName: googleUserInfo.Name,
-		Email:       googleUserInfo.Email,
-		AvatarUrl:   googleUserInfo.Picture,
-		Phone:       phoneNumber,
-		CountryCode: countryCode,
+		Id:            googleUserInfo.Id,
+		Username:      googleUserInfo.Email,
+		DisplayName:   googleUserInfo.Name,
+		Email:         googleUserInfo.Email,
+		EmailVerified: googleUserInfo.VerifiedEmail,
+		AvatarUrl:     googleUserInfo.Picture,
+		Phone:         phoneNumber,
+		CountryCode:   countryCode,
 	}
 	return &userInfo, nil
 }
