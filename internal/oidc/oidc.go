@@ -26,6 +26,7 @@ const (
 	PathUserInfo    = "/v1/iam/oauth/userinfo"
 	PathLogout      = "/v1/iam/oauth/logout"
 	PathJWKS        = "/v1/iam/.well-known/jwks"
+	PathJWKSRoot    = "/.well-known/jwks"
 	PathDiscovery   = "/.well-known/openid-configuration"
 	PathDiscoveryV1 = "/v1/iam/.well-known/openid-configuration"
 )
@@ -35,11 +36,16 @@ const (
 // endpoints, and the front door are all wired here so the surface lives in one
 // place.
 func Mount(app *zip.App, db orm.DB) {
-	// Discovery is served at both the root well-known path (RFC 8414) and the
-	// /v1/iam-prefixed path, matching the live hanzo.id surface.
+	// Discovery and the JWKS are each served at BOTH the root well-known path
+	// (RFC 8414 §3, where a bare-origin client and the gateway's default look)
+	// and the /v1/iam-prefixed path, matching the live hanzo.id surface. Both
+	// paths are the same handler over the same keys — one key set, two spellings
+	// of where to find it.
+	jwks := jwksHandler(db)
 	app.Get(PathDiscovery, Discovery)
 	app.Get(PathDiscoveryV1, Discovery)
-	app.Get(PathJWKS, jwksHandler(db))
+	app.Get(PathJWKS, jwks)
+	app.Get(PathJWKSRoot, jwks)
 
 	// OAuth2 / OIDC protocol endpoints.
 	app.Get(PathAuthorize, authorizeHandler(db))

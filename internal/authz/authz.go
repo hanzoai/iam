@@ -84,6 +84,22 @@ func From(ctx context.Context) (*Principal, bool) {
 	return p, ok
 }
 
+// Scope resolves the owner a listing is bound to: a SuperAdmin lists the owner
+// it asks for (empty = every tenant), anyone else lists only its own org. The
+// org comes from the verified bearer, so a request parameter can never widen a
+// read beyond the caller's authority — the one value authorized is the one value
+// queried. Every owner-scoped lister resolves its owner here.
+func Scope(ctx context.Context, owner string) (string, error) {
+	p, ok := From(ctx)
+	if !ok {
+		return "", zip.ErrForbidden("no principal")
+	}
+	if p.Super {
+		return owner, nil
+	}
+	return p.Org, nil
+}
+
 // Fail-closed reasons. The Guard collapses all of them to one opaque 401 so a
 // prober cannot tell a bad signature from an expired token from a revoked user.
 var (
@@ -104,7 +120,8 @@ var publicPaths = map[string]bool{
 	"/healthz":                                 true, // liveness, unversioned
 	"/.well-known/openid-configuration":        true, // OIDC discovery (root)
 	"/v1/iam/.well-known/openid-configuration": true, // OIDC discovery (v1)
-	"/v1/iam/.well-known/jwks":                 true, // JWKS public keys
+	"/.well-known/jwks":                        true, // JWKS public keys (root)
+	"/v1/iam/.well-known/jwks":                 true, // JWKS public keys (v1)
 	"/v1/iam/login":                            true, // credential login, mints the code
 	"/v1/iam/oauth/authorize":                  true, // OAuth2 authorize
 	"/v1/iam/oauth/token":                      true, // OAuth2 token

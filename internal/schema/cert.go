@@ -44,3 +44,18 @@ type Cert struct {
 	Certificate string `json:"certificate"`
 	PrivateKey  string `json:"privateKey"`
 }
+
+// Mask returns a copy of the cert with its secret material removed — the one
+// place a Cert is prepared to cross the API. The private key signs every token
+// this IAM issues: it lives in the store, signs in process, and is never served.
+// Relying parties read the PUBLIC half from the JWKS (RFC 7517), which is
+// derived from Certificate. AccessSecret is the ACME/DNS provider credential and
+// is secret for the same reason. Returns nil for a nil cert.
+func (c *Cert) Mask() *Cert {
+	if c == nil {
+		return nil
+	}
+	m := *c
+	m.PrivateKey, m.AccessSecret = "", ""
+	return &m
+}
