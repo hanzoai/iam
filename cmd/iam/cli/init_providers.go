@@ -94,6 +94,20 @@ var supportedProviders = []providerSpec{
 		RequiredSecret: false,
 	},
 	{
+		// GitLab — read_user is the minimal scope covering GetUserInfo's
+		// /api/v4/user call (username, public email, name); mirrors GitHub's
+		// least-privilege "read:user". Same bootstrap-tolerant skip as the other
+		// credentialed IdPs when GITLAB_CLIENT_ID/SECRET are absent.
+		Name:           "provider-gitlab",
+		DisplayName:    "GitLab",
+		Category:       "OAuth",
+		Type:           "GitLab",
+		Scopes:         "read_user",
+		ClientIDEnv:    "GITLAB_CLIENT_ID",
+		ClientSecret:   "GITLAB_CLIENT_SECRET",
+		RequiredSecret: false,
+	},
+	{
 		// Twilio SMS — the verification-code channel behind the phone login
 		// switch. clientId=Account SID, clientSecret=Auth Token, AppId=sender
 		// number (Casdoor's "Twilio SMS" binding). The actual send is opaque to
@@ -155,8 +169,8 @@ func newInitProvidersCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init-providers",
 		Short: "Upsert admin-org OAuth/SMS/Email/Web3 provider rows from KMS-sourced env",
-		Long: `Upsert the admin-org provider rows (GitHub, Google, SMS, Email,
-Web3) from environment variables sourced from KMS.
+		Long: `Upsert the admin-org provider rows (GitHub, Google, GitLab, SMS,
+Email, Web3) from environment variables sourced from KMS.
 
 For each spec: read its credentials from env, then idempotently add or update
 the provider row owned by the admin org. A row is mutated only when a field
@@ -171,6 +185,7 @@ Environment:
   IAM_ADMIN_ORG       Admin org name (default admin)
   GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET
   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
+  GITLAB_CLIENT_ID / GITLAB_CLIENT_SECRET
   TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_SENDER
   SMTP_USER / SMTP_PASS / SMTP_HOST / SMTP_PORT / SMTP_FROM`,
 		Args: cobra.NoArgs,

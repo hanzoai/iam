@@ -1129,7 +1129,11 @@ function LoginPage(props) {
               return order(a) - order(b);
             }).map((providerItem, id) => {
               const hint = (providerHint || "").toLowerCase();
-              if (hint && (hint === providerItem.provider.name.toLowerCase() || hint === providerItem.provider.type.toLowerCase())) {
+              // Web3 wallet login is NOT an OAuth redirect — getAuthUrl only knows the
+              // OAuth authInfo table, so a web3 hint must not auto-advance here. Fall
+              // through and render the wallet button (connecting a wallet needs a user
+              // gesture anyway); the hint just lands the user on this page.
+              if (hint && providerItem.provider.category !== "Web3" && (hint === providerItem.provider.name.toLowerCase() || hint === providerItem.provider.type.toLowerCase())) {
                 goToLink(Provider.getAuthUrl(application, providerItem.provider, "signup"));
                 return null;
               }
@@ -1369,7 +1373,10 @@ function LoginPage(props) {
   if (props.preview !== "auto" && providerHint) {
     const hint = providerHint.trim().toLowerCase();
     const hintedProviderItem = (application.providers ?? []).find(providerItem => {
-      if (!isProviderVisible(providerItem) || providerItem.provider?.category === "SAML") {return false;}
+      // Web3 (like SAML) is not an OAuth authorize redirect, so it must not be
+      // auto-federated via getAuthUrl; a web3 hint falls through to the login page
+      // where the wallet button drives the native /v1/iam/web3 flow on user gesture.
+      if (!isProviderVisible(providerItem) || providerItem.provider?.category === "SAML" || providerItem.provider?.category === "Web3") {return false;}
       const name = (providerItem.provider?.name ?? "").toLowerCase();
       const type = (providerItem.provider?.type ?? "").toLowerCase();
       return name === hint || type === hint || name === `provider-${hint}`;
