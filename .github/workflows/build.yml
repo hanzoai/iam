@@ -13,7 +13,4 @@ jobs:
     with:
       image: ghcr.io/hanzoai/iam2
       target: STANDARD
-      # hanzo org runners only — never cross-org (lux/zoo). The shared workflow
-      # defaults runner-amd64 to hanzo-build-linux-amd64, which is correct here.
-      platforms: linux/amd64
     secrets: inherit
