@@ -57,8 +57,13 @@ func MintCode(app *schema.Application, userID, scope, challenge, method, resourc
 	if challenge != "" && method != "S256" {
 		return nil, ErrPKCEPlainRejected
 	}
+	// The token row is keyed by the application's OWNER (its registry owner, e.g.
+	// "admin"), so (Owner, Application) is the application's natural key and the
+	// token endpoint resolves the app back unambiguously. Organization records the
+	// tenant the grant belongs to.
 	return &schema.Token{
-		Owner:               app.Organization,
+		Owner:               app.Owner,
+		Organization:        app.Organization,
 		Application:         app.Name,
 		User:                userID,
 		Code:                code,
