@@ -69,11 +69,3 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.48.1 // indirect
 )
-
-// Local checkouts during the migration so iam2 stays in sync with patches
-// landing in orm and zip. Switch to pinned vX.Y.Z once the v2 surface
-// stabilises (Phase 1).
-replace (
-	github.com/hanzoai/orm => ../orm
-	github.com/zap-proto/zip => ../../zap-proto/zip
-)
