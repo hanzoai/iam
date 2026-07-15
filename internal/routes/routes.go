@@ -20,6 +20,7 @@ import (
 
 	"github.com/hanzoai/iam2/internal/applications"
 	"github.com/hanzoai/iam2/internal/auditlogs"
+	"github.com/hanzoai/iam2/internal/authz"
 	"github.com/hanzoai/iam2/internal/certs"
 	"github.com/hanzoai/iam2/internal/invitations"
 	"github.com/hanzoai/iam2/internal/keys"
@@ -37,6 +38,15 @@ import (
 // Mount registers every Phase-1 route on app, threading the entity store db
 // into each entity's typed CRUD handlers.
 func Mount(app *zip.App, db orm.DB) {
+	// Phase 3 — the authorization seam. Installed FIRST, via app.Use, so it wraps
+	// every route registered below AND the framework's deferred /mcp and /openapi
+	// projections of the typed handlers. It fails closed: only the public OIDC /
+	// front-door allowlist is reachable without a bearer; every CRUD route
+	// requires a verified bearer, tenant-scoped to the principal's own org, with
+	// writes to the reserved admin/built-in owners (the signing-cert poisoning
+	// gate) restricted to SuperAdmin. See internal/authz.
+	app.Use(authz.Guard(db))
+
 	app.Get("/healthz", health)
 
 	// Phase 2 — the full OIDC/OAuth2 surface at the canonical /v1/iam/* paths
