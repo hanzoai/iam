@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/luxfi/crypto/pq/mldsa/mldsa65"
 
 	"github.com/hanzoai/orm"
 

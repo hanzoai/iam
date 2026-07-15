@@ -8,8 +8,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/luxfi/crypto/pq/mldsa/mldsa65"
 
 	"github.com/hanzoai/iam2/internal/schema"
 )
@@ -22,8 +22,8 @@ import (
 // deployment migrates one Cert at a time without touching the token core.
 //
 // The signature scheme is pure ML-DSA-65 over the JWS signing input (no context,
-// deterministic), which is exactly what circl's Verify checks — so a token this
-// method signs round-trips through the same package's verify path, and a
+// deterministic), which is exactly what the ML-DSA-65 Verify checks — so a token
+// this method signs round-trips through the same package's verify path, and a
 // PQ-aware relying party reads the raw public key published in the JWKS.
 
 // algMLDSA65 is the JOSE `alg` value for ML-DSA-65 — the identifier carried in
@@ -49,8 +49,8 @@ func (signingMethodMLDSA65) Sign(signingString string, key any) ([]byte, error) 
 	if !ok {
 		return nil, jwt.ErrInvalidKeyType
 	}
-	sig := make([]byte, mldsa65.SignatureSize)
-	if err := mldsa65.SignTo(sk, []byte(signingString), nil, false, sig); err != nil {
+	sig, err := mldsa65.Sign(sk, []byte(signingString), nil, false)
+	if err != nil {
 		return nil, err
 	}
 	return sig, nil
