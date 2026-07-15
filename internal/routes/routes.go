@@ -45,6 +45,7 @@ func Mount(app *zip.App, db orm.DB) {
 	oidc.Mount(app)
 	oidc.MountFrontDoor(app, db)
 	oidc.MountToken(app, db)
+	oidc.MountLogin(app, db)
 
 	users.Mount(app, db)
 	organizations.Mount(app, db)

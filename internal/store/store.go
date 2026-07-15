@@ -41,6 +41,25 @@ func GetApplicationByName(_ context.Context, db orm.DB, owner, name string) (*sc
 	return app, err
 }
 
+// GetUserByName resolves a user by (owner, name) — owner is the organization.
+// Returns (nil, nil) when absent.
+func GetUserByName(_ context.Context, db orm.DB, owner, name string) (*schema.User, error) {
+	u, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).Filter("Name=", name).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return u, err
+}
+
+// GetUserByEmail resolves a user by (owner, email) — the email-login identifier.
+func GetUserByEmail(_ context.Context, db orm.DB, owner, email string) (*schema.User, error) {
+	u, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).Filter("Email=", email).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return u, err
+}
+
 // GetTokenByCode resolves a token row by its authorization code. Returns
 // (nil, nil) when no row carries the code.
 func GetTokenByCode(_ context.Context, db orm.DB, code string) (*schema.Token, error) {
