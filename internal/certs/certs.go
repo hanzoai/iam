@@ -15,6 +15,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam2/internal/authz"
 	"github.com/hanzoai/iam2/internal/schema"
 )
 
@@ -60,21 +61,31 @@ type DeleteOutput struct {
 // key builds the orm string key from the (owner, name) natural key.
 func key(owner, name string) string { return owner + "/" + name }
 
-// List returns the certs for one owner, newest first. An empty owner lists
-// every cert (the unscoped admin view).
+// List returns the certs the caller may read, newest first, secrets masked. The
+// owner is resolved by authz.Scope from the authenticated principal — a tenant
+// reads only its own org, a SuperAdmin reads the owner it asks for — so a query
+// parameter can never widen a listing beyond the bearer's authority.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+	owner, err := authz.Scope(ctx, in.Owner)
+	if err != nil {
+		return nil, err
+	}
 	q := orm.TypedQuery[schema.Cert](h.db)
-	if in.Owner != "" {
-		q = q.Filter("owner", in.Owner)
+	if owner != "" {
+		q = q.Filter("owner", owner)
 	}
 	certs, err := q.Order("-createdTime").GetAll(ctx)
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	return &ListOutput{Certs: certs, Total: len(certs)}, nil
+	out := make([]*schema.Cert, len(certs))
+	for i, c := range certs {
+		out[i] = c.Mask()
+	}
+	return &ListOutput{Certs: out, Total: len(out)}, nil
 }
 
-// Get returns one cert addressed by (owner, name).
+// Get returns one cert addressed by (owner, name), secrets masked.
 func (h *Handler) Get(_ context.Context, in *Ref) (*schema.Cert, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -83,7 +94,7 @@ func (h *Handler) Get(_ context.Context, in *Ref) (*schema.Cert, error) {
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	return cert, nil
+	return cert.Mask(), nil
 }
 
 // Create persists a new cert. It rejects a duplicate (owner, name) and stamps
