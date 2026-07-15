@@ -240,3 +240,16 @@ func EnrichProviders(ctx context.Context, db orm.DB, app *schema.Application) {
 		}
 	}
 }
+
+// GetOrganizationByName resolves an organization by its name. Orgs are stored
+// under the "admin" owner (v1 convention). Returns (nil, nil) when absent.
+func GetOrganizationByName(_ context.Context, db orm.DB, name string) (*schema.Organization, error) {
+	if name == "" {
+		return nil, nil
+	}
+	o, err := orm.TypedQuery[schema.Organization](db).Filter("Name=", name).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return o, err
+}
