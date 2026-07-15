@@ -34,12 +34,15 @@ type User struct {
 	Type       string `json:"type,omitempty"`
 
 	// Credential material. PasswordHash is a one-way bcrypt digest and is
-	// verify-only — json:"-" keeps it off every response. PasswordType and
+	// verify-only. It MUST be persisted (orm serializes the entity to its JSON
+	// data column, so a json:"-" field would never be stored — that silently
+	// broke login), so it carries a real json tag; the users API redact() strips
+	// it (and every other secret) from every response. PasswordType and
 	// PasswordSalt describe the digest scheme so rows hashed under the legacy
 	// argon2id scheme can still be verified and lazily re-hashed to bcrypt.
-	PasswordHash string `json:"-"`
+	PasswordHash string `json:"passwordHash,omitempty"`
 	PasswordType string `json:"passwordType,omitempty"`
-	PasswordSalt string `json:"-"`
+	PasswordSalt string `json:"passwordSalt,omitempty"`
 
 	// Profile.
 	DisplayName     string     `json:"displayName,omitempty"`
@@ -93,11 +96,13 @@ type User struct {
 	RegisterSource    string `json:"registerSource,omitempty"`
 
 	// API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are
-	// bearer material; AccessSecretHash and the raw secret never serialize.
-	// The handler redacts AccessSecret and the token fields before responding.
+	// bearer material. AccessSecretHash MUST persist (orm stores via JSON; a
+	// json:"-" field is never saved), so it carries a real json tag and the
+	// handler's redact() strips it (and AccessSecret + the token fields) before
+	// responding.
 	AccessKey            string `json:"accessKey,omitempty"`
 	AccessSecret         string `json:"accessSecret,omitempty"`
-	AccessSecretHash     string `json:"-"`
+	AccessSecretHash     string `json:"accessSecretHash,omitempty"`
 	AccessToken          string `json:"accessToken,omitempty"`
 	OriginalToken        string `json:"originalToken,omitempty"`
 	OriginalRefreshToken string `json:"originalRefreshToken,omitempty"`
