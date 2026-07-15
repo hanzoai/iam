@@ -40,6 +40,22 @@ Phases 0–4 are additive and non-destructive — v1 stays live and authoritativ
 until Phase 5. Routes carry a `/v1/iam/*` prefix through the transition so
 they are orthogonal to the live `/v1/iam/*` mount; the prefix collapses at §6.
 
+**Phase 1 blocker — password hashes are `argon2id`, not bcrypt (breaks EVERY login).**
+`users.VerifyPassword` (`internal/users/users.go`) calls `bcrypt.CompareHashAndPassword`
+unconditionally, and it is the only path credential login takes (`internal/oidc/login.go`).
+Every live v1 row is `argon2id`: `object/organization.go sanitizeOrgPasswordType`
+rewrites `""`/`bcrypt`/`plain` → `argon2id` on both AddOrganization and
+UpdateOrganization, `CreatePersonalOrganization` inserts it, `init_data.json`
+declares it, and `object/user_cred.go UpdateUserPassword` stamps it. Handed an
+argon2id PHC string, bcrypt returns `ErrHashTooShort` — so on cutover **100% of
+credential logins fail**, for every existing user, immediately. v1 resolves the
+algorithm per row: `object/check.go` reads `user.PasswordType`, falling back to
+`organization.PasswordType`, then dispatches through `cred.GetCredManager`.
+iam2 must do the same — the hash algorithm is a property of the stored row, never
+a constant. Verify-only (never re-hash on read); a rehash-on-login upgrade is a
+separate, deliberate decision. This is the sharpest reason parity is proven by
+`compare` against real rows, not by tests over rows iam2 wrote itself.
+
 **Phase 2 residual — the front door (blocks Phase 5).** The OIDC/OAuth2 protocol
 surface is complete, but HIP-0111 §6's *native front-door* surface — what the
 hosted portal at `hanzo.id` itself calls, as distinct from the OIDC surface
@@ -48,6 +64,16 @@ client apps use — is not. Present: `get-app-login`, `login`. Missing: `signup`
 A backend swap without these takes the portal's signup, email verification,
 account page, and sign-out with it, so cutover is gated on them regardless of
 drift. Serve them under `/v1/iam/*` per HIP-0111 §6 — no `/api/`, no new prefix.
+
+Three facts the port must honour, each verified against live v1:
+- `get-account` is not just the portal's session read — the gateway's admin-guard
+  derives the **SuperAdmin predicate** from it (`gateway/cmd/admin-guard/main.go`)
+  and waitlist-guard derives **approval** from it. Its response shape is a
+  security contract, not a convenience.
+- `send-verification-code` takes **multipart/form-data**, not JSON.
+- Native `userinfo` and `logout` are **aliases** of the `oauth/*` handlers
+  (`routers/router.go` + `authz_filter.go` collapse them onto one handler each) —
+  register the alias, never fork a second implementation.
 
 ## §4 Domain model (v1 xorm table → v2 Base collection)
 
