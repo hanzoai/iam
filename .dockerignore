@@ -1,0 +1,6 @@
+data/
+*.db
+*.db-*
+.git/
+.claude/
+node_modules/
