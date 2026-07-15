@@ -34,7 +34,9 @@ func verifyToken(ctx context.Context, db orm.DB, tokenStr string) (*Claims, erro
 		if kid == "" {
 			return nil, errors.New("verify: token has no kid")
 		}
-		cert, err := store.FindCertByName(ctx, db, kid)
+		// Resolve the kid ONLY among trusted platform signing certs, so a token
+		// signed by a tenant-created cert with a colliding name never verifies.
+		cert, err := store.GetSigningCert(ctx, db, kid)
 		if err != nil {
 			return nil, err
 		}
