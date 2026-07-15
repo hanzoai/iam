@@ -40,6 +40,15 @@ Phases 0–4 are additive and non-destructive — v1 stays live and authoritativ
 until Phase 5. Routes carry a `/v1/iam/*` prefix through the transition so
 they are orthogonal to the live `/v1/iam/*` mount; the prefix collapses at §6.
 
+**Phase 2 residual — the front door (blocks Phase 5).** The OIDC/OAuth2 protocol
+surface is complete, but HIP-0111 §6's *native front-door* surface — what the
+hosted portal at `hanzo.id` itself calls, as distinct from the OIDC surface
+client apps use — is not. Present: `get-app-login`, `login`. Missing: `signup`,
+`send-verification-code`, `get-account`, `userinfo` (native), `logout` (native).
+A backend swap without these takes the portal's signup, email verification,
+account page, and sign-out with it, so cutover is gated on them regardless of
+drift. Serve them under `/v1/iam/*` per HIP-0111 §6 — no `/api/`, no new prefix.
+
 ## §4 Domain model (v1 xorm table → v2 Base collection)
 
 Thirteen identity entities. Field-completeness is mandatory — a dropped column
