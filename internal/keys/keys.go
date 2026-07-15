@@ -27,15 +27,15 @@ import (
 // Mount registers the key CRUD routes on app, binding each handler to db.
 // Called from routes.Mount once it is threaded the entity store.
 func Mount(app *zip.App, db orm.DB) {
-	zip.Get(app, "/v1/iam/v2/keys", list(db),
+	zip.Get(app, "/v1/iam/keys", list(db),
 		zip.WithSummary("List keys in an owner"), zip.WithTags("keys"))
-	zip.Get(app, "/v1/iam/v2/key", get(db),
+	zip.Get(app, "/v1/iam/key", get(db),
 		zip.WithSummary("Get a key by (owner, name)"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/v2/key", create(db),
+	zip.Post(app, "/v1/iam/key", create(db),
 		zip.WithSummary("Create a key"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/v2/key/update", update(db),
+	zip.Post(app, "/v1/iam/key/update", update(db),
 		zip.WithSummary("Update a key"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/v2/key/delete", del(db),
+	zip.Post(app, "/v1/iam/key/delete", del(db),
 		zip.WithSummary("Delete a key"), zip.WithTags("keys"))
 }
 

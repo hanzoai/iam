@@ -28,11 +28,11 @@ type Handler struct {
 // the wire contract and the stored entity never drift.
 func Mount(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/v2/certs", h.List, zip.WithSummary("List certs for an owner"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/v2/certs", h.Create, zip.WithSummary("Create a cert"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/v2/certs/get", h.Get, zip.WithSummary("Get one cert"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/v2/certs/update", h.Update, zip.WithSummary("Update a cert"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/v2/certs/delete", h.Delete, zip.WithSummary("Delete a cert"), zip.WithTags("certs"))
+	zip.Get(app, "/v1/iam/certs", h.List, zip.WithSummary("List certs for an owner"), zip.WithTags("certs"))
+	zip.Post(app, "/v1/iam/certs", h.Create, zip.WithSummary("Create a cert"), zip.WithTags("certs"))
+	zip.Post(app, "/v1/iam/certs/get", h.Get, zip.WithSummary("Get one cert"), zip.WithTags("certs"))
+	zip.Post(app, "/v1/iam/certs/update", h.Update, zip.WithSummary("Update a cert"), zip.WithTags("certs"))
+	zip.Post(app, "/v1/iam/certs/delete", h.Delete, zip.WithSummary("Delete a cert"), zip.WithTags("certs"))
 }
 
 // Ref addresses one cert by its owner-scoped natural key.

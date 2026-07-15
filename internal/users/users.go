@@ -34,11 +34,11 @@ type API struct{ db orm.DB }
 // every transport.
 func Mount(app *zip.App, db orm.DB) {
 	a := &API{db: db}
-	zip.Post(app, "/v1/iam/v2/users", a.Create, zip.WithTags("users"), zip.WithSummary("Create a user"))
-	zip.Get(app, "/v1/iam/v2/users", a.List, zip.WithTags("users"), zip.WithSummary("List users in an org"))
-	zip.Get(app, "/v1/iam/v2/users/get", a.Get, zip.WithTags("users"), zip.WithSummary("Get a user by (owner, name)"))
-	zip.Post(app, "/v1/iam/v2/users/update", a.Update, zip.WithTags("users"), zip.WithSummary("Update a user"))
-	zip.Post(app, "/v1/iam/v2/users/delete", a.Delete, zip.WithTags("users"), zip.WithSummary("Delete a user"))
+	zip.Post(app, "/v1/iam/users", a.Create, zip.WithTags("users"), zip.WithSummary("Create a user"))
+	zip.Get(app, "/v1/iam/users", a.List, zip.WithTags("users"), zip.WithSummary("List users in an org"))
+	zip.Get(app, "/v1/iam/users/get", a.Get, zip.WithTags("users"), zip.WithSummary("Get a user by (owner, name)"))
+	zip.Post(app, "/v1/iam/users/update", a.Update, zip.WithTags("users"), zip.WithSummary("Update a user"))
+	zip.Post(app, "/v1/iam/users/delete", a.Delete, zip.WithTags("users"), zip.WithSummary("Delete a user"))
 }
 
 // Ref identifies one user by its natural key.

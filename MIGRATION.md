@@ -29,7 +29,7 @@ own framework — we own it, and it collapses to one way of doing each thing.
 
 | Phase | Scope | Gate to exit |
 |------:|-------|--------------|
-| 0 | Scaffold: Base boots, v2 collection namespace claimed, `/v1/iam/v2/health`, `compare` CLI. | Binary builds and boots. |
+| 0 | Scaffold: Base boots, v2 collection namespace claimed, `/v1/iam/health`, `compare` CLI. | Binary builds and boots. |
 | 1 | Entity schemas (fields + indexes) + CRUD handlers on `zip` + `orm`, per resource. | Per-entity field parity vs v1; handlers pass tests. |
 | 2 | In-tree OIDC/OAuth2 server: `/v1/iam/oauth/*`, `/v1/iam/.well-known/*`, JWT (ML-DSA-65), JWKS. | Token/userinfo/authorize parity vs v1. |
 | 3 | Authz via `hanzoai/authz` over ZAP RPC; retire in-process authz. | Policy decisions match v1. |
@@ -37,7 +37,7 @@ own framework — we own it, and it collapses to one way of doing each thing.
 | 5 | Cutover: import v1 data, promote `iam2` to the `iam` mount, archive the fork. | Green in prod; rollback path proven. |
 
 Phases 0–4 are additive and non-destructive — v1 stays live and authoritative
-until Phase 5. Routes carry a `/v1/iam/v2/*` prefix through the transition so
+until Phase 5. Routes carry a `/v1/iam/*` prefix through the transition so
 they are orthogonal to the live `/v1/iam/*` mount; the prefix collapses at §6.
 
 ## §4 Domain model (v1 xorm table → v2 Base collection)
@@ -74,7 +74,6 @@ drift must be 0 before Phase 5 import goes live. No writes, no DDL, ever.
 
 ## §6 Cutover
 
-At Phase 5, with drift proven 0: import v1 rows into v2 collections, drop the
-`/v2` route prefix so `iam2` answers on `/v1/iam/*`, repoint the `iam` image /
+At Phase 5, with drift proven 0: import v1 rows into v2 collections, repoint the `iam` image /
 operator CR / DNS to `iam2`, and archive `hanzoai/iam`. One identity binary,
 one way, no Casdoor.

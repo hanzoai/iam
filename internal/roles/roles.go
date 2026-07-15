@@ -25,11 +25,11 @@ type Handler struct {
 // Mount registers the roles CRUD routes on app against db.
 func Mount(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/v2/roles", h.List, zip.WithSummary("List roles for an owner"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/v2/roles", h.Create, zip.WithSummary("Create a role"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/v2/roles/get", h.Get, zip.WithSummary("Get one role"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/v2/roles/update", h.Update, zip.WithSummary("Update a role"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/v2/roles/delete", h.Delete, zip.WithSummary("Delete a role"), zip.WithTags("roles"))
+	zip.Get(app, "/v1/iam/roles", h.List, zip.WithSummary("List roles for an owner"), zip.WithTags("roles"))
+	zip.Post(app, "/v1/iam/roles", h.Create, zip.WithSummary("Create a role"), zip.WithTags("roles"))
+	zip.Post(app, "/v1/iam/roles/get", h.Get, zip.WithSummary("Get one role"), zip.WithTags("roles"))
+	zip.Post(app, "/v1/iam/roles/update", h.Update, zip.WithSummary("Update a role"), zip.WithTags("roles"))
+	zip.Post(app, "/v1/iam/roles/delete", h.Delete, zip.WithSummary("Delete a role"), zip.WithTags("roles"))
 }
 
 // Ref addresses one role by its owner-scoped natural key.
