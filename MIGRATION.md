@@ -29,7 +29,7 @@ own framework — we own it, and it collapses to one way of doing each thing.
 
 | Phase | Scope | Gate to exit |
 |------:|-------|--------------|
-| 0 | Scaffold: Base boots, v2 collection namespace claimed, `/v1/iam/health`, `compare` CLI. | Binary builds and boots. |
+| 0 | Scaffold: Base boots, v2 collection namespace claimed, `/healthz`, `compare` CLI. | Binary builds and boots. |
 | 1 | Entity schemas (fields + indexes) + CRUD handlers on `zip` + `orm`, per resource. | Per-entity field parity vs v1; handlers pass tests. |
 | 2 | In-tree OIDC/OAuth2 server: `/v1/iam/oauth/*`, `/v1/iam/.well-known/*`, JWT (ML-DSA-65), JWKS. | Token/userinfo/authorize parity vs v1. |
 | 3 | Authz via `hanzoai/authz` over ZAP RPC; retire in-process authz. | Policy decisions match v1. |
