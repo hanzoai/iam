@@ -41,6 +41,59 @@ func GetApplicationByName(_ context.Context, db orm.DB, owner, name string) (*sc
 	return app, err
 }
 
+// GetTokenByCode resolves a token row by its authorization code. Returns
+// (nil, nil) when no row carries the code.
+func GetTokenByCode(_ context.Context, db orm.DB, code string) (*schema.Token, error) {
+	if code == "" {
+		return nil, nil
+	}
+	t, err := orm.TypedQuery[schema.Token](db).Filter("Code=", code).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return t, err
+}
+
+// GetCert resolves a signing certificate by (owner, name).
+func GetCert(_ context.Context, db orm.DB, owner, name string) (*schema.Cert, error) {
+	c, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", owner).Filter("Name=", name).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return c, err
+}
+
+// PersistToken wires a domain Token onto the store and creates it. Used to
+// persist an authorization code minted by oidc.MintCode. The id is (owner, name);
+// callers set Name to a unique value (e.g. the code) before persisting.
+func PersistToken(ctx context.Context, db orm.DB, tok *schema.Token) error {
+	t := orm.New[schema.Token](db)
+	model := t.Model
+	*t = *tok
+	t.Model = model
+	name := tok.Name
+	if name == "" {
+		name = tok.Code // codes are unique; use as the row name when none given
+		t.Name = name
+	}
+	t.SetId(tok.Owner + "/" + name)
+	return t.CreateCtx(ctx)
+}
+
+// SaveToken read-modify-writes an existing token row (e.g. after redemption:
+// CodeIsUsed=true + AccessToken set). It looks the row up by (owner, name),
+// copies the mutated fields, and updates in place.
+func SaveToken(ctx context.Context, db orm.DB, tok *schema.Token) error {
+	existing, err := orm.Get[schema.Token](db, tok.Owner+"/"+tok.Name)
+	if err != nil {
+		return err
+	}
+	model := existing.Model
+	*existing = *tok
+	existing.Model = model
+	return existing.UpdateCtx(ctx)
+}
+
 // GetProvider resolves a provider record by (owner, name) — e.g.
 // ("admin", "provider-github"). Providers are shared org-level records the
 // application's ProviderItem links to by name.
