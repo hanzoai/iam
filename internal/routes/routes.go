@@ -38,14 +38,17 @@ import (
 // Mount registers every Phase-1 route on app, threading the entity store db
 // into each entity's typed CRUD handlers.
 func Mount(app *zip.App, db orm.DB) {
-	// Phase 3 — the authorization seam. Installed FIRST, via app.Use, so it wraps
-	// every route registered below AND the framework's deferred /mcp and /openapi
-	// projections of the typed handlers. It fails closed: only the public OIDC /
-	// front-door allowlist is reachable without a bearer; every CRUD route
-	// requires a verified bearer, tenant-scoped to the principal's own org, with
-	// writes to the reserved admin/built-in owners (the signing-cert poisoning
-	// gate) restricted to SuperAdmin. See internal/authz.
+	// Phase 3 — the authorization seam, in two orthogonal halves (see internal/authz):
+	//   - Guard (app.Use) AUTHENTICATES every request first: public OIDC/front-door
+	//     routes pass; every other route needs a verified bearer, and the resolved
+	//     Principal is attached to the context. It also authorizes reads, whose
+	//     target rides in the query string.
+	//   - Authorize (app.Authorize) AUTHORIZES writes at the framework's op-invoke
+	//     seam, on the DECODED input the handler binds — for REST and MCP alike, so
+	//     the value authorized is the value written. Writes to the reserved
+	//     admin/built-in owners (the signing-cert poisoning gate) stay SuperAdmin-only.
 	app.Use(authz.Guard(db))
+	app.Authorize(authz.Authorize)
 
 	app.Get("/healthz", health)
 
