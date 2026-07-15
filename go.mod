@@ -20,7 +20,10 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 )
 
-require github.com/golang-jwt/jwt/v5 v5.3.1
+require (
+	github.com/cloudflare/circl v1.6.3
+	github.com/golang-jwt/jwt/v5 v5.3.1
+)
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
