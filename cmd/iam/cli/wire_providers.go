@@ -69,11 +69,12 @@ func (a *app) UnmarshalJSON(b []byte) error {
 // rendered UI — GitHub first per CTO directive. Must stay in sync with
 // supportedProviders in init_providers.go.
 //
-// Social = GitHub/Google OAuth; web3 = the multi-chain SIWx login; email/sms =
+// Social = GitHub/Google/GitLab OAuth; web3 = the multi-chain SIWx login; email/sms =
 // the shared verification-code channels.
 var providersToWire = []string{
 	"provider-github",
 	"provider-google",
+	"provider-gitlab",
 	"provider-web3",
 	"provider-email",
 	"provider-sms",
@@ -84,7 +85,7 @@ func newWireProvidersCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "wire-providers",
 		Short: "Attach the admin-default providers to every real-org application",
-		Long: `Attach provider-github, provider-google, provider-web3,
+		Long: `Attach provider-github, provider-google, provider-gitlab, provider-web3,
 provider-email and provider-sms to every application in every real
 organization (excluding the admin org). Idempotent — re-runs are no-ops once
 converged.

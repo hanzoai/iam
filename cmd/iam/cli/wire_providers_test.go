@@ -68,6 +68,7 @@ func TestEnsureProviders_PartialPresent(t *testing.T) {
 		Providers: []providerItem{
 			{Name: "provider-github", CanSignIn: true},
 			{Name: "provider-google", CanSignIn: true},
+			{Name: "provider-gitlab", CanSignIn: true},
 			{Name: "provider-web3", CanSignIn: true},
 			{Name: "provider-email", CanSignIn: true},
 		},
