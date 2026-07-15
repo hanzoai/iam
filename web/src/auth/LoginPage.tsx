@@ -685,6 +685,17 @@ function LoginPage(props) {
     return Setting.isProviderVisibleForSignIn(providerItem);
   };
 
+  // isFederatableOAuth is the single predicate for "may this provider be
+  // auto-advanced to via getAuthUrl". getAuthUrl performs an OAuth authorize
+  // redirect, which fits neither SAML (its own POST-binding flow) nor Web3 (a
+  // client-side wallet challenge, not a redirect). Both must be excluded at
+  // EVERY auto-federation sink or a SAML-only / wallet-only app hands one to
+  // getAuthUrl on page load and crashes (Red MEDIUM-3). Visibility still gates.
+  const isFederatableOAuth = (providerItem) => {
+    const category = providerItem.provider?.category;
+    return isProviderVisible(providerItem) && category !== "SAML" && category !== "Web3";
+  };
+
   const renderOtherFormProvider = (application) => {
     if (Setting.inIframe()) {return null;}
     for (const providerConf of application.providers) {
@@ -1129,11 +1140,10 @@ function LoginPage(props) {
               return order(a) - order(b);
             }).map((providerItem, id) => {
               const hint = (providerHint || "").toLowerCase();
-              // Web3 wallet login is NOT an OAuth redirect — getAuthUrl only knows the
-              // OAuth authInfo table, so a web3 hint must not auto-advance here. Fall
-              // through and render the wallet button (connecting a wallet needs a user
-              // gesture anyway); the hint just lands the user on this page.
-              if (hint && providerItem.provider.category !== "Web3" && (hint === providerItem.provider.name.toLowerCase() || hint === providerItem.provider.type.toLowerCase())) {
+              // Only OAuth providers may auto-advance via getAuthUrl; a SAML or
+              // Web3 hint falls through and renders its own button (a wallet
+              // connect needs a user gesture anyway) instead of crashing.
+              if (hint && isFederatableOAuth(providerItem) && (hint === providerItem.provider.name.toLowerCase() || hint === providerItem.provider.type.toLowerCase())) {
                 goToLink(Provider.getAuthUrl(application, providerItem.provider, "signup"));
                 return null;
               }
@@ -1373,10 +1383,7 @@ function LoginPage(props) {
   if (props.preview !== "auto" && providerHint) {
     const hint = providerHint.trim().toLowerCase();
     const hintedProviderItem = (application.providers ?? []).find(providerItem => {
-      // Web3 (like SAML) is not an OAuth authorize redirect, so it must not be
-      // auto-federated via getAuthUrl; a web3 hint falls through to the login page
-      // where the wallet button drives the native /v1/iam/web3 flow on user gesture.
-      if (!isProviderVisible(providerItem) || providerItem.provider?.category === "SAML" || providerItem.provider?.category === "Web3") {return false;}
+      if (!isFederatableOAuth(providerItem)) {return false;}
       const name = (providerItem.provider?.name ?? "").toLowerCase();
       const type = (providerItem.provider?.type ?? "").toLowerCase();
       return name === hint || type === hint || name === `provider-${hint}`;
@@ -1391,7 +1398,7 @@ function LoginPage(props) {
     }
   }
 
-  const visibleOAuthProviderItems = (application.providers === null) ? [] : application.providers.filter(providerItem => isProviderVisible(providerItem) && providerItem.provider?.category !== "SAML");
+  const visibleOAuthProviderItems = (application.providers === null) ? [] : application.providers.filter(providerItem => isFederatableOAuth(providerItem));
   if (props.preview !== "auto" && !Setting.isPasswordEnabled(application) && !Setting.isCodeSigninEnabled(application) && !Setting.isWebAuthnEnabled(application) && !Setting.isLdapEnabled(application) && visibleOAuthProviderItems.length === 1) {
     Setting.goToLink(Provider.getAuthUrl(application, visibleOAuthProviderItems[0].provider, "signup"));
     return (
