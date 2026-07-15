@@ -6,10 +6,10 @@
 # (hanzo/zoo/lux -app-client-id) — without them get-app-login returns
 # "Invalid client_id", the desktop login page renders no providers, and
 # wire-providers has no apps to attach providers to. The init-apps step:
-#   1. init-providers upserts the admin-org provider rows (GitHub, Google, SMS,
-#      Email, Web3) from credentials read at RUNTIME from k8s Secrets / KMS —
+#   1. init-providers upserts the admin-org provider rows (GitHub, Google, GitLab,
+#      SMS, Email, Web3) from credentials read at RUNTIME from k8s Secrets / KMS —
 #      ZERO hardcoded creds in this manifest.
-#   2. wire-providers attaches those five admin-default providers to every
+#   2. wire-providers attaches those six admin-default providers to every
 #      real-org application (hanzo/lux/zoo/pars/…) so every brand inherits the
 #      ONE shared credential set.
 #
@@ -33,6 +33,8 @@
 #   google-oauth          Secret  keys CLIENT_ID, CLIENT_SECRET (OPTIONAL — Job
 #                                  skips Google if this Secret/keys are absent;
 #                                  init-providers is bootstrap-tolerant)
+#   gitlab-oauth          Secret  keys CLIENT_ID, CLIENT_SECRET (OPTIONAL — same
+#                                  bootstrap-tolerant skip as google-oauth)
 #   iam-twilio            Secret  keys ACCOUNT_SID, AUTH_TOKEN, SENDER
 #                                  (KMSSecret iam-twilio-kms-sync — co-located below)
 #   iam-smtp              Secret  keys HOST, PORT, USER, PASS, FROM
@@ -129,6 +131,21 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: google-oauth
+                  key: CLIENT_SECRET
+                  optional: true
+            # ---- GitLab OAuth (OPTIONAL; bootstrap-tolerant skip if absent) ----
+            # Mirrors the google-oauth wiring: `optional: true` lets the Job start
+            # before the gitlab-oauth Secret exists; init-providers then skips GitLab.
+            - name: GITLAB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-oauth
+                  key: CLIENT_ID
+                  optional: true
+            - name: GITLAB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-oauth
                   key: CLIENT_SECRET
                   optional: true
             # ---- Twilio SMS (KMS-synced; iam-twilio Secret) ----
