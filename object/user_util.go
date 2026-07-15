@@ -247,6 +247,23 @@ func GetUserByFields(organization string, field string) (*User, error) {
 	return nil, nil
 }
 
+// MayLinkByVerifiedEmail reports whether a social ("OAuth") signup may attach
+// its new provider identity to an EXISTING account located by email — i.e.
+// whether the provider's email is trustworthy enough to prove the social user
+// owns that account.
+//
+// SECURITY (account takeover, Red HIGH-2): linking a new identity into an
+// existing account is an account mutation that needs CONSENT. A provider email
+// is consent ONLY when the provider ASSERTS it verified the user controls that
+// address AND the deployment opted into email linking (EnableLinkWithEmail). An
+// unverified provider email is attacker-controllable, so it must never resolve a
+// login to an account that merely shares the address. This is the OAuth
+// analogue of the wallet rule in web3_auth.go, which refuses to bind an identity
+// by address alone. PURE — no DB — so it is unit-testable.
+func MayLinkByVerifiedEmail(enableLinkWithEmail bool, email string, emailVerified bool) bool {
+	return enableLinkWithEmail && emailVerified && strings.TrimSpace(email) != ""
+}
+
 func SetUserField(user *User, field string, value string) (bool, error) {
 	bean := make(map[string]interface{})
 	if field == "password" {

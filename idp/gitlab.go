@@ -52,7 +52,7 @@ func (idp *GitlabIdProvider) getConfig(clientId string, clientSecret string, red
 	}
 
 	config := &oauth2.Config{
-		Scopes:       []string{"read_user+profile"},
+		Scopes:       []string{"read_user"},
 		Endpoint:     endpoint,
 		ClientID:     clientId,
 		ClientSecret: clientSecret,
@@ -226,6 +226,10 @@ func (idp *GitlabIdProvider) GetUserInfo(token *oauth2.Token) (*UserInfo, error)
 		DisplayName: guser.Name,
 		AvatarUrl:   guser.AvatarUrl,
 		Email:       guser.Email,
+		// GitLab confirms an email before it stamps confirmed_at, and only an
+		// active account may sign in. Require both: an unconfirmed or
+		// non-active account carries no verified-email guarantee.
+		EmailVerified: !guser.ConfirmedAt.IsZero() && guser.State == "active",
 	}
 	return &userInfo, nil
 }
