@@ -3,7 +3,9 @@
 package authz_test
 
 // End-to-end authorization tests driven through the REAL mounted router
-// (routes.Mount, which installs authz.Guard first). Every case is a wire request
+// (routes.Mount, which installs authz.Guard after the public group, so gating is
+// structural — the public routes registered before it are never reached by it).
+// Every case is a wire request
 // a client could send: a status code is the whole contract. Tokens are genuine
 // RS256 JWTs signed by the seeded admin signing cert, so they pass the exact
 // oidc.VerifyToken the guard reuses — nothing here is mocked.

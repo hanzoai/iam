@@ -26,10 +26,11 @@ const (
 	PathRevoke     = "/v1/iam/oauth/revoke"
 )
 
-// MountIntrospectRevoke registers the introspection + revocation endpoints.
-func MountIntrospectRevoke(app *zip.App, db orm.DB) {
-	app.Post(PathIntrospect, introspectHandler(db))
-	app.Post(PathRevoke, revokeHandler(db))
+// routeIntrospectRevoke registers the introspection + revocation endpoints on the
+// PUBLIC group r (client-authenticated, not Bearer-gated).
+func routeIntrospectRevoke(r zip.Router, db orm.DB) {
+	r.Post(PathIntrospect, introspectHandler(db))
+	r.Post(PathRevoke, revokeHandler(db))
 }
 
 // authConfidentialClient authenticates the calling client and requires it to be

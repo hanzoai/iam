@@ -207,12 +207,26 @@ func TestPublicRoutesNeedNoBearer(t *testing.T) {
 		{"GET", "/.well-known/openid-configuration"},
 		{"GET", "/v1/iam/.well-known/openid-configuration"},
 		{"GET", "/v1/iam/.well-known/jwks"},
+		{"GET", "/.well-known/oauth-authorization-server"},        // RFC 8414 AS metadata (root)
+		{"GET", "/v1/iam/.well-known/oauth-authorization-server"}, // RFC 8414 AS metadata (v1)
 		{"POST", "/v1/iam/login"},
 		{"GET", "/v1/iam/oauth/authorize"},
 		{"POST", "/v1/iam/oauth/token"},
 		{"GET", "/v1/iam/get-app-login"},
 		{"GET", "/v1/iam/auth/methods"},
 		{"POST", "/v1/iam/oauth/logout"},
+		// The front-door session/identity surface — each self-resolves the caller
+		// (session cookie, else bearer) and answers anonymously (200 {status:error}
+		// or a handler 400), never the Guard's 401. These are the routes the old
+		// publicPaths list had to be patched to include; now they are public purely
+		// because oidc.Route registers them on the pre-Guard group.
+		{"GET", "/v1/iam/get-account"},
+		{"POST", "/v1/iam/signin"},
+		{"GET", "/v1/iam/whoami"},
+		{"GET", "/v1/iam/linked-accounts"},
+		{"POST", "/v1/iam/signup"},
+		{"POST", "/v1/iam/send-verification-code"},
+		{"POST", "/v1/iam/update-preferences"},
 	}
 	for _, c := range public {
 		t.Run(c.method+" "+c.path, func(t *testing.T) {

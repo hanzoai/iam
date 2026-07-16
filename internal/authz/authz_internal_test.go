@@ -67,37 +67,13 @@ func TestSuperIsAdminOrgOnly(t *testing.T) {
 	}
 }
 
-func TestIsPublicIsAClosedAllowlist(t *testing.T) {
-	for _, p := range []string{
-		"/healthz",
-		"/.well-known/openid-configuration",
-		"/v1/iam/.well-known/jwks",
-		"/v1/iam/login",
-		"/v1/iam/login/", // trailing slash normalizes to the same public route
-		"/v1/iam/oauth/token",
-		"/v1/iam/oauth/userinfo",
-	} {
-		if !isPublic(p) {
-			t.Errorf("%q should be public", p)
-		}
-	}
-	// Everything else is gated by default — including the CRUD, the framework
-	// side doors, and near-misses on the public paths.
-	for _, p := range []string{
-		"/v1/iam/users",
-		"/v1/iam/certs",
-		"/v1/iam/certs/update",
-		"/mcp",
-		"/.well-known/openapi.json",
-		"/v1/iam/oauth/tokens",   // near-miss, not the token endpoint
-		"/v1/iam/login/../certs", // pre-normalization junk is never public
-		"",
-	} {
-		if isPublic(p) {
-			t.Errorf("%q must NOT be public (fail-closed default)", p)
-		}
-	}
-}
+// Public vs gated is no longer a path allow-list this package owns — it is
+// STRUCTURAL, decided by which group a route is registered on in routes.Mount
+// (the public group before the Guard, everything else after it). The boundary is
+// therefore proven end-to-end over the real mounted router: TestPublicRoutesNeedNoBearer
+// (public routes reachable without a bearer), TestUnauthenticatedWriteIs401 /
+// TestCrossOrgWriteIs403 (authed routes gated), and TestFrameworkSideDoorsAreGated
+// (/mcp + /openapi gated) in authz_cases_test.go.
 
 func TestEntityOf(t *testing.T) {
 	cases := map[string]string{
