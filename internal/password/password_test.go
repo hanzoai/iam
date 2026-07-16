@@ -3,6 +3,7 @@
 package password
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -51,7 +52,7 @@ func TestVerifiesLiveShapedArgon2idDigest(t *testing.T) {
 		{"vector 2", liveArgon2idDigest2, liveArgon2idPassword2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ok, stale := Verify(tc.digest, tc.password)
+			ok, stale := Verify(ctx(), tc.digest, tc.password)
 			if !ok {
 				t.Fatal("a live-shaped v1 argon2id digest did not verify — every argon2id login is broken")
 			}
@@ -66,7 +67,7 @@ func TestVerifiesLiveShapedArgon2idDigest(t *testing.T) {
 
 func TestRejectsWrongPasswordAgainstLiveDigest(t *testing.T) {
 	for _, wrong := range []string{"", "wrong", liveArgon2idPassword + "x", strings.ToUpper(liveArgon2idPassword)} {
-		if ok, _ := Verify(liveArgon2idDigest, wrong); ok {
+		if ok, _ := Verify(ctx(), liveArgon2idDigest, wrong); ok {
 			t.Fatalf("wrong password %q verified against a live argon2id digest", wrong)
 		}
 	}
@@ -84,7 +85,7 @@ func TestVerifiesLiveBcryptDigest(t *testing.T) {
 		{"$2y$10", "$2y$" + strings.TrimPrefix(liveBcrypt10Digest, "$2a$")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ok, stale := Verify(tc.digest, liveBcryptPassword)
+			ok, stale := Verify(ctx(), tc.digest, liveBcryptPassword)
 			if !ok {
 				t.Fatal("a live-shaped bcrypt digest did not verify — these accounts would be locked out")
 			}
@@ -95,7 +96,7 @@ func TestVerifiesLiveBcryptDigest(t *testing.T) {
 			}
 		})
 	}
-	if ok, _ := Verify(liveBcrypt10Digest, "wrong"); ok {
+	if ok, _ := Verify(ctx(), liveBcrypt10Digest, "wrong"); ok {
 		t.Fatal("wrong password verified against a live bcrypt digest")
 	}
 }
@@ -103,7 +104,7 @@ func TestVerifiesLiveBcryptDigest(t *testing.T) {
 // TestNeverStaleOnFailure: a failed guess must never trigger a re-hash.
 func TestNeverStaleOnFailure(t *testing.T) {
 	for _, digest := range []string{liveArgon2idDigest, liveBcrypt10Digest} {
-		ok, stale := Verify(digest, "definitely-not-the-password")
+		ok, stale := Verify(ctx(), digest, "definitely-not-the-password")
 		if ok {
 			t.Fatal("wrong password verified")
 		}
@@ -115,18 +116,18 @@ func TestNeverStaleOnFailure(t *testing.T) {
 
 func TestHashVerifyRoundTrip(t *testing.T) {
 	const pw = "a fresh password"
-	digest, err := Hash(pw)
+	digest, err := Hash(ctx(), pw)
 	if err != nil {
 		t.Fatalf("Hash: %v", err)
 	}
-	ok, stale := Verify(digest, pw)
+	ok, stale := Verify(ctx(), digest, pw)
 	if !ok {
 		t.Fatal("freshly minted digest did not verify")
 	}
 	if stale {
 		t.Fatal("freshly minted digest reported stale — every login would re-hash forever")
 	}
-	if ok, _ := Verify(digest, pw+"x"); ok {
+	if ok, _ := Verify(ctx(), digest, pw+"x"); ok {
 		t.Fatal("wrong password verified against a fresh digest")
 	}
 }
@@ -134,7 +135,7 @@ func TestHashVerifyRoundTrip(t *testing.T) {
 // TestHashMintsCurrentPolicy pins the parameters we advertise. OWASP baseline:
 // m=19456 (19 MiB), t=2, p=1.
 func TestHashMintsCurrentPolicy(t *testing.T) {
-	digest, err := Hash("x")
+	digest, err := Hash(ctx(), "x")
 	if err != nil {
 		t.Fatalf("Hash: %v", err)
 	}
@@ -158,11 +159,11 @@ func TestHashMintsCurrentPolicy(t *testing.T) {
 
 // TestHashSaltIsRandom: two digests of the same password must differ.
 func TestHashSaltIsRandom(t *testing.T) {
-	a, err := Hash("same password")
+	a, err := Hash(ctx(), "same password")
 	if err != nil {
 		t.Fatalf("Hash: %v", err)
 	}
-	b, err := Hash("same password")
+	b, err := Hash(ctx(), "same password")
 	if err != nil {
 		t.Fatalf("Hash: %v", err)
 	}
@@ -206,7 +207,7 @@ func TestWeakArgon2idIsRehashed(t *testing.T) {
 	// Minted at deliberately weak parameters (m=1024,t=1,p=1).
 	const pw = "weakly hashed"
 	weak := mintAt(t, pw, 1024, 1, 1)
-	ok, stale := Verify(weak, pw)
+	ok, stale := Verify(ctx(), weak, pw)
 	if !ok {
 		t.Fatal("weak argon2id digest did not verify")
 	}
@@ -241,7 +242,7 @@ func TestMalformedDigestFailsClosed(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// A panic here is a crash on the unauthenticated login path.
-			ok, stale := Verify(tc.digest, "anything")
+			ok, stale := Verify(ctx(), tc.digest, "anything")
 			if ok {
 				t.Fatal("malformed digest verified — must fail closed")
 			}
@@ -257,16 +258,16 @@ func TestMalformedDigestFailsClosed(t *testing.T) {
 func TestVerifyHasNoLengthCap(t *testing.T) {
 	long := strings.Repeat("x", maxPasswordLen*2)
 	digest := mintAt(t, long, 1024, 1, 1) // weak params: keep the test fast
-	if ok, _ := Verify(digest, long); !ok {
+	if ok, _ := Verify(ctx(), digest, long); !ok {
 		t.Fatal("an over-long password could not be verified — the cap must not reach the verify path")
 	}
 }
 
 func TestHashRejectsOverlongPassword(t *testing.T) {
-	if _, err := Hash(strings.Repeat("x", maxPasswordLen+1)); err != ErrPasswordTooLong {
-		t.Fatalf("Hash(overlong) error = %v, want ErrPasswordTooLong", err)
+	if _, err := Hash(ctx(), strings.Repeat("x", maxPasswordLen+1)); err != ErrPasswordTooLong {
+		t.Fatalf("Hash(ctx(), overlong) error = %v, want ErrPasswordTooLong", err)
 	}
-	if _, err := Hash(strings.Repeat("x", maxPasswordLen)); err != nil {
+	if _, err := Hash(ctx(), strings.Repeat("x", maxPasswordLen)); err != nil {
 		t.Fatalf("Hash at exactly maxPasswordLen: %v", err)
 	}
 }
@@ -275,7 +276,7 @@ func TestHashRejectsOverlongPassword(t *testing.T) {
 // digest. An empty password must not authenticate them.
 func TestEmptyDigestNeverVerifies(t *testing.T) {
 	for _, pw := range []string{"", "anything"} {
-		if ok, _ := Verify("", pw); ok {
+		if ok, _ := Verify(ctx(), "", pw); ok {
 			t.Fatalf("empty digest verified against %q — federated accounts would be open", pw)
 		}
 	}
@@ -286,7 +287,10 @@ func TestEmptyDigestNeverVerifies(t *testing.T) {
 func mintAt(t *testing.T, plaintext string, memory, time uint32, threads uint8) string {
 	t.Helper()
 	salt := []byte("0123456789abcdef")
-	key := idKey([]byte(plaintext), salt, time, memory, threads, keyLen)
+	key, err := idKey(ctx(), []byte(plaintext), salt, time, memory, threads, keyLen)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", memory, time, threads,
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(key),
@@ -303,3 +307,7 @@ func paramsOf(digest string) string {
 	}
 	return strings.Join(parts[:4], "$")
 }
+
+// ctx is the test context for the gate. Every hash runs under one, so the tests
+// name it once here rather than at ~40 call sites.
+func ctx() context.Context { return context.Background() }

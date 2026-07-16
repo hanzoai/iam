@@ -121,7 +121,7 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	u.PasswordHash, u.PasswordSalt = "", ""
 	u.PasswordType = ""
 	if in.Password != "" {
-		hash, err := password.Hash(in.Password)
+		hash, err := password.Hash(ctx, in.Password)
 		if err != nil {
 			return nil, zip.ErrInternal("hash password: " + err.Error())
 		}
@@ -204,7 +204,7 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	u.PasswordType = existing.PasswordType
 	u.PasswordSalt = existing.PasswordSalt
 	if in.Password != "" {
-		hash, err := password.Hash(in.Password)
+		hash, err := password.Hash(ctx, in.Password)
 		if err != nil {
 			return nil, zip.ErrInternal("hash password: " + err.Error())
 		}
@@ -268,12 +268,21 @@ func find(db orm.DB, owner, name string) (*schema.User, error) {
 //
 // The algorithm is not decided here. password.Verify reads it out of the stored
 // digest, which is the only description of the digest that cannot be wrong.
+//
+// A nil user is not a special case, it is the ordinary one: "there is no digest
+// that matches this plaintext" is the same answer whether the row is absent,
+// federated with no password, or simply holds a different digest. Handing the
+// absent user to password.Verify as the empty digest keeps all three on one
+// path that fails closed at one cost. The caller that branches early to a cheap
+// `return false` for the absent user is the caller that turns its login into a
+// username oracle.
 func VerifyPassword(ctx context.Context, db orm.DB, u *schema.User, plaintext string) bool {
-	if u == nil {
-		return false
+	var digest string
+	if u != nil {
+		digest = u.PasswordHash
 	}
-	ok, stale := password.Verify(u.PasswordHash, plaintext)
-	if !ok {
+	ok, stale := password.Verify(ctx, digest, plaintext)
+	if !ok || u == nil {
 		return false
 	}
 	if stale {
@@ -308,7 +317,7 @@ func VerifyPassword(ctx context.Context, db orm.DB, u *schema.User, plaintext st
 // a storage failure here must not fail the login. It costs one more login to
 // try again.
 func upgrade(ctx context.Context, db orm.DB, u *schema.User, plaintext string) {
-	hash, err := password.Hash(plaintext)
+	hash, err := password.Hash(ctx, plaintext)
 	if err != nil {
 		return
 	}

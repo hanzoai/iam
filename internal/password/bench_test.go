@@ -24,7 +24,7 @@ import "testing"
 
 func BenchmarkHashPolicy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		if _, err := Hash("a representative password"); err != nil {
+		if _, err := Hash(ctx(), "a representative password"); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -34,7 +34,7 @@ func BenchmarkHashPolicy(b *testing.B) {
 // cost us on the login path — the parameters are theirs, not ours.
 func BenchmarkVerifyLiveV1Params(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		if ok, _ := Verify(liveArgon2idDigest, liveArgon2idPassword); !ok {
+		if ok, _ := Verify(ctx(), liveArgon2idDigest, liveArgon2idPassword); !ok {
 			b.Fatal("did not verify")
 		}
 	}
@@ -43,7 +43,7 @@ func BenchmarkVerifyLiveV1Params(b *testing.B) {
 // BenchmarkVerifyBcrypt10 measures the 40 live bcrypt rows, for comparison.
 func BenchmarkVerifyBcrypt10(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		if ok, _ := Verify(liveBcrypt10Digest, liveBcryptPassword); !ok {
+		if ok, _ := Verify(ctx(), liveBcrypt10Digest, liveBcryptPassword); !ok {
 			b.Fatal("did not verify")
 		}
 	}
