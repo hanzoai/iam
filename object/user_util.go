@@ -66,18 +66,19 @@ func GetUserByField(organizationName string, field string, value string) (*User,
 }
 
 // pickCrossOrgLoginUser returns the first cross-org row to use for login
-// resolution. When allowAdminOrg is false (the login targets a non-admin org,
-// or is org-agnostic) global-admin-org (conf.AdminOrg) rows are SKIPPED so a
-// tenant-app login can never silently resolve to a global-admin identity
-// (Red H-3). Global-admin login requires an explicit organization ==
-// conf.AdminOrg, which the within-org primary lookups satisfy directly. PURE:
-// no DB, unit-testable. Counterpart of selectVerifyingRow in check.go.
-func pickCrossOrgLoginUser(users []*User, allowAdminOrg bool) *User {
+// resolution. Rows in the global-admin org (conf.AdminOrg) are ALWAYS skipped:
+// the admin org (god-mode) is reached ONLY by the primary within-org lookup,
+// which targets conf.AdminOrg exactly when the requesting application's declared
+// org IS conf.AdminOrg (admin.hanzo.ai's hanzo-admin-guard, via loginOrgForApp).
+// The cross-org fallback exists to find a user's HOME TENANT org when they sign
+// into a shared app they have no row in — never the admin org. This one rule
+// keeps superadmin unreachable from every non-admin surface (console, CLI, chat,
+// brand apps). PURE: no DB, unit-testable. Counterpart of selectVerifyingRow in
+// check.go, which applies the SAME admin exclusion to the password-collision
+// fallback.
+func pickCrossOrgLoginUser(users []*User) *User {
 	for _, u := range users {
-		if u == nil {
-			continue
-		}
-		if !allowAdminOrg && u.Owner == conf.AdminOrg {
+		if u == nil || u.Owner == conf.AdminOrg {
 			continue
 		}
 		return u
@@ -165,6 +166,16 @@ func GetUserByFields(organization string, field string) (*User, error) {
 
 	field = strings.TrimSpace(field)
 
+	// An empty org has no within-org scope. An unscoped primary lookup (owner="")
+	// returns an ARBITRARY cross-org row — including a global-admin (conf.AdminOrg)
+	// row — so an org-agnostic resolution must NOT run it; it funnels straight to
+	// the admin-excluding cross-org fallback. The admin org is thus reachable ONLY
+	// by an explicit within-org lookup that names it (organization ==
+	// conf.AdminOrg), i.e. only via the admin app (loginOrgForApp).
+	if organization == "" {
+		return getUserCrossOrg(field)
+	}
+
 	// check username
 	user, err := GetUserByField(organization, "name", field)
 	if err != nil || user != nil {
@@ -210,37 +221,39 @@ func GetUserByFields(organization string, field string) (*User, error) {
 		return user, err
 	}
 
-	// Cross-org fallback: if not found in the specified org, try to find the
-	// user in any OTHER org by email then username. This supports multi-tenant
-	// login where a user may live in a different (e.g. personal) org than the
-	// app's org — e.g. a user in their personal org logging into a shared app.
-	//
-	// SECURITY (Red H-3): the global-admin org (conf.AdminOrg) is NEVER reachable
-	// via this fallback for a login that targets any other org (or is
-	// org-agnostic, organization==""). Otherwise a tenant-app login whose
-	// email/username collides with a global-admin row would silently resolve to
-	// that row and confer a full global-admin session. Global-admin login
-	// requires an explicit organization == conf.AdminOrg, which the within-org
-	// lookups above satisfy directly. Counterpart of selectVerifyingRow.
-	allowAdminOrg := organization == conf.AdminOrg
+	// Not found within the app's org: fall back to a cross-org search (a user may
+	// live in a different org than the app's — e.g. a personal org logging into a
+	// shared app). getUserCrossOrg excludes the global-admin org, so admin is
+	// reached only by the within-org lookups above.
+	return getUserCrossOrg(field)
+}
 
+// getUserCrossOrg resolves field to a user across ALL orgs by email then
+// username, EXCLUDING the global-admin org (conf.AdminOrg) — see
+// pickCrossOrgLoginUser. It is the SINGLE org-agnostic resolution path: both an
+// empty-org call and a within-org miss funnel through it, so the admin org is
+// never reachable except by an explicit within-org lookup that names it. A login
+// whose email/username collides with a global-admin row (the seeded superusers
+// exist in BOTH admin/ and their brand org) therefore resolves to the brand row
+// from every non-admin surface. Counterpart of selectVerifyingRow in check.go,
+// which applies the same admin exclusion to the password-collision fallback.
+func getUserCrossOrg(field string) (*User, error) {
 	if strings.Contains(field, "@") {
 		normalizedEmail := strings.ToLower(field)
-		users, lookupErr := GetUsersByFieldCrossOrg("email", normalizedEmail)
-		if lookupErr != nil {
-			return nil, lookupErr
+		users, err := GetUsersByFieldCrossOrg("email", normalizedEmail)
+		if err != nil {
+			return nil, err
 		}
-		if u := pickCrossOrgLoginUser(users, allowAdminOrg); u != nil {
+		if u := pickCrossOrgLoginUser(users); u != nil {
 			return u, nil
 		}
 	}
 
-	// Cross-org by username
-	users, lookupErr := GetUsersByFieldCrossOrg("name", field)
-	if lookupErr != nil {
-		return nil, lookupErr
+	users, err := GetUsersByFieldCrossOrg("name", field)
+	if err != nil {
+		return nil, err
 	}
-	if u := pickCrossOrgLoginUser(users, allowAdminOrg); u != nil {
+	if u := pickCrossOrgLoginUser(users); u != nil {
 		return u, nil
 	}
 
