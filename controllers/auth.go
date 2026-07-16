@@ -646,14 +646,6 @@ func (c *ApiController) Login() {
 	if authForm.Username != "" {
 		var user *object.User
 		if authForm.SigninMethod == "Face ID" {
-			if user, err = object.GetUserByFields(authForm.Organization, authForm.Username); err != nil {
-				c.ResponseError(err.Error(), nil)
-				return
-			} else if user == nil {
-				c.ResponseError(fmt.Sprintf(c.T("general:The user: %s doesn't exist"), util.GetId(authForm.Organization, authForm.Username)))
-				return
-			}
-
 			var application *object.Application
 			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
 			if err != nil {
@@ -668,6 +660,19 @@ func (c *ApiController) Login() {
 
 			if !application.IsFaceIdEnabled() {
 				c.ResponseError(c.T("auth:The login method: login with face is not enabled for the application"))
+				return
+			}
+
+			// Resolve the user in the APPLICATION's org, never the client-supplied
+			// authForm.Organization: otherwise a client could set organization to
+			// the global-admin org and resolve admin/<user> through a brand app.
+			// Same org rule the password path uses (loginOrgForApp).
+			loginOrg := loginOrgForApp(application, authForm.Organization)
+			if user, err = object.GetUserByFields(loginOrg, authForm.Username); err != nil {
+				c.ResponseError(err.Error(), nil)
+				return
+			} else if user == nil {
+				c.ResponseError(fmt.Sprintf(c.T("general:The user: %s doesn't exist"), util.GetId(loginOrg, authForm.Username)))
 				return
 			}
 
@@ -693,14 +698,6 @@ func (c *ApiController) Login() {
 				}
 			}
 		} else if authForm.Password == "" {
-			if user, err = object.GetUserByFields(authForm.Organization, authForm.Username); err != nil {
-				c.ResponseError(err.Error(), nil)
-				return
-			} else if user == nil {
-				c.ResponseError(fmt.Sprintf(c.T("general:The user: %s doesn't exist"), util.GetId(authForm.Organization, authForm.Username)))
-				return
-			}
-
 			var application *object.Application
 			application, err = object.FindApplicationByName(authForm.Application, authForm.Organization)
 			if err != nil {
@@ -710,6 +707,18 @@ func (c *ApiController) Login() {
 
 			if application == nil {
 				c.ResponseError(fmt.Sprintf(c.T("auth:The application: %s does not exist"), authForm.Application))
+				return
+			}
+
+			// Resolve the user in the APPLICATION's org, never the client-supplied
+			// authForm.Organization (see the Face ID branch) — keeps the admin org
+			// reachable only through the admin app.
+			loginOrg := loginOrgForApp(application, authForm.Organization)
+			if user, err = object.GetUserByFields(loginOrg, authForm.Username); err != nil {
+				c.ResponseError(err.Error(), nil)
+				return
+			} else if user == nil {
+				c.ResponseError(fmt.Sprintf(c.T("general:The user: %s doesn't exist"), util.GetId(loginOrg, authForm.Username)))
 				return
 			}
 
