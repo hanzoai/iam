@@ -17,30 +17,98 @@ import (
 	"github.com/hanzoai/iam2/internal/store"
 )
 
-// The confidential-client `hk-` Cloud API-key primitives. A trusted, allow-listed
-// backend (the console BFF as `hanzo-console`) authenticates as the confidential
-// CLIENT — not an end-user bearer — and (re)generates or revokes a `?id=<owner>/
-// <name>` target user's durable `hk-` key. (The on-behalf-of TOKEN minting that
-// used to live here — `issue-user-token` — is retired in favor of the standard
-// RFC 8693 Token Exchange grant on /oauth/token, per HIP-0111; it reuses the same
-// authorizeMinter allow-list + reserved-org gate + SignUserToken defined here.)
+// The confidential-client on-behalf-of primitives. A trusted, allow-listed backend
+// (the console BFF as `hanzo-console`) authenticates as the confidential CLIENT —
+// not an end-user bearer — and acts on a `?id=<owner>/<name>` target user: mint a
+// short-lived user-bound access token (`issue-user-token`), or (re)generate/revoke
+// the user's durable `hk-` Cloud API key.
 //
-// API keys are a PRODUCT credential with no IETF standard, so they stay a first-
-// party primitive (flagged for a product decision on whether they become long-
-// lived tokens). They are NOT Bearer-gated (they live in the PUBLIC group, before
-// the Guard); each does its own tighter authentication through the ONE
-// authorizeMinter seam.
+// `issue-user-token` is the CANONICAL FORWARD path's transitional twin: the RFC
+// 8693 Token Exchange grant on /oauth/token is the standard (HIP-0111), and this
+// verb is the COMPAT SHIM the console still calls (identity.ts `issueUserToken` →
+// `adminBearer` backs EVERY /v1/* BFF proxy call). It mints over the exact same
+// authorizeMinter allow-list + reserved-org gate + SignUserToken as token exchange
+// — same authority, same audit — so the console works unchanged during the cutover,
+// then migrates to grant_type=token-exchange and this shim is retired. API keys are
+// a PRODUCT credential (no IETF standard), a first-party primitive.
+//
+// They are NOT Bearer-gated (they live in the PUBLIC group, before the Guard); each
+// does its own tighter authentication through the ONE authorizeMinter seam.
 const (
+	PathIssueUserToken = "/v1/iam/issue-user-token"
 	PathMintUserKeys   = "/v1/iam/mint-user-keys"
 	PathRevokeUserKeys = "/v1/iam/revoke-user-keys"
 )
 
-// routeIssueToken registers the confidential-client API-key primitives on the
-// PUBLIC group r. POST-only: they rotate a credential — never over a cacheable GET
-// (a client_secret in a query string would reach logs/proxies).
+// routeIssueToken registers the confidential-client primitives on the PUBLIC group
+// r. POST-only: they mint/rotate a credential — never over a cacheable GET (a
+// client_secret in a query string would reach logs/proxies).
 func routeIssueToken(r zip.Router, db orm.DB) {
+	r.Post(PathIssueUserToken, issueUserTokenHandler(db))
 	r.Post(PathMintUserKeys, mintUserKeysHandler(db))
 	r.Post(PathRevokeUserKeys, revokeUserKeysHandler(db))
+}
+
+// issueUserTokenHandler mints an access token for the `?id=<owner>/<name>` target
+// user (optional `?aud=` resource, RFC 8707), issued by the authenticated +
+// allow-listed confidential client. The token's subject + owner are the TARGET
+// USER's, so a resource server scopes on the validated owner claim to the user's
+// tenant — indistinguishable from a token the user obtained directly. Response is
+// the camelCase `{accessToken, expiresIn}` body identity.ts consumes. Equivalent to
+// the RFC 8693 token-exchange grant, minus the subject_token proof (the console has
+// the user's id, not a token) — the reason this compat shim exists.
+func issueUserTokenHandler(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		ctx := c.Context()
+		now := nowFunc()
+
+		clientApp, status, msg := authorizeMinter(ctx, db, c)
+		if status != 0 {
+			return mintErr(c, status, msg)
+		}
+		user, status, msg := mintTarget(ctx, db, c, clientApp)
+		if status != 0 {
+			return mintErr(c, status, msg)
+		}
+
+		aud := strings.TrimSpace(c.Query("aud"))
+		if aud == "" {
+			aud = defaultUserAudience(ctx, db, user, clientApp)
+		}
+		signer, err := signerFor(ctx, db, clientApp, tokenIssuer(c))
+		if err != nil {
+			return mintErr(c, 500, "server_error")
+		}
+		ttl := appTTL(clientApp)
+		subject := user.Owner + "/" + user.Name
+		display := user.DisplayName
+		if display == "" {
+			display = user.Name
+		}
+		access, err := signer.SignUserToken(subject, user.Owner, aud, clientApp.ClientId, user.Email, display, "", ttl, now)
+		if err != nil {
+			return mintErr(c, 500, "server_error")
+		}
+
+		row := &schema.Token{
+			Owner:           user.Owner,
+			Application:     clientApp.Name,
+			Organization:    user.Owner,
+			User:            subject,
+			TokenType:       "Bearer",
+			ExpiresIn:       int(ttl.Seconds()),
+			AccessTokenHash: hashToken(access),
+		}
+		row.Name = "iut-" + hashToken(access)[:32]
+		if err := store.PersistToken(ctx, db, row); err != nil {
+			return mintErr(c, 500, "server_error")
+		}
+		auditMint(ctx, db, c, "issue-user-token", clientApp.ClientId, subject)
+		return httpx.Ok(c, map[string]any{
+			"accessToken": access,
+			"expiresIn":   int(ttl.Seconds()),
+		})
+	}
 }
 
 // mintUserKeysHandler (re)generates the target user's durable `hk-` Cloud API key

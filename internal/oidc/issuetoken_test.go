@@ -53,6 +53,46 @@ func dataMap(t *testing.T, body []byte) map[string]any {
 	return d
 }
 
+// issue-user-token is the compat shim the console's adminBearer depends on: an
+// allow-listed confidential client mints a token bound to the ?id= target user.
+func TestIssueUserToken_mintsTargetUserToken(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	resp, body := do(t, app, keyReq(PathIssueUserToken, "hanzo-console", "top-secret", "?id=hanzo/alice&aud=hanzo-cloud"))
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d; body=%s", resp.StatusCode, body)
+	}
+	access, _ := dataMap(t, body)["accessToken"].(string)
+	if access == "" {
+		t.Fatalf("no accessToken; body=%s", body)
+	}
+	// The minted token verifies under the JWKS and carries the TARGET user's identity.
+	claims, err := verifyToken(context.Background(), db, access)
+	if err != nil {
+		t.Fatalf("minted token does not verify: %v", err)
+	}
+	if claims.Subject != "hanzo/alice" || claims.Owner != "hanzo" {
+		t.Fatalf("subject/owner = %q/%q, want hanzo/alice / hanzo", claims.Subject, claims.Owner)
+	}
+	if exp, _ := dataMap(t, body)["expiresIn"].(float64); exp <= 0 {
+		t.Fatalf("expiresIn = %v, want > 0", dataMap(t, body)["expiresIn"])
+	}
+}
+
+func TestIssueUserToken_notAllowlisted_403(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "other-app")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+	resp, _ := do(t, app, keyReq(PathIssueUserToken, "hanzo-console", "top-secret", "?id=hanzo/alice"))
+	if resp.StatusCode != 403 {
+		t.Fatalf("off-allow-list issue-user-token = %d, want 403", resp.StatusCode)
+	}
+}
+
 func TestMintUserKeys_generatesReadableHkKey(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
