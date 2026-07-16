@@ -35,9 +35,8 @@ type accountResponse struct {
 }
 
 // getAccount resolves the signed-in caller and returns their REDACTED account +
-// organization. Resolution is by bearer access token (the API path, shared with
-// userinfo/verifyToken); the portal session-cookie path lands with the session
-// layer (§4 front-door residual) and plugs in here with no shape change.
+// organization. Resolution (callerOf) is by session cookie first — the portal +
+// gateway-admin-guard path — then bearer access token — the API path.
 func getAccount(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

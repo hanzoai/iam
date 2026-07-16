@@ -52,6 +52,14 @@ client apps use — is now complete: `get-app-login`, `login`, `auth/methods`,
 portal's account page, email verification, and signup with it, so cutover was
 gated on them. Serve under `/v1/iam/*` (no `/api/`, no new prefix).
 
+The **durable session** is wired (`internal/sessions`): a bare `login`
+(type=login) issues a signed, revocable session cookie (`hanzo_session`, HMAC
+keyed off the platform signing cert — no new secret), and `get-account` resolves
+the caller by cookie first (the portal + admin-guard path) then bearer (the API
+path) — two credentials, one identity. The cookie's `sid` is registered in the
+`Session` row and re-checked on every resolve, so logout/rotation revokes it.
+§4 is closed; iam2 is Phase-4 shadow-embed ready.
+
 The `signup`/`send-verification-code` pair carries two deliberate seams vs v1,
 each a missing iam2 dependency, not a shortcut: (1) signup lands the user in the
 app's **existing** org — v1's founder-org mint (`TenantOrgForSignup`) needs an
