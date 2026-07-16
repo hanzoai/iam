@@ -103,3 +103,25 @@ type Organization struct {
 
 	IsPersonal bool `json:"isPersonal" orm:"bool"`
 }
+
+// Redact masks every organization secret in place and returns it, ready to
+// serialize. The ONE canonical org secret-mask (master/default passwords, the
+// verification code, salt/obfuscator key, kerberos keytab).
+func (o *Organization) Redact() *Organization {
+	if o == nil {
+		return nil
+	}
+	for _, secret := range []*string{
+		&o.MasterPassword,
+		&o.DefaultPassword,
+		&o.MasterVerificationCode,
+		&o.PasswordSalt,
+		&o.PasswordObfuscatorKey,
+		&o.KerberosKeytab,
+	} {
+		if *secret != "" {
+			*secret = "***"
+		}
+	}
+	return o
+}
