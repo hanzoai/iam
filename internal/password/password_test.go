@@ -311,3 +311,45 @@ func paramsOf(digest string) string {
 // ctx is the test context for the gate. Every hash runs under one, so the tests
 // name it once here rather than at ~40 call sites.
 func ctx() context.Context { return context.Background() }
+
+// TestMemoryCeilingIsEnforced: Verify reads `m` out of the stored digest and
+// hands it to an allocator. A digest claiming m=4294967295 asks for 4 TiB, and
+// before the ceiling parse returned err=nil for exactly that. Nothing can plant
+// such a digest today — Create and Update both refuse a client-supplied hash —
+// which is why this is a bound on the code rather than a patch on a breach.
+func TestMemoryCeilingIsEnforced(t *testing.T) {
+	// The shape that parsed clean before the ceiling.
+	const huge = "$argon2id$v=19$m=4294967295,t=1,p=2$pp/ox8H4VMz2MEVeKoOuxg$Vqb3kOJtdw9vdDMTvJG/yn8U81IwcuidSJFXMUaI+u0"
+	if _, _, _, _, _, err := parse(huge); err == nil {
+		t.Fatal("parse accepted m=4294967295 — verifyArgon2id would hand 4 TiB to argon2.IDKey")
+	}
+	// It must fail closed rather than by allocating: never a match.
+	if ok, _ := Verify(ctx(), huge, "correct horse battery staple"); ok {
+		t.Fatal("a digest above the memory ceiling verified")
+	}
+
+	// Exactly at the ceiling is accepted — the bound is not off by one.
+	atCeiling := fmt.Sprintf("$argon2id$v=19$m=%d,t=1,p=1$c2FsdHNhbHRzYWx0c2E$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGE", memoryCeiling)
+	if _, _, _, _, _, err := parse(atCeiling); err != nil {
+		t.Fatalf("parse rejected a digest AT the ceiling: %v", err)
+	}
+	// One KiB over is not.
+	over := fmt.Sprintf("$argon2id$v=19$m=%d,t=1,p=1$c2FsdHNhbHRzYWx0c2E$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGE", memoryCeiling+1)
+	if _, _, _, _, _, err := parse(over); err == nil {
+		t.Fatal("parse accepted a digest one KiB above the ceiling")
+	}
+}
+
+// TestCeilingDoesNotLockOutTheLiveFleet is the other half of the ceiling: a
+// bound introduced today must not lock out an account that logged in yesterday.
+// The live fleet's 85 argon2id rows are m=65536; the ceiling is 2x that.
+func TestCeilingDoesNotLockOutTheLiveFleet(t *testing.T) {
+	if ok, stale := Verify(ctx(), liveArgon2idDigest, liveArgon2idPassword); !ok {
+		t.Fatal("the live m=65536 digest no longer verifies — the ceiling locked out 85 accounts")
+	} else if stale {
+		t.Fatal("the live digest is stronger than policy and must not be re-minted")
+	}
+	if memoryCeiling < 65536 {
+		t.Fatalf("memoryCeiling %d is below the live fleet's m=65536", memoryCeiling)
+	}
+}
