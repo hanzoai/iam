@@ -5,10 +5,15 @@
 // by the (owner, name) natural key.
 //
 // This is the authentication entity, so the credential invariant is absolute:
-// the plaintext password rides in on the create/update request, is hashed with
-// bcrypt exactly once, and is discarded. Only the one-way digest reaches the
-// store (schema.User.PasswordHash, json:"-"), and no response ever carries the
-// digest or any other secret material — reads pass through redact() first.
+// the plaintext password rides in on the create/update request, is hashed
+// exactly once, and is discarded. Only the one-way digest reaches the store
+// (schema.User.PasswordHash), and no response ever carries the digest or any
+// other secret material — reads pass through redact() first.
+//
+// How a password is hashed or checked is not this package's business: it calls
+// internal/password and holds no opinion of its own. That is deliberate — a
+// second opinion about the algorithm is exactly how a row comes to claim one
+// scheme while holding another.
 package users
 
 import (
@@ -17,11 +22,10 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam2/internal/password"
 	"github.com/hanzoai/iam2/internal/schema"
 )
 
@@ -117,12 +121,12 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	u.PasswordHash, u.PasswordSalt = "", ""
 	u.PasswordType = ""
 	if in.Password != "" {
-		hash, err := hashPassword(in.Password)
+		hash, err := password.Hash(in.Password)
 		if err != nil {
 			return nil, zip.ErrInternal("hash password: " + err.Error())
 		}
 		u.PasswordHash = hash
-		u.PasswordType = "bcrypt"
+		u.PasswordType = password.Scheme(hash)
 	}
 	now := nowRFC3339()
 	u.CreatedTime, u.UpdatedTime = now, now
@@ -200,12 +204,12 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	u.PasswordType = existing.PasswordType
 	u.PasswordSalt = existing.PasswordSalt
 	if in.Password != "" {
-		hash, err := hashPassword(in.Password)
+		hash, err := password.Hash(in.Password)
 		if err != nil {
 			return nil, zip.ErrInternal("hash password: " + err.Error())
 		}
 		u.PasswordHash = hash
-		u.PasswordType = "bcrypt"
+		u.PasswordType = password.Scheme(hash)
 		u.PasswordSalt = ""
 	}
 
@@ -249,23 +253,48 @@ func (a *API) lookup(ctx context.Context, owner, name string) (*schema.User, err
 	return u, nil
 }
 
-// hashPassword derives a one-way bcrypt digest from a plaintext password.
-func hashPassword(plaintext string) (string, error) {
-	b, err := bcrypt.GenerateFromPassword([]byte(plaintext), bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
-// VerifyPassword reports whether plaintext matches the user's stored digest.
-// It is the single verify choke point for the login path — the digest itself
-// never leaves the store, so verification happens here, against the row.
-func VerifyPassword(u *schema.User, plaintext string) bool {
-	if u == nil || u.PasswordHash == "" {
+// VerifyPassword reports whether plaintext matches the user's stored digest,
+// and transparently re-mints that digest when it is stale. It is the single
+// verify choke point for the login path — the digest itself never leaves the
+// store, so verification happens here, against the row.
+//
+// The algorithm is not decided here. password.Verify reads it out of the stored
+// digest, which is the only description of the digest that cannot be wrong.
+func VerifyPassword(ctx context.Context, db orm.DB, u *schema.User, plaintext string) bool {
+	if u == nil {
 		return false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(plaintext)) == nil
+	ok, stale := password.Verify(u.PasswordHash, plaintext)
+	if !ok {
+		return false
+	}
+	if stale {
+		upgrade(ctx, db, u, plaintext)
+	}
+	return true
+}
+
+// upgrade re-mints a stale digest at current parameters. A successful login is
+// the only moment the plaintext exists to re-hash from, so it is the only
+// moment a legacy row can be retired — the alternative is a forced reset for
+// every account that has not changed its password.
+//
+// Best-effort by construction: the password has already been proven correct, so
+// a storage failure here must not fail the login. It costs one more login to
+// try again.
+func upgrade(ctx context.Context, db orm.DB, u *schema.User, plaintext string) {
+	hash, err := password.Hash(plaintext)
+	if err != nil {
+		return
+	}
+	u.PasswordHash = hash
+	u.PasswordType = password.Scheme(hash)
+	// The legacy per-row salt is meaningless under argon2id — the salt lives
+	// inside the PHC string. Leaving it behind would strand a value that
+	// describes nothing.
+	u.PasswordSalt = ""
+	u.Init(db)
+	_ = u.UpdateCtx(ctx)
 }
 
 // view redacts u in place and returns it, ready to serialize.

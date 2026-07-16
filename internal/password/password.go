@@ -135,23 +135,48 @@ func Hash(plaintext string) (string, error) {
 // re-hashing those to policy would weaken 85 accounts in the name of an
 // upgrade. See stale() for the comparison.
 func Verify(digest, plaintext string) (ok, stale bool) {
-	switch {
-	case digest == "":
-		return false, false
-	case strings.HasPrefix(digest, "$argon2id$"):
+	switch Scheme(digest) {
+	case SchemeArgon2id:
 		return verifyArgon2id(digest, plaintext)
-	case strings.HasPrefix(digest, "$2a$"),
-		strings.HasPrefix(digest, "$2b$"),
-		strings.HasPrefix(digest, "$2y$"):
+	case SchemeBcrypt:
 		// bcrypt: correct today, but not the algorithm we mint. A successful
 		// verify is the only moment we hold the plaintext, so it is the only
 		// moment we can replace the digest.
 		err := bcrypt.CompareHashAndPassword([]byte(digest), []byte(plaintext))
 		return err == nil, err == nil
 	default:
-		// Unknown or corrupt digest: fail closed. Never treat an
+		// Unknown, empty or corrupt digest: fail closed. Never treat an
 		// unparseable digest as a match.
 		return false, false
+	}
+}
+
+// The schemes a stored digest can be under. SchemeArgon2id is the only one we
+// mint; SchemeBcrypt is verify-and-retire.
+const (
+	SchemeArgon2id = "argon2id"
+	SchemeBcrypt   = "bcrypt"
+)
+
+// Scheme names the algorithm a digest is stored under, read from the digest
+// itself, or "" if it is under none we know.
+//
+// It exists so that the stored `passwordType` is DERIVED from the bytes it
+// describes instead of being chosen alongside them. Those are the two writes
+// that drift apart: v1 sets the organization's type in one place and the user's
+// digest in another, so a row can claim argon2id while holding bcrypt bytes.
+// Nothing here reads the column to decide how to verify — Verify asks the
+// digest — but as long as the column exists it must not be able to lie.
+func Scheme(digest string) string {
+	switch {
+	case strings.HasPrefix(digest, "$argon2id$"):
+		return SchemeArgon2id
+	case strings.HasPrefix(digest, "$2a$"),
+		strings.HasPrefix(digest, "$2b$"),
+		strings.HasPrefix(digest, "$2y$"):
+		return SchemeBcrypt
+	default:
+		return ""
 	}
 }
 
