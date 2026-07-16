@@ -304,8 +304,12 @@ func view(u *schema.User) *schema.User {
 }
 
 // redact strips every secret/bearer field from a user before it is returned.
-// PasswordHash and AccessSecretHash are already json:"-"; this zeros the
-// remaining sensitive material for defense in depth.
+//
+// This is the ONLY thing keeping the digest out of a response — not defense in
+// depth. PasswordHash and AccessSecretHash carry real json tags on purpose (orm
+// serializes the entity to its JSON data column, so json:"-" would mean "never
+// stored" — that silently broke login once already), which means they serialize
+// into a response unless zeroed here. Every read path must go through view().
 func redact(u *schema.User) {
 	u.PasswordHash = ""
 	u.PasswordSalt = ""

@@ -40,14 +40,18 @@ Phases 0–4 are additive and non-destructive — v1 stays live and authoritativ
 until Phase 5. Routes carry a `/v1/iam/*` prefix through the transition so
 they are orthogonal to the live `/v1/iam/*` mount; the prefix collapses at §6.
 
-**Phase 1 blocker — login verifies with bcrypt only; live rows are BOTH argon2id and bcrypt.**
-`users.VerifyPassword` (`internal/users/users.go`) calls `bcrypt.CompareHashAndPassword`
-unconditionally, and it is the only path credential login takes (`internal/oidc/login.go`).
-Handed an argon2id PHC string bcrypt returns `ErrHashTooShort`, so every argon2id
-user fails login. v1 resolves the algorithm per row: `object/check.go` reads
-`user.PasswordType`, falling back to `organization.PasswordType`, then dispatches
-through `cred.GetCredManager`. The hash algorithm is a property of the stored row,
-never a constant.
+**Phase 1 blocker — RESOLVED (`internal/password`).** Login verified with bcrypt
+only; live rows are BOTH argon2id and bcrypt.
+
+`users.VerifyPassword` called `bcrypt.CompareHashAndPassword` unconditionally, and
+it is the only path credential login takes (`internal/oidc/login.go`), so every
+argon2id user failed login. (Handed an argon2id PHC string bcrypt does *not*
+return `ErrHashTooShort` as first recorded — it reads the `a` of `$argon2id$` as
+a version and returns `HashVersionTooNewError`. Same outage; the correct password
+is rejected either way.) v1 resolves the algorithm per row: `object/check.go`
+reads `user.PasswordType`, falling back to `organization.PasswordType`, then
+dispatches through `cred.GetCredManager`. The hash algorithm is a property of the
+stored row, never a constant.
 
 *Measured against the live prod store (2026-07-16), not inferred.* The earlier
 claim here — "every live v1 row is argon2id, so bcrypt can be deleted" — is
@@ -68,17 +72,61 @@ password is next written. A user whose password has not changed keeps its bcrypt
 digest indefinitely — 3 orgs are still `bcrypt` outright. So both algorithms must
 verify, and bcrypt rows only ever migrate if login rehashes them.
 
-Consequences for iam2, all load-bearing:
-1. **Verify must dispatch on the hash bytes, not a type column.** The digest is
+The fix, in `internal/password` — the one place that mints a digest and the one
+place that checks one. Nothing else in the tree imports a hash function:
+
+1. **Verify dispatches on the hash bytes, not a type column.** The digest is
    self-describing (`$argon2id$…` / `$2a$|$2b$|$2y$…`). `PasswordType` is a second
-   source of truth that can disagree with the bytes it describes — it is not read
-   on the verify path.
+   source of truth that can disagree with the bytes it describes, so it is not read
+   on the verify path — and it is now *derived* from the digest (`password.Scheme`)
+   wherever it is written, so it cannot contradict it.
 2. **Params come from the stored hash, never from a constant.** Live rows are
-   `m=65536,t=1,p=2`; the current OWASP recommendation is different. Hardcoding
-   today's params on the verify path would fail all 85 argon2id rows.
-3. **Rehash-on-login is required, not optional** — it is the only thing that
-   retires the 40 bcrypt rows. (This supersedes the earlier "verify-only" note:
-   that was written believing no bcrypt rows existed.)
+   `m=65536,t=1,p=2`; our mint policy is the OWASP baseline `m=19456,t=2,p=1`.
+   Parameters pinned into verify would fail all 85 argon2id rows.
+3. **Rehash-on-login**, in `users.VerifyPassword` — the only thing that retires
+   the 40 bcrypt rows, since a successful login is the only moment the plaintext
+   exists to re-hash from. Best-effort: the password is already proven correct, so
+   a storage failure must not fail the login. (This supersedes the earlier
+   "verify-only" note, written believing no bcrypt rows existed.)
+4. **Staleness is judged against an acceptance floor, not against mint policy.**
+   The floor is the weakest of OWASP's five equivalent sets (`m=7168,t=5` → 35840
+   KiB-passes, on the memory-time product). Comparing against mint policy instead
+   would flag three of OWASP's own equivalent sets as stale *and* "upgrade" the
+   live `m=65536,t=1` rows by halving their memory hardness — a downgrade wearing
+   the word upgrade.
+
+**Parameters, and why.** OWASP's baseline `m=19456 (19 MiB), t=2, p=1`, 16-byte
+`crypto/rand` salt, 32-byte key. Measured at `GOMAXPROCS=2` — the iam pod's real
+budget (2 CPU, 2 GiB, `GOMEMLIMIT=1750MiB`):
+
+| operation | latency | memory/op |
+|---|---:|---:|
+| Hash (`m=19456,t=2,p=1`) | 13.5 ms | 19.9 MB |
+| Verify live v1 (`m=65536,t=1,p=2`) | 16.6 ms | 67.1 MB |
+| Verify bcrypt (cost 10) | 39.3 ms | 5.3 KB |
+
+Argon2id at the baseline is ~3x **faster** than the bcrypt it replaces, so
+retiring bcrypt costs no login latency. Memory is the exposed axis: of OWASP's
+equivalent sets we take the cheap end of the memory range (`m=47104` is 2.4x the
+footprint for the same work; `m=7168,t=5` is 2.5x the CPU on a 2-core box).
+Because every in-flight argon2id hash holds its full `m`, and login is
+unauthenticated, argon2id runs under a `GOMAXPROCS`-wide gate — without it ~26
+concurrent logins against live-parameter rows reach `GOMEMLIMIT` and OOM the pod,
+which is the one failure that logs everybody out at once. With `p=1` only
+`GOMAXPROCS` hashes progress anyway, so the bound costs no throughput.
+
+**Proven** (`go test -race ./...`): a digest minted by v1's exact pinned library
+(`alexedwards/argon2id v0.0.0-20211130144151`, `DefaultParams` = the live
+`m=65536,t=1,p=2`) verifies; both live shapes sign in through the real
+`POST /v1/iam/login`; a fresh bootstrap signs in with no manual step; a bcrypt row
+is re-minted in place and the same password still works. Testing only our own
+hasher's round-trip would have passed while every live login was broken.
+
+> **`init_data.json` seeds no users.** It declares organizations, applications,
+> providers and certs — v1's own file declares **zero** users, and `internal/seed`
+> models none. "Bootstrap" cannot mean "seed a login": the first credential comes
+> from the users API. The `passwordType: argon2id` in that file is the
+> *organization*'s, which iam2 does not read (the digest decides).
 
 This is the sharpest reason parity is proven by `compare` against real rows, not
 by tests over rows iam2 wrote itself — a round-trip test of our own hasher passes
