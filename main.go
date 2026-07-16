@@ -106,7 +106,7 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initDat
 	// an identity service has no need to expose its admin CRUD as an agent tool
 	// surface, so it is disabled outright — one fewer surface to defend.
 	app := zip.New(zip.Config{AppName: "iam2", MCP: zip.MCPConfig{Disabled: true}})
-	routes.Mount(app, db)
+	routes.Route(app, db)
 	app.OnShutdown(func(context.Context) error { return db.Close() })
 
 	// Translate ctx cancellation (SIGINT/SIGTERM) into a graceful shutdown.

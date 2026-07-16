@@ -42,9 +42,10 @@ import (
 	"github.com/hanzoai/iam2/internal/webauthn"
 )
 
-// Mount registers the whole IAM v2 route surface on app, threading the entity
-// store db into every handler.
-func Mount(app *zip.App, db orm.DB) {
+// Route registers the whole IAM v2 route surface on app, threading the entity
+// store db into every handler. This is the route table server.Mount embeds — the
+// one Mount(app, db) is the public entry; everything below is Route.
+func Route(app *zip.App, db orm.DB) {
 	// AUTHORIZATION of writes: the op-invoke hook authorizes every typed op on the
 	// DECODED input the handler binds — for REST and MCP alike, so the value
 	// authorized is the value written. Writes to the reserved admin/built-in owners
@@ -78,31 +79,31 @@ func Mount(app *zip.App, db orm.DB) {
 	// Typed entity CRUD. Each registers its typed ops on app (the projection into
 	// REST + OpenAPI + MCP needs *App); registered after the Guard, so all are
 	// gated.
-	users.Mount(app, db)
-	organizations.Mount(app, db)
-	applications.Mount(app, db)
-	providers.Mount(app, db)
-	roles.Mount(app, db)
-	permission.Mount(app, db)
-	certs.Mount(app, db)
-	keys.Mount(app, db)
-	webauthn.Mount(app, db)
-	sessions.Mount(app, db)
-	tokens.Mount(app, db)
-	auditlogs.Mount(app, db)
-	invitations.Mount(app, db)
+	users.Route(app, db)
+	organizations.Route(app, db)
+	applications.Route(app, db)
+	providers.Route(app, db)
+	roles.Route(app, db)
+	permission.Route(app, db)
+	certs.Route(app, db)
+	keys.Route(app, db)
+	webauthn.Route(app, db)
+	sessions.Route(app, db)
+	tokens.Route(app, db)
+	auditlogs.Route(app, db)
+	invitations.Route(app, db)
 
 	// Casdoor verb-alias layer: the get-users / get-organizations / add-organization
 	// / … spellings (in the v1 {status,data,data2} envelope) every live console/
 	// gateway/portal client hard-codes, served over the SAME store, redaction, and
 	// authz as the REST surface above — the transparent backend swap. After the
 	// Guard, so it shares the one Guard/Authorize seam.
-	compat.Mount(app, db)
+	compat.Route(app, db)
 
 	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface that
 	// replaces the Casdoor entity verbs (HIP-0111). After the Guard, so it is
 	// authenticated; each handler owner-scopes via authz.Scope on the path target.
-	scim.Mount(app, db)
+	scim.Route(app, db)
 }
 
 // health is the Phase-1 liveness probe.

@@ -34,8 +34,8 @@ const (
 	contentTypeSCIM = "application/scim+json"
 )
 
-// Mount registers the SCIM 2.0 surface on app.
-func Mount(app *zip.App, db orm.DB) {
+// Route registers the SCIM 2.0 surface on app.
+func Route(app *zip.App, db orm.DB) {
 	// Discovery.
 	app.Get(base+"/ServiceProviderConfig", serviceProviderConfig)
 

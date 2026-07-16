@@ -19,9 +19,9 @@ import (
 
 const orgBase = "/v1/iam/organizations"
 
-// Mount registers the organization CRUD surface on app, backed by db.
-func Mount(app *zip.App, db orm.DB) {
-	NewOrganizationAPI(db).mount(app)
+// Route registers the organization CRUD surface on app, backed by db.
+func Route(app *zip.App, db orm.DB) {
+	NewOrganizationAPI(db).route(app)
 }
 
 // OrganizationAPI serves CRUD for the organization entity over a single
@@ -41,7 +41,7 @@ func NewOrganizationAPI(db orm.DB) *OrganizationAPI {
 // JSON body; reads are GET whose (owner, name, paging) selector binds from the
 // request. Every handler validates its key and fails 400 if it is absent, so a
 // missing selector is loud, never a silent full-table action.
-func (h *OrganizationAPI) mount(app *zip.App) {
+func (h *OrganizationAPI) route(app *zip.App) {
 	zip.Post[CreateOrganizationInput, schema.Organization](app, orgBase, h.Create,
 		zip.WithOperationID("createOrganization"), zip.WithSummary("Create an organization"), zip.WithTags("organizations"))
 	zip.Get[ListOrganizationsInput, ListOrganizationsOutput](app, orgBase, h.List,

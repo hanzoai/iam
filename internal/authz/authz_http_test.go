@@ -135,7 +135,7 @@ func newHarness(t *testing.T) *harness {
 	seedUser(t, db, "built-in", "svc", true, false, false) // built-in org, NOT SuperAdmin
 
 	app := zip.New(zip.Config{AppName: "authz-test", DisableStartupMessage: true})
-	routes.Mount(app, db)
+	routes.Route(app, db)
 	// Install the deferred framework projections (/mcp, /openapi) for real, so the
 	// side-door tests drive the ACTUAL routes — the same surface a served app
 	// exposes — not a route that never got registered. MCP is left ENABLED here

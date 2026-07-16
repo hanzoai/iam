@@ -36,11 +36,11 @@ type API struct{ db orm.DB }
 // minted at signup is byte-identical to one minted through the CRUD surface.
 func New(db orm.DB) *API { return &API{db: db} }
 
-// Mount registers the typed user CRUD handlers on app. Reads use zip.Get and
+// Route registers the typed user CRUD handlers on app. Reads use zip.Get and
 // writes use zip.Post; both project the same transport-agnostic handler to REST
 // and MCP, so the (owner, name) identity in each typed request is honored on
 // every transport.
-func Mount(app *zip.App, db orm.DB) {
+func Route(app *zip.App, db orm.DB) {
 	a := &API{db: db}
 	zip.Post(app, "/v1/iam/users", a.Create, zip.WithTags("users"), zip.WithSummary("Create a user"))
 	zip.Get(app, "/v1/iam/users", a.List, zip.WithTags("users"), zip.WithSummary("List users in an org"))

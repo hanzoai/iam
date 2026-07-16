@@ -52,8 +52,8 @@ type mutationResult struct {
 	Provider *schema.Provider `json:"provider,omitempty"`
 }
 
-// Mount registers the provider surface on app, closing over the entity store.
-func Mount(app *zip.App, db orm.DB) {
+// Route registers the provider surface on app, closing over the entity store.
+func Route(app *zip.App, db orm.DB) {
 	zip.Get[listProvidersIn, listProvidersOut](app, "/v1/iam/providers", listProviders(db),
 		zip.WithOperationID("listProviders"),
 		zip.WithSummary("List providers in an owner scope"),

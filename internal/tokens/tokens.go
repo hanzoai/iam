@@ -55,8 +55,8 @@ type tokenMutation struct {
 	Token    *schema.Token `json:"token,omitempty"`
 }
 
-// Mount registers the token surface on app, closing over the entity store.
-func Mount(app *zip.App, db orm.DB) {
+// Route registers the token surface on app, closing over the entity store.
+func Route(app *zip.App, db orm.DB) {
 	zip.Get[listTokensIn, listTokensOut](app, "/v1/iam/tokens", listTokens(db),
 		zip.WithOperationID("listTokens"),
 		zip.WithSummary("List tokens in an owner scope"),

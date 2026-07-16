@@ -27,9 +27,9 @@ import (
 //
 // Read verbs ride aliases.go; these are the "Writes ride a companion file" half.
 
-// mountWrites registers the Casdoor write-verb aliases on app. Called from Mount
+// routeWrites registers the Casdoor write-verb aliases on app. Called from Route
 // (aliases.go) so reads and writes share the one Guard/Authorize seam.
-func mountWrites(app *zip.App, db orm.DB) {
+func routeWrites(app *zip.App, db orm.DB) {
 	orgs := organizations.NewOrganizationAPI(db)
 	usersAPI := users.New(db)
 	appUpdate := applications.Update(db)

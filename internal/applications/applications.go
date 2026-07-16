@@ -46,10 +46,10 @@ type DeleteResult struct {
 	Deleted bool `json:"deleted"`
 }
 
-// Mount registers the applications CRUD surface on app, closing over db. Reads
+// Route registers the applications CRUD surface on app, closing over db. Reads
 // use GET, create POST, update PUT, delete DELETE — every one a zip typed
 // handler.
-func Mount(app *zip.App, db orm.DB) {
+func Route(app *zip.App, db orm.DB) {
 	zip.Get(app, "/v1/iam/applications", listApplications(db),
 		zip.WithSummary("List applications for an owner"), zip.WithTags("applications"))
 	zip.Get(app, "/v1/iam/application", getApplication(db),
