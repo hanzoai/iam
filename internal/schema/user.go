@@ -10,11 +10,10 @@ import (
 
 // User is an identity principal — the v2 form of the v1 Casdoor `user` row,
 // re-expressed on hanzoai/orm. It is the authentication entity: the only
-// credential material it persists is PasswordHash (a one-way bcrypt digest,
-// json:"-" so it never leaves the process) and the legacy hash metadata used
-// to migrate rows minted before the bcrypt cutover. The plaintext password is
-// never a field on this struct — it arrives on the create/update request,
-// is hashed immediately, and is discarded.
+// credential material it persists is PasswordHash (a one-way digest) plus the
+// metadata describing it. The plaintext password is never a field on this
+// struct — it arrives on the create/update request, is hashed immediately, and
+// is discarded.
 //
 // The natural key is (Owner, Name): Owner is the tenant/organization slug,
 // Name is unique within it. The embedded orm.Model[User] supplies the storage
@@ -33,13 +32,20 @@ type User struct {
 	ExternalId string `json:"externalId,omitempty" orm:"index"`
 	Type       string `json:"type,omitempty"`
 
-	// Credential material. PasswordHash is a one-way bcrypt digest and is
-	// verify-only. It MUST be persisted (orm serializes the entity to its JSON
-	// data column, so a json:"-" field would never be stored — that silently
-	// broke login), so it carries a real json tag; the users API redact() strips
-	// it (and every other secret) from every response. PasswordType and
-	// PasswordSalt describe the digest scheme so rows hashed under the legacy
-	// argon2id scheme can still be verified and lazily re-hashed to bcrypt.
+	// Credential material. PasswordHash is a one-way digest and is verify-only.
+	// It MUST be persisted (orm serializes the entity to its JSON data column,
+	// so a json:"-" field would never be stored — that silently broke login), so
+	// it carries a real json tag; the users API redact() strips it (and every
+	// other secret) from every response.
+	//
+	// The digest is self-describing: argon2id rows are a PHC string carrying
+	// their own parameters and salt, bcrypt rows carry theirs. internal/password
+	// reads the scheme from PasswordHash and never from PasswordType — so these
+	// two fields are DESCRIPTIVE only, and nothing authenticates on them.
+	// PasswordType is derived from the digest (password.Scheme) so it cannot
+	// contradict the bytes it names; PasswordSalt is a v1 legacy field that
+	// argon2id does not use (the salt is inside the PHC string) and is cleared
+	// when a row is re-minted.
 	PasswordHash string `json:"passwordHash,omitempty"`
 	PasswordType string `json:"passwordType,omitempty"`
 	PasswordSalt string `json:"passwordSalt,omitempty"`

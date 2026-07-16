@@ -22,8 +22,10 @@ import (
 // then exchanges it at /v1/iam/oauth/token. Login by EMAIL or USERNAME.
 //
 // This is the interactive-flow counterpart to the token endpoint: login mints
-// the code, /token redeems it. Password verification is bcrypt (constant-time),
-// never plaintext, and the hash never crosses a response.
+// the code, /token redeems it. Password verification is constant-time, never
+// plaintext, and the hash never crosses a response. The algorithm is whatever
+// the stored digest says it is (internal/password) — this path holds no opinion
+// about it, and a successful login re-mints a legacy digest in place.
 
 // PathLogin is the canonical credential-login endpoint.
 const PathLogin = "/v1/iam/login"
@@ -69,7 +71,7 @@ func loginHandler(db orm.DB) zip.Handler {
 		}
 		// One opaque failure for "no such user" and "wrong password" — no oracle
 		// that reveals whether the account exists.
-		if user == nil || !users.VerifyPassword(user, f.Password) {
+		if user == nil || !users.VerifyPassword(ctx, db, user, f.Password) {
 			return httpx.Err(c, "the username or password is incorrect")
 		}
 
