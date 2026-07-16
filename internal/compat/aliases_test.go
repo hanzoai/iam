@@ -3,7 +3,8 @@
 package compat_test
 
 // End-to-end tests for the Casdoor verb aliases, driven through the REAL mounted
-// router (routes.Mount installs the authz Guard first, then compat.Mount). Every
+// router (routes.Mount installs the authz Guard between the public group and the
+// authed routes; compat is registered after it, so gated). Every
 // case is a wire request a live console/gateway client sends. The assertions are
 // the three contracts a backend swap depends on: the v1 {status,data,data2}
 // envelope shape, owner-scoping that no request parameter can widen, and — the
@@ -283,7 +284,7 @@ func TestGetApplications_nonSuper_deniedOnPlatformOwned(t *testing.T) {
 
 func TestCompatAliases_requireAuth(t *testing.T) {
 	h := newHarness(t)
-	// No bearer → the Guard fails closed (not in the public allowlist).
+	// No bearer → the Guard fails closed (compat is registered after the Guard).
 	if status, _ := h.get(t, "/v1/iam/get-users", ""); status != 401 {
 		t.Fatalf("unauthenticated get-users status = %d, want 401", status)
 	}

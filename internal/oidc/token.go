@@ -44,11 +44,11 @@ type tokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
-// MountToken registers the ONE token endpoint: POST /v1/iam/oauth/token (the
+// routeToken registers the ONE token endpoint: POST /v1/iam/oauth/token (the
 // RFC 6749 / discovery `token_endpoint`). No legacy `access_token` alias — every
 // client posts to the standard path; the stack is fixed to it, not shimmed.
-func MountToken(app *zip.App, db orm.DB) {
-	app.Post(PathToken, tokenHandler(db))
+func routeToken(r zip.Router, db orm.DB) {
+	r.Post(PathToken, tokenHandler(db))
 }
 
 // param reads an OAuth parameter from the query first, then the form body

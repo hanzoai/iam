@@ -16,36 +16,37 @@ import (
 // Front-door JSON endpoints the @hanzo/iam SDK + hanzo.id portal call: the login
 // UI descriptors (get-app-login, auth/methods), the account read (get-account),
 // account creation (signup), and OTP send (send-verification-code). Login itself
-// is MountLogin; the OIDC/OAuth surface is Mount.
+// is routeLogin; the OIDC/OAuth surface is Route.
 const (
 	PathGetAppLogin = "/v1/iam/get-app-login"
 	PathAuthMethods = "/v1/iam/auth/methods"
 )
 
-// MountFrontDoor registers the front-door endpoints the hosted hanzo.id portal
-// and the @hanzo/iam SDK call. Separate from Mount because these need the entity
-// store; the OIDC discovery/JWKS surface does not.
-func MountFrontDoor(app *zip.App, db orm.DB) {
-	app.Get(PathGetAppLogin, getAppLogin(db))
-	app.Get(PathAuthMethods, authMethods(db))
+// routeFrontDoor registers the front-door endpoints the hosted hanzo.id portal
+// and the @hanzo/iam SDK call, on the PUBLIC group r. Each handler RESOLVES the
+// caller itself (callerOf: session cookie first, then bearer) and SELF-SCOPES to
+// that caller, so — like the rest of this group — they are reachable without a
+// Guard-verified bearer yet never act on anyone but the resolved caller.
+func routeFrontDoor(r zip.Router, db orm.DB) {
+	r.Get(PathGetAppLogin, getAppLogin(db))
+	r.Get(PathAuthMethods, authMethods(db))
 	// get-account is anonymous-safe (returns {status:"error"} unauthenticated)
 	// and a security contract — the gateway admin-guard reads its `owner`.
-	app.Get(PathGetAccount, getAccount(db))
+	r.Get(PathGetAccount, getAccount(db))
 	// Account creation + email/phone OTP send. signup is JSON; send-verification-code
 	// is multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
-	app.Post(PathSignup, signupHandler(db))
-	app.Post(PathSendVerificationCode, sendVerificationCode(db))
+	r.Post(PathSignup, signupHandler(db))
+	r.Post(PathSendVerificationCode, sendVerificationCode(db))
 
 	// The session/identity front door the console drives once a user is signed in:
 	// signin (the code→session exchange), whoami (lightweight identity), onboard
 	// (first-run org creation + move), update-preferences (self, shallow-merge), and
-	// linked-accounts (the caller's linked identities). Each resolves + self-scopes
-	// the caller (callerOf), so all are public in the Guard like get-account.
-	app.Post(PathSignin, signinHandler(db))
-	app.Get(PathWhoami, whoamiHandler(db))
-	app.Post(PathOnboard, onboardHandler(db))
-	app.Post(PathUpdatePreferences, updatePreferencesHandler(db))
-	app.Get(PathLinkedAccounts, linkedAccountsHandler(db))
+	// linked-accounts (the caller's linked identities).
+	r.Post(PathSignin, signinHandler(db))
+	r.Get(PathWhoami, whoamiHandler(db))
+	r.Post(PathOnboard, onboardHandler(db))
+	r.Post(PathUpdatePreferences, updatePreferencesHandler(db))
+	r.Get(PathLinkedAccounts, linkedAccountsHandler(db))
 }
 
 // getAppLogin resolves an application by clientId and returns it with the

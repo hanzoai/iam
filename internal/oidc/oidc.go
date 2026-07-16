@@ -21,10 +21,10 @@ import (
 // existing relying party hard-code. iam2 serves them directly; the transition
 // off v1 is a backend swap behind the same paths, never a parallel version.
 const (
-	PathAuthorize   = "/v1/iam/oauth/authorize"
-	PathToken       = "/v1/iam/oauth/token"
-	PathUserInfo    = "/v1/iam/oauth/userinfo"
-	PathLogout      = "/v1/iam/oauth/logout"
+	PathAuthorize    = "/v1/iam/oauth/authorize"
+	PathToken        = "/v1/iam/oauth/token"
+	PathUserInfo     = "/v1/iam/oauth/userinfo"
+	PathLogout       = "/v1/iam/oauth/logout"
 	PathJWKS         = "/v1/iam/.well-known/jwks"
 	PathJWKSRoot     = "/.well-known/jwks"
 	PathDiscovery    = "/.well-known/openid-configuration"
@@ -33,49 +33,52 @@ const (
 	PathASMetadataV1 = "/v1/iam/.well-known/oauth-authorization-server" // RFC 8414 (v1)
 )
 
-// Mount registers the entire OIDC/OAuth2 surface on app, backed by db. This is
-// the one entry point the route table calls — discovery, JWKS, the protocol
+// Route registers the entire OIDC/OAuth2 surface on r, backed by db. This is the
+// one entry point the route table calls — discovery, JWKS, the protocol
 // endpoints, and the front door are all wired here so the surface lives in one
-// place.
-func Mount(app *zip.App, db orm.DB) {
+// place. r is the PUBLIC group (registered before the router's authentication
+// Guard): the whole OIDC/OAuth + front-door surface is pre-authentication by
+// construction, so membership in this group IS what makes it reachable without a
+// bearer — there is no separate allow-list to keep in sync.
+func Route(r zip.Router, db orm.DB) {
 	// Discovery and the JWKS are each served at BOTH the root well-known path
 	// (RFC 8414 §3, where a bare-origin client and the gateway's default look)
 	// and the /v1/iam-prefixed path, matching the live hanzo.id surface. Both
 	// paths are the same handler over the same keys — one key set, two spellings
 	// of where to find it.
 	jwks := jwksHandler(db)
-	app.Get(PathDiscovery, Discovery)
-	app.Get(PathDiscoveryV1, Discovery)
+	r.Get(PathDiscovery, Discovery)
+	r.Get(PathDiscoveryV1, Discovery)
 	// RFC 8414 OAuth Authorization Server Metadata — the same self-consistent
 	// document at the OAuth well-known path (a superset serves it), so an OAuth-only
 	// client that looks for `oauth-authorization-server` finds the AS too.
-	app.Get(PathASMetadata, Discovery)
-	app.Get(PathASMetadataV1, Discovery)
-	app.Get(PathJWKS, jwks)
-	app.Get(PathJWKSRoot, jwks)
+	r.Get(PathASMetadata, Discovery)
+	r.Get(PathASMetadataV1, Discovery)
+	r.Get(PathJWKS, jwks)
+	r.Get(PathJWKSRoot, jwks)
 
 	// OAuth2 / OIDC protocol endpoints.
-	app.Get(PathAuthorize, authorizeHandler(db))
-	app.Post(PathAuthorize, authorizeHandler(db))
-	app.Get(PathUserInfo, userinfoHandler(db))
-	app.Post(PathUserInfo, userinfoHandler(db))
-	app.Get(PathLogout, logoutHandler(db))
-	app.Post(PathLogout, logoutHandler(db))
+	r.Get(PathAuthorize, authorizeHandler(db))
+	r.Post(PathAuthorize, authorizeHandler(db))
+	r.Get(PathUserInfo, userinfoHandler(db))
+	r.Post(PathUserInfo, userinfoHandler(db))
+	r.Get(PathLogout, logoutHandler(db))
+	r.Post(PathLogout, logoutHandler(db))
 
 	// The token endpoint, the credential login that mints codes, and the
 	// read-only front door the hosted <Login> self-configures from.
-	MountToken(app, db)
-	MountLogin(app, db)
-	MountFrontDoor(app, db)
+	routeToken(r, db)
+	routeLogin(r, db)
+	routeFrontDoor(r, db)
 
 	// RFC 7662 introspection + RFC 7009 revocation — the standard token-management
 	// endpoints a resource server / confidential client uses (client-authenticated).
-	MountIntrospectRevoke(app, db)
+	routeIntrospectRevoke(r, db)
 
 	// The confidential-client "act on behalf of a user" primitive (the console +
 	// keyless-AI proxies mint their forwarded bearer here). Authenticates the
 	// client itself, so it is not Bearer-gated.
-	MountIssueToken(app, db)
+	routeIssueToken(r, db)
 }
 
 // Discovery serves the OIDC discovery document, host-relative (issuer derived
