@@ -40,21 +40,49 @@ Phases 0–4 are additive and non-destructive — v1 stays live and authoritativ
 until Phase 5. Routes carry a `/v1/iam/*` prefix through the transition so
 they are orthogonal to the live `/v1/iam/*` mount; the prefix collapses at §6.
 
-**Phase 1 blocker — password hashes are `argon2id`, not bcrypt (breaks EVERY login).**
+**Phase 1 blocker — login verifies with bcrypt only; live rows are BOTH argon2id and bcrypt.**
 `users.VerifyPassword` (`internal/users/users.go`) calls `bcrypt.CompareHashAndPassword`
 unconditionally, and it is the only path credential login takes (`internal/oidc/login.go`).
-Every live v1 row is `argon2id`: `object/organization.go sanitizeOrgPasswordType`
-rewrites `""`/`bcrypt`/`plain` → `argon2id` on both AddOrganization and
-UpdateOrganization, `CreatePersonalOrganization` inserts it, `init_data.json`
-declares it, and `object/user_cred.go UpdateUserPassword` stamps it. Handed an
-argon2id PHC string, bcrypt returns `ErrHashTooShort` — so on cutover **100% of
-credential logins fail**, for every existing user, immediately. v1 resolves the
-algorithm per row: `object/check.go` reads `user.PasswordType`, falling back to
-`organization.PasswordType`, then dispatches through `cred.GetCredManager`.
-iam2 must do the same — the hash algorithm is a property of the stored row, never
-a constant. Verify-only (never re-hash on read); a rehash-on-login upgrade is a
-separate, deliberate decision. This is the sharpest reason parity is proven by
-`compare` against real rows, not by tests over rows iam2 wrote itself.
+Handed an argon2id PHC string bcrypt returns `ErrHashTooShort`, so every argon2id
+user fails login. v1 resolves the algorithm per row: `object/check.go` reads
+`user.PasswordType`, falling back to `organization.PasswordType`, then dispatches
+through `cred.GetCredManager`. The hash algorithm is a property of the stored row,
+never a constant.
+
+*Measured against the live prod store (2026-07-16), not inferred.* The earlier
+claim here — "every live v1 row is argon2id, so bcrypt can be deleted" — is
+**false**, and deleting the bcrypt path would have broken more logins than it
+fixed. Read via the product's own read-only codec (`iam orgdb query`, HKDF KEK →
+AES-GCM DEK unwrap → SQLCipher) across all 114 per-org DBs in `hanzo/iam`
+(`v1.31.27`), classifying by the hash bytes themselves:
+
+| stored hash | users | note |
+|---|---:|---|
+| `argon2id` (`m=65536,t=1,p=2`) | 85 | `alexedwards/argon2id` `DefaultParams` |
+| *(empty)* | 63 | federated/OAuth — no credential login |
+| `bcrypt` (`$2a$10$`×24, `$2b$10$`×15, `$2b$12$`×1) | 40 | **still live** |
+
+Why bcrypt survives: `sanitizeOrgPasswordType` rewrites the **organization**'s
+type, and `UpdateUserPassword` only re-stamps a **user**'s row when that user's
+password is next written. A user whose password has not changed keeps its bcrypt
+digest indefinitely — 3 orgs are still `bcrypt` outright. So both algorithms must
+verify, and bcrypt rows only ever migrate if login rehashes them.
+
+Consequences for iam2, all load-bearing:
+1. **Verify must dispatch on the hash bytes, not a type column.** The digest is
+   self-describing (`$argon2id$…` / `$2a$|$2b$|$2y$…`). `PasswordType` is a second
+   source of truth that can disagree with the bytes it describes — it is not read
+   on the verify path.
+2. **Params come from the stored hash, never from a constant.** Live rows are
+   `m=65536,t=1,p=2`; the current OWASP recommendation is different. Hardcoding
+   today's params on the verify path would fail all 85 argon2id rows.
+3. **Rehash-on-login is required, not optional** — it is the only thing that
+   retires the 40 bcrypt rows. (This supersedes the earlier "verify-only" note:
+   that was written believing no bcrypt rows existed.)
+
+This is the sharpest reason parity is proven by `compare` against real rows, not
+by tests over rows iam2 wrote itself — a round-trip test of our own hasher passes
+happily while every live login is broken.
 
 **Phase 2 residual — the front door (blocks Phase 5).** The OIDC/OAuth2 protocol
 surface is complete, but HIP-0111 §6's *native front-door* surface — what the
