@@ -11,4 +11,5 @@ type (
 	User         = schema.User
 	Application  = schema.Application
 	Organization = schema.Organization
+	Cert         = schema.Cert
 )

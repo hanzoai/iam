@@ -86,3 +86,7 @@ func (s *ormStore) GetApplication(ctx context.Context, id string) (*model.Applic
 func (s *ormStore) GetOrganization(ctx context.Context, name string) (*model.Organization, error) {
 	return store.GetOrganizationByName(ctx, s.db, name)
 }
+
+func (s *ormStore) GetCert(ctx context.Context, owner, name string) (*model.Cert, error) {
+	return store.GetCert(ctx, s.db, owner, name)
+}
