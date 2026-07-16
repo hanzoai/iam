@@ -122,6 +122,10 @@ var publicPaths = map[string]bool{
 	"/v1/iam/.well-known/openid-configuration": true, // OIDC discovery (v1)
 	"/.well-known/jwks":                        true, // JWKS public keys (root)
 	"/v1/iam/.well-known/jwks":                 true, // JWKS public keys (v1)
+	"/.well-known/oauth-authorization-server":        true, // RFC 8414 AS metadata (root)
+	"/v1/iam/.well-known/oauth-authorization-server": true, // RFC 8414 AS metadata (v1)
+	"/v1/iam/oauth/introspect":                       true, // RFC 7662 (client-authenticated)
+	"/v1/iam/oauth/revoke":                           true, // RFC 7009 (client-authenticated)
 	"/v1/iam/login":                            true, // credential login, mints the code
 	"/v1/iam/oauth/authorize":                  true, // OAuth2 authorize
 	"/v1/iam/oauth/token":                      true, // OAuth2 token
