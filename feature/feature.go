@@ -29,6 +29,15 @@ type Store interface {
 	GetOrganization(ctx context.Context, name string) (*model.Organization, error)
 	// GetCert resolves a signing cert by (owner, name) — SAML metadata signing, etc.
 	GetCert(ctx context.Context, owner, name string) (*model.Cert, error)
+	// SetPassword sets a user's password: the core hashes the plaintext exactly
+	// once and stores only the one-way digest (never the clear text). Used by SCIM
+	// to provision the `password` attribute. An empty plaintext leaves the digest
+	// untouched. Hashing lives in ONE place (the core) — a module never sees a hash.
+	SetPassword(ctx context.Context, owner, name, plaintext string) (bool, error)
+	// VerifyPassword reports whether plaintext matches the user's stored digest
+	// (argon2id for migrated v1 rows, bcrypt for v2, per the org's password type).
+	// Used by LDAP bind — verification stays in the core, never in a module.
+	VerifyPassword(ctx context.Context, owner, name, plaintext string) (bool, error)
 }
 
 // Feature is one pluggable enterprise capability. Mount registers its routes on
