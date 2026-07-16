@@ -7,11 +7,13 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // issue-user-token is a security primitive: an allow-listed confidential client
@@ -184,6 +186,69 @@ func TestIssueUserToken_unknownUser_error(t *testing.T) {
 	_, body := do(t, app, issueReq("hanzo-console", "top-secret", "?id=hanzo/ghost"))
 	if decode(t, body)["status"] != "error" {
 		t.Fatalf("unknown user must be status:error; body=%s", body)
+	}
+}
+
+func TestMintUserKeys_generatesReadableHkKey(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	req := issueReq("hanzo-console", "top-secret", "?id=hanzo/alice")
+	req.URL.Path = PathMintUserKeys
+	resp, body := do(t, app, req)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d; body=%s", resp.StatusCode, body)
+	}
+	key, _ := dataMap(t, body)["accessKey"].(string)
+	if !strings.HasPrefix(key, "hk-") || len(key) < 8 {
+		t.Fatalf("accessKey = %q, want an hk- key", key)
+	}
+	// The minted key is persisted on the user row (get-user / getUserKey read it).
+	u, err := store.GetUserByName(context.Background(), db, "hanzo", "alice")
+	if err != nil || u == nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if u.AccessKey != key {
+		t.Fatalf("persisted AccessKey = %q, want the minted %q", u.AccessKey, key)
+	}
+}
+
+func TestRevokeUserKeys_clearsTheKey(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	// mint, then revoke.
+	mint := issueReq("hanzo-console", "top-secret", "?id=hanzo/alice")
+	mint.URL.Path = PathMintUserKeys
+	do(t, app, mint)
+
+	rev := issueReq("hanzo-console", "top-secret", "?id=hanzo/alice")
+	rev.URL.Path = PathRevokeUserKeys
+	resp, body := do(t, app, rev)
+	if resp.StatusCode != 200 || decode(t, body)["status"] != "ok" {
+		t.Fatalf("revoke status = %d; body=%s", resp.StatusCode, body)
+	}
+	u, _ := store.GetUserByName(context.Background(), db, "hanzo", "alice")
+	if u.AccessKey != "" {
+		t.Fatalf("AccessKey after revoke = %q, want empty", u.AccessKey)
+	}
+}
+
+func TestMintUserKeys_notAllowlisted_403(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "other")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	req := issueReq("hanzo-console", "top-secret", "?id=hanzo/alice")
+	req.URL.Path = PathMintUserKeys
+	resp, _ := do(t, app, req)
+	if resp.StatusCode != 403 {
+		t.Fatalf("off-allow-list mint status = %d, want 403", resp.StatusCode)
 	}
 }
 

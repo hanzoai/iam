@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -16,21 +17,30 @@ import (
 	"github.com/hanzoai/iam2/internal/store"
 )
 
-// PathIssueUserToken is the confidential-client "act on behalf of a user"
-// primitive. A trusted, allow-listed backend (the console BFF as `hanzo-console`)
-// authenticates as the confidential client and mints a short-lived access token
-// bound to a TARGET user — the credential a proxy forwards so no long-lived key
-// ever reaches a browser. It is THE gate the console admin + keyless-AI proxies
-// depend on: absent, every /admin/* and /ai call 502s before any verb.
-const PathIssueUserToken = "/v1/iam/issue-user-token"
+// The confidential-client "act on behalf of a user" primitives. A trusted,
+// allow-listed backend (the console BFF as `hanzo-console`) authenticates as the
+// confidential CLIENT — not an end-user bearer — and operates on a `?id=<owner>/
+// <name>` TARGET user: mint a short-lived user-bound access token
+// (issue-user-token, the credential a proxy forwards so no long-lived key reaches
+// a browser), or (re)generate / revoke the user's durable `hk-` Cloud API key.
+// These are THE gate the console admin + keyless-AI proxies depend on: absent,
+// every /admin/* and /ai call 502s before any verb.
+//
+// They are NOT Bearer-gated (authz.Guard lists them public); each does its own,
+// tighter authentication here — a valid confidential client on the mint
+// allow-list, resolved and enforced through the ONE authorizeMinter seam.
+const (
+	PathIssueUserToken = "/v1/iam/issue-user-token"
+	PathMintUserKeys   = "/v1/iam/mint-user-keys"
+	PathRevokeUserKeys = "/v1/iam/revoke-user-keys"
+)
 
-// MountIssueToken registers the issue-user-token primitive. It is NOT Bearer-gated
-// (it authenticates the confidential CLIENT via Basic/POST creds + a capability
-// allow-list, not an end-user bearer), so authz.Guard lists it public and this
-// handler does its own, tighter authentication.
+// MountIssueToken registers the confidential-client user primitives.
 func MountIssueToken(app *zip.App, db orm.DB) {
 	app.Post(PathIssueUserToken, issueUserTokenHandler(db))
 	app.Get(PathIssueUserToken, issueUserTokenHandler(db))
+	app.Post(PathMintUserKeys, mintUserKeysHandler(db))
+	app.Post(PathRevokeUserKeys, revokeUserKeysHandler(db))
 }
 
 // issueUserTokenHandler mints an access token for the `?id=<owner>/<name>` target
@@ -42,44 +52,16 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		ctx := c.Context()
 		now := nowFunc()
 
-		// 1) Authenticate the confidential CLIENT (client_secret_post or Basic).
-		clientID, clientSecret := clientAuth(c)
-		if clientID == "" {
-			return unauthorizedEnvelope(c, "client authentication required")
+		clientApp, status, msg := authorizeMinter(ctx, db, c)
+		if status != 0 {
+			return mintErr(c, status, msg)
 		}
-		clientApp, err := store.GetApplicationByClientId(ctx, db, clientID)
-		if err != nil {
-			return httpx.Err(c, "server_error")
-		}
-		if clientApp == nil || clientApp.ClientSecret == "" ||
-			subtle.ConstantTimeCompare([]byte(clientSecret), []byte(clientApp.ClientSecret)) != 1 {
-			return unauthorizedEnvelope(c, "client authentication failed")
+		user, status, msg := mintTarget(ctx, db, c)
+		if status != 0 {
+			return mintErr(c, status, msg)
 		}
 
-		// 2) The capability gate: only an ALLOW-LISTED app may mint a user token.
-		// Fail closed — an unset allow-list permits NOTHING (this endpoint hands out
-		// a user's full authority; a missing config must never mean "anyone").
-		if !mintAllowed(clientID, clientApp.Name) {
-			return forbiddenEnvelope(c, "client is not permitted to issue user tokens")
-		}
-
-		// 3) Resolve the TARGET user from `?id=<owner>/<name>`.
-		owner, name := splitSub(c.Query("id"))
-		if owner == "" || name == "" {
-			return httpx.Err(c, "id (owner/name) is required")
-		}
-		user, err := store.GetUserByName(ctx, db, owner, name)
-		if err != nil {
-			return httpx.Err(c, "server_error")
-		}
-		if user == nil {
-			return httpx.Err(c, "the user does not exist")
-		}
-		if user.IsForbidden || user.IsDeleted {
-			return forbiddenEnvelope(c, "the user is forbidden")
-		}
-
-		// 4) Audience (RFC 8707): an explicit `?aud=` resource wins (the admin path
+		// Audience (RFC 8707): an explicit `?aud=` resource wins (the admin path
 		// pins the cloud audience so a reserved-admin operator's token is accepted);
 		// otherwise default to the target user's OWN app — a same-app consumer.
 		aud := strings.TrimSpace(c.Query("aud"))
@@ -87,30 +69,29 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 			aud = defaultUserAudience(ctx, db, user, clientApp)
 		}
 
-		// 5) Mint under the confidential client's TRUSTED signing cert. The token's
+		// Mint under the confidential client's TRUSTED signing cert. The token's
 		// subject + owner are the TARGET USER's, so it is indistinguishable from one
 		// the user obtained directly and a resource server scopes to the user's org.
 		signer, err := signerFor(ctx, db, clientApp, tokenIssuer(c))
 		if err != nil {
-			return httpx.Err(c, "server_error")
+			return mintErr(c, 500, "server_error")
 		}
 		ttl := appTTL(clientApp)
-		subject := owner + "/" + name
+		subject := user.Owner + "/" + user.Name
 		display := user.DisplayName
 		if display == "" {
 			display = user.Name
 		}
-		access, err := signer.SignUserToken(subject, owner, aud, clientApp.ClientId, user.Email, display, "", ttl, now)
+		access, err := signer.SignUserToken(subject, user.Owner, aud, clientApp.ClientId, user.Email, display, "", ttl, now)
 		if err != nil {
-			return httpx.Err(c, "server_error")
+			return mintErr(c, 500, "server_error")
 		}
 
-		// 6) Persist the token (by hash) so it is revocable and resolvable by
-		// userinfo — the same durability the other grants have.
+		// Persist the token (by hash) so it is revocable and userinfo-resolvable.
 		row := &schema.Token{
-			Owner:           owner,
+			Owner:           user.Owner,
 			Application:     clientApp.Name,
-			Organization:    owner,
+			Organization:    user.Owner,
 			User:            subject,
 			TokenType:       "Bearer",
 			ExpiresIn:       int(ttl.Seconds()),
@@ -118,7 +99,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		}
 		row.Name = "iut-" + hashToken(access)[:32]
 		if err := store.PersistToken(ctx, db, row); err != nil {
-			return httpx.Err(c, "server_error")
+			return mintErr(c, 500, "server_error")
 		}
 
 		return httpx.Ok(c, map[string]any{
@@ -128,10 +109,112 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 	}
 }
 
+// mintUserKeysHandler (re)generates the target user's durable `hk-` Cloud API key
+// (schema.User.AccessKey) and returns it once. Same confidential-client + target
+// resolution as issue-user-token.
+func mintUserKeysHandler(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		ctx := c.Context()
+		if _, status, msg := authorizeMinter(ctx, db, c); status != 0 {
+			return mintErr(c, status, msg)
+		}
+		user, status, msg := mintTarget(ctx, db, c)
+		if status != 0 {
+			return mintErr(c, status, msg)
+		}
+		key, err := newAccessKey()
+		if err != nil {
+			return mintErr(c, 500, "server_error")
+		}
+		user.AccessKey = key
+		user.UpdatedTime = nowFunc().UTC().Format(time.RFC3339)
+		if err := saveUser(ctx, db, user); err != nil {
+			return mintErr(c, 500, "server_error")
+		}
+		return httpx.Ok(c, map[string]any{"accessKey": key})
+	}
+}
+
+// revokeUserKeysHandler clears the target user's `hk-` key (immediate revoke).
+func revokeUserKeysHandler(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		ctx := c.Context()
+		if _, status, msg := authorizeMinter(ctx, db, c); status != 0 {
+			return mintErr(c, status, msg)
+		}
+		user, status, msg := mintTarget(ctx, db, c)
+		if status != 0 {
+			return mintErr(c, status, msg)
+		}
+		user.AccessKey = ""
+		user.AccessSecret = ""
+		user.AccessSecretHash = ""
+		user.UpdatedTime = nowFunc().UTC().Format(time.RFC3339)
+		if err := saveUser(ctx, db, user); err != nil {
+			return mintErr(c, 500, "server_error")
+		}
+		return httpx.Ok(c, map[string]any{"affected": true})
+	}
+}
+
+// authorizeMinter is the ONE authentication seam for the confidential-client
+// primitives: it authenticates the client (client_secret_basic or _post,
+// constant-time) and enforces the mint allow-list. status==0 means authorized and
+// returns the client app; otherwise (status, msg) is the response to render. It
+// never reveals WHICH check failed beyond auth-vs-permission (401 vs 403).
+func authorizeMinter(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.Application, int, string) {
+	clientID, clientSecret := clientAuth(c)
+	if clientID == "" {
+		return nil, 401, "client authentication required"
+	}
+	app, err := store.GetApplicationByClientId(ctx, db, clientID)
+	if err != nil {
+		return nil, 500, "server_error"
+	}
+	if app == nil || app.ClientSecret == "" ||
+		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+		return nil, 401, "client authentication failed"
+	}
+	// The capability gate: only an ALLOW-LISTED app may act on a user's behalf.
+	// Fail closed — an unset allow-list permits NOTHING (these hand out / rotate a
+	// user's credential; a missing config must never mean "anyone").
+	if !mintAllowed(clientID, app.Name) {
+		return nil, 403, "client is not on the user-key mint allow-list"
+	}
+	return app, 0, ""
+}
+
+// mintTarget resolves and validates the `?id=<owner>/<name>` target user. A
+// missing id or absent user is a v1 business error (200 + status:error); a
+// revoked (forbidden/deleted) user is a 403 — no credential is ever minted for it.
+func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.User, int, string) {
+	owner, name := splitSub(c.Query("id"))
+	if owner == "" || name == "" {
+		return nil, 200, "id (owner/name) is required"
+	}
+	user, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil {
+		return nil, 500, "server_error"
+	}
+	if user == nil {
+		return nil, 200, "the user does not exist"
+	}
+	if user.IsForbidden || user.IsDeleted {
+		return nil, 403, "the user is forbidden"
+	}
+	return user, 0, ""
+}
+
+// mintErr renders the v1 error envelope with a correct HTTP status (the SDK
+// branches on status; a business error rides a 200, an auth/permission failure
+// its real 401/403).
+func mintErr(c *zip.Ctx, status int, msg string) error {
+	return c.JSON(status, httpx.Response{Status: "error", Msg: msg})
+}
+
 // mintAllowed reports whether an app (by clientId OR name) is on the
 // IAM_KEY_MINT_ALLOWED_APPS allow-list. Comma/space separated; matches either
-// identifier so the operator can list whichever is convenient. An empty/unset
-// list allows nothing — fail closed.
+// identifier. An empty/unset list allows nothing — fail closed.
 func mintAllowed(clientID, appName string) bool {
 	raw := os.Getenv("IAM_KEY_MINT_ALLOWED_APPS")
 	if strings.TrimSpace(raw) == "" {
@@ -159,12 +242,25 @@ func defaultUserAudience(ctx context.Context, db orm.DB, user *schema.User, clie
 	return clientApp.ClientId
 }
 
-// unauthorizedEnvelope / forbiddenEnvelope return the v1 error envelope with a
-// correct HTTP status (the SDK branches on status; a prober still gets 401/403).
-func unauthorizedEnvelope(c *zip.Ctx, msg string) error {
-	return c.JSON(401, httpx.Response{Status: "error", Msg: msg})
+// newAccessKey mints an `hk-`-prefixed Cloud API key (the durable credential the
+// gateway recognizes), a cryptographically-random opaque token behind the prefix.
+func newAccessKey() (string, error) {
+	tok, err := newOpaqueToken()
+	if err != nil {
+		return "", err
+	}
+	return "hk-" + tok, nil
 }
 
-func forbiddenEnvelope(c *zip.Ctx, msg string) error {
-	return c.JSON(403, httpx.Response{Status: "error", Msg: msg})
+// saveUser read-modify-writes the mutated user row by its (owner, name) key,
+// preserving every other field (orm persists the whole record).
+func saveUser(ctx context.Context, db orm.DB, user *schema.User) error {
+	existing, err := orm.Get[schema.User](db, user.Owner+"/"+user.Name)
+	if err != nil {
+		return err
+	}
+	model := existing.Model
+	*existing = *user
+	existing.Model = model
+	return existing.UpdateCtx(ctx)
 }
