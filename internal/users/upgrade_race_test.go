@@ -96,7 +96,7 @@ func TestUpgradeDoesNotRevertAConcurrentAdminWrite(t *testing.T) {
 	revoked.IsForbidden = true
 	revoked.IsAdmin = false
 	revoked.Groups = nil
-	newDigest, err := password.Hash(rotated)
+	newDigest, err := password.Hash(context.Background(), rotated)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,10 +130,10 @@ func TestUpgradeDoesNotRevertAConcurrentAdminWrite(t *testing.T) {
 
 	// The credential rotation must have survived: the rotated password works and
 	// the leaked one does not.
-	if ok, _ := password.Verify(after.PasswordHash, rotated); !ok {
+	if ok, _ := password.Verify(context.Background(), after.PasswordHash, rotated); !ok {
 		t.Error("the rotated password no longer works — the rotation was destroyed")
 	}
-	if ok, _ := password.Verify(after.PasswordHash, leaked); ok {
+	if ok, _ := password.Verify(context.Background(), after.PasswordHash, leaked); ok {
 		t.Error("the LEAKED password still works — the rotation was reverted")
 	}
 }
@@ -172,7 +172,7 @@ func TestUpgradeIsSafeUnderConcurrentLogins(t *testing.T) {
 	if password.Scheme(after.PasswordHash) != password.SchemeArgon2id {
 		t.Fatalf("row not re-minted; scheme=%q", password.Scheme(after.PasswordHash))
 	}
-	if ok, _ := password.Verify(after.PasswordHash, pw); !ok {
+	if ok, _ := password.Verify(context.Background(), after.PasswordHash, pw); !ok {
 		t.Fatal("the row no longer authenticates after concurrent upgrades")
 	}
 	// The privileged state the row carried must be intact — no login rewrote it.
