@@ -285,31 +285,9 @@ func view(u *schema.User) *schema.User {
 }
 
 // redact strips every secret/bearer field from a user before it is returned.
-// PasswordHash and AccessSecretHash are already json:"-"; this zeros the
-// remaining sensitive material for defense in depth.
-func redact(u *schema.User) {
-	u.PasswordHash = ""
-	u.PasswordSalt = ""
-	u.AccessSecret = ""
-	u.AccessSecretHash = ""
-	u.AccessToken = ""
-	u.OriginalToken = ""
-	u.OriginalRefreshToken = ""
-	u.TotpSecret = ""
-	u.RecoveryCodes = nil
-	for i := range u.ManagedAccounts {
-		u.ManagedAccounts[i].Password = ""
-	}
-	for i := range u.MfaAccounts {
-		u.MfaAccounts[i].SecretKey = ""
-	}
-	for _, m := range u.MultiFactorAuths {
-		if m != nil {
-			m.Secret = ""
-			m.RecoveryCodes = nil
-		}
-	}
-}
+// Delegates to the ONE canonical schema.User.Redact() so there is a single
+// secret-strip definition shared with get-account and every other caller.
+func redact(u *schema.User) { u.Redact() }
 
 // nowRFC3339 is the single timestamp format for v1-compatible string times.
 func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }
