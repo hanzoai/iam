@@ -2,8 +2,8 @@
 
 package scim_test
 
-// SCIM 2.0 tests driven through the REAL mounted router (routes.Mount installs
-// the authz Guard, then scim.Mount). Every case is a wire request an IdP / SCIM
+// SCIM 2.0 tests driven through the REAL mounted router (routes.Route installs
+// the authz Guard, then scim.Route). Every case is a wire request an IdP / SCIM
 // client sends. The assertions pin the three contracts a provisioning surface
 // depends on: the RFC-standard envelopes (ListResponse / a bare resource / Error),
 // owner-scoping that no path can widen, and — the security one — that NO secret
@@ -71,7 +71,7 @@ func newHarness(t *testing.T) *harness {
 	seedUser(t, db, "orgb", "bob", true)     // org-admin of a second tenant
 
 	app := zip.New(zip.Config{AppName: "scim-test", DisableStartupMessage: true})
-	routes.Mount(app, db)
+	routes.Route(app, db)
 	app.Prepare()
 	return &harness{app: app, key: key, db: db}
 }

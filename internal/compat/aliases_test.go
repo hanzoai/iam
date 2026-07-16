@@ -84,7 +84,7 @@ func newHarness(t *testing.T) *harness {
 	seedProvider(t, db, "provider-gh") // Owner="admin", ClientSecret sentinel
 
 	app := zip.New(zip.Config{AppName: "compat-test", DisableStartupMessage: true})
-	routes.Mount(app, db)
+	routes.Route(app, db)
 	app.Prepare()
 	return &harness{app: app, key: key, db: db}
 }
