@@ -122,6 +122,76 @@ which is the one failure that logs everybody out at once. With `p=1` only
 is re-minted in place and the same password still works. Testing only our own
 hasher's round-trip would have passed while every live login was broken.
 
+**Login is a writer now, and that is the sharp edge of rehash-on-login.** Before
+`internal/password`, the login path only ever read. Point 3 above makes a
+successful login write, and a write from the login path has the whole user row in
+its blast radius: `orm`'s `Update` is a blind whole-entity `Put` — no dirty-field
+tracking, no version, no CAS. Written naively, the sequence is *read → verify
+(bcrypt ~39ms) → mint (~14ms) → write back the row you read 53ms ago*, which
+silently reverts anything that landed in between. The scenario that matters is an
+incident response: a responder forbids a compromised account, strips its admin
+and rotates the password, while the attacker — who knows the password, which is
+*why* it is being rotated — has a login in flight against a pre-revocation
+snapshot. The revert restores admin, clears the forbid, and puts the leaked
+password back, with no error and no audit signal. `login.go` does not gate on
+`IsForbidden` (only `authz.go` does), so the reverted row is fully live.
+
+`upgrade` therefore re-reads inside a transaction and writes only the three
+fields it owns, with the digest it verified against as the precondition: if that
+digest changed underneath, the other write is newer and wins. The mint stays
+*outside* the transaction — the SQLite store serializes every writer in the
+process for the life of a transaction, so minting inside would put password
+hashing on the critical path of every unrelated write. This also collapses the
+redundant writes when several logins race the same stale row: the first lands,
+the rest decline. Only stale rows are ever written, so the exposure was exactly
+the 40 bcrypt rows, and it self-heals as they migrate.
+
+**The login must not answer whether an account exists.** Verifying is expensive
+and *not* verifying is not, so a handler that short-circuits `user == nil` around
+the hash tells the caller the account is absent by answering sooner. Measured
+through the real router: 18.5ms for a real user with a wrong password against
+92us for an absent one — 201x, no statistics needed. So an absent user is not a
+special case: "there is no digest that matches this plaintext" is one question
+with one answer, whether the row is missing, federated with no password, or
+holding a different digest. `VerifyPassword` hands the absent user to `Verify` as
+the empty digest, and `Verify` pays for a decoy rather than returning cheaply.
+Ratio through the router afterwards: **0.95x**, and a federated row is 1.06x
+against one holding a password.
+
+The decoy runs through the same gate as every real hash — a decoy that allocated
+around the bound would be a hole in it — and it does not raise the DoS ceiling:
+anyone holding a single valid username could already make the pod hash on demand,
+and the gate bounds that work regardless of which branch asked for it. What the
+decoy removes is the need to know a username. Bounding arrival *volume* is the
+edge's job; it can see the client, this package can only see a plaintext.
+
+Residual, and it self-heals: the decoy costs one mint (13.5ms), so a live bcrypt
+row (39.3ms) still answers ~3x slower — the tell is the row's **scheme**, not its
+existence, and it disappears as the 40 rows migrate. Closing it fully would mean
+a fixed time budget for the whole login, which no single decoy cost can imitate
+across a fleet holding three different costs.
+
+> **bcrypt truncates at 72 bytes.** Live rows longer than 72 bytes are not locked
+> out — bcrypt verifies the 72-byte prefix, so those logins keep working. But the
+> re-mint changes the effective secret from that prefix to the **full string**:
+> argon2id has no such truncation. A user who has been signing in with a known
+> *prefix* of their password (rather than the whole thing) would be locked out
+> the moment their row migrates. Exotic, but it is a one-way door — the plaintext
+> only exists during that one login.
+
+> **`redact` + `Update` destroys MFA enrolment — pre-existing, and `feat/mfa`
+> lands on top of it.** `redact` zeroes `TotpSecret`, `RecoveryCodes` and
+> `AccessSecretHash` on the way out, and `Update` restores only the password
+> triple (`PasswordHash`/`PasswordType`/`PasswordSalt`) from the stored row. So a
+> read-modify-write round-trip through the API — **an ordinary rename** — writes
+> those secrets back as empty and silently un-enrolls the user's second factor.
+> `main` is identical here; what this branch made safe is the password triple
+> only, and the same reasoning was never applied to the other redacted fields.
+> Whoever implements MFA must preserve every redacted field on `Update` the way
+> the password triple is preserved, or enrolment evaporates on the first profile
+> edit. The general fix is that `Update` must not be able to write a field it
+> never showed the caller.
+
 > **`init_data.json` seeds no users.** It declares organizations, applications,
 > providers and certs — v1's own file declares **zero** users, and `internal/seed`
 > models none. "Bootstrap" cannot mean "seed a login": the first credential comes
