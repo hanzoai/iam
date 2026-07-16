@@ -238,6 +238,29 @@ func TestRevokeUserKeys_clearsTheKey(t *testing.T) {
 	}
 }
 
+func TestIssueUserToken_emitsAuditRecord(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	resp, _ := do(t, app, issueReq("hanzo-console", "top-secret", "?id=hanzo/alice"))
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	// The mint is accountable: an audit row names the action, target, and minter.
+	logs, err := orm.TypedQuery[schema.AuditLog](db).Filter("Action=", "issue-user-token").GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("query audit: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("audit rows = %d, want 1", len(logs))
+	}
+	if logs[0].User != "hanzo/alice" || logs[0].Object != "hanzo-console" {
+		t.Fatalf("audit row = {user:%q, minter:%q}, want {hanzo/alice, hanzo-console}", logs[0].User, logs[0].Object)
+	}
+}
+
 func TestMintUserKeys_notAllowlisted_403(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "other")
 	app, db := newServer(t)

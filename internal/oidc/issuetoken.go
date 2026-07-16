@@ -37,8 +37,9 @@ const (
 
 // MountIssueToken registers the confidential-client user primitives.
 func MountIssueToken(app *zip.App, db orm.DB) {
+	// POST-only: these mint/rotate a credential and return a bearer — never over a
+	// cacheable GET (a client_secret in a query string would reach logs/proxies).
 	app.Post(PathIssueUserToken, issueUserTokenHandler(db))
-	app.Get(PathIssueUserToken, issueUserTokenHandler(db))
 	app.Post(PathMintUserKeys, mintUserKeysHandler(db))
 	app.Post(PathRevokeUserKeys, revokeUserKeysHandler(db))
 }
@@ -56,7 +57,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
-		user, status, msg := mintTarget(ctx, db, c)
+		user, status, msg := mintTarget(ctx, db, c, clientApp)
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
@@ -102,6 +103,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 			return mintErr(c, 500, "server_error")
 		}
 
+		auditMint(ctx, db, c, "issue-user-token", clientApp.ClientId, subject)
 		return httpx.Ok(c, map[string]any{
 			"accessToken": access,
 			"expiresIn":   int(ttl.Seconds()),
@@ -115,10 +117,11 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 func mintUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		if _, status, msg := authorizeMinter(ctx, db, c); status != 0 {
+		clientApp, status, msg := authorizeMinter(ctx, db, c)
+		if status != 0 {
 			return mintErr(c, status, msg)
 		}
-		user, status, msg := mintTarget(ctx, db, c)
+		user, status, msg := mintTarget(ctx, db, c, clientApp)
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
@@ -131,6 +134,7 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 		if err := saveUser(ctx, db, user); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
+		auditMint(ctx, db, c, "mint-user-keys", clientApp.ClientId, user.Owner+"/"+user.Name)
 		return httpx.Ok(c, map[string]any{"accessKey": key})
 	}
 }
@@ -139,10 +143,11 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 func revokeUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		if _, status, msg := authorizeMinter(ctx, db, c); status != 0 {
+		clientApp, status, msg := authorizeMinter(ctx, db, c)
+		if status != 0 {
 			return mintErr(c, status, msg)
 		}
-		user, status, msg := mintTarget(ctx, db, c)
+		user, status, msg := mintTarget(ctx, db, c, clientApp)
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
@@ -153,6 +158,7 @@ func revokeUserKeysHandler(db orm.DB) zip.Handler {
 		if err := saveUser(ctx, db, user); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
+		auditMint(ctx, db, c, "revoke-user-keys", clientApp.ClientId, user.Owner+"/"+user.Name)
 		return httpx.Ok(c, map[string]any{"affected": true})
 	}
 }
@@ -177,20 +183,28 @@ func authorizeMinter(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.Applic
 	}
 	// The capability gate: only an ALLOW-LISTED app may act on a user's behalf.
 	// Fail closed — an unset allow-list permits NOTHING (these hand out / rotate a
-	// user's credential; a missing config must never mean "anyone").
-	if !mintAllowed(clientID, app.Name) {
+	// user's credential; a missing config must never mean "anyone"). Matched by the
+	// globally-unique clientId only (see mintAllowed).
+	if !mintAllowed(clientID) {
 		return nil, 403, "client is not on the user-key mint allow-list"
 	}
 	return app, 0, ""
 }
 
-// mintTarget resolves and validates the `?id=<owner>/<name>` target user. A
-// missing id or absent user is a v1 business error (200 + status:error); a
-// revoked (forbidden/deleted) user is a 403 — no credential is ever minted for it.
-func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.User, int, string) {
+// mintTarget resolves and validates the `?id=<owner>/<name>` target user for the
+// authenticated clientApp. A missing id or absent user is a v1 business error
+// (200 + status:error); a revoked (forbidden/deleted) user is a 403 — no
+// credential is ever minted for it. A RESERVED-org (admin/built-in) target — a
+// cross-tenant / SuperAdmin identity — additionally requires the separate
+// admin-mint capability, so even a valid general minter cannot reach an admin-org
+// user unless explicitly granted (defense-in-depth behind the mint allow-list).
+func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Application) (*schema.User, int, string) {
 	owner, name := splitSub(c.Query("id"))
 	if owner == "" || name == "" {
 		return nil, 200, "id (owner/name) is required"
+	}
+	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp.ClientId) {
+		return nil, 403, "client is not permitted to act for a reserved-org user"
 	}
 	user, err := store.GetUserByName(ctx, db, owner, name)
 	if err != nil {
@@ -205,6 +219,33 @@ func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.User, int, 
 	return user, 0, ""
 }
 
+// auditMint best-effort records a confidential-primitive event — the
+// accountability trail for WHO (minter clientId) issued/rotated a credential for
+// WHOM (target subject). Emitted only on success. A failed audit write never
+// fails the operation (the credential was already issued); it is a record, not a
+// gate.
+func auditMint(ctx context.Context, db orm.DB, c *zip.Ctx, action, minterClientID, targetSub string) {
+	name, err := newOpaqueToken()
+	if err != nil {
+		return
+	}
+	owner, _ := splitSub(targetSub)
+	log := orm.New[schema.AuditLog](db)
+	log.Owner = owner
+	log.Name = name
+	log.CreatedTime = nowFunc().UTC().Format(time.RFC3339)
+	log.Organization = owner
+	log.User = targetSub
+	log.Action = action
+	log.Object = minterClientID
+	log.Method = "POST"
+	log.RequestUri = c.Path()
+	log.StatusCode = 200
+	log.IsTriggered = true
+	log.SetId(owner + "/" + name)
+	_ = log.CreateCtx(ctx)
+}
+
 // mintErr renders the v1 error envelope with a correct HTTP status (the SDK
 // branches on status; a business error rides a 200, an auth/permission failure
 // its real 401/403).
@@ -212,16 +253,37 @@ func mintErr(c *zip.Ctx, status int, msg string) error {
 	return c.JSON(status, httpx.Response{Status: "error", Msg: msg})
 }
 
-// mintAllowed reports whether an app (by clientId OR name) is on the
-// IAM_KEY_MINT_ALLOWED_APPS allow-list. Comma/space separated; matches either
-// identifier. An empty/unset list allows nothing — fail closed.
-func mintAllowed(clientID, appName string) bool {
-	raw := os.Getenv("IAM_KEY_MINT_ALLOWED_APPS")
+// mintAllowed reports whether a client is on the IAM_KEY_MINT_ALLOWED_APPS
+// allow-list. It matches the client's GLOBALLY-unique clientId ONLY — never the
+// per-owner-unique app Name: a Name match let a tenant org-admin register an app
+// named like the console in their OWN org and pass the gate, minting an admin-org
+// (SuperAdmin) token (red-team finding, closed here). An empty/unset list allows
+// nothing — fail closed.
+func mintAllowed(clientID string) bool {
+	return appInList("IAM_KEY_MINT_ALLOWED_APPS", clientID)
+}
+
+// adminMintAllowed reports whether a client may act on behalf of a RESERVED-org
+// (admin/built-in) user — a strictly narrower, separately-granted capability than
+// the general mint list, so a leaked general-minter secret can never reach a
+// SuperAdmin identity. The console, which legitimately drives admin.hanzo.ai, is
+// on both lists. Fail closed.
+func adminMintAllowed(clientID string) bool {
+	return appInList("IAM_ADMIN_MINT_ALLOWED_APPS", clientID)
+}
+
+// appInList matches clientID against a comma/space-separated env allow-list, by
+// exact clientId. Empty/unset → false (fail closed).
+func appInList(env, clientID string) bool {
+	if clientID == "" {
+		return false
+	}
+	raw := os.Getenv(env)
 	if strings.TrimSpace(raw) == "" {
 		return false
 	}
 	for _, item := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ' ' }) {
-		if item == clientID || item == appName {
+		if item == clientID {
 			return true
 		}
 	}
