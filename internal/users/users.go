@@ -237,10 +237,18 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	return &DeleteOutput{Deleted: true}, nil
 }
 
-// lookup resolves a single user by its (owner, name) natural key. It returns
-// (nil, nil) when no row matches — a not-found is not an error here.
+// lookup resolves a single user by its (owner, name) natural key against the
+// API's store.
 func (a *API) lookup(ctx context.Context, owner, name string) (*schema.User, error) {
-	u, err := orm.TypedQuery[schema.User](a.db).
+	return find(a.db, owner, name)
+}
+
+// find resolves a single user by its (owner, name) natural key against db,
+// which is either the store or an open transaction — the read has to be able to
+// happen inside one, so the store is a parameter rather than a captured field.
+// It returns (nil, nil) when no row matches: a not-found is not an error here.
+func find(db orm.DB, owner, name string) (*schema.User, error) {
+	u, err := orm.TypedQuery[schema.User](db).
 		Filter("Owner=", owner).
 		Filter("Name=", name).
 		First()
@@ -279,6 +287,23 @@ func VerifyPassword(ctx context.Context, db orm.DB, u *schema.User, plaintext st
 // moment a legacy row can be retired — the alternative is a forced reset for
 // every account that has not changed its password.
 //
+// This is the login path's ONLY write, and it is the reason the login path is a
+// writer at all. That makes its blast radius the whole user row, so it re-reads
+// inside a transaction and touches nothing but the three fields it owns.
+// Writing back the caller's `u` would put a snapshot read before verification
+// (bcrypt + a fresh mint — tens of milliseconds earlier) on top of current
+// state, silently reverting any write that landed in between: an incident
+// responder's forbid, a privilege strip, a password rotation. The attacker
+// picks the moment, so the window is theirs, not ours.
+//
+// The digest we verified against is the precondition. If it changed under us —
+// rotated, or re-minted by another login — that write is newer than our
+// snapshot and it wins; we drop ours. The mint happens BEFORE the transaction
+// on purpose: it costs ~14ms and holds argon2id's memory live, and the store
+// serializes every writer in the process for the life of a transaction, so
+// minting inside would put password hashing on the critical path of every
+// unrelated write.
+//
 // Best-effort by construction: the password has already been proven correct, so
 // a storage failure here must not fail the login. It costs one more login to
 // try again.
@@ -287,14 +312,25 @@ func upgrade(ctx context.Context, db orm.DB, u *schema.User, plaintext string) {
 	if err != nil {
 		return
 	}
-	u.PasswordHash = hash
-	u.PasswordType = password.Scheme(hash)
-	// The legacy per-row salt is meaningless under argon2id — the salt lives
-	// inside the PHC string. Leaving it behind would strand a value that
-	// describes nothing.
-	u.PasswordSalt = ""
-	u.Init(db)
-	_ = u.UpdateCtx(ctx)
+	verified, owner, name := u.PasswordHash, u.Owner, u.Name
+
+	_ = db.RunInTransaction(ctx, func(tx orm.DB) error {
+		fresh, err := find(tx, owner, name)
+		if err != nil || fresh == nil {
+			return nil
+		}
+		if fresh.PasswordHash != verified {
+			return nil
+		}
+		fresh.PasswordHash = hash
+		fresh.PasswordType = password.Scheme(hash)
+		// The legacy per-row salt is meaningless under argon2id — the salt
+		// lives inside the PHC string. Leaving it behind would strand a value
+		// that describes nothing.
+		fresh.PasswordSalt = ""
+		fresh.Init(tx)
+		return fresh.UpdateCtx(ctx)
+	})
 }
 
 // view redacts u in place and returns it, ready to serialize.
