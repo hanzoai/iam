@@ -39,6 +39,7 @@ func (nopStore) GetApplication(context.Context, string) (*model.Application, err
 func (nopStore) GetOrganization(context.Context, string) (*model.Organization, error) {
 	return nil, nil
 }
+func (nopStore) GetCert(context.Context, string, string) (*model.Cert, error) { return nil, nil }
 
 func TestMountAll_MountsRegistered(t *testing.T) {
 	f := &fakeFeature{name: "fake"}
