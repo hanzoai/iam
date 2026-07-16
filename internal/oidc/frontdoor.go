@@ -35,6 +35,17 @@ func MountFrontDoor(app *zip.App, db orm.DB) {
 	// is multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
 	app.Post(PathSignup, signupHandler(db))
 	app.Post(PathSendVerificationCode, sendVerificationCode(db))
+
+	// The session/identity front door the console drives once a user is signed in:
+	// signin (the code→session exchange), whoami (lightweight identity), onboard
+	// (first-run org creation + move), update-preferences (self, shallow-merge), and
+	// linked-accounts (the caller's linked identities). Each resolves + self-scopes
+	// the caller (callerOf), so all are public in the Guard like get-account.
+	app.Post(PathSignin, signinHandler(db))
+	app.Get(PathWhoami, whoamiHandler(db))
+	app.Post(PathOnboard, onboardHandler(db))
+	app.Post(PathUpdatePreferences, updatePreferencesHandler(db))
+	app.Get(PathLinkedAccounts, linkedAccountsHandler(db))
 }
 
 // getAppLogin resolves an application by clientId and returns it with the
