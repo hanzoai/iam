@@ -94,6 +94,8 @@ func tokenHandler(db orm.DB) zip.Handler {
 			return clientCredentialsGrant(c, db)
 		case "password":
 			return passwordGrant(c, db)
+		case grantTypeTokenExchange:
+			return tokenExchangeGrant(c, db)
 		case "":
 			return tokenError(c, 400, "invalid_request", "grant_type is required")
 		default:

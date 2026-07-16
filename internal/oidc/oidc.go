@@ -96,7 +96,7 @@ func Discovery(c *zip.Ctx) error {
 		"jwks_uri":                              iss + PathJWKS,
 		"response_types_supported":              []string{"code"},
 		"response_modes_supported":              []string{"query", "fragment", "form_post"},
-		"grant_types_supported":                 []string{"authorization_code", "refresh_token", "client_credentials", "password"},
+		"grant_types_supported":                 []string{"authorization_code", "refresh_token", "client_credentials", "password", grantTypeTokenExchange},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256", "RS512", "ES256", "ES384", "ES512", "MLDSA65"},
 		"scopes_supported":                      []string{"openid", "email", "profile", "address", "phone", "offline_access"},
