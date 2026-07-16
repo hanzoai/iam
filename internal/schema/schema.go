@@ -1,6 +1,6 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package schema declares the thirteen IAM v2 identity entities on
+// Package schema declares the fourteen IAM v2 identity entities on
 // hanzoai/orm.
 //
 // Each entity embeds orm.Model[T]; every kind is registered exactly once in
@@ -30,7 +30,7 @@ func Kinds() []string {
 		"users", "organizations", "applications", "providers",
 		"roles", "permissions", "certs", "keys",
 		"webauthn_credentials", "sessions", "tokens", "audit_logs",
-		"invitations",
+		"invitations", "verifications",
 	}
 }
 
@@ -48,4 +48,5 @@ func init() {
 	orm.Register[Token]("tokens")
 	orm.Register[AuditLog]("audit_logs")
 	orm.Register[Invitation]("invitations")
+	orm.Register[VerificationRecord]("verifications")
 }
