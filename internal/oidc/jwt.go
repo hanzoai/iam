@@ -140,7 +140,7 @@ func (s *Signer) Sign(app *schema.Application, userID, email, name, scope string
 }
 
 // SignUserToken mints an access token a confidential client issues ON BEHALF OF a
-// target user — the issue-user-token primitive. Unlike Sign (which stamps the
+// target user — the RFC 8693 Token Exchange grant. Unlike Sign (which stamps the
 // APP's org as the owner claim), every authority claim here is the TARGET USER's:
 // the subject and owner are the user's, so a resource server that scopes on the
 // validated `owner` claim (cloud's SanitizeIdentity) scopes to the USER's tenant,

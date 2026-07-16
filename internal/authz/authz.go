@@ -133,9 +133,8 @@ var publicPaths = map[string]bool{
 	"/v1/iam/oauth/logout":                     true, // end session
 	"/v1/iam/get-app-login":                    true, // pre-login app config (secrets masked)
 	"/v1/iam/auth/methods":                     true, // pre-login method list
-	"/v1/iam/issue-user-token":                 true, // confidential-client auth (Basic + allow-list), not a bearer
-	"/v1/iam/mint-user-keys":                   true, // confidential-client auth (same seam as issue-user-token)
-	"/v1/iam/revoke-user-keys":                 true, // confidential-client auth (same seam as issue-user-token)
+	"/v1/iam/mint-user-keys":                   true, // confidential-client auth (Basic + allow-list), not a bearer
+	"/v1/iam/revoke-user-keys":                 true, // confidential-client auth (same authorizeMinter seam)
 	// The front-door session/identity surface (oidc.MountFrontDoor). Each handler
 	// RESOLVES the caller itself (callerOf: session cookie first, then bearer) and
 	// SELF-SCOPES to that caller — so, like get-account, they are reachable without a
