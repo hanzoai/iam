@@ -31,6 +31,32 @@ own framework — we own it, and it collapses to one way of doing each thing.
   service↔service is ZAP (platform law).
 - **Authz** — `github.com/hanzoai/authz` policy engine (`internal/authz` gate).
 
+## §2.1 RFC/IETF-standard surface — no Casdoor verbs (HIP-0111)
+
+The wire contract is RFC/OpenID-standard only; there are no Casdoor verb aliases
+(`get-users`, `add-user`, `get-account`, `issue-user-token`, …) and no `access_token`
+duplicate of the token endpoint. Each capability is served by its standard, all
+shipped (iam2 tags):
+
+| Capability | Standard | Endpoint | Tag |
+|-----------|----------|----------|-----|
+| Authorize / token | RFC 6749 (code+PKCE, refresh, client_credentials, **password**) | `/v1/iam/oauth/{authorize,token}` | v0.5.0 |
+| Delegation / on-behalf-of | **RFC 8693 Token Exchange** (replaces `issue-user-token`) | `grant_type=…token-exchange` | v0.7.0 |
+| Introspection / revocation | RFC 7662 / RFC 7009 | `/v1/iam/oauth/{introspect,revoke}` | v0.6.0 |
+| AS metadata / discovery / JWKS | RFC 8414 / OIDC Discovery / RFC 7517 | `/.well-known/*` | v0.6.0 |
+| Account claims | **OIDC UserInfo** (carries owner/organization/email/isAdmin/type — the get-account contract) | `/v1/iam/oauth/userinfo` | v0.9.0 |
+| Identity provisioning | **SCIM 2.0** (RFC 7644/7643; replaces get-/add-/update-/delete-user) | `/v1/iam/scim/v2/Users` | v0.8.0 (v0.8.1 authz fix) |
+| Resource indicators / issuer pin | RFC 8707 + `IAM_ISSUER` | token `aud`/`iss` | v0.5.0 |
+
+Deploy env: `IAM_ISSUER=https://<brand-id>`, `IAM_KEY_MINT_ALLOWED_APPS` (token
+exchange + `hk-` key mint) and `IAM_ADMIN_MINT_ALLOWED_APPS` (reserved-org targets)
+— both matched by the globally-unique clientId only.
+
+Remaining for cutover: migrate the clients (console `IamAdminApi`/`identity.ts`,
+gateway admin-guard, portal) off the Casdoor verbs onto these standards via
+`@hanzo/iam` (+ a SCIM client + token-exchange), then retire `internal/compat` and
+`get-account`. iam2 already serves everything the clients need in standard form.
+
 ## §3 Phases
 
 | Phase | Scope | Exit |
