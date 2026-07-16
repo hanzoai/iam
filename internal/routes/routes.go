@@ -2,16 +2,21 @@
 
 // Package routes mounts the IAM v2 HTTP surface on a zip App.
 //
-// Phase 1 serves GET /healthz plus the typed CRUD surface for all
-// thirteen identity entities (users, organizations, applications, providers,
-// roles, permissions, certs, keys, webauthn credentials, sessions, tokens,
-// audit logs, invitations). Each entity owns its own package under internal/;
-// every package exposes one uniform entry point — Mount(app, db) — so this
-// file is the single place the whole resource surface is wired.
+// Authentication is STRUCTURAL, decided by which group a route is registered on,
+// never by a hand-maintained path list. Mount wires the surface in two phases
+// around one authentication seam:
 //
-// The OIDC/OAuth2 surface (/v1/iam/oauth/*, /v1/iam/.well-known/*) lands in
-// Phase 2. The /v1/iam prefix keeps these routes orthogonal to the live v1
-// mount at /v1/iam/* during the transition; it collapses at Phase 5 cutover.
+//   - the PUBLIC group (oidc.Route + /healthz) is registered FIRST, before the
+//     Guard. A matched public route terminates fiber's middleware walk, so the
+//     Guard never runs on it — membership in this group IS "public".
+//   - app.Use(authz.Guard) is the ONE authentication seam. Every route registered
+//     AFTER it — the typed entity CRUD, the Casdoor verb aliases, the SCIM
+//     surface, and the framework's own /mcp + /openapi projections — requires a
+//     verified bearer.
+//
+// A public route therefore can never be accidentally gated, and an authed route
+// can never be accidentally public: the decision is where you register, not an
+// allow-list that can drift out of sync with the routes.
 package routes
 
 import (
@@ -37,29 +42,42 @@ import (
 	"github.com/hanzoai/iam2/internal/webauthn"
 )
 
-// Mount registers every Phase-1 route on app, threading the entity store db
-// into each entity's typed CRUD handlers.
+// Mount registers the whole IAM v2 route surface on app, threading the entity
+// store db into every handler.
 func Mount(app *zip.App, db orm.DB) {
-	// Phase 3 — the authorization seam, in two orthogonal halves (see internal/authz):
-	//   - Guard (app.Use) AUTHENTICATES every request first: public OIDC/front-door
-	//     routes pass; every other route needs a verified bearer, and the resolved
-	//     Principal is attached to the context. It also authorizes reads, whose
-	//     target rides in the query string.
-	//   - Authorize (app.Authorize) AUTHORIZES writes at the framework's op-invoke
-	//     seam, on the DECODED input the handler binds — for REST and MCP alike, so
-	//     the value authorized is the value written. Writes to the reserved
-	//     admin/built-in owners (the signing-cert poisoning gate) stay SuperAdmin-only.
-	app.Use(authz.Guard(db))
+	// AUTHORIZATION of writes: the op-invoke hook authorizes every typed op on the
+	// DECODED input the handler binds — for REST and MCP alike, so the value
+	// authorized is the value written. Writes to the reserved admin/built-in owners
+	// (the signing-cert poisoning gate) stay SuperAdmin-only. Installed once; it is
+	// order-independent (it fires inside each typed op, not as middleware).
 	app.Authorize(authz.Authorize)
 
-	app.Get("/healthz", health)
+	// ─────────────────────────── PUBLIC ───────────────────────────
+	// The pre-authentication surface: OIDC discovery/JWKS + RFC 8414 AS metadata,
+	// the oauth/* protocol endpoints (authorize, token, userinfo, logout,
+	// introspect, revoke), credential login, the confidential-client key minters,
+	// and the front door (get-app-login, auth/methods, get-account, signup, signin,
+	// whoami, onboard, …). Registered on a root (empty-prefix) group BEFORE the
+	// Guard, at their absolute paths, so a matched public route terminates the
+	// middleware walk and the Guard never runs on it. There is no allow-list to
+	// keep in sync: a route is public because it is registered here.
+	public := app.Group("")
+	public.Get("/healthz", health)
+	oidc.Route(public, db)
 
-	// Phase 2 — the full OIDC/OAuth2 surface at the canonical /v1/iam/* paths
-	// (discovery, JWKS, authorize, token, userinfo, logout) plus the front door
-	// (get-app-login, auth/methods, login) the @hanzo/iam <Login> self-configures
-	// from. One entry point wires the whole identity core.
-	oidc.Mount(app, db)
+	// ─────────────────────────── GUARD ────────────────────────────
+	// The ONE authentication seam. Every route registered AFTER it requires a
+	// verified bearer — the typed entity CRUD below, the Casdoor verb aliases, the
+	// SCIM surface, and the framework's own /mcp + /openapi projections (added at
+	// Prepare). The resolved Principal rides the request context for the write-authz
+	// hook above; reads are authorized here (their target rides the query string, or
+	// the handler scopes a path target itself). Fails closed (401).
+	app.Use(authz.Guard(db))
 
+	// ─────────────────────────── AUTHED ───────────────────────────
+	// Typed entity CRUD. Each registers its typed ops on app (the projection into
+	// REST + OpenAPI + MCP needs *App); registered after the Guard, so all are
+	// gated.
 	users.Mount(app, db)
 	organizations.Mount(app, db)
 	applications.Mount(app, db)
@@ -74,17 +92,16 @@ func Mount(app *zip.App, db orm.DB) {
 	auditlogs.Mount(app, db)
 	invitations.Mount(app, db)
 
-	// Casdoor verb-alias layer: the get-users / get-organizations / … spellings
-	// (in the v1 {status,data,data2} envelope) every live console/gateway/portal
-	// client hard-codes, served over the SAME store, redaction, and authz as the
-	// REST surface above. This is what makes the backend swap transparent — no
-	// client changes at cutover. Mounted after the entity CRUD so both share the
-	// one Guard/Authorize seam wired at the top.
+	// Casdoor verb-alias layer: the get-users / get-organizations / add-organization
+	// / … spellings (in the v1 {status,data,data2} envelope) every live console/
+	// gateway/portal client hard-codes, served over the SAME store, redaction, and
+	// authz as the REST surface above — the transparent backend swap. After the
+	// Guard, so it shares the one Guard/Authorize seam.
 	compat.Mount(app, db)
 
 	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface that
-	// replaces the Casdoor entity verbs (HIP-0111). Authenticated by the Guard;
-	// each handler owner-scopes via authz.Scope on the path target.
+	// replaces the Casdoor entity verbs (HIP-0111). After the Guard, so it is
+	// authenticated; each handler owner-scopes via authz.Scope on the path target.
 	scim.Mount(app, db)
 }
 

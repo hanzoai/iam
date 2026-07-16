@@ -5,10 +5,13 @@
 // through to overwrite an admin-owned signing cert and forge tokens. It is two
 // orthogonal decisions, never braided:
 //
-//   - AUTHENTICATION — the Guard middleware, mounted ONCE and FIRST via app.Use.
-//     Every non-public request must carry a verified bearer; the resolved
-//     Principal is attached to the request context for the authorization decision
-//     and audit. Public routes pass straight through. Fails closed (401).
+//   - AUTHENTICATION — the Guard middleware, mounted ONCE via app.Use, AFTER the
+//     public group and BEFORE the authed routes. Public (pre-authentication)
+//     routes are registered first, so a matched one terminates fiber's middleware
+//     walk and the Guard never runs on it — public vs gated is structural (which
+//     group a route is on), not an allow-list. Every request the Guard wraps must
+//     carry a verified bearer; the resolved Principal is attached to the request
+//     context for the authorization decision and audit. Fails closed (401).
 //
 //   - AUTHORIZATION — the Authorize hook, installed ONCE via app.Authorize. It
 //     runs at the framework's op-invoke seam, on the DECODED typed input the
@@ -130,61 +133,6 @@ var (
 	errRevoked   = errors.New("authz: principal is forbidden or deleted")
 )
 
-// publicPaths is the CLOSED set of routes reachable without a bearer — the
-// pre-authentication OIDC/OAuth2 and front-door surface a browser must reach
-// before it can hold a token. Everything not listed here is gated: the default
-// is fail-closed, so a newly mounted route (including the framework's own /mcp
-// and /openapi projections of the typed handlers) is protected until it is
-// deliberately published here. userinfo and logout are listed because they
-// verify their own bearer (userinfo) or must clear a session without a live one
-// (logout); gating them again would break their own OIDC contract.
-var publicPaths = map[string]bool{
-	"/healthz":                                 true, // liveness, unversioned
-	"/.well-known/openid-configuration":        true, // OIDC discovery (root)
-	"/v1/iam/.well-known/openid-configuration": true, // OIDC discovery (v1)
-	"/.well-known/jwks":                        true, // JWKS public keys (root)
-	"/v1/iam/.well-known/jwks":                 true, // JWKS public keys (v1)
-	"/.well-known/oauth-authorization-server":        true, // RFC 8414 AS metadata (root)
-	"/v1/iam/.well-known/oauth-authorization-server": true, // RFC 8414 AS metadata (v1)
-	"/v1/iam/oauth/introspect":                       true, // RFC 7662 (client-authenticated)
-	"/v1/iam/oauth/revoke":                           true, // RFC 7009 (client-authenticated)
-	"/v1/iam/login":                            true, // credential login, mints the code
-	"/v1/iam/oauth/authorize":                  true, // OAuth2 authorize
-	"/v1/iam/oauth/token":                      true, // OAuth2 token
-	"/v1/iam/oauth/userinfo":                   true, // self-verifying bearer read
-	"/v1/iam/oauth/logout":                     true, // end session
-	"/v1/iam/get-app-login":                    true, // pre-login app config (secrets masked)
-	"/v1/iam/auth/methods":                     true, // pre-login method list
-	"/v1/iam/mint-user-keys":                   true, // confidential-client auth (Basic + allow-list), not a bearer
-	"/v1/iam/revoke-user-keys":                 true, // confidential-client auth (same authorizeMinter seam)
-	// The front-door session/identity surface (oidc.MountFrontDoor). Each handler
-	// RESOLVES the caller itself (callerOf: session cookie first, then bearer) and
-	// SELF-SCOPES to that caller — so, like get-account, they are reachable without a
-	// Guard-verified bearer (the portal + gateway admin-guard call them with a session
-	// cookie) yet never act on anyone but the resolved caller. signup and
-	// send-verification-code are pre-authentication by nature (no token exists yet).
-	"/v1/iam/get-account":            true, // anonymous-safe account read (admin-guard contract)
-	"/v1/iam/signup":                 true, // pre-auth account creation (own policy checks)
-	"/v1/iam/send-verification-code": true, // pre-auth OTP send
-	"/v1/iam/signin":                 true, // code→session exchange (the code is the credential)
-	"/v1/iam/whoami":                 true, // lightweight caller identity (self-resolving)
-	"/v1/iam/onboard":                true, // first-run org onboarding (self-move only)
-	"/v1/iam/update-preferences":     true, // self preferences (writes only the caller's row)
-	"/v1/iam/linked-accounts":        true, // the caller's own linked identities
-}
-
-// isPublic reports whether path is in the public allowlist. A trailing slash is
-// trimmed first so /v1/iam/login/ resolves like /v1/iam/login — the same route
-// fiber serves. It can only ever widen matches to the fixed public set, never
-// turn a gated path into a public one (no gated path equals a public path plus a
-// slash), so the fail-closed default holds.
-func isPublic(path string) bool {
-	if len(path) > 1 {
-		path = strings.TrimRight(path, "/")
-	}
-	return publicPaths[path]
-}
-
 // isRead reports whether a method addresses its target through the query string
 // rather than a body: a GET (or HEAD) has no body for the op-invoke seam to
 // decode, so its target is authorized in the Guard. Every other method carries a
@@ -233,20 +181,20 @@ func pathAuthorized(path string) bool {
 	return false
 }
 
-// Guard is the AUTHENTICATION middleware. Mount it ONCE and FIRST, via app.Use,
-// so it wraps every route — the typed CRUD handlers and the framework's /mcp and
-// /openapi surfaces alike. Public routes pass straight through; every other route
-// requires a valid bearer (401 otherwise) whose Principal is attached to the
-// request context for the authorization hook downstream. A read's authorization
-// target rides in the query string, so reads are authorized here; a write's rides
-// in the body, decoded once by the op and authorized at the op-invoke seam
-// (Authorize) on that exact decoded value — this middleware never re-parses a
+// Guard is the AUTHENTICATION middleware. Mount it via app.Use AFTER the public
+// group and BEFORE the authed routes: the public (pre-authentication) routes are
+// registered first, so a matched public route terminates fiber's middleware walk
+// and the Guard never runs on it — public vs gated is decided structurally, by
+// which group a route is registered on, not by an allow-list. Every route the
+// Guard does wrap — the typed CRUD handlers and the framework's /mcp and /openapi
+// surfaces alike — requires a valid bearer (401 otherwise) whose Principal is
+// attached to the request context for the authorization hook downstream. A read's
+// authorization target rides in the query string, so reads are authorized here; a
+// write's rides in the body, decoded once by the op and authorized at the op-invoke
+// seam (Authorize) on that exact decoded value — this middleware never re-parses a
 // write body, which is what let the old target extraction diverge from execution.
 func Guard(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
-		if isPublic(c.Path()) {
-			return c.Continue()
-		}
 		p, err := principal(c, db)
 		if err != nil {
 			return zip.ErrUnauthorized("authentication required")
@@ -279,10 +227,12 @@ func Guard(db orm.DB) zip.Handler {
 // decoded In is empty and the Guard already authorized it there — such a call is
 // admitted here (owner == ""). Every write, and any read invoked over MCP (whose
 // arguments DO decode a target into In), is authorized against authorize().
+//
+// Every typed op is authed by construction — the public surface is raw handlers
+// in the pre-Guard group, none of which is a typed op — so this hook needs no
+// public bypass: whenever it runs, the Guard has already run and attached a
+// principal (over REST, before the op; over MCP, on the gated /mcp route).
 func Authorize(ctx context.Context, op zip.Op, in any) error {
-	if isPublic(op.Path) {
-		return nil // pre-auth surface; the Guard admitted it without a principal
-	}
 	owner, name := decodedTarget(in)
 	if owner == "" && isRead(op.Method) {
 		return nil // REST read: target rode in the query, authorized by the Guard

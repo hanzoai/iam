@@ -48,9 +48,9 @@ type loginForm struct {
 	Resource            string `json:"resource"`
 }
 
-// MountLogin registers POST /v1/iam/login.
-func MountLogin(app *zip.App, db orm.DB) {
-	app.Post(PathLogin, loginHandler(db))
+// routeLogin registers POST /v1/iam/login.
+func routeLogin(r zip.Router, db orm.DB) {
+	r.Post(PathLogin, loginHandler(db))
 }
 
 func loginHandler(db orm.DB) zip.Handler {

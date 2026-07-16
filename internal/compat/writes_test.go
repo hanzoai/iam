@@ -2,9 +2,10 @@
 
 package compat_test
 
-// End-to-end tests for the Casdoor WRITE verbs + the front-door publicPaths fix,
-// driven through the REAL mounted router (routes.Mount installs the authz Guard +
-// Authorize seam). They assert the three write contracts a backend swap depends on:
+// End-to-end tests for the Casdoor WRITE verbs + the structurally-public front
+// door, driven through the REAL mounted router (routes.Mount installs the authz
+// Guard + Authorize seam; the front door is registered on the pre-Guard public
+// group). They assert the three write contracts a backend swap depends on:
 // the {status,ok} envelope every client parses, authorization identical to the REST
 // twin (super for platform-owned org/app; org-admin for its own users; cross-tenant
 // refused), and that no secret ever surfaces. Plus: the front-door session routes are
@@ -130,8 +131,8 @@ func TestUpdateApplication_super(t *testing.T) {
 	assertNoSecretLeak(t, body)
 }
 
-// The write verbs are gated — no bearer fails closed at the Guard (they are not in the
-// public allowlist).
+// The write verbs are gated — no bearer fails closed at the Guard (they are
+// registered after it).
 func TestWriteAliases_requireAuth(t *testing.T) {
 	h := newHarness(t)
 	if status, _ := h.post(t, "/v1/iam/add-user", "", map[string]any{"owner": "hanzo", "name": "x"}); status != 401 {
@@ -139,10 +140,10 @@ func TestWriteAliases_requireAuth(t *testing.T) {
 	}
 }
 
-// The FRONT-DOOR session routes are PUBLIC in the Guard: reachable WITHOUT a bearer
-// (the portal + gateway admin-guard call them with a session cookie). Before this
-// change they 401'd at the Guard through routes.Mount; now an anonymous caller gets
-// the casibase {status:"error"} (200), never a 401 and never a leak.
+// The FRONT-DOOR session routes are structurally PUBLIC — registered on the
+// pre-Guard group, so reachable WITHOUT a bearer (the portal + gateway admin-guard
+// call them with a session cookie). An anonymous caller gets the casibase
+// {status:"error"} (200), never a 401 and never a leak.
 func TestFrontDoorPublic_ReachableWithoutBearer(t *testing.T) {
 	h := newHarness(t)
 	for _, tc := range []struct {

@@ -27,19 +27,20 @@ import (
 //
 // API keys are a PRODUCT credential with no IETF standard, so they stay a first-
 // party primitive (flagged for a product decision on whether they become long-
-// lived tokens). They are NOT Bearer-gated (authz.Guard lists them public); each
-// does its own tighter authentication through the ONE authorizeMinter seam.
+// lived tokens). They are NOT Bearer-gated (they live in the PUBLIC group, before
+// the Guard); each does its own tighter authentication through the ONE
+// authorizeMinter seam.
 const (
 	PathMintUserKeys   = "/v1/iam/mint-user-keys"
 	PathRevokeUserKeys = "/v1/iam/revoke-user-keys"
 )
 
-// MountIssueToken registers the confidential-client API-key primitives. POST-only:
-// they rotate a credential — never over a cacheable GET (a client_secret in a
-// query string would reach logs/proxies).
-func MountIssueToken(app *zip.App, db orm.DB) {
-	app.Post(PathMintUserKeys, mintUserKeysHandler(db))
-	app.Post(PathRevokeUserKeys, revokeUserKeysHandler(db))
+// routeIssueToken registers the confidential-client API-key primitives on the
+// PUBLIC group r. POST-only: they rotate a credential — never over a cacheable GET
+// (a client_secret in a query string would reach logs/proxies).
+func routeIssueToken(r zip.Router, db orm.DB) {
+	r.Post(PathMintUserKeys, mintUserKeysHandler(db))
+	r.Post(PathRevokeUserKeys, revokeUserKeysHandler(db))
 }
 
 // mintUserKeysHandler (re)generates the target user's durable `hk-` Cloud API key
