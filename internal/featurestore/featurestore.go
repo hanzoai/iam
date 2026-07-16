@@ -90,3 +90,37 @@ func (s *ormStore) GetOrganization(ctx context.Context, name string) (*model.Org
 func (s *ormStore) GetCert(ctx context.Context, owner, name string) (*model.Cert, error) {
 	return store.GetCert(ctx, s.db, owner, name)
 }
+
+// SetPassword loads the canonical row and re-saves it with the plaintext, which
+// users.Update hashes exactly once (empty leaves the digest untouched). Passing
+// the full existing row means no other field is zeroed by the update.
+func (s *ormStore) SetPassword(ctx context.Context, owner, name, plaintext string) (bool, error) {
+	u, err := store.GetUserByName(ctx, s.db, owner, name)
+	if err != nil {
+		return false, err
+	}
+	if u == nil {
+		return false, nil
+	}
+	if _, err := s.u.Update(ctx, &users.UpdateInput{User: *u, Password: plaintext}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// VerifyPassword defers to the core's digest-scheme-aware verifier (argon2id v1 /
+// bcrypt v2), keyed by the org's password type — no hash ever leaves the core.
+func (s *ormStore) VerifyPassword(ctx context.Context, owner, name, plaintext string) (bool, error) {
+	u, err := store.GetUserByName(ctx, s.db, owner, name)
+	if err != nil {
+		return false, err
+	}
+	if u == nil {
+		return false, nil
+	}
+	pwType := ""
+	if org, oerr := store.GetOrganizationByName(ctx, s.db, owner); oerr == nil && org != nil {
+		pwType = org.PasswordType
+	}
+	return users.VerifyPassword(u, plaintext, pwType), nil
+}
