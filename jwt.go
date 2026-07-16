@@ -30,6 +30,18 @@ type Claims struct {
 	TokenType        string `json:"tokenType"`
 	RefreshTokenType string `json:"TokenType"`
 	SigninMethod     string `json:"signinMethod"`
+	// BillingAccount is the signed `billing_account` claim: WHO PAYS for this
+	// credential, stated by IAM at mint time from the real grant context rather
+	// than inferred by the reader (object/billing_account.go is the one mint site).
+	// It is the SDK half of that contract — a consumer parses a token here and
+	// reads the payer straight off it, instead of guessing from User.Type, which
+	// this SDK's own users can set on themselves.
+	//
+	// The wire is `<kind>:<subject>` — "org:acme", "person:hanzo/alice",
+	// "project:acme/website". Empty on a token minted before the claim shipped, and
+	// on one IAM could not attribute; a reader must fall back rather than bill a
+	// guess. ai/object.ParseAccount reads it back into the Account that pays.
+	BillingAccount string `json:"billing_account,omitempty"`
 }
 
 // IsRefreshToken returns true if the token is a refresh token
