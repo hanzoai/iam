@@ -186,35 +186,39 @@ func TestCanMutatePrivilegedUserFields_NonGlobalCannotEscalate(t *testing.T) {
 	}
 }
 
-// ── H-3 (fallback): cross-org login resolution never lands on the admin org ──
+// ── Cross-org fallback NEVER lands on the admin org (uniform policy) ──
 //
 // pickCrossOrgLoginUser is the policy behind the GetUserByFields cross-org
-// fallback. For a non-admin (or org-agnostic) login it must skip conf.AdminOrg
-// rows and return the first tenant row; for an explicit admin login it may
-// return the admin row.
+// fallback. It skips conf.AdminOrg rows UNCONDITIONALLY and returns the first
+// tenant row: the admin (god-mode) org is reached ONLY by the within-org primary
+// lookup, which targets conf.AdminOrg exactly when the requesting application's
+// declared org IS conf.AdminOrg (loginOrgForApp) — never through this fallback.
 
 func TestPickCrossOrgLoginUser_SkipsAdminForTenantLogin(t *testing.T) {
 	users := []*User{
 		{Owner: conf.AdminOrg, Name: "a", Email: "a@hanzo.ai"},
 		{Owner: "lux", Name: "a", Email: "a@hanzo.ai"},
 	}
-	got := pickCrossOrgLoginUser(users, false)
+	got := pickCrossOrgLoginUser(users)
 	if got == nil || got.Owner != "lux" {
-		t.Fatalf("H-3: tenant login must skip admin row and pick lux/a, got %v", got)
+		t.Fatalf("tenant login must skip admin row and pick lux/a, got %v", got)
 	}
 }
 
 func TestPickCrossOrgLoginUser_AdminOnlyTenantLoginYieldsNil(t *testing.T) {
 	users := []*User{{Owner: conf.AdminOrg, Name: "a", Email: "a@hanzo.ai"}}
-	if got := pickCrossOrgLoginUser(users, false); got != nil {
-		t.Fatalf("H-3: admin-only cross-org row must be refused for tenant login, got %s/%s", got.Owner, got.Name)
+	if got := pickCrossOrgLoginUser(users); got != nil {
+		t.Fatalf("admin-only cross-org row must be refused for the fallback, got %s/%s", got.Owner, got.Name)
 	}
 }
 
-func TestPickCrossOrgLoginUser_ExplicitAdminLoginAllowsAdmin(t *testing.T) {
+// The fallback NEVER yields an admin row, even when the app's org is admin: the
+// admin app resolves admin/<user> via the within-org PRIMARY lookup, so this
+// fallback is not the path admin logins take. Pinning nil here guarantees no
+// residual cross-org path can ever confer superadmin.
+func TestPickCrossOrgLoginUser_NeverYieldsAdmin(t *testing.T) {
 	users := []*User{{Owner: conf.AdminOrg, Name: "a", Email: "a@hanzo.ai"}}
-	got := pickCrossOrgLoginUser(users, true)
-	if got == nil || got.Owner != conf.AdminOrg {
-		t.Fatalf("explicit admin login must resolve the admin row, got %v", got)
+	if got := pickCrossOrgLoginUser(users); got != nil {
+		t.Fatalf("cross-org fallback must never yield an admin row, got %s/%s", got.Owner, got.Name)
 	}
 }
