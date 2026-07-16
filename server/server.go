@@ -19,6 +19,8 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam2/feature"
+	"github.com/hanzoai/iam2/internal/featurestore"
 	"github.com/hanzoai/iam2/internal/routes"
 	_ "github.com/hanzoai/iam2/internal/schema" // registers the entity kinds
 	"github.com/hanzoai/iam2/internal/seed"
@@ -29,6 +31,12 @@ import (
 // This is the one call a host binary makes to embed iam2.
 func Mount(app *zip.App, db orm.DB) {
 	routes.Mount(app, db)
+	// Enterprise features (hanzoai/iam2/feature — SCIM/SAML/LDAP live in the
+	// hanzoiam/* modules and Register themselves). No-op until a host registers
+	// one; fail-fast if a registered module can't mount (a boot misconfiguration).
+	if err := feature.MountAll(app, featurestore.New(db)); err != nil {
+		panic("iam2: enterprise feature mount failed: " + err.Error())
+	}
 }
 
 // OpenSQLite opens an embedded SQLite store for iam2 at path (WAL). The host may
