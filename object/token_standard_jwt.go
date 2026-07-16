@@ -28,7 +28,9 @@ type ClaimsStandard struct {
 	// Organization mirrors the embedded user's `owner` (see ClaimsShort).
 	Organization string `json:"organization,omitempty"`
 	// Project is the org's default project; see Claims.Project.
-	Project             string      `json:"project,omitempty"`
+	Project string `json:"project,omitempty"`
+	// BillingAccount is the signed `billing_account` claim; see Claims.BillingAccount.
+	BillingAccount      string      `json:"billing_account,omitempty"`
 	EmailVerified       bool        `json:"email_verified,omitempty"`
 	PhoneNumber         string      `json:"phone_number,omitempty"`
 	PhoneNumberVerified bool        `json:"phone_number_verified,omitempty"`
@@ -56,6 +58,7 @@ func getStandardClaims(claims Claims) ClaimsStandard {
 		UserStandard:     getStandardUser(claims.User),
 		Organization:     claims.User.Owner,
 		Project:          claims.Project,
+		BillingAccount:   claims.BillingAccount,
 		EmailVerified:    claims.User.EmailVerified,
 		TokenType:        claims.TokenType,
 		Nonce:            claims.Nonce,

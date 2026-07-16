@@ -54,24 +54,12 @@ func IsClientCredentialsClaim(claims *Claims, application *Application) bool {
 	if claims == nil || claims.User == nil || application == nil {
 		return false
 	}
-	// Type ALONE is forgeable — require the full client_credentials shape.
-	if claims.User.Type != "application" {
-		return false
-	}
-	// The registered ClientId is by construction the app's Name, and
-	// GetClientCredentialsToken sets nullUser.Name = application.Name. A user
-	// JWT carrying Type="application" but User.Name != app.Name is the exact
-	// forgery shape.
-	if claims.User.Name != application.Name {
-		return false
-	}
-	// client_credentials involves no IdP and is not a sign-in, so neither field
-	// is ever set; password / authorization_code / OIDC grants set them.
-	if claims.Provider != "" {
-		return false
-	}
-	if claims.SigninMethod != "" {
-		return false
-	}
-	return true
+	// The four-field shape lives in ONE place (isClientCredentialsShape): Type
+	// alone is forgeable (AddUser/UpdateUser persist arbitrary Type), so it also
+	// requires name==app.Name (the strongest — a promoted user cannot carry it
+	// without already owning the app) plus provider=="" and signinMethod=="" (a
+	// client_credentials grant involves no IdP and is not a sign-in). The
+	// billing_account producer resolves machine-ness at MINT time through the same
+	// predicate, so the inbound check and the mint decision can never disagree.
+	return isClientCredentialsShape(claims.User, application, claims.Provider, claims.SigninMethod)
 }
