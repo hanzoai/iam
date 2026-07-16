@@ -28,6 +28,7 @@
 package password
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -68,19 +69,41 @@ const (
 	keyLen    = 32 // 256-bit derived key
 )
 
-// minCost is the ACCEPTANCE floor: an argon2id digest at or above it is
+// acceptFloor is the ACCEPTANCE floor: an argon2id digest at or above it is
 // current enough to keep, and only one below it is re-minted on login. It is a
 // separate question from what we mint, and conflating the two is a bug in each
 // direction — mint policy that doubles as an acceptance test re-hashes accounts
 // that are already fine (and, when a live row is stronger than policy, actively
-// weakens them).
+// weakens them). Accepting and minting are different questions, so they are
+// different constants: the mint parameters are memoryKiB/timeCost/lanes above.
 //
 // The unit is the memory-time product (KiB-passes) — Argon2's area-time cost,
 // the axis its parameters trade along. The floor is the weakest of the five
 // configurations OWASP itself calls equivalent (m=7168, t=5 -> 35840), so every
 // OWASP-current digest is accepted, including the three that sit just below our
 // own mint cost of 19456*2=38912.
-const minCost = 7168 * 5 // 35840 KiB-passes
+const acceptFloor = 7168 * 5 // 35840 KiB-passes
+
+// memoryCeiling bounds the memory a digest can make us allocate to verify it.
+// It is a different question from acceptFloor — that one asks whether a digest
+// is strong enough to keep, this one asks whether we can afford to compute it —
+// so it is a separate constant in a separate unit (KiB of memory, not
+// KiB-passes of area-time).
+//
+// Verify reads `m` out of the digest, which is the only way a digest minted
+// under other parameters stays verifiable. But `m` is then a number from
+// storage that we hand to an allocator: an argon2id digest claiming
+// m=4294967295 asks for 4 TiB. Nothing can plant such a digest today (Create
+// and Update both refuse a client-supplied hash — the digest is derived from a
+// plaintext or not at all), so this is not a reachable attack; it is what makes
+// the bound a property of the code instead of a property of every current call
+// site staying correct forever.
+//
+// 128 MiB is 2x the strongest digest the live fleet holds (85 rows at m=65536,
+// 67.1 MB each) — headroom for a future parameter raise, while keeping the
+// worst case a hostile row can demand at GOMAXPROCS x 128 MiB, well inside the
+// pod's 1750MiB GOMEMLIMIT.
+const memoryCeiling = 131072 // 128 MiB, in KiB
 
 // maxPasswordLen bounds what we will MINT a digest for. OWASP: "you should
 // enforce a maximum password length". It is deliberately not enforced on the
@@ -88,17 +111,29 @@ const minCost = 7168 * 5 // 35840 KiB-passes
 // password was accepted yesterday.
 const maxPasswordLen = 4096
 
-// gate bounds how many argon2id computations run at once. Each one holds
-// memoryKiB (19 MiB) of live memory for its duration, so without a bound an
-// unauthenticated login endpoint is a memory-exhaustion lever: ~90 concurrent
-// requests reach this pod's 1750MiB GOMEMLIMIT and the process is killed —
-// which is the one failure that logs everybody out at once.
+// gate bounds how many argon2id computations run at once. Each one holds its
+// own `m` of live memory for its duration, so without a bound an
+// unauthenticated login endpoint is a memory-exhaustion lever: enough
+// concurrent requests reach this pod's 1750MiB GOMEMLIMIT and the process is
+// killed — which is the one failure that logs everybody out at once.
 //
 // GOMAXPROCS is the right bound and costs nothing: with p=1 only GOMAXPROCS
 // hashes can make real progress anyway, so admitting more buys queueing and a
 // larger peak, not throughput. Excess logins wait here (cheap — a parked
-// goroutine) instead of allocating (expensive). On the iam pod this caps
-// argon2id's footprint at 2 x 19 MiB.
+// goroutine) instead of allocating (expensive).
+//
+// What this bounds is CONCURRENCY, not footprint per hash: what we MINT is
+// memoryKiB (19 MiB), but what we VERIFY is whatever the stored digest asks
+// for, and the live fleet's 85 argon2id rows are m=65536 — 67.1 MB each. So on
+// the 2-CPU iam pod the real peak is 2 x 67.1 MB today, and 2 x memoryCeiling
+// (2 x 128 MiB) in the worst case a digest can express. Both fit; the claim
+// that this caps argon2id at 2 x 19 MiB did not, and a bound stated in a
+// comment is not a bound.
+//
+// It does NOT bound how many requests QUEUE for a slot. Waiters are parked
+// goroutines, and a cancelled request stops waiting (see acquire), so an
+// abandoned flood drains itself. Bounding arrival volume is the edge's job —
+// it can see the client; this package can only see a plaintext.
 var gate = make(chan struct{}, max(1, runtime.GOMAXPROCS(0)))
 
 // ErrPasswordTooLong is returned by Hash for an input over maxPasswordLen.
@@ -108,7 +143,7 @@ var ErrPasswordTooLong = errors.New("password: too long")
 // current parameters — the ONE way a password becomes storable. The returned
 // PHC string carries its own salt and parameters, so it stays verifiable after
 // those parameters change.
-func Hash(plaintext string) (string, error) {
+func Hash(ctx context.Context, plaintext string) (string, error) {
 	if len(plaintext) > maxPasswordLen {
 		return "", ErrPasswordTooLong
 	}
@@ -116,7 +151,10 @@ func Hash(plaintext string) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("password: read salt: %w", err)
 	}
-	key := idKey([]byte(plaintext), salt, timeCost, memoryKiB, lanes, keyLen)
+	key, err := idKey(ctx, []byte(plaintext), salt, timeCost, memoryKiB, lanes, keyLen)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version, memoryKiB, timeCost, lanes,
 		base64.RawStdEncoding.EncodeToString(salt),
@@ -134,10 +172,10 @@ func Hash(plaintext string) (string, error) {
 // (64 MiB), which is *stronger* than our m=19456,t=2,p=1 baseline, and
 // re-hashing those to policy would weaken 85 accounts in the name of an
 // upgrade. See stale() for the comparison.
-func Verify(digest, plaintext string) (ok, stale bool) {
+func Verify(ctx context.Context, digest, plaintext string) (ok, stale bool) {
 	switch Scheme(digest) {
 	case SchemeArgon2id:
-		return verifyArgon2id(digest, plaintext)
+		return verifyArgon2id(ctx, digest, plaintext)
 	case SchemeBcrypt:
 		// bcrypt: correct today, but not the algorithm we mint. A successful
 		// verify is the only moment we hold the plaintext, so it is the only
@@ -147,8 +185,35 @@ func Verify(digest, plaintext string) (ok, stale bool) {
 	default:
 		// Unknown, empty or corrupt digest: fail closed. Never treat an
 		// unparseable digest as a match.
+		//
+		// Failing closed CHEAPLY is its own leak. Returning straight from here
+		// makes the response time answer a question nobody asked it: measured
+		// through the router, a login for an account that does not exist
+		// answered in 92us against 18.5ms for one that does — 201x, which needs
+		// no statistics to read. The same cliff separates a federated row that
+		// holds no password from one that does. So a verification with nothing
+		// to verify against costs what a verification costs.
+		decoy(ctx, plaintext)
 		return false, false
 	}
+}
+
+// decoy burns one argon2id at mint parameters and discards it, so that having
+// no digest to check is not cheaper than checking one.
+//
+// It runs through idKey, so it holds a gate slot exactly like a real hash: a
+// decoy that skipped the bound would be a way to allocate around it. That is
+// also why it does not raise the DoS ceiling — anyone who knows a single valid
+// username can already make this pod hash on demand, and the gate bounds that
+// work the same way no matter which branch asked for it. What the decoy removes
+// is the need to know a username in the first place.
+//
+// The salt is a zero array rather than a random one: the output is discarded,
+// and reading randomness here would add a syscall to a path whose only job is
+// to cost the same as its sibling.
+func decoy(ctx context.Context, plaintext string) {
+	var salt [saltLen]byte
+	_, _ = idKey(ctx, []byte(plaintext), salt[:], timeCost, memoryKiB, lanes, keyLen)
 }
 
 // The schemes a stored digest can be under. SchemeArgon2id is the only one we
@@ -182,12 +247,18 @@ func Scheme(digest string) string {
 
 // verifyArgon2id checks plaintext against a PHC argon2id digest, using the
 // parameters the digest itself carries.
-func verifyArgon2id(digest, plaintext string) (ok, stale bool) {
+func verifyArgon2id(ctx context.Context, digest, plaintext string) (ok, stale bool) {
 	memory, time, threads, salt, want, err := parse(digest)
+	if err != nil {
+		// A corrupt argon2id digest is indistinguishable from an absent one, so
+		// it costs the same. See the default branch of Verify.
+		decoy(ctx, plaintext)
+		return false, false
+	}
+	got, err := idKey(ctx, []byte(plaintext), salt, time, memory, threads, uint32(len(want)))
 	if err != nil {
 		return false, false
 	}
-	got := idKey([]byte(plaintext), salt, time, memory, threads, uint32(len(want)))
 	if subtle.ConstantTimeCompare(got, want) != 1 {
 		return false, false
 	}
@@ -197,13 +268,13 @@ func verifyArgon2id(digest, plaintext string) (ok, stale bool) {
 // weaker reports whether an argon2id digest at these parameters is below the
 // acceptance floor, and so should be re-minted on the next successful login.
 //
-// It compares against minCost, NOT against our mint parameters. Testing against
-// what we mint would flag three of OWASP's five equivalent sets (12288x3 and
-// 9216x4 = 36864, 7168x5 = 35840 all sit under our 38912) as stale, and would
-// flag the live v1 rows for a "upgrade" that halves their memory hardness.
-// What we mint and what we accept are different questions.
+// It compares against acceptFloor, NOT against our mint parameters. Testing
+// against what we mint would flag three of OWASP's five equivalent sets
+// (12288x3 and 9216x4 = 36864, 7168x5 = 35840 all sit under our 38912) as
+// stale, and would flag the live v1 rows for an "upgrade" that halves their
+// memory hardness. What we mint and what we accept are different questions.
 func weaker(memory, time uint32) bool {
-	return uint64(memory)*uint64(time) < minCost
+	return uint64(memory)*uint64(time) < acceptFloor
 }
 
 // parse pulls the parameters, salt and key out of a PHC argon2id string:
@@ -232,6 +303,12 @@ func parse(digest string) (memory, time uint32, threads uint8, salt, key []byte,
 	if memory == 0 || time == 0 || threads == 0 {
 		return 0, 0, 0, nil, nil, errors.New("password: zero parameter")
 	}
+	// `memory` is about to become an allocation. Refuse a digest that asks for
+	// more than we are willing to hold, rather than discovering the number's
+	// size by allocating it.
+	if memory > memoryCeiling {
+		return 0, 0, 0, nil, nil, errors.New("password: memory parameter above ceiling")
+	}
 
 	if salt, err = base64.RawStdEncoding.DecodeString(parts[4]); err != nil {
 		return 0, 0, 0, nil, nil, errors.New("password: bad salt encoding")
@@ -246,10 +323,27 @@ func parse(digest string) (memory, time uint32, threads uint8, salt, key []byte,
 }
 
 // idKey is argon2.IDKey under `gate`, which is the only reason the bound holds:
-// every argon2id computation in the process — mint and verify — goes through
-// here.
-func idKey(plaintext, salt []byte, time, memory uint32, threads uint8, keyLen uint32) []byte {
-	gate <- struct{}{}
+// every argon2id computation in the process — mint, verify and decoy — goes
+// through here.
+func idKey(ctx context.Context, plaintext, salt []byte, time, memory uint32, threads uint8, keyLen uint32) ([]byte, error) {
+	if err := acquire(ctx); err != nil {
+		return nil, err
+	}
 	defer func() { <-gate }()
-	return argon2.IDKey(plaintext, salt, time, memory, threads, keyLen)
+	return argon2.IDKey(plaintext, salt, time, memory, threads, keyLen), nil
+}
+
+// acquire takes a gate slot, or gives up if the caller's context ends first.
+//
+// Waiting on the bare channel send would mean a client that hung up still gets
+// its 19 MiB and its slot, computed to completion, for a response nobody reads
+// — under load that is the queue outliving the requests that formed it. The
+// work is only worth doing while someone is still waiting for the answer.
+func acquire(ctx context.Context) error {
+	select {
+	case gate <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
