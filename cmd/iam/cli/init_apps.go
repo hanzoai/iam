@@ -76,6 +76,12 @@ var brandGrantTypes = []string{
 	"authorization_code",
 	"refresh_token",
 	deviceGrantType,
+	// password (ROPC) — the first-party `hanzo login --username/--password-stdin`
+	// automation path the CLI advertises. Without it every app rejects the CLI
+	// password grant with unsupported_grant_type, so headless/CI login is broken
+	// even though the CLI ships the flag. First-party apps only; ensureGrantTypes
+	// converges it onto existing rows on boot.
+	"password",
 }
 
 // mfaItem mirrors object.MfaItem — one MFA method + its enforcement rule.
