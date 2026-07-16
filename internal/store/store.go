@@ -253,3 +253,31 @@ func GetOrganizationByName(_ context.Context, db orm.DB, name string) (*schema.O
 	}
 	return o, err
 }
+
+// AddVerificationRecord persists a freshly minted verification code. The id is
+// (owner, name); the caller sets Name to a unique value before persisting.
+// Mirrors PersistToken: the orm.Model is preserved while the caller's fields are
+// copied onto the fresh, db-wired entity.
+func AddVerificationRecord(ctx context.Context, db orm.DB, rec *schema.VerificationRecord) error {
+	r := orm.New[schema.VerificationRecord](db)
+	model := r.Model
+	*r = *rec
+	r.Model = model
+	r.SetId(rec.Owner + "/" + rec.Name)
+	return r.CreateCtx(ctx)
+}
+
+// GetLatestVerificationRecord resolves the most recent UNUSED verification
+// record sent to receiver — the row the check path validates a submitted code
+// against. Returns (nil, nil) when none exists.
+func GetLatestVerificationRecord(_ context.Context, db orm.DB, receiver string) (*schema.VerificationRecord, error) {
+	if receiver == "" {
+		return nil, nil
+	}
+	rec, err := orm.TypedQuery[schema.VerificationRecord](db).
+		Filter("Receiver=", receiver).Filter("IsUsed=", false).Order("-Time").First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return rec, err
+}

@@ -46,11 +46,19 @@ own framework — we own it, and it collapses to one way of doing each thing.
 
 The OIDC/OAuth2 protocol surface is complete. HIP-0111 §6's *native front-door* —
 what the hosted `hanzo.id` portal itself calls, distinct from the OIDC surface
-client apps use — is being finished. Present: `get-app-login`, `login`,
-`auth/methods`, `userinfo`, `logout`, `refresh`, `authorize`. In progress:
-`get-account`, `send-verification-code`, `signup`. A backend swap without these
-takes the portal's account page, email verification, and signup with it, so
-cutover is gated on them. Serve under `/v1/iam/*` (no `/api/`, no new prefix).
+client apps use — is now complete: `get-app-login`, `login`, `auth/methods`,
+`userinfo`, `logout`, `refresh`, `authorize`, `get-account`,
+`send-verification-code`, `signup`. A backend swap without these takes the
+portal's account page, email verification, and signup with it, so cutover was
+gated on them. Serve under `/v1/iam/*` (no `/api/`, no new prefix).
+
+The `signup`/`send-verification-code` pair carries two deliberate seams vs v1,
+each a missing iam2 dependency, not a shortcut: (1) signup lands the user in the
+app's **existing** org — v1's founder-org mint (`TenantOrgForSignup`) needs an
+org-create helper + the `Org.Parent` tenant model iam2 has not modeled yet;
+(2) `send-verification-code` persists a verifiable OTP (the `verifications`
+entity) but the email/SMS **delivery** is owned by `hanzoai/notify`, not wired
+into iam2 — the endpoint reports `ok` honestly and never fakes a "sent" claim.
 
 Three facts the port must honour, each verified against live v1:
 - **`get-account` is a security contract, not a convenience.** The gateway's
@@ -78,7 +86,7 @@ password reset, no re-hash on read.
 
 ## §6 Domain model (v1 xorm table → v2 orm kind)
 
-Thirteen identity entities. Field-completeness is mandatory — a dropped column is
+Fourteen identity entities. Field-completeness is mandatory — a dropped column is
 lost auth data.
 
 | v1 table (xorm)       | v2 orm kind            |
@@ -96,6 +104,7 @@ lost auth data.
 | `token`               | `tokens`               |
 | `record`              | `audit_logs`           |
 | `invitation`          | `invitations`          |
+| `verification`        | `verifications`        |
 
 **Deliberately NOT modeled by iam2** (they belong to other services or are
 replaced by `hanzoai/authz`): `payment`, `plan`, `product`, `subscription`,

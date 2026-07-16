@@ -21,15 +21,19 @@ const (
 	PathAuthMethods = "/v1/iam/auth/methods"
 )
 
-// MountFrontDoor registers the read-only front-door endpoints. Separate from
-// Mount because these need the entity store; the OIDC discovery/JWKS surface
-// does not.
+// MountFrontDoor registers the front-door endpoints the hosted hanzo.id portal
+// and the @hanzo/iam SDK call. Separate from Mount because these need the entity
+// store; the OIDC discovery/JWKS surface does not.
 func MountFrontDoor(app *zip.App, db orm.DB) {
 	app.Get(PathGetAppLogin, getAppLogin(db))
 	app.Get(PathAuthMethods, authMethods(db))
 	// get-account is anonymous-safe (returns {status:"error"} unauthenticated)
 	// and a security contract — the gateway admin-guard reads its `owner`.
 	app.Get(PathGetAccount, getAccount(db))
+	// Account creation + email/phone OTP send. signup is JSON; send-verification-code
+	// is multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
+	app.Post(PathSignup, signupHandler(db))
+	app.Post(PathSendVerificationCode, sendVerificationCode(db))
 }
 
 // getAppLogin resolves an application by clientId and returns it with the

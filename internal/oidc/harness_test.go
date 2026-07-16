@@ -52,6 +52,7 @@ type appOpts struct {
 	redirectURIs []string
 	refreshHours float64
 	shared       bool // IsShared → accepts users from any org
+	signup       bool // EnableSignUp → the app allows new-account creation
 }
 
 // tctx is the background context used by the test seed helpers.
@@ -93,6 +94,7 @@ func seedApp(t *testing.T, db orm.DB, o appOpts) *schema.Application {
 	a.Organization = "hanzo"
 	a.Cert = "cert-" + o.clientID
 	a.EnablePassword = true
+	a.EnableSignUp = o.signup
 	a.ExpireInHours = 1
 	a.RefreshExpireInHours = o.refreshHours
 	a.RedirectUris = o.redirectURIs

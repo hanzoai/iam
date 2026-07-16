@@ -30,6 +30,12 @@ import (
 // API binds the user handlers to an orm store. Construct once at boot and mount.
 type API struct{ db orm.DB }
 
+// New returns a user API over db — the constructor front-door handlers (e.g. the
+// signup endpoint) use to reach the ONE canonical create path (Create hashes the
+// password with bcrypt exactly once and returns the redacted row), so a user
+// minted at signup is byte-identical to one minted through the CRUD surface.
+func New(db orm.DB) *API { return &API{db: db} }
+
 // Mount registers the typed user CRUD handlers on app. Reads use zip.Get and
 // writes use zip.Post; both project the same transport-agnostic handler to REST
 // and MCP, so the (owner, name) identity in each typed request is honored on
