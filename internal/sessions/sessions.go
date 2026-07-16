@@ -31,8 +31,8 @@ const maxSessionIds = 100
 // Sessions binds the session CRUD operations to an orm store.
 type Sessions struct{ db orm.DB }
 
-// Mount registers the session operations on app against db.
-func Mount(app *zip.App, db orm.DB) {
+// Route registers the session operations on app against db.
+func Route(app *zip.App, db orm.DB) {
 	h := &Sessions{db: db}
 	zip.Post(app, "/v1/iam/sessions/list", h.List,
 		zip.WithSummary("List an owner's sessions, newest first"),

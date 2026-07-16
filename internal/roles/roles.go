@@ -22,8 +22,8 @@ type Handler struct {
 	db orm.DB
 }
 
-// Mount registers the roles CRUD routes on app against db.
-func Mount(app *zip.App, db orm.DB) {
+// Route registers the roles CRUD routes on app against db.
+func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/roles", h.List, zip.WithSummary("List roles for an owner"), zip.WithTags("roles"))
 	zip.Post(app, "/v1/iam/roles", h.Create, zip.WithSummary("Create a role"), zip.WithTags("roles"))

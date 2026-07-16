@@ -24,8 +24,8 @@ type Handler struct {
 	db orm.DB
 }
 
-// Mount registers the audit-log CRUD routes on app against db.
-func Mount(app *zip.App, db orm.DB) {
+// Route registers the audit-log CRUD routes on app against db.
+func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/audit-logs", h.List, zip.WithSummary("List audit logs for an owner"), zip.WithTags("audit-logs"))
 	zip.Post(app, "/v1/iam/audit-logs", h.Create, zip.WithSummary("Create an audit log"), zip.WithTags("audit-logs"))

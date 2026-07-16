@@ -30,7 +30,7 @@ import (
 // auth/methods, token, login, and the v2 entity CRUD) onto app, backed by db.
 // This is the one call a host binary makes to embed iam2.
 func Mount(app *zip.App, db orm.DB) {
-	routes.Mount(app, db)
+	routes.Route(app, db)
 	// Enterprise features (hanzoai/iam2/feature — SCIM/SAML/LDAP live in the
 	// hanzoiam/* modules and Register themselves). No-op until a host registers
 	// one; fail-fast if a registered module can't mount (a boot misconfiguration).

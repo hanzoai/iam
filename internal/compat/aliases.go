@@ -32,11 +32,11 @@ import (
 	"github.com/hanzoai/iam2/internal/schema"
 )
 
-// Mount registers the Casdoor read-verb aliases. The mask argument is the
+// Route registers the Casdoor read-verb aliases. The mask argument is the
 // entity's schema.Mask method (the ONE redaction contract) for entities that
 // carry secrets, or nil for those that do not — nil means "no field to strip",
 // not "skip a needed redaction". Writes ride a companion file.
-func Mount(app *zip.App, db orm.DB) {
+func Route(app *zip.App, db orm.DB) {
 	// List reads — `?owner=&p=&pageSize=` (Casdoor shape). Owner-scoped by authz.
 	app.Get("/v1/iam/get-organizations", listHandler(db, (*schema.Organization).Mask))
 	app.Get("/v1/iam/get-users", listHandler(db, (*schema.User).Mask))
@@ -59,7 +59,7 @@ func Mount(app *zip.App, db orm.DB) {
 	app.Get("/v1/iam/get-permission", getHandler[schema.Permission](db, nil))
 
 	// The Casdoor WRITE verbs (companion file), over the same store + authz seam.
-	mountWrites(app, db)
+	routeWrites(app, db)
 }
 
 // listHandler serves a Casdoor get-<entities> list for one orm kind: it scopes

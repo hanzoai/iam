@@ -22,9 +22,9 @@ type Handlers struct {
 	db orm.DB
 }
 
-// Mount registers the permission routes on app, backed by db. It is called
+// Route registers the permission routes on app, backed by db. It is called
 // from routes.Mount once the store is open.
-func Mount(app *zip.App, db orm.DB) {
+func Route(app *zip.App, db orm.DB) {
 	h := &Handlers{db: db}
 	zip.Get(app, "/v1/iam/permissions", h.List,
 		zip.WithSummary("List permissions for an owner"), zip.WithTags("permissions"))

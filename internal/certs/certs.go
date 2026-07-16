@@ -24,10 +24,10 @@ type Handler struct {
 	db orm.DB
 }
 
-// Mount registers the certs CRUD routes on app against db. Reads are zip.Get,
+// Route registers the certs CRUD routes on app against db. Reads are zip.Get,
 // writes are zip.Post; the create/update body is the schema.Cert row itself, so
 // the wire contract and the stored entity never drift.
-func Mount(app *zip.App, db orm.DB) {
+func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/certs", h.List, zip.WithSummary("List certs for an owner"), zip.WithTags("certs"))
 	zip.Post(app, "/v1/iam/certs", h.Create, zip.WithSummary("Create a cert"), zip.WithTags("certs"))
