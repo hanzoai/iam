@@ -100,6 +100,28 @@ func Scope(ctx context.Context, owner string) (string, error) {
 	return p.Org, nil
 }
 
+// Can reports whether the ctx principal may perform `method` on the entity's
+// (owner, name) — the SAME policy the op-invoke seam (Authorize) applies, exposed
+// for a RAW handler that does not pass through app.Authorize (e.g. SCIM, whose
+// writes call the CRUD directly). Owner-pinning via Scope alone is NOT sufficient
+// for a write: it enforces tenant isolation but not the admin/self clause, so a
+// raw handler MUST call this. Fails closed when no principal is present.
+func Can(ctx context.Context, method, entity, owner, name string) bool {
+	p, ok := From(ctx)
+	if !ok {
+		return false
+	}
+	return authorize(p, method, entity, owner, name)
+}
+
+// IsSuper reports whether the ctx principal is a SuperAdmin — used by a raw
+// handler to gate a privileged field (e.g. provision-don't-promote: only a super
+// may set isAdmin). Fails closed when no principal is present.
+func IsSuper(ctx context.Context) bool {
+	p, ok := From(ctx)
+	return ok && p.Super
+}
+
 // Fail-closed reasons. The Guard collapses all of them to one opaque 401 so a
 // prober cannot tell a bad signature from an expired token from a revoked user.
 var (
