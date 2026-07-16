@@ -38,7 +38,14 @@ function ForgetPage(props) {
   const [email, setEmail] = useState("");
   const [dest, setDest] = useState("");
   const [isVerifyTypeFixed, setIsVerifyTypeFixed] = useState(false);
-  const [verifyType, setVerifyType] = useState("");
+  // The verification type is a FUNCTION of the destination — an address with an
+  // "@" is an email, anything else is a phone. Deriving it at the point of use
+  // (rather than storing it and hoping every path sets it) is why a reset can no
+  // longer ask the server to send a code with no type: there is no state left to
+  // miss. It previously defaulted to "" and was only set by a switch with no
+  // default branch, or by manually re-picking the dropdown — so a pre-filled
+  // destination sent type="" and the server refused with "Missing parameter: type".
+  const verifyType = dest.includes("@") ? "email" : "phone";
   const [current, setCurrent] = useState(queryParams.get("code") ? 2 : 0);
   const [code, setCode] = useState(queryParams.get("code"));
   // Step 1
@@ -91,16 +98,23 @@ function ForgetPage(props) {
             setName(res.data.name);
             setPhone(p);
             setEmail(e2);
-            const saveFields = (type, d, fixed) => {
-              setVerifyType(type);
+            // The destination is the only thing to choose — its type follows from
+            // it. `fixed` says whether the user may re-pick: they looked the
+            // account up BY an email or phone, so that is the one they get; a
+            // username lookup leaves the choice open.
+            const saveFields = (d, fixed) => {
               setIsVerifyTypeFixed(fixed);
               setDest(d);
             };
             switch (res.data2) {
-            case "email": saveFields("email", e2, true); break;
-            case "phone": saveFields("phone", p, true); break;
-            case "username":
-              p !== "" ? saveFields("phone", p, false) : saveFields("email", e2, false);
+            case "email": saveFields(e2, true); break;
+            case "phone": saveFields(p, true); break;
+            default:
+              // A username lookup, or any answer we do not model: prefer the
+              // phone, else the email. One of them exists (the !p && !e2 case
+              // returned above), so a destination is always chosen — never left
+              // empty for the next step to trip over.
+              p !== "" ? saveFields(p, false) : saveFields(e2, false);
             }
             setCurrent(1);
           }
@@ -274,10 +288,7 @@ function ForgetPage(props) {
             <Select
               value={dest}
               disabled={isVerifyTypeFixed}
-              onValueChange={(v) => {
-                setDest(v);
-                setVerifyType(v?.indexOf("@") === -1 ? "phone" : "email");
-              }}
+              onValueChange={(v) => setDest(v)}
             >
               <SelectTrigger>
                 <SelectValue placeholder={i18next.t("forget:Choose email or phone")} />
