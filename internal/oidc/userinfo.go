@@ -70,6 +70,18 @@ func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string
 	if u == nil {
 		return info
 	}
+	// isAdmin is the SuperAdmin-predicate input the gateway admin-guard derives its
+	// decision from (with owner==adminOrg). It describes the token's OWN principal —
+	// read from the loaded user record (authoritative, never a token claim, matching
+	// the authz Principal) — so UserInfo is a drop-in for the retired get-account
+	// security contract. Emitted regardless of scope (it is identity, not profile),
+	// as `isAdmin` — the exact key the admin-guard + @hanzo/iam SDK read.
+	info["isAdmin"] = u.IsAdmin
+	// type distinguishes a real account from an auto-created anonymous session (the
+	// console's `type === "anonymous-user"` check); always present.
+	if u.Type != "" {
+		info["type"] = u.Type
+	}
 	scope := row.Scope
 	if hasScope(scope, "profile") {
 		putIf(info, "preferred_username", u.Name)

@@ -94,6 +94,54 @@ func TestUserinfo_ClaimsByScope(t *testing.T) {
 	}
 }
 
+// UserInfo carries the get-account security contract: isAdmin (the gateway
+// admin-guard's SuperAdmin-predicate input, with owner==adminOrg) + type, from the
+// loaded user record, so UserInfo is a drop-in for the retired get-account. isAdmin
+// is present regardless of scope (identity, not profile).
+func TestUserinfo_AdminGuardContract(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedRichUser(t, db)
+	// Promote the seeded user to an admin with a concrete type.
+	u, err := orm.Get[schema.User](db, "hanzo/alice")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	u.IsAdmin = true
+	u.Type = "normal-user"
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+
+	// Even a minimal (openid-only) scope carries the identity claims.
+	access := accessTokenFor(t, app, "openid")
+	status, info := userinfo(t, app, access)
+	if status != 200 {
+		t.Fatalf("status %d: %v", status, info)
+	}
+	if info["isAdmin"] != true {
+		t.Errorf("userinfo[isAdmin] = %v, want true (the admin-guard SuperAdmin input)", info["isAdmin"])
+	}
+	if info["type"] != "normal-user" {
+		t.Errorf("userinfo[type] = %v, want normal-user", info["type"])
+	}
+	if info["owner"] != "hanzo" {
+		t.Errorf("userinfo[owner] = %v, want hanzo", info["owner"])
+	}
+}
+
+// A non-admin's userinfo carries isAdmin:false (never absent — the admin-guard
+// must be able to read a definite false, not infer it from a missing key).
+func TestUserinfo_NonAdminIsExplicitFalse(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedRichUser(t, db) // alice, IsAdmin=false
+	_, info := userinfo(t, app, accessTokenFor(t, app, "openid"))
+	if v, ok := info["isAdmin"]; !ok || v != false {
+		t.Errorf("userinfo[isAdmin] = %v (present=%v), want an explicit false", v, ok)
+	}
+}
+
 // A narrow scope yields only the identifiers — no profile/email leakage.
 func TestUserinfo_ScopeGating(t *testing.T) {
 	app, db := newServer(t)
