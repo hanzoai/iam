@@ -1,0 +1,171 @@
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+
+// Package compat serves the Casdoor VERB surface (get-users, get-organizations,
+// …) over iam2's orm store, in the v1 Response envelope. It exists because every
+// live consumer — the console admin BFF, the gateway admin-api, the hanzo.id
+// portal — hard-codes the Casdoor verb spellings and the `{status,data,data2}`
+// envelope, while iam2's native surface is REST (`/v1/iam/users`,
+// `/v1/iam/users/get`). Without these aliases a backend swap 404s every console
+// IAM page. The aliases are a thin routing + envelope layer over the SAME orm
+// store and the SAME schema.Mask redaction the REST handlers use — no CRUD and
+// no redaction is reimplemented here.
+//
+// Authorization is NOT reimplemented either. These paths are not in authz's
+// public allowlist, so the Guard (app.Use, mounted first) authenticates every
+// request AND authorizes the read against the exact (owner, name) it addresses —
+// resolved by the same authz.ReadTarget the handlers use, so a handler can never
+// reach a row the Guard did not authorize. Each handler then re-scopes the query
+// owner through authz.Scope: a SuperAdmin may list any owner (empty = all
+// tenants), everyone else is pinned to their own org, so a request parameter can
+// never widen a read past the caller's authority.
+package compat
+
+import (
+	"errors"
+	"strconv"
+
+	"github.com/hanzoai/orm"
+	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam2/internal/authz"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
+)
+
+// Mount registers the Casdoor read-verb aliases. The mask argument is the
+// entity's schema.Mask method (the ONE redaction contract) for entities that
+// carry secrets, or nil for those that do not — nil means "no field to strip",
+// not "skip a needed redaction". Writes ride a companion file.
+func Mount(app *zip.App, db orm.DB) {
+	// List reads — `?owner=&p=&pageSize=` (Casdoor shape). Owner-scoped by authz.
+	app.Get("/v1/iam/get-organizations", listHandler(db, (*schema.Organization).Mask))
+	app.Get("/v1/iam/get-users", listHandler(db, (*schema.User).Mask))
+	app.Get("/v1/iam/get-global-users", listHandler(db, (*schema.User).Mask))
+	app.Get("/v1/iam/get-applications", listHandler(db, (*schema.Application).Mask))
+	app.Get("/v1/iam/get-providers", listHandler(db, (*schema.Provider).Mask))
+	app.Get("/v1/iam/get-certs", listHandler(db, (*schema.Cert).Mask))
+	app.Get("/v1/iam/get-roles", listHandler[schema.Role](db, nil))
+	app.Get("/v1/iam/get-permissions", listHandler[schema.Permission](db, nil))
+	app.Get("/v1/iam/get-invitations", listHandler[schema.Invitation](db, nil))
+	app.Get("/v1/iam/get-records", listHandler[schema.AuditLog](db, nil))
+
+	// Single reads — `?id=<owner>/<name>` (or `?owner=&name=`).
+	app.Get("/v1/iam/get-organization", getHandler(db, (*schema.Organization).Mask))
+	app.Get("/v1/iam/get-user", getHandler(db, (*schema.User).Mask))
+	app.Get("/v1/iam/get-application", getHandler(db, (*schema.Application).Mask))
+	app.Get("/v1/iam/get-provider", getHandler(db, (*schema.Provider).Mask))
+	app.Get("/v1/iam/get-cert", getHandler(db, (*schema.Cert).Mask))
+	app.Get("/v1/iam/get-role", getHandler[schema.Role](db, nil))
+	app.Get("/v1/iam/get-permission", getHandler[schema.Permission](db, nil))
+}
+
+// listHandler serves a Casdoor get-<entities> list for one orm kind: it scopes
+// the owner through authz, queries the store, redacts each row via the entity's
+// Mask, and wraps the result in the v1 envelope. Per the v1 contract a list
+// paginates ONLY when BOTH `p` and `pageSize` are present — then the total rides
+// in data2; otherwise the full owner-scoped set is returned with no data2.
+//
+// Scoping note (intentional, fail-closed): iam2's ownership model is mixed —
+// users/roles/permissions are owned by their tenant org, while organizations/
+// applications/providers/certs are platform-owned (Owner "admin"). A SuperAdmin
+// (Scope → the requested owner, empty = all) therefore lists every entity, which
+// is the console-admin path. A non-super is pinned by Scope to its own org, so it
+// lists its tenant-owned entities correctly and is refused the platform-owned
+// lists at the Guard (owner "" or "admin" both deny) — a safe 403, never another
+// tenant's rows. Non-super, membership-scoped views of the platform-owned
+// entities (e.g. an org console's own app list keyed on Application.Organization)
+// are a separate, additive surface, not a silent behavior of this generic lister.
+func listHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
+	return func(c *zip.Ctx) error {
+		ctx := c.Context()
+		owner, err := authz.Scope(ctx, c.Query("owner"))
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+
+		base := func() *orm.ModelQuery[T] {
+			q := orm.TypedQuery[T](db)
+			if owner != "" {
+				q = q.Filter("Owner=", owner)
+			}
+			return q
+		}
+
+		page, size, paginated := pageParams(c)
+		if !paginated {
+			rows, err := base().Order("Name").GetAll(ctx)
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			return httpx.Ok(c, maskAll(rows, mask))
+		}
+
+		total, err := base().Count(ctx)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		rows, err := base().Order("Name").Limit(size).Offset((page - 1) * size).GetAll(ctx)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		return c.JSON(200, httpx.Response{Status: "ok", Data: maskAll(rows, mask), Data2: total})
+	}
+}
+
+// getHandler serves a Casdoor get-<entity> single read. The target is resolved
+// by authz.ReadTarget (the same extraction the Guard authorized with), then the
+// owner is re-scoped through authz.Scope so a non-super can never read another
+// tenant's row even if it spells one in `?id`.
+func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
+	return func(c *zip.Ctx) error {
+		ctx := c.Context()
+		owner, name := authz.ReadTarget(c)
+		if name == "" {
+			return httpx.Err(c, "id (owner/name) or name is required")
+		}
+		scoped, err := authz.Scope(ctx, owner)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		row, err := orm.TypedQuery[T](db).Filter("Owner=", scoped).Filter("Name=", name).First()
+		if errors.Is(err, orm.ErrNotFound) {
+			return httpx.Err(c, "the entity does not exist")
+		}
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		if mask != nil {
+			row = mask(row)
+		}
+		return httpx.Ok(c, row)
+	}
+}
+
+// maskAll redacts every row through the entity's Mask (a no-op when the entity
+// has no secrets, i.e. mask is nil). Mask returns a copy, so the slice is
+// rewritten in place with the masked copies.
+func maskAll[T any](rows []*T, mask func(*T) *T) []*T {
+	if mask == nil {
+		return rows
+	}
+	for i, r := range rows {
+		rows[i] = mask(r)
+	}
+	return rows
+}
+
+// pageParams returns (page, size, paginated). A list paginates ONLY when BOTH
+// `p` and `pageSize` are present and positive; otherwise the caller returns the
+// full set (v1 semantics).
+func pageParams(c *zip.Ctx) (page, size int, paginated bool) {
+	pp, ps := c.Query("p"), c.Query("pageSize")
+	if pp == "" || ps == "" {
+		return 0, 0, false
+	}
+	page, _ = strconv.Atoi(pp)
+	size, _ = strconv.Atoi(ps)
+	if page <= 0 || size <= 0 {
+		return 0, 0, false
+	}
+	return page, size, true
+}

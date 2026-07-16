@@ -22,6 +22,7 @@ import (
 	"github.com/hanzoai/iam2/internal/auditlogs"
 	"github.com/hanzoai/iam2/internal/authz"
 	"github.com/hanzoai/iam2/internal/certs"
+	"github.com/hanzoai/iam2/internal/compat"
 	"github.com/hanzoai/iam2/internal/invitations"
 	"github.com/hanzoai/iam2/internal/keys"
 	"github.com/hanzoai/iam2/internal/oidc"
@@ -71,6 +72,14 @@ func Mount(app *zip.App, db orm.DB) {
 	tokens.Mount(app, db)
 	auditlogs.Mount(app, db)
 	invitations.Mount(app, db)
+
+	// Casdoor verb-alias layer: the get-users / get-organizations / … spellings
+	// (in the v1 {status,data,data2} envelope) every live console/gateway/portal
+	// client hard-codes, served over the SAME store, redaction, and authz as the
+	// REST surface above. This is what makes the backend swap transparent — no
+	// client changes at cutover. Mounted after the entity CRUD so both share the
+	// one Guard/Authorize seam wired at the top.
+	compat.Mount(app, db)
 }
 
 // health is the Phase-1 liveness probe.

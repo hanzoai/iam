@@ -66,8 +66,8 @@ func getAccount(db orm.DB) zip.Handler {
 			Status: "ok",
 			Sub:    claims.Subject,
 			Name:   user.Name,
-			Data:   user.Redact(), // owner + isAdmin survive; every secret stripped
-			Data2:  org.Redact(),  // org master/default passwords masked
+			Data:   user.Mask(), // owner + isAdmin survive; every secret stripped
+			Data2:  org.Mask(),  // org master/default passwords masked
 		})
 	}
 }

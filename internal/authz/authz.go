@@ -149,6 +149,30 @@ func isPublic(path string) bool {
 // body decoded once by the op and is authorized at that seam.
 func isRead(method string) bool { return method == "GET" || method == "HEAD" }
 
+// ReadTarget extracts the (owner, name) a GET addresses, from the query string.
+// A native typed read files them as `?owner=&name=`; the Casdoor compat verbs
+// (get-user, get-organization, …) file them as `?id=<owner>/<name>`. Explicit
+// owner/name win; the id split is a fallback only when owner is absent, so this
+// can only make an id-based read's authorization MORE precise than the empty
+// target it resolves to today (which fail-closed denies every non-super). It
+// never widens: the tenant rule still pins owner to the principal's org, and the
+// handler independently re-scopes the query owner through Scope, so a request
+// that spells one owner in `?owner` and another in `?id` cannot read across
+// tenants — the authorized owner and the queried owner are both pinned.
+//
+// It is exported so the compat read aliases resolve their target through the
+// SAME function the Guard authorizes with: one extraction, so a handler can
+// never address a row the Guard did not authorize.
+func ReadTarget(c *zip.Ctx) (owner, name string) {
+	owner, name = c.Query("owner"), c.Query("name")
+	if owner == "" {
+		if o, n, ok := strings.Cut(c.Query("id"), "/"); ok && o != "" {
+			return o, n
+		}
+	}
+	return owner, name
+}
+
 // Guard is the AUTHENTICATION middleware. Mount it ONCE and FIRST, via app.Use,
 // so it wraps every route — the typed CRUD handlers and the framework's /mcp and
 // /openapi surfaces alike. Public routes pass straight through; every other route
@@ -167,7 +191,8 @@ func Guard(db orm.DB) zip.Handler {
 		if err != nil {
 			return zip.ErrUnauthorized("authentication required")
 		}
-		if isRead(c.Method()) && !authorize(p, c.Method(), entityOf(c.Path()), c.Query("owner"), c.Query("name")) {
+		rOwner, rName := ReadTarget(c)
+		if isRead(c.Method()) && !authorize(p, c.Method(), entityOf(c.Path()), rOwner, rName) {
 			return zip.ErrForbidden("forbidden")
 		}
 		c.SetContext(context.WithValue(c.Context(), ctxKey{}, p))

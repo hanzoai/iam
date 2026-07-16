@@ -91,6 +91,9 @@ func listProviders(db orm.DB) zip.TypedHandler[listProvidersIn, listProvidersOut
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		for i, p := range rows {
+			rows[i] = p.Mask() // never emit clientSecret in a list response
+		}
 		return &listProvidersOut{Providers: rows}, nil
 	}
 }
@@ -105,7 +108,7 @@ func getProvider(db orm.DB) zip.TypedHandler[providerKey, providerResult] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		return &providerResult{Provider: p}, nil
+		return &providerResult{Provider: p.Mask()}, nil
 	}
 }
 
@@ -126,7 +129,7 @@ func addProvider(db orm.DB) zip.TypedHandler[schema.Provider, providerResult] {
 		if err := p.CreateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		return &providerResult{Provider: p}, nil
+		return &providerResult{Provider: p.Mask()}, nil
 	}
 }
 
@@ -153,7 +156,7 @@ func updateProvider(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult]
 		if err := p.UpdateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		return &mutationResult{Affected: true, Provider: p}, nil
+		return &mutationResult{Affected: true, Provider: p.Mask()}, nil
 	}
 }
 
