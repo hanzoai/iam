@@ -167,11 +167,13 @@ func Hash(ctx context.Context, plaintext string) (string, error) {
 //
 // stale is only meaningful when ok is true — never re-hash on a failed guess.
 // It is true when the digest is not argon2id (bcrypt, which we are retiring),
-// or when it is argon2id weaker than current policy. It is deliberately NOT
-// "the parameters differ from policy": the live v1 rows are m=65536,t=1,p=2
-// (64 MiB), which is *stronger* than our m=19456,t=2,p=1 baseline, and
-// re-hashing those to policy would weaken 85 accounts in the name of an
-// upgrade. See stale() for the comparison.
+// or when it is argon2id below the ACCEPTANCE FLOOR — not when it is merely
+// weaker than what we mint. Those differ, and the gap is load-bearing: three of
+// OWASP's five equivalent sets sit under our mint cost of 38912 but above the
+// floor of 35840, and are correctly left alone. It is likewise NOT "the
+// parameters differ from policy": the live v1 rows are m=65536,t=1,p=2 (64 MiB),
+// *stronger* than our m=19456,t=2,p=1 baseline, and re-hashing those to policy
+// would weaken 85 accounts in the name of an upgrade. See weaker().
 func Verify(ctx context.Context, digest, plaintext string) (ok, stale bool) {
 	switch Scheme(digest) {
 	case SchemeArgon2id:
