@@ -212,7 +212,7 @@ func weaker(memory, time uint32) bool {
 func parse(digest string) (memory, time uint32, threads uint8, salt, key []byte, err error) {
 	// A leading "$" makes the first field empty, hence 6.
 	parts := strings.Split(digest, "$")
-	if len(parts) != 6 || parts[1] != "argon2id" {
+	if len(parts) != 6 || parts[1] != SchemeArgon2id {
 		return 0, 0, 0, nil, nil, errors.New("password: not an argon2id digest")
 	}
 
