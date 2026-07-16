@@ -120,7 +120,7 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	if err := entity.CreateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	return masked(entity), nil
+	return entity.Mask(), nil
 }
 
 // Get resolves one organization by (owner, name).
@@ -135,7 +135,7 @@ func (h *OrganizationAPI) Get(ctx context.Context, in *GetOrganizationInput) (*s
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	return masked(org), nil
+	return org.Mask(), nil
 }
 
 // List returns organizations newest-first, optionally scoped by owner and paged.
@@ -154,8 +154,8 @@ func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) 
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	for _, o := range orgs {
-		masked(o)
+	for i, o := range orgs {
+		orgs[i] = o.Mask()
 	}
 	return &ListOrganizationsOutput{Organizations: orgs, Count: len(orgs)}, nil
 }
@@ -185,7 +185,7 @@ func (h *OrganizationAPI) Update(ctx context.Context, in *UpdateOrganizationInpu
 	if err := existing.UpdateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	return masked(existing), nil
+	return existing.Mask(), nil
 }
 
 // Delete removes an organization. The built-in admin organization is protected.
@@ -217,9 +217,3 @@ func (h *OrganizationAPI) find(owner, name string) (*schema.Organization, error)
 		Filter("Name=", name).
 		First()
 }
-
-// masked blanks secret material before an organization leaves the service,
-// mirroring the v1 read-path masking.
-// masked delegates to the ONE canonical schema.Organization.Redact() so there
-// is a single org secret-mask definition shared with get-account.
-func masked(o *schema.Organization) *schema.Organization { return o.Redact() }

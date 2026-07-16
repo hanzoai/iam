@@ -76,7 +76,7 @@ func TestGetAccount_AnonymousIsErrorNotLeak(t *testing.T) {
 
 // Redact keeps the admin-guard fields (owner, isAdmin) while stripping every
 // secret — the invariant get-account relies on. Unit-level, no db/login flow.
-func TestUserRedact_KeepsAdminFieldsStripsSecrets(t *testing.T) {
+func TestUserMask_KeepsAdminFieldsStripsSecrets(t *testing.T) {
 	u := &schema.User{
 		Owner:        "admin",
 		Name:         "root",
@@ -86,14 +86,16 @@ func TestUserRedact_KeepsAdminFieldsStripsSecrets(t *testing.T) {
 		AccessSecret: "sk_live_abc",
 		TotpSecret:   "JBSWY3DPEHPK3PXP",
 	}
-	got := u.Redact()
+	got := u.Mask()
 	if got.Owner != "admin" || !got.IsAdmin {
-		t.Errorf("Redact dropped an admin-guard field: owner=%q isAdmin=%v", got.Owner, got.IsAdmin)
+		t.Errorf("Mask dropped an admin-guard field: owner=%q isAdmin=%v", got.Owner, got.IsAdmin)
 	}
 	if got.PasswordHash != "" || got.PasswordSalt != "" || got.AccessSecret != "" || got.TotpSecret != "" {
-		t.Errorf("Redact left a secret: %+v", got)
+		t.Errorf("Mask left a secret: %+v", got)
 	}
-	if u.PasswordHash != "" { // in place
-		t.Errorf("Redact must strip in place, original still has PasswordHash")
+	// Mask returns a COPY — the login-verify path must still see the live hash on
+	// the original row, so masking a response can never blank it.
+	if u.PasswordHash == "" {
+		t.Errorf("Mask must NOT mutate the receiver, but the original's PasswordHash was cleared")
 	}
 }

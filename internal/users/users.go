@@ -7,8 +7,9 @@
 // This is the authentication entity, so the credential invariant is absolute:
 // the plaintext password rides in on the create/update request, is hashed with
 // bcrypt exactly once, and is discarded. Only the one-way digest reaches the
-// store (schema.User.PasswordHash, json:"-"), and no response ever carries the
-// digest or any other secret material — reads pass through redact() first.
+// store, and no response ever carries the digest or any other secret material —
+// every user returned here passes through schema.User.Mask() (internal/schema/
+// mask.go), the single redaction contract shared with the compat aliases.
 package users
 
 import (
@@ -132,7 +133,7 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	if err := u.Create(); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	return view(u), nil
+	return u.Mask(), nil
 }
 
 // Get returns one user by (owner, name), redacted.
@@ -144,7 +145,7 @@ func (a *API) Get(ctx context.Context, in *Ref) (*schema.User, error) {
 	if u == nil {
 		return nil, zip.ErrNotFound("user " + in.Owner + "/" + in.Name + " not found")
 	}
-	return view(u), nil
+	return u.Mask(), nil
 }
 
 // List returns a redacted page of users within one owner.
@@ -168,8 +169,8 @@ func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	for _, u := range list {
-		redact(u)
+	for i, u := range list {
+		list[i] = u.Mask()
 	}
 	return &ListOutput{Users: list, Total: total}, nil
 }
@@ -216,7 +217,7 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	if err := u.Update(); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	return view(u), nil
+	return u.Mask(), nil
 }
 
 // Delete removes a user by (owner, name).
@@ -277,17 +278,6 @@ func VerifyPassword(u *schema.User, plaintext, orgPasswordType string) bool {
 	}
 	return cred.Verify(cred.Resolve(u.PasswordType, orgPasswordType), plaintext, u.PasswordHash)
 }
-
-// view redacts u in place and returns it, ready to serialize.
-func view(u *schema.User) *schema.User {
-	redact(u)
-	return u
-}
-
-// redact strips every secret/bearer field from a user before it is returned.
-// Delegates to the ONE canonical schema.User.Redact() so there is a single
-// secret-strip definition shared with get-account and every other caller.
-func redact(u *schema.User) { u.Redact() }
 
 // nowRFC3339 is the single timestamp format for v1-compatible string times.
 func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }
