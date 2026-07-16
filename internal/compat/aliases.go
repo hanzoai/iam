@@ -57,6 +57,9 @@ func Mount(app *zip.App, db orm.DB) {
 	app.Get("/v1/iam/get-cert", getHandler(db, (*schema.Cert).Mask))
 	app.Get("/v1/iam/get-role", getHandler[schema.Role](db, nil))
 	app.Get("/v1/iam/get-permission", getHandler[schema.Permission](db, nil))
+
+	// The Casdoor WRITE verbs (companion file), over the same store + authz seam.
+	mountWrites(app, db)
 }
 
 // listHandler serves a Casdoor get-<entities> list for one orm kind: it scopes

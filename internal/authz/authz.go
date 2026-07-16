@@ -132,6 +132,20 @@ var publicPaths = map[string]bool{
 	"/v1/iam/issue-user-token":                 true, // confidential-client auth (Basic + allow-list), not a bearer
 	"/v1/iam/mint-user-keys":                   true, // confidential-client auth (same seam as issue-user-token)
 	"/v1/iam/revoke-user-keys":                 true, // confidential-client auth (same seam as issue-user-token)
+	// The front-door session/identity surface (oidc.MountFrontDoor). Each handler
+	// RESOLVES the caller itself (callerOf: session cookie first, then bearer) and
+	// SELF-SCOPES to that caller — so, like get-account, they are reachable without a
+	// Guard-verified bearer (the portal + gateway admin-guard call them with a session
+	// cookie) yet never act on anyone but the resolved caller. signup and
+	// send-verification-code are pre-authentication by nature (no token exists yet).
+	"/v1/iam/get-account":            true, // anonymous-safe account read (admin-guard contract)
+	"/v1/iam/signup":                 true, // pre-auth account creation (own policy checks)
+	"/v1/iam/send-verification-code": true, // pre-auth OTP send
+	"/v1/iam/signin":                 true, // code→session exchange (the code is the credential)
+	"/v1/iam/whoami":                 true, // lightweight caller identity (self-resolving)
+	"/v1/iam/onboard":                true, // first-run org onboarding (self-move only)
+	"/v1/iam/update-preferences":     true, // self preferences (writes only the caller's row)
+	"/v1/iam/linked-accounts":        true, // the caller's own linked identities
 }
 
 // isPublic reports whether path is in the public allowlist. A trailing slash is

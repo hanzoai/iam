@@ -62,13 +62,13 @@ func TestVerify_CrossSchemeFailsClosed(t *testing.T) {
 // TestVerify_FailsClosedOnGarbage — unknown type, empty hash, malformed digest.
 func TestVerify_FailsClosedOnGarbage(t *testing.T) {
 	cases := []struct{ typ, pw, hash string }{
-		{"", "pw", "$argon2id$v=19$whatever"},          // no type
-		{"sha256-salt", "pw", "deadbeef"},              // unsupported legacy type
-		{"plain", "pw", "pw"},                          // plaintext scheme: refused
-		{TypeArgon2id, "pw", ""},                       // empty hash
-		{TypeArgon2id, "pw", "not-a-phc-string"},       // malformed
-		{TypeBcrypt, "pw", "$2a$garbage"},              // malformed bcrypt
-		{"ARGON2ID", "pw", "$argon2id$v=19$x"},         // case-sensitive: not supported
+		{"", "pw", "$argon2id$v=19$whatever"},    // no type
+		{"sha256-salt", "pw", "deadbeef"},        // unsupported legacy type
+		{"plain", "pw", "pw"},                    // plaintext scheme: refused
+		{TypeArgon2id, "pw", ""},                 // empty hash
+		{TypeArgon2id, "pw", "not-a-phc-string"}, // malformed
+		{TypeBcrypt, "pw", "$2a$garbage"},        // malformed bcrypt
+		{"ARGON2ID", "pw", "$argon2id$v=19$x"},   // case-sensitive: not supported
 	}
 	for _, c := range cases {
 		if Verify(c.typ, c.pw, c.hash) {

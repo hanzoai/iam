@@ -54,9 +54,9 @@ func Mount(app *zip.App, db orm.DB) {
 		zip.WithSummary("List applications for an owner"), zip.WithTags("applications"))
 	zip.Get(app, "/v1/iam/application", getApplication(db),
 		zip.WithSummary("Get one application by owner and name"), zip.WithTags("applications"))
-	zip.Post(app, "/v1/iam/application", createApplication(db),
+	zip.Post(app, "/v1/iam/application", Create(db),
 		zip.WithSummary("Create an application"), zip.WithTags("applications"))
-	zip.Put(app, "/v1/iam/application", updateApplication(db),
+	zip.Put(app, "/v1/iam/application", Update(db),
 		zip.WithSummary("Update an application"), zip.WithTags("applications"))
 	zip.Delete(app, "/v1/iam/application", deleteApplication(db),
 		zip.WithSummary("Delete an application"), zip.WithTags("applications"))
@@ -101,9 +101,11 @@ func getApplication(db orm.DB) zip.TypedHandler[ApplicationRef, schema.Applicati
 	}
 }
 
-// createApplication persists a new application under (in.Owner, in.Name),
-// rejecting a collision on that owner-scoped key.
-func createApplication(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] {
+// Create persists a new application under (in.Owner, in.Name), rejecting a
+// collision on that owner-scoped key. Exported so the Casdoor add-application
+// alias reuses this exact logic (no duplication); the REST route and the alias
+// share the one create path.
+func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] {
 	return func(ctx context.Context, in *schema.Application) (*schema.Application, error) {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
@@ -127,10 +129,11 @@ func createApplication(db orm.DB) zip.TypedHandler[schema.Application, schema.Ap
 	}
 }
 
-// updateApplication overwrites the application at (in.Owner, in.Name),
-// preserving its immutable creation metadata. The (owner, name) identity is
-// fixed by the URL of the record, not editable through the body.
-func updateApplication(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] {
+// Update overwrites the application at (in.Owner, in.Name), preserving its
+// immutable creation metadata. The (owner, name) identity is fixed by the record,
+// not editable through the body. Exported so the Casdoor update-application alias
+// reuses this exact logic (no duplication).
+func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] {
 	return func(ctx context.Context, in *schema.Application) (*schema.Application, error) {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")

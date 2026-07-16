@@ -78,9 +78,9 @@ func newHarness(t *testing.T) *harness {
 
 	// Secret-bearing rows: every one carries a sentinel that must never surface.
 	// users already seeded carry a password hash sentinel (set in seedUser).
-	seedOrg(t, db, "hanzo")             // Owner="admin", Name="hanzo", MasterPassword sentinel
-	seedApp(t, db, "hanzo-console")     // Owner="admin", ClientSecret sentinel
-	seedProvider(t, db, "provider-gh")  // Owner="admin", ClientSecret sentinel
+	seedOrg(t, db, "hanzo")            // Owner="admin", Name="hanzo", MasterPassword sentinel
+	seedApp(t, db, "hanzo-console")    // Owner="admin", ClientSecret sentinel
+	seedProvider(t, db, "provider-gh") // Owner="admin", ClientSecret sentinel
 
 	app := zip.New(zip.Config{AppName: "compat-test", DisableStartupMessage: true})
 	routes.Mount(app, db)

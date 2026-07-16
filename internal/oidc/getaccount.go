@@ -45,25 +45,36 @@ func getAccount(db orm.DB) zip.Handler {
 		if !ok {
 			return c.JSON(200, accountResponse{Status: "error", Msg: "please sign in first"})
 		}
-		user, err := store.GetUserByName(ctx, db, owner, name)
-		if err != nil {
-			return c.JSON(500, accountResponse{Status: "error", Msg: "server_error"})
-		}
-		if user == nil {
-			return c.JSON(200, accountResponse{Status: "error", Msg: "the user does not exist"})
-		}
-		org, err := store.GetOrganizationByName(ctx, db, user.Owner)
-		if err != nil {
-			return c.JSON(500, accountResponse{Status: "error", Msg: "server_error"})
-		}
-		return c.JSON(200, accountResponse{
-			Status: "ok",
-			Sub:    owner + "/" + name,
-			Name:   user.Name,
-			Data:   user.Mask(), // owner + isAdmin survive; every secret stripped
-			Data2:  org.Mask(),  // org master/default passwords masked
-		})
+		env, status := accountEnvelopeFor(ctx, db, owner, name)
+		return c.JSON(status, env)
 	}
+}
+
+// accountEnvelopeFor builds the get-account envelope for an already-resolved
+// caller: the REDACTED user + organization in the casibase shape, or an error
+// envelope when the user or org lookup fails. It is the ONE place the account
+// envelope is assembled, shared by get-account and signin (the code→session
+// exchange), so the two can never drift. status is the HTTP code to return with
+// it (200 for both ok and the casibase "error" convention, 500 on a store fault).
+func accountEnvelopeFor(ctx context.Context, db orm.DB, owner, name string) (accountResponse, int) {
+	user, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil {
+		return accountResponse{Status: "error", Msg: "server_error"}, 500
+	}
+	if user == nil {
+		return accountResponse{Status: "error", Msg: "the user does not exist"}, 200
+	}
+	org, err := store.GetOrganizationByName(ctx, db, user.Owner)
+	if err != nil {
+		return accountResponse{Status: "error", Msg: "server_error"}, 500
+	}
+	return accountResponse{
+		Status: "ok",
+		Sub:    owner + "/" + name,
+		Name:   user.Name,
+		Data:   user.Mask(), // owner + isAdmin survive; every secret stripped
+		Data2:  org.Mask(),  // org master/default passwords masked
+	}, 200
 }
 
 // callerOf resolves the signed-in principal by SESSION COOKIE first (the portal
