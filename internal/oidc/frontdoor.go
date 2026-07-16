@@ -27,6 +27,9 @@ const (
 func MountFrontDoor(app *zip.App, db orm.DB) {
 	app.Get(PathGetAppLogin, getAppLogin(db))
 	app.Get(PathAuthMethods, authMethods(db))
+	// get-account is anonymous-safe (returns {status:"error"} unauthenticated)
+	// and a security contract — the gateway admin-guard reads its `owner`.
+	app.Get(PathGetAccount, getAccount(db))
 }
 
 // getAppLogin resolves an application by clientId and returns it with the

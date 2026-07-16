@@ -220,21 +220,6 @@ func (h *OrganizationAPI) find(owner, name string) (*schema.Organization, error)
 
 // masked blanks secret material before an organization leaves the service,
 // mirroring the v1 read-path masking.
-func masked(o *schema.Organization) *schema.Organization {
-	if o == nil {
-		return nil
-	}
-	for _, secret := range []*string{
-		&o.MasterPassword,
-		&o.DefaultPassword,
-		&o.MasterVerificationCode,
-		&o.PasswordSalt,
-		&o.PasswordObfuscatorKey,
-		&o.KerberosKeytab,
-	} {
-		if *secret != "" {
-			*secret = "***"
-		}
-	}
-	return o
-}
+// masked delegates to the ONE canonical schema.Organization.Redact() so there
+// is a single org secret-mask definition shared with get-account.
+func masked(o *schema.Organization) *schema.Organization { return o.Redact() }

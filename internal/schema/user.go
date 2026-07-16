@@ -314,3 +314,35 @@ type ConsentRecord struct {
 	Application   string   `json:"application,omitempty"`
 	GrantedScopes []string `json:"grantedScopes,omitempty"`
 }
+
+// Redact strips every secret/bearer field from a User in place and returns it,
+// ready to serialize in any response (get-account, users API, …). The ONE
+// canonical secret-strip for a User — callers never hand-roll their own. Owner,
+// Name, IsAdmin and the rest of the public profile survive.
+func (u *User) Redact() *User {
+	if u == nil {
+		return nil
+	}
+	u.PasswordHash = ""
+	u.PasswordSalt = ""
+	u.AccessSecret = ""
+	u.AccessSecretHash = ""
+	u.AccessToken = ""
+	u.OriginalToken = ""
+	u.OriginalRefreshToken = ""
+	u.TotpSecret = ""
+	u.RecoveryCodes = nil
+	for i := range u.ManagedAccounts {
+		u.ManagedAccounts[i].Password = ""
+	}
+	for i := range u.MfaAccounts {
+		u.MfaAccounts[i].SecretKey = ""
+	}
+	for _, m := range u.MultiFactorAuths {
+		if m != nil {
+			m.Secret = ""
+			m.RecoveryCodes = nil
+		}
+	}
+	return u
+}
