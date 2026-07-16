@@ -70,7 +70,7 @@ func TestCheckMfaEnable_MfaUserIsChallenged(t *testing.T) {
 		Owner:            "hanzo",
 		Name:             "alice",
 		Email:            "alice@corp.example",
-		PreferredMfaType: object.TotpType,   // → IsMfaEnabled() == true
+		PreferredMfaType: object.TotpType,    // → IsMfaEnabled() == true
 		TotpSecret:       "JBSWY3DPEHPK3PXP", // enabled TOTP factor
 	}
 	org := &object.Organization{Owner: "admin", Name: "hanzo"}
