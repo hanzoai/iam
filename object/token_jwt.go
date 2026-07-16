@@ -41,6 +41,12 @@ type Claims struct {
 	// (empty ⟹ default scope ⟹ header omitted). Resolved once at mint time and
 	// threaded into every token format alongside `organization`.
 	Project string `json:"project,omitempty"`
+	// BillingAccount is the signed `billing_account` claim — IAM's authoritative
+	// statement of who pays (see billing_account.go). Resolved once at mint time
+	// and threaded into every token format, exactly like Project. It is ALSO the
+	// parse target: this Claims struct is what ParseJwtToken decodes into, so a
+	// downstream reader (ai/object.Payer) reads the claim straight off it.
+	BillingAccount string `json:"billing_account,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -110,12 +116,14 @@ type ClaimsShort struct {
 	// alias lets consumers read either, identically across every token format.
 	Organization string `json:"organization,omitempty"`
 	// Project is the org's default project; see Claims.Project.
-	Project   string `json:"project,omitempty"`
-	TokenType string `json:"tokenType,omitempty"`
-	Nonce     string `json:"nonce,omitempty"`
-	Scope     string `json:"scope,omitempty"`
-	Azp       string `json:"azp,omitempty"`
-	Provider  string `json:"provider,omitempty"`
+	Project string `json:"project,omitempty"`
+	// BillingAccount is the signed `billing_account` claim; see Claims.BillingAccount.
+	BillingAccount string `json:"billing_account,omitempty"`
+	TokenType      string `json:"tokenType,omitempty"`
+	Nonce          string `json:"nonce,omitempty"`
+	Scope          string `json:"scope,omitempty"`
+	Azp            string `json:"azp,omitempty"`
+	Provider       string `json:"provider,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -135,13 +143,15 @@ type ClaimsWithoutThirdIdp struct {
 	// Organization mirrors the embedded user's `owner` (see ClaimsShort).
 	Organization string `json:"organization,omitempty"`
 	// Project is the org's default project; see Claims.Project.
-	Project   string `json:"project,omitempty"`
-	TokenType string `json:"tokenType,omitempty"`
-	Nonce     string `json:"nonce,omitempty"`
-	Tag       string `json:"tag"`
-	Scope     string `json:"scope,omitempty"`
-	Azp       string `json:"azp,omitempty"`
-	Provider  string `json:"provider,omitempty"`
+	Project string `json:"project,omitempty"`
+	// BillingAccount is the signed `billing_account` claim; see Claims.BillingAccount.
+	BillingAccount string `json:"billing_account,omitempty"`
+	TokenType      string `json:"tokenType,omitempty"`
+	Nonce          string `json:"nonce,omitempty"`
+	Tag            string `json:"tag"`
+	Scope          string `json:"scope,omitempty"`
+	Azp            string `json:"azp,omitempty"`
+	Provider       string `json:"provider,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -261,6 +271,7 @@ func getShortClaims(claims Claims) ClaimsShort {
 		UserShort:        getShortUser(claims.User),
 		Organization:     claims.User.Owner,
 		Project:          claims.Project,
+		BillingAccount:   claims.BillingAccount,
 		TokenType:        claims.TokenType,
 		Nonce:            claims.Nonce,
 		Scope:            claims.Scope,
@@ -277,6 +288,7 @@ func getClaimsWithoutThirdIdp(claims Claims) ClaimsWithoutThirdIdp {
 		UserWithoutThirdIdp: getUserWithoutThirdIdp(claims.User),
 		Organization:        claims.User.Owner,
 		Project:             claims.Project,
+		BillingAccount:      claims.BillingAccount,
 		TokenType:           claims.TokenType,
 		Nonce:               claims.Nonce,
 		Tag:                 claims.Tag,
@@ -367,6 +379,15 @@ func getClaimsCustom(claims Claims, tokenField []string, tokenAttributes []*JwtI
 	// formats and matches how `owner`/`organization` ride here for JWT-Custom).
 	if claims.Project != "" {
 		res["project"] = claims.Project
+	}
+
+	// Always include the billing_account claim — the signed statement of who pays
+	// (billing_account.go). Like `owner`, it rides independent of the application's
+	// selected token fields: JWT-Custom emits only explicitly-selected fields, so
+	// the payer would otherwise be dropped here and every JWT-Custom app would fall
+	// back to Payer's legacy inference. Omitted when empty (unattributable).
+	if claims.BillingAccount != "" {
+		res["billing_account"] = claims.BillingAccount
 	}
 
 	// Always include azp if present (authorized party)
@@ -544,12 +565,18 @@ func generateJwtToken(application *Application, user *User, provider string, sig
 		TokenType: "access-token",
 		Nonce:     nonce,
 		// FIXME: A workaround for custom claim by reusing `tag` in user info
-		Tag:          user.Tag,
-		Scope:        scope,
-		Azp:          application.ClientId,
-		Provider:     provider,
-		Project:      project,
-		SigninMethod: signinMethod,
+		Tag:      user.Tag,
+		Scope:    scope,
+		Azp:      application.ClientId,
+		Provider: provider,
+		Project:  project,
+		// Who pays, stated authoritatively at the identity boundary. This is the ONE
+		// mint site: it reads the REAL grant context (the client_credentials shape,
+		// the signup org, the project scope) rather than any user-writable field, so
+		// a downstream reader never has to infer the payer — and a forged User.Type
+		// can no longer name the org pool. See billing_account.go.
+		BillingAccount: billingAccountClaim(user, application, provider, signinMethod, project),
+		SigninMethod:   signinMethod,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
 			Subject:   user.Id,
