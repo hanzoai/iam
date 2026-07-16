@@ -76,6 +76,9 @@ func listApplications(db orm.DB) zip.TypedHandler[ApplicationQuery, ApplicationL
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		for i, app := range apps {
+			apps[i] = app.Mask() // never emit clientSecret in a list response
+		}
 		return &ApplicationListResult{Applications: apps}, nil
 	}
 }
@@ -94,7 +97,7 @@ func getApplication(db orm.DB) zip.TypedHandler[ApplicationRef, schema.Applicati
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		return app, nil
+		return app.Mask(), nil
 	}
 }
 
@@ -120,7 +123,7 @@ func createApplication(db orm.DB) zip.TypedHandler[schema.Application, schema.Ap
 		if err := in.Create(); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		return in, nil
+		return in.Mask(), nil
 	}
 }
 
@@ -149,7 +152,7 @@ func updateApplication(db orm.DB) zip.TypedHandler[schema.Application, schema.Ap
 		if err := in.Update(); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		return in, nil
+		return in.Mask(), nil
 	}
 }
 
