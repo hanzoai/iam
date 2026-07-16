@@ -193,6 +193,24 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 	return owner, name
 }
 
+// handlerAuthorizedPrefixes are path subtrees whose target rides in the PATH, not
+// the query — the Guard authenticates them (a bearer is still required) but does
+// NOT pre-authorize the read; the handler authorizes on the path id via
+// authz.Scope. SCIM (RFC 7644, /v1/iam/scim/v2/Users/{id}) is path-targeted, so it
+// belongs here. This is the read analogue of a write deferring to the op-invoke
+// seam — the target is authorized where it is bound, not guessed from the query.
+var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/"}
+
+// pathAuthorized reports whether path is under a handler-authorized subtree.
+func pathAuthorized(path string) bool {
+	for _, p := range handlerAuthorizedPrefixes {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // Guard is the AUTHENTICATION middleware. Mount it ONCE and FIRST, via app.Use,
 // so it wraps every route — the typed CRUD handlers and the framework's /mcp and
 // /openapi surfaces alike. Public routes pass straight through; every other route
@@ -211,9 +229,17 @@ func Guard(db orm.DB) zip.Handler {
 		if err != nil {
 			return zip.ErrUnauthorized("authentication required")
 		}
-		rOwner, rName := ReadTarget(c)
-		if isRead(c.Method()) && !authorize(p, c.Method(), entityOf(c.Path()), rOwner, rName) {
-			return zip.ErrForbidden("forbidden")
+		// A path-targeted resource (SCIM: /Users/{id}) carries its target in the
+		// PATH, not the query — so, like a write whose target rides in the body, the
+		// Guard authenticates (bearer required, principal attached) and the handler
+		// authorizes via authz.Scope on the path id. The Guard never authorizes an
+		// empty query target for these (which would fail-closed deny every non-super
+		// before the handler could scope). Every other read is authorized here.
+		if !pathAuthorized(c.Path()) {
+			rOwner, rName := ReadTarget(c)
+			if isRead(c.Method()) && !authorize(p, c.Method(), entityOf(c.Path()), rOwner, rName) {
+				return zip.ErrForbidden("forbidden")
+			}
 		}
 		c.SetContext(context.WithValue(c.Context(), ctxKey{}, p))
 		return c.Continue()

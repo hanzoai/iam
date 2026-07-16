@@ -30,6 +30,7 @@ import (
 	"github.com/hanzoai/iam2/internal/permission"
 	"github.com/hanzoai/iam2/internal/providers"
 	"github.com/hanzoai/iam2/internal/roles"
+	"github.com/hanzoai/iam2/internal/scim"
 	"github.com/hanzoai/iam2/internal/sessions"
 	"github.com/hanzoai/iam2/internal/tokens"
 	"github.com/hanzoai/iam2/internal/users"
@@ -80,6 +81,11 @@ func Mount(app *zip.App, db orm.DB) {
 	// client changes at cutover. Mounted after the entity CRUD so both share the
 	// one Guard/Authorize seam wired at the top.
 	compat.Mount(app, db)
+
+	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface that
+	// replaces the Casdoor entity verbs (HIP-0111). Authenticated by the Guard;
+	// each handler owner-scopes via authz.Scope on the path target.
+	scim.Mount(app, db)
 }
 
 // health is the Phase-1 liveness probe.
