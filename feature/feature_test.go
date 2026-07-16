@@ -40,6 +40,9 @@ func (nopStore) GetOrganization(context.Context, string) (*model.Organization, e
 	return nil, nil
 }
 func (nopStore) GetCert(context.Context, string, string) (*model.Cert, error) { return nil, nil }
+func (nopStore) GetProvider(context.Context, string, string) (*model.Provider, error) {
+	return nil, nil
+}
 func (nopStore) SetPassword(context.Context, string, string, string) (bool, error) {
 	return true, nil
 }

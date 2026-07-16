@@ -27,6 +27,10 @@ type Store interface {
 	DeleteUser(ctx context.Context, owner, name string) (bool, error)
 	GetApplication(ctx context.Context, id string) (*model.Application, error)
 	GetOrganization(ctx context.Context, name string) (*model.Organization, error)
+	// GetProvider resolves an identity provider by (owner, name) — the SP-inbound
+	// SAML/OAuth surface (a user signing in through a corporate IdP where Hanzo is
+	// the Service Provider). SAML SP-initiated login reads its IdP config from here.
+	GetProvider(ctx context.Context, owner, name string) (*model.Provider, error)
 	// GetCert resolves a signing cert by (owner, name) — SAML metadata signing, etc.
 	GetCert(ctx context.Context, owner, name string) (*model.Cert, error)
 	// SetPassword sets a user's password: the core hashes the plaintext exactly

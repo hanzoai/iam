@@ -87,6 +87,10 @@ func (s *ormStore) GetOrganization(ctx context.Context, name string) (*model.Org
 	return store.GetOrganizationByName(ctx, s.db, name)
 }
 
+func (s *ormStore) GetProvider(ctx context.Context, owner, name string) (*model.Provider, error) {
+	return store.GetProvider(ctx, s.db, owner, name)
+}
+
 func (s *ormStore) GetCert(ctx context.Context, owner, name string) (*model.Cert, error) {
 	return store.GetCert(ctx, s.db, owner, name)
 }

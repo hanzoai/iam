@@ -12,4 +12,5 @@ type (
 	Application  = schema.Application
 	Organization = schema.Organization
 	Cert         = schema.Cert
+	Provider     = schema.Provider
 )
