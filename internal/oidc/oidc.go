@@ -60,6 +60,11 @@ func Mount(app *zip.App, db orm.DB) {
 	MountToken(app, db)
 	MountLogin(app, db)
 	MountFrontDoor(app, db)
+
+	// The confidential-client "act on behalf of a user" primitive (the console +
+	// keyless-AI proxies mint their forwarded bearer here). Authenticates the
+	// client itself, so it is not Bearer-gated.
+	MountIssueToken(app, db)
 }
 
 // Discovery serves the OIDC discovery document, host-relative (issuer derived

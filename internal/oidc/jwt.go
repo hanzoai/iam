@@ -139,6 +139,46 @@ func (s *Signer) Sign(app *schema.Application, userID, email, name, scope string
 	return s.signClaims(claims)
 }
 
+// SignUserToken mints an access token a confidential client issues ON BEHALF OF a
+// target user — the issue-user-token primitive. Unlike Sign (which stamps the
+// APP's org as the owner claim), every authority claim here is the TARGET USER's:
+// the subject and owner are the user's, so a resource server that scopes on the
+// validated `owner` claim (cloud's SanitizeIdentity) scopes to the USER's tenant,
+// never the minting client's. `aud` is the caller-resolved audience (an explicit
+// RFC 8707 resource, else the user's own app) and `azp` records the minting
+// client. Signed under this signer's trusted cert + canonical issuer, so the same
+// JWKS verifies it — the token is indistinguishable from one the user obtained
+// directly, which is the point. The Signer stays decoupled from schema.User: the
+// handler resolves and passes the values it authorized.
+func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, scope string, ttl time.Duration, now time.Time) (string, error) {
+	if s == nil {
+		return "", errors.New("jwt: nil signer")
+	}
+	jti, err := newOpaqueToken()
+	if err != nil {
+		return "", err
+	}
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    s.issuer,
+			Subject:   subject,
+			Audience:  jwt.ClaimStrings{aud},
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+			NotBefore: jwt.NewNumericDate(now),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ID:        jti,
+		},
+		Scope:        scope,
+		Owner:        owner,
+		Organization: owner,
+		Email:        email,
+		Name:         name,
+		Azp:          azp,
+		TokenType:    "access-token",
+	}
+	return s.signClaims(claims)
+}
+
 // SignID issues an OIDC id_token for (app, user). It differs from the access
 // token by carrying the echoed nonce and by declaring tokenType "id-token"; the
 // audience is the client the token was minted for (the RP), and iss matches the
