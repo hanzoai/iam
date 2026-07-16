@@ -25,10 +25,12 @@ const (
 	PathToken       = "/v1/iam/oauth/token"
 	PathUserInfo    = "/v1/iam/oauth/userinfo"
 	PathLogout      = "/v1/iam/oauth/logout"
-	PathJWKS        = "/v1/iam/.well-known/jwks"
-	PathJWKSRoot    = "/.well-known/jwks"
-	PathDiscovery   = "/.well-known/openid-configuration"
-	PathDiscoveryV1 = "/v1/iam/.well-known/openid-configuration"
+	PathJWKS         = "/v1/iam/.well-known/jwks"
+	PathJWKSRoot     = "/.well-known/jwks"
+	PathDiscovery    = "/.well-known/openid-configuration"
+	PathDiscoveryV1  = "/v1/iam/.well-known/openid-configuration"
+	PathASMetadata   = "/.well-known/oauth-authorization-server"        // RFC 8414 (root)
+	PathASMetadataV1 = "/v1/iam/.well-known/oauth-authorization-server" // RFC 8414 (v1)
 )
 
 // Mount registers the entire OIDC/OAuth2 surface on app, backed by db. This is
@@ -44,6 +46,11 @@ func Mount(app *zip.App, db orm.DB) {
 	jwks := jwksHandler(db)
 	app.Get(PathDiscovery, Discovery)
 	app.Get(PathDiscoveryV1, Discovery)
+	// RFC 8414 OAuth Authorization Server Metadata — the same self-consistent
+	// document at the OAuth well-known path (a superset serves it), so an OAuth-only
+	// client that looks for `oauth-authorization-server` finds the AS too.
+	app.Get(PathASMetadata, Discovery)
+	app.Get(PathASMetadataV1, Discovery)
 	app.Get(PathJWKS, jwks)
 	app.Get(PathJWKSRoot, jwks)
 
@@ -60,6 +67,10 @@ func Mount(app *zip.App, db orm.DB) {
 	MountToken(app, db)
 	MountLogin(app, db)
 	MountFrontDoor(app, db)
+
+	// RFC 7662 introspection + RFC 7009 revocation — the standard token-management
+	// endpoints a resource server / confidential client uses (client-authenticated).
+	MountIntrospectRevoke(app, db)
 
 	// The confidential-client "act on behalf of a user" primitive (the console +
 	// keyless-AI proxies mint their forwarded bearer here). Authenticates the
@@ -79,6 +90,8 @@ func Discovery(c *zip.Ctx) error {
 		"authorization_endpoint":                iss + PathAuthorize,
 		"token_endpoint":                        iss + PathToken,
 		"userinfo_endpoint":                     iss + PathUserInfo,
+		"introspection_endpoint":                iss + PathIntrospect,
+		"revocation_endpoint":                   iss + PathRevoke,
 		"end_session_endpoint":                  iss + PathLogout,
 		"jwks_uri":                              iss + PathJWKS,
 		"response_types_supported":              []string{"code"},
