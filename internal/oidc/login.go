@@ -11,6 +11,7 @@ import (
 
 	"github.com/hanzoai/iam2/internal/httpx"
 	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/sessions"
 	"github.com/hanzoai/iam2/internal/store"
 	"github.com/hanzoai/iam2/internal/users"
 )
@@ -80,10 +81,12 @@ func loginHandler(db orm.DB) zip.Handler {
 
 		userID := user.Owner + "/" + user.Name
 
-		// type=login: a bare portal sign-in. Session issuance lands with the
-		// session layer; for now report success + the user id (the shape the
-		// portal expects for a non-OAuth sign-in).
+		// type=login: a bare portal sign-in. Establish the durable session the
+		// portal + the gateway admin-guard read via get-account, then report the
+		// user id (the shape the portal expects for a non-OAuth sign-in). The
+		// cookie is best-effort — a session failure never blocks a valid login.
 		if f.Type != "code" {
+			_ = sessions.Set(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
 			return httpx.Ok(c, userID)
 		}
 
