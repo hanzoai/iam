@@ -130,6 +130,8 @@ var publicPaths = map[string]bool{
 	"/v1/iam/get-app-login":                    true, // pre-login app config (secrets masked)
 	"/v1/iam/auth/methods":                     true, // pre-login method list
 	"/v1/iam/issue-user-token":                 true, // confidential-client auth (Basic + allow-list), not a bearer
+	"/v1/iam/mint-user-keys":                   true, // confidential-client auth (same seam as issue-user-token)
+	"/v1/iam/revoke-user-keys":                 true, // confidential-client auth (same seam as issue-user-token)
 }
 
 // isPublic reports whether path is in the public allowlist. A trailing slash is
