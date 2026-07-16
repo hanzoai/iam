@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/hanzoai/iam2/internal/httpx"
 	"github.com/hanzoai/iam2/internal/schema"
 	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam2/internal/users"
 )
 
 // The token endpoint: POST /v1/iam/oauth/token. It dispatches the three grant
@@ -42,7 +44,9 @@ type tokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
-// MountToken registers POST /v1/iam/oauth/token.
+// MountToken registers the ONE token endpoint: POST /v1/iam/oauth/token (the
+// RFC 6749 / discovery `token_endpoint`). No legacy `access_token` alias — every
+// client posts to the standard path; the stack is fixed to it, not shimmed.
 func MountToken(app *zip.App, db orm.DB) {
 	app.Post(PathToken, tokenHandler(db))
 }
@@ -88,6 +92,8 @@ func tokenHandler(db orm.DB) zip.Handler {
 			return refreshTokenGrant(c, db)
 		case "client_credentials":
 			return clientCredentialsGrant(c, db)
+		case "password":
+			return passwordGrant(c, db)
 		case "":
 			return tokenError(c, 400, "invalid_request", "grant_type is required")
 		default:
@@ -218,6 +224,85 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		ExpiresIn:   int(ttl.Seconds()),
 		Scope:       scope,
 	})
+}
+
+// passwordGrant issues tokens for a Resource Owner Password Credentials request
+// (RFC 6749 §4.3) — the durable first-party console session (session.ts posts
+// grant_type=password with the confidential client + username/password). It is a
+// TRUSTED flow: confidential clients only (a public client + password grant is a
+// phishing footgun), the app must have password login enabled, and the password
+// is verified through the SAME algorithm-aware, per-row path the login form uses
+// (argon2id for every live v1 row, bcrypt for new rows). One generic failure for
+// unknown-user and bad-password — no user-enumeration oracle.
+func passwordGrant(c *zip.Ctx, db orm.DB) error {
+	ctx := c.Context()
+	now := nowFunc()
+
+	clientID, clientSecret := clientAuth(c)
+	if clientID == "" {
+		return tokenErrorClient(c, "client authentication required")
+	}
+	app, err := store.GetApplicationByClientId(ctx, db, clientID)
+	if err != nil {
+		return tokenError(c, 500, "server_error", "")
+	}
+	if app == nil || app.ClientSecret == "" ||
+		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+		return tokenErrorClient(c, "client authentication failed")
+	}
+	if isInternalApp(app) {
+		return tokenErrorClient(c, "client is not permitted on this endpoint")
+	}
+	if !app.IsPasswordEnabled() {
+		return tokenError(c, 400, "unauthorized_client", "password grant is not enabled for this client")
+	}
+
+	username, password := param(c, "username"), param(c, "password")
+	if username == "" || password == "" {
+		return tokenError(c, 400, "invalid_request", "username and password are required")
+	}
+	// Org scope: an explicit `organization` wins; otherwise the client's own org
+	// (a same-org first-party login — the console's default).
+	org := param(c, "organization")
+	if org == "" {
+		org = app.Organization
+	}
+
+	user, err := resolveLoginUser(ctx, db, org, username)
+	if err != nil {
+		return tokenError(c, 500, "server_error", "")
+	}
+	orgPasswordType := loginOrgPasswordType(ctx, db, org)
+	if user == nil || !users.VerifyPassword(user, password, orgPasswordType) {
+		return tokenError(c, 400, "invalid_grant", "the username or password is incorrect")
+	}
+	if user.IsForbidden || user.IsDeleted {
+		return tokenError(c, 400, "invalid_grant", "the user is forbidden")
+	}
+
+	// Build a fresh grant row (owner/name upfront so newFamilyID has a stable id),
+	// then mint through the ONE shared token path (access + id_token on openid +
+	// rotating refresh) so the password grant's token shape never drifts.
+	name, err := newOpaqueToken()
+	if err != nil {
+		return tokenError(c, 500, "server_error", "")
+	}
+	row := &schema.Token{
+		Owner:        user.Owner,
+		Name:         "pwd-" + name[:32],
+		Application:  app.Name,
+		Organization: user.Owner,
+		User:         user.Owner + "/" + user.Name,
+		Scope:        param(c, "scope"),
+	}
+	resp, err := issueTokens(ctx, db, c, app, row, newFamilyID(row), now)
+	if err != nil {
+		return tokenError(c, 500, "server_error", "")
+	}
+	if err := store.PersistToken(ctx, db, row); err != nil {
+		return tokenError(c, 500, "server_error", "")
+	}
+	return c.JSON(200, resp)
 }
 
 // issueTokens mints the grant's tokens onto row: a signed access JWT, an
@@ -362,9 +447,18 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 	return signer.Sign(app, tok.User, "", "", tok.Scope, ttl, now)
 }
 
-// tokenIssuer is the canonical OIDC issuer for this request (https://<host>),
-// the value discovery advertises and every token carries as `iss`.
+// tokenIssuer is the canonical OIDC issuer for this request — the value discovery
+// advertises and every token carries as `iss`. A deployment PINS it with the
+// IAM_ISSUER env (e.g. `https://hanzo.id`): the embedded KMS + every resource
+// server validate `iss` against a fixed expected value, so a hanzo deployment
+// serving both `hanzo.id` and `iam.hanzo.ai` must emit ONE stable issuer, not a
+// host-derived one. Pinning also closes the header-influenced-iss vector (a
+// request's X-Forwarded-Host can no longer steer `iss`). Unset → host-relative
+// (dev / multi-tenant), so discovery stays split-origin-safe when no pin applies.
 func tokenIssuer(c *zip.Ctx) string {
+	if iss := strings.TrimSpace(os.Getenv("IAM_ISSUER")); iss != "" {
+		return strings.TrimRight(iss, "/")
+	}
 	if h := httpx.EffectiveHost(c); h != "" {
 		return "https://" + h
 	}

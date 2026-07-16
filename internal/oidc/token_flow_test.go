@@ -131,7 +131,8 @@ func TestToken_ErrorTaxonomy(t *testing.T) {
 		requireError(t, resp, tok, 400, "invalid_request")
 	})
 	t.Run("unsupported grant_type", func(t *testing.T) {
-		resp, tok := postToken(t, app, url.Values{"grant_type": {"password"}})
+		// A grant iam2 does not implement (device_code) — password IS supported now.
+		resp, tok := postToken(t, app, url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}})
 		requireError(t, resp, tok, 400, "unsupported_grant_type")
 	})
 	t.Run("unknown code", func(t *testing.T) {
