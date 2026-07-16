@@ -157,6 +157,28 @@ func ListCerts(ctx context.Context, db orm.DB) ([]*schema.Cert, error) {
 	return orm.TypedQuery[schema.Cert](db).Order("Name").GetAll(ctx)
 }
 
+// PlatformSigningCert returns a deterministic trusted signing cert — the first by
+// (owner, name) order among the reserved platform owners that carries a private
+// key. It keys deployment-stable secret derivations (the session-cookie MAC), so
+// there is no new secret to provision; a tenant cert can never be chosen. Returns
+// (nil, nil) when none is seeded.
+func PlatformSigningCert(ctx context.Context, db orm.DB) (*schema.Cert, error) {
+	certs, err := ListCerts(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	var best *schema.Cert
+	for _, c := range certs {
+		if c == nil || c.PrivateKey == "" || !IsSigningCertOwner(c.Owner) {
+			continue
+		}
+		if best == nil || c.Owner+"/"+c.Name < best.Owner+"/"+best.Name {
+			best = c
+		}
+	}
+	return best, nil
+}
+
 // GetTokenByAccessTokenHash resolves a live token row by the SHA-256 hash of a
 // presented access token — the userinfo bearer lookup. Because the row is the
 // authorization server's memory of the grant, a deleted/rotated row means the

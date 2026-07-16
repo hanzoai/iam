@@ -2,10 +2,13 @@
 package oidc
 
 import (
+	"context"
+
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/sessions"
 	"github.com/hanzoai/iam2/internal/store"
 )
 
@@ -39,16 +42,10 @@ func getAccount(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
 
-		bearer := httpx.Bearer(c)
-		if bearer == "" {
+		owner, name, ok := callerOf(ctx, c, db)
+		if !ok {
 			return c.JSON(200, accountResponse{Status: "error", Msg: "please sign in first"})
 		}
-		claims, err := verifyToken(ctx, db, bearer)
-		if err != nil {
-			return c.JSON(200, accountResponse{Status: "error", Msg: "the access token is invalid or expired"})
-		}
-
-		owner, name := splitSub(claims.Subject)
 		user, err := store.GetUserByName(ctx, db, owner, name)
 		if err != nil {
 			return c.JSON(500, accountResponse{Status: "error", Msg: "server_error"})
@@ -56,18 +53,35 @@ func getAccount(db orm.DB) zip.Handler {
 		if user == nil {
 			return c.JSON(200, accountResponse{Status: "error", Msg: "the user does not exist"})
 		}
-
 		org, err := store.GetOrganizationByName(ctx, db, user.Owner)
 		if err != nil {
 			return c.JSON(500, accountResponse{Status: "error", Msg: "server_error"})
 		}
-
 		return c.JSON(200, accountResponse{
 			Status: "ok",
-			Sub:    claims.Subject,
+			Sub:    owner + "/" + name,
 			Name:   user.Name,
 			Data:   user.Mask(), // owner + isAdmin survive; every secret stripped
 			Data2:  org.Mask(),  // org master/default passwords masked
 		})
 	}
+}
+
+// callerOf resolves the signed-in principal by SESSION COOKIE first (the portal
+// and gateway-admin-guard path) then bearer access token (the API path) — two
+// credentials, one identity. ok=false means no valid session or token.
+func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, ok bool) {
+	if o, n, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
+		return o, n, true
+	}
+	bearer := httpx.Bearer(c)
+	if bearer == "" {
+		return "", "", false
+	}
+	claims, err := verifyToken(ctx, db, bearer)
+	if err != nil {
+		return "", "", false
+	}
+	o, n := splitSub(claims.Subject)
+	return o, n, true
 }
