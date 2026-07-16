@@ -13,9 +13,10 @@ import (
 	"github.com/hanzoai/iam2/internal/store"
 )
 
-// Front-door JSON endpoints the @hanzo/iam SDK + hanzo.id portal call to render
-// the login UI. Read-only in this increment (get-app-login + auth/methods); the
-// credential path (login/signup) lands with the session + token increments.
+// Front-door JSON endpoints the @hanzo/iam SDK + hanzo.id portal call: the login
+// UI descriptors (get-app-login, auth/methods), the account read (get-account),
+// account creation (signup), and OTP send (send-verification-code). Login itself
+// is MountLogin; the OIDC/OAuth surface is Mount.
 const (
 	PathGetAppLogin = "/v1/iam/get-app-login"
 	PathAuthMethods = "/v1/iam/auth/methods"
