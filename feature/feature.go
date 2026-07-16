@@ -1,0 +1,57 @@
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+
+// Package feature is the seam enterprise capabilities plug into. A module
+// (hanzoiam/scim, saml, ldap, …) implements Feature and reads/writes the core's
+// identity via the injected Store — so it shares ONE identity store with the core
+// and never carries a second copy. The core NEVER imports a module; dependency
+// flows one way (module → feature).
+package feature
+
+import (
+	"context"
+
+	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam2/pkg/model"
+)
+
+// Store is the identity surface a feature needs — the union of the calls the
+// copied Casdoor code makes (object.* → store.*). The core implements it over its
+// orm store (internal/featurestore). A feature ignores methods it doesn't use.
+type Store interface {
+	GetUser(ctx context.Context, owner, name string) (*model.User, error)
+	GetUserByID(ctx context.Context, id string) (*model.User, error)
+	GetGlobalUsers(ctx context.Context, offset, limit int) ([]*model.User, int, error)
+	AddUser(ctx context.Context, u *model.User) (bool, error)
+	UpdateUser(ctx context.Context, u *model.User) (bool, error)
+	DeleteUser(ctx context.Context, owner, name string) (bool, error)
+	GetApplication(ctx context.Context, id string) (*model.Application, error)
+	GetOrganization(ctx context.Context, name string) (*model.Organization, error)
+}
+
+// Feature is one pluggable enterprise capability. Mount registers its routes on
+// the shared app, backed by store. Name is for diagnostics.
+type Feature interface {
+	Name() string
+	Mount(app *zip.App, store Store) error
+}
+
+var registry []Feature
+
+// Register adds a feature to the set MountAll mounts. Called by the composing
+// binary (cloud) or a module init — the core decides which enterprise features ship.
+func Register(f Feature) { registry = append(registry, f) }
+
+// Registered returns the registered features (diagnostics/tests).
+func Registered() []Feature { return append([]Feature(nil), registry...) }
+
+// MountAll mounts every registered feature on app with store, fail-fast: a
+// registered-but-broken enterprise module surfaces loudly at boot, never a silent no-op.
+func MountAll(app *zip.App, store Store) error {
+	for _, f := range registry {
+		if err := f.Mount(app, store); err != nil {
+			return err
+		}
+	}
+	return nil
+}
