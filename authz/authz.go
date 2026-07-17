@@ -133,6 +133,7 @@ p, *, *, GET, /v1/iam/run-authz-command, *, *
 p, *, *, GET, /v1/iam/get-invitation-info, *, *
 p, *, *, GET, /v1/iam/faceid-signin-begin, *, *
 p, *, *, GET, /v1/iam/registry/token, *, *
+p, *, *, POST, /v1/iam/registry/token, *, *
 p, *, *, GET, /v1/iam/registry/jwks, *, *
 p, *, *, POST, /v1/iam/sync-init-data, *, *
 `

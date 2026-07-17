@@ -209,6 +209,35 @@ type RegistryAccess struct {
 	Actions []string `json:"actions"`
 }
 
+// registryScopeAccess parses Docker registry scope strings ("type:name:a,b")
+// into access entries. It flattens BOTH shapes that reach the token endpoint —
+// space-separated scopes in one param (Docker) and repeated `scope=` params
+// (buildx/BuildKit multi-scope) — so no requested repository is silently
+// dropped. Non-privileged principals are restricted to the `pull` action.
+func registryScopeAccess(rawScopes []string, privileged bool) []RegistryAccess {
+	var access []RegistryAccess
+	for _, raw := range rawScopes {
+		for _, s := range strings.Fields(raw) {
+			parts := strings.SplitN(s, ":", 3)
+			if len(parts) != 3 {
+				continue
+			}
+			actions := strings.Split(parts[2], ",")
+			if !privileged {
+				filtered := []string{}
+				for _, a := range actions {
+					if a == "pull" {
+						filtered = append(filtered, a)
+					}
+				}
+				actions = filtered
+			}
+			access = append(access, RegistryAccess{Type: parts[0], Name: parts[1], Actions: actions})
+		}
+	}
+	return access
+}
+
 // registrySigningKeyID memoizes the Docker/libtrust key ID of the signing key.
 var (
 	registrySigningKeyID     string
@@ -255,36 +284,66 @@ func libtrustKeyID(pub *rsa.PublicKey) string {
 
 // RegistryTokenResponse is the JSON response for the token endpoint.
 type RegistryTokenResponse struct {
-	Token     string `json:"token"`
-	ExpiresIn int    `json:"expires_in"`
-	IssuedAt  string `json:"issued_at"`
+	Token string `json:"token"`
+	// AccessToken mirrors Token. The Docker registry v2 GET flow (crane, kaniko,
+	// docker) reads `token`; containerd's / BuildKit's OAuth2 POST flow reads
+	// `access_token`. Emitting BOTH lets buildx/BuildKit push+pull
+	// registry.hanzo.ai, not just the GET-flow clients.
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
+	IssuedAt    string `json:"issued_at"`
 }
 
 // GetRegistryToken handles Docker registry v2 token authentication.
 //
-// The Docker registry sends unauthenticated clients here with:
+// Two client flows reach this one handler:
 //
-//	GET /v1/iam/registry/token?service=registry.hanzo.ai&scope=repository:myimage:pull,push
+//	GET  /v1/iam/registry/token?service=registry.hanzo.ai&scope=repository:img:pull,push
+//	     with an Authorization: Basic header — docker, crane, kaniko.
+//	POST /v1/iam/registry/token   (application/x-www-form-urlencoded)
+//	     grant_type=password&username=…&password=…&service=…&scope=…&scope=… —
+//	     containerd's / BuildKit's OAuth2 token flow, which sends NO Basic header
+//	     and puts the credentials in the form body. Serving only GET made buildx
+//	     POST here, 404, and fail every push/pull with "authorization server did
+//	     not include a token in the response".
 //
-// The client provides Basic auth credentials. This endpoint validates them
-// against IAM users and returns a short-lived JWT granting the requested access.
+// Either way we validate the credentials against IAM users (or an application's
+// service credentials) and return a short-lived JWT granting the requested access.
 //
 // @Title GetRegistryToken
 // @Tag Registry API
-// @Description Get a Docker registry authentication token
+// @Description Get a Docker registry authentication token (GET Basic-auth or OAuth2 POST)
 // @Param   service     query   string  true    "The registry service name"
 // @Param   scope       query   string  false   "The requested scope (type:name:actions)"
 // @Success 200 {object} RegistryTokenResponse
 // @Failure 401 Unauthorized
-// @router /v1/iam/registry/token [get]
+// @router /v1/iam/registry/token [get post]
 func (c *ApiController) GetRegistryToken() {
 	EnsureRegistrySigningKey()
 	service := c.GetString("service")
-	scope := c.GetString("scope")
 
-	// Extract Basic auth credentials
+	// Collect EVERY requested scope. Two shapes arrive: one `scope` carrying
+	// space-separated scopes (Docker), and repeated `scope=` params (buildx /
+	// BuildKit multi-scope). GetString would return only the first and silently
+	// drop the rest, so read the raw slice from the parsed form (query + body).
+	_ = c.Ctx.Request.ParseForm()
+	rawScopes := c.Ctx.Request.Form["scope"]
+	if len(rawScopes) == 0 {
+		if s := c.GetString("scope"); s != "" {
+			rawScopes = []string{s}
+		}
+	}
+
+	// Extract credentials, two ways:
+	//  1. Authorization: Basic header — the Docker GET flow (crane, kaniko, docker).
+	//  2. grant_type=password form body (username/password) — containerd's /
+	//     BuildKit's OAuth2 POST flow, which never sends a Basic header.
 	username, password, ok := c.Ctx.Request.BasicAuth()
 	if !ok || username == "" {
+		username = c.GetString("username")
+		password = c.GetString("password")
+	}
+	if username == "" {
 		c.Ctx.Output.SetStatus(401)
 		c.Ctx.Output.Header("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, service))
 		c.Data["json"] = map[string]string{"error": "authentication required"}
@@ -324,33 +383,10 @@ func (c *ApiController) GetRegistryToken() {
 		return
 	}
 
-	// Parse requested scope: "repository:name:pull,push"
-	var access []RegistryAccess
-	if scope != "" {
-		for _, s := range strings.Split(scope, " ") {
-			parts := strings.SplitN(s, ":", 3)
-			if len(parts) == 3 {
-				actions := strings.Split(parts[2], ",")
-				// Service accounts and admin users get all requested actions
-				// (incl. push); regular users get pull only.
-				privileged := isServiceAccount || (user != nil && (user.IsAdmin || user.IsSuperAdmin()))
-				if !privileged {
-					filtered := []string{}
-					for _, a := range actions {
-						if a == "pull" {
-							filtered = append(filtered, a)
-						}
-					}
-					actions = filtered
-				}
-				access = append(access, RegistryAccess{
-					Type:    parts[0],
-					Name:    parts[1],
-					Actions: actions,
-				})
-			}
-		}
-	}
+	// Service accounts and admin users get all requested actions (incl. push);
+	// regular users are restricted to pull.
+	privileged := isServiceAccount || (user != nil && (user.IsAdmin || user.IsSuperAdmin()))
+	access := registryScopeAccess(rawScopes, privileged)
 
 	now := time.Now()
 	expiresIn := 900 // 15 minutes
@@ -392,9 +428,10 @@ func (c *ApiController) GetRegistryToken() {
 	}
 
 	c.Data["json"] = RegistryTokenResponse{
-		Token:     tokenString,
-		ExpiresIn: expiresIn,
-		IssuedAt:  now.Format(time.RFC3339),
+		Token:       tokenString,
+		AccessToken: tokenString,
+		ExpiresIn:   expiresIn,
+		IssuedAt:    now.Format(time.RFC3339),
 	}
 	c.ServeJSON()
 }
