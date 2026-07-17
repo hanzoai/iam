@@ -1,0 +1,51 @@
+# Native CI for the Hanzo Git act_runners (label hanzo-build-linux-amd64).
+# Self-contained — no reusable-workflow hub (hanzoai/ci) is on Gitea yet.
+# GitHub.com ignores .gitea/workflows, so this never touches the GitHub release
+# lanes; it mirrors the `test:` gates in hanzo.yml (go-test + go-lint).
+#
+# Secrets: NONE needed. iam's luxfi/* and hanzoai/* modules are PUBLIC (see the
+# Dockerfile: they resolve via the public proxy + sumdb), and the CI gate runs
+# the pure-Go modernc driver (CGO_ENABLED=0), so no libsqlcipher and no
+# UNIVERSE_PAT. GITHUB_TOKEN is auto-minted per job by Gitea.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: hanzo-build-linux-amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache-dependency-path: go.sum
+      - run: CGO_ENABLED=0 go build -tags skipCi ./...
+
+  test:
+    runs-on: hanzo-build-linux-amd64
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache-dependency-path: go.sum
+      - run: CGO_ENABLED=0 go test $(go list ./...) -tags skipCi
+
+  lint:
+    runs-on: hanzo-build-linux-amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache-dependency-path: go.sum
+      - run: CGO_ENABLED=0 go vet -tags "libsqlite3 sqlite_fts5" ./...
+      - name: gofumpt
+        run: |
+          go install mvdan.cc/gofumpt@v0.7.0
+          test -z "$(gofumpt -l .)" || { echo "gofumpt: files need formatting:"; gofumpt -l .; exit 1; }
