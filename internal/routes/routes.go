@@ -26,6 +26,7 @@ import (
 	"github.com/hanzoai/iam2/internal/applications"
 	"github.com/hanzoai/iam2/internal/auditlogs"
 	"github.com/hanzoai/iam2/internal/authz"
+	"github.com/hanzoai/iam2/internal/bootstrap"
 	"github.com/hanzoai/iam2/internal/certs"
 	"github.com/hanzoai/iam2/internal/compat"
 	"github.com/hanzoai/iam2/internal/invitations"
@@ -65,6 +66,9 @@ func Route(app *zip.App, db orm.DB) {
 	public := app.Group("")
 	public.Get("/healthz", health)
 	oidc.Route(public, db)
+	// Operator bootstrap upsert (admin/{applications,users}/upsert) — self-authenticated
+	// by the unified service token (Bearer), not a user principal, so it is PUBLIC.
+	bootstrap.Route(public, db)
 
 	// ─────────────────────────── GUARD ────────────────────────────
 	// The ONE authentication seam. Every route registered AFTER it requires a
