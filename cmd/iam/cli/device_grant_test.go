@@ -55,19 +55,20 @@ func TestEnsureGrantTypes_Idempotent(t *testing.T) {
 }
 
 // TestEnsureGrantTypes_PartialPreservesOrder is the real prod state: existing
-// apps have [authorization_code, refresh_token]; converge appends device_code
-// at the end WITHOUT reordering (authorization_code must stay first for the UI).
+// apps have [authorization_code, refresh_token]; converge appends the missing
+// brand grants (device_code + password) at the end WITHOUT reordering
+// (authorization_code must stay first for the UI).
 func TestEnsureGrantTypes_PartialPreservesOrder(t *testing.T) {
 	a := &app{GrantTypes: []string{"authorization_code", "refresh_token"}}
 	added := ensureGrantTypes(a, brandGrantTypes)
-	if added != 1 {
-		t.Fatalf("expected 1 addition (device_code), got %d", added)
+	if added != 2 {
+		t.Fatalf("expected 2 additions (device_code + password), got %d", added)
 	}
 	if a.GrantTypes[0] != "authorization_code" || a.GrantTypes[1] != "refresh_token" {
 		t.Errorf("existing order not preserved: %v", a.GrantTypes)
 	}
-	if a.GrantTypes[len(a.GrantTypes)-1] != deviceCodeGrant {
-		t.Errorf("device_code must be appended last: %v", a.GrantTypes)
+	if !containsStr(a.GrantTypes, deviceCodeGrant) || !containsStr(a.GrantTypes, "password") {
+		t.Errorf("converge must append device_code and password: %v", a.GrantTypes)
 	}
 }
 
@@ -135,8 +136,8 @@ func TestUpdateBody_PreservesUnknownFields(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &a); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if added := ensureGrantTypes(&a, brandGrantTypes); added != 1 {
-		t.Fatalf("expected 1 grant added (device_code), got %d", added)
+	if added := ensureGrantTypes(&a, brandGrantTypes); added != 2 {
+		t.Fatalf("expected 2 grants added (device_code + password), got %d", added)
 	}
 
 	body := a.updateBody()
