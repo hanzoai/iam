@@ -5,9 +5,18 @@
 FROM golang:1.26.4 AS build
 WORKDIR /src
 
-# Cache the module graph before copying the source.
+# Cache the module graph before copying the source. iam2 imports private hanzoai
+# modules (hanzoai/orm, hanzoai/sqlite), so mark them private (direct fetch, no
+# sumdb) and — when a GIT_AUTH_TOKEN is mounted — rewrite github.com to an
+# authenticated fetch so `go mod download` can read them. Same pattern as
+# hanzoai/cloud; without the token it is a no-op (a public-only build still works).
+ENV GOPRIVATE=github.com/hanzoai/*
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=secret,id=GIT_AUTH_TOKEN \
+    if [ -s /run/secrets/GIT_AUTH_TOKEN ]; then \
+      git config --global url."https://x-access-token:$(cat /run/secrets/GIT_AUTH_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    fi && \
+    go mod download
 
 COPY . .
 
