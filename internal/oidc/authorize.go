@@ -38,6 +38,7 @@ type authorizeRequest struct {
 	codeChallengeMethod string
 	resource            string
 	responseMode        string
+	provider            string
 }
 
 func authorizeHandler(db orm.DB) zip.Handler {
@@ -76,6 +77,14 @@ func authorizeHandler(db orm.DB) zip.Handler {
 			return authorizeErrorRedirect(c, q, "invalid_request", "PKCE is required for public clients")
 		}
 
+		// A request that names a social `provider` is federated to that external
+		// IdP (Google/GitHub, …) instead of the hosted credential login. The
+		// client + redirect_uri + PKCE policy above are already enforced, so the
+		// federation broker starts from a validated request and a trusted target.
+		if q.provider != "" {
+			return beginFederation(c, db, app, q, method)
+		}
+
 		// Delegate to the hosted login with a clean, re-encoded request. The login
 		// page posts credentials to /v1/iam/login, which mints the code.
 		return c.Redirect(302, hostedLoginTarget(app)+"?"+authorizeForwardQuery(q, method))
@@ -96,6 +105,7 @@ func authorizeParams(c *zip.Ctx) authorizeRequest {
 		codeChallengeMethod: param(c, "code_challenge_method"),
 		resource:            param(c, "resource"),
 		responseMode:        param(c, "response_mode"),
+		provider:            param(c, "provider"),
 	}
 }
 
