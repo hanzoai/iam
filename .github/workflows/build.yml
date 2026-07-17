@@ -47,8 +47,8 @@ jobs:
           # GH_PAT (admin:org + write:packages) — the automatic GITHUB_TOKEN is
           # denied write to ghcr.io/hanzoai/* (permission_denied: write_package),
           # the same reason hanzoai/cloud logs in with GH_PAT.
-          username: ${{ secrets.REGISTRY_USER || github.actor }}
-          password: ${{ secrets.REGISTRY_TOKEN || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          username: hanzo-dev
+          password: ${{ secrets.GH_PAT }}
 
       - name: Build + push (amd64; pure-Go, jsonv2 per SCALE_STANDARD)
         uses: docker/build-push-action@v6
@@ -60,10 +60,13 @@ jobs:
           build-args: |
             GO_EXPERIMENT=jsonv2
             VERSION=${{ steps.meta.outputs.version }}
-          # iam2's private modules (hanzoai/orm, hanzoai/sqlite) are fetched inside
-          # the build via this token — the Dockerfile mounts it as GIT_AUTH_TOKEN.
+          # iam2's private modules (hanzoai/orm → hanzoai/dbx, hanzoai/sqlite) are
+          # fetched inside the build via this token — the Dockerfile mounts it as
+          # GIT_AUTH_TOKEN. GH_PAT (admin:org read) is what hanzoai/cloud uses to
+          # fetch the same private cross-repo modules; the automatic GITHUB_TOKEN
+          # cannot (it only reads the repo it runs in), which is why dbx 404'd.
           secrets: |
-            GIT_AUTH_TOKEN=${{ secrets.REGISTRY_TOKEN || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+            GIT_AUTH_TOKEN=${{ secrets.GH_PAT }}
           tags: |
             ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
         env:
