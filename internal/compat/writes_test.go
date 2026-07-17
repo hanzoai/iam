@@ -176,7 +176,7 @@ func TestDeleteUser_lifecycle(t *testing.T) {
 	if s, b := h.post(t, "/v1/iam/add-user", root, map[string]any{"owner": "hanzo", "name": "tmp", "password": "x"}); s != 200 {
 		t.Fatalf("add-user status=%d body=%s", s, b)
 	}
-	okEnvelope(h.postOK(t, "/v1/iam/delete-user", root, map[string]any{"owner": "hanzo", "name": "tmp"}))
+	h.postAssertOK(t, "/v1/iam/delete-user", root, map[string]any{"owner": "hanzo", "name": "tmp"})
 	if s, rb := h.get(t, "/v1/iam/get-user?id=hanzo/tmp", root); s == 200 && strings.Contains(rb, "\"name\":\"tmp\"") {
 		t.Fatalf("user still present after delete-user: %s", rb)
 	}
@@ -187,8 +187,8 @@ func TestDeleteUser_lifecycle(t *testing.T) {
 func TestAddProvider_super(t *testing.T) {
 	h := newHarness(t)
 	root := h.token(t, "admin/root")
-	okEnvelope(h.postOK(t, "/v1/iam/add-provider", root,
-		map[string]any{"owner": "admin", "name": "provider-test", "category": "OAuth", "type": "GitHub"}))
+	h.postAssertOK(t, "/v1/iam/add-provider", root,
+		map[string]any{"owner": "admin", "name": "provider-test", "category": "OAuth", "type": "GitHub"})
 	if s, rb := h.get(t, "/v1/iam/get-provider?id=admin/provider-test", root); s != 200 || !strings.Contains(rb, "provider-test") {
 		t.Fatalf("get-provider after add: status=%d body=%s", s, rb)
 	}
@@ -208,8 +208,8 @@ func TestAddProvider_nonSuperForbidden(t *testing.T) {
 func TestAddRole_orgAdmin(t *testing.T) {
 	h := newHarness(t)
 	boss := h.token(t, "hanzo/boss")
-	okEnvelope(h.postOK(t, "/v1/iam/add-role", boss,
-		map[string]any{"owner": "hanzo", "name": "editors", "displayName": "Editors"}))
+	h.postAssertOK(t, "/v1/iam/add-role", boss,
+		map[string]any{"owner": "hanzo", "name": "editors", "displayName": "Editors"})
 	if s, rb := h.get(t, "/v1/iam/get-role?id=hanzo/editors", boss); s != 200 || !strings.Contains(rb, "editors") {
 		t.Fatalf("get-role after add: status=%d body=%s", s, rb)
 	}
@@ -219,11 +219,12 @@ func TestAddRole_orgAdmin(t *testing.T) {
 func TestUpdateOrganization_super(t *testing.T) {
 	h := newHarness(t)
 	root := h.token(t, "admin/root")
-	okEnvelope(h.postOK(t, "/v1/iam/update-organization", root,
-		map[string]any{"owner": "admin", "name": "hanzo", "displayName": "Hanzo Updated"}))
+	h.postAssertOK(t, "/v1/iam/update-organization", root,
+		map[string]any{"owner": "admin", "name": "hanzo", "displayName": "Hanzo Updated"})
 }
 
-// postOK is post with the (status, body) returned for okEnvelope chaining.
-func (h *harness) postOK(t *testing.T, path, bearer string, body any) (int, string) {
-	return h.post(t, path, bearer, body)
+// postAssertOK posts and asserts the {status:ok} envelope.
+func (h *harness) postAssertOK(t *testing.T, path, bearer string, body any) {
+	s, b := h.post(t, path, bearer, body)
+	okEnvelope(t, s, b)
 }
