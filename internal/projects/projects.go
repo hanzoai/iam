@@ -1,0 +1,193 @@
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+
+// Package projects serves the IAM v2 CRUD surface for the `projects` entity: an
+// organization-scoped work container owner-scoped by (owner, name), where Owner
+// is the owning organization. Every operation is a typed zip handler over
+// hanzoai/orm; the orm string key is "owner/name". Reads scope to one owner
+// (organization); writes address one project by its (owner, name) key. This is
+// the ONE project CRUD path — the Casdoor get-organization-projects / add-project
+// / delete-project verb aliases (internal/compat) reuse it via New.
+package projects
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/hanzoai/orm"
+	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam2/internal/schema"
+)
+
+// Handler binds the projects operations to one orm store.
+type Handler struct {
+	db orm.DB
+}
+
+// Route registers the projects CRUD routes on app against db.
+func Route(app *zip.App, db orm.DB) {
+	h := &Handler{db: db}
+	zip.Get(app, "/v1/iam/projects", h.List, zip.WithSummary("List projects for an owner"), zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects", h.Create, zip.WithSummary("Create a project"), zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/get", h.Get, zip.WithSummary("Get one project"), zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/update", h.Update, zip.WithSummary("Update a project"), zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/delete", h.Delete, zip.WithSummary("Delete a project"), zip.WithTags("projects"))
+}
+
+// New exposes a project Handler so the Casdoor add-/delete-project verb aliases
+// (internal/compat) reuse the ONE project CRUD path, wrapped in the compat
+// envelope.
+func New(db orm.DB) *Handler { return &Handler{db: db} }
+
+// Ref addresses one project by its owner-scoped natural key.
+type Ref struct {
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+}
+
+// Input is the writable projection of a project (the v1 add/update-project body).
+// It keeps the wire contract clean of the orm.Model bookkeeping fields.
+type Input struct {
+	Owner        string   `json:"owner"`
+	Name         string   `json:"name"`
+	CreatedTime  string   `json:"createdTime"`
+	DisplayName  string   `json:"displayName"`
+	Description  string   `json:"description"`
+	Organization string   `json:"organization"`
+	Tags         []string `json:"tags"`
+	Metadata     string   `json:"metadata"`
+	IsDefault    bool     `json:"isDefault"`
+}
+
+// ListInput scopes a listing to one owner (organization).
+type ListInput struct {
+	Owner string `json:"owner"`
+}
+
+// ListOutput is the owner-scoped page of projects.
+type ListOutput struct {
+	Projects []*schema.Project `json:"projects"`
+	Total    int               `json:"total"`
+}
+
+// DeleteOutput reports the delete result.
+type DeleteOutput struct {
+	Deleted bool `json:"deleted"`
+}
+
+func key(owner, name string) string { return owner + "/" + name }
+
+// apply copies the mutable domain fields of an Input onto a project. The identity
+// fields (owner, name) and the created stamp are set only on Create, never
+// overwritten by an update.
+func apply(dst *schema.Project, in *Input) {
+	dst.DisplayName = in.DisplayName
+	dst.Description = in.Description
+	dst.Organization = pick(in.Organization, in.Owner)
+	dst.Tags = in.Tags
+	dst.Metadata = in.Metadata
+	dst.IsDefault = in.IsDefault
+}
+
+// List returns the projects for one owner, newest first. An empty owner lists
+// every project (the unscoped admin view).
+func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+	q := orm.TypedQuery[schema.Project](h.db)
+	if in.Owner != "" {
+		q = q.Filter("owner", in.Owner)
+	}
+	rows, err := q.Order("-createdTime").GetAll(ctx)
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return &ListOutput{Projects: rows, Total: len(rows)}, nil
+}
+
+// Get returns one project addressed by (owner, name).
+func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Project, error) {
+	if in.Owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	p, err := orm.Get[schema.Project](h.db, key(in.Owner, in.Name))
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return p, nil
+}
+
+// Create persists a new project. It rejects a duplicate (owner, name).
+func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Project, error) {
+	if in.Owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	switch _, err := orm.Get[schema.Project](h.db, key(in.Owner, in.Name)); {
+	case err == nil:
+		return nil, zip.ErrConflict("project already exists")
+	case !errors.Is(err, orm.ErrNotFound):
+		return nil, zip.ErrInternal(err.Error())
+	}
+
+	p := orm.New[schema.Project](h.db)
+	p.Owner = in.Owner
+	p.Name = in.Name
+	p.CreatedTime = in.CreatedTime
+	if p.CreatedTime == "" {
+		p.CreatedTime = time.Now().UTC().Format(time.RFC3339)
+	}
+	apply(p, in)
+	p.SetId(key(in.Owner, in.Name))
+
+	if err := p.CreateCtx(ctx); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return p, nil
+}
+
+// Update mutates an existing project. Identity and created stamp are immutable; a
+// missing project is a 404.
+func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Project, error) {
+	if in.Owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	p, err := orm.Get[schema.Project](h.db, key(in.Owner, in.Name))
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	apply(p, in)
+	if err := p.UpdateCtx(ctx); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return p, nil
+}
+
+// Delete removes one project addressed by (owner, name).
+func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
+	if in.Owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	p, err := orm.Get[schema.Project](h.db, key(in.Owner, in.Name))
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	if err := p.DeleteCtx(ctx); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return &DeleteOutput{Deleted: true}, nil
+}
+
+// mapErr translates an orm lookup error into the matching HTTP status.
+func mapErr(err error) error {
+	if errors.Is(err, orm.ErrNotFound) {
+		return zip.ErrNotFound("project not found")
+	}
+	return zip.ErrInternal(err.Error())
+}
+
+// pick returns a if non-empty, else b.
+func pick(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}

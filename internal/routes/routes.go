@@ -35,6 +35,7 @@ import (
 	"github.com/hanzoai/iam2/internal/oidc"
 	"github.com/hanzoai/iam2/internal/organizations"
 	"github.com/hanzoai/iam2/internal/permission"
+	"github.com/hanzoai/iam2/internal/projects"
 	"github.com/hanzoai/iam2/internal/providers"
 	"github.com/hanzoai/iam2/internal/roles"
 	"github.com/hanzoai/iam2/internal/scim"
@@ -89,6 +90,7 @@ func Route(app *zip.App, db orm.DB) {
 	applications.Route(app, db)
 	providers.Route(app, db)
 	roles.Route(app, db)
+	projects.Route(app, db)
 	permission.Route(app, db)
 	certs.Route(app, db)
 	keys.Route(app, db)
