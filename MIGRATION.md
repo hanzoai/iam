@@ -47,10 +47,33 @@ shipped (iam2 tags):
 | Account claims | **OIDC UserInfo** (carries owner/organization/email/isAdmin/type — the get-account contract) | `/v1/iam/oauth/userinfo` | v0.9.0 |
 | Identity provisioning | **SCIM 2.0** (RFC 7644/7643; replaces get-/add-/update-/delete-user) | `/v1/iam/scim/v2/Users` | v0.8.0 (v0.8.1 authz fix) |
 | Resource indicators / issuer pin | RFC 8707 + `IAM_ISSUER` | token `aud`/`iss` | v0.5.0 |
+| Social sign-in / federation | **OIDC/OAuth2 Relying Party** (Authorization-Code + PKCE; Google = OIDC Discovery, GitHub = OAuth2 + userinfo) | authorize `?provider=<name>` → `/v1/iam/oauth/callback` | v0.15.0 |
 
 Deploy env: `IAM_ISSUER=https://<brand-id>`, `IAM_KEY_MINT_ALLOWED_APPS` (token
 exchange + `hk-` key mint) and `IAM_ADMIN_MINT_ALLOWED_APPS` (reserved-org targets)
 — both matched by the globally-unique clientId only.
+
+**Federation (social sign-in), v0.15.0.** iam2 completes a Google/GitHub sign-in
+as a standard OIDC/OAuth2 Relying Party — no Casdoor verbs, no tokens-in-query.
+The authorize endpoint, once it has validated the client and its EXACT
+redirect_uri, treats a `?provider=<providerName>` request as a federation
+kickoff: it stashes the app-leg request in a single-use, expiring,
+browser-bound `FederationState` (state = an opaque 256-bit row key; a `hanzo_fed`
+HttpOnly+Secure+SameSite=Lax cookie binds it to the initiating browser) and 302s
+to the IdP with iam2's callback as the redirect_uri, an IdP-leg S256 PKCE
+verifier, and (OIDC) a nonce. The fixed public callback `/v1/iam/oauth/callback`
+resolves + burns the transaction (expiry + browser-binding checked), exchanges
+the IdP code, and VERIFIES the response — for OIDC the id_token signature
+(against the discovered JWKS, alg pinned to RS/ES), issuer, audience (= our
+client id), expiry, and nonce; for GitHub the userinfo + a GitHub-verified
+primary email. It then LINKS or PROVISIONS a local user (match by provider
+subject, else by VERIFIED email, else provision — never `isAdmin`, federated
+accounts carry no password) and mints iam2's OWN authorization code bound to the
+original PKCE/redirect/nonce, so the relying party's existing PKCE code→token
+exchange completes unchanged. Provider credentials/endpoints come from the
+existing `providers` rows (`clientId`/`clientSecret`/`type`/`scopes`/`issuerUrl`
+or the `custom*Url` overrides); the linked subject is persisted on the User's
+per-connector column (`google`/`github`/…).
 
 Remaining for cutover: migrate the clients (console `IamAdminApi`/`identity.ts`,
 gateway admin-guard, portal) off the Casdoor verbs onto these standards via
