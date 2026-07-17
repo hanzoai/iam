@@ -19,7 +19,10 @@ permissions:
 
 jobs:
   docker:
-    runs-on: ubuntu-latest
+    # The ARC self-hosted scale set, as every working hanzo build uses. GitHub-hosted
+    # `ubuntu-latest` is billing-frozen for the org, so a run on it never starts —
+    # which is why every prior iam2 build silently failed to produce an image.
+    runs-on: hanzo-build-linux-amd64
     steps:
       - uses: actions/checkout@v4
 
