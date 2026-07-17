@@ -160,6 +160,10 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 }
 
 // deleteApplication removes the application at (in.Owner, in.Name).
+// Delete exposes the delete handler so the Casdoor `delete-application` verb alias
+// (internal/compat) can reuse it — one delete path, wrapped in the compat envelope.
+func Delete(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult] { return deleteApplication(db) }
+
 func deleteApplication(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult] {
 	return func(ctx context.Context, in *ApplicationRef) (*DeleteResult, error) {
 		if in.Owner == "" || in.Name == "" {

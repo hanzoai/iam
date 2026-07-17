@@ -80,6 +80,19 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithTags("providers"))
 }
 
+// Add / Update / Delete expose the write handlers so the Casdoor add-/update-/
+// delete-provider verb aliases (internal/compat) reuse the ONE provider CRUD path,
+// wrapped in the compat envelope. Delete decodes the posted provider body and keys
+// the delete by its (owner, name) — the Casdoor verb posts the object, not a ?id=.
+func Add(db orm.DB) zip.TypedHandler[schema.Provider, providerResult]    { return addProvider(db) }
+func Update(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult] { return updateProvider(db) }
+func Delete(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult] {
+	del := deleteProvider(db)
+	return func(ctx context.Context, in *schema.Provider) (*mutationResult, error) {
+		return del(ctx, &providerKey{Owner: in.Owner, Name: in.Name})
+	}
+}
+
 // listProviders returns every provider in the owner scope, newest first.
 func listProviders(db orm.DB) zip.TypedHandler[listProvidersIn, listProvidersOut] {
 	return func(ctx context.Context, in *listProvidersIn) (*listProvidersOut, error) {
