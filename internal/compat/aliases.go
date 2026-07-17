@@ -58,8 +58,46 @@ func Route(app *zip.App, db orm.DB) {
 	app.Get("/v1/iam/get-role", getHandler[schema.Role](db, nil))
 	app.Get("/v1/iam/get-permission", getHandler[schema.Permission](db, nil))
 
+	// get-organization-projects — the console ScopeSwitcher's project list, keyed by
+	// ?organization= (not ?owner=). Its target rides in ?organization, which the Guard
+	// does not inspect generically, so this path is handler-authorized (authz's
+	// handlerAuthorizedPrefixes): the Guard authenticates, and this handler scopes the
+	// requested org through authz.Scope — a non-super is pinned to its own org, so any
+	// authenticated member lists exactly its own org's projects (the ScopeSwitcher is
+	// shown to every user, not only admins, so this read is intentionally not
+	// admin-gated the way the generic listers are).
+	app.Get("/v1/iam/get-organization-projects", orgProjectsHandler(db))
+
 	// The Casdoor WRITE verbs (companion file), over the same store + authz seam.
 	routeWrites(app, db)
+}
+
+// orgProjectsHandler serves get-organization-projects: the org's project list for
+// the console ScopeSwitcher. The requested org rides in ?organization= (or ?owner=
+// as a fallback); authz.Scope pins a non-super to its own org, so a request
+// parameter can never widen the read past the caller's tenant. Projects carry no
+// secrets, so no Mask is applied.
+func orgProjectsHandler(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		ctx := c.Context()
+		requested := c.Query("organization")
+		if requested == "" {
+			requested = c.Query("owner")
+		}
+		owner, err := authz.Scope(ctx, requested)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		q := orm.TypedQuery[schema.Project](db)
+		if owner != "" {
+			q = q.Filter("Owner=", owner)
+		}
+		rows, err := q.Order("Name").GetAll(ctx)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		return httpx.Ok(c, rows)
+	}
 }
 
 // listHandler serves a Casdoor get-<entities> list for one orm kind: it scopes
