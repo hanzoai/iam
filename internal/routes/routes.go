@@ -31,6 +31,7 @@ import (
 	"github.com/hanzoai/iam2/internal/compat"
 	"github.com/hanzoai/iam2/internal/invitations"
 	"github.com/hanzoai/iam2/internal/keys"
+	"github.com/hanzoai/iam2/internal/mfa"
 	"github.com/hanzoai/iam2/internal/oidc"
 	"github.com/hanzoai/iam2/internal/organizations"
 	"github.com/hanzoai/iam2/internal/permission"
@@ -108,6 +109,11 @@ func Route(app *zip.App, db orm.DB) {
 	// replaces the Casdoor entity verbs (HIP-0111). After the Guard, so it is
 	// authenticated; each handler owner-scopes via authz.Scope on the path target.
 	scim.Route(app, db)
+
+	// TOTP multi-factor enrollment (RFC 6238) — the account security page's
+	// initiate/verify/enable/disable flow. After the Guard: self-service on the
+	// caller's own user (authz.From); a cross-user reset needs admin (authz.Can).
+	mfa.Route(app, db)
 }
 
 // health is the Phase-1 liveness probe.

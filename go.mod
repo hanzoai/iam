@@ -24,11 +24,14 @@ require (
 	github.com/alexedwards/argon2id v1.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/luxfi/crypto v1.20.1
+	github.com/pquerna/otp v1.5.0
+	github.com/zap-proto/fiber/v3 v3.2.1
 )
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
@@ -60,7 +63,6 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.70.0 // indirect
-	github.com/zap-proto/fiber/v3 v3.2.1 // indirect
 	github.com/zap-proto/go v1.3.0 // indirect
 	github.com/zap-proto/http v0.2.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
