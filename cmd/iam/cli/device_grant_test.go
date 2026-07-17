@@ -55,19 +55,28 @@ func TestEnsureGrantTypes_Idempotent(t *testing.T) {
 }
 
 // TestEnsureGrantTypes_PartialPreservesOrder is the real prod state: existing
-// apps have [authorization_code, refresh_token]; converge appends device_code
-// at the end WITHOUT reordering (authorization_code must stay first for the UI).
+// apps have [authorization_code, refresh_token]; converge appends the missing
+// brand grants (device_code, then password) at the end WITHOUT reordering
+// (authorization_code must stay first for the UI). The two browser grants are
+// already present, so converge adds every OTHER brandGrantType — expressed as
+// len(brandGrantTypes)-2 (mirroring the ensureProviders test) so it stays
+// correct as the canonical set grows: `password` was added to brandGrantTypes
+// in 07b5d4d1 after this test was first written, making device_code no longer
+// the final appended grant.
 func TestEnsureGrantTypes_PartialPreservesOrder(t *testing.T) {
 	a := &app{GrantTypes: []string{"authorization_code", "refresh_token"}}
 	added := ensureGrantTypes(a, brandGrantTypes)
-	if added != 1 {
-		t.Fatalf("expected 1 addition (device_code), got %d", added)
+	if want := len(brandGrantTypes) - 2; added != want {
+		t.Fatalf("expected %d additions (device_code, password), got %d", want, added)
 	}
 	if a.GrantTypes[0] != "authorization_code" || a.GrantTypes[1] != "refresh_token" {
 		t.Errorf("existing order not preserved: %v", a.GrantTypes)
 	}
-	if a.GrantTypes[len(a.GrantTypes)-1] != deviceCodeGrant {
-		t.Errorf("device_code must be appended last: %v", a.GrantTypes)
+	// device_code is appended immediately after the preserved browser-grant
+	// prefix, in canonical brandGrantTypes order (it is no longer the final
+	// element — `password` now trails it).
+	if a.GrantTypes[2] != deviceCodeGrant {
+		t.Errorf("device_code must be appended after the existing grants: %v", a.GrantTypes)
 	}
 }
 
@@ -135,8 +144,8 @@ func TestUpdateBody_PreservesUnknownFields(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &a); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if added := ensureGrantTypes(&a, brandGrantTypes); added != 1 {
-		t.Fatalf("expected 1 grant added (device_code), got %d", added)
+	if added, want := ensureGrantTypes(&a, brandGrantTypes), len(brandGrantTypes)-2; added != want {
+		t.Fatalf("expected %d grants added (device_code, password), got %d", want, added)
 	}
 
 	body := a.updateBody()
