@@ -165,3 +165,34 @@ func TestRegistryToken_KidHeaderSigned(t *testing.T) {
 		t.Fatalf("alg = %v, want RS256", parsed.Header["alg"])
 	}
 }
+
+// TestRegistryScopeAccess locks the scope flattening that lets BOTH buildx/
+// BuildKit (repeated scope= params) and Docker (space-separated scopes) authorize
+// every requested repository, plus the pull-only restriction for non-privileged
+// principals. Dropping the second scope was the multi-scope bug that made buildx
+// registry-cache pushes fail.
+func TestRegistryScopeAccess(t *testing.T) {
+	// buildx multi-scope: repeated params, privileged (service account) keeps push.
+	multi := registryScopeAccess([]string{
+		"repository:hanzoai/console-embed:pull,push",
+		"repository:hanzoai/console-embed/cache:pull,push",
+	}, true)
+	if len(multi) != 2 {
+		t.Fatalf("multi-scope dropped entries: %+v", multi)
+	}
+	if multi[1].Name != "hanzoai/console-embed/cache" || len(multi[1].Actions) != 2 {
+		t.Fatalf("second scope not honored: %+v", multi[1])
+	}
+
+	// Docker: space-separated scopes in one param.
+	spaced := registryScopeAccess([]string{"repository:a:pull repository:b:pull,push"}, true)
+	if len(spaced) != 2 || spaced[0].Name != "a" || spaced[1].Name != "b" {
+		t.Fatalf("space-separated scopes not split: %+v", spaced)
+	}
+
+	// Non-privileged principal is restricted to pull; push is dropped.
+	reg := registryScopeAccess([]string{"repository:a:pull,push"}, false)
+	if len(reg) != 1 || len(reg[0].Actions) != 1 || reg[0].Actions[0] != "pull" {
+		t.Fatalf("non-privileged should get pull only: %+v", reg[0])
+	}
+}
