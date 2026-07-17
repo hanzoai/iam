@@ -125,6 +125,22 @@ func IsSuper(ctx context.Context) bool {
 	return ok && p.Super
 }
 
+// CanSetOrg reports whether principal p may point a resource at organization
+// `org` — the tenant an application SERVES (the org every credential minted
+// through that app lands in), authorized EXACTLY as an owner target through the
+// one policy: a SuperAdmin may set any org; anyone else only their OWN org, never
+// a reserved platform org (admin/built-in — the SuperAdmin/signing vector) nor
+// another tenant (cross-tenant mint). It is the gate the application create/update
+// path applies to the Organization FIELD — closing the hole where authorizing only
+// the top-level Owner let a tenant admin register an app whose Organization named
+// the admin org (SuperAdmin) or a victim tenant. Fails closed on a nil principal.
+func CanSetOrg(p *Principal, org string) bool {
+	if p == nil {
+		return false
+	}
+	return authorize(p, "POST", "applications", org, "")
+}
+
 // Fail-closed reasons. The Guard collapses all of them to one opaque 401 so a
 // prober cannot tell a bad signature from an expired token from a revoked user.
 var (
