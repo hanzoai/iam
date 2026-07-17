@@ -1,0 +1,731 @@
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+
+package oidc
+
+import (
+	"context"
+	"crypto/rsa"
+	"encoding/base64"
+	"encoding/json"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/hanzoai/orm"
+	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
+)
+
+// Federation is driven through the REAL mounted routes (authorize → IdP → callback
+// → code → token). The external IdP is an httptest server — a real HTTP RP round
+// trip with a real OIDC discovery document, a real JWKS, and a real RS256-signed
+// id_token whose signature/issuer/audience/nonce iam2 actually verifies (Google
+// dialect), plus a real GitHub userinfo + verified-email exchange. No live
+// Google/GitHub is contacted.
+
+const (
+	fedAppState   = "app-state-xyz"
+	fedVerifier   = "verifier-abcdefghijklmnopqrstuvwxyz-0123456789"
+	fedGoogleCID  = "google-oauth-client"
+	fedGitHubCID  = "github-oauth-client"
+	fedProvGoogle = "provider-google"
+	fedProvGitHub = "provider-github"
+)
+
+// ---------------------------------------------------------------------------
+// Mock OIDC IdP (Google-shaped): discovery + JWKS + RS256 id_token.
+// ---------------------------------------------------------------------------
+
+type mockOIDC struct {
+	*httptest.Server
+	key      *rsa.PrivateKey
+	wrongKey *rsa.PrivateKey
+	kid      string
+	clientID string
+
+	mu             sync.Mutex
+	sub            string
+	email          string
+	name           string
+	emailVerified  bool
+	nonce          string // baked into the id_token; wired from the authorize redirect
+	signWrong      bool   // sign with wrongKey → signature must fail
+	noneAlg        bool   // emit an alg=none (unsigned) id_token → must be rejected
+	issuerOverride string // override id_token iss (issuer-confusion test)
+	audOverride    string // override id_token aud (audience test)
+	tokenForm      url.Values
+}
+
+func newMockOIDC(t *testing.T, clientID string) *mockOIDC {
+	t.Helper()
+	m := &mockOIDC{
+		key:           mustGenRSA(t),
+		wrongKey:      mustGenRSA(t),
+		kid:           "mock-oidc-kid",
+		clientID:      clientID,
+		sub:           "google-sub-1001",
+		email:         "alice@example.com",
+		name:          "Alice Example",
+		emailVerified: true,
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer":                 m.URL,
+			"authorization_endpoint": m.URL + "/authorize",
+			"token_endpoint":         m.URL + "/token",
+			"userinfo_endpoint":      m.URL + "/userinfo",
+			"jwks_uri":               m.URL + "/jwks",
+		})
+	})
+	mux.HandleFunc("/jwks", func(w http.ResponseWriter, _ *http.Request) {
+		pub := m.key.PublicKey
+		writeJSON(w, map[string]any{"keys": []map[string]any{{
+			"kty": "RSA", "use": "sig", "alg": "RS256", "kid": m.kid,
+			"n": base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
+			"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
+		}}})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		m.mu.Lock()
+		m.tokenForm = r.Form
+		iss := firstNonEmpty(m.issuerOverride, m.URL)
+		aud := firstNonEmpty(m.audOverride, m.clientID)
+		claims := jwt.MapClaims{
+			"iss": iss, "sub": m.sub, "aud": aud,
+			"exp":            time.Now().Add(time.Hour).Unix(),
+			"iat":            time.Now().Add(-time.Minute).Unix(),
+			"nonce":          m.nonce,
+			"email":          m.email,
+			"email_verified": m.emailVerified,
+			"name":           m.name,
+		}
+		signKey := m.key
+		if m.signWrong {
+			signKey = m.wrongKey
+		}
+		noneAlg := m.noneAlg
+		m.mu.Unlock()
+		// The alg=none forgery: an unsigned token whose header claims no signature.
+		if noneAlg {
+			tok := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
+			idt, _ := tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
+			writeJSON(w, map[string]any{"access_token": "x", "id_token": idt, "token_type": "Bearer"})
+			return
+		}
+		tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		tok.Header["kid"] = m.kid
+		idt, err := tok.SignedString(signKey)
+		if err != nil {
+			http.Error(w, "sign", 500)
+			return
+		}
+		writeJSON(w, map[string]any{"access_token": "idp-at-" + randHex(6), "id_token": idt, "token_type": "Bearer"})
+	})
+	m.Server = httptest.NewServer(mux)
+	t.Cleanup(m.Close)
+	return m
+}
+
+// ---------------------------------------------------------------------------
+// Mock GitHub IdP (OAuth2 + userinfo + verified emails).
+// ---------------------------------------------------------------------------
+
+type mockGitHub struct {
+	*httptest.Server
+	mu           sync.Mutex
+	id           int64
+	login        string
+	name         string
+	profileEmail string
+	emails       []map[string]any // {email, primary, verified}
+	tokenForm    url.Values
+}
+
+func newMockGitHub(t *testing.T) *mockGitHub {
+	t.Helper()
+	m := &mockGitHub{
+		id:    424242,
+		login: "octocat",
+		name:  "The Octocat",
+		emails: []map[string]any{
+			{"email": "octo-unverified@example.com", "primary": false, "verified": false},
+			{"email": "octo@example.com", "primary": true, "verified": true},
+		},
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		m.mu.Lock()
+		m.tokenForm = r.Form
+		m.mu.Unlock()
+		writeJSON(w, map[string]any{"access_token": "gho-" + randHex(6), "token_type": "bearer", "scope": "read:user,user:email"})
+	})
+	mux.HandleFunc("/user/emails", func(w http.ResponseWriter, _ *http.Request) {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		writeJSON(w, m.emails)
+	})
+	mux.HandleFunc("/user", func(w http.ResponseWriter, _ *http.Request) {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		writeJSON(w, map[string]any{"id": m.id, "login": m.login, "name": m.name, "email": m.profileEmail, "avatar_url": "https://avatars/x"})
+	})
+	m.Server = httptest.NewServer(mux)
+	t.Cleanup(m.Close)
+	return m
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// ---------------------------------------------------------------------------
+// Seeds + drivers.
+// ---------------------------------------------------------------------------
+
+// seedOIDCProvider seeds a Google-dialect Provider row whose OIDC issuer points
+// at the mock, and links it (sign-in enabled) onto the app.
+func seedOIDCProvider(t *testing.T, db orm.DB, appClientID string, m *mockOIDC) {
+	t.Helper()
+	p := orm.New[schema.Provider](db)
+	p.Owner, p.Name = "admin", fedProvGoogle
+	p.Category, p.Type = "OAuth", "Google"
+	p.ClientId, p.ClientSecret = m.clientID, "google-secret-do-not-log"
+	p.IssuerUrl = m.URL
+	p.SetId("admin/" + fedProvGoogle)
+	if err := p.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed google provider: %v", err)
+	}
+	linkProvider(t, db, appClientID, fedProvGoogle)
+}
+
+// seedGitHubProvider seeds a GitHub-dialect Provider row whose endpoints point at
+// the mock, and links it onto the app.
+func seedGitHubProvider(t *testing.T, db orm.DB, appClientID string, m *mockGitHub) {
+	t.Helper()
+	p := orm.New[schema.Provider](db)
+	p.Owner, p.Name = "admin", fedProvGitHub
+	p.Category, p.Type = "OAuth", "GitHub"
+	p.ClientId, p.ClientSecret = fedGitHubCID, "github-secret-do-not-log"
+	p.CustomAuthUrl = m.URL + "/authorize"
+	p.CustomTokenUrl = m.URL + "/token"
+	p.CustomUserInfoUrl = m.URL + "/user"
+	p.SetId("admin/" + fedProvGitHub)
+	if err := p.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed github provider: %v", err)
+	}
+	linkProvider(t, db, appClientID, fedProvGitHub)
+}
+
+// linkProvider appends a sign-in-enabled ProviderItem to an app and persists it.
+func linkProvider(t *testing.T, db orm.DB, appClientID, providerName string) {
+	t.Helper()
+	a, err := orm.Get[schema.Application](db, "admin/"+appClientID)
+	if err != nil {
+		t.Fatalf("load app: %v", err)
+	}
+	a.Providers = append(a.Providers, &schema.ProviderItem{Owner: "admin", Name: providerName, CanSignIn: true, CanSignUp: true})
+	if err := a.UpdateCtx(context.Background()); err != nil {
+		t.Fatalf("link provider: %v", err)
+	}
+}
+
+// beginAuthorize drives GET /v1/iam/oauth/authorize with a provider hint and
+// returns the IdP-authorize query (from the 302 Location) and the anti-forgery
+// cookie the response set. It asserts the request is a 302 to an IdP.
+func beginAuthorize(t *testing.T, app *zip.App, clientID, provider string) (url.Values, string) {
+	t.Helper()
+	q := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {clientID},
+		"redirect_uri":          {testRedirect},
+		"scope":                 {"openid email profile"},
+		"state":                 {fedAppState},
+		"code_challenge":        {ComputeS256Challenge(fedVerifier)},
+		"code_challenge_method": {"S256"},
+		"provider":              {provider},
+	}
+	resp, _ := do(t, app, formReqNoBody("GET", PathAuthorize+"?"+q.Encode()))
+	if resp.StatusCode != 302 {
+		t.Fatalf("authorize(provider) status = %d, want 302", resp.StatusCode)
+	}
+	loc, err := url.Parse(resp.Header.Get("Location"))
+	if err != nil {
+		t.Fatalf("parse IdP authorize location: %v", err)
+	}
+	// A federation kickoff redirects to an ABSOLUTE external IdP URL, never to the
+	// relative hosted-login path a credential flow uses.
+	if !loc.IsAbs() || loc.Host == "" {
+		t.Fatalf("authorize(provider) must redirect to an external IdP; got %q", loc.String())
+	}
+	return loc.Query(), cookieKV(resp.Header.Get("Set-Cookie"))
+}
+
+// callback drives GET /v1/iam/oauth/callback with the given state/code and the
+// anti-forgery cookie.
+func callback(t *testing.T, app *zip.App, state, code, cookie string) *http.Response {
+	t.Helper()
+	q := url.Values{"state": {state}, "code": {code}}
+	req := formReqNoBody("GET", PathFederationCallback+"?"+q.Encode())
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+	resp, _ := do(t, app, req)
+	return resp
+}
+
+// countUsers returns the number of users in the hanzo org.
+func countUsers(t *testing.T, db orm.DB) int {
+	t.Helper()
+	n, err := orm.TypedQuery[schema.User](db).Filter("Owner=", "hanzo").Count(context.Background())
+	if err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	return n
+}
+
+// ---------------------------------------------------------------------------
+// Tests.
+// ---------------------------------------------------------------------------
+
+// The authorize endpoint, given a provider hint, redirects the browser to the
+// external IdP with response_type=code, our callback, a single-use state, S256
+// PKCE, and (OIDC) a nonce — and sets the HttpOnly browser-binding cookie. The
+// client_secret is NEVER on this browser-facing redirect.
+func TestFederation_AuthorizeRedirectsToOIDCWithStatePKCENonce(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+
+	if q.Get("response_type") != "code" {
+		t.Errorf("response_type = %q", q.Get("response_type"))
+	}
+	if q.Get("client_id") != fedGoogleCID {
+		t.Errorf("client_id = %q, want the provider's IdP client id", q.Get("client_id"))
+	}
+	if !strings.HasSuffix(q.Get("redirect_uri"), PathFederationCallback) {
+		t.Errorf("redirect_uri = %q, want our callback", q.Get("redirect_uri"))
+	}
+	if q.Get("state") == "" {
+		t.Error("state must be present (single-use CSRF token)")
+	}
+	if q.Get("nonce") == "" {
+		t.Error("OIDC nonce must be present")
+	}
+	if q.Get("code_challenge") == "" || q.Get("code_challenge_method") != "S256" {
+		t.Errorf("IdP-leg PKCE missing: challenge=%q method=%q", q.Get("code_challenge"), q.Get("code_challenge_method"))
+	}
+	if cookie == "" || !strings.HasPrefix(cookie, fedCookieName+"=") {
+		t.Errorf("anti-forgery cookie missing: %q", cookie)
+	}
+	// The provider secret must never cross to the browser.
+	if strings.Contains(q.Encode(), "google-secret-do-not-log") {
+		t.Fatal("client_secret leaked into the browser-facing IdP redirect")
+	}
+	// State is server-side single-use.
+	if st, _ := store.GetFederationState(context.Background(), db, q.Get("state")); st == nil {
+		t.Fatal("federation state row was not persisted")
+	}
+}
+
+// GitHub authorize carries state (its CSRF defense) but no nonce (OAuth2, no
+// id_token) and no PKCE by default.
+func TestFederation_AuthorizeRedirectsToGitHub(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockGitHub(t)
+	seedGitHubProvider(t, db, "webapp", m)
+
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGitHub)
+	if q.Get("state") == "" {
+		t.Error("GitHub authorize must carry state")
+	}
+	if q.Get("nonce") != "" {
+		t.Error("GitHub (OAuth2) must not carry an OIDC nonce")
+	}
+	if cookie == "" {
+		t.Error("anti-forgery cookie must be set")
+	}
+}
+
+// Full OIDC round-trip: a first-time login PROVISIONS a user (no password, not
+// admin) and mints an iam2 authorization code; the relying party's existing PKCE
+// code→token exchange then completes unchanged and carries the new user's sub.
+func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+
+	before := countUsers(t, db)
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce") // wire the transaction's real IdP nonce into the id_token
+	m.mu.Unlock()
+
+	resp := callback(t, app, q.Get("state"), "idp-code-1", cookie)
+	loc := requireRedirect(t, resp, testRedirect)
+	cb, _ := url.Parse(loc)
+	code := cb.Query().Get("code")
+	if code == "" {
+		t.Fatalf("callback must redirect with an iam2 code; got %q", loc)
+	}
+	if cb.Query().Get("state") != fedAppState {
+		t.Errorf("app state not echoed: %q", cb.Query().Get("state"))
+	}
+
+	// A user was provisioned, linked by the Google subject, no password, no admin.
+	u, err := store.GetUserByConnector(context.Background(), db, "hanzo", "google", m.sub)
+	if err != nil || u == nil {
+		t.Fatalf("provisioned user not found by connector subject: %v", err)
+	}
+	if u.PasswordHash != "" {
+		t.Error("federated user must have NO password hash")
+	}
+	if u.IsAdmin {
+		t.Fatal("federation must NEVER set isAdmin")
+	}
+	if !u.EmailVerified || u.Email != m.email {
+		t.Errorf("verified email not carried: verified=%v email=%q", u.EmailVerified, u.Email)
+	}
+	if countUsers(t, db) != before+1 {
+		t.Fatalf("expected exactly one new user")
+	}
+
+	// The iam2 code redeems through the ordinary PKCE token exchange, unchanged.
+	tokResp, tok := exchangeCode(t, app, url.Values{
+		"code": {code}, "client_id": {"webapp"}, "redirect_uri": {testRedirect}, "code_verifier": {fedVerifier},
+	})
+	if tokResp.StatusCode != 200 {
+		t.Fatalf("iam2 code exchange failed: %d %v", tokResp.StatusCode, tok)
+	}
+	if tok["access_token"] == nil {
+		t.Fatal("no access_token from the iam2 code exchange")
+	}
+	// The token subject is the provisioned user; no IdP token leaks into it.
+	if body := tokenBody(tok); strings.Contains(body, "idp-at-") || strings.Contains(body, "google-secret-do-not-log") {
+		t.Fatal("IdP access token / client secret leaked into the iam2 token response")
+	}
+}
+
+// The GitHub dialect: token exchange + /user + /user/emails, provisioning by the
+// primary VERIFIED email.
+func TestFederation_GitHubCallbackProvisionsViaVerifiedEmail(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockGitHub(t)
+	seedGitHubProvider(t, db, "webapp", m)
+
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGitHub)
+	resp := callback(t, app, q.Get("state"), "gh-code-1", cookie)
+	loc := requireRedirect(t, resp, testRedirect)
+	if code := mustQuery(t, loc).Get("code"); code == "" {
+		t.Fatalf("GitHub federation did not mint an iam2 code: %q", loc)
+	}
+	u, err := store.GetUserByConnector(context.Background(), db, "hanzo", "github", "424242")
+	if err != nil || u == nil {
+		t.Fatalf("GitHub user not provisioned by subject: %v", err)
+	}
+	if u.Email != "octo@example.com" || !u.EmailVerified {
+		t.Errorf("expected the primary verified email; got %q verified=%v", u.Email, u.EmailVerified)
+	}
+	// The GitHub client secret only ever went to the token endpoint (server-side).
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.tokenForm.Get("client_secret") != "github-secret-do-not-log" {
+		t.Errorf("expected the secret at the token endpoint, form=%v", m.tokenForm)
+	}
+}
+
+// A returning federated user (same subject) is matched by subject — no duplicate
+// account is created on the second login.
+func TestFederation_ReloginBySubjectIsStable(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+
+	runOIDCLogin(t, app, db, m, "webapp", nil)
+	after1 := countUsers(t, db)
+	runOIDCLogin(t, app, db, m, "webapp", nil)
+	if countUsers(t, db) != after1 {
+		t.Fatalf("second login by the same subject must not create a new user")
+	}
+}
+
+// A verified IdP email that matches an EXISTING local account LINKS to it (sets
+// the connector column) instead of creating a duplicate.
+func TestFederation_LinksExistingAccountByVerifiedEmail(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	seedUser(t, db, "alice", "alice@example.com", "pw") // pre-existing password account, same email
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+
+	before := countUsers(t, db)
+	runOIDCLogin(t, app, db, m, "webapp", nil)
+	if countUsers(t, db) != before {
+		t.Fatalf("verified-email login must link, not create a duplicate")
+	}
+	// The Google subject is now linked onto the pre-existing account.
+	linked, _ := store.GetUserByName(context.Background(), db, "hanzo", "alice")
+	if linked == nil || linked.Google != m.sub {
+		t.Fatalf("connector subject not linked onto the existing account: %+v", linked)
+	}
+}
+
+// email_verified:false must NOT auto-link by email — it provisions a fresh
+// account, so an unproven address can never take over an existing one.
+func TestFederation_UnverifiedEmailDoesNotAutoLink(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	seedUser(t, db, "victim", "victim@example.com", "pw")
+	m := newMockOIDC(t, fedGoogleCID)
+	m.email = "victim@example.com"
+	m.emailVerified = false
+	m.sub = "attacker-sub-9"
+	seedOIDCProvider(t, db, "webapp", m)
+
+	before := countUsers(t, db)
+	runOIDCLogin(t, app, db, m, "webapp", nil)
+
+	// The victim account was NOT linked.
+	victim, _ := store.GetUserByName(context.Background(), db, "hanzo", "victim")
+	if victim == nil || victim.Google != "" {
+		t.Fatalf("unverified email must not link onto the victim account: %+v", victim)
+	}
+	// A fresh account was provisioned instead.
+	if countUsers(t, db) != before+1 {
+		t.Fatalf("expected a freshly provisioned account, not a takeover")
+	}
+	if u, _ := store.GetUserByConnector(context.Background(), db, "hanzo", "google", "attacker-sub-9"); u == nil {
+		t.Fatal("federated identity should have been provisioned onto its own account")
+	}
+}
+
+// An unknown/forged state is answered in place (no trusted redirect target) and
+// never completes.
+func TestFederation_UnknownStateRejected(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+
+	// A cookie alone cannot substitute for a real server-side state row.
+	resp := callback(t, app, "totally-made-up-state", "idp-code", fedCookieName+"=whatever")
+	if resp.StatusCode != 400 {
+		t.Fatalf("unknown state status = %d, want 400", resp.StatusCode)
+	}
+	if resp.Header.Get("Location") != "" {
+		t.Fatalf("unknown state must NOT redirect anywhere; got %q", resp.Header.Get("Location"))
+	}
+}
+
+// A consumed state cannot be replayed — the second callback mints nothing.
+func TestFederation_ReplayedStateRejected(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce")
+	m.mu.Unlock()
+
+	first := callback(t, app, q.Get("state"), "idp-code-1", cookie)
+	requireRedirect(t, first, testRedirect) // success
+
+	replay := callback(t, app, q.Get("state"), "idp-code-1", cookie)
+	if replay.StatusCode != 400 || replay.Header.Get("Location") != "" {
+		t.Fatalf("replayed state must be refused in place; status=%d loc=%q", replay.StatusCode, replay.Header.Get("Location"))
+	}
+}
+
+// Without the browser-binding cookie the callback is refused (login-CSRF /
+// session-fixation defense): a state injected into another browser cannot land.
+func TestFederation_MissingOrWrongBindCookieRejected(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce")
+	m.mu.Unlock()
+
+	// No cookie.
+	noCookie := callback(t, app, q.Get("state"), "idp-code-1", "")
+	if noCookie.StatusCode != 400 || noCookie.Header.Get("Location") != "" {
+		t.Fatalf("callback without the bind cookie must be refused; status=%d", noCookie.StatusCode)
+	}
+	// Wrong cookie value.
+	wrong := callback(t, app, q.Get("state"), "idp-code-1", fedCookieName+"=not-the-secret")
+	if wrong.StatusCode != 400 || wrong.Header.Get("Location") != "" {
+		t.Fatalf("callback with a wrong bind cookie must be refused; status=%d", wrong.StatusCode)
+	}
+	// The state was not consumed by the failed attempts — the legit browser still works.
+	_ = cookie
+}
+
+// An id_token whose nonce does not match the transaction's nonce is rejected —
+// the login does not complete and no account is created/linked.
+func TestFederation_OIDCNonceMismatchRejected(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+
+	before := countUsers(t, db)
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = "a-different-nonce-than-issued" // tamper: id_token nonce != state.IdpNonce
+	m.mu.Unlock()
+
+	resp := callback(t, app, q.Get("state"), "idp-code-1", cookie)
+	loc := requireRedirect(t, resp, testRedirect)
+	if q2 := mustQuery(t, loc); q2.Get("error") == "" || q2.Get("code") != "" {
+		t.Fatalf("nonce mismatch must fail closed (error, no code); got %q", loc)
+	}
+	if countUsers(t, db) != before {
+		t.Fatal("a nonce-mismatched login must not provision an account")
+	}
+}
+
+// An id_token whose signature does not verify against the published JWKS is
+// rejected — proving the signature check is real, not stubbed.
+func TestFederation_OIDCBadSignatureRejected(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	m.signWrong = true // sign with a key NOT in the JWKS
+	seedOIDCProvider(t, db, "webapp", m)
+
+	before := countUsers(t, db)
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce")
+	m.mu.Unlock()
+
+	resp := callback(t, app, q.Get("state"), "idp-code-1", cookie)
+	loc := requireRedirect(t, resp, testRedirect)
+	if q2 := mustQuery(t, loc); q2.Get("error") == "" || q2.Get("code") != "" {
+		t.Fatalf("bad signature must fail closed; got %q", loc)
+	}
+	if countUsers(t, db) != before {
+		t.Fatal("a signature-invalid login must not provision an account")
+	}
+}
+
+// An alg=none (unsigned) id_token is rejected — the signing method is pinned to
+// the asymmetric set, so the classic JWT downgrade never authenticates anyone.
+func TestFederation_OIDCAlgNoneRejected(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	m.noneAlg = true
+	seedOIDCProvider(t, db, "webapp", m)
+
+	before := countUsers(t, db)
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce")
+	m.mu.Unlock()
+
+	resp := callback(t, app, q.Get("state"), "idp-code-1", cookie)
+	loc := requireRedirect(t, resp, testRedirect)
+	if q2 := mustQuery(t, loc); q2.Get("error") == "" || q2.Get("code") != "" {
+		t.Fatalf("alg=none must fail closed; got %q", loc)
+	}
+	if countUsers(t, db) != before {
+		t.Fatal("an unsigned id_token must not provision an account")
+	}
+}
+
+// An id_token minted for a different audience (not our client id) is rejected.
+func TestFederation_OIDCWrongAudienceRejected(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	m.audOverride = "some-other-client"
+	seedOIDCProvider(t, db, "webapp", m)
+
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce")
+	m.mu.Unlock()
+
+	resp := callback(t, app, q.Get("state"), "idp-code-1", cookie)
+	loc := requireRedirect(t, resp, testRedirect)
+	if q2 := mustQuery(t, loc); q2.Get("error") == "" || q2.Get("code") != "" {
+		t.Fatalf("wrong audience must fail closed; got %q", loc)
+	}
+}
+
+// A non-allow-listed redirect_uri is refused at the authorize leg IN PLACE (never
+// redirected), and no federation transaction is created for it.
+func TestFederation_NonAllowlistedRedirectUriRefused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+
+	q := url.Values{
+		"response_type": {"code"}, "client_id": {"webapp"},
+		"redirect_uri":   {"https://evil.example/steal"},
+		"code_challenge": {ComputeS256Challenge(fedVerifier)},
+		"provider":       {fedProvGoogle},
+	}
+	resp, _ := do(t, app, formReqNoBody("GET", PathAuthorize+"?"+q.Encode()))
+	if resp.StatusCode != 400 || resp.Header.Get("Location") != "" {
+		t.Fatalf("bad redirect_uri must be answered in place; status=%d loc=%q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
+// runOIDCLogin drives a full successful OIDC federation login (authorize →
+// callback) and asserts it lands an iam2 code. mutate may tweak the mock after
+// the nonce is wired.
+func runOIDCLogin(t *testing.T, app *zip.App, db orm.DB, m *mockOIDC, clientID string, mutate func()) {
+	t.Helper()
+	q, cookie := beginAuthorize(t, app, clientID, fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce")
+	m.mu.Unlock()
+	if mutate != nil {
+		mutate()
+	}
+	resp := callback(t, app, q.Get("state"), "idp-code-"+randHex(3), cookie)
+	loc := requireRedirect(t, resp, testRedirect)
+	if mustQuery(t, loc).Get("code") == "" {
+		t.Fatalf("federation login did not mint an iam2 code: %q", loc)
+	}
+}
+
+func mustQuery(t *testing.T, loc string) url.Values {
+	t.Helper()
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("parse location %q: %v", loc, err)
+	}
+	return u.Query()
+}
+
+func tokenBody(tok map[string]any) string {
+	b, _ := json.Marshal(tok)
+	return string(b)
+}

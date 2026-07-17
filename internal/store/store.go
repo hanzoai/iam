@@ -303,3 +303,63 @@ func GetLatestVerificationRecord(_ context.Context, db orm.DB, receiver string) 
 	}
 	return rec, err
 }
+
+// PersistFederationState creates a fresh in-flight federation transaction. The
+// id is (owner, name); the caller sets Name to the opaque `state` token before
+// persisting. Mirrors PersistToken — the orm.Model is preserved while the
+// caller's fields are copied onto the db-wired entity.
+func PersistFederationState(ctx context.Context, db orm.DB, st *schema.FederationState) error {
+	s := orm.New[schema.FederationState](db)
+	model := s.Model
+	*s = *st
+	s.Model = model
+	s.SetId(st.Owner + "/" + st.Name)
+	return s.CreateCtx(ctx)
+}
+
+// GetFederationState resolves an in-flight federation transaction by its opaque
+// `state` token (the row Name). The state is a 256-bit random value, so a
+// name-only lookup is unambiguous. Returns (nil, nil) when no row carries it —
+// the callback treats that as an invalid/expired state and fails closed.
+func GetFederationState(_ context.Context, db orm.DB, state string) (*schema.FederationState, error) {
+	if state == "" {
+		return nil, nil
+	}
+	s, err := orm.TypedQuery[schema.FederationState](db).Filter("Name=", state).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return s, err
+}
+
+// SaveFederationState read-modify-writes an existing federation transaction (the
+// callback burns it: Used=true), looking the row up by (owner, name) and
+// updating in place. Mirrors SaveToken.
+func SaveFederationState(ctx context.Context, db orm.DB, st *schema.FederationState) error {
+	existing, err := orm.Get[schema.FederationState](db, st.Owner+"/"+st.Name)
+	if err != nil {
+		return err
+	}
+	model := existing.Model
+	*existing = *st
+	existing.Model = model
+	return existing.UpdateCtx(ctx)
+}
+
+// GetUserByConnector resolves the user in an organization whose federated
+// connector column (field — the EXACT lowercase orm/json name, e.g. "google" or
+// "github") holds subject. It is the "already linked by provider subject" lookup
+// the federation broker runs first. subject must be non-empty (an empty subject
+// would match every unlinked row, so it is refused). Returns (nil, nil) when no
+// user is linked to that subject.
+func GetUserByConnector(_ context.Context, db orm.DB, owner, field, subject string) (*schema.User, error) {
+	if owner == "" || field == "" || subject == "" {
+		return nil, nil
+	}
+	u, err := orm.TypedQuery[schema.User](db).
+		Filter("Owner=", owner).Filter(field+"=", subject).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return u, err
+}

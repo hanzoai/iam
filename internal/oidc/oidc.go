@@ -71,6 +71,11 @@ func Route(r zip.Router, db orm.DB) {
 	routeLogin(r, db)
 	routeFrontDoor(r, db)
 
+	// Identity federation: the external-IdP callback (Google/GitHub, …). The
+	// authorize endpoint kicks a federation off when the request names a
+	// `provider`; this registers the fixed return endpoint the IdP redirects to.
+	routeFederation(r, db)
+
 	// RFC 7662 introspection + RFC 7009 revocation — the standard token-management
 	// endpoints a resource server / confidential client uses (client-authenticated).
 	routeIntrospectRevoke(r, db)
