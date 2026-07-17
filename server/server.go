@@ -14,9 +14,11 @@ package server
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
+	"github.com/zap-proto/fiber/v3/middleware/adaptor"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam2/feature"
@@ -37,6 +39,28 @@ func Mount(app *zip.App, db orm.DB) {
 	if err := feature.MountAll(app, featurestore.New(db)); err != nil {
 		panic("iam2: enterprise feature mount failed: " + err.Error())
 	}
+}
+
+// NewApp builds a STANDALONE iam2 zip.App over db — the whole IAM v2 surface
+// mounted and Prepared as one self-contained app. A host that mounts iam2 as a
+// wildcard sub-handler (app.All("/v1/iam/*", zip.AdaptNetHTTP(h))) rather than
+// co-mingling iam2's routes onto its own app uses this together with Handler; the
+// caller owns the returned app's Shutdown.
+func NewApp(db orm.DB) *zip.App {
+	app := zip.New(zip.Config{AppName: "iam2", DisableStartupMessage: true})
+	Mount(app, db)
+	app.Prepare()
+	return app
+}
+
+// Handler adapts a standalone iam2 app (NewApp) to a net/http handler, so a host
+// router serves the whole IAM v2 surface behind ONE wildcard route. This is the
+// drop-in shape hanzoai/cloud uses to swap the legacy Beego IAM catch-all for
+// iam2: mounted at the /v1/iam/* (and root /.well-known/*) wildcards, the
+// specific self-service routes layered in front still win by Fiber specificity,
+// so the swap is collision-free — the same topology the Beego mount had.
+func Handler(db orm.DB) http.Handler {
+	return adaptor.FiberApp(NewApp(db).Fiber())
 }
 
 // OpenSQLite opens an embedded SQLite store for iam2 at path (WAL). The host may
