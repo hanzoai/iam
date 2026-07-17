@@ -3,16 +3,20 @@
 # GitHub.com ignores .gitea/workflows, so this never touches the GitHub release
 # lanes; it mirrors the `test:` gates in hanzo.yml (go-test + go-lint).
 #
-# Secrets: NONE needed. iam's luxfi/* and hanzoai/* modules are PUBLIC (see the
-# Dockerfile: they resolve via the public proxy + sumdb), and the CI gate runs
-# the pure-Go modernc driver (CGO_ENABLED=0), so no libsqlcipher and no
-# UNIVERSE_PAT. GITHUB_TOKEN is auto-minted per job by Gitea.
+# Private modules: github.com/hanzoai/* (e.g. hanzoai/beego) are PRIVATE and a
+# direct fetch 128s without auth, so each job authenticates github via the
+# UNIVERSE_PAT repo secret (git insteadOf) and marks hanzoai/* GOPRIVATE. luxfi/*
+# stays public via the proxy. Pure-Go modernc driver (CGO_ENABLED=0), no
+# libsqlcipher. GITHUB_TOKEN is auto-minted per job by Gitea.
 name: ci
 
 on:
   push:
     branches: [main]
   pull_request:
+
+env:
+  GOPRIVATE: github.com/hanzoai/*
 
 jobs:
   build:
@@ -23,6 +27,8 @@ jobs:
         with:
           go-version: '1.26.4'
           cache-dependency-path: go.sum
+      - name: auth private modules
+        run: git config --global url."https://x-access-token:${{ secrets.UNIVERSE_PAT }}@github.com/".insteadOf "https://github.com/"
       - run: CGO_ENABLED=0 go build -tags skipCi ./...
 
   test:
@@ -34,6 +40,8 @@ jobs:
         with:
           go-version: '1.26.4'
           cache-dependency-path: go.sum
+      - name: auth private modules
+        run: git config --global url."https://x-access-token:${{ secrets.UNIVERSE_PAT }}@github.com/".insteadOf "https://github.com/"
       - run: CGO_ENABLED=0 go test $(go list ./...) -tags skipCi
 
   lint:
@@ -44,6 +52,8 @@ jobs:
         with:
           go-version: '1.26.4'
           cache-dependency-path: go.sum
+      - name: auth private modules
+        run: git config --global url."https://x-access-token:${{ secrets.UNIVERSE_PAT }}@github.com/".insteadOf "https://github.com/"
       - run: CGO_ENABLED=0 go vet -tags "libsqlite3 sqlite_fts5" ./...
       - name: gofumpt
         run: |
