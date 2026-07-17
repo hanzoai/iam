@@ -380,6 +380,7 @@ func InitAPI() {
 	//   POST /v1/iam/web3/verify -> verify a SignedProof, burn the nonce, log in
 	web.Router("/v1/iam/web3/nonce", &controllers.ApiController{}, "GET:GetWeb3Nonce")
 	web.Router("/v1/iam/web3/verify", &controllers.ApiController{}, "POST:VerifyWeb3")
+	web.Router("/v1/iam/web3/wallet", &controllers.ApiController{}, "GET:GetWeb3Wallet")
 
 	web.Router("/v1/iam/get-records", &controllers.ApiController{}, "GET:GetRecords")
 	web.Router("/v1/iam/get-records-filter", &controllers.ApiController{}, "POST:GetRecordsByFilter")
