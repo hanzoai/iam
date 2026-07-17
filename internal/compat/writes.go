@@ -11,6 +11,8 @@ import (
 	"github.com/hanzoai/iam2/internal/applications"
 	"github.com/hanzoai/iam2/internal/httpx"
 	"github.com/hanzoai/iam2/internal/organizations"
+	"github.com/hanzoai/iam2/internal/providers"
+	"github.com/hanzoai/iam2/internal/roles"
 	"github.com/hanzoai/iam2/internal/schema"
 	"github.com/hanzoai/iam2/internal/users"
 )
@@ -32,7 +34,9 @@ import (
 func routeWrites(app *zip.App, db orm.DB) {
 	orgs := organizations.NewOrganizationAPI(db)
 	usersAPI := users.New(db)
-	appUpdate := applications.Update(db)
+	appCreate, appUpdate, appDelete := applications.Create(db), applications.Update(db), applications.Delete(db)
+	rolesH := roles.New(db)
+	provAdd, provUpdate, provDelete := providers.Add(db), providers.Update(db), providers.Delete(db)
 
 	zip.Post(app, "/v1/iam/add-organization",
 		func(ctx context.Context, in *organizations.CreateOrganizationInput) (*httpx.Response, error) {
@@ -57,6 +61,57 @@ func routeWrites(app *zip.App, db orm.DB) {
 			return envelope(appUpdate(ctx, in))
 		},
 		zip.WithOperationID("updateApplication"), zip.WithSummary("Update an application (Casdoor verb)"), zip.WithTags("compat"))
+
+	// delete-user — the console IamAdminApi + /org/iam admin mutation.
+	zip.Post(app, "/v1/iam/delete-user",
+		func(ctx context.Context, in *userBody) (*httpx.Response, error) {
+			return envelope(usersAPI.Delete(ctx, &users.Ref{Owner: in.Owner, Name: in.Name}))
+		},
+		zip.WithOperationID("deleteUser"), zip.WithSummary("Delete a user (Casdoor verb)"), zip.WithTags("compat"))
+
+	// Applications: add-/delete- (update-application already above).
+	zip.Post(app, "/v1/iam/add-application",
+		func(ctx context.Context, in *schema.Application) (*httpx.Response, error) { return envelope(appCreate(ctx, in)) },
+		zip.WithOperationID("addApplication"), zip.WithSummary("Create an application (Casdoor verb)"), zip.WithTags("compat"))
+	zip.Post(app, "/v1/iam/delete-application",
+		func(ctx context.Context, in *schema.Application) (*httpx.Response, error) {
+			return envelope(appDelete(ctx, &applications.ApplicationRef{Owner: in.Owner, Name: in.Name}))
+		},
+		zip.WithOperationID("deleteApplication"), zip.WithSummary("Delete an application (Casdoor verb)"), zip.WithTags("compat"))
+
+	// Providers: add-/update-/delete- (console admin Providers page).
+	zip.Post(app, "/v1/iam/add-provider",
+		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) { return envelope(provAdd(ctx, in)) },
+		zip.WithOperationID("addProvider"), zip.WithSummary("Create a provider (Casdoor verb)"), zip.WithTags("compat"))
+	zip.Post(app, "/v1/iam/update-provider",
+		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) { return envelope(provUpdate(ctx, in)) },
+		zip.WithOperationID("updateProvider"), zip.WithSummary("Update a provider (Casdoor verb)"), zip.WithTags("compat"))
+	zip.Post(app, "/v1/iam/delete-provider",
+		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) { return envelope(provDelete(ctx, in)) },
+		zip.WithOperationID("deleteProvider"), zip.WithSummary("Delete a provider (Casdoor verb)"), zip.WithTags("compat"))
+
+	// Roles: add-/update-/delete- (console admin Roles page).
+	zip.Post(app, "/v1/iam/add-role",
+		func(ctx context.Context, in *roles.Input) (*httpx.Response, error) { return envelope(rolesH.Create(ctx, in)) },
+		zip.WithOperationID("addRole"), zip.WithSummary("Create a role (Casdoor verb)"), zip.WithTags("compat"))
+	zip.Post(app, "/v1/iam/update-role",
+		func(ctx context.Context, in *roles.Input) (*httpx.Response, error) { return envelope(rolesH.Update(ctx, in)) },
+		zip.WithOperationID("updateRole"), zip.WithSummary("Update a role (Casdoor verb)"), zip.WithTags("compat"))
+	zip.Post(app, "/v1/iam/delete-role",
+		func(ctx context.Context, in *roles.Ref) (*httpx.Response, error) { return envelope(rolesH.Delete(ctx, in)) },
+		zip.WithOperationID("deleteRole"), zip.WithSummary("Delete a role (Casdoor verb)"), zip.WithTags("compat"))
+
+	// Organizations: update-/delete- (add-organization already above).
+	zip.Post(app, "/v1/iam/update-organization",
+		func(ctx context.Context, in *organizations.UpdateOrganizationInput) (*httpx.Response, error) {
+			return envelope(orgs.Update(ctx, in))
+		},
+		zip.WithOperationID("updateOrganization"), zip.WithSummary("Update an organization (Casdoor verb)"), zip.WithTags("compat"))
+	zip.Post(app, "/v1/iam/delete-organization",
+		func(ctx context.Context, in *organizations.DeleteOrganizationInput) (*httpx.Response, error) {
+			return envelope(orgs.Delete(ctx, in))
+		},
+		zip.WithOperationID("deleteOrganization"), zip.WithSummary("Delete an organization (Casdoor verb)"), zip.WithTags("compat"))
 }
 
 // userBody is the bare-user body the Casdoor add-user/update-user verbs post (the

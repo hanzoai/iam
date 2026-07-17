@@ -166,3 +166,64 @@ func TestFrontDoorPublic_ReachableWithoutBearer(t *testing.T) {
 		t.Fatalf("anonymous signin status=%d body=%s, want 200 error (public)", status, body)
 	}
 }
+
+// --- C2 parity write-verb aliases (the console admin mutations) ---
+
+// delete-user: a full lifecycle through the Casdoor verb (add → delete → gone).
+func TestDeleteUser_lifecycle(t *testing.T) {
+	h := newHarness(t)
+	root := h.token(t, "admin/root")
+	if s, b := h.post(t, "/v1/iam/add-user", root, map[string]any{"owner": "hanzo", "name": "tmp", "password": "x"}); s != 200 {
+		t.Fatalf("add-user status=%d body=%s", s, b)
+	}
+	okEnvelope(h.postOK(t, "/v1/iam/delete-user", root, map[string]any{"owner": "hanzo", "name": "tmp"}))
+	if s, rb := h.get(t, "/v1/iam/get-user?id=hanzo/tmp", root); s == 200 && strings.Contains(rb, "\"name\":\"tmp\"") {
+		t.Fatalf("user still present after delete-user: %s", rb)
+	}
+}
+
+// add-provider is platform-owned — only a SuperAdmin creates one, over the SAME
+// providers.Add the REST route uses.
+func TestAddProvider_super(t *testing.T) {
+	h := newHarness(t)
+	root := h.token(t, "admin/root")
+	okEnvelope(h.postOK(t, "/v1/iam/add-provider", root,
+		map[string]any{"owner": "admin", "name": "provider-test", "category": "OAuth", "type": "GitHub"}))
+	if s, rb := h.get(t, "/v1/iam/get-provider?id=admin/provider-test", root); s != 200 || !strings.Contains(rb, "provider-test") {
+		t.Fatalf("get-provider after add: status=%d body=%s", s, rb)
+	}
+}
+
+// add-provider by a non-super is refused (platform-owned write).
+func TestAddProvider_nonSuperForbidden(t *testing.T) {
+	h := newHarness(t)
+	s, _ := h.post(t, "/v1/iam/add-provider", h.token(t, "hanzo/boss"),
+		map[string]any{"owner": "admin", "name": "evil", "category": "OAuth", "type": "GitHub"})
+	if s != 403 {
+		t.Fatalf("non-super add-provider status=%d, want 403", s)
+	}
+}
+
+// add-role is tenant-owned — an org-admin creates one in its OWN org.
+func TestAddRole_orgAdmin(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss")
+	okEnvelope(h.postOK(t, "/v1/iam/add-role", boss,
+		map[string]any{"owner": "hanzo", "name": "editors", "displayName": "Editors"}))
+	if s, rb := h.get(t, "/v1/iam/get-role?id=hanzo/editors", boss); s != 200 || !strings.Contains(rb, "editors") {
+		t.Fatalf("get-role after add: status=%d body=%s", s, rb)
+	}
+}
+
+// update-organization is platform-owned — SuperAdmin only.
+func TestUpdateOrganization_super(t *testing.T) {
+	h := newHarness(t)
+	root := h.token(t, "admin/root")
+	okEnvelope(h.postOK(t, "/v1/iam/update-organization", root,
+		map[string]any{"owner": "admin", "name": "hanzo", "displayName": "Hanzo Updated"}))
+}
+
+// postOK is post with the (status, body) returned for okEnvelope chaining.
+func (h *harness) postOK(t *testing.T, path, bearer string, body any) (int, string) {
+	return h.post(t, path, bearer, body)
+}
