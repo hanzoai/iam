@@ -452,6 +452,28 @@ func runInitApps(client *provClient, cfg *provConfig, verbose bool) error {
 		}
 	}
 
+	// hanzo-admin-guard — the SuperAdmin ForwardAuth app (org=admin). It ships
+	// authorization_code+refresh_token only, so headless SuperAdmin login (the CLI
+	// `hanzo login --password-stdin`, and the device flow targeting the admin app)
+	// is rejected with unsupported_grant_type. Converge it to ALSO accept `password`
+	// (ROPC — the owner's explicit choice for programmatic admin automation) and the
+	// device grant, so superadmin can authenticate without a browser. Converge-only:
+	// the guard row is admin-owned (never created here); we only add the missing
+	// grants when it exists. Idempotent (a converged guard adds 0).
+	if adminApps, err := listAppsForOrg(client, cfg.AdminOrg, cfg.AdminOrg); err == nil {
+		if guard := findApp(adminApps, "hanzo-admin-guard"); guard != nil {
+			if added := ensureGrantTypes(guard, []string{"password", deviceGrantType}); added > 0 {
+				if err := updateApp(client, guard); err != nil {
+					return fmt.Errorf("init-apps: converge admin-guard grants: %w", err)
+				}
+				convergedApps++
+				if verbose {
+					fmt.Printf("[grant] %s/hanzo-admin-guard — added %d grant type(s)\n", cfg.AdminOrg, added)
+				}
+			}
+		}
+	}
+
 	// KMS admin SSO clients — the confidential "<org>-kms" client per brand,
 	// derived from the SAME brandSpecs. Idempotent: created only if absent. This
 	// is what makes KMS "Sign in with IAM" work on a fresh cluster with zero env
