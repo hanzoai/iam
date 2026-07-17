@@ -85,6 +85,10 @@ func isServiceTokenRoute(urlPath string) bool {
 		// Read-only; the service token is already all-powerful for the
 		// upsert routes above, so read access is strictly narrower.
 		return true
+	case "/v1/iam/web3/wallet":
+		// bounty-bot resolves a PR author's payout wallet by GitHub id.
+		// Read-only, public-on-chain mapping; same service-token pipeline.
+		return true
 	default:
 		return false
 	}
