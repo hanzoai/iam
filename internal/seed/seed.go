@@ -80,6 +80,12 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 		}
 	}
 	for _, c := range data.Certs {
+		// A reserved-org signing cert arrives from init_data without key material
+		// (secrets can't ride a ConfigMap); mint the keypair so the JWKS publishes a
+		// key and iam2 can sign — persisted once by the new-only upsert below.
+		if err := ensureSigningKey(c); err != nil {
+			return s, fmt.Errorf("seed: generate signing key for cert %s/%s: %w", c.Owner, c.Name, err)
+		}
 		if err := upsert[schema.Cert](ctx, db, c.Owner, c.Name, c, s, "certs"); err != nil {
 			return s, err
 		}
