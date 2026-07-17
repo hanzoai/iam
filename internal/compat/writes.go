@@ -11,6 +11,7 @@ import (
 	"github.com/hanzoai/iam2/internal/applications"
 	"github.com/hanzoai/iam2/internal/httpx"
 	"github.com/hanzoai/iam2/internal/organizations"
+	"github.com/hanzoai/iam2/internal/projects"
 	"github.com/hanzoai/iam2/internal/providers"
 	"github.com/hanzoai/iam2/internal/roles"
 	"github.com/hanzoai/iam2/internal/schema"
@@ -36,6 +37,7 @@ func routeWrites(app *zip.App, db orm.DB) {
 	usersAPI := users.New(db)
 	appCreate, appUpdate, appDelete := applications.Create(db), applications.Update(db), applications.Delete(db)
 	rolesH := roles.New(db)
+	projectsH := projects.New(db)
 	provAdd, provUpdate, provDelete := providers.Add(db), providers.Update(db), providers.Delete(db)
 
 	zip.Post(app, "/v1/iam/add-organization",
@@ -100,6 +102,16 @@ func routeWrites(app *zip.App, db orm.DB) {
 	zip.Post(app, "/v1/iam/delete-role",
 		func(ctx context.Context, in *roles.Ref) (*httpx.Response, error) { return envelope(rolesH.Delete(ctx, in)) },
 		zip.WithOperationID("deleteRole"), zip.WithSummary("Delete a role (Casdoor verb)"), zip.WithTags("compat"))
+
+	// Projects: add-/delete- (console ScopeSwitcher; the read rides get-organization-projects
+	// in aliases.go). Owner is the org, so app.Authorize gates a write to an org-admin
+	// of that org — the same clause as add-role.
+	zip.Post(app, "/v1/iam/add-project",
+		func(ctx context.Context, in *projects.Input) (*httpx.Response, error) { return envelope(projectsH.Create(ctx, in)) },
+		zip.WithOperationID("addProject"), zip.WithSummary("Create a project (Casdoor verb)"), zip.WithTags("compat"))
+	zip.Post(app, "/v1/iam/delete-project",
+		func(ctx context.Context, in *projects.Ref) (*httpx.Response, error) { return envelope(projectsH.Delete(ctx, in)) },
+		zip.WithOperationID("deleteProject"), zip.WithSummary("Delete a project (Casdoor verb)"), zip.WithTags("compat"))
 
 	// Organizations: update-/delete- (add-organization already above).
 	zip.Post(app, "/v1/iam/update-organization",
