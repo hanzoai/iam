@@ -33,6 +33,25 @@ func KMSOIDCClientSecret(org string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// adminAgentSalt is the compiled-in domain separator for deriving the
+// "admin-agent" SuperAdmin service-account secret. Like kmsOIDCSalt it is NOT a
+// secret on its own — HMAC-SHA256 provides the strength; this only namespaces the
+// derivation so IAM (which provisions the client) and automation/KMS (which
+// retrieve it) agree on the IDENTICAL value with zero coordination. Bump the
+// suffix to rotate the SuperAdmin credential fleet-wide.
+const adminAgentSalt = "hanzo-admin-agent-oidc/v1"
+
+// AdminAgentClientSecret derives the confidential client secret for the
+// "admin-agent" SuperAdmin service account deterministically from the admin org
+// name. Exported so automation (and the KMS seed at hanzo/prod/admin-agent) can
+// recompute the identical value; KMS is the canonical retrieval path, this the
+// zero-coordination fallback — same admin org -> same secret, every boot.
+func AdminAgentClientSecret(adminOrg string) string {
+	mac := hmac.New(sha256.New, []byte(adminAgentSalt))
+	mac.Write([]byte(adminOrg + "-agent"))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
 // brandSpec is the canonical definition of one brand's IAM surface: its desktop
 // OAuth client (public) AND its KMS SSO client (confidential). brandSpecs (below)
 // is the SINGLE source of truth — adding a brand there is the only change needed
@@ -283,6 +302,56 @@ func buildIAMServiceApp(b brandSpec) *appCreate {
 	}
 }
 
+// adminAgentGrantTypes — the SuperAdmin service account authenticates ONLY via the
+// client_credentials grant: a headless machine identity, no browser, no user, no
+// refresh token. Least privilege for a machine.
+var adminAgentGrantTypes = []string{"client_credentials"}
+
+// adminAgentExpireInHours bounds the minted SuperAdmin token's lifetime (1h). The
+// SECRET is durable (held in KMS); the TOKEN is short-lived and re-minted on demand,
+// bounding the replay window of any single mint.
+const adminAgentExpireInHours = 1.0
+
+// buildAdminAgentApp builds the dedicated SuperAdmin service account: a confidential
+// client whose Organization == the ADMIN org, so its client_credentials M2M token
+// carries owner==<adminOrg> — the ONE claim cloud's SuperAdmin gate (c.IsAdmin(),
+// true iff owner==AdminOrg) requires. This is the durable machine identity agents/
+// automation use for SuperAdmin admin operations (funding orgs, etc.) WITHOUT a
+// human password.
+//
+// The owner claim is derived from application.Organization at the mint site
+// (object.GetClientCredentialsToken), NOT application.Owner — that is why every
+// existing service client (hanzo-cloud, "<org>-iam") lives in a tenant org and
+// carries owner=<tenant>, never owner=admin. Putting THIS client in the admin org
+// is the whole fix; no mint-site change is needed.
+//
+// Unlike the "<org>-iam" internal identities it is NOT marked internal and is NOT
+// named "<org>-iam", so IsInternalServiceApplication is false and the PUBLIC token
+// endpoint mints its token (automation runs off-cluster). Secret is derived
+// (AdminAgentClientSecret — recomputable, zero-coordination) and mirrored to KMS
+// (hanzo/prod/admin-agent) as the canonical retrieval path. Signs with cert-built-in,
+// the admin org's own cert, published in IAM's JWKS so cloud validates the mint.
+func buildAdminAgentApp(adminOrg string) *appCreate {
+	return &appCreate{
+		Owner:          adminOrg,
+		Name:           "admin-agent",
+		Organization:   adminOrg,
+		DisplayName:    "Admin Agent",
+		Description:    "SuperAdmin service account (client_credentials M2M; owner==admin passes cloud IsAdmin)",
+		HomepageUrl:    "https://hanzo.ai",
+		Cert:           "cert-built-in",
+		ClientId:       "admin-agent",
+		ClientSecret:   AdminAgentClientSecret(adminOrg),
+		ExpireInHours:  adminAgentExpireInHours,
+		RedirectUris:   []string{},
+		GrantTypes:     append([]string(nil), adminAgentGrantTypes...),
+		TokenFormat:    "JWT",
+		EnablePassword: false,
+		EnableSignUp:   false,
+		Providers:      []providerItem{},
+	}
+}
+
 // chooseConvergeTarget picks the live app to converge brand b's grants onto:
 // the canonical "<org>-app" if present, else a legacy "app-<org>" row (the
 // pre-rename naming). Returning the legacy row means we add device_code to the
@@ -528,8 +597,34 @@ func runInitApps(client *provClient, cfg *provConfig, verbose bool) error {
 		}
 	}
 
-	fmt.Printf("init-apps: orgs +%d, apps +%d, kms-clients +%d, iam-svc +%d, grants converged %d, %d already converged, MFA un-forced %d\n",
-		newOrgs, newApps, newKms, newSvc, convergedApps, haveApps, unforcedOrgs)
+	// Admin SuperAdmin service account — the dedicated confidential "admin-agent"
+	// client in the ADMIN org. Its client_credentials M2M token carries
+	// owner==<AdminOrg>, the one claim cloud's SuperAdmin gate (c.IsAdmin()) requires,
+	// so agents/automation can perform SuperAdmin admin operations (funding orgs, etc.)
+	// with a KMS-held secret instead of a human password. Idempotent: created only if
+	// absent; its secret is derived (AdminAgentClientSecret) and mirrored to KMS
+	// (hanzo/prod/admin-agent).
+	newAgent := 0
+	adminApps, err := listAppsForOrg(client, cfg.AdminOrg, cfg.AdminOrg)
+	if err != nil {
+		return fmt.Errorf("init-apps: list admin apps: %w", err)
+	}
+	if hasApp(adminApps, "admin-agent") {
+		if verbose {
+			fmt.Printf("[skip] %s/admin-agent — already present\n", cfg.AdminOrg)
+		}
+	} else {
+		if err := addApp(client, buildAdminAgentApp(cfg.AdminOrg)); err != nil {
+			return fmt.Errorf("init-apps: add admin-agent: %w", err)
+		}
+		newAgent++
+		if verbose {
+			fmt.Printf("[agent] created %s/admin-agent (SuperAdmin service account)\n", cfg.AdminOrg)
+		}
+	}
+
+	fmt.Printf("init-apps: orgs +%d, apps +%d, kms-clients +%d, iam-svc +%d, admin-agent +%d, grants converged %d, %d already converged, MFA un-forced %d\n",
+		newOrgs, newApps, newKms, newSvc, newAgent, convergedApps, haveApps, unforcedOrgs)
 	return nil
 }
 
