@@ -30,6 +30,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/hanzoai/iam/form"
@@ -252,4 +253,63 @@ func (c *ApiController) VerifyWeb3() {
 	resp := c.HandleLoggedIn(application, user, authForm)
 	c.Ctx.Input.SetParam("recordUserId", user.GetId())
 	c.ResponseOk(resp)
+}
+
+// Web3WalletResponse is the GitHub-id -> linked-wallet lookup result.
+type Web3WalletResponse struct {
+	Chain   string `json:"chain"`
+	Address string `json:"address"`
+	Owner   string `json:"owner"`
+	User    string `json:"user"`
+}
+
+// GetWeb3Wallet resolves a user's linked wallet for a chain, keyed on the IMMUTABLE
+// numeric GitHub id (login reuse can never hijack a wallet). Service-only: the
+// mapping is public on-chain (leaks nothing fund-sensitive) but must not be
+// world-enumerable, so it requires a unified service token.
+//
+// Route: GET /v1/iam/web3/wallet?githubId=<numericId>&chain=<evm>&owner=<org>
+//
+//	200 {chain,address,owner,user}  -> a linked wallet
+//	404                             -> no user for that github id / no wallet on that chain
+//	401                             -> missing/invalid service token
+//	400                             -> missing githubId/chain/owner
+func (c *ApiController) GetWeb3Wallet() {
+	if !c.IsServiceTokenAuthenticated() {
+		c.Ctx.Output.SetStatus(http.StatusUnauthorized)
+		c.Data["json"] = map[string]string{"status": "error", "msg": "web3: service token required"}
+		c.ServeJSON()
+		return
+	}
+	githubId := strings.TrimSpace(c.Ctx.Input.Query("githubId"))
+	chain := strings.TrimSpace(c.Ctx.Input.Query("chain"))
+	org := strings.TrimSpace(c.Ctx.Input.Query("owner"))
+	if githubId == "" || chain == "" || org == "" {
+		c.Ctx.Output.SetStatus(http.StatusBadRequest)
+		c.Data["json"] = map[string]string{"status": "error", "msg": "web3: githubId, chain, and owner are required"}
+		c.ServeJSON()
+		return
+	}
+	user, err := object.GetUserByField(org, "GitHub", githubId)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if user != nil {
+		links, err := object.GetWalletLinksByUser(user.Owner, user.Name)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		for _, l := range links {
+			if l.Chain == chain {
+				c.Data["json"] = &Web3WalletResponse{Chain: l.Chain, Address: l.Address, Owner: l.Owner, User: l.User}
+				c.ServeJSON()
+				return
+			}
+		}
+	}
+	c.Ctx.Output.SetStatus(http.StatusNotFound)
+	c.Data["json"] = map[string]string{"status": "error", "msg": "web3: no linked wallet"}
+	c.ServeJSON()
 }
