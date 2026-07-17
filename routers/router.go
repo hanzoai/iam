@@ -455,7 +455,7 @@ func InitAPI() {
 
 	web.Router("/v1/iam/faceid-signin-begin", &controllers.ApiController{}, "GET:FaceIDSigninBegin")
 
-	web.Router("/v1/iam/registry/token", &controllers.ApiController{}, "GET:GetRegistryToken")
+	web.Router("/v1/iam/registry/token", &controllers.ApiController{}, "GET:GetRegistryToken;POST:GetRegistryToken")
 	web.Router("/v1/iam/registry/jwks", &controllers.ApiController{}, "GET:GetRegistryPublicKey")
 
 	// IDV (Identity Verification) routes
