@@ -373,6 +373,13 @@ func (c *ApiController) Signup() {
 		if personalErr != nil {
 			// Non-fatal: user just won't have a personal org yet.
 			fmt.Printf("[signup] failed to create personal org for %s: %v\n", username, personalErr)
+		} else if _, mErr := object.EnsureMembership(user.GetId(), username, object.MembershipRoleOwner); mErr != nil {
+			// Record the user as owner of their personal org so the `orgs` claim
+			// carries it alongside the signup (home) org — the switch target the
+			// comment above promises. Non-fatal: the boot backfill only seeds the
+			// HOME membership, so a miss here leaves the personal org switchable
+			// once re-ensured, never blocking signup.
+			fmt.Printf("[signup] failed to record personal-org membership for %s: %v\n", username, mErr)
 		}
 	}
 
