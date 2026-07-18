@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/Masterminds/squirrel v1.5.3
-	github.com/alexedwards/argon2id v0.0.0-20211130144151-3585854a6387
+	github.com/alexedwards/argon2id v1.0.0
 	github.com/alibabacloud-go/cloudauth-20190307/v3 v3.9.2
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.1.16
 	github.com/alibabacloud-go/facebody-20191230/v5 v5.1.2
@@ -22,10 +22,10 @@ require (
 	github.com/elimity-com/scim v0.0.0-20230426070224-941a5eac92f3
 	github.com/fogleman/gg v1.3.0
 	github.com/go-acme/lego/v4 v4.34.0
-	github.com/go-asn1-ber/asn1-ber v1.5.5
+	github.com/go-asn1-ber/asn1-ber v1.5.8
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/go-jose/go-jose/v4 v4.1.4
-	github.com/go-ldap/ldap/v3 v3.4.6
+	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/go-mysql-org/go-mysql v1.7.0
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/go-telegram-bot-api/telegram-bot-api v4.6.4+incompatible
@@ -34,13 +34,13 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hanzoai/authzstore v0.1.1
-	github.com/hanzoai/beego/v2 v2.3.10
+	github.com/hanzoai/beego/v2 v2.4.2
 	github.com/hanzoai/builder v0.3.13
 	github.com/hanzoai/idv v1.0.3
-	github.com/hanzoai/ldapserver v1.2.1
+	github.com/hanzoai/ldapserver v1.2.2
 	github.com/hanzoai/notify2 v1.6.3
 	github.com/hanzoai/oss v1.8.5
-	github.com/hanzoai/xorm v1.1.6
+	github.com/hanzoai/xorm v1.4.1
 	github.com/hsluoyz/modsecurity-go v0.0.7
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/json-iterator/go v1.1.13-0.20220915233716-71ac16282d12
@@ -48,10 +48,10 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/likexian/whois v1.15.1
 	github.com/likexian/whois-parser v1.24.9
-	github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3
-	github.com/luxfi/crypto v1.19.21
+	github.com/lor00x/goldap v0.0.0-20240304151906-8d785c64d1c8
+	github.com/luxfi/crypto v1.20.2
 	github.com/luxfi/kms v1.11.8
-	github.com/luxfi/metric v1.5.8
+	github.com/luxfi/metric v1.8.1
 	github.com/luxwallet/connect/go v0.1.3
 	github.com/markbates/goth v1.82.0
 	github.com/microsoft/go-mssqldb v1.9.5
@@ -63,7 +63,7 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/russellhaering/gosaml2 v0.11.0
 	github.com/russellhaering/goxmldsig v1.6.0
-	github.com/shirou/gopsutil/v4 v4.26.2
+	github.com/shirou/gopsutil/v4 v4.26.3
 	github.com/siddontang/go-log v0.0.0-20190221022429-1e957dd83bed
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
@@ -75,12 +75,12 @@ require (
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
 	go.opentelemetry.io/otel/sdk v1.44.0
-	golang.org/x/crypto v0.53.0
+	golang.org/x/crypto v0.54.0
 	golang.org/x/image v0.41.0
-	golang.org/x/net v0.56.0
+	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sys v0.46.0
-	golang.org/x/text v0.38.0
+	golang.org/x/sys v0.47.0
+	golang.org/x/text v0.40.0
 	golang.org/x/time v0.15.0
 	google.golang.org/api v0.275.0
 	layeh.com/radius v0.0.0-20231213012653-1006025d24f8
@@ -91,11 +91,9 @@ require (
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.20.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
-	cloud.google.com/go/compute v1.58.0 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
-	filippo.io/hpke v0.4.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1 // indirect
@@ -105,15 +103,11 @@ require (
 	github.com/Azure/go-ntlmssp v0.1.1 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.7.0 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
-	github.com/ClickHouse/ch-go v0.71.0 // indirect
-	github.com/ClickHouse/clickhouse-go/v2 v2.44.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/RocketChat/Rocket.Chat.Go.SDK v0.0.0-20240116134246-a8cbe886bab0 // indirect
 	github.com/SherClockHolmes/webpush-go v1.4.0 // indirect
 	github.com/ThinkInAIXYZ/go-mcp v0.2.24 // indirect
-	github.com/WqyJh/go-cosyvoice v0.1.0 // indirect
-	github.com/WqyJh/go-openai-realtime v0.5.1-0.20250210083616-024eddd5a481 // indirect
 	github.com/alibabacloud-go/alibabacloud-gateway-spi v0.0.5 // indirect
 	github.com/alibabacloud-go/darabonba-number v1.0.4 // indirect
 	github.com/alibabacloud-go/darabonba-openapi v0.1.18 // indirect
@@ -187,7 +181,6 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/dghubble/oauth1 v0.7.3 // indirect
 	github.com/dghubble/sling v1.4.2 // indirect
-	github.com/dgraph-io/ristretto/v2 v2.4.0 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/di-wu/parser v0.2.2 // indirect
 	github.com/di-wu/xsd-datetime v1.0.0 // indirect
@@ -198,7 +191,7 @@ require (
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/docker/docker v28.5.2+incompatible // indirect
-	github.com/docker/go-connections v0.6.0 // indirect
+	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dop251/goja v0.0.0-20260627200808-0b76000cabdb // indirect
 	github.com/drswork/go-twitter v0.0.0-20221107160839-dea1b6ed53d7 // indirect
@@ -243,7 +236,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.1.9 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
-	github.com/gofiber/fiber/v3 v3.2.0 // indirect
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.4 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -252,7 +244,6 @@ require (
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
-	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
@@ -267,17 +258,29 @@ require (
 	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/gregdel/pushover v1.3.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
-	github.com/hanzoai/ai v1.800.9 // indirect
-	github.com/hanzoai/cloud v1.786.112 // indirect
-	github.com/hanzoai/commerce/metering v0.1.4 // indirect
+	github.com/hanzo-ds/go v1.0.1 // indirect
+	github.com/hanzo-ds/native v0.72.0 // indirect
+	github.com/hanzoai/account v0.2.0 // indirect
+	github.com/hanzoai/ai v1.822.3 // indirect
+	github.com/hanzoai/beego v1.12.13 // indirect
+	github.com/hanzoai/cloud v1.801.63 // indirect
+	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/dashscope-go-sdk v0.0.2 // indirect
 	github.com/hanzoai/dashscopego v0.6.0 // indirect
 	github.com/hanzoai/dbx v1.16.0 // indirect
+	github.com/hanzoai/decimal v0.1.1 // indirect
+	github.com/hanzoai/go-cosyvoice v1.0.0 // indirect
+	github.com/hanzoai/go-openai v1.41.0 // indirect
+	github.com/hanzoai/go-openai-realtime v1.0.0 // indirect
+	github.com/hanzoai/go-openai-realtime/contrib/ws-gorilla v1.0.0 // indirect
 	github.com/hanzoai/go-openrouter v1.0.0 // indirect
+	github.com/hanzoai/ha v0.1.1 // indirect
 	github.com/hanzoai/iamsdk/v2 v2.1.2 // indirect
+	github.com/hanzoai/money v0.2.1 // indirect
 	github.com/hanzoai/pdf v1.2.0 // indirect
+	github.com/hanzoai/s3-go v1.0.0 // indirect
 	github.com/hanzoai/search-go v0.36.0 // indirect
-	github.com/hanzoai/tasks v1.49.0 // indirect
+	github.com/hanzoai/tasks v1.51.1 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/henomis/lingoose v0.1.0 // indirect
@@ -317,45 +320,42 @@ require (
 	github.com/lufia/plan9stats v0.0.0-20260216142805-b3301c5f2a88 // indirect
 	github.com/luthermonson/go-proxmox v0.4.0 // indirect
 	github.com/luxfi/accel v1.2.4 // indirect
-	github.com/luxfi/age v1.6.0 // indirect
 	github.com/luxfi/bft v0.1.5 // indirect
-	github.com/luxfi/cache v1.2.1 // indirect
-	github.com/luxfi/compress v0.0.5 // indirect
-	github.com/luxfi/concurrent v0.0.3 // indirect
-	github.com/luxfi/consensus v1.25.15 // indirect
-	github.com/luxfi/constants v1.5.8 // indirect
-	github.com/luxfi/container v0.0.4 // indirect
+	github.com/luxfi/cache v1.3.1 // indirect
+	github.com/luxfi/compress v0.1.1 // indirect
+	github.com/luxfi/concurrent v0.1.1 // indirect
+	github.com/luxfi/consensus v1.36.3 // indirect
+	github.com/luxfi/constants v1.6.2 // indirect
+	github.com/luxfi/container v0.2.1 // indirect
 	github.com/luxfi/crypto/ipa v1.2.4 // indirect
-	github.com/luxfi/database v1.19.3 // indirect
-	github.com/luxfi/geth v1.17.5 // indirect
-	github.com/luxfi/ids v1.2.15 // indirect
-	github.com/luxfi/log v1.4.3 // indirect
-	github.com/luxfi/math v1.4.1 // indirect
+	github.com/luxfi/database v1.21.1 // indirect
+	github.com/luxfi/geth v1.20.1 // indirect
+	github.com/luxfi/ids v1.3.2 // indirect
+	github.com/luxfi/log v1.5.0 // indirect
+	github.com/luxfi/math v1.5.1 // indirect
 	github.com/luxfi/math/big v0.1.0 // indirect
 	github.com/luxfi/mdns v0.1.1 // indirect
 	github.com/luxfi/mock v0.1.1 // indirect
-	github.com/luxfi/p2p v1.21.1 // indirect
+	github.com/luxfi/p2p v1.22.1 // indirect
 	github.com/luxfi/pq v1.1.0 // indirect
 	github.com/luxfi/sampler v1.1.0 // indirect
-	github.com/luxfi/validators v1.2.0 // indirect
+	github.com/luxfi/validators v1.3.1 // indirect
 	github.com/luxfi/version v1.0.1 // indirect
-	github.com/luxfi/warp v1.19.3 // indirect
-	github.com/luxfi/zap v1.2.0 // indirect
-	github.com/luxfi/zapdb v1.10.0 // indirect
+	github.com/luxfi/warp v1.24.1 // indirect
+	github.com/luxfi/zap v1.2.6 // indirect
 	github.com/magefile/mage v1.17.1 // indirect
 	github.com/markbates/going v1.0.0 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-runewidth v0.0.21 // indirect
-	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mileusna/viber v1.0.1 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/minio/minio-go/v7 v7.0.100 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
+	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
@@ -374,7 +374,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.3.0 // indirect
 	github.com/petar-dambovaliev/aho-corasick v0.0.0-20240411101913-e07a1f0e8eb4 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
-	github.com/pierrec/lz4/v4 v4.1.26 // indirect
+	github.com/pierrec/lz4/v4 v4.1.27 // indirect
 	github.com/pingcap/errors v0.11.5-0.20210425183316-da1aaba5fb63 // indirect
 	github.com/pingcap/log v0.0.0-20210625125904-98ed8e2eb1c7 // indirect
 	github.com/pingcap/tidb/parser v0.0.0-20221126021158-6b02a5d8ba7d // indirect
@@ -393,7 +393,6 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/rs/zerolog v1.35.0 // indirect
 	github.com/sagikazarmark/locafero v0.9.0 // indirect
-	github.com/sashabaranov/go-openai v1.32.0 // indirect
 	github.com/savsgio/gotils v0.0.0-20240704082632-aef3928b8a38 // indirect
 	github.com/scim2/filter-parser/v2 v2.2.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
@@ -440,7 +439,9 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	github.com/zap-proto/zip v1.2.1 // indirect
+	github.com/zap-proto/fiber/v3 v3.2.1 // indirect
+	github.com/zap-proto/md v0.1.0 // indirect
+	github.com/zap-proto/zip v1.8.3 // indirect
 	go.mau.fi/util v0.8.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
@@ -454,14 +455,13 @@ require (
 	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
-	golang.org/x/mod v0.36.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/term v0.44.0 // indirect
-	golang.org/x/tools v0.45.0 // indirect
+	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9 // indirect
+	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/term v0.45.0 // indirect
+	golang.org/x/tools v0.47.0 // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
 	google.golang.org/genai v1.10.0 // indirect
-	google.golang.org/genproto v0.0.0-20260406210006-6f92a3bedf2d // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260615183401-62b3387ff324 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260622175928-b703f567277d // indirect
 	google.golang.org/grpc v1.81.1 // indirect
@@ -496,34 +496,17 @@ require (
 // hanzoai/authz is the in-house policy engine fork. Module path was renamed
 // in v1.10.0 (commit d59807e); workspace consumers import this directly.
 // The upstream ACME fork was likewise swapped for go-acme/lego.
-require github.com/hanzoai/authz v1.10.4
+require github.com/hanzoai/authz v1.10.7
 
-// hanzoai/sqlite is the dual-backend driver: it registers the "sqlite"
-// database/sql driver under BOTH build configs. CGO (prod) => mattn +
-// SQLCipher (encrypted at rest, reopen-safe via the URI key param); !CGO
-// (CI tests/lint/dev) => pure-Go modernc. Imported directly (NOT via a
-// `replace modernc.org/sqlite => …`, which was circular — the fork imports
-// modernc on its !cgo path). Build prod with:
-//   CGO_ENABLED=1 -tags "libsqlite3 sqlite_fts5"
-//   CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 …" CGO_LDFLAGS="-lsqlcipher"
-require github.com/hanzoai/sqlite v0.1.5
-
-// SQLITE-GATE history: cloud/audit once blank-imported modernc.org/sqlite
-// directly, self-registering a second "sqlite" driver alongside iam's own
-// CGO/SQLCipher registration via hanzoai/sqlite → `panic: sql: Register called
-// twice for driver sqlite` at init, and the Dockerfile SQLITE-GATE
-// (TestEncryptionProof / DT_NEEDED) fails the build before such an image ships.
-// The prior fix pinned a throwaway cloud commit (tag `iam-audit-sqlite-driver-fix`,
-// pseudo-version …-701639a3b26f) — that commit was GC'd and no longer resolves,
-// so `go mod download` died at Dockerfile:75. The audit→org-canonical
-// hanzoai/sqlite driver migration has since landed in a RELEASED cloud tag, so we
-// require cloud at that tag (v1.786.112) directly and drop the broken replace.
-// cmd/iamd's transitive graph no longer blank-imports modernc.org/sqlite (verified
-// via `go list -deps`), so the gate stays closed with zero pseudo-version fragility.
-//
-// cloud v1.786.112 transitively pulls github.com/hanzoai/ai, whose model layer
-// uses go-openai's Delta.ReasoningContent field that ONLY the Hanzo go-openai fork
-// carries; upstream sashabaranov/go-openai lacks it. Mirror cloud's own replace so
-// go-openai resolves to the fork (same pin cloud/go.mod uses) — otherwise iam
-// fails to compile against the ai model layer.
-replace github.com/sashabaranov/go-openai => github.com/hanzoai/go-openai v1.40.0
+require (
+	// hanzoai/sqlite is the dual-backend driver: it registers the "sqlite"
+	// database/sql driver under BOTH build configs. CGO (prod) => mattn +
+	// SQLCipher (encrypted at rest, reopen-safe via the URI key param); !CGO
+	// (CI tests/lint/dev) => pure-Go modernc. Imported directly (NOT via a
+	// `replace modernc.org/sqlite => …`, which was circular — the fork imports
+	// modernc on its !cgo path). Build prod with:
+	//   CGO_ENABLED=1 -tags "libsqlite3 sqlite_fts5"
+	//   CGO_CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_USE_URI=1 …" CGO_LDFLAGS="-lsqlcipher"
+	github.com/hanzoai/sqlite v0.3.0
+	github.com/luxfi/protocol v0.0.2 // indirect
+)
