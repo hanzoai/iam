@@ -30,7 +30,9 @@ type ClaimsStandard struct {
 	// Project is the org's default project; see Claims.Project.
 	Project string `json:"project,omitempty"`
 	// BillingAccount is the signed `billing_account` claim; see Claims.BillingAccount.
-	BillingAccount      string      `json:"billing_account,omitempty"`
+	BillingAccount string `json:"billing_account,omitempty"`
+	// Orgs is the org-membership set; see Claims.Orgs.
+	Orgs                []orgRef    `json:"orgs,omitempty"`
 	EmailVerified       bool        `json:"email_verified,omitempty"`
 	PhoneNumber         string      `json:"phone_number,omitempty"`
 	PhoneNumberVerified bool        `json:"phone_number_verified,omitempty"`
@@ -59,6 +61,7 @@ func getStandardClaims(claims Claims) ClaimsStandard {
 		Organization:     claims.User.Owner,
 		Project:          claims.Project,
 		BillingAccount:   claims.BillingAccount,
+		Orgs:             claims.Orgs,
 		EmailVerified:    claims.User.EmailVerified,
 		TokenType:        claims.TokenType,
 		Nonce:            claims.Nonce,
