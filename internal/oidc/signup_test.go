@@ -36,7 +36,7 @@ func signupReq(t *testing.T, app *zip.App, body map[string]string) (int, map[str
 }
 
 // The happy path creates the account, returns it REDACTED (owner/name present,
-// no secret), and stores the password as a bcrypt hash — never plaintext.
+// no secret), and stores the password as an argon2id hash — never plaintext.
 func TestSignup_HappyPathCreatesRedactedUser(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true})
@@ -68,7 +68,7 @@ func TestSignup_HappyPathCreatesRedactedUser(t *testing.T) {
 		}
 	}
 
-	// The STORED row holds a bcrypt hash (PasswordType=bcrypt) that verifies the
+	// The STORED row holds an argon2id hash (PasswordType=argon2id) that verifies the
 	// password — and is NOT the plaintext. This is the no-plaintext contract.
 	stored, err := store.GetUserByName(context.Background(), db, "hanzo", "newbie")
 	if err != nil || stored == nil {
@@ -77,8 +77,8 @@ func TestSignup_HappyPathCreatesRedactedUser(t *testing.T) {
 	if stored.PasswordHash == "" || stored.PasswordHash == pw {
 		t.Fatalf("password stored as plaintext or empty: %q", stored.PasswordHash)
 	}
-	if stored.PasswordType != "bcrypt" {
-		t.Errorf("PasswordType = %q, want bcrypt", stored.PasswordType)
+	if stored.PasswordType != "argon2id" {
+		t.Errorf("PasswordType = %q, want argon2id", stored.PasswordType)
 	}
 	if !users.VerifyPassword(stored, pw, "") {
 		t.Error("stored hash does not verify the signup password")
