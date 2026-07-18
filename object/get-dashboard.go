@@ -43,8 +43,8 @@ func GetDashboard(owner string) (*map[string][]int64, error) {
 	// in this fork. The upstream `subscription` + `transaction` tables
 	// are not migrated here (no billing surface), so they were
 	// removed from the list. Adding a name without a model returns
-	// `SQL logic error: no such table: <name>` from modernc.org/sqlite
-	// and aborts the entire dashboard payload.
+	// `SQL logic error: no such table: <name>` from hanzoai/sqlite's
+	// pure-Go backend and aborts the entire dashboard payload.
 	tableNames := []string{"organization", "user", "provider", "application", "role", "group", "resource", "cert", "permission", "model", "adapter", "enforcer"}
 
 	time30day := time.Now().AddDate(0, 0, -30)
