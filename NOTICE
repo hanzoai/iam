@@ -46,5 +46,3 @@ This fork diverges from upstream Casdoor. Notable changes:
   and follow-on endpoints.
 - MCP and A2A identity surfaces added (mcp/, mcpself/) for AI-agent authentication.
 - On-the-wire routes use the /v1/iam/* prefix (no /api/ prefix).
-</content>
-</invoke>
