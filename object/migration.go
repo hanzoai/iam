@@ -157,6 +157,7 @@ func globalModels() []interface{} {
 		new(Site),
 		new(Rule),
 		new(Project),
+		new(Membership),
 		new(Server),
 	}
 }
