@@ -47,6 +47,11 @@ type Claims struct {
 	// parse target: this Claims struct is what ParseJwtToken decodes into, so a
 	// downstream reader (ai/object.Payer) reads the claim straight off it.
 	BillingAccount string `json:"billing_account,omitempty"`
+	// Orgs is the org-membership SET: every org the subject may act in (home +
+	// teams), each with a coarse role. The gateway authorizes an org-switch
+	// against it (X-Org-Id ∈ orgs). Resolved once at mint, threaded into every
+	// format like `project`. Empty ⟹ home-only (the default scope).
+	Orgs []orgRef `json:"orgs,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -119,11 +124,13 @@ type ClaimsShort struct {
 	Project string `json:"project,omitempty"`
 	// BillingAccount is the signed `billing_account` claim; see Claims.BillingAccount.
 	BillingAccount string `json:"billing_account,omitempty"`
-	TokenType      string `json:"tokenType,omitempty"`
-	Nonce          string `json:"nonce,omitempty"`
-	Scope          string `json:"scope,omitempty"`
-	Azp            string `json:"azp,omitempty"`
-	Provider       string `json:"provider,omitempty"`
+	// Orgs is the org-membership set; see Claims.Orgs.
+	Orgs      []orgRef `json:"orgs,omitempty"`
+	TokenType string   `json:"tokenType,omitempty"`
+	Nonce     string   `json:"nonce,omitempty"`
+	Scope     string   `json:"scope,omitempty"`
+	Azp       string   `json:"azp,omitempty"`
+	Provider  string   `json:"provider,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -146,12 +153,14 @@ type ClaimsWithoutThirdIdp struct {
 	Project string `json:"project,omitempty"`
 	// BillingAccount is the signed `billing_account` claim; see Claims.BillingAccount.
 	BillingAccount string `json:"billing_account,omitempty"`
-	TokenType      string `json:"tokenType,omitempty"`
-	Nonce          string `json:"nonce,omitempty"`
-	Tag            string `json:"tag"`
-	Scope          string `json:"scope,omitempty"`
-	Azp            string `json:"azp,omitempty"`
-	Provider       string `json:"provider,omitempty"`
+	// Orgs is the org-membership set; see Claims.Orgs.
+	Orgs      []orgRef `json:"orgs,omitempty"`
+	TokenType string   `json:"tokenType,omitempty"`
+	Nonce     string   `json:"nonce,omitempty"`
+	Tag       string   `json:"tag"`
+	Scope     string   `json:"scope,omitempty"`
+	Azp       string   `json:"azp,omitempty"`
+	Provider  string   `json:"provider,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -225,6 +234,45 @@ func permissionRefs(perms []*Permission) []roleRef {
 	return out
 }
 
+// orgRef is the minimal membership shape carried in an access token: an org the
+// subject may act in, plus the subject's coarse role there. Like roleRef it stays
+// slug-sized so the token stays inside the edge request-header buffer even for a
+// user in many orgs. The gateway authorizes an org-switch against this set
+// (X-Org-Id ∈ orgs) with no round-trip.
+type orgRef struct {
+	Org  string `json:"org"`
+	Role string `json:"role,omitempty"`
+}
+
+// memberOrgRefs resolves the org-membership SET a token carries for a user: the
+// user's HOME org (User.Owner) always, plus every org the user has an explicit
+// Membership in. Home is listed first and wins on a duplicate. Resolved once at
+// mint time and threaded into every token format as the `orgs` claim, mirroring
+// how `project` rides alongside `organization`.
+func memberOrgRefs(user *User) []orgRef {
+	if user == nil || user.Owner == "" {
+		return nil
+	}
+	seen := map[string]bool{user.Owner: true}
+	out := []orgRef{{Org: user.Owner, Role: homeRole(user)}}
+
+	memberships, err := GetMembershipsByUser(user.GetId())
+	if err != nil {
+		// Best-effort like the project claim: a lookup failure emits just the home
+		// org rather than breaking token minting — auth availability wins.
+		logs.Warning("memberOrgRefs: membership lookup for %q failed: %v", user.GetId(), err)
+		return out
+	}
+	for _, m := range memberships {
+		if m == nil || m.Org == "" || seen[m.Org] {
+			continue
+		}
+		seen[m.Org] = true
+		out = append(out, orgRef{Org: m.Org, Role: m.Role})
+	}
+	return out
+}
+
 // billingProps is the allowlist of user Properties a bearer token carries. The
 // console UI-preferences blob and other free-form properties are dropped to keep
 // the token bounded; `tier` is read by commerce for plan gating.
@@ -272,6 +320,7 @@ func getShortClaims(claims Claims) ClaimsShort {
 		Organization:     claims.User.Owner,
 		Project:          claims.Project,
 		BillingAccount:   claims.BillingAccount,
+		Orgs:             claims.Orgs,
 		TokenType:        claims.TokenType,
 		Nonce:            claims.Nonce,
 		Scope:            claims.Scope,
@@ -289,6 +338,7 @@ func getClaimsWithoutThirdIdp(claims Claims) ClaimsWithoutThirdIdp {
 		Organization:        claims.User.Owner,
 		Project:             claims.Project,
 		BillingAccount:      claims.BillingAccount,
+		Orgs:                claims.Orgs,
 		TokenType:           claims.TokenType,
 		Nonce:               claims.Nonce,
 		Tag:                 claims.Tag,
@@ -388,6 +438,13 @@ func getClaimsCustom(claims Claims, tokenField []string, tokenAttributes []*JwtI
 	// back to Payer's legacy inference. Omitted when empty (unattributable).
 	if claims.BillingAccount != "" {
 		res["billing_account"] = claims.BillingAccount
+	}
+
+	// Include the org-membership set when present, so the edge can authorize an
+	// org-switch (X-Org-Id ∈ orgs) from JWT-Custom tokens too. Omitted when empty,
+	// matching the omitempty struct formats.
+	if len(claims.Orgs) > 0 {
+		res["orgs"] = claims.Orgs
 	}
 
 	// Always include azp if present (authorized party)
@@ -576,6 +633,7 @@ func generateJwtToken(application *Application, user *User, provider string, sig
 		// a downstream reader never has to infer the payer — and a forged User.Type
 		// can no longer name the org pool. See billing_account.go.
 		BillingAccount: billingAccountClaim(user, application, provider, signinMethod, project),
+		Orgs:           memberOrgRefs(user),
 		SigninMethod:   signinMethod,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
