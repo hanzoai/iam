@@ -5,8 +5,7 @@
 // by the (owner, name) natural key.
 //
 // This is the authentication entity, so the credential invariant is absolute:
-// the plaintext password rides in on the create/update request, is hashed with
-// bcrypt exactly once, and is discarded. Only the one-way digest reaches the
+// the plaintext password rides in on the create/update request, is hashed with argon2id exactly once, and is discarded. Only the one-way digest reaches the
 // store, and no response ever carries the digest or any other secret material —
 // every user returned here passes through schema.User.Mask() (internal/schema/
 // mask.go), the single redaction contract shared with the compat aliases.
@@ -18,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -31,8 +29,7 @@ import (
 type API struct{ db orm.DB }
 
 // New returns a user API over db — the constructor front-door handlers (e.g. the
-// signup endpoint) use to reach the ONE canonical create path (Create hashes the
-// password with bcrypt exactly once and returns the redacted row), so a user
+// signup endpoint) use to reach the ONE canonical create path (Create hashes the password with argon2id exactly once and returns the redacted row), so a user
 // minted at signup is byte-identical to one minted through the CRUD surface.
 func New(db orm.DB) *API { return &API{db: db} }
 
@@ -130,7 +127,7 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 			return nil, zip.ErrInternal("hash password: " + err.Error())
 		}
 		u.PasswordHash = hash
-		u.PasswordType = "bcrypt"
+		u.PasswordType = cred.TypeArgon2id
 	}
 	now := nowRFC3339()
 	u.CreatedTime, u.UpdatedTime = now, now
@@ -213,7 +210,7 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 			return nil, zip.ErrInternal("hash password: " + err.Error())
 		}
 		u.PasswordHash = hash
-		u.PasswordType = "bcrypt"
+		u.PasswordType = cred.TypeArgon2id
 		u.PasswordSalt = ""
 	}
 
@@ -257,13 +254,10 @@ func (a *API) lookup(ctx context.Context, owner, name string) (*schema.User, err
 	return u, nil
 }
 
-// hashPassword derives a one-way bcrypt digest from a plaintext password.
+// hashPassword derives a one-way argon2id digest (SOTA) via the ONE cred.Hash —
+// the single place password hashing lives, so every mint is the same strong scheme.
 func hashPassword(plaintext string) (string, error) {
-	b, err := bcrypt.GenerateFromPassword([]byte(plaintext), bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return cred.Hash(plaintext)
 }
 
 // VerifyPassword reports whether plaintext matches the user's stored digest,
