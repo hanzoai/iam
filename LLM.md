@@ -26,12 +26,19 @@ Data lives in Base (`hanzoai/base`) — embedded SQLite with auto-migrations and
 /v1/iam/users/...
 /v1/iam/applications/...
 /v1/iam/organizations/...
+/v1/iam/web3/wallet                 — service-token GitHub-id → wallet lookup (bounty payouts)
 /v1/iam/...
 ```
 
 One shape per endpoint. There is no rewrite layer, no `/api/*` alias, no `/login/oauth/*` back-compat. Anything off `/v1/iam/*` is 404.
 
 ZAP RPC runs on a separate port for service-to-service auth (`AuthService.GetToken`, `AuthService.IntrospectToken`).
+
+## Tenancy & claims
+
+- **Membership(User × Org × Role):** a user belongs to many orgs; login emits an `orgs` membership-set claim. Projects are create-on-demand — no project means org-level scope.
+- **`billing_account` claim:** the token mints `billing_account`, so the credential itself states who pays over IAM's signature; the SDK `Claims` carries it.
+- Password + device grants converge onto `hanzo-admin-guard` (owner-authorized); the password grant is enabled on brand apps because the CLI advertises it.
 
 ## Storage — Base/SQLite ONLY, per-org + per-user files. NO Postgres. NO Redis. Ever.
 
