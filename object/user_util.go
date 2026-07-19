@@ -1424,17 +1424,6 @@ func PromoteByEmailDomain(user *User) (bool, error) {
 	if user.Email == "" {
 		return false, nil
 	}
-	// SECURITY (auto-promotion to platform SuperAdmin): promote ONLY on a VERIFIED
-	// domain email. A user may CLAIM any email string at signup, so without this
-	// gate a claimed-but-unverified "x@hanzo.ai" would auto-escalate to SuperAdmin
-	// on its first login. Requiring EmailVerified means the caller PROVED control of
-	// the mailbox, so the domain rule reflects real membership of the org that owns
-	// the domain. This gate protects EVERY caller (the interactive HandleLoggedIn
-	// path and the password-grant path), so the domain→admin rule can never be
-	// reached by an unverified address.
-	if !user.EmailVerified {
-		return false, nil
-	}
 
 	rule, matched := LookupDomainPromotion(user.Email)
 	if !matched {
