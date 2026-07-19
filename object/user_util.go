@@ -679,7 +679,19 @@ func canMutatePrivilegedUserFields(oldUser, newUser *User, oldIsAdmin, callerIsA
 	// escalation. Admins (org-admin or global) may set it via this API; the
 	// trusted mailbox-verification flow bypasses this check entirely (it calls
 	// object.UpdateUser directly, not CheckPermissionForUpdateUser).
-	if newUser.EmailVerified && !oldUser.EmailVerified && !callerIsAdmin {
+	//
+	// SECURITY (Red HIGH-2): a non-admin may assert EmailVerified=true ONLY when
+	// it was ALREADY true AND the email is UNCHANGED. The raise check above
+	// blocks false→true, but a user who legitimately verified addressA could
+	// otherwise CARRY that true bit onto a NEW, unproven addressB (true→true +
+	// email change) — forging a verified claim on an address they don't own
+	// (cross-app takeover on RPs that trust email_verified). Deny any non-admin
+	// EmailVerified=true that accompanies an email change; the mailbox-proven
+	// verification flow (which bypasses this function) is unaffected, and an
+	// email change with EmailVerified=false is still allowed (object.UpdateUser
+	// then resets the stored bit).
+	if newUser.EmailVerified && !callerIsAdmin &&
+		(!oldUser.EmailVerified || newUser.Email != oldUser.Email) {
 		return false
 	}
 	return true
@@ -691,11 +703,15 @@ func CheckPermissionForUpdateUser(oldUser, newUser *User, isAdmin bool, isSuperA
 		return false, err.Error()
 	}
 
-	// SECURITY (Red H-4): deny-by-default wall for privilege-critical fields.
-	// Resolve the authoritative prior admin state first (oldUser.IsAdmin can be
-	// misread by xorm bool deserialization — the same fallback the authz engine
-	// uses), then refuse any owner move or admin grant by a non-global-admin.
-	oldIsAdmin := oldUser.IsAdmin || CheckUserIsAdminRaw(oldUser.Owner, oldUser.Name)
+	// SECURITY (Red H-4 + Red MED fail-open): deny-by-default wall for
+	// privilege-critical fields. Resolve the prior admin state from the
+	// AUTHORITATIVE raw-SQL read only — `oldUser.IsAdmin` can be misread by xorm
+	// bool deserialization in BOTH directions, and `oldUser.IsAdmin || raw`
+	// fails OPEN: a xorm false-positive (row is NOT admin but deserializes true)
+	// would make oldIsAdmin=true, silently permitting an is_admin grant to a
+	// non-admin. The raw read is the same source the authz engine trusts and is
+	// fail-CLOSED on error (false → grant refused).
+	oldIsAdmin := CheckUserIsAdminRaw(oldUser.Owner, oldUser.Name)
 	if !canMutatePrivilegedUserFields(oldUser, newUser, oldIsAdmin, isAdmin, isSuperAdmin) {
 		return false, i18n.Translate(lang, "auth:Unauthorized operation")
 	}
@@ -1368,6 +1384,33 @@ func CheckUserIsAdminRaw(owner, name string) bool {
 	return isAdmin
 }
 
+// CheckUserEmailVerifiedRaw bypasses xorm and reads the email_verified boolean
+// directly from the DB — the SAME xorm bool-deserialization nondeterminism that
+// affects is_admin (CheckUserIsAdminRaw) also affects email_verified (Red MED:
+// get-account read true while the login path read false). Callers that GATE a
+// privilege on verification (e.g. org-scoped email-domain promotion) MUST use
+// this authoritative read, never the possibly-misread user.EmailVerified.
+// Fail-CLOSED: any DB error returns false (treated as unverified → not promoted).
+func CheckUserEmailVerifiedRaw(owner, name string) bool {
+	if ormer == nil || ormer.Db == nil {
+		return false
+	}
+
+	var query string
+	if ormer.driverName == "postgres" {
+		query = `SELECT email_verified FROM "user" WHERE owner = $1 AND name = $2 LIMIT 1`
+	} else {
+		query = `SELECT email_verified FROM "user" WHERE owner = ? AND name = ? LIMIT 1`
+	}
+
+	var emailVerified bool
+	err := ormer.Db.QueryRow(query, owner, name).Scan(&emailVerified)
+	if err != nil {
+		return false
+	}
+	return emailVerified
+}
+
 // MoveUserToOrg changes a user's owner (organization) field.
 // Since owner is part of the composite primary key in IAM, this uses
 // xorm's Exec for a direct SQL UPDATE.
@@ -1463,9 +1506,12 @@ func PromoteByEmailDomain(user *User) (bool, error) {
 	// requires a SERVER-CONTROLLED proof the mailbox is real. Post-lockdown
 	// EmailVerified is no longer self-writable (removed from UpdateUser's default
 	// columns, gated Admin-only in canMutatePrivilegedUserFields, reset on email
-	// change), so it is now a trustworthy server-controlled signal. A subject who
-	// has not proven their mailbox is not auto-promoted.
-	if !user.EmailVerified {
+	// change), so it is now a trustworthy server-controlled signal. Read it from
+	// the AUTHORITATIVE raw-SQL source (Red MED): the xorm-deserialized
+	// user.EmailVerified is nondeterministic and would let the gate fail OPEN
+	// (promote an unverified subject). Fail-CLOSED: a subject whose mailbox is not
+	// provably verified is not auto-promoted.
+	if !CheckUserEmailVerifiedRaw(user.Owner, user.Name) {
 		return false, nil
 	}
 
