@@ -137,3 +137,46 @@ func TestLookupDomainPromotion_AllDomainsCovered(t *testing.T) {
 		}
 	}
 }
+
+// TestPromoteByEmailDomain_UnverifiedEmailBlocked is the SPOOF guard (RED (a)):
+// a user CLAIMING @hanzo.ai but whose email is NOT verified must NEVER be moved
+// to the admin org — the gate returns before any org move. Runs without a DB
+// because the EmailVerified gate precedes MoveUserToOrg.
+func TestPromoteByEmailDomain_UnverifiedEmailBlocked(t *testing.T) {
+	u := &User{Owner: "hanzo", Name: "spoofer", Email: "z@hanzo.ai", EmailVerified: false}
+	mutated, err := PromoteByEmailDomain(u)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if mutated {
+		t.Fatal("RED (a): an UNVERIFIED @hanzo.ai email must not promote to admin")
+	}
+	if u.Owner != "hanzo" || u.IsAdmin {
+		t.Fatalf("RED (a): user was mutated on an unverified email: owner=%s isAdmin=%v", u.Owner, u.IsAdmin)
+	}
+}
+
+// TestPromoteByEmailDomain_NonSuperadminDomainBlocked is the scope guard
+// (RED (b)/(c)): a VERIFIED non-superadmin-domain email has no path to the admin
+// org — only the configured brand domains promote.
+func TestPromoteByEmailDomain_NonSuperadminDomainBlocked(t *testing.T) {
+	for _, email := range []string{"a@gmail.com", "b@evil.com", "c@hanzo.ai.evil.com", "d@nothanzo.ai"} {
+		u := &User{Owner: "tenant", Name: "member", Email: email, EmailVerified: true}
+		mutated, err := PromoteByEmailDomain(u)
+		if err != nil {
+			t.Fatalf("%s: unexpected err: %v", email, err)
+		}
+		if mutated || u.Owner != "tenant" || u.IsAdmin {
+			t.Fatalf("RED (b)/(c): %q must not reach the admin org (mutated=%v owner=%s isAdmin=%v)",
+				email, mutated, u.Owner, u.IsAdmin)
+		}
+	}
+}
+
+// TestPromoteByEmailDomain_EmptyEmailNoop: no email ⇒ no promotion.
+func TestPromoteByEmailDomain_EmptyEmailNoop(t *testing.T) {
+	u := &User{Owner: "hanzo", Name: "noemail", Email: "", EmailVerified: true}
+	if mutated, err := PromoteByEmailDomain(u); err != nil || mutated {
+		t.Fatalf("empty email must be a no-op, got mutated=%v err=%v", mutated, err)
+	}
+}
