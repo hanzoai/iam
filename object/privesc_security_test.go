@@ -125,18 +125,50 @@ func TestIsApplicationAdmin_OwningAndGlobalStillReveal(t *testing.T) {
 
 func TestCanMutatePrivilegedUserFields_NonGlobalCannotEscalate(t *testing.T) {
 	cases := []struct {
-		name         string
-		old          *User
-		new          *User
-		oldIsAdmin   bool
-		isSuperAdmin bool
-		want         bool
+		name          string
+		old           *User
+		new           *User
+		oldIsAdmin    bool
+		callerIsAdmin bool
+		isSuperAdmin  bool
+		want          bool
 	}{
 		{
 			name:       "self-grant admin is refused",
 			old:        &User{Owner: "hanzo", Name: "a", IsAdmin: false},
 			new:        &User{Owner: "hanzo", Name: "a", IsAdmin: true},
 			oldIsAdmin: false, isSuperAdmin: false, want: false,
+		},
+		// ── Blue live-escalation fix: EmailVerified write-path lockdown ──
+		{
+			name:       "non-admin self-raising email_verified is refused (the live hole)",
+			old:        &User{Owner: "hanzo", Name: "a", EmailVerified: false},
+			new:        &User{Owner: "hanzo", Name: "a", EmailVerified: true},
+			oldIsAdmin: false, callerIsAdmin: false, isSuperAdmin: false, want: false,
+		},
+		{
+			name:       "non-admin lowering email_verified is allowed (de-verify is not escalation)",
+			old:        &User{Owner: "hanzo", Name: "a", EmailVerified: true},
+			new:        &User{Owner: "hanzo", Name: "a", EmailVerified: false},
+			oldIsAdmin: false, callerIsAdmin: false, isSuperAdmin: false, want: true,
+		},
+		{
+			name:       "non-admin keeping email_verified true (no raise) is allowed",
+			old:        &User{Owner: "hanzo", Name: "a", EmailVerified: true},
+			new:        &User{Owner: "hanzo", Name: "a", EmailVerified: true},
+			oldIsAdmin: false, callerIsAdmin: false, isSuperAdmin: false, want: true,
+		},
+		{
+			name:       "org-admin may set email_verified true",
+			old:        &User{Owner: "hanzo", Name: "bob", EmailVerified: false},
+			new:        &User{Owner: "hanzo", Name: "bob", EmailVerified: true},
+			oldIsAdmin: false, callerIsAdmin: true, isSuperAdmin: false, want: true,
+		},
+		{
+			name:       "global admin may set email_verified true",
+			old:        &User{Owner: "hanzo", Name: "a", EmailVerified: false},
+			new:        &User{Owner: "hanzo", Name: "a", EmailVerified: true},
+			oldIsAdmin: false, callerIsAdmin: false, isSuperAdmin: true, want: true,
 		},
 		{
 			name:       "self-move to admin org is refused",
@@ -178,7 +210,7 @@ func TestCanMutatePrivilegedUserFields_NonGlobalCannotEscalate(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := canMutatePrivilegedUserFields(tc.old, tc.new, tc.oldIsAdmin, tc.isSuperAdmin)
+			got := canMutatePrivilegedUserFields(tc.old, tc.new, tc.oldIsAdmin, tc.callerIsAdmin, tc.isSuperAdmin)
 			if got != tc.want {
 				t.Fatalf("canMutatePrivilegedUserFields = %v, want %v", got, tc.want)
 			}

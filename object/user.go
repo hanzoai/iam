@@ -1040,7 +1040,7 @@ func UpdateUser(id string, user *User, columns []string, isAdmin bool) (bool, er
 			"owner", "display_name", "avatar", "first_name", "last_name",
 			"location", "address", "addresses", "country_code", "region", "language", "affiliation", "title", "id_card_type", "id_card", "homepage", "bio", "tag", "language", "gender", "birthday", "education", "score", "karma", "ranking", "signup_application", "register_type", "register_source",
 			"is_admin", "is_forbidden", "is_deleted", "hash", "is_default_avatar", "properties", "webauthnCredentials", "mfa_items", "last_change_password_time", "managedAccounts", "face_ids", "mfaAccounts",
-			"signin_wrong_times", "last_signin_wrong_time", "groups", "mfa_phone_enabled", "mfa_email_enabled", "email_verified",
+			"signin_wrong_times", "last_signin_wrong_time", "groups", "mfa_phone_enabled", "mfa_email_enabled",
 			"github", "google", "qq", "wechat", "facebook", "dingtalk", "weibo", "gitee", "linkedin", "wecom", "lark", "gitlab", "adfs",
 			"baidu", "alipay", "iam", "infoflow", "apple", "azuread", "azureadb2c", "slack", "steam", "bilibili", "okta", "douyin", "kwai", "line", "amazon",
 			"auth0", "battlenet", "bitbucket", "box", "cloudfoundry", "dailymotion", "deezer", "digitalocean", "discord", "dropbox",
@@ -1052,7 +1052,32 @@ func UpdateUser(id string, user *User, columns []string, isAdmin bool) (bool, er
 		}
 	}
 	if isAdmin {
-		columns = append(columns, "name", "id", "email", "phone", "country_code", "type", "balance", "balance_credit", "balance_currency", "mfa_items", "register_type", "register_source", "verification_code")
+		// SECURITY (Blue, live escalation fix): "email_verified" is intentionally
+		// OMITTED from the default (self-service) column set above and lives ONLY
+		// here in the admin-gated set. A non-admin self-update must never write it
+		// — that was the client-writable path to SuperAdmin (self-register
+		// @hanzo.ai → self-set emailVerified → promote on login). The trusted
+		// mailbox-verification flow sets it via an explicit column list, not the
+		// default set, so it is unaffected. Do NOT re-add it to the default set.
+		columns = append(columns, "name", "id", "email", "email_verified", "phone", "country_code", "type", "balance", "balance_credit", "balance_currency", "mfa_items", "register_type", "register_source", "verification_code")
+	}
+
+	// SECURITY (Blue, live escalation fix): an email change INVALIDATES any prior
+	// verification. Unless this same update is explicitly (re)verifying the new
+	// address — the trusted mailbox-verification flow passes an explicit
+	// ["email","email_verified"] column list with EmailVerified=true — force the
+	// verified bit back to false and persist it, so a changed address can never
+	// inherit a stale verified status (which gates OIDC email_verified claims and
+	// email-domain promotion). Runs at the single UpdateUser chokepoint, after the
+	// column set is fully resolved, so it applies to every write path.
+	if oldUser.Email != user.Email && user.Email != "" {
+		reVerifying := util.InSlice(columns, "email_verified") && user.EmailVerified
+		if !reVerifying {
+			user.EmailVerified = false
+			if !util.InSlice(columns, "email_verified") {
+				columns = append(columns, "email_verified")
+			}
+		}
 	}
 
 	columns = append(columns, "updated_time")
@@ -1458,8 +1483,10 @@ func GetUserInfo(user *User, scope string, aud string, host string) (*Userinfo, 
 
 	if strings.Contains(scope, "email") {
 		resp.Email = user.Email
-		// resp.EmailVerified = user.EmailVerified
-		resp.EmailVerified = true
+		// SECURITY (Blue, live escalation fix): reflect the ACTUAL verification
+		// state — never hardcode true. A relying party that trusts the OIDC
+		// email_verified claim must not be told every mailbox is verified.
+		resp.EmailVerified = user.EmailVerified
 	}
 
 	if strings.Contains(scope, "address") {
