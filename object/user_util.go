@@ -658,7 +658,7 @@ func userVisible(isAdmin bool, item *AccountItem) bool {
 // the weaker per-field account-item visibility checks (which key on org-level
 // isAdmin and on operator-configurable rules). PURE — no DB — so it is
 // unit-testable; the caller resolves oldIsAdmin authoritatively.
-func canMutatePrivilegedUserFields(oldUser, newUser *User, oldIsAdmin, isSuperAdmin bool) bool {
+func canMutatePrivilegedUserFields(oldUser, newUser *User, oldIsAdmin, callerIsAdmin, isSuperAdmin bool) bool {
 	if isSuperAdmin {
 		return true
 	}
@@ -666,6 +666,20 @@ func canMutatePrivilegedUserFields(oldUser, newUser *User, oldIsAdmin, isSuperAd
 		return false
 	}
 	if newUser.IsAdmin && !oldIsAdmin {
+		return false
+	}
+	// SECURITY (Blue, live escalation fix): EmailVerified is a privilege-critical
+	// signal — it gates OIDC email_verified claims and email-domain promotion. A
+	// NON-admin must never RAISE the verified bit (false → true) on any record,
+	// including their own; that was the self-service path to SuperAdmin
+	// (self-register @hanzo.ai → self-set emailVerified → promote on login). This
+	// is the hard deny-wall backing the column-set lockdown: it catches an
+	// explicit ?columns=email_verified bypass regardless of the default set.
+	// Lowering it (true → false) is always allowed — de-verifying is never an
+	// escalation. Admins (org-admin or global) may set it via this API; the
+	// trusted mailbox-verification flow bypasses this check entirely (it calls
+	// object.UpdateUser directly, not CheckPermissionForUpdateUser).
+	if newUser.EmailVerified && !oldUser.EmailVerified && !callerIsAdmin {
 		return false
 	}
 	return true
@@ -682,7 +696,7 @@ func CheckPermissionForUpdateUser(oldUser, newUser *User, isAdmin bool, isSuperA
 	// misread by xorm bool deserialization — the same fallback the authz engine
 	// uses), then refuse any owner move or admin grant by a non-global-admin.
 	oldIsAdmin := oldUser.IsAdmin || CheckUserIsAdminRaw(oldUser.Owner, oldUser.Name)
-	if !canMutatePrivilegedUserFields(oldUser, newUser, oldIsAdmin, isSuperAdmin) {
+	if !canMutatePrivilegedUserFields(oldUser, newUser, oldIsAdmin, isAdmin, isSuperAdmin) {
 		return false, i18n.Translate(lang, "auth:Unauthorized operation")
 	}
 
@@ -1427,6 +1441,31 @@ func PromoteByEmailDomain(user *User) (bool, error) {
 
 	rule, matched := LookupDomainPromotion(user.Email)
 	if !matched {
+		return false, nil
+	}
+
+	// SECURITY (Blue, live escalation fix): the login path MUST NOT be able to
+	// confer GLOBAL admin (membership in conf.AdminOrg == SuperAdmin, see
+	// User.IsSuperAdmin). That was the live hole: self-register @hanzo.ai →
+	// self-set emailVerified → interactive/password login → PromoteByEmailDomain
+	// moves the row into the admin org = platform sudo, mailbox never proven.
+	// SuperAdmin membership is established ONLY by the admin-gated provisioning
+	// path (service-token bootstrap / iamctl), NEVER by a login. Refuse the
+	// super-admin tier here outright so the crown-jewel invariant holds BY
+	// CONSTRUCTION — independent of who or what wrote the EmailVerified bit
+	// (self-service, an external syncer, or a bootstrap seed).
+	if rule.SuperAdmin || rule.Org == conf.AdminOrg {
+		return false, nil
+	}
+
+	// Org-scoped promotion (e.g. pars.network → the pars org + org-admin) is not
+	// a platform-SuperAdmin escalation, but it still grants org-admin power, so it
+	// requires a SERVER-CONTROLLED proof the mailbox is real. Post-lockdown
+	// EmailVerified is no longer self-writable (removed from UpdateUser's default
+	// columns, gated Admin-only in canMutatePrivilegedUserFields, reset on email
+	// change), so it is now a trustworthy server-controlled signal. A subject who
+	// has not proven their mailbox is not auto-promoted.
+	if !user.EmailVerified {
 		return false, nil
 	}
 
