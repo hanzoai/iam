@@ -60,6 +60,13 @@ import (
 // The clientSecret in the response is the source-of-truth value the caller
 // must persist (e.g. into a k8s Secret).
 func (c *ApiController) BootstrapApplicationUpsert() {
+	// SECURITY (Red HIGH-1): REQUIRE the service token — the same self-clause
+	// bypass that let a non-admin reach BootstrapUserUpsert applies to every
+	// operator-only /v1/iam/admin/* mutating handler. Deny-by-default.
+	if !c.IsServiceTokenAuthenticated() {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return
+	}
 	var req struct {
 		Organization string   `json:"organization"`
 		Name         string   `json:"name"`
@@ -275,6 +282,18 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 //
 //	{ "status": "ok", "data": { "created": bool, "name": "...", "email": "..." } }
 func (c *ApiController) BootstrapUserUpsert() {
+	// SECURITY (Red HIGH-1): REQUIRE the service token. The auto-signin filter
+	// accepts the service token as an ALTERNATIVE, not a REQUIREMENT — so a
+	// plain user-session request reaches this operator-only handler and the
+	// Casbin self-clause (subject==object) authorizes it, letting a non-admin
+	// self-grant is_admin=true + forge emailVerified via UpdateUserForAllFields
+	// (AllCols, no CheckPermission). Assert service-token auth here so ONLY the
+	// operator (HANZO_API_KEY/KMS_SERVICE_TOKEN/IAM_SERVICE_TOKEN) can call it;
+	// a self-authenticated user is refused deny-by-default.
+	if !c.IsServiceTokenAuthenticated() {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return
+	}
 	var req struct {
 		Owner             string            `json:"owner"`
 		Name              string            `json:"name"`

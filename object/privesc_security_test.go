@@ -170,6 +170,31 @@ func TestCanMutatePrivilegedUserFields_NonGlobalCannotEscalate(t *testing.T) {
 			new:        &User{Owner: "hanzo", Name: "a", EmailVerified: true},
 			oldIsAdmin: false, callerIsAdmin: false, isSuperAdmin: true, want: true,
 		},
+		// ── Red HIGH-2: verified-bit CARRY onto a changed email ──
+		{
+			name:       "non-admin carrying email_verified=true onto a NEW email is refused (the carry)",
+			old:        &User{Owner: "hanzo", Name: "a", Email: "a@proven.com", EmailVerified: true},
+			new:        &User{Owner: "hanzo", Name: "a", Email: "victim@unowned.com", EmailVerified: true},
+			oldIsAdmin: false, callerIsAdmin: false, isSuperAdmin: false, want: false,
+		},
+		{
+			name:       "non-admin changing email with email_verified=false is allowed",
+			old:        &User{Owner: "hanzo", Name: "a", Email: "a@proven.com", EmailVerified: true},
+			new:        &User{Owner: "hanzo", Name: "a", Email: "b@new.com", EmailVerified: false},
+			oldIsAdmin: false, callerIsAdmin: false, isSuperAdmin: false, want: true,
+		},
+		{
+			name:       "admin MAY carry email_verified=true across an email change",
+			old:        &User{Owner: "hanzo", Name: "a", Email: "a@proven.com", EmailVerified: true},
+			new:        &User{Owner: "hanzo", Name: "a", Email: "b@new.com", EmailVerified: true},
+			oldIsAdmin: false, callerIsAdmin: true, isSuperAdmin: false, want: true,
+		},
+		{
+			name:       "non-admin keeping email_verified true with the SAME email is allowed",
+			old:        &User{Owner: "hanzo", Name: "a", Email: "a@proven.com", EmailVerified: true},
+			new:        &User{Owner: "hanzo", Name: "a", Email: "a@proven.com", EmailVerified: true, DisplayName: "A2"},
+			oldIsAdmin: false, callerIsAdmin: false, isSuperAdmin: false, want: true,
+		},
 		{
 			name:       "self-move to admin org is refused",
 			old:        &User{Owner: "hanzo", Name: "a", IsAdmin: false},
