@@ -81,6 +81,7 @@ func TestIsUserIdSuperAdmin_AppPrincipalIsNeverSuperAdmin(t *testing.T) {
 // grant by an app, on its own synthetic record, another user's, or cross-org.
 func TestCanMutatePrivilegedUserFields_AppPrincipalCannotEscalate(t *testing.T) {
 	const appIsSuperAdmin = false // the authority value an app/<name> now carries
+	const appIsAdmin = false      // an app principal is not an org-admin caller either
 
 	cases := []struct {
 		name     string
@@ -104,7 +105,7 @@ func TestCanMutatePrivilegedUserFields_AppPrincipalCannotEscalate(t *testing.T) 
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if canMutatePrivilegedUserFields(tc.old, tc.new, false, appIsSuperAdmin) {
+			if canMutatePrivilegedUserFields(tc.old, tc.new, false, appIsAdmin, appIsSuperAdmin) {
 				t.Fatalf("R-1: an app principal must NOT be able to: %s", tc.name)
 			}
 		})
@@ -115,7 +116,7 @@ func TestCanMutatePrivilegedUserFields_AppPrincipalCannotEscalate(t *testing.T) 
 	// wall, decides whether an app may call update-user at all).
 	benignOld := &User{Owner: "hanzo", Name: "bob", IsAdmin: false, DisplayName: "Bob"}
 	benignNew := &User{Owner: "hanzo", Name: "bob", IsAdmin: false, DisplayName: "Bobby"}
-	if !canMutatePrivilegedUserFields(benignOld, benignNew, false, appIsSuperAdmin) {
+	if !canMutatePrivilegedUserFields(benignOld, benignNew, false, appIsAdmin, appIsSuperAdmin) {
 		t.Fatal("a benign (non-privileged) field edit must still be permitted (no blanket app deny)")
 	}
 }
