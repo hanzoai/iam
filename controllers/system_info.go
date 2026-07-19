@@ -87,6 +87,13 @@ func (c *ApiController) Health() {
 // @Success 200 {object} controllers.Response The Response object
 // @router /sync-init-data [post]
 func (c *ApiController) SyncInitData() {
+	// SECURITY (Red HIGH-1): REQUIRE the service token — this bulk-imports the
+	// init-data seed (orgs/apps/users). It is an operator-only route; a
+	// self-authenticated caller must never trigger it. Deny-by-default.
+	if !c.IsServiceTokenAuthenticated() {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return
+	}
 	var syncErr error
 	func() {
 		defer func() {
