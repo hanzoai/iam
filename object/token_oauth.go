@@ -1001,6 +1001,16 @@ func GetPasswordToken(application *Application, username string, password string
 		}, nil
 	}
 
+	// Email-domain auto-promotion on the password grant (ROPC), the SAME rule the
+	// interactive HandleLoggedIn path applies: a VERIFIED @hanzo.ai login is moved
+	// to the admin org (PromoteByEmailDomain is EmailVerified-gated + scoped to the
+	// brand superadmin-domain rule). Placed AFTER a successful CheckPassword and
+	// BEFORE generateJwtToken, so the JWT's owner claim (= user.Owner) reflects the
+	// promoted org and `hanzo login --password-stdin` yields a SuperAdmin token in
+	// one shot — no separate interactive login. Best-effort: a promotion DB error
+	// must NOT fail a valid login (the user simply keeps their pre-promotion org).
+	_, _ = PromoteByEmailDomain(user)
+
 	err = ExtendUserWithRolesAndPermissions(user)
 	if err != nil {
 		return nil, nil, err
