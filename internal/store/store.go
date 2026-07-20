@@ -51,6 +51,21 @@ func GetUserByName(_ context.Context, db orm.DB, owner, name string) (*schema.Us
 	return u, err
 }
 
+// GetOrganizationByName resolves a tenant by name. Organizations are filed under
+// the reserved admin org (v1 object/organization.go composes "admin/<name>"), so
+// the caller supplies only the tenant slug — a user's Owner IS this name.
+// Returns (nil, nil) when absent.
+func GetOrganizationByName(_ context.Context, db orm.DB, name string) (*schema.Organization, error) {
+	if name == "" {
+		return nil, nil
+	}
+	o, err := orm.TypedQuery[schema.Organization](db).Filter("Name=", name).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return o, err
+}
+
 // GetUserByEmail resolves a user by (owner, email) — the email-login identifier.
 func GetUserByEmail(_ context.Context, db orm.DB, owner, email string) (*schema.User, error) {
 	u, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).Filter("Email=", email).First()
