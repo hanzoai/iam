@@ -23,6 +23,7 @@ require (
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/luxfi/crypto v1.20.1
+	golang.org/x/oauth2 v0.36.0
 )
 
 require (

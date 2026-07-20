@@ -28,12 +28,18 @@ import (
 // API binds the user handlers to an orm store. Construct once at boot and mount.
 type API struct{ db orm.DB }
 
+// New binds the user API to a store. Mount uses it, and so does any in-process
+// caller that must create an account without going out over HTTP — the social
+// sign-up path (internal/social) — so an account is minted through this one
+// path and the credential invariant holds wherever the caller sits.
+func New(db orm.DB) *API { return &API{db: db} }
+
 // Mount registers the typed user CRUD handlers on app. Reads use zip.Get and
 // writes use zip.Post; both project the same transport-agnostic handler to REST
 // and MCP, so the (owner, name) identity in each typed request is honored on
 // every transport.
 func Mount(app *zip.App, db orm.DB) {
-	a := &API{db: db}
+	a := New(db)
 	zip.Post(app, "/v1/iam/users", a.Create, zip.WithTags("users"), zip.WithSummary("Create a user"))
 	zip.Get(app, "/v1/iam/users", a.List, zip.WithTags("users"), zip.WithSummary("List users in an org"))
 	zip.Get(app, "/v1/iam/users/get", a.Get, zip.WithTags("users"), zip.WithSummary("Get a user by (owner, name)"))

@@ -73,6 +73,34 @@ func GetTokenByCode(_ context.Context, db orm.DB, code string) (*schema.Token, e
 	return t, err
 }
 
+// GetTokenByName resolves a token row by its unique row name. A parked social
+// sign-in request is keyed this way — its Name is the opaque handle the
+// provider echoes back, and its Code is empty, so it is reachable here and
+// nowhere else. Names are 256-bit random values, so this resolves one row.
+func GetTokenByName(_ context.Context, db orm.DB, name string) (*schema.Token, error) {
+	if name == "" {
+		return nil, nil
+	}
+	t, err := orm.TypedQuery[schema.Token](db).Filter("Name=", name).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return t, err
+}
+
+// GetOrganization resolves an organization by name. Organizations are registry
+// records under the reserved admin owner.
+func GetOrganization(_ context.Context, db orm.DB, name string) (*schema.Organization, error) {
+	if name == "" {
+		return nil, nil
+	}
+	o, err := orm.TypedQuery[schema.Organization](db).Filter("Name=", name).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return o, err
+}
+
 // GetCert resolves a signing certificate by (owner, name).
 func GetCert(_ context.Context, db orm.DB, owner, name string) (*schema.Cert, error) {
 	c, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", owner).Filter("Name=", name).First()

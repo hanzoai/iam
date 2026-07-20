@@ -90,36 +90,19 @@ func loginHandler(db orm.DB) zip.Handler {
 		if app == nil {
 			return httpx.Err(c, "the application does not exist")
 		}
-		// Tenant isolation: the authenticated user's organization must be
-		// permitted for this application — its own org, a shared app, or an app
-		// that lets users choose their org. Without this a user in one tenant
-		// could obtain a token whose `organization` claim names another tenant.
-		if f.Organization != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
-			return httpx.Err(c, "the user is not permitted to sign in to this application")
-		}
-		// Bind the code to an EXACTLY-registered redirect URI (RFC 6749 §3.1.2.3);
-		// the token endpoint re-checks it. A supplied-but-unregistered URI is
-		// refused — never minted against.
-		if f.RedirectUri != "" && !app.IsRedirectUriValid(f.RedirectUri) {
-			return httpx.Err(c, "invalid redirect_uri")
-		}
-		method := normalizeChallengeMethod(f.CodeChallenge, f.CodeChallengeMethod)
-		if f.CodeChallenge != "" && method != "S256" {
-			return httpx.Err(c, "only S256 PKCE is supported")
-		}
-		// A public client (no secret) must use PKCE — no downgrade.
-		if app.ClientSecret == "" && f.CodeChallenge == "" {
-			return httpx.Err(c, "PKCE is required for public clients")
-		}
-		code, err := MintCode(app, userID, f.Scope, f.CodeChallenge, method, f.Resource, nowFunc())
+		// Mint through the ONE code seam every login method shares (issue.go) —
+		// tenant isolation, the exact-redirect check, PKCE, and (when it lands)
+		// the second factor are stated there, once, so no method is born past
+		// them.
+		code, err := Issue(ctx, db, app, user, Params{
+			Scope:     f.Scope,
+			Redirect:  f.RedirectUri,
+			Nonce:     f.Nonce,
+			Challenge: f.CodeChallenge,
+			Method:    f.CodeChallengeMethod,
+			Resource:  f.Resource,
+		})
 		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		// Bind the redirect_uri and nonce onto the code so the token exchange can
-		// re-verify the redirect and echo the nonce into the id_token.
-		code.RedirectUri = f.RedirectUri
-		code.Nonce = f.Nonce
-		if err := store.PersistToken(ctx, db, code); err != nil {
 			return httpx.Err(c, err.Error())
 		}
 		// The SDK reads data as the authorization code to exchange at /token.
