@@ -76,6 +76,17 @@ func authorizeHandler(db orm.DB) zip.Handler {
 			return authorizeErrorRedirect(c, q, "invalid_request", "PKCE is required for public clients")
 		}
 
+		// A provider hint names a federated connector to go straight to,
+		// skipping the hosted login (social.go). It is honored only here, after
+		// the request is validated, so a hop can never start from an unknown
+		// client or an unregistered redirect. An unresolvable hint falls through
+		// to the login page, which offers the same providers as buttons.
+		if h := hint(c); h != "" {
+			if item := pick(ctx, db, app, h); item != nil {
+				return hop(c, db, app, item, q, method)
+			}
+		}
+
 		// Delegate to the hosted login with a clean, re-encoded request. The login
 		// page posts credentials to /v1/iam/login, which mints the code.
 		return c.Redirect(302, hostedLoginTarget(app)+"?"+authorizeForwardQuery(q, method))

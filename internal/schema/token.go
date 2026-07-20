@@ -66,4 +66,23 @@ type Token struct {
 	RefreshFamily   string `json:"refreshFamily,omitempty" orm:"index"`
 	RefreshConsumed bool   `json:"refreshConsumed,omitempty"`
 	RefreshExpireIn int64  `json:"refreshExpireIn,omitempty"`
+
+	// A parked social sign-in request (v2). While the browser is away at
+	// Google/GitHub/GitLab, the authorize request waits on a row of this same
+	// entity — a parked request and a minted code carry the identical authorize
+	// parameters (application, redirect, nonce, PKCE challenge, scope,
+	// resource), so they are one shape, not two. Only three values are its own:
+	// Provider names the link the hop went to, Verifier is the upstream PKCE
+	// verifier (kept here rather than handed to the browser), and State is the
+	// application's own state parameter, echoed back untouched when the browser
+	// lands.
+	//
+	// A parked row is keyed by Name (the opaque handle sent upstream) and leaves
+	// Code EMPTY, which is what keeps the two key spaces disjoint: every
+	// redemption path resolves a row by a non-empty Code, access-token hash, or
+	// refresh hash, so a parked row answers to none of them and the handle a
+	// browser watches travel to the provider is never redeemable as a code.
+	Provider string `json:"provider,omitempty"`
+	Verifier string `json:"verifier,omitempty"`
+	State    string `json:"state,omitempty"`
 }

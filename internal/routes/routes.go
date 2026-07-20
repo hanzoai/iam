@@ -30,6 +30,7 @@ import (
 	"github.com/hanzoai/iam2/internal/providers"
 	"github.com/hanzoai/iam2/internal/roles"
 	"github.com/hanzoai/iam2/internal/sessions"
+	"github.com/hanzoai/iam2/internal/social"
 	"github.com/hanzoai/iam2/internal/tokens"
 	"github.com/hanzoai/iam2/internal/users"
 	"github.com/hanzoai/iam2/internal/webauthn"
@@ -57,6 +58,7 @@ func Mount(app *zip.App, db orm.DB) {
 	// (get-app-login, auth/methods, login) the @hanzo/iam <Login> self-configures
 	// from. One entry point wires the whole identity core.
 	oidc.Mount(app, db)
+	social.Mount(app, db)
 
 	users.Mount(app, db)
 	organizations.Mount(app, db)
