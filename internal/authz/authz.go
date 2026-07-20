@@ -141,6 +141,27 @@ func CanSetOrg(p *Principal, org string) bool {
 	return authorize(p, "POST", "applications", org, "")
 }
 
+// Optional resolves the Principal a PUBLIC route's caller happens to carry, or
+// nil when the request is anonymous or its bearer does not verify. The Guard
+// admits a public path WITHOUT resolving a principal (a browser must reach the
+// pre-auth surface before it holds a token), so From() is empty there — a public
+// handler that legitimately honors an authenticated caller resolves it here.
+//
+// It is the same fail-closed resolution every gated route runs (one verifier,
+// one user load, one revocation check); only the outcome differs — a bad bearer
+// is nil rather than a 401, because the caller's flow continues anonymously.
+// A handler must therefore treat a nil Principal as "anonymous", never as an
+// error, and must never widen authority on the strength of this alone: it proves
+// only WHO the caller is, not that the caller INTENDED this request (the wallet
+// link branch pairs it with a same-site check for exactly that reason).
+func Optional(c *zip.Ctx, db orm.DB) *Principal {
+	p, err := principal(c, db)
+	if err != nil {
+		return nil
+	}
+	return p
+}
+
 // Fail-closed reasons. The Guard collapses all of them to one opaque 401 so a
 // prober cannot tell a bad signature from an expired token from a revoked user.
 var (
