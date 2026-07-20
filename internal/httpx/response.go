@@ -23,8 +23,12 @@ type Response struct {
 }
 
 // Ok writes 200 { status:"ok", data }.
-func Ok(c *zip.Ctx, data any) error {
-	return c.JSON(200, Response{Status: "ok", Data: data})
+func Ok(c *zip.Ctx, data any, more ...any) error {
+	r := Response{Status: "ok", Data: data}
+	if len(more) > 0 {
+		r.Data2 = more[0]
+	}
+	return c.JSON(200, r)
 }
 
 // Err writes 200 { status:"error", msg } — the SDK contract (branch on status,
