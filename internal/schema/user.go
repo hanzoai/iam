@@ -113,7 +113,15 @@ type User struct {
 	LastSigninIp   string `json:"lastSigninIp,omitempty"`
 
 	// Linked federated-identity subjects, one column per connector (v1 parity).
-	GitHub          string `json:"github,omitempty"`
+	//
+	// A field that is FILTERED on must be named so that its json tag is its own
+	// name with the first letter lowered: that is the mapping orm derives a JSON
+	// path from (db.ToJSONFieldName → LowercaseFirst), and a name that does not
+	// round-trip through it silently matches nothing rather than erroring. v1
+	// names this field GitHub, which maps to `gitHub` and would never find the
+	// `github` it wrote — the same class of miss as v1's own GitLab bug, one
+	// layer down. The json tag, and so the wire, is unchanged.
+	Github          string `json:"github,omitempty"`
 	Google          string `json:"google,omitempty"`
 	QQ              string `json:"qq,omitempty"`
 	WeChat          string `json:"wechat,omitempty"`
