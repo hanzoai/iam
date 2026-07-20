@@ -9,25 +9,34 @@ package organizations
 import (
 	"context"
 	"errors"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam2/internal/cred"
 	"github.com/hanzoai/iam2/internal/schema"
 )
 
 const orgBase = "/v1/iam/organizations"
 
-// Mount registers the organization CRUD surface on app, backed by db.
+// Mount registers the organization surface on app, backed by db: the typed
+// entity routes and the verb face (verbs.go) the live consumers call, both bound
+// to ONE OrganizationAPI so they share the store operations, the record policy,
+// and the masker.
 func Mount(app *zip.App, db orm.DB) {
-	NewOrganizationAPI(db).mount(app)
+	h := NewOrganizationAPI(db)
+	h.mount(app)
+	h.mountVerbs(app)
 }
 
-// OrganizationAPI serves CRUD for the organization entity over a single
-// orm.DB. It is transport-only: credential hashing, password-type
-// sanitisation, and signin-throttle clamping are policy concerns applied by the
-// caller before Create/Update — never braided into persistence here.
+// OrganizationAPI serves CRUD for the organization entity over a single orm.DB.
+// It is the ONE core under both faces — the typed entity routes mounted here and
+// the verb face in verbs.go — so the record policy every write must obey
+// (normalize + validate) is applied HERE, at the two write entry points, and
+// cannot be side-stepped by choosing a face.
 type OrganizationAPI struct {
 	DB orm.DB
 }
@@ -101,6 +110,10 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	if org.Owner == "" || org.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	if err := validate(&org); err != nil {
+		return nil, err
+	}
+	normalize(&org)
 	switch _, err := h.find(org.Owner, org.Name); {
 	case err == nil:
 		return nil, zip.ErrConflict("organization already exists")
@@ -167,6 +180,10 @@ func (h *OrganizationAPI) Update(ctx context.Context, in *UpdateOrganizationInpu
 	if desired.Owner == "" || desired.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	if err := validate(&desired); err != nil {
+		return nil, err
+	}
+	normalize(&desired)
 	existing, err := h.find(desired.Owner, desired.Name)
 	if errors.Is(err, orm.ErrNotFound) {
 		return nil, zip.ErrNotFound("organization not found")
@@ -207,6 +224,67 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return &DeleteOrganizationOutput{Affected: true}, nil
+}
+
+// normalize applies the organization record policy every write obeys, porting
+// v1's object/organization.go Add/UpdateOrganization preamble. It is pure and
+// total: it only ever fills or clamps, never rejects (validate does that), so
+// both write paths can call it unconditionally.
+func normalize(o *schema.Organization) {
+	if o.BalanceCurrency == "" {
+		o.BalanceCurrency = "USD" // v1 organization.go:170-172, 213-215
+	}
+	o.PasswordType = passwordType(o.PasswordType)
+	clamp(&o.FailedSigninLimit, 3, 100)       // v1 clampSigninRateLimits
+	clamp(&o.FailedSigninFrozenTime, 1, 1440) //
+}
+
+// passwordType resolves the digest scheme an org's members inherit when their
+// own row names none (internal/cred: the scheme is a property of the row, and
+// the org is its fallback — v1 object/check.go:244-249). Plaintext is refused
+// and both it and the empty/bcrypt defaults resolve to the platform default, so
+// an org can never be configured to store its members' passwords in the clear
+// (v1 sanitizeOrgPasswordType). An explicitly-chosen other scheme is preserved
+// verbatim, so an imported org keeps verifying its existing rows.
+func passwordType(t string) string {
+	switch t {
+	case "", "plain", cred.Bcrypt:
+		return cred.Argon2id
+	}
+	return t
+}
+
+// clamp bounds a per-org signin-throttle field to a safe range. Zero means
+// "inherit the application default" and is left alone (v1 clampSigninRateLimits).
+func clamp(v *int, lo, hi int) {
+	switch {
+	case *v == 0:
+	case *v < lo:
+		*v = lo
+	case *v > hi:
+		*v = hi
+	}
+}
+
+// validate rejects a record no write may persist. IpWhitelist is the one field
+// whose value can be malformed rather than merely unset: it is a comma-separated
+// CIDR list enforced on every signin, so an unparseable entry would either lock
+// an org out or silently admit everyone (v1 object.CheckIpWhitelist, called from
+// controllers/organization.go:163 and :208).
+func validate(o *schema.Organization) error {
+	if o.IpWhitelist == "" {
+		return nil
+	}
+	for _, item := range strings.Split(o.IpWhitelist, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(item); err != nil {
+			return zip.ErrBadRequest(item + " does not meet the CIDR format")
+		}
+	}
+	return nil
 }
 
 // find resolves an organization by its (owner, name) natural key. The error is
