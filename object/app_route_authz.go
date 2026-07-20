@@ -96,6 +96,8 @@ func appCapabilityForRoute(method, urlPath string) (AppAdminCapability, bool) {
 		return CapWebhookAdmin, true
 	case "add-token", "update-token", "delete-token":
 		return CapTokenAdmin, true
+	case "add-membership", "delete-membership":
+		return CapMembershipAdmin, true
 	}
 	return AppAdminCapability{}, false
 }

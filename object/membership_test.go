@@ -95,7 +95,7 @@ func TestMemberOrgRefsHomePlusTeams(t *testing.T) {
 		t.Fatalf("ensure home dup: %v", err)
 	}
 
-	refs := memberOrgRefs(user)
+	refs := MemberOrgRefs(user)
 	if len(refs) != 2 {
 		t.Fatalf("orgs = %+v, want 2 (acme home + beta-team, home deduped)", refs)
 	}
@@ -113,7 +113,7 @@ func TestMemberOrgRefsHomePlusTeams(t *testing.T) {
 func TestMemberOrgRefsHomeOnlyWithoutRows(t *testing.T) {
 	newMembershipTestOrmer(t)
 	user := &User{Owner: "solo", Name: "bob", Id: "solo/bob"}
-	refs := memberOrgRefs(user)
+	refs := MemberOrgRefs(user)
 	if len(refs) != 1 || refs[0].Org != "solo" || refs[0].Role != MembershipRoleMember {
 		t.Errorf("orgs = %+v, want exactly {solo member}", refs)
 	}
@@ -176,7 +176,7 @@ func TestMembershipRidesTheClaim(t *testing.T) {
 		t.Fatalf("ensure team: %v", err)
 	}
 
-	claims := Claims{User: user, TokenType: "access-token", Scope: "openid", Orgs: memberOrgRefs(user)}
+	claims := Claims{User: user, TokenType: "access-token", Scope: "openid", Orgs: MemberOrgRefs(user)}
 	for surface, m := range map[string]map[string]interface{}{
 		"JWT (default)": jsonClaims(t, getClaimsWithoutThirdIdp(claims)),
 		"JWT-Empty":     jsonClaims(t, getShortClaims(claims)),
@@ -190,8 +190,8 @@ func TestMembershipRidesTheClaim(t *testing.T) {
 		}
 		orgs, ok := raw.([]interface{})
 		if !ok {
-			// JWT-Custom carries the native []orgRef (no JSON round-trip); handle it.
-			if native, isNative := raw.([]orgRef); isNative {
+			// JWT-Custom carries the native []OrgRef (no JSON round-trip); handle it.
+			if native, isNative := raw.([]OrgRef); isNative {
 				if len(native) != 2 || native[0].Org != "hanzo" || native[1].Org != "acme-team" {
 					t.Errorf("%s: orgs = %+v, want [hanzo, acme-team]", surface, native)
 				}

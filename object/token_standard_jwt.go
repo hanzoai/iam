@@ -32,7 +32,7 @@ type ClaimsStandard struct {
 	// BillingAccount is the signed `billing_account` claim; see Claims.BillingAccount.
 	BillingAccount string `json:"billing_account,omitempty"`
 	// Orgs is the org-membership set; see Claims.Orgs.
-	Orgs                []orgRef    `json:"orgs,omitempty"`
+	Orgs                []OrgRef    `json:"orgs,omitempty"`
 	EmailVerified       bool        `json:"email_verified,omitempty"`
 	PhoneNumber         string      `json:"phone_number,omitempty"`
 	PhoneNumberVerified bool        `json:"phone_number_verified,omitempty"`

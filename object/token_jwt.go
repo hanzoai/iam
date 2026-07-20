@@ -51,7 +51,7 @@ type Claims struct {
 	// teams), each with a coarse role. The gateway authorizes an org-switch
 	// against it (X-Org-Id ∈ orgs). Resolved once at mint, threaded into every
 	// format like `project`. Empty ⟹ home-only (the default scope).
-	Orgs []orgRef `json:"orgs,omitempty"`
+	Orgs []OrgRef `json:"orgs,omitempty"`
 
 	SigninMethod string `json:"signinMethod,omitempty"`
 	jwt.RegisteredClaims
@@ -125,7 +125,7 @@ type ClaimsShort struct {
 	// BillingAccount is the signed `billing_account` claim; see Claims.BillingAccount.
 	BillingAccount string `json:"billing_account,omitempty"`
 	// Orgs is the org-membership set; see Claims.Orgs.
-	Orgs      []orgRef `json:"orgs,omitempty"`
+	Orgs      []OrgRef `json:"orgs,omitempty"`
 	TokenType string   `json:"tokenType,omitempty"`
 	Nonce     string   `json:"nonce,omitempty"`
 	Scope     string   `json:"scope,omitempty"`
@@ -154,7 +154,7 @@ type ClaimsWithoutThirdIdp struct {
 	// BillingAccount is the signed `billing_account` claim; see Claims.BillingAccount.
 	BillingAccount string `json:"billing_account,omitempty"`
 	// Orgs is the org-membership set; see Claims.Orgs.
-	Orgs      []orgRef `json:"orgs,omitempty"`
+	Orgs      []OrgRef `json:"orgs,omitempty"`
 	TokenType string   `json:"tokenType,omitempty"`
 	Nonce     string   `json:"nonce,omitempty"`
 	Tag       string   `json:"tag"`
@@ -234,33 +234,33 @@ func permissionRefs(perms []*Permission) []roleRef {
 	return out
 }
 
-// orgRef is the minimal membership shape carried in an access token: an org the
+// OrgRef is the minimal membership shape carried in an access token: an org the
 // subject may act in, plus the subject's coarse role there. Like roleRef it stays
 // slug-sized so the token stays inside the edge request-header buffer even for a
 // user in many orgs. The gateway authorizes an org-switch against this set
 // (X-Org-Id ∈ orgs) with no round-trip.
-type orgRef struct {
+type OrgRef struct {
 	Org  string `json:"org"`
 	Role string `json:"role,omitempty"`
 }
 
-// memberOrgRefs resolves the org-membership SET a token carries for a user: the
+// MemberOrgRefs resolves the org-membership SET a token carries for a user: the
 // user's HOME org (User.Owner) always, plus every org the user has an explicit
 // Membership in. Home is listed first and wins on a duplicate. Resolved once at
 // mint time and threaded into every token format as the `orgs` claim, mirroring
 // how `project` rides alongside `organization`.
-func memberOrgRefs(user *User) []orgRef {
+func MemberOrgRefs(user *User) []OrgRef {
 	if user == nil || user.Owner == "" {
 		return nil
 	}
 	seen := map[string]bool{user.Owner: true}
-	out := []orgRef{{Org: user.Owner, Role: homeRole(user)}}
+	out := []OrgRef{{Org: user.Owner, Role: homeRole(user)}}
 
 	memberships, err := GetMembershipsByUser(user.GetId())
 	if err != nil {
 		// Best-effort like the project claim: a lookup failure emits just the home
 		// org rather than breaking token minting — auth availability wins.
-		logs.Warning("memberOrgRefs: membership lookup for %q failed: %v", user.GetId(), err)
+		logs.Warning("MemberOrgRefs: membership lookup for %q failed: %v", user.GetId(), err)
 		return out
 	}
 	for _, m := range memberships {
@@ -268,7 +268,7 @@ func memberOrgRefs(user *User) []orgRef {
 			continue
 		}
 		seen[m.Org] = true
-		out = append(out, orgRef{Org: m.Org, Role: m.Role})
+		out = append(out, OrgRef{Org: m.Org, Role: m.Role})
 	}
 	return out
 }
@@ -633,7 +633,7 @@ func generateJwtToken(application *Application, user *User, provider string, sig
 		// a downstream reader never has to infer the payer — and a forged User.Type
 		// can no longer name the org pool. See billing_account.go.
 		BillingAccount: billingAccountClaim(user, application, provider, signinMethod, project),
-		Orgs:           memberOrgRefs(user),
+		Orgs:           MemberOrgRefs(user),
 		SigninMethod:   signinMethod,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,

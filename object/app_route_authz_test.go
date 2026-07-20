@@ -27,7 +27,7 @@ func clearAllAppAllowlists(t *testing.T) {
 	for _, cap := range []AppAdminCapability{
 		CapUserPasswordAdmin, CapUserAdmin, CapAppAdmin, CapKeyMint,
 		CapCertAdmin, CapKeyAdmin, CapOrgAdmin, CapProviderAdmin,
-		CapSyncerAdmin, CapWebhookAdmin, CapTokenAdmin,
+		CapSyncerAdmin, CapWebhookAdmin, CapTokenAdmin, CapMembershipAdmin,
 	} {
 		os.Unsetenv(cap.EnvVar)
 	}
@@ -110,6 +110,7 @@ func TestAppRouteAllowed_CapGatedDeniedWithoutAllowlist(t *testing.T) {
 		"/v1/iam/add-syncer", "/v1/iam/update-syncer", "/v1/iam/delete-syncer",
 		"/v1/iam/add-webhook", "/v1/iam/update-webhook", "/v1/iam/delete-webhook",
 		"/v1/iam/add-token", "/v1/iam/update-token", "/v1/iam/delete-token",
+		"/v1/iam/add-membership", "/v1/iam/delete-membership",
 	}
 	for _, path := range capRoutes {
 		if AppRouteAllowed("unlisted-app", http.MethodPost, path) {
@@ -133,6 +134,8 @@ func TestAppRouteAllowed_CapGatedAllowedWhenAllowlisted(t *testing.T) {
 		{CapUserPasswordAdmin.EnvVar, "/v1/iam/set-password"},
 		{CapKeyMint.EnvVar, "/v1/iam/mint-user-keys"},
 		{CapTokenAdmin.EnvVar, "/v1/iam/delete-token"},
+		{CapMembershipAdmin.EnvVar, "/v1/iam/add-membership"}, // the hanzo-team invite path
+		{CapMembershipAdmin.EnvVar, "/v1/iam/delete-membership"},
 	}
 	for _, tc := range cases {
 		clearAllAppAllowlists(t)

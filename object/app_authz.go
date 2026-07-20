@@ -133,6 +133,20 @@ var (
 	// the OAuth grant endpoints is unaffected — this gates only the admin CRUD.)
 	CapTokenAdmin = AppAdminCapability{Name: "token", EnvVar: "IAM_TOKEN_ADMIN_APPS"}
 
+	// CapMembershipAdmin gates the org-membership surface: reading another
+	// user's membership set / an org's roster (get-memberships) and the invite
+	// mutations (add-membership / delete-membership). Membership IS tenancy — a
+	// row makes the org switchable in every token the user mints — so an app
+	// that can write it can move users between tenants. The intended holder is
+	// the platform team product (hanzo-team): its invite flow records the IAM
+	// membership, and the per-tenant isolation is enforced by that trusted
+	// caller, the same trust model as CapKeyMint. Allowlist:
+	// IAM_MEMBERSHIP_ADMIN_APPS (empty/unset = deny all, fail-secure). Human
+	// principals are unaffected: self-reads, org-admin roster reads, and
+	// org-admin invites are authorized per-endpoint in
+	// controllers/membership.go.
+	CapMembershipAdmin = AppAdminCapability{Name: "membership", EnvVar: "IAM_MEMBERSHIP_ADMIN_APPS"}
+
 	// CapServiceAccountRead gates LISTING service accounts — GET
 	// /v1/iam/service-accounts?organization=<org> — which returns names +
 	// metadata ONLY (accessKey/accessSecret masked by GetMaskedUsers, the
@@ -170,7 +184,7 @@ func AppNameFromPrincipal(principal string) string {
 var allCapabilities = []AppAdminCapability{
 	CapUserPasswordAdmin, CapUserAdmin, CapAppAdmin, CapKeyMint, CapCertAdmin,
 	CapKeyAdmin, CapOrgAdmin, CapProviderAdmin, CapSyncerAdmin, CapWebhookAdmin,
-	CapTokenAdmin, CapServiceAccountRead,
+	CapTokenAdmin, CapMembershipAdmin, CapServiceAccountRead,
 }
 
 // AppNameIsCapabilityReserved reports whether appName appears in ANY capability
