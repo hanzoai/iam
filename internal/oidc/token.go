@@ -96,6 +96,8 @@ func tokenHandler(db orm.DB) zip.Handler {
 			return passwordGrant(c, db)
 		case grantTypeTokenExchange:
 			return tokenExchangeGrant(c, db)
+		case deviceGrant:
+			return deviceCodeGrant(c, db)
 		case "":
 			return tokenError(c, 400, "invalid_request", "grant_type is required")
 		default:
@@ -126,8 +128,11 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	if app == nil {
-		// Unknown code OR its app vanished — one opaque answer, no oracle.
+	// Unknown code, an app that vanished, or a row that is a DEVICE authorization
+	// rather than an authorization code — one opaque answer, no oracle. The kind
+	// check is load-bearing: a device row carries no PKCE challenge and no
+	// redirect_uri, so redeeming one here would mint on a grant no human approved.
+	if app == nil || isDevice(tok) {
 		return tokenError(c, 400, "invalid_grant", "invalid authorization code")
 	}
 
