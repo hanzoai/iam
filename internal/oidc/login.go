@@ -35,7 +35,11 @@ type loginForm struct {
 	Organization string `json:"organization"`
 	Username     string `json:"username"` // email OR username
 	Password     string `json:"password"`
-	Type         string `json:"type"` // "code" (PKCE authorize) | "login" (bare session)
+	Type         string `json:"type"` // "code" (PKCE authorize) | "device" (RFC 8628 approval) | "login" (bare session)
+
+	// UserCode is the RFC 8628 code the device displays, transcribed by the human
+	// approving it (type=device).
+	UserCode string `json:"userCode"`
 
 	// PKCE authorize passthrough (present when type=code).
 	ClientId            string `json:"clientId"`
@@ -77,6 +81,13 @@ func loginHandler(db orm.DB) zip.Handler {
 		// that reveals whether the account exists.
 		if user == nil || !users.VerifyPassword(user, f.Password, orgPasswordType) {
 			return httpx.Err(c, "the username or password is incorrect")
+		}
+
+		// type=device: approve a pending RFC 8628 device authorization against the
+		// identity the credential check just proved (device.go). It sits here
+		// because approving a device sign-in requires a PROVEN approver identity.
+		if f.Type == "device" {
+			return approveDevice(c, db, user, f.UserCode)
 		}
 
 		userID := user.Owner + "/" + user.Name
