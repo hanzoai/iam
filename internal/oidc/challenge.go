@@ -33,7 +33,10 @@ const challengeTTL = 5 * time.Minute
 
 // The challenge kinds. Each names the proof still outstanding, and a taker demands
 // its own kind: a challenge minted for one purpose must never satisfy another.
-const KindMfa = "mfa"
+const (
+	KindMfa        = "mfa"
+	KindFederation = "federation"
+)
 
 // ErrChallenge is the ONE opaque failure for every way a challenge can be refused
 // — unknown, expired, spent, or the wrong kind. They collapse to one answer so a
