@@ -44,6 +44,8 @@ var mapping = []pair{
 	{"token", "tokens"},
 	{"record", "audit_logs"},
 	{"invitation", "invitations"},
+	{"web3_nonce", "challenges"},
+	{"wallet_link", "wallets"},
 }
 
 // Run writes a tab-aligned per-entity drift report to w. ctx bounds every
