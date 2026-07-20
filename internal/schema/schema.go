@@ -1,7 +1,12 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package schema declares the thirteen IAM v2 identity entities on
-// hanzoai/orm.
+// Package schema declares the IAM v2 identity entities on hanzoai/orm.
+//
+// Thirteen mirror a v1 Casdoor table one-for-one (MIGRATION.md §4) and are the
+// ones the drift-compare tool reconciles. Membership is the fourteenth and has
+// no v1 counterpart to compare against: the tenancy relation that lets one
+// identity act in several orgs is new here, so it is absent from compare's
+// mapping by design, not by omission.
 //
 // Each entity embeds orm.Model[T]; every kind is registered exactly once in
 // this file's init(). orm stores every entity as one row in a single
@@ -30,7 +35,7 @@ func Kinds() []string {
 		"users", "organizations", "applications", "providers",
 		"roles", "permissions", "certs", "keys",
 		"webauthn_credentials", "sessions", "tokens", "audit_logs",
-		"invitations",
+		"invitations", "memberships",
 	}
 }
 
@@ -48,4 +53,5 @@ func init() {
 	orm.Register[Token]("tokens")
 	orm.Register[AuditLog]("audit_logs")
 	orm.Register[Invitation]("invitations")
+	orm.Register[Membership]("memberships")
 }

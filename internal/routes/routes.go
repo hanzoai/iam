@@ -24,11 +24,13 @@ import (
 	"github.com/hanzoai/iam2/internal/certs"
 	"github.com/hanzoai/iam2/internal/invitations"
 	"github.com/hanzoai/iam2/internal/keys"
+	"github.com/hanzoai/iam2/internal/memberships"
 	"github.com/hanzoai/iam2/internal/oidc"
 	"github.com/hanzoai/iam2/internal/organizations"
 	"github.com/hanzoai/iam2/internal/permission"
 	"github.com/hanzoai/iam2/internal/providers"
 	"github.com/hanzoai/iam2/internal/roles"
+	"github.com/hanzoai/iam2/internal/serviceaccounts"
 	"github.com/hanzoai/iam2/internal/sessions"
 	"github.com/hanzoai/iam2/internal/tokens"
 	"github.com/hanzoai/iam2/internal/users"
@@ -60,6 +62,8 @@ func Mount(app *zip.App, db orm.DB) {
 
 	users.Mount(app, db)
 	organizations.Mount(app, db)
+	serviceaccounts.Mount(app, db)
+	memberships.Mount(app, db)
 	applications.Mount(app, db)
 	providers.Mount(app, db)
 	roles.Mount(app, db)

@@ -26,12 +26,36 @@ import (
 // inert until an ML-DSA Cert is configured. Keys come from the Cert entity
 // (KMS-backed); tests inject an ephemeral in-memory key through the same path.
 
+// OrgRef is one org the subject may act in, plus its coarse role there — the
+// unit of the `orgs` membership set. The edge authorizes an org-switch against
+// that set statelessly (X-Org-Id ∈ orgs), so this shape is a wire contract: it
+// is an array of OBJECTS, matching gateway/iamauth.Membership field for field.
+// It stays slug-sized for the same reason RoleRef does.
+type OrgRef struct {
+	Org  string `json:"org"`
+	Role string `json:"role,omitempty"`
+}
+
+// RoleRef names a role or permission by its (owner, name) identity. A token
+// carries refs, never whole rows: the bearer rides in a request header, and an
+// oversized header is answered with HTTP 431 — which locks the tenant out of
+// every API. A consumer that needs more than the name reads the catalog.
+type RoleRef struct {
+	Owner string `json:"owner,omitempty"`
+	Name  string `json:"name,omitempty"`
+}
+
 // Claims is the iam2 token claim set: the standard registered claims plus the
 // Hanzo first-class claims the SDK and downstream validators read. owner and
 // organization are the tenant (both the org slug); scope carries the granted
 // scopes; nonce is echoed into the id_token; tokenType distinguishes an
-// access-token from an id-token. A field is emitted only when populated, so one
-// struct serves both token shapes without leaking empty claims.
+// access-token from an id-token.
+//
+// The subject block below describes the PRINCIPAL, and every one of its fields
+// is resolved from the user record at mint (see Subject) — never from a request,
+// which could otherwise assert its own isAdmin. Each is omitempty, so a machine
+// token carries none of them and a single-org user's token is byte-identical to
+// one minted before the set grew.
 type Claims struct {
 	jwt.RegisteredClaims
 	Scope        string `json:"scope,omitempty"`
@@ -42,6 +66,19 @@ type Claims struct {
 	Nonce        string `json:"nonce,omitempty"`
 	Azp          string `json:"azp,omitempty"`
 	TokenType    string `json:"tokenType,omitempty"`
+
+	// The subject block — what downstream reads to authorize.
+	Id                string    `json:"id,omitempty"`
+	PreferredUsername string    `json:"preferred_username,omitempty"`
+	Type              string    `json:"type,omitempty"`
+	Tag               string    `json:"tag,omitempty"`
+	Phone             string    `json:"phone,omitempty"`        // IAM's own name
+	PhoneNumber       string    `json:"phone_number,omitempty"` // the OIDC standard name
+	IsAdmin           bool      `json:"isAdmin,omitempty"`      // ORG admin — never platform sudo
+	Orgs              []OrgRef  `json:"orgs,omitempty"`
+	Roles             []RoleRef `json:"roles,omitempty"`
+	Permissions       []RoleRef `json:"permissions,omitempty"`
+	Groups            []string  `json:"groups,omitempty"`
 }
 
 // Signer signs tokens with one key under one algorithm. Immutable after
@@ -107,10 +144,11 @@ func NewRSASigner(key *rsa.PrivateKey, kid, issuer string) *Signer {
 	return &Signer{method: jwt.SigningMethodRS256, key: key, kid: kid, alg: "RS256", issuer: issuer}
 }
 
-// Sign issues a signed access token for (app, user) with the given scope. now is
+// Sign issues a signed access token for (app, sub) with the given scope. now is
 // injected for testability; ttl is the token lifetime. The audience is the app's
-// clientId (validators fail closed when aud != clientId).
-func (s *Signer) Sign(app *schema.Application, userID, email, name, scope string, ttl time.Duration, now time.Time) (string, error) {
+// clientId (validators fail closed when aud != clientId). Every principal claim
+// comes from sub, which was resolved from the user record — see Subject.
+func (s *Signer) Sign(app *schema.Application, sub Subject, scope string, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
@@ -121,7 +159,6 @@ func (s *Signer) Sign(app *schema.Application, userID, email, name, scope string
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
-			Subject:   userID,
 			Audience:  audienceFor(app, ""),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 			NotBefore: jwt.NewNumericDate(now),
@@ -131,19 +168,18 @@ func (s *Signer) Sign(app *schema.Application, userID, email, name, scope string
 		Scope:        scope,
 		Owner:        app.Organization,
 		Organization: app.Organization,
-		Email:        email,
-		Name:         name,
 		Azp:          app.ClientId,
 		TokenType:    "access-token",
 	}
+	sub.claims(&claims)
 	return s.signClaims(claims)
 }
 
-// SignID issues an OIDC id_token for (app, user). It differs from the access
+// SignID issues an OIDC id_token for (app, sub). It differs from the access
 // token by carrying the echoed nonce and by declaring tokenType "id-token"; the
 // audience is the client the token was minted for (the RP), and iss matches the
 // discovery issuer so a standard OIDC client validates it.
-func (s *Signer) SignID(app *schema.Application, userID, email, name, scope, nonce string, ttl time.Duration, now time.Time) (string, error) {
+func (s *Signer) SignID(app *schema.Application, sub Subject, scope, nonce string, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
@@ -154,7 +190,6 @@ func (s *Signer) SignID(app *schema.Application, userID, email, name, scope, non
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
-			Subject:   userID,
 			Audience:  jwt.ClaimStrings{app.ClientId},
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -164,12 +199,11 @@ func (s *Signer) SignID(app *schema.Application, userID, email, name, scope, non
 		Scope:        scope,
 		Owner:        app.Organization,
 		Organization: app.Organization,
-		Email:        email,
-		Name:         name,
 		Nonce:        nonce,
 		Azp:          app.ClientId,
 		TokenType:    "id-token",
 	}
+	sub.claims(&claims)
 	return s.signClaims(claims)
 }
 

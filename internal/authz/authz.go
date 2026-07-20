@@ -46,6 +46,7 @@ package authz
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"reflect"
 	"strings"
@@ -65,12 +66,20 @@ import (
 const adminOrg = "admin"
 
 // Principal is the identity a gated request acts as, resolved from a verified
-// bearer. Org is the tenant (the authenticated principal's own org, from the
-// subject); User is its name within that org (empty for a machine token); Admin
-// is the org-admin flag; Super is the SuperAdmin predicate (Org == adminOrg).
+// bearer or from a confidential client's Basic credential. Org is the tenant
+// (the authenticated principal's own org, from the subject); User is its name
+// within that org (empty for a machine token); Admin is the org-admin flag;
+// Super is the SuperAdmin predicate (Org == adminOrg).
+//
+// App is the application NAME when the request authenticated as a confidential
+// client (client_secret_basic), and "" for every human. An app principal is
+// never Admin and never Super — its whole authority is its capability allowlist
+// (cap.go), so a leaked client credential can neither read another tenant nor
+// touch signing material.
 type Principal struct {
 	Org   string
 	User  string
+	App   string
 	Admin bool
 	Super bool
 }
@@ -131,16 +140,47 @@ var publicPaths = map[string]bool{
 	"/v1/iam/auth/methods":                     true, // pre-login method list
 }
 
+// selfPaths is the CLOSED set of GATED routes that carry their OWN
+// authorization — the verb face (HIP-0111 §6) the live consumers call. Their
+// read target is an `id=<owner>/<name>` or an org-scoped listing, not the
+// ?owner=&name= pair the generic rule reads, so the Guard has nothing to
+// authorize here and would refuse every one of them on an empty owner.
+//
+// The Guard still AUTHENTICATES them (no credential ⇒ 401); it skips ONLY the
+// target rule. Each handler then authorizes through the SAME pure policy — Can
+// for a single target, Scope for a listing — before it touches the store. One
+// policy, two faces. Listing a path here MOVES its check into that handler; it
+// never removes it, and each is pinned by a test.
+var selfPaths = map[string]bool{
+	"/v1/iam/get-organization":  true, // ?id=admin/<slug> → Can(GET, organizations)
+	"/v1/iam/get-organizations": true, // owner-scoped listing → Scope
+	"/v1/iam/service-accounts":  true, // ?organization=<org> → the service-account read gate
+	"/v1/iam/memberships":       true, // ?user=|?org= → Scope
+}
+
 // isPublic reports whether path is in the public allowlist. A trailing slash is
 // trimmed first so /v1/iam/login/ resolves like /v1/iam/login — the same route
 // fiber serves. It can only ever widen matches to the fixed public set, never
 // turn a gated path into a public one (no gated path equals a public path plus a
 // slash), so the fail-closed default holds.
 func isPublic(path string) bool {
+	return publicPaths[trimmed(path)]
+}
+
+// isSelf reports whether path authorizes itself (selfPaths), normalized the same
+// way as isPublic.
+func isSelf(path string) bool {
+	return selfPaths[trimmed(path)]
+}
+
+// trimmed normalizes a request path for allowlist lookup by dropping a trailing
+// slash, so /v1/iam/login/ resolves like /v1/iam/login — the same route fiber
+// serves.
+func trimmed(path string) string {
 	if len(path) > 1 {
-		path = strings.TrimRight(path, "/")
+		return strings.TrimRight(path, "/")
 	}
-	return publicPaths[path]
+	return path
 }
 
 // isRead reports whether a method addresses its target through the query string
@@ -167,7 +207,8 @@ func Guard(db orm.DB) zip.Handler {
 		if err != nil {
 			return zip.ErrUnauthorized("authentication required")
 		}
-		if isRead(c.Method()) && !authorize(p, c.Method(), entityOf(c.Path()), c.Query("owner"), c.Query("name")) {
+		if isRead(c.Method()) && !isSelf(c.Path()) &&
+			!authorize(p, c.Method(), entityOf(c.Path()), c.Query("owner"), c.Query("name")) {
 			return zip.ErrForbidden("forbidden")
 		}
 		c.SetContext(context.WithValue(c.Context(), ctxKey{}, p))
@@ -204,32 +245,72 @@ func Authorize(ctx context.Context, op zip.Op, in any) error {
 	return nil
 }
 
+// Can reports whether the ctx principal may act on (entity, owner, name) with
+// method. It is the SAME pure policy the Guard applies to the entity face,
+// exported for the verb face, whose target rides in `id=<owner>/<name>` rather
+// than in ?owner=&name=. One policy, two faces — a verb handler never restates
+// the rule, so the faces cannot drift apart. No principal (an unauthenticated
+// request that reached a gated handler) is refused.
+func Can(ctx context.Context, method, entity, owner, name string) bool {
+	p, ok := From(ctx)
+	if !ok {
+		return false
+	}
+	return authorize(p, method, entity, owner, name)
+}
+
 // authorize is the pure authorization decision: may p act on a resource owned by
 // `owner` (named `name`) on the given entity? The order IS the policy:
 //
 //  1. SuperAdmin may do anything — the only cross-tenant scope.
-//  2. A platform-owned resource (admin/built-in — the reserved owners the token
-//     verifier trusts to sign) is writable only by a SuperAdmin. This single
-//     rule is the signing-cert poisoning gate, the admin-scoped app/provider
-//     registration gate, AND the built-in-org gap, all at once: a built-in-org
-//     principal is not SuperAdmin (that is admin only), so it cannot write a
-//     built-in-owned signing cert either.
-//  3. Tenant isolation: a normal principal may act only within its OWN org. An
-//     empty or foreign owner is refused — the target org is bound to the
-//     principal, never trusted from the request.
-//  4. Inside its own org, an org admin manages everything; a regular user may
+//
+//  2. A resource under a reserved owner (admin/built-in — the owners the token
+//     verifier trusts to sign) is SuperAdmin-only. This single rule is the
+//     signing-cert poisoning gate, the admin-scoped app/provider registration
+//     gate, AND the built-in-org gap at once: a built-in-org principal is not
+//     SuperAdmin (that is admin only), so it cannot write a built-in-owned
+//     signing cert either. It is also what keeps a user OUT of the reserved
+//     admin org: no capability moves a user under owner=="admin", because a
+//     user in the admin org IS a SuperAdmin — provision, never promote.
+//
+//     The ONE exception is the tenant registry. Every organization row is filed
+//     under the admin owner (`admin/<slug>`), but an org row is the TENANT'S own
+//     record, not platform trust material: a tenant reads its own org, its admin
+//     edits its own org's branding, and an org-admin-capable confidential client
+//     manages orgs during onboarding. That is exactly v1's rule
+//     (controllers/organization.go:113-123, requireAppCapability(CapOrgAdmin)).
+//     The exception is keyed on the entity, so certs, applications, providers,
+//     and users under a reserved owner stay refused.
+//
+//  3. A confidential client's authority is its capability allowlist and nothing
+//     else. It is checked here, once, for every entity and both faces — never
+//     Super, never Admin, and an unmapped entity or unset allowlist denies.
+//
+//  4. Tenant isolation: a human may act only within its OWN org. An empty or
+//     foreign owner is refused — the target org is bound to the principal, never
+//     trusted from the request.
+//
+//  5. Inside its own org, an org admin manages everything; a regular user may
 //     only READ its own user record (self-service). The users entity serves
 //     reads as GET and writes as POST, so gating the self clause to GET keeps a
 //     regular user from writing its own record — a raw entity write would
-//     otherwise let it carry isAdmin and self-promote. Privileged self-mutation
-//     is the Phase-5 provision-don't-promote concern; here it is closed by
-//     denial.
+//     otherwise let it carry isAdmin and self-promote.
 func authorize(p *Principal, method, entity, owner, name string) bool {
 	if p.Super {
 		return true
 	}
 	if store.IsSigningCertOwner(owner) {
-		return false
+		if entity != "organizations" {
+			return false
+		}
+		if p.App != "" {
+			return Allowed(p, CapOrgAdmin)
+		}
+		// The tenant's OWN org row: anyone in it reads it, its admin writes it.
+		return name == p.Org && (isRead(method) || p.Admin)
+	}
+	if p.App != "" {
+		return Allowed(p, capFor(entity))
 	}
 	if owner == "" || owner != p.Org {
 		return false
@@ -302,6 +383,9 @@ func stringField(v reflect.Value, name string) string {
 // identities explicit scope. This closes the phantom-admin subject: a token for
 // "admin/<nobody>" resolves to no authority, not SuperAdmin.
 func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
+	if p, ok := app(c, db); ok {
+		return p, nil
+	}
 	bearer := httpx.Bearer(c)
 	if bearer == "" {
 		return nil, errNoBearer
@@ -328,6 +412,37 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 		return &Principal{Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Super: u.Owner == adminOrg}, nil
 	}
 	return &Principal{Org: owner}, nil
+}
+
+// app resolves an `Authorization: Basic <clientId>:<clientSecret>` credential
+// into a confidential-client Principal — the transport every live server-side
+// consumer authenticates with (RFC 6749 §2.3.1 client_secret_basic; cloud reads
+// IAM_MINT_CLIENT_ID/SECRET and sends exactly this). The application NAME is the
+// identity, because the capability allowlists key on the name.
+//
+// It is deliberately NOT an authority: the returned Principal is never Admin and
+// never Super, so the ONLY thing it can do is what its name is allowlisted for
+// (authorize → Allowed). This is what keeps the v1 "every confidential client is
+// a global admin" hole closed as the transport is re-added.
+//
+// Fail-closed: an unparseable header, an unknown clientId, an application with no
+// registered secret, an empty presented secret (a public client must never
+// authenticate as an app), or a mismatch all report false — the caller then
+// finds no bearer either and answers 401. The comparison is constant-time, so a
+// prober cannot recover a secret byte by byte.
+func app(c *zip.Ctx, db orm.DB) (*Principal, bool) {
+	id, secret, ok := httpx.Basic(c)
+	if !ok || id == "" || secret == "" {
+		return nil, false
+	}
+	a, err := store.GetApplicationByClientId(c.Context(), db, id)
+	if err != nil || a == nil || a.ClientSecret == "" {
+		return nil, false
+	}
+	if subtle.ConstantTimeCompare([]byte(a.ClientSecret), []byte(secret)) != 1 {
+		return nil, false
+	}
+	return &Principal{App: a.Name, Org: a.Organization}, true
 }
 
 // entityOf returns the resource segment of an /v1/iam/<entity>[/verb] path, or

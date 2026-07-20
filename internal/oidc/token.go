@@ -194,7 +194,9 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 500, "server_error", "")
 	}
 	sub := app.GetId() // <appOwner>/<appName>, per v1
-	access, err := signer.Sign(app, sub, "", app.Name, scope, ttl, now)
+	// A machine grant has no user record, so it asserts no principal claims —
+	// just the grant itself, named by the app.
+	access, err := signer.Sign(app, Subject{Id: sub, Display: app.Name}, scope, ttl, now)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
@@ -232,9 +234,11 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	if err != nil {
 		return tokenResponse{}, err
 	}
-	email, name := userProfile(ctx, db, row.User)
+	// Resolve the principal ONCE: the access token and the id_token then assert
+	// the same identity by construction, and the record is read a single time.
+	sub := SubjectOf(ctx, db, row.User)
 
-	access, err := signer.Sign(app, row.User, email, name, row.Scope, ttl, now)
+	access, err := signer.Sign(app, sub, row.Scope, ttl, now)
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -264,7 +268,7 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 		Scope:        row.Scope,
 	}
 	if hasScope(row.Scope, "openid") {
-		idt, err := signer.SignID(app, row.User, email, name, row.Scope, row.Nonce, ttl, now)
+		idt, err := signer.SignID(app, sub, row.Scope, row.Nonce, ttl, now)
 		if err != nil {
 			return tokenResponse{}, err
 		}
@@ -359,7 +363,7 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 	if err != nil {
 		return "", err
 	}
-	return signer.Sign(app, tok.User, "", "", tok.Scope, ttl, now)
+	return signer.Sign(app, SubjectOf(ctx, db, tok.User), tok.Scope, ttl, now)
 }
 
 // tokenIssuer is the canonical OIDC issuer for this request (https://<host>),
@@ -371,22 +375,6 @@ func tokenIssuer(c *zip.Ctx) string {
 	return "https://hanzo.id"
 }
 
-// userProfile loads a user's email and display name for the token claims.
-func userProfile(ctx context.Context, db orm.DB, userID string) (email, name string) {
-	owner, uname := splitSub(userID)
-	if owner == "" || uname == "" {
-		return "", ""
-	}
-	u, err := store.GetUserByName(ctx, db, owner, uname)
-	if err != nil || u == nil {
-		return "", ""
-	}
-	name = u.DisplayName
-	if name == "" {
-		name = u.Name
-	}
-	return u.Email, name
-}
 
 // splitSub splits a subject "owner/name" into its two parts.
 func splitSub(sub string) (owner, name string) {

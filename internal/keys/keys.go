@@ -120,10 +120,10 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		k.Owner, k.Name = in.Owner, in.Name
 		apply(k, in)
 		if k.AccessKey == "" {
-			k.AccessKey = mint("pk", k.State)
+			k.AccessKey = Mint("pk", k.State)
 		}
 		if k.AccessSecret == "" {
-			k.AccessSecret = mint("sk", k.State)
+			k.AccessSecret = Mint("sk", k.State)
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
 		k.CreatedTime, k.UpdatedTime = now, now
@@ -192,9 +192,13 @@ func apply(dst, src *schema.Key) {
 	dst.State = src.State
 }
 
-// mint generates a prefixed credential half — "{pk|sk}-{live|test}-{random}"
-// — mirroring the v1 key format. State == "test" selects the test env.
-func mint(prefix, state string) string {
+// Mint generates a prefixed credential half — "{prefix}-{live|test}-{random}" —
+// mirroring the v1 key format. State == "test" selects the test env. It is the
+// ONE credential minting primitive: the key entity mints its pk-/sk- halves with
+// it, and service accounts mint their hk- key and secret with it, so every
+// credential in the system carries the same 128 bits of entropy from the same
+// source.
+func Mint(prefix, state string) string {
 	env := "live"
 	if state == "test" {
 		env = "test"
