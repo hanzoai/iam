@@ -81,6 +81,7 @@ func Route(r zip.Router, db orm.DB) {
 	// `provider`; this registers the fixed return endpoint the IdP redirects to.
 	routeFederation(r, db)
 	routeFederationMfa(r, db)
+	routeUnlink(r, db)
 
 	// RFC 7662 introspection + RFC 7009 revocation — the standard token-management
 	// endpoints a resource server / confidential client uses (client-authenticated).
