@@ -31,6 +31,7 @@ import (
 	"github.com/hanzoai/iam2/internal/compat"
 	"github.com/hanzoai/iam2/internal/invitations"
 	"github.com/hanzoai/iam2/internal/keys"
+	"github.com/hanzoai/iam2/internal/memberships"
 	"github.com/hanzoai/iam2/internal/mfa"
 	"github.com/hanzoai/iam2/internal/oidc"
 	"github.com/hanzoai/iam2/internal/organizations"
@@ -39,6 +40,7 @@ import (
 	"github.com/hanzoai/iam2/internal/providers"
 	"github.com/hanzoai/iam2/internal/roles"
 	"github.com/hanzoai/iam2/internal/scim"
+	"github.com/hanzoai/iam2/internal/serviceaccounts"
 	"github.com/hanzoai/iam2/internal/sessions"
 	"github.com/hanzoai/iam2/internal/tokens"
 	"github.com/hanzoai/iam2/internal/users"
@@ -116,6 +118,12 @@ func Route(app *zip.App, db orm.DB) {
 	// replaces the Casdoor entity verbs (HIP-0111). After the Guard, so it is
 	// authenticated; each handler owner-scopes via authz.Scope on the path target.
 	scim.Route(app, db)
+
+	// Agent/bot identities (service accounts) + the (User x Org x Role) membership
+	// relation. After the Guard: each self-authorizes writes via the Principal +
+	// capabilities the Guard attached, and org-scopes reads via authz.Scope.
+	serviceaccounts.Route(app, db)
+	memberships.Route(app, db)
 
 	// TOTP multi-factor enrollment (RFC 6238) — the account security page's
 	// initiate/verify/enable/disable flow. After the Guard: self-service on the
