@@ -30,7 +30,7 @@ func TestSign_RoundTripAndClaims(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	app := testApp()
 
-	tokenStr, err := s.Sign(app, "hanzo/alice", "alice@hanzo.ai", "Alice", "openid profile", time.Hour, now)
+	tokenStr, err := s.Sign(app, Subject{Id: "hanzo/alice", Email: "alice@hanzo.ai", Display: "Alice"}, "openid profile", time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestSign_ExpiredTokenRejected(t *testing.T) {
 	key := testKey(t)
 	s := NewRSASigner(key, "cert-hanzo", "https://iam.hanzo.ai")
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, err := s.Sign(testApp(), "u", "", "", "openid", time.Minute, now)
+	tokenStr, err := s.Sign(testApp(), Subject{Id: "u"}, "openid", time.Minute, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestSign_WrongKeyRejected(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
 	other := testKey(t)
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, _ := s.Sign(testApp(), "u", "", "", "openid", time.Hour, now)
+	tokenStr, _ := s.Sign(testApp(), Subject{Id: "u"}, "openid", time.Hour, now)
 	var claims Claims
 	_, err := jwt.ParseWithClaims(tokenStr, &claims, func(*jwt.Token) (any, error) { return &other.PublicKey, nil },
 		jwt.WithValidMethods([]string{"RS256"}))
@@ -119,7 +119,7 @@ func TestNewRSASignerFromCert_PEMRoundTrip(t *testing.T) {
 	}
 	// Sign+verify to prove the parsed key works.
 	now := time.Unix(1_800_000_000, 0)
-	str, err := s.Sign(testApp(), "u", "", "", "openid", time.Hour, now)
+	str, err := s.Sign(testApp(), Subject{Id: "u"}, "openid", time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
