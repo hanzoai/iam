@@ -34,6 +34,7 @@ type Token struct {
 	User         string `json:"user"`
 
 	Code                string `json:"code" orm:"index"`
+	UserCode            string `json:"userCode,omitempty" orm:"index"`
 	AccessToken         string `json:"accessToken"`
 	RefreshToken        string `json:"refreshToken"`
 	AccessTokenHash     string `json:"accessTokenHash" orm:"index"`
