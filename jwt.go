@@ -23,6 +23,15 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
+// OrgRef is one entry of the `orgs` membership-set claim: an org the subject
+// may act in, plus the subject's coarse role there (owner | admin | member).
+// The set always lists the HOME org (the token's `owner`) first; explicit team
+// memberships follow. object/token_jwt.go MemberOrgRefs is the one mint site.
+type OrgRef struct {
+	Org  string `json:"org"`
+	Role string `json:"role,omitempty"`
+}
+
 type Claims struct {
 	User
 	AccessToken string `json:"accessToken"`
@@ -30,6 +39,12 @@ type Claims struct {
 	TokenType        string `json:"tokenType"`
 	RefreshTokenType string `json:"TokenType"`
 	SigninMethod     string `json:"signinMethod"`
+	// Orgs is the signed `orgs` claim: the org-membership SET — every org the
+	// subject may act in, home first. A consumer authorizes an org switch or
+	// enumerates cross-org surfaces (e.g. hanzo.team workspaces) against this
+	// set with no IAM round-trip. Empty on tokens minted before the claim
+	// shipped; a reader falls back to the single `owner` org.
+	Orgs []OrgRef `json:"orgs,omitempty"`
 	// BillingAccount is the signed `billing_account` claim: WHO PAYS for this
 	// credential, stated by IAM at mint time from the real grant context rather
 	// than inferred by the reader (object/billing_account.go is the one mint site).

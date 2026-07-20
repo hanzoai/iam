@@ -47,6 +47,9 @@ p, *, !anonymous, POST, /v1/iam/add-application, *, *
 p, *, !anonymous, POST, /v1/iam/update-application, *, *
 p, *, !anonymous, POST, /v1/iam/delete-application, *, *
 p, *, !anonymous, GET, /v1/iam/get-applications, *, *
+p, *, !anonymous, GET, /v1/iam/get-memberships, *, *
+p, *, !anonymous, POST, /v1/iam/add-membership, *, *
+p, *, !anonymous, POST, /v1/iam/delete-membership, *, *
 p, *, !anonymous, GET, /v1/iam/get-pending-users, *, *
 p, *, !anonymous, POST, /v1/iam/approve-user, *, *
 p, *, !anonymous, POST, /v1/iam/reject-user, *, *

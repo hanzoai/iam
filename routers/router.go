@@ -106,6 +106,13 @@ func InitAPI() {
 	web.Router("/v1/iam/update-project", &controllers.ApiController{}, "POST:UpdateProject")
 	web.Router("/v1/iam/delete-project", &controllers.ApiController{}, "POST:DeleteProject")
 
+	// Org-membership plane (Membership = User × Org × Role, the `orgs` claim):
+	// the live read + the invite write. Controller-enforced authorization
+	// (self / org admin / super admin / CapMembershipAdmin app).
+	web.Router("/v1/iam/get-memberships", &controllers.ApiController{}, "GET:GetMemberships")
+	web.Router("/v1/iam/add-membership", &controllers.ApiController{}, "POST:AddMembership")
+	web.Router("/v1/iam/delete-membership", &controllers.ApiController{}, "POST:DeleteMembership")
+
 	web.Router("/v1/iam/get-groups", &controllers.ApiController{}, "GET:GetGroups")
 	web.Router("/v1/iam/get-group", &controllers.ApiController{}, "GET:GetGroup")
 	web.Router("/v1/iam/update-group", &controllers.ApiController{}, "POST:UpdateGroup")
