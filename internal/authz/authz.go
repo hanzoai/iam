@@ -129,6 +129,54 @@ var publicPaths = map[string]bool{
 	"/v1/iam/oauth/logout":                     true, // end session
 	"/v1/iam/get-app-login":                    true, // pre-login app config (secrets masked)
 	"/v1/iam/auth/methods":                     true, // pre-login method list
+	// The passkey SIGN-IN ceremony. A passkey is what the caller signs in WITH,
+	// so no bearer can exist yet — gating these would make the credential
+	// unusable. Both halves gate themselves on possession of the private key:
+	// begin only issues a random challenge, and finish only completes when the
+	// authenticator's signature verifies against a stored public key. They are
+	// the passkey twin of /v1/iam/login, which is public for the same reason.
+	// The REGISTRATION ceremony (webauthn/signup/*) is NOT here — it requires a
+	// bearer, because it decides which account a new credential can open.
+	"/v1/iam/webauthn/signin/begin":  true,
+	"/v1/iam/webauthn/signin/finish": true,
+}
+
+// formPaths is the CLOSED set of gated routes whose authorization target rides in
+// the request FORM rather than a decoded JSON body — the frozen v1 MFA wire.
+// v1 reads every MFA parameter through c.Ctx.Request.Form (controllers/mfa.go:36),
+// the query merged with the body, and its two live clients disagree about which
+// they use: the hanzo.id portal posts multipart, the console's BFF sends the
+// query with an empty body. So these are raw handlers, and no decoded body ever
+// reaches the op-invoke seam.
+//
+// The Guard authorizes them here, through the SAME httpx.Form call the handler
+// binds (internal/mfa subject()) — one function over one buffered request. That
+// is what keeps invariant 2: the target authorized cannot diverge from the target
+// executed, because there is no second parse to diverge with.
+var formPaths = map[string]bool{
+	"/v1/iam/mfa/setup/initiate": true,
+	"/v1/iam/mfa/setup/verify":   true,
+	"/v1/iam/mfa/setup/enable":   true,
+	"/v1/iam/delete-mfa":         true,
+	"/v1/iam/set-preferred-mfa":  true,
+}
+
+// bearerBound is the CLOSED set of gated routes whose subject IS the verified
+// bearer: the handler reads it from From(ctx) and takes no (owner, name) at all,
+// so there is no request-supplied target and the Guard only authenticates.
+//
+// Passkey registration is self-only BY CONSTRUCTION, and that is the whole point
+// of binding it here. A target parameter would have to pass the tenant rule
+// below, which lets an ORG ADMIN act on any member — and an org admin who can
+// register a passkey onto a member's account owns that account silently, forever.
+// So the ceremony never learns a target: it can only ever add a credential to the
+// caller's own identity.
+//
+// A route belongs here ONLY if its handler resolves its subject from From(ctx)
+// and nowhere else.
+var bearerBound = map[string]bool{
+	"/v1/iam/webauthn/signup/begin":  true,
+	"/v1/iam/webauthn/signup/finish": true,
 }
 
 // isPublic reports whether path is in the public allowlist. A trailing slash is
@@ -149,6 +197,29 @@ func isPublic(path string) bool {
 // body decoded once by the op and is authorized at that seam.
 func isRead(method string) bool { return method == "GET" || method == "HEAD" }
 
+// guards reports whether the Guard itself authorizes this request's target. Two
+// classes address a target outside a decoded JSON body: a read (no body at all)
+// and a v1 form route (its target rides in the form). A bearer-bound route
+// carries no target to authorize. Everything else decodes a typed body, which
+// the op-invoke seam authorizes on the exact value the handler binds.
+func guards(method, path string) bool {
+	if bearerBound[path] {
+		return false
+	}
+	return isRead(method) || formPaths[path]
+}
+
+// target returns the (owner, name) a Guard-authorized request addresses, read
+// exactly where its handler reads it: a read's rides in the query string; a v1
+// form route's rides in the request form (query ∪ body), through the same
+// httpx.Form the handler binds, so the two cannot come apart.
+func target(c *zip.Ctx) (owner, name string) {
+	if formPaths[c.Path()] {
+		return httpx.Form(c, "owner"), httpx.Form(c, "name")
+	}
+	return c.Query("owner"), c.Query("name")
+}
+
 // Guard is the AUTHENTICATION middleware. Mount it ONCE and FIRST, via app.Use,
 // so it wraps every route — the typed CRUD handlers and the framework's /mcp and
 // /openapi surfaces alike. Public routes pass straight through; every other route
@@ -167,8 +238,11 @@ func Guard(db orm.DB) zip.Handler {
 		if err != nil {
 			return zip.ErrUnauthorized("authentication required")
 		}
-		if isRead(c.Method()) && !authorize(p, c.Method(), entityOf(c.Path()), c.Query("owner"), c.Query("name")) {
-			return zip.ErrForbidden("forbidden")
+		if guards(c.Method(), c.Path()) {
+			owner, name := target(c)
+			if !authorize(p, c.Method(), entityOf(c.Path()), owner, name) {
+				return zip.ErrForbidden("forbidden")
+			}
 		}
 		c.SetContext(context.WithValue(c.Context(), ctxKey{}, p))
 		return c.Continue()
@@ -208,22 +282,34 @@ func Authorize(ctx context.Context, op zip.Op, in any) error {
 // `owner` (named `name`) on the given entity? The order IS the policy:
 //
 //  1. SuperAdmin may do anything — the only cross-tenant scope.
+//
 //  2. A platform-owned resource (admin/built-in — the reserved owners the token
 //     verifier trusts to sign) is writable only by a SuperAdmin. This single
 //     rule is the signing-cert poisoning gate, the admin-scoped app/provider
 //     registration gate, AND the built-in-org gap, all at once: a built-in-org
 //     principal is not SuperAdmin (that is admin only), so it cannot write a
 //     built-in-owned signing cert either.
+//
 //  3. Tenant isolation: a normal principal may act only within its OWN org. An
 //     empty or foreign owner is refused — the target org is bound to the
 //     principal, never trusted from the request.
+//
 //  4. Inside its own org, an org admin manages everything; a regular user may
-//     only READ its own user record (self-service). The users entity serves
-//     reads as GET and writes as POST, so gating the self clause to GET keeps a
-//     regular user from writing its own record — a raw entity write would
-//     otherwise let it carry isAdmin and self-promote. Privileged self-mutation
-//     is the Phase-5 provision-don't-promote concern; here it is closed by
-//     denial.
+//     only READ its own user record, or manage its own MFA (self-service). The
+//     users entity serves reads as GET and writes as POST, so gating the self
+//     clause to GET keeps a regular user from writing its own record — a raw
+//     entity write would otherwise let it carry isAdmin and self-promote.
+//     Privileged self-mutation is the Phase-5 provision-don't-promote concern;
+//     here it is closed by denial.
+//
+//     The MFA entities are the ONE self-service WRITE, and they are safe only
+//     because those handlers are column-scoped: every one of them persists
+//     through mfa.Save, which overlays the multi-factor columns onto the STORED
+//     row, so the request's user value never reaches the store and cannot carry
+//     isAdmin. Widen those handlers to a whole-row write and this clause becomes
+//     the self-promotion path the users clause is narrow to avoid. The grant does
+//     NOT widen the users entity; enrolling a factor and editing a profile stay
+//     different rights.
 func authorize(p *Principal, method, entity, owner, name string) bool {
 	if p.Super {
 		return true
@@ -237,7 +323,23 @@ func authorize(p *Principal, method, entity, owner, name string) bool {
 	if p.Admin {
 		return true
 	}
-	return method == "GET" && entity == "users" && name != "" && name == p.User
+	if name == "" || name != p.User {
+		return false // every remaining grant is self-service
+	}
+	return (method == "GET" && entity == "users") || isMfa(entity)
+}
+
+// isMfa reports whether entity is one of the multi-factor enrollment surfaces —
+// the entity segment of the five frozen v1 paths (mfa/setup/*, delete-mfa,
+// set-preferred-mfa). They are named here rather than derived so that adding a
+// route under one of these entities is a deliberate act: everything they admit,
+// a regular user may do to itself.
+func isMfa(entity string) bool {
+	switch entity {
+	case "mfa", "delete-mfa", "set-preferred-mfa":
+		return true
+	}
+	return false
 }
 
 // owned is implemented by a typed input whose authorization target is NOT its

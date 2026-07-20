@@ -24,6 +24,7 @@ import (
 	"github.com/hanzoai/iam2/internal/certs"
 	"github.com/hanzoai/iam2/internal/invitations"
 	"github.com/hanzoai/iam2/internal/keys"
+	"github.com/hanzoai/iam2/internal/mfa"
 	"github.com/hanzoai/iam2/internal/oidc"
 	"github.com/hanzoai/iam2/internal/organizations"
 	"github.com/hanzoai/iam2/internal/permission"
@@ -58,6 +59,7 @@ func Mount(app *zip.App, db orm.DB) {
 	// from. One entry point wires the whole identity core.
 	oidc.Mount(app, db)
 
+	mfa.Mount(app, db)
 	users.Mount(app, db)
 	organizations.Mount(app, db)
 	applications.Mount(app, db)

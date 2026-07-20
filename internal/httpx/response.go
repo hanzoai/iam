@@ -22,9 +22,18 @@ type Response struct {
 	Data3  any    `json:"data3,omitempty"`
 }
 
-// Ok writes 200 { status:"ok", data }.
-func Ok(c *zip.Ctx, data any) error {
-	return c.JSON(200, Response{Status: "ok", Data: data})
+// Ok writes 200 { status:"ok", data }, plus data2 when a second value is given —
+// the shape of v1's ResponseOk(data ...interface{}) (controllers/util.go:43). The
+// MFA gate is the one caller that needs both: it answers `data:"NextMfa"` with the
+// allowed factors in data2, and the portal string-compares data, so the pair must
+// ride one envelope. Variadic rather than a second Ok-like function: one helper,
+// one way.
+func Ok(c *zip.Ctx, data any, more ...any) error {
+	r := Response{Status: "ok", Data: data}
+	if len(more) > 0 {
+		r.Data2 = more[0]
+	}
+	return c.JSON(200, r)
 }
 
 // Err writes 200 { status:"error", msg } — the SDK contract (branch on status,
@@ -32,6 +41,21 @@ func Ok(c *zip.Ctx, data any) error {
 func Err(c *zip.Ctx, msg string) error {
 	return c.JSON(200, Response{Status: "error", Msg: msg})
 }
+
+// Form returns a request parameter the way v1 reads every MFA parameter —
+// c.Ctx.Request.Form.Get (controllers/mfa.go:36-38), Go's merge of the URL query
+// with the posted form. The underlying FormValue searches QueryArgs → PostArgs →
+// MultipartForm, which is that same precedence, so ONE call serves every live
+// client of the frozen wire: the hanzo.id portal posts multipart FormData
+// (web/src/backend/MfaBackend.ts), the console BFF sends the query with an empty
+// body (console app/console/mfa/[action]/route.ts:76-87), and an SDK may send
+// urlencoded.
+//
+// This is the ONLY way an MFA parameter is read, by the handler that executes it
+// AND by the authz Guard that authorizes its (owner, name) — the same function
+// over the same buffered request, so the value authorized cannot diverge from the
+// value executed (internal/authz, invariant 2).
+func Form(c *zip.Ctx, name string) string { return c.Fiber().FormValue(name) }
 
 // Bearer returns the token from an `Authorization: Bearer <token>` header, or "".
 func Bearer(c *zip.Ctx) string {

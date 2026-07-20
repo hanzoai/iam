@@ -53,8 +53,11 @@ type webauthnCredentialMutationResult struct {
 	WebauthnCredential *schema.WebauthnCredential `json:"webauthnCredential,omitempty"`
 }
 
-// Mount registers the passkey surface on app, closing over the entity store.
+// Mount registers the passkey surface on app, closing over the entity store: the
+// entity CRUD below, plus the ceremony (ceremony.go) that creates a passkey and
+// signs a user in with one.
 func Mount(app *zip.App, db orm.DB) {
+	MountCeremony(app, db)
 	zip.Get[listWebauthnCredentialsIn, listWebauthnCredentialsOut](app, "/v1/iam/webauthn-credentials", listWebauthnCredentials(db),
 		zip.WithOperationID("listWebauthnCredentials"),
 		zip.WithSummary("List webauthn credentials in an owner scope"),
