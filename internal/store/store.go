@@ -99,6 +99,27 @@ func IsSigningCertOwner(owner string) bool {
 	return false
 }
 
+// GetTokenByUserCode resolves a pending device authorization by the user_code a
+// human transcribes at the verification URI (RFC 8628 §3.3). Returns (nil, nil)
+// when no row carries the code.
+func GetTokenByUserCode(_ context.Context, db orm.DB, userCode string) (*schema.Token, error) {
+	if userCode == "" {
+		return nil, nil
+	}
+	t, err := orm.TypedQuery[schema.Token](db).Filter("UserCode=", userCode).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return t, err
+}
+
+// IsSuperAdmin reports whether owner is the reserved admin organization — THE
+// SuperAdmin predicate, the only cross-tenant scope there is. It mirrors authz's
+// own adminOrg so a subsystem BELOW the authz seam (the device-approval tenant
+// gate) can ask the same question without importing authz. A per-org isAdmin
+// flag is a different, org-scoped question and never answers this one.
+func IsSuperAdmin(owner string) bool { return owner == "admin" }
+
 // GetSigningCert resolves a TRUSTED signing certificate by name (the JWKS
 // `kid`), searching only the reserved platform owners in order. A cert owned by
 // any other org is never returned, so an attacker-created cert with a colliding
