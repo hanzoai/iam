@@ -42,6 +42,7 @@ import (
 	"github.com/hanzoai/iam2/internal/sessions"
 	"github.com/hanzoai/iam2/internal/tokens"
 	"github.com/hanzoai/iam2/internal/users"
+	"github.com/hanzoai/iam2/internal/wallet"
 	"github.com/hanzoai/iam2/internal/webauthn"
 )
 
@@ -71,6 +72,10 @@ func Route(app *zip.App, db orm.DB) {
 	// Operator bootstrap upsert (admin/{applications,users}/upsert) — self-authenticated
 	// by the unified service token (Bearer), not a user principal, so it is PUBLIC.
 	bootstrap.Route(public, db)
+	// Native multi-chain wallet sign-in (CAIP-122): GET /v1/iam/web3/nonce +
+	// POST /v1/iam/web3/verify. Public by construction — a wallet holder has no
+	// token until this flow gives them one.
+	wallet.Route(public, db)
 
 	// ─────────────────────────── GUARD ────────────────────────────
 	// The ONE authentication seam. Every route registered AFTER it requires a
