@@ -1,7 +1,9 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package schema declares the thirteen IAM v2 identity entities on
-// hanzoai/orm.
+// hanzoai/orm, plus Challenge — the one record that is not an identity but the
+// server-side memory of a half-finished sign-in (v1 keeps it in a cookie
+// session, which v2 has no store for).
 //
 // Each entity embeds orm.Model[T]; every kind is registered exactly once in
 // this file's init(). orm stores every entity as one row in a single
@@ -31,6 +33,11 @@ func Kinds() []string {
 		"roles", "permissions", "certs", "keys",
 		"webauthn_credentials", "sessions", "tokens", "audit_logs",
 		"invitations",
+		// challenges has no v1 table to compare against: v1 keeps a
+		// half-finished ceremony in a beego cookie session (object/mfa.go:51,
+		// controllers/webauthn.go:68), so there is nothing to migrate — the rows
+		// are minted fresh and expire within minutes.
+		"challenges",
 	}
 }
 
@@ -48,4 +55,5 @@ func init() {
 	orm.Register[Token]("tokens")
 	orm.Register[AuditLog]("audit_logs")
 	orm.Register[Invitation]("invitations")
+	orm.Register[Challenge]("challenges")
 }
