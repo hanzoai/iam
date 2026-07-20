@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
@@ -17,6 +18,7 @@ import (
 	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam2/internal/mfa/factor"
 	"github.com/hanzoai/iam2/internal/schema"
 	"github.com/hanzoai/iam2/internal/store"
 	"github.com/hanzoai/iam2/internal/users"
@@ -43,6 +45,12 @@ import (
 // state keys, never from a spoofable URL segment. It is the redirect_uri iam2
 // registers with each external IdP.
 const PathFederationCallback = "/v1/iam/oauth/callback"
+
+// PathMfaVerify is the hosted 2FA PAGE (a route in the SPA, not an API path) the
+// federation callback sends a second-factor-enrolled user's browser to. The page
+// collects the factor and POSTs it to PathFederationMfa; the challenge id rides
+// the httpOnly cookie the callback set, never a URL segment.
+const PathMfaVerify = "/login/mfa"
 
 // fedCookieName is the per-transaction anti-forgery cookie the begin leg sets and
 // the callback checks — the browser binding that defeats login-CSRF.
@@ -224,25 +232,116 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			return fedErrorRedirect(c, st, "access_denied", "the account is not permitted")
 		}
 
-		// A public client must have carried a PKCE challenge (enforced at the begin
-		// leg; re-asserted here so a minted code is never redeemable without proof).
-		if app.ClientSecret == "" && st.CodeChallenge == "" {
-			return fedErrorRedirect(c, st, "invalid_request", "PKCE is required for public clients")
+		// The resume parameters — the ORIGINAL authorize request — pinned so the mint
+		// (now, or after a second factor) uses exactly these and nothing a later
+		// request could supply.
+		p := fedResumeParams{
+			ClientId:            st.ClientId,
+			RedirectUri:         st.RedirectUri,
+			AppState:            st.AppState,
+			Scope:               st.Scope,
+			AppNonce:            st.AppNonce,
+			CodeChallenge:       st.CodeChallenge,
+			CodeChallengeMethod: st.CodeChallengeMethod,
+			Resource:            st.Resource,
 		}
-		// Mint iam2's own authorization code — the SAME artifact a password login
-		// mints — bound to the app-leg PKCE, redirect_uri, and nonce.
-		userID := user.Owner + "/" + user.Name
-		codeRow, err := MintCode(app, userID, st.Scope, st.CodeChallenge, st.CodeChallengeMethod, st.Resource, now)
+
+		// Second-factor gate: a federated login must NOT skip the factor a password
+		// login would demand (the MFA gate, mfa_gate.go). If the resolved user owes a
+		// factor, mint NOTHING here — park the resume, bound to the user and these
+		// pinned params, and send the browser to the hosted 2FA page.
+		org, err := store.GetOrganizationByName(ctx, db, user.Owner)
 		if err != nil {
 			return fedErrorRedirect(c, st, "server_error", "")
 		}
-		codeRow.RedirectUri = st.RedirectUri
-		codeRow.Nonce = st.AppNonce
-		if err := store.PersistToken(ctx, db, codeRow); err != nil {
-			return fedErrorRedirect(c, st, "server_error", "")
+		if factor.Prompt(org, user) {
+			// The organization requires a factor this federated user has not enrolled;
+			// a federated login cannot enroll one inline, so it fails closed.
+			return fedErrorRedirect(c, st, "access_denied", "two-factor authentication must be set up before signing in")
 		}
-		return fedSuccessRedirect(c, st, codeRow.Code)
+		if factor.Enabled(user) && !remembered(user, now) {
+			return federationChallenge(c, db, st, user, p, now)
+		}
+
+		// No second factor owed — complete exactly as before, through the one mint.
+		loc, err := federationMint(ctx, db, app, user, p, now)
+		if err != nil {
+			return fedMintErrorRedirect(c, st, err)
+		}
+		return c.Redirect(302, loc)
 	}
+}
+
+// fedResumeParams is the ORIGINAL iam2 authorize request, pinned server-side so
+// the code minted after a federated login (immediately, or after a second factor)
+// binds to exactly these values — never to anything a later request supplies.
+type fedResumeParams struct {
+	ClientId            string `json:"clientId"`
+	RedirectUri         string `json:"redirectUri"`
+	AppState            string `json:"appState"`
+	Scope               string `json:"scope"`
+	AppNonce            string `json:"appNonce"`
+	CodeChallenge       string `json:"codeChallenge"`
+	CodeChallengeMethod string `json:"codeChallengeMethod"`
+	Resource            string `json:"resource"`
+}
+
+// errPKCERequired is the one distinguished mint error a caller maps to an OAuth
+// invalid_request; every other mint failure is an opaque server_error.
+var errPKCERequired = errors.New("federation: PKCE is required for public clients")
+
+// federationMint mints iam2's own authorization code — the SAME artifact a
+// password login mints — bound to the pinned app-leg PKCE, redirect_uri and nonce,
+// and returns the RP redirect (redirect_uri?code&state). It is the ONE mint path
+// both the no-factor completion and the post-2FA resume reach, so a federated code
+// can never be minted two different ways.
+func federationMint(ctx context.Context, db orm.DB, app *schema.Application, user *schema.User, p fedResumeParams, now time.Time) (string, error) {
+	// A public client must have carried a PKCE challenge, re-asserted at the mint so
+	// a minted code is never redeemable without proof.
+	if app.ClientSecret == "" && p.CodeChallenge == "" {
+		return "", errPKCERequired
+	}
+	userID := user.Owner + "/" + user.Name
+	codeRow, err := MintCode(app, userID, p.Scope, p.CodeChallenge, p.CodeChallengeMethod, p.Resource, now)
+	if err != nil {
+		return "", err
+	}
+	codeRow.RedirectUri = p.RedirectUri
+	codeRow.Nonce = p.AppNonce
+	if err := store.PersistToken(ctx, db, codeRow); err != nil {
+		return "", err
+	}
+	v := url.Values{}
+	v.Set("code", codeRow.Code)
+	setIfPresent(v, "state", p.AppState)
+	return joinQuery(p.RedirectUri, v), nil
+}
+
+// federationChallenge parks a resolved-but-not-yet-second-factored federated login.
+// The pending state IS a LoginChallenge (KindFederation) — the same single-use,
+// expiring, subject-pinned lifecycle the password MFA gate uses, so there is ONE
+// challenge concept — carrying the resume params as its payload. The browser is
+// sent to the hosted 2FA page; the challenge id rides the httpOnly cookie, never a
+// URL segment.
+func federationChallenge(c *zip.Ctx, db orm.DB, st *schema.FederationState, user *schema.User, p fedResumeParams, now time.Time) error {
+	payload, err := json.Marshal(p)
+	if err != nil {
+		return fedErrorRedirect(c, st, "server_error", "")
+	}
+	id, err := MintChallenge(c.Context(), db, KindFederation, user.Owner+"/"+user.Name, string(payload), now)
+	if err != nil {
+		return fedErrorRedirect(c, st, "server_error", "")
+	}
+	SetChallenge(c, id)
+	return c.Redirect(302, federationBaseURL(c)+PathMfaVerify)
+}
+
+// fedMintErrorRedirect maps a federationMint error to the RP redirect_uri.
+func fedMintErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) error {
+	if err == errPKCERequired {
+		return fedErrorRedirect(c, st, "invalid_request", "PKCE is required for public clients")
+	}
+	return fedErrorRedirect(c, st, "server_error", "")
 }
 
 // linkOrProvision resolves the local identity for a verified federated login,
