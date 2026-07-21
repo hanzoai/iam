@@ -23,6 +23,7 @@ require (
 require (
 	github.com/alexedwards/argon2id v1.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/hanzoai/sqlcipher v0.1.0
 	github.com/hanzoai/sqlite v0.2.1
 	github.com/luxfi/crypto v1.20.1
 	github.com/luxwallet/connect/go v0.1.4
