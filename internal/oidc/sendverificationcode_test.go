@@ -13,7 +13,7 @@ import (
 
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // multipartReq builds a real multipart/form-data POST — the wire format v1's

@@ -17,10 +17,10 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/httpx"
-	"github.com/hanzoai/iam2/internal/schema"
-	"github.com/hanzoai/iam2/internal/store"
-	"github.com/hanzoai/iam2/internal/users"
+	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/internal/users"
 )
 
 // The token endpoint: POST /v1/iam/oauth/token. It dispatches the three grant

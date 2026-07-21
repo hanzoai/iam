@@ -57,9 +57,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/httpx"
-	"github.com/hanzoai/iam2/internal/oidc"
-	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/oidc"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // adminOrg is the reserved organization whose membership IS SuperAdmin — the one
