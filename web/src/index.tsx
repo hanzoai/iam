@@ -17,6 +17,7 @@ import {createRoot} from "react-dom/client";
 import "./globals.css";
 import App from "./App";
 import {BrowserRouter} from "react-router-dom";
+import {AnalyticsRoot} from "./Analytics";
 import "./backend/FetchFilter";
 
 const container = document.getElementById("root")!;
@@ -24,5 +25,7 @@ const container = document.getElementById("root")!;
 const app = createRoot(container);
 
 app.render(<BrowserRouter>
-  <App />
+  <AnalyticsRoot>
+    <App />
+  </AnalyticsRoot>
 </BrowserRouter>);

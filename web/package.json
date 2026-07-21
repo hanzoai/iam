@@ -8,6 +8,7 @@
     "@crowdin/cli": "^3.7.10",
     "@ctrl/tinycolor": "^3.5.0",
     "@emotion/react": "^11.10.5",
+    "@hanzo/event": "^0.2.0",
     "@hookform/resolvers": "^3.9.1",
     "@crossmarkio/sdk": "^0.4.0",
     "@luxwallet/connect": "^0.1.0",

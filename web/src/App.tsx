@@ -34,6 +34,7 @@ import SamlCallback from "./auth/SamlCallback";
 import TelegramLogin from "./auth/TelegramLogin";
 import i18next from "i18next";
 import {withTranslation} from "react-i18next";
+import {analytics, setAnalyticsToken} from "./lib/analytics";
 const ManagementPage = lazy(() => import("./ManagementPage"));
 
 import * as ApplicationBackend from "./backend/ApplicationBackend";
@@ -94,6 +95,13 @@ class App extends Component {
     }
 
     if (this.state.account !== prevState.account) {
+      // Bind telemetry to the resolved session: identify by the stable user id
+      // (never email/PII) so funnel pageviews attribute to the person.
+      setAnalyticsToken(this.state.accessToken);
+      if (this.state.account?.id) {
+        analytics.identify(this.state.account.id);
+      }
+
       const requiredEnableMfa = Setting.isRequiredEnableMfa(this.state.account, this.state.account?.organization);
       this.setState({
         requiredEnableMfa: requiredEnableMfa,
