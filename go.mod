@@ -23,6 +23,7 @@ require (
 require (
 	github.com/alexedwards/argon2id v1.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/hanzoai/sqlite v0.2.1
 	github.com/luxfi/crypto v1.20.1
 	github.com/luxwallet/connect/go v0.1.4
 	github.com/pquerna/otp v1.5.0
@@ -49,7 +50,6 @@ require (
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/hanzoai/dbx v1.16.0 // indirect
 	github.com/hanzoai/kv-go/v9 v9.18.0 // indirect
-	github.com/hanzoai/sqlite v0.2.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect

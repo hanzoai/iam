@@ -25,19 +25,18 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
 
 	"github.com/hanzoai/orm"
-	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/compare"
 	"github.com/hanzoai/iam/internal/routes"
 	_ "github.com/hanzoai/iam/internal/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/internal/seed"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".
@@ -158,38 +157,9 @@ func versionCmd() *cobra.Command {
 	}
 }
 
-// openStore opens the v2 entity store on the chosen backend. The returned
-// orm.DB is identical across backends, so nothing downstream knows or cares
-// which one is live:
-//
-//	sqlite    — embedded hanzoai/sqlite (default; the no-Postgres local path)
-//	sql       — hanzoai/sql (Postgres fork) over ZAP :9651
-//	datastore — hanzoai/datastore (ClickHouse fork) over ZAP :9655
-//
-// The ZAP backends currently surface orm's "ZAP backend disabled" error until
-// the zap-proto/go Node port lands in orm; the seam is here so iam2 gains them
-// with no code change.
+// openStore opens the v2 entity store on the chosen backend via the shared
+// store.Open — the ONE store-open path, reused by the migrate-v1 tool so a
+// migrated store and a served store share identical open config.
 func openStore(backend, path string) (orm.DB, error) {
-	switch backend {
-	case "", "sqlite":
-		if dir := filepath.Dir(path); dir != "" && dir != "." {
-			if err := os.MkdirAll(dir, 0o750); err != nil {
-				return nil, fmt.Errorf("create db dir %q: %w", dir, err)
-			}
-		}
-		db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
-			Path:   path,
-			Config: ormdb.SQLiteConfig{BusyTimeout: 5000, JournalMode: "WAL"},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("open sqlite %q: %w", path, err)
-		}
-		return db, nil
-	case "sql":
-		return orm.OpenZap(&ormdb.ZapConfig{})
-	case "datastore":
-		return orm.OpenDatastore(&ormdb.ZapConfig{})
-	default:
-		return nil, fmt.Errorf("unknown --store %q (want sqlite, sql, or datastore)", backend)
-	}
+	return store.Open(backend, path)
 }
