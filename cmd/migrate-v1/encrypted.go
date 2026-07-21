@@ -44,8 +44,8 @@ import (
 	"strings"
 
 	"github.com/hanzoai/orm"
-	hsqlite "github.com/hanzoai/sqlite"
 	"github.com/hanzoai/sqlcipher"
+	hsqlite "github.com/hanzoai/sqlite"
 
 	"github.com/hanzoai/iam/internal/store"
 )
@@ -74,7 +74,20 @@ type encShard struct {
 // the encrypted-source sibling of run() and shares the exact same Migrate engine
 // and store-open path, so an encrypted cutover and a plaintext one produce a
 // byte-identical clean store.
-func runEncrypted(ctx context.Context, datadir, keyEnv, workDir, dest string, dryRun bool, only []string) error {
+//
+// The wal mode selects HOW each shard is turned into a plaintext temp: the
+// default DecryptFile path decrypts only the CHECKPOINTED main-db image (fast,
+// pure-Go, but blind to rows still in the shard's uncheckpointed -wal), while
+// wal.enabled drives the C sqlcipher binary to checkpoint each shard's WAL into
+// the plaintext copy first — the COMPLETE extraction a real cutover needs.
+func runEncrypted(ctx context.Context, datadir, keyEnv, workDir, dest string, dryRun bool, only []string, wal walMode) error {
+	// Fail before touching any shard if --wal-inclusive was requested but the C
+	// sqlcipher binary is missing — never silently fall back to the checkpointed
+	// (WAL-blind) path.
+	if err := preflightWAL(wal); err != nil {
+		return err
+	}
+
 	master, err := loadMasterKey(keyEnv)
 	if err != nil {
 		return err
@@ -92,12 +105,16 @@ func runEncrypted(ctx context.Context, datadir, keyEnv, workDir, dest string, dr
 	}
 	defer dst.Close()
 
+	extraction := "checkpointed MAIN db only — does NOT merge -wal (a real cutover must use --wal-inclusive)"
+	if wal.enabled {
+		extraction = "WAL-INCLUSIVE — each shard's -wal is checkpointed into the plaintext copy via C sqlcipher before migrating"
+	}
 	fmt.Fprintf(os.Stdout,
-		"migrate-v1: encrypted source %q — %d shard(s). NOTE: decrypting each shard's checkpointed MAIN db file; a real cutover checkpoints WAL first. This run does NOT merge -wal.\n",
-		datadir, len(shards))
+		"migrate-v1: encrypted source %q — %d shard(s); extraction: %s.\n",
+		datadir, len(shards), extraction)
 
 	for _, sh := range shards {
-		results, err := migrateEncryptedShard(ctx, sh, master, workDir, dst, dryRun, only)
+		results, err := migrateEncryptedShard(ctx, sh, master, workDir, dst, dryRun, only, wal)
 		if err != nil {
 			return fmt.Errorf("shard %s (%s): %w", sh.label, sh.path, err)
 		}
@@ -161,17 +178,34 @@ func discoverShards(datadir string) ([]encShard, error) {
 	return shards, nil
 }
 
-// migrateEncryptedShard decrypts one shard to a shredded temp and runs the
-// Migrate engine over it. The temp holds plaintext credential material, so it is
-// shredded on EVERY path including error (deferred immediately after creation).
-func migrateEncryptedShard(ctx context.Context, sh encShard, master []byte, workDir string, dst orm.DB, dryRun bool, only []string) ([]*EntityResult, error) {
-	tmp, err := decryptToTemp(sh, master, workDir)
-	if err != nil {
-		return nil, err
+// migrateEncryptedShard turns one shard into a shredded plaintext temp and runs
+// the Migrate engine over it. Which extraction is used depends on wal: the
+// default DecryptFile path (checkpointed main db only) or the WAL-inclusive C
+// sqlcipher path (checkpoints -wal first). Either way the plaintext temp holds
+// credential material, so it is shredded on EVERY path including error (deferred
+// immediately after creation), and both converge on the SAME read-only modernc
+// open + Migrate engine.
+func migrateEncryptedShard(ctx context.Context, sh encShard, master []byte, workDir string, dst orm.DB, dryRun bool, only []string, wal walMode) ([]*EntityResult, error) {
+	var (
+		srcPath string
+		cleanup func()
+	)
+	if wal.enabled {
+		plainPath, tmpDir, err := checkpointShardToPlaintext(sh, master, workDir, wal.bin)
+		if err != nil {
+			return nil, err
+		}
+		srcPath, cleanup = plainPath, func() { shredDir(tmpDir) }
+	} else {
+		tmp, err := decryptToTemp(sh, master, workDir)
+		if err != nil {
+			return nil, err
+		}
+		srcPath, cleanup = tmp, func() { shred(tmp) }
 	}
-	defer shred(tmp)
+	defer cleanup()
 
-	src, err := openLegacy(tmp) // read-only modernc open — the SAME reader the plaintext path uses
+	src, err := openLegacy(srcPath) // read-only modernc open — the SAME reader the plaintext path uses
 	if err != nil {
 		return nil, err
 	}
@@ -182,26 +216,43 @@ func migrateEncryptedShard(ctx context.Context, sh encShard, master []byte, work
 	return Migrate(ctx, src, dst, only, options{dryRun: dryRun})
 }
 
-// decryptToTemp runs the envelope-decrypt recipe for one shard and writes the
-// plaintext SQLite bytes to a fresh 0600 temp under workDir (OS temp when empty),
-// returning the temp path. A WRONG master key fails LOUDLY at UnwrapDEK (the
-// AES-256-GCM auth tag rejects a KEK derived from garbage); a wrong DEK or a
-// corrupt page fails at DecryptFile (per-page HMAC → sqlcipher.ErrKey). It never
-// returns a temp on error, and never logs the key or the DEK.
-func decryptToTemp(sh encShard, master []byte, workDir string) (string, error) {
+// deriveDEK runs the pure-Go envelope recipe that recovers a shard's 32-byte
+// SQLCipher DEK from the KMS master key: derive the shard's KEK, read its wrapped
+// -DEK sidecar, unwrap it under the principal-binding AAD. It is the SINGLE place
+// the DEK is computed — BOTH the checkpointed DecryptFile path and the
+// WAL-inclusive C-sqlcipher path call it, so the key is never re-derived two ways
+// that could drift. A WRONG master key fails LOUDLY here at UnwrapDEK (the
+// AES-256-GCM auth tag rejects a KEK derived from garbage). The caller owns the
+// returned DEK and MUST zero it; deriveDEK never logs the key or the DEK.
+func deriveDEK(sh encShard, master []byte) ([]byte, error) {
 	kek, err := hsqlite.DeriveKey(master, sh.pt, sh.pid)
 	if err != nil {
-		return "", fmt.Errorf("derive KEK: %w", err)
+		return nil, fmt.Errorf("derive KEK: %w", err)
 	}
 	defer zero(kek)
 
 	wrapped, err := os.ReadFile(sh.path + ".dek")
 	if err != nil {
-		return "", fmt.Errorf("read wrapped-DEK sidecar %s.dek: %w", sh.path, err)
+		return nil, fmt.Errorf("read wrapped-DEK sidecar %s.dek: %w", sh.path, err)
 	}
 	dek, err := hsqlite.UnwrapDEK(kek, wrapped, hsqlite.PrincipalAAD(sh.pt, sh.pid))
 	if err != nil {
-		return "", fmt.Errorf("unwrap DEK (wrong master key, or corrupt/foreign sidecar): %w", err)
+		return nil, fmt.Errorf("unwrap DEK (wrong master key, or corrupt/foreign sidecar): %w", err)
+	}
+	return dek, nil
+}
+
+// decryptToTemp runs the (checkpointed) envelope-decrypt recipe for one shard and
+// writes the plaintext SQLite bytes to a fresh 0600 temp under workDir (OS temp
+// when empty), returning the temp path. A wrong DEK or a corrupt page fails at
+// DecryptFile (per-page HMAC → sqlcipher.ErrKey). It never returns a temp on
+// error, and never logs the key or the DEK. NOTE: this reads only the shard's
+// CHECKPOINTED main db — rows in its uncheckpointed -wal are invisible; the
+// WAL-inclusive path (checkpointShardToPlaintext) is the complete extraction.
+func decryptToTemp(sh encShard, master []byte, workDir string) (string, error) {
+	dek, err := deriveDEK(sh, master)
+	if err != nil {
+		return "", err
 	}
 	defer zero(dek)
 
