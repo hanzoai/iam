@@ -917,8 +917,14 @@ func UpdateApplication(id string, application *Application, isSuperAdmin bool, l
 		return false, fmt.Errorf("%s", i18n.Translate(lang, "auth:Unauthorized operation"))
 	}
 
-	if name == "hanzo-app" {
-		application.Name = name
+	// Brand-wide shared login clients (<brand>-app) may NEVER be renamed — the login
+	// surface is keyed on the <org>-app name, so a rename breaks it: a brand-wide auth
+	// DoS, the RENAME twin of the DeleteApplication refusal. Pin the name back to the
+	// stored value SYMMETRICALLY across every white-label brand via the one predicate
+	// (replaces the old hanzo-app-only literal, which left lux/zoo/pars/adnexus/bootnode
+	// renamable through this same superadmin/service-token path).
+	if IsSharedLoginClient(oldApplication) {
+		application.Name = oldApplication.Name
 	}
 
 	if name != application.Name {

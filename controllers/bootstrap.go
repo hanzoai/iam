@@ -276,9 +276,10 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 //
 // Body: { "organization": "<org>", "name": "<app-name>" }  (both required)
 //
-// The shared brand app "hanzo-app" can NEVER be deleted here — object.DeleteApplication
-// hard-refuses it — so a bug in a caller can't take down the shared login client, and
-// DeleteApplication never touches org users (only the application row + its caches).
+// A brand-wide shared login client (<brand>-app, ANY brand) can NEVER be deleted here —
+// object.DeleteApplication hard-refuses every IsSharedLoginClient — so a bug in a caller
+// can't take down a brand's login surface, and DeleteApplication never touches org users
+// (only the application row + its caches).
 func (c *ApiController) BootstrapApplicationDelete() {
 	// Same deny-by-default service-token gate as the upsert twin.
 	if !c.IsServiceTokenAuthenticated() {
@@ -311,9 +312,9 @@ func (c *ApiController) BootstrapApplicationDelete() {
 		return
 	}
 	// System-level (service token): pass isSuperAdmin=true, mirroring the upsert's
-	// UpdateApplication(..., true, ...). DeleteApplication itself refuses the shared
-	// "hanzo-app" app; a per-app client is not capability-reserved, so this only ever
-	// removes the exact (org, name) row addressed above.
+	// UpdateApplication(..., true, ...). DeleteApplication itself refuses any brand's
+	// shared login client (IsSharedLoginClient); a per-app client is not one, so this
+	// only ever removes the exact (org, name) row addressed above.
 	deleted, err := object.DeleteApplication(existing, true)
 	if err != nil {
 		c.ResponseError(err.Error())
