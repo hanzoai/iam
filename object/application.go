@@ -1078,8 +1078,31 @@ func deleteApplication(application *Application) (bool, error) {
 	return affected != 0, nil
 }
 
+// IsSharedLoginClient reports whether app is a brand-wide SHARED LOGIN client — the
+// one `<brand>-app` application (owner=admin) that IS its organization's primary
+// login/signup surface (hanzo-app for org hanzo, lux-app for lux, zoo-app for zoo,
+// pars-app, adnexus-app, bootnode-app, ...). It is white-label AGNOSTIC by
+// construction: a shared client is EXACTLY the app whose Name equals its
+// Organization + "-app", so every brand is protected symmetrically with NO hardcoded
+// brand list to drift — and a PER-APP published client (`<brand>-app-<slug>`, which
+// carries the extra `-<slug>` suffix) is NOT one.
+//
+// Deleting or renaming a shared login client is a brand-wide auth DoS, so it is
+// refused UNCONDITIONALLY (no isSuperAdmin / service-token bypass). The check is
+// spoof-safe: deleteApplication filters the DELETE by the SAME Organization value, so
+// sending a mismatched Organization to dodge this guard also makes the WHERE miss the
+// real row — the shared client survives either way.
+func IsSharedLoginClient(app *Application) bool {
+	return app != nil && app.Organization != "" && app.Name == app.Organization+"-app"
+}
+
 func DeleteApplication(application *Application, isSuperAdmin bool) (bool, error) {
-	if application.Name == "hanzo-app" {
+	// Brand-wide shared login clients (<brand>-app) are NEVER deletable — one delete is
+	// a brand-wide auth DoS. Refused unconditionally, SYMMETRICALLY across every
+	// white-label brand (replaces the old hanzo-app-only literal, which left
+	// lux-app/zoo-app/pars-app/adnexus-app/bootnode-app unprotected against the
+	// service token — which is always isSuperAdmin).
+	if IsSharedLoginClient(application) {
 		return false, nil
 	}
 
