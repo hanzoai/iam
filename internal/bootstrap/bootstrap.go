@@ -25,13 +25,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam2/internal/cred"
+	"github.com/hanzoai/iam/internal/cred"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/schema"
-	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // Route registers the bootstrap upsert endpoints on the PUBLIC group r (they

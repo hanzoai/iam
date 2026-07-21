@@ -12,8 +12,8 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam2/internal/schema"
-	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // The `hk-` Cloud API-key primitives (mint/revoke). A confidential, allow-listed

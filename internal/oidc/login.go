@@ -9,11 +9,11 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/httpx"
-	"github.com/hanzoai/iam2/internal/schema"
-	"github.com/hanzoai/iam2/internal/sessions"
-	"github.com/hanzoai/iam2/internal/store"
-	"github.com/hanzoai/iam2/internal/users"
+	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/sessions"
+	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/internal/users"
 )
 
 // The credential login front door: POST /v1/iam/login. The @hanzo/iam SDK +

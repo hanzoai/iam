@@ -15,8 +15,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/authz"
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // authorizeOrganization gates the Organization an application will SERVE (the

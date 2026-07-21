@@ -12,7 +12,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam2/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/mfa/factor"
 )
 
 // The federated-login second-factor gate, driven through the REAL mounted routes

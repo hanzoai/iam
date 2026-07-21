@@ -24,9 +24,9 @@ import (
 	wc "github.com/luxwallet/connect/go/walletconnect"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/authz"
-	"github.com/hanzoai/iam2/internal/oidc"
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/oidc"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // HTTP-level harness: every test drives the REAL mounted router behind the REAL

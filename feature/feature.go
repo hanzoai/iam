@@ -12,7 +12,7 @@ import (
 
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/pkg/model"
+	"github.com/hanzoai/iam/pkg/model"
 )
 
 // Store is the identity surface a feature needs — the union of the calls the

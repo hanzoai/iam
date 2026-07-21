@@ -34,10 +34,10 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/compare"
-	"github.com/hanzoai/iam2/internal/routes"
-	_ "github.com/hanzoai/iam2/internal/schema" // registers the v2 entity kinds
-	"github.com/hanzoai/iam2/internal/seed"
+	"github.com/hanzoai/iam/internal/compare"
+	"github.com/hanzoai/iam/internal/routes"
+	_ "github.com/hanzoai/iam/internal/schema" // registers the v2 entity kinds
+	"github.com/hanzoai/iam/internal/seed"
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".

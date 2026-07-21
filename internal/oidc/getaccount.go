@@ -7,9 +7,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/httpx"
-	"github.com/hanzoai/iam2/internal/sessions"
-	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/sessions"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // PathGetAccount is the native front-door account endpoint — what the hanzo.id

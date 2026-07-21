@@ -13,8 +13,8 @@ import (
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/hanzoai/iam2/internal/schema"
-	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // Package factor is the pure multi-factor DOMAIN — what a factor IS, whether a

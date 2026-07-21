@@ -21,8 +21,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/cred"
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/cred"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // API binds the user handlers to an orm store. Construct once at boot and mount.

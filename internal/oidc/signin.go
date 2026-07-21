@@ -6,9 +6,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/httpx"
-	"github.com/hanzoai/iam2/internal/sessions"
-	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/sessions"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // The code→session exchange: POST /v1/iam/signin. After the authorize/login flow
