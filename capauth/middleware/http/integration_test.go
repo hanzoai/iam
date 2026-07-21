@@ -38,8 +38,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanzoai/iam/capauth"
-	"github.com/hanzoai/iam/capauth/registry"
+	"github.com/hanzoai/iam-v1/capauth"
+	"github.com/hanzoai/iam-v1/capauth/registry"
 	zapcap "github.com/zap-proto/go/cap"
 )
 

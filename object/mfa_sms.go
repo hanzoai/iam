@@ -18,7 +18,7 @@ package object
 import (
 	"errors"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 type SmsMfa struct {

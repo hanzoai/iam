@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hanzoai/iam/ip"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/ip"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 type IpRule struct{}

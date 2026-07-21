@@ -20,8 +20,8 @@ import (
 	"fmt"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // GetSystemInfo

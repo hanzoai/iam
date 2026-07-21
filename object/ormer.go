@@ -29,8 +29,8 @@ import (
 
 	_ "github.com/go-sql-driver/mysql" // db = mysql
 	"github.com/hanzoai/beego/v2/server/web"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/util"
 	sqlitedrv "github.com/hanzoai/sqlite" // db = sqlite (dual-backend: cgo SQLCipher / !cgo modernc); also envelope principals
 	"github.com/hanzoai/xorm"
 	"github.com/hanzoai/xorm/core"

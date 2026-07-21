@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 type I18nData map[string]map[string]string

@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/beego/v2/server/web/context"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 type OrganizationThemeCookie struct {

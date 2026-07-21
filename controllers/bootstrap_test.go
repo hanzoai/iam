@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/alexedwards/argon2id"
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // ptr is a tiny helper to build the *bool tri-state in table tests.

@@ -19,7 +19,7 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // TestSuperAdmin_DerivedFromAdminOrg proves the ONE fact behind every super-admin

@@ -30,7 +30,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanzoai/iam/capauth"
+	"github.com/hanzoai/iam-v1/capauth"
 	zapcap "github.com/zap-proto/go/cap"
 )
 

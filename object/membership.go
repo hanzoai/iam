@@ -17,7 +17,7 @@ package object
 import (
 	"fmt"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // Membership records that a user may ACT IN an org — the (User × Org × Role)

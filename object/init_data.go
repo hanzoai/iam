@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/cred"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/cred"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 type InitData struct {

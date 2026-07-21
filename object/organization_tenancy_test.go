@@ -3,7 +3,7 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // The tenancy chain is only safe while the graph is a forest. A cycle in a parent

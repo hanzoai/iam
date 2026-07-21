@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 	"golang.org/x/net/html"
 )
 

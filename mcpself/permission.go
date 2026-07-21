@@ -16,7 +16,7 @@
 package mcpself
 
 import (
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // BuiltinScopes defines the default scope-to-tool mappings for the IAM MCP server

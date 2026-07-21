@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 var (

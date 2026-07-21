@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // OktaSyncerProvider implements SyncerProvider for Okta API-based syncers

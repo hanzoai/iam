@@ -25,7 +25,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // DingtalkSyncerProvider implements SyncerProvider for DingTalk API-based syncers

@@ -31,8 +31,8 @@ import (
 	"testing"
 
 	beecontext "github.com/hanzoai/beego/v2/server/web/context"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // newSAController builds an ApiController whose session principal is `principal`,

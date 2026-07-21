@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hanzoai/iam/cmd/iam/cli"
-	"github.com/hanzoai/iam/iamserver"
+	"github.com/hanzoai/iam-v1/cmd/iam/cli"
+	"github.com/hanzoai/iam-v1/iamserver"
 )
 
 var version = "(dev)"

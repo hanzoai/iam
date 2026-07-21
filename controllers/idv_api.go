@@ -18,9 +18,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/hanzoai/iam/idv"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/idv"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 
 	cidv "github.com/hanzoai/idv/provider"
 )

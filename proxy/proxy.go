@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 	"golang.org/x/net/proxy"
 )
 

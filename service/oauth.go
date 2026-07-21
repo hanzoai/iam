@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"net/url"
 
-	iam "github.com/hanzoai/iam"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	iam "github.com/hanzoai/iam-v1"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 func getSigninUrl(iamClient *iam.Client, callbackUrl string, originalPath string) string {

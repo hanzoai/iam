@@ -22,7 +22,7 @@ import (
 
 	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/hanzoai/beego/v2/server/web/context"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // resetByAttrState wipes the per-test rate-limit state and restores the

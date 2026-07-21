@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/hanzoai/beego/v2/core/utils/pagination"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // parseFormEncodedBody parses application/x-www-form-urlencoded data from the

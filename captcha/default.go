@@ -15,7 +15,7 @@
 
 package captcha
 
-import "github.com/hanzoai/iam/object"
+import "github.com/hanzoai/iam-v1/object"
 
 type DefaultCaptchaProvider struct{}
 

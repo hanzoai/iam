@@ -15,7 +15,7 @@
 
 package object
 
-import "github.com/hanzoai/iam/util"
+import "github.com/hanzoai/iam-v1/util"
 
 func DumpToFile(filePath string) error {
 	return writeInitDataToFile(filePath)

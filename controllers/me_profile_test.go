@@ -25,7 +25,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 func TestValidateDisplayName(t *testing.T) {

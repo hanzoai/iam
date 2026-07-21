@@ -27,11 +27,11 @@ import (
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/hanzoai/builder"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/faceId"
-	"github.com/hanzoai/iam/i18n"
-	"github.com/hanzoai/iam/proxy"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/faceId"
+	"github.com/hanzoai/iam-v1/i18n"
+	"github.com/hanzoai/iam-v1/proxy"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 const (
@@ -1236,7 +1236,7 @@ func AddUser(user *User, lang string) (bool, error) {
 	// mode the count query can return 0 even when apps exist (they live in
 	// the admin org's DB, not the tenant org's DB). Apps are validated at
 	// login time via client_id anyway.
-	// See: https://github.com/hanzoai/iam/issues/1
+	// See: https://github.com/hanzoai/iam-v1/issues/1
 
 	if user.BalanceCurrency == "" {
 		if organization.BalanceCurrency != "" {

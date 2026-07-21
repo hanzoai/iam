@@ -22,8 +22,8 @@ import (
 	"github.com/elimity-com/scim"
 	"github.com/elimity-com/scim/optional"
 	"github.com/elimity-com/scim/schema"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 type AnyMap map[string]interface{}

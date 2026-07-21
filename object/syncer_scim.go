@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // SCIMSyncerProvider implements SyncerProvider for SCIM 2.0 API-based syncers

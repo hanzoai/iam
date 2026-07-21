@@ -17,8 +17,8 @@ package controllers
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // TestLoginOrgForApp pins the org-resolution invariant behind the operator-panel

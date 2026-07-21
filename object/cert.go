@@ -19,10 +19,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 
-	"github.com/hanzoai/iam/certificate"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/certificate"
+	"github.com/hanzoai/iam-v1/util"
 	"golang.org/x/net/publicsuffix"
 )
 

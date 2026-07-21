@@ -26,7 +26,7 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/idp"
+	"github.com/hanzoai/iam-v1/idp"
 )
 
 // resolveSignupLinkTarget mirrors the existing-account selection the controller

@@ -26,7 +26,7 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // ── H-3: org-agnostic login must NOT prefer the global-admin row ─────────────

@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 const deviceCodeGrant = "urn:ietf:params:oauth:grant-type:device_code"

@@ -20,8 +20,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/iam/cred"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/cred"
+	"github.com/hanzoai/iam-v1/object"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/bcrypt"
 )

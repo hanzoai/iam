@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // DynamicClientRegistrationRequest represents an RFC 7591 client registration request
