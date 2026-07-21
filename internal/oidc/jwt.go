@@ -14,7 +14,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // JWT token signing. The signing algorithm is a property of the signing Cert's

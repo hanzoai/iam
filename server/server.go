@@ -21,11 +21,11 @@ import (
 	"github.com/zap-proto/fiber/v3/middleware/adaptor"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/feature"
-	"github.com/hanzoai/iam2/internal/featurestore"
-	"github.com/hanzoai/iam2/internal/routes"
-	_ "github.com/hanzoai/iam2/internal/schema" // registers the entity kinds
-	"github.com/hanzoai/iam2/internal/seed"
+	"github.com/hanzoai/iam/feature"
+	"github.com/hanzoai/iam/internal/featurestore"
+	"github.com/hanzoai/iam/internal/routes"
+	_ "github.com/hanzoai/iam/internal/schema" // registers the entity kinds
+	"github.com/hanzoai/iam/internal/seed"
 )
 
 // Mount registers the entire IAM v2 surface (OIDC discovery/JWKS, get-app-login,

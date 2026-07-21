@@ -19,7 +19,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // HTTP-level test harness: mount the whole OIDC surface on a fresh store and

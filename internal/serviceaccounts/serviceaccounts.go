@@ -32,11 +32,11 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/authz"
-	"github.com/hanzoai/iam2/internal/cred"
-	"github.com/hanzoai/iam2/internal/httpx"
-	"github.com/hanzoai/iam2/internal/keys"
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/cred"
+	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/keys"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // Paths — the verb face the live consumers call (team's bot member sync reads

@@ -1,4 +1,4 @@
-module github.com/hanzoai/iam2
+module github.com/hanzoai/iam
 
 go 1.26.4
 

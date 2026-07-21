@@ -18,10 +18,10 @@ import (
 	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/mfa/factor"
-	"github.com/hanzoai/iam2/internal/schema"
-	"github.com/hanzoai/iam2/internal/store"
-	"github.com/hanzoai/iam2/internal/users"
+	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/internal/users"
 )
 
 // Identity federation — iam2 as an OIDC/OAuth2 Relying Party to external IdPs.

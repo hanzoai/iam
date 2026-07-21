@@ -24,7 +24,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // The Relying-Party side of federation: iam2 as an OIDC/OAuth2 CLIENT of an

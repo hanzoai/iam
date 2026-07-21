@@ -11,11 +11,11 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam2/feature"
-	"github.com/hanzoai/iam2/internal/schema"
-	"github.com/hanzoai/iam2/internal/store"
-	"github.com/hanzoai/iam2/internal/users"
-	"github.com/hanzoai/iam2/pkg/model"
+	"github.com/hanzoai/iam/feature"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/internal/users"
+	"github.com/hanzoai/iam/pkg/model"
 )
 
 type ormStore struct {

@@ -33,9 +33,9 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/oidc"
-	"github.com/hanzoai/iam2/internal/routes"
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/oidc"
+	"github.com/hanzoai/iam/internal/routes"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 const (

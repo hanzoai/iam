@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 func testApp() *schema.Application {

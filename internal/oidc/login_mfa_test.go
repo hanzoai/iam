@@ -13,8 +13,8 @@ import (
 	"github.com/pquerna/otp/totp"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/mfa/factor"
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // The MFA gate at login, driven through the REAL mounted router. The contract is
