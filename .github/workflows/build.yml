@@ -30,7 +30,7 @@ jobs:
         id: meta
         run: |
           echo "registry=${REGISTRY:-ghcr.io}" >> "$GITHUB_OUTPUT"
-          echo "image=${REGISTRY:-ghcr.io}/hanzoai/iam2" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY:-ghcr.io}/hanzoai/iam" >> "$GITHUB_OUTPUT"
           ref="${GITHUB_REF##*/}"
           case "$GITHUB_REF" in
             refs/tags/v*) ver="$ref" ;;                       # v0.1.0
