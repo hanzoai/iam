@@ -18,7 +18,7 @@ package controllers
 import (
 	"strings"
 
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // GetOidcDiscovery

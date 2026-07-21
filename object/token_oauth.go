@@ -28,9 +28,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hanzoai/iam/i18n"
-	"github.com/hanzoai/iam/idp"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/i18n"
+	"github.com/hanzoai/iam-v1/idp"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 const (

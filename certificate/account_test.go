@@ -23,8 +23,8 @@ import (
 	"testing"
 
 	"github.com/hanzoai/beego/v2/server/web"
-	"github.com/hanzoai/iam/proxy"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/proxy"
+	"github.com/hanzoai/iam-v1/util"
 	"github.com/stretchr/testify/assert"
 )
 

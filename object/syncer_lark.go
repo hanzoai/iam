@@ -24,7 +24,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // LarkSyncerProvider implements SyncerProvider for Lark API-based syncers

@@ -19,7 +19,7 @@ import (
 	"strconv"
 
 	api "github.com/go-telegram-bot-api/telegram-bot-api"
-	"github.com/hanzoai/iam/proxy"
+	"github.com/hanzoai/iam-v1/proxy"
 	notify "github.com/hanzoai/notify2"
 	"github.com/hanzoai/notify2/service/telegram"
 )

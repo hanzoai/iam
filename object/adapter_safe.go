@@ -19,7 +19,7 @@ import (
 	"github.com/hanzoai/xorm"
 
 	"github.com/hanzoai/authzstore"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // SafeAdapter wraps an authzstore.Adapter and overrides RemovePolicy /

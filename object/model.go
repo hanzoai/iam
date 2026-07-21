@@ -20,8 +20,8 @@ import (
 
 	authzconfig "github.com/hanzoai/authz/config"
 	authzmodel "github.com/hanzoai/authz/model"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 type Model struct {

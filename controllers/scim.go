@@ -18,7 +18,7 @@ package controllers
 import (
 	"strings"
 
-	"github.com/hanzoai/iam/scim"
+	"github.com/hanzoai/iam-v1/scim"
 )
 
 func (c *RootController) HandleScim() {

@@ -18,8 +18,8 @@ package object
 import (
 	"regexp"
 
-	"github.com/hanzoai/iam/cred"
-	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam-v1/cred"
+	"github.com/hanzoai/iam-v1/i18n"
 )
 
 type ValidatorFunc func(password string, lang string) string

@@ -24,9 +24,9 @@ import (
 	"strings"
 
 	"github.com/hanzoai/beego/v2/core/logs"
-	"github.com/hanzoai/iam/form"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/form"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 const (
@@ -634,7 +634,7 @@ func (c *ApiController) Logout() {
 	user := c.GetSessionUsername()
 
 	if accessToken == "" && redirectUri == "" {
-		// TODO https://github.com/hanzoai/iam/pull/1494#discussion_r1095675265
+		// TODO https://github.com/hanzoai/iam-v1/pull/1494#discussion_r1095675265
 		if user == "" {
 			c.ResponseOk()
 			return
@@ -656,7 +656,7 @@ func (c *ApiController) Logout() {
 		c.ResponseOk(user, application.HomepageUrl)
 		return
 	} else {
-		// "post_logout_redirect_uri" has been made optional, see: https://github.com/hanzoai/iam/issues/2151
+		// "post_logout_redirect_uri" has been made optional, see: https://github.com/hanzoai/iam-v1/issues/2151
 		// if redirectUri == "" {
 		// 	c.ResponseError(c.T("general:Missing parameter") + ": post_logout_redirect_uri")
 		// 	return
@@ -687,7 +687,7 @@ func (c *ApiController) Logout() {
 		c.ClearUserSession()
 		c.ClearTokenSession()
 
-		// TODO https://github.com/hanzoai/iam/pull/1494#discussion_r1095675265
+		// TODO https://github.com/hanzoai/iam-v1/pull/1494#discussion_r1095675265
 		if err := c.deleteUserSession(user); err != nil {
 			c.ResponseError(err.Error())
 			return

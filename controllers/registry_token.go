@@ -36,8 +36,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/beego/v2/core/logs"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // registrySigningKey is the RSA private key for signing Docker registry tokens.

@@ -38,7 +38,7 @@ import (
 	"github.com/hanzoai/beego/v2/server/web"
 	"github.com/hanzoai/beego/v2/server/web/session"
 
-	"github.com/hanzoai/iam/iamserver"
+	"github.com/hanzoai/iam-v1/iamserver"
 )
 
 // ErrAlreadyEmbedded is returned by a second Embed call in the same

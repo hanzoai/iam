@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 	"github.com/likexian/whois"
 	whoisparser "github.com/likexian/whois-parser"
 )

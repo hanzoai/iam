@@ -22,9 +22,9 @@ import (
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/lego"
 	"github.com/go-acme/lego/v4/registration"
-	"github.com/hanzoai/iam/certificate"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/proxy"
+	"github.com/hanzoai/iam-v1/certificate"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/proxy"
 )
 
 func getLegoClientAndAccount(email string, privateKey string, devMode bool, useProxy bool) (*lego.Client, *certificate.Account, error) {

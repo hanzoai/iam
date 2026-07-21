@@ -47,8 +47,8 @@ import (
 
 	_ "golang.org/x/image/webp"
 
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // avatarMaxBytes — 2 MiB hard cap on the multipart upload body.

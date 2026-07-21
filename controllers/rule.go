@@ -22,8 +22,8 @@ import (
 	"strings"
 
 	"github.com/hanzoai/beego/v2/server/web/pagination"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 	"github.com/hsluoyz/modsecurity-go/seclang/parser"
 )
 

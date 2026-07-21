@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 func sendWebhook(webhook *Webhook, record *Record, extendedUser *User) (int, string, error) {

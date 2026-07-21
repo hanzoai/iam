@@ -33,14 +33,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/beego/v2/server/web"
-	"github.com/hanzoai/iam/captcha"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/form"
-	"github.com/hanzoai/iam/i18n"
-	"github.com/hanzoai/iam/idp"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/proxy"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/captcha"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/form"
+	"github.com/hanzoai/iam-v1/i18n"
+	"github.com/hanzoai/iam-v1/idp"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/proxy"
+	"github.com/hanzoai/iam-v1/util"
 	"golang.org/x/oauth2"
 )
 

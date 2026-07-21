@@ -17,7 +17,7 @@ package object
 import (
 	"fmt"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // Project represents a project within an organization.

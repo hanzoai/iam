@@ -11,7 +11,7 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // TestIsApproved locks the waitlist gate's fail-OPEN contract: absence of the

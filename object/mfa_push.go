@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hanzoai/iam/notification"
+	"github.com/hanzoai/iam-v1/notification"
 )
 
 type PushMfa struct {

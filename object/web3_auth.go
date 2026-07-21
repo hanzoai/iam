@@ -37,7 +37,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 
 	wc "github.com/luxwallet/connect/go/walletconnect"
 )

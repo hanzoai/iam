@@ -15,9 +15,9 @@
 package object
 
 import (
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/teamrole"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/teamrole"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // This file is the IAM-side bridge for the app-scoped team-role policy defined

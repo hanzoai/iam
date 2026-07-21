@@ -18,7 +18,7 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // RevokeConsent revokes a consent record

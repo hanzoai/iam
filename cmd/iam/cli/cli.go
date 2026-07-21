@@ -29,7 +29,7 @@ func Execute() error {
 //
 // Usage from an external Go consumer:
 //
-//	import iamcli "github.com/hanzoai/iam/cmd/iam/cli"
+//	import iamcli "github.com/hanzoai/iam-v1/cmd/iam/cli"
 //
 //	root := &cobra.Command{Use: "<tenant>"}
 //	root.AddCommand(iamcli.NewRootCmd())   // mounts the whole tree

@@ -22,7 +22,7 @@ import (
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/lego"
 	"github.com/go-acme/lego/v4/registration"
-	"github.com/hanzoai/iam/proxy"
+	"github.com/hanzoai/iam-v1/proxy"
 )
 
 type Account struct {

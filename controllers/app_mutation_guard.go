@@ -14,7 +14,7 @@
 
 package controllers
 
-import "github.com/hanzoai/iam/object"
+import "github.com/hanzoai/iam-v1/object"
 
 // requireAppCapability is the single choke point that revokes the legacy
 // "every confidential-client credential is a global admin" privilege for

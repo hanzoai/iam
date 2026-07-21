@@ -27,9 +27,9 @@ import (
 
 	"github.com/hanzoai/beego/v2/core/logs"
 	"github.com/hanzoai/beego/v2/server/web/context"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 var (
@@ -291,7 +291,7 @@ func StaticFilter(ctx *context.Context) {
 		}
 		dir = strings.ReplaceAll(dir, "\\", "/")
 		ctx.ResponseWriter.WriteHeader(http.StatusNotFound)
-		errorText := fmt.Sprintf("The IAM frontend HTML file: \"index.html\" was not found, it should be placed at: \"%s/web/build/index.html\". For more information, see: https://github.com/hanzoai/iam", dir)
+		errorText := fmt.Sprintf("The IAM frontend HTML file: \"index.html\" was not found, it should be placed at: \"%s/web/build/index.html\". For more information, see: https://github.com/hanzoai/iam-v1", dir)
 		http.ServeContent(ctx.ResponseWriter, ctx.Request, "IAM frontend has encountered error...", time.Now(), strings.NewReader(errorText))
 		return
 	}

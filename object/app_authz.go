@@ -41,7 +41,7 @@ package object
 import (
 	"strings"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // AppAdminCapability names a sensitive, app-gated capability and the env var

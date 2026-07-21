@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 func updateUserColumn(column string, user *User) {

@@ -21,9 +21,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 
-	"github.com/hanzoai/iam/cred"
+	"github.com/hanzoai/iam-v1/cred"
 )
 
 // TestPlaintextPasswordBlocked verifies that sanitizeOrgPasswordType rejects "plain"

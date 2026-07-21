@@ -24,7 +24,7 @@ import (
 
 	"github.com/hanzoai/beego/v2/core/logs"
 	"github.com/hanzoai/beego/v2/server/web/context"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 const (

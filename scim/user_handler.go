@@ -21,7 +21,7 @@ import (
 
 	"github.com/elimity-com/scim"
 	"github.com/elimity-com/scim/errors"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 type UserResourceHandler struct{}

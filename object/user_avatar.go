@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hanzoai/iam/proxy"
+	"github.com/hanzoai/iam-v1/proxy"
 )
 
 func downloadImage(client *http.Client, url string) (*bytes.Buffer, string, error) {

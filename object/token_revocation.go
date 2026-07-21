@@ -17,7 +17,7 @@ package object
 import (
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // RevokedToken represents a revoked OAuth2 token (RFC 7009).

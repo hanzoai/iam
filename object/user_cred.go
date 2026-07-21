@@ -18,8 +18,8 @@ package object
 import (
 	"fmt"
 
-	"github.com/hanzoai/iam/cred"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/cred"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 func calculateHash(user *User) (string, error) {

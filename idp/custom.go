@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 	"github.com/mitchellh/mapstructure"
 	"golang.org/x/oauth2"
 )

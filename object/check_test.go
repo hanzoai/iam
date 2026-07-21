@@ -17,7 +17,7 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // verifyOnly returns a verify func that passes only for the given (owner,name)

@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 	sqlitedrv "github.com/hanzoai/sqlite"
 	"github.com/hanzoai/xorm"
 	"github.com/hanzoai/xorm/core"

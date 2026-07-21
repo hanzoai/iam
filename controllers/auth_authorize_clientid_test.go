@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	beecontext "github.com/hanzoai/beego/v2/server/web/context"
-	"github.com/hanzoai/iam/form"
+	"github.com/hanzoai/iam-v1/form"
 )
 
 // newAuthorizeController builds an ApiController whose request carries the given

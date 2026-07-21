@@ -22,9 +22,9 @@ import (
 	"net/http"
 	"strings"
 
-	iam "github.com/hanzoai/iam"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object"
+	iam "github.com/hanzoai/iam-v1"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 func joinPath(a string, b string) string {

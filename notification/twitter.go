@@ -16,7 +16,7 @@
 package notification
 
 import (
-	"github.com/hanzoai/iam/proxy"
+	"github.com/hanzoai/iam-v1/proxy"
 	notify "github.com/hanzoai/notify2"
 	"github.com/hanzoai/notify2/service/twitter"
 )

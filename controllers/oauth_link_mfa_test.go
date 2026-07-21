@@ -31,7 +31,7 @@ import (
 	"github.com/hanzoai/beego/v2/server/web"
 	beecontext "github.com/hanzoai/beego/v2/server/web/context"
 
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // newMfaController wires an ApiController to a live, memory-backed session so

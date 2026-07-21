@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 func TestIpRateRule_checkRule(t *testing.T) {

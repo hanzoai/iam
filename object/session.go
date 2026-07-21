@@ -22,8 +22,8 @@ import (
 	"slices"
 
 	"github.com/hanzoai/beego/v2/server/web"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 var (

@@ -27,7 +27,7 @@ package controllers
 import (
 	"encoding/json"
 
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 type NotificationForm struct {

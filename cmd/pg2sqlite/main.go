@@ -54,7 +54,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/authzstore"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 	"github.com/hanzoai/xorm"
 	xormLog "github.com/hanzoai/xorm/log"
 	"github.com/hanzoai/xorm/names"

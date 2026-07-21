@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // SessionData represents session metadata

@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 func GetDirectResources(owner string, user string, provider *Provider, prefix string, lang string) ([]*Resource, error) {

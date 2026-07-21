@@ -17,8 +17,8 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/teamrole"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/teamrole"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // TestTeamRoleFor pins the IAM Role row built from a catalog entry: the Name is

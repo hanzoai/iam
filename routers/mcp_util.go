@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 
 	"github.com/hanzoai/beego/v2/server/web/context"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // applicationStub is a lightweight struct for extracting owner/name from application data

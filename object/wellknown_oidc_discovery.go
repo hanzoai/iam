@@ -23,8 +23,8 @@ import (
 	"strings"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 type OidcDiscovery struct {

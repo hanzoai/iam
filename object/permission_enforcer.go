@@ -24,8 +24,8 @@ import (
 	authzlog "github.com/hanzoai/authz/log"
 	authzmodel "github.com/hanzoai/authz/model"
 	"github.com/hanzoai/authzstore"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 func getPermissionEnforcer(p *Permission, permissionIDs ...string) (*authz.Enforcer, error) {

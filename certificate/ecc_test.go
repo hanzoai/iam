@@ -21,7 +21,7 @@ package certificate
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 	"github.com/stretchr/testify/assert"
 )
 

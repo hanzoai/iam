@@ -24,8 +24,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/object"
 	ldap "github.com/hanzoai/ldapserver"
 	"github.com/lor00x/goldap/message"
 )

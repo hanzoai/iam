@@ -21,9 +21,9 @@ import (
 	"net/http/httputil"
 	"net/url"
 
-	"github.com/hanzoai/iam/mcpself"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/mcpself"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // ProxyServer

@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam-v1/i18n"
 )
 
 // ConsentRecord represents the data for OAuth consent API requests/responses

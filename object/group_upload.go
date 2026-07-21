@@ -16,7 +16,7 @@
 package object
 
 import (
-	"github.com/hanzoai/iam/xlsx"
+	"github.com/hanzoai/iam-v1/xlsx"
 )
 
 func getGroupMap(owner string) (map[string]*Group, error) {

@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/iam/xlsx"
+	"github.com/hanzoai/iam-v1/xlsx"
 )
 
 func getRoleMap(owner string) (map[string]*Role, error) {
