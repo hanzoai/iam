@@ -27,12 +27,17 @@ type Project struct {
 	Name        string `xorm:"varchar(100) notnull pk" json:"name"`
 	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
 
-	DisplayName  string   `xorm:"varchar(100)" json:"displayName"`
-	Description  string   `xorm:"varchar(500)" json:"description"`
-	Organization string   `xorm:"varchar(100) index" json:"organization"`
-	Tags         []string `xorm:"mediumtext" json:"tags"`
-	Metadata     string   `xorm:"mediumtext" json:"metadata"`
-	IsDefault    bool     `json:"isDefault"`
+	DisplayName  string `xorm:"varchar(100)" json:"displayName"`
+	Description  string `xorm:"varchar(500)" json:"description"`
+	Organization string `xorm:"varchar(100) index" json:"organization"`
+	// Workspace is the parent workspace under which this project lives:
+	// Organization → Workspace → Project. Empty means the project sits directly
+	// at the org level (the org's default/un-workspaced scope) — backward-compatible
+	// with pre-Workspace projects, which read back as Workspace="".
+	Workspace string   `xorm:"varchar(100) index" json:"workspace"`
+	Tags      []string `xorm:"mediumtext" json:"tags"`
+	Metadata  string   `xorm:"mediumtext" json:"metadata"`
+	IsDefault bool     `json:"isDefault"`
 }
 
 func GetProjectCount(owner, field, value string) (int64, error) {

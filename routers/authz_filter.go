@@ -165,6 +165,16 @@ func isProjectManagementRoute(method, urlPath string) bool {
 	return false
 }
 
+func isWorkspaceManagementRoute(method, urlPath string) bool {
+	switch urlPath {
+	case "/v1/iam/add-workspace", "/v1/iam/update-workspace", "/v1/iam/delete-workspace":
+		return method == "POST"
+	case "/v1/iam/get-workspaces", "/v1/iam/get-workspace", "/v1/iam/get-organization-workspaces":
+		return method == "GET"
+	}
+	return false
+}
+
 // isByAttributeRoute is the server-to-server soft-signal lookup. Auth is
 // enforced by the controller itself (client_credentials JWT + env
 // allowlist + per-(clientId,IP) rate limit), so the generic authz engine
@@ -526,10 +536,10 @@ func ApiFilter(ctx *context.Context) {
 	// above. NOTE: projects created via the onboarding currently target the
 	// shared "hanzo" org; per-tenant org creation is the follow-up.
 	if subOwner != "anonymous" && subName != "anonymous" {
-		if isProjectManagementRoute(method, urlPath) {
+		if isProjectManagementRoute(method, urlPath) || isWorkspaceManagementRoute(method, urlPath) {
 			username := fmt.Sprintf("%s/%s", subOwner, subName)
 			ctx.Input.SetData("currentUserId", username)
-			logLine := fmt.Sprintf("subOwner = %s, subName = %s, method = %s, urlPath = %s, result = allow (project management bypass)",
+			logLine := fmt.Sprintf("subOwner = %s, subName = %s, method = %s, urlPath = %s, result = allow (project/workspace management bypass)",
 				subOwner, subName, method, urlPath)
 			fmt.Println(logLine)
 			util.LogInfo(ctx, logLine)
