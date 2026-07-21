@@ -9,9 +9,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/httpx"
-	"github.com/hanzoai/iam2/internal/mfa/factor"
-	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // The second-factor RESUME for a federated login. When the federation callback

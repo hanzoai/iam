@@ -14,7 +14,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // GetApplicationByClientId resolves an OAuth2/OIDC client by its clientId.

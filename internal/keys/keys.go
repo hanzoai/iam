@@ -21,7 +21,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // Route registers the key CRUD routes on app, binding each handler to db.

@@ -7,8 +7,8 @@ import (
 
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/feature"
-	"github.com/hanzoai/iam2/pkg/model"
+	"github.com/hanzoai/iam/feature"
+	"github.com/hanzoai/iam/pkg/model"
 )
 
 // A registered feature is mounted by MountAll and reaches the app + store; a

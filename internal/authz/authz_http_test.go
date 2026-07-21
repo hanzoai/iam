@@ -32,9 +32,9 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/routes"
-	"github.com/hanzoai/iam2/internal/schema"
-	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam/internal/routes"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 const signingKid = "cert-hanzo" // the seeded admin signing cert's name = JWKS kid

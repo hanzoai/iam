@@ -10,7 +10,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // RFC 8693 Token Exchange — the standard on-behalf-of flow (replaces the retired

@@ -5,7 +5,7 @@
 // schema, so a module and the core share ONE type — no mapping, no drift.
 package model
 
-import "github.com/hanzoai/iam2/internal/schema"
+import "github.com/hanzoai/iam/internal/schema"
 
 type (
 	User         = schema.User

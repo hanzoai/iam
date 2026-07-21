@@ -31,9 +31,9 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam2/internal/authz"
-	"github.com/hanzoai/iam2/internal/mfa/factor"
-	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // The TOTP factor type ("app") and the domain helpers are factor.App et al (internal/mfa/factor).

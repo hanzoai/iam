@@ -8,14 +8,14 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/applications"
-	"github.com/hanzoai/iam2/internal/httpx"
-	"github.com/hanzoai/iam2/internal/organizations"
-	"github.com/hanzoai/iam2/internal/projects"
-	"github.com/hanzoai/iam2/internal/providers"
-	"github.com/hanzoai/iam2/internal/roles"
-	"github.com/hanzoai/iam2/internal/schema"
-	"github.com/hanzoai/iam2/internal/users"
+	"github.com/hanzoai/iam/internal/applications"
+	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/organizations"
+	"github.com/hanzoai/iam/internal/projects"
+	"github.com/hanzoai/iam/internal/providers"
+	"github.com/hanzoai/iam/internal/roles"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/users"
 )
 
 // The Casdoor WRITE verbs (add-organization, add-user, update-user,
