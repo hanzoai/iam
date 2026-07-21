@@ -919,12 +919,18 @@ func UpdateApplication(id string, application *Application, isSuperAdmin bool, l
 
 	// Brand-wide shared login clients (<brand>-app) may NEVER be renamed — the login
 	// surface is keyed on the <org>-app name, so a rename breaks it: a brand-wide auth
-	// DoS, the RENAME twin of the DeleteApplication refusal. Pin the name back to the
-	// stored value SYMMETRICALLY across every white-label brand via the one predicate
-	// (replaces the old hanzo-app-only literal, which left lux/zoo/pars/adnexus/bootnode
-	// renamable through this same superadmin/service-token path).
+	// DoS, the RENAME twin of the DeleteApplication refusal. Pin the identity back to
+	// the stored value SYMMETRICALLY across every white-label brand via the one
+	// predicate (replaces the old hanzo-app-only literal, which left
+	// lux/zoo/pars/adnexus/bootnode renamable through this same superadmin/service-token
+	// path). BOTH Name and Organization are pinned: IsSharedLoginClient keys on
+	// Organization (name == org+"-app"), so pinning Name alone would let a superadmin
+	// STRIP the identity via an org-swap (→ IsSharedLoginClient false) and then delete
+	// it (strip-then-delete DoS). Pinning both makes "never mutated" literally true and
+	// closes that chain.
 	if IsSharedLoginClient(oldApplication) {
 		application.Name = oldApplication.Name
+		application.Organization = oldApplication.Organization
 	}
 
 	if name != application.Name {
