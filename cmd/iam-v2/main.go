@@ -30,14 +30,14 @@ import (
 	"github.com/hanzoai/base/core"
 	"github.com/spf13/cobra"
 
-	v2compare "github.com/hanzoai/iam/cmd/iam-v2/internal/compare"
-	v2routes "github.com/hanzoai/iam/cmd/iam-v2/internal/routes"
-	v2schema "github.com/hanzoai/iam/cmd/iam-v2/internal/schema"
+	v2compare "github.com/hanzoai/iam-v1/cmd/iam-v2/internal/compare"
+	v2routes "github.com/hanzoai/iam-v1/cmd/iam-v2/internal/routes"
+	v2schema "github.com/hanzoai/iam-v1/cmd/iam-v2/internal/schema"
 
 	// stack pins the canonical IAM v2 dependencies (hanzoai/orm,
 	// hanzoai/zip, hanzoai/authz) as direct deps even at Phase 0,
 	// before they're wired into request paths. See MIGRATION.md §2.
-	_ "github.com/hanzoai/iam/cmd/iam-v2/internal/stack"
+	_ "github.com/hanzoai/iam-v1/cmd/iam-v2/internal/stack"
 )
 
 var version = "(dev)"

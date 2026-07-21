@@ -24,13 +24,13 @@ import (
 	"time"
 
 	"github.com/hanzoai/beego/v2/core/logs"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/controllers"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/controllers"
+	"github.com/hanzoai/iam-v1/object"
 
 	"github.com/hanzoai/beego/v2/server/web/context"
-	"github.com/hanzoai/iam/authz"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/authz"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // getUsernameFromBearerToken extracts the user identity from a JWT Bearer token

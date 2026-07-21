@@ -45,7 +45,7 @@ import (
 
 	"github.com/alexedwards/argon2id"
 	"github.com/hanzoai/builder"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // ServiceAccountUserType is the User.Type discriminator for a service account.

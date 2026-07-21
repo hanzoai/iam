@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam/notification"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/notification"
+	"github.com/hanzoai/iam-v1/util"
 	notify "github.com/hanzoai/notify2"
 )
 

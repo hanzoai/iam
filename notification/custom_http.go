@@ -22,7 +22,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/hanzoai/iam/proxy"
+	"github.com/hanzoai/iam-v1/proxy"
 )
 
 type HttpNotificationClient struct {

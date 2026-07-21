@@ -36,7 +36,7 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // ── R-1: an app/<name> principal is NEVER a global admin (the unmask gate) ────

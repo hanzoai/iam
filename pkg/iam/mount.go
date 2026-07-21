@@ -4,7 +4,7 @@
 //
 // Wire shape:
 //
-//	import _ "github.com/hanzoai/iam"  // init() registers
+//	import _ "github.com/hanzoai/iam-v1"  // init() registers
 //
 // The init() function below calls cloud.Register("iam", 50, …). At
 // startup the cloud binary iterates the registry and calls Mount() for

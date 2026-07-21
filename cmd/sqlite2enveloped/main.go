@@ -57,7 +57,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 	sqlitedrv "github.com/hanzoai/sqlite"
 	"github.com/hanzoai/xorm"
 	"github.com/hanzoai/xorm/core"

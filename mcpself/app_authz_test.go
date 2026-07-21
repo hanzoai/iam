@@ -18,7 +18,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // TestAppToolAllowed_MutatingDeniedWithoutAllowlist closes the latent

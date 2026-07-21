@@ -22,7 +22,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hanzoai/iam/proxy"
+	"github.com/hanzoai/iam-v1/proxy"
 )
 
 func TestSyncPermanentAvatars(t *testing.T) {

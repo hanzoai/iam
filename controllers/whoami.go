@@ -30,8 +30,8 @@ package controllers
 import (
 	"net/http"
 
-	"github.com/hanzoai/iam/capauth"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/capauth"
+	"github.com/hanzoai/iam-v1/object"
 	"github.com/zap-proto/go/cap"
 )
 

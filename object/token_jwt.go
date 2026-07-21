@@ -23,8 +23,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/beego/v2/core/logs"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 type Claims struct {

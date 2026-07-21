@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hanzoai/iam/i18n"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/i18n"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 func checkPasswordExpired(user *User, lang string) error {

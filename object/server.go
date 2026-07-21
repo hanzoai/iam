@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/hanzoai/iam/mcp"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/mcp"
+	"github.com/hanzoai/iam-v1/util"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

@@ -15,7 +15,7 @@
 
 package controllers
 
-import "github.com/hanzoai/iam/object"
+import "github.com/hanzoai/iam-v1/object"
 
 // GetDashboard
 // @Title GetDashboard

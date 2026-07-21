@@ -97,7 +97,7 @@ func (p *DatabaseSyncerProvider) GetOriginalUsers() ([]*OriginalUser, error) {
 	}
 
 	// Memory leak problem handling
-	// https://github.com/hanzoai/iam/issues/1256
+	// https://github.com/hanzoai/iam-v1/issues/1256
 	users := p.Syncer.getOriginalUsersFromMap(results)
 	// Clear map contents to help garbage collection
 	for i := range results {

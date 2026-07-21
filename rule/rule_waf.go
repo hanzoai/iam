@@ -21,8 +21,8 @@ import (
 
 	"github.com/corazawaf/coraza/v3"
 	"github.com/corazawaf/coraza/v3/types"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/object"
 	"github.com/hsluoyz/modsecurity-go/seclang/parser"
 )
 

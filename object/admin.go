@@ -8,7 +8,7 @@
 
 package object
 
-import "github.com/hanzoai/iam/conf"
+import "github.com/hanzoai/iam-v1/conf"
 
 // Admin-vocabulary constructors. The IAM data model has two slots on every
 // row — owner (the org that owns it) and name (the resource). For the

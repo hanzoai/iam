@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/proxy"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/proxy"
 )
 
 var defaultStorageProvider *Provider = nil

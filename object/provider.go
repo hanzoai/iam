@@ -21,10 +21,10 @@ import (
 	"strings"
 
 	"github.com/hanzoai/beego/v2/server/web/context"
-	"github.com/hanzoai/iam/i18n"
-	"github.com/hanzoai/iam/idp"
-	"github.com/hanzoai/iam/idv"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/i18n"
+	"github.com/hanzoai/iam-v1/idp"
+	"github.com/hanzoai/iam-v1/idv"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 type Provider struct {

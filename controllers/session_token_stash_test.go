@@ -11,7 +11,7 @@ import (
 
 	beecontext "github.com/hanzoai/beego/v2/server/web/context"
 	"github.com/hanzoai/beego/v2/server/web/session"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // freshSessionStore returns a real (empty) Beego in-memory session store — the

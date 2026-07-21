@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/beego/v2/core/logs"
-	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam-v1/i18n"
 )
 
 var reRealName *regexp.Regexp

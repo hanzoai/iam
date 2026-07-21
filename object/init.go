@@ -21,8 +21,8 @@ import (
 	"os"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // bootstrapAdminPassword returns the plaintext to seed the admin user with.

@@ -18,7 +18,7 @@ package form
 import (
 	"strings"
 
-	"github.com/hanzoai/iam/i18n"
+	"github.com/hanzoai/iam-v1/i18n"
 )
 
 type VerificationForm struct {

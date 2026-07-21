@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/iam/xlsx"
+	"github.com/hanzoai/iam-v1/xlsx"
 )
 
 func getPermissionMap(owner string) (map[string]*Permission, error) {

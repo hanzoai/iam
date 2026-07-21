@@ -17,7 +17,7 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // TestAuthorizeLogin_NoPrivilegeEscalation is the safety proof for the

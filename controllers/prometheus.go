@@ -16,7 +16,7 @@
 package controllers
 
 import (
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 	"github.com/luxfi/metric"
 )
 

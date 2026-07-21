@@ -18,7 +18,7 @@ package ip
 import (
 	"fmt"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 func InitIpDb() {

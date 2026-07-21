@@ -19,7 +19,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 )

@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/beego/v2/core/logs"
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // sandboxOriginAllowlist returns hostname suffixes / exact values that are

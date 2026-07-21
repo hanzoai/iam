@@ -17,7 +17,7 @@ package object
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 // TestPromoteByEmailDomain_SuperAdminTierNeverAutoPromotedOnLogin is the direct

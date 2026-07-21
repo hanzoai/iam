@@ -18,8 +18,8 @@ package controllers
 import (
 	"fmt"
 
-	"github.com/hanzoai/iam/cred"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/cred"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 func (c *ApiController) checkOrgMasterVerificationCode(user *object.User, code string) (bool, error) {

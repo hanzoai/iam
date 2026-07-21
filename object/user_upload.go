@@ -20,9 +20,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hanzoai/iam/i18n"
-	"github.com/hanzoai/iam/util"
-	"github.com/hanzoai/iam/xlsx"
+	"github.com/hanzoai/iam-v1/i18n"
+	"github.com/hanzoai/iam-v1/util"
+	"github.com/hanzoai/iam-v1/xlsx"
 )
 
 func getUserMap(owner string) (map[string]*User, error) {

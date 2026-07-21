@@ -25,11 +25,11 @@ import (
 	"unicode"
 
 	goldap "github.com/go-ldap/ldap/v3"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/cred"
-	"github.com/hanzoai/iam/form"
-	"github.com/hanzoai/iam/i18n"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/cred"
+	"github.com/hanzoai/iam-v1/form"
+	"github.com/hanzoai/iam-v1/i18n"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 const (
@@ -292,7 +292,7 @@ func CheckPassword(user *User, password string, lang string, options ...bool) er
 	// Password auto-upgrade is DISABLED. IAM's re-hash produces unverifiable
 	// hashes for both argon2id and bcrypt, permanently locking users out.
 	// Passwords are set correctly at user creation / password reset time.
-	// See: https://github.com/hanzoai/iam/commit/abbffb64
+	// See: https://github.com/hanzoai/iam-v1/commit/abbffb64
 
 	return resetUserSigninErrorTimes(user)
 }

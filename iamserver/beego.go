@@ -23,16 +23,16 @@ import (
 
 	"github.com/hanzoai/beego/v2/core/logs"
 	"github.com/hanzoai/beego/v2/server/web"
-	"github.com/hanzoai/iam/authz"
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/controllers"
-	"github.com/hanzoai/iam/ldap"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/proxy"
-	"github.com/hanzoai/iam/radius"
-	"github.com/hanzoai/iam/routers"
-	"github.com/hanzoai/iam/service"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/authz"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/controllers"
+	"github.com/hanzoai/iam-v1/ldap"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/proxy"
+	"github.com/hanzoai/iam-v1/radius"
+	"github.com/hanzoai/iam-v1/routers"
+	"github.com/hanzoai/iam-v1/service"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // Run starts the IAM Beego server. This is the body of the original main().

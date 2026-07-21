@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // MaxOrgDepth bounds the reseller chain (tenant → reseller → distributor → …).

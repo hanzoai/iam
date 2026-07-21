@@ -17,7 +17,7 @@ package routers
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // confidentialClientSubject is the ONE canonical CC->subject rule shared by

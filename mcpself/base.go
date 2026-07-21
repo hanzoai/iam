@@ -21,7 +21,7 @@ import (
 	"net/http"
 
 	"github.com/hanzoai/beego/v2/server/web"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // MCP JSON-RPC 2.0 structures

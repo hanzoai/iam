@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hanzoai/iam/form"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/form"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // KerberosLogin

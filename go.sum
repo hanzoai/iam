@@ -909,6 +909,8 @@ github.com/hanzoai/go-openrouter v1.0.0 h1:oQTSk4mjBhdgbUMdVm6XxPQy4u0QNhQrEBuuE
 github.com/hanzoai/go-openrouter v1.0.0/go.mod h1:wC86avp4HRT7ZrvdwOIs3ZmnwUSkSeX2+HfLAAEYHVo=
 github.com/hanzoai/ha v0.1.1 h1:FyiD6mRAdAKbPRlzSqOWujvDG/O9OgZ3CHvqO+XRfsY=
 github.com/hanzoai/ha v0.1.1/go.mod h1:7G+gwkCWNpVsioNpKpK+x6ECoUYY2N/m/rlgPbxCqrA=
+github.com/hanzoai/iam v1.31.28 h1:bEKm4x7Ghy0LQD+GeMjeMhzBwIYjJV+6UlGwCkHCi4U=
+github.com/hanzoai/iam v1.31.28/go.mod h1:7kl/z2j0QQ+DFmQsq8S//ypDLkyl6VDsY4owK3fKbJU=
 github.com/hanzoai/iamsdk/v2 v2.1.2 h1:u86WwM76e46YUrDbvB5k5hD2g+t9oqT5PmssKC5+El8=
 github.com/hanzoai/iamsdk/v2 v2.1.2/go.mod h1:oBI91+bAbrIt2MEPYuXUM6NinpjwcREz85sccdDkUY4=
 github.com/hanzoai/idv v1.0.3 h1:x4v5VjCv8onxLsWRSOrRifxLdYEvYBQjYzgnv1NNeKg=

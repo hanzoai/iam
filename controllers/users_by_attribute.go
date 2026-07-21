@@ -70,8 +70,8 @@ import (
 	"time"
 
 	"github.com/hanzoai/beego/v2/core/logs"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // byAttributeMaxResults is the hard cap on results returned in a single

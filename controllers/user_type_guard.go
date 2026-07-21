@@ -35,8 +35,8 @@ package controllers
 import (
 	"net/http"
 
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/object"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/object"
 )
 
 // applicationUserType is the magic literal that GetClientCredentialsToken

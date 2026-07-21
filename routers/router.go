@@ -26,7 +26,7 @@ package routers
 
 import (
 	"github.com/hanzoai/beego/v2/server/web"
-	"github.com/hanzoai/iam/controllers"
+	"github.com/hanzoai/iam-v1/controllers"
 )
 
 func InitAPI() {

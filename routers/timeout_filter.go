@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/beego/v2/server/web/context"
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 var (

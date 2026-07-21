@@ -20,7 +20,7 @@ import (
 	"slices"
 
 	authz "github.com/hanzoai/authz"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 type Enforcer struct {

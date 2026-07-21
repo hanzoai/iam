@@ -20,10 +20,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/hanzoai/iam/conf"
-	"github.com/hanzoai/iam/i18n"
-	"github.com/hanzoai/iam/object"
-	"github.com/hanzoai/iam/util"
+	"github.com/hanzoai/iam-v1/conf"
+	"github.com/hanzoai/iam-v1/i18n"
+	"github.com/hanzoai/iam-v1/object"
+	"github.com/hanzoai/iam-v1/util"
 )
 
 // ResponseJsonData ...

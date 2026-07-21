@@ -30,7 +30,7 @@
 
 package mcpself
 
-import "github.com/hanzoai/iam/object"
+import "github.com/hanzoai/iam-v1/object"
 
 // appCapabilityForTool maps a mutating MCP tool to the capability an app/<name>
 // principal must hold. The bool reports whether the tool MUTATES state:

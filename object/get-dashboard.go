@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/iam/conf"
+	"github.com/hanzoai/iam-v1/conf"
 )
 
 type DashboardDateItem struct {
