@@ -213,11 +213,12 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 // authz.Scope. SCIM (RFC 7644, /v1/iam/scim/v2/Users/{id}) is path-targeted, so it
 // belongs here. This is the read analogue of a write deferring to the op-invoke
 // seam — the target is authorized where it is bound, not guessed from the query.
-// get-organization-projects is the one Casdoor read verb whose target rides in
-// ?organization= (the ScopeSwitcher's project list), not ?owner=/?id=/the path,
-// so the Guard cannot pre-authorize it generically; the handler scopes it through
-// authz.Scope instead (the read analogue of SCIM's path-targeted authorization).
-var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects", "/v1/iam/service-accounts", "/v1/iam/memberships"}
+// get-organization-projects (and its workspace tier, get-organization-workspaces)
+// is the Casdoor read verb whose target rides in ?organization= (the
+// ScopeSwitcher's project/workspace list), not ?owner=/?id=/the path, so the Guard
+// cannot pre-authorize it generically; the handler scopes it through authz.Scope
+// instead (the read analogue of SCIM's path-targeted authorization).
+var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects", "/v1/iam/get-organization-workspaces", "/v1/iam/service-accounts", "/v1/iam/memberships"}
 
 // pathAuthorized reports whether path is under a handler-authorized subtree.
 func pathAuthorized(path string) bool {
