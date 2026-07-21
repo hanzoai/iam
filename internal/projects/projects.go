@@ -55,6 +55,7 @@ type Input struct {
 	DisplayName  string   `json:"displayName"`
 	Description  string   `json:"description"`
 	Organization string   `json:"organization"`
+	Workspace    string   `json:"workspace"`
 	Tags         []string `json:"tags"`
 	Metadata     string   `json:"metadata"`
 	IsDefault    bool     `json:"isDefault"`
@@ -85,6 +86,7 @@ func apply(dst *schema.Project, in *Input) {
 	dst.DisplayName = in.DisplayName
 	dst.Description = in.Description
 	dst.Organization = pick(in.Organization, in.Owner)
+	dst.Workspace = in.Workspace
 	dst.Tags = in.Tags
 	dst.Metadata = in.Metadata
 	dst.IsDefault = in.IsDefault
