@@ -649,7 +649,11 @@ func (c *ApiController) Logout() {
 		}
 
 		application := c.GetSessionApplication()
-		if application == nil || application.Name == "hanzo-app" || application.HomepageUrl == "" {
+		// Post-logout: a brand-wide shared login client (<brand>-app, any brand) has no
+		// app-specific homepage to bounce to — symmetric across every white-label brand
+		// via the one predicate (was a hanzo-app-only name check, which sent lux/zoo/pars
+		// logouts to a brand homepage while hanzo stayed on the IAM page).
+		if application == nil || object.IsSharedLoginClient(application) || application.HomepageUrl == "" {
 			c.ResponseOk(user)
 			return
 		}
