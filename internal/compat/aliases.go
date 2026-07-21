@@ -68,6 +68,14 @@ func Route(app *zip.App, db orm.DB) {
 	// admin-gated the way the generic listers are).
 	app.Get("/v1/iam/get-organization-projects", orgProjectsHandler(db))
 
+	// get-organization-workspaces — the console ScopeSwitcher's workspace list, the
+	// tier above projects in the Organization → Workspace → Project hierarchy. Keyed
+	// by ?organization= exactly like get-organization-projects, so it is
+	// handler-authorized (authz's handlerAuthorizedPrefixes) the same way: the Guard
+	// authenticates, and this handler scopes the requested org through authz.Scope so
+	// a request parameter can never widen the read past the caller's tenant.
+	app.Get("/v1/iam/get-organization-workspaces", orgWorkspacesHandler(db))
+
 	// The Casdoor WRITE verbs (companion file), over the same store + authz seam.
 	routeWrites(app, db)
 }
@@ -89,6 +97,34 @@ func orgProjectsHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, err.Error())
 		}
 		q := orm.TypedQuery[schema.Project](db)
+		if owner != "" {
+			q = q.Filter("Owner=", owner)
+		}
+		rows, err := q.Order("Name").GetAll(ctx)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		return httpx.Ok(c, rows)
+	}
+}
+
+// orgWorkspacesHandler serves get-organization-workspaces: the org's workspace
+// list for the console ScopeSwitcher. The requested org rides in ?organization=
+// (or ?owner= as a fallback); authz.Scope pins a non-super to its own org, so a
+// request parameter can never widen the read past the caller's tenant. Workspaces
+// carry no secrets, so no Mask is applied.
+func orgWorkspacesHandler(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		ctx := c.Context()
+		requested := c.Query("organization")
+		if requested == "" {
+			requested = c.Query("owner")
+		}
+		owner, err := authz.Scope(ctx, requested)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		q := orm.TypedQuery[schema.Workspace](db)
 		if owner != "" {
 			q = q.Filter("Owner=", owner)
 		}

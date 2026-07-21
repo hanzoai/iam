@@ -46,6 +46,7 @@ import (
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/internal/wallet"
 	"github.com/hanzoai/iam/internal/webauthn"
+	"github.com/hanzoai/iam/internal/workspaces"
 )
 
 // Route registers the whole IAM v2 route surface on app, threading the entity
@@ -98,6 +99,7 @@ func Route(app *zip.App, db orm.DB) {
 	providers.Route(app, db)
 	roles.Route(app, db)
 	projects.Route(app, db)
+	workspaces.Route(app, db)
 	permission.Route(app, db)
 	certs.Route(app, db)
 	keys.Route(app, db)
