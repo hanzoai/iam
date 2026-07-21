@@ -13,4 +13,10 @@ type (
 	Organization = schema.Organization
 	Cert         = schema.Cert
 	Provider     = schema.Provider
+
+	// OrgRef is the (org, role) membership reference a token carries in its `orgs`
+	// claim. Exported here so a consumer (cloud) reads the tenancy set off a v2
+	// token WITHOUT importing the dead iam-v1 — the same shape and JSON tags, one
+	// canonical definition (schema.OrgRef), no drift.
+	OrgRef = schema.OrgRef
 )
