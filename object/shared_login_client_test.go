@@ -130,3 +130,44 @@ func TestUpdateApplicationRefusesRenamingSharedLoginClientsSymmetrically(t *test
 		t.Errorf("legit per-app rename was blocked: name pinned to %q", attempt.Name)
 	}
 }
+
+// TestUpdateApplicationPinsOrgOfSharedLoginClient closes the strip-then-delete chain
+// (RED LOW). IsSharedLoginClient keys on the MUTABLE Organization (name == org+"-app"),
+// so pinning only Name would let a superadmin org-swap a <brand>-app (→
+// IsSharedLoginClient false) and then delete it. UpdateApplication must pin BOTH Name
+// AND Organization of a shared login client, so the org-swap is a no-op and the app
+// stays a shared login client — a subsequent delete still refuses.
+func TestUpdateApplicationPinsOrgOfSharedLoginClient(t *testing.T) {
+	engine := newTestEngine(t)
+	if err := engine.Sync2(new(Application), new(Provider), new(Organization), new(User), new(Resource), new(Permission)); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	prev := ormer
+	t.Cleanup(func() { ormer = prev })
+	ormer = &Ormer{driverName: "sqlite", Engine: engine}
+
+	if _, err := engine.Insert(&Application{Owner: "admin", Name: "hanzo-app", Organization: "hanzo"}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// step1: superadmin attempts to STRIP the shared-client identity via an org-swap.
+	attempt := &Application{Owner: "admin", Name: "hanzo-app", Organization: "attacker"}
+	_, _ = UpdateApplication("admin/hanzo-app", attempt, true, "en")
+	if attempt.Organization != "hanzo" {
+		t.Errorf("org-swap on a shared login client was NOT pinned: got %q, want hanzo", attempt.Organization)
+	}
+	var got Application
+	if has, _ := engine.ID(PK{"admin", "hanzo-app"}).Get(&got); !has || got.Organization != "hanzo" {
+		t.Errorf("shared login client org changed on disk: has=%v org=%q, want hanzo", has, got.Organization)
+	}
+
+	// step2: because the org is still hanzo, hanzo-app is still a shared login client,
+	// so the delete leg of the chain still refuses — the app survives.
+	deleted, err := DeleteApplication(&Application{Owner: "admin", Name: "hanzo-app", Organization: "hanzo"}, true)
+	if deleted || err != nil {
+		t.Errorf("delete after failed org-swap = (%v, %v); want (false, nil) — shared client must survive", deleted, err)
+	}
+	if n, _ := engine.Where("name = ?", "hanzo-app").Count(&Application{}); n != 1 {
+		t.Errorf("shared login client hanzo-app was deleted (count=%d, want 1)", n)
+	}
+}
