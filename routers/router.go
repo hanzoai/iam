@@ -105,6 +105,12 @@ func InitAPI() {
 	web.Router("/v1/iam/add-project", &controllers.ApiController{}, "POST:AddProject")
 	web.Router("/v1/iam/update-project", &controllers.ApiController{}, "POST:UpdateProject")
 	web.Router("/v1/iam/delete-project", &controllers.ApiController{}, "POST:DeleteProject")
+	web.Router("/v1/iam/get-workspaces", &controllers.ApiController{}, "GET:GetWorkspaces")
+	web.Router("/v1/iam/get-workspace", &controllers.ApiController{}, "GET:GetWorkspace")
+	web.Router("/v1/iam/get-organization-workspaces", &controllers.ApiController{}, "GET:GetOrganizationWorkspaces")
+	web.Router("/v1/iam/add-workspace", &controllers.ApiController{}, "POST:AddWorkspace")
+	web.Router("/v1/iam/update-workspace", &controllers.ApiController{}, "POST:UpdateWorkspace")
+	web.Router("/v1/iam/delete-workspace", &controllers.ApiController{}, "POST:DeleteWorkspace")
 
 	// Org-membership plane (Membership = User × Org × Role, the `orgs` claim):
 	// the live read + the invite write. Controller-enforced authorization
