@@ -10,6 +10,8 @@ iam-v2
 *.db
 *.db-shm
 *.db-wal
+# committed test fixtures (encrypted-source migrator canvas vector)
+!cmd/migrate-v1/testdata/*.db
 
 # env / local
 .env
