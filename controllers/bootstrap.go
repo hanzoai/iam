@@ -80,6 +80,12 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		// admin-org apps can never be opened for self-signup. The operator sends
 		// this to lock (false) an app it provisions.
 		EnableSignUp *bool `json:"enableSignUp"`
+		// EnablePassword is an explicit tri-state: nil = keep the historical default
+		// (true — the app's login page offers password sign-in), true/false = honor
+		// verbatim. A PKCE-only public client (e.g. a per-published-app client) sends
+		// false so its hanzo.id login page never renders a password/registration form
+		// that writes into the shared brand directory — SSO/social only.
+		EnablePassword *bool `json:"enablePassword"`
 	}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
 		c.ResponseError(err.Error())
@@ -140,6 +146,12 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		if req.EnableSignUp != nil || existing.Organization == conf.AdminOrg {
 			existing.EnableSignUp = resolveBootstrapSignUp(existing.Organization, req.EnableSignUp)
 		}
+		// Password login on the update path: honor an explicit request so the operator
+		// can lock an already-provisioned app to PKCE/SSO-only (no password form). When
+		// the caller says nothing, the stored value is preserved (unchanged behavior).
+		if req.EnablePassword != nil {
+			existing.EnablePassword = *req.EnablePassword
+		}
 		// Bootstrap is system-level — bypass org-membership gate.
 		ok, err := object.UpdateApplication(id, existing, true, c.GetAcceptLanguage())
 		if err != nil {
@@ -171,17 +183,20 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 		return
 	}
 	app := &object.Application{
-		Owner:          owner,
-		Name:           req.Name,
-		Organization:   req.Organization,
-		DisplayName:    req.DisplayName,
-		ClientId:       req.ClientId,
-		ClientSecret:   req.ClientSecret,
-		GrantTypes:     req.GrantTypes,
-		RedirectUris:   req.RedirectUris,
-		ExpireInHours:  24,
-		TokenFormat:    "JWT",
-		EnablePassword: true,
+		Owner:         owner,
+		Name:          req.Name,
+		Organization:  req.Organization,
+		DisplayName:   req.DisplayName,
+		ClientId:      req.ClientId,
+		ClientSecret:  req.ClientSecret,
+		GrantTypes:    req.GrantTypes,
+		RedirectUris:  req.RedirectUris,
+		ExpireInHours: 24,
+		TokenFormat:   "JWT",
+		// Password login defaults ON (historical behavior for operator-seeded tenant
+		// apps) unless the caller explicitly disables it — a PKCE-only public client
+		// sends enablePassword:false so no password/registration form is offered.
+		EnablePassword: boolOr(req.EnablePassword, true),
 		// Self-signup is fail-secure: admin-org apps are ALWAYS created closed
 		// (self-registering into the admin org = instant global admin, since
 		// IsSuperAdmin()=user.Owner==conf.AdminOrg). Non-admin tenant apps keep
@@ -241,6 +256,74 @@ func (c *ApiController) BootstrapApplicationUpsert() {
 			"clientSecret": req.ClientSecret,
 		},
 		"created": created,
+	}
+	c.ServeJSON()
+}
+
+// BootstrapApplicationDelete
+//
+// Endpoint:  POST /v1/iam/admin/applications/delete
+// Auth:      service-token via Authorization: Bearer <token>
+//
+//	(HANZO_API_KEY / KMS_SERVICE_TOKEN / IAM_SERVICE_TOKEN; validated upstream by
+//	routers/auto_signin_filter.go before this handler runs.)
+//
+// Idempotent operator-driven application DEPROVISIONING — the delete twin of
+// BootstrapApplicationUpsert. Keeps an application's lifecycle bound to the resource
+// that owns it (e.g. a per-published-app client removed when its <slug>.<apex> host
+// binding is released on project delete). Deleting a non-existent app is a success
+// (nothing to do), so a caller's repeated reconcile is genuinely idempotent.
+//
+// Body: { "organization": "<org>", "name": "<app-name>" }  (both required)
+//
+// The shared brand app "hanzo-app" can NEVER be deleted here — object.DeleteApplication
+// hard-refuses it — so a bug in a caller can't take down the shared login client, and
+// DeleteApplication never touches org users (only the application row + its caches).
+func (c *ApiController) BootstrapApplicationDelete() {
+	// Same deny-by-default service-token gate as the upsert twin.
+	if !c.IsServiceTokenAuthenticated() {
+		c.ResponseError(c.T("auth:Unauthorized operation"))
+		return
+	}
+	var req struct {
+		Organization string `json:"organization"`
+		Name         string `json:"name"`
+	}
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	req.Organization = strings.TrimSpace(req.Organization)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Organization == "" || req.Name == "" {
+		c.ResponseError("organization and name are required")
+		return
+	}
+	id := req.Organization + "/" + req.Name
+	existing, _ := object.GetApplication(id)
+	if existing == nil {
+		// Nothing to delete — idempotent success.
+		c.Data["json"] = map[string]any{
+			"status": "ok", "action": "absent",
+			"data": map[string]string{"name": req.Name, "organization": req.Organization},
+		}
+		c.ServeJSON()
+		return
+	}
+	// System-level (service token): pass isSuperAdmin=true, mirroring the upsert's
+	// UpdateApplication(..., true, ...). DeleteApplication itself refuses the shared
+	// "hanzo-app" app; a per-app client is not capability-reserved, so this only ever
+	// removes the exact (org, name) row addressed above.
+	deleted, err := object.DeleteApplication(existing, true)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.Data["json"] = map[string]any{
+		"status":  "ok",
+		"action":  "deleted",
+		"data":    map[string]string{"name": req.Name, "organization": req.Organization},
+		"deleted": deleted,
 	}
 	c.ServeJSON()
 }
@@ -500,6 +583,16 @@ func pickNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// boolOr resolves an optional tri-state bool: the pointed-to value when set, else
+// the default. Used so an operator can explicitly disable a capability (e.g.
+// enablePassword:false) while an unset field preserves the historical default.
+func boolOr(p *bool, def bool) bool {
+	if p != nil {
+		return *p
+	}
+	return def
 }
 
 func isUniqueConstraintErr(err error) bool {

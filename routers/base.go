@@ -62,6 +62,11 @@ func isServiceTokenRoute(urlPath string) bool {
 		// HANZO_API_KEY/KMS_SERVICE_TOKEN/IAM_SERVICE_TOKEN service-token
 		// pipeline used by sync-init-data.
 		return true
+	case "/v1/iam/admin/applications/delete":
+		// Delete twin of applications/upsert — operator-driven deprovisioning
+		// (per-app client removed on project delete). Same service-token pipeline;
+		// object.DeleteApplication hard-refuses the shared "hanzo-app" app.
+		return true
 	case "/v1/iam/admin/users/upsert":
 		// Operator-driven user provisioning (LiquidIAM.spec.users[]). Same
 		// service-token pipeline as applications/upsert.
