@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	hsqlite "github.com/hanzoai/sqlite"
 	"github.com/hanzoai/sqlcipher"
+	hsqlite "github.com/hanzoai/sqlite"
 
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/store"
@@ -194,7 +194,7 @@ func TestEncryptedSource_GoldenChain(t *testing.T) {
 	workDir := t.TempDir()
 	dest := t.TempDir()
 
-	if err := runEncrypted(ctx, datadir, "MIGRATE_V1_TEST_MASTER_KEY", workDir, dest, false, nil); err != nil {
+	if err := runEncrypted(ctx, datadir, "MIGRATE_V1_TEST_MASTER_KEY", workDir, dest, false, nil, walMode{}); err != nil {
 		t.Fatalf("runEncrypted: %v", err)
 	}
 
@@ -277,7 +277,7 @@ func TestEncryptedSource_WrongMasterFailsLoud(t *testing.T) {
 	t.Setenv("MIGRATE_V1_TEST_MASTER_KEY", hex.EncodeToString(wrong))
 	dest := t.TempDir()
 
-	err := runEncrypted(ctx, datadir, "MIGRATE_V1_TEST_MASTER_KEY", t.TempDir(), dest, false, nil)
+	err := runEncrypted(ctx, datadir, "MIGRATE_V1_TEST_MASTER_KEY", t.TempDir(), dest, false, nil, walMode{})
 	if err == nil {
 		t.Fatal("wrong master key must fail loudly, got nil error")
 	}
