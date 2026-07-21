@@ -16,6 +16,7 @@ import (
 	"github.com/hanzoai/iam/internal/roles"
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/users"
+	"github.com/hanzoai/iam/internal/workspaces"
 )
 
 // The Casdoor WRITE verbs (add-organization, add-user, update-user,
@@ -38,6 +39,7 @@ func routeWrites(app *zip.App, db orm.DB) {
 	appCreate, appUpdate, appDelete := applications.Create(db), applications.Update(db), applications.Delete(db)
 	rolesH := roles.New(db)
 	projectsH := projects.New(db)
+	workspacesH := workspaces.New(db)
 	provAdd, provUpdate, provDelete := providers.Add(db), providers.Update(db), providers.Delete(db)
 
 	zip.Post(app, "/v1/iam/add-organization",
@@ -112,6 +114,16 @@ func routeWrites(app *zip.App, db orm.DB) {
 	zip.Post(app, "/v1/iam/delete-project",
 		func(ctx context.Context, in *projects.Ref) (*httpx.Response, error) { return envelope(projectsH.Delete(ctx, in)) },
 		zip.WithOperationID("deleteProject"), zip.WithSummary("Delete a project (Casdoor verb)"), zip.WithTags("compat"))
+
+	// Workspaces: add-/delete- (console ScopeSwitcher; the read rides
+	// get-organization-workspaces in aliases.go). Owner is the org, so app.Authorize
+	// gates a write to an org-admin of that org — the same clause as add-project.
+	zip.Post(app, "/v1/iam/add-workspace",
+		func(ctx context.Context, in *workspaces.Input) (*httpx.Response, error) { return envelope(workspacesH.Create(ctx, in)) },
+		zip.WithOperationID("addWorkspace"), zip.WithSummary("Create a workspace (Casdoor verb)"), zip.WithTags("compat"))
+	zip.Post(app, "/v1/iam/delete-workspace",
+		func(ctx context.Context, in *workspaces.Ref) (*httpx.Response, error) { return envelope(workspacesH.Delete(ctx, in)) },
+		zip.WithOperationID("deleteWorkspace"), zip.WithSummary("Delete a workspace (Casdoor verb)"), zip.WithTags("compat"))
 
 	// Organizations: update-/delete- (add-organization already above).
 	zip.Post(app, "/v1/iam/update-organization",
