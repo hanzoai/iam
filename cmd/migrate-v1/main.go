@@ -41,21 +41,39 @@ func main() {
 
 	fs := flag.NewFlagSet("migrate-v1", flag.ContinueOnError)
 	var (
-		srcPath = fs.String("src", "", "path to the legacy Casdoor SQLite iam.db (opened read-only)")
-		dest    = fs.String("dest", "", "clean IAM v2 data-dir (the store is <dest>/iam2.db) or a .db path")
-		dryRun  = fs.Bool("dry-run", false, "count + sample per entity without writing")
-		only    = fs.String("only", "", "comma list of entities: users,orgs,apps,certs,providers,roles,permissions (default all)")
+		srcPath      = fs.String("src", "", "path to a PLAINTEXT legacy Casdoor SQLite iam.db (opened read-only); mutually exclusive with --src-datadir")
+		srcDatadir   = fs.String("src-datadir", "", "root of the ENCRYPTED sharded source (<dir>/iam.db + <dir>/orgs/*/iam.db, each with a .dek sidecar); mutually exclusive with --src")
+		masterKeyEnv = fs.String("src-master-key-env", "IAM_KMS_MASTER_KEY", "NAME of the env var holding the 64-hex KMS master key (read for --src-datadir; never taken as an arg or logged)")
+		workDir      = fs.String("work-dir", "", "directory for decrypted temp files (default: OS temp); each is created 0600 and shredded after use")
+		dest         = fs.String("dest", "", "clean IAM v2 data-dir (the store is <dest>/iam2.db) or a .db path")
+		dryRun       = fs.Bool("dry-run", false, "count + sample per entity without writing")
+		only         = fs.String("only", "", "comma list of entities: users,orgs,apps,certs,providers,roles,permissions (default all)")
 	)
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		os.Exit(2)
 	}
-	if *srcPath == "" || *dest == "" {
-		fmt.Fprintln(os.Stderr, "migrate-v1: --src and --dest are required")
+	switch {
+	case *srcPath != "" && *srcDatadir != "":
+		fmt.Fprintln(os.Stderr, "migrate-v1: --src and --src-datadir are mutually exclusive")
+		fs.Usage()
+		os.Exit(2)
+	case *srcPath == "" && *srcDatadir == "":
+		fmt.Fprintln(os.Stderr, "migrate-v1: one of --src (plaintext) or --src-datadir (encrypted sharded) is required")
+		fs.Usage()
+		os.Exit(2)
+	case *dest == "":
+		fmt.Fprintln(os.Stderr, "migrate-v1: --dest is required")
 		fs.Usage()
 		os.Exit(2)
 	}
 
-	if err := run(ctx, *srcPath, *dest, *dryRun, splitOnly(*only)); err != nil {
+	var err error
+	if *srcDatadir != "" {
+		err = runEncrypted(ctx, *srcDatadir, *masterKeyEnv, *workDir, *dest, *dryRun, splitOnly(*only))
+	} else {
+		err = run(ctx, *srcPath, *dest, *dryRun, splitOnly(*only))
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "migrate-v1: %v\n", err)
 		os.Exit(1)
 	}
