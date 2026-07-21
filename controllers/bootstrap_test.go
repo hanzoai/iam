@@ -21,6 +21,24 @@ import (
 // ptr is a tiny helper to build the *bool tri-state in table tests.
 func ptr(b bool) *bool { return &b }
 
+// TestBoolOr locks the tri-state resolution used for enablePassword on the create
+// path: nil = historical default (true — password login on), an explicit value is
+// honored verbatim (a PKCE-only public client sends false).
+func TestBoolOr(t *testing.T) {
+	if !boolOr(nil, true) {
+		t.Error("boolOr(nil, true) = false; want true (unset preserves the default)")
+	}
+	if boolOr(nil, false) {
+		t.Error("boolOr(nil, false) = true; want false")
+	}
+	if boolOr(ptr(false), true) {
+		t.Error("boolOr(ptr(false), true) = true; want false (explicit false wins — PKCE-only client)")
+	}
+	if !boolOr(ptr(true), false) {
+		t.Error("boolOr(ptr(true), false) = false; want true (explicit true wins)")
+	}
+}
+
 // TestResolveBootstrapSignUp locks the fail-secure contract for operator-driven
 // application provisioning (BootstrapApplicationUpsert):
 //
