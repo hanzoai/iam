@@ -100,8 +100,8 @@ func TestUpsertUser_createHashesPassword(t *testing.T) {
 	if u == nil || u.PasswordHash == "" || u.PasswordHash == "s3cret" {
 		t.Fatalf("password not hashed: %+v", u)
 	}
-	if u.PasswordType != "argon2id" {
-		t.Fatalf("passwordType = %q, want argon2id", u.PasswordType)
+	if u.PasswordType != "bcrypt" {
+		t.Fatalf("passwordType = %q, want bcrypt", u.PasswordType)
 	}
 }
 

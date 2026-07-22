@@ -10,10 +10,8 @@
 // cutover. v1 resolves per row — user.PasswordType, falling back to the
 // organization's — and dispatches to the matching manager. iam2 does the same.
 //
-// Hashing is argon2id ONLY (SOTA). Verify stays scheme-aware so pre-existing
-// bcrypt and v1 argon2id rows keep validating, but every NEW or updated digest
-// this package mints is argon2id — one way to hash, the strongest one. Re-hashing
-// a verified bcrypt row to argon2id (upgrade-on-login) is a separate, deliberate
+// Verify-only by design: this package never hashes. Re-hashing a verified
+// password to a newer scheme (upgrade-on-login) is a separate, deliberate
 // decision, not a side effect of a read.
 package cred
 
@@ -76,28 +74,6 @@ func Verify(passwordType, plaintext, hashed string) bool {
 		return bcrypt.CompareHashAndPassword([]byte(hashed), []byte(plaintext)) == nil
 	}
 	return false
-}
-
-// hashParams are the argon2id cost parameters for every new digest — OWASP-aligned
-// SOTA (64 MiB memory, 2 passes, parallelism 1), tuned so a login stays well under
-// ~100ms while resisting GPU/ASIC cracking. The parameters + a per-hash random salt
-// ride INSIDE the PHC string, so Verify reads them from the digest itself — changing
-// these never invalidates an already-stored hash.
-var hashParams = &argon2id.Params{
-	Memory:      64 * 1024, // 64 MiB
-	Iterations:  2,
-	Parallelism: 1,
-	SaltLength:  16,
-	KeyLength:   32,
-}
-
-// Hash derives a one-way argon2id (PHC) digest from a plaintext password — the
-// SOTA scheme every new/updated Hanzo password uses, stamped TypeArgon2id. The
-// cost parameters and a per-hash random salt are embedded in the returned string,
-// so Verify needs no external salt or config. The plaintext is never logged or
-// stored; only this one-way digest is.
-func Hash(plaintext string) (string, error) {
-	return argon2id.CreateHash(plaintext, hashParams)
 }
 
 // ConstantTimeEqual is a small helper for comparing non-hash secrets (e.g. a

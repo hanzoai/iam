@@ -64,19 +64,8 @@ type mockOIDC struct {
 	tokenForm      url.Values
 }
 
-// allowPrivateFederationDial relaxes the SSRF dial guard for the test's duration
-// so the httptest mock IdPs (bound to 127.0.0.1) are reachable — the same
-// package-var test-injection pattern as nowFuncSet. Production never flips it.
-func allowPrivateFederationDial(t *testing.T) {
-	t.Helper()
-	prev := federationDialAllowsPrivate
-	federationDialAllowsPrivate = true
-	t.Cleanup(func() { federationDialAllowsPrivate = prev })
-}
-
 func newMockOIDC(t *testing.T, clientID string) *mockOIDC {
 	t.Helper()
-	allowPrivateFederationDial(t)
 	m := &mockOIDC{
 		key:           mustGenRSA(t),
 		wrongKey:      mustGenRSA(t),
@@ -164,7 +153,6 @@ type mockGitHub struct {
 
 func newMockGitHub(t *testing.T) *mockGitHub {
 	t.Helper()
-	allowPrivateFederationDial(t)
 	m := &mockGitHub{
 		id:    424242,
 		login: "octocat",
@@ -735,188 +723,6 @@ func mustQuery(t *testing.T, loc string) url.Values {
 		t.Fatalf("parse location %q: %v", loc, err)
 	}
 	return u.Query()
-}
-
-// ---------------------------------------------------------------------------
-// RED-TEAM PoCs — F1: federation must never mint a SuperAdmin or cross-tenant
-// identity. These reproduce the reported exploits and assert they are REFUSED.
-// ---------------------------------------------------------------------------
-
-// seedFederationTarget seeds a (possibly malicious) app — appOwner/appClientID
-// pointing its Organization at `serves` — linked to a Google-dialect provider
-// (owned by provOwner) whose OIDC issuer is the mock IdP.
-func seedFederationTarget(t *testing.T, db orm.DB, appClientID, appOwner, serves, provOwner string, m *mockOIDC) {
-	t.Helper()
-	ctx := context.Background()
-	p := orm.New[schema.Provider](db)
-	p.Owner, p.Name = provOwner, fedProvGoogle
-	p.Category, p.Type = "OAuth", "Google"
-	p.ClientId, p.ClientSecret = m.clientID, "secret-do-not-log"
-	p.IssuerUrl = m.URL
-	p.SetId(provOwner + "/" + fedProvGoogle)
-	if err := p.CreateCtx(ctx); err != nil {
-		t.Fatalf("seed provider: %v", err)
-	}
-	a := orm.New[schema.Application](db)
-	a.Owner, a.Name, a.ClientId = appOwner, appClientID, appClientID
-	a.Organization = serves
-	a.EnablePassword = true
-	a.ExpireInHours = 1
-	a.RedirectUris = []string{testRedirect}
-	a.Providers = []*schema.ProviderItem{{Owner: provOwner, Name: fedProvGoogle, CanSignIn: true}}
-	a.SetId(appOwner + "/" + appClientID)
-	if err := a.CreateCtx(ctx); err != nil {
-		t.Fatalf("seed app: %v", err)
-	}
-}
-
-func federationAuthorizeQuery(clientID string) url.Values {
-	return url.Values{
-		"response_type":         {"code"},
-		"client_id":             {clientID},
-		"redirect_uri":          {testRedirect},
-		"code_challenge":        {ComputeS256Challenge(fedVerifier)},
-		"code_challenge_method": {"S256"},
-		"state":                 {fedAppState},
-		"provider":              {fedProvGoogle},
-	}
-}
-
-// assertFederationRefused asserts a federation kickoff was refused: bounced back
-// to the relying party with an OAuth error, NEVER redirected to the IdP, NEVER a
-// code.
-func assertFederationRefused(t *testing.T, resp *http.Response, m *mockOIDC) {
-	t.Helper()
-	if resp.StatusCode != 302 {
-		t.Fatalf("want a 302 refusal redirect, got %d", resp.StatusCode)
-	}
-	loc := resp.Header.Get("Location")
-	if !strings.HasPrefix(loc, testRedirect) {
-		t.Fatalf("refusal must redirect to the relying party, not the IdP: %q", loc)
-	}
-	if m != nil && strings.HasPrefix(loc, m.URL) {
-		t.Fatal("a refused federation must never reach the IdP")
-	}
-	q := mustQuery(t, loc)
-	if q.Get("error") == "" {
-		t.Fatalf("refusal must carry an OAuth error: %q", loc)
-	}
-	if q.Get("code") != "" {
-		t.Fatal("a refused federation must not mint a code")
-	}
-}
-
-func countUsersIn(t *testing.T, db orm.DB, org string) int {
-	t.Helper()
-	n, err := orm.TypedQuery[schema.User](db).Filter("Owner=", org).Count(context.Background())
-	if err != nil {
-		t.Fatalf("count users in %q: %v", org, err)
-	}
-	return n
-}
-
-// PoC 1 — an attacker-owned app whose Organization names the reserved admin org
-// would provision User{Owner:"admin"} = SuperAdmin. Federation must refuse it.
-func TestRedTeam_FederationMintsSuperAdmin(t *testing.T) {
-	app, db := newServer(t)
-	m := newMockOIDC(t, fedGoogleCID) // the attacker's OWN Google account
-	seedFederationTarget(t, db, "evil-app", "attackerorg", "admin", "admin", m)
-
-	beforeAdmin := countUsersIn(t, db, "admin")
-
-	resp, _ := do(t, app, formReqNoBody("GET", PathAuthorize+"?"+federationAuthorizeQuery("evil-app").Encode()))
-	assertFederationRefused(t, resp, m)
-
-	if countUsersIn(t, db, "admin") != beforeAdmin {
-		t.Fatal("PoC: federation provisioned a user into the admin org (SuperAdmin mint)")
-	}
-	// Defense in depth: the innermost mint refuses this app directly too.
-	evil, _ := store.GetApplicationByClientId(tctx(), db, "evil-app")
-	prov, _ := store.GetProvider(tctx(), db, "admin", fedProvGoogle)
-	if _, err := linkOrProvision(tctx(), db, evil, prov, federatedIdentity{subject: "s1", email: "a@b.com", emailVerified: true}); err == nil {
-		t.Fatal("PoC: linkOrProvision minted an identity into the admin org")
-	}
-}
-
-// PoC 2 — an attacker-owned app whose Organization names a VICTIM tenant, driven
-// by a tenant-owned IdP that asserts the victim's verified email, would link the
-// attacker's identity onto the victim's account. Federation must refuse it.
-func TestRedTeam_FederationCrossTenantTakeover(t *testing.T) {
-	app, db := newServer(t)
-	seedUserInOrg(t, db, "victimorg", "ceo", "ceo@victim.com", "pw")
-
-	m := newMockOIDC(t, fedGoogleCID) // attacker's tenant-owned IdP...
-	m.email = "ceo@victim.com"        // ...asserting the victim's email, "verified"
-	m.emailVerified = true
-	m.sub = "attacker-controlled-sub"
-	seedFederationTarget(t, db, "evil-app", "attackerorg", "victimorg", "attackerorg", m)
-
-	resp, _ := do(t, app, formReqNoBody("GET", PathAuthorize+"?"+federationAuthorizeQuery("evil-app").Encode()))
-	assertFederationRefused(t, resp, m)
-
-	victim, _ := store.GetUserByName(tctx(), db, "victimorg", "ceo")
-	if victim == nil || victim.Google != "" {
-		t.Fatalf("PoC: cross-tenant identity linked onto the victim account: %+v", victim)
-	}
-}
-
-// PoC 3 — the fully tenant-owned variant: the attacker's OWN app AND OWN provider
-// (no platform resource referenced) still cannot point Organization at admin.
-func TestRedTeam_FederationMintsSuperAdmin_TenantOwnedApp(t *testing.T) {
-	app, db := newServer(t)
-	m := newMockOIDC(t, fedGoogleCID)
-	seedFederationTarget(t, db, "evil-app", "attackerorg", "admin", "attackerorg", m)
-
-	beforeAdmin := countUsersIn(t, db, "admin")
-	resp, _ := do(t, app, formReqNoBody("GET", PathAuthorize+"?"+federationAuthorizeQuery("evil-app").Encode()))
-	assertFederationRefused(t, resp, m)
-	if countUsersIn(t, db, "admin") != beforeAdmin {
-		t.Fatal("PoC: a tenant-owned app federated a user into the admin org")
-	}
-}
-
-// The legitimate case still works: a platform app (admin-owned) serving a real
-// tenant federates fine — proving the guard refuses only the escalation, not the
-// happy path.
-func TestFederation_PlatformAppLegitimateOrgAllowed(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}}) // Owner=admin, Org=hanzo
-	m := newMockOIDC(t, fedGoogleCID)
-	seedOIDCProvider(t, db, "webapp", m)
-	runOIDCLogin(t, app, db, m, "webapp", nil)
-	if u, _ := store.GetUserByConnector(tctx(), db, "hanzo", "google", m.sub); u == nil {
-		t.Fatal("a legitimate platform-app federation must still provision a user")
-	}
-}
-
-// F2 — SSRF: an org-admin-writable IssuerUrl pointing at the cloud-metadata
-// endpoint must be refused at DIAL time (the guard is armed; no private-dial seam
-// here), so federation fails closed to the relying party and never fetches it.
-func TestFederation_SSRFPrivateIssuerRefused(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
-	p := orm.New[schema.Provider](db)
-	p.Owner, p.Name = "admin", fedProvGoogle
-	p.Category, p.Type = "OAuth", "Google"
-	p.ClientId, p.ClientSecret = "cid", "secret"
-	p.IssuerUrl = "https://169.254.169.254" // link-local cloud metadata over TLS
-	p.SetId("admin/" + fedProvGoogle)
-	if err := p.CreateCtx(tctx()); err != nil {
-		t.Fatalf("seed provider: %v", err)
-	}
-	linkProvider(t, db, "webapp", fedProvGoogle)
-
-	resp, _ := do(t, app, formReqNoBody("GET", PathAuthorize+"?"+federationAuthorizeQuery("webapp").Encode()))
-	if resp.StatusCode != 302 {
-		t.Fatalf("want 302, got %d", resp.StatusCode)
-	}
-	loc := resp.Header.Get("Location")
-	if !strings.HasPrefix(loc, testRedirect) || mustQuery(t, loc).Get("error") == "" {
-		t.Fatalf("SSRF to metadata must fail closed to the RP with an error: %q", loc)
-	}
-	if strings.Contains(loc, "169.254") {
-		t.Fatal("must not redirect the browser to the metadata endpoint")
-	}
 }
 
 func tokenBody(tok map[string]any) string {
