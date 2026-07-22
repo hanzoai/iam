@@ -14,16 +14,19 @@
 //	GET;POST /v1/iam/registry/token  — Docker Registry v2 token auth
 //	GET      /v1/iam/registry/jwks   — the verifying key (ROOTCERTBUNDLE trust set)
 //
-// Authentication accepts three credential shapes, all fail-closed, and every USER
-// shape is BOUND to the platform candidateOrgs {admin, hanzo} — the v1 trust
-// boundary (v1 only ever authenticated users in those two orgs). A user in any
-// other tenant org is NOT a registry identity and gets no token:
-//   - a user password (resolved WITHIN candidateOrgs, verified through the SAME
-//     cred path login uses),
-//   - a confidential application's clientId:clientSecret (the CI/service account),
-//   - a Hanzo API key (hk-/pk-/sk-, resolved through store.UserByAccessKey then
-//     bound to candidateOrgs — the key resolves its OWNER's org, so this bound is
-//     what stops a foreign-tenant key from authenticating).
+// Authentication accepts three credential shapes, all fail-closed. Each resolves a
+// principal that carries its OWNER org, and authenticate binds that owner to the
+// platform candidateOrgs {admin, hanzo} in ONE authoritative gate — the v1 trust
+// boundary (v1 only ever authenticated users in those two orgs). A principal in any
+// other tenant org gets no token. ALL THREE shapes pass through the same gate, so a
+// foreign tenant is denied whether it presents:
+//   - a user password (also resolved WITHIN candidateOrgs, verified through the
+//     SAME cred path login uses),
+//   - a Hanzo API key (hk-/pk-/sk-, resolved via store.UserByAccessKey — which
+//     resolves the key's OWNER, any org — then gated),
+//   - a confidential application's clientId:clientSecret (store.GetApplicationBy
+//     ClientId resolves GLOBALLY, so the gate on app.Owner is what stops a tenant
+//     app minted in its OWN org from becoming a privileged push identity).
 //
 // Authorization: push (privileged) requires a service account, OR a user that owns
 // a platform SIGNING-trust org (admin/built-in) and is an admin/SuperAdmin there
@@ -113,10 +116,14 @@ type access struct {
 }
 
 // principal is the authenticated identity the token is minted for: `subject` is
-// the `sub` claim (owner/name for a user, clientId for a service account) and
-// `privileged` decides whether push is granted.
+// the `sub` claim (owner/name for a user, clientId for a service account),
+// `owner` is the tenant org that credential belongs to (the user's org, or the
+// application's Owner), and `privileged` decides whether push is granted. `owner`
+// is what the ONE candidateOrgs gate in authenticate enforces, so EVERY credential
+// path — key, password, service account — is bound by construction.
 type principal struct {
 	subject    string
+	owner      string
 	privileged bool
 }
 
@@ -189,24 +196,35 @@ func credentials(c *zip.Ctx, req *fasthttp.Request) (id, secret string) {
 	return formOrQuery(req, "username"), formOrQuery(req, "password")
 }
 
-// authenticate resolves (id, secret) to a principal, or nil when no shape
-// authenticates. Ordered, each fail-closed; the first that authenticates wins.
-// EVERY user shape is bound to the platform candidateOrgs {admin, hanzo} — the v1
-// trust boundary: v1 only ever authenticated users in those two orgs, so a user
-// (however credentialed) whose owner is any other tenant is NOT a registry
-// identity and gets no token. This is the boundary the cross-tenant key-auth hole
-// violated: the key path resolves a user in the key's OWN org, so without this
-// bound a self-onboarded tenant admin could authenticate and (being IsAdmin) push.
+// authenticate resolves (id, secret) to a registry principal, or nil. It is the
+// ONE trust boundary: resolve() finds WHO the credential is (any org), and this
+// function then binds that principal to the platform candidateOrgs {admin, hanzo}
+// in a SINGLE authoritative gate. This is the v1 boundary — v1 only ever
+// authenticated users in those two orgs — and, crucially, it is enforced ONCE over
+// whatever principal any credential path returns, so a NEW credential path can
+// never silently skip it (the class of bug that let the key AND the service-account
+// paths reach privileged push from a foreign tenant). A principal whose owner is
+// any other tenant gets no token.
+func (h *handler) authenticate(ctx context.Context, id, secret string) *principal {
+	p := h.resolve(ctx, id, secret)
+	if p == nil || !inCandidateOrg(p.owner) {
+		return nil // no credential matched, or a foreign-tenant principal — denied
+	}
+	return p
+}
+
+// resolve finds the principal a credential authenticates as — WITHOUT the org
+// bound (authenticate applies that once). Ordered, each fail-closed; first match
+// wins:
 //
 //  1. API key — an hk-/pk-/sk- value (in the secret, or the username for the
-//     token-as-username clients) resolved through store.UserByAccessKey, then
-//     BOUND to candidateOrgs. Keyed by an unambiguous prefix, so it never captures
-//     a password or clientId.
+//     token-as-username clients) resolved through store.UserByAccessKey. Keyed by
+//     an unambiguous prefix, so it never captures a password or clientId.
 //  2. User password — resolved WITHIN candidateOrgs and verified through the SAME
 //     cred path login uses.
 //  3. Service account — a confidential application's clientId:clientSecret,
 //     compared in constant time. This is the CI/machine push identity.
-func (h *handler) authenticate(ctx context.Context, id, secret string) *principal {
+func (h *handler) resolve(ctx context.Context, id, secret string) *principal {
 	for _, cand := range []string{secret, id} {
 		if u := h.userByKey(ctx, cand); u != nil {
 			return userPrincipal(u)
@@ -224,12 +242,8 @@ func (h *handler) authenticate(ctx context.Context, id, secret string) *principa
 // userByKey resolves a Hanzo API key to its user, fail-closed: an empty, unknown,
 // or non-key value (any error, incl. orm.ErrNotFound) yields nil — never a wrong
 // or fallback principal. It reuses the ONE key resolver (store.UserByAccessKey);
-// there is no second key path.
-//
-// The resolved user is then BOUND to candidateOrgs {admin, hanzo}. store.UserBy
-// AccessKey resolves the key's OWNER — any tenant org — so without this bound a
-// foreign-tenant key would authenticate on the shared registry (the cross-tenant
-// hole). A key belonging to any other org resolves to nil here: denied, no token.
+// there is no second key path. The key resolves its OWNER's org (any tenant); the
+// candidateOrgs bound is applied ONCE in authenticate, not here.
 func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 	if strings.TrimSpace(key) == "" {
 		return nil
@@ -237,9 +251,6 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 	u, err := store.UserByAccessKey(ctx, h.db, key)
 	if err != nil || u == nil {
 		return nil
-	}
-	if !inCandidateOrg(u.Owner) {
-		return nil // foreign-tenant key — outside the registry trust boundary
 	}
 	return u
 }
@@ -266,6 +277,13 @@ func (h *handler) userByPassword(ctx context.Context, id, secret string) *schema
 // in constant time — the CI/machine push identity, a KMS-distributed credential
 // (e.g. app hanzo-registry) granted push so builds push without a human user. A
 // secret-less application is never a valid credential.
+//
+// The principal carries the application's OWNER, so the authenticate gate binds it
+// to candidateOrgs exactly like the user paths. store.GetApplicationByClientId
+// resolves GLOBALLY across every org, so without that bound an app a tenant created
+// in its OWN org (Owner="evil") would authenticate as a privileged push identity on
+// the shared registry — the F-R1 cross-tenant hole. A tenant-org app is denied at
+// the gate; a real CI/service account lives in the admin/hanzo org and passes.
 func (h *handler) serviceAccount(ctx context.Context, id, secret string) *principal {
 	app, err := store.GetApplicationByClientId(ctx, h.db, id)
 	if err != nil || app == nil || app.ClientSecret == "" {
@@ -274,15 +292,18 @@ func (h *handler) serviceAccount(ctx context.Context, id, secret string) *princi
 	if subtle.ConstantTimeCompare([]byte(app.ClientSecret), []byte(secret)) != 1 {
 		return nil
 	}
-	// A service account is privileged: it exists to push.
-	return &principal{subject: id, privileged: true}
+	// A service account is privileged: it exists to push. The candidateOrgs gate
+	// on app.Owner (in authenticate) is what keeps that privilege in-platform.
+	return &principal{subject: id, owner: app.Owner, privileged: true}
 }
 
-// userPrincipal projects a user into a token principal: `sub` is owner/name; push
+// userPrincipal projects a user into a token principal: `sub` is owner/name,
+// `owner` is the user's org (bound to candidateOrgs by authenticate), and push
 // (privileged) is gated by userPrivileged.
 func userPrincipal(u *schema.User) *principal {
 	return &principal{
 		subject:    u.Owner + "/" + u.Name,
+		owner:      u.Owner,
 		privileged: userPrivileged(u),
 	}
 }
