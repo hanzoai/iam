@@ -14,26 +14,35 @@
 //	GET;POST /v1/iam/registry/token  — Docker Registry v2 token auth
 //	GET      /v1/iam/registry/jwks   — the verifying key (ROOTCERTBUNDLE trust set)
 //
-// Authentication accepts three credential shapes, all fail-closed:
-//   - a user password (verified through the SAME cred path login uses),
+// Authentication accepts three credential shapes, all fail-closed, and every USER
+// shape is BOUND to the platform candidateOrgs {admin, hanzo} — the v1 trust
+// boundary (v1 only ever authenticated users in those two orgs). A user in any
+// other tenant org is NOT a registry identity and gets no token:
+//   - a user password (resolved WITHIN candidateOrgs, verified through the SAME
+//     cred path login uses),
 //   - a confidential application's clientId:clientSecret (the CI/service account),
-//   - a Hanzo API key (hk-/pk-/sk-, resolved through store.UserByAccessKey).
+//   - a Hanzo API key (hk-/pk-/sk-, resolved through store.UserByAccessKey then
+//     bound to candidateOrgs — the key resolves its OWNER's org, so this bound is
+//     what stops a foreign-tenant key from authenticating).
 //
-// Authorization mirrors the registry the endpoint fronts: a privileged principal
-// (service account, admin, or SuperAdmin) receives every requested action; any
-// other authenticated principal is restricted to `pull`. An action a principal is
-// not authorized for is dropped, and a scope left with no authorized action is
-// omitted entirely — never a silent grant.
+// Authorization: push (privileged) requires a service account, OR a user that owns
+// a platform SIGNING-trust org (admin/built-in) and is an admin/SuperAdmin there
+// (userPrivileged). A tenant/platform org-admin is NEVER privileged — IsAdmin is
+// set on every org creator, so it is not, alone, a push signal. Any other
+// authenticated principal is restricted to `pull`. An action not authorized is
+// dropped, and a scope left with no authorized action is omitted entirely — never
+// a silent grant.
 //
 // POLICY (owner decision, deliberately preserved — do NOT silently change):
 // "any authenticated identity may `pull` any repository" is the EXISTING Casdoor
-// (iam-v1) behavior this port reproduces byte-for-byte so the identity cutover is
-// pure parity, not a policy shift. Pulls are NOT org-scoped. Tightening this to
-// per-org pull authorization is a legitimate future hardening, but it is an OWNER
-// call, not a port detail: CI and cluster nodes pull cross-org base images through
-// this realm, so narrowing pull scope here can break the image supply chain. If
-// that change is made, do it as an explicit, tested policy decision — never as an
-// incidental edit to scopeAccess/authorizeActions.
+// (iam-v1) behavior this port reproduces so the identity cutover is pure parity,
+// not a policy shift — BUT "authenticated" is now bounded to candidateOrgs, so a
+// foreign tenant can neither push nor pull. Pulls remain NOT per-repo-org-scoped
+// within {admin, hanzo}. Tightening pull to per-org authorization is a legitimate
+// future hardening, but an OWNER call, not a port detail: CI and cluster nodes
+// pull cross-org base images through this realm, so narrowing pull scope here can
+// break the image supply chain. If made, do it as an explicit, tested policy
+// decision — never as an incidental edit to scopeAccess/authorizeActions.
 package registry
 
 import (
@@ -60,28 +69,29 @@ const (
 )
 
 // Route registers the registry token + JWKS endpoints on r (the PUBLIC group),
-// backed by db and the process signing key. Called once from routes.Route. The
-// key is resolved here — at mount, i.e. boot — so a production misconfiguration
-// (REGISTRY_REQUIRE_PERSISTENT_SIGNING_KEY set, no key) fails the boot, not a
-// live docker push.
+// backed by db and the process signing keyring. Called once from routes.Route.
+// The keyring is passed as a lazy resolver (processKeyring): mounting never forces
+// key resolution, so every host that mounts the full IAM surface (routes.Route)
+// comes up even with no registry key configured; only an actual registry request
+// resolves, and a fail-closed resolution answers 503 (never an untrusted token).
 func Route(r zip.Router, db orm.DB) {
-	mount(r, db, processKeyring())
+	mount(r, db, processKeyring)
 }
 
-// mount is the registration seam Route and the tests share: it wires a resolved
-// keyring into a handler and registers the routes, so a test drives the SAME
+// mount is the registration seam Route and the tests share: it wires a keyring
+// resolver into a handler and registers the routes, so a test drives the SAME
 // handlers with an injected key and never touches process/env state.
-func mount(r zip.Router, db orm.DB, kr *keyring) {
-	h := &handler{db: db, kr: kr}
+func mount(r zip.Router, db orm.DB, key func() (*keyring, error)) {
+	h := &handler{db: db, key: key}
 	r.Get(PathToken, h.token)
 	r.Post(PathToken, h.token)
 	r.Get(PathJWKS, h.jwks)
 }
 
-// handler holds the store and the process signing keyring.
+// handler holds the store and the lazy signing-keyring resolver.
 type handler struct {
-	db orm.DB
-	kr *keyring
+	db  orm.DB
+	key func() (*keyring, error)
 }
 
 // tokenResponse is the Docker registry v2 token JSON. `token` is what the GET flow
@@ -115,6 +125,12 @@ type principal struct {
 // OAuth2 POST flow (form username/password + form scopes). Either way it
 // authenticates the credential and returns a short-lived scoped JWT.
 func (h *handler) token(c *zip.Ctx) error {
+	kr, err := h.key()
+	if err != nil {
+		// Fail closed: no trusted signing key ⇒ no token. Never mint under an
+		// untrusted (e.g. ephemeral) key the registry's ROOTCERTBUNDLE rejects.
+		return c.JSON(503, map[string]string{"error": "registry signing key unavailable"})
+	}
 	req := c.Fiber().Request()
 	service := formOrQuery(req, "service")
 
@@ -131,7 +147,7 @@ func (h *handler) token(c *zip.Ctx) error {
 	acc := scopeAccess(scopes(req), p.privileged)
 
 	now := time.Now()
-	tok, err := h.kr.sign(p.subject, service, acc, now)
+	tok, err := kr.sign(p.subject, service, acc, now)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": "failed to sign token"})
 	}
@@ -144,9 +160,15 @@ func (h *handler) token(c *zip.Ctx) error {
 }
 
 // jwks serves the verifying key so registry:2's ROOTCERTBUNDLE (and any relying
-// party) verifies the tokens this endpoint issues.
+// party) verifies the tokens this endpoint issues. Fails closed (503) when no
+// trusted key resolves — the same key backs signing and this JWKS, so publishing
+// one without the other would be incoherent.
 func (h *handler) jwks(c *zip.Ctx) error {
-	return c.JSON(200, h.kr.publicJWKS())
+	kr, err := h.key()
+	if err != nil {
+		return c.JSON(503, map[string]string{"error": "registry signing key unavailable"})
+	}
+	return c.JSON(200, kr.publicJWKS())
 }
 
 // challenge writes the 401 a docker client expects: a WWW-Authenticate Basic
@@ -168,13 +190,20 @@ func credentials(c *zip.Ctx, req *fasthttp.Request) (id, secret string) {
 }
 
 // authenticate resolves (id, secret) to a principal, or nil when no shape
-// authenticates. Ordered, each fail-closed; the first that authenticates wins:
+// authenticates. Ordered, each fail-closed; the first that authenticates wins.
+// EVERY user shape is bound to the platform candidateOrgs {admin, hanzo} — the v1
+// trust boundary: v1 only ever authenticated users in those two orgs, so a user
+// (however credentialed) whose owner is any other tenant is NOT a registry
+// identity and gets no token. This is the boundary the cross-tenant key-auth hole
+// violated: the key path resolves a user in the key's OWN org, so without this
+// bound a self-onboarded tenant admin could authenticate and (being IsAdmin) push.
 //
 //  1. API key — an hk-/pk-/sk- value (in the secret, or the username for the
-//     token-as-username clients) resolved through store.UserByAccessKey. Keyed by
-//     an unambiguous prefix, so it never captures a password or clientId.
-//  2. User password — verified through the SAME cred path login uses, across the
-//     platform candidate orgs.
+//     token-as-username clients) resolved through store.UserByAccessKey, then
+//     BOUND to candidateOrgs. Keyed by an unambiguous prefix, so it never captures
+//     a password or clientId.
+//  2. User password — resolved WITHIN candidateOrgs and verified through the SAME
+//     cred path login uses.
 //  3. Service account — a confidential application's clientId:clientSecret,
 //     compared in constant time. This is the CI/machine push identity.
 func (h *handler) authenticate(ctx context.Context, id, secret string) *principal {
@@ -196,13 +225,21 @@ func (h *handler) authenticate(ctx context.Context, id, secret string) *principa
 // or non-key value (any error, incl. orm.ErrNotFound) yields nil — never a wrong
 // or fallback principal. It reuses the ONE key resolver (store.UserByAccessKey);
 // there is no second key path.
+//
+// The resolved user is then BOUND to candidateOrgs {admin, hanzo}. store.UserBy
+// AccessKey resolves the key's OWNER — any tenant org — so without this bound a
+// foreign-tenant key would authenticate on the shared registry (the cross-tenant
+// hole). A key belonging to any other org resolves to nil here: denied, no token.
 func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 	if strings.TrimSpace(key) == "" {
 		return nil
 	}
 	u, err := store.UserByAccessKey(ctx, h.db, key)
-	if err != nil {
+	if err != nil || u == nil {
 		return nil
+	}
+	if !inCandidateOrg(u.Owner) {
+		return nil // foreign-tenant key — outside the registry trust boundary
 	}
 	return u
 }
@@ -241,21 +278,46 @@ func (h *handler) serviceAccount(ctx context.Context, id, secret string) *princi
 	return &principal{subject: id, privileged: true}
 }
 
-// userPrincipal projects a user into a token principal: `sub` is owner/name, and
-// push is granted only to an admin or a SuperAdmin (owner == the admin org).
+// userPrincipal projects a user into a token principal: `sub` is owner/name; push
+// (privileged) is gated by userPrivileged.
 func userPrincipal(u *schema.User) *principal {
 	return &principal{
 		subject:    u.Owner + "/" + u.Name,
-		privileged: u.IsAdmin || store.IsSuperAdmin(u.Owner),
+		privileged: userPrivileged(u),
 	}
 }
 
-// candidateOrgs are the platform organizations a bare docker username is resolved
+// userPrivileged decides whether a USER may push to the shared registry — the
+// defense-in-depth gate on top of the candidateOrgs authentication bound. Push
+// requires the user to own a platform SIGNING-trust org (admin/built-in) AND be an
+// admin/SuperAdmin there. IsAdmin alone is NOT a push signal: onboard sets it on
+// EVERY org creator, so a tenant org-admin has it too — gating push on IsAdmin
+// without the signing-owner check is exactly what let a self-onboarded admin push.
+// Intersected with the candidateOrgs auth bound, the only human push identity is
+// the admin org (SuperAdmins); CI pushes through the service account, which is
+// privileged by its own path. A hanzo-org admin authenticates but is pull-only.
+func userPrivileged(u *schema.User) bool {
+	return store.IsSigningCertOwner(u.Owner) && (u.IsAdmin || store.IsSuperAdmin(u.Owner))
+}
+
+// candidateOrgs are the platform organizations a docker credential is resolved
 // within: the reserved admin org (home of the SuperAdmin) and the hanzo org (home
 // of platform users). registry.hanzo.ai is Hanzo infrastructure, so these are the
 // two tenants its push/pull identities live in — matching the beego source's
-// {AdminOrg, "hanzo"} resolution.
+// {AdminOrg, "hanzo"} resolution. This is the trust boundary EVERY user credential
+// shape (password AND API key) is bound to.
 func candidateOrgs() []string { return []string{"admin", "hanzo"} }
+
+// inCandidateOrg reports whether owner is one of the platform candidateOrgs — the
+// ONE membership predicate the key path and any future bound share.
+func inCandidateOrg(owner string) bool {
+	for _, o := range candidateOrgs() {
+		if o == owner {
+			return true
+		}
+	}
+	return false
+}
 
 // resolveUser looks a user up by email (identifier contains "@") or by name,
 // scoped to org — the same email-or-name resolution the login front door uses.
