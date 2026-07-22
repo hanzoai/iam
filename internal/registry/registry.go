@@ -287,17 +287,28 @@ func userPrincipal(u *schema.User) *principal {
 	}
 }
 
-// userPrivileged decides whether a USER may push to the shared registry — the
-// defense-in-depth gate on top of the candidateOrgs authentication bound. Push
-// requires the user to own a platform SIGNING-trust org (admin/built-in) AND be an
-// admin/SuperAdmin there. IsAdmin alone is NOT a push signal: onboard sets it on
-// EVERY org creator, so a tenant org-admin has it too — gating push on IsAdmin
-// without the signing-owner check is exactly what let a self-onboarded admin push.
-// Intersected with the candidateOrgs auth bound, the only human push identity is
-// the admin org (SuperAdmins); CI pushes through the service account, which is
-// privileged by its own path. A hanzo-org admin authenticates but is pull-only.
+// userPrivileged decides whether a USER may push to the shared registry. This is
+// the v1-PARITY gate: casdoor (registry_token.go) authenticated users within
+// {admin, hanzo} and granted push to any IsAdmin/SuperAdmin among them. We
+// reproduce that EXACTLY so the identity cutover is a faithful drop-in with zero
+// behavior change — a hanzo-org admin keeps push, as it does on casdoor today.
+//
+// Push requires the user to be in a candidateOrg AND be an admin/SuperAdmin there.
+// The candidateOrgs bound (enforced at authentication, registry.go ~:241) is what
+// makes IsAdmin safe to trust here: a FOREIGN-tenant org-admin never authenticates
+// to the registry at all (TestToken_ForeignTenantKey_Denied), so its IsAdmin can
+// never reach this gate — that foreign-org denial is the actual cross-tenant close,
+// independent of this predicate. CI pushes through the service account (privileged
+// by its own path).
+//
+// DEFERRED OWNER POLICY (do NOT tighten during the migration): whether a hanzo-org
+// HUMAN admin should keep registry push — vs. restricting push to the admin org
+// (SuperAdmins) / signing-trust orgs only — is a post-cutover hardening decision,
+// not a port detail. Narrowing it here would be a behavior change vs casdoor. If
+// made, do it as an explicit, tested policy change (alongside the pull org-scoping
+// decision documented at the top of this file), never as an incidental edit.
 func userPrivileged(u *schema.User) bool {
-	return store.IsSigningCertOwner(u.Owner) && (u.IsAdmin || store.IsSuperAdmin(u.Owner))
+	return inCandidateOrg(u.Owner) && (u.IsAdmin || store.IsSuperAdmin(u.Owner))
 }
 
 // candidateOrgs are the platform organizations a docker credential is resolved
