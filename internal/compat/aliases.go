@@ -23,6 +23,7 @@ package compat
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -30,7 +31,12 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
+
+// unauthorized is v1's refusal message, verbatim — the envelope a denied caller
+// receives from a handler-authorized read (the Guard's own refusals are raw 403s).
+const unauthorized = "auth:Unauthorized operation"
 
 // Route registers the Casdoor read-verb aliases. The mask argument is the
 // entity's schema.Mask method (the ONE redaction contract) for entities that
@@ -51,7 +57,7 @@ func Route(app *zip.App, db orm.DB) {
 
 	// Single reads — `?id=<owner>/<name>` (or `?owner=&name=`).
 	app.Get("/v1/iam/get-organization", getHandler(db, (*schema.Organization).Mask))
-	app.Get("/v1/iam/get-user", getHandler(db, (*schema.User).Mask))
+	app.Get("/v1/iam/get-user", userGetHandler(db))
 	app.Get("/v1/iam/get-application", getHandler(db, (*schema.Application).Mask))
 	app.Get("/v1/iam/get-provider", getHandler(db, (*schema.Provider).Mask))
 	app.Get("/v1/iam/get-cert", getHandler(db, (*schema.Cert).Mask))
@@ -216,6 +222,69 @@ func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 		}
 		return httpx.Ok(c, row)
 	}
+}
+
+// userGetHandler serves get-user, which has TWO variants. When `?accessKey=` is
+// present it resolves an opaque API key (hk-/pk-/sk-) to its owning user — the path
+// cloud's identity boundary calls to authenticate a keyed request — behind the
+// CapKeyResolve service capability. Otherwise it is the ordinary owner/name/id read.
+//
+// get-user is handler-authorized (authz.handlerAuthorizedExact) because the key
+// variant carries no owner/name for the Guard to authorize; so the owner/name
+// variant reinstates the SAME read authorization the Guard applies, through the ONE
+// policy function (authz.Can) — identical behavior, a cross-tenant or non-self read
+// still refused 403 — then reuses the generic getHandler verbatim for resolution and
+// redaction. No authz and no CRUD is reimplemented.
+func userGetHandler(db orm.DB) zip.Handler {
+	byOwnerName := getHandler(db, (*schema.User).Mask)
+	return func(c *zip.Ctx) error {
+		if key := strings.TrimSpace(c.Query("accessKey")); key != "" {
+			return resolveUserByAccessKey(c, db, key)
+		}
+		owner, name := authz.ReadTarget(c)
+		if !authz.Can(c.Context(), "GET", "users", owner, name) {
+			return zip.ErrForbidden("forbidden")
+		}
+		return byOwnerName(c)
+	}
+}
+
+// keyUser is the minimal principal projection get-user?accessKey returns — EXACTLY
+// the four fields cloud's key resolver consumes (auth_apikey.go) and no more. It is
+// a TIGHTER redaction than schema.User.Mask, deliberately: Mask blanks the secret
+// digests and bearer tokens but leaves AccessKey populated, and a pk-/sk- resolution
+// must never disclose the resolved user's OTHER credential (its hk- AccessKey) to a
+// caller that only presented a project key. A projection carrying no secret field is
+// leak-proof by construction.
+type keyUser struct {
+	Owner   string `json:"owner"`
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	IsAdmin bool   `json:"isAdmin"`
+}
+
+// resolveUserByAccessKey authenticates the SERVICE caller and resolves an API key to
+// its owning principal. The gate is service-only and fail-secure: the caller must be
+// a confidential app (p.App != "") holding CapKeyResolve — a human, even a
+// SuperAdmin, is refused, because a capability is held vacuously by non-apps and key
+// resolution is a machine-identity boundary, never an interactive admin action. An
+// unknown/unresolvable key answers the same not-exist envelope every other get- verb
+// uses, so a prober cannot distinguish a missing key from a denied one beyond the
+// auth refusal.
+func resolveUserByAccessKey(c *zip.Ctx, db orm.DB, key string) error {
+	ctx := c.Context()
+	p, ok := authz.From(ctx)
+	if !ok || p.App == "" || !authz.Allowed(p, authz.CapKeyResolve) {
+		return httpx.Err(c, unauthorized)
+	}
+	u, err := store.UserByAccessKey(ctx, db, key)
+	if errors.Is(err, orm.ErrNotFound) {
+		return httpx.Err(c, "the entity does not exist")
+	}
+	if err != nil {
+		return httpx.Err(c, err.Error())
+	}
+	return httpx.Ok(c, keyUser{Owner: u.Owner, Name: u.Name, Email: u.Email, IsAdmin: u.IsAdmin})
 }
 
 // maskAll redacts every row through the entity's Mask (a no-op when the entity
