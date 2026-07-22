@@ -38,6 +38,7 @@ import (
 	"github.com/hanzoai/iam/internal/permission"
 	"github.com/hanzoai/iam/internal/projects"
 	"github.com/hanzoai/iam/internal/providers"
+	"github.com/hanzoai/iam/internal/registry"
 	"github.com/hanzoai/iam/internal/roles"
 	"github.com/hanzoai/iam/internal/scim"
 	"github.com/hanzoai/iam/internal/serviceaccounts"
@@ -79,6 +80,13 @@ func Route(app *zip.App, db orm.DB) {
 	// POST /v1/iam/web3/verify. Public by construction — a wallet holder has no
 	// token until this flow gives them one.
 	wallet.Route(public, db)
+
+	// Docker Registry v2 token auth: GET;POST /v1/iam/registry/token +
+	// GET /v1/iam/registry/jwks. Public by construction — a docker client holds
+	// no IAM bearer; it presents a Basic credential the token endpoint verifies.
+	// registry:2 at registry.hanzo.ai points REGISTRY_AUTH_TOKEN_REALM here and
+	// trusts these tokens via the served JWKS (its ROOTCERTBUNDLE).
+	registry.Route(public, db)
 
 	// ─────────────────────────── GUARD ────────────────────────────
 	// The ONE authentication seam. Every route registered AFTER it requires a
