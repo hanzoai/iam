@@ -126,7 +126,7 @@ func ensure(db orm.DB) zip.Handler {
 		default:
 			return httpx.Err(c, "role must be owner, admin, or member")
 		}
-		if !authz.Can(ctx, "POST", "organizations", store.MembershipOwner, in.Org) {
+		if !mayGrant(ctx, in.Org) {
 			return httpx.Err(c, unauthorized)
 		}
 		added, err := store.EnsureMembership(ctx, db, in.User, in.Org, in.Role)
@@ -153,7 +153,7 @@ func remove(db orm.DB) zip.Handler {
 		if in.User == "" || in.Org == "" {
 			return httpx.Err(c, "user and org are required")
 		}
-		if !authz.Can(ctx, "POST", "organizations", store.MembershipOwner, in.Org) {
+		if !mayGrant(ctx, in.Org) {
 			return httpx.Err(c, unauthorized)
 		}
 		removed, err := store.DeleteMembership(ctx, db, in.User, in.Org)
@@ -162,6 +162,26 @@ func remove(db orm.DB) zip.Handler {
 		}
 		return httpx.Ok(c, removed)
 	}
+}
+
+// mayGrant reports whether the ctx principal may grant OR revoke a membership into
+// org — the ONE write gate ensure and remove share. Two clauses, both required:
+//
+//   - the org's admin authority: a SuperAdmin, an admin of the org itself, or an
+//     org-admin-capable confidential client — the same authz.Can(POST, organizations)
+//     gate a write to that org's own registry row takes; AND
+//   - the reserved-org escalation guard (RED F2): a membership INTO a reserved system
+//     org (admin/built-in/app) flows into the target user's `orgs` claim, which the
+//     edge honors as X-Org-Id ∈ orgs — i.e. it seeds admin-org (SuperAdmin) tenancy.
+//     A CapOrgAdmin client passes authz.Can for the membership row (always owned by
+//     the reserved "admin" org, so the check is NOT bound to in.Org), so without this
+//     a brand console could grant anyone tenancy in the admin org. Only a real
+//     SuperAdmin may target a reserved org.
+func mayGrant(ctx context.Context, org string) bool {
+	if store.IsReservedOrg(org) && !authz.IsSuper(ctx) {
+		return false
+	}
+	return authz.Can(ctx, "POST", "organizations", store.MembershipOwner, org)
 }
 
 // scoped reports whether the caller may read the membership rows of org — i.e.
