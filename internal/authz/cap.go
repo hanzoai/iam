@@ -67,6 +67,17 @@ var (
 	// allowlist lets NO app resolve a key. Enforced additionally as app-only at the
 	// handler (a human, even a SuperAdmin, holds a capability vacuously — so the key
 	// path also requires p.App != "" to keep this a service-only door).
+	//
+	// Keyed on the application NAME (via Allowed → p.App), matching all four sibling
+	// Caps above — the ONE way capabilities are matched in this family. RED F3 asked
+	// whether it should key on clientId like the issuetoken mint verbs (appInList);
+	// deliberately NOT, because (1) that is a DIFFERENT, older mechanism, so making
+	// CapKeyResolve clientId-based would make it the sole clientId-keyed Cap —
+	// inconsistent with its own family — and (2) it would require adding ClientId to
+	// the Principal shape. The owner-pin (Allowed requires AppOwner ∈ signing owners)
+	// already defeats the name-collision vector: a tenant app that reuses a listed
+	// name is not a signing owner and holds nothing. Under the <org>-<app> convention
+	// name == clientId, so the two are equivalent in practice. Gate unchanged.
 	CapKeyResolve = Cap{Name: "key-resolve", Env: "IAM_KEY_RESOLVE_APPS"}
 )
 
