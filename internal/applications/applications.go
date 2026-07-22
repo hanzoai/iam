@@ -17,6 +17,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // authorizeOrganization gates the Organization an application will SERVE (the
@@ -38,6 +39,32 @@ func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	}
 	if !authz.CanSetOrg(p, in.Organization) {
 		return zip.ErrForbidden("not authorized to set the application organization to " + in.Organization)
+	}
+	return nil
+}
+
+// ensureClientIdUnique rejects a create/update whose clientId is already held by a
+// DIFFERENT application (any owner). clientId is the GLOBAL key the mint and Basic-auth
+// resolvers authenticate against, so it must be unique across every owner, not merely
+// within one — otherwise a tenant could register a row whose clientId collides with a
+// platform console's and (on a backend whose duplicate-row order is unspecified) shadow
+// it. A JSON-document store has no per-field column to carry a DB UNIQUE index, so the
+// invariant is enforced here at the write, exactly as the (owner,name) natural key is.
+// An empty clientId cannot collide (a public app authenticates no confidential grant);
+// the self-row (same owner,name) is skipped so an update that keeps its own clientId is
+// never a self-collision.
+func ensureClientIdUnique(ctx context.Context, db orm.DB, clientId, owner, name string) error {
+	if clientId == "" {
+		return nil
+	}
+	existing, err := store.ListApplicationsByClientId(ctx, db, clientId)
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	for _, a := range existing {
+		if a.Owner != owner || a.Name != name {
+			return zip.ErrConflict("clientId already in use: " + clientId)
+		}
 	}
 	return nil
 }
@@ -146,6 +173,12 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, zip.ErrInternal(err.Error())
 		}
 
+		// Global uniqueness: clientId is the mint/Basic-auth resolution key, so it must
+		// be free across ALL owners — the invariant the confidential-client gates rely on.
+		if err := ensureClientIdUnique(ctx, db, in.ClientId, in.Owner, in.Name); err != nil {
+			return nil, err
+		}
+
 		// Wire the decoded entity to db under its natural key and persist.
 		in.Init(db)
 		in.SetId(id)
@@ -176,6 +209,12 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		}
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
+		}
+
+		// Global clientId uniqueness (see Create): an update may keep its own clientId
+		// but must never steal another app's.
+		if err := ensureClientIdUnique(ctx, db, in.ClientId, in.Owner, in.Name); err != nil {
+			return nil, err
 		}
 
 		in.Init(db)
