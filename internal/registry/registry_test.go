@@ -171,15 +171,26 @@ func seedKeyRow(t *testing.T, db orm.DB, org, name string, isAdmin bool, pk, sk 
 	}
 }
 
+// seedApp seeds a confidential app owned by the admin org — a legitimate platform
+// service account (the CI/push identity shape).
 func seedApp(t *testing.T, db orm.DB, clientID, secret string) {
 	t.Helper()
+	seedAppInOrg(t, db, "admin", clientID, secret)
+}
+
+// seedAppInOrg seeds a confidential app OWNED by `owner` — the field the
+// candidateOrgs gate checks. owner="evil" models a tenant that created an app in
+// its own org (a legitimate self-org write) and tries to use it on the shared
+// registry.
+func seedAppInOrg(t *testing.T, db orm.DB, owner, clientID, secret string) {
+	t.Helper()
 	a := orm.New[schema.Application](db)
-	a.Owner = "admin"
+	a.Owner = owner
 	a.Name = clientID
 	a.ClientId = clientID
 	a.ClientSecret = secret
-	a.Organization = "hanzo"
-	a.SetId("admin/" + clientID)
+	a.Organization = owner
+	a.SetId(owner + "/" + clientID)
 	if err := a.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed app: %v", err)
 	}
@@ -521,6 +532,60 @@ func TestToken_ForeignTenantKey_Denied(t *testing.T) {
 			if status != 401 || body["token"] != nil {
 				t.Fatalf("foreign key %s (username) scope %q: status=%d body=%v — must be 401/no token", key, scope, status, body)
 			}
+		}
+	}
+}
+
+// TestToken_ForeignTenantApp_Denied is the regression proof for F-R1 — the
+// cross-tenant push path via the service-account credential shape. The attacker
+// self-onboards org "evil" and creates a confidential app OWNED by "evil" (a
+// legitimate self-org write) with a clientId/clientSecret, then docker-logs-in with
+// those. NON-VACUOUS: the secret MATCHES, so the constant-time compare passes and
+// the ONLY thing denying the request is the candidateOrgs gate on app.Owner — a
+// foreign-org app is denied 401, NO token, no push. Before the fix this minted a
+// privileged (push) token because serviceAccount resolved GetApplicationByClientId
+// globally with no org bound.
+func TestToken_ForeignTenantApp_Denied(t *testing.T) {
+	app, db, _ := newServer(t)
+	seedAppInOrg(t, db, "evil", "evilci-xyz", "evil-secret-matches")
+
+	for _, scope := range []string{"repository:hanzo/iam:pull,push", "repository:hanzo/iam:pull"} {
+		// Basic-auth (docker GET flow) with the CORRECT secret — denial is the gate.
+		status, body, hdr := tokenGET(t, app, "evilci-xyz", "evil-secret-matches", "registry.hanzo.ai", scope)
+		if status != 401 || body["token"] != nil {
+			t.Fatalf("foreign app (GET) scope %q: status=%d body=%v — must be 401/no token", scope, status, body)
+		}
+		if hdr.Get("WWW-Authenticate") == "" {
+			t.Fatal("foreign app: missing WWW-Authenticate on 401")
+		}
+		// OAuth2 POST flow — same denial.
+		status, body, _ = tokenPOST(t, app, "evilci-xyz", "evil-secret-matches", "registry.hanzo.ai", scope)
+		if status != 401 || body["token"] != nil {
+			t.Fatalf("foreign app (POST) scope %q: status=%d body=%v — must be 401/no token", scope, status, body)
+		}
+	}
+}
+
+// TestToken_HanzoKey_PullToken is the positive control for the API-key path: a
+// hanzo-org pk-/sk- Key resolves and gets a (pull) token, so the candidateOrgs gate
+// admits in-platform keys — the foreign-key denial is the gate, not a broken path.
+func TestToken_HanzoKey_PullToken(t *testing.T) {
+	app, db, _ := newServer(t)
+	seedKeyRow(t, db, "hanzo", "grace", false, "pk-live-HANZO", "sk-live-HANZO")
+
+	for _, key := range []string{"sk-live-HANZO", "pk-live-HANZO"} {
+		status, body, _ := tokenGET(t, app, "x", key, "registry.hanzo.ai", "repository:hanzo/app:pull")
+		if status != 200 {
+			t.Fatalf("hanzo key %s: status=%d body=%v — must authenticate", key, status, body)
+		}
+		claims := verifyClaims(t, app, body["token"].(string))
+		if claims["sub"] != "hanzo/grace" {
+			t.Fatalf("hanzo key %s: sub=%v, want hanzo/grace", key, claims["sub"])
+		}
+		acc := accessOf(t, claims)
+		want := []access{{Type: "repository", Name: "hanzo/app", Actions: []string{"pull"}}}
+		if !eqAccess(acc, want) {
+			t.Fatalf("hanzo key %s: access=%v, want %v", key, acc, want)
 		}
 	}
 }
