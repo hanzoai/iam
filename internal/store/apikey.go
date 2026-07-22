@@ -54,9 +54,20 @@ func userByField(_ context.Context, db orm.DB, field, val string) (*schema.User,
 }
 
 // userOwningKey resolves the schema.Key whose `field` equals val (pk- → AccessKey,
-// sk- → AccessSecret), then the user that key belongs to. A key that resolves no
-// user (a key with no User reference — an org/app-scoped credential) fails closed
-// with orm.ErrNotFound: this path attributes a key to a USER principal or to none.
+// sk- → AccessSecret), then the user that key belongs to — CONSTRAINED to the key
+// row's OWN tenant. A key that resolves no user (a key with no User reference — an
+// org/app-scoped credential) fails closed with orm.ErrNotFound: this path attributes
+// a key to a USER principal in the key's own org, or to none.
+//
+// The same-tenant pin is the F1 forgery gate. Key.User, AccessKey, and AccessSecret
+// are all attacker-controlled at write time and keys CRUD authorizes only
+// (Key.Owner, Key.Name) — never the User field — so a tenant admin could plant a Key
+// in its OWN org whose User names "admin/z" (a SuperAdmin) or a victim tenant's user
+// and, presenting the known secret, have get-user?accessKey resolve it to that
+// foreign identity. Refusing any resolved owner != k.Owner makes that impossible: a
+// key can only ever speak for a user in the org that owns the key, and a non-super
+// can never own a key under a reserved org (authorize gates keys writes), so no
+// pk-/sk- key can resolve to a SuperAdmin or cross-tenant identity.
 func userOwningKey(ctx context.Context, db orm.DB, field, val string) (*schema.User, error) {
 	k, err := orm.TypedQuery[schema.Key](db).Filter(field+"=", val).First()
 	if err == orm.ErrNotFound {
@@ -66,7 +77,9 @@ func userOwningKey(ctx context.Context, db orm.DB, field, val string) (*schema.U
 		return nil, err
 	}
 	owner, name := keyUserRef(k)
-	if owner == "" || name == "" {
+	// Same-tenant pin: the resolved user MUST live in the key row's own org. A
+	// "/"-qualified User naming a foreign owner is a forgery attempt — fail closed.
+	if owner == "" || name == "" || owner != k.Owner {
 		return nil, orm.ErrNotFound
 	}
 	u, err := GetUserByName(ctx, db, owner, name)
@@ -82,8 +95,9 @@ func userOwningKey(ctx context.Context, db orm.DB, field, val string) (*schema.U
 // keyUserRef extracts the (owner, name) of the user a schema.Key belongs to. The
 // User field is the "owner/name" identity used everywhere a user is referenced
 // (Token.User, Membership.User); a bare username without a "/" is taken within the
-// key's own tenant (Key.Owner). An empty User yields ("",""), which the caller
-// treats as fail-closed.
+// key's own tenant (Key.Owner). An empty User yields ("",""). The owner it returns
+// is NOT trusted: userOwningKey rejects any owner that is not the key row's own
+// (Key.Owner), so a "/"-qualified reference to a foreign owner resolves to nobody.
 func keyUserRef(k *schema.Key) (owner, name string) {
 	if o, n, ok := strings.Cut(k.User, "/"); ok && o != "" && n != "" {
 		return o, n
