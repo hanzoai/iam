@@ -35,10 +35,12 @@ import (
 )
 
 // walMode selects and configures the WAL-inclusive extraction path. The zero
-// value (enabled=false) is the default checkpointed path, so nothing regresses.
+// value (enabled=false, ignoreWAL=false) is the default checkpointed path guarded
+// against a non-empty uncheckpointed WAL, so nothing regresses.
 type walMode struct {
-	enabled bool
-	bin     string // C sqlcipher binary (path, or a name resolved on PATH)
+	enabled   bool   // --wal-inclusive: checkpoint each shard's -wal into the plaintext copy (complete extraction)
+	ignoreWAL bool   // --ignore-wal: in the default path, proceed even if a shard has a non-empty -wal, INTENTIONALLY dropping those rows
+	bin       string // C sqlcipher binary (path, or a name resolved on PATH)
 }
 
 // sqliteHeader is the 16-byte magic every SQLite database file begins with. A
@@ -100,6 +102,25 @@ func checkpointShardToPlaintext(sh encShard, master []byte, workDir, bin string)
 		return "", "", fmt.Errorf("work-dir path contains an unsupported character (%q or newline)", "'")
 	}
 
+	// READ-CONSISTENCY FENCE (HIGH #1). A shard is three on-disk files — iam.db,
+	// -wal, -shm — and copying them as three separate reads is only sound if the
+	// source does not change across the copy window. If a checkpoint fires mid-copy
+	// it moves committed frames out of the -wal we already read into a main db we
+	// did not (then TRUNCATEs the -wal), and those rows vanish from the copied set
+	// with no error. So snapshot the (existence, size, mtime) identity of all three
+	// files BEFORE the copy and re-snapshot AFTER: if anything moved, the source was
+	// written during the window and the copied triple may be internally
+	// inconsistent — abort LOUDLY rather than checkpoint a mismatched main/-wal
+	// pair. At cutover the source is a frozen VolumeSnapshot with IAM writes frozen,
+	// so this never trips in practice; it is the defense-in-depth that turns
+	// "silently copy a live shard" into a hard refusal. Reads never advance mtime,
+	// so our own copy cannot false-trip the fence; the bracket is exactly the read
+	// window, so any change inside it is caught and any change outside it is
+	// irrelevant to the bytes we captured.
+	before := statShard(sh.path)
+	if walCopyHook != nil {
+		walCopyHook(sh.path) // test seam only (nil in production): inject a writer to prove the fence aborts
+	}
 	if err := copyFile(sh.path, srcCopy); err != nil {
 		return "", "", fmt.Errorf("copy shard main db: %w", err)
 	}
@@ -109,6 +130,9 @@ func checkpointShardToPlaintext(sh encShard, master []byte, workDir, bin string)
 				return "", "", fmt.Errorf("copy shard %q: %w", suf, err)
 			}
 		}
+	}
+	if after := statShard(sh.path); after != before {
+		return "", "", fmt.Errorf("shard %s changed on disk during copy (source not quiescent — iam.db/-wal/-shm existence, size, or mtime moved): refusing to migrate a possibly-inconsistent snapshot that could silently drop committed WAL rows; run against a frozen snapshot with IAM writes frozen, or a shard with no live writer", sh.label)
 	}
 
 	dek, err := deriveDEK(sh, master)
@@ -120,12 +144,53 @@ func checkpointShardToPlaintext(sh encShard, master []byte, workDir, bin string)
 	if err := runSQLCipherExport(bin, srcCopy, plain, dek); err != nil {
 		return "", "", err
 	}
+	// Defensive drain check (RED LOW). After wal_checkpoint(TRUNCATE) the copy's
+	// -wal must be fully drained into its main db; any bytes still there mean the
+	// checkpoint could not apply every frame (a busy checkpoint), and the plaintext
+	// export — taken from the main db — would then be missing rows. This asserts the
+	// OUTCOME of the checkpoint (WAL emptied) directly, which is strictly stronger
+	// than parsing the PRAGMA's busy column and is version-independent. On a private
+	// copy no other connection holds, it never trips; it is the belt to -bail's
+	// suspenders.
+	if fi, statErr := os.Stat(srcCopy + "-wal"); statErr == nil && fi.Size() > 0 {
+		return "", "", fmt.Errorf("shard %s: wal_checkpoint(TRUNCATE) left %d bytes uncheckpointed in the WAL — the export would miss those rows", sh.label, fi.Size())
+	}
 	if err := validatePlaintextSQLite(plain); err != nil {
 		return "", "", err
 	}
 	ok = true
 	return plain, dir, nil
 }
+
+// shardStat is the on-disk identity of one shard file: whether it exists, its
+// size, and its mtime as UnixNano. All fields are comparable, so a [3]shardStat of
+// (iam.db, -wal, -shm) can be compared with != to detect ANY change — including a
+// -wal that appears or disappears — across the copy window.
+type shardStat struct {
+	exists  bool
+	size    int64
+	mtimeNs int64
+}
+
+// statShard snapshots the identity of a shard's three on-disk files: the main db
+// at base, base+"-wal", and base+"-shm". A missing file is the zero shardStat
+// (exists=false), so a -wal materializing or being truncated away mid-copy is
+// itself a detected change.
+func statShard(base string) [3]shardStat {
+	var s [3]shardStat
+	for i, suf := range []string{"", "-wal", "-shm"} {
+		if fi, err := os.Stat(base + suf); err == nil {
+			s[i] = shardStat{exists: true, size: fi.Size(), mtimeNs: fi.ModTime().UnixNano()}
+		}
+	}
+	return s
+}
+
+// walCopyHook is a TEST SEAM. When non-nil it is invoked exactly once, immediately
+// after the pre-copy identity snapshot, so a test can deterministically inject a
+// concurrent writer and prove the read-consistency fence aborts. It is nil in
+// production — no behavior, no cost. (Same pattern as the stdlib's testHook vars.)
+var walCopyHook func(shardBase string)
 
 // runSQLCipherExport drives the C sqlcipher shell to checkpoint srcCopy's WAL
 // into its main db and export a plaintext db to plainPath. The DEK is written as

@@ -99,15 +99,31 @@ func runEncrypted(ctx context.Context, datadir, keyEnv, workDir, dest string, dr
 		return err
 	}
 
+	// The default (checkpointed) path reads ONLY each shard's checkpointed main db
+	// and is blind to rows still in an uncheckpointed -wal. Running it against a
+	// shard that carries a non-empty -wal would SILENTLY drop those (most-recent)
+	// rows and still report success — the exact silent-data-loss default RED
+	// flagged. Refuse, fail-closed, unless the operator opts into capturing the WAL
+	// (--wal-inclusive) or explicitly into dropping it (--ignore-wal). Checked
+	// before the dest store is even opened, so a refusal writes nothing.
+	if !wal.enabled {
+		if err := guardCheckpointedWAL(shards, wal.ignoreWAL); err != nil {
+			return err
+		}
+	}
+
 	dst, err := store.Open("sqlite", storePath(dest))
 	if err != nil {
 		return fmt.Errorf("open clean store: %w", err)
 	}
 	defer dst.Close()
 
-	extraction := "checkpointed MAIN db only — does NOT merge -wal (a real cutover must use --wal-inclusive)"
-	if wal.enabled {
+	extraction := "checkpointed MAIN db only (guarded: refuses a non-empty uncheckpointed -wal unless --ignore-wal)"
+	switch {
+	case wal.enabled:
 		extraction = "WAL-INCLUSIVE — each shard's -wal is checkpointed into the plaintext copy via C sqlcipher before migrating"
+	case wal.ignoreWAL:
+		extraction = "checkpointed MAIN db only, --ignore-wal — any uncheckpointed -wal rows are INTENTIONALLY DROPPED"
 	}
 	fmt.Fprintf(os.Stdout,
 		"migrate-v1: encrypted source %q — %d shard(s); extraction: %s.\n",
@@ -176,6 +192,34 @@ func discoverShards(datadir string) ([]encShard, error) {
 		shards = append(shards, encShard{label: "org:" + slug, path: p, pt: hsqlite.PrincipalOrg, pid: slug})
 	}
 	return shards, nil
+}
+
+// guardCheckpointedWAL is the fail-closed gate for the default (checkpointed)
+// extraction. That path reads only a shard's checkpointed main db, so any shard
+// carrying a non-empty uncheckpointed -wal would have those rows SILENTLY dropped.
+// It stats every shard's <path>-wal and, if any is non-empty, either aborts with an
+// actionable error (the default — never silently lose data) or, when the operator
+// passed --ignore-wal, proceeds after LOUDLY warning exactly which shards' rows are
+// being dropped. An absent or empty -wal is clean (nothing to lose).
+func guardCheckpointedWAL(shards []encShard, ignore bool) error {
+	var dirty []string
+	for _, sh := range shards {
+		if fi, err := os.Stat(sh.path + "-wal"); err == nil && fi.Size() > 0 {
+			dirty = append(dirty, fmt.Sprintf("%s (%s-wal: %d bytes)", sh.label, sh.path, fi.Size()))
+		}
+	}
+	if len(dirty) == 0 {
+		return nil
+	}
+	if ignore {
+		fmt.Fprintf(os.Stderr,
+			"migrate-v1: WARNING --ignore-wal: %d shard(s) carry a non-empty uncheckpointed -wal whose rows will NOT be migrated (intentionally dropped): %s\n",
+			len(dirty), strings.Join(dirty, "; "))
+		return nil
+	}
+	return fmt.Errorf(
+		"%d shard(s) carry a non-empty uncheckpointed -wal that the default checkpointed path would SILENTLY DROP: %s; re-run with --wal-inclusive to migrate those rows, or --ignore-wal to intentionally drop them",
+		len(dirty), strings.Join(dirty, "; "))
 }
 
 // migrateEncryptedShard turns one shard into a shredded plaintext temp and runs
