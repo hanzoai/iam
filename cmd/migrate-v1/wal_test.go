@@ -418,10 +418,19 @@ func TestWALInclusive_RealSQLCipher_MergesUncheckpointedWAL(t *testing.T) {
 		`INSERT INTO "user" VALUES('hanzo','late','2020-03-03T03:04:05Z','uuid-late','`+goldenDigest+`','argon2id','late@hanzo.ai');`)
 	writeDEKSidecar(t, orgDB, master, hsqlite.PrincipalOrg, "hanzo", dekO)
 
-	// ---- DEFAULT (checkpointed) path: migrates z, MISSES the WAL-only late. ----
+	// ---- DEFAULT (checkpointed) path now HARD-FAILS on the shard's non-empty -wal
+	// (HIGH #2): it would silently drop `late`, so with no flag it must refuse. ----
+	if err := runEncrypted(ctx, datadir, env, t.TempDir(), t.TempDir(), false, nil, walMode{}); err == nil {
+		t.Fatal("default path must refuse a shard carrying a non-empty uncheckpointed -wal")
+	} else if !strings.Contains(err.Error(), "--wal-inclusive") || !strings.Contains(err.Error(), "--ignore-wal") {
+		t.Errorf("hard-fail must name both escape hatches, got: %v", err)
+	}
+
+	// ---- --ignore-wal: proceeds down the checkpointed path — migrates z, MISSES the
+	// WAL-only late (the documented, opt-in lossy behavior). ----
 	destCk := t.TempDir()
-	if err := runEncrypted(ctx, datadir, env, t.TempDir(), destCk, false, nil, walMode{}); err != nil {
-		t.Fatalf("checkpointed runEncrypted: %v", err)
+	if err := runEncrypted(ctx, datadir, env, t.TempDir(), destCk, false, nil, walMode{ignoreWAL: true}); err != nil {
+		t.Fatalf("--ignore-wal checkpointed runEncrypted: %v", err)
 	}
 	dck, err := store.Open("sqlite", filepath.Join(destCk, "iam2.db"))
 	if err != nil {
@@ -429,10 +438,10 @@ func TestWALInclusive_RealSQLCipher_MergesUncheckpointedWAL(t *testing.T) {
 	}
 	defer dck.Close()
 	if u, _ := store.GetUserByName(ctx, dck, "hanzo", "z"); u == nil {
-		t.Fatal("checkpointed path lost the base user z")
+		t.Fatal("--ignore-wal checkpointed path lost the base user z")
 	}
 	if late, _ := store.GetUserByName(ctx, dck, "hanzo", "late"); late != nil {
-		t.Fatal("checkpointed path unexpectedly saw the WAL-only user — fixture WAL was already checkpointed")
+		t.Fatal("--ignore-wal path unexpectedly saw the WAL-only user — fixture WAL was already checkpointed")
 	}
 
 	// ---- --wal-inclusive path: recovers BOTH, and late verifies golden. ----
