@@ -35,6 +35,11 @@ import (
 // envSigningKeyFile), which is how cutover stays continuous: inject the current
 // key material and the registry's existing ROOTCERTBUNDLE keeps verifying — no
 // repoint. See LLM.md "registry-token continuity".
+//
+// Resolution is FAIL-CLOSED by default: with no key configured and no explicit
+// dev opt-in (envAllowEphemeral), the process refuses to sign rather than mint a
+// throwaway key the registry's ROOTCERTBUNDLE does not trust. Prod need set only
+// the key; a dev box that wants a throwaway key sets envAllowEphemeral=true.
 
 const (
 	// envSigningKey carries the PEM (PKCS#1 or PKCS#8) RSA registry signing key
@@ -45,12 +50,14 @@ const (
 	// envSigningKeyFile is the path to a mounted PEM file, when the operator mounts
 	// the Secret as a file instead of an env var.
 	envSigningKeyFile = "REGISTRY_SIGNING_KEY_FILE"
-	// envRequirePersistent, when "true", makes a missing persistent key a HARD boot
-	// failure instead of an ephemeral dev key. Production MUST set it: an ephemeral
-	// key would sign tokens the registry's ROOTCERTBUNDLE does not trust — a silent
-	// push/pull outage. Fail-closed by explicit operator opt-in, mirroring the OIDC
-	// issuer resolver's IAM_DEV_HOST_RELATIVE opt-in for the loose path.
-	envRequirePersistent = "REGISTRY_REQUIRE_PERSISTENT_SIGNING_KEY"
+	// envAllowEphemeral, when "true", is the EXPLICIT dev opt-in that permits a
+	// throwaway signing key when none is configured. It is the ONLY thing that lets
+	// resolution mint an ephemeral key; absent it, a missing key FAILS CLOSED. This
+	// inverts the earlier (fail-open) default: production need set nothing special
+	// to be safe — a deploy that forgets the key is refused, not silently signing
+	// tokens the registry's ROOTCERTBUNDLE cannot trust. Mirrors the OIDC issuer
+	// resolver's IAM_DEV_HOST_RELATIVE opt-in for its loose path.
+	envAllowEphemeral = "REGISTRY_ALLOW_EPHEMERAL"
 )
 
 // issuer is the fixed `iss` every registry token carries. Docker Distribution
@@ -155,33 +162,44 @@ func newJTI() (string, error) {
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b), nil
 }
 
-// processKeyring resolves THE registry signing key exactly once per process. There
-// is one registry key per process — loaded from configuration when present, else
-// (dev/test only) an ephemeral key. It is eager: Route calls it at mount, so a
-// production misconfiguration fails the BOOT, never a live push.
-var processKeyring = sync.OnceValue(func() *keyring {
+// processKeyring resolves THE registry signing key once per process, LAZILY — on
+// first registry request, not at mount — and memoizes the (keyring, error). Lazy
+// is load-bearing: mounting the IAM surface (routes.Route, which every non-registry
+// test also does) must NOT force key resolution, or a box without a registry key
+// could not run the rest of IAM. Only an actual registry request resolves; a
+// fail-closed resolution surfaces as a 503 on THAT request (no untrusted token
+// ever minted), never a panic that takes the whole binary down.
+var processKeyring = sync.OnceValues(resolveKeyring)
+
+// resolveKeyring loads the signing key and decides the fallback, FAIL-CLOSED by
+// default: a configured key (envSigningKey / envSigningKeyFile) is used; a
+// configured-but-broken key is an error in every environment; and when NOTHING is
+// configured, resolution ERRORS — no ephemeral key is minted — UNLESS the explicit
+// dev opt-in envAllowEphemeral="true" is set. So a production deploy that forgets
+// the key fails closed with no action required, and only a dev box that WANTS a
+// throwaway key opts in.
+func resolveKeyring() (*keyring, error) {
 	key, err := loadSigningKey()
 	if err != nil {
-		// A configured-but-unreadable/unparseable key is a hard error in ANY
-		// environment — you meant to set a key; a silent ephemeral fallback here
-		// would mask a broken secret and still break the registry.
-		panic("registry: " + err.Error())
+		return nil, err
 	}
 	if key != nil {
-		return newKeyring(key)
+		return newKeyring(key), nil
 	}
-	if persistentRequired() {
-		panic(fmt.Sprintf("registry: %s is set but neither %s nor %s is configured",
-			envRequirePersistent, envSigningKey, envSigningKeyFile))
+	if !allowEphemeral() {
+		return nil, fmt.Errorf(
+			"no registry signing key: set %s or %s to the current KMS key (prod), "+
+				"or %s=true for a throwaway dev key",
+			envSigningKey, envSigningKeyFile, envAllowEphemeral)
 	}
-	// Dev/test: no persistent key and none required. Generate an ephemeral one so a
-	// local box serves a coherent token+JWKS pair (the same key signs and verifies).
+	// Explicit dev opt-in only: mint a throwaway key so a local box serves a
+	// coherent token+JWKS pair (the same key signs and verifies).
 	eph, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		panic("registry: ephemeral signing key: " + err.Error())
+		return nil, fmt.Errorf("ephemeral signing key: %w", err)
 	}
-	return newKeyring(eph)
-})
+	return newKeyring(eph), nil
+}
 
 // loadSigningKey resolves the persistent registry signing key from configuration,
 // in order: envSigningKey (inline PEM), then envSigningKeyFile (a mounted PEM).
@@ -202,10 +220,10 @@ func loadSigningKey() (*rsa.PrivateKey, error) {
 	return nil, nil
 }
 
-// persistentRequired reports the explicit operator opt-in to fail closed when no
-// persistent key is configured.
-func persistentRequired() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv(envRequirePersistent)), "true")
+// allowEphemeral reports the explicit dev opt-in to mint a throwaway signing key
+// when none is configured. Absent it, a missing key fails closed.
+func allowEphemeral() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv(envAllowEphemeral)), "true")
 }
 
 // parseRSAPEM decodes a PEM RSA private key (PKCS#1 or PKCS#8). Registry tokens are
