@@ -4,12 +4,28 @@ package oidc
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 )
+
+// devFallbackIssuer is the ONE fixed, non-host-derived issuer this package ever
+// falls back to. It is a constant, never interpolated from the request, so a
+// fail-closed landing can never become a host echo.
+const devFallbackIssuer = "https://hanzo.id"
+
+// errNoIssuer is the fail-LOUD boot error when nothing pins the issuer — no
+// IAM_ISSUER, no IAM_ISSUER_MAP — and the operator has NOT explicitly opted into
+// host-relative dev issuers (IAM_DEV_HOST_RELATIVE=1). Booting here would leave
+// the request host as the only value `iss` could take, a silent fail-open host
+// echo; we refuse to boot instead.
+var errNoIssuer = errors.New(
+	"no OIDC issuer configured: set IAM_ISSUER to an absolute https URL " +
+		"(optionally with IAM_ISSUER_MAP for per-brand pinning); " +
+		"set IAM_DEV_HOST_RELATIVE=1 only on a local dev box that intends host-relative issuers")
 
 // The per-host OIDC issuer resolver.
 //
@@ -34,8 +50,14 @@ import (
 // thereafter — a value, not a place, so every request goroutine reads it without
 // a lock and no request can mutate it.
 type issuerResolver struct {
-	def    string            // default issuer (IAM_ISSUER), normalized; "" only in pure-dev
+	def    string            // default issuer (IAM_ISSUER), normalized; "" ONLY under the dev opt-in
 	byHost map[string]string // normalized brand host -> normalized pinned issuer
+
+	// devHostRelative is the EXPLICIT opt-in (IAM_DEV_HOST_RELATIVE=1) that permits
+	// a host-relative issuer when nothing is pinned. It is the ONLY thing that lets
+	// issuerFor derive `iss` from the request host; absent it, a no-issuer config is
+	// a hard boot error, so the request host is NEVER echoed as `iss` in any mode.
+	devHostRelative bool
 }
 
 // newIssuerResolver builds a resolver from the default issuer and the JSON
@@ -44,27 +66,41 @@ type issuerResolver struct {
 //
 // Fail-closed by construction:
 //
+//   - A non-empty default (IAM_ISSUER) MUST be an absolute https URL — the SAME
+//     bar every map entry clears, applied to the default too, so no mode admits a
+//     non-https or scheme-less issuer (checked FIRST, before the map).
 //   - An empty mapJSON yields a resolver that returns def for every host —
 //     EXACTLY the single-issuer behavior that predates the map (backward
 //     compatible; zero behavior change when IAM_ISSUER_MAP is unset).
-//   - A non-empty map REQUIRES a non-empty default. A map without a default would
-//     let an unknown host fall through to a host-relative issuer (fail-open); we
-//     refuse that configuration at startup instead, so an unknown/spoofed Host in
-//     map mode ALWAYS lands on the pinned default, never an echoed host.
+//   - No default AND no map is a HARD error UNLESS devHostRelative is set. Without
+//     that opt-in the only issuer left to emit would be the request host echoed
+//     back — a silent fail-open — so we refuse to boot. With the opt-in
+//     (IAM_DEV_HOST_RELATIVE=1) a dev box serves a host-relative issuer instead.
+//   - A non-empty map REQUIRES a non-empty default — even with the dev opt-in. A
+//     map without a default would let an unknown host fall through (fail-open); we
+//     refuse that configuration, so an unknown/spoofed Host in map mode ALWAYS
+//     lands on the pinned default, never an echoed host.
 //   - A malformed map, or an entry whose host or issuer is empty or whose issuer
 //     is not an absolute https URL, is a hard error. A misconfigured issuer map
 //     must fail the boot LOUD, never silently mint tokens under the wrong `iss`.
-func newIssuerResolver(defaultIssuer, mapJSON string) (*issuerResolver, error) {
-	r := &issuerResolver{def: normalizeIssuer(defaultIssuer)}
+func newIssuerResolver(defaultIssuer, mapJSON string, devHostRelative bool) (*issuerResolver, error) {
+	def := normalizeIssuer(defaultIssuer)
+	if def != "" && !strings.HasPrefix(def, "https://") {
+		return nil, fmt.Errorf("IAM_ISSUER must be an absolute https URL, got %q", def)
+	}
+	r := &issuerResolver{def: def, devHostRelative: devHostRelative}
 	mapJSON = strings.TrimSpace(mapJSON)
 	if mapJSON == "" {
+		if def == "" && !devHostRelative {
+			return nil, errNoIssuer
+		}
 		return r, nil
 	}
 	var raw map[string]string
 	if err := json.Unmarshal([]byte(mapJSON), &raw); err != nil {
 		return nil, fmt.Errorf("IAM_ISSUER_MAP: invalid JSON: %w", err)
 	}
-	if len(raw) > 0 && r.def == "" {
+	if len(raw) > 0 && def == "" {
 		return nil, fmt.Errorf("IAM_ISSUER_MAP is set but IAM_ISSUER (the fail-closed default) is empty: " +
 			"an unknown host would have no pinned issuer to fall back to")
 	}
@@ -83,24 +119,25 @@ func newIssuerResolver(defaultIssuer, mapJSON string) (*issuerResolver, error) {
 	return r, nil
 }
 
-// issuerFor returns the pinned issuer for host. Resolution order — every branch
-// yields a trusted config value except the last, which is reachable only with NO
-// config at all:
+// issuerFor returns the pinned issuer for host. The host is echoed into `iss`
+// ONLY inside the explicit dev opt-in branch (4); every other branch yields a
+// trusted config value or the fixed fallback, so "never echo the request host"
+// is structural here, not merely an emergent property of construction:
 //
 //  1. host is a configured brand → that brand's PINNED issuer (trusted config).
 //  2. otherwise the default issuer (IAM_ISSUER) when one is pinned — the
 //     fail-closed landing spot for an unknown/spoofed Host. The attacker-supplied
 //     Host is NEVER echoed as the issuer.
-//  3. no config at all (map empty AND default empty → pure dev) → host-relative
-//     from the TRUSTED host, so a dev box with no pin still serves a coherent
-//     discovery / JWKS / iss triple. host here is zip.Ctx.Host(), which ignores
-//     X-Forwarded-Host, so even this dev branch cannot be steered by a header.
-//
-// The (2)-before-(3) ordering plus newIssuerResolver's "map ⇒ default" rule
-// guarantee branch (3) is unreachable whenever ANY issuer is configured.
+//  3. no default and NOT the dev opt-in → the fixed fallback. This is unreachable
+//     given newIssuerResolver's gate (a def-less, non-dev resolver never builds),
+//     but issuerFor still refuses to echo if one is ever hand-constructed.
+//  4. dev opt-in (IAM_DEV_HOST_RELATIVE=1) with no pin → host-relative from the
+//     TRUSTED host, so a dev box still serves a coherent discovery / JWKS / iss
+//     triple. host here is zip.Ctx.Host(), which ignores X-Forwarded-Host, so even
+//     this dev branch cannot be steered by a client header.
 func (r *issuerResolver) issuerFor(host string) string {
-	if r == nil { // defensive: an unbuilt resolver still fails closed to the dev default
-		return devIssuer("")
+	if r == nil { // defensive: an unbuilt resolver still fails closed, never echoes
+		return devFallbackIssuer
 	}
 	if iss, ok := r.byHost[normalizeHost(host)]; ok {
 		return iss
@@ -108,18 +145,21 @@ func (r *issuerResolver) issuerFor(host string) string {
 	if r.def != "" {
 		return r.def
 	}
-	return devIssuer(host)
+	if r.devHostRelative {
+		return devIssuer(host)
+	}
+	return devFallbackIssuer
 }
 
-// devIssuer is the no-config dev fallback: a host-relative issuer from the trusted
-// host, or the hanzo.id default when even the host is absent. Reached ONLY when
-// neither IAM_ISSUER nor IAM_ISSUER_MAP is set; any real deployment pins at least
-// IAM_ISSUER and never reaches it.
+// devIssuer is the host-relative dev issuer: "https://<trusted host>", or the
+// fixed fallback when even the host is absent. Reached ONLY under the explicit
+// IAM_DEV_HOST_RELATIVE=1 opt-in (issuerFor branch 4); any real deployment pins at
+// least IAM_ISSUER and never reaches it.
 func devIssuer(host string) string {
 	if h := normalizeHost(host); h != "" {
 		return "https://" + h
 	}
-	return "https://hanzo.id"
+	return devFallbackIssuer
 }
 
 // normalizeHost lowercases, trims whitespace, strips a :port, and strips a single
@@ -150,26 +190,37 @@ func normalizeIssuer(iss string) string {
 // every request goroutine with no lock on the hot path.
 var activeResolver atomic.Pointer[issuerResolver]
 
+// devHostRelativeEnabled reports whether the operator has EXPLICITLY opted into
+// host-relative dev issuers (IAM_DEV_HOST_RELATIVE=1). It gates the one branch
+// that derives `iss` from the request host; absent the opt-in, a no-issuer boot is
+// a hard error (errNoIssuer) rather than a silent host echo.
+func devHostRelativeEnabled() bool { return os.Getenv("IAM_DEV_HOST_RELATIVE") == "1" }
+
 // envIssuerResolver builds the resolver from IAM_ISSUER + IAM_ISSUER_MAP exactly
 // once, lazily. It is the fallback for a request that reaches a handler before
 // InitIssuerResolver has installed one (only tests that skip the startup path).
 // A malformed map degrades fail-closed to the default issuer — never a boot an
 // attacker can steer — while InitIssuerResolver remains the eager, hard-error
-// path a real deploy hits first, so this degrade branch is a last-resort net.
+// path a real deploy hits first, so this degrade branch is a last-resort net. If
+// even the default is absent AND the dev opt-in is unset, the fallback build also
+// errors and yields nil, which issuerFor handles by failing closed (never echo).
 var envIssuerResolver = sync.OnceValue(func() *issuerResolver {
-	r, err := newIssuerResolver(os.Getenv("IAM_ISSUER"), os.Getenv("IAM_ISSUER_MAP"))
+	dev := devHostRelativeEnabled()
+	r, err := newIssuerResolver(os.Getenv("IAM_ISSUER"), os.Getenv("IAM_ISSUER_MAP"), dev)
 	if err != nil {
-		r, _ = newIssuerResolver(os.Getenv("IAM_ISSUER"), "")
+		r, _ = newIssuerResolver(os.Getenv("IAM_ISSUER"), "", dev)
 	}
 	return r
 })
 
 // InitIssuerResolver parses IAM_ISSUER + IAM_ISSUER_MAP once at startup and
-// installs the process resolver. A malformed / fail-open IAM_ISSUER_MAP is a HARD
-// error so a misconfigured deploy fails to boot rather than silently minting
-// tokens under the wrong `iss`. Called from serve() before the listener opens.
+// installs the process resolver. A malformed / fail-open / non-https config — or
+// nothing pinned at all without the IAM_DEV_HOST_RELATIVE opt-in — is a HARD error
+// so a misconfigured deploy fails to boot rather than silently minting tokens
+// under the wrong (or host-echoed) `iss`. Called from serve() before the listener
+// opens.
 func InitIssuerResolver() error {
-	r, err := newIssuerResolver(os.Getenv("IAM_ISSUER"), os.Getenv("IAM_ISSUER_MAP"))
+	r, err := newIssuerResolver(os.Getenv("IAM_ISSUER"), os.Getenv("IAM_ISSUER_MAP"), devHostRelativeEnabled())
 	if err != nil {
 		return err
 	}
