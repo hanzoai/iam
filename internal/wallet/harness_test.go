@@ -136,8 +136,23 @@ func do(t *testing.T, app *zip.App, req *http.Request) (int, map[string]any) {
 // get issues an anonymous GET against the brand host.
 func get(t *testing.T, app *zip.App, path string) (int, map[string]any) {
 	t.Helper()
+	return getWith(t, app, path, nil)
+}
+
+// getWith issues an anonymous GET against the brand host with extra headers (e.g.
+// a spoofed X-Forwarded-Host, to prove header-immunity). A "Host" key overrides
+// the routed host.
+func getWith(t *testing.T, app *zip.App, path string, hdr map[string]string) (int, map[string]any) {
+	t.Helper()
 	req := httptest.NewRequest("GET", path, nil)
 	req.Host = host
+	for k, v := range hdr {
+		if k == "Host" {
+			req.Host = v
+			continue
+		}
+		req.Header.Set(k, v)
+	}
 	return do(t, app, req)
 }
 
@@ -161,10 +176,17 @@ func post(t *testing.T, app *zip.App, path string, body any, hdr map[string]stri
 
 // --- the wallet client ---
 
-// mint drives GET /v1/iam/web3/nonce and returns the challenge the wallet signs.
+// mintFor drives GET /v1/iam/web3/nonce and returns the challenge the wallet signs.
 func mintFor(t *testing.T, app *zip.App, chain string) wc.LoginChallenge {
 	t.Helper()
-	_, m := get(t, app, PathNonce+"?chain="+chain+"&address="+addr)
+	return mintWith(t, app, chain, nil)
+}
+
+// mintWith is mintFor with extra request headers, so a test can mint under a
+// spoofed X-Forwarded-Host and assert the challenge still binds to the true host.
+func mintWith(t *testing.T, app *zip.App, chain string, hdr map[string]string) wc.LoginChallenge {
+	t.Helper()
+	_, m := getWith(t, app, PathNonce+"?chain="+chain+"&address="+addr, hdr)
 	if m["status"] != "ok" {
 		t.Fatalf("nonce: %v", m)
 	}
