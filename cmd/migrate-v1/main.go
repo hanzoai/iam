@@ -49,6 +49,7 @@ func main() {
 		dryRun       = fs.Bool("dry-run", false, "count + sample per entity without writing")
 		only         = fs.String("only", "", "comma list of entities: users,orgs,apps,certs,providers,roles,permissions (default all)")
 		walInclusive = fs.Bool("wal-inclusive", false, "encrypted source only: checkpoint each shard's uncheckpointed -wal into the plaintext copy via the C sqlcipher binary before migrating (COMPLETE extraction; default reads only the checkpointed main db and misses WAL rows)")
+		ignoreWAL    = fs.Bool("ignore-wal", false, "encrypted source only: in the DEFAULT (checkpointed) path, proceed even when a shard carries a non-empty uncheckpointed -wal, INTENTIONALLY dropping those rows (mutually exclusive with --wal-inclusive; without either, a non-empty -wal is a hard error)")
 		sqlcipherBin = fs.String("sqlcipher-bin", "sqlcipher", "path to (or name on PATH of) the C sqlcipher binary used by --wal-inclusive")
 	)
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -71,11 +72,19 @@ func main() {
 		fmt.Fprintln(os.Stderr, "migrate-v1: --wal-inclusive applies only to the encrypted sharded source (--src-datadir)")
 		fs.Usage()
 		os.Exit(2)
+	case *ignoreWAL && *srcDatadir == "":
+		fmt.Fprintln(os.Stderr, "migrate-v1: --ignore-wal applies only to the encrypted sharded source (--src-datadir)")
+		fs.Usage()
+		os.Exit(2)
+	case *walInclusive && *ignoreWAL:
+		fmt.Fprintln(os.Stderr, "migrate-v1: --wal-inclusive (capture the WAL) and --ignore-wal (drop the WAL) are mutually exclusive")
+		fs.Usage()
+		os.Exit(2)
 	}
 
 	var err error
 	if *srcDatadir != "" {
-		wal := walMode{enabled: *walInclusive, bin: *sqlcipherBin}
+		wal := walMode{enabled: *walInclusive, ignoreWAL: *ignoreWAL, bin: *sqlcipherBin}
 		err = runEncrypted(ctx, *srcDatadir, *masterKeyEnv, *workDir, *dest, *dryRun, splitOnly(*only), wal)
 	} else {
 		err = run(ctx, *srcPath, *dest, *dryRun, splitOnly(*only))

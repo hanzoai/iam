@@ -26,19 +26,32 @@ ARG GO_EXPERIMENT=jsonv2
 ENV GOEXPERIMENT=${GO_EXPERIMENT}
 
 ARG VERSION=dev
+# Two binaries from one build stage: the server (/out/iam2) and the Phase-5
+# cutover migrator (/out/migrate-v1) the migration Job runs. Both are pure-Go
+# (CGO_ENABLED=0 + the same GOEXPERIMENT) and share the one module download above.
+# The migrator carries no version symbol, so it is stamped -s -w only.
 RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION}" \
-      -o /out/iam2 .
+      -o /out/iam2 . \
+ && CGO_ENABLED=0 go build -trimpath \
+      -ldflags "-s -w" \
+      -o /out/migrate-v1 ./cmd/migrate-v1
 
 FROM alpine:latest AS STANDARD
-LABEL org.opencontainers.image.source="https://github.com/hanzoai/iam2"
+LABEL org.opencontainers.image.source="https://github.com/hanzoai/iam"
 LABEL org.opencontainers.image.title="Hanzo IAM v2"
-RUN apk add --no-cache ca-certificates && update-ca-certificates \
+# sqlcipher is the C SQLCipher 4.x shell the migrator's --wal-inclusive path drives
+# to checkpoint each shard's uncheckpointed -wal before extraction; alpine ships
+# SQLCipher 4.x (4.5.6 on the stable branch, 4.6.x on edge), whose v4 on-disk
+# format matches the production data and the pure-Go codec. The server never calls
+# it — it rides along so this ONE image serves both the server and the migrator Job.
+RUN apk add --no-cache ca-certificates sqlcipher && update-ca-certificates \
     && adduser -D -u 1000 hanzo \
     && mkdir -p /data && chown -R hanzo:hanzo /data
 USER 1000
 WORKDIR /
 COPY --from=build --chown=hanzo:hanzo /out/iam2 /iam2
+COPY --from=build --chown=hanzo:hanzo /out/migrate-v1 /migrate-v1
 
 # Serves the IAM v2 API over ZAP (:9653) + the HTTP edge (:8080). Bootstrap the
 # config with --init-data /etc/iam/init_data.json (mounted from the same
