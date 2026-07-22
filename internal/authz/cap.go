@@ -5,6 +5,8 @@ package authz
 import (
 	"os"
 	"strings"
+
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // Confidential-client capabilities — the port of the v1 gate (object/app_authz.go
@@ -17,9 +19,12 @@ import (
 // org admin (see Principal), so a leaked client credential grants exactly the
 // capabilities its NAME was allowlisted for and nothing more.
 //
-// The key is the application NAME, not its (owner, name) row — a name in an
-// allowlist is thereby reserved to the platform's admin-owned app, so a tenant
-// cannot register <theirOrg>/hanzo-console and inherit its grants.
+// The key is the application NAME, not its (owner, name) row. That alone would let
+// ANY owner's app claim a listed name, so Allowed ALSO pins the app's OWNING org to
+// a reserved platform signing owner (store.IsSigningCertOwner): the name is thereby
+// reserved to the platform's admin-owned app, and a tenant that registers
+// <theirOrg>/hanzo-console — same name, its own owner — inherits none of its grants.
+// The pin is what ENFORCES that reservation; the name match alone was the escalation.
 
 // Cap is one capability: a Name for diagnostics and the Env var holding its
 // comma-separated allowlist of application names.
@@ -69,6 +74,16 @@ func Allowed(p *Principal, c Cap) bool {
 	}
 	if p.App == "" {
 		return true // not an app; the org policy decides
+	}
+	// The owner-pin: an app holds a platform capability ONLY when its OWNING org is a
+	// reserved platform signing owner (admin/built-in). Every allow-listed console is
+	// admin-owned, so this never revokes a legitimate grant — but it binds the NAME
+	// allowlist to the platform: a tenant that registers <theirOrg>/hanzo-console
+	// (same name, its OWN owner) is not a signing owner, so it inherits nothing. This
+	// is the single gate that turns the allowlist's NAME key from a spoofable label
+	// into an authority reserved to the admin-owned app.
+	if !store.IsSigningCertOwner(p.AppOwner) {
+		return false
 	}
 	if c.Env == "" {
 		return false

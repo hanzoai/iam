@@ -33,6 +33,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/compare"
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/routes"
 	_ "github.com/hanzoai/iam/internal/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/internal/seed"
@@ -86,6 +87,14 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initDat
 		return err
 	}
 	defer db.Close()
+
+	// Pin the per-brand OIDC issuer map from config (IAM_ISSUER + IAM_ISSUER_MAP)
+	// before the listener opens. A malformed or fail-open map fails the boot LOUD
+	// rather than silently minting tokens under the wrong `iss`; an unset map keeps
+	// the single-issuer (IAM_ISSUER) behavior unchanged.
+	if err := oidc.InitIssuerResolver(); err != nil {
+		return fmt.Errorf("serve: %w", err)
+	}
 
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
 	// same file the Casdoor iam uses — so a fresh store comes up with the real
