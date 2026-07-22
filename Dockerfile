@@ -2,7 +2,7 @@
 # Multi-stage Go build → distroless-style alpine. Pure-Go (CGO_ENABLED=0);
 # hanzoai/sqlite uses the modernc engine so no cgo/musl toolchain is needed.
 
-FROM golang:1.26.4 AS build
+FROM golang:1.26.4@sha256:f96cc555eb8db430159a3aa6797cd5bae561945b7b0fe7d0e284c63a3b291609 AS build
 WORKDIR /src
 
 # Cache the module graph before copying the source. iam2 imports private hanzoai
@@ -37,7 +37,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w" \
       -o /out/migrate-v1 ./cmd/migrate-v1
 
-FROM alpine:latest AS STANDARD
+FROM alpine:latest@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS STANDARD
 LABEL org.opencontainers.image.source="https://github.com/hanzoai/iam"
 LABEL org.opencontainers.image.title="Hanzo IAM v2"
 # sqlcipher is the C SQLCipher 4.x shell the migrator's --wal-inclusive path drives
@@ -45,6 +45,9 @@ LABEL org.opencontainers.image.title="Hanzo IAM v2"
 # SQLCipher 4.x (4.5.6 on the stable branch, 4.6.x on edge), whose v4 on-disk
 # format matches the production data and the pure-Go codec. The server never calls
 # it — it rides along so this ONE image serves both the server and the migrator Job.
+# alpine is digest-pinned: this runtime base is in the migrator's DEK trust path (it
+# provides the sqlcipher the raw decryption key is piped to), so a floating :latest is
+# not acceptable for a one-shot migration of irreplaceable auth data (RED, v1.32.6).
 RUN apk add --no-cache ca-certificates sqlcipher && update-ca-certificates \
     && adduser -D -u 1000 hanzo \
     && mkdir -p /data && chown -R hanzo:hanzo /data
