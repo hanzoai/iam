@@ -10,14 +10,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
 	"github.com/hanzoai/iam/internal/users"
@@ -455,21 +453,13 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 }
 
 // tokenIssuer is the canonical OIDC issuer for this request — the value discovery
-// advertises and every token carries as `iss`. A deployment PINS it with the
-// IAM_ISSUER env (e.g. `https://hanzo.id`): the embedded KMS + every resource
-// server validate `iss` against a fixed expected value, so a hanzo deployment
-// serving both `hanzo.id` and `iam.hanzo.ai` must emit ONE stable issuer, not a
-// host-derived one. Pinning also closes the header-influenced-iss vector (a
-// request's X-Forwarded-Host can no longer steer `iss`). Unset → host-relative
-// (dev / multi-tenant), so discovery stays split-origin-safe when no pin applies.
+// advertises and every token carries as `iss`. It routes through the ONE per-host
+// issuer resolver (issuer.go), keyed on the TRUSTED request host (c.Host(), which
+// ignores X-Forwarded-Host), so the value is always a pinned CONFIG issuer for the
+// brand the ingress routed this request to — never a string interpolated from a
+// request header. See resolveIssuer for the fail-closed resolution order.
 func tokenIssuer(c *zip.Ctx) string {
-	if iss := strings.TrimSpace(os.Getenv("IAM_ISSUER")); iss != "" {
-		return strings.TrimRight(iss, "/")
-	}
-	if h := httpx.EffectiveHost(c); h != "" {
-		return "https://" + h
-	}
-	return "https://hanzo.id"
+	return resolveIssuer(c.Host())
 }
 
 // userProfile loads a user's email and display name for the token claims.

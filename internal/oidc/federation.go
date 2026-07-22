@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -461,19 +460,13 @@ func federationCallbackURL(c *zip.Ctx) string {
 }
 
 // federationBaseURL is the pinned public origin the IdP callback is registered
-// under. In production it is the IAM_ISSUER pin (required — HIP-0112) so the
-// value is fixed and header-immune. Where IAM_ISSUER is unset (dev), it falls
-// back to the DIRECT Host header — NEVER httpx.EffectiveHost, which honors the
-// attacker-suppliable X-Forwarded-Host — so even the dev path cannot be steered
-// to an attacker origin.
+// under — the SAME per-brand issuer the tokens carry, resolved through the ONE
+// issuer resolver (issuer.go) keyed on the TRUSTED request host (c.Host(), which
+// ignores X-Forwarded-Host). So a brand's federation callback is registered at
+// that brand's pinned origin, header-immune and never steered to an attacker
+// origin. See resolveIssuer for the fail-closed resolution order.
 func federationBaseURL(c *zip.Ctx) string {
-	if iss := strings.TrimSpace(os.Getenv("IAM_ISSUER")); iss != "" {
-		return strings.TrimRight(iss, "/")
-	}
-	if h := strings.TrimSpace(c.Header("Host")); h != "" {
-		return "https://" + h
-	}
-	return "https://hanzo.id"
+	return resolveIssuer(c.Host())
 }
 
 // federationOrgAllowed reports whether a federated (external) identity may be
