@@ -57,6 +57,17 @@ var (
 	// CapKeyMint (a read cap can never mint, rotate, or delete a credential) and
 	// is additionally tenant-bound by BoundToOrg.
 	CapServiceAccountRead = Cap{Name: "service-account-read", Env: "IAM_SA_LIST_ALLOWED_APPS"}
+
+	// CapKeyResolve gates resolving an opaque API key (hk-/pk-/sk-) to its owning
+	// principal via get-user?accessKey. It is a CREDENTIAL-DISCLOSURE boundary: the
+	// caller presents a secret key and learns WHO it authenticates, so it must never
+	// be an arbitrary authenticated caller. The intended sole holder is the cloud
+	// identity boundary (SanitizeIdentity), which turns a keyed request into the same
+	// principal a JWT yields. Fail-secure exactly like the others: an unset or empty
+	// allowlist lets NO app resolve a key. Enforced additionally as app-only at the
+	// handler (a human, even a SuperAdmin, holds a capability vacuously — so the key
+	// path also requires p.App != "" to keep this a service-only door).
+	CapKeyResolve = Cap{Name: "key-resolve", Env: "IAM_KEY_RESOLVE_APPS"}
 )
 
 // Allowed reports whether p holds c.

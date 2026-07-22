@@ -231,8 +231,22 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 // membership list handler's own scoped() check is the tenant gate.
 var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects", "/v1/iam/get-organization-workspaces", "/v1/iam/service-accounts", "/v1/iam/memberships", "/v1/iam/get-memberships"}
 
-// pathAuthorized reports whether path is under a handler-authorized subtree.
+// handlerAuthorizedExact are SINGLE routes (not subtrees) the handler authorizes
+// itself. get-user is here — not a prefix — because "/v1/iam/get-user" IS a prefix
+// of "/v1/iam/get-users" (the generic, Guard-authorized list): a prefix entry would
+// silently strip the Guard's read gate from get-users and let a request parameter
+// narrow rather than deny a cross-tenant list. get-user carries a `?accessKey=`
+// variant whose target is a secret key (no owner/name for the Guard to authorize),
+// so the get-user handler authorizes BOTH its variants — the owner/name read through
+// the SAME authz.Can the Guard would have applied, the key read behind CapKeyResolve.
+var handlerAuthorizedExact = map[string]bool{"/v1/iam/get-user": true}
+
+// pathAuthorized reports whether path is handler-authorized: an exact single-route
+// match, or under a handler-authorized subtree.
 func pathAuthorized(path string) bool {
+	if handlerAuthorizedExact[path] {
+		return true
+	}
 	for _, p := range handlerAuthorizedPrefixes {
 		if strings.HasPrefix(path, p) {
 			return true
