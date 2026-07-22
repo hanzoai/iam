@@ -80,6 +80,19 @@ func signupHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the application does not allow password sign-up")
 		}
 
+		// A self-service signup may NEVER resolve to a reserved system org
+		// (admin/built-in/app). A user created under "admin" is a SuperAdmin — authz
+		// derives Super from owner == "admin" — so this is THE privilege escalation to
+		// refuse, and it must hold INDEPENDENT of the app: an admin-org app, a shared
+		// app, or an org-choice app would each otherwise admit `organization=admin`
+		// through the tenant gate below and mint a SuperAdmin. This is the same
+		// store.IsReservedOrg refusal onboarding and federated provisioning apply — the
+		// ONE reserved-org predicate, so signup can never drift from them. The message
+		// is byte-identical to the tenant refuse below, so a prober cannot distinguish
+		// "reserved org" from "wrong tenant" (no existence/authority oracle).
+		if store.IsReservedOrg(f.Organization) {
+			return httpx.Err(c, "the user is not permitted to sign up to this application")
+		}
 		// Tenant isolation: the requested org must be the app's own org, a shared
 		// app, or an app that lets users choose their org — the same gate login
 		// enforces, so a signup cannot land a user in an arbitrary tenant.
@@ -125,10 +138,10 @@ func signupHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, msg)
 		}
 
-		// Create through the ONE canonical user path: bcrypt-hash the password once,
-		// persist, return the REDACTED row (no plaintext, no digest ever stored or
-		// returned). PasswordType is stamped "bcrypt" — exactly what internal/cred
-		// verifies for a new iam2 row.
+		// Create through the ONE canonical user path (users.Create): argon2id-hash the
+		// password once, persist, return the REDACTED row (no plaintext, no digest ever
+		// stored or returned). PasswordType is stamped "argon2id" — exactly what
+		// internal/cred verifies for a new iam2 row.
 		created, err := users.New(db).Create(ctx, &users.CreateInput{
 			User: schema.User{
 				Owner:             f.Organization,
