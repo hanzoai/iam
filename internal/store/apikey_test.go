@@ -76,6 +76,38 @@ func TestUserByAccessKey_BareUserRefWithinTenant(t *testing.T) {
 	}
 }
 
+// F1 REGRESSION — credential forgery: a Key in tenant A whose User names a foreign
+// owner (a victim tenant, or the reserved admin org = SuperAdmin) must resolve to
+// NOBODY, even though those users exist. The resolved owner is pinned to the KEY
+// ROW's own tenant; a "/"-qualified foreign reference fails closed.
+func TestUserByAccessKey_RejectsCrossTenantUserRef(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	// Real high-value victims in OTHER orgs.
+	admZ := seedKeyUser(t, db, "admin", "z", "z@hanzo.ai", "")
+	admZ.IsAdmin = true
+	if err := admZ.UpdateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	seedKeyUser(t, db, "victimorg", "ceo", "ceo@victim.example", "")
+
+	// Attacker plants keys in its OWN org (attackerOrg — a write it IS authorized
+	// for) pointing User at a foreign identity, with a KNOWN secret it supplied.
+	seedKey(t, db, "attackerOrg", "forge-super", "admin/z", "pk-live-FORGESUPER", "sk-live-FORGESUPER")
+	seedKey(t, db, "attackerOrg", "forge-victim", "victimorg/ceo", "pk-live-FORGEVICTIM", "sk-live-FORGEVICTIM")
+
+	for _, key := range []string{
+		"pk-live-FORGESUPER", "sk-live-FORGESUPER",
+		"pk-live-FORGEVICTIM", "sk-live-FORGEVICTIM",
+	} {
+		got, err := UserByAccessKey(ctx, db, key)
+		if !errors.Is(err, orm.ErrNotFound) || got != nil {
+			t.Fatalf("FORGERY: key %q resolved to %+v (err=%v), want (nil, ErrNotFound)", key, got, err)
+		}
+	}
+}
+
 // Fail-closed: empty, unknown, wrong-shape, and user-less keys all resolve to
 // orm.ErrNotFound — never a fallback or wrong user.
 func TestUserByAccessKey_FailsClosed(t *testing.T) {
