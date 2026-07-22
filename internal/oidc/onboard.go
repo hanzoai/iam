@@ -37,11 +37,12 @@ const (
 	maxOrgSlug = 60
 )
 
-// reservedOrgs are the IAM SYSTEM owners a customer org may never become — creating
-// one would collide with a signing-cert owner (admin/built-in) or a system principal
-// (app). Brand/staff orgs (hanzo/lux/zoo/pars in the console list) are NOT hard-coded
-// here (iam2 is white-label): an existing one is refused by the create-conflict check.
-var reservedOrgs = map[string]bool{"admin": true, "built-in": true, "app": true}
+// The IAM SYSTEM owners a customer org may never become — creating one would collide
+// with a signing-cert owner (admin/built-in) or a system principal (app) — are the
+// ONE store.IsReservedOrg set, shared with signup and federated provisioning so the
+// reserved set never drifts between surfaces. Brand/staff orgs (hanzo/lux/zoo/pars in
+// the console list) are NOT reserved here (iam2 is white-label): an existing one is
+// refused by the create-conflict check.
 
 // onboardForm is the request body: a name to create, or personal=true for the
 // one-click `<username>` org.
@@ -72,7 +73,7 @@ func onboardHandler(db orm.DB) zip.Handler {
 		if len(slug) < minOrgSlug {
 			return onboardErr(c, 400, "use at least 2 letters or numbers")
 		}
-		if reservedOrgs[slug] {
+		if store.IsReservedOrg(slug) {
 			return onboardErr(c, 400, "\""+slug+"\" is reserved. choose a different name")
 		}
 

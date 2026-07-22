@@ -196,7 +196,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 		return tokenErrorClient(c, "client authentication failed")
 	}
-	if isInternalApp(app) {
+	if publicTokenEndpointForbidden(app) {
 		return tokenErrorClient(c, "client is not permitted on this endpoint")
 	}
 
@@ -257,7 +257,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 		return tokenErrorClient(c, "client authentication failed")
 	}
-	if isInternalApp(app) {
+	if publicTokenEndpointForbidden(app) {
 		return tokenErrorClient(c, "client is not permitted on this endpoint")
 	}
 	if !app.IsPasswordEnabled() {
@@ -523,6 +523,23 @@ func newFamilyID(tok *schema.Token) string {
 // (<org>-iam), which may never obtain a token on the public token endpoint.
 func isInternalApp(app *schema.Application) bool {
 	return strings.HasSuffix(app.Name, "-iam")
+}
+
+// publicTokenEndpointForbidden reports whether an application must NEVER obtain a
+// token on the PUBLIC token endpoint (the client_credentials and password grants).
+// It is the ONE gate both grants apply — two disjoint reasons, one predicate:
+//
+//   - an internal service identity (<org>-iam), which authenticates through the
+//     operator's private provisioning path, never the public endpoint; and
+//   - an app that SERVES a reserved system org (admin/built-in/app — store.IsReservedOrg):
+//     a platform-internal client whose tokens have no business being minted by a
+//     public request. Even though such a token already resolves to NO authority (its
+//     subject "admin/<app>" has no user row, so authz grants it nothing — token.go /
+//     authz.principal), refusing it at the door makes the invariant STRUCTURAL: an
+//     admin-org app cannot mint on the public endpoint, period, independent of how the
+//     principal resolver later evolves. Fail-secure defense in depth.
+func publicTokenEndpointForbidden(app *schema.Application) bool {
+	return isInternalApp(app) || store.IsReservedOrg(app.Organization)
 }
 
 // redeemErrToResponse maps a RedeemCode error to the RFC 6749 error body.

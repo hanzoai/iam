@@ -120,6 +120,29 @@ func GetTokenByUserCode(_ context.Context, db orm.DB, userCode string) (*schema.
 // flag is a different, org-scoped question and never answers this one.
 func IsSuperAdmin(owner string) bool { return owner == "admin" }
 
+// reservedServiceOrg is the system organization that owns service/app principals —
+// reserved alongside the signing-cert owners, but not itself a signing owner.
+const reservedServiceOrg = "app"
+
+// IsReservedOrg reports whether owner is a SYSTEM organization a self-service,
+// federated, or otherwise customer-driven flow may NEVER land a principal in. It is
+// the ONE predicate that boundary shares (signup, onboarding, and federated
+// provisioning all consult it), so the reserved set is defined in exactly one place
+// and can never drift between those surfaces.
+//
+// The set is the SuperAdmin/signing trust boundary — admin and built-in, i.e.
+// IsSigningCertOwner, composed so a newly-reserved signing owner is covered here for
+// free — plus the service-principal org "app". A user created under any of these is a
+// platform identity, not a customer: a user under "admin" is a SuperAdmin (authz
+// derives Super from owner == "admin"), and a signing/built-in or service org is
+// platform trust material. These orgs are seeded, onboarded by a SuperAdmin, or
+// provisioned by the operator's service token — never reached by a public signup or
+// an external login. Fail-closed by construction: an unknown org is NOT reserved, so
+// legitimate tenants are unaffected while every reserved org is refused.
+func IsReservedOrg(owner string) bool {
+	return IsSigningCertOwner(owner) || owner == reservedServiceOrg
+}
+
 // GetSigningCert resolves a TRUSTED signing certificate by name (the JWKS
 // `kid`), searching only the reserved platform owners in order. A cert owned by
 // any other org is never returned, so an attacker-created cert with a colliding
