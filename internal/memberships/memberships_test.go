@@ -109,6 +109,18 @@ func (h *harness) post(t *testing.T, path string, body any, bearer string) (int,
 	return h.do(t, req)
 }
 
+// postBasic drives an add/delete verb authenticating as a confidential client
+// (client_secret_basic) — how a brand console / cloud service calls these verbs.
+func (h *harness) postBasic(t *testing.T, path string, body any, clientID, secret string) (int, env) {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", path, bytes.NewReader(b))
+	req.Host = "hanzo.id"
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(clientID, secret)
+	return h.do(t, req)
+}
+
 // do drives the request through the real mounted router and decodes the v1
 // envelope. A raw 401 (the Guard's fail-closed refusal) has no envelope body; the
 // caller asserts on the status alone.
@@ -238,6 +250,48 @@ func TestMembership_crossTenantDenied(t *testing.T) {
 	}
 }
 
+// RED F2 — a CapOrgAdmin (non-super) confidential client can create customer-org
+// memberships but must NEVER grant tenancy INTO a reserved system org (admin /
+// built-in), which would seed a SuperAdmin-org `orgs` claim on the target user. Only
+// a real SuperAdmin may. The client's legitimate power over a normal org is intact.
+func TestEnsureMembership_reservedOrgRequiresSuper(t *testing.T) {
+	h := newHarness(t)
+	seedClientApp(t, h.db, "hanzo-console", "console-secret")
+	t.Setenv("IAM_ORG_ADMIN_APPS", "hanzo-console")
+
+	// Into the reserved admin/built-in orgs: refused, verbatim.
+	for _, org := range []string{"admin", "built-in"} {
+		_, e := h.postBasic(t, "/v1/iam/add-membership",
+			map[string]string{"user": "hanzo/alice", "org": org, "role": "admin"}, "hanzo-console", "console-secret")
+		if e.Status != "error" || e.Msg != "auth:Unauthorized operation" {
+			t.Fatalf("CapOrgAdmin ensure into %q env=%+v, want error auth:Unauthorized operation", org, e)
+		}
+		if m, _ := store.GetMembership(context.Background(), h.db, "hanzo/alice", org); m != nil {
+			t.Fatalf("a reserved-org membership was created in %q despite the refusal", org)
+		}
+	}
+	// Revoke into a reserved org is gated the same way.
+	_, del := h.postBasic(t, "/v1/iam/delete-membership",
+		map[string]string{"user": "hanzo/alice", "org": "admin"}, "hanzo-console", "console-secret")
+	if del.Status != "error" || del.Msg != "auth:Unauthorized operation" {
+		t.Fatalf("CapOrgAdmin revoke into admin env=%+v, want error auth:Unauthorized operation", del)
+	}
+
+	// Legit power preserved: the SAME client CAN ensure into a normal customer org.
+	_, ok := h.postBasic(t, "/v1/iam/add-membership",
+		map[string]string{"user": "hanzo/alice", "org": "hanzo", "role": "member"}, "hanzo-console", "console-secret")
+	if ok.Status != "ok" {
+		t.Fatalf("CapOrgAdmin ensure into a normal org env=%+v, want ok (legit power broken)", ok)
+	}
+
+	// And a real SuperAdmin MAY grant a reserved-org membership (the escape hatch).
+	_, sup := h.post(t, "/v1/iam/add-membership",
+		map[string]string{"user": "hanzo/alice", "org": "admin", "role": "admin"}, h.token(t, "admin/root"))
+	if sup.Status != "ok" {
+		t.Fatalf("SuperAdmin ensure into admin env=%+v, want ok", sup)
+	}
+}
+
 // The verbs are gated: no bearer → the Guard fails closed (401).
 func TestMembershipVerbs_requireAuth(t *testing.T) {
 	h := newHarness(t)
@@ -293,6 +347,21 @@ func seedUser(t *testing.T, db orm.DB, owner, name string, admin bool) {
 	u.SetId(owner + "/" + name)
 	if err := u.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed user: %v", err)
+	}
+}
+
+// seedClientApp seeds an admin-owned confidential client (so the CapOrgAdmin
+// owner-pin holds) with a client_secret for Basic-auth authentication.
+func seedClientApp(t *testing.T, db orm.DB, name, secret string) {
+	t.Helper()
+	a := orm.New[schema.Application](db)
+	a.Owner, a.Name = "admin", name
+	a.Organization = "hanzo"
+	a.ClientId = name
+	a.ClientSecret = secret
+	a.SetId("admin/" + name)
+	if err := a.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed client app: %v", err)
 	}
 }
 
