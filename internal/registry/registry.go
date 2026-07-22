@@ -24,6 +24,16 @@
 // other authenticated principal is restricted to `pull`. An action a principal is
 // not authorized for is dropped, and a scope left with no authorized action is
 // omitted entirely — never a silent grant.
+//
+// POLICY (owner decision, deliberately preserved — do NOT silently change):
+// "any authenticated identity may `pull` any repository" is the EXISTING Casdoor
+// (iam-v1) behavior this port reproduces byte-for-byte so the identity cutover is
+// pure parity, not a policy shift. Pulls are NOT org-scoped. Tightening this to
+// per-org pull authorization is a legitimate future hardening, but it is an OWNER
+// call, not a port detail: CI and cluster nodes pull cross-org base images through
+// this realm, so narrowing pull scope here can break the image supply chain. If
+// that change is made, do it as an explicit, tested policy decision — never as an
+// incidental edit to scopeAccess/authorizeActions.
 package registry
 
 import (
