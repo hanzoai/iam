@@ -141,6 +141,37 @@ func TestGetUserByAccessKey_ResolvesAndNoLeak(t *testing.T) {
 	}
 }
 
+// F1 REGRESSION — end to end: a forged Key (planted in the attacker's own org but
+// pointing User at the reserved admin org = SuperAdmin) must yield NO identity
+// through the real get-user?accessKey path, even to the cap-holding service caller.
+func TestGetUserByAccessKey_CrossTenantForgeryDenied(t *testing.T) {
+	h := newHarness(t)
+	keyFixtures(t, h)
+
+	// admin/root already exists in the harness (a SuperAdmin). Plant a Key in
+	// "attackerOrg" whose User names it, with a KNOWN secret. Seeded directly (the
+	// write-side gate would also reject it via the API).
+	k := orm.New[schema.Key](h.db)
+	k.Owner, k.Name, k.User = "attackerOrg", "forge", "admin/root"
+	k.AccessKey, k.AccessSecret = "pk-live-FORGE", "sk-live-FORGE"
+	k.SetId("attackerOrg/forge")
+	if err := k.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed forged key: %v", err)
+	}
+
+	for _, key := range []string{"pk-live-FORGE", "sk-live-FORGE"} {
+		_, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+key, resolverApp, svcSecret)
+		var e keyEnv
+		_ = json.Unmarshal([]byte(body), &e)
+		if e.Status != "error" || e.Msg != "the entity does not exist" {
+			t.Fatalf("FORGERY resolved via %q: env=%+v body=%s", key, e, body)
+		}
+		if strings.Contains(body, "\"admin\"") || strings.Contains(body, "\"root\"") {
+			t.Fatalf("FORGERY leaked the SuperAdmin identity via %q: %s", key, body)
+		}
+	}
+}
+
 // A caller WITHOUT the capability is refused with v1's verbatim message, whether it
 // is an app not on the allowlist or (implicitly) a human — never a resolved user.
 func TestGetUserByAccessKey_NonCapDenied(t *testing.T) {

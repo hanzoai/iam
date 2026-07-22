@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -109,6 +110,9 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
+		if err := sameTenantUser(in); err != nil {
+			return nil, err
+		}
 		if _, err := orm.Get[schema.Key](db, id(in.Owner, in.Name)); err == nil {
 			return nil, zip.ErrConflict("key already exists: " + id(in.Owner, in.Name))
 		} else if !errors.Is(err, orm.ErrNotFound) {
@@ -149,6 +153,9 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		if err := sameTenantUser(in); err != nil {
+			return nil, err
+		}
 		apply(k, in)
 		k.UpdatedTime = time.Now().UTC().Format(time.RFC3339)
 		if err := k.UpdateCtx(ctx); err != nil {
@@ -176,6 +183,21 @@ func del(db orm.DB) zip.TypedHandler[Ref, DeleteResponse] {
 		}
 		return &DeleteResponse{Deleted: true}, nil
 	}
+}
+
+// sameTenantUser rejects a Key whose User field names a DIFFERENT owner than the key
+// itself — the write-side half of the F1 credential-forgery gate (store.userOwningKey
+// is the authoritative half). Key.User, AccessKey, and AccessSecret are all
+// caller-supplied, and the key write is authorized only on (Owner, Name), so a
+// "/"-qualified User naming "admin/z" or a victim tenant would otherwise persist and
+// let get-user?accessKey resolve a foreign / SuperAdmin identity. A bare username or
+// an empty User is fine (both resolve within the key's own owner); a cross-tenant
+// qualified reference is refused, so no forged row is ever written.
+func sameTenantUser(k *schema.Key) error {
+	if o, _, ok := strings.Cut(k.User, "/"); ok && o != k.Owner {
+		return zip.ErrBadRequest("key user must belong to the key's owner")
+	}
+	return nil
 }
 
 // apply copies the caller-settable fields from src onto dst, leaving the
