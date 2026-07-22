@@ -411,13 +411,15 @@ func TestToken_User_PushOnly_Denied(t *testing.T) {
 	}
 }
 
-// TestToken_HanzoOrgAdmin_PullOnly is the defense-in-depth assertion: a hanzo-org
-// user with IsAdmin=true AUTHENTICATES (hanzo ∈ candidateOrgs) but is NOT
-// privileged — hanzo is not a signing-trust org, and IsAdmin alone is not a push
-// signal (onboard sets it on every org creator). It gets pull, never push.
-func TestToken_HanzoOrgAdmin_PullOnly(t *testing.T) {
+// TestToken_HanzoOrgAdmin_CanPush is the v1-PARITY assertion: a hanzo-org user with
+// IsAdmin=true authenticates (hanzo ∈ candidateOrgs) and IS privileged — casdoor
+// grants push to an IsAdmin within {admin,hanzo}, and this port preserves that
+// exactly. The real cross-tenant close is that a FOREIGN-tenant admin never reaches
+// this gate (TestToken_ForeignTenantKey_Denied). Tightening hanzo-human push to
+// admin-org-only is a deferred owner policy decision, not a migration change.
+func TestToken_HanzoOrgAdmin_CanPush(t *testing.T) {
 	app, db, _ := newServer(t)
-	seedUser(t, db, "hanzo", "carol", "s0verysecret!!", true) // IsAdmin, but org hanzo
+	seedUser(t, db, "hanzo", "carol", "s0verysecret!!", true) // IsAdmin in org hanzo
 
 	status, body, _ := tokenGET(t, app, "carol", "s0verysecret!!",
 		"registry.hanzo.ai", "repository:hanzo/app:pull,push")
@@ -426,9 +428,9 @@ func TestToken_HanzoOrgAdmin_PullOnly(t *testing.T) {
 	}
 	claims := verifyClaims(t, app, body["token"].(string))
 	acc := accessOf(t, claims)
-	want := []access{{Type: "repository", Name: "hanzo/app", Actions: []string{"pull"}}}
+	want := []access{{Type: "repository", Name: "hanzo/app", Actions: []string{"pull", "push"}}}
 	if !eqAccess(acc, want) {
-		t.Fatalf("hanzo-org admin access = %v, want pull-only %v (push is signing-org only)", acc, want)
+		t.Fatalf("hanzo-org admin access = %v, want pull+push %v (v1 parity)", acc, want)
 	}
 }
 
