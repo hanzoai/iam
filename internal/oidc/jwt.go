@@ -42,6 +42,12 @@ type Claims struct {
 	Nonce        string `json:"nonce,omitempty"`
 	Azp          string `json:"azp,omitempty"`
 	TokenType    string `json:"tokenType,omitempty"`
+	// Orgs is the membership set — the tenancy the identity may act in, home org
+	// first — a resource server reads to authorize an org-switch (X-Org-Id ∈ orgs)
+	// with no round-trip. omitempty ⇒ a nil set omits the claim entirely (a machine
+	// token, which has no membership, never carries it), so one struct still serves
+	// both an app token and a user token without emitting an empty claim.
+	Orgs []schema.OrgRef `json:"orgs,omitempty"`
 }
 
 // Signer signs tokens with one key under one algorithm. Immutable after
@@ -109,8 +115,11 @@ func NewRSASigner(key *rsa.PrivateKey, kid, issuer string) *Signer {
 
 // Sign issues a signed access token for (app, user) with the given scope. now is
 // injected for testability; ttl is the token lifetime. The audience is the app's
-// clientId (validators fail closed when aud != clientId).
-func (s *Signer) Sign(app *schema.Application, userID, email, name, scope string, ttl time.Duration, now time.Time) (string, error) {
+// clientId (validators fail closed when aud != clientId). orgs is the caller-
+// resolved membership set (home org first); nil for a machine token, which omits
+// the claim — the Signer stays decoupled from schema.User, so the caller resolves
+// the tenancy (store.MemberOrgRefs) and passes it.
+func (s *Signer) Sign(app *schema.Application, userID, email, name, scope string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
@@ -135,6 +144,7 @@ func (s *Signer) Sign(app *schema.Application, userID, email, name, scope string
 		Name:         name,
 		Azp:          app.ClientId,
 		TokenType:    "access-token",
+		Orgs:         orgs,
 	}
 	return s.signClaims(claims)
 }
@@ -150,7 +160,7 @@ func (s *Signer) Sign(app *schema.Application, userID, email, name, scope string
 // JWKS verifies it — the token is indistinguishable from one the user obtained
 // directly, which is the point. The Signer stays decoupled from schema.User: the
 // handler resolves and passes the values it authorized.
-func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, scope string, ttl time.Duration, now time.Time) (string, error) {
+func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, scope string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
@@ -175,6 +185,7 @@ func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, scope stri
 		Name:         name,
 		Azp:          azp,
 		TokenType:    "access-token",
+		Orgs:         orgs,
 	}
 	return s.signClaims(claims)
 }
@@ -183,7 +194,7 @@ func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, scope stri
 // token by carrying the echoed nonce and by declaring tokenType "id-token"; the
 // audience is the client the token was minted for (the RP), and iss matches the
 // discovery issuer so a standard OIDC client validates it.
-func (s *Signer) SignID(app *schema.Application, userID, email, name, scope, nonce string, ttl time.Duration, now time.Time) (string, error) {
+func (s *Signer) SignID(app *schema.Application, userID, email, name, scope, nonce string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
@@ -209,6 +220,7 @@ func (s *Signer) SignID(app *schema.Application, userID, email, name, scope, non
 		Nonce:        nonce,
 		Azp:          app.ClientId,
 		TokenType:    "id-token",
+		Orgs:         orgs,
 	}
 	return s.signClaims(claims)
 }

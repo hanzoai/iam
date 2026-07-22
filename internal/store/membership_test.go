@@ -93,6 +93,78 @@ func TestMembershipsByUserAndByOrg(t *testing.T) {
 	}
 }
 
+// MemberOrgRefs is the ONE way a user's token `orgs` claim is built: the HOME org
+// first (its role from HomeRole, never an explicit row), then every explicit
+// membership, deduped by org — home wins and is never emitted twice.
+func TestMemberOrgRefs_HomeFirstAndDedup(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	// alice is a regular user (home role = member) with team memberships AND a
+	// redundant explicit row for her OWN home org carrying a DIFFERENT (owner) role.
+	alice := orm.New[schema.User](db)
+	alice.Owner, alice.Name = "hanzo", "alice"
+	alice.SetId("hanzo/alice")
+	if err := alice.CreateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []struct{ org, role string }{
+		{"hanzo", RoleOwner}, // redundant home row — must NOT override home role or duplicate
+		{"team-x", RoleAdmin},
+		{"team-y", RoleMember},
+	} {
+		if _, err := EnsureMembership(ctx, db, "hanzo/alice", m.org, m.role); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	refs := MemberOrgRefs(ctx, db, alice)
+	// Home first, home role from HomeRole (member) — NOT the explicit owner row —
+	// then the team orgs in Org order, with hanzo never repeated.
+	want := []schema.OrgRef{
+		{Org: "hanzo", Role: RoleMember},
+		{Org: "team-x", Role: RoleAdmin},
+		{Org: "team-y", Role: RoleMember},
+	}
+	if len(refs) != len(want) {
+		t.Fatalf("orgs = %+v, want %+v (home-first, deduped)", refs, want)
+	}
+	for i, w := range want {
+		if refs[i] != w {
+			t.Fatalf("orgs[%d] = %+v, want %+v", i, refs[i], w)
+		}
+	}
+	seen := map[string]int{}
+	for _, r := range refs {
+		seen[r.Org]++
+	}
+	if seen["hanzo"] != 1 {
+		t.Fatalf("home org emitted %d times, want exactly 1", seen["hanzo"])
+	}
+}
+
+// A user with no explicit membership still carries its home org; an admin's home
+// role is admin; a nil/unresolved user (a machine token) carries nothing.
+func TestMemberOrgRefs_HomeOnlyAndNil(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	boss := orm.New[schema.User](db)
+	boss.Owner, boss.Name, boss.IsAdmin = "hanzo", "boss", true
+	boss.SetId("hanzo/boss")
+	if err := boss.CreateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	refs := MemberOrgRefs(ctx, db, boss)
+	if len(refs) != 1 || refs[0] != (schema.OrgRef{Org: "hanzo", Role: RoleAdmin}) {
+		t.Fatalf("no-explicit admin orgs = %+v, want [{hanzo admin}]", refs)
+	}
+	if refs := MemberOrgRefs(ctx, db, nil); refs != nil {
+		t.Fatalf("nil user must carry no membership, got %+v", refs)
+	}
+}
+
 // The boot backfill seeds the HOME-org membership for every user, idempotently.
 func TestBackfillMemberships(t *testing.T) {
 	db := memDB(t)
