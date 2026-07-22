@@ -226,7 +226,10 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 // ScopeSwitcher's project/workspace list), not ?owner=/?id=/the path, so the Guard
 // cannot pre-authorize it generically; the handler scopes it through authz.Scope
 // instead (the read analogue of SCIM's path-targeted authorization).
-var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects", "/v1/iam/get-organization-workspaces", "/v1/iam/service-accounts", "/v1/iam/memberships"}
+// get-memberships is the Casdoor alias of /v1/iam/memberships whose target rides in
+// ?user=/?org=, so it belongs here for the same reason its REST twin does — the
+// membership list handler's own scoped() check is the tenant gate.
+var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects", "/v1/iam/get-organization-workspaces", "/v1/iam/service-accounts", "/v1/iam/memberships", "/v1/iam/get-memberships"}
 
 // pathAuthorized reports whether path is under a handler-authorized subtree.
 func pathAuthorized(path string) bool {
