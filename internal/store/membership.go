@@ -72,6 +72,25 @@ func GetMembership(_ context.Context, db orm.DB, user, org string) (*schema.Memb
 	return m, err
 }
 
+// DeleteMembership revokes a user's right to act in an org — the inverse of
+// EnsureMembership, keyed by the SAME (user, org) natural key, so a grant and its
+// revoke address exactly one row. Idempotent: revoking an absent membership reports
+// (false, nil), never an error, so a retried or racing revoke is safe. Reports
+// whether a row was removed.
+func DeleteMembership(ctx context.Context, db orm.DB, user, org string) (bool, error) {
+	if user == "" || org == "" {
+		return false, nil
+	}
+	m, err := GetMembership(ctx, db, user, org)
+	if err != nil || m == nil {
+		return false, err
+	}
+	if err := m.DeleteCtx(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // MembershipsByUser returns every org a user may explicitly act in. A caller
 // unions the user's HOME org itself (the token resolver does), so the set is
 // complete even before any team is joined.
