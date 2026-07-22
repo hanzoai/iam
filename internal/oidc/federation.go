@@ -496,7 +496,7 @@ func federationBaseURL(c *zip.Ctx) string {
 // one was bypassed and still refuses the escalation.
 func federationOrgAllowed(app *schema.Application) bool {
 	org := strings.TrimSpace(app.Organization)
-	if org == "" || reservedOrgs[org] {
+	if org == "" || store.IsReservedOrg(org) {
 		return false
 	}
 	if store.IsSigningCertOwner(app.Owner) {
