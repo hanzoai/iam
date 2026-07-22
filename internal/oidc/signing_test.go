@@ -57,7 +57,7 @@ func TestSigner_ES256RoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Unix(1_800_000_000, 0)
-	tok, err := s.Sign(testApp(), "hanzo/alice", "alice@hanzo.ai", "Alice", "openid", time.Hour, now)
+	tok, err := s.Sign(testApp(), "hanzo/alice", "alice@hanzo.ai", "Alice", "openid", nil, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestSigner_MLDSA65RoundTripThroughVerify(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	nowFuncSet(t, now.Add(time.Minute))
 
-	tok, err := s.SignID(testApp(), "hanzo/alice", "alice@hanzo.ai", "Alice", "openid", "nonce-xyz", time.Hour, now)
+	tok, err := s.SignID(testApp(), "hanzo/alice", "alice@hanzo.ai", "Alice", "openid", "nonce-xyz", nil, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestSignID_EchoesNonce(t *testing.T) {
 	key := sharedKey(t)
 	s := NewRSASigner(key, "cert-hanzo", "https://hanzo.id")
 	now := time.Unix(1_800_000_000, 0)
-	tok, err := s.SignID(testApp(), "hanzo/alice", "a@h.ai", "Alice", "openid", "n-123", time.Hour, now)
+	tok, err := s.SignID(testApp(), "hanzo/alice", "a@h.ai", "Alice", "openid", "n-123", nil, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestVerifyToken_RejectsUnknownKid(t *testing.T) {
 	s, _ := NewSignerFromCert(other, testApp(), "https://hanzo.id")
 	now := time.Unix(1_800_000_000, 0)
 	nowFuncSet(t, now.Add(time.Minute))
-	tok, _ := s.Sign(testApp(), "hanzo/alice", "", "", "openid", time.Hour, now)
+	tok, _ := s.Sign(testApp(), "hanzo/alice", "", "", "openid", nil, time.Hour, now)
 	if _, err := verifyToken(context.Background(), db, tok); err == nil {
 		t.Fatal("token with an unknown kid was accepted")
 	}
@@ -179,7 +179,7 @@ func TestVerify_TenantCannotShadowSigningKey(t *testing.T) {
 
 	// Attacker forges a token signed with THEIR key, kid=cert-hanzo, claiming admin.
 	forger := NewRSASigner(attackerKey, "cert-hanzo", "https://hanzo.id")
-	forged, err := forger.Sign(&schema.Application{ClientId: "victim"}, "admin/superadmin", "", "", "openid", time.Hour, base)
+	forged, err := forger.Sign(&schema.Application{ClientId: "victim"}, "admin/superadmin", "", "", "openid", nil, time.Hour, base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestVerify_NonPlatformCertNeverTrusted(t *testing.T) {
 	persistCert(t, db, ac)
 
 	forger := NewRSASigner(attackerKey, "cert-evil", "https://hanzo.id")
-	forged, _ := forger.Sign(&schema.Application{ClientId: "victim"}, "admin/superadmin", "", "", "openid", time.Hour, base)
+	forged, _ := forger.Sign(&schema.Application{ClientId: "victim"}, "admin/superadmin", "", "", "openid", nil, time.Hour, base)
 	if _, err := verifyToken(context.Background(), db, forged); err == nil {
 		t.Fatal("a non-platform cert must never verify a token")
 	}
