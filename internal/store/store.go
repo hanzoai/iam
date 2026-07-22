@@ -17,18 +17,67 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 )
 
-// GetApplicationByClientId resolves an OAuth2/OIDC client by its clientId.
-// Returns (nil, nil) when no application matches (a not-found is not an error
-// at this layer — the handler decides the response).
-func GetApplicationByClientId(_ context.Context, db orm.DB, clientId string) (*schema.Application, error) {
+// GetApplicationByClientId resolves an OAuth2/OIDC client by its clientId,
+// DETERMINISTICALLY: among any rows carrying clientId it returns the platform-
+// preferred one — a reserved signing owner (admin/built-in) outranks a tenant, and
+// within a tier the lexically-least (owner,name) wins. clientId is globally unique
+// by the applications create/update guard, so this normally has exactly one
+// candidate; the ordering is defense-in-depth that makes a stray duplicate resolve
+// to the PLATFORM row rather than whichever row the storage engine's heap happened
+// to return first. A First() with no ORDER BY was the collidable-mint vector (safe
+// on dev sqlite by rowid, UNSPECIFIED on Postgres): a tenant that registered a row
+// with a mint-allow-listed clientId could have its row win resolution and
+// authenticate a mint. This can no longer happen — the platform row always wins,
+// and the owner-pin on the mint/capability gates denies a non-signing owner even if
+// it did. Returns (nil, nil) when no application matches.
+func GetApplicationByClientId(ctx context.Context, db orm.DB, clientId string) (*schema.Application, error) {
+	apps, err := ListApplicationsByClientId(ctx, db, clientId)
+	if err != nil {
+		return nil, err
+	}
+	return preferredApp(apps), nil
+}
+
+// ListApplicationsByClientId returns EVERY application row carrying clientId — the
+// ONE place "which applications share this clientId" is answered. It backs both the
+// deterministic single resolve above and the global-uniqueness guard the
+// applications create/update path enforces: a JSON-document store has no per-field
+// column to hang a DB UNIQUE index on, so clientId uniqueness is enforced at the
+// write, exactly as the (owner,name) natural key already is. Returns nil when
+// clientId is empty or unmatched.
+func ListApplicationsByClientId(ctx context.Context, db orm.DB, clientId string) ([]*schema.Application, error) {
 	if clientId == "" {
 		return nil, nil
 	}
-	app, err := orm.TypedQuery[schema.Application](db).Filter("ClientId=", clientId).First()
-	if err == orm.ErrNotFound {
-		return nil, nil
+	return orm.TypedQuery[schema.Application](db).Filter("ClientId=", clientId).GetAll(ctx)
+}
+
+// preferredApp deterministically selects the platform-preferred application among
+// rows sharing a clientId (see morePreferredApp for the total order). Returns nil
+// for an empty set, preserving GetApplicationByClientId's (nil, nil) not-found
+// contract.
+func preferredApp(apps []*schema.Application) *schema.Application {
+	var best *schema.Application
+	for _, a := range apps {
+		if a == nil {
+			continue
+		}
+		if best == nil || morePreferredApp(a, best) {
+			best = a
+		}
 	}
-	return app, err
+	return best
+}
+
+// morePreferredApp reports whether a outranks b for clientId resolution: a reserved
+// signing owner (admin/built-in) outranks a non-reserved one; within the same tier
+// the lexically-least (owner,name) wins. The order is total and independent of
+// storage/heap order, so resolution is deterministic on every backend.
+func morePreferredApp(a, b *schema.Application) bool {
+	if sa, sb := IsSigningCertOwner(a.Owner), IsSigningCertOwner(b.Owner); sa != sb {
+		return sa
+	}
+	return a.Owner+"/"+a.Name < b.Owner+"/"+b.Name
 }
 
 // GetApplicationByName resolves an application by (owner, name).
@@ -119,6 +168,29 @@ func GetTokenByUserCode(_ context.Context, db orm.DB, userCode string) (*schema.
 // gate) can ask the same question without importing authz. A per-org isAdmin
 // flag is a different, org-scoped question and never answers this one.
 func IsSuperAdmin(owner string) bool { return owner == "admin" }
+
+// reservedServiceOrg is the system organization that owns service/app principals —
+// reserved alongside the signing-cert owners, but not itself a signing owner.
+const reservedServiceOrg = "app"
+
+// IsReservedOrg reports whether owner is a SYSTEM organization a self-service,
+// federated, or otherwise customer-driven flow may NEVER land a principal in. It is
+// the ONE predicate that boundary shares (signup, onboarding, and federated
+// provisioning all consult it), so the reserved set is defined in exactly one place
+// and can never drift between those surfaces.
+//
+// The set is the SuperAdmin/signing trust boundary — admin and built-in, i.e.
+// IsSigningCertOwner, composed so a newly-reserved signing owner is covered here for
+// free — plus the service-principal org "app". A user created under any of these is a
+// platform identity, not a customer: a user under "admin" is a SuperAdmin (authz
+// derives Super from owner == "admin"), and a signing/built-in or service org is
+// platform trust material. These orgs are seeded, onboarded by a SuperAdmin, or
+// provisioned by the operator's service token — never reached by a public signup or
+// an external login. Fail-closed by construction: an unknown org is NOT reserved, so
+// legitimate tenants are unaffected while every reserved org is refused.
+func IsReservedOrg(owner string) bool {
+	return IsSigningCertOwner(owner) || owner == reservedServiceOrg
+}
 
 // GetSigningCert resolves a TRUSTED signing certificate by name (the JWKS
 // `kid`), searching only the reserved platform owners in order. A cert owned by
