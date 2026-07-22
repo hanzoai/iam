@@ -100,13 +100,15 @@ func testKeyring(t *testing.T) *keyring {
 }
 
 // newServer mounts the registry surface exactly as routes.Route does — on a root
-// (empty-prefix) PUBLIC router — with the injected keyring.
+// (empty-prefix) PUBLIC router — with an injected keyring resolver. The resolver
+// closes over the fixed golden key, so tests never touch env/process state and the
+// signing/JWKS key is deterministic.
 func newServer(t *testing.T) (*zip.App, orm.DB, *keyring) {
 	t.Helper()
 	db := openTestDB(t)
 	kr := testKeyring(t)
 	app := zip.New(zip.Config{AppName: "iam2-registry-test", DisableStartupMessage: true})
-	mount(app.Group(""), db, kr)
+	mount(app.Group(""), db, func() (*keyring, error) { return kr, nil })
 	return app, db, kr
 }
 
@@ -139,6 +141,33 @@ func seedUserKey(t *testing.T, db orm.DB, org, name, accessKey string) {
 	u.SetId(org + "/" + name)
 	if err := u.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed user key: %v", err)
+	}
+}
+
+// seedKeyRow creates a user in org `org` (IsAdmin as given) plus a schema.Key
+// (pk-/sk- halves) that belongs to it — the exact shape store.UserByAccessKey
+// resolves a pk-/sk- credential through. Used to model the attacker: a key minted
+// in the attacker's OWN org (a legitimate self-org write) that must nonetheless
+// gain nothing on the shared registry.
+func seedKeyRow(t *testing.T, db orm.DB, org, name string, isAdmin bool, pk, sk string) {
+	t.Helper()
+	u := orm.New[schema.User](db)
+	u.Owner = org
+	u.Name = name
+	u.IsAdmin = isAdmin
+	u.SetId(org + "/" + name)
+	if err := u.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed key-row user: %v", err)
+	}
+	k := orm.New[schema.Key](db)
+	k.Owner = org
+	k.Name = name + "-key"
+	k.User = org + "/" + name
+	k.AccessKey = pk
+	k.AccessSecret = sk
+	k.SetId(org + "/" + name + "-key")
+	if err := k.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed key row: %v", err)
 	}
 }
 
@@ -382,18 +411,24 @@ func TestToken_User_PushOnly_Denied(t *testing.T) {
 	}
 }
 
-// TestToken_AdminUser_PullPush proves an admin user is privileged (push granted).
-func TestToken_AdminUser_PullPush(t *testing.T) {
+// TestToken_HanzoOrgAdmin_PullOnly is the defense-in-depth assertion: a hanzo-org
+// user with IsAdmin=true AUTHENTICATES (hanzo ∈ candidateOrgs) but is NOT
+// privileged — hanzo is not a signing-trust org, and IsAdmin alone is not a push
+// signal (onboard sets it on every org creator). It gets pull, never push.
+func TestToken_HanzoOrgAdmin_PullOnly(t *testing.T) {
 	app, db, _ := newServer(t)
-	seedUser(t, db, "hanzo", "carol", "s0verysecret!!", true) // IsAdmin
+	seedUser(t, db, "hanzo", "carol", "s0verysecret!!", true) // IsAdmin, but org hanzo
 
-	_, body, _ := tokenGET(t, app, "carol", "s0verysecret!!",
+	status, body, _ := tokenGET(t, app, "carol", "s0verysecret!!",
 		"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+	if status != 200 {
+		t.Fatalf("status = %d, body %v", status, body)
+	}
 	claims := verifyClaims(t, app, body["token"].(string))
 	acc := accessOf(t, claims)
-	want := []access{{Type: "repository", Name: "hanzo/app", Actions: []string{"pull", "push"}}}
+	want := []access{{Type: "repository", Name: "hanzo/app", Actions: []string{"pull"}}}
 	if !eqAccess(acc, want) {
-		t.Fatalf("admin access = %v, want %v", acc, want)
+		t.Fatalf("hanzo-org admin access = %v, want pull-only %v (push is signing-org only)", acc, want)
 	}
 }
 
@@ -452,6 +487,39 @@ func TestToken_ApiKey_Username(t *testing.T) {
 	claims := verifyClaims(t, app, body["token"].(string))
 	if claims["sub"] != "hanzo/erin" {
 		t.Fatalf("sub = %v, want hanzo/erin", claims["sub"])
+	}
+}
+
+// TestToken_ForeignTenantKey_Denied is the regression proof for the cross-tenant
+// image-poisoning CRITICAL. The attacker self-onboards org "evil" (becomes IsAdmin
+// there), mints a key in their OWN org (a legitimate self-org write), and presents
+// it at docker login. The key resolves — to a user whose owner is "evil" — but
+// that owner is outside candidateOrgs {admin, hanzo}, so authentication is DENIED:
+// 401, NO token. A foreign-tenant key cannot get even a pull token, let alone
+// push. Before the fix this path minted a privileged (push) token on the shared
+// registry.
+func TestToken_ForeignTenantKey_Denied(t *testing.T) {
+	app, db, _ := newServer(t)
+	seedKeyRow(t, db, "evil", "mallory", true, "pk-live-EVIL", "sk-live-EVIL")
+
+	// Probe BOTH key halves and BOTH credential positions (username / password),
+	// and BOTH a push and a pull scope — every shape must be denied.
+	for _, key := range []string{"sk-live-EVIL", "pk-live-EVIL"} {
+		for _, scope := range []string{"repository:hanzo/iam:pull,push", "repository:hanzo/iam:pull"} {
+			// key as password
+			status, body, hdr := tokenGET(t, app, "mallory", key, "registry.hanzo.ai", scope)
+			if status != 401 || body["token"] != nil {
+				t.Fatalf("foreign key %s (password) scope %q: status=%d body=%v — must be 401/no token", key, scope, status, body)
+			}
+			if hdr.Get("WWW-Authenticate") == "" {
+				t.Fatalf("foreign key %s: missing WWW-Authenticate on 401", key)
+			}
+			// key as username
+			status, body, _ = tokenGET(t, app, key, "x", "registry.hanzo.ai", scope)
+			if status != 401 || body["token"] != nil {
+				t.Fatalf("foreign key %s (username) scope %q: status=%d body=%v — must be 401/no token", key, scope, status, body)
+			}
+		}
 	}
 }
 
@@ -626,6 +694,71 @@ func independentKID(t *testing.T, pub *rsa.PublicKey) string {
 		parts = append(parts, s[i:end])
 	}
 	return strings.Join(parts, ":")
+}
+
+// --- signing-key resolution (fail-closed by default) ---
+
+// clearKeyEnv wipes every signing-key env var for a test, so resolveKeyring reads
+// exactly what the test sets and never inherits an ambient key.
+func clearKeyEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv(envSigningKey, "")
+	t.Setenv(envSigningKeyFile, "")
+	t.Setenv(envAllowEphemeral, "")
+}
+
+// TestKeyring_FailsClosed_NoEphemeralByDefault is the regression proof for the
+// fail-open MEDIUM: with NO key configured and NO explicit opt-in, resolution
+// ERRORS — it must NOT silently mint an ephemeral key the registry cannot trust.
+func TestKeyring_FailsClosed_NoEphemeralByDefault(t *testing.T) {
+	clearKeyEnv(t)
+	kr, err := resolveKeyring()
+	if err == nil {
+		t.Fatalf("resolveKeyring succeeded (kid %q) with no key and no opt-in — must fail closed", kr.kid)
+	}
+	if kr != nil {
+		t.Fatalf("resolveKeyring returned a keyring on failure: %v", kr)
+	}
+}
+
+// TestKeyring_EphemeralRequiresOptIn proves an ephemeral key is minted ONLY under
+// the explicit dev opt-in.
+func TestKeyring_EphemeralRequiresOptIn(t *testing.T) {
+	clearKeyEnv(t)
+	t.Setenv(envAllowEphemeral, "true")
+	kr, err := resolveKeyring()
+	if err != nil || kr == nil {
+		t.Fatalf("dev opt-in should mint an ephemeral key: kr=%v err=%v", kr, err)
+	}
+	if kr.kid == "" {
+		t.Fatal("ephemeral keyring has no kid")
+	}
+}
+
+// TestKeyring_LoadsConfiguredKey proves a configured inline key is used and yields
+// the pinned kid — the continuity path (same key ⇒ same kid ⇒ ROOTCERTBUNDLE valid).
+func TestKeyring_LoadsConfiguredKey(t *testing.T) {
+	clearKeyEnv(t)
+	t.Setenv(envSigningKey, goldenKeyPEM)
+	kr, err := resolveKeyring()
+	if err != nil {
+		t.Fatalf("resolveKeyring with a configured key: %v", err)
+	}
+	if kr.kid != goldenKID {
+		t.Fatalf("configured-key kid = %q, want golden %q", kr.kid, goldenKID)
+	}
+}
+
+// TestKeyring_BrokenKeyIsError proves a configured-but-unparseable key is an error
+// in every environment — never a silent ephemeral fallback that masks a broken
+// secret (even WITH the ephemeral opt-in set).
+func TestKeyring_BrokenKeyIsError(t *testing.T) {
+	clearKeyEnv(t)
+	t.Setenv(envSigningKey, "-----BEGIN PRIVATE KEY-----\nnot base64 pem\n-----END PRIVATE KEY-----")
+	t.Setenv(envAllowEphemeral, "true") // even opted-in, a broken configured key must error
+	if _, err := resolveKeyring(); err == nil {
+		t.Fatal("a broken configured key must be an error, not a silent ephemeral fallback")
+	}
 }
 
 // --- comparison helpers ---
