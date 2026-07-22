@@ -49,7 +49,6 @@ package authz
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"reflect"
 	"strings"
@@ -73,14 +72,8 @@ const adminOrg = "admin"
 // subject); User is its name within that org (empty for a machine token); Admin
 // is the org-admin flag; Super is the SuperAdmin predicate (Org == adminOrg).
 type Principal struct {
-	Org  string
-	User string
-	// App is the application NAME when the request authenticated as a confidential
-	// client (client_secret_basic), and "" for every human. An app principal is
-	// never Admin and never Super — its whole authority is its capability allowlist
-	// (cap.go), so a leaked client credential can neither read another tenant nor
-	// touch signing material.
-	App   string
+	Org   string
+	User  string
 	Admin bool
 	Super bool
 }
@@ -132,43 +125,6 @@ func IsSuper(ctx context.Context) bool {
 	return ok && p.Super
 }
 
-// CanSetOrg reports whether principal p may point a resource at organization
-// `org` — the tenant an application SERVES (the org every credential minted
-// through that app lands in), authorized EXACTLY as an owner target through the
-// one policy: a SuperAdmin may set any org; anyone else only their OWN org, never
-// a reserved platform org (admin/built-in — the SuperAdmin/signing vector) nor
-// another tenant (cross-tenant mint). It is the gate the application create/update
-// path applies to the Organization FIELD — closing the hole where authorizing only
-// the top-level Owner let a tenant admin register an app whose Organization named
-// the admin org (SuperAdmin) or a victim tenant. Fails closed on a nil principal.
-func CanSetOrg(p *Principal, org string) bool {
-	if p == nil {
-		return false
-	}
-	return authorize(p, "POST", "applications", org, "")
-}
-
-// Optional resolves the Principal a PUBLIC route's caller happens to carry, or
-// nil when the request is anonymous or its bearer does not verify. The Guard
-// admits a public path WITHOUT resolving a principal (a browser must reach the
-// pre-auth surface before it holds a token), so From() is empty there — a public
-// handler that legitimately honors an authenticated caller resolves it here.
-//
-// It is the same fail-closed resolution every gated route runs (one verifier,
-// one user load, one revocation check); only the outcome differs — a bad bearer
-// is nil rather than a 401, because the caller's flow continues anonymously.
-// A handler must therefore treat a nil Principal as "anonymous", never as an
-// error, and must never widen authority on the strength of this alone: it proves
-// only WHO the caller is, not that the caller INTENDED this request (the wallet
-// link branch pairs it with a same-site check for exactly that reason).
-func Optional(c *zip.Ctx, db orm.DB) *Principal {
-	p, err := principal(c, db)
-	if err != nil {
-		return nil
-	}
-	return p
-}
-
 // Fail-closed reasons. The Guard collapses all of them to one opaque 401 so a
 // prober cannot tell a bad signature from an expired token from a revoked user.
 var (
@@ -217,7 +173,7 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 // ?organization= (the ScopeSwitcher's project list), not ?owner=/?id=/the path,
 // so the Guard cannot pre-authorize it generically; the handler scopes it through
 // authz.Scope instead (the read analogue of SCIM's path-targeted authorization).
-var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects", "/v1/iam/service-accounts", "/v1/iam/memberships"}
+var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects"}
 
 // pathAuthorized reports whether path is under a handler-authorized subtree.
 func pathAuthorized(path string) bool {
@@ -320,25 +276,7 @@ func authorize(p *Principal, method, entity, owner, name string) bool {
 		return true
 	}
 	if store.IsSigningCertOwner(owner) {
-		// The ONE exception to the reserved-owner gate is the tenant registry: every
-		// organization row is filed under the admin owner, but an org row is the
-		// TENANT'S own record, not platform trust material — a tenant reads its own
-		// org, its admin edits it, and an org-admin-capable confidential client
-		// manages orgs during onboarding (v1 requireAppCapability(CapOrgAdmin)).
-		// Certs, applications, providers, and users under a reserved owner stay
-		// SuperAdmin-only.
-		if entity != "organizations" {
-			return false
-		}
-		if p.App != "" {
-			return Allowed(p, CapOrgAdmin)
-		}
-		return name == p.Org && (isRead(method) || p.Admin)
-	}
-	// A confidential client's authority is its capability allowlist and nothing
-	// else — never Super, never Admin; an unmapped entity or unset allowlist denies.
-	if p.App != "" {
-		return Allowed(p, capFor(entity))
+		return false
 	}
 	if owner == "" || owner != p.Org {
 		return false
@@ -411,9 +349,6 @@ func stringField(v reflect.Value, name string) string {
 // identities explicit scope. This closes the phantom-admin subject: a token for
 // "admin/<nobody>" resolves to no authority, not SuperAdmin.
 func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
-	if p, ok := app(c, db); ok {
-		return p, nil
-	}
 	bearer := httpx.Bearer(c)
 	if bearer == "" {
 		return nil, errNoBearer
@@ -440,36 +375,6 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 		return &Principal{Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Super: u.Owner == adminOrg}, nil
 	}
 	return &Principal{Org: owner}, nil
-}
-
-// app resolves an `Authorization: Basic <clientId>:<clientSecret>` credential into
-// a confidential-client Principal — the transport every live server-side consumer
-// authenticates with (RFC 6749 §2.3.1 client_secret_basic; cloud reads
-// IAM_MINT_CLIENT_ID/SECRET and sends exactly this). The application NAME is the
-// identity, because the capability allowlists key on the name.
-//
-// It is deliberately NOT an authority: the returned Principal is never Admin and
-// never Super, so the ONLY thing it can do is what its name is allowlisted for
-// (authorize → Allowed). This is what keeps the v1 "every confidential client is a
-// global admin" hole closed as the transport is re-added.
-//
-// Fail-closed: an unparseable header, an unknown clientId, an application with no
-// registered secret, an empty presented secret (a public client must never
-// authenticate as an app), or a mismatch all report false — the caller then finds
-// no bearer either and answers 401. The comparison is constant-time.
-func app(c *zip.Ctx, db orm.DB) (*Principal, bool) {
-	id, secret, ok := httpx.Basic(c)
-	if !ok || id == "" || secret == "" {
-		return nil, false
-	}
-	a, err := store.GetApplicationByClientId(c.Context(), db, id)
-	if err != nil || a == nil || a.ClientSecret == "" {
-		return nil, false
-	}
-	if subtle.ConstantTimeCompare([]byte(a.ClientSecret), []byte(secret)) != 1 {
-		return nil, false
-	}
-	return &Principal{App: a.Name, Org: a.Organization}, true
 }
 
 // entityOf returns the resource segment of an /v1/iam/<entity>[/verb] path, or

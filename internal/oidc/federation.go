@@ -7,10 +7,8 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -18,7 +16,6 @@ import (
 	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/mfa/factor"
 	"github.com/hanzoai/iam2/internal/schema"
 	"github.com/hanzoai/iam2/internal/store"
 	"github.com/hanzoai/iam2/internal/users"
@@ -46,12 +43,6 @@ import (
 // registers with each external IdP.
 const PathFederationCallback = "/v1/iam/oauth/callback"
 
-// PathMfaVerify is the hosted 2FA PAGE (a route in the SPA, not an API path) the
-// federation callback sends a second-factor-enrolled user's browser to. The page
-// collects the factor and POSTs it to PathFederationMfa; the challenge id rides
-// the httpOnly cookie the callback set, never a URL segment.
-const PathMfaVerify = "/login/mfa"
-
 // fedCookieName is the per-transaction anti-forgery cookie the begin leg sets and
 // the callback checks — the browser binding that defeats login-CSRF.
 const fedCookieName = "hanzo_fed"
@@ -60,15 +51,12 @@ const fedCookieName = "hanzo_fed"
 // redeemable. Short, because it only has to survive one IdP round-trip.
 const fedStateTTL = 10 * time.Minute
 
-// routeFederation registers the IdP callback on the PUBLIC group r. GET only: the
-// IdP returns via a top-level browser redirect (Google/GitHub), on which the
-// SameSite=Lax browser-binding cookie IS sent. A cross-site form_post (POST) would
-// NOT carry a Lax cookie, so the bind check would fail closed — rather than ship a
-// half-working POST path, form_post support is a deliberate future change (it needs
-// SameSite=None + its own CSRF analysis). The callback self-authenticates via the
-// single-use state + the browser cookie.
+// routeFederation registers the IdP callback on the PUBLIC group r. GET is the
+// browser-redirect return; POST covers an IdP that uses form_post. Each
+// self-authenticates via the state + browser cookie.
 func routeFederation(r zip.Router, db orm.DB) {
 	r.Get(PathFederationCallback, federationCallbackHandler(db))
+	r.Post(PathFederationCallback, federationCallbackHandler(db))
 }
 
 // beginFederation starts an Authorization-Code federation. It is entered from
@@ -79,14 +67,6 @@ func routeFederation(r zip.Router, db orm.DB) {
 // cookie, and sends the browser to the IdP.
 func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequest, method string) error {
 	ctx := c.Context()
-
-	// A federated (external) identity may never be minted into a reserved system
-	// org (the SuperAdmin vector) nor into a tenant an attacker-owned app has no
-	// right to serve. Refuse BEFORE starting the round-trip (fail fast, no IdP
-	// traffic) — defense in depth behind the application-write org authorization.
-	if !federationOrgAllowed(app) {
-		return authorizeErrorRedirect(c, q, "access_denied", "federation is not permitted for this application")
-	}
 
 	store.EnrichProviders(ctx, db, app)
 	prov := federationProvider(app, q.provider)
@@ -199,11 +179,6 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		if !app.IsRedirectUriValid(st.RedirectUri) {
 			return authorizeUserError(c, "invalid redirect_uri")
 		}
-		// Re-assert the reserved-org / tenant-legitimacy gate at the mint boundary,
-		// never trusting that the begin leg still holds or that the app row is honest.
-		if !federationOrgAllowed(app) {
-			return fedErrorRedirect(c, st, "access_denied", "federation is not permitted for this application")
-		}
 		prov, err := store.GetProvider(ctx, db, st.Owner, st.Provider)
 		if err != nil || prov == nil {
 			return fedErrorRedirect(c, st, "temporarily_unavailable", "the identity provider is unavailable")
@@ -232,116 +207,25 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			return fedErrorRedirect(c, st, "access_denied", "the account is not permitted")
 		}
 
-		// The resume parameters — the ORIGINAL authorize request — pinned so the mint
-		// (now, or after a second factor) uses exactly these and nothing a later
-		// request could supply.
-		p := fedResumeParams{
-			ClientId:            st.ClientId,
-			RedirectUri:         st.RedirectUri,
-			AppState:            st.AppState,
-			Scope:               st.Scope,
-			AppNonce:            st.AppNonce,
-			CodeChallenge:       st.CodeChallenge,
-			CodeChallengeMethod: st.CodeChallengeMethod,
-			Resource:            st.Resource,
+		// A public client must have carried a PKCE challenge (enforced at the begin
+		// leg; re-asserted here so a minted code is never redeemable without proof).
+		if app.ClientSecret == "" && st.CodeChallenge == "" {
+			return fedErrorRedirect(c, st, "invalid_request", "PKCE is required for public clients")
 		}
-
-		// Second-factor gate: a federated login must NOT skip the factor a password
-		// login would demand (the MFA gate, mfa_gate.go). If the resolved user owes a
-		// factor, mint NOTHING here — park the resume, bound to the user and these
-		// pinned params, and send the browser to the hosted 2FA page.
-		org, err := store.GetOrganizationByName(ctx, db, user.Owner)
+		// Mint iam2's own authorization code — the SAME artifact a password login
+		// mints — bound to the app-leg PKCE, redirect_uri, and nonce.
+		userID := user.Owner + "/" + user.Name
+		codeRow, err := MintCode(app, userID, st.Scope, st.CodeChallenge, st.CodeChallengeMethod, st.Resource, now)
 		if err != nil {
 			return fedErrorRedirect(c, st, "server_error", "")
 		}
-		if factor.Prompt(org, user) {
-			// The organization requires a factor this federated user has not enrolled;
-			// a federated login cannot enroll one inline, so it fails closed.
-			return fedErrorRedirect(c, st, "access_denied", "two-factor authentication must be set up before signing in")
+		codeRow.RedirectUri = st.RedirectUri
+		codeRow.Nonce = st.AppNonce
+		if err := store.PersistToken(ctx, db, codeRow); err != nil {
+			return fedErrorRedirect(c, st, "server_error", "")
 		}
-		if factor.Enabled(user) && !remembered(user, now) {
-			return federationChallenge(c, db, st, user, p, now)
-		}
-
-		// No second factor owed — complete exactly as before, through the one mint.
-		loc, err := federationMint(ctx, db, app, user, p, now)
-		if err != nil {
-			return fedMintErrorRedirect(c, st, err)
-		}
-		return c.Redirect(302, loc)
+		return fedSuccessRedirect(c, st, codeRow.Code)
 	}
-}
-
-// fedResumeParams is the ORIGINAL iam2 authorize request, pinned server-side so
-// the code minted after a federated login (immediately, or after a second factor)
-// binds to exactly these values — never to anything a later request supplies.
-type fedResumeParams struct {
-	ClientId            string `json:"clientId"`
-	RedirectUri         string `json:"redirectUri"`
-	AppState            string `json:"appState"`
-	Scope               string `json:"scope"`
-	AppNonce            string `json:"appNonce"`
-	CodeChallenge       string `json:"codeChallenge"`
-	CodeChallengeMethod string `json:"codeChallengeMethod"`
-	Resource            string `json:"resource"`
-}
-
-// errPKCERequired is the one distinguished mint error a caller maps to an OAuth
-// invalid_request; every other mint failure is an opaque server_error.
-var errPKCERequired = errors.New("federation: PKCE is required for public clients")
-
-// federationMint mints iam2's own authorization code — the SAME artifact a
-// password login mints — bound to the pinned app-leg PKCE, redirect_uri and nonce,
-// and returns the RP redirect (redirect_uri?code&state). It is the ONE mint path
-// both the no-factor completion and the post-2FA resume reach, so a federated code
-// can never be minted two different ways.
-func federationMint(ctx context.Context, db orm.DB, app *schema.Application, user *schema.User, p fedResumeParams, now time.Time) (string, error) {
-	// A public client must have carried a PKCE challenge, re-asserted at the mint so
-	// a minted code is never redeemable without proof.
-	if app.ClientSecret == "" && p.CodeChallenge == "" {
-		return "", errPKCERequired
-	}
-	userID := user.Owner + "/" + user.Name
-	codeRow, err := MintCode(app, userID, p.Scope, p.CodeChallenge, p.CodeChallengeMethod, p.Resource, now)
-	if err != nil {
-		return "", err
-	}
-	codeRow.RedirectUri = p.RedirectUri
-	codeRow.Nonce = p.AppNonce
-	if err := store.PersistToken(ctx, db, codeRow); err != nil {
-		return "", err
-	}
-	v := url.Values{}
-	v.Set("code", codeRow.Code)
-	setIfPresent(v, "state", p.AppState)
-	return joinQuery(p.RedirectUri, v), nil
-}
-
-// federationChallenge parks a resolved-but-not-yet-second-factored federated login.
-// The pending state IS a LoginChallenge (KindFederation) — the same single-use,
-// expiring, subject-pinned lifecycle the password MFA gate uses, so there is ONE
-// challenge concept — carrying the resume params as its payload. The browser is
-// sent to the hosted 2FA page; the challenge id rides the httpOnly cookie, never a
-// URL segment.
-func federationChallenge(c *zip.Ctx, db orm.DB, st *schema.FederationState, user *schema.User, p fedResumeParams, now time.Time) error {
-	payload, err := json.Marshal(p)
-	if err != nil {
-		return fedErrorRedirect(c, st, "server_error", "")
-	}
-	id, err := MintChallenge(c.Context(), db, KindFederation, user.Owner+"/"+user.Name, string(payload), now)
-	if err != nil {
-		return fedErrorRedirect(c, st, "server_error", "")
-	}
-	SetChallenge(c, id)
-	return c.Redirect(302, federationBaseURL(c)+PathMfaVerify)
-}
-
-// fedMintErrorRedirect maps a federationMint error to the RP redirect_uri.
-func fedMintErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) error {
-	if err == errPKCERequired {
-		return fedErrorRedirect(c, st, "invalid_request", "PKCE is required for public clients")
-	}
-	return fedErrorRedirect(c, st, "server_error", "")
 }
 
 // linkOrProvision resolves the local identity for a verified federated login,
@@ -350,13 +234,6 @@ func fedMintErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) err
 // now), else (3) a freshly provisioned account. It NEVER sets isAdmin and never
 // grants an existing account anything — federation only authenticates.
 func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, prov *schema.Provider, id federatedIdentity) (*schema.User, error) {
-	// Innermost guard on the mint itself: never provision/link a federated identity
-	// into a reserved system org (SuperAdmin) or a tenant this app may not serve.
-	// This layer assumes the two before it (app-write authorization + the begin/
-	// callback checks) both failed.
-	if !federationOrgAllowed(app) {
-		return nil, errors.New("federation: provisioning into this organization is not permitted")
-	}
 	org := app.Organization
 	binding, ok := connectorFor(prov.Type)
 	if !ok {
@@ -454,58 +331,10 @@ func providerOwner(p *schema.Provider) string {
 }
 
 // federationCallbackURL is the iam2 callback iam2 registers with the IdP and
-// re-presents at the token exchange. It is PINNED from config, never steered by a
-// request header, so an attacker cannot redirect the IdP leg via X-Forwarded-Host.
+// re-presents at the token exchange. It is derived from the pinned issuer (or the
+// effective host), so it is stable and never steered by a request header.
 func federationCallbackURL(c *zip.Ctx) string {
-	return federationBaseURL(c) + PathFederationCallback
-}
-
-// federationBaseURL is the pinned public origin the IdP callback is registered
-// under. In production it is the IAM_ISSUER pin (required — HIP-0112) so the
-// value is fixed and header-immune. Where IAM_ISSUER is unset (dev), it falls
-// back to the DIRECT Host header — NEVER httpx.EffectiveHost, which honors the
-// attacker-suppliable X-Forwarded-Host — so even the dev path cannot be steered
-// to an attacker origin.
-func federationBaseURL(c *zip.Ctx) string {
-	if iss := strings.TrimSpace(os.Getenv("IAM_ISSUER")); iss != "" {
-		return strings.TrimRight(iss, "/")
-	}
-	if h := strings.TrimSpace(c.Header("Host")); h != "" {
-		return "https://" + h
-	}
-	return "https://hanzo.id"
-}
-
-// federationOrgAllowed reports whether a federated (external) identity may be
-// provisioned or linked into the application's Organization. Two invariants,
-// both fail-closed:
-//
-//  1. NEVER a reserved system org (admin/built-in/app). A social sign-in that
-//     landed a user in the admin org would make that user a SuperAdmin — the
-//     critical escalation. Federation is customer sign-in; system orgs are seeded
-//     / onboarded / SuperAdmin-managed, never reached by an external login.
-//  2. Tenant legitimacy. A platform app (admin/built-in-owned, and thus only
-//     SuperAdmin-creatable) may serve any non-reserved tenant. A tenant-registered
-//     app may only land users in the org it legitimately serves — its OWN org, a
-//     shared app, or one with an explicit org-choice mode — mirroring the
-//     login/signup tenant gate, so an attacker-owned app cannot mint or link
-//     identities into a victim tenant.
-//
-// This is defense in depth behind the application-write authorization (authz
-// authorizes the Organization field on create/update); this layer assumes that
-// one was bypassed and still refuses the escalation.
-func federationOrgAllowed(app *schema.Application) bool {
-	org := strings.TrimSpace(app.Organization)
-	if org == "" || reservedOrgs[org] {
-		return false
-	}
-	if store.IsSigningCertOwner(app.Owner) {
-		return true // platform app — SuperAdmin-configured, may serve any tenant
-	}
-	if app.IsShared || app.OrgChoiceMode != "" {
-		return true
-	}
-	return org == app.Owner
+	return tokenIssuer(c) + PathFederationCallback
 }
 
 // fedSuccessRedirect returns the browser to the relying party's redirect_uri with

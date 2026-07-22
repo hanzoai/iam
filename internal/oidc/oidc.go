@@ -31,11 +31,6 @@ const (
 	PathDiscoveryV1  = "/v1/iam/.well-known/openid-configuration"
 	PathASMetadata   = "/.well-known/oauth-authorization-server"        // RFC 8414 (root)
 	PathASMetadataV1 = "/v1/iam/.well-known/oauth-authorization-server" // RFC 8414 (v1)
-	PathDevice       = "/v1/iam/oauth/device"                           // RFC 8628 device authorization
-	// PathDeviceVerify is the user-facing device-approval PAGE (a route in the
-	// hosted SPA), not an API path: RFC 8628's verification_uri is somewhere a
-	// human opens and signs in, which the JSON token API can never be.
-	PathDeviceVerify = "/login/oauth/device"
 )
 
 // Route registers the entire OIDC/OAuth2 surface on r, backed by db. This is the
@@ -80,17 +75,10 @@ func Route(r zip.Router, db orm.DB) {
 	// authorize endpoint kicks a federation off when the request names a
 	// `provider`; this registers the fixed return endpoint the IdP redirects to.
 	routeFederation(r, db)
-	routeFederationMfa(r, db)
-	routeUnlink(r, db)
 
 	// RFC 7662 introspection + RFC 7009 revocation — the standard token-management
 	// endpoints a resource server / confidential client uses (client-authenticated).
 	routeIntrospectRevoke(r, db)
-
-	// RFC 8628 device authorization grant — the browserless CLI sign-in. The
-	// request endpoint is registered here; the poll rides the token endpoint and
-	// the approval rides the login endpoint, both already public above.
-	routeDevice(r, db)
 
 	// The confidential-client "act on behalf of a user" primitive (the console +
 	// keyless-AI proxies mint their forwarded bearer here). Authenticates the
@@ -113,11 +101,10 @@ func Discovery(c *zip.Ctx) error {
 		"introspection_endpoint":                iss + PathIntrospect,
 		"revocation_endpoint":                   iss + PathRevoke,
 		"end_session_endpoint":                  iss + PathLogout,
-		"device_authorization_endpoint":         iss + PathDevice,
 		"jwks_uri":                              iss + PathJWKS,
 		"response_types_supported":              []string{"code"},
 		"response_modes_supported":              []string{"query", "fragment", "form_post"},
-		"grant_types_supported":                 []string{"authorization_code", "refresh_token", "client_credentials", "password", grantTypeTokenExchange, deviceGrant},
+		"grant_types_supported":                 []string{"authorization_code", "refresh_token", "client_credentials", "password", grantTypeTokenExchange},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256", "RS512", "ES256", "ES384", "ES512", "MLDSA65"},
 		"scopes_supported":                      []string{"openid", "email", "profile", "address", "phone", "offline_access"},

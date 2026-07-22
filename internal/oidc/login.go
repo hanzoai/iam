@@ -35,11 +35,7 @@ type loginForm struct {
 	Organization string `json:"organization"`
 	Username     string `json:"username"` // email OR username
 	Password     string `json:"password"`
-	Type         string `json:"type"` // "code" (PKCE authorize) | "device" (RFC 8628 approval) | "login" (bare session)
-
-	// UserCode is the RFC 8628 code the device displays, transcribed by the human
-	// approving it (type=device).
-	UserCode string `json:"userCode"`
+	Type         string `json:"type"` // "code" (PKCE authorize) | "login" (bare session)
 
 	// PKCE authorize passthrough (present when type=code).
 	ClientId            string `json:"clientId"`
@@ -50,15 +46,6 @@ type loginForm struct {
 	CodeChallenge       string `json:"codeChallenge"`
 	CodeChallengeMethod string `json:"codeChallengeMethod"`
 	Resource            string `json:"resource"`
-
-	// The second factor (present on the finishing request). Challenge names the
-	// outstanding ceremony; a browser returns it in the cookie the gate set and
-	// leaves this empty.
-	MfaType           string `json:"mfaType"`
-	Passcode          string `json:"passcode"`
-	RecoveryCode      string `json:"recoveryCode"`
-	EnableMfaRemember bool   `json:"enableMfaRemember"`
-	Challenge         string `json:"challenge"`
 }
 
 // routeLogin registers POST /v1/iam/login.
@@ -72,20 +59,10 @@ func loginHandler(db orm.DB) zip.Handler {
 		if err := c.Bind(&f); err != nil {
 			return httpx.Err(c, "invalid request body")
 		}
-		ctx := c.Context()
-
-		// A post carrying no fresh credential but naming an outstanding challenge is
-		// the SECOND half of a sign-in this endpoint already gated: the second-factor
-		// answer. The principal comes from the challenge, never from the body.
-		if f.Username == "" && f.Password == "" {
-			if id := ReadChallenge(c, f.Challenge); id != "" {
-				return finishMfa(c, db, id, f)
-			}
-		}
-
 		if f.Organization == "" || f.Username == "" || f.Password == "" {
 			return httpx.Err(c, "organization, username and password are required")
 		}
+		ctx := c.Context()
 
 		user, err := resolveLoginUser(ctx, db, f.Organization, f.Username)
 		if err != nil {
@@ -102,89 +79,60 @@ func loginHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the username or password is incorrect")
 		}
 
-		// The password proved ONE factor. The gate holds the sign-in when a second
-		// factor is outstanding — before ANY token or device approval — and answers
-		// the request itself; a false means nothing more is owed. The verificationType
-		// is "" because a password proves none of the offerable factors.
-		org, err := store.GetOrganizationByName(ctx, db, user.Owner)
+		userID := user.Owner + "/" + user.Name
+
+		// type=login: a bare portal sign-in. Establish the durable session the
+		// portal + the gateway admin-guard read via get-account, then report the
+		// user id (the shape the portal expects for a non-OAuth sign-in). The
+		// cookie is best-effort — a session failure never blocks a valid login.
+		if f.Type != "code" {
+			_ = sessions.Set(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
+			return httpx.Ok(c, userID)
+		}
+
+		// type=code: mint a PKCE-bound authorization code for the OAuth flow.
+		app, err := resolveLoginApp(ctx, db, f)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
-		gated, err := gate(c, db, user, org, "")
+		if app == nil {
+			return httpx.Err(c, "the application does not exist")
+		}
+		// Tenant isolation: the authenticated user's organization must be
+		// permitted for this application — its own org, a shared app, or an app
+		// that lets users choose their org. Without this a user in one tenant
+		// could obtain a token whose `organization` claim names another tenant.
+		if f.Organization != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
+			return httpx.Err(c, "the user is not permitted to sign in to this application")
+		}
+		// Bind the code to an EXACTLY-registered redirect URI (RFC 6749 §3.1.2.3);
+		// the token endpoint re-checks it. A supplied-but-unregistered URI is
+		// refused — never minted against.
+		if f.RedirectUri != "" && !app.IsRedirectUriValid(f.RedirectUri) {
+			return httpx.Err(c, "invalid redirect_uri")
+		}
+		method := normalizeChallengeMethod(f.CodeChallenge, f.CodeChallengeMethod)
+		if f.CodeChallenge != "" && method != "S256" {
+			return httpx.Err(c, "only S256 PKCE is supported")
+		}
+		// A public client (no secret) must use PKCE — no downgrade.
+		if app.ClientSecret == "" && f.CodeChallenge == "" {
+			return httpx.Err(c, "PKCE is required for public clients")
+		}
+		code, err := MintCode(app, userID, f.Scope, f.CodeChallenge, method, f.Resource, nowFunc())
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
-		if gated {
-			return nil
+		// Bind the redirect_uri and nonce onto the code so the token exchange can
+		// re-verify the redirect and echo the nonce into the id_token.
+		code.RedirectUri = f.RedirectUri
+		code.Nonce = f.Nonce
+		if err := store.PersistToken(ctx, db, code); err != nil {
+			return httpx.Err(c, err.Error())
 		}
-
-		return loginGrant(c, db, user, f)
+		// The SDK reads data as the authorization code to exchange at /token.
+		return httpx.Ok(c, code.Code)
 	}
-}
-
-// loginGrant completes a sign-in that has passed the gate: a device approval, a
-// bare portal session, or a PKCE-bound authorization code. It is the ONE minting
-// tail every interactive path reaches — the credential post and the second-factor
-// finish alike — so the checks between "this is the user" and "here is the grant"
-// are stated once and cannot be true of one path and false of another.
-func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
-	ctx := c.Context()
-
-	// type=device: approve a pending RFC 8628 device authorization against the
-	// identity now fully proven (device.go).
-	if f.Type == "device" {
-		return approveDevice(c, db, user, f.UserCode)
-	}
-
-	userID := user.Owner + "/" + user.Name
-
-	// type=login: a bare portal sign-in. Establish the durable session the portal +
-	// the gateway admin-guard read via get-account, then report the user id. The
-	// cookie is best-effort — a session failure never blocks a valid login.
-	if f.Type != "code" {
-		_ = sessions.Set(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
-		return httpx.Ok(c, userID)
-	}
-
-	// type=code: mint a PKCE-bound authorization code for the OAuth flow. The org is
-	// the USER's own, from the loaded row, so a second-factor post (which carries no
-	// organization field) is checked exactly like the first.
-	app, err := resolveLoginApp(ctx, db, f)
-	if err != nil {
-		return httpx.Err(c, err.Error())
-	}
-	if app == nil {
-		return httpx.Err(c, "the application does not exist")
-	}
-	if user.Owner != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
-		return httpx.Err(c, "the user is not permitted to sign in to this application")
-	}
-	// Bind the code to an EXACTLY-registered redirect URI (RFC 6749 §3.1.2.3); the
-	// token endpoint re-checks it. A supplied-but-unregistered URI is refused.
-	if f.RedirectUri != "" && !app.IsRedirectUriValid(f.RedirectUri) {
-		return httpx.Err(c, "invalid redirect_uri")
-	}
-	method := normalizeChallengeMethod(f.CodeChallenge, f.CodeChallengeMethod)
-	if f.CodeChallenge != "" && method != "S256" {
-		return httpx.Err(c, "only S256 PKCE is supported")
-	}
-	// A public client (no secret) must use PKCE — no downgrade.
-	if app.ClientSecret == "" && f.CodeChallenge == "" {
-		return httpx.Err(c, "PKCE is required for public clients")
-	}
-	code, err := MintCode(app, userID, f.Scope, f.CodeChallenge, method, f.Resource, nowFunc())
-	if err != nil {
-		return httpx.Err(c, err.Error())
-	}
-	// Bind the redirect_uri and nonce onto the code so the token exchange can
-	// re-verify the redirect and echo the nonce into the id_token.
-	code.RedirectUri = f.RedirectUri
-	code.Nonce = f.Nonce
-	if err := store.PersistToken(ctx, db, code); err != nil {
-		return httpx.Err(c, err.Error())
-	}
-	// The SDK reads data as the authorization code to exchange at /token.
-	return httpx.Ok(c, code.Code)
 }
 
 // resolveLoginUser looks a user up by email (contains "@") or username, scoped

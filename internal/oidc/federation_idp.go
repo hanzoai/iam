@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -59,74 +58,13 @@ type federatedIdentity struct {
 
 // federationHTTPClient is the hardened client every IdP call rides. The timeout
 // bounds a slow/hostile IdP; CheckRedirect refuses to chase a redirect (an IdP
-// token/userinfo/JWKS endpoint answering 3xx is a fault, not a hop), closing the
-// SSRF-via-redirect vector; and the dialer Control refuses to connect to a
-// private/loopback/link-local/metadata address AT DIAL TIME — after DNS
-// resolution, on the ACTUAL connecting IP — so a hostile IssuerUrl/Custom*Url (or
-// a DNS-rebinding hostname) cannot make iam2 reach an internal service or the
-// cloud metadata endpoint.
+// token/userinfo/JWKS endpoint answering 3xx is a fault, not a hop), closing an
+// SSRF-via-redirect vector.
 var federationHTTPClient = &http.Client{
 	Timeout: 12 * time.Second,
 	CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	},
-	Transport: &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
-			Control:   federationDialControl,
-		}).DialContext,
-		TLSHandshakeTimeout:   8 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
-		MaxIdleConns:          8,
-		IdleConnTimeout:       30 * time.Second,
-	},
-}
-
-// federationDialAllowsPrivate relaxes the SSRF dial guard to permit
-// private/loopback addresses. It is a TEST SEAM ONLY (the mock IdPs bind to
-// 127.0.0.1); production code never sets it, so the guard is always fully armed
-// in a real deployment.
-var federationDialAllowsPrivate = false
-
-// federationDialControl is the net.Dialer.Control hook: it inspects the resolved
-// address every connection actually dials and refuses a private, loopback,
-// link-local, ULA, unspecified, multicast, or CGNAT target — the SSRF gate that a
-// literal-URL check cannot provide because it sees the post-DNS IP (defeating
-// DNS-rebinding). Fails closed on an unparseable address.
-func federationDialControl(_, address string, _ syscall.RawConn) error {
-	if federationDialAllowsPrivate {
-		return nil
-	}
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return errors.New("federation: refusing an unparseable dial address")
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return errors.New("federation: dial host did not resolve to an IP")
-	}
-	if ipBlockedForFederation(ip) {
-		return errors.New("federation: refusing to dial a private/loopback/link-local address")
-	}
-	return nil
-}
-
-// ipBlockedForFederation reports whether an IP is in a range iam2 must never
-// fetch from during federation. net.IP.IsPrivate covers RFC1918 and IPv6 ULA
-// (fc00::/7); IsLinkLocalUnicast covers 169.254.0.0/16 (incl. the 169.254.169.254
-// cloud-metadata address) and fe80::/10.
-func ipBlockedForFederation(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
-		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || isCGNAT(ip)
-}
-
-// isCGNAT reports whether ip is in 100.64.0.0/10 (carrier-grade NAT), a shared
-// range net.IP.IsPrivate does not cover.
-func isCGNAT(ip net.IP) bool {
-	v4 := ip.To4()
-	return v4 != nil && v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127
 }
 
 // maxIdPBodyBytes caps every IdP response read — a hostile or broken IdP cannot

@@ -120,10 +120,10 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		k.Owner, k.Name = in.Owner, in.Name
 		apply(k, in)
 		if k.AccessKey == "" {
-			k.AccessKey = Mint("pk", k.State)
+			k.AccessKey = mint("pk", k.State)
 		}
 		if k.AccessSecret == "" {
-			k.AccessSecret = Mint("sk", k.State)
+			k.AccessSecret = mint("sk", k.State)
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
 		k.CreatedTime, k.UpdatedTime = now, now
@@ -194,7 +194,7 @@ func apply(dst, src *schema.Key) {
 
 // mint generates a prefixed credential half — "{pk|sk}-{live|test}-{random}"
 // — mirroring the v1 key format. State == "test" selects the test env.
-func Mint(prefix, state string) string {
+func mint(prefix, state string) string {
 	env := "live"
 	if state == "test" {
 		env = "test"

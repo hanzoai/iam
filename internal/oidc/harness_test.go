@@ -51,9 +51,8 @@ type appOpts struct {
 	secret       string // "" → public (PKCE) client
 	redirectURIs []string
 	refreshHours float64
-	shared       bool     // IsShared → accepts users from any org
-	signup       bool     // EnableSignUp → the app allows new-account creation
-	grants       []string // declared OAuth grants; a grant absent here is refused
+	shared       bool // IsShared → accepts users from any org
+	signup       bool // EnableSignUp → the app allows new-account creation
 }
 
 // tctx is the background context used by the test seed helpers.
@@ -102,7 +101,6 @@ func seedApp(t *testing.T, db orm.DB, o appOpts) *schema.Application {
 	a.RefreshExpireInHours = o.refreshHours
 	a.RedirectUris = o.redirectURIs
 	a.IsShared = o.shared
-	a.GrantTypes = o.grants
 	a.SetId("admin/" + o.clientID)
 	if err := a.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed app: %v", err)

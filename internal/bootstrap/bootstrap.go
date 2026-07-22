@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam2/internal/cred"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -177,7 +177,7 @@ type userUpsertReq struct {
 }
 
 // upsertUser idempotently creates or updates a user keyed by (Owner, Name). The
-// password is argon2id-hashed (SOTA; never stored plaintext); an empty password preserves
+// password is bcrypt-hashed (never stored plaintext); an empty password preserves
 // the existing credential. Returns {status:"ok", action, data:{owner, name}}.
 func upsertUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
@@ -196,11 +196,11 @@ func upsertUser(db orm.DB) zip.Handler {
 
 		var hash string
 		if req.Password != "" {
-			h, err := cred.Hash(req.Password)
+			h, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 			if err != nil {
 				return c.JSON(500, errResp("server_error"))
 			}
-			hash = h
+			hash = string(h)
 		}
 
 		existing, err := store.GetUserByName(ctx, db, req.Owner, req.Name)
@@ -215,7 +215,7 @@ func upsertUser(db orm.DB) zip.Handler {
 			existing.Phone = pick(req.Phone, existing.Phone)
 			existing.IsAdmin = req.IsAdmin
 			if hash != "" {
-				existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, cred.TypeArgon2id, ""
+				existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, "bcrypt", ""
 			}
 			existing.UpdatedTime = now()
 			if err := existing.UpdateCtx(ctx); err != nil {
@@ -227,7 +227,7 @@ func upsertUser(db orm.DB) zip.Handler {
 			u.Owner, u.Name = req.Owner, req.Name
 			u.DisplayName, u.Email, u.Phone, u.IsAdmin = req.DisplayName, req.Email, req.Phone, req.IsAdmin
 			if hash != "" {
-				u.PasswordHash, u.PasswordType = hash, cred.TypeArgon2id
+				u.PasswordHash, u.PasswordType = hash, "bcrypt"
 			}
 			u.CreatedTime, u.UpdatedTime = now(), now()
 			u.Model = model

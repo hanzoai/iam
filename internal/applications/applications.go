@@ -15,32 +15,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam2/internal/authz"
 	"github.com/hanzoai/iam2/internal/schema"
 )
-
-// authorizeOrganization gates the Organization an application will SERVE (the
-// tenant a credential minted through it lands in), not just its registry Owner:
-// the op-invoke authz hook authorizes the top-level Owner, but Organization is a
-// separate field that a tenant admin could otherwise set to the reserved admin
-// org (a SuperAdmin-minting app) or to a victim tenant. On a gated HTTP request
-// the Guard attached a Principal; a non-super may point an app only at its OWN
-// org. A server-internal call (bootstrap/seed) carries no Principal and is
-// trusted, so an unauthenticated context is left to the surrounding trust
-// boundary rather than blocked here.
-func authorizeOrganization(ctx context.Context, in *schema.Application) error {
-	if in.Organization == "" {
-		return nil // an org-less app mints no cross-tenant/SuperAdmin identity
-	}
-	p, ok := authz.From(ctx)
-	if !ok {
-		return nil // server-internal (no principal) — trusted caller
-	}
-	if !authz.CanSetOrg(p, in.Organization) {
-		return zip.ErrForbidden("not authorized to set the application organization to " + in.Organization)
-	}
-	return nil
-}
 
 // appID is the owner-scoped natural key "<owner>/<name>" — the single source
 // of an application's orm id. Every handler routes through it so reads and
@@ -134,9 +110,6 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
-		if err := authorizeOrganization(ctx, in); err != nil {
-			return nil, err
-		}
 		id := appID(in.Owner, in.Name)
 
 		// Owner-scoped uniqueness: (owner, name) must be free.
@@ -164,9 +137,6 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 	return func(ctx context.Context, in *schema.Application) (*schema.Application, error) {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
-		}
-		if err := authorizeOrganization(ctx, in); err != nil {
-			return nil, err
 		}
 		id := appID(in.Owner, in.Name)
 
