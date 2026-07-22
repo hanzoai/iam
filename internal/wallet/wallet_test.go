@@ -577,6 +577,97 @@ func TestLinkCrossSiteRefused(t *testing.T) {
 	}
 }
 
+// --- header-immunity: the SIWE domain + CSRF check use c.Host(), never a header ---
+
+// The SIWE domain is the true routed brand host, read through the header-immune
+// c.Host(). A spoofed X-Forwarded-Host must NOT steer the domain a wallet signs —
+// that binding is the anti-phishing guarantee (EIP-4361/CAIP-122 `domain`). Under
+// the old EffectiveHost (which honored X-Forwarded-Host) this domain would become
+// "evil.example"; it must stay hanzo.id.
+func TestNonceDomainIsHeaderImmune(t *testing.T) {
+	app, _ := newServer(t)
+	ch := mintWith(t, app, "evm", map[string]string{"X-Forwarded-Host": "evil.example"})
+	if ch.Domain != host {
+		t.Fatalf("challenge domain = %q, want %q (X-Forwarded-Host must not steer the signed domain)", ch.Domain, host)
+	}
+	if ch.URI != "https://"+host+"/login" {
+		t.Errorf("uri = %q, want the true-host uri", ch.URI)
+	}
+}
+
+// End-to-end: a spoofed X-Forwarded-Host present on BOTH the mint and the verify
+// neither breaks the login nor moves the binding. The challenge binds to the true
+// host, the wallet signs that, verify re-derives the same true host, and the
+// identity provisions — proving the domain is pinned to c.Host() throughout.
+func TestLoginHeaderImmuneEndToEnd(t *testing.T) {
+	app, db := newServer(t)
+	a := seed(t, db, opts{signup: true})
+	spoof := map[string]string{"X-Forwarded-Host": "evil.example"}
+
+	ch := mintWith(t, app, "evm", spoof)
+	if ch.Domain != host {
+		t.Fatalf("minted domain = %q, want %q", ch.Domain, host)
+	}
+	msg, sig := signWith(t, signer(t), ch, wc.ChainEVM, addr)
+	code, res := post(t, app, PathVerify, body(a, wc.ChainEVM, addr, msg, sig), spoof)
+	if got := okData(t, code, res); got != "hanzo/"+name(wc.ChainEVM, addr) {
+		t.Fatalf("login data = %q, want the provisioned identity", got)
+	}
+	for _, c := range challenges(t, db) {
+		if c.Domain != host {
+			t.Errorf("stored challenge domain = %q, want %q (never the spoof)", c.Domain, host)
+		}
+	}
+}
+
+// The CSRF same-origin check is immune to a spoofed X-Forwarded-Host. A cross-site
+// attacker forges Origin AND spoofs X-Forwarded-Host to equal it, trying to make
+// same() read them as equal and honor the victim's session. With the header-immune
+// c.Host() the true routed host (hanzo.id) wins, so the request is correctly
+// cross-site: the session is dropped and the link is refused. Under the old
+// EffectiveHost this POST would attach the attacker's wallet to alice's account.
+func TestCSRFSpoofedForwardedHostRefused(t *testing.T) {
+	app, db := newServer(t)
+	a := seed(t, db, opts{signup: false}) // link-only — no signup escape hatch
+	_, tok := bearer(t, db, a, "hanzo", "alice")
+
+	ch := mintFor(t, app, "evm")
+	msg, sig := signWith(t, signer(t), ch, wc.ChainEVM, addr)
+	code, m := post(t, app, PathVerify, body(a, wc.ChainEVM, addr, msg, sig), map[string]string{
+		"Origin":           "https://evil.example",
+		"X-Forwarded-Host": "evil.example", // the spoof that would have matched Origin
+		"Authorization":    "Bearer " + tok,
+	})
+	errorIs(t, code, m, "sign up is disabled") // fell through to the anonymous path
+	if n := len(wallets(t, db)); n != 0 {
+		t.Fatalf("wallets = %d — a spoofed X-Forwarded-Host bypassed the CSRF check", n)
+	}
+}
+
+// The honest path is intact: a legit same-brand link still succeeds even when a
+// (benign) X-Forwarded-Host rides along, because c.Host() reads the true routed
+// host and the Origin matches it. Proves the switch off EffectiveHost did not
+// break same-site linking.
+func TestSameSiteLinkIgnoresForwardedHost(t *testing.T) {
+	app, db := newServer(t)
+	a := seed(t, db, opts{signup: false})
+	u, tok := bearer(t, db, a, "hanzo", "alice")
+
+	ch := mintFor(t, app, "evm")
+	msg, sig := signWith(t, signer(t), ch, wc.ChainEVM, addr)
+	code, m := post(t, app, PathVerify, body(a, wc.ChainEVM, addr, msg, sig), map[string]string{
+		"Origin":           "https://" + host,
+		"X-Forwarded-Host": "somewhere.else", // ignored — c.Host() wins
+		"Authorization":    "Bearer " + tok,
+	})
+	if got := okData(t, code, m); got != "hanzo/alice" {
+		t.Fatalf("data = %q, want the session identity hanzo/alice", got)
+	}
+	if w := wallets(t, db); len(w) != 1 || w[0].User != u.Name {
+		t.Fatalf("wallet = %+v, want linked to the session user", w)
+	}
+}
+
 // --- bounds ---
 
 // Oversized fields are refused before any per-chain parser sees them.

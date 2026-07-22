@@ -48,8 +48,9 @@ var (
 // The proof itself IS the SDK's own value — the seven attacker-controlled fields
 // are never re-declared here, so Go and TypeScript verify the identical value.
 type login struct {
-	// Domain is the request-derived brand host, re-checked against the burned
-	// challenge. Never client-supplied: phishing protection rides on it.
+	// Domain is the brand host from the header-immune c.Host(), re-checked against
+	// the burned challenge. Never client-supplied (X-Forwarded-Host is ignored):
+	// the anti-phishing binding rides on it.
 	Domain string
 	Proof  wc.Proof
 	Method string // "signup" (default) | "login"

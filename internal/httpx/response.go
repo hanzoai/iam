@@ -74,12 +74,8 @@ func Basic(c *zip.Ctx) (id, secret string, ok bool) {
 	return id, secret, true
 }
 
-// EffectiveHost is the request host used to build a host-relative issuer, so
-// discovery/JWKS never split-origin (HIP-0111). Honors X-Forwarded-Host when
-// the request came through the ingress/gateway.
-func EffectiveHost(c *zip.Ctx) string {
-	if h := c.Header("X-Forwarded-Host"); h != "" {
-		return h
-	}
-	return c.Header("Host")
-}
+// The request host is read through the ONE header-immune accessor, zip.Ctx.Host()
+// — the same seam the OIDC issuer resolver uses. It ignores X-Forwarded-Host (zip
+// has no trusted-proxy knob), so the brand host a client authenticates to cannot
+// be spoofed by a request header. There is deliberately no EffectiveHost helper
+// here: a second accessor that honored X-Forwarded-Host would reopen that spoof.
