@@ -181,11 +181,12 @@ func authorizeMinter(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.Applic
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 		return nil, 401, "client authentication failed"
 	}
-	// The capability gate: only an ALLOW-LISTED app may act on a user's behalf.
-	// Fail closed — an unset allow-list permits NOTHING (these hand out / rotate a
-	// user's credential; a missing config must never mean "anyone"). Matched by the
-	// globally-unique clientId only (see mintAllowed).
-	if !mintAllowed(clientID) {
+	// The capability gate: only an ALLOW-LISTED, admin-owned app may act on a user's
+	// behalf. Fail closed — an unset allow-list permits NOTHING (these hand out /
+	// rotate a user's credential; a missing config must never mean "anyone"). Keyed on
+	// the resolved app's globally-unique clientId AND pinned to its signing owner (see
+	// mintAllowed), so a colliding-clientId tenant app is refused here.
+	if !mintAllowed(app) {
 		return nil, 403, "client is not on the user-key mint allow-list"
 	}
 	return app, 0, ""
@@ -203,7 +204,7 @@ func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Ap
 	if owner == "" || name == "" {
 		return nil, 200, "id (owner/name) is required"
 	}
-	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp.ClientId) {
+	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp) {
 		return nil, 403, "client is not permitted to act for a reserved-org user"
 	}
 	user, err := store.GetUserByName(ctx, db, owner, name)
@@ -253,23 +254,28 @@ func mintErr(c *zip.Ctx, status int, msg string) error {
 	return c.JSON(status, httpx.Response{Status: "error", Msg: msg})
 }
 
-// mintAllowed reports whether a client is on the IAM_KEY_MINT_ALLOWED_APPS
-// allow-list. It matches the client's GLOBALLY-unique clientId ONLY — never the
-// per-owner-unique app Name: a Name match let a tenant org-admin register an app
-// named like the console in their OWN org and pass the gate, minting an admin-org
-// (SuperAdmin) token (red-team finding, closed here). An empty/unset list allows
-// nothing — fail closed.
-func mintAllowed(clientID string) bool {
-	return appInList("IAM_KEY_MINT_ALLOWED_APPS", clientID)
+// mintAllowed reports whether app may act on a user's behalf. TWO conditions, both
+// required: its OWNING org must be a reserved platform signing owner (admin/built-in),
+// AND its clientId must be on IAM_KEY_MINT_ALLOWED_APPS. The owner-pin is the decisive
+// gate — clientId and secret are body-supplied at registration, so a tenant could
+// register an app whose clientId collides with a mint-listed one and, on a backend
+// whose duplicate-row order is unspecified, have its row resolve and its known secret
+// authenticate; but its owner is its OWN tenant, never a signing owner, so it mints
+// nothing. (Resolution is additionally admin-preferring and clientId is unique on
+// create, so the collision cannot arise nor win — this is the third, innermost gate.)
+// Every legit minter is admin-owned, so no legitimate grant regresses. Empty/unset
+// list allows nothing — fail closed.
+func mintAllowed(app *schema.Application) bool {
+	return store.IsSigningCertOwner(app.Owner) && appInList("IAM_KEY_MINT_ALLOWED_APPS", app.ClientId)
 }
 
-// adminMintAllowed reports whether a client may act on behalf of a RESERVED-org
-// (admin/built-in) user — a strictly narrower, separately-granted capability than
-// the general mint list, so a leaked general-minter secret can never reach a
-// SuperAdmin identity. The console, which legitimately drives admin.hanzo.ai, is
-// on both lists. Fail closed.
-func adminMintAllowed(clientID string) bool {
-	return appInList("IAM_ADMIN_MINT_ALLOWED_APPS", clientID)
+// adminMintAllowed reports whether app may act on behalf of a RESERVED-org
+// (admin/built-in) user — a strictly narrower, separately-granted capability than the
+// general mint list, so a leaked general-minter secret can never reach a SuperAdmin
+// identity. Same owner-pin as mintAllowed: the app must be admin/built-in owned. The
+// console, which legitimately drives admin.hanzo.ai, is on both lists. Fail closed.
+func adminMintAllowed(app *schema.Application) bool {
+	return store.IsSigningCertOwner(app.Owner) && appInList("IAM_ADMIN_MINT_ALLOWED_APPS", app.ClientId)
 }
 
 // appInList matches clientID against a comma/space-separated env allow-list, by
