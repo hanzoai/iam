@@ -80,9 +80,17 @@ type Principal struct {
 	// never Admin and never Super — its whole authority is its capability allowlist
 	// (cap.go), so a leaked client credential can neither read another tenant nor
 	// touch signing material.
-	App   string
-	Admin bool
-	Super bool
+	App string
+	// AppOwner is the OWNING organization of that application row — "admin"/"built-in"
+	// for a platform app, the tenant's own org for a customer app. It is NOT App's
+	// served Organization. A capability (cap.go Allowed) is granted ONLY when this is
+	// a reserved platform signing owner, so a tenant that registers an app whose NAME
+	// (or clientId) collides with a platform console inherits none of its authority:
+	// the allowlist keys on the name, and the owner-pin binds that name to the
+	// platform. Empty for every human.
+	AppOwner string
+	Admin    bool
+	Super    bool
 }
 
 type ctxKey struct{}
@@ -300,12 +308,16 @@ func Authorize(ctx context.Context, op zip.Op, in any) error {
 // `owner` (named `name`) on the given entity? The order IS the policy:
 //
 //  1. SuperAdmin may do anything — the only cross-tenant scope.
-//  2. A platform-owned resource (admin/built-in — the reserved owners the token
-//     verifier trusts to sign) is writable only by a SuperAdmin. This single
-//     rule is the signing-cert poisoning gate, the admin-scoped app/provider
-//     registration gate, AND the built-in-org gap, all at once: a built-in-org
-//     principal is not SuperAdmin (that is admin only), so it cannot write a
-//     built-in-owned signing cert either.
+//  2. A platform-owned resource — one under a RESERVED system org (store.IsReservedOrg:
+//     admin/built-in, the signing owners, PLUS "app", the service-principal org) — is
+//     writable only by a SuperAdmin. This single rule is the signing-cert poisoning
+//     gate, the admin-scoped app/provider registration gate, the built-in-org gap, AND
+//     the service-org ("app") consistency the self-service surfaces already enforce, all
+//     at once: a built-in-org principal is not SuperAdmin (that is admin only), so it
+//     cannot write a built-in-owned signing cert; and no capability app nor "app"-org
+//     admin can land a user under owner="app" (a platform identity) — the raw CRUD now
+//     consults the SAME predicate signup/onboarding do, so the reserved set never
+//     drifts between surfaces.
 //  3. Tenant isolation: a normal principal may act only within its OWN org. An
 //     empty or foreign owner is refused — the target org is bound to the
 //     principal, never trusted from the request.
@@ -320,14 +332,14 @@ func authorize(p *Principal, method, entity, owner, name string) bool {
 	if p.Super {
 		return true
 	}
-	if store.IsSigningCertOwner(owner) {
+	if store.IsReservedOrg(owner) {
 		// The ONE exception to the reserved-owner gate is the tenant registry: every
 		// organization row is filed under the admin owner, but an org row is the
 		// TENANT'S own record, not platform trust material — a tenant reads its own
 		// org, its admin edits it, and an org-admin-capable confidential client
 		// manages orgs during onboarding (v1 requireAppCapability(CapOrgAdmin)).
-		// Certs, applications, providers, and users under a reserved owner stay
-		// SuperAdmin-only.
+		// Certs, applications, providers, and users under a reserved owner
+		// (admin/built-in/app) stay SuperAdmin-only.
 		if entity != "organizations" {
 			return false
 		}
@@ -470,7 +482,11 @@ func app(c *zip.Ctx, db orm.DB) (*Principal, bool) {
 	if subtle.ConstantTimeCompare([]byte(a.ClientSecret), []byte(secret)) != 1 {
 		return nil, false
 	}
-	return &Principal{App: a.Name, Org: a.Organization}, true
+	// AppOwner is the app row's OWNING org (a.Owner: "admin"/"built-in" for a platform
+	// app), NOT a.Organization (the tenant it SERVES). cap.go pins every capability to
+	// this being a reserved signing owner, so a tenant-owned app named/clientId'd like
+	// a console holds nothing. Org carries the served tenant, as before.
+	return &Principal{App: a.Name, AppOwner: a.Owner, Org: a.Organization}, true
 }
 
 // entityOf returns the resource segment of an /v1/iam/<entity>[/verb] path, or

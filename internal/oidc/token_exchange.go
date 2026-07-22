@@ -52,7 +52,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(clientApp.ClientSecret)) != 1 {
 		return tokenErrorClient(c, "client authentication failed")
 	}
-	if !mintAllowed(clientApp.ClientId) {
+	if !mintAllowed(clientApp) {
 		return tokenError(c, 403, "unauthorized_client", "client is not permitted for token exchange")
 	}
 
@@ -84,7 +84,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 
 	// 3) A reserved-org (admin/built-in) subject is a cross-tenant / SuperAdmin
 	//    identity — gate it behind the separate admin-exchange capability.
-	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp.ClientId) {
+	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp) {
 		return tokenError(c, 403, "access_denied", "not permitted to act for a reserved-org subject")
 	}
 
