@@ -235,12 +235,26 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 
 // passwordGrant issues tokens for a Resource Owner Password Credentials request
 // (RFC 6749 §4.3) — the durable first-party console session (session.ts posts
-// grant_type=password with the confidential client + username/password). It is a
-// TRUSTED flow: confidential clients only (a public client + password grant is a
-// phishing footgun), the app must have password login enabled, and the password
-// is verified through the SAME algorithm-aware, per-row path the login form uses
-// (argon2id for every live v1 row, bcrypt for new rows). One generic failure for
-// unknown-user and bad-password — no user-enumeration oracle.
+// grant_type=password with username/password).
+//
+// CASDOOR PARITY — INTENTIONAL SECURITY-POSTURE DECISION (flagged for Red review).
+// Casdoor ALLOWS a PUBLIC client (the console/chat apps: no client_secret, no PKCE)
+// to complete this grant. During the casdoor→clean-room cutover iam2 defaults to
+// the SAME behavior so console/chat logins do not 401 `invalid_client`. The exact,
+// bounded relaxation vs the prior confidential-only rule:
+//
+//   - A PUBLIC client (no registered ClientSecret) MAY now complete the password
+//     grant with NO client_secret and NO PKCE. This is the ONLY thing newly allowed.
+//   - A CONFIDENTIAL client (one that registered a secret) is UNCHANGED: it MUST
+//     still present that secret, verified constant-time — a supplied-but-wrong
+//     secret is still 401.
+//
+// Every OTHER control is untouched: publicTokenEndpointForbidden still bars internal
+// (<org>-iam) and reserved-org (admin/built-in/app) apps from this endpoint; the app
+// must have password login enabled; the password is verified through the SAME
+// algorithm-aware, per-row path the login form uses (argon2id for every live v1 row,
+// bcrypt for new rows); unknown-user and bad-password return one generic failure (no
+// enumeration oracle); a forbidden/deleted user is denied.
 func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	ctx := c.Context()
 	now := nowFunc()
@@ -253,7 +267,13 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	if app == nil || app.ClientSecret == "" ||
+	if app == nil {
+		return tokenErrorClient(c, "client authentication failed")
+	}
+	// A confidential client (one that registered a secret) must present it; a public
+	// client (no registered secret) authenticates by its clientId alone — casdoor ROPC
+	// parity. See the doc comment for the exact new surface.
+	if app.ClientSecret != "" &&
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 		return tokenErrorClient(c, "client authentication failed")
 	}
