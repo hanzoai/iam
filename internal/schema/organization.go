@@ -102,4 +102,13 @@ type Organization struct {
 	BalanceCurrency string  `json:"balanceCurrency" orm:"varchar(100)"`
 
 	IsPersonal bool `json:"isPersonal" orm:"bool"`
+
+	// Founder is the stable storage id of the identity that provisioned this org
+	// (self-service onboarding). It is the resume token that makes provisioning
+	// converge on a backend where each write autocommits independently (no
+	// transaction rollback): after a partial failure that created the org but did
+	// not move the founder in, a retry recognises the org as the founder's own and
+	// completes it, instead of refusing it as "already taken". It also fences the
+	// org to ONE tenant — a different identity can never complete or join it.
+	Founder string `json:"founder,omitempty" orm:"varchar(255)"`
 }

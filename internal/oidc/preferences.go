@@ -70,7 +70,7 @@ func updatePreferencesHandler(db orm.DB) zip.Handler {
 				u.Properties = map[string]string{}
 			}
 			u.Properties[preferencesKey] = mergedJSON
-			u.UpdatedTime = onboardNow()
+			u.UpdatedTime = provisionNow()
 			merged = m
 			return nil
 		}); err != nil {
