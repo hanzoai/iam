@@ -24,6 +24,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // API binds the user handlers to an orm store. Construct once at boot and mount.
@@ -119,13 +120,22 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 
 	u := &in.User
 	u.Owner, u.Name = owner, name
-	// Assign a stable opaque identity (the OIDC `sub`) if the caller supplied none,
-	// so a natively-minted v2 user's `sub` is a UUID from birth — never the mutable
-	// (owner,name) pair. A migrated user already carries its v1 UUID (the migrator
-	// writes User.Id directly, not through this path), so this only fires for a
-	// genuinely new account.
-	if u.Id == "" {
-		u.Id = uuid.NewString()
+	// The stable opaque identity (the OIDC `sub`) is ALWAYS minted server-side; a
+	// client-supplied Id is DISCARDED. Id keys the token `sub` AND the authz
+	// principal, so a caller allowed to PIN it could set it to a victim's UUID and,
+	// once two rows shared it, be resolved AS the victim (tenant-admin → SuperAdmin
+	// impersonation). A migrated user's casdoor UUID enters through the migrator's
+	// direct write, never this create path.
+	u.Id = uuid.NewString()
+	// The JSON-document store hangs no per-field DB UNIQUE constraint (the same reason
+	// clientId uniqueness is enforced at the write, not by an index), so reject the
+	// astronomically-unlikely UUID clash HERE rather than admit a second row under one
+	// subject. store.GetUserById also fails closed on a duplicate, so any slip is
+	// caught again at read.
+	if existing, err := store.GetUserById(ctx, a.db, u.Id); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	} else if existing != nil {
+		return nil, zip.ErrConflict("user id collision; retry")
 	}
 	// Never trust a client-supplied digest; the hash is derived here or nowhere.
 	u.PasswordHash, u.PasswordSalt = "", ""
@@ -206,7 +216,12 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 
 	u := &in.User
 	u.Owner, u.Name = owner, name
-	// Preserve immutable identity and creation provenance.
+	// Preserve immutable identity and creation provenance. Id is the stable OIDC
+	// `sub` (and the authz principal key): like CreatedTime it is carried from the
+	// stored row and a body-supplied value is IGNORED — mutating it would move the
+	// user's subject (breaking every session/reference) or, worse, point it at a
+	// victim's UUID for impersonation on the money path.
+	u.Id = existing.Id
 	u.CreatedTime = existing.CreatedTime
 	u.UpdatedTime = nowRFC3339()
 	// Preserve the existing digest unless a new plaintext password is supplied.

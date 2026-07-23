@@ -164,6 +164,23 @@ func TestSignup_Errors(t *testing.T) {
 		}
 	})
 
+	// F-I2: a "/" in a username would inject a spurious owner/name separator into the
+	// subject discriminator — forbidden at the door.
+	t.Run("username with slash refused", func(t *testing.T) {
+		app, db := newServer(t)
+		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", signup: true})
+		seedOrg(t, db, "hanzo")
+		body := newbieBody()
+		body["username"] = "foo/bar"
+		_, env := signupReq(t, app, body)
+		if env["status"] != "error" {
+			t.Fatalf("username containing '/' must be refused, got %v", env)
+		}
+		if u, _ := store.GetUserByName(context.Background(), db, "hanzo", "foo/bar"); u != nil {
+			t.Error("a user with a '/' username was created")
+		}
+	})
+
 	t.Run("password fails org complexity", func(t *testing.T) {
 		app, db := newServer(t)
 		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", signup: true})
