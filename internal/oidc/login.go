@@ -13,6 +13,7 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/internal/users"
 )
 
 // The credential login front door: POST /v1/iam/login. The @hanzo/iam SDK +
@@ -95,11 +96,12 @@ func loginHandler(db orm.DB) zip.Handler {
 		// object/check.go contract). Every live v1 row is argon2id — a bcrypt-only
 		// verify would fail every real login at cutover.
 		orgPasswordType := loginOrgPasswordType(ctx, db, f.Organization)
-		// Verify through the ONE lockout-enforcing choke point (F-D1), shared with the
-		// ROPC grant. One opaque failure for "no such user" and "wrong password" — no
-		// oracle that reveals whether the account exists — and a distinct lockout
-		// refusal after a run of wrong passwords.
-		ok, locked := verifyLoginPassword(ctx, db, user, f.Password, orgPasswordType, nowFunc())
+		// Verify through the ONE lockout-enforcing choke point (F-D1) — users.Authenticate,
+		// shared with the ROPC grant, the registry token endpoint, and the LDAP-bind seam.
+		// One opaque failure for "no such user" and "wrong password" — no oracle that
+		// reveals whether the account exists — and a distinct lockout refusal after a run
+		// of wrong passwords.
+		ok, locked := users.Authenticate(ctx, db, user, f.Password, orgPasswordType, nowFunc())
 		if locked {
 			return httpx.Err(c, "too many failed attempts; the account is temporarily locked")
 		}
