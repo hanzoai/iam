@@ -224,6 +224,13 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	u.Id = existing.Id
 	u.CreatedTime = existing.CreatedTime
 	u.UpdatedTime = nowRFC3339()
+	// Lockout state is SERVER-OWNED, exactly like Id/CreatedTime: recordAttempt is its
+	// only writer. Carry it from the stored row and IGNORE any body value — this is a
+	// full-row write, so an omitted (or 0) signinWrongTimes would otherwise overwrite a
+	// LOCKED account's counter to 0, and a routine admin profile edit would silently
+	// unlock a user mid-attack (F-6).
+	u.SigninWrongTimes = existing.SigninWrongTimes
+	u.LastSigninWrongTime = existing.LastSigninWrongTime
 	// Preserve the existing digest unless a new plaintext password is supplied.
 	u.PasswordHash = existing.PasswordHash
 	u.PasswordType = existing.PasswordType

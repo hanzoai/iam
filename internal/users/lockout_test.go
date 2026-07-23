@@ -140,6 +140,55 @@ func TestAuthenticate_ConcurrentFlood_Locks(t *testing.T) {
 	}
 }
 
+// F-6: the canonical admin profile edit (POST /v1/iam/update-user -> API.Update) must
+// NOT reset the lockout counter. Update is a full-row write; a body that omits
+// signinWrongTimes (the common case) or sends 0 would overwrite a LOCKED account's
+// counter to 0 — a routine profile edit silently unlocks the user mid-attack. Lockout
+// state is server-owned, carried from the stored row like Id/CreatedTime. FAILS before
+// the fix (counter 0), PASSES after (counter preserved at the lock threshold).
+func TestUpdate_preservesLockoutCounter(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "f6-update.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer db.Close()
+
+	const org, name, pw = "hanzo", "victim", "correct horse battery staple"
+	if _, err := New(db).Create(ctx, &CreateInput{
+		User:     schema.User{Owner: org, Name: name, Email: "victim@hanzo.ai"},
+		Password: pw,
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Lock the account.
+	now := time.Now()
+	for i := 0; i < LockThreshold; i++ {
+		u, _ := store.GetUserByName(ctx, db, org, name)
+		Authenticate(ctx, db, u, "WRONG", "", now)
+	}
+	locked, _ := store.GetUserByName(ctx, db, org, name)
+	if locked.SigninWrongTimes < LockThreshold {
+		t.Fatalf("setup: counter=%d, want >= threshold %d", locked.SigninWrongTimes, LockThreshold)
+	}
+
+	// A routine admin profile edit — the body carries the ZERO-value counter (omitted in
+	// JSON). It must change DisplayName WITHOUT touching the lockout state.
+	if _, err := New(db).Update(ctx, &UpdateInput{
+		User: schema.User{Owner: org, Name: name, Email: "victim@hanzo.ai", DisplayName: "Victim V"},
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	after, _ := store.GetUserByName(ctx, db, org, name)
+	if after.SigninWrongTimes < LockThreshold {
+		t.Fatalf("update-user reset the lockout counter to %d (want >= threshold %d) — a profile edit unlocked a locked account (F-6)", after.SigninWrongTimes, LockThreshold)
+	}
+	if after.DisplayName != "Victim V" {
+		t.Fatalf("update did not apply the intended DisplayName change: %q", after.DisplayName)
+	}
+}
+
 // TestAuthenticate_SequentialLockAndReset covers the single-threaded contract the
 // atomic rewrite must preserve: a run of wrongs locks; a correct password on a
 // sub-threshold count resets it; a correct password on a LOCKED account is still
