@@ -138,9 +138,34 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	ctx := c.Context()
 
 	// type=device: approve a pending RFC 8628 device authorization against the
-	// identity now fully proven (device.go).
+	// identity now fully proven (device.go). Device approval has its OWN tenant model —
+	// a SuperAdmin may deliberately approve a device across tenants (device.go), a
+	// blessed capability — so the reserved-org grant gate below (which binds a
+	// SuperAdmin to its own-org app) does NOT apply to it; it precedes that gate.
 	if f.Type == "device" {
 		return approveDevice(c, db, user, f.UserCode)
+	}
+
+	// Reserved-org grant gate — the SAME store.IsReservedOrg refuse signup.go and the
+	// ROPC grant enforce, which login.go alone was missing (F-D2 tail / F-D1). A
+	// RESERVED-org principal (a SuperAdmin under "admin", a built-in/service identity)
+	// may be granted a bare SESSION or an authorization CODE ONLY through an application
+	// that itself SERVES that reserved org — the dedicated console. A shared,
+	// org-choice, or cross-tenant app must NEVER authenticate one: otherwise any shared
+	// app (whose per-type tenant gate below accepts every org) would mint a real
+	// SuperAdmin grant on the correct admin password. Enforced here, ahead of BOTH the
+	// bare-session and the type=code branches, so every credential grant shape (incl.
+	// the second-factor finish, which reaches this same tail) is bound identically. A
+	// normal-tenant login never triggers this (IsReservedOrg is false), so the shared/
+	// org-choice apps keep serving them unchanged.
+	if store.IsReservedOrg(user.Owner) {
+		app, err := resolveLoginApp(ctx, db, f)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		if app == nil || user.Owner != app.Organization {
+			return httpx.Err(c, "the user is not permitted to sign in to this application")
+		}
 	}
 
 	userID := user.Owner + "/" + user.Name
