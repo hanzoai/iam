@@ -10,6 +10,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
 )
 
@@ -54,16 +55,25 @@ func updatePreferencesHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the user does not exist")
 		}
 
-		mergedJSON, merged, err := mergePreferences(user.Properties[preferencesKey], c.Fiber().Body())
-		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		if user.Properties == nil {
-			user.Properties = map[string]string{}
-		}
-		user.Properties[preferencesKey] = mergedJSON
-		user.UpdatedTime = onboardNow()
-		if err := user.UpdateCtx(ctx); err != nil {
+		// Merge under the row lock against the FRESH stored blob (updateUser): a
+		// concurrent product/device setting a DIFFERENT top-level key is preserved (the
+		// merge now reads the current value, not a snapshot), and the lockout counter is
+		// never clobbered by this full-row write.
+		body := c.Fiber().Body()
+		var merged map[string]json.RawMessage
+		if _, err := updateUser(ctx, db, owner, name, func(u *schema.User) error {
+			mergedJSON, m, err := mergePreferences(u.Properties[preferencesKey], body)
+			if err != nil {
+				return err
+			}
+			if u.Properties == nil {
+				u.Properties = map[string]string{}
+			}
+			u.Properties[preferencesKey] = mergedJSON
+			u.UpdatedTime = onboardNow()
+			merged = m
+			return nil
+		}); err != nil {
 			return httpx.Err(c, err.Error())
 		}
 		return httpx.Ok(c, merged)
