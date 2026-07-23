@@ -6,11 +6,13 @@ import (
 	"context"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // RFC 8693 Token Exchange — the standard on-behalf-of flow (replaces the retired
@@ -54,6 +56,35 @@ func subjectTokenFor(t *testing.T, app *zip.App, viaClient, secret, org, usernam
 		t.Fatalf("could not mint a subject_token; body=%v", tok)
 	}
 	return st
+}
+
+// directSubjectToken signs a verifiable access token for the (owner,name) user
+// directly under the trusted signing cert — the legitimate way to obtain a
+// subject_token for a RESERVED-org subject now that public ROPC into a reserved org
+// is forbidden (F-D2). verifyToken checks only the trusted kid + signature + time,
+// so a cert-signed token carrying the user's `sub` is accepted; the exchange then
+// resolves that subject and applies its OWN reserved-org gate (the thing under test).
+func directSubjectToken(t *testing.T, db orm.DB, certName, owner, name string) string {
+	t.Helper()
+	ctx := context.Background()
+	cert, err := store.GetSigningCert(ctx, db, certName)
+	if err != nil || cert == nil {
+		t.Fatalf("signing cert %q: %v", certName, err)
+	}
+	signer, err := NewSignerFromCert(cert, nil, "https://hanzo.id")
+	if err != nil {
+		t.Fatalf("signer: %v", err)
+	}
+	u, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil || u == nil {
+		t.Fatalf("user %s/%s not seeded: %v", owner, name, err)
+	}
+	app := &schema.Application{Organization: u.Owner, ClientId: "direct"}
+	tok, err := signer.Sign(app, subjectOf(u), u.Email, u.Name, "openid profile", nil, time.Hour, nowFunc())
+	if err != nil {
+		t.Fatalf("sign subject token: %v", err)
+	}
+	return tok
 }
 
 func TestTokenExchange_mintsForSubject(t *testing.T) {
@@ -142,7 +173,7 @@ func TestTokenExchange_reservedOrgSubject_requiresAdminCapability(t *testing.T) 
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	// An admin-org user with a password, so we can mint their subject_token.
 	seedUserInOrg(t, db, "admin", "root", "root@hanzo.ai", "admin pw")
-	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "admin", "root@hanzo.ai", "admin pw")
+	subject := directSubjectToken(t, db, "cert-hanzo-console", "admin", "root")
 
 	status, _ := exchange(t, app, "hanzo-console", "top-secret", url.Values{
 		"subject_token": {subject},
@@ -159,7 +190,7 @@ func TestTokenExchange_reservedOrgSubject_admitsWithAdminCapability(t *testing.T
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUserInOrg(t, db, "admin", "root", "root@hanzo.ai", "admin pw")
-	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "admin", "root@hanzo.ai", "admin pw")
+	subject := directSubjectToken(t, db, "cert-hanzo-console", "admin", "root")
 
 	status, tok := exchange(t, app, "hanzo-console", "top-secret", url.Values{
 		"subject_token": {subject},

@@ -159,6 +159,46 @@ func TestPasswordGrant_publicClient_forbiddenUser_denied(t *testing.T) {
 	requireError(t, resp, tok, 400, "invalid_grant")
 }
 
+// F-D2: a public console must NOT be able to mint a token for a reserved system org
+// (admin/built-in/app) by passing organization=<reserved> — that path resolved
+// admin/<super> and minted a real SuperAdmin token on the correct password.
+func TestPasswordGrant_reservedTargetOrg_refused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "zoo-console"}) // public, Organization=hanzo per seedApp
+	// A SuperAdmin lives in the admin org with a known, CORRECT password — so the
+	// refusal is provably the org gate, not a bad credential.
+	seedUserInOrg(t, db, "admin", "z", "z@hanzo.ai", "correct horse")
+
+	resp, tok := postToken(t, app, url.Values{
+		"grant_type":   {"password"},
+		"client_id":    {"zoo-console"},
+		"organization": {"admin"},
+		"username":     {"z"},
+		"password":     {"correct horse"},
+	})
+	requireError(t, resp, tok, 400, "invalid_grant")
+	// And no token leaked.
+	if tok["access_token"] != nil {
+		t.Fatal("F-D2: a reserved-org password grant minted a token")
+	}
+}
+
+// A foreign tenant org (not the client's own, non-shared) is refused too.
+func TestPasswordGrant_foreignTenantOrg_refused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // Organization=hanzo, not shared
+	seedUserInOrg(t, db, "lux", "eve", "eve@lux.ai", "correct horse")
+
+	resp, tok := postToken(t, app, url.Values{
+		"grant_type":   {"password"},
+		"client_id":    {"hanzo-console"},
+		"organization": {"lux"},
+		"username":     {"eve"},
+		"password":     {"correct horse"},
+	})
+	requireError(t, resp, tok, 400, "invalid_grant")
+}
+
 // A confidential client (registered secret) is UNCHANGED: a wrong/absent secret is
 // still a 401 client-authentication failure — the relaxation is public-only.
 func TestPasswordGrant_confidentialClient_wrongSecret_stillRejected(t *testing.T) {
