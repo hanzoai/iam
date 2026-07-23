@@ -11,6 +11,7 @@ package store
 
 import (
 	"context"
+	"strings"
 
 	"github.com/hanzoai/orm"
 
@@ -98,6 +99,44 @@ func GetUserByName(_ context.Context, db orm.DB, owner, name string) (*schema.Us
 		return nil, nil
 	}
 	return u, err
+}
+
+// GetUserById resolves a user by its stable opaque Id — the UUID the OIDC `sub`
+// carries (schema.User.Id). Filters on the persisted "id" field, which the
+// domain Id dominates over the embedded orm storage id, so the value matched is
+// the UUID, never the (owner,name) key. Returns (nil, nil) when id is empty or
+// unmatched (a pre-cutover user with no Id has "" here and is never matched by a
+// non-empty subject).
+func GetUserById(_ context.Context, db orm.DB, id string) (*schema.User, error) {
+	if id == "" {
+		return nil, nil
+	}
+	u, err := orm.TypedQuery[schema.User](db).Filter("Id=", id).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	return u, err
+}
+
+// GetUserBySubject resolves the user a token's `sub` names — the ONE place the
+// subject→user mapping lives, shared by userinfo, get-account, token exchange,
+// and the authz principal, so `sub` is decoded the same way everywhere. The
+// discriminator is deterministic and matches how a `sub` is MINTED (subjectOf):
+// a stable opaque UUID carries no "/" and resolves by Id; an "owner/name" subject
+// (a pre-cutover user with no Id, or a machine token's app identity) resolves by
+// its natural key. Returns (nil, nil) when no user matches — a machine token's
+// app-id subject, or a since-deleted user — the callers fail closed on nil.
+func GetUserBySubject(ctx context.Context, db orm.DB, sub string) (*schema.User, error) {
+	if sub == "" {
+		return nil, nil
+	}
+	if owner, name, hasSlash := strings.Cut(sub, "/"); hasSlash {
+		if owner == "" || name == "" {
+			return nil, nil
+		}
+		return GetUserByName(ctx, db, owner, name)
+	}
+	return GetUserById(ctx, db, sub)
 }
 
 // GetUserByEmail resolves a user by (owner, email) — the email-login identifier.
