@@ -324,9 +324,9 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	if err != nil {
 		return tokenResponse{}, err
 	}
-	email, name, orgs := userClaims(ctx, db, row.User)
+	sub, email, name, orgs := userClaims(ctx, db, row.User)
 
-	access, err := signer.Sign(app, row.User, email, name, row.Scope, orgs, ttl, now)
+	access, err := signer.Sign(app, sub, email, name, row.Scope, orgs, ttl, now)
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -356,7 +356,7 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 		Scope:        row.Scope,
 	}
 	if hasScope(row.Scope, "openid") {
-		idt, err := signer.SignID(app, row.User, email, name, row.Scope, row.Nonce, orgs, ttl, now)
+		idt, err := signer.SignID(app, sub, email, name, row.Scope, row.Nonce, orgs, ttl, now)
 		if err != nil {
 			return tokenResponse{}, err
 		}
@@ -451,8 +451,8 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 	if err != nil {
 		return "", err
 	}
-	_, _, orgs := userClaims(ctx, db, tok.User)
-	return signer.Sign(app, tok.User, "", "", tok.Scope, orgs, ttl, now)
+	sub, _, _, orgs := userClaims(ctx, db, tok.User)
+	return signer.Sign(app, sub, "", "", tok.Scope, orgs, ttl, now)
 }
 
 // tokenIssuer is the canonical OIDC issuer for this request — the value discovery
@@ -465,27 +465,41 @@ func tokenIssuer(c *zip.Ctx) string {
 	return resolveIssuer(c.Host())
 }
 
-// userClaims loads a user's token-facing claims in ONE lookup: its email, display
-// name, and membership set (store.MemberOrgRefs — home org first, deduped). It is
-// the single resolution both the code/refresh/password mint (issueTokens) and the
-// direct-sign path share, so the `orgs` claim and the profile can never be sourced
-// two different ways. A subject with no user row (a machine token, or a
-// since-deleted user) yields empty profile and nil orgs — the claim is omitted, not
-// forged.
-func userClaims(ctx context.Context, db orm.DB, userID string) (email, name string, orgs []schema.OrgRef) {
+// subjectOf is the OIDC `sub` for a user: its stable opaque Id (the cutover-
+// continuity UUID casdoor emits and the migrator preserves), falling back to the
+// (owner/name) natural key ONLY for a pre-cutover row that carries no Id. It is
+// the single place the subject is derived, so the token's `sub`, userinfo's `sub`,
+// and the introspection `sub` can never disagree, and store.GetUserBySubject
+// decodes exactly what this encodes (no "/" ⇒ resolve by Id).
+func subjectOf(u *schema.User) string {
+	if u != nil && u.Id != "" {
+		return u.Id
+	}
+	return u.Owner + "/" + u.Name
+}
+
+// userClaims loads a user's token-facing claims in ONE lookup: its subject (the
+// stable `sub`), email, display name, and membership set (store.MemberOrgRefs —
+// home org first, deduped). It is the single resolution both the
+// code/refresh/password mint (issueTokens) and the direct-sign path share, so the
+// `sub`, `orgs` claim, and profile can never be sourced two different ways. userID
+// is the token row's (owner/name) User key. A subject with no user row (a machine
+// token, or a since-deleted user) yields the passed-in id as sub, empty profile,
+// and nil orgs — the claim is omitted, not forged.
+func userClaims(ctx context.Context, db orm.DB, userID string) (sub, email, name string, orgs []schema.OrgRef) {
 	owner, uname := splitSub(userID)
 	if owner == "" || uname == "" {
-		return "", "", nil
+		return userID, "", "", nil
 	}
 	u, err := store.GetUserByName(ctx, db, owner, uname)
 	if err != nil || u == nil {
-		return "", "", nil
+		return userID, "", "", nil
 	}
 	name = u.DisplayName
 	if name == "" {
 		name = u.Name
 	}
-	return u.Email, name, store.MemberOrgRefs(ctx, db, u)
+	return subjectOf(u), u.Email, name, store.MemberOrgRefs(ctx, db, u)
 }
 
 // splitSub splits a subject "owner/name" into its two parts.

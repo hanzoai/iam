@@ -70,7 +70,7 @@ func accountEnvelopeFor(ctx context.Context, db orm.DB, owner, name string) (acc
 	}
 	return accountResponse{
 		Status: "ok",
-		Sub:    owner + "/" + name,
+		Sub:    subjectOf(user), // the stable `sub` (UUID, or owner/name pre-cutover)
 		Name:   user.Name,
 		Data:   user.Mask(), // owner + isAdmin survive; every secret stripped
 		Data2:  org.Mask(),  // org master/default passwords masked
@@ -92,6 +92,12 @@ func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, o
 	if err != nil {
 		return "", "", false
 	}
-	o, n := splitSub(claims.Subject)
-	return o, n, true
+	// The `sub` is a stable UUID for a v2 token; resolve it to the real (owner,name)
+	// so the account/whoami envelope reports the identity, not the opaque subject. A
+	// subject with no user row (a machine token) is not an account caller.
+	u, err := store.GetUserBySubject(ctx, db, claims.Subject)
+	if err != nil || u == nil {
+		return "", "", false
+	}
+	return u.Owner, u.Name, true
 }
