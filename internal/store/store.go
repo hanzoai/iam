@@ -11,6 +11,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -107,15 +108,28 @@ func GetUserByName(_ context.Context, db orm.DB, owner, name string) (*schema.Us
 // the UUID, never the (owner,name) key. Returns (nil, nil) when id is empty or
 // unmatched (a pre-cutover user with no Id has "" here and is never matched by a
 // non-empty subject).
-func GetUserById(_ context.Context, db orm.DB, id string) (*schema.User, error) {
+//
+// It FAILS CLOSED on multiplicity: the store has no DB UNIQUE index on Id, so if two
+// rows ever shared one UUID (a broken invariant — Id is the OIDC `sub` and the authz
+// principal key), returning the storage engine's arbitrary First() would let an
+// attacker who planted a colliding row be resolved AS a victim. More than one match
+// is therefore an error, never a silently-chosen row.
+func GetUserById(ctx context.Context, db orm.DB, id string) (*schema.User, error) {
 	if id == "" {
 		return nil, nil
 	}
-	u, err := orm.TypedQuery[schema.User](db).Filter("Id=", id).First()
-	if err == orm.ErrNotFound {
-		return nil, nil
+	us, err := orm.TypedQuery[schema.User](db).Filter("Id=", id).GetAll(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return u, err
+	switch len(us) {
+	case 0:
+		return nil, nil
+	case 1:
+		return us[0], nil
+	default:
+		return nil, fmt.Errorf("store: %d users share id %q — ambiguous subject", len(us), id)
+	}
 }
 
 // GetUserBySubject resolves the user a token's `sub` names — the ONE place the
