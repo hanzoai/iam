@@ -31,7 +31,8 @@ const (
 
 // newLegacyDB builds a tiny synthetic legacy Casdoor iam.db with snake_case
 // columns (as xorm emits) — including the credential-critical `password` column
-// and the Casdoor `id` UUID that the clean schema has no home for.
+// and the Casdoor `id` UUID that the clean schema now carries verbatim as
+// schema.User.Id (the continuity `sub`).
 func newLegacyDB(t *testing.T, certPEM, keyPEM string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "iam.db")
@@ -196,6 +197,12 @@ func TestMigrate_PreservesCredentialsAndKeysVerbatim(t *testing.T) {
 	if u.Email != "z@hanzo.ai" {
 		t.Errorf("user.Email = %q", u.Email)
 	}
+	// SUB CONTINUITY: the Casdoor per-row UUID migrates verbatim into User.Id — the
+	// value the OIDC `sub` will carry, so a migrated user's sub is byte-identical
+	// across the cutover.
+	if u.Id != "uuid-0001" {
+		t.Errorf("user.Id = %q, want uuid-0001 (the migrated continuity sub)", u.Id)
+	}
 	// THE assertion that matters: the migrated hash verifies under the clean
 	// verifier, resolving the scheme from the row exactly as login does.
 	typ := cred.Resolve(u.PasswordType, org.PasswordType)
@@ -242,10 +249,13 @@ func TestMigrate_PreservesCredentialsAndKeysVerbatim(t *testing.T) {
 		t.Errorf("provider.UserMapping = %#v, want %#v", prov.UserMapping, wantMap)
 	}
 
-	// ---- The Casdoor `id` UUID has NO clean home: it must be flagged as a gap. ----
-	if got := byEntity["users"]; got == nil || !contains(got.UnmappedCols, "id") {
-		t.Errorf("expected legacy user column 'id' reported as unmapped (the old OIDC sub), got %v",
+	// ---- The Casdoor `id` UUID now has a clean home (User.Id): it must NOT be a gap. ----
+	if got := byEntity["users"]; got == nil || contains(got.UnmappedCols, "id") {
+		t.Errorf("legacy user column 'id' must now be MAPPED to User.Id (the continuity sub), still reported unmapped: %v",
 			gapCols(got))
+	}
+	if fb, _ := store.GetUserByName(ctx, dst, "hanzo", "fallback"); fb == nil || fb.Id != "uuid-0002" {
+		t.Errorf("fallback user.Id = %v, want uuid-0002 (every casdoor row's UUID carries)", fb)
 	}
 
 	// ---- Row counts: everything read was created. ----
