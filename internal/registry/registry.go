@@ -256,17 +256,21 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 }
 
 // userByPassword resolves a user by username (or email) across the platform
-// candidate orgs and verifies the password through users.VerifyPassword — the
-// SAME scheme-aware (argon2id/bcrypt) path login uses, so a credential that logs
-// in also authenticates a docker push. Returns nil on no match or wrong password
-// (one opaque failure, no account-existence oracle).
+// candidate orgs and verifies the password through users.Authenticate — the SAME
+// lockout-enforcing choke point the interactive login and the ROPC grant use, so this
+// PUBLIC endpoint throttles a password guess exactly like they do. Without it, an
+// unauthenticated attacker could brute-force an admin/hanzo (SuperAdmin) password here
+// with zero rate limit while the login door locked — the F-D1 second-path bypass. A
+// locked account verifies as no-match: docker gets the same opaque 401 as a wrong
+// password (no lockout oracle on the registry realm). Returns nil on no match, wrong
+// password, or a locked account (one opaque failure, no account-existence oracle).
 func (h *handler) userByPassword(ctx context.Context, id, secret string) *schema.User {
 	for _, org := range candidateOrgs() {
 		u := resolveUser(ctx, h.db, org, id)
 		if u == nil {
 			continue
 		}
-		if users.VerifyPassword(u, secret, orgPasswordType(ctx, h.db, org)) {
+		if ok, _ := users.Authenticate(ctx, h.db, u, secret, orgPasswordType(ctx, h.db, org), time.Now()); ok {
 			return u
 		}
 	}

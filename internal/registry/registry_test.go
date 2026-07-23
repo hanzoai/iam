@@ -26,6 +26,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/users"
 )
 
 // HTTP-level harness: every test drives the REAL mounted token/jwks routes through
@@ -606,6 +607,42 @@ func TestToken_BadPassword_401(t *testing.T) {
 	}
 	if !strings.HasPrefix(hdr.Get("WWW-Authenticate"), "Basic realm=") {
 		t.Fatalf("WWW-Authenticate = %q", hdr.Get("WWW-Authenticate"))
+	}
+}
+
+// TestToken_AdminPassword_LocksAfterRepeatedWrong proves the registry Basic-auth
+// password path routes through the SAME lockout choke point as login/ROPC — the F-D1
+// second-path bypass. It mints a SuperAdmin (org "admin") through the REAL
+// users.Create path (an auto-int64 storage key — exactly the shape whose counter never
+// used to persist), then hammers wrong passwords on the PUBLIC token endpoint. After
+// the threshold the account is locked, so even the CORRECT admin password is refused:
+// this public endpoint is no longer an unthrottled admin-password brute-force oracle.
+func TestToken_AdminPassword_LocksAfterRepeatedWrong(t *testing.T) {
+	app, db, _ := newServer(t)
+	ctx := context.Background()
+	const pw = "the real admin password"
+	if _, err := users.New(db).Create(ctx, &users.CreateInput{
+		User:     schema.User{Owner: "admin", Name: "root", IsAdmin: true},
+		Password: pw,
+	}); err != nil {
+		t.Fatalf("create admin user through the canonical path: %v", err)
+	}
+
+	// Hammer wrong passwords on the public token endpoint — each a fresh HTTP request.
+	for i := 0; i < users.LockThreshold; i++ {
+		status, body, _ := tokenGET(t, app, "root", "WRONG",
+			"registry.hanzo.ai", "repository:hanzo/app:pull")
+		if status != 401 || body["token"] != nil {
+			t.Fatalf("wrong attempt %d: status=%d body=%v, want 401 no-token", i, status, body)
+		}
+	}
+	// The CORRECT admin password is now REFUSED — the account is locked, so the public
+	// registry realm cannot confirm (or brute-force) the SuperAdmin password.
+	status, body, _ := tokenGET(t, app, "root", pw,
+		"registry.hanzo.ai", "repository:hanzo/app:pull")
+	if status != 401 || body["token"] != nil {
+		t.Fatalf("admin password ACCEPTED after %d wrong attempts: status=%d body=%v — registry bypasses the lockout choke point (F-D1)",
+			users.LockThreshold, status, body)
 	}
 }
 

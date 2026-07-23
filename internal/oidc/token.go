@@ -18,6 +18,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/internal/users"
 )
 
 // The token endpoint: POST /v1/iam/oauth/token. It dispatches the three grant
@@ -311,11 +312,11 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 500, "server_error", "")
 	}
 	orgPasswordType := loginOrgPasswordType(ctx, db, org)
-	// Credential verify through the ONE lockout-enforcing choke point (F-D1): a run of
-	// wrong passwords locks the account, so the public ROPC endpoint is not an online
-	// brute-force oracle. The lockout refusal is distinct from a bad credential but
-	// still reveals nothing about correctness.
-	ok, locked := verifyLoginPassword(ctx, db, user, password, orgPasswordType, now)
+	// Credential verify through the ONE lockout-enforcing choke point (F-D1) —
+	// users.Authenticate: a run of wrong passwords locks the account, so the public ROPC
+	// endpoint is not an online brute-force oracle. The lockout refusal is distinct from
+	// a bad credential but still reveals nothing about correctness.
+	ok, locked := users.Authenticate(ctx, db, user, password, orgPasswordType, now)
 	if locked {
 		return tokenError(c, 400, "invalid_grant", "too many failed attempts; the account is temporarily locked")
 	}
