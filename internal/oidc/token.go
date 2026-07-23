@@ -294,6 +294,18 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	if org == "" {
 		org = app.Organization
 	}
+	// Cross-tenant gate — the SAME guard mint.go, login.go, signup.go and
+	// federation.go enforce, which passwordGrant alone was missing (F-D2): the login
+	// org must be one this client may serve (its own org, a shared app, or an app
+	// that lets users pick), and NEVER a reserved system org (admin/built-in/app).
+	// Without it a public zoo-console posting organization=admin resolved
+	// admin/<super> and minted a real SuperAdmin token on the correct password.
+	// Checked BEFORE the user lookup, with the SAME opaque failure as a bad
+	// credential, so it is no org/user existence oracle.
+	if store.IsReservedOrg(org) ||
+		(org != app.Organization && !app.IsShared && app.OrgChoiceMode == "") {
+		return tokenError(c, 400, "invalid_grant", "the username or password is incorrect")
+	}
 
 	user, err := resolveLoginUser(ctx, db, org, username)
 	if err != nil {
