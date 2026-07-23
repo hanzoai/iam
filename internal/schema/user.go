@@ -16,9 +16,9 @@ import (
 // never a field on this struct — it arrives on the create/update request,
 // is hashed immediately, and is discarded.
 //
-// The natural key is (Owner, Name): Owner is the tenant/organization slug,
+// The natural/query key is (Owner, Name): Owner is the tenant/organization slug,
 // Name is unique within it. The embedded orm.Model[User] supplies the storage
-// id (the OIDC `sub`), the created/updated timestamps, and the CRUD lifecycle.
+// key, the created/updated timestamps, and the CRUD lifecycle.
 type User struct {
 	orm.Model[User]
 
@@ -31,13 +31,20 @@ type User struct {
 	// `sub` is ALWAYS a stable opaque id going forward — never the (Owner, Name)
 	// pair, which is mutable (a rename would otherwise silently reissue identity).
 	//
-	// It is distinct from the embedded orm.Model storage id (the (Owner, Name)
-	// natural key): this is a first-class, indexed DOMAIN field. The json tag "id"
-	// dominates the promoted orm.Model `Id_` (also "id") by shallower depth, so the
-	// persisted record's "id" is this UUID — exactly the v1 shape — while the row's
-	// primary key remains (Owner, Name), carried by the storage key, not this field.
-	// A row that carries no Id (a not-yet-assigned pre-cutover user) falls back to
-	// the (Owner, Name) subject at mint; every other path resolves `sub`→user by Id.
+	// It is distinct from the embedded orm.Model STORAGE KEY — the value the datastore
+	// locks and looks a row up by — which is NOT (Owner, Name) for every row: a MIGRATED
+	// casdoor row is stamped "owner/name" (SetId in the migrator), but a v2-native
+	// users.Create'd row is NOT — Create allocates rather than pinning a key, so its
+	// storage key is a store-assigned surrogate id (a GenerateID decimal string like
+	// "17847909129933610000001"). (Owner, Name) is therefore the natural/QUERY key
+	// (unique, indexed), not necessarily the storage key: resolve a row for a locked
+	// write by its REAL key (store.GetUserByName(...).Key().Encode(), which stamps both
+	// shapes — see internal/oidc updateUser), never by assuming "owner/name". This Id is
+	// a first-class, indexed DOMAIN field; its json tag "id" dominates the promoted
+	// orm.Model `Id_` (also "id") by shallower depth, so the persisted record's "id" is
+	// this UUID — exactly the v1 shape. A row that carries no Id (a not-yet-assigned
+	// pre-cutover user) falls back to the (Owner, Name) subject at mint; every other
+	// path resolves `sub`→user by Id.
 	Id string `json:"id,omitempty" orm:"index"`
 
 	// Identity / tenancy. (Owner, Name) is the natural key.
