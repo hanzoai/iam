@@ -40,9 +40,9 @@ func seedAttackerApp(t *testing.T, db orm.DB, owner, name, clientID, secret, pla
 }
 
 // TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin proves the mint/revoke
-// read-modify-write (saveUser) does not blank PasswordHash nor flip privilege
-// bits. GetUserByName returns the FULL row (no mask), so *existing = *user
-// preserves every field the handler didn't touch.
+// read-modify-write (updateUser) does not blank PasswordHash nor flip privilege
+// bits. updateUser reads the FULL row fresh under a row lock and mutates only
+// AccessKey/UpdatedTime, so every field the handler didn't touch is preserved.
 func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)

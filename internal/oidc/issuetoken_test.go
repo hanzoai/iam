@@ -14,6 +14,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/internal/users"
 )
 
 // The `hk-` Cloud API-key primitives (mint/revoke). A confidential, allow-listed
@@ -156,5 +157,54 @@ func TestMintUserKeys_forbiddenUser_403(t *testing.T) {
 	resp, _ := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/banned"))
 	if resp.StatusCode != 403 {
 		t.Fatalf("forbidden-user mint status = %d, want 403", resp.StatusCode)
+	}
+}
+
+// ITEM 1 [functional break]: every mint/revoke test above seeds its user with
+// SetId("owner/name"), so the row's storage key HAPPENS to equal "owner/name" and the
+// pre-fix owner/name-keyed read resolves it. A user minted through the ONE canonical
+// users.Create path (signup / SCIM / federation / CRUD) gets a store-ASSIGNED surrogate
+// key (a GenerateID decimal string) and a UUID sub — the exact post-cutover account
+// shape — for which an "owner/name" lookup MISSES. The pre-fix saveUser then errored
+// (orm.ErrNotFound → 500) and no hk- key was ever minted or revoked for a new signup.
+// This drives mint AND revoke against a create-path user; it FAILS before the fix (mint
+// 500) and PASSES after (the write targets the row's real storage key, both shapes).
+func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+
+	// Canonical create — surrogate storage key, UUID sub, NO SetId anywhere.
+	if _, err := users.New(db).Create(tctx(), &users.CreateInput{
+		User:     schema.User{Owner: "hanzo", Name: "mallory", Email: "mallory@hanzo.ai"},
+		Password: "pw",
+	}); err != nil {
+		t.Fatalf("create via canonical path: %v", err)
+	}
+
+	// MINT must persist the hk- key on the real (surrogate-keyed) row.
+	resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/mallory"))
+	if resp.StatusCode != 200 {
+		t.Fatalf("mint status=%d body=%s — saveUser missed the surrogate-key row (ITEM 1)", resp.StatusCode, body)
+	}
+	key, _ := dataMap(t, body)["accessKey"].(string)
+	if !strings.HasPrefix(key, "hk-") {
+		t.Fatalf("accessKey=%q, want an hk- key", key)
+	}
+	u, err := store.GetUserByName(tctx(), db, "hanzo", "mallory")
+	if err != nil || u == nil {
+		t.Fatalf("reload after mint: %v", err)
+	}
+	if u.AccessKey != key {
+		t.Fatalf("persisted AccessKey=%q, want the minted %q — the write missed the real row", u.AccessKey, key)
+	}
+
+	// REVOKE must clear it on the same real row.
+	resp, body = do(t, app, keyReq(PathRevokeUserKeys, "hanzo-console", "top-secret", "?id=hanzo/mallory"))
+	if resp.StatusCode != 200 {
+		t.Fatalf("revoke status=%d body=%s", resp.StatusCode, body)
+	}
+	if u, _ := store.GetUserByName(tctx(), db, "hanzo", "mallory"); u.AccessKey != "" {
+		t.Fatalf("AccessKey after revoke=%q, want empty", u.AccessKey)
 	}
 }
