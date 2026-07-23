@@ -17,15 +17,14 @@ package bootstrap
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/hanzoai/iam/internal/cred"
+	"github.com/hanzoai/iam/internal/httpx"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -39,32 +38,6 @@ import (
 func Route(r zip.Router, db orm.DB) {
 	r.Post("/v1/iam/admin/applications/upsert", upsertApplication(db))
 	r.Post("/v1/iam/admin/users/upsert", upsertUser(db))
-}
-
-// serviceToken returns the configured unified service token, or "" (fail closed).
-func serviceToken() string {
-	for _, key := range []string{"HANZO_API_KEY", "KMS_SERVICE_TOKEN", "IAM_SERVICE_TOKEN"} {
-		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-// authService validates the Bearer service token (constant-time). An unset expected
-// token, or a mismatch, is unauthorized.
-func authService(c *zip.Ctx) bool {
-	expected := serviceToken()
-	if expected == "" {
-		return false
-	}
-	const p = "Bearer "
-	h := c.Header("Authorization")
-	if len(h) <= len(p) || !strings.EqualFold(h[:len(p)], p) {
-		return false
-	}
-	got := strings.TrimSpace(h[len(p):])
-	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
 }
 
 func unauthorized(c *zip.Ctx) error {
@@ -90,7 +63,7 @@ type appUpsertReq struct {
 // the existing one (no rotation on a steady-state reconcile) or is generated.
 func upsertApplication(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
-		if !authService(c) {
+		if !httpx.ServiceTokenAuth(c) {
 			return unauthorized(c)
 		}
 		ctx := c.Context()
@@ -181,7 +154,7 @@ type userUpsertReq struct {
 // the existing credential. Returns {status:"ok", action, data:{owner, name}}.
 func upsertUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
-		if !authService(c) {
+		if !httpx.ServiceTokenAuth(c) {
 			return unauthorized(c)
 		}
 		ctx := c.Context()
