@@ -45,6 +45,10 @@ func routeFrontDoor(r zip.Router, db orm.DB) {
 	r.Post(PathSignin, signinHandler(db))
 	r.Get(PathWhoami, whoamiHandler(db))
 	r.Post(PathOnboard, onboardHandler(db))
+	// Service-token admin provision: the ONE atomic op the cloud onboarding
+	// orchestrator calls (on behalf of a named user) instead of a create-org +
+	// move-user pair. Self-authenticates via the unified service token.
+	r.Post(PathProvision, provisionServiceHandler(db))
 	r.Post(PathUpdatePreferences, updatePreferencesHandler(db))
 	r.Get(PathLinkedAccounts, linkedAccountsHandler(db))
 }
