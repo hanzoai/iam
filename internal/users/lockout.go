@@ -97,11 +97,13 @@ func Authenticate(ctx context.Context, db orm.DB, user *schema.User, password, o
 //
 // The row's storage key is resolved ONCE via the (owner,name) query path (which stamps
 // the real orm key — an auto-int64 for a users.Create'd row, "owner/name" for a migrated
-// casdoor row), then the lock is taken by that exact key. Reading the FULL fresh row and
-// writing only the two counter fields under the held lock also removes the collateral
-// full-row-clobber: no concurrent update to an unrelated field can land between the
-// locked read and the write, so nothing is lost (a JSON-document store has no per-column
-// write; atomicity comes from the lock, not column scoping).
+// casdoor row), then the lock is taken by that exact key. Reading the FRESH row and
+// writing it back under the held lock keeps recordAttempt's OWN write free of lost
+// updates. It does NOT, by itself, stop a DIFFERENT user-row writer from erasing this
+// counter with a stale full-row write; that is prevented by routing every such writer
+// through the SAME row lock (internal/oidc updateUser reads the row fresh under the lock
+// and preserves the counter), so no snapshot can overwrite it (Red PoC4). Atomicity
+// comes from the lock, not column scoping (a JSON-document store has no per-column write).
 func recordAttempt(ctx context.Context, db orm.DB, owner, name string, passwordOK bool, now time.Time) (ok, locked bool) {
 	keyed, err := store.GetUserByName(ctx, db, owner, name)
 	if err != nil || keyed == nil {
