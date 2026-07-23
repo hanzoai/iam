@@ -180,12 +180,18 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		if raw == "" || subtle.ConstantTimeCompare([]byte(hashToken(raw)), []byte(st.BindHash)) != 1 {
 			return authorizeUserError(c, "the federation session could not be verified")
 		}
-		// Burn the transaction now (single-use). A concurrent replay reads Used and
-		// loses; a later replay finds nothing.
-		st.Used = true
-		if err := store.SaveFederationState(ctx, db, st); err != nil {
+		// Burn the transaction now (single-use), ATOMICALLY: the find-and-burn runs under
+		// a row lock (GetForUpdate), so two concurrent callbacks on one state cannot both
+		// win — the loser is refused (mirrors the wallet challenge burn / TakeChallenge).
+		// A replay finds it spent. The bind-cookie check above already gated this request,
+		// so a CSRF-failed replay never reaches the burn.
+		if _, err := store.BurnFederationState(ctx, db, state, now); err != nil {
+			if errors.Is(err, store.ErrFederationConsumed) {
+				return authorizeUserError(c, "the federation session is invalid or expired")
+			}
 			return authorizeUserError(c, "internal error")
 		}
+		st.Used = true
 		clearBindCookie(c)
 
 		// Resolve the relying-party app (the trusted redirect target) and re-check
