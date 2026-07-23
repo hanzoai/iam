@@ -135,6 +135,17 @@ func finishMfa(c *zip.Ctx, db orm.DB, id string, f loginForm) error {
 		return httpx.Err(c, ErrChallenge.Error())
 	}
 
+	// SECOND-FACTOR THROTTLE (deferred hardening, F-D1 INFO): the passcode/recovery
+	// verify below has no DEDICATED per-account lockout counter of its own. It is not
+	// an unthrottled brute-force oracle, because the MFA challenge is SINGLE-USE —
+	// TakeChallenge above burns it (Used=true) BEFORE this verify — so each guess
+	// requires a FRESH challenge, and a fresh challenge only comes from re-proving the
+	// FIRST factor at the login door, which IS rate-limited by the atomic password
+	// lockout (users.Authenticate). An attacker cannot rapidly iterate the 10^6 TOTP
+	// space: every attempt costs one throttled, argon2id-costed password auth. A
+	// dedicated second-factor counter (its own window + atomic increment, mirroring
+	// internal/users/lockout.go) is a separate, tested change — deliberately NOT folded
+	// into this cutover rework, to avoid destabilizing the MFA path.
 	switch {
 	case f.Passcode != "":
 		// The challenge's payload is the factor already used to get here. Answering
