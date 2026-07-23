@@ -11,8 +11,10 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hanzoai/orm"
 
@@ -478,18 +480,61 @@ func GetFederationState(_ context.Context, db orm.DB, state string) (*schema.Fed
 	return s, err
 }
 
-// SaveFederationState read-modify-writes an existing federation transaction (the
-// callback burns it: Used=true), looking the row up by (owner, name) and
-// updating in place. Mirrors SaveToken.
-func SaveFederationState(ctx context.Context, db orm.DB, st *schema.FederationState) error {
-	existing, err := orm.Get[schema.FederationState](db, st.Owner+"/"+st.Name)
-	if err != nil {
-		return err
+// ErrFederationConsumed is the ONE opaque refusal for a federation state that is
+// gone, already burned, expired, or that lost a concurrent burn — the single-use
+// guard's "no". Callers collapse it to the same "invalid or expired" answer so a
+// prober cannot tell a replay from a race from a forged state.
+var ErrFederationConsumed = errors.New("federation state is invalid, used, or expired")
+
+// BurnFederationState atomically consumes an in-flight federation transaction — the
+// single-use guard for the OAuth callback. The find-and-burn runs inside a
+// GetForUpdate transaction (mirroring the wallet challenge burn and TakeChallenge),
+// so two concurrent callbacks on ONE state cannot both flip Used=false→true: the
+// loser blocks until the winner commits, then reads it spent. It resolves the row's
+// real storage key via the (owner,name) query path (Name is the opaque `state`
+// token), locks by that key, refuses a used/expired row with ErrFederationConsumed
+// (no write), else sets Used and returns the burned row. A store fault returns the
+// raw error so the caller can distinguish it from the opaque refusal.
+//
+// The caller performs the browser bind-cookie (CSRF) check on a prior read BEFORE
+// calling this, so a request that fails the cookie check never reaches — and never
+// burns — a victim's pending state.
+func BurnFederationState(ctx context.Context, db orm.DB, state string, now time.Time) (*schema.FederationState, error) {
+	if state == "" {
+		return nil, ErrFederationConsumed
 	}
-	model := existing.Model
-	*existing = *st
-	existing.Model = model
-	return existing.UpdateCtx(ctx)
+	keyed, err := GetFederationState(ctx, db, state)
+	if err != nil {
+		return nil, err
+	}
+	if keyed == nil {
+		return nil, ErrFederationConsumed
+	}
+	storageID := keyed.Key().Encode()
+
+	var out *schema.FederationState
+	txErr := db.RunInTransaction(ctx, func(tx orm.DB) error {
+		fresh, err := orm.GetForUpdate[schema.FederationState](tx, storageID)
+		if err != nil {
+			if errors.Is(err, orm.ErrNotFound) {
+				return ErrFederationConsumed
+			}
+			return err
+		}
+		if fresh.Used || (fresh.ExpireIn != 0 && now.Unix() > fresh.ExpireIn) {
+			return ErrFederationConsumed
+		}
+		fresh.Used = true
+		if err := fresh.UpdateCtx(ctx); err != nil {
+			return err
+		}
+		out = fresh
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
+	}
+	return out, nil
 }
 
 // GetUserByConnector resolves the user in an organization whose federated
