@@ -492,7 +492,10 @@ func tokenIssuer(c *zip.Ctx) string {
 // and the introspection `sub` can never disagree, and store.GetUserBySubject
 // decodes exactly what this encodes (no "/" ⇒ resolve by Id).
 func subjectOf(u *schema.User) string {
-	if u != nil && u.Id != "" {
+	if u == nil {
+		return ""
+	}
+	if u.Id != "" {
 		return u.Id
 	}
 	return u.Owner + "/" + u.Name
