@@ -4,25 +4,32 @@ package oidc
 
 import (
 	"strings"
-	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/organizations"
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/store"
 )
 
 // POST /v1/iam/onboard — first-run org onboarding. A signed-in user with no org of
 // their own creates one (named, or a one-click `<username>` personal org) and is
-// MOVED into it as its admin, so everyone always has an org. Because an IAM user's
-// org IS their identity, the move re-keys the caller (their subject becomes
-// slug/name), so the console re-authenticates after a success.
+// MOVED into it as its admin, so everyone always has an org. The org IS the tenant's
+// billing account, so the same call provisions its ONE org-scoped API key — the
+// signup path lands a funded, metered, callable identity in one idempotent step.
+//
+// Because an IAM user's org IS their identity, the move re-keys the caller (their
+// subject becomes slug/name), so the console re-authenticates after a success.
+//
+// Idempotent + retry-safe: the whole converge (org + admin move + key) runs through
+// the provision() primitive, which ensures each resource atomically — a retry or a
+// partial failure re-drives to the SAME org + user + key, never a duplicate.
 //
 // The response is the console's own {org}/{error} contract (NOT the casibase
-// envelope): {"org":"<slug>"} on success, an {"error":"..."} with a 4xx/5xx status
-// on failure — the OrgOnboarding client reads json.org / json.error directly.
+// envelope): {"org":"<slug>", ...key} on success, an {"error":"..."} with a 4xx/5xx
+// status on failure — the OrgOnboarding client reads json.org / json.error directly.
+// On the FIRST provision the response also carries the key's secret (shown once);
+// an idempotent replay returns the publishable accessKey without re-revealing it.
 //
 // Self-scoped: the caller is resolved from its session/bearer (callerOf), never from
 // the body, so onboarding only ever moves the caller — its own identity, its own org.
@@ -40,9 +47,11 @@ const (
 // The IAM SYSTEM owners a customer org may never become — creating one would collide
 // with a signing-cert owner (admin/built-in) or a system principal (app) — are the
 // ONE store.IsReservedOrg set, shared with signup and federated provisioning so the
-// reserved set never drifts between surfaces. Brand/staff orgs (hanzo/lux/zoo/pars in
-// the console list) are NOT reserved here (iam2 is white-label): an existing one is
-// refused by the create-conflict check.
+// reserved set never drifts between surfaces. admin is here for a second reason: it is
+// the reserved SuperAdmin org, and a self-service signup must never provision into it
+// (provision, do not promote). Brand/staff orgs (hanzo/lux/zoo/pars in the console
+// list) are NOT reserved here (iam2 is white-label): an existing one is refused by the
+// create-conflict check.
 
 // onboardForm is the request body: a name to create, or personal=true for the
 // one-click `<username>` org.
@@ -51,86 +60,111 @@ type onboardForm struct {
 	Personal bool   `json:"personal"`
 }
 
-// onboardHandler creates the caller's org and moves them into it as admin.
+// onboardHandler is the SELF-SERVICE front door: it resolves the caller from its
+// own session/bearer (never the body), so onboarding only ever moves the caller.
 func onboardHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
-		ctx := c.Context()
-
-		owner, name, ok := callerOf(ctx, c, db)
+		owner, name, ok := callerOf(c.Context(), c, db)
 		if !ok {
 			return onboardErr(c, 401, "please sign in first")
 		}
-
 		var f onboardForm
 		_ = c.Bind(&f)
-
+		// Self-service derives the slug under the ONE policy: a one-click personal org
+		// from the caller's own username, else the given name slugified.
 		slug, display, personal := f.Name, strings.TrimSpace(f.Name), false
 		if f.Personal {
 			slug, display, personal = personalOrgSlug(name), name, true
 		} else {
 			slug = slugifyOrg(f.Name)
 		}
-		if len(slug) < minOrgSlug {
-			return onboardErr(c, 400, "use at least 2 letters or numbers")
-		}
-		if store.IsReservedOrg(slug) {
-			return onboardErr(c, 400, "\""+slug+"\" is reserved. choose a different name")
-		}
-
-		// Load the caller BEFORE creating the org, so a missing user is a clean 4xx
-		// with no orphaned org.
-		user, err := store.GetUserByName(ctx, db, owner, name)
-		if err != nil {
-			return onboardErr(c, 500, "server_error")
-		}
-		if user == nil {
-			return onboardErr(c, 400, "the user does not exist")
-		}
-
-		// The slug must be free (globally: org names are unique). This is also the
-		// guard that refuses an existing brand/staff org by name.
-		existing, err := store.GetOrganizationByName(ctx, db, slug)
-		if err != nil {
-			return onboardErr(c, 500, "server_error")
-		}
-		if existing != nil {
-			return onboardErr(c, 409, "the organization \""+slug+"\" already exists")
-		}
-
-		// Create the tenant org (platform-owned, Owner "admin") through the ONE org
-		// create path.
-		if display == "" {
-			display = slug
-		}
-		if _, err := organizations.NewOrganizationAPI(db).Create(ctx, &organizations.CreateOrganizationInput{
-			Organization: schema.Organization{
-				Owner:       "admin",
-				Name:        slug,
-				DisplayName: display,
-				IsPersonal:  personal,
-				CreatedTime: onboardNow(),
-			},
-		}); err != nil {
-			return onboardErr(c, 400, err.Error())
-		}
-
-		// Move the caller in as admin through the ONE user-row writer (updateUser: a
-		// fresh read-modify-write under the row lock, so a concurrent lockout increment
-		// is never clobbered). Changing Owner re-keys the identity by VALUE — the row's
-		// storage key is stable and user lookups are by (owner, name) — so the caller
-		// thereafter resolves under the new org. Resolve by the ORIGINAL (owner, name);
-		// the mutate sets the new Owner on the fresh row.
-		if _, err := updateUser(ctx, db, owner, name, func(u *schema.User) error {
-			u.Owner = slug
-			u.IsAdmin = true
-			u.UpdatedTime = onboardNow()
-			return nil
-		}); err != nil {
-			return onboardErr(c, 500, err.Error())
-		}
-
-		return c.JSON(200, map[string]string{"org": slug})
+		// provisionAndRespond validates the slug (length + store.IsReservedOrg) and
+		// drives the ONE atomic provision — org + admin move + hashed metered
+		// credential — replacing the old non-atomic create-then-move (no orphan on a
+		// mid-flight fault, resumable via the Founder stamp).
+		return provisionAndRespond(c, db, owner, name, slug, display, personal)
 	}
+}
+
+// PathProvision is the service-token admin provisioning endpoint. It is the ONE
+// atomic op the cloud onboarding orchestrator (api.hanzo.ai) calls, on behalf of a
+// named user, instead of a separate create-org + move-user pair — so the production
+// signup path converges to one org + admin + credential exactly like the
+// self-service front door, with no partial-failure orphan between two calls.
+const PathProvision = "/v1/iam/admin/provision"
+
+// provisionForm is the service-token provision body: the target identity to
+// provision (owner, name) and the org to land it in. orgSlug is the ALREADY-RESOLVED
+// slug the caller chose (it owns its own uniqueness policy — e.g. cloud's numeric
+// auto-suffix — so provision honors it verbatim rather than re-deriving); personal
+// marks it a personal org (and, absent an explicit orgSlug, derives <username>).
+type provisionForm struct {
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	OrgSlug  string `json:"orgSlug"`
+	Personal bool   `json:"personal"`
+}
+
+// provisionServiceHandler is the service-token admin provision. Self-authenticated
+// by the unified service token (Bearer), like the operator bootstrap endpoints — it
+// acts on behalf of the named user, so the caller comes from the body, not a
+// session. The converge itself is the SAME provision() primitive the self-service
+// front door drives; there is one and only one provisioning path.
+func provisionServiceHandler(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		if !httpx.ServiceTokenAuth(c) {
+			return c.JSON(401, map[string]string{"error": "a valid service token is required"})
+		}
+		var f provisionForm
+		if err := c.Bind(&f); err != nil {
+			return onboardErr(c, 400, "invalid request body")
+		}
+		owner, name := strings.TrimSpace(f.Owner), strings.TrimSpace(f.Name)
+		if owner == "" || name == "" {
+			return onboardErr(c, 400, "owner and name are required")
+		}
+		// Honor the caller's resolved slug verbatim; fall back to the derived personal
+		// slug only when the caller supplied none.
+		slug, display := slugifyOrg(f.OrgSlug), strings.TrimSpace(f.OrgSlug)
+		if slug == "" && f.Personal {
+			slug, display = personalOrgSlug(name), name
+		}
+		return provisionAndRespond(c, db, owner, name, slug, display, f.Personal)
+	}
+}
+
+// provisionAndRespond drives the idempotent provision() converge for an
+// already-resolved (slug, display, personal) and renders the {org, accessKey,
+// accessSecret?}/{error} contract. Shared by the self-service onboard (caller from
+// session) and the service-token admin provision (caller from body) so both paths
+// behave identically once the slug is resolved.
+func provisionAndRespond(c *zip.Ctx, db orm.DB, owner, name, slug, display string, personal bool) error {
+	if len(slug) < minOrgSlug {
+		return onboardErr(c, 400, "use at least 2 letters or numbers")
+	}
+	if store.IsReservedOrg(slug) {
+		return onboardErr(c, 400, "\""+slug+"\" is reserved. choose a different name")
+	}
+	if display == "" {
+		display = slug
+	}
+
+	out, err := provision(c.Context(), db, claim{
+		owner: owner, name: name,
+		slug: slug, display: display, personal: personal,
+	})
+	if err != nil {
+		if ft, ok := err.(*fault); ok {
+			return onboardErr(c, ft.status, ft.msg)
+		}
+		return onboardErr(c, 500, "server_error")
+	}
+
+	resp := map[string]any{"org": out.org, "accessKey": out.accessKey}
+	if out.accessSecret != "" {
+		resp["accessSecret"] = out.accessSecret
+	}
+	return c.JSON(200, resp)
 }
 
 // onboardErr writes the console's {"error":...} shape with an HTTP status the
@@ -138,9 +172,6 @@ func onboardHandler(db orm.DB) zip.Handler {
 func onboardErr(c *zip.Ctx, status int, msg string) error {
 	return c.JSON(status, map[string]string{"error": msg})
 }
-
-// onboardNow is the v1-compatible string timestamp for a freshly created/updated row.
-func onboardNow() string { return time.Now().UTC().Format(time.RFC3339) }
 
 // slugifyOrg normalizes a human org name into an IAM slug — lowercase ASCII
 // alphanumerics, every other run collapsed to a single '-', trimmed, capped at
