@@ -26,6 +26,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 	"github.com/hanzoai/iam/internal/users"
 )
 
@@ -446,21 +447,52 @@ func TestToken_HanzoOrgAdmin_CanPush(t *testing.T) {
 	}
 }
 
-// TestToken_SuperAdmin_PullPush proves a user in the admin org (SuperAdmin) is
-// privileged even without the IsAdmin flag.
-func TestToken_SuperAdmin_PullPush(t *testing.T) {
+// TestToken_SuperAdminKey_CanPush proves a SuperAdmin (admin org) pushes via its
+// HIGH-ENTROPY machine credential — an API key — and is privileged (owner==admin).
+// This is the reserved-org push identity that remains after the password path is
+// narrowed to non-reserved orgs (see TestToken_SuperAdminPassword_Denied).
+func TestToken_SuperAdminKey_CanPush(t *testing.T) {
 	app, db, _ := newServer(t)
-	seedUser(t, db, "admin", "z", "***REMOVED***", false) // owner==admin ⇒ SuperAdmin
+	seedUserKey(t, db, "admin", "z", "hk-SUPERADMINkey0001") // owner==admin ⇒ SuperAdmin
 
-	_, body, _ := tokenGET(t, app, "z", "***REMOVED***",
+	status, body, _ := tokenGET(t, app, "z", "hk-SUPERADMINkey0001",
 		"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+	if status != 200 {
+		t.Fatalf("status = %d, body %v", status, body)
+	}
 	claims := verifyClaims(t, app, body["token"].(string))
 	if claims["sub"] != "admin/z" {
 		t.Fatalf("sub = %v, want admin/z", claims["sub"])
 	}
 	acc := accessOf(t, claims)
 	if len(acc) != 1 || !eqStrings(acc[0].Actions, []string{"pull", "push"}) {
-		t.Fatalf("superadmin access = %v, want pull+push", acc)
+		t.Fatalf("superadmin key access = %v, want pull+push", acc)
+	}
+}
+
+// TestToken_SuperAdminPassword_Denied is the FINDING 2 policy: a reserved-org
+// (SuperAdmin) WEB PASSWORD is NOT a registry credential. Even the CORRECT password
+// is refused (401, no token) — a guessable password never authenticates the platform
+// root identity on a public realm, and verifying it can never drive its lockout
+// counter (no unauth DoS on the super). The SuperAdmin pushes via its API key /
+// service account instead (TestToken_SuperAdminKey_CanPush).
+func TestToken_SuperAdminPassword_Denied(t *testing.T) {
+	app, db, _ := newServer(t)
+	seedUser(t, db, "admin", "z", "***REMOVED***", false) // owner==admin ⇒ SuperAdmin
+
+	for _, flow := range []string{"GET", "POST"} {
+		var status int
+		var body map[string]any
+		if flow == "GET" {
+			status, body, _ = tokenGET(t, app, "z", "***REMOVED***",
+				"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+		} else {
+			status, body, _ = tokenPOST(t, app, "z", "***REMOVED***",
+				"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+		}
+		if status != 401 || body["token"] != nil {
+			t.Fatalf("%s: SuperAdmin password ACCEPTED on the registry: status=%d body=%v — reserved-org password must not be a registry credential", flow, status, body)
+		}
 	}
 }
 
@@ -610,14 +642,16 @@ func TestToken_BadPassword_401(t *testing.T) {
 	}
 }
 
-// TestToken_AdminPassword_LocksAfterRepeatedWrong proves the registry Basic-auth
-// password path routes through the SAME lockout choke point as login/ROPC — the F-D1
-// second-path bypass. It mints a SuperAdmin (org "admin") through the REAL
-// users.Create path (an auto-int64 storage key — exactly the shape whose counter never
-// used to persist), then hammers wrong passwords on the PUBLIC token endpoint. After
-// the threshold the account is locked, so even the CORRECT admin password is refused:
-// this public endpoint is no longer an unthrottled admin-password brute-force oracle.
-func TestToken_AdminPassword_LocksAfterRepeatedWrong(t *testing.T) {
+// TestToken_AdminPassword_NotDosableOnPublicRegistry is the FINDING 2 DoS proof: an
+// unauthenticated attacker MUST NOT be able to lock the platform SuperAdmin out of
+// its password doors by hammering the PUBLIC registry endpoint. It mints a SuperAdmin
+// (org "admin") through the REAL users.Create path, then floods far past the lock
+// threshold with wrong passwords on the public token endpoint. Every attempt is a
+// no-match 401 (reserved-org password is not a registry credential), and — crucially
+// — the admin row's shared lockout counter is NEVER advanced, so the super stays
+// signable on every OTHER door. The registry password path never touches a reserved
+// account.
+func TestToken_AdminPassword_NotDosableOnPublicRegistry(t *testing.T) {
 	app, db, _ := newServer(t)
 	ctx := context.Background()
 	const pw = "the real admin password"
@@ -628,21 +662,77 @@ func TestToken_AdminPassword_LocksAfterRepeatedWrong(t *testing.T) {
 		t.Fatalf("create admin user through the canonical path: %v", err)
 	}
 
-	// Hammer wrong passwords on the public token endpoint — each a fresh HTTP request.
-	for i := 0; i < users.LockThreshold; i++ {
+	// Flood well past the threshold with wrong passwords — each a fresh HTTP request.
+	for i := 0; i < users.LockThreshold*3; i++ {
 		status, body, _ := tokenGET(t, app, "root", "WRONG",
 			"registry.hanzo.ai", "repository:hanzo/app:pull")
 		if status != 401 || body["token"] != nil {
 			t.Fatalf("wrong attempt %d: status=%d body=%v, want 401 no-token", i, status, body)
 		}
 	}
-	// The CORRECT admin password is now REFUSED — the account is locked, so the public
-	// registry realm cannot confirm (or brute-force) the SuperAdmin password.
-	status, body, _ := tokenGET(t, app, "root", pw,
-		"registry.hanzo.ai", "repository:hanzo/app:pull")
+	// The SuperAdmin's shared lockout counter is untouched — the public registry could
+	// NOT weaponize a hard per-account lock against the super.
+	after, err := store.GetUserByName(ctx, db, "admin", "root")
+	if err != nil || after == nil {
+		t.Fatalf("reload admin/root: %v", err)
+	}
+	if after.SigninWrongTimes != 0 {
+		t.Fatalf("admin/root SigninWrongTimes = %d after a public registry flood, want 0 — unauth SuperAdmin lockout DoS", after.SigninWrongTimes)
+	}
+}
+
+// TestToken_RegistryPassword_NoCrossOrgCoupling is the FINDING 2 coupling/parity
+// proof for the z@hanzo.ai collision (same name+email in BOTH the reserved admin org
+// and the non-reserved hanzo org, with DIFFERENT passwords). It asserts:
+//   - a wrong registry password advances ONLY the hanzo row's counter (single-row,
+//     login-parity — no double-speed), and NEVER the reserved admin row's;
+//   - the correct hanzo password authenticates as hanzo/z and never touches admin/z.
+func TestToken_RegistryPassword_NoCrossOrgCoupling(t *testing.T) {
+	app, db, _ := newServer(t)
+	ctx := context.Background()
+	// Same identifier in both orgs (the real collision). seedUser sets Name; give both
+	// the same email so an email-form login would resolve both, too.
+	if _, err := users.New(db).Create(ctx, &users.CreateInput{
+		User:     schema.User{Owner: "admin", Name: "z", Email: "z@hanzo.ai"},
+		Password: "admin-only-secret",
+	}); err != nil {
+		t.Fatalf("create admin/z: %v", err)
+	}
+	if _, err := users.New(db).Create(ctx, &users.CreateInput{
+		User:     schema.User{Owner: "hanzo", Name: "z", Email: "z@hanzo.ai"},
+		Password: "hanzo-only-secret",
+	}); err != nil {
+		t.Fatalf("create hanzo/z: %v", err)
+	}
+
+	// One wrong attempt: exactly ONE row (the non-reserved hanzo/z) is bumped; admin/z
+	// is untouched.
+	status, body, _ := tokenGET(t, app, "z", "WRONG", "registry.hanzo.ai", "repository:hanzo/app:pull")
 	if status != 401 || body["token"] != nil {
-		t.Fatalf("admin password ACCEPTED after %d wrong attempts: status=%d body=%v — registry bypasses the lockout choke point (F-D1)",
-			users.LockThreshold, status, body)
+		t.Fatalf("wrong attempt: status=%d body=%v, want 401 no-token", status, body)
+	}
+	adminZ, _ := store.GetUserByName(ctx, db, "admin", "z")
+	hanzoZ, _ := store.GetUserByName(ctx, db, "hanzo", "z")
+	if adminZ.SigninWrongTimes != 0 {
+		t.Fatalf("admin/z counter = %d after a wrong registry attempt on a shared name, want 0 — cross-org coupling / reserved DoS", adminZ.SigninWrongTimes)
+	}
+	if hanzoZ.SigninWrongTimes != 1 {
+		t.Fatalf("hanzo/z counter = %d after ONE wrong attempt, want 1 — single-row login-parity", hanzoZ.SigninWrongTimes)
+	}
+
+	// The correct hanzo password authenticates as hanzo/z (resets its own counter) and
+	// never touches admin/z.
+	status, body, _ = tokenGET(t, app, "z", "hanzo-only-secret", "registry.hanzo.ai", "repository:hanzo/app:pull")
+	if status != 200 {
+		t.Fatalf("correct hanzo password: status=%d body=%v, want 200", status, body)
+	}
+	claims := verifyClaims(t, app, body["token"].(string))
+	if claims["sub"] != "hanzo/z" {
+		t.Fatalf("sub = %v, want hanzo/z", claims["sub"])
+	}
+	adminZ, _ = store.GetUserByName(ctx, db, "admin", "z")
+	if adminZ.SigninWrongTimes != 0 {
+		t.Fatalf("admin/z counter = %d after a correct hanzo login, want 0 — cross-org coupling", adminZ.SigninWrongTimes)
 	}
 }
 
