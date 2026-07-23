@@ -23,11 +23,13 @@ require (
 require (
 	github.com/alexedwards/argon2id v1.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/google/uuid v1.6.0
 	github.com/hanzoai/sqlcipher v0.1.0
 	github.com/hanzoai/sqlite v0.2.1
 	github.com/luxfi/crypto v1.20.1
 	github.com/luxwallet/connect/go v0.1.4
 	github.com/pquerna/otp v1.5.0
+	github.com/valyala/fasthttp v1.70.0
 	github.com/zap-proto/fiber/v3 v3.2.1
 )
 
@@ -47,7 +49,6 @@ require (
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.4 // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/hanzoai/dbx v1.16.0 // indirect
 	github.com/hanzoai/kv-go/v9 v9.18.0 // indirect
@@ -77,7 +78,6 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.70.0 // indirect
 	github.com/zap-proto/go v1.3.0 // indirect
 	github.com/zap-proto/http v0.2.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect

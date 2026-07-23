@@ -70,17 +70,22 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 400, "invalid_grant", "subject_token is invalid or expired")
 	}
-	owner, name := splitSub(claims.Subject)
-	if owner == "" || name == "" {
+	if claims.Subject == "" {
 		return tokenError(c, 400, "invalid_grant", "subject_token carries no subject")
 	}
-	user, err := store.GetUserByName(ctx, db, owner, name)
+	// Resolve the acted-for user from the subject_token's `sub` — which is now the
+	// stable UUID for a v2-minted token (store.GetUserBySubject decodes Id-or-name).
+	user, err := store.GetUserBySubject(ctx, db, claims.Subject)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
 	if user == nil || user.IsForbidden || user.IsDeleted {
 		return tokenError(c, 400, "invalid_grant", "the subject is unknown or forbidden")
 	}
+	// Every authority claim is the TARGET USER's, read from the resolved row —
+	// never split from the (now-opaque) subject.
+	owner := user.Owner
+	natural := user.Owner + "/" + user.Name
 
 	// 3) A reserved-org (admin/built-in) subject is a cross-tenant / SuperAdmin
 	//    identity — gate it behind the separate admin-exchange capability.
@@ -109,7 +114,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	}
 	ttl := appTTL(clientApp)
 	scope := param(c, "scope")
-	subject := owner + "/" + name
+	subject := subjectOf(user) // the stable `sub` (UUID, or owner/name pre-cutover)
 	display := user.DisplayName
 	if display == "" {
 		display = user.Name
@@ -123,7 +128,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 		Owner:           owner,
 		Application:     clientApp.Name,
 		Organization:    owner,
-		User:            subject,
+		User:            natural, // the row's User stays the (owner/name) key
 		Scope:           scope,
 		TokenType:       "Bearer",
 		ExpiresIn:       int(ttl.Seconds()),
@@ -133,7 +138,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err := store.PersistToken(ctx, db, row); err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	auditMint(ctx, db, c, "token-exchange", clientApp.ClientId, subject)
+	auditMint(ctx, db, c, "token-exchange", clientApp.ClientId, natural)
 
 	// 6) RFC 8693 §2.2 response.
 	return c.JSON(200, map[string]any{
