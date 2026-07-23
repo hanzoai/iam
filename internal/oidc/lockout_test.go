@@ -5,6 +5,8 @@ package oidc
 import (
 	"net/url"
 	"testing"
+
+	"github.com/hanzoai/iam/internal/users"
 )
 
 // F-D1: public ROPC without lockout is an online brute-force oracle. A run of wrong
@@ -21,8 +23,8 @@ func TestPasswordGrant_lockoutAfterRepeatedWrong(t *testing.T) {
 		"grant_type": {"password"}, "client_id": {"hanzo-console"},
 		"username": {"alice@hanzo.ai"}, "password": {"WRONG"},
 	}
-	// Exactly signinWrongLimit wrong attempts, each a plain bad-credential refusal.
-	for i := 0; i < signinWrongLimit; i++ {
+	// Exactly users.LockThreshold wrong attempts, each a plain bad-credential refusal.
+	for i := 0; i < users.LockThreshold; i++ {
 		resp, tok := postToken(t, app, wrong)
 		requireError(t, resp, tok, 400, "invalid_grant")
 	}
@@ -70,7 +72,7 @@ func TestPasswordGrant_lockout_signupCreatedUser(t *testing.T) {
 		"grant_type": {"password"}, "client_id": {"hanzo-console"},
 		"username": {"mallory@hanzo.ai"}, "password": {"WRONG"},
 	}
-	for i := 0; i < signinWrongLimit; i++ {
+	for i := 0; i < users.LockThreshold; i++ {
 		resp, tok := postToken(t, app, wrong)
 		requireError(t, resp, tok, 400, "invalid_grant")
 	}
@@ -81,7 +83,7 @@ func TestPasswordGrant_lockout_signupCreatedUser(t *testing.T) {
 	})
 	if resp.StatusCode != 400 || tok["error"] != "invalid_grant" {
 		t.Fatalf("a signup-created account did NOT lock after %d wrong passwords: status=%d err=%v — the counter never persisted (F-D1)",
-			signinWrongLimit, resp.StatusCode, tok["error"])
+			users.LockThreshold, resp.StatusCode, tok["error"])
 	}
 	desc, _ := tok["error_description"].(string)
 	if desc != "too many failed attempts; the account is temporarily locked" {
@@ -107,7 +109,7 @@ func TestPasswordGrant_correctPasswordResetsLockout(t *testing.T) {
 	// counter, the accumulated wrongs (2*(limit-1)) would exceed the limit and the
 	// final success would be locked out.
 	for round := 0; round < 2; round++ {
-		for i := 0; i < signinWrongLimit-1; i++ {
+		for i := 0; i < users.LockThreshold-1; i++ {
 			resp, tok := postToken(t, app, wrong)
 			requireError(t, resp, tok, 400, "invalid_grant")
 		}
