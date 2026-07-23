@@ -130,9 +130,12 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
-		user.AccessKey = key
-		user.UpdatedTime = nowFunc().UTC().Format(time.RFC3339)
-		if err := saveUser(ctx, db, user); err != nil {
+		now := nowFunc().UTC().Format(time.RFC3339)
+		if _, err := updateUser(ctx, db, user.Owner, user.Name, func(u *schema.User) error {
+			u.AccessKey = key
+			u.UpdatedTime = now
+			return nil
+		}); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
 		auditMint(ctx, db, c, "mint-user-keys", clientApp.ClientId, user.Owner+"/"+user.Name)
@@ -152,11 +155,14 @@ func revokeUserKeysHandler(db orm.DB) zip.Handler {
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
-		user.AccessKey = ""
-		user.AccessSecret = ""
-		user.AccessSecretHash = ""
-		user.UpdatedTime = nowFunc().UTC().Format(time.RFC3339)
-		if err := saveUser(ctx, db, user); err != nil {
+		now := nowFunc().UTC().Format(time.RFC3339)
+		if _, err := updateUser(ctx, db, user.Owner, user.Name, func(u *schema.User) error {
+			u.AccessKey = ""
+			u.AccessSecret = ""
+			u.AccessSecretHash = ""
+			u.UpdatedTime = now
+			return nil
+		}); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
 		auditMint(ctx, db, c, "revoke-user-keys", clientApp.ClientId, user.Owner+"/"+user.Name)
@@ -319,17 +325,4 @@ func newAccessKey() (string, error) {
 		return "", err
 	}
 	return "hk-" + tok, nil
-}
-
-// saveUser read-modify-writes the mutated user row by its (owner, name) key,
-// preserving every other field (orm persists the whole record).
-func saveUser(ctx context.Context, db orm.DB, user *schema.User) error {
-	existing, err := orm.Get[schema.User](db, user.Owner+"/"+user.Name)
-	if err != nil {
-		return err
-	}
-	model := existing.Model
-	*existing = *user
-	existing.Model = model
-	return existing.UpdateCtx(ctx)
 }
