@@ -2,12 +2,13 @@
 
 package compat_test
 
-// GAP B — get-user?accessKey: cloud's identity boundary resolves an opaque API key
-// (hk-/pk-/sk-) to {owner,name,email,isAdmin} to authenticate a keyed request. It is
+// GAP B — get-user?accessKey: cloud's identity boundary resolves an opaque SECRET API
+// key (hk-/sk-) to {owner,name,email,isAdmin} to authenticate a keyed request. It is
 // SECURITY-CRITICAL: the caller presents a secret key and learns who it belongs to,
 // so it is gated behind the CapKeyResolve service capability, fails closed on an
 // unknown key, and NEVER leaks a secret field — in particular never the resolved
-// user's OTHER credential (its hk- AccessKey) on a pk-/sk- resolution.
+// user's OTHER credential (its hk- AccessKey) on an sk- resolution. A PUBLIC pk- is
+// write-only and is REFUSED here (its org-only dual is /v1/iam/resolve-key).
 
 import (
 	"context"
@@ -23,14 +24,14 @@ import (
 )
 
 const (
-	resolverApp = "hanzo-cloud"    // admin-owned service app that holds CapKeyResolve
+	resolverApp = "hanzo-cloud"     // admin-owned service app that holds CapKeyResolve
 	otherApp    = "hanzo-noresolve" // admin-owned app WITHOUT the capability
 	svcSecret   = "resolver-secret"
 
-	keyUserHK  = "hk-live-KEYUSERHK"          // the user's own durable Cloud API key
+	keyUserHK         = "hk-live-KEYUSERHK" // the user's own durable Cloud API key
 	keyUserSecretHash = "SENTINEL_ACCESS_SECRET_HASH"
-	projPK     = "pk-live-KEYUSERPK"          // publishable half of a schema.Key
-	projSK     = "sk-live-KEYUSERPKSECRET"    // confidential half of the same Key
+	projPK            = "pk-live-KEYUSERPK"       // publishable half of a schema.Key
+	projSK            = "sk-live-KEYUSERPKSECRET" // confidential half of the same Key
 )
 
 // keyEnv decodes the single-object get-user envelope.
@@ -105,15 +106,16 @@ func seedClientApp(t *testing.T, db orm.DB, name, secret string) {
 	}
 }
 
-// A cap-holding service caller resolves every key shape to the right user, with the
-// exact {owner,name,email,isAdmin} cloud consumes — and NO secret ever appears.
-func TestGetUserByAccessKey_ResolvesAndNoLeak(t *testing.T) {
+// A cap-holding service caller resolves each SECRET key shape to the right user, with
+// the exact {owner,name,email,isAdmin} cloud consumes — and NO secret ever appears —
+// while the PUBLIC publishable pk- is REFUSED, so a public key can never become a read
+// principal at cloud's identity boundary.
+func TestGetUserByAccessKey_ResolvesSecretsRefusesPublishable(t *testing.T) {
 	h := newHarness(t)
 	keyFixtures(t, h)
 
 	for _, tc := range []struct{ name, key string }{
 		{"hk on user row", keyUserHK},
-		{"pk publishable half", projPK},
 		{"sk confidential half", projSK},
 	} {
 		status, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+tc.key, resolverApp, svcSecret)
@@ -132,12 +134,24 @@ func TestGetUserByAccessKey_ResolvesAndNoLeak(t *testing.T) {
 			t.Fatalf("%s: data=%+v, want hanzo/keyuser keyuser@hanzo.ai isAdmin=true", tc.name, e.Data)
 		}
 		// No secret material, and — critically — not the user's OTHER credential
-		// (its hk- key) when a pk-/sk- key was the one presented.
+		// (its hk- key) when an sk- key was the one presented.
 		for _, secret := range []string{secretUserHash, keyUserSecretHash, keyUserHK} {
 			if tc.key != secret && strings.Contains(body, secret) {
 				t.Fatalf("%s: SECRET LEAK %q in body:\n%s", tc.name, secret, body)
 			}
 		}
+	}
+
+	// The PUBLIC pk- publishable half is WRITE-ONLY: get-user?accessKey REFUSES it, even
+	// to the cap-holding service caller, so a public key never becomes a read principal.
+	status, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+projPK, resolverApp, svcSecret)
+	var e keyEnv
+	_ = json.Unmarshal([]byte(body), &e)
+	if e.Status != "error" || e.Msg != "the entity does not exist" {
+		t.Fatalf("publishable pk- via get-user?accessKey: status=%d env=%+v — a pk- must never resolve to a principal", status, e)
+	}
+	if strings.Contains(body, "keyuser") {
+		t.Fatalf("publishable pk- leaked the principal identity: %s", body)
 	}
 }
 

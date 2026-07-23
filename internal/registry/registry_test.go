@@ -147,10 +147,11 @@ func seedUserKey(t *testing.T, db orm.DB, org, name, accessKey string) {
 }
 
 // seedKeyRow creates a user in org `org` (IsAdmin as given) plus a schema.Key
-// (pk-/sk- halves) that belongs to it — the exact shape store.UserByAccessKey
-// resolves a pk-/sk- credential through. Used to model the attacker: a key minted
-// in the attacker's OWN org (a legitimate self-org write) that must nonetheless
-// gain nothing on the shared registry.
+// (pk- publishable + sk- secret halves) that belongs to it — the shape whose SECRET
+// sk- half store.UserByAccessKey resolves to a user (the public pk- half is write-only
+// and resolves to nobody). Used to model the attacker: a key minted in the attacker's
+// OWN org (a legitimate self-org write) that must nonetheless gain nothing on the
+// shared registry.
 func seedKeyRow(t *testing.T, db orm.DB, org, name string, isAdmin bool, pk, sk string) {
 	t.Helper()
 	u := orm.New[schema.User](db)
@@ -600,25 +601,35 @@ func TestToken_ForeignTenantApp_Denied(t *testing.T) {
 }
 
 // TestToken_HanzoKey_PullToken is the positive control for the API-key path: a
-// hanzo-org pk-/sk- Key resolves and gets a (pull) token, so the candidateOrgs gate
-// admits in-platform keys — the foreign-key denial is the gate, not a broken path.
+// hanzo-org SECRET sk- resolves and gets a (pull) token, so the candidateOrgs gate
+// admits in-platform keys — the foreign-key denial is the gate, not a broken path. The
+// PUBLIC pk- half is write-only and authenticates NOTHING, even in-platform: a public
+// key is never a docker credential.
 func TestToken_HanzoKey_PullToken(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedKeyRow(t, db, "hanzo", "grace", false, "pk-live-HANZO", "sk-live-HANZO")
 
-	for _, key := range []string{"sk-live-HANZO", "pk-live-HANZO"} {
-		status, body, _ := tokenGET(t, app, "x", key, "registry.hanzo.ai", "repository:hanzo/app:pull")
-		if status != 200 {
-			t.Fatalf("hanzo key %s: status=%d body=%v — must authenticate", key, status, body)
-		}
-		claims := verifyClaims(t, app, body["token"].(string))
-		if claims["sub"] != "hanzo/grace" {
-			t.Fatalf("hanzo key %s: sub=%v, want hanzo/grace", key, claims["sub"])
-		}
-		acc := accessOf(t, claims)
-		want := []access{{Type: "repository", Name: "hanzo/app", Actions: []string{"pull"}}}
-		if !eqAccess(acc, want) {
-			t.Fatalf("hanzo key %s: access=%v, want %v", key, acc, want)
+	// The SECRET sk- half authenticates and gets a pull token.
+	status, body, _ := tokenGET(t, app, "x", "sk-live-HANZO", "registry.hanzo.ai", "repository:hanzo/app:pull")
+	if status != 200 {
+		t.Fatalf("hanzo sk-: status=%d body=%v — must authenticate", status, body)
+	}
+	claims := verifyClaims(t, app, body["token"].(string))
+	if claims["sub"] != "hanzo/grace" {
+		t.Fatalf("hanzo sk-: sub=%v, want hanzo/grace", claims["sub"])
+	}
+	acc := accessOf(t, claims)
+	want := []access{{Type: "repository", Name: "hanzo/app", Actions: []string{"pull"}}}
+	if !eqAccess(acc, want) {
+		t.Fatalf("hanzo sk-: access=%v, want %v", acc, want)
+	}
+
+	// The PUBLIC pk- half is write-only — it authenticates nothing, so no token, even in
+	// the platform org. Probe both credential positions (username and password).
+	for _, pos := range []struct{ user, pass string }{{"x", "pk-live-HANZO"}, {"pk-live-HANZO", "x"}} {
+		st, b, _ := tokenGET(t, app, pos.user, pos.pass, "registry.hanzo.ai", "repository:hanzo/app:pull")
+		if st != 401 || b["token"] != nil {
+			t.Fatalf("hanzo pk- (%s/%s): status=%d body=%v — a public key must authenticate nothing", pos.user, pos.pass, st, b)
 		}
 	}
 }
