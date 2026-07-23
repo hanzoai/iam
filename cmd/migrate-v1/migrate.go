@@ -112,6 +112,19 @@ func specs() []entitySpec {
 			run: runner[schema.User](),
 		},
 		{
+			// Memberships carry the (User × Org × Role) tenancy relation — the source
+			// of a user's multi-org `orgs` claim. Without them z's orgs collapses from
+			// [hanzo,lux,zoo,pars] to [hanzo] (the home org alone). Casdoor's
+			// `membership` table has the identical (owner,name,user,org,role) shape as
+			// schema.Membership, so the generic engine carries it verbatim, keyed by the
+			// (owner,name) natural key — idempotent on re-run. Ordered AFTER users and
+			// organizations, which it references.
+			name:      "memberships",
+			selectors: []string{"memberships", "membership"},
+			tables:    []string{"membership", "memberships"},
+			run:       runner[schema.Membership](),
+		},
+		{
 			name:      "roles",
 			selectors: []string{"roles", "role"},
 			tables:    []string{"role", "roles"},
@@ -179,7 +192,7 @@ func selectSpecs(only []string) ([]entitySpec, error) {
 	}
 	for sel := range want {
 		if !matched[sel] {
-			return nil, fmt.Errorf("unknown --only entity %q (valid: users, orgs, apps, certs, providers, roles, permissions)", sel)
+			return nil, fmt.Errorf("unknown --only entity %q (valid: users, orgs, apps, certs, providers, memberships, roles, permissions)", sel)
 		}
 	}
 	return chosen, nil
