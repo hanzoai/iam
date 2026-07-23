@@ -13,19 +13,26 @@ import (
 	"github.com/hanzoai/iam/internal/store"
 )
 
-// A user minted natively in v2 gets a stable opaque UUID `sub` on create, so its
-// identity is never the mutable (owner,name) pair. A caller-supplied Id is honored
-// (the migrator relies on writing it directly), but the common path generates one.
+// A user minted natively in v2 gets a stable opaque UUID `sub` on create, ALWAYS
+// server-side. Id is the token subject AND the authz principal key, so it must be
+// non-forgeable: a client-supplied Id is discarded on create, and Id is immutable
+// on update. Otherwise an org-admin could pin their Id to a victim's UUID and, once
+// two rows shared it, be resolved AS the victim (F-A1: tenant-admin → SuperAdmin).
 
-func TestCreate_GeneratesUUIDSubject(t *testing.T) {
-	ctx := context.Background()
+func openUsersTestDB(t *testing.T) (*API, func()) {
+	t.Helper()
 	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "iam2.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer db.Close()
+	return New(db), func() { db.Close() }
+}
 
-	api := New(db)
+func TestCreate_GeneratesUUIDSubject(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
 	out, err := api.Create(ctx, &CreateInput{
 		User:     schema.User{Owner: "hanzo", Name: "newbie", Email: "newbie@hanzo.ai"},
 		Password: "correct horse battery staple",
@@ -39,25 +46,90 @@ func TestCreate_GeneratesUUIDSubject(t *testing.T) {
 	if _, err := uuid.Parse(out.Id); err != nil {
 		t.Errorf("assigned Id %q is not a UUID: %v", out.Id, err)
 	}
-
 	// The generated Id persisted and resolves as the subject.
-	got, err := store.GetUserBySubject(ctx, db, out.Id)
+	got, err := store.GetUserBySubject(ctx, api.db, out.Id)
 	if err != nil || got == nil {
 		t.Fatalf("GetUserBySubject(generated id) = %v, %v; want the created user", got, err)
 	}
 	if got.Owner != "hanzo" || got.Name != "newbie" {
 		t.Errorf("resolved %s/%s, want hanzo/newbie", got.Owner, got.Name)
 	}
+}
 
-	// A caller-supplied Id is preserved (the migration write path).
-	pinned, err := api.Create(ctx, &CreateInput{
-		User:     schema.User{Id: "uuid-pinned-0001", Owner: "hanzo", Name: "migrated"},
-		Password: "pw",
+// F-A1 #1: a client-supplied Id is IGNORED on create — the server always mints a
+// fresh UUID, so a caller can never point a new row at a chosen (victim's) subject.
+func TestCreate_IgnoresClientSuppliedId(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	// Victim carries a known UUID (a public OIDC identifier).
+	const victimSub = "e7d7fda0-4c53-4508-9d35-7ec892b7e5d7"
+	if _, err := api.Create(ctx, &CreateInput{
+		User: schema.User{Id: victimSub, Owner: "hanzo", Name: "victim"}, Password: "pw1",
+	}); err != nil {
+		t.Fatalf("seed victim: %v", err)
+	}
+	// The victim's OWN generated Id must NOT be the value it tried to pin.
+	victim, _ := store.GetUserByName(ctx, api.db, "hanzo", "victim")
+	if victim.Id == victimSub {
+		t.Fatal("client-supplied Id was honored on create — must be discarded")
+	}
+
+	// An attacker in another tenant tries to pin the victim's (real) UUID.
+	attacker, err := api.Create(ctx, &CreateInput{
+		User: schema.User{Id: victim.Id, Owner: "zoo", Name: "eve"}, Password: "pw2",
 	})
 	if err != nil {
-		t.Fatalf("create pinned: %v", err)
+		t.Fatalf("create attacker: %v", err)
 	}
-	if pinned.Id != "uuid-pinned-0001" {
-		t.Errorf("pinned Id = %q, want uuid-pinned-0001 (a supplied Id is kept)", pinned.Id)
+	if attacker.Id == victim.Id {
+		t.Fatal("F-A1: attacker create adopted the victim's Id — sub collision")
+	}
+	// The subject still resolves to exactly ONE, correct user (fail-closed read intact).
+	got, err := store.GetUserBySubject(ctx, api.db, victim.Id)
+	if err != nil || got == nil || got.Name != "victim" {
+		t.Fatalf("GetUserBySubject(victim) = %v, %v; want the sole victim row", got, err)
+	}
+}
+
+// F-A1 #2 / F-A2: Id is immutable on update — a body-supplied Id is ignored, and an
+// update that omits Id preserves the existing subject (never wipes it to "").
+func TestUpdate_IdIsImmutable(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	created, err := api.Create(ctx, &CreateInput{
+		User: schema.User{Owner: "zoo", Name: "eve", Email: "eve@zoo.ai"}, Password: "pw",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	original := created.Id
+
+	// Attempt to move Id to a victim's UUID.
+	moved, err := api.Update(ctx, &UpdateInput{
+		User: schema.User{Id: "victim-uuid-9999", Owner: "zoo", Name: "eve", DisplayName: "Eve"},
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if moved.Id != original {
+		t.Fatalf("F-A1: Update changed Id %q -> %q; must be immutable", original, moved.Id)
+	}
+
+	// F-A2: an update that OMITS id must preserve the existing subject, not erase it.
+	edited, err := api.Update(ctx, &UpdateInput{
+		User: schema.User{Owner: "zoo", Name: "eve", DisplayName: "Eve Edited"},
+	})
+	if err != nil {
+		t.Fatalf("update (no id): %v", err)
+	}
+	if edited.Id != original {
+		t.Fatalf("F-A2: benign edit erased the subject: Id = %q, want %q", edited.Id, original)
+	}
+	if edited.DisplayName != "Eve Edited" {
+		t.Errorf("profile edit not applied: %q", edited.DisplayName)
 	}
 }
