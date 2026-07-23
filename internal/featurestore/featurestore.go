@@ -8,6 +8,7 @@ package featurestore
 
 import (
 	"context"
+	"time"
 
 	"github.com/hanzoai/orm"
 
@@ -112,8 +113,13 @@ func (s *ormStore) SetPassword(ctx context.Context, owner, name, plaintext strin
 	return true, nil
 }
 
-// VerifyPassword defers to the core's digest-scheme-aware verifier (argon2id v1 /
-// bcrypt v2), keyed by the org's password type — no hash ever leaves the core.
+// VerifyPassword authenticates a human credential for the LDAP-bind feature seam. It
+// goes through users.Authenticate — the ONE lockout-enforcing choke point the login
+// form, the ROPC grant, and the registry token endpoint share — so an LDAP bind is
+// rate-limited (argon2id v1 / bcrypt v2, keyed by the org's password type) exactly
+// like every other human-credential path; no hash ever leaves the core. A locked
+// account returns false (the bind fails), folding lockout into the same negative
+// result as a wrong password — LDAP has no distinct "locked" signal.
 func (s *ormStore) VerifyPassword(ctx context.Context, owner, name, plaintext string) (bool, error) {
 	u, err := store.GetUserByName(ctx, s.db, owner, name)
 	if err != nil {
@@ -126,5 +132,6 @@ func (s *ormStore) VerifyPassword(ctx context.Context, owner, name, plaintext st
 	if org, oerr := store.GetOrganizationByName(ctx, s.db, owner); oerr == nil && org != nil {
 		pwType = org.PasswordType
 	}
-	return users.VerifyPassword(u, plaintext, pwType), nil
+	ok, _ := users.Authenticate(ctx, s.db, u, plaintext, pwType, time.Now())
+	return ok, nil
 }
