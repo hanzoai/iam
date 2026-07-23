@@ -135,17 +135,22 @@ func finishMfa(c *zip.Ctx, db orm.DB, id string, f loginForm) error {
 		return httpx.Err(c, ErrChallenge.Error())
 	}
 
-	// SECOND-FACTOR THROTTLE (deferred hardening, F-D1 INFO): the passcode/recovery
-	// verify below has no DEDICATED per-account lockout counter of its own. It is not
-	// an unthrottled brute-force oracle, because the MFA challenge is SINGLE-USE —
-	// TakeChallenge above burns it (Used=true) BEFORE this verify — so each guess
-	// requires a FRESH challenge, and a fresh challenge only comes from re-proving the
-	// FIRST factor at the login door, which IS rate-limited by the atomic password
-	// lockout (users.Authenticate). An attacker cannot rapidly iterate the 10^6 TOTP
-	// space: every attempt costs one throttled, argon2id-costed password auth. A
+	// SECOND-FACTOR THROTTLE (F-D1 INFO): the passcode/recovery verify below has no
+	// DEDICATED per-account counter, and — correcting an earlier note — the PASSWORD
+	// lockout does NOT stand in for one. The MFA threat model assumes the password is
+	// already KNOWN (that is the whole reason a second factor exists), and a CORRECT
+	// password RESETS the lockout counter rather than tripping it (users.Authenticate),
+	// so an attacker who holds the password can mint FRESH single-use challenges without
+	// ever locking the door. What actually makes online iteration of the 10^6 TOTP space
+	// infeasible is independent of the lockout: (1) each fresh challenge costs one
+	// deliberately-slow argon2id password verify, and (2) the 30-second TOTP step makes
+	// the current code a MOVING target — the ~1-3 codes valid in any window cannot be
+	// enumerated within that window at argon2id-throttled rates. The challenge itself is
+	// single-use and burned ATOMICALLY (TakeChallenge holds the row lock, GetForUpdate),
+	// so one captured passcode cannot be double-spent by racing finishMfa calls. A
 	// dedicated second-factor counter (its own window + atomic increment, mirroring
-	// internal/users/lockout.go) is a separate, tested change — deliberately NOT folded
-	// into this cutover rework, to avoid destabilizing the MFA path.
+	// internal/users/lockout.go) remains an available defense-in-depth addition; it is
+	// not required to close an online-guessing oracle under the model above.
 	switch {
 	case f.Passcode != "":
 		// The challenge's payload is the factor already used to get here. Answering
