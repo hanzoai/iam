@@ -9,6 +9,7 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 	"github.com/hanzoai/iam/internal/users"
 )
 
@@ -84,15 +85,26 @@ func withinLockoutWindow(lastWrong string, now time.Time) bool {
 	return now.Sub(t) < lockoutWindow
 }
 
-// saveLoginCounters persists ONLY the lockout counters onto the stored row, by the
-// (owner,name) key — a read-modify-write that leaves every other field (and the
-// immutable Id) untouched. Best-effort by design (see verifyLoginPassword).
+// saveLoginCounters persists ONLY the lockout counters onto the stored row — a
+// read-modify-write that leaves every other field (and the immutable Id) untouched.
+// Best-effort by design (see verifyLoginPassword).
+//
+// It re-reads the row through the ONE (owner,name) query path — the same load the
+// verify used — which stamps the row's REAL storage key (First/GetAll → SetKey), then
+// writes back by THAT key. This is load-bearing: schema.User is registered without
+// WithStringKey, so a users.Create'd account is keyed by an auto-allocated int64
+// (orm.Model.Id_), NOT by "owner/name"; only a migrated casdoor row is keyed by
+// owner/name. The prior orm.Get(db, owner+"/"+name) matched a row ONLY for the
+// migrated shape, so every post-cutover account's counter silently vanished and the
+// account never locked — the online brute-force oracle F-D1 was meant to close.
+// Re-reading fresh keeps the write counter-only for BOTH shapes: fresh mirrors the
+// stored state, so only the two counters differ from what is persisted.
 func saveLoginCounters(ctx context.Context, db orm.DB, u *schema.User) {
-	existing, err := orm.Get[schema.User](db, u.Owner+"/"+u.Name)
-	if err != nil {
+	fresh, err := store.GetUserByName(ctx, db, u.Owner, u.Name)
+	if err != nil || fresh == nil {
 		return
 	}
-	existing.SigninWrongTimes = u.SigninWrongTimes
-	existing.LastSigninWrongTime = u.LastSigninWrongTime
-	_ = existing.UpdateCtx(ctx)
+	fresh.SigninWrongTimes = u.SigninWrongTimes
+	fresh.LastSigninWrongTime = u.LastSigninWrongTime
+	_ = fresh.UpdateCtx(ctx)
 }
