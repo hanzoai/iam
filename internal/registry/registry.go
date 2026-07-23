@@ -20,8 +20,9 @@
 // boundary (v1 only ever authenticated users in those two orgs). A principal in any
 // other tenant org gets no token. ALL THREE shapes pass through the same gate, so a
 // foreign tenant is denied whether it presents:
-//   - a user password (also resolved WITHIN candidateOrgs, verified through the
-//     SAME cred path login uses),
+//   - a user password (resolved within the NON-RESERVED candidateOrgs — a reserved-
+//     org/SuperAdmin password is not a registry credential; see userByPassword —
+//     verified through the SAME lockout choke point login uses),
 //   - a Hanzo API key (hk-/pk-/sk-, resolved via store.UserByAccessKey — which
 //     resolves the key's OWNER, any org — then gated),
 //   - a confidential application's clientId:clientSecret (store.GetApplicationBy
@@ -220,8 +221,10 @@ func (h *handler) authenticate(ctx context.Context, id, secret string) *principa
 //  1. API key — an hk-/pk-/sk- value (in the secret, or the username for the
 //     token-as-username clients) resolved through store.UserByAccessKey. Keyed by
 //     an unambiguous prefix, so it never captures a password or clientId.
-//  2. User password — resolved WITHIN candidateOrgs and verified through the SAME
-//     cred path login uses.
+//  2. User password — resolved within the NON-RESERVED candidate org(s) and
+//     verified through the SAME lockout choke point login uses. A reserved-org
+//     (SuperAdmin) password is NOT a registry credential (see userByPassword);
+//     that principal pushes via its API key or service account (paths 1 and 3).
 //  3. Service account — a confidential application's clientId:clientSecret,
 //     compared in constant time. This is the CI/machine push identity.
 func (h *handler) resolve(ctx context.Context, id, secret string) *principal {
@@ -255,17 +258,45 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 	return u
 }
 
-// userByPassword resolves a user by username (or email) across the platform
-// candidate orgs and verifies the password through users.Authenticate — the SAME
-// lockout-enforcing choke point the interactive login and the ROPC grant use, so this
-// PUBLIC endpoint throttles a password guess exactly like they do. Without it, an
-// unauthenticated attacker could brute-force an admin/hanzo (SuperAdmin) password here
-// with zero rate limit while the login door locked — the F-D1 second-path bypass. A
-// locked account verifies as no-match: docker gets the same opaque 401 as a wrong
-// password (no lockout oracle on the registry realm). Returns nil on no match, wrong
-// password, or a locked account (one opaque failure, no account-existence oracle).
+// userByPassword resolves a user by username (or email) within the NON-RESERVED
+// platform candidate org(s) and verifies the password through users.Authenticate —
+// the SAME lockout-enforcing choke point the interactive login and the ROPC grant
+// use, so this PUBLIC endpoint throttles a password guess exactly like login: a run
+// of wrong passwords locks THAT ONE row, a locked account verifies as no-match
+// (docker gets the same opaque 401 as a wrong password — no lockout oracle). Returns
+// nil on no match, wrong password, or a locked account.
+//
+// A RESERVED-org (SuperAdmin/built-in/service) principal is DELIBERATELY NOT
+// authenticated by password here — the reserved candidate is skipped. This closes
+// two holes the earlier multi-org walk opened on a PUBLIC unauthenticated endpoint:
+//   - unauth account-lock DoS: verifying the reserved row drove its shared lockout
+//     counter, so five wrong `docker login`s locked the platform SuperAdmin out of
+//     every password door (login/ROPC/registry share the one row counter). A public
+//     endpoint must never let an anonymous caller trip a hard lock on the super.
+//   - a low-throttle brute-force oracle for the SuperAdmin's password on a public
+//     realm.
+//
+// Skipping the reserved org ALSO collapses the walk to the single non-reserved
+// candidate, so a wrong attempt drives at most ONE row's counter (login-parity, no
+// double-speed lock) and a correct hanzo/<name> password can never touch
+// admin/<name>'s counter (no cross-org coupling — the F-2 bug where z@hanzo.ai
+// collided across admin and hanzo). A reserved-org principal pushes to the registry
+// with its HIGH-ENTROPY machine credential — an API key (userByKey) or a service
+// account (serviceAccount) — which are unaffected here and are the documented CI/
+// SuperAdmin push identity; neither is a guessable web password on a public door.
+//
+// PARITY NOTE: casdoor's registry token path resolved {admin, hanzo} passwords with
+// NO lockout at all, so this per-account lock on the registry endpoint is NEW surface
+// (added by F-D1). Narrowing the PASSWORD path to non-reserved orgs is a deliberate,
+// tested hardening of that new surface — not an incidental edit — and it aligns the
+// registry with the ROPC grant, which already refuses reserved-org password grants
+// outright (token.go). It does not narrow the API-key or service-account paths, so a
+// SuperAdmin's real machine push identity is unchanged.
 func (h *handler) userByPassword(ctx context.Context, id, secret string) *schema.User {
 	for _, org := range candidateOrgs() {
+		if store.IsReservedOrg(org) {
+			continue
+		}
 		u := resolveUser(ctx, h.db, org, id)
 		if u == nil {
 			continue
