@@ -96,8 +96,9 @@ func Authenticate(ctx context.Context, db orm.DB, user *schema.User, password, o
 // (internal/wallet/store.go), the established row-lock pattern in this repo.
 //
 // The row's storage key is resolved ONCE via the (owner,name) query path (which stamps
-// the real orm key — an auto-int64 for a users.Create'd row, "owner/name" for a migrated
-// casdoor row), then the lock is taken by that exact key. Reading the FRESH row and
+// the real orm key — a store-assigned surrogate id, a GenerateID decimal string like
+// "17847909129933610000001", for a v2-native users.Create'd row; "owner/name" for a
+// migrated casdoor row), then the lock is taken by that exact key. Reading the FRESH row and
 // writing it back under the held lock keeps recordAttempt's OWN write free of lost
 // updates. It does NOT, by itself, stop a DIFFERENT user-row writer from erasing this
 // counter with a stale full-row write; that is prevented by routing every such writer
