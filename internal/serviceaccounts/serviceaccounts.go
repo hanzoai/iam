@@ -114,6 +114,14 @@ func create(db orm.DB) zip.Handler {
 		sa := orm.New[schema.User](db)
 		sa.Owner, sa.Name = in.Organization, name
 		sa.Type, sa.DisplayName, sa.Tag = serviceAccount, name, in.AgentRef
+		// Subject is the (owner,name) natural key, NOT a minted UUID — a service account
+		// is a machine identity whose sub is its stable owner/name (the M2M principal),
+		// so this bypasses the canonical users.Create path and diverges from the "sub is
+		// always a UUID" invariant (F-A1). It is NOT an impersonation vector: owner is the
+		// caller's authorized org and name is canonicalized server-side with no client Id,
+		// and store.GetUserById fails closed on an empty/duplicate Id. Minting a UUID here
+		// would change the M2M subject shape, so it is deferred to a deliberate migration
+		// rather than folded into this security rework.
 		sa.SetId(in.Organization + "/" + name)
 		key, secret, err := mint(sa)
 		if err != nil {
