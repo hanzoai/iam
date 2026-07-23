@@ -187,18 +187,23 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	return httpx.Ok(c, code.Code)
 }
 
-// resolveLoginUser looks a user up by email (contains "@") or username, scoped
-// to the org.
+// resolveLoginUser looks a user up by the login identifier, scoped to the org,
+// resolving NAME FIRST and email second — casdoor's own precedence
+// (object.GetUserByFields tries the user NAME before the email/phone). This is
+// load-bearing at cutover when two rows collide on an email: e.g. org hanzo holds
+// both `hanzo/z` (name z, email z@hanzo.ai) and `hanzo/z@hanzo.ai` (name
+// z@hanzo.ai, same email). The ROPC/login username "z@hanzo.ai" must resolve to
+// the NAME match (hanzo/z@hanzo.ai) exactly as casdoor did — an email-first lookup
+// would silently authenticate the OTHER identity. The `@` gate stays only to skip
+// a pointless email lookup for a plain username.
 func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {
-	if strings.Contains(identifier, "@") {
-		u, err := store.GetUserByEmail(ctx, db, org, identifier)
-		if err != nil || u != nil {
-			return u, err
-		}
-		// Fall through: some accounts set name = email (email is not indexed as
-		// a separate login) — try name too.
+	if u, err := store.GetUserByName(ctx, db, org, identifier); err != nil || u != nil {
+		return u, err
 	}
-	return store.GetUserByName(ctx, db, org, identifier)
+	if strings.Contains(identifier, "@") {
+		return store.GetUserByEmail(ctx, db, org, identifier)
+	}
+	return nil, nil
 }
 
 // resolveLoginApp resolves the OAuth app for a type=code login: by clientId when
