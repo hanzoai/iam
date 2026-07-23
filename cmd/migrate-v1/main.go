@@ -10,7 +10,7 @@
 // Usage:
 //
 //	migrate-v1 --src /path/to/legacy/iam.db --dest /path/to/clean/data-dir \
-//	           [--dry-run] [--only users,orgs,apps,certs,providers]
+//	           [--dry-run] [--only users,orgs,apps,certs,providers,memberships]
 //
 // The source is opened READ-ONLY. The destination is opened through the exact
 // store-open path the server uses (store.Open), so the migrated store is
@@ -47,7 +47,7 @@ func main() {
 		workDir      = fs.String("work-dir", "", "directory for decrypted temp files (default: OS temp); each is created 0600 and shredded after use")
 		dest         = fs.String("dest", "", "clean IAM v2 data-dir (the store is <dest>/iam2.db) or a .db path")
 		dryRun       = fs.Bool("dry-run", false, "count + sample per entity without writing")
-		only         = fs.String("only", "", "comma list of entities: users,orgs,apps,certs,providers,roles,permissions (default all)")
+		only         = fs.String("only", "", "comma list of entities: users,orgs,apps,certs,providers,memberships,roles,permissions (default all)")
 		walInclusive = fs.Bool("wal-inclusive", false, "encrypted source only: checkpoint each shard's uncheckpointed -wal into the plaintext copy via the C sqlcipher binary before migrating (COMPLETE extraction; default reads only the checkpointed main db and misses WAL rows)")
 		ignoreWAL    = fs.Bool("ignore-wal", false, "encrypted source only: in the DEFAULT (checkpointed) path, proceed even when a shard carries a non-empty uncheckpointed -wal, INTENTIONALLY dropping those rows (mutually exclusive with --wal-inclusive; without either, a non-empty -wal is a hard error)")
 		sqlcipherBin = fs.String("sqlcipher-bin", "sqlcipher", "path to (or name on PATH of) the C sqlcipher binary used by --wal-inclusive")
