@@ -6,7 +6,26 @@ import (
 	"context"
 	"net/url"
 	"testing"
+
+	"github.com/hanzoai/orm"
+
+	"github.com/hanzoai/iam/internal/schema"
 )
+
+// forbidUser flips an already-seeded user to revoked (IsForbidden), keeping its
+// password intact — so a denial in the password grant is provably the
+// forbidden-user gate, not a credential mismatch.
+func forbidUser(t *testing.T, db orm.DB, owner, name string) {
+	t.Helper()
+	u, err := orm.Get[schema.User](db, owner+"/"+name)
+	if err != nil {
+		t.Fatalf("load %s/%s: %v", owner, name, err)
+	}
+	u.IsForbidden = true
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatalf("forbid %s/%s: %v", owner, name, err)
+	}
+}
 
 // The Resource Owner Password Credentials grant (RFC 6749 §4.3) — the durable
 // first-party console session. Verifies the happy path mints a real, verifiable
@@ -81,19 +100,80 @@ func TestPasswordGrant_unknownUser_invalidGrant_sameAsBadPassword(t *testing.T) 
 	requireError(t, resp, tok, 400, "invalid_grant")
 }
 
-func TestPasswordGrant_publicClient_rejected(t *testing.T) {
+// CASDOOR PARITY: a PUBLIC client (no secret, no PKCE) may complete the password
+// grant — the console/chat apps casdoor allowed. See passwordGrant's doc comment.
+func TestPasswordGrant_publicClient_casdoorParity_succeeds(t *testing.T) {
 	app, db := newServer(t)
-	// A public (no-secret) client can never use the password grant.
-	seedApp(t, db, appOpts{clientID: "pub"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // no secret → public client
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 
 	resp, tok := postToken(t, app, url.Values{
 		"grant_type": {"password"},
-		"client_id":  {"pub"},
+		"client_id":  {"hanzo-console"},
+		"username":   {"alice@hanzo.ai"},
+		"password":   {"correct horse"},
+		"scope":      {"openid"},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("public-client password grant status = %d, want 200 (casdoor parity); body=%v", resp.StatusCode, tok)
+	}
+	access, _ := tok["access_token"].(string)
+	claims, err := verifyToken(context.Background(), db, access)
+	if err != nil {
+		t.Fatalf("minted token does not verify: %v", err)
+	}
+	if claims.Subject != "hanzo/alice" || claims.Owner != "hanzo" {
+		t.Errorf("subject/owner = %q/%q, want hanzo/alice / hanzo", claims.Subject, claims.Owner)
+	}
+}
+
+// The relaxation is BOUNDED: a public client still cannot pass a WRONG password —
+// the credential check is untouched.
+func TestPasswordGrant_publicClient_wrongPassword_denied(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // public
+	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
+
+	resp, tok := postToken(t, app, url.Values{
+		"grant_type": {"password"},
+		"client_id":  {"hanzo-console"},
+		"username":   {"alice@hanzo.ai"},
+		"password":   {"WRONG"},
+	})
+	requireError(t, resp, tok, 400, "invalid_grant")
+}
+
+// A forbidden (revoked) user is denied even to a public client.
+func TestPasswordGrant_publicClient_forbiddenUser_denied(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // public
+	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
+	forbidUser(t, db, "hanzo", "alice")
+
+	resp, tok := postToken(t, app, url.Values{
+		"grant_type": {"password"},
+		"client_id":  {"hanzo-console"},
 		"username":   {"alice@hanzo.ai"},
 		"password":   {"correct horse"},
 	})
+	requireError(t, resp, tok, 400, "invalid_grant")
+}
+
+// A confidential client (registered secret) is UNCHANGED: a wrong/absent secret is
+// still a 401 client-authentication failure — the relaxation is public-only.
+func TestPasswordGrant_confidentialClient_wrongSecret_stillRejected(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
+
+	resp, tok := postToken(t, app, url.Values{
+		"grant_type":    {"password"},
+		"client_id":     {"conf-console"},
+		"client_secret": {"WRONG"},
+		"username":      {"alice@hanzo.ai"},
+		"password":      {"correct horse"},
+	})
 	if resp.StatusCode != 401 {
-		t.Fatalf("public-client password grant status = %d, want 401; body=%v", resp.StatusCode, tok)
+		t.Fatalf("confidential wrong-secret status = %d, want 401; body=%v", resp.StatusCode, tok)
 	}
 }
