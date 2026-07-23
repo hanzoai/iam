@@ -4,6 +4,7 @@ package users
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -21,6 +22,17 @@ import (
 // unauthenticated online brute-force oracle. State lives on the user row
 // (SigninWrongTimes / LastSigninWrongTime — already in schema.User), so it is
 // per-account and survives restarts.
+//
+// The running count is a SHARED MUTABLE CELL, so the failed-attempt increment must
+// be atomic against concurrent wrong attempts. A read-at-handler-entry, then
+// in-memory bump, then full-row write loses updates: a generation of C parallel
+// wrongs that each captured the same pre-increment snapshot all persist snapshot+1,
+// so C concurrent guesses advance the persisted counter by only ONE — the account
+// never locks and the brute-force oracle F-D1 exists to kill re-opens. The mutation
+// therefore runs inside a ROW-LOCKED TRANSACTION (recordAttempt): every increment
+// reads the FRESH persisted value under the lock and writes back from it, so C
+// serialized wrongs advance the counter by exactly C. See recordAttempt for why
+// this is correct under the production topology.
 
 const (
 	// LockThreshold is the consecutive-wrong-password count that locks an account
@@ -36,7 +48,7 @@ const (
 // Authenticate is the single human-credential check. It enforces lockout AROUND the
 // raw VerifyPassword digest comparison:
 //   - a locked account (count ≥ threshold within the window) is refused BEFORE the
-//     password is checked — a correct password does not unlock it early;
+//     password is honored — a correct password does not unlock it early;
 //   - a wrong password increments the count (restarting it when the previous window
 //     lapsed) and stamps the time;
 //   - a correct, unlocked password resets the count to zero.
@@ -47,35 +59,108 @@ const (
 // user (unknown login) is (false, false) — there is no row to lock, and the caller
 // returns the same opaque error as a wrong password (no enumeration). Counter writes
 // are best-effort: a persist fault must not convert a correct login into an error, so
-// it is swallowed (the in-memory decision holds).
+// it is swallowed (the verify verdict holds).
 //
-// The user MUST be a row loaded through the store (the (owner,name) query path stamps
-// its real orm storage key); the counter save re-reads by that key, so it works for
-// BOTH a users.Create'd account (auto-int64 key) and a migrated casdoor row
-// (owner/name key). See saveLoginCounters.
+// The digest comparison (argon2id/bcrypt) is deliberately slow and CPU-bound; it runs
+// OUTSIDE the counter transaction so a login never holds the store's write lock across
+// a password hash — that would serialize every concurrent login in the process behind
+// one verify, a self-inflicted DoS. Only its boolean result crosses into the atomic
+// counter update, which is the sole part that must be serialized.
 func Authenticate(ctx context.Context, db orm.DB, user *schema.User, password, orgPasswordType string, now time.Time) (ok, locked bool) {
 	if user == nil {
 		return false, false
 	}
-	if user.SigninWrongTimes >= LockThreshold && withinLockWindow(user.LastSigninWrongTime, now) {
-		return false, true
+	passwordOK := VerifyPassword(user, password, orgPasswordType)
+	return recordAttempt(ctx, db, user.Owner, user.Name, passwordOK, now)
+}
+
+// recordAttempt applies the lockout decision atomically against the user's FRESH
+// persisted counter and returns (ok, locked). passwordOK is the already-computed
+// digest verdict (see Authenticate); this function performs NO password comparison,
+// only the counter accounting.
+//
+// Atomicity mechanism and why it is correct under the production topology:
+//
+// The clean-room iam runs as an embedded subsystem of the ONE cloud binary, backed by
+// hanzoai/orm over SQLite (store.Open("sqlite", …), WAL + busy_timeout) on a
+// ReadWriteOnce volume — a single writer process. The SQLite backend opens its write
+// handle with MaxOpenConns(1) and guards every write path (and every RunInTransaction)
+// with one process-wide write mutex held for the FULL transaction, so a read→check→write
+// inside RunInTransaction cannot interleave with any other writer in the process. The
+// mechanism is NOT a process-local application mutex — which would not serialize across
+// replicas — but the STORE's own transaction with a row lock: orm.GetForUpdate takes an
+// exclusive lock on the row for the life of the transaction (a real SELECT … FOR UPDATE
+// on the hanzoai/sql/Postgres backend; the write-mutex-serialized read under SQLite), so
+// the same code is correct whether the store is single-writer SQLite today or a shared
+// SQL backend under N replicas tomorrow. This mirrors the wallet challenge-burn CAS
+// (internal/wallet/store.go), the established row-lock pattern in this repo.
+//
+// The row's storage key is resolved ONCE via the (owner,name) query path (which stamps
+// the real orm key — an auto-int64 for a users.Create'd row, "owner/name" for a migrated
+// casdoor row), then the lock is taken by that exact key. Reading the FULL fresh row and
+// writing only the two counter fields under the held lock also removes the collateral
+// full-row-clobber: no concurrent update to an unrelated field can land between the
+// locked read and the write, so nothing is lost (a JSON-document store has no per-column
+// write; atomicity comes from the lock, not column scoping).
+func recordAttempt(ctx context.Context, db orm.DB, owner, name string, passwordOK bool, now time.Time) (ok, locked bool) {
+	keyed, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil || keyed == nil {
+		// No row to lock (deleted under us, or a transient read fault). The counter is
+		// best-effort — a persist fault must never turn a correct login into an error —
+		// so fall back to the stateless verify verdict.
+		return passwordOK, false
 	}
-	if VerifyPassword(user, password, orgPasswordType) {
-		if user.SigninWrongTimes != 0 {
-			user.SigninWrongTimes = 0
-			user.LastSigninWrongTime = ""
-			saveLoginCounters(ctx, db, user)
+	storageID := keyed.Key().Encode()
+
+	var outOK, outLocked bool
+	txErr := db.RunInTransaction(ctx, func(tx orm.DB) error {
+		fresh, err := orm.GetForUpdate[schema.User](tx, storageID)
+		if err != nil {
+			if errors.Is(err, orm.ErrNotFound) {
+				outOK, outLocked = passwordOK, false
+				return nil
+			}
+			return err
 		}
-		return true, false
+		// Authoritative lock decision on the FRESH counter, under the row lock. A
+		// correct password does NOT unlock a locked account early, and a wrong attempt
+		// against an already-locked account neither increments nor extends it (no stamp
+		// bump), so the lock expires the window after the LAST pre-lock wrong attempt.
+		if fresh.SigninWrongTimes >= LockThreshold && withinLockWindow(fresh.LastSigninWrongTime, now) {
+			outOK, outLocked = false, true
+			return nil
+		}
+		if passwordOK {
+			outOK = true
+			// Reset a sub-threshold running count. Skip the write when already clear so a
+			// clean login neither rewrites the row nor races a concurrent unrelated update.
+			if fresh.SigninWrongTimes != 0 || fresh.LastSigninWrongTime != "" {
+				fresh.SigninWrongTimes = 0
+				fresh.LastSigninWrongTime = ""
+				return fresh.UpdateCtx(ctx)
+			}
+			return nil
+		}
+		// Wrong password, not locked: restart the count if the previous window lapsed,
+		// then bump FROM THE FRESH value. The row lock is held from the GetForUpdate read
+		// through this write, so C concurrent wrongs serialize and advance by exactly C.
+		if !withinLockWindow(fresh.LastSigninWrongTime, now) {
+			fresh.SigninWrongTimes = 0
+		}
+		fresh.SigninWrongTimes++
+		fresh.LastSigninWrongTime = now.UTC().Format(time.RFC3339)
+		if err := fresh.UpdateCtx(ctx); err != nil {
+			return err
+		}
+		outLocked = fresh.SigninWrongTimes >= LockThreshold
+		return nil
+	})
+	if txErr != nil {
+		// Persist fault: keep the best-effort contract — the correct/wrong verdict still
+		// holds, we just could not record the attempt (never a spurious lock).
+		return passwordOK, false
 	}
-	// Wrong password: restart the count if the previous window lapsed, then bump.
-	if !withinLockWindow(user.LastSigninWrongTime, now) {
-		user.SigninWrongTimes = 0
-	}
-	user.SigninWrongTimes++
-	user.LastSigninWrongTime = now.UTC().Format(time.RFC3339)
-	saveLoginCounters(ctx, db, user)
-	return false, user.SigninWrongTimes >= LockThreshold
+	return outOK, outLocked
 }
 
 // withinLockWindow reports whether the last wrong attempt is recent enough that the
@@ -90,28 +175,4 @@ func withinLockWindow(lastWrong string, now time.Time) bool {
 		return false
 	}
 	return now.Sub(t) < lockWindow
-}
-
-// saveLoginCounters persists ONLY the lockout counters onto the stored row — a
-// read-modify-write that leaves every other field (and the immutable Id) untouched.
-// Best-effort by design (see Authenticate).
-//
-// It re-reads the row through the ONE (owner,name) query path — the same load the
-// verify used — which stamps the row's REAL storage key (First → SetKey), then writes
-// back by THAT key. This is load-bearing: schema.User is registered without
-// WithStringKey, so a users.Create'd account is keyed by an auto-allocated int64
-// (orm.Model.Id_), NOT by "owner/name"; only a migrated casdoor row is keyed by
-// owner/name. A save keyed by owner/name matched a row ONLY for the migrated shape, so
-// every post-cutover account's counter silently vanished and the account never
-// locked — the online brute-force oracle F-D1 was meant to close. Re-reading fresh
-// keeps the write counter-only for BOTH shapes: fresh mirrors the stored state, so
-// only the two counters differ from what is persisted.
-func saveLoginCounters(ctx context.Context, db orm.DB, u *schema.User) {
-	fresh, err := store.GetUserByName(ctx, db, u.Owner, u.Name)
-	if err != nil || fresh == nil {
-		return
-	}
-	fresh.SigninWrongTimes = u.SigninWrongTimes
-	fresh.LastSigninWrongTime = u.LastSigninWrongTime
-	_ = fresh.UpdateCtx(ctx)
 }
