@@ -453,13 +453,13 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The subject is "<owner>/<name>": the principal's OWN org and name, set
-	// server-side at mint and signed. Never the `owner` claim (the app's org).
-	owner, name, _ := strings.Cut(claims.Subject, "/")
-	if owner == "" {
-		return nil, errNoSubject
-	}
-	u, err := store.GetUserByName(ctx, db, owner, name)
+	// The subject is the principal's OWN stable identity, set server-side at mint and
+	// signed — a UUID for a v2 token, or "<owner>/<name>" pre-cutover. Resolve it to
+	// the live user through the ONE subject decoder (Id-or-name), and read Org/Admin/
+	// Super from the LOADED record — never from the `owner` claim (the app's org), so
+	// a token whose owner claim names admin but whose subject is a tenant user gets
+	// the tenant's authority, not the claim's (the org-confusion defense).
+	u, err := store.GetUserBySubject(ctx, db, claims.Subject)
 	if err != nil {
 		return nil, err // fail closed: cannot establish the principal
 	}
@@ -468,6 +468,14 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 			return nil, errRevoked
 		}
 		return &Principal{Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Super: u.Owner == adminOrg}, nil
+	}
+	// No user row. A machine token's subject is "<appOwner>/<appName>" — org-scoped
+	// to the app's owner half, carrying no admin/super authority. Anything else — an
+	// opaque UUID subject with no live user row (a since-deleted user, or a forgery
+	// the trusted-key verify already blocks) — establishes NO principal, fail closed.
+	owner, _, hasSlash := strings.Cut(claims.Subject, "/")
+	if !hasSlash || owner == "" {
+		return nil, errNoSubject
 	}
 	return &Principal{Org: owner}, nil
 }

@@ -80,7 +80,8 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 			return mintErr(c, 500, "server_error")
 		}
 		ttl := appTTL(clientApp)
-		subject := user.Owner + "/" + user.Name
+		natural := user.Owner + "/" + user.Name
+		subject := subjectOf(user) // the stable `sub` (UUID, or owner/name pre-cutover)
 		display := user.DisplayName
 		if display == "" {
 			display = user.Name
@@ -94,7 +95,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 			Owner:           user.Owner,
 			Application:     clientApp.Name,
 			Organization:    user.Owner,
-			User:            subject,
+			User:            natural, // the row's User stays the (owner/name) key
 			TokenType:       "Bearer",
 			ExpiresIn:       int(ttl.Seconds()),
 			AccessTokenHash: hashToken(access),
@@ -103,7 +104,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		if err := store.PersistToken(ctx, db, row); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
-		auditMint(ctx, db, c, "issue-user-token", clientApp.ClientId, subject)
+		auditMint(ctx, db, c, "issue-user-token", clientApp.ClientId, natural)
 		return httpx.Ok(c, map[string]any{
 			"accessToken": access,
 			"expiresIn":   int(ttl.Seconds()),

@@ -22,8 +22,25 @@ import (
 type User struct {
 	orm.Model[User]
 
-	// Identity / tenancy. (Owner, Name) is the natural key; the OIDC `sub`
-	// is the embedded orm.Model id.
+	// Id is the user's STABLE OPAQUE identifier — the value the OIDC `sub` claim
+	// carries. It is the v1 Casdoor per-row UUID (e.g.
+	// "e7d7fda0-4c53-4508-9d35-7ec892b7e5d7"), migrated verbatim so a user's `sub`
+	// is byte-identical across the cutover: every live session, external reference,
+	// and the downstream money-path principal keyed on `sub` survive unchanged. A
+	// user minted natively in v2 is assigned a fresh UUID here on create, so the
+	// `sub` is ALWAYS a stable opaque id going forward — never the (Owner, Name)
+	// pair, which is mutable (a rename would otherwise silently reissue identity).
+	//
+	// It is distinct from the embedded orm.Model storage id (the (Owner, Name)
+	// natural key): this is a first-class, indexed DOMAIN field. The json tag "id"
+	// dominates the promoted orm.Model `Id_` (also "id") by shallower depth, so the
+	// persisted record's "id" is this UUID — exactly the v1 shape — while the row's
+	// primary key remains (Owner, Name), carried by the storage key, not this field.
+	// A row that carries no Id (a not-yet-assigned pre-cutover user) falls back to
+	// the (Owner, Name) subject at mint; every other path resolves `sub`→user by Id.
+	Id string `json:"id,omitempty" orm:"index"`
+
+	// Identity / tenancy. (Owner, Name) is the natural key.
 	Owner       string `json:"owner" orm:"index"`
 	Name        string `json:"name" orm:"index"`
 	CreatedTime string `json:"createdTime"`
