@@ -216,6 +216,13 @@ func usernamePolicyError(username string) string {
 	if strings.IndexFunc(username, unicode.IsSpace) >= 0 {
 		return "username cannot contain white spaces"
 	}
+	// "/" is the (owner/name) natural-key AND the owner/name-subject separator, so a
+	// name carrying one could introduce a spurious separator into the sub. Forbid it
+	// at the door so the subject discriminator (store.GetUserBySubject) can never be
+	// confused by a self-service-registered name.
+	if strings.Contains(username, "/") {
+		return "username cannot contain '/'"
+	}
 	return ""
 }
 
