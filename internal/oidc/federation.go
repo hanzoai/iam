@@ -376,12 +376,15 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 		if u, err := store.GetUserByEmail(ctx, db, org, id.email); err != nil {
 			return nil, err
 		} else if u != nil {
-			*binding.ref(u) = id.subject
-			u.EmailVerified = true
-			if err := saveUser(ctx, db, u); err != nil {
+			linked, err := updateUser(ctx, db, u.Owner, u.Name, func(fresh *schema.User) error {
+				*binding.ref(fresh) = id.subject
+				fresh.EmailVerified = true
+				return nil
+			})
+			if err != nil {
 				return nil, err
 			}
-			return u, nil
+			return linked, nil
 		}
 	}
 
