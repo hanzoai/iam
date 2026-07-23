@@ -300,9 +300,10 @@ const (
 
 // upsert creates a row when absent, overwrites it when the clean row differs,
 // and is a true no-op when it already matches (idempotent re-run). In dry-run it
-// resolves the action without ever writing. The natural key is the id
-// (owner/name); the OIDC `sub` the clean iam mints is owner/name too, so the
-// legacy per-row UUID never enters the key.
+// resolves the action without ever writing. The storage KEY is the (owner/name)
+// natural key; the legacy per-row UUID is carried as a DOMAIN field (schema.User.Id,
+// via the normal column mapping) — it is the OIDC `sub` the clean iam now mints for
+// continuity, but it never becomes the storage key.
 func upsert[T any](dst orm.DB, id string, blob []byte, dry bool) (string, error) {
 	existing, err := orm.Get[T](dst, id)
 	if errors.Is(err, orm.ErrNotFound) {

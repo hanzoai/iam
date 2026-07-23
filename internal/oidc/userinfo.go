@@ -40,8 +40,10 @@ func userinfoHandler(db orm.DB) zip.Handler {
 			return userinfoUnauthorized(c, "the access token is invalid")
 		}
 
-		owner, name := splitSub(claims.Subject)
-		user, err := store.GetUserByName(ctx, db, owner, name)
+		// Resolve the token's principal from its `sub` (a stable UUID for a v2 token,
+		// or owner/name pre-cutover). The response `sub` is the signed claims.Subject
+		// itself, so userinfo reports the SAME subject the token carries.
+		user, err := store.GetUserBySubject(ctx, db, claims.Subject)
 		if err != nil {
 			return c.JSON(500, map[string]string{"error": "server_error"})
 		}

@@ -18,6 +18,7 @@ import (
 	"time"
 
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -118,6 +119,14 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 
 	u := &in.User
 	u.Owner, u.Name = owner, name
+	// Assign a stable opaque identity (the OIDC `sub`) if the caller supplied none,
+	// so a natively-minted v2 user's `sub` is a UUID from birth — never the mutable
+	// (owner,name) pair. A migrated user already carries its v1 UUID (the migrator
+	// writes User.Id directly, not through this path), so this only fires for a
+	// genuinely new account.
+	if u.Id == "" {
+		u.Id = uuid.NewString()
+	}
 	// Never trust a client-supplied digest; the hash is derived here or nowhere.
 	u.PasswordHash, u.PasswordSalt = "", ""
 	u.PasswordType = ""
