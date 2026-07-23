@@ -239,7 +239,14 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organizat
 // variant whose target is a secret key (no owner/name for the Guard to authorize),
 // so the get-user handler authorizes BOTH its variants — the owner/name read through
 // the SAME authz.Can the Guard would have applied, the key read behind CapKeyResolve.
-var handlerAuthorizedExact = map[string]bool{"/v1/iam/get-user": true}
+//
+// resolve-key is here for the same reason: its target is a publishable pk- riding in
+// ?accessKey= (no owner/name for the Guard to authorize), and its handler authorizes
+// itself behind CapPublishableResolve, returning ONLY the org — never a principal.
+var handlerAuthorizedExact = map[string]bool{
+	"/v1/iam/get-user":    true,
+	"/v1/iam/resolve-key": true,
+}
 
 // pathAuthorized reports whether path is handler-authorized: an exact single-route
 // match, or under a handler-authorized subtree.
