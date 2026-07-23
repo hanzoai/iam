@@ -114,13 +114,18 @@ func onboardHandler(db orm.DB) zip.Handler {
 			return onboardErr(c, 400, err.Error())
 		}
 
-		// Move the caller in as admin. Changing Owner re-keys the identity (the row's
-		// surrogate id is stable; user lookups are by (owner, name)), so the loaded
-		// row updates in place and the caller thereafter resolves under the new org.
-		user.Owner = slug
-		user.IsAdmin = true
-		user.UpdatedTime = onboardNow()
-		if err := user.UpdateCtx(ctx); err != nil {
+		// Move the caller in as admin through the ONE user-row writer (updateUser: a
+		// fresh read-modify-write under the row lock, so a concurrent lockout increment
+		// is never clobbered). Changing Owner re-keys the identity by VALUE — the row's
+		// storage key is stable and user lookups are by (owner, name) — so the caller
+		// thereafter resolves under the new org. Resolve by the ORIGINAL (owner, name);
+		// the mutate sets the new Owner on the fresh row.
+		if _, err := updateUser(ctx, db, owner, name, func(u *schema.User) error {
+			u.Owner = slug
+			u.IsAdmin = true
+			u.UpdatedTime = onboardNow()
+			return nil
+		}); err != nil {
 			return onboardErr(c, 500, err.Error())
 		}
 
