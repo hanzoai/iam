@@ -89,6 +89,36 @@ func authorizeCert(ctx context.Context, db orm.DB, in *schema.Application) error
 	return nil // a tenant-owned or unknown cert name is inert for signing — mints nothing
 }
 
+// authorizeSilentSSO gates the three application fields that turn it into a silent /
+// cross-tenant code-minting surface — EnableAutoSignin, IsShared, OrgChoiceMode — to a
+// SuperAdmin, the same structural gate authorizeCert applies to the signing cert.
+// EnableAutoSignin is what the /oauth/authorize fast path reads to mint an authorization
+// code from a cookie session with NO consent; IsShared and OrgChoiceMode are what the mint
+// tenant gate reads to admit a subject from ANOTHER org. Left writable by any org admin
+// (the op-invoke seam authorizes only the app's Owner, never these fields), a tenant could
+// register — or flip on an app it owns — {enableAutoSignin, isShared, redirectUris: evil}
+// and turn one logged-in Hanzo user's top-navigation into a code minted for that user and
+// delivered to an attacker's callback: a login-CSRF token theft, made cross-tenant by
+// IsShared. So a non-super may neither introduce nor change any of them. The rule is one
+// baseline comparison: on CREATE the baseline is the zero value (all off, stored == nil);
+// on UPDATE it is the persisted row — so a non-super write is coerced to "off on create,
+// unchanged on update" and the attacker value is never taken. A SuperAdmin sets them
+// freely (the platform console/commerce apps legitimately use EnableAutoSignin). A
+// server-internal call (bootstrap/seed/migration) carries no principal and is the trusted
+// boundary — its value stands, which is how the seed lands the platform apps' configuration
+// unaltered (the seed writes the store directly and never even reaches this path).
+func authorizeSilentSSO(ctx context.Context, in, stored *schema.Application) {
+	if p, ok := authz.From(ctx); !ok || p.Super {
+		return // server-internal (trusted) or a SuperAdmin — the requested value stands
+	}
+	if stored == nil {
+		stored = &schema.Application{} // create baseline: every gated field off
+	}
+	in.EnableAutoSignin = stored.EnableAutoSignin
+	in.IsShared = stored.IsShared
+	in.OrgChoiceMode = stored.OrgChoiceMode
+}
+
 // ensureClientIdUnique rejects a create/update whose clientId is already held by a
 // DIFFERENT application (any owner). clientId is the GLOBAL key the mint and Basic-auth
 // resolvers authenticate against, so it must be unique across every owner, not merely
@@ -228,6 +258,10 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, err
 		}
 
+		// Field gate: a non-super may not register an app with the silent / cross-tenant
+		// minting flags on (create baseline is off) — closes the login-CSRF app surface.
+		authorizeSilentSSO(ctx, in, nil)
+
 		// Wire the decoded entity to db under its natural key and persist.
 		in.Init(db)
 		in.SetId(id)
@@ -268,6 +302,11 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := ensureClientIdUnique(ctx, db, in.ClientId, in.Owner, in.Name); err != nil {
 			return nil, err
 		}
+
+		// Field gate: a non-super may not FLIP the silent / cross-tenant minting flags on
+		// (update baseline is the stored row) — so a tenant can neither turn its own app
+		// nor a re-submitted app into a login-CSRF minting surface.
+		authorizeSilentSSO(ctx, in, existing)
 
 		in.Init(db)
 		in.SetId(id)
