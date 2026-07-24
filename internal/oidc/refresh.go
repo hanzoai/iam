@@ -126,8 +126,12 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		// public-vs-confidential discriminator the client-auth check above reads. A
 		// dual-use record (stored secret, redeemed via PKCE = public) would otherwise be
 		// misclassified confidential on the 2nd rotation and 401 the browser — the bug
-		// re-emerging one hop later. CodeChallenge is server-set and immutable per row,
-		// so it cannot be forged to flip the classification.
+		// re-emerging one hop later. CodeChallenge is only ever SERVER-SET, at the
+		// authorization-code mint (internal/oidc.MintCode from the /oauth/authorize flow),
+		// and carried verbatim here on each rotation: there is NO REST/CRUD write path to
+		// the tokens entity (the mass-assign create/update was removed — see
+		// internal/tokens), so a caller cannot set or flip it. It therefore faithfully
+		// reflects the grant's real provenance and cannot be attacker-chosen.
 		CodeChallenge:       tok.CodeChallenge,
 		CodeChallengeMethod: tok.CodeChallengeMethod,
 	}
