@@ -88,6 +88,9 @@ func listTokens(db orm.DB) zip.TypedHandler[listTokensIn, listTokensOut] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		for i, r := range rows {
+			rows[i] = r.Mask() // never emit bearer/verifier material in a list response
+		}
 		return &listTokensOut{Tokens: rows}, nil
 	}
 }
@@ -102,6 +105,6 @@ func getToken(db orm.DB) zip.TypedHandler[tokenKey, tokenResult] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		return &tokenResult{Token: t}, nil
+		return &tokenResult{Token: t.Mask()}, nil
 	}
 }
