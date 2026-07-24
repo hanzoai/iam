@@ -10,6 +10,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/internal/store"
 )
 
@@ -83,6 +84,45 @@ func authorizeHandler(db orm.DB) zip.Handler {
 		// federation broker starts from a validated request and a trusted target.
 		if q.provider != "" {
 			return beginFederation(c, db, app, q, method)
+		}
+
+		// SSO fast path — the clean-room equivalent of the fork's fastAutoSignin: when
+		// the application opted into silent SSO AND the resource owner is ALREADY
+		// authenticated (a valid hanzo.id session), the authorization endpoint mints the
+		// code ITSELF and 302s straight back to the registered redirect_uri, rather than
+		// bouncing to the hosted login. It mints through the SAME MintFor the credential
+		// login uses — the one-and-only-one interactive mint routine — so the code
+		// persists the EXACT fields a login-minted code does (owner-pinned user,
+		// CodeChallenge, CodeChallengeMethod, redirect_uri, nonce). The PKCE challenge
+		// validated above is written onto the row by the SERVER here, never round-tripped
+		// through the login page where it could be dropped: dropping it left an
+		// authorize-minted code non-PKCE (tok.CodeChallenge == "") so a public browser
+		// redeem fell into the confidential branch and 401'd invalid_client — the defect
+		// that forced three cutover rollbacks. userID is the SESSION identity, never a
+		// request value, so a code can be minted for no one but the signed-in user.
+		if app.EnableAutoSignin {
+			if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
+				if code, err := MintFor(ctx, db, app, owner+"/"+name, Mint{
+					Type:                "code",
+					RedirectUri:         q.redirectURI,
+					State:               q.state,
+					Scope:               q.scope,
+					Nonce:               q.nonce,
+					CodeChallenge:       q.codeChallenge,
+					CodeChallengeMethod: method,
+					Resource:            q.resource,
+				}); err == nil {
+					v := url.Values{}
+					v.Set("code", code)
+					setIfPresent(v, "state", q.state)
+					return c.Redirect(302, joinQuery(q.redirectURI, v))
+				}
+				// The only MintFor error reachable here is the tenant gate — the signed-in
+				// user's org may not sign in to THIS application. Client, redirect_uri and
+				// PKCE policy were all validated above and re-asserted identically inside
+				// MintFor. Fall through to the hosted login so the user can authenticate as
+				// an identity that MAY use this app; a cross-tenant code is never minted.
+			}
 		}
 
 		// Delegate to the hosted login with a clean, re-encoded request. The login
