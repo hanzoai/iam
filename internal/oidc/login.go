@@ -178,9 +178,15 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 		return httpx.Ok(c, userID)
 	}
 
-	// type=code: mint a PKCE-bound authorization code for the OAuth flow. The org is
-	// the USER's own, from the loaded row, so a second-factor post (which carries no
-	// organization field) is checked exactly like the first.
+	// type=code: mint the PKCE-bound authorization code through the ONE interactive mint
+	// routine — MintFor, the SAME one the /oauth/authorize SSO fast path and the wallet
+	// login use. Routing every credentialed front door through MintFor states the tenant
+	// gate, the exact-redirect binding (RFC 6749 §3.1.2.3), the S256-only PKCE policy, the
+	// public-client-must-PKCE rule, and the persisted fields (owner-pinned user,
+	// CodeChallenge/method, redirect_uri, nonce) EXACTLY ONCE — so a redeemed code behaves
+	// identically no matter which endpoint minted it, closing the divergence that left an
+	// authorize-path code non-PKCE. The user's org is userID's own owner half, set
+	// server-side, so a second-factor post (no organization field) is bound like the first.
 	app, err := resolveLoginApp(ctx, db, f)
 	if err != nil {
 		return httpx.Err(c, err.Error())
@@ -188,35 +194,21 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	if app == nil {
 		return httpx.Err(c, "the application does not exist")
 	}
-	if user.Owner != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
-		return httpx.Err(c, "the user is not permitted to sign in to this application")
-	}
-	// Bind the code to an EXACTLY-registered redirect URI (RFC 6749 §3.1.2.3); the
-	// token endpoint re-checks it. A supplied-but-unregistered URI is refused.
-	if f.RedirectUri != "" && !app.IsRedirectUriValid(f.RedirectUri) {
-		return httpx.Err(c, "invalid redirect_uri")
-	}
-	method := normalizeChallengeMethod(f.CodeChallenge, f.CodeChallengeMethod)
-	if f.CodeChallenge != "" && method != "S256" {
-		return httpx.Err(c, "only S256 PKCE is supported")
-	}
-	// A public client (no secret) must use PKCE — no downgrade.
-	if app.ClientSecret == "" && f.CodeChallenge == "" {
-		return httpx.Err(c, "PKCE is required for public clients")
-	}
-	code, err := MintCode(app, userID, f.Scope, f.CodeChallenge, method, f.Resource, nowFunc())
+	code, err := MintFor(ctx, db, app, userID, Mint{
+		Type:                "code",
+		RedirectUri:         f.RedirectUri,
+		State:               f.State,
+		Scope:               f.Scope,
+		Nonce:               f.Nonce,
+		CodeChallenge:       f.CodeChallenge,
+		CodeChallengeMethod: f.CodeChallengeMethod,
+		Resource:            f.Resource,
+	})
 	if err != nil {
 		return httpx.Err(c, err.Error())
 	}
-	// Bind the redirect_uri and nonce onto the code so the token exchange can
-	// re-verify the redirect and echo the nonce into the id_token.
-	code.RedirectUri = f.RedirectUri
-	code.Nonce = f.Nonce
-	if err := store.PersistToken(ctx, db, code); err != nil {
-		return httpx.Err(c, err.Error())
-	}
 	// The SDK reads data as the authorization code to exchange at /token.
-	return httpx.Ok(c, code.Code)
+	return httpx.Ok(c, code)
 }
 
 // resolveLoginUser looks a user up by the login identifier, scoped to the org,
