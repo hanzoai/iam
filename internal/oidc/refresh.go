@@ -48,13 +48,19 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "invalid_grant", "refresh token is invalid or revoked")
 	}
 
-	// Client authentication: the presented client must be the grant's client, and
-	// a confidential client must present its secret.
+	// Client authentication: the presented client must be the grant's client. As on
+	// the authorization_code grant, this gates on what the REQUEST presents, never on
+	// `app.ClientSecret != ""`: the SAME dual-use record (hanzo-cloud) refreshes
+	// server-side WITH a secret (console) and in-browser WITHOUT one (insights/
+	// analytics). A client that PRESENTS a secret is held to the confidential rule (it
+	// must match, constant-time); a public client presents none and is authenticated
+	// by possession of the rotating, single-use, reuse-detected refresh token itself —
+	// the refresh analog of the PKCE verifier (there is no code_challenge here).
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	if app.ClientSecret != "" {
-		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+	if clientSecret != "" {
+		if app.ClientSecret == "" || subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 			return tokenErrorClient(c, "client authentication failed")
 		}
 	}
