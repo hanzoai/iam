@@ -31,6 +31,21 @@ func grantViaPKCE(t *testing.T, app *zip.App, clientID, scope string) map[string
 	return tok
 }
 
+// grantViaConfidential runs the confidential (non-PKCE, server-side) authorization-code
+// flow against a stored-secret app and returns the issued token set — the console shape.
+// Its family carries NO PKCE provenance, so its refresh MUST present the secret.
+func grantViaConfidential(t *testing.T, app *zip.App, clientID, secret, scope string) map[string]any {
+	t.Helper()
+	code, _, _ := loginForCode(t, app, loginParams(clientID, scope)) // non-PKCE code (app has a secret)
+	resp, tok := exchangeCode(t, app, url.Values{
+		"code": {code}, "client_id": {clientID}, "client_secret": {secret}, "redirect_uri": {testRedirect},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("confidential grant failed: %d %v", resp.StatusCode, tok)
+	}
+	return tok
+}
+
 func refresh(t *testing.T, app *zip.App, clientID, refreshToken string, extra url.Values) (int, map[string]any) {
 	t.Helper()
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refreshToken}, "client_id": {clientID}}
