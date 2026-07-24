@@ -42,6 +42,7 @@ func TestReadsAreMasked(t *testing.T) {
 	tok.AccessToken, tok.RefreshToken = "at-secret", "rt-secret"
 	tok.AccessTokenHash, tok.RefreshTokenHash = "at-hash", "rt-hash"
 	tok.CodeChallenge = "chal-secret"
+	tok.Code, tok.UserCode = "auth-code-live", "USER-CODE-LIVE" // live, single-use, redeemable
 	tok.SetId("hanzo/t1")
 	if err := tok.CreateCtx(ctx); err != nil {
 		t.Fatalf("seed token: %v", err)
@@ -57,6 +58,9 @@ func TestReadsAreMasked(t *testing.T) {
 		}
 		if got.CodeChallenge != "" {
 			t.Fatalf("code challenge leaked: %q", got.CodeChallenge)
+		}
+		if got.Code != "" || got.UserCode != "" {
+			t.Fatalf("live redeemable code leaked: code=%q userCode=%q", got.Code, got.UserCode)
 		}
 		if got.User != "hanzo/alice" || got.Application != "hanzo/app" || got.Scope != "openid" {
 			t.Fatalf("non-secret metadata dropped: user=%q app=%q scope=%q", got.User, got.Application, got.Scope)
