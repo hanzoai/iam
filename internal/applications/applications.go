@@ -46,24 +46,32 @@ func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 // authorizeCert gates the signing certificate an application binds. The Cert an
 // app names is the key IAM signs that app's tokens with — oidc.signerFor resolves
 // it through store.GetSigningCert, which trusts a cert ONLY under the reserved
-// platform owners (admin/built-in). Left unvalidated (the top-level authz seam
-// authorizes the app's Owner, not this field), a tenant admin could register an app
-// in its OWN org whose Cert NAMES a platform signing cert and have IAM mint tokens
-// signed by the platform key — the cert half of the SuperAdmin-forgery chain, and
-// exactly what seedAttackerApp models. The rule, applied on create AND update:
+// platform owners (admin/built-in) and resolves it by NAME, IGNORING the app's own
+// owner. Left unvalidated (the top-level authz seam authorizes the app's Owner, not
+// this field), a tenant admin could register an app in its OWN org whose Cert NAMES
+// a platform signing cert and have IAM mint tokens signed by the platform key — the
+// cert half of the SuperAdmin-forgery chain, and exactly what seedAttackerApp
+// models. The rule, applied on create AND update:
 //
 //   - a PLATFORM app — its own Owner is a reserved signing owner (admin/built-in) —
 //     may bind a platform signing cert, unchanged; registering such an app is itself
 //     SuperAdmin-only at the authz seam, so no tenant reaches this branch.
-//   - any OTHER (tenant) app may bind ONLY a cert its OWN organization owns. Signing
-//     certs live exclusively under admin/built-in, so this forbids a tenant app from
-//     naming ANY trusted signing cert — even a forged token row could not be
-//     platform-signed through it.
+//   - any OTHER (tenant) app may not bind a cert whose NAME resolves to a trusted
+//     platform signing cert. A tenant-owned or unknown name resolves to no signing
+//     key (GetSigningCert ignores non-reserved owners), so the app mints nothing —
+//     that is left alone.
 //
-// An app that binds no cert mints nothing and is left alone. The check is a
-// structural invariant, not a per-principal decision, so it also holds on the
-// trusted server-internal (bootstrap/seed) path — where every seeded app is
-// platform-owned and clears the first branch.
+// The gate MUST authorize by the SAME resolution the signer performs
+// (store.GetSigningCert(in.Cert)), never by whether the app's own org happens to own
+// a cert of that name: the two join on the attacker-choosable NAME, so gating on
+// own-org ownership let a tenant admin plant a same-named DECOY under its own org (an
+// allowed own-org cert write) to satisfy the check while the signer still resolved
+// the PLATFORM cert of that name — trust-anchor confusion. Resolving the trust
+// anchor here closes it: the decoy does not change what GetSigningCert(name) returns.
+// An app that binds no cert is left alone. The check is a structural invariant, not a
+// per-principal decision, so it also holds on the trusted server-internal
+// (bootstrap/seed) path — where every seeded app is platform-owned and clears the
+// first branch.
 func authorizeCert(ctx context.Context, db orm.DB, in *schema.Application) error {
 	if in.Cert == "" {
 		return nil // binds no signing key
@@ -71,14 +79,14 @@ func authorizeCert(ctx context.Context, db orm.DB, in *schema.Application) error
 	if store.IsSigningCertOwner(in.Owner) {
 		return nil // a platform (admin/built-in) app legitimately signs with a platform cert
 	}
-	c, err := store.GetCert(ctx, db, in.Owner, in.Cert)
+	signing, err := store.GetSigningCert(ctx, db, in.Cert)
 	if err != nil {
 		return zip.ErrInternal(err.Error())
 	}
-	if c == nil {
-		return zip.ErrForbidden("application cert must be owned by the application's own organization: " + in.Cert)
+	if signing != nil {
+		return zip.ErrForbidden("application may not bind a platform signing cert: " + in.Cert)
 	}
-	return nil
+	return nil // a tenant-owned or unknown cert name is inert for signing — mints nothing
 }
 
 // ensureClientIdUnique rejects a create/update whose clientId is already held by a
