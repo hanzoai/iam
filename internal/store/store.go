@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/orm"
+	ormdb "github.com/hanzoai/orm/db"
 
 	"github.com/hanzoai/iam/internal/schema"
 )
@@ -375,6 +376,66 @@ func DeleteToken(ctx context.Context, db orm.DB, tok *schema.Token) error {
 		return err
 	}
 	return existing.DeleteCtx(ctx)
+}
+
+// ConsumeRefreshToken atomically consumes a presented refresh token — the single-use
+// guard for refresh-token rotation with reuse detection. tok is the row already resolved
+// by GetTokenByRefreshHash (a hash QUERY that stamps the orm storage key onto the returned
+// entity), so its real key is read from tok itself; the check-and-consume then runs inside
+// a GetForUpdate transaction (mirroring BurnFederationState and TakeChallenge), re-reading
+// RefreshConsumed UNDER THE ROW LOCK. The lock is held from that re-read through the write,
+// so two concurrent exchanges of the SAME refresh token cannot both observe
+// RefreshConsumed=false and both rotate: the loser blocks until the winner commits, then
+// reads it consumed and loses.
+//
+// The prior read-check-then-write (Get→check RefreshConsumed→SaveToken) left a TOCTOU window
+// between the unlocked read and the write in which a stolen refresh could be RACED through as
+// "first use" by firing two exchanges at once — both slipped past the reuse check and both
+// minted a successor, silently defeating the reuse-detection containment RFC 9700 §4.14
+// promises. This is the same row-lock CAS as recordAttempt and BurnFederationState, so it is
+// correct whether the store is single-writer SQLite today or a shared SQL backend under N
+// replicas tomorrow (a real SELECT … FOR UPDATE).
+//
+// Returns (won, err): won is true for the ONE caller that flipped RefreshConsumed false→true
+// — it proceeds to mint the successor. won is false when the row is already consumed OR gone
+// (revoked under us): this caller lost the race or replayed a rotated token, and the caller
+// treats it as reuse — revoking the whole family. err is non-nil only on a genuine store
+// fault (the caller maps it to server_error), never for the lost/consumed outcome.
+func ConsumeRefreshToken(ctx context.Context, db orm.DB, tok *schema.Token) (bool, error) {
+	if tok == nil {
+		return false, nil
+	}
+	storageID := tok.Key().Encode()
+
+	var won bool
+	txErr := db.RunInTransaction(ctx, func(tx orm.DB) error {
+		fresh, err := orm.GetForUpdate[schema.Token](tx, storageID)
+		if err != nil {
+			// A gone row is the reuse/lost path, NOT a fault: a concurrent replay that lost
+			// the race already ran revokeRefreshFamily and DELETED this family's rows out
+			// from under us. Match BOTH not-found sentinels — orm.GetForUpdate surfaces the
+			// low-level ormdb.ErrNoSuchEntity ("db: no such entity"), not the orm.ErrNotFound
+			// that the non-locking GetById translates to — so the delete race resolves to
+			// won=false (this caller revokes the family too) instead of a spurious 500.
+			if errors.Is(err, orm.ErrNotFound) || errors.Is(err, ormdb.ErrNoSuchEntity) {
+				return nil
+			}
+			return err
+		}
+		if fresh.RefreshConsumed {
+			return nil // already consumed → this caller lost the race (the reuse path)
+		}
+		fresh.RefreshConsumed = true
+		if err := fresh.UpdateCtx(ctx); err != nil {
+			return err
+		}
+		won = true
+		return nil
+	})
+	if txErr != nil {
+		return false, txErr
+	}
+	return won, nil
 }
 
 // GetProvider resolves a provider record by (owner, name) — e.g.
