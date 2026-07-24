@@ -14,11 +14,11 @@ jobs:
             --opt context="${{ github.server_url }}/${{ github.repository }}.git#${GITHUB_SHA}" \
             --opt filename=Dockerfile --opt platform=linux/amd64 \
             --secret id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN \
-            --output "type=image,name=ghcr.io/hanzoai/bot:${SHA},push=true" --progress=plain
+            --output "type=image,name=ghcr.io/hanzoai/iam:${SHA},push=true" --progress=plain
         env:
           GIT_AUTH_TOKEN: ${{ secrets.GIT_CLONE_TOKEN }}
       - name: Deploy — declare tag to operator
         run: |
-          for app in bot-gateway; do
-            kubectl -n hanzo patch app "$app" --type=merge -p "{\"spec\":{\"image\":{\"repository\":\"ghcr.io/hanzoai/bot\",\"tag\":\"${GITHUB_SHA::8}\"}}}"
+          for app in iam; do
+            kubectl -n hanzo patch app "$app" --type=merge -p "{\"spec\":{\"image\":{\"repository\":\"ghcr.io/hanzoai/iam\",\"tag\":\"${GITHUB_SHA::8}\"}}}"
           done
