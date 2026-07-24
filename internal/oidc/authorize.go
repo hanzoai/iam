@@ -100,8 +100,18 @@ func authorizeHandler(db orm.DB) zip.Handler {
 		// redeem fell into the confidential branch and 401'd invalid_client — the defect
 		// that forced three cutover rollbacks. userID is the SESSION identity, never a
 		// request value, so a code can be minted for no one but the signed-in user.
+		// F1b (defense in depth): the silent path mints ONLY for a SAME-TENANT session —
+		// the session subject's org must equal the app's served Organization. A cross-org
+		// session (a shared or org-choice app, or an app an admin registered under ANOTHER
+		// tenant) falls through to the interactive hosted login instead of minting a code
+		// from the cookie. This bounds the SSO fast path to one tenant, so even if the field
+		// gate on EnableAutoSignin/IsShared were ever missed, a tenant admin's app can never
+		// silently mint a code for a victim signed into a different tenant — the cross-tenant
+		// amplification of the login-CSRF is dead here regardless of the app's flags. It is
+		// stricter than MintFor's tenant gate on purpose (which admits any org for a shared /
+		// org-choice app); same-tenant SSO — the console/commerce case — is unchanged.
 		if app.EnableAutoSignin {
-			if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
+			if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok && owner == app.Organization {
 				if code, err := MintFor(ctx, db, app, owner+"/"+name, Mint{
 					Type:                "code",
 					RedirectUri:         q.redirectURI,
@@ -117,11 +127,13 @@ func authorizeHandler(db orm.DB) zip.Handler {
 					setIfPresent(v, "state", q.state)
 					return c.Redirect(302, joinQuery(q.redirectURI, v))
 				}
-				// The only MintFor error reachable here is the tenant gate — the signed-in
-				// user's org may not sign in to THIS application. Client, redirect_uri and
-				// PKCE policy were all validated above and re-asserted identically inside
-				// MintFor. Fall through to the hosted login so the user can authenticate as
-				// an identity that MAY use this app; a cross-tenant code is never minted.
+				// A MintFor error here is residual: the same-tenant guard above already
+				// excluded the tenant/reserved-org refusals (org == app.Organization inside
+				// this block), and client, redirect_uri and PKCE were validated above and
+				// re-asserted identically inside MintFor, so what remains is a persistence /
+				// internal failure. Fall through to the hosted login rather than surfacing it;
+				// a code is never minted on error, and the cross-tenant case never reaches
+				// MintFor at all — it fell through at the same-tenant guard.
 			}
 		}
 
