@@ -102,6 +102,16 @@ func From(ctx context.Context) (*Principal, bool) {
 	return p, ok
 }
 
+// WithPrincipal returns ctx carrying p as the request principal — the ONE
+// constructor for an authorized context, symmetric with From. The Guard uses it
+// to attach the principal it authenticated; a handler-level gate (e.g. the
+// application field gate) reads it back through From. It only labels a context —
+// a principal's AUTHORITY still derives from the Guard's bearer verification, not
+// from holding this key — so nothing outside the Guard should fabricate one.
+func WithPrincipal(ctx context.Context, p *Principal) context.Context {
+	return context.WithValue(ctx, ctxKey{}, p)
+}
+
 // Scope resolves the owner a listing is bound to: a SuperAdmin lists the owner
 // it asks for (empty = every tenant), anyone else lists only its own org. The
 // org comes from the verified bearer, so a request parameter can never widen a
@@ -285,7 +295,7 @@ func Guard(db orm.DB) zip.Handler {
 				return zip.ErrForbidden("forbidden")
 			}
 		}
-		c.SetContext(context.WithValue(c.Context(), ctxKey{}, p))
+		c.SetContext(WithPrincipal(c.Context(), p))
 		return c.Continue()
 	}
 }
