@@ -43,6 +43,44 @@ func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	return nil
 }
 
+// authorizeCert gates the signing certificate an application binds. The Cert an
+// app names is the key IAM signs that app's tokens with — oidc.signerFor resolves
+// it through store.GetSigningCert, which trusts a cert ONLY under the reserved
+// platform owners (admin/built-in). Left unvalidated (the top-level authz seam
+// authorizes the app's Owner, not this field), a tenant admin could register an app
+// in its OWN org whose Cert NAMES a platform signing cert and have IAM mint tokens
+// signed by the platform key — the cert half of the SuperAdmin-forgery chain, and
+// exactly what seedAttackerApp models. The rule, applied on create AND update:
+//
+//   - a PLATFORM app — its own Owner is a reserved signing owner (admin/built-in) —
+//     may bind a platform signing cert, unchanged; registering such an app is itself
+//     SuperAdmin-only at the authz seam, so no tenant reaches this branch.
+//   - any OTHER (tenant) app may bind ONLY a cert its OWN organization owns. Signing
+//     certs live exclusively under admin/built-in, so this forbids a tenant app from
+//     naming ANY trusted signing cert — even a forged token row could not be
+//     platform-signed through it.
+//
+// An app that binds no cert mints nothing and is left alone. The check is a
+// structural invariant, not a per-principal decision, so it also holds on the
+// trusted server-internal (bootstrap/seed) path — where every seeded app is
+// platform-owned and clears the first branch.
+func authorizeCert(ctx context.Context, db orm.DB, in *schema.Application) error {
+	if in.Cert == "" {
+		return nil // binds no signing key
+	}
+	if store.IsSigningCertOwner(in.Owner) {
+		return nil // a platform (admin/built-in) app legitimately signs with a platform cert
+	}
+	c, err := store.GetCert(ctx, db, in.Owner, in.Cert)
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	if c == nil {
+		return zip.ErrForbidden("application cert must be owned by the application's own organization: " + in.Cert)
+	}
+	return nil
+}
+
 // ensureClientIdUnique rejects a create/update whose clientId is already held by a
 // DIFFERENT application (any owner). clientId is the GLOBAL key the mint and Basic-auth
 // resolvers authenticate against, so it must be unique across every owner, not merely
@@ -164,6 +202,9 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authorizeOrganization(ctx, in); err != nil {
 			return nil, err
 		}
+		if err := authorizeCert(ctx, db, in); err != nil {
+			return nil, err
+		}
 		id := appID(in.Owner, in.Name)
 
 		// Owner-scoped uniqueness: (owner, name) must be free.
@@ -199,6 +240,9 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
 		if err := authorizeOrganization(ctx, in); err != nil {
+			return nil, err
+		}
+		if err := authorizeCert(ctx, db, in); err != nil {
 			return nil, err
 		}
 		id := appID(in.Owner, in.Name)
