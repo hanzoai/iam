@@ -15,8 +15,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
+	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/schema"
@@ -54,6 +56,7 @@ type appOpts struct {
 	shared       bool     // IsShared → accepts users from any org
 	signup       bool     // EnableSignUp → the app allows new-account creation
 	grants       []string // declared OAuth grants; a grant absent here is refused
+	autosignin   bool     // EnableAutoSignin → the /oauth/authorize SSO fast path mints from a session
 }
 
 // tctx is the background context used by the test seed helpers.
@@ -97,6 +100,7 @@ func seedApp(t *testing.T, db orm.DB, o appOpts) *schema.Application {
 	a.Organization = "hanzo"
 	a.Cert = "cert-" + o.clientID
 	a.EnablePassword = true
+	a.EnableAutoSignin = o.autosignin
 	a.EnableSignUp = o.signup
 	a.ExpireInHours = 1
 	a.RefreshExpireInHours = o.refreshHours
@@ -135,7 +139,13 @@ func jsonReq(method, path string, body any) *http.Request {
 
 func do(t *testing.T, app *zip.App, req *http.Request) (*http.Response, []byte) {
 	t.Helper()
-	resp, err := app.Fiber().Test(req)
+	// Fiber's Test defaults to a 1s per-request timeout, which argon2id password hashing
+	// (signup / credential verify — a deliberate work factor) blows past under the race
+	// detector's instrumentation, flaking the whole suite on `-race` (pre-existing, not
+	// tied to any one test). Give every in-process request a generous ceiling so a
+	// slow-but-correct handler is never mistaken for a hang; a genuine deadlock still
+	// trips the 60s bound.
+	resp, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 60 * time.Second, FailOnTimeout: true})
 	if err != nil {
 		t.Fatalf("test request %s %s: %v", req.Method, req.URL.Path, err)
 	}
