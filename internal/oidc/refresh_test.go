@@ -3,9 +3,13 @@
 package oidc
 
 import (
+	"io"
 	"net/url"
+	"sync"
 	"testing"
+	"time"
 
+	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 )
 
@@ -119,5 +123,105 @@ func TestRefresh_UnknownToken(t *testing.T) {
 	status, out := refresh(t, app, "pub", "not-a-real-refresh-token", nil)
 	if status != 400 || out["error"] != "invalid_grant" {
 		t.Fatalf("unknown refresh: status=%d err=%v", status, out["error"])
+	}
+}
+
+// Concurrent replay: N requests present ONE refresh token at once. Rotation consumes the
+// presented token atomically (store.ConsumeRefreshToken, under a row lock), so however the
+// requests interleave EXACTLY ONE rotates — 200 with a fresh, distinct successor — and every
+// other is refused 400 invalid_grant, with reuse detection firing (a loser is treated as a
+// replay and revokes the family). Against the prior non-atomic read-check-then-write, two
+// racers both observed RefreshConsumed=false and both rotated: multiple 200s and no reuse
+// detection — a stolen refresh raced through as "first use" (RFC 9700 §4.14 TOCTOU). The
+// family-revoke EFFECT (a rotated token's successor dying) is pinned deterministically by
+// TestRefresh_ReuseDetectionRevokesFamily; under concurrency the winner's successor-persist
+// races the losers' revoke, so THIS test asserts the invariant that holds regardless of
+// interleaving: one and only one winner, and at least one loser detected as replay.
+func TestRefreshRotation_concurrentReplay_exactlyOneWinner(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}, refreshHours: 24})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	tok := grantViaPKCE(t, app, "pub", "openid offline_access")
+	rt := tok["refresh_token"].(string)
+
+	const N = 16
+	type result struct {
+		status int
+		body   []byte
+		err    error
+	}
+	results := make([]result, N)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// Build the request before the gate so close(start) releases every goroutine
+			// straight into the exchange — maximizing the read/check/consume overlap. A
+			// worker goroutine must never call t.Fatal (that is only valid on the test
+			// goroutine): it records its raw result; the test goroutine decodes and asserts.
+			form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}, "client_id": {"pub"}}
+			req := formReq("POST", PathToken, form)
+			<-start
+			// A generous timeout: N writers serialize on one SQLite writer under -race, which
+			// can exceed Fiber's 1s default Test timeout.
+			resp, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 30 * time.Second, FailOnTimeout: true})
+			if err != nil {
+				results[i].err = err
+				return
+			}
+			results[i].status = resp.StatusCode
+			results[i].body, _ = io.ReadAll(resp.Body)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	var winners, refusals, replaysDetected int
+	for i, r := range results {
+		if r.err != nil {
+			t.Fatalf("goroutine %d: refresh request failed: %v", i, r.err)
+		}
+		body := decode(t, r.body)
+		switch r.status {
+		case 200:
+			winners++
+			s, _ := body["refresh_token"].(string)
+			if s == "" || s == rt {
+				t.Fatalf("winner must mint a fresh successor distinct from the presented token, got %q", s)
+			}
+			if body["access_token"] == nil {
+				t.Fatalf("winner must issue an access token, body %v", body)
+			}
+		case 400:
+			refusals++
+			if body["error"] != "invalid_grant" {
+				t.Fatalf("a losing racer must be invalid_grant, got %v (%v)", body["error"], body["error_description"])
+			}
+			if body["error_description"] == "refresh token replay detected" {
+				replaysDetected++
+			}
+		default:
+			t.Fatalf("unexpected status %d (%s)", r.status, r.body)
+		}
+	}
+
+	if winners != 1 {
+		t.Fatalf("concurrent replay of one refresh produced %d winners, want exactly 1 — the rotation consume is not atomic, so a stolen refresh can be raced through as first use (RFC 9700 §4.14 TOCTOU)", winners)
+	}
+	if refusals != N-1 {
+		t.Fatalf("want %d refusals, got %d", N-1, refusals)
+	}
+	if replaysDetected == 0 {
+		t.Fatalf(`reuse detection never fired: no losing racer was told "refresh token replay detected" — the family-revoke containment did not trigger`)
+	}
+
+	// The presented token is single-use: after the burst it never rotates again, whether its
+	// row was consumed (replay detected) or already deleted by a loser's family revoke.
+	status, after := refresh(t, app, "pub", rt, nil)
+	if status != 400 || after["error"] != "invalid_grant" {
+		t.Fatalf("presented token must be dead after the burst: status=%d err=%v", status, after["error"])
 	}
 }
