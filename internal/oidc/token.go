@@ -139,7 +139,11 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
 	// Client authentication is discriminated by the CODE, never by whether the request
-	// carries a secret. PKCE (RFC 7636) IS the browser-redeem client authentication:
+	// carries a secret. The discriminator reads tok.CodeChallenge as the grant's real
+	// PKCE binding, sound because CodeChallenge is SERVER-SET at the authorization-code
+	// mint and has NO REST/CRUD write path — the tokens mass-assign create/update was
+	// removed (see internal/tokens), so a caller cannot set or forge it. PKCE (RFC 7636)
+	// IS the browser-redeem client authentication:
 	//
 	//   - PKCE-bound code (tok.CodeChallenge != ""): the code_verifier proves the
 	//     redeemer is the client instance that began the flow — RedeemCode verifies
