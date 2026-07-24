@@ -38,6 +38,25 @@ const (
 	PathDeviceVerify = "/login/oauth/device"
 )
 
+// Legacy path aliases the deployed fleet hard-codes. Discovery advertises ONLY the
+// canonical spellings (PathToken, PathUserInfo); each alias below is the SAME handler
+// at a SECOND path that pinned/older callers POST to and cannot be re-pointed
+// atomically during the Casdoor→clean-room cutover. Every one is justified by a real
+// live caller (grep-verified across the fleet) — no dead surface is registered:
+//
+//	PathAccessToken  the token endpoint's Casdoor spelling. Callers: the hanzo CLI
+//	                 password login; the KMS bridge and the gateway admin/waitlist
+//	                 guards (client_credentials); commerce's code-exchange + refresh.
+//	PathRefreshToken the refresh spelling the hanzo CLI posts to. It rides the SAME
+//	                 token handler (grant_type=refresh_token travels in the body).
+//	PathUserInfoV1   the /v1/iam/userinfo spelling commerce and the login proxy read
+//	                 (the canonical is PathUserInfo, /v1/iam/oauth/userinfo).
+const (
+	PathAccessToken  = "/v1/iam/oauth/access_token"
+	PathRefreshToken = "/v1/iam/oauth/refresh_token"
+	PathUserInfoV1   = "/v1/iam/userinfo"
+)
+
 // Route registers the entire OIDC/OAuth2 surface on r, backed by db. This is the
 // one entry point the route table calls — discovery, JWKS, the protocol
 // endpoints, and the front door are all wired here so the surface lives in one
@@ -65,8 +84,13 @@ func Route(r zip.Router, db orm.DB) {
 	// OAuth2 / OIDC protocol endpoints.
 	r.Get(PathAuthorize, authorizeHandler(db))
 	r.Post(PathAuthorize, authorizeHandler(db))
-	r.Get(PathUserInfo, userinfoHandler(db))
-	r.Post(PathUserInfo, userinfoHandler(db))
+	// UserInfo at the canonical /oauth/userinfo AND the /v1/iam/userinfo alias the
+	// deployed fleet (commerce, the login proxy) hard-codes — ONE handler, both spellings.
+	userinfo := userinfoHandler(db)
+	r.Get(PathUserInfo, userinfo)
+	r.Post(PathUserInfo, userinfo)
+	r.Get(PathUserInfoV1, userinfo)
+	r.Post(PathUserInfoV1, userinfo)
 	r.Get(PathLogout, logoutHandler(db))
 	r.Post(PathLogout, logoutHandler(db))
 
