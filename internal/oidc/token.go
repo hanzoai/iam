@@ -134,21 +134,33 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "invalid_grant", "invalid authorization code")
 	}
 
-	// The presented client must be the code's client.
+	// The presented client_id, when sent, must be the code's client (both paths).
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	// Client authentication gates on what the REQUEST presents, never on whether a
-	// secret is STORED on the app: the SAME record (hanzo-cloud) is redeemed
-	// server-side WITH a secret (the console, confidential) and in-browser WITHOUT one
-	// (insights/analytics, public+PKCE), so `app.ClientSecret != ""` is the wrong
-	// discriminator — every migrated app carries a casdoor secret, which made it 401
-	// every public browser redeem. A secret is REQUIRED only when the request presents
-	// one (confidential) OR the code is not PKCE-bound (nothing else proves the
-	// client); a secretless PKCE redeem is authenticated by RedeemCode's verifier ↔
-	// challenge proof below. On the confidential path a missing/wrong secret stays 401,
-	// constant-time — that path is not weakened.
-	if clientSecret != "" || tok.CodeChallenge == "" {
+	// Client authentication is discriminated by the CODE, never by whether the request
+	// carries a secret. PKCE (RFC 7636) IS the browser-redeem client authentication:
+	//
+	//   - PKCE-bound code (tok.CodeChallenge != ""): the code_verifier proves the
+	//     redeemer is the client instance that began the flow — RedeemCode verifies
+	//     verifier ↔ challenge below, and a missing/plain/wrong verifier is refused
+	//     there. The client_secret is NOT consulted at all. A public browser client
+	//     legitimately holds none; a migrated dual-use record (a stored secret it also
+	//     serves confidentially) makes SPAs echo a configured, often-STALE secret, and
+	//     verifying that stale value was the defect that 401'd every browser redeem and
+	//     forced the rollback. On a PKCE redeem a presented secret is irrelevant —
+	//     ignored, never a 401. (The prior fix still verified a presented secret, so a
+	//     stale one 401'd; only a secretless request slipped through. The programmatic
+	//     gate that sent no secret went green while the browser, which sends the secret,
+	//     still broke.)
+	//   - Non-PKCE code (tok.CodeChallenge == ""): nothing but a secret can prove the
+	//     client, so a matching client_secret is REQUIRED, constant-time. This is the
+	//     confidential path — unchanged, and strictly stronger than the fork, which
+	//     accepted a secretless non-PKCE redeem. The `app.ClientSecret == ""` disjunct
+	//     is load-bearing: without it a secretless redeem against a secretless app would
+	//     pass a constant-time compare of "" == "" — so a crafted non-PKCE code for a
+	//     public app is refused here, not just at mint time.
+	if tok.CodeChallenge == "" {
 		if app.ClientSecret == "" || subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 			return tokenErrorClient(c, "client authentication failed")
 		}
@@ -160,17 +172,14 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 			return tokenError(c, 400, "invalid_grant", "redirect_uri mismatch")
 		}
 	}
-	// Core guard: replay / expiry / client / PKCE.
+	// Core guard: replay / expiry / client-app / PKCE verifier ↔ challenge. On a
+	// PKCE-bound code THIS is the client authentication — a missing, plain, or
+	// mismatched verifier is refused here (no empty/plain/S256 bypass), which is what
+	// makes the secret-free branch above safe. A public client using PKCE is enforced
+	// at mint (MintFor) AND, independently, at redeem: a non-PKCE code carrying no
+	// stored secret was already refused 401 by the discriminator above.
 	if err := RedeemCode(tok, app.Name, verifier, now); err != nil {
 		return redeemErrToResponse(c, err)
-	}
-	// Belt-and-suspenders: a public client MUST have used PKCE. The request-based auth
-	// check above already refuses a secretless non-PKCE redeem (401) — this restates
-	// the invariant as a standalone assertion so it survives any future edit to that
-	// check, and keeps the precise "PKCE required" signal (downgrade / code-injection
-	// defense).
-	if app.ClientSecret == "" && tok.CodeChallenge == "" {
-		return tokenError(c, 400, "invalid_grant", "PKCE is required for public clients")
 	}
 
 	// One-shot: burn the code, then mint the grant's tokens onto the same row.
@@ -416,15 +425,25 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	return resp, nil
 }
 
-// clientAuth extracts client credentials, preferring client_secret_post (body /
-// query) and falling back to client_secret_basic (Authorization: Basic).
+// clientAuth extracts the presented client credentials from EITHER RFC 6749
+// §2.3.1 channel — client_secret_post (body / query params) and
+// client_secret_basic (Authorization: Basic) — uniformly, so no channel's secret
+// is silently dropped. A form value wins for a field it sets; the Basic header
+// fills a field the form left empty. The prior version returned as soon as a form
+// client_id was present, which dropped a Basic-header secret whenever the client
+// also sent client_id in the body — so a form-param wrong secret 401'd while a
+// Basic wrong secret was silently ignored, an inconsistency the callers must not
+// have to reason about. The caller applies ONE rule to the extracted secret
+// regardless of which channel carried it.
 func clientAuth(c *zip.Ctx) (id, secret string) {
 	id, secret = param(c, "client_id"), param(c, "client_secret")
-	if id != "" {
-		return id, secret
-	}
 	if bid, bsecret, ok := parseBasicAuth(c.Header("Authorization")); ok {
-		return bid, bsecret
+		if id == "" {
+			id = bid
+		}
+		if secret == "" {
+			secret = bsecret
+		}
 	}
 	return id, secret
 }
