@@ -58,6 +58,17 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	// The user's org is the owner half of its own id, set server-side at
 	// authentication — never read from the request.
 	org, _, _ := strings.Cut(userID, "/")
+	// Reserved-org gate (F-D2): a RESERVED-org principal (a SuperAdmin under "admin", a
+	// built-in/service identity) may be granted a code ONLY through an application that
+	// itself SERVES that reserved org — never a shared or org-choice app, whose normal
+	// tenant gate below would otherwise accept ANY org and thereby mint a real SuperAdmin
+	// grant on a correct session. This is the SAME refuse login.go's mint tail, signup.go
+	// and the ROPC grant enforce; stating it HERE binds every front door that mints
+	// through MintFor — the /oauth/authorize SSO fast path and wallet login — identically,
+	// so the gate can never be present on one door and missing on another.
+	if store.IsReservedOrg(org) && org != app.Organization {
+		return "", errors.New("the user is not permitted to sign in to this application")
+	}
 	if org != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
 		return "", errors.New("the user is not permitted to sign in to this application")
 	}

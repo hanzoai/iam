@@ -23,6 +23,7 @@ type fullApp struct {
 	orgChoice string // OrgChoiceMode: non-empty lets a signup pick its org
 	signup    bool
 	shared    bool
+	autosignin bool // EnableAutoSignin → the /oauth/authorize SSO fast path mints from a session
 	redirects []string
 }
 
@@ -38,6 +39,7 @@ func seedAppFull(t *testing.T, db orm.DB, a fullApp) {
 	app.Cert = "cert-" + a.clientID
 	app.EnablePassword = true
 	app.EnableSignUp = a.signup
+	app.EnableAutoSignin = a.autosignin
 	app.IsShared = a.shared
 	app.OrgChoiceMode = a.orgChoice
 	app.ExpireInHours = 1
