@@ -48,19 +48,30 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "invalid_grant", "refresh token is invalid or revoked")
 	}
 
-	// Client authentication: the presented client must be the grant's client. As on
-	// the authorization_code grant, this gates on what the REQUEST presents, never on
-	// `app.ClientSecret != ""`: the SAME dual-use record (hanzo-cloud) refreshes
-	// server-side WITH a secret (console) and in-browser WITHOUT one (insights/
-	// analytics). A client that PRESENTS a secret is held to the confidential rule (it
-	// must match, constant-time); a public client presents none and is authenticated
-	// by possession of the rotating, single-use, reuse-detected refresh token itself —
-	// the refresh analog of the PKCE verifier (there is no code_challenge here).
+	// The presented client_id, when sent, must be the grant's client (both paths).
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	if clientSecret != "" {
-		if app.ClientSecret == "" || subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+	// Client authentication is discriminated by the GRANT's provenance, never by
+	// whether the request carries a secret — the same reason the authorization_code
+	// grant gates on the code, not the request. There is no code_verifier on refresh,
+	// so the discriminator is the durable provenance carried on the token family:
+	//
+	//   - CONFIDENTIAL grant (app has a registered secret AND the grant was NOT
+	//     PKCE-bound: tok.CodeChallenge == "", preserved across every rotation below).
+	//     Such a client authenticated with its secret at grant time and MUST present a
+	//     matching one on refresh, constant-time (RFC 9700 §4.13.2 — confidential
+	//     clients are authenticated on refresh). app.ClientSecret is non-empty on this
+	//     branch, so a missing/wrong secret fails the compare → 401.
+	//   - PUBLIC grant (everything else): a browser PKCE client — including the
+	//     dual-use record that has a stored secret but redeemed via PKCE — or a
+	//     secretless client. It holds no usable secret and is authenticated by
+	//     possession of the rotating, single-use, reuse-detected refresh token itself
+	//     (the refresh analog of the PKCE verifier). A presented secret is a stale
+	//     browser echo — IGNORED, never a 401. Verifying it was the same defect the
+	//     authorization_code path had: it 401'd the in-browser refresh.
+	if app.ClientSecret != "" && tok.CodeChallenge == "" {
+		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 			return tokenErrorClient(c, "client authentication failed")
 		}
 	}
@@ -111,6 +122,14 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		Nonce:        tok.Nonce,
 		Resource:     tok.Resource,
 		RedirectUri:  tok.RedirectUri,
+		// Preserve the grant's PKCE provenance across rotation: it is the durable
+		// public-vs-confidential discriminator the client-auth check above reads. A
+		// dual-use record (stored secret, redeemed via PKCE = public) would otherwise be
+		// misclassified confidential on the 2nd rotation and 401 the browser — the bug
+		// re-emerging one hop later. CodeChallenge is server-set and immutable per row,
+		// so it cannot be forged to flip the classification.
+		CodeChallenge:       tok.CodeChallenge,
+		CodeChallengeMethod: tok.CodeChallengeMethod,
 	}
 	nu.Name = "rt-" + nameSeed[:24]
 	resp, err := issueTokens(ctx, db, c, app, nu, tok.RefreshFamily, now)
