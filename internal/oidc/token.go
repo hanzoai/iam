@@ -138,10 +138,18 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	// Confidential client: verify the secret (constant-time). A public client
-	// (PKCE, no stored secret) may present none.
-	if app.ClientSecret != "" {
-		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+	// Client authentication gates on what the REQUEST presents, never on whether a
+	// secret is STORED on the app: the SAME record (hanzo-cloud) is redeemed
+	// server-side WITH a secret (the console, confidential) and in-browser WITHOUT one
+	// (insights/analytics, public+PKCE), so `app.ClientSecret != ""` is the wrong
+	// discriminator — every migrated app carries a casdoor secret, which made it 401
+	// every public browser redeem. A secret is REQUIRED only when the request presents
+	// one (confidential) OR the code is not PKCE-bound (nothing else proves the
+	// client); a secretless PKCE redeem is authenticated by RedeemCode's verifier ↔
+	// challenge proof below. On the confidential path a missing/wrong secret stays 401,
+	// constant-time — that path is not weakened.
+	if clientSecret != "" || tok.CodeChallenge == "" {
+		if app.ClientSecret == "" || subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 			return tokenErrorClient(c, "client authentication failed")
 		}
 	}
@@ -156,8 +164,11 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	if err := RedeemCode(tok, app.Name, verifier, now); err != nil {
 		return redeemErrToResponse(c, err)
 	}
-	// A public client MUST have used PKCE — never let a no-secret grant through
-	// without a challenge (downgrade / code injection defense).
+	// Belt-and-suspenders: a public client MUST have used PKCE. The request-based auth
+	// check above already refuses a secretless non-PKCE redeem (401) — this restates
+	// the invariant as a standalone assertion so it survives any future edit to that
+	// check, and keeps the precise "PKCE required" signal (downgrade / code-injection
+	// defense).
 	if app.ClientSecret == "" && tok.CodeChallenge == "" {
 		return tokenError(c, 400, "invalid_grant", "PKCE is required for public clients")
 	}
