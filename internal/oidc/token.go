@@ -42,11 +42,25 @@ type tokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
-// routeToken registers the ONE token endpoint: POST /v1/iam/oauth/token (the
-// RFC 6749 / discovery `token_endpoint`). No legacy `access_token` alias — every
-// client posts to the standard path; the stack is fixed to it, not shimmed.
+// routeToken registers the token endpoint. The canonical path is PathToken
+// (/v1/iam/oauth/token — discovery's `token_endpoint`); it is ALSO reachable at two
+// Casdoor-era spellings the deployed fleet hard-codes and cannot re-point atomically
+// at cutover:
+//
+//	PathAccessToken  (/v1/iam/oauth/access_token) — the hanzo CLI password login, the
+//	  KMS bridge + the gateway admin/waitlist guards (client_credentials), and
+//	  commerce's code-exchange + refresh all POST here.
+//	PathRefreshToken (/v1/iam/oauth/refresh_token) — the hanzo CLI posts its refresh here.
+//
+// All three share ONE handler: it dispatches on grant_type — the body every one of
+// those callers sends — so an alias is a pure second spelling of the endpoint, not a
+// separate grant. These are the ONLY token-path aliases (each verified against a real
+// caller, no dead surface); the canonical path stays PathToken.
 func routeToken(r zip.Router, db orm.DB) {
-	r.Post(PathToken, tokenHandler(db))
+	h := tokenHandler(db)
+	r.Post(PathToken, h)
+	r.Post(PathAccessToken, h)
+	r.Post(PathRefreshToken, h)
 }
 
 // param reads an OAuth parameter from the query first, then the form body
