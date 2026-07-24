@@ -65,12 +65,10 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		}
 	}
 
-	// Reuse detection: a consumed token was already rotated. Revoke the whole
-	// family and refuse — a replay means the token leaked.
-	if tok.RefreshConsumed {
-		revokeRefreshFamily(ctx, db, tok.RefreshFamily)
-		return tokenError(c, 400, "invalid_grant", "refresh token replay detected")
-	}
+	// Expiry and scope are validated on the presented row BEFORE the consume. Both read
+	// immutable per-row state (RefreshExpireIn is stamped once at mint, Scope is the grant's
+	// own), so no lock is needed here; validating scope first also means a too-wide request
+	// refuses without burning an otherwise-valid token.
 	if tok.RefreshExpireIn != 0 && now.Unix() > tok.RefreshExpireIn {
 		return tokenError(c, 400, "invalid_grant", "refresh token expired")
 	}
@@ -84,12 +82,21 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		scope = req
 	}
 
-	// Rotate: consume the presented token, then mint a successor in the same
-	// family. The successor is a new row so the consumed one remains as a
-	// tripwire for replay until the family is revoked or expires.
-	tok.RefreshConsumed = true
-	if err := store.SaveToken(ctx, db, tok); err != nil {
+	// Rotate: atomically consume the presented token, then mint a successor in the same
+	// family. Reuse detection and the consume are ONE row-locked operation
+	// (store.ConsumeRefreshToken) — a read-check-then-write would let two concurrent exchanges
+	// of ONE token both observe RefreshConsumed=false and both rotate, so a stolen refresh
+	// could be raced through as "first use", silently defeating reuse detection (RFC 9700
+	// §4.14 TOCTOU). Losing the race IS the reuse case: revoke the whole family so the
+	// containment fires for the loser exactly as a sequential replay would, and the consumed
+	// row remains a tripwire for later replay until the family is revoked or expires.
+	won, err := store.ConsumeRefreshToken(ctx, db, tok)
+	if err != nil {
 		return tokenError(c, 500, "server_error", "")
+	}
+	if !won {
+		revokeRefreshFamily(ctx, db, tok.RefreshFamily)
+		return tokenError(c, 400, "invalid_grant", "refresh token replay detected")
 	}
 	nameSeed, err := newOpaqueToken()
 	if err != nil {
