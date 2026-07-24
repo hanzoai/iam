@@ -107,3 +107,21 @@ func (p *Provider) Mask() *Provider {
 	m.ClientSecret, m.ClientSecret2 = "", ""
 	return &m
 }
+
+// Mask returns a copy of t with every response-serialized bearer/verifier and the
+// PKCE challenge blanked — the read projection for the token entity, so getToken /
+// listTokens never emit credential material. AccessToken/RefreshToken are the
+// plaintext bearers; AccessTokenHash/RefreshTokenHash are the SHA-256 lookup
+// verifiers; CodeChallenge is the grant's PKCE binding. None is metadata a reader
+// needs. The owner, application, user, scope, type, lifetimes, and rotation-family
+// metadata are kept so a listing stays useful.
+func (t *Token) Mask() *Token {
+	if t == nil {
+		return nil
+	}
+	m := *t
+	m.AccessToken, m.RefreshToken = "", ""
+	m.AccessTokenHash, m.RefreshTokenHash = "", ""
+	m.CodeChallenge = ""
+	return &m
+}
