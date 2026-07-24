@@ -1,15 +1,24 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package tokens is the Phase-1 typed CRUD surface for the `tokens` entity
-// (an issued OAuth2/OIDC token record), owner-scoped by the (owner, name)
-// natural key.
+// Package tokens is the Phase-1 typed READ surface for the `tokens` entity (an
+// issued OAuth2/OIDC token record), owner-scoped by the (owner, name) natural key.
 //
-// The five operations are typed zip handlers over orm: reads are zip.Get,
-// writes are zip.Post. zip decodes the request body into the In struct for
-// every non-GET method (and, over the MCP projection, for GET too); the REST
-// GET projection carries no body, so any op that needs the (owner, name) key
-// from the caller is a POST. Each op is also an MCP tool and an OpenAPI 3.1
-// operation from this one registration.
+// A token row is AUTHORIZATION-SERVER-INTERNAL state, never a tenant business
+// record: it is created, rotated, and revoked ONLY through the OAuth grant
+// handlers (internal/oidc — authorization_code / refresh_token / client_credentials
+// mint, RFC 7009 revocation), which write the store directly. There is deliberately
+// NO REST create/update/delete here. A generic org-admin entity write over the
+// whole schema.Token would mass-assign its server-set fields (user, application,
+// refreshTokenHash, codeChallenge, refreshFamily, refreshExpireIn) from the request
+// body: an org admin, authorized by the seam to write any row it owns, could forge a
+// refresh-token row naming another user (e.g. admin/z) with a known hash and a set
+// codeChallenge, then redeem it into a platform-signed, cross-tenant or SuperAdmin
+// token. Mint is the one and only write path; this surface only reads.
+//
+// The two read operations are typed zip handlers over orm, each also an MCP tool
+// and an OpenAPI 3.1 operation from this one registration. The list is a GET (its
+// target rides in the query, authorized by the Guard); the by-key get is a POST
+// because the REST GET projection carries no body to file the (owner, name) key in.
 package tokens
 
 import (
@@ -22,11 +31,11 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 )
 
-// tokenId renders the (owner, name) pair as the orm row id so Get, Update, and
-// Delete resolve by natural key without a secondary lookup.
+// tokenId renders the (owner, name) pair as the orm row id so Get resolves by
+// natural key without a secondary lookup.
 func tokenId(owner, name string) string { return owner + "/" + name }
 
-// tokenKey is the (owner, name) selector for get and delete.
+// tokenKey is the (owner, name) selector for get.
 type tokenKey struct {
 	Owner string `json:"owner" validate:"required"`
 	Name  string `json:"name"  validate:"required"`
@@ -48,14 +57,10 @@ type tokenResult struct {
 	Token *schema.Token `json:"token"`
 }
 
-// tokenMutation mirrors v1's Affected/Unaffected action response and carries
-// the resulting row on a successful write.
-type tokenMutation struct {
-	Affected bool          `json:"affected"`
-	Token    *schema.Token `json:"token,omitempty"`
-}
-
-// Route registers the token surface on app, closing over the entity store.
+// Route registers the token READ surface on app, closing over the entity store.
+// There is no write route: token creation, rotation, and revocation happen only
+// through the OAuth grant handlers (internal/oidc), never through entity CRUD —
+// see the package doc for why a generic write is a privilege-escalation surface.
 func Route(app *zip.App, db orm.DB) {
 	zip.Get[listTokensIn, listTokensOut](app, "/v1/iam/tokens", listTokens(db),
 		zip.WithOperationID("listTokens"),
@@ -65,21 +70,6 @@ func Route(app *zip.App, db orm.DB) {
 	zip.Post[tokenKey, tokenResult](app, "/v1/iam/tokens/get", getToken(db),
 		zip.WithOperationID("getToken"),
 		zip.WithSummary("Get one token by (owner, name)"),
-		zip.WithTags("tokens"))
-
-	zip.Post[schema.Token, tokenResult](app, "/v1/iam/tokens", addToken(db),
-		zip.WithOperationID("addToken"),
-		zip.WithSummary("Create a token"),
-		zip.WithTags("tokens"))
-
-	zip.Post[schema.Token, tokenMutation](app, "/v1/iam/tokens/update", updateToken(db),
-		zip.WithOperationID("updateToken"),
-		zip.WithSummary("Update an existing token"),
-		zip.WithTags("tokens"))
-
-	zip.Post[tokenKey, tokenMutation](app, "/v1/iam/tokens/delete", deleteToken(db),
-		zip.WithOperationID("deleteToken"),
-		zip.WithSummary("Delete a token by (owner, name)"),
 		zip.WithTags("tokens"))
 }
 
@@ -113,70 +103,5 @@ func getToken(db orm.DB) zip.TypedHandler[tokenKey, tokenResult] {
 			return nil, zip.ErrInternal(err.Error())
 		}
 		return &tokenResult{Token: t}, nil
-	}
-}
-
-// addToken creates a token from the request body, keyed by (owner, name).
-func addToken(db orm.DB) zip.TypedHandler[schema.Token, tokenResult] {
-	return func(ctx context.Context, in *schema.Token) (*tokenResult, error) {
-		if in.Owner == "" || in.Name == "" {
-			return nil, zip.ErrBadRequest("owner and name are required")
-		}
-		// orm.New wires the store and applies defaults; copy the decoded domain
-		// fields over it, then restore the wired Model so its db handle and key
-		// survive the assignment.
-		t := orm.New[schema.Token](db)
-		model := t.Model
-		*t = *in
-		t.Model = model
-		t.SetId(tokenId(in.Owner, in.Name))
-		if err := t.CreateCtx(ctx); err != nil {
-			return nil, zip.ErrInternal(err.Error())
-		}
-		return &tokenResult{Token: t}, nil
-	}
-}
-
-// updateToken read-modify-writes a token in place. A missing row is reported as
-// Unaffected (v1 UpdateToken returns false), not an error.
-func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
-	return func(ctx context.Context, in *schema.Token) (*tokenMutation, error) {
-		if in.Owner == "" || in.Name == "" {
-			return nil, zip.ErrBadRequest("owner and name are required")
-		}
-		t, err := orm.Get[schema.Token](db, tokenId(in.Owner, in.Name))
-		if errors.Is(err, orm.ErrNotFound) {
-			return &tokenMutation{Affected: false}, nil
-		}
-		if err != nil {
-			return nil, zip.ErrInternal(err.Error())
-		}
-		// Overlay the decoded domain fields onto the loaded row, keeping the
-		// loaded Model (id, createdAt, key, snapshot) so the write targets the
-		// existing key and preserves creation metadata.
-		model := t.Model
-		*t = *in
-		t.Model = model
-		if err := t.UpdateCtx(ctx); err != nil {
-			return nil, zip.ErrInternal(err.Error())
-		}
-		return &tokenMutation{Affected: true, Token: t}, nil
-	}
-}
-
-// deleteToken removes a token by key. A missing row is Unaffected.
-func deleteToken(db orm.DB) zip.TypedHandler[tokenKey, tokenMutation] {
-	return func(ctx context.Context, in *tokenKey) (*tokenMutation, error) {
-		t, err := orm.Get[schema.Token](db, tokenId(in.Owner, in.Name))
-		if errors.Is(err, orm.ErrNotFound) {
-			return &tokenMutation{Affected: false}, nil
-		}
-		if err != nil {
-			return nil, zip.ErrInternal(err.Error())
-		}
-		if err := t.DeleteCtx(ctx); err != nil {
-			return nil, zip.ErrInternal(err.Error())
-		}
-		return &tokenMutation{Affected: true}, nil
 	}
 }
