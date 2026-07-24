@@ -88,3 +88,68 @@ func TestUpdate_ClientIdCollision(t *testing.T) {
 		t.Fatal("HIGH REOPENED: an update stole another app's clientId")
 	}
 }
+
+// seedCert persists a bare cert row under (owner, name) so the binding gate can
+// resolve ownership. The key material is irrelevant to the ownership check.
+func seedCert(t *testing.T, db orm.DB, owner, name string) {
+	t.Helper()
+	c := orm.New[schema.Cert](db)
+	c.Owner, c.Name = owner, name
+	c.SetId(owner + "/" + name)
+	if err := c.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed cert %s/%s: %v", owner, name, err)
+	}
+}
+
+// The signing-cert binding gate on create: the Cert an app names is the key IAM
+// signs that app's tokens with (oidc.signerFor → store.GetSigningCert, trusted only
+// under admin/built-in). A tenant app may bind ONLY a cert its OWN org owns — naming
+// a platform (admin/built-in) signing cert is the cert half of the SuperAdmin-forgery
+// chain and is refused. A platform-owned app keeps binding a platform cert; a
+// certless app is untouched. Background ctx = the trusted server-internal path, so
+// the gate is a structural invariant, not a per-principal authz decision.
+func TestCreate_CertBindingIsScoped(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	create := Create(db)
+
+	seedCert(t, db, "admin", "cert-platform")    // a trusted platform signing cert
+	seedCert(t, db, "hanzo", "cert-hanzo-local") // a tenant-owned cert
+
+	// Tenant app naming the PLATFORM cert → refused (the poisoning vector).
+	if _, err := create(ctx, &schema.Application{Owner: "hanzo", Name: "poison", Cert: "cert-platform"}); err == nil {
+		t.Fatal("HIGH: a tenant app bound the PLATFORM signing cert (cert poisoning)")
+	}
+	// Tenant app naming a cert its org does NOT own (cross-owner / absent) → refused.
+	if _, err := create(ctx, &schema.Application{Owner: "hanzo", Name: "ghost", Cert: "cert-nope"}); err == nil {
+		t.Fatal("a tenant app bound a cert its org does not own")
+	}
+	// Tenant app with NO cert → allowed (mints nothing).
+	if _, err := create(ctx, &schema.Application{Owner: "hanzo", Name: "plain"}); err != nil {
+		t.Fatalf("a certless tenant app must be allowed: %v", err)
+	}
+	// Tenant app naming its OWN-ORG cert → allowed.
+	if _, err := create(ctx, &schema.Application{Owner: "hanzo", Name: "local", Cert: "cert-hanzo-local"}); err != nil {
+		t.Fatalf("a same-org cert must be allowed: %v", err)
+	}
+	// Platform (admin-owned) app naming a platform cert → allowed (the carve-out).
+	if _, err := create(ctx, &schema.Application{Owner: "admin", Name: "console-app", Cert: "cert-platform"}); err != nil {
+		t.Fatalf("a platform app binding a platform cert must be allowed: %v", err)
+	}
+}
+
+// The same binding gate on update: a tenant app cannot be re-pointed at a platform
+// signing cert after the fact.
+func TestUpdate_CertBindingIsScoped(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	create, update := Create(db), Update(db)
+	seedCert(t, db, "admin", "cert-platform")
+
+	if _, err := create(ctx, &schema.Application{Owner: "hanzo", Name: "app"}); err != nil {
+		t.Fatalf("seed tenant app: %v", err)
+	}
+	if _, err := update(ctx, &schema.Application{Owner: "hanzo", Name: "app", Cert: "cert-platform"}); err == nil {
+		t.Fatal("HIGH: update bound a tenant app to the PLATFORM signing cert")
+	}
+}
