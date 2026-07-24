@@ -108,13 +108,16 @@ func (p *Provider) Mask() *Provider {
 	return &m
 }
 
-// Mask returns a copy of t with every response-serialized bearer/verifier and the
-// PKCE challenge blanked — the read projection for the token entity, so getToken /
-// listTokens never emit credential material. AccessToken/RefreshToken are the
-// plaintext bearers; AccessTokenHash/RefreshTokenHash are the SHA-256 lookup
-// verifiers; CodeChallenge is the grant's PKCE binding. None is metadata a reader
-// needs. The owner, application, user, scope, type, lifetimes, and rotation-family
-// metadata are kept so a listing stays useful.
+// Mask returns a copy of t with every response-serialized credential blanked — the
+// read projection for the token entity, so getToken / listTokens emit only
+// non-secret metadata. AccessToken/RefreshToken are the plaintext bearers;
+// AccessTokenHash/RefreshTokenHash are the SHA-256 lookup verifiers; CodeChallenge
+// is the grant's PKCE binding; Code/UserCode are LIVE, single-use, redeemable
+// authorization / device codes (worse than a hash — a redeemable credential, not a
+// verifier). None is metadata a reader needs. The owner, application, user, scope,
+// type, lifetimes, and rotation-family metadata are kept so a listing stays useful.
+// Masking the code here does not affect resolution: store.GetTokenByCode /
+// GetTokenByUserCode read the persisted row, never this projection.
 func (t *Token) Mask() *Token {
 	if t == nil {
 		return nil
@@ -123,5 +126,6 @@ func (t *Token) Mask() *Token {
 	m.AccessToken, m.RefreshToken = "", ""
 	m.AccessTokenHash, m.RefreshTokenHash = "", ""
 	m.CodeChallenge = ""
+	m.Code, m.UserCode = "", ""
 	return &m
 }
