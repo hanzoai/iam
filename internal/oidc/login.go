@@ -72,6 +72,16 @@ func loginHandler(db orm.DB) zip.Handler {
 		if err := c.Bind(&f); err != nil {
 			return httpx.Err(c, "invalid request body")
 		}
+		// The id SPA posts the CREDENTIALS in the JSON body but carries the OAuth
+		// authorize passthrough — the PKCE challenge, redirect_uri, scope, state,
+		// nonce — on the QUERY STRING (client.ts login()/silentLogin()), the same
+		// place the fork read them and authorize.go reads its own params. Binding
+		// those from the body ALONE dropped the challenge, so the minted code was
+		// non-PKCE and a secret-less browser redeem fell into the confidential
+		// branch at /token and 401'd invalid_client — the cutover defect. Read them
+		// from the request (query winning over the bound body), body kept only as a
+		// fallback for a caller that posts them there.
+		overlayAuthorizeParams(c, &f)
 		ctx := c.Context()
 
 		// A post carrying no fresh credential but naming an outstanding challenge is
@@ -129,6 +139,37 @@ func loginHandler(db orm.DB) zip.Handler {
 	}
 }
 
+// overlayAuthorizeParams copies the OAuth authorize passthrough the id SPA sends
+// on the QUERY onto the login form, the request value WINNING over the JSON body
+// c.Bind already read. The SPA carries the PKCE challenge as snake_case
+// code_challenge / code_challenge_method and the redirect target as redirectUri
+// (client.ts) — the exact wire the fork consumed. A field absent from the request
+// keeps its bound body value, so a caller that posts these in the body (the
+// token-flow tests, any form client) is unbroken. code_challenge is load-bearing:
+// dropping it minted a non-PKCE code that 401'd a public browser redeem at /token.
+func overlayAuthorizeParams(c *zip.Ctx, f *loginForm) {
+	overlayParam(c, &f.CodeChallenge, "code_challenge")
+	overlayParam(c, &f.CodeChallengeMethod, "code_challenge_method")
+	overlayParam(c, &f.RedirectUri, "redirectUri", "redirect_uri")
+	overlayParam(c, &f.Scope, "scope")
+	overlayParam(c, &f.State, "state")
+	overlayParam(c, &f.Nonce, "nonce")
+}
+
+// overlayParam overwrites *dst with the first non-empty request value among keys —
+// query first, then form body, through the shared param reader — leaving the bound
+// body value untouched when the request carries none. The key list lets one field
+// accept both the SPA's spelling and the OAuth-standard one (redirectUri /
+// redirect_uri) without a second code path.
+func overlayParam(c *zip.Ctx, dst *string, keys ...string) {
+	for _, k := range keys {
+		if v := param(c, k); v != "" {
+			*dst = v
+			return
+		}
+	}
+}
+
 // loginGrant completes a sign-in that has passed the gate: a device approval, a
 // bare portal session, or a PKCE-bound authorization code. It is the ONE minting
 // tail every interactive path reaches — the credential post and the second-factor
@@ -170,11 +211,22 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 
 	userID := user.Owner + "/" + user.Name
 
-	// type=login: a bare portal sign-in. Establish the durable session the portal +
-	// the gateway admin-guard read via get-account, then report the user id. The
-	// cookie is best-effort — a session failure never blocks a valid login.
+	// Establish the durable session for the now fully-authenticated user — a bare
+	// portal sign-in (type=login) AND a type=code authorization-code login alike.
+	// The session names the caller's OWN verified (owner, name), set server-side.
+	// Setting it on type=code is what lets a RETURNING browser mint the next app's
+	// code with zero clicks: get-account resolves this session and the
+	// /oauth/authorize SSO fast path (F1b, same-tenant only) mints from it. A code
+	// login used to leave NO cookie, so silent SSO was dead. It never widens the
+	// F1a/F1b gates — the fast path still requires owner == app.Organization, and
+	// the reserved-org grant gate above already bound a reserved principal to its
+	// own-org app. Best-effort: a session write failure never blocks a valid login
+	// or a minted code.
+	_ = sessions.Set(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
+
+	// type=login: a bare portal sign-in reports the identity the portal + the
+	// gateway admin-guard read via get-account.
 	if f.Type != "code" {
-		_ = sessions.Set(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
 		return httpx.Ok(c, userID)
 	}
 
