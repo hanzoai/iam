@@ -87,18 +87,11 @@ func upsertApplication(db orm.DB) zip.Handler {
 		if err != nil {
 			return c.JSON(500, errResp("server_error"))
 		}
-		switch {
-		case req.Public:
-			// A public client must hold NO secret: that absence is what the
-			// token endpoint reads as "PKCE, do not demand client auth". Clear
-			// any secret a previous confidential registration left behind,
-			// otherwise the client stays un-authenticatable from a browser.
-			req.ClientSecret = ""
-		case req.ClientSecret == "" && existing != nil && existing.ClientSecret != "":
-			req.ClientSecret = existing.ClientSecret // steady-state: never rotate
-		case req.ClientSecret == "":
-			req.ClientSecret = randomSecret()
+		var existingSecret string
+		if existing != nil {
+			existingSecret = existing.ClientSecret
 		}
+		req.ClientSecret = resolveSecret(req.Public, req.ClientSecret, existing != nil, existingSecret)
 		if req.ClientId == "" {
 			req.ClientId = req.Name // <org>-<app> convention: clientId == name
 		}
@@ -229,6 +222,31 @@ func upsertUser(db orm.DB) zip.Handler {
 }
 
 // ---- helpers ----
+
+// resolveSecret decides the credential an upsert stores. It is the ONE place
+// public-vs-confidential is settled, split out so the rule is testable without
+// a store:
+//
+//   - public       -> NO secret. That absence is exactly what the token endpoint
+//     reads as "PKCE, do not demand client auth", so it must also
+//     CLEAR one left by an earlier confidential registration.
+//   - explicit     -> honour it; rotation is deliberate.
+//   - existing app -> preserve what it has, INCLUDING an empty secret. Minting
+//     one because "the stored secret is empty" would silently
+//     turn a public client confidential on the next reconcile.
+//   - brand new    -> mint one.
+func resolveSecret(public bool, requested string, hasExisting bool, existing string) string {
+	switch {
+	case public:
+		return ""
+	case requested != "":
+		return requested
+	case hasExisting:
+		return existing
+	default:
+		return randomSecret()
+	}
+}
 
 // decode reads the raw JSON body (content-type independent) into v.
 func decode(c *zip.Ctx, v any) error {
