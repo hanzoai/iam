@@ -69,6 +69,12 @@ type Client struct {
 	DisplayName  string   `json:"displayName"`
 	GrantTypes   []string `json:"grantTypes"`
 	RedirectUris []string `json:"redirectUris"`
+	// Public is the whole point of `type`: a browser, CLI or desktop client
+	// ships to the user, so it cannot keep a secret and must prove itself with
+	// PKCE. IAM reads "no stored secret" as exactly that, so declaring it here
+	// is what stops the token endpoint demanding a credential the client could
+	// never hold — the `invalid_client` a browser login otherwise dies on.
+	Public bool `json:"public"`
 }
 
 // App types. A document that names anything else is rejected at Derive rather
@@ -97,6 +103,17 @@ var grantsByType = map[string][]string{
 	TypeCLI:          {"authorization_code", "refresh_token"},
 	TypeDesktop:      {"authorization_code", "refresh_token"},
 	TypeService:      {"client_credentials"},
+}
+
+// publicByType: a client that SHIPS TO THE USER cannot keep a secret. Browser,
+// CLI and desktop clients therefore hold none and use PKCE; only a server-side
+// app (confidential) or a machine identity (service) can be trusted with one.
+var publicByType = map[string]bool{
+	TypeSPA:          true,
+	TypeCLI:          true,
+	TypeDesktop:      true,
+	TypeConfidential: false,
+	TypeService:      false,
 }
 
 // Parse reads a provision document. Unknown fields are an error: a typo'd key
@@ -155,6 +172,7 @@ func deriveApp(org Org, a App) (Client, error) {
 		DisplayName:  displayName(org, name),
 		GrantTypes:   grants,
 		RedirectUris: redirects(org, a),
+		Public:       publicByType[a.Type],
 	}
 	if c.RedirectUris == nil && a.Type != TypeService {
 		return Client{}, fmt.Errorf("provision: app %s declares no hosts and type %q needs a redirect", id, a.Type)
