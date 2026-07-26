@@ -3,6 +3,18 @@
 /iam-v2
 iam2
 iam-v2
+/iam
+/iamd
+
+# signing key material — keys live in KMS, never in the tree
+object/token_jwt_key.key
+object/token_jwt_key.pem
+*.pem
+*.key
+
+# frontend deps + build output
+node_modules/
+web/build/
 
 # base / sqlite data
 /data
