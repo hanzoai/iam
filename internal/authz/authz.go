@@ -51,6 +51,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"net/http"
 	"reflect"
 	"strings"
 
@@ -269,6 +270,19 @@ func pathAuthorized(path string) bool {
 // write body, which is what let the old target extraction diverge from execution.
 func Guard(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
+		// A CORS preflight carries no credentials BY DEFINITION — the browser
+		// strips them — so authenticating one is a category error: it can only
+		// ever fail. It also fails usefully for nobody, because a 401 preflight
+		// is indistinguishable to the page from "this origin is not allowed",
+		// which is how a legitimately-registered SPA gets told its own IdP is
+		// unreachable. Whether the path is actually open to a browser is CORS's
+		// question, already answered upstream (internal/cors): if it opened the
+		// path it terminated the walk with 204 and we never run; if it did not,
+		// falling through emits no allow-origin header and the browser blocks
+		// the real request anyway. Either way this is not a request to authorize.
+		if c.Method() == http.MethodOptions {
+			return c.Continue()
+		}
 		p, err := principal(c, db)
 		if err != nil {
 			return zip.ErrUnauthorized("authentication required")

@@ -99,3 +99,38 @@ func TestLoadDerivesTheAllowlistFromRedirectUris(t *testing.T) {
 		t.Errorf("deep-link scheme leaked into the web allowlist: %v", set)
 	}
 }
+
+// The org surface a console reads about itself must be reachable cross-origin,
+// or a registered SPA cannot render its own org switcher and its backend ends up
+// re-implementing an identity read. These sit beside the OIDC endpoints because
+// they are the same shape: a Bearer-protected read whose ORIGIN is decided here
+// and whose PRINCIPAL is decided by the Guard.
+func TestBrowserPaths_CoverTheConsoleOrgSurface(t *testing.T) {
+	for _, p := range []string{
+		"/v1/iam/get-organizations",
+		"/v1/iam/get-organization",
+		"/v1/iam/get-users",
+		"/v1/iam/get-account",
+	} {
+		if !browserPaths[p] {
+			t.Errorf("%s must be reachable cross-origin: a console reads it to show "+
+				"which org the user is acting as", p)
+		}
+	}
+}
+
+// Opening a path to an origin is not the same as opening the data. Anything a
+// browser never calls stays closed, so this list can only grow deliberately.
+func TestBrowserPaths_StayClosedByDefault(t *testing.T) {
+	for _, p := range []string{
+		"/v1/iam/users",          // typed CRUD — server-to-server
+		"/v1/iam/get-certs",      // signing material
+		"/v1/iam/get-providers",  // provider secrets
+		"/v1/iam/delete-user",    // a write
+		"/v1/iam/registry/token", // docker client, not a browser
+	} {
+		if browserPaths[p] {
+			t.Errorf("%s is open to browsers but nothing browser-side calls it", p)
+		}
+	}
+}
