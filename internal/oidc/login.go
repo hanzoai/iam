@@ -72,6 +72,7 @@ func loginHandler(db orm.DB) zip.Handler {
 		if err := c.Bind(&f); err != nil {
 			return httpx.Err(c, "invalid request body")
 		}
+		adoptQueryPKCE(c, &f)
 		ctx := c.Context()
 
 		// A post carrying no fresh credential but naming an outstanding challenge is
@@ -260,4 +261,27 @@ func loginOrgPasswordType(ctx context.Context, db orm.DB, org string) string {
 		return ""
 	}
 	return o.PasswordType
+}
+
+// adoptQueryPKCE takes the PKCE challenge from the QUERY STRING when the body
+// did not carry one.
+//
+// The login form is posted to the URL the authorize step handed the page, and
+// that URL already carries the OAuth parameters:
+//
+//	POST /v1/iam/login?clientId=…&code_challenge=…&code_challenge_method=S256
+//	{"type":…,"username":…,"password":…,"application":…,"organization":…}
+//
+// The body binds `codeChallenge` (camelCase); the query spells it
+// `code_challenge` (RFC 7636). Reading only the body threw away a challenge the
+// client HAD sent, so a public client was rejected with "PKCE is required for
+// public clients" — the request was complete, we were looking in one place.
+// Body wins when both are present; the query is a fallback, never an override.
+func adoptQueryPKCE(c *zip.Ctx, f *loginForm) {
+	if f.CodeChallenge == "" {
+		f.CodeChallenge = firstNonEmpty(c.Query("code_challenge"), c.Query("codeChallenge"))
+	}
+	if f.CodeChallengeMethod == "" {
+		f.CodeChallengeMethod = firstNonEmpty(c.Query("code_challenge_method"), c.Query("codeChallengeMethod"))
+	}
 }
