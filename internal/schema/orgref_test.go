@@ -13,7 +13,7 @@ import (
 // byte-for-byte through a consumer, and the Membership → OrgRef projection is
 // the ONE way to build the `orgs` claim.
 
-func TestOrgRef_wireContract(t *testing.T) {
+func TestOrgRef_JSONContract(t *testing.T) {
 	// role present: both fields emitted.
 	b, err := json.Marshal(OrgRef{Org: "hanzo", Role: "admin"})
 	if err != nil {
