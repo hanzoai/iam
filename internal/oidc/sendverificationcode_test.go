@@ -10,9 +10,11 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
 )
 
@@ -38,14 +40,16 @@ func sendCode(t *testing.T, app *zip.App, fields map[string]string) (int, map[st
 	return resp.StatusCode, decode(t, raw)
 }
 
-// The happy path parses the multipart form, persists a 6-digit unused code
-// bound to the receiver, and reports ok — and that code then verifies through
-// CheckVerificationCode while a wrong one fails closed.
-func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
+// A well-formed request reaches the delivery step and is REFUSED there, because
+// codeDelivery reports no transport — and, decisively, persists NOTHING. A code
+// that never left the building is not a credential anyone can redeem, and this
+// route is public: were it stored anyway, any anonymous caller could grow the
+// identity store one dead code at a time.
+func TestSendVerificationCode_RefusedAndStoresNothingWithoutDelivery(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
 	seedOrg(t, db, "hanzo")
-	seedRichUser(t, db) // alice@hanzo.ai — exercises the user-resolution branch
+	seedRichUser(t, db) // alice@hanzo.ai — the request clears every validation gate
 
 	status, env := sendCode(t, app, map[string]string{
 		"dest":          "alice@hanzo.ai",
@@ -53,40 +57,20 @@ func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 		"applicationId": "admin/conf",
 		"captchaType":   "none",
 	})
-	if status != 200 || env["status"] != "ok" {
-		t.Fatalf("status=%d env=%v, want 200 ok", status, env)
+	if status != 200 || env["status"] != "error" {
+		t.Fatalf("status=%d env=%v, want 200 error while delivery is unwired", status, env)
 	}
-
-	ctx := context.Background()
-	rec, err := store.GetLatestVerificationRecord(ctx, db, "alice@hanzo.ai")
-	if err != nil || rec == nil {
-		t.Fatalf("verification record not persisted: %v (nil=%v)", err, rec == nil)
+	if msg, _ := env["msg"].(string); msg != codeDelivery().Error() {
+		t.Errorf("msg = %q, want the codeDelivery reason %q", msg, codeDelivery().Error())
 	}
-	if rec.Type != "email" || rec.IsUsed {
-		t.Errorf("record type/used = %q/%v, want email/false", rec.Type, rec.IsUsed)
-	}
-	if len(rec.Code) != verificationCodeLength {
-		t.Errorf("code = %q, want %d digits", rec.Code, verificationCodeLength)
-	}
-	if rec.User != "hanzo/alice" {
-		t.Errorf("record.User = %q, want hanzo/alice (resolved from the dest)", rec.User)
-	}
-
-	// The validation surface: the persisted code verifies, a wrong one does not.
-	if ok, err := CheckVerificationCode(ctx, db, "alice@hanzo.ai", rec.Code); err != nil || !ok {
-		t.Fatalf("correct code must verify: ok=%v err=%v", ok, err)
-	}
-	if ok, _ := CheckVerificationCode(ctx, db, "alice@hanzo.ai", "000000"); ok {
-		t.Error("a wrong code must not verify")
-	}
-	if ok, _ := CheckVerificationCode(ctx, db, "nobody@hanzo.ai", rec.Code); ok {
-		t.Error("a code must not verify for a different receiver")
+	if rec, _ := store.GetLatestVerificationRecord(context.Background(), db, "alice@hanzo.ai"); rec != nil {
+		t.Fatal("an undelivered code must never be persisted")
 	}
 }
 
 // A urlencoded body reaches the same handler (fiber's FormValue reads both) —
-// the code path is not multipart-only.
-func TestSendVerificationCode_UrlencodedAlsoWorks(t *testing.T) {
+// the request contract is not multipart-only, and it refuses identically.
+func TestSendVerificationCode_UrlencodedReachesTheSameHandler(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
 	seedOrg(t, db, "hanzo")
@@ -96,15 +80,63 @@ func TestSendVerificationCode_UrlencodedAlsoWorks(t *testing.T) {
 		"type":          {"email"},
 		"applicationId": {"admin/conf"},
 	}))
-	if env := decode(t, raw); resp.StatusCode != 200 || env["status"] != "ok" {
-		t.Fatalf("status=%d env=%v, want 200 ok", resp.StatusCode, env)
+	env := decode(t, raw)
+	if resp.StatusCode != 200 || env["status"] != "error" {
+		t.Fatalf("status=%d env=%v, want 200 error", resp.StatusCode, env)
 	}
-	if rec, _ := store.GetLatestVerificationRecord(context.Background(), db, "someone@hanzo.ai"); rec == nil {
-		t.Error("urlencoded send did not persist a record")
+	// It reached DELIVERY, not a parse failure — proving the urlencoded body was
+	// read: a body the handler could not parse would have failed on "missing
+	// parameter: type" long before.
+	if msg, _ := env["msg"].(string); msg != codeDelivery().Error() {
+		t.Errorf("msg = %q, want the codeDelivery reason (the urlencoded form did not parse)", msg)
+	}
+}
+
+// The mint + redeem machinery the endpoint gates: a persisted code verifies in
+// constant time, and every near miss fails closed. Driven directly, because the
+// endpoint stops short of persisting while there is no transport — testing it
+// through a door that is shut would assert nothing.
+func TestCheckVerificationCode(t *testing.T) {
+	_, db := newServer(t)
+	ctx := context.Background()
+
+	code, err := generateCode(verificationCodeLength)
+	if err != nil || len(code) != verificationCodeLength {
+		t.Fatalf("generateCode = %q, %v; want %d digits", code, err, verificationCodeLength)
+	}
+	rec := &schema.VerificationRecord{
+		Owner: "hanzo", Name: "rec-1", Type: "email",
+		Receiver: "alice@hanzo.ai", Code: code, Time: nowFunc().Unix(),
+	}
+	if err := store.AddVerificationRecord(ctx, db, rec); err != nil {
+		t.Fatalf("persist record: %v", err)
+	}
+
+	if ok, err := CheckVerificationCode(ctx, db, "alice@hanzo.ai", code); err != nil || !ok {
+		t.Fatalf("the correct code must verify: ok=%v err=%v", ok, err)
+	}
+	for name, tc := range map[string]struct{ receiver, code string }{
+		"wrong code":     {"alice@hanzo.ai", "000000"},
+		"other receiver": {"nobody@hanzo.ai", code},
+		"empty code":     {"alice@hanzo.ai", ""},
+		"empty receiver": {"", code},
+	} {
+		if ok, _ := CheckVerificationCode(ctx, db, tc.receiver, tc.code); ok {
+			t.Errorf("%s must not verify", name)
+		}
+	}
+
+	// Past the TTL the record is no longer redeemable, without being consumed.
+	nowFuncSet(t, time.Now().Add(verificationCodeTTL+time.Second))
+	if ok, _ := CheckVerificationCode(ctx, db, "alice@hanzo.ai", code); ok {
+		t.Error("an expired code must not verify")
 	}
 }
 
 // Every malformed request returns {status:"error"} on a 200 and persists nothing.
+// Each case must be refused by its OWN validation gate and never reach delivery,
+// so this stays a test of the request contract rather than of the shut door: the
+// assertion is that the message is anything BUT the codeDelivery reason.
 func TestSendVerificationCode_Errors(t *testing.T) {
 	base := func() map[string]string {
 		return map[string]string{"dest": "x@hanzo.ai", "type": "email", "applicationId": "admin/conf"}
@@ -127,6 +159,9 @@ func TestSendVerificationCode_Errors(t *testing.T) {
 			status, env := sendCode(t, app, m)
 			if status != 200 || env["status"] != "error" {
 				t.Fatalf("status=%d env=%v, want 200 error", status, env)
+			}
+			if msg, _ := env["msg"].(string); msg == codeDelivery().Error() {
+				t.Errorf("reached delivery; %s must be refused by its own validation gate", name)
 			}
 		})
 	}

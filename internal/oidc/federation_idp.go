@@ -30,7 +30,7 @@ import (
 // The Relying-Party side of federation: iam2 as an OIDC/OAuth2 CLIENT of an
 // external identity provider. Two dialects, one contract (federatedIdentity):
 //
-//   - OIDC (Google + any provider with an IssuerUrl): OIDC Discovery resolves the
+//   - OIDC (Google, GitLab + any provider with an IssuerUrl): OIDC Discovery resolves the
 //     endpoints and JWKS; the end user is authenticated by the id_token, whose
 //     SIGNATURE (against the published JWKS), issuer, audience, expiry, and nonce
 //     are all verified before a single claim is trusted. email_verified is read
@@ -133,9 +133,30 @@ func isCGNAT(ip net.IP) bool {
 // exhaust memory (discovery/JWKS/token/userinfo are all a few KB).
 const maxIdPBodyBytes = 1 << 20 // 1 MiB
 
-// defaultGoogleIssuer is the OIDC issuer for a Google provider that pins none of
-// its own — the value the id_token carries as `iss` and the discovery origin.
-const defaultGoogleIssuer = "https://accounts.google.com"
+// defaultIssuers pins the OIDC issuer for the provider types whose issuer is a
+// published constant, so a row for one of them needs no issuerUrl of its own.
+// The value is both the discovery origin and the `iss` an id_token must carry —
+// oidcDiscover refuses a document whose own issuer disagrees. It is the ONE place
+// a type becomes federable without per-row configuration: idpKind classifies
+// against it and oidcResolve resolves against it, so a type can never be
+// classified supported yet fail to resolve (or the reverse).
+//
+// GitLab is here rather than as a second OAuth2+userinfo dialect: gitlab.com
+// publishes a compliant discovery document (S256 PKCE, RS256, email +
+// email_verified), so the OIDC leg already services it — and services it strictly
+// better than the fork's bespoke connector did, because the identity then comes
+// from a JWKS-verified, nonce-bound id_token instead of an unauthenticated
+// userinfo body. A self-hosted GitLab needs no entry: it sets its own issuerUrl.
+var defaultIssuers = map[string]string{
+	"google": "https://accounts.google.com",
+	"gitlab": "https://gitlab.com",
+}
+
+// defaultIssuer returns the published issuer for p's type, or "" when the type
+// pins none — every other provider must carry its own issuerUrl to be federable.
+func defaultIssuer(p *schema.Provider) string {
+	return defaultIssuers[strings.ToLower(strings.TrimSpace(p.Type))]
+}
 
 // GitHub's fixed OAuth2 endpoints (overridable per-Provider for GitHub
 // Enterprise / tests via Custom{Auth,Token,UserInfo}Url).
@@ -145,14 +166,20 @@ const (
 	githubUserEndpoint      = "https://api.github.com/user"
 )
 
-// idpKind classifies a provider into its federation dialect. A provider with an
-// explicit OIDC issuer — or Google — is OIDC; GitHub is OAuth2+userinfo.
-// Anything else is unsupported and fails closed (""), never guessed.
+// idpKind classifies a provider into its federation dialect: a provider carrying
+// its own OIDC issuer — or whose type pins a published one — is OIDC; GitHub is
+// OAuth2+userinfo. Anything else is unsupported and fails closed (""), never
+// guessed.
+//
+// It is the ONE dialect decision: idpAuthorizeURL and idpExchange dispatch on it,
+// and federable reads it as the first of the two halves a provider needs before
+// it may be offered on a login page. Adding a dialect here is what makes it
+// reachable — there is no second classifier to also remember.
 func idpKind(p *schema.Provider) string {
 	switch {
 	case strings.EqualFold(p.Type, "GitHub"):
 		return "github"
-	case strings.EqualFold(p.Type, "Google") || strings.TrimSpace(p.IssuerUrl) != "":
+	case defaultIssuer(p) != "" || strings.TrimSpace(p.IssuerUrl) != "":
 		return "oidc"
 	default:
 		return ""
@@ -211,8 +238,8 @@ type oidcConfig struct {
 // so id_token verification keys are never attacker-chosen.
 func oidcResolve(ctx context.Context, p *schema.Provider) (oidcConfig, error) {
 	issuer := strings.TrimRight(strings.TrimSpace(p.IssuerUrl), "/")
-	if issuer == "" && strings.EqualFold(p.Type, "Google") {
-		issuer = defaultGoogleIssuer
+	if issuer == "" {
+		issuer = defaultIssuer(p)
 	}
 	if issuer == "" {
 		return oidcConfig{}, errors.New("federation: OIDC provider has no issuerUrl")
