@@ -29,6 +29,7 @@ import (
 	"github.com/hanzoai/iam/internal/bootstrap"
 	"github.com/hanzoai/iam/internal/certs"
 	"github.com/hanzoai/iam/internal/compat"
+	"github.com/hanzoai/iam/internal/cors"
 	"github.com/hanzoai/iam/internal/invitations"
 	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/internal/memberships"
@@ -70,6 +71,11 @@ func Route(app *zip.App, db orm.DB) {
 	// Guard, at their absolute paths, so a matched public route terminates the
 	// middleware walk and the Guard never runs on it. There is no allow-list to
 	// keep in sync: a route is public because it is registered here.
+	// CORS for the browser-side OIDC surface, BEFORE any route matches so it
+	// covers the public group without a route opting in. The allowlist is derived
+	// from registered redirect URIs — provision a host and login works from it.
+	app.Use(cors.Allow(db))
+
 	public := app.Group("")
 	public.Get("/healthz", health)
 	oidc.Route(public, db)
