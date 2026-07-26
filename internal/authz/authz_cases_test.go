@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// The eight required cases, each through the real mounted router. Sub names map
+// The eight required cases, each through the real registered router. Sub names map
 // to seeded principals: admin/root = SuperAdmin, hanzo/boss = org admin,
 // hanzo/alice = regular user, orgb/bob = a foreign org's admin.
 
@@ -332,7 +332,7 @@ func TestPhantomSubjectHasNoAuthority(t *testing.T) {
 // the same fail-closed default — proven on a REAL, installed route and a REAL
 // tool INVOCATION, not just the envelope path. newHarness calls app.Prepare(), so
 // /mcp and /openapi are actually registered (the old test hit a route that was
-// never mounted, so the guard's 401 masked the fact the invocation was untested),
+// never registered, so the guard's 401 masked the fact the invocation was untested),
 // and the tool id is the framework's real one (post_v1_iam_certs), so a
 // regression that let a tool arguments-mask through would FAIL here, not pass.
 func TestFrameworkSideDoorsAreGated(t *testing.T) {

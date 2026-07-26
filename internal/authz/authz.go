@@ -5,7 +5,7 @@
 // through to overwrite an admin-owned signing cert and forge tokens. It is two
 // orthogonal decisions, never braided:
 //
-//   - AUTHENTICATION — the Guard middleware, mounted ONCE via app.Use, AFTER the
+//   - AUTHENTICATION — the Guard middleware, registered ONCE via app.Use, AFTER the
 //     public group and BEFORE the authed routes. Public (pre-authentication)
 //     routes are registered first, so a matched one terminates fiber's middleware
 //     walk and the Guard never runs on it — public vs gated is structural (which
@@ -255,7 +255,7 @@ func pathAuthorized(path string) bool {
 	return false
 }
 
-// Guard is the AUTHENTICATION middleware. Mount it via app.Use AFTER the public
+// Guard is the AUTHENTICATION middleware. Route it via app.Use AFTER the public
 // group and BEFORE the authed routes: the public (pre-authentication) routes are
 // registered first, so a matched public route terminates fiber's middleware walk
 // and the Guard never runs on it — public vs gated is decided structurally, by
@@ -397,7 +397,7 @@ type owned interface {
 // runs on, so there is no second parse to diverge from. An input that nests its
 // owner declares it via owned; every other input files its owner at the top level
 // (directly, or promoted from an embedded record), read reflectively so no entity
-// needs bespoke wiring and an attacker-supplied nested sub-struct is never a
+// needs bespoke binding and an attacker-supplied nested sub-struct is never a
 // target.
 func decodedTarget(in any) (owner, name string) {
 	if o, ok := in.(owned); ok {

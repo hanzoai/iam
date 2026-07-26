@@ -22,9 +22,9 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 )
 
-// HTTP-level test harness: mount the whole OIDC surface on a fresh store and
+// HTTP-level test harness: register the whole OIDC surface on a fresh store and
 // drive it through the real router (app.Fiber().Test), so every test exercises
-// the wire contract a client sees — status codes, headers, redirects, bodies.
+// the HTTP contract a client sees — status codes, headers, redirects, bodies.
 
 // sharedKey is one RSA key reused across tests (keygen is the slow part; the
 // crypto under test is identical regardless of which key it is).
@@ -59,7 +59,7 @@ type appOpts struct {
 // tctx is the background context used by the test seed helpers.
 func tctx() context.Context { return context.Background() }
 
-// newServer mounts the full OIDC surface on a fresh SQLite store.
+// newServer registers the full OIDC surface on a fresh SQLite store.
 func newServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	db := openTestDB(t)

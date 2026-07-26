@@ -30,8 +30,8 @@ import (
 	"github.com/hanzoai/iam/internal/users"
 )
 
-// HTTP-level harness: every test drives the REAL mounted token/jwks routes through
-// the router a docker client hits, so it exercises the wire contract — status,
+// HTTP-level harness: every test drives the REAL registered token/jwks routes through
+// the router a docker client hits, so it exercises the HTTP contract — status,
 // WWW-Authenticate, the token JSON, and (for a minted token) verification against
 // the SAME JWKS the endpoint serves.
 
@@ -101,7 +101,7 @@ func testKeyring(t *testing.T) *keyring {
 	return newKeyring(key)
 }
 
-// newServer mounts the registry surface exactly as routes.Route does — on a root
+// newServer registers the registry surface exactly as routes.Route does — on a root
 // (empty-prefix) PUBLIC router — with an injected keyring resolver. The resolver
 // closes over the fixed golden key, so tests never touch env/process state and the
 // signing/JWKS key is deterministic.
@@ -110,7 +110,7 @@ func newServer(t *testing.T) (*zip.App, orm.DB, *keyring) {
 	db := openTestDB(t)
 	kr := testKeyring(t)
 	app := zip.New(zip.Config{AppName: "iam2-registry-test", DisableStartupMessage: true})
-	mount(app.Group(""), db, func() (*keyring, error) { return kr, nil })
+	route(app.Group(""), db, func() (*keyring, error) { return kr, nil })
 	return app, db, kr
 }
 

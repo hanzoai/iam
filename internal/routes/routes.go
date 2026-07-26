@@ -1,9 +1,9 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package routes mounts the IAM v2 HTTP surface on a zip App.
+// Package routes registers the IAM v2 HTTP surface on a zip App.
 //
 // Authentication is STRUCTURAL, decided by which group a route is registered on,
-// never by a hand-maintained path list. Mount wires the surface in two phases
+// never by a hand-maintained path list. Route binds the surface in two phases
 // around one authentication seam:
 //
 //   - the PUBLIC group (oidc.Route + /healthz) is registered FIRST, before the
@@ -52,8 +52,8 @@ import (
 )
 
 // Route registers the whole IAM v2 route surface on app, threading the entity
-// store db into every handler. This is the route table server.Mount embeds — the
-// one Mount(app, db) is the public entry; everything below is Route.
+// store db into every handler. This is the route table server.Route embeds — the
+// one Route(app, db) is the public entry; everything below is Route.
 func Route(app *zip.App, db orm.DB) {
 	// AUTHORIZATION of writes: the op-invoke hook authorizes every typed op on the
 	// DECODED input the handler binds — for REST and MCP alike, so the value

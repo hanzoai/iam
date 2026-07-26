@@ -2,10 +2,10 @@
 
 package authz_test
 
-// End-to-end authorization tests driven through the REAL mounted router
-// (routes.Mount, which installs authz.Guard after the public group, so gating is
+// End-to-end authorization tests driven through the REAL registered router
+// (routes.Route, which installs authz.Guard after the public group, so gating is
 // structural — the public routes registered before it are never reached by it).
-// Every case is a wire request
+// Every case is a HTTP request
 // a client could send: a status code is the whole contract. Tokens are genuine
 // RS256 JWTs signed by the seeded admin signing cert, so they pass the exact
 // oidc.VerifyToken the guard reuses — nothing here is mocked.
@@ -61,7 +61,7 @@ func mustRSA() *rsa.PrivateKey {
 	return k
 }
 
-// harness holds the mounted app, the RSA key the signing cert holds (so a test
+// harness holds the registered app, the RSA key the signing cert holds (so a test
 // can mint a token any principal would carry), and the store (so a test can
 // assert that a refused write persisted NOTHING — the real security property, not
 // just a status code).
@@ -104,7 +104,7 @@ func (h *harness) userIsAdmin(t *testing.T, owner, name string) bool {
 }
 
 // newHarness opens a fresh SQLite store, seeds the trust anchor (an admin-owned
-// RS256 signing cert) plus a cast of principals across three orgs, and mounts
+// RS256 signing cert) plus a cast of principals across three orgs, and registers
 // the full router — guard and all. MCP is left ENABLED here (unlike prod) so the
 // tests prove the guard, not a disabled feature, closes the /mcp side door.
 func newHarness(t *testing.T) *harness {
@@ -207,7 +207,7 @@ func mcpEnvelope(tool string, args any) map[string]any {
 }
 
 // mcpToolCall fires an MCP tools/call for `tool` with `args` through the REAL
-// mounted /mcp route and reports the HTTP status plus whether the op-invoke
+// registered /mcp route and reports the HTTP status plus whether the op-invoke
 // authorizer refused it. A refusal at the op seam surfaces as an isError result
 // with HTTP 200 (MCP reports handler errors in-band), never a transport 403, so
 // a refused write shows up as isError==true — the status stays 200.

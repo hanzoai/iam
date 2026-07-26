@@ -41,7 +41,7 @@ type Ref struct {
 }
 
 // Input is the writable projection of an audit log (the v1 add/update-record
-// body). It keeps the wire contract clean of the orm.Model bookkeeping fields
+// body). It keeps the HTTP contract clean of the orm.Model bookkeeping fields
 // and of the v1 integer surrogate id, which the orm string key supersedes.
 type Input struct {
 	Owner        string `json:"owner"`
