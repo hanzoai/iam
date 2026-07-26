@@ -66,6 +66,15 @@ var browserPaths = map[string]bool{
 	"/v1/iam/get-organization":  true,
 	"/v1/iam/get-users":         true,
 	"/v1/iam/get-account":       true,
+
+	// The two writes a first-party console performs on the user's OWN behalf:
+	// create an org, invite someone to it. Both are Guard-authorized against the
+	// caller's principal, so the browser can only do what that user could
+	// already do. Listed as the NATIVE REST paths, not the Casdoor verbs — those
+	// are a compatibility surface for existing backends, not something a new
+	// browser client should learn.
+	"/v1/iam/organizations": true,
+	"/v1/iam/invitations":   true,
 }
 
 // registry answers "is this origin registered?" from the application rows,
