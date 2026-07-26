@@ -329,3 +329,29 @@ func cert(owner, name string) map[string]any {
 func user(owner, name string) map[string]any {
 	return map[string]any{"user": map[string]any{"owner": owner, "name": name}, "password": "x"}
 }
+
+// A CORS preflight carries no credentials — the browser strips them — so the
+// Guard must never answer one with 401. It used to, which is indistinguishable
+// to the page from "your origin is not allowed": a registered console asking
+// its own IdP "which orgs am I in?" got a failed preflight and rendered an
+// empty org switcher, with nothing in the network log but a 401 on OPTIONS.
+//
+// The pairing is the point. Opening the preflight must not open the DATA, so
+// each case also asserts the real GET is still refused without a bearer.
+func TestGuard_NeverAuthenticatesAPreflight(t *testing.T) {
+	h := newHarness(t)
+	for _, path := range []string{
+		"/v1/iam/get-organizations",
+		"/v1/iam/get-organization",
+		"/v1/iam/get-users",
+	} {
+		if got := h.do(t, "OPTIONS", path, "", nil); got == 401 {
+			t.Errorf("OPTIONS %s answered 401: a preflight has no credentials to "+
+				"reject, and the browser reads this as origin-not-allowed", path)
+		}
+		if got := h.do(t, "GET", path, "", nil); got != 401 {
+			t.Errorf("GET %s without a bearer = %d, want 401: letting the preflight "+
+				"through must not let the READ through", path, got)
+		}
+	}
+}
