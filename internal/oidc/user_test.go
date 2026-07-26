@@ -13,7 +13,7 @@ import (
 	"github.com/hanzoai/iam/internal/users"
 )
 
-// ITEM 2: a full-row user writer (onboard / preferences / the hk- key mint-revoke) must
+// ITEM 2: a full-row user writer (onboard / preferences / the sk- key mint-revoke) must
 // not erase the lockout counter a concurrent wrong-password attempt advanced. Every such
 // writer now goes through updateUser, which reads the row FRESH under a GetForUpdate row
 // lock and writes it back, so the counter (advanced atomically by users.recordAttempt on
