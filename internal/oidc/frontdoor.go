@@ -79,6 +79,13 @@ func getAppLogin(db orm.DB) zip.Handler {
 // <Login> self-configures instead of hard-coding a provider list. This endpoint
 // does NOT exist in v1 — it is the clean seam that lets one <Login> render the
 // right buttons for any app. Pure read over the resolved application.
+//
+// Every method it reports is the conjunction of two facts: the application
+// ENABLES it, and this service can SERVICE it. The second fact is never restated
+// here — it is asked of whichever subsystem owns the method (codeDelivery for the
+// emailed code, federable for a federated provider), so a method cannot be
+// advertised and unimplemented at the same time. A button rendered from this
+// response is a button that completes.
 func authMethods(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		clientId := c.Query("clientId")
@@ -94,6 +101,11 @@ func authMethods(db orm.DB) zip.Handler {
 		}
 		store.EnrichProviders(c.Context(), db, app)
 
+		// Asked ONCE per response, not per method: the answer is a property of
+		// the service, not of the application being described.
+		_, deliveryErr := codeDelivery()
+		deliverable := deliveryErr == nil
+
 		oauth := []map[string]string{}
 		web3 := false
 		for _, it := range app.Providers {
@@ -107,6 +119,16 @@ func authMethods(db orm.DB) zip.Handler {
 			case "web3":
 				web3 = true
 			case "oauth":
+				// Real credentials are not enough — the broker must also be able
+				// to FEDERATE this provider. federable is the same predicate
+				// beginFederation refuses on, so asking it here keeps the
+				// advertised set and the servable set one set. Without it, every
+				// type the fork carried but iam2 does not broker (Apple, Facebook,
+				// WeChat, LinkedIn — some thirty of them, plus a Web3 row
+				// miscategorised as OAuth) renders a button that dies on click.
+				if federable(it.Provider) != nil {
+					continue
+				}
 				oauth = append(oauth, map[string]string{
 					"name": it.Name,
 					"type": it.Provider.Type,
@@ -116,7 +138,13 @@ func authMethods(db orm.DB) zip.Handler {
 		}
 		return httpx.Ok(c, map[string]any{
 			"password": app.EnablePassword,
-			"code":     app.EnableCodeSignin,
+			// An application may ENABLE code sign-in, but the method is only real
+			// if the service can deliver the code. codeDelivery is the authority
+			// sendVerificationCode itself refuses on — it reports a courier only
+			// when the notify rail is credentialed and answering — so this goes
+			// true and false with the rail, automatically, and the page never
+			// renders "email me a code" for a code that cannot be sent.
+			"code":     app.EnableCodeSignin && deliverable,
 			"webauthn": app.EnableWebAuthn,
 			"web3":     web3,
 			"oauth":    oauth,

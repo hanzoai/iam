@@ -41,8 +41,12 @@ func Route(r zip.Router, db orm.DB) {
 	r.Post("/v1/iam/admin/users/upsert", upsertUser(db))
 }
 
-// serviceToken returns the configured unified service token, or "" (fail closed).
-func serviceToken() string {
+// ServiceToken returns the configured unified service token, or "" (fail closed).
+// Exported because it is the ONE place the fleet's service credential is
+// resolved: the OIDC verification-code courier presents the same token to the
+// notify rail that the operator presents here, so there is one credential and
+// one resolution order, never a second env name that drifts from this list.
+func ServiceToken() string {
 	for _, key := range []string{"HANZO_API_KEY", "KMS_SERVICE_TOKEN", "IAM_SERVICE_TOKEN"} {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 			return v
@@ -54,7 +58,7 @@ func serviceToken() string {
 // authService validates the Bearer service token (constant-time). An unset expected
 // token, or a mismatch, is unauthorized.
 func authService(c *zip.Ctx) bool {
-	expected := serviceToken()
+	expected := ServiceToken()
 	if expected == "" {
 		return false
 	}

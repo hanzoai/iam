@@ -17,14 +17,14 @@ import (
 // IsShared/EnableSignUp). Owner is "admin" (platform-owned, the iam2 convention);
 // clientId == Name (the <org>-<app> convention the mint allow-lists key on).
 type fullApp struct {
-	clientID  string
-	secret    string // "" → public (PKCE) client
-	org       string // the tenant the app SERVES (Application.Organization)
-	orgChoice string // OrgChoiceMode: non-empty lets a signup pick its org
-	signup    bool
-	shared    bool
+	clientID   string
+	secret     string // "" → public (PKCE) client
+	org        string // the tenant the app SERVES (Application.Organization)
+	orgChoice  string // OrgChoiceMode: non-empty lets a signup pick its org
+	signup     bool
+	shared     bool
 	autosignin bool // EnableAutoSignin → the /oauth/authorize SSO fast path mints from a session
-	redirects []string
+	redirects  []string
 }
 
 func seedAppFull(t *testing.T, db orm.DB, a fullApp) {

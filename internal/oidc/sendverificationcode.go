@@ -25,12 +25,13 @@ import (
 // response is the casibase {status,msg,data} envelope with an empty data on
 // success.
 //
-// This endpoint owns the code-generation + persistence + validation surface. The
-// actual email/SMS DELIVERY is a separate concern owned by hanzoai/notify (v1
-// calls object.SendVerificationCodeToEmail/…Phone, which forwards to notify over
-// ZAP). notify is not wired into iam2 yet, so this endpoint persists a verifiable
-// code and returns {status:"ok"} honestly — it does NOT fabricate a "sent" claim.
-// Delivery plugs in at the marked seam below with no shape change.
+// This endpoint owns the request contract, code generation, persistence, and the
+// verification check; DELIVERY — putting the code in front of the user — is the
+// separate concern codeDelivery names. The two are joined here and nowhere else:
+// the handler delivers before it persists and refuses when it cannot, and
+// authMethods withholds the `code` sign-in method on the same call, so the login
+// page can never offer a code this endpoint would not send. One authority, asked
+// at both ends.
 
 // PathSendVerificationCode is the canonical front-door OTP-send endpoint.
 const PathSendVerificationCode = "/v1/iam/send-verification-code"
@@ -42,8 +43,8 @@ const verificationCodeLength = 6
 // verificationCodeTimeout default, 10 minutes).
 const verificationCodeTTL = 10 * time.Minute
 
-// sendVerificationCode validates the request, mints + persists an OTP, and
-// reports success. The request fields are read via fiber's FormValue — the
+// sendVerificationCode validates the request, mints an OTP, delivers it, and
+// persists it for redemption. The request fields are read via fiber's FormValue — the
 // escape hatch zip exposes for form bodies (multipart or urlencoded) — since the
 // typed JSON Bind does not apply here. v1 also accepts countryCode/method/
 // checkUser/captchaType; iam2 ignores them (the captcha/forget/MFA flows those
@@ -87,32 +88,59 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the organization does not exist")
 		}
 
-		// Validate the destination by type and, for email, resolve the target user
-		// (metadata on the record). Phone user-resolution + E.164 normalization need
-		// a phone library iam2 does not carry yet — the record still persists.
+		// ONE gate: normalize and judge the destination, then spend quota in all
+		// three scopes. Everything downstream uses the CANONICAL destination it
+		// returns, never the caller's raw string — for email those differ whenever
+		// the input carried a display name or a quoted local part, and delivering
+		// the raw form would send somewhere the validation never looked at.
+		//
+		// This runs AFTER the application resolves, so quota is charged to a real
+		// application, and BEFORE any code is minted, so a refused request costs
+		// nothing but the lookup.
+		dest, err = guardOTP(typ, dest, applicationId)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+
+		// Resolve the target user for the record's metadata (email only — a phone
+		// lookup needs a normalized-number index iam2 does not carry). Absence is
+		// not an error: the response must not differ for a known and an unknown
+		// address, or this becomes an account-existence oracle.
 		var user *schema.User
-		switch typ {
-		case "email":
-			if !isEmailValid(dest) {
-				return httpx.Err(c, "email is invalid")
-			}
+		if typ == "email" {
 			if user, err = store.GetUserByEmail(ctx, db, org.Name, dest); err != nil {
 				return httpx.Err(c, err.Error())
 			}
-		case "phone":
-			// dest is required (checked above); accepted as-is.
-		default:
-			return httpx.Err(c, "unsupported verification type: "+typ)
 		}
 
 		code, err := generateCode(verificationCodeLength)
 		if err != nil {
 			return httpx.Err(c, "failed to generate verification code")
 		}
+
+		// Deliver, then persist — in that order, and never the reverse. A record
+		// is the redemption half of a credential the user has to be holding; if
+		// the code never left the building, storing it buys nothing and costs a
+		// row. This route is on the PUBLIC group, so persisting first would let
+		// any anonymous caller grow the identity store one live, unredeemable
+		// code at a time.
+		//
+		// The send is SYNCHRONOUS and its failure is terminal here: iam2 persists
+		// a redeemable code only after the rail has confirmed the code went out.
+		courier, err := codeDelivery()
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
 		id, err := newOpaqueToken()
 		if err != nil {
 			return httpx.Err(c, "failed to generate verification record id")
 		}
+		// The record id is the idempotency key, so a retried request reuses the
+		// same rail message instead of sending the user a second code.
+		if err := courier.send(ctx, app.Name, typ, dest, code, id); err != nil {
+			return httpx.Err(c, err.Error())
+		}
+
 		rec := &schema.VerificationRecord{
 			Owner:       org.Name,
 			Name:        id,
@@ -131,15 +159,17 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 		if err := store.AddVerificationRecord(ctx, db, rec); err != nil {
 			return httpx.Err(c, err.Error())
 		}
-
-		// --- DELIVERY SEAM ---------------------------------------------------
-		// v1 hands (org, user, dest, code) to hanzoai/notify here
-		// (object.SendVerificationCodeToEmail / …ToPhone). notify owns the
-		// per-tenant SendGrid/SMTP/Resend/Twilio provider + template. It is not
-		// wired into iam2 yet; when it is, the send call slots in exactly here and
-		// the persisted record above stays the source of truth for verification.
-		// ---------------------------------------------------------------------
-
+		// A verification record is worthless the moment it expires — it can no
+		// longer be redeemed — but nothing ever deleted one, so an endpoint any
+		// anonymous caller can drive grew the single-writer store forever. Prune
+		// on the write path: the cost is paid by the request that created the
+		// row, no sweeper process is introduced, and the table stays proportional
+		// to live codes rather than to all codes ever sent.
+		if err := store.PruneVerificationRecords(ctx, db, nowFunc().Add(-verificationCodeTTL)); err != nil {
+			// A failed prune must not fail a delivered code: the user is already
+			// holding it and the record is already persisted.
+			_ = err
+		}
 		return httpx.Ok(c, nil)
 	}
 }

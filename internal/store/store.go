@@ -498,6 +498,30 @@ func AddVerificationRecord(ctx context.Context, db orm.DB, rec *schema.Verificat
 	return r.CreateCtx(ctx)
 }
 
+// PruneVerificationRecords deletes every verification record issued before
+// cutoff. A record past the redemption TTL can never verify anything, so it is
+// pure residue — and the endpoint that creates them is public and
+// unauthenticated, which made "never delete" an unbounded-growth primitive
+// against a single-writer store several identity brands share. The caller passes
+// the cutoff so the TTL stays defined in ONE place (the OIDC package that owns
+// it) rather than being restated here.
+//
+// Deleting row by row keeps this on the same orm surface as every other write in
+// this file — the volumes are small precisely because this runs on every send.
+func PruneVerificationRecords(ctx context.Context, db orm.DB, cutoff time.Time) (err error) {
+	rows, err := orm.TypedQuery[schema.VerificationRecord](db).
+		Filter("Time<", cutoff.Unix()).GetAll(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if derr := r.DeleteCtx(ctx); derr != nil && err == nil {
+			err = derr
+		}
+	}
+	return err
+}
+
 // GetLatestVerificationRecord resolves the most recent UNUSED verification
 // record sent to receiver — the row the check path validates a submitted code
 // against. Returns (nil, nil) when none exists.
