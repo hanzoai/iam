@@ -138,9 +138,24 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	// Confidential client: verify the secret (constant-time). A public client
-	// (PKCE, no stored secret) may present none.
-	if app.ClientSecret != "" {
+	// Client authentication. A client that PRESENTS a secret must present the right
+	// one (constant-time). A BROWSER client presents none — it cannot hold one — and
+	// the code's PKCE binding is what authenticates it: RedeemCode below verifies the
+	// verifier against the challenge, the code is single-use, and it was delivered to
+	// a registered redirect_uri.
+	//
+	// CASDOOR PARITY — same bounded relaxation this file already documents for
+	// passwordGrant. Registration is not per-flow here: `hanzo-chat` and `hanzo-cloud`
+	// keep a secret for their BACKEND paths (chat's passport OpenID, cloud's
+	// client_credentials machine auth) while their SPA is a public PKCE client. The
+	// clean-room rewrite required the secret unconditionally, so every @hanzo/iam
+	// login — hanzo.chat, cloud.hanzo.ai — signed in at hanzo.id, returned to
+	// /auth/callback and died on `401 invalid_client`. Deleting those secrets is NOT
+	// the fix (it breaks client_credentials, which requires a registered secret).
+	//
+	// A code with NO PKCE challenge still requires the secret, so this is not a
+	// downgrade path: an attacker cannot skip client auth by omitting PKCE.
+	if app.ClientSecret != "" && (clientSecret != "" || tok.CodeChallenge == "") {
 		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 			return tokenErrorClient(c, "client authentication failed")
 		}
