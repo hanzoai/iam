@@ -92,11 +92,8 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 	if prov == nil {
 		return authorizeErrorRedirect(c, q, "invalid_request", "unknown or unavailable provider")
 	}
-	if idpKind(prov) == "" {
-		return authorizeErrorRedirect(c, q, "invalid_request", "provider is not a supported federation type")
-	}
-	if _, ok := connectorFor(prov.Type); !ok {
-		return authorizeErrorRedirect(c, q, "invalid_request", "provider has no local identity binding")
+	if err := federable(prov); err != nil {
+		return authorizeErrorRedirect(c, q, "invalid_request", err.Error())
 	}
 
 	state, err := newOpaqueToken()
@@ -596,6 +593,28 @@ var connectorRegistry = map[string]connectorBinding{
 func connectorFor(providerType string) (connectorBinding, bool) {
 	b, ok := connectorRegistry[strings.ToLower(strings.TrimSpace(providerType))]
 	return b, ok
+}
+
+// federable reports why the broker cannot federate p, or nil when it can. Two
+// halves have to hold and neither implies the other: a DIALECT to speak to the
+// IdP (idpKind) and a LOCAL COLUMN to land the returned subject on
+// (connectorRegistry) — a provider can have a perfectly good OIDC issuer and
+// still have nowhere to stamp its identity.
+//
+// It is the ONE authority on the question, and it answers with the reason so no
+// caller has to restate the conditions to say something useful. beginFederation
+// refuses on it and authMethods withholds the button on it, which is what makes
+// the set of providers a login page offers and the set the broker can actually
+// service one set. A dialect or a connector added to only one half of this now
+// fails here rather than dead-ending a user mid-redirect.
+func federable(p *schema.Provider) error {
+	if idpKind(p) == "" {
+		return errors.New("provider is not a supported federation type")
+	}
+	if _, ok := connectorFor(p.Type); !ok {
+		return errors.New("provider has no local identity binding")
+	}
+	return nil
 }
 
 // federatedUsername generates a valid, human-friendly, collision-resistant

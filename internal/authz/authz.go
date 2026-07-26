@@ -524,18 +524,131 @@ func app(c *zip.Ctx, db orm.DB) (*Principal, bool) {
 	return &Principal{App: a.Name, AppOwner: a.Owner, Org: a.Organization}, true
 }
 
-// entityOf returns the resource segment of an /v1/iam/<entity>[/verb] path, or
-// "" for anything else (e.g. /mcp). Only the users entity needs distinguishing —
-// its regular-user self-service rule — so every other segment is treated
-// uniformly by the tenant rule.
+// entityFor resolves a leading path segment that does NOT spell its own entity to
+// the entity it addresses. Exactly two families need it:
+//
+//   - the Casdoor VERB surface (internal/compat) — add-organization, get-users, … —
+//     where the segment names an ACTION, not a resource. Every one is an alias of a
+//     REST route over the same store and the same handlers, so it must reach
+//     authorize() with the same entity its twin does. Left unresolved it matched no
+//     entity and no capability, which denied the entire compat surface to every
+//     confidential client while the identical REST call passed.
+//   - /v1/iam/application, the one REST route spelling its entity singular while the
+//     policy layer spells it plural (CanSetOrg authorizes "applications"). One
+//     entity, one name: two spellings would let a future capability attach to one
+//     route of an entity and silently not the other.
+//
+// It is a TABLE, not a rule, because the failure directions are not symmetric.
+// authorize() reads the entity in exactly three places — the reserved-owner gate
+// (entity == "organizations"), the confidential-client gate (capFor, which maps
+// ONLY organizations and users), and the regular-user self-read (entity ==
+// "users") — so the entity space has exactly three classes: organizations, users,
+// and everything else, every member of which denies at all three. A missing entry
+// therefore falls through to the segment itself and DENIES; only a wrong entry can
+// GRANT. A rule fails in the granting direction: "strip the leading verb" resolves
+// get-organization-projects and get-organization-workspaces — which name their
+// parent org but address the CHILD collection — to "organizations", handing every
+// org-admin-capable client (CapOrgAdmin) a grant on a collection it holds no
+// capability for. They resolve to the child entity their REST twins resolve to.
+//
+// Absent by design, and authority-neutral by the rule above: the raw handlers that
+// authorize their own target through authz.Can (get-memberships, add-membership,
+// delete-membership, delete-mfa, set-preferred-mfa) and the public front door
+// registered before the Guard (get-account, get-app-login, update-preferences, …).
+// Neither seam ever asks entityOf about those, so listing them would make this a
+// second inventory of the route surface, free to drift from the first.
+var entityFor = map[string]string{
+	// organizations — the tenant registry, and the ONE entity the reserved-owner gate
+	// lets a non-Super past: every org row is filed under the admin owner, so a tenant
+	// reads its own and an org-admin-capable client creates customer orgs during
+	// onboarding. These five verbs are the only ones that may resolve here. Everything
+	// else under a reserved owner — certs, applications, providers, users — stays
+	// SuperAdmin-only, and stays so precisely BECAUSE its verb does not resolve here.
+	"get-organizations":   "organizations", // GET  /v1/iam/organizations
+	"get-organization":    "organizations", // GET  /v1/iam/organizations/get
+	"add-organization":    "organizations", // POST /v1/iam/organizations
+	"update-organization": "organizations", // POST /v1/iam/organizations/update
+	"delete-organization": "organizations", // POST /v1/iam/organizations/delete
+
+	// users — the other authority-carrying entity (capFor → CapUserAdmin, plus the
+	// regular-user self-read clause). get-global-users is Casdoor's cross-tenant
+	// spelling, but this deployment serves it from the SAME owner-scoped lister as
+	// get-users — one handler, one authz.Scope, no cross-tenant widening — so it is a
+	// users read exactly like its twin, and resolving it anywhere else would only
+	// desynchronise two spellings of one read.
+	"get-users":        "users", // GET  /v1/iam/users
+	"get-global-users": "users", // GET  /v1/iam/users
+	"get-user":         "users", // GET  /v1/iam/users/get
+	"add-user":         "users", // POST /v1/iam/users
+	"update-user":      "users", // POST /v1/iam/users/update
+	"delete-user":      "users", // POST /v1/iam/users/delete
+
+	// Below here every value is authority-neutral: none is "organizations" or "users",
+	// so none can grant. They are resolved anyway so that a verb and its REST twin are
+	// governed by one entity rather than two, which is what keeps a future capability
+	// from attaching to half an entity.
+	"application":        "applications", // the singular REST route; plural is the policy's name
+	"get-applications":   "applications", // GET    /v1/iam/applications
+	"get-application":    "applications", // GET    /v1/iam/application
+	"add-application":    "applications", // POST   /v1/iam/application
+	"update-application": "applications", // PUT    /v1/iam/application
+	"delete-application": "applications", // DELETE /v1/iam/application
+
+	"get-providers":   "providers", // GET  /v1/iam/providers
+	"get-provider":    "providers", // POST /v1/iam/providers/get
+	"add-provider":    "providers", // POST /v1/iam/providers
+	"update-provider": "providers", // POST /v1/iam/providers/update
+	"delete-provider": "providers", // POST /v1/iam/providers/delete
+
+	"get-roles":   "roles", // GET  /v1/iam/roles
+	"get-role":    "roles", // POST /v1/iam/roles/get
+	"add-role":    "roles", // POST /v1/iam/roles
+	"update-role": "roles", // POST /v1/iam/roles/update
+	"delete-role": "roles", // POST /v1/iam/roles/delete
+
+	// The compound reads: named for the parent org, addressed at the child collection.
+	// Their targets ride in ?organization=, so both are handler-authorized (see
+	// handlerAuthorizedPrefixes) and the Guard does not consult this today — they are
+	// resolved truthfully so that removing that entry later denies rather than grants.
+	"get-organization-projects":   "projects",   // GET  /v1/iam/projects
+	"add-project":                 "projects",   // POST /v1/iam/projects
+	"delete-project":              "projects",   // POST /v1/iam/projects/delete
+	"get-organization-workspaces": "workspaces", // GET  /v1/iam/workspaces
+	"add-workspace":               "workspaces", // POST /v1/iam/workspaces
+	"delete-workspace":            "workspaces", // POST /v1/iam/workspaces/delete
+
+	"get-certs":       "certs",       // GET /v1/iam/certs
+	"get-cert":        "certs",       // POST /v1/iam/certs/get
+	"get-permissions": "permissions", // GET /v1/iam/permissions
+	"get-permission":  "permissions", // GET /v1/iam/permissions/get
+	"get-invitations": "invitations", // GET /v1/iam/invitations
+	"get-records":     "audit-logs",  // GET /v1/iam/audit-logs — "records" is Casdoor's name for them
+}
+
+// entityOf returns the ENTITY an /v1/iam/… path addresses — the resource the policy
+// is about — or "" for anything else (e.g. /mcp). It is the ONE resolver: the Guard
+// authorizes a read through it and the op-invoke seam authorizes a write through it,
+// so a REST route and its Casdoor verb alias arrive at authorize() carrying the same
+// entity and are therefore governed by the same rule. Nothing else normalises a path;
+// a second resolver would be a second policy.
+//
+// The leading segment IS the entity across the REST surface (/v1/iam/users/update →
+// users), so it is the answer unless entityFor says otherwise. An unlisted segment
+// returning itself is not a gap: only "organizations" and "users" carry authority in
+// authorize(), so any other value — a verb spelling, an unknown route, a mixed-case
+// variant — denies exactly as "" does. This resolver can widen authorization only by
+// naming one of those two for a path that does not address it.
 func entityOf(path string) string {
 	const p = "/v1/iam/"
 	if !strings.HasPrefix(path, p) {
 		return ""
 	}
-	rest := path[len(p):]
-	if i := strings.IndexByte(rest, '/'); i >= 0 {
-		return rest[:i]
+	seg := path[len(p):]
+	if i := strings.IndexByte(seg, '/'); i >= 0 {
+		seg = seg[:i]
 	}
-	return rest
+	if e, ok := entityFor[seg]; ok {
+		return e
+	}
+	return seg
 }

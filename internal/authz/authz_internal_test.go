@@ -81,11 +81,19 @@ func TestEntityOf(t *testing.T) {
 		"/v1/iam/users/get":    "users",
 		"/v1/iam/users/update": "users",
 		"/v1/iam/certs/delete": "certs",
-		"/v1/iam/application":  "application",
+		// The singular REST route resolves to the entity the POLICY names — CanSetOrg
+		// authorizes "applications" — so one entity never has two spellings here.
+		"/v1/iam/application":  "applications",
+		"/v1/iam/applications": "applications",
 		"/v1/iam/audit-logs":   "audit-logs",
-		"/mcp":                 "",
-		"/healthz":             "",
-		"/v1/iam/":             "",
+		// The Casdoor verb surface resolves to the entity it addresses, not its verb
+		// spelling: an alias is governed by its REST twin's rule (authz_entity_test.go).
+		"/v1/iam/add-organization":          "organizations",
+		"/v1/iam/get-users":                 "users",
+		"/v1/iam/get-organization-projects": "projects",
+		"/mcp":                              "",
+		"/healthz":                          "",
+		"/v1/iam/":                          "",
 	}
 	for path, want := range cases {
 		if got := entityOf(path); got != want {
