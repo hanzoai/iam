@@ -56,7 +56,7 @@ require (
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/dbx v1.16.0 // indirect
 	github.com/hanzoai/xorm v1.4.4 // indirect
-	github.com/hanzokv/go/v9 v9.21.1 // indirect
+	github.com/hanzokv/go/v9 v9.22.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
