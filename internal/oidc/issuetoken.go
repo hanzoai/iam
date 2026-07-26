@@ -13,6 +13,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
 )
@@ -112,7 +113,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// mintUserKeysHandler (re)generates the target user's durable `hk-` Cloud API key
+// mintUserKeysHandler (re)generates the target user's durable `sk-` Cloud API key
 // (schema.User.AccessKey) and returns it once, over the shared authorizeMinter +
 // mintTarget seam.
 func mintUserKeysHandler(db orm.DB) zip.Handler {
@@ -126,10 +127,7 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
-		key, err := newAccessKey()
-		if err != nil {
-			return mintErr(c, 500, "server_error")
-		}
+		key := newAccessKey()
 		now := nowFunc().UTC().Format(time.RFC3339)
 		if _, err := updateUser(ctx, db, user.Owner, user.Name, func(u *schema.User) error {
 			u.AccessKey = key
@@ -317,12 +315,20 @@ func defaultUserAudience(ctx context.Context, db orm.DB, user *schema.User, clie
 	return clientApp.ClientId
 }
 
-// newAccessKey mints an `hk-`-prefixed Cloud API key (the durable credential the
-// gateway recognizes), a cryptographically-random opaque token behind the prefix.
-func newAccessKey() (string, error) {
-	tok, err := newOpaqueToken()
-	if err != nil {
-		return "", err
-	}
-	return "hk-" + tok, nil
+// newAccessKey mints the user's durable Cloud API key through the ONE key minter,
+// keys.Mint — the same one schema.Key's halves come from.
+//
+// It is `sk-`, not a third prefix. A durable full-access bearer credential IS the
+// confidential half; naming it `hk-` invented a parallel credential family that
+// meant the same thing, so every consumer had to know all three prefixes
+// (`hk-/pk-/sk-` appears verbatim in the gateway filter, the audit redactor, the
+// registry resolver, and this package's own gate comment). One concept, one
+// spelling: `pk-` is publishable, `sk-` is secret, and there is no third thing.
+//
+// Forward-only and non-breaking: resolution is an exact-value lookup
+// (store.UserByAccessKey), never a prefix match, so keys already issued keep
+// working while every NEW key is minted as `sk-`. The prefix carries no authority
+// — it is a human-readable label on an opaque random token.
+func newAccessKey() string {
+	return keys.Mint("sk", "")
 }
