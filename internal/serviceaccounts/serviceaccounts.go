@@ -255,12 +255,15 @@ func read(p *authz.Principal, org string) bool {
 	return p.Super || (p.Admin && p.Org == org)
 }
 
-// mint (re)generates the identity's credential: a fresh access key (the
-// plaintext lookup handle) and a fresh secret whose argon2id DIGEST — never the
+// mint (re)generates the identity's credential: a fresh pk- access key (the
+// plaintext lookup handle) and a fresh sk- secret whose argon2id DIGEST — never the
 // secret — is stored. Any prior key stops authenticating the moment this
 // persists. The raw secret is returned to the caller and never written.
+//
+// pk- for the handle, sk- for the secret: the prefix is what tells a reader which
+// half they are holding. Minting both as `hk-` erased that distinction.
 func mint(sa *schema.User) (key, secret string, err error) {
-	key, secret = keys.Mint("hk", ""), keys.Mint("hk", "")
+	key, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
 	hash, err := cred.Hash(secret)
 	if err != nil {
 		return "", "", zip.ErrInternal("hash service account secret: " + err.Error())

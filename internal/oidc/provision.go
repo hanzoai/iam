@@ -20,12 +20,18 @@ import (
 // value is stated here and the two are kept in step by that contract.
 const credentialType = "service-account"
 
-// mintCredential sets a fresh hk- access key and an argon2id DIGEST of its secret on
-// sa, returning the plaintext secret to reveal EXACTLY ONCE. The digest — never the
+// mintCredential sets a fresh pk- access key and an argon2id DIGEST of its sk- secret
+// on sa, returning the plaintext secret to reveal EXACTLY ONCE. The digest — never the
 // secret — is persisted, so a storage read can never recover a live credential.
 // Mirrors serviceaccounts.mint (a service account is one User row).
+//
+// The two halves carry DIFFERENT prefixes because they are different things, and the
+// prefix is the only thing a human reading a log or a config file has to tell them
+// apart: pk- is the publishable lookup handle (stored verbatim, safe to show), sk- is
+// the confidential half (digested, revealed once). Minting both as `hk-` made an
+// exposed secret indistinguishable from a harmless handle at a glance.
 func mintCredential(sa *schema.User) (accessKey, secret string, err error) {
-	accessKey, secret = keys.Mint("hk", ""), keys.Mint("hk", "")
+	accessKey, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
 	hash, err := cred.Hash(secret)
 	if err != nil {
 		return "", "", err

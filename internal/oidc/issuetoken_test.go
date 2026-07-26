@@ -17,7 +17,7 @@ import (
 	"github.com/hanzoai/iam/internal/users"
 )
 
-// The `hk-` Cloud API-key primitives (mint/revoke). A confidential, allow-listed
+// The `sk-` Cloud API-key primitives (mint/revoke). A confidential, allow-listed
 // client (client_secret_basic) acts on a ?id=<owner>/<name> target user. These are
 // a product credential, not an RFC token flow — the on-behalf-of TOKEN minting is
 // RFC 8693 Token Exchange (token_exchange_test.go).
@@ -94,7 +94,7 @@ func TestIssueUserToken_notAllowlisted_403(t *testing.T) {
 	}
 }
 
-func TestMintUserKeys_generatesReadableHkKey(t *testing.T) {
+func TestMintUserKeys_generatesReadableSkKey(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
@@ -105,8 +105,8 @@ func TestMintUserKeys_generatesReadableHkKey(t *testing.T) {
 		t.Fatalf("status = %d; body=%s", resp.StatusCode, body)
 	}
 	key, _ := dataMap(t, body)["accessKey"].(string)
-	if !strings.HasPrefix(key, "hk-") || len(key) < 8 {
-		t.Fatalf("accessKey = %q, want an hk- key", key)
+	if !strings.HasPrefix(key, "sk-") || len(key) < 8 {
+		t.Fatalf("accessKey = %q, want an sk- key", key)
 	}
 	// The minted key is persisted on the user row (get-user / getUserKey read it).
 	u, err := store.GetUserByName(context.Background(), db, "hanzo", "alice")
@@ -166,7 +166,7 @@ func TestMintUserKeys_forbiddenUser_403(t *testing.T) {
 // users.Create path (signup / SCIM / federation / CRUD) gets a store-ASSIGNED surrogate
 // key (a GenerateID decimal string) and a UUID sub — the exact post-cutover account
 // shape — for which an "owner/name" lookup MISSES. The pre-fix saveUser then errored
-// (orm.ErrNotFound → 500) and no hk- key was ever minted or revoked for a new signup.
+// (orm.ErrNotFound → 500) and no sk- key was ever minted or revoked for a new signup.
 // This drives mint AND revoke against a create-path user; it FAILS before the fix (mint
 // 500) and PASSES after (the write targets the row's real storage key, both shapes).
 func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
@@ -182,14 +182,14 @@ func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 		t.Fatalf("create via canonical path: %v", err)
 	}
 
-	// MINT must persist the hk- key on the real (surrogate-keyed) row.
+	// MINT must persist the sk- key on the real (surrogate-keyed) row.
 	resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/mallory"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("mint status=%d body=%s — saveUser missed the surrogate-key row (ITEM 1)", resp.StatusCode, body)
 	}
 	key, _ := dataMap(t, body)["accessKey"].(string)
-	if !strings.HasPrefix(key, "hk-") {
-		t.Fatalf("accessKey=%q, want an hk- key", key)
+	if !strings.HasPrefix(key, "sk-") {
+		t.Fatalf("accessKey=%q, want an sk- key", key)
 	}
 	u, err := store.GetUserByName(tctx(), db, "hanzo", "mallory")
 	if err != nil || u == nil {
