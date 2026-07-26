@@ -17,7 +17,7 @@ import (
 //
 //	sqlite    — embedded hanzoai/sqlite (default; the no-Postgres local path)
 //	sql       — hanzoai/sql (Postgres fork) over ZAP :9651
-//	datastore — hanzoai/datastore (ClickHouse fork) over ZAP :9655
+//	datastore — hanzoai/datastore (Hanzo Datastore) over ZAP :9655
 //
 // This is the ONE store-open path: the serving binary (main.go) and the
 // migrate-v1 tool both call it, so a migrated store and a served store share
