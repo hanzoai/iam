@@ -54,6 +54,13 @@ type appUpsertReq struct {
 	RedirectUris []string `json:"redirectUris"`
 	DisplayName  string   `json:"displayName"`
 	Cert         string   `json:"cert"`
+	// Public declares a client that CANNOT hold a credential — a browser SPA,
+	// a CLI, a desktop app. It proves itself with PKCE instead, and the token
+	// endpoint treats "no stored secret" as exactly that (token.go: a secret is
+	// verified only when one is stored). Without this flag every upsert minted
+	// a secret, so a public client could never be registered at all and its
+	// browser code->token exchange 401'd `invalid_client` forever.
+	Public bool `json:"public"`
 }
 
 // upsertApplication idempotently creates or updates a service-account application,
@@ -80,12 +87,17 @@ func upsertApplication(db orm.DB) zip.Handler {
 		if err != nil {
 			return c.JSON(500, errResp("server_error"))
 		}
-		if req.ClientSecret == "" {
-			if existing != nil && existing.ClientSecret != "" {
-				req.ClientSecret = existing.ClientSecret
-			} else {
-				req.ClientSecret = randomSecret()
-			}
+		switch {
+		case req.Public:
+			// A public client must hold NO secret: that absence is what the
+			// token endpoint reads as "PKCE, do not demand client auth". Clear
+			// any secret a previous confidential registration left behind,
+			// otherwise the client stays un-authenticatable from a browser.
+			req.ClientSecret = ""
+		case req.ClientSecret == "" && existing != nil && existing.ClientSecret != "":
+			req.ClientSecret = existing.ClientSecret // steady-state: never rotate
+		case req.ClientSecret == "":
+			req.ClientSecret = randomSecret()
 		}
 		if req.ClientId == "" {
 			req.ClientId = req.Name // <org>-<app> convention: clientId == name

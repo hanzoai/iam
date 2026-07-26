@@ -201,3 +201,22 @@ func contains(hay []string, needle string) bool {
 	}
 	return false
 }
+
+// A client that ships to the user cannot hold a secret. Getting this wrong is
+// not cosmetic: IAM demands client auth whenever a secret IS stored, so a
+// browser client registered as confidential 401s `invalid_client` on every
+// login, with no way for the page to comply.
+func TestDerive_ShippedClientsArePublic(t *testing.T) {
+	m := derive(t, doc)
+	for _, name := range []string{"lux-wallet" /*spa*/, "lux-cli", "lux-desk"} {
+		if !m[name].Public {
+			t.Errorf("%s must be a public (PKCE) client", name)
+		}
+	}
+	// A server-side app and a machine identity keep their secret.
+	for _, name := range []string{"lux-cloud" /*confidential in this fixture*/, "lux-signer"} {
+		if m[name].Public {
+			t.Errorf("%s must NOT be public — it can hold a credential", name)
+		}
+	}
+}
