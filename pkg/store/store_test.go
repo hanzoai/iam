@@ -13,7 +13,7 @@ import (
 
 func TestProjectStore_AddGetListDelete(t *testing.T) {
 	// Open the SAME embedded SQLite store a host binary (cloud) opens via the public
-	// embedding surface, so the test exercises the exact wiring the embedder uses.
+	// embedding surface, so the test exercises the exact binding the embedder uses.
 	sdb, err := server.OpenSQLite(filepath.Join(t.TempDir(), "store.db"))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)

@@ -131,8 +131,8 @@ func addProvider(db orm.DB) zip.TypedHandler[schema.Provider, providerResult] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
-		// orm.New wires the store and applies defaults; copy the decoded domain
-		// fields over it, then restore the wired Model so its db handle and key
+		// orm.New binds the store and applies defaults; copy the decoded domain
+		// fields over it, then restore the bound Model so its db handle and key
 		// survive the assignment.
 		p := orm.New[schema.Provider](db)
 		model := p.Model

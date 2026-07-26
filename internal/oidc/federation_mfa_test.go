@@ -15,7 +15,7 @@ import (
 	"github.com/hanzoai/iam/internal/mfa/factor"
 )
 
-// The federated-login second-factor gate, driven through the REAL mounted routes
+// The federated-login second-factor gate, driven through the REAL registered routes
 // and the same httptest mock IdP the federation suite uses. The contract that
 // matters is a store fact: an MFA-enrolled user who signs in through an external
 // IdP gets NO authorization code until the factor lands — the hole a live MFA gate

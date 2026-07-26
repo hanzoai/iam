@@ -8,7 +8,7 @@ import (
 )
 
 // OrgRef is the claim-side value a consumer (cloud) decodes off a v2 token in
-// place of the dead iam-v1 type. These tests pin the wire contract: the JSON
+// place of the dead iam-v1 type. These tests pin the HTTP contract: the JSON
 // tags MUST stay `org` and `role,omitempty` so a token minted by v2 round-trips
 // byte-for-byte through a consumer, and the Membership → OrgRef projection is
 // the ONE way to build the `orgs` claim.

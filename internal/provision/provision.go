@@ -71,7 +71,7 @@ type App struct {
 	Callback string `yaml:"callback"`
 }
 
-// Client is the derived, wire-ready registration — the body of an upsert call.
+// Client is the derived, serialized registration — the body of an upsert call.
 // It is deliberately the shape bootstrap.appUpsertReq accepts, minus the
 // secret: see the package comment for why the secret is never sent.
 type Client struct {

@@ -2,8 +2,8 @@
 
 // Package featurestore implements feature.Store over the iam2 orm store, so the
 // hanzoiam/* enterprise modules read/write the SAME identity data as the core.
-// Internal: the core (server.Mount) constructs it and hands the interface to
-// feature.MountAll — modules never see this package, only the feature.Store seam.
+// Internal: the core (server.Route) constructs it and hands the interface to
+// feature.RouteAll — modules never see this package, only the feature.Store seam.
 package featurestore
 
 import (

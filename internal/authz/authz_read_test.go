@@ -2,10 +2,10 @@
 
 package authz_test
 
-// Read-path authorization, driven through the REAL mounted router. A status code
+// Read-path authorization, driven through the REAL registered router. A status code
 // is not the contract here — the BODY is: a listing that returns 200 while
 // carrying the admin signing key is a total compromise. Every case asserts on
-// what actually crossed the wire.
+// what actually crossed the network.
 
 import (
 	"bytes"

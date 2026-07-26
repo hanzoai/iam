@@ -11,7 +11,7 @@
 // no redaction is reimplemented here.
 //
 // Authorization is NOT reimplemented either. These paths are not in authz's
-// public allowlist, so the Guard (app.Use, mounted first) authenticates every
+// public allowlist, so the Guard (app.Use, registered first) authenticates every
 // request AND authorizes the read against the exact (owner, name) it addresses —
 // resolved by the same authz.ReadTarget the handlers use, so a handler can never
 // reach a row the Guard did not authorize. Each handler then re-scopes the query
