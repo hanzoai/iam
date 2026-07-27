@@ -258,3 +258,51 @@ func TestSeed_ReconcileKeepsUndeclaredFields(t *testing.T) {
 		t.Fatal("declared enablePassword=true should hold")
 	}
 }
+
+// Measured against production: live applications legitimately carry redirect URIs
+// and grants init_data.json does not list (hanzo-console alone had 4 extra
+// redirects and 2 extra grants). Reconciling the WHOLE declared object would have
+// deleted them and broken the very logins the flag change was meant to fix, so the
+// reconcile is narrowed to policy keys. This is the guard on that.
+func TestSeed_ReconcileNeverStripsRegistration(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "init_data.json")
+	_ = os.WriteFile(path, []byte(fixture), 0o600)
+	if _, err := FromInitData(ctx, db, path); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stand in for registration that drifted ahead of the file, as production had.
+	if _, err := orm.GetOrUpdate[schema.Application](db, "admin/hanzo-console", func(a *schema.Application) {
+		a.RedirectUris = []string{"https://console.hanzo.ai/callback", "https://admin.hanzo.ai/auth/callback"}
+		a.GrantTypes = []string{"authorization_code", "refresh_token", "client_credentials"}
+		a.ClientSecret = "generated-at-first-boot"
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The file declares neither, and now flips a policy flag.
+	on := `{
+  "organizations": [{"owner":"admin","name":"hanzo"}],
+  "applications": [{"owner":"admin","name":"hanzo-console","clientId":"hanzo-console","organization":"hanzo","enablePassword":true,"enableSignUp":true}]
+}`
+	_ = os.WriteFile(path, []byte(on), 0o600)
+	if _, err := FromInitData(ctx, db, path); err != nil {
+		t.Fatal(err)
+	}
+
+	app, _ := orm.Get[schema.Application](db, "admin/hanzo-console")
+	if !app.EnableSignUp {
+		t.Fatal("declared policy must converge")
+	}
+	if len(app.RedirectUris) != 2 {
+		t.Fatalf("registration must survive: redirectUris=%v", app.RedirectUris)
+	}
+	if len(app.GrantTypes) != 3 {
+		t.Fatalf("registration must survive: grantTypes=%v", app.GrantTypes)
+	}
+	if app.ClientSecret != "generated-at-first-boot" {
+		t.Fatalf("clientSecret must survive: %q", app.ClientSecret)
+	}
+}

@@ -164,8 +164,37 @@ func reconcileApp(db orm.DB, id string, declared map[string]json.RawMessage, s *
 	if !ok {
 		return nil
 	}
+	// Narrow the declared object to the POLICY keys before applying it. Merging the
+	// WHOLE object would make init_data.json authoritative over the entire
+	// registration, and it is not: measured against production, live applications
+	// legitimately carry redirect URIs and grants this file does not list
+	// (hanzo-console alone had 4 extra redirects and 2 extra grants). A full merge
+	// would silently DELETE those and break the very logins it was meant to fix.
+	//
+	// Registration — redirects, grants, hosts — is owned by the provision document.
+	// This file owns identity POLICY. Keeping the two apart is why a bootstrap file
+	// can converge a flag without being able to take a surface offline.
+	policy := map[string]json.RawMessage{}
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &all); err != nil {
+		return fmt.Errorf("seed: reconcile application %s: %w", id, err)
+	}
+	for _, k := range appPolicyKeys {
+		if v, ok := all[k]; ok {
+			policy[k] = v
+		}
+	}
+	if len(policy) == 0 {
+		return nil
+	}
+	patch, err := json.Marshal(policy)
+	if err != nil {
+		return fmt.Errorf("seed: reconcile application %s: %w", id, err)
+	}
 	if _, err := orm.GetOrUpdate[schema.Application](db, id, func(dst *schema.Application) {
-		_ = json.Unmarshal(raw, dst)
+		// Only the keys present in `patch` are written; everything else on the row —
+		// including clientSecret, redirects and grants — is left exactly as stored.
+		_ = json.Unmarshal(patch, dst)
 	}); err != nil {
 		return fmt.Errorf("seed: reconcile application %s: %w", id, err)
 	}
@@ -173,10 +202,27 @@ func reconcileApp(db orm.DB, id string, declared map[string]json.RawMessage, s *
 	return nil
 }
 
+// appPolicyKeys are the application fields init_data.json GOVERNS — who may sign in
+// and how they pick an org. Deliberately short: every key added here becomes one the
+// file can silently revert on the next boot, so a field belongs on this list only if
+// the declared value should always win over whatever is live.
+//
+// Not here, on purpose: redirectUris, grantTypes, clientId/clientSecret, cert — the
+// registration surface, which drifts legitimately and is owned elsewhere.
+var appPolicyKeys = []string{
+	"enableSignUp",
+	"enablePassword",
+	"enableCodeSignin",
+	"enableSigninSession",
+	"orgChoiceMode",
+	"isShared",
+	"organization",
+}
+
 // upsert creates entity if (owner,name) is absent; otherwise counts it skipped
-// (new-only). GetOrCreate binds a fresh Model + sets the id; the defaults func
+// (new-only). GetOrCreate wires a fresh Model + sets the id; the defaults func
 // copies the entity's data fields via a JSON round-trip, which sets only the
-// json-tagged fields and leaves the bound Model's internals (db handle, key)
+// json-tagged fields and leaves the wired Model's internals (db handle, key)
 // intact — the generic-safe way to persist a fully-formed struct.
 func upsert[T any](_ context.Context, db orm.DB, owner, name string, entity *T, s *Summary, kind string) error {
 	if owner == "" {
