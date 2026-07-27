@@ -80,7 +80,7 @@ func directSubjectToken(t *testing.T, db orm.DB, certName, owner, name string) s
 		t.Fatalf("user %s/%s not seeded: %v", owner, name, err)
 	}
 	app := &schema.Application{Organization: u.Owner, ClientId: "direct"}
-	tok, err := signer.Sign(app, subjectOf(u), u.Email, u.Name, u.Name, "openid profile", nil, time.Hour, nowFunc())
+	tok, err := signer.Sign(app, subjectOf(u), u.Email, u.Name, u.Name, "", "openid profile", nil, time.Hour, nowFunc())
 	if err != nil {
 		t.Fatalf("sign subject token: %v", err)
 	}

@@ -31,7 +31,7 @@ func TestSign_RoundTripAndClaims(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	app := testApp()
 
-	tokenStr, err := s.Sign(app, "hanzo/alice", "alice@hanzo.ai", "Alice", "", "openid profile", nil, time.Hour, now)
+	tokenStr, err := s.Sign(app, "hanzo/alice", "alice@hanzo.ai", "Alice", "", "", "openid profile", nil, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestSign_ExpiredTokenRejected(t *testing.T) {
 	key := testKey(t)
 	s := NewRSASigner(key, "cert-hanzo", "https://iam.hanzo.ai")
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, err := s.Sign(testApp(), "u", "", "", "", "openid", nil, time.Minute, now)
+	tokenStr, err := s.Sign(testApp(), "u", "", "", "", "", "openid", nil, time.Minute, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestSign_WrongKeyRejected(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
 	other := testKey(t)
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, _ := s.Sign(testApp(), "u", "", "", "", "openid", nil, time.Hour, now)
+	tokenStr, _ := s.Sign(testApp(), "u", "", "", "", "", "openid", nil, time.Hour, now)
 	var claims Claims
 	_, err := jwt.ParseWithClaims(tokenStr, &claims, func(*jwt.Token) (any, error) { return &other.PublicKey, nil },
 		jwt.WithValidMethods([]string{"RS256"}))
@@ -120,7 +120,7 @@ func TestNewRSASignerFromCert_PEMRoundTrip(t *testing.T) {
 	}
 	// Sign+verify to prove the parsed key works.
 	now := time.Unix(1_800_000_000, 0)
-	str, err := s.Sign(testApp(), "u", "", "", "", "openid", nil, time.Hour, now)
+	str, err := s.Sign(testApp(), "u", "", "", "", "", "openid", nil, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestNewRSASignerFromCert_PEMRoundTrip(t *testing.T) {
 func TestSignEmitsPreferredUsername(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, err := s.Sign(testApp(), "hanzo/z", "z@hanzo.ai", "Zach Kelling", "z", "openid profile", nil, time.Hour, now)
+	tokenStr, err := s.Sign(testApp(), "hanzo/z", "z@hanzo.ai", "Zach Kelling", "z", "", "openid profile", nil, time.Hour, now)
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -157,11 +157,46 @@ func TestSignEmitsPreferredUsername(t *testing.T) {
 	}
 	// A machine token has no user, so the claim is omitted entirely rather than
 	// emitted empty — omitempty is what keeps one struct serving both shapes.
-	machine, err := s.Sign(testApp(), "hanzo/app", "", "app", "", "openid", nil, time.Hour, now)
+	machine, err := s.Sign(testApp(), "hanzo/app", "", "app", "", "", "openid", nil, time.Hour, now)
 	if err != nil {
 		t.Fatalf("Sign machine: %v", err)
 	}
 	if strings.Contains(machine, "preferred_username") {
 		t.Fatal("machine token must omit preferred_username, not emit it empty")
+	}
+}
+
+// TestBillingAccountForOnlyAdminsSpendThePool pins who may spend the org pool.
+//
+// account.Payer honours a signed billing_account above everything else; absent
+// one, its shape rule makes the SIGNUP ORG special — a member of any other org
+// spends the org pool, but a member of "hanzo" gets a PERSONAL wallet, because
+// every self-signup lands there and keying them on the pool let a brand-new $0
+// account read Hanzo's balance and sail through the gate.
+//
+// So the claim is what lets a real admin spend company credit without reopening
+// that hole: admins and owners name the pool, a plain member names nothing.
+func TestBillingAccountForOnlyAdminsSpendThePool(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		refs []schema.OrgRef
+		want string
+	}{
+		{"owner spends the pool", []schema.OrgRef{{Org: "hanzo", Role: "owner"}}, "hanzo"},
+		{"admin spends the pool", []schema.OrgRef{{Org: "hanzo", Role: "admin"}}, "hanzo"},
+		{"plain member does not", []schema.OrgRef{{Org: "hanzo", Role: "member"}}, ""},
+		{"no role does not", []schema.OrgRef{{Org: "hanzo"}}, ""},
+		{"no membership at all", nil, ""},
+		// A token minted for one tenant must never name another's ledger, however
+		// privileged the caller is elsewhere.
+		{"admin of ANOTHER org does not", []schema.OrgRef{{Org: "lux", Role: "admin"}}, ""},
+		{"admin elsewhere, member here", []schema.OrgRef{{Org: "lux", Role: "owner"}, {Org: "hanzo", Role: "member"}}, ""},
+		{"admin here, member elsewhere", []schema.OrgRef{{Org: "lux", Role: "member"}, {Org: "hanzo", Role: "admin"}}, "hanzo"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := billingAccountFor("hanzo", tc.refs); got != tc.want {
+				t.Fatalf("billingAccountFor = %q; want %q", got, tc.want)
+			}
+		})
 	}
 }

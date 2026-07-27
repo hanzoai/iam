@@ -324,7 +324,13 @@ func bearer(t *testing.T, db orm.DB, a *schema.Application, org, name string) (*
 	}
 
 	tok, err := oidc.NewRSASigner(k, "cert-wallet", "https://"+host).
-		Sign(a, org+"/"+name, "", "", "", "openid", nil, time.Hour, time.Now())
+		// Sign is (app, userID, email, name, username, billing, scope, orgs, ttl, now).
+		// "openid" is the SCOPE; it once sat in the username slot because this call
+		// predates username being a parameter, so it silently became a username and
+		// left scope holding the orgs nil. billing is the signed billing_account —
+		// empty here, so account.Payer falls back to its shape rule, which is what
+		// a bare harness user should get.
+		Sign(a, org+"/"+name, "", "", "", "", "openid", nil, time.Hour, time.Now())
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
 	}

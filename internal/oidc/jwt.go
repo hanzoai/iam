@@ -52,9 +52,17 @@ type Claims struct {
 	// completion then 402'd with a funded account. Emitting the username is what
 	// makes the address derivable rather than guessed.
 	PreferredUsername string `json:"preferred_username,omitempty"`
-	Nonce             string `json:"nonce,omitempty"`
-	Azp               string `json:"azp,omitempty"`
-	TokenType         string `json:"tokenType,omitempty"`
+	// BillingAccount names WHICH LEDGER this token spends from — the org pool, or
+	// empty to let the consumer's shape rule pick. account.Payer honours it above
+	// every other signal precisely because it is SIGNED: a caller cannot name its
+	// own payer, so this is IAM stating who is entitled to spend what.
+	//
+	// Empty is meaningful, not missing: it means "no explicit entitlement", and
+	// the consumer falls back to the behaviour it already had.
+	BillingAccount string `json:"billing_account,omitempty"`
+	Nonce          string `json:"nonce,omitempty"`
+	Azp            string `json:"azp,omitempty"`
+	TokenType      string `json:"tokenType,omitempty"`
 	// Orgs is the membership set — the tenancy the identity may act in, home org
 	// first — a resource server reads to authorize an org-switch (X-Org-Id ∈ orgs)
 	// with no round-trip. omitempty ⇒ a nil set omits the claim entirely (a machine
@@ -132,7 +140,7 @@ func NewRSASigner(key *rsa.PrivateKey, kid, issuer string) *Signer {
 // resolved membership set (home org first); nil for a machine token, which omits
 // the claim — the Signer stays decoupled from schema.User, so the caller resolves
 // the tenancy (store.MemberOrgRefs) and passes it.
-func (s *Signer) Sign(app *schema.Application, userID, email, name, username, scope string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
+func (s *Signer) Sign(app *schema.Application, userID, email, name, username, billing, scope string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
@@ -156,6 +164,7 @@ func (s *Signer) Sign(app *schema.Application, userID, email, name, username, sc
 		Email:             email,
 		Name:              name,
 		PreferredUsername: username,
+		BillingAccount:    billing,
 		Azp:               app.ClientId,
 		TokenType:         "access-token",
 		Orgs:              orgs,
@@ -174,7 +183,7 @@ func (s *Signer) Sign(app *schema.Application, userID, email, name, username, sc
 // JWKS verifies it — the token is indistinguishable from one the user obtained
 // directly, which is the point. The Signer stays decoupled from schema.User: the
 // handler resolves and passes the values it authorized.
-func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, username, scope string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
+func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, username, billing, scope string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
@@ -198,6 +207,7 @@ func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, username, 
 		Email:             email,
 		Name:              name,
 		PreferredUsername: username,
+		BillingAccount:    billing,
 		Azp:               azp,
 		TokenType:         "access-token",
 		Orgs:              orgs,
@@ -209,7 +219,7 @@ func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, username, 
 // token by carrying the echoed nonce and by declaring tokenType "id-token"; the
 // audience is the client the token was minted for (the RP), and iss matches the
 // discovery issuer so a standard OIDC client validates it.
-func (s *Signer) SignID(app *schema.Application, userID, email, name, username, scope, nonce string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
+func (s *Signer) SignID(app *schema.Application, userID, email, name, username, billing, scope, nonce string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
@@ -233,6 +243,7 @@ func (s *Signer) SignID(app *schema.Application, userID, email, name, username, 
 		Email:             email,
 		Name:              name,
 		PreferredUsername: username,
+		BillingAccount:    billing,
 		Nonce:             nonce,
 		Azp:               app.ClientId,
 		TokenType:         "id-token",
