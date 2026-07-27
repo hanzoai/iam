@@ -15,6 +15,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/rest"
+
 	"github.com/hanzoai/iam/internal/schema"
 )
 
@@ -26,11 +28,8 @@ type Handler struct {
 // Route registers the invitations CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/invitations", h.List, zip.WithSummary("List invitations for an owner"), zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations", h.Create, zip.WithSummary("Create an invitation"), zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations/get", h.Get, zip.WithSummary("Get one invitation"), zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations/update", h.Update, zip.WithSummary("Update an invitation"), zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations/delete", h.Delete, zip.WithSummary("Delete an invitation"), zip.WithTags("invitations"))
+	rest.Collection(app, "invitations", h.List, h.Create)
+	rest.Member(app, "invitations", h.Get, h.Update, h.Delete)
 }
 
 // Ref addresses one invitation by its owner-scoped natural key.

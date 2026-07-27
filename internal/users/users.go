@@ -22,6 +22,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/cred"
+	"github.com/hanzoai/iam/internal/rest"
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
 )
@@ -40,11 +41,8 @@ func New(db orm.DB) *API { return &API{db: db} }
 // every transport.
 func Route(app *zip.App, db orm.DB) {
 	a := &API{db: db}
-	zip.Post(app, "/v1/iam/users", a.Create, zip.WithTags("users"), zip.WithSummary("Create a user"))
-	zip.Get(app, "/v1/iam/users", a.List, zip.WithTags("users"), zip.WithSummary("List users in an org"))
-	zip.Get(app, "/v1/iam/users/get", a.Get, zip.WithTags("users"), zip.WithSummary("Get a user by (owner, name)"))
-	zip.Post(app, "/v1/iam/users/update", a.Update, zip.WithTags("users"), zip.WithSummary("Update a user"))
-	zip.Post(app, "/v1/iam/users/delete", a.Delete, zip.WithTags("users"), zip.WithSummary("Delete a user"))
+	rest.Collection(app, "users", a.List, a.Create)
+	rest.Member(app, "users", a.Get, a.Update, a.Delete)
 }
 
 // Ref identifies one user by its natural key.
@@ -62,7 +60,15 @@ type CreateInput struct {
 
 // UpdateInput carries the desired user state plus an optional new plaintext
 // password. An empty Password leaves the stored digest untouched.
+//
+// Owner and Name are the member URL's path params, bound by zip from
+// PATCH /v1/iam/users/{owner}/{name}. They are the ADDRESS; the nested record is
+// the desired state. Keeping them at the top level is what lets the URL win — a
+// nested field is not a path target, so without them the URL would be decorative
+// and the body would silently decide which user gets written.
 type UpdateInput struct {
+	Owner    string      `json:"owner,omitempty"`
+	Name     string      `json:"name,omitempty"`
 	User     schema.User `json:"user"`
 	Password string      `json:"password,omitempty"`
 }
@@ -76,9 +82,18 @@ func (in *CreateInput) AuthzTarget() (owner, name string) {
 	return strings.TrimSpace(in.User.Owner), strings.TrimSpace(in.User.Name)
 }
 
-// AuthzTarget reports the (owner, name) this update binds, from the nested record
-// — the same values Update writes, so authorization and execution never diverge.
+// AuthzTarget reports the (owner, name) this update binds — the same values
+// Update writes, so authorization and execution never diverge.
+//
+// The top-level pair wins when present, because it is what the member URL bound:
+// PATCH /v1/iam/users/acme/bob updates acme/bob whatever the nested record says.
+// The nested record remains the target for the callers that address a user by
+// body alone — the Casdoor update-user alias and MCP, neither of which has a URL
+// to carry an address.
 func (in *UpdateInput) AuthzTarget() (owner, name string) {
+	if o := strings.TrimSpace(in.Owner); o != "" {
+		return o, strings.TrimSpace(in.Name)
+	}
 	return strings.TrimSpace(in.User.Owner), strings.TrimSpace(in.User.Name)
 }
 

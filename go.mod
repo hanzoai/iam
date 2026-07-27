@@ -8,7 +8,7 @@ go 1.26.4
 require (
 	github.com/hanzoai/orm v0.6.16
 	github.com/spf13/cobra v1.10.2
-	github.com/zap-proto/zip v1.10.0
+	github.com/zap-proto/zip v1.10.2
 	golang.org/x/crypto v0.53.0
 )
 

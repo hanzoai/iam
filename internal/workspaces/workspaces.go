@@ -19,6 +19,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/rest"
+
 	"github.com/hanzoai/iam/internal/schema"
 )
 
@@ -30,11 +32,8 @@ type Handler struct {
 // Route registers the workspaces CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/workspaces", h.List, zip.WithSummary("List workspaces for an owner"), zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces", h.Create, zip.WithSummary("Create a workspace"), zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces/get", h.Get, zip.WithSummary("Get one workspace"), zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces/update", h.Update, zip.WithSummary("Update a workspace"), zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces/delete", h.Delete, zip.WithSummary("Delete a workspace"), zip.WithTags("workspaces"))
+	rest.Collection(app, "workspaces", h.List, h.Create)
+	rest.Member(app, "workspaces", h.Get, h.Update, h.Delete)
 }
 
 // New exposes a workspace Handler so the Casdoor add-/delete-workspace verb

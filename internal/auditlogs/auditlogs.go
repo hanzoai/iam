@@ -16,6 +16,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/rest"
+
 	"github.com/hanzoai/iam/internal/schema"
 )
 
@@ -27,11 +29,8 @@ type Handler struct {
 // Route registers the audit-log CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/audit-logs", h.List, zip.WithSummary("List audit logs for an owner"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs", h.Create, zip.WithSummary("Create an audit log"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/get", h.Get, zip.WithSummary("Get one audit log"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/update", h.Update, zip.WithSummary("Update an audit log"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/delete", h.Delete, zip.WithSummary("Delete an audit log"), zip.WithTags("audit-logs"))
+	rest.Collection(app, "audit-logs", h.List, h.Create)
+	rest.Member(app, "audit-logs", h.Get, h.Update, h.Delete)
 }
 
 // Ref addresses one audit log by its owner-scoped natural key.

@@ -235,6 +235,20 @@ func isRead(method string) bool { return method == "GET" || method == "HEAD" }
 // SAME function the Guard authorizes with: one extraction, so a handler can
 // never address a row the Guard did not authorize.
 func ReadTarget(c *zip.Ctx) (owner, name string) {
+	// A REST member route declares its target as PATH params
+	// (/v1/iam/<entity>/:owner/:name), so the target is the URL that routed the
+	// request. That is strictly more reliable than the query string it replaces:
+	// a query param can be omitted, duplicated, or disagree with what the handler
+	// binds, whereas these are the same values zip binds onto the decoded input,
+	// so the Guard authorizes exactly what the handler acts on.
+	//
+	// It is read from the ROUTE's own declared params, never inferred from the
+	// shape of the path — a route that does not declare :owner yields "" here and
+	// falls through to the query below. So this cannot silently reinterpret an
+	// unrelated path (a SCIM /Users/{id}, a /web3/nonce) as an (owner, name).
+	if o := c.Param("owner"); o != "" {
+		return o, c.Param("name")
+	}
 	owner, name = c.Query("owner"), c.Query("name")
 	if owner == "" {
 		if id := c.Query("id"); id != "" {
