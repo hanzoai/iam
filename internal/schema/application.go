@@ -262,23 +262,35 @@ func (a *Application) ServesOrg(org string) bool {
 	return org == a.Organization || a.IsShared || a.AllowsOrgChoice()
 }
 
-// orgChoosers are the ONLY OrgChoiceMode values that actually put an organization
-// chooser in front of a human — Casdoor's "Select" (pick from a list) and "Input"
-// (type one). It is an ALLOWLIST, which is what makes the predicate fail closed:
-// a value nobody anticipated gates rather than waves through.
-var orgChoosers = map[string]bool{"select": true, "input": true}
+// orgChoosers are the ONLY OrgChoiceMode values that let a human land in an
+// organization other than the application's own: Casdoor's "select" (pick from a
+// list) and "input" (type one), plus IAM's own "create" — the per-application
+// opt-in to self-serve organization creation that signupHandler reads as
+// orgChoiceCreate. It is an ALLOWLIST, which is what makes the predicate fail
+// closed: a value nobody anticipated gates rather than waves through.
+//
+// "create" belongs here and its omission was not cosmetic. Measured on live IAM,
+// hanzo-console and hanzo-cloud both carry it — they are the surfaces that mint a
+// founder's org at signup and let that founder sign back in afterwards. Leaving
+// "create" out gated exactly those two: signup could not create the org, because
+// the tenant check refuses a foreign org before the create branch is reached, and
+// every founder already onboarded would be refused at login. The gate would have
+// locked out the users it exists to keep apart while leaving its actual targets
+// untouched.
+var orgChoosers = map[string]bool{"select": true, "input": true, "create": true}
 
 // AllowsOrgChoice reports whether this application lets a person sign in under an
 // organization OTHER than the app's own, because it offers a chooser.
 //
 // The bug this closes: the gate used to be spelled `OrgChoiceMode == ""`, treating
 // the EMPTY string as "no chooser". Casdoor's actual value for "no chooser" is the
-// STRING "None", and that is what production carries — measured on live IAM, 13 of
-// 16 registered apps hold "None" and only 3 hold "". Two spellings of one state, so
-// the tenant gate was OFF for those 13 and ON for those 3, while the code read as
-// though it were uniformly on. A security control silently disabled on most of the
-// fleet, and a product inconsistency besides: the same founder could mint a code for
-// hanzo-chat and be refused by hanzo-cli.
+// STRING "None", and that is what production carries. Measured by reading the
+// running pod's own store: of 281 registered applications, 70 hold "None", 2 hold
+// "create", and 209 hold "" — two spellings of one state, so the tenant gate was
+// OFF for 70 apps and ON for 209, while the code read as though it were uniformly
+// on. A security control silently disabled across a large slice of the fleet, and a
+// product inconsistency besides: the same founder could mint a code for hanzo-chat
+// and be refused by hanzo-cli.
 //
 // Both spellings now mean the same thing, decided in ONE place: "None", "", and any
 // unrecognized value all mean no chooser. Comparison is trim+lowercase so a stored
