@@ -8,7 +8,7 @@
 // stamps it per user). A bcrypt-only verifier handed an argon2id PHC string
 // returns ErrHashTooShort, so a bcrypt-only login fails 100% of real users at
 // cutover. v1 resolves per row — user.PasswordType, falling back to the
-// organization's — and dispatches to the matching manager. iam2 does the same.
+// organization's — and dispatches to the matching manager. iam does the same.
 //
 // Hashing is argon2id ONLY (SOTA). Verify stays scheme-aware so pre-existing
 // bcrypt and v1 argon2id rows keep validating, but every NEW or updated digest
@@ -25,7 +25,7 @@ import (
 )
 
 // Supported password types. These are the two schemes Hanzo actually stores:
-// argon2id (every live v1 row) and bcrypt (what iam2 mints for new users).
+// argon2id (every live v1 row) and bcrypt (what iam mints for new users).
 // Anything else fails CLOSED — a silent "true" on an unrecognized scheme would
 // be an auth bypass, and a silent "false" we can't explain is a support
 // nightmare, so Verify reports Unsupported distinctly.

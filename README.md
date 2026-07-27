@@ -91,7 +91,7 @@ go run . version
 globally-unique `client_id`).
 
 The service is embeddable via `server.Route` and builds on Hanzo CI
-(`ghcr.io/hanzoai/iam2`).
+(`ghcr.io/hanzoai/iam`).
 
 ## Client auth (HIP-0111)
 

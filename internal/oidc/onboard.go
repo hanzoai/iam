@@ -51,7 +51,7 @@ const (
 // reserved set never drifts between surfaces. admin is here for a second reason: it is
 // the reserved SuperAdmin org, and a self-service signup must never provision into it
 // (provision, do not promote). Brand/staff orgs (hanzo/lux/zoo/pars in the console
-// list) are NOT reserved here (iam2 is white-label): an existing one is refused by the
+// list) are NOT reserved here (iam is white-label): an existing one is refused by the
 // create-conflict check.
 
 // onboardForm is the request body: a name to create, or personal=true for the

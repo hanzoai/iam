@@ -1,6 +1,6 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package store is the IAM v2 object layer: thin, typed reads over hanzoai/orm
+// Package store is the IAM object layer: thin, typed reads over hanzoai/orm
 // against the Phase-1 entities. It replaces the v1 xorm ormer.Engine fluent
 // calls with orm.TypedQuery, so handlers depend on named operations
 // (GetApplicationByClientId, GetProvider, …) rather than a query builder.
@@ -250,7 +250,7 @@ func IsReservedOrg(owner string) bool {
 // GetSigningCert resolves a TRUSTED signing certificate by name (the JWKS
 // `kid`), searching only the reserved platform owners in order. A cert owned by
 // any other org is never returned, so an attacker-created cert with a colliding
-// name can neither sign a token iam2 will verify nor be published in the JWKS.
+// name can neither sign a token iam will verify nor be published in the JWKS.
 // Returns (nil, nil) when no trusted cert carries the name.
 func GetSigningCert(ctx context.Context, db orm.DB, name string) (*schema.Cert, error) {
 	if name == "" {

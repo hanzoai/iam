@@ -13,7 +13,7 @@ import (
 
 // testIssuerMap is the canonical multi-brand map the cutover deploy configures as
 // IAM_ISSUER_MAP: several ingress hosts (including iam.* aliases) collapse to ONE
-// pinned issuer per brand, all served by the single iam2 instance.
+// pinned issuer per brand, all served by the single iam instance.
 const testIssuerMap = `{
 	"hanzo.id":        "https://hanzo.id",
 	"iam.hanzo.ai":    "https://hanzo.id",

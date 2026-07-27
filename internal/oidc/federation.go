@@ -23,14 +23,14 @@ import (
 	"github.com/hanzoai/iam/internal/users"
 )
 
-// Identity federation — iam2 as an OIDC/OAuth2 Relying Party to external IdPs.
+// Identity federation — iam as an OIDC/OAuth2 Relying Party to external IdPs.
 //
 // A social sign-in is a DETOUR inside the ordinary authorization-code flow. The
 // authorize endpoint, having already validated the client and its EXACT
 // redirect_uri (so there is a trusted target before anything is trusted), hands
 // a request that names a `provider` to beginFederation, which stashes the whole
 // app-leg request server-side and sends the browser to the IdP. When the IdP
-// returns to the fixed callback, iam2 verifies the response, LINKS or PROVISIONS
+// returns to the fixed callback, iam verifies the response, LINKS or PROVISIONS
 // a local user, and mints ITS OWN authorization code — bound to the original
 // PKCE challenge, redirect_uri, and nonce — exactly as a password login would.
 // The relying party's existing PKCE code→token exchange then completes unchanged.
@@ -41,7 +41,7 @@ import (
 
 // PathFederationCallback is the fixed IdP return endpoint. One callback for every
 // provider — the provider is recovered from the server-side transaction the
-// state keys, never from a spoofable URL segment. It is the redirect_uri iam2
+// state keys, never from a spoofable URL segment. It is the redirect_uri iam
 // registers with each external IdP.
 const PathFederationCallback = "/v1/iam/oauth/callback"
 
@@ -152,7 +152,7 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 // federationCallbackHandler completes the round-trip: it resolves and burns the
 // single-use transaction (checking expiry + browser binding), exchanges and
 // verifies the IdP response, links or provisions the local user, and mints the
-// iam2 authorization code the relying party expects — then redirects to the
+// iam authorization code the relying party expects — then redirects to the
 // original redirect_uri with code + state.
 func federationCallbackHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
@@ -277,7 +277,7 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// fedResumeParams is the ORIGINAL iam2 authorize request, pinned server-side so
+// fedResumeParams is the ORIGINAL iam authorize request, pinned server-side so
 // the code minted after a federated login (immediately, or after a second factor)
 // binds to exactly these values — never to anything a later request supplies.
 type fedResumeParams struct {
@@ -295,7 +295,7 @@ type fedResumeParams struct {
 // invalid_request; every other mint failure is an opaque server_error.
 var errPKCERequired = errors.New("federation: PKCE is required for public clients")
 
-// federationMint mints iam2's own authorization code — the SAME artifact a
+// federationMint mints iam's own authorization code — the SAME artifact a
 // password login mints — bound to the pinned app-leg PKCE, redirect_uri and nonce,
 // and returns the RP redirect (redirect_uri?code&state). It is the ONE mint path
 // both the no-factor completion and the post-2FA resume reach, so a federated code
@@ -461,7 +461,7 @@ func providerOwner(p *schema.Provider) string {
 	return "admin"
 }
 
-// federationCallbackURL is the iam2 callback iam2 registers with the IdP and
+// federationCallbackURL is the iam callback iam registers with the IdP and
 // re-presents at the token exchange. It is PINNED from config, never steered by a
 // request header, so an attacker cannot redirect the IdP leg via X-Forwarded-Host.
 func federationCallbackURL(c *zip.Ctx) string {
@@ -511,7 +511,7 @@ func federationOrgAllowed(app *schema.Application) bool {
 }
 
 // fedSuccessRedirect returns the browser to the relying party's redirect_uri with
-// the iam2 authorization code and the original app state (RFC 6749 §4.1.2).
+// the iam authorization code and the original app state (RFC 6749 §4.1.2).
 func fedSuccessRedirect(c *zip.Ctx, st *schema.FederationState, code string) error {
 	v := url.Values{}
 	v.Set("code", code)
@@ -573,7 +573,7 @@ type connectorBinding struct {
 // name is the EXACT json/orm name (already lowercase): orm's filter lowercases
 // only the FIRST rune, so a Go field name like "GitHub" would query '$.gitHub'
 // (the tag is 'github') — passing the exact json name is the one correct way, and
-// this registry is its single source of truth. Only the connectors iam2 can
+// this registry is its single source of truth. Only the connectors iam can
 // federate are listed; anything else fails closed.
 var connectorRegistry = map[string]connectorBinding{
 	"google":          {"google", func(u *schema.User) *string { return &u.Google }},

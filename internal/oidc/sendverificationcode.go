@@ -28,7 +28,7 @@ import (
 // This endpoint owns the code-generation + persistence + validation surface. The
 // actual email/SMS DELIVERY is a separate concern owned by hanzoai/notify (v1
 // calls object.SendVerificationCodeToEmail/…Phone, which forwards to notify over
-// ZAP). notify is not bound into iam2 yet, so this endpoint persists a verifiable
+// ZAP). notify is not bound into iam yet, so this endpoint persists a verifiable
 // code and returns {status:"ok"} honestly — it does NOT fabricate a "sent" claim.
 // Delivery plugs in at the marked seam below with no shape change.
 
@@ -46,9 +46,9 @@ const verificationCodeTTL = 10 * time.Minute
 // reports success. The request fields are read via fiber's FormValue — the
 // escape hatch zip exposes for form bodies (multipart or urlencoded) — since the
 // typed JSON Bind does not apply here. v1 also accepts countryCode/method/
-// checkUser/captchaType; iam2 ignores them (the captcha/forget/MFA flows those
+// checkUser/captchaType; iam ignores them (the captcha/forget/MFA flows those
 // drive are not ported), and CAPTCHA verification is likewise not enforced —
-// iam2 models no captcha provider — so the code is issued once the destination
+// iam models no captcha provider — so the code is issued once the destination
 // and application validate.
 func sendVerificationCode(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
@@ -89,7 +89,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 
 		// Validate the destination by type and, for email, resolve the target user
 		// (metadata on the record). Phone user-resolution + E.164 normalization need
-		// a phone library iam2 does not carry yet — the record still persists.
+		// a phone library iam does not carry yet — the record still persists.
 		var user *schema.User
 		switch typ {
 		case "email":
@@ -136,7 +136,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 		// v1 hands (org, user, dest, code) to hanzoai/notify here
 		// (object.SendVerificationCodeToEmail / …ToPhone). notify owns the
 		// per-tenant SendGrid/SMTP/Resend/Twilio provider + template. It is not
-		// bound into iam2 yet; when it is, the send call slots in exactly here and
+		// bound into iam yet; when it is, the send call slots in exactly here and
 		// the persisted record above stays the source of truth for verification.
 		// ---------------------------------------------------------------------
 

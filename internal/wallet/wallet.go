@@ -1,6 +1,6 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package wallet is native multi-chain wallet sign-in for IAM v2 (HIP-0111):
+// Package wallet is native multi-chain wallet sign-in for IAM (HIP-0111):
 // keyless CAIP-122 challenge/response over github.com/luxwallet/connect/go —
 // the SAME VerifyProof the TypeScript SDK runs, so Go and TS verify identically.
 //
@@ -213,7 +213,7 @@ func check(db orm.DB) zip.Handler {
 		// The multi-factor gate belongs HERE — after the wallet proves the
 		// identity, before any session or code is minted. v1 runs checkMfaEnable
 		// at exactly this point with an empty verificationType (wallet login has
-		// no SMS/email pre-step). iam2 has no MFA gate yet; this is the ONE call
+		// no SMS/email pre-step). iam has no MFA gate yet; this is the ONE call
 		// site it binds into, so wallet login never becomes a silent MFA bypass.
 		if factor(user, org) {
 			return httpx.Err(c, "web3: multi-factor authentication is required")
@@ -236,7 +236,7 @@ func check(db orm.DB) zip.Handler {
 }
 
 // factor reports whether user must clear a second factor before a session is
-// minted. iam2 has no MFA gate yet, so it always reports "not required" — the
+// minted. iam has no MFA gate yet, so it always reports "not required" — the
 // call site above exists so the gate lands in one place rather than being
 // rediscovered, and so its absence is visible rather than silent.
 func factor(_ *schema.User, _ *schema.Organization) bool { return false }

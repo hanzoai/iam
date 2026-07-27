@@ -1,15 +1,13 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package server is the PUBLIC embedding surface of iam2: a host binary (cloud)
-// imports this and registers the full IAM v2 HTTP surface onto its own zip app,
-// over its own orm.DB. This is how iam2 goes live embedded in hanzoai/cloud
-// without a separate pod — the same multi-mode pattern cloud already uses for
-// the Casdoor iamserver, but zip-native and lean.
+// Package server is the PUBLIC embedding surface of iam: a host binary (cloud)
+// imports this and registers the full IAM HTTP surface onto its own zip app,
+// over its own orm.DB. This is how iam goes live embedded in hanzoai/cloud
+// without a separate pod.
 //
-// SHADOW-FIRST: the caller decides the route prefix. Registered under a shadow
-// prefix (e.g. /v2-iam) iam2 runs ALONGSIDE the live Casdoor /v1/iam/* with zero
-// impact; only once verified against real traffic does the host flip iam2 onto
-// the canonical /v1/iam/* paths. Never blind-replace live auth.
+// The caller decides the route prefix. It is normally the canonical /v1/iam/*;
+// a shadow prefix still works if a host wants to stand a second instance up
+// beside the live one before moving traffic.
 package server
 
 import (
@@ -28,42 +26,42 @@ import (
 	"github.com/hanzoai/iam/internal/seed"
 )
 
-// Route registers the entire IAM v2 surface (OIDC discovery/JWKS, get-app-login,
+// Route registers the entire IAM surface (OIDC discovery/JWKS, get-app-login,
 // auth/methods, token, login, and the v2 entity CRUD) onto app, backed by db.
-// This is the one call a host binary makes to embed iam2.
+// This is the one call a host binary makes to embed iam.
 func Route(app *zip.App, db orm.DB) {
 	routes.Route(app, db)
-	// Enterprise features (hanzoai/iam2/feature — SCIM/SAML/LDAP live in the
+	// Enterprise features (hanzoai/iam/feature — SCIM/SAML/LDAP live in the
 	// hanzoiam/* modules and Register themselves). No-op until a host registers
 	// one; fail-fast if a registered module cannot register (a boot misconfiguration).
 	if err := feature.RouteAll(app, featurestore.New(db)); err != nil {
-		panic("iam2: enterprise feature registration failed: " + err.Error())
+		panic("iam: enterprise feature registration failed: " + err.Error())
 	}
 }
 
-// NewApp builds a STANDALONE iam2 zip.App over db — the whole IAM v2 surface
-// registered and Prepared as one self-contained app. A host that registers iam2 as a
+// NewApp builds a STANDALONE iam zip.App over db — the whole IAM surface
+// registered and Prepared as one self-contained app. A host that registers iam as a
 // wildcard sub-handler (app.All("/v1/iam/*", zip.AdaptNetHTTP(h))) rather than
-// co-mingling iam2's routes onto its own app uses this together with Handler; the
+// co-mingling iam's routes onto its own app uses this together with Handler; the
 // caller owns the returned app's Shutdown.
 func NewApp(db orm.DB) *zip.App {
-	app := zip.New(zip.Config{AppName: "iam2", DisableStartupMessage: true})
+	app := zip.New(zip.Config{AppName: "iam", DisableStartupMessage: true})
 	Route(app, db)
 	app.Prepare()
 	return app
 }
 
-// Handler adapts a standalone iam2 app (NewApp) to a net/http handler, so a host
-// router serves the whole IAM v2 surface behind ONE wildcard route. This is the
+// Handler adapts a standalone iam app (NewApp) to a net/http handler, so a host
+// router serves the whole IAM surface behind ONE wildcard route. This is the
 // drop-in shape hanzoai/cloud uses to swap the legacy Beego IAM catch-all for
-// iam2: registered at the /v1/iam/* (and root /.well-known/*) wildcards, the
+// iam: registered at the /v1/iam/* (and root /.well-known/*) wildcards, the
 // specific self-service routes layered in front still win by Fiber specificity,
 // so the swap is collision-free — the same topology the Beego catch-all had.
 func Handler(db orm.DB) http.Handler {
 	return adaptor.FiberApp(NewApp(db).Fiber())
 }
 
-// OpenSQLite opens an embedded SQLite store for iam2 at path (WAL). The host may
+// OpenSQLite opens an embedded SQLite store for iam at path (WAL). The host may
 // instead pass its own orm.DB (e.g. hanzoai/sql over ZAP) to Route.
 func OpenSQLite(path string) (orm.DB, error) {
 	return orm.OpenSQLite(&ormdb.SQLiteDBConfig{
