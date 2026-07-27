@@ -205,3 +205,64 @@ func TestRevokeUserKey_EndStateAndIdempotent(t *testing.T) {
 		t.Fatalf("revoke on an already-revoked user must succeed, got %v", err)
 	}
 }
+
+// A caller must not be able to CHOOSE a key's credential. The sk- half resolves its
+// owning user by exact match (store.userOwningKey), so a body that carries one lets
+// the sender pick a secret it already knows and then present it as that principal.
+// This is a forgery primitive the moment the secret is stored as a digest.
+func TestKeys_CallerCannotChooseTheCredential(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	k, err := create(db)(ctx, &schema.Key{
+		Owner: "acme", Name: "planted",
+		AccessKey:    "pk-live-chosen-by-caller",
+		AccessSecret: "sk-live-chosen-by-caller",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if k.AccessSecret == "sk-live-chosen-by-caller" {
+		t.Fatal("caller-supplied AccessSecret was persisted — a chosen credential is a forgery")
+	}
+	if k.AccessKey == "pk-live-chosen-by-caller" {
+		t.Fatal("caller-supplied AccessKey was persisted")
+	}
+	if !strings.HasPrefix(k.AccessSecret, "sk-") || !strings.HasPrefix(k.AccessKey, "pk-") {
+		t.Fatalf("both halves must be minted; got key=%q secret-prefix=%q", k.AccessKey, k.AccessSecret[:3])
+	}
+}
+
+// Scope is the ACCESS CLASS and is fixed at mint. An update that could flip a secret
+// key to publish scope would blank its secret and make its pk- half org-resolvable at
+// the ingest door — a privilege change wearing the clothes of a profile edit.
+func TestKeys_UpdateCannotReScopeOrRotate(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	made, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "svc"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	secret, access := made.AccessSecret, made.AccessKey
+
+	got, err := update(db)(ctx, &schema.Key{
+		Owner: "acme", Name: "svc",
+		DisplayName:  "renamed",
+		Scope:        schema.KeyScopePublish,
+		AccessSecret: "sk-live-attacker",
+		AccessKey:    "pk-live-attacker",
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got.Scope == schema.KeyScopePublish {
+		t.Fatal("update re-scoped a secret key to publish — that blanks the secret and opens the ingest door")
+	}
+	if got.AccessSecret != secret || got.AccessKey != access {
+		t.Fatal("update rotated the credential to caller-supplied values")
+	}
+	if got.DisplayName != "renamed" {
+		t.Fatalf("update failed to apply a legitimately mutable field: %q", got.DisplayName)
+	}
+}

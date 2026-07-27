@@ -133,3 +133,46 @@ func TestUpdate_IdIsImmutable(t *testing.T) {
 		t.Errorf("profile edit not applied: %q", edited.DisplayName)
 	}
 }
+
+// A user's credential is not a profile field. hk- resolves a user by exact match on
+// AccessKey (store.UserByAccessKey), so a body that carries one plants a credential
+// the sender already knows and can then present AS that user. It is also what would
+// let a retired prefix be re-introduced at will, which makes any census of the legacy
+// population meaningless. Minting is the only writer.
+func TestUsers_CredentialIsNotAProfileField(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	made, err := api.Create(ctx, &CreateInput{
+		User: schema.User{Owner: "hanzo", Name: "ada", Email: "ada@hanzo.ai",
+			AccessKey: "hk-live-planted-at-create"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if made.AccessKey != "" {
+		t.Fatalf("create persisted a caller-supplied credential: %q", made.AccessKey)
+	}
+
+	// Give the row a credential the way the system actually does, then try to
+	// overwrite it through the profile write.
+	made.AccessKey = "sk-live-minted-legitimately"
+	if err := made.UpdateCtx(ctx); err != nil {
+		t.Fatalf("seed credential: %v", err)
+	}
+
+	got, err := api.Update(ctx, &UpdateInput{
+		User: schema.User{Owner: "hanzo", Name: "ada", Email: "ada@hanzo.ai",
+			DisplayName: "Ada L", AccessKey: "hk-live-planted-by-admin"},
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got.AccessKey != "sk-live-minted-legitimately" {
+		t.Fatalf("update overwrote the credential with a caller-supplied value: %q", got.AccessKey)
+	}
+	if got.DisplayName != "Ada L" {
+		t.Fatalf("update failed to apply a legitimately mutable field: %q", got.DisplayName)
+	}
+}
