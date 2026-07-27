@@ -6,9 +6,9 @@ go 1.26.4
 //   - github.com/zap-proto/zip — typed HTTP handlers on the zap-proto/fiber v3 engine
 //   - github.com/hanzoai/orm   — typed Go records over SQLite / hanzoai/sql / hanzoai/datastore
 require (
-	github.com/hanzoai/orm v0.6.8
+	github.com/hanzoai/orm v0.6.15
 	github.com/spf13/cobra v1.10.2
-	github.com/zap-proto/zip v1.8.3
+	github.com/zap-proto/zip v1.9.0
 	golang.org/x/crypto v0.53.0
 )
 
@@ -22,6 +22,7 @@ require (
 
 require (
 	github.com/alexedwards/argon2id v1.0.0
+	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hanzoai/sqlcipher v0.1.0
@@ -47,7 +48,6 @@ require (
 	github.com/evanw/esbuild v0.28.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
-	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.4 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
@@ -55,7 +55,7 @@ require (
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/hanzoai/builder v0.3.13 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
-	github.com/hanzoai/dbx v1.16.0 // indirect
+	github.com/hanzoai/dbx v1.17.2 // indirect
 	github.com/hanzoai/xorm v1.4.4 // indirect
 	github.com/hanzokv/go/v9 v9.22.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -85,7 +85,7 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/zap-proto/go v1.3.0 // indirect
-	github.com/zap-proto/http v0.2.0 // indirect
+	github.com/zap-proto/http v0.2.2 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
