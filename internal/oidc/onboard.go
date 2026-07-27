@@ -9,6 +9,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/internal/store"
 )
 
@@ -158,6 +159,15 @@ func provisionAndRespond(c *zip.Ctx, db orm.DB, owner, name, slug, display strin
 			return onboardErr(c, ft.status, ft.msg)
 		}
 		return onboardErr(c, 500, "server_error")
+	}
+
+	// The converge MOVED the caller into the org it just founded, which re-keys the
+	// identity — so the session cookie the browser is holding names a user that no
+	// longer exists, and the very next request would read as signed OUT. Carry the
+	// live session across to the new key (a no-op on the bearer path, whose subject
+	// is a stable UUID the re-key does not touch).
+	if out.movedFrom != "" && out.movedFrom != out.org {
+		sessions.Rekey(c.Context(), c.Fiber(), db, out.org)
 	}
 
 	resp := map[string]any{"org": out.org, "accessKey": out.accessKey}
