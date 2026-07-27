@@ -20,12 +20,18 @@ import (
 // value is stated here and the two are kept in step by that contract.
 const credentialType = "service-account"
 
-// mintCredential sets a fresh hk- access key and an argon2id DIGEST of its secret on
-// sa, returning the plaintext secret to reveal EXACTLY ONCE. The digest — never the
+// mintCredential sets a fresh pk- access key and an argon2id DIGEST of its sk- secret
+// on sa, returning the plaintext secret to reveal EXACTLY ONCE. The digest — never the
 // secret — is persisted, so a storage read can never recover a live credential.
 // Mirrors serviceaccounts.mint (a service account is one User row).
+//
+// The two halves carry DIFFERENT prefixes because they are different things, and the
+// prefix is the only thing a human reading a log or a config file has to tell them
+// apart: pk- is the publishable lookup handle (stored verbatim, safe to show), sk- is
+// the confidential half (digested, revealed once). Minting both as `hk-` made an
+// exposed secret indistinguishable from a harmless handle at a glance.
 func mintCredential(sa *schema.User) (accessKey, secret string, err error) {
-	accessKey, secret = keys.Mint("hk", ""), keys.Mint("hk", "")
+	accessKey, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
 	hash, err := cred.Hash(secret)
 	if err != nil {
 		return "", "", err
@@ -87,6 +93,12 @@ type provisioned struct {
 	org                     string
 	accessKey, accessSecret string
 	orgCreated, keyCreated  bool
+	// movedFrom is the org the caller belonged to BEFORE the converge. When it
+	// differs from org the caller's identity was re-keyed ("<owner>/<name>"), which
+	// invalidates every credential that names the old pair — the session cookie
+	// above all. The onboard front door reads it to re-issue that cookie so a human
+	// stays signed in across their own signup.
+	movedFrom string
 }
 
 // fault is a provisioning failure carrying the HTTP status the onboarding contract
@@ -181,6 +193,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// Move the caller into the org as its admin (changing Owner re-keys the
 		// identity; lookups are by (owner, name)). Already-there is a no-op that skips
 		// the write. The org's balance starts at zero — usage is pre-paid.
+		wasOwner := user.Owner
 		if user.Owner != cl.slug || !user.IsAdmin {
 			user.Owner = cl.slug
 			user.IsAdmin = true
@@ -189,6 +202,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 				return &fault{500, "server_error"}
 			}
 		}
+		out.movedFrom = wasOwner
 
 		// Ensure ONE org-scoped, metered credential — a service account whose secret
 		// is argon2id-HASHED at rest (never plaintext) and revealed exactly once, on
@@ -219,6 +233,29 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 			out.accessSecret = secret // shown once, on first mint
 		} else {
 			out.accessKey = sa.AccessKey
+		}
+
+		// Record the founder ON the org's roster. The move alone makes the caller the
+		// org's admin, and MemberOrgRefs already emits a HOME org from the user row —
+		// but the (User × Org) relation is what an org's ROSTER is read from
+		// (MembershipsByOrg: invitations, team management, the org-switch grant), so
+		// without this row a self-service org is born with nobody on it. RoleOwner, not
+		// admin: the founder is the org's owner, and EnsureMembership never downgrades,
+		// so a later home-org backfill (which would write RoleAdmin) can no longer
+		// quietly demote them. Idempotent on the (user, org) pair, so a replay adds
+		// nothing.
+		if _, err := store.EnsureMembership(ctx, tx, cl.slug+"/"+cl.name, cl.slug, store.RoleOwner); err != nil {
+			return &fault{500, "server_error"}
+		}
+		// The move RE-KEYS the caller (user ids are "<owner>/<name>"), which strands
+		// the membership row filed under the OLD id: it names an identity that no
+		// longer exists, so the previous org's roster keeps a ghost member forever.
+		// Drop it in the same converge that re-keyed the user — one identity, one set
+		// of memberships. Idempotent (a missing row reports false, never an error).
+		if wasOwner != cl.slug {
+			if _, err := store.DeleteMembership(ctx, tx, wasOwner+"/"+cl.name, wasOwner); err != nil {
+				return &fault{500, "server_error"}
+			}
 		}
 		out.org = cl.slug
 		out.keyCreated = keyCreated

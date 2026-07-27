@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -34,6 +35,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/compare"
 	"github.com/hanzoai/iam/internal/oidc"
+	"github.com/hanzoai/iam/internal/provision"
 	"github.com/hanzoai/iam/internal/routes"
 	_ "github.com/hanzoai/iam/internal/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/internal/seed"
@@ -55,7 +57,7 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), compareCmd(), versionCmd())
+	root.AddCommand(serveCmd(), compareCmd(), provisionCmd(), versionCmd())
 
 	if err := root.ExecuteContext(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "iam2: %v\n", err)
@@ -153,6 +155,71 @@ func compareCmd() *cobra.Command {
 	f.StringVar(&store, "store", "sqlite", "v2 storage backend: sqlite | sql | datastore")
 	f.StringVar(&dbPath, "db", "data/iam2.db", "v2 SQLite database path (store=sqlite)")
 	f.StringVar(&legacy, "legacy", "", "v1 Casdoor DSN (postgres:// or mysql://)")
+	return cmd
+}
+
+// provisionCmd converges a live IAM onto an org's declarative app graph. The
+// document is DATA owned by that org's universe repo; this command is the ONE
+// mechanism that applies it, for every brand. Re-running is a no-op: the upsert
+// keys on <org>-<app> and preserves each existing client secret.
+func provisionCmd() *cobra.Command {
+	var config, url, token string
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "provision",
+		Short: "Converge orgs + OAuth apps from a declarative provision document",
+		Long: "Reads a provision document (orgs[].apps[]) and idempotently upserts every " +
+			"OAuth client via /v1/iam/admin/applications/upsert. clientId is always " +
+			"<org>-<app> and redirect URIs are derived per app type, so a document line " +
+			"cannot drift from the app that actually calls it. Requires the IAM service " +
+			"token (--token or IAM_SERVICE_TOKEN).",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if config == "" {
+				return fmt.Errorf("--config <provision.yaml> is required")
+			}
+			raw, err := os.ReadFile(config)
+			if err != nil {
+				return err
+			}
+			doc, err := provision.Parse(raw)
+			if err != nil {
+				return err
+			}
+			clients, err := provision.Derive(doc)
+			if err != nil {
+				return err
+			}
+			if token == "" {
+				token = os.Getenv("IAM_SERVICE_TOKEN")
+			}
+			if token == "" && !dryRun {
+				return fmt.Errorf("no service token: pass --token or set IAM_SERVICE_TOKEN")
+			}
+
+			out := cmd.OutOrStdout()
+			r := &provision.Reconciler{BaseURL: url, Token: token, DryRun: dryRun}
+			var failed int
+			for _, res := range r.Apply(cmd.Context(), clients) {
+				if res.Err != nil {
+					failed++
+					fmt.Fprintf(out, "  FAIL     %-28s %v\n", res.Client.Name, res.Err)
+					continue
+				}
+				fmt.Fprintf(out, "  %-8s %-28s %s\n", res.Action, res.Client.Name,
+					strings.Join(res.Client.RedirectUris, " "))
+			}
+			fmt.Fprintf(out, "%d app(s), %d failed\n", len(clients), failed)
+			if failed > 0 {
+				return fmt.Errorf("%d app(s) did not converge", failed)
+			}
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&config, "config", "", "path to the provision document (orgs[].apps[])")
+	f.StringVar(&url, "url", "https://hanzo.id", "IAM base URL to converge")
+	f.StringVar(&token, "token", "", "IAM service token (default $IAM_SERVICE_TOKEN)")
+	f.BoolVar(&dryRun, "dry-run", false, "print the derived plan without writing")
 	return cmd
 }
 

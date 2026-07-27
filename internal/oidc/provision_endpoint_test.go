@@ -94,7 +94,7 @@ func TestProvisionEndpoint_ServiceToken(t *testing.T) {
 	if m["org"] != "dave" {
 		t.Fatalf("org=%v, want dave", m["org"])
 	}
-	if ak, _ := m["accessKey"].(string); !strings.HasPrefix(ak, "hk-") {
+	if ak, _ := m["accessKey"].(string); !strings.HasPrefix(ak, "pk-") {
 		t.Fatalf("accessKey not a service-account key: %v", m["accessKey"])
 	}
 	if _, ok := m["accessSecret"]; !ok {

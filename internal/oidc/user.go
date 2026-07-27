@@ -42,7 +42,7 @@ import (
 // A missing row is orm.ErrNotFound; mutate's own error aborts the transaction and is
 // returned verbatim. mutate must set only the fields it owns and must not carry in a
 // value captured before the lock — the point is to act on the fresh row. The returned
-// row reflects the committed state (a read-only view; it is wired to the closed
+// row reflects the committed state (a read-only view; it is bound to the closed
 // transaction, like the wallet burn's returned challenge).
 func updateUser(ctx context.Context, db orm.DB, owner, name string, mutate func(*schema.User) error) (*schema.User, error) {
 	keyed, err := store.GetUserByName(ctx, db, owner, name)

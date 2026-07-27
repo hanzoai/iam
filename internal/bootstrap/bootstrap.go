@@ -3,7 +3,7 @@
 // Package bootstrap serves the operator-driven service-account provisioning
 // endpoints — `POST /v1/iam/admin/{applications,users}/upsert`. The Hanzo K8s
 // operator (operator-core) reconciles an IAM CR's spec.applications[]/users[] here,
-// wiring the service-account OAuth apps that KMS/signers authenticate with, with NO
+// binding the service-account OAuth apps that KMS/signers authenticate with, with NO
 // human admin in the loop. It is idempotent (create OR update by the natural key)
 // so a ~30s reconcile is a no-op once converged.
 //
@@ -54,6 +54,13 @@ type appUpsertReq struct {
 	RedirectUris []string `json:"redirectUris"`
 	DisplayName  string   `json:"displayName"`
 	Cert         string   `json:"cert"`
+	// Public declares a client that CANNOT hold a credential — a browser SPA,
+	// a CLI, a desktop app. It proves itself with PKCE instead, and the token
+	// endpoint treats "no stored secret" as exactly that (token.go: a secret is
+	// verified only when one is stored). Without this flag every upsert minted
+	// a secret, so a public client could never be registered at all and its
+	// browser code->token exchange 401'd `invalid_client` forever.
+	Public bool `json:"public"`
 }
 
 // upsertApplication idempotently creates or updates a service-account application,
@@ -80,13 +87,11 @@ func upsertApplication(db orm.DB) zip.Handler {
 		if err != nil {
 			return c.JSON(500, errResp("server_error"))
 		}
-		if req.ClientSecret == "" {
-			if existing != nil && existing.ClientSecret != "" {
-				req.ClientSecret = existing.ClientSecret
-			} else {
-				req.ClientSecret = randomSecret()
-			}
+		var existingSecret string
+		if existing != nil {
+			existingSecret = existing.ClientSecret
 		}
+		req.ClientSecret = resolveSecret(req.Public, req.ClientSecret, existing != nil, existingSecret)
 		if req.ClientId == "" {
 			req.ClientId = req.Name // <org>-<app> convention: clientId == name
 		}
@@ -217,6 +222,31 @@ func upsertUser(db orm.DB) zip.Handler {
 }
 
 // ---- helpers ----
+
+// resolveSecret decides the credential an upsert stores. It is the ONE place
+// public-vs-confidential is settled, split out so the rule is testable without
+// a store:
+//
+//   - public       -> NO secret. That absence is exactly what the token endpoint
+//     reads as "PKCE, do not demand client auth", so it must also
+//     CLEAR one left by an earlier confidential registration.
+//   - explicit     -> honour it; rotation is deliberate.
+//   - existing app -> preserve what it has, INCLUDING an empty secret. Minting
+//     one because "the stored secret is empty" would silently
+//     turn a public client confidential on the next reconcile.
+//   - brand new    -> mint one.
+func resolveSecret(public bool, requested string, hasExisting bool, existing string) string {
+	switch {
+	case public:
+		return ""
+	case requested != "":
+		return requested
+	case hasExisting:
+		return existing
+	default:
+		return randomSecret()
+	}
+}
 
 // decode reads the raw JSON body (content-type independent) into v.
 func decode(c *zip.Ctx, v any) error {
