@@ -1,6 +1,6 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package users mounts the Phase-1 typed CRUD surface for the IAM v2 user
+// Package users registers the Phase-1 typed CRUD surface for the IAM v2 user
 // entity on a zip App, backed by hanzoai/orm. Every operation is owner-scoped
 // by the (owner, name) natural key.
 //
@@ -27,7 +27,7 @@ import (
 	"github.com/hanzoai/iam/internal/store"
 )
 
-// API binds the user handlers to an orm store. Construct once at boot and mount.
+// API binds the user handlers to an orm store. Construct once at boot and register.
 type API struct{ db orm.DB }
 
 // New returns a user API over db — the constructor front-door handlers (e.g. the

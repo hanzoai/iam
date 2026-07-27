@@ -28,7 +28,7 @@ import (
 // This endpoint owns the code-generation + persistence + validation surface. The
 // actual email/SMS DELIVERY is a separate concern owned by hanzoai/notify (v1
 // calls object.SendVerificationCodeToEmail/…Phone, which forwards to notify over
-// ZAP). notify is not wired into iam2 yet, so this endpoint persists a verifiable
+// ZAP). notify is not bound into iam2 yet, so this endpoint persists a verifiable
 // code and returns {status:"ok"} honestly — it does NOT fabricate a "sent" claim.
 // Delivery plugs in at the marked seam below with no shape change.
 
@@ -136,7 +136,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 		// v1 hands (org, user, dest, code) to hanzoai/notify here
 		// (object.SendVerificationCodeToEmail / …ToPhone). notify owns the
 		// per-tenant SendGrid/SMTP/Resend/Twilio provider + template. It is not
-		// wired into iam2 yet; when it is, the send call slots in exactly here and
+		// bound into iam2 yet; when it is, the send call slots in exactly here and
 		// the persisted record above stays the source of truth for verification.
 		// ---------------------------------------------------------------------
 

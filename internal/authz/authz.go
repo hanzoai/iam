@@ -5,7 +5,7 @@
 // through to overwrite an admin-owned signing cert and forge tokens. It is two
 // orthogonal decisions, never braided:
 //
-//   - AUTHENTICATION — the Guard middleware, mounted ONCE via app.Use, AFTER the
+//   - AUTHENTICATION — the Guard middleware, registered ONCE via app.Use, AFTER the
 //     public group and BEFORE the authed routes. Public (pre-authentication)
 //     routes are registered first, so a matched one terminates fiber's middleware
 //     walk and the Guard never runs on it — public vs gated is structural (which
@@ -51,6 +51,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"net/http"
 	"reflect"
 	"strings"
 
@@ -255,7 +256,7 @@ func pathAuthorized(path string) bool {
 	return false
 }
 
-// Guard is the AUTHENTICATION middleware. Mount it via app.Use AFTER the public
+// Guard is the AUTHENTICATION middleware. Route it via app.Use AFTER the public
 // group and BEFORE the authed routes: the public (pre-authentication) routes are
 // registered first, so a matched public route terminates fiber's middleware walk
 // and the Guard never runs on it — public vs gated is decided structurally, by
@@ -269,6 +270,19 @@ func pathAuthorized(path string) bool {
 // write body, which is what let the old target extraction diverge from execution.
 func Guard(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
+		// A CORS preflight carries no credentials BY DEFINITION — the browser
+		// strips them — so authenticating one is a category error: it can only
+		// ever fail. It also fails usefully for nobody, because a 401 preflight
+		// is indistinguishable to the page from "this origin is not allowed",
+		// which is how a legitimately-registered SPA gets told its own IdP is
+		// unreachable. Whether the path is actually open to a browser is CORS's
+		// question, already answered upstream (internal/cors): if it opened the
+		// path it terminated the walk with 204 and we never run; if it did not,
+		// falling through emits no allow-origin header and the browser blocks
+		// the real request anyway. Either way this is not a request to authorize.
+		if c.Method() == http.MethodOptions {
+			return c.Continue()
+		}
 		p, err := principal(c, db)
 		if err != nil {
 			return zip.ErrUnauthorized("authentication required")
@@ -397,7 +411,7 @@ type owned interface {
 // runs on, so there is no second parse to diverge from. An input that nests its
 // owner declares it via owned; every other input files its owner at the top level
 // (directly, or promoted from an embedded record), read reflectively so no entity
-// needs bespoke wiring and an attacker-supplied nested sub-struct is never a
+// needs bespoke binding and an attacker-supplied nested sub-struct is never a
 // target.
 func decodedTarget(in any) (owner, name string) {
 	if o, ok := in.(owned); ok {

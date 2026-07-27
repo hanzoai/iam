@@ -57,9 +57,21 @@ type App struct {
 	App   string   `yaml:"app"`
 	Type  string   `yaml:"type"`
 	Hosts []string `yaml:"hosts"`
+	// Cert names the signing cert this app's tokens are issued under. It is not
+	// cosmetic: issueTokens resolves app.Cert to sign, so a client registered
+	// without one cannot mint an id_token, and an OIDC library that needs the
+	// id_token to identify the user fails AFTER a successful code exchange —
+	// the confusing "cannot get user information without id_token" class. Empty
+	// leaves whatever the app already has, so adding this field rotates nothing.
+	Cert string `yaml:"cert"`
+	// Callback overrides the standard browser callback path for a server whose
+	// redirect URI is not ours to choose (Hanzo Git serves
+	// /user/oauth2/<source>/callback). Still derived per host, so one host set
+	// stays the single source of the URI list.
+	Callback string `yaml:"callback"`
 }
 
-// Client is the derived, wire-ready registration — the body of an upsert call.
+// Client is the derived, serialized registration — the body of an upsert call.
 // It is deliberately the shape bootstrap.appUpsertReq accepts, minus the
 // secret: see the package comment for why the secret is never sent.
 type Client struct {
@@ -75,6 +87,9 @@ type Client struct {
 	// is what stops the token endpoint demanding a credential the client could
 	// never hold — the `invalid_client` a browser login otherwise dies on.
 	Public bool `json:"public"`
+	// Cert is the signing cert name. Omitted from the body when empty so the
+	// upsert preserves the app's current cert (it assigns only a non-empty one).
+	Cert string `json:"cert,omitempty"`
 }
 
 // App types. A document that names anything else is rejected at Derive rather
@@ -159,6 +174,17 @@ func deriveApp(org Org, a App) (Client, error) {
 	if !ok {
 		return Client{}, fmt.Errorf("provision: app %s/%s has unknown type %q", org.Name, name, a.Type)
 	}
+	// A callback is a path, and never the /api/ prefix we retired everywhere
+	// else. Rejected here rather than in review, because a malformed redirect
+	// converges silently and then every login dies redirect_uri_mismatch.
+	if cb := strings.TrimSpace(a.Callback); cb != "" {
+		if !strings.HasPrefix(cb, "/") {
+			return Client{}, fmt.Errorf("provision: app %s/%s callback %q must start with /", org.Name, name, cb)
+		}
+		if strings.Contains(cb, "/api/") {
+			return Client{}, fmt.Errorf("provision: app %s/%s callback %q uses the forbidden /api/ prefix", org.Name, name, cb)
+		}
+	}
 
 	// clientId == name == <org>-<app>. The upsert keys on Name and defaults
 	// ClientId to it, so stating both keeps the record self-describing even if
@@ -173,6 +199,7 @@ func deriveApp(org Org, a App) (Client, error) {
 		GrantTypes:   grants,
 		RedirectUris: redirects(org, a),
 		Public:       publicByType[a.Type],
+		Cert:         strings.TrimSpace(a.Cert),
 	}
 	if c.RedirectUris == nil && a.Type != TypeService {
 		return Client{}, fmt.Errorf("provision: app %s declares no hosts and type %q needs a redirect", id, a.Type)
@@ -201,10 +228,14 @@ func redirects(org Org, a App) []string {
 		return []string{scheme + "://oauth/" + a.App}
 
 	default: // spa, confidential
+		path := callbackPath
+		if p := strings.TrimSpace(a.Callback); p != "" {
+			path = p
+		}
 		var uris []string
 		for _, h := range a.Hosts {
 			if h = strings.TrimSpace(h); h != "" {
-				uris = append(uris, "https://"+h+callbackPath)
+				uris = append(uris, "https://"+h+path)
 			}
 		}
 		return uris

@@ -220,3 +220,73 @@ func TestDerive_ShippedClientsArePublic(t *testing.T) {
 		}
 	}
 }
+
+// gitDoc is the case the derived-only model could not express: a server that
+// dictates its own callback path, and an app that must name its signing cert.
+const gitDoc = `
+orgs:
+  - name: hanzo
+    displayName: Hanzo
+    homepage: https://hanzo.ai
+    apps:
+      - { app: git, type: confidential, hosts: [git.hanzo.ai], cert: cert-hanzo, callback: /user/oauth2/hanzo/callback }
+      - { app: cloud, type: spa, hosts: [cloud.hanzo.ai] }
+`
+
+// Hanzo Git serves /user/oauth2/<source>/callback, not /auth/callback. Without
+// the override the derived URI is simply wrong and every login ends in
+// redirect_uri_mismatch — the exact failure Derive exists to prevent.
+func TestDerive_CallbackOverride(t *testing.T) {
+	m := derive(t, gitDoc)
+	want := "https://git.hanzo.ai/user/oauth2/hanzo/callback"
+	if got := m["hanzo-git"].RedirectUris; !contains(got, want) {
+		t.Errorf("redirectUris = %v, must contain %q", got, want)
+	}
+	// The override is per app, never global: an app that does not ask for one
+	// still gets the single standard path.
+	if got := m["hanzo-cloud"].RedirectUris; !contains(got, "https://cloud.hanzo.ai/auth/callback") {
+		t.Errorf("unoverridden app = %v, want the standard /auth/callback", got)
+	}
+}
+
+// A client with no signing cert cannot mint an id_token (issueTokens resolves
+// app.Cert to build the signer), so an OIDC consumer that identifies the user
+// from the id_token fails AFTER a successful code exchange.
+func TestDerive_CertIsCarried(t *testing.T) {
+	if got := derive(t, gitDoc)["hanzo-git"].Cert; got != "cert-hanzo" {
+		t.Errorf("cert = %q, want cert-hanzo", got)
+	}
+}
+
+// An absent cert must be OMITTED from the body, not sent empty: the upsert
+// assigns only a non-empty cert, so an empty string in the JSON would be
+// indistinguishable from "leave it alone" only by luck. Omitting says it.
+func TestDerive_EmptyCertIsOmittedFromBody(t *testing.T) {
+	b, err := json.Marshal(derive(t, gitDoc)["hanzo-cloud"])
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), "cert") {
+		t.Errorf("body = %s, must not carry a cert key when none is declared", b)
+	}
+	// ...and present when it is declared.
+	b, _ = json.Marshal(derive(t, gitDoc)["hanzo-git"])
+	if !strings.Contains(string(b), `"cert":"cert-hanzo"`) {
+		t.Errorf("body = %s, must carry the declared cert", b)
+	}
+}
+
+// A malformed callback converges silently and breaks login later, so it is
+// rejected at Derive.
+func TestDerive_RejectsBadCallback(t *testing.T) {
+	for _, cb := range []string{"user/oauth2/hanzo/callback", "/api/oauth/callback"} {
+		src := "orgs:\n  - name: hanzo\n    apps:\n      - { app: git, type: confidential, hosts: [git.hanzo.ai], callback: \"" + cb + "\" }\n"
+		d, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", cb, err)
+		}
+		if _, err := Derive(d); err == nil {
+			t.Errorf("callback %q was accepted; want a Derive error", cb)
+		}
+	}
+}

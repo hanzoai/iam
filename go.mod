@@ -6,7 +6,7 @@ go 1.26.4
 //   - github.com/zap-proto/zip — typed HTTP handlers on the zap-proto/fiber v3 engine
 //   - github.com/hanzoai/orm   — typed Go records over SQLite / hanzoai/sql / hanzoai/datastore
 require (
-	github.com/hanzoai/orm v0.6.8-0.20260726065619-7b3c62da906d
+	github.com/hanzoai/orm v0.6.8
 	github.com/spf13/cobra v1.10.2
 	github.com/zap-proto/zip v1.8.3
 	golang.org/x/crypto v0.53.0

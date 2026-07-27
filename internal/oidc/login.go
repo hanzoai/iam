@@ -72,7 +72,7 @@ func loginHandler(db orm.DB) zip.Handler {
 		if err := c.Bind(&f); err != nil {
 			return httpx.Err(c, "invalid request body")
 		}
-		adoptQueryPKCE(c, &f)
+		adoptQuery(c, &f)
 		ctx := c.Context()
 
 		// A post carrying no fresh credential but naming an outstanding challenge is
@@ -81,6 +81,42 @@ func loginHandler(db orm.DB) zip.Handler {
 		if f.Username == "" && f.Password == "" {
 			if id := ReadChallenge(c, f.Challenge); id != "" {
 				return finishMfa(c, db, id, f)
+			}
+			// SINGLE SIGN-ON. A code request carrying no credential but a LIVE session
+			// THIS IdP issued is a user who is already signed in asking for a grant to
+			// the next app. Re-typing the password would prove nothing new: the session
+			// cookie is tamper-evident (HMAC over the platform signing key), carries its
+			// own expiry, and its sid is checked against the Session row on every
+			// resolve, so it is revocable — and it only ever exists downstream of the
+			// full gate, second factor included, because loginGrant is what sets it.
+			//
+			// Without this every app bounced a signed-in person to a credential form:
+			// the portal's own launcher tiles landed on a login wall, which reads as
+			// "the link is dead" because the browser ends up back on the IdP.
+			//
+			// It grants NOTHING extra. The mint runs through loginGrant — the ONE
+			// minting tail — so the reserved-org gate, the app-org tenant gate, the
+			// exact redirect_uri match and the public-client PKCE requirement are the
+			// same checks, in the same order, as a password post; only the proof of
+			// identity differs. Restricted to type=code (a bare session has nothing to
+			// re-establish, and a device approval must stay a deliberate act), and the
+			// row is re-read so an account forbidden or deleted since sign-in is
+			// refused rather than riding its old session.
+			//
+			// Not a CSRF mint: /v1/iam/login is not a CORS browser path and the IdP
+			// never allows credentialed cross-origin reads (internal/cors), so only a
+			// first-party page can both send the cookie and read the code.
+			if f.Type == "code" {
+				if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
+					user, err := store.GetUserByName(ctx, db, owner, name)
+					if err != nil {
+						return httpx.Err(c, err.Error())
+					}
+					if user == nil || user.IsForbidden || user.IsDeleted {
+						return httpx.Err(c, "please sign in first")
+					}
+					return loginGrant(c, db, user, f)
+				}
 			}
 		}
 
@@ -263,25 +299,45 @@ func loginOrgPasswordType(ctx context.Context, db orm.DB, org string) string {
 	return o.PasswordType
 }
 
-// adoptQueryPKCE takes the PKCE challenge from the QUERY STRING when the body
-// did not carry one.
+// adoptQuery takes the authorize request from the QUERY STRING when the body
+// did not carry it.
 //
 // The login form is posted to the URL the authorize step handed the page, and
-// that URL already carries the OAuth parameters:
+// that URL already carries the OAuth request. The BODY is the credential:
 //
-//	POST /v1/iam/login?clientId=…&code_challenge=…&code_challenge_method=S256
-//	{"type":…,"username":…,"password":…,"application":…,"organization":…}
+//	POST /v1/iam/login?clientId=…&redirectUri=…&scope=openid+profile+email&nonce=…&code_challenge=…
+//	{"type":"code","username":…,"password":…,"application":…,"organization":…}
 //
-// The body binds `codeChallenge` (camelCase); the query spells it
-// `code_challenge` (RFC 7636). Reading only the body threw away a challenge the
-// client HAD sent, so a public client was rejected with "PKCE is required for
-// public clients" — the request was complete, we were looking in one place.
-// Body wins when both are present; the query is a fallback, never an override.
-func adoptQueryPKCE(c *zip.Ctx, f *loginForm) {
-	if f.CodeChallenge == "" {
-		f.CodeChallenge = firstNonEmpty(c.Query("code_challenge"), c.Query("codeChallenge"))
+// Both spellings are read because the query has two authors: this server's own
+// authorize endpoint writes RFC snake_case (authorizeForwardQuery), the
+// @hanzo/iam SDK writes camelCase. The body binds camelCase only. Body wins
+// when both are present; the query is a fallback, never an override — a value
+// adopted here still runs every check the body path runs, so an unregistered
+// redirect_uri is refused exactly as before.
+//
+// Reading only the body threw away a request the client HAD sent in full, and
+// the damage surfaced two hops away at the relying party: no scope means no
+// `openid`, so /token answered 200 with NO id_token (a KeyError in every strict
+// OIDC client) and userinfo withheld `email`; no nonce failed the id_token
+// claim check; no redirect_uri skipped the RFC 6749 §4.1.3 binding at
+// redemption. One lookup site, so no parameter can be forgotten alone again.
+func adoptQuery(c *zip.Ctx, f *loginForm) {
+	adopt := func(dst *string, keys ...string) {
+		if *dst == "" {
+			for _, k := range keys {
+				if v := c.Query(k); v != "" {
+					*dst = v
+					return
+				}
+			}
+		}
 	}
-	if f.CodeChallengeMethod == "" {
-		f.CodeChallengeMethod = firstNonEmpty(c.Query("code_challenge_method"), c.Query("codeChallengeMethod"))
-	}
+	adopt(&f.ClientId, "client_id", "clientId")
+	adopt(&f.RedirectUri, "redirect_uri", "redirectUri")
+	adopt(&f.Scope, "scope")
+	adopt(&f.State, "state")
+	adopt(&f.Nonce, "nonce")
+	adopt(&f.Resource, "resource")
+	adopt(&f.CodeChallenge, "code_challenge", "codeChallenge")
+	adopt(&f.CodeChallengeMethod, "code_challenge_method", "codeChallengeMethod")
 }

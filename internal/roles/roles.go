@@ -39,7 +39,7 @@ type Ref struct {
 }
 
 // Input is the writable projection of a role (the v1 add/update-role body). It
-// keeps the wire contract clean of the orm.Model bookkeeping fields.
+// keeps the HTTP contract clean of the orm.Model bookkeeping fields.
 type Input struct {
 	Owner       string   `json:"owner"`
 	Name        string   `json:"name"`

@@ -4,7 +4,7 @@ package memberships_test
 
 // The Casdoor membership VERB aliases (GAP A): get-memberships / add-membership /
 // delete-membership, the spellings cloud's clients/team invite path hard-codes.
-// Every case is a wire request driven through the REAL mounted router (routes.Route
+// Every case is a HTTP request driven through the REAL registered router (routes.Route
 // installs the authz Guard, then registers memberships after it), so the assertions
 // prove the three things a backend swap depends on: the verbs reach the SAME store
 // as the REST surface, the SAME tenant authz gates the REST surface uses, and a
@@ -121,7 +121,7 @@ func (h *harness) postBasic(t *testing.T, path string, body any, clientID, secre
 	return h.do(t, req)
 }
 
-// do drives the request through the real mounted router and decodes the v1
+// do drives the request through the real registered router and decodes the v1
 // envelope. A raw 401 (the Guard's fail-closed refusal) has no envelope body; the
 // caller asserts on the status alone.
 func (h *harness) do(t *testing.T, req *http.Request) (int, env) {

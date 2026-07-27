@@ -22,7 +22,7 @@ type (
 
 	// Project is the org-scoped work container (owner-scoped by (Owner, Name),
 	// where Owner is the owning organization). Exported here so an embedder (cloud)
-	// reads/writes the SAME project rows the mounted /v1/iam/projects surface serves
+	// reads/writes the SAME project rows the registered /v1/iam/projects surface serves
 	// via pkg/store — one canonical definition (schema.Project), no platform-local
 	// clone, replacing the dead iam-v1 object.Project.
 	Project = schema.Project
