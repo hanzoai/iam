@@ -222,7 +222,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	sub := app.GetId() // <appOwner>/<appName>, per v1
 	// A machine token has no user and therefore no membership set — nil orgs omits
 	// the claim, so an app token can never carry a tenancy it did not earn.
-	access, err := signer.Sign(app, sub, "", app.Name, "", scope, nil, ttl, now)
+	access, err := signer.Sign(app, sub, "", app.Name, "", "", scope, nil, ttl, now)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
@@ -379,9 +379,9 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	if err != nil {
 		return tokenResponse{}, err
 	}
-	sub, email, name, username, orgs := userClaims(ctx, db, row.User)
+	sub, email, name, username, billing, orgs := userClaims(ctx, db, row.User)
 
-	access, err := signer.Sign(app, sub, email, name, username, row.Scope, orgs, ttl, now)
+	access, err := signer.Sign(app, sub, email, name, username, billing, row.Scope, orgs, ttl, now)
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -411,7 +411,7 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 		Scope:        row.Scope,
 	}
 	if hasScope(row.Scope, "openid") {
-		idt, err := signer.SignID(app, sub, email, name, username, row.Scope, row.Nonce, orgs, ttl, now)
+		idt, err := signer.SignID(app, sub, email, name, username, billing, row.Scope, row.Nonce, orgs, ttl, now)
 		if err != nil {
 			return tokenResponse{}, err
 		}
@@ -506,8 +506,8 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 	if err != nil {
 		return "", err
 	}
-	sub, _, _, _, orgs := userClaims(ctx, db, tok.User)
-	return signer.Sign(app, sub, "", "", "", tok.Scope, orgs, ttl, now)
+	sub, _, _, _, _, orgs := userClaims(ctx, db, tok.User)
+	return signer.Sign(app, sub, "", "", "", "", tok.Scope, orgs, ttl, now)
 }
 
 // tokenIssuer is the canonical OIDC issuer for this request — the value discovery
@@ -544,14 +544,14 @@ func subjectOf(u *schema.User) string {
 // is the token row's (owner/name) User key. A subject with no user row (a machine
 // token, or a since-deleted user) yields the passed-in id as sub, empty profile,
 // and nil orgs — the claim is omitted, not forged.
-func userClaims(ctx context.Context, db orm.DB, userID string) (sub, email, name, username string, orgs []schema.OrgRef) {
+func userClaims(ctx context.Context, db orm.DB, userID string) (sub, email, name, username, billing string, orgs []schema.OrgRef) {
 	owner, uname := splitSub(userID)
 	if owner == "" || uname == "" {
-		return userID, "", "", "", nil
+		return userID, "", "", "", "", nil
 	}
 	u, err := store.GetUserByName(ctx, db, owner, uname)
 	if err != nil || u == nil {
-		return userID, "", "", "", nil
+		return userID, "", "", "", "", nil
 	}
 	name = u.DisplayName
 	if name == "" {
@@ -559,7 +559,39 @@ func userClaims(ctx context.Context, db orm.DB, userID string) (sub, email, name
 	}
 	// u.Name is the IAM username — the `<name>` half of `<owner>/<name>` and the
 	// only value downstream can address a wallet with. DisplayName is for humans.
-	return subjectOf(u), u.Email, name, u.Name, store.MemberOrgRefs(ctx, db, u)
+	refs := store.MemberOrgRefs(ctx, db, u)
+	return subjectOf(u), u.Email, name, u.Name, billingAccountFor(owner, refs), refs
+}
+
+// billingAccountFor decides WHICH LEDGER this person spends from, and says so in
+// a signed claim so no downstream layer has to guess.
+//
+// account.Payer honours a `billing_account` claim above everything else; absent
+// one it falls back to a shape rule, and that rule makes the SIGNUP ORG special:
+// a member of any other org spends the ORG POOL, but a member of "hanzo" gets a
+// PERSONAL wallet. That asymmetry is deliberate and load-bearing — every
+// self-signup lands in hanzo, and keying them on the pool let a brand-new $0
+// account read Hanzo's balance and sail through the gate.
+//
+// The cost is that a real org ADMIN in hanzo is treated like a random signup:
+// they hold company credit in the pool and are billed against their own empty
+// personal wallet instead. Naming the pool for admins and owners fixes that
+// without reopening the free-rider hole, because a plain member still gets no
+// claim and still falls through to a personal wallet.
+//
+// Only the caller's HOME org is considered: this claim says where THIS token
+// spends, and a token minted for one tenant must never name another's ledger.
+func billingAccountFor(owner string, refs []schema.OrgRef) string {
+	for _, r := range refs {
+		if r.Org != owner {
+			continue
+		}
+		switch r.Role {
+		case store.RoleOwner, store.RoleAdmin:
+			return owner // the org pool
+		}
+	}
+	return "" // no claim ⇒ Payer's shape rule decides, unchanged
 }
 
 // splitSub splits a subject "owner/name" into its two parts.
