@@ -290,3 +290,106 @@ func TestDerive_RejectsBadCallback(t *testing.T) {
 		}
 	}
 }
+
+// The upsert REPLACES redirectUris and grantTypes; it does not merge
+// (internal/bootstrap: `if len(req.RedirectUris) > 0 { existing.RedirectUris =
+// req.RedirectUris }`). So a document that cannot express a live URI does not
+// merely fail to add it — converging DELETES it. These are the two live shapes
+// that proved it, read off the production IAM store:
+//
+//	hanzo-app   24 URIs, incl. the desktop deep link hanzo://oauth/hanzo, the
+//	            loopback dev ports the Tauri build listens on, and
+//	            https://cowork.hanzo.ai/auth/callback. `desktop` derives exactly
+//	            one, hanzo://oauth/app — a value nothing uses.
+//	hanzo-cloud grants [authorization_code refresh_token device_code
+//	            client_credentials]: one client_id serving a browser PKCE
+//	            surface AND a backend machine identity. `spa` derives two, so
+//	            converging revokes the machine half.
+//
+// Literal extras are what let the document state that truth, and this test is
+// the guarantee they are added rather than substituted.
+func TestDerive_LiteralExtrasAreAddedToTheDerivedSet(t *testing.T) {
+	src := `
+orgs:
+  - name: hanzo
+    displayName: Hanzo
+    deepLinkScheme: hanzo
+    apps:
+      - app: app
+        type: spa
+        hosts: [hanzo.app, cowork.hanzo.ai]
+        redirects: ["hanzo://oauth/hanzo", "http://localhost:1420/oauth/callback"]
+      - app: cloud
+        type: spa
+        hosts: [cloud.hanzo.ai]
+        grants: [client_credentials, "urn:ietf:params:oauth:grant-type:device_code"]
+`
+	m := derive(t, src)
+
+	app := m["hanzo-app"]
+	for _, want := range []string{
+		"https://hanzo.app/auth/callback",       // derived from hosts
+		"https://cowork.hanzo.ai/auth/callback", // derived from hosts
+		"hanzo://oauth/hanzo",                   // literal: the deep link in use
+		"http://localhost:1420/oauth/callback",  // literal: a loopback dev port
+	} {
+		if !contains(app.RedirectUris, want) {
+			t.Errorf("redirectUris = %v, missing %s", app.RedirectUris, want)
+		}
+	}
+	if len(app.RedirectUris) != 4 {
+		t.Errorf("redirectUris = %v, want exactly the 2 derived + 2 literal", app.RedirectUris)
+	}
+
+	cloud := m["hanzo-cloud"]
+	for _, want := range []string{
+		"authorization_code", "refresh_token", // the type's default set, kept
+		"client_credentials", "urn:ietf:params:oauth:grant-type:device_code", // extras
+	} {
+		if !contains(cloud.GrantTypes, want) {
+			t.Errorf("grantTypes = %v, missing %s", cloud.GrantTypes, want)
+		}
+	}
+}
+
+// Two runs over one document must produce byte-identical bodies, or a re-run is
+// not a no-op and --dry-run is not reviewable. Extras that repeat a derived
+// value collapse instead of registering the same URI twice.
+func TestDerive_ExtrasAreDeduplicatedAndOrderStable(t *testing.T) {
+	src := `
+orgs:
+  - name: hanzo
+    apps:
+      - app: cloud
+        type: spa
+        hosts: [cloud.hanzo.ai]
+        redirects: ["https://cloud.hanzo.ai/auth/callback", "https://cloud.hanzo.ai/callback", ""]
+        grants: [refresh_token, client_credentials]
+`
+	c := derive(t, src)["hanzo-cloud"]
+	want := []string{"https://cloud.hanzo.ai/auth/callback", "https://cloud.hanzo.ai/callback"}
+	if len(c.RedirectUris) != len(want) {
+		t.Fatalf("redirectUris = %v, want %v", c.RedirectUris, want)
+	}
+	for i := range want {
+		if c.RedirectUris[i] != want[i] {
+			t.Fatalf("redirectUris = %v, want %v (order is part of the contract)", c.RedirectUris, want)
+		}
+	}
+	if got := strings.Join(c.GrantTypes, ","); got != "authorization_code,refresh_token,client_credentials" {
+		t.Errorf("grantTypes = %s, want the default set then the extras, each once", got)
+	}
+}
+
+// A path where a URI belongs registers a redirect no authorize request can
+// match, so it is a loud parse-time error, not a live redirect_uri_mismatch.
+func TestDerive_RejectsRelativeLiteralRedirect(t *testing.T) {
+	src := "orgs:\n  - name: hanzo\n    apps:\n      - { app: cloud, type: spa, hosts: [cloud.hanzo.ai], redirects: [\"/auth/callback\"] }\n"
+	d, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if _, err := Derive(d); err == nil {
+		t.Error("a relative redirect was accepted; want a Derive error")
+	}
+}
