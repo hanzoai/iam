@@ -17,6 +17,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/rest"
+
 	"github.com/hanzoai/iam/internal/schema"
 )
 
@@ -28,11 +30,8 @@ type Handler struct {
 // Route registers the projects CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/projects", h.List, zip.WithSummary("List projects for an owner"), zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects", h.Create, zip.WithSummary("Create a project"), zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects/get", h.Get, zip.WithSummary("Get one project"), zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects/update", h.Update, zip.WithSummary("Update a project"), zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects/delete", h.Delete, zip.WithSummary("Delete a project"), zip.WithTags("projects"))
+	rest.Collection(app, "projects", h.List, h.Create)
+	rest.Member(app, "projects", h.Get, h.Update, h.Delete)
 }
 
 // New exposes a project Handler so the Casdoor add-/delete-project verb aliases

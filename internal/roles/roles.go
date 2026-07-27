@@ -14,6 +14,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/rest"
+
 	"github.com/hanzoai/iam/internal/schema"
 )
 
@@ -25,11 +27,8 @@ type Handler struct {
 // Route registers the roles CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/roles", h.List, zip.WithSummary("List roles for an owner"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles", h.Create, zip.WithSummary("Create a role"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/get", h.Get, zip.WithSummary("Get one role"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/update", h.Update, zip.WithSummary("Update a role"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/delete", h.Delete, zip.WithSummary("Delete a role"), zip.WithTags("roles"))
+	rest.Collection(app, "roles", h.List, h.Create)
+	rest.Member(app, "roles", h.Get, h.Update, h.Delete)
 }
 
 // Ref addresses one role by its owner-scoped natural key.

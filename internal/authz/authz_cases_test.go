@@ -22,8 +22,8 @@ func TestUnauthenticatedWriteIs401(t *testing.T) {
 		{"create user", "POST", "/v1/iam/users", user("hanzo", "x")},
 		{"write cert", "POST", "/v1/iam/certs", cert("admin", signingKid)},
 		{"register app", "POST", "/v1/iam/application", map[string]any{"owner": "admin", "name": "x"}},
-		{"delete user", "POST", "/v1/iam/users/delete", map[string]any{"owner": "hanzo", "name": "alice"}},
-		{"update cert", "POST", "/v1/iam/certs/update", cert("admin", signingKid)},
+		{"delete user", "DELETE", "/v1/iam/users/hanzo/alice", nil},
+		{"update cert", "PATCH", "/v1/iam/certs/admin/" + signingKid, cert("admin", signingKid)},
 		{"create org", "POST", "/v1/iam/organizations", map[string]any{"owner": "admin", "name": "x"}},
 	}
 	for _, c := range cases {
@@ -45,8 +45,8 @@ func TestCrossOrgWriteIs403(t *testing.T) {
 		body               any
 	}{
 		{"create user in hanzo", "POST", "/v1/iam/users", user("hanzo", "mole")},
-		{"update user in hanzo", "POST", "/v1/iam/users/update", user("hanzo", "alice")},
-		{"delete user in hanzo", "POST", "/v1/iam/users/delete", map[string]any{"owner": "hanzo", "name": "alice"}},
+		{"update user in hanzo", "PATCH", "/v1/iam/users/hanzo/alice", user("hanzo", "alice")},
+		{"delete user in hanzo", "DELETE", "/v1/iam/users/hanzo/alice", nil},
 		{"create role in hanzo", "POST", "/v1/iam/roles", map[string]any{"owner": "hanzo", "name": "r"}},
 	}
 	for _, c := range cases {
@@ -70,20 +70,21 @@ func TestSigningCertPoisoningIs403(t *testing.T) {
 		"built-in member (built-in/svc)": h.token(t, "built-in/svc"),
 	}
 	writes := []struct {
-		name, path string
-		body       any
+		name, method, path string
+		body               any
 	}{
-		{"create admin cert", "/v1/iam/certs", cert("admin", "cert-forge")},
-		{"overwrite live admin cert", "/v1/iam/certs/update", cert("admin", signingKid)},
-		{"delete live admin cert", "/v1/iam/certs/delete", map[string]any{"owner": "admin", "name": signingKid}},
-		{"create built-in cert", "/v1/iam/certs", cert("built-in", "cert-forge")},
-		{"overwrite built-in cert", "/v1/iam/certs/update", cert("built-in", "anything")},
+		{"create admin cert", "POST", "/v1/iam/certs", cert("admin", "cert-forge")},
+		{"overwrite live admin cert", "PATCH", "/v1/iam/certs/admin/" + signingKid, cert("admin", signingKid)},
+		{"replace live admin cert", "PUT", "/v1/iam/certs/admin/" + signingKid, cert("admin", signingKid)},
+		{"delete live admin cert", "DELETE", "/v1/iam/certs/admin/" + signingKid, nil},
+		{"create built-in cert", "POST", "/v1/iam/certs", cert("built-in", "cert-forge")},
+		{"overwrite built-in cert", "PATCH", "/v1/iam/certs/built-in/anything", cert("built-in", "anything")},
 	}
 	for who, tok := range principals {
 		for _, w := range writes {
 			t.Run(who+" "+w.name, func(t *testing.T) {
-				if got := h.do(t, "POST", w.path, tok, w.body); got != http.StatusForbidden {
-					t.Fatalf("%s writing %s = %d, want 403 (poisoning gate)", who, w.path, got)
+				if got := h.do(t, w.method, w.path, tok, w.body); got != http.StatusForbidden {
+					t.Fatalf("%s writing %s %s = %d, want 403 (poisoning gate)", who, w.method, w.path, got)
 				}
 			})
 		}
@@ -106,7 +107,7 @@ func TestSuperAdminWritesAdminCertAndCrossOrg(t *testing.T) {
 		body               any
 	}{
 		{"create a new admin signing cert", "POST", "/v1/iam/certs", cert("admin", "cert-fresh")},
-		{"rotate the live admin signing cert", "POST", "/v1/iam/certs/update", rotate},
+		{"rotate the live admin signing cert", "PATCH", "/v1/iam/certs/admin/" + signingKid, rotate},
 		{"create a user in any org", "POST", "/v1/iam/users", user("hanzo", "hire-by-root")},
 		{"create a user in another org", "POST", "/v1/iam/users", user("orgb", "hire-by-root")},
 		{"register an admin-owned app", "POST", "/v1/iam/application", map[string]any{"owner": "admin", "name": "root-app", "clientId": "root-app"}},
@@ -132,7 +133,7 @@ func TestOrgAdminManagesOwnOrgOnly(t *testing.T) {
 		body               any
 	}{
 		{"create user in own org", "POST", "/v1/iam/users", user("hanzo", "newhire")},
-		{"update self org's user", "POST", "/v1/iam/users/update", user("hanzo", "alice")},
+		{"update self org's user", "PATCH", "/v1/iam/users/hanzo/alice", user("hanzo", "alice")},
 		{"register app in own org", "POST", "/v1/iam/application", map[string]any{"owner": "hanzo", "name": "hanzo-app", "clientId": "hanzo-app"}},
 	}
 	for _, c := range allow {
@@ -171,7 +172,7 @@ func TestRegularUserSelfServiceOnly(t *testing.T) {
 	// Reading own record: the guard admits it (not 401/403). The Phase-1 GET
 	// handler binds no query, so the status is the handler's, never the guard's
 	// forbid — the point here is that the guard did NOT block self-read.
-	if got := h.do(t, "GET", "/v1/iam/users/get?owner=hanzo&name=alice", alice, nil); got == http.StatusForbidden || got == http.StatusUnauthorized {
+	if got := h.do(t, "GET", "/v1/iam/users/hanzo/alice", alice, nil); got == http.StatusForbidden || got == http.StatusUnauthorized {
 		t.Fatalf("regular self-read = %d, want the guard to admit it (not 401/403)", got)
 	}
 
@@ -180,12 +181,12 @@ func TestRegularUserSelfServiceOnly(t *testing.T) {
 		name, method, path string
 		body               any
 	}{
-		{"read another user", "GET", "/v1/iam/users/get?owner=hanzo&name=boss", nil},
+		{"read another user", "GET", "/v1/iam/users/hanzo/boss", nil},
 		{"list the org's users", "GET", "/v1/iam/users?owner=hanzo", nil},
-		{"update own record (self-promote)", "POST", "/v1/iam/users/update", map[string]any{"user": map[string]any{"owner": "hanzo", "name": "alice", "isAdmin": true}}},
+		{"update own record (self-promote)", "PATCH", "/v1/iam/users/hanzo/alice", map[string]any{"user": map[string]any{"owner": "hanzo", "name": "alice", "isAdmin": true}}},
 		{"create a user", "POST", "/v1/iam/users", user("hanzo", "puppet")},
-		{"delete another user", "POST", "/v1/iam/users/delete", map[string]any{"owner": "hanzo", "name": "boss"}},
-		{"read another org", "GET", "/v1/iam/users/get?owner=orgb&name=bob", nil},
+		{"delete another user", "DELETE", "/v1/iam/users/hanzo/boss", nil},
+		{"read another org", "GET", "/v1/iam/users/orgb/bob", nil},
 	}
 	for _, c := range deny {
 		t.Run("deny/"+c.name, func(t *testing.T) {
@@ -289,9 +290,9 @@ func TestOwnerClaimCannotEscalate(t *testing.T) {
 		body               any
 	}{
 		{"write admin signing cert", "POST", "/v1/iam/certs", cert("admin", "cert-forge")},
-		{"overwrite live admin cert", "POST", "/v1/iam/certs/update", cert("admin", signingKid)},
+		{"overwrite live admin cert", "PATCH", "/v1/iam/certs/admin/" + signingKid, cert("admin", signingKid)},
 		{"create a user cross-org", "POST", "/v1/iam/users", user("orgb", "mole")},
-		{"promote self in own org", "POST", "/v1/iam/users/update", map[string]any{"user": map[string]any{"owner": "hanzo", "name": "alice", "isAdmin": true}}},
+		{"promote self in own org", "PATCH", "/v1/iam/users/hanzo/alice", map[string]any{"user": map[string]any{"owner": "hanzo", "name": "alice", "isAdmin": true}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -397,17 +398,29 @@ func TestUserOwnerMaskIsRefused(t *testing.T) {
 		t.Fatal("owner-mask injected a user into orgb (cross-tenant)")
 	}
 
-	// Hijack an EXISTING admin-org user via /users/update (nested owner=admin):
-	// refused, and the victim's privilege/credentials are untouched.
+	// Hijack an EXISTING admin-org user by ADDRESSING it: the member URL names the
+	// reserved admin org, which the reserved-owner gate refuses outright.
 	hijack := map[string]any{
 		"user":     map[string]any{"owner": "admin", "name": "root", "isAdmin": true},
 		"password": "attacker-chosen",
 	}
-	if got := h.do(t, "POST", "/v1/iam/users/update", boss, hijack); got != http.StatusForbidden {
+	if got := h.do(t, "PATCH", "/v1/iam/users/admin/root", boss, hijack); got != http.StatusForbidden {
 		t.Fatalf("users update hijack of admin/root = %d, want 403", got)
 	}
 	if h.userIsAdmin(t, "admin", "root") {
-		t.Fatal("update hijack flipped admin/root.isAdmin — privilege takeover via /users/update")
+		t.Fatal("update hijack flipped admin/root.isAdmin — privilege takeover via the member route")
+	}
+
+	// The same mask aimed THROUGH an authorized URL: the attacker addresses a user
+	// it may write (its own org) while the nested record names admin/root. The URL
+	// is the address, so this must land on hanzo/boss and never touch admin/root —
+	// if the nested owner could win, the authorized path would become a tunnel to
+	// the reserved org.
+	if got := h.do(t, "PATCH", "/v1/iam/users/hanzo/boss", boss, hijack); got >= 500 {
+		t.Fatalf("users update of own record = %d, want < 500", got)
+	}
+	if h.userIsAdmin(t, "admin", "root") {
+		t.Fatal("nested owner overrode the member URL — admin/root was written through an authorized path")
 	}
 }
 

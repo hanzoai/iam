@@ -15,6 +15,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/rest"
+
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/schema"
 )
@@ -29,11 +31,8 @@ type Handler struct {
 // the HTTP contract and the stored entity never drift.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/certs", h.List, zip.WithSummary("List certs for an owner"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs", h.Create, zip.WithSummary("Create a cert"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/get", h.Get, zip.WithSummary("Get one cert"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/update", h.Update, zip.WithSummary("Update a cert"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/delete", h.Delete, zip.WithSummary("Delete a cert"), zip.WithTags("certs"))
+	rest.Collection(app, "certs", h.List, h.Create)
+	rest.Member(app, "certs", h.Get, h.Update, h.Delete)
 }
 
 // Ref addresses one cert by its owner-scoped natural key.
