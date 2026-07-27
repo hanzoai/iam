@@ -1,6 +1,6 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package oidc serves the IAM v2 OpenID Connect / OAuth2 surface on zip. The
+// Package oidc serves the IAM OpenID Connect / OAuth2 surface on zip. The
 // handlers are RAW zip handlers (func(c *zip.Ctx) error), not typed generics,
 // because the auth surface needs query params, form bodies, redirects, and
 // headers a JSON-in/JSON-out handler can't reach.
@@ -18,7 +18,7 @@ import (
 )
 
 // Canonical OIDC paths — the single source of truth the @hanzo/iam SDK and every
-// existing relying party hard-code. iam2 serves them directly; the transition
+// existing relying party hard-code. iam serves them directly; the transition
 // off v1 is a backend swap behind the same paths, never a parallel version.
 const (
 	PathAuthorize    = "/v1/iam/oauth/authorize"
@@ -100,7 +100,7 @@ func Route(r zip.Router, db orm.DB) {
 
 // Discovery serves the OIDC discovery document, host-relative (issuer derived
 // from the request host, the same value the tokens carry as `iss`) so a strict
-// client never splits origin. It advertises only what iam2 implements: the
+// client never splits origin. It advertises only what iam implements: the
 // authorization-code flow, S256 PKCE, the three supported grants, and the
 // signing algorithms whose public keys the JWKS actually publishes.
 func Discovery(c *zip.Ctx) error {

@@ -27,7 +27,7 @@ import (
 // Federation is driven through the REAL registered routes (authorize → IdP → callback
 // → code → token). The external IdP is an httptest server — a real HTTP RP round
 // trip with a real OIDC discovery document, a real JWKS, and a real RS256-signed
-// id_token whose signature/issuer/audience/nonce iam2 actually verifies (Google
+// id_token whose signature/issuer/audience/nonce iam actually verifies (Google
 // dialect), plus a real GitHub userinfo + verified-email exchange. No live
 // Google/GitHub is contacted.
 
@@ -375,7 +375,7 @@ func TestFederation_AuthorizeRedirectsToGitHub(t *testing.T) {
 }
 
 // Full OIDC round-trip: a first-time login PROVISIONS a user (no password, not
-// admin) and mints an iam2 authorization code; the relying party's existing PKCE
+// admin) and mints an iam authorization code; the relying party's existing PKCE
 // code→token exchange then completes unchanged and carries the new user's sub.
 func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 	app, db := newServer(t)
@@ -394,7 +394,7 @@ func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 	cb, _ := url.Parse(loc)
 	code := cb.Query().Get("code")
 	if code == "" {
-		t.Fatalf("callback must redirect with an iam2 code; got %q", loc)
+		t.Fatalf("callback must redirect with an iam code; got %q", loc)
 	}
 	if cb.Query().Get("state") != fedAppState {
 		t.Errorf("app state not echoed: %q", cb.Query().Get("state"))
@@ -418,19 +418,19 @@ func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 		t.Fatalf("expected exactly one new user")
 	}
 
-	// The iam2 code redeems through the ordinary PKCE token exchange, unchanged.
+	// The iam code redeems through the ordinary PKCE token exchange, unchanged.
 	tokResp, tok := exchangeCode(t, app, url.Values{
 		"code": {code}, "client_id": {"webapp"}, "redirect_uri": {testRedirect}, "code_verifier": {fedVerifier},
 	})
 	if tokResp.StatusCode != 200 {
-		t.Fatalf("iam2 code exchange failed: %d %v", tokResp.StatusCode, tok)
+		t.Fatalf("iam code exchange failed: %d %v", tokResp.StatusCode, tok)
 	}
 	if tok["access_token"] == nil {
-		t.Fatal("no access_token from the iam2 code exchange")
+		t.Fatal("no access_token from the iam code exchange")
 	}
 	// The token subject is the provisioned user; no IdP token leaks into it.
 	if body := tokenBody(tok); strings.Contains(body, "idp-at-") || strings.Contains(body, "google-secret-do-not-log") {
-		t.Fatal("IdP access token / client secret leaked into the iam2 token response")
+		t.Fatal("IdP access token / client secret leaked into the iam token response")
 	}
 }
 
@@ -446,7 +446,7 @@ func TestFederation_GitHubCallbackProvisionsViaVerifiedEmail(t *testing.T) {
 	resp := callback(t, app, q.Get("state"), "gh-code-1", cookie)
 	loc := requireRedirect(t, resp, testRedirect)
 	if code := mustQuery(t, loc).Get("code"); code == "" {
-		t.Fatalf("GitHub federation did not mint an iam2 code: %q", loc)
+		t.Fatalf("GitHub federation did not mint an iam code: %q", loc)
 	}
 	u, err := store.GetUserByConnector(context.Background(), db, "hanzo", "github", "424242")
 	if err != nil || u == nil {
@@ -710,7 +710,7 @@ func TestFederation_NonAllowlistedRedirectUriRefused(t *testing.T) {
 }
 
 // runOIDCLogin drives a full successful OIDC federation login (authorize →
-// callback) and asserts it lands an iam2 code. mutate may tweak the mock after
+// callback) and asserts it lands an iam code. mutate may tweak the mock after
 // the nonce is bound.
 func runOIDCLogin(t *testing.T, app *zip.App, db orm.DB, m *mockOIDC, clientID string, mutate func()) {
 	t.Helper()
@@ -724,7 +724,7 @@ func runOIDCLogin(t *testing.T, app *zip.App, db orm.DB, m *mockOIDC, clientID s
 	resp := callback(t, app, q.Get("state"), "idp-code-"+randHex(3), cookie)
 	loc := requireRedirect(t, resp, testRedirect)
 	if mustQuery(t, loc).Get("code") == "" {
-		t.Fatalf("federation login did not mint an iam2 code: %q", loc)
+		t.Fatalf("federation login did not mint an iam code: %q", loc)
 	}
 }
 

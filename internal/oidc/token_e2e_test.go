@@ -25,7 +25,7 @@ func openTestDB(t *testing.T) orm.DB {
 	_ = schema.Kinds() // force the schema package init() (kind registration)
 	dir := t.TempDir()
 	db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
-		Path:   filepath.Join(dir, "iam2test.db"),
+		Path:   filepath.Join(dir, "iamtest.db"),
 		Config: ormdb.SQLiteConfig{BusyTimeout: 5000, JournalMode: "WAL"},
 	})
 	if err != nil {

@@ -109,7 +109,7 @@ func newServer(t *testing.T) (*zip.App, orm.DB, *keyring) {
 	t.Helper()
 	db := openTestDB(t)
 	kr := testKeyring(t)
-	app := zip.New(zip.Config{AppName: "iam2-registry-test", DisableStartupMessage: true})
+	app := zip.New(zip.Config{AppName: "iam-registry-test", DisableStartupMessage: true})
 	route(app.Group(""), db, func() (*keyring, error) { return kr, nil })
 	return app, db, kr
 }

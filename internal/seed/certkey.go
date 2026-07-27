@@ -19,7 +19,7 @@ import (
 // cert METADATA but no key material — the normal case, because a signing key
 // cannot live in the init_data.json ConfigMap (it is a secret). It generates a
 // keypair matching CryptoAlgorithm and PEM-encodes the private half, so the JWKS
-// endpoint publishes a key and iam2 can sign tokens — the same first-boot key
+// endpoint publishes a key and iam can sign tokens — the same first-boot key
 // provisioning the legacy Beego iam performs. It is gated to a reserved-org cert
 // (the only certs the JWKS publishes), leaves a cert that already carries key
 // material (PrivateKey or Certificate) or an SSL/unrecognized-alg cert untouched,

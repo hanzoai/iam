@@ -1,8 +1,8 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package seed bootstraps the iam2 store from an init_data.json file — the same
+// Package seed bootstraps the iam store from an init_data.json file — the same
 // file the Casdoor iam uses. This is the ported InitFromFile behavior: on boot,
-// upsert organizations, applications, providers, and certs so a fresh iam2
+// upsert organizations, applications, providers, and certs so a fresh iam
 // (embedded in cloud or standalone) comes up with the real app/provider/cert
 // config instead of an empty store.
 //
@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 )
 
-// initData is the subset of the init_data.json shape iam2 seeds. Users and the
+// initData is the subset of the init_data.json shape iam seeds. Users and the
 // Casbin/LDAP/syncer artifacts are deliberately excluded — identity config only.
 type initData struct {
 	Organizations []*schema.Organization `json:"organizations"`
@@ -114,7 +114,7 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 	for _, c := range data.Certs {
 		// A reserved-org signing cert arrives from init_data without key material
 		// (secrets can't ride a ConfigMap); mint the keypair so the JWKS publishes a
-		// key and iam2 can sign — persisted once by the new-only upsert below.
+		// key and iam can sign — persisted once by the new-only upsert below.
 		if err := ensureSigningKey(c); err != nil {
 			return s, fmt.Errorf("seed: generate signing key for cert %s/%s: %w", c.Owner, c.Name, err)
 		}

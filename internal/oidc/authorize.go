@@ -14,7 +14,7 @@ import (
 )
 
 // The authorization endpoint: GET/POST /v1/iam/oauth/authorize — the front door
-// of the authorization-code flow. iam2 validates the request BEFORE it trusts
+// of the authorization-code flow. iam validates the request BEFORE it trusts
 // any redirect: an unknown client_id or an unregistered redirect_uri is answered
 // in place and NEVER redirected to (RFC 6749 §4.1.2.1), closing the open-redirect
 // and code-injection surface that a bare pass-through would leave open. A
@@ -165,7 +165,7 @@ func authorizeUserError(c *zip.Ctx, msg string) error {
 }
 
 // normalizeChallengeMethod maps an omitted PKCE method to S256 when a challenge
-// is present (S256 is the only method iam2 supports); an explicit non-S256
+// is present (S256 is the only method iam supports); an explicit non-S256
 // method is returned unchanged so the caller rejects the downgrade.
 func normalizeChallengeMethod(challenge, method string) string {
 	if challenge == "" {

@@ -21,7 +21,7 @@ import (
 // subject — the casdoor data model. So the linked accounts ARE those per-connector
 // columns that are set; this returns [{provider, subject}] for each non-empty one.
 // Each item carries only the subject string (the schema stores no per-link display
-// name / avatar / linkedAt), so a richer per-link shape is not available from iam2.
+// name / avatar / linkedAt), so a richer per-link shape is not available from iam.
 // Self-scoped: resolved from the caller (callerOf), never the request.
 
 // PathLinkedAccounts is the canonical linked-identities endpoint.

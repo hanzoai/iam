@@ -67,7 +67,7 @@ func openTestDB(t *testing.T) orm.DB {
 func newServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	db := openTestDB(t)
-	app := zip.New(zip.Config{AppName: "iam2-wallet-test", DisableStartupMessage: true})
+	app := zip.New(zip.Config{AppName: "iam-wallet-test", DisableStartupMessage: true})
 	Route(app.Group(""), db)
 	app.Use(authz.Guard(db))
 	app.Authorize(authz.Authorize)

@@ -1,6 +1,6 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package routes registers the IAM v2 HTTP surface on a zip App.
+// Package routes registers the IAM HTTP surface on a zip App.
 //
 // Authentication is STRUCTURAL, decided by which group a route is registered on,
 // never by a hand-maintained path list. Route binds the surface in two phases
@@ -63,7 +63,7 @@ import (
 //     mount its own guard, which is why they are named here rather than assumed.
 var guardedPrefixes = []string{"/v1/iam", "/login/oauth", "/mcp", "/.well-known/openapi.json"}
 
-// Route registers the whole IAM v2 route surface on app, threading the entity
+// Route registers the whole IAM route surface on app, threading the entity
 // store db into every handler. This is the route table server.Route embeds — the
 // one Route(app, db) is the public entry; everything below is Route.
 func Route(app *zip.App, db orm.DB) {
@@ -119,7 +119,7 @@ func Route(app *zip.App, db orm.DB) {
 	// That is coherent while IAM owns the whole app and false the moment it does
 	// not: embedded in the cloud binary IAM mounts at position 9 and `ai` registers
 	// /v1/models at 106, so IAM's Guard gated ai's routes 97 positions later — and
-	// then resolved the bearer against the EMBEDDED iam2.db, which has never seen a
+	// then resolved the bearer against the EMBEDDED iam.db, which has never seen a
 	// token minted by the external hanzo.id, so it failed closed on every valid
 	// request. The tell was the body: {"status":401,"error":"authentication
 	// required"} is this file's Guard, not ai's OpenAI-shaped error.
@@ -184,6 +184,6 @@ func health(c *zip.Ctx) error {
 	return c.JSON(200, map[string]string{
 		"status": "ok",
 		"phase":  "1",
-		"binary": "iam2",
+		"binary": "iam",
 	})
 }

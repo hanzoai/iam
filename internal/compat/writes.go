@@ -75,7 +75,9 @@ func routeWrites(app *zip.App, db orm.DB) {
 
 	// Applications: add-/delete- (update-application already above).
 	zip.Post(app, "/v1/iam/add-application",
-		func(ctx context.Context, in *schema.Application) (*httpx.Response, error) { return envelope(appCreate(ctx, in)) },
+		func(ctx context.Context, in *schema.Application) (*httpx.Response, error) {
+			return envelope(appCreate(ctx, in))
+		},
 		zip.WithOperationID("addApplication"), zip.WithSummary("Create an application (Casdoor verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-application",
 		func(ctx context.Context, in *schema.Application) (*httpx.Response, error) {
@@ -85,44 +87,64 @@ func routeWrites(app *zip.App, db orm.DB) {
 
 	// Providers: add-/update-/delete- (console admin Providers page).
 	zip.Post(app, "/v1/iam/add-provider",
-		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) { return envelope(provAdd(ctx, in)) },
+		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) {
+			return envelope(provAdd(ctx, in))
+		},
 		zip.WithOperationID("addProvider"), zip.WithSummary("Create a provider (Casdoor verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/update-provider",
-		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) { return envelope(provUpdate(ctx, in)) },
+		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) {
+			return envelope(provUpdate(ctx, in))
+		},
 		zip.WithOperationID("updateProvider"), zip.WithSummary("Update a provider (Casdoor verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-provider",
-		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) { return envelope(provDelete(ctx, in)) },
+		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) {
+			return envelope(provDelete(ctx, in))
+		},
 		zip.WithOperationID("deleteProvider"), zip.WithSummary("Delete a provider (Casdoor verb)"), zip.WithTags("compat"))
 
 	// Roles: add-/update-/delete- (console admin Roles page).
 	zip.Post(app, "/v1/iam/add-role",
-		func(ctx context.Context, in *roles.Input) (*httpx.Response, error) { return envelope(rolesH.Create(ctx, in)) },
+		func(ctx context.Context, in *roles.Input) (*httpx.Response, error) {
+			return envelope(rolesH.Create(ctx, in))
+		},
 		zip.WithOperationID("addRole"), zip.WithSummary("Create a role (Casdoor verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/update-role",
-		func(ctx context.Context, in *roles.Input) (*httpx.Response, error) { return envelope(rolesH.Update(ctx, in)) },
+		func(ctx context.Context, in *roles.Input) (*httpx.Response, error) {
+			return envelope(rolesH.Update(ctx, in))
+		},
 		zip.WithOperationID("updateRole"), zip.WithSummary("Update a role (Casdoor verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-role",
-		func(ctx context.Context, in *roles.Ref) (*httpx.Response, error) { return envelope(rolesH.Delete(ctx, in)) },
+		func(ctx context.Context, in *roles.Ref) (*httpx.Response, error) {
+			return envelope(rolesH.Delete(ctx, in))
+		},
 		zip.WithOperationID("deleteRole"), zip.WithSummary("Delete a role (Casdoor verb)"), zip.WithTags("compat"))
 
 	// Projects: add-/delete- (console ScopeSwitcher; the read rides get-organization-projects
 	// in aliases.go). Owner is the org, so app.Authorize gates a write to an org-admin
 	// of that org — the same clause as add-role.
 	zip.Post(app, "/v1/iam/add-project",
-		func(ctx context.Context, in *projects.Input) (*httpx.Response, error) { return envelope(projectsH.Create(ctx, in)) },
+		func(ctx context.Context, in *projects.Input) (*httpx.Response, error) {
+			return envelope(projectsH.Create(ctx, in))
+		},
 		zip.WithOperationID("addProject"), zip.WithSummary("Create a project (Casdoor verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-project",
-		func(ctx context.Context, in *projects.Ref) (*httpx.Response, error) { return envelope(projectsH.Delete(ctx, in)) },
+		func(ctx context.Context, in *projects.Ref) (*httpx.Response, error) {
+			return envelope(projectsH.Delete(ctx, in))
+		},
 		zip.WithOperationID("deleteProject"), zip.WithSummary("Delete a project (Casdoor verb)"), zip.WithTags("compat"))
 
 	// Workspaces: add-/delete- (console ScopeSwitcher; the read rides
 	// get-organization-workspaces in aliases.go). Owner is the org, so app.Authorize
 	// gates a write to an org-admin of that org — the same clause as add-project.
 	zip.Post(app, "/v1/iam/add-workspace",
-		func(ctx context.Context, in *workspaces.Input) (*httpx.Response, error) { return envelope(workspacesH.Create(ctx, in)) },
+		func(ctx context.Context, in *workspaces.Input) (*httpx.Response, error) {
+			return envelope(workspacesH.Create(ctx, in))
+		},
 		zip.WithOperationID("addWorkspace"), zip.WithSummary("Create a workspace (Casdoor verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-workspace",
-		func(ctx context.Context, in *workspaces.Ref) (*httpx.Response, error) { return envelope(workspacesH.Delete(ctx, in)) },
+		func(ctx context.Context, in *workspaces.Ref) (*httpx.Response, error) {
+			return envelope(workspacesH.Delete(ctx, in))
+		},
 		zip.WithOperationID("deleteWorkspace"), zip.WithSummary("Delete a workspace (Casdoor verb)"), zip.WithTags("compat"))
 
 	// Organizations: update-/delete- (add-organization already above).

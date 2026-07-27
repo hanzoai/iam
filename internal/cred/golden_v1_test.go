@@ -6,11 +6,11 @@ import "testing"
 
 // Golden vectors: PHC digests produced by **v1's own Argon2idCredManager**
 // (hanzoai/iam `cred.NewArgon2idCredManager().GetHashedPassword`, DefaultParams),
-// captured verbatim. This is the parity proof that matters — iam2 must verify the
-// exact bytes v1 wrote, not merely a digest iam2 generated itself.
+// captured verbatim. This is the parity proof that matters — iam must verify the
+// exact bytes v1 wrote, not merely a digest iam generated itself.
 //
 // It also pins a REAL cross-version risk: v1 resolves
-// `github.com/alexedwards/argon2id v0.0.0-20211130144151-3585854a6387` while iam2
+// `github.com/alexedwards/argon2id v0.0.0-20211130144151-3585854a6387` while iam
 // pins `v1.0.0`. The PHC string is self-describing (m/t/p + salt + key), so a
 // digest from either version must verify under the other — this test is what
 // proves that, and what fails loudly if a future bump ever breaks it.
@@ -25,10 +25,10 @@ const (
 )
 
 // TestGolden_V1Argon2idDigestVerifies is the cutover-parity assertion: a digest
-// written by the LIVE v1 code path verifies under iam2's cred.Verify.
+// written by the LIVE v1 code path verifies under iam's cred.Verify.
 func TestGolden_V1Argon2idDigestVerifies(t *testing.T) {
 	if !Verify(TypeArgon2id, goldenV1Password, goldenV1Digest) {
-		t.Fatal("iam2 REJECTED a digest produced by v1's Argon2idCredManager — " +
+		t.Fatal("iam REJECTED a digest produced by v1's Argon2idCredManager — " +
 			"credential parity is broken; every live login would fail at cutover")
 	}
 	if Verify(TypeArgon2id, "not-the-password", goldenV1Digest) {

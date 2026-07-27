@@ -64,7 +64,7 @@ func tctx() context.Context { return context.Background() }
 func newServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	db := openTestDB(t)
-	app := zip.New(zip.Config{AppName: "iam2-test", DisableStartupMessage: true})
+	app := zip.New(zip.Config{AppName: "iam-test", DisableStartupMessage: true})
 	// The whole OIDC surface is the pre-authentication PUBLIC group; a root
 	// (empty-prefix) router registers it at its absolute paths, no Guard.
 	Route(app.Group(""), db)

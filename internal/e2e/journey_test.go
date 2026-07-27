@@ -1,8 +1,8 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package e2e_test drives the WHOLE iam2 surface through the real registered router
+// Package e2e_test drives the WHOLE iam surface through the real registered router
 // (routes.Route) as one integrated journey — the behavioral parity proof that the
-// old Casdoor IAM's clients work against iam2. Unlike the per-package unit tests,
+// old Casdoor IAM's clients work against iam. Unlike the per-package unit tests,
 // this chains the real flows a live client runs in sequence: OIDC discovery →
 // PKCE login → code→token → userinfo → introspect → revoke; the admin console's
 // get-account → get-organizations → get-users (the Casdoor compat surface); SCIM
@@ -74,7 +74,7 @@ func boot(t *testing.T) *env {
 	seedUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "pw", false)
 	seedUser(t, db, "admin", "root", "root@hanzo.ai", "pw", true) // SuperAdmin
 
-	app := zip.New(zip.Config{AppName: "iam2-e2e", DisableStartupMessage: true})
+	app := zip.New(zip.Config{AppName: "iam-e2e", DisableStartupMessage: true})
 	routes.Route(app, db)
 	app.Prepare()
 	return &env{app: app, key: key, db: db}
@@ -158,8 +158,8 @@ func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
 	// RFC 8693 token exchange: the BFF exchanges alice's token for one scoped to a
 	// downstream resource, still bound to alice.
 	xe := e.token(t, url.Values{
-		"grant_type":    {"urn:ietf:params:oauth:grant-type:token-exchange"},
-		"client_id":     {"hanzo-console"}, "client_secret": {"top-secret"},
+		"grant_type": {"urn:ietf:params:oauth:grant-type:token-exchange"},
+		"client_id":  {"hanzo-console"}, "client_secret": {"top-secret"},
 		"subject_token": {subjectToken}, "resource": {"hanzo-cloud"},
 	})
 	if xe["issued_token_type"] != "urn:ietf:params:oauth:token-type:access_token" || xe["access_token"] == "" {

@@ -45,7 +45,7 @@ var (
 // secret to provision and cookies survive restarts. Domain-separated so the key
 // can never collide with any other use of the cert.
 func SessionKey(certPrivateKeyPEM string) []byte {
-	sum := sha256.Sum256([]byte("iam2.session.cookie.v1\x00" + certPrivateKeyPEM))
+	sum := sha256.Sum256([]byte("iam.session.cookie.v1\x00" + certPrivateKeyPEM))
 	return sum[:]
 }
 
