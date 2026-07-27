@@ -1,6 +1,6 @@
 module github.com/hanzoai/iam
 
-go 1.26.4
+go 1.26.5
 
 // Hanzo IAM stack (MIGRATION.md §2) — no base, no consensus engine:
 //   - github.com/zap-proto/zip — typed HTTP handlers on the zap-proto/fiber v3 engine
