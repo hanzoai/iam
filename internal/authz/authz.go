@@ -90,8 +90,13 @@ type Principal struct {
 	// the allowlist keys on the name, and the owner-pin binds that name to the
 	// platform. Empty for every human.
 	AppOwner string
-	Admin    bool
-	Super    bool
+	// AppCert is the NAME of the signing cert that application row references
+	// (schema.Application.Cert). It is carried on the principal so the self-read
+	// clause can permit an app exactly one cert — its own — without the pure
+	// authorize() decision having to reach into the store. Empty for every human.
+	AppCert string
+	Admin   bool
+	Super   bool
 }
 
 type ctxKey struct{}
@@ -209,8 +214,22 @@ func isRead(method string) bool { return method == "GET" || method == "HEAD" }
 func ReadTarget(c *zip.Ctx) (owner, name string) {
 	owner, name = c.Query("owner"), c.Query("name")
 	if owner == "" {
-		if o, n, ok := strings.Cut(c.Query("id"), "/"); ok && o != "" {
-			return o, n
+		if id := c.Query("id"); id != "" {
+			if o, n, ok := strings.Cut(id, "/"); ok && o != "" {
+				return o, n
+			}
+			// A BARE id carries the name alone — `?id=cert-hanzo`, which is how a
+			// relying party asks for the cert its application row names. Previously
+			// this resolved to NO target at all (owner "" AND name ""), so the
+			// authorizer was handed nothing to reason about and fail-closed denied
+			// every caller including the one reading its own. Resolving the name half
+			// can only make the decision MORE precise: an empty owner still fails the
+			// tenant rule (owner != p.Org) and IsReservedOrg(""), so no clause is
+			// widened by knowing the name — only the self-read clause, which pins that
+			// name to the principal's own cert, can act on it.
+			if !strings.Contains(id, "/") {
+				return "", id
+			}
 		}
 	}
 	return owner, name
@@ -433,9 +452,27 @@ func authorize(p *Principal, method, entity, owner, name string) bool {
 	// and stays refused, and admin/<app> vs <tenant>/<app> — the same NAME under a
 	// different owner — differs in `owner`, so neither direction of that collision
 	// is admitted. That pairing is the same one Allowed() pins capabilities to.
-	if p.App != "" && entity == "applications" && isRead(method) &&
-		owner != "" && owner == p.AppOwner && name == p.App {
-		return true
+	if p.App != "" && isRead(method) {
+		// its own application row — both halves of the key must match
+		if entity == "applications" && owner != "" && owner == p.AppOwner && name == p.App {
+			return true
+		}
+		// ...and the ONE signing cert that row references. A relying party cannot
+		// bootstrap without it: InitAuthConfig reads its application, then reads
+		// application.Cert, then InitConfig(cert.Certificate) — so granting only the
+		// application fixes one line and panics identically on the next.
+		//
+		// Scoped to the cert its OWN application names, never "apps may read certs":
+		// name must equal the cert on the authenticated row, so an app cannot walk to
+		// another brand's signing cert. Read-only, and the read is masked anyway
+		// (Cert.Mask blanks PrivateKey and AccessSecret), so what crosses the wire is
+		// the PUBLIC certificate this client already has to trust to verify our
+		// tokens. A bare `?id=cert-hanzo` carries no owner half, so an empty owner is
+		// admitted ONLY here, where the cert NAME is already pinned to this principal.
+		if entity == "certs" && p.AppCert != "" && name == p.AppCert &&
+			(owner == "" || owner == p.AppOwner) {
+			return true
+		}
 	}
 	if store.IsReservedOrg(owner) {
 		// The ONE exception to the reserved-owner gate is the tenant registry: every
@@ -599,7 +636,7 @@ func app(c *zip.Ctx, db orm.DB) (*Principal, bool) {
 	// app), NOT a.Organization (the tenant it SERVES). cap.go pins every capability to
 	// this being a reserved signing owner, so a tenant-owned app named/clientId'd like
 	// a console holds nothing. Org carries the served tenant, as before.
-	return &Principal{App: a.Name, AppOwner: a.Owner, Org: a.Organization}, true
+	return &Principal{App: a.Name, AppOwner: a.Owner, AppCert: a.Cert, Org: a.Organization}, true
 }
 
 // entityOf returns the resource segment of an /v1/iam/<entity>[/verb] path, or
@@ -613,7 +650,44 @@ func entityOf(path string) string {
 	}
 	rest := path[len(p):]
 	if i := strings.IndexByte(rest, '/'); i >= 0 {
-		return rest[:i]
+		rest = rest[:i]
 	}
-	return rest
+	return entityNoun(rest)
+}
+
+// entityNoun folds the Casdoor VERB spelling of a path segment onto the entity
+// noun the policy is written in: get-application -> applications, add-organization
+// -> organizations. Both surfaces address the SAME rows, so they must resolve to
+// the same entity — and they did not.
+//
+// This is what made the app self-read grant look inert in production. The native
+// route /v1/iam/applications resolved to "applications" and matched; the compat
+// alias /v1/iam/get-application resolved to the literal string "get-application",
+// matched no clause, fell through to the reserved-owner gate and 403'd. Cloud calls
+// the alias, so the grant never fired on the only path anyone uses.
+//
+// It is the wider bug too, not just this grant's: EVERY capability keyed on an
+// entity was dead on the compat surface, because capFor("add-organization") is not
+// capFor("organizations"). The allowlists that exist precisely so the brand consoles
+// can manage orgs during onboarding were being consulted with a key that could never
+// match. Folding here — the ONE place a path becomes an entity — restores the
+// documented policy on both surfaces at once rather than teaching each clause two
+// spellings.
+func entityNoun(seg string) string {
+	for _, v := range casdoorVerbs {
+		if !strings.HasPrefix(seg, v) {
+			continue
+		}
+		noun := seg[len(v):]
+		if noun == "" {
+			return ""
+		}
+		// The verbs are singular, the entities plural (get-user -> users); an
+		// already-plural alias (get-memberships) is left alone.
+		if !strings.HasSuffix(noun, "s") {
+			noun += "s"
+		}
+		return noun
+	}
+	return seg
 }
