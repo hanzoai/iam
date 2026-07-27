@@ -22,7 +22,7 @@ import (
 )
 
 // The token endpoint: POST /v1/iam/oauth/token. It dispatches the three grant
-// types iam2 issues — authorization_code (PKCE-verified, single-use code →
+// types iam issues — authorization_code (PKCE-verified, single-use code →
 // access JWT + id_token when openid + rotating refresh), refresh_token
 // (rotation with reuse detection, refresh.go), and client_credentials
 // (machine-to-machine, no user, no refresh). Every response carries no-store
@@ -254,7 +254,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 //
 // CASDOOR PARITY — INTENTIONAL SECURITY-POSTURE DECISION (flagged for Red review).
 // Casdoor ALLOWS a PUBLIC client (the console/chat apps: no client_secret, no PKCE)
-// to complete this grant. During the casdoor→clean-room cutover iam2 defaults to
+// to complete this grant. During the casdoor→clean-room cutover iam defaults to
 // the SAME behavior so console/chat logins do not 401 `invalid_client`. The exact,
 // bounded relaxation vs the prior confidential-only rule:
 //
@@ -487,7 +487,7 @@ func refreshTTL(app *schema.Application) time.Duration {
 // signerFor loads the application's signing cert from the trusted platform
 // signing-cert owners and builds a Signer with the given canonical issuer. Using
 // the same trusted resolution as the JWKS and verification keeps the three
-// consistent: a token is signed by a key iam2 will also publish and verify.
+// consistent: a token is signed by a key iam will also publish and verify.
 func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer string) (*Signer, error) {
 	cert, err := store.GetSigningCert(ctx, db, app.Cert)
 	if err != nil {

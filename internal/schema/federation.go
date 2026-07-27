@@ -7,12 +7,12 @@ import "github.com/hanzoai/orm"
 // FederationState is ONE in-flight identity-federation transaction: the
 // server-side memory that spans the browser's round-trip to an external identity
 // provider (Google/GitHub, …) during an Authorization-Code federation, where
-// iam2 acts as the OIDC/OAuth2 Relying Party. It is what lets the IdP callback
-// RESUME the original iam2 authorize request, and it is the CSRF / replay guard
+// iam acts as the OIDC/OAuth2 Relying Party. It is what lets the IdP callback
+// RESUME the original iam authorize request, and it is the CSRF / replay guard
 // for that callback.
 //
 // Identity is the (Owner, Name) pair; Name IS the opaque 256-bit `state` value
-// iam2 sends to the IdP, so the callback resolves the transaction by the state
+// iam sends to the IdP, so the callback resolves the transaction by the state
 // the IdP reflects back. The row is single-use (Used) and expiring (ExpireIn),
 // and is bound to the initiating browser by BindHash — the SHA-256 of a
 // per-transaction anti-forgery cookie — so a state that is stolen or injected
@@ -21,7 +21,7 @@ import "github.com/hanzoai/orm"
 // No IdP access/ID tokens are persisted here: only the material needed to VERIFY
 // the IdP response (the IdP-leg PKCE verifier and, for OIDC, the nonce checked
 // against the id_token) and to RESUME the app-leg (the original authorize
-// parameters, so the callback mints an iam2 authorization code identical to the
+// parameters, so the callback mints an iam authorization code identical to the
 // one a password login mints). The row is burned on consume.
 type FederationState struct {
 	orm.Model[FederationState]
@@ -37,8 +37,8 @@ type FederationState struct {
 	// (e.g. "provider-google") — the connector whose callback this state authorizes.
 	Provider string `json:"provider"`
 
-	// App-leg: the ORIGINAL iam2 authorize request, stashed so the callback can
-	// resume it. The minted iam2 code is bound to CodeChallenge/RedirectUri/Nonce
+	// App-leg: the ORIGINAL iam authorize request, stashed so the callback can
+	// resume it. The minted iam code is bound to CodeChallenge/RedirectUri/Nonce
 	// exactly as a password-login code is, so the relying party's existing PKCE
 	// code→token exchange completes unchanged. AppState is echoed on the final
 	// redirect back to the relying party.

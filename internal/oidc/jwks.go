@@ -16,13 +16,13 @@ import (
 )
 
 // The JSON Web Key Set: the public half of every active signing Cert, so relying
-// parties verify the tokens iam2 issues. This is the load-bearing interop
+// parties verify the tokens iam issues. This is the load-bearing interop
 // surface — the live hanzo.id JWKS publishes one RSA (RS256) key per Cert, keyed
 // by `kid` = the Cert name, and every existing verifier reads it. Keys are
 // deduplicated by kid and ordered stably; the response carries a strong ETag and
 // a 60s cache, matching live.
 
-// signingAlgs is the set of JOSE algorithms iam2 publishes signing keys for.
+// signingAlgs is the set of JOSE algorithms iam publishes signing keys for.
 // A Cert whose CryptoAlgorithm is outside this set (e.g. an ACME/SSL TLS cert)
 // is not a token-signing key and is excluded from the JWKS.
 var signingAlgs = map[string]bool{

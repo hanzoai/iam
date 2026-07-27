@@ -27,7 +27,7 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 )
 
-// The Relying-Party side of federation: iam2 as an OIDC/OAuth2 CLIENT of an
+// The Relying-Party side of federation: iam as an OIDC/OAuth2 CLIENT of an
 // external identity provider. Two dialects, one contract (federatedIdentity):
 //
 //   - OIDC (Google + any provider with an IssuerUrl): OIDC Discovery resolves the
@@ -63,7 +63,7 @@ type federatedIdentity struct {
 // SSRF-via-redirect vector; and the dialer Control refuses to connect to a
 // private/loopback/link-local/metadata address AT DIAL TIME — after DNS
 // resolution, on the ACTUAL connecting IP — so a hostile IssuerUrl/Custom*Url (or
-// a DNS-rebinding hostname) cannot make iam2 reach an internal service or the
+// a DNS-rebinding hostname) cannot make iam reach an internal service or the
 // cloud metadata endpoint.
 var federationHTTPClient = &http.Client{
 	Timeout: 12 * time.Second,
@@ -112,7 +112,7 @@ func federationDialControl(_, address string, _ syscall.RawConn) error {
 	return nil
 }
 
-// ipBlockedForFederation reports whether an IP is in a range iam2 must never
+// ipBlockedForFederation reports whether an IP is in a range iam must never
 // fetch from during federation. net.IP.IsPrivate covers RFC1918 and IPv6 ULA
 // (fc00::/7); IsLinkLocalUnicast covers 169.254.0.0/16 (incl. the 169.254.169.254
 // cloud-metadata address) and fe80::/10.
@@ -160,7 +160,7 @@ func idpKind(p *schema.Provider) string {
 }
 
 // idpAuthorizeURL builds the IdP authorization-endpoint URL the browser is sent
-// to at the begin leg — dialect-dispatched, with iam2's callback as the IdP
+// to at the begin leg — dialect-dispatched, with iam's callback as the IdP
 // redirect_uri, our single-use state, IdP-leg PKCE, and (OIDC) the nonce.
 func idpAuthorizeURL(ctx context.Context, p *schema.Provider, st *schema.FederationState, callback string) (string, error) {
 	switch idpKind(p) {
@@ -239,7 +239,7 @@ func oidcResolve(ctx context.Context, p *schema.Provider) (oidcConfig, error) {
 	return cfg, nil
 }
 
-// oidcDiscoveryDocument is the subset of the OIDC Discovery document iam2 reads.
+// oidcDiscoveryDocument is the subset of the OIDC Discovery document iam reads.
 type oidcDiscoveryDocument struct {
 	Issuer                string `json:"issuer"`
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
@@ -323,7 +323,7 @@ func oidcExchange(ctx context.Context, cfg oidcConfig, p *schema.Provider, st *s
 	}, nil
 }
 
-// idTokenClaims is the id_token claim set iam2 reads. Nonce is a top-level OIDC
+// idTokenClaims is the id_token claim set iam reads. Nonce is a top-level OIDC
 // claim (not a registered JWT claim), verified against the transaction's stored
 // nonce. email_verified is `any` because providers send it as a JSON bool or
 // (legacy) the string "true".
@@ -391,7 +391,7 @@ type githubTokenResponse struct {
 	Error       string `json:"error"`
 }
 
-// githubUser / githubEmail are the userinfo shapes iam2 reads.
+// githubUser / githubEmail are the userinfo shapes iam reads.
 type githubUser struct {
 	ID        int64  `json:"id"`
 	Login     string `json:"login"`
@@ -528,7 +528,7 @@ func newIdPRequest(ctx context.Context, method, rawURL string, body io.Reader, h
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "hanzo-iam2-federation")
+	req.Header.Set("User-Agent", "hanzo-iam-federation")
 	for k, vs := range header {
 		for _, v := range vs {
 			req.Header.Add(k, v)
@@ -588,7 +588,7 @@ func isLoopbackHost(host string) bool {
 	return false
 }
 
-// jwkSet / jwk are the JSON Web Key Set shapes iam2 verifies id_tokens against.
+// jwkSet / jwk are the JSON Web Key Set shapes iam verifies id_tokens against.
 type jwkSet struct {
 	Keys []jwk `json:"keys"`
 }
@@ -631,7 +631,7 @@ func jwksKeyfunc(ctx context.Context, jwksURL string) jwt.Keyfunc {
 }
 
 // publicKey materializes a JWK into a crypto public key (RSA or EC). Only the
-// two families iam2 signs with are supported; any other key type is refused.
+// two families iam signs with are supported; any other key type is refused.
 func (k jwk) publicKey() (any, error) {
 	switch k.Kty {
 	case "RSA":

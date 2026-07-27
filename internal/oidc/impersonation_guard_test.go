@@ -7,19 +7,19 @@ import (
 )
 
 // The port of the iam-v1 fixes c904dc0a + 0e5485a5 ("app principal can't
-// impersonate its way to admin/super via ?userId") into the iam2 architecture.
+// impersonate its way to admin/super via ?userId") into the iam architecture.
 //
 // iam-v1 let an "app/<name>" confidential client set ?userId=<owner>/<name> on the
 // identity endpoints and RequireAdmin routes, then derived admin/super authority
 // from the RESOLVED user — so ?userId=admin/z made the app a platform SuperAdmin.
 //
-// iam2 has NO ?userId override anywhere: userinfo/whoami/get-account take the
+// iam has NO ?userId override anywhere: userinfo/whoami/get-account take the
 // subject from the VERIFIED JWT `sub` (oidc.callerOf / splitSub(claims.Subject)),
 // and an app principal is never Admin/Super — its whole authority is its capability
 // allowlist (authz.app / authz.authorize: `if p.App != "" { return Allowed(...) }`).
 // The one surface where a confidential client acts on an ARBITRARY named user is the
 // on-behalf-of mint (issue-user-token / mint-user-keys), targeted by ?id=<owner>/<name>.
-// That is the iam2 analogue of iam-v1's ?userId, and the escalation-blocking guard is
+// That is the iam analogue of iam-v1's ?userId, and the escalation-blocking guard is
 // mintTarget's reserved-org gate (issuetoken.go):
 //
 //	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp) { return 403 }

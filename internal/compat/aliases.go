@@ -1,10 +1,10 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package compat serves the Casdoor VERB surface (get-users, get-organizations,
-// …) over iam2's orm store, in the v1 Response envelope. It exists because every
+// …) over iam's orm store, in the v1 Response envelope. It exists because every
 // live consumer — the console admin BFF, the gateway admin-api, the hanzo.id
 // portal — hard-codes the Casdoor verb spellings and the `{status,data,data2}`
-// envelope, while iam2's native surface is REST (`/v1/iam/users`,
+// envelope, while iam's native surface is REST (`/v1/iam/users`,
 // `/v1/iam/users/get`). Without these aliases a backend swap 404s every console
 // IAM page. The aliases are a thin routing + envelope layer over the SAME orm
 // store and the SAME schema.Mask redaction the REST handlers use — no CRUD and
@@ -155,7 +155,7 @@ func orgWorkspacesHandler(db orm.DB) zip.Handler {
 // paginates ONLY when BOTH `p` and `pageSize` are present — then the total rides
 // in data2; otherwise the full owner-scoped set is returned with no data2.
 //
-// Scoping note (intentional, fail-closed): iam2's ownership model is mixed —
+// Scoping note (intentional, fail-closed): iam's ownership model is mixed —
 // users/roles/permissions are owned by their tenant org, while organizations/
 // applications/providers/certs are platform-owned (Owner "admin"). A SuperAdmin
 // (Scope → the requested owner, empty = all) therefore lists every entity, which

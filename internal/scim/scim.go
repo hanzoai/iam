@@ -1,6 +1,6 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package scim serves the SCIM 2.0 protocol (RFC 7644) over iam2's identity store
+// Package scim serves the SCIM 2.0 protocol (RFC 7644) over iam's identity store
 // — the STANDARD identity-provisioning surface that replaces the Casdoor entity
 // verbs (get-users/add-user/update-user/delete-user, …) per HIP-0111. There are
 // no "verbs": creating an identity is POST /Users, reading is GET, updating is
@@ -40,7 +40,7 @@ func Route(app *zip.App, db orm.DB) {
 	app.Get(base+"/ServiceProviderConfig", serviceProviderConfig)
 
 	// Users resource. The item path is {owner}/{name} because the SCIM id is
-	// "owner/name" (iam2's natural key) and a client appends that opaque id
+	// "owner/name" (iam's natural key) and a client appends that opaque id
 	// verbatim — two segments, so no slash-in-id percent-encoding ambiguity.
 	app.Get(base+"/Users", listUsers(db))
 	app.Post(base+"/Users", createUser(db))

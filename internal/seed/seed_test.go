@@ -114,7 +114,7 @@ func TestSubstituteEnv_UnsetBecomesEmpty(t *testing.T) {
 // TestSeed_GeneratesSigningKeyForKeylessReservedCert proves the fix for the empty
 // JWKS: a reserved-org signing cert arrives from init_data WITHOUT key material
 // (secrets can't ride a ConfigMap), and the seed mints a parseable keypair so the
-// JWKS endpoint publishes a key and iam2 can sign — while an SSL cert and a
+// JWKS endpoint publishes a key and iam can sign — while an SSL cert and a
 // tenant-owned cert are deliberately left keyless.
 func TestSeed_GeneratesSigningKeyForKeylessReservedCert(t *testing.T) {
 	db := openDB(t)

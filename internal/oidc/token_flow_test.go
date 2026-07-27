@@ -56,7 +56,7 @@ func TestAuthCodeFlow_ConfidentialHappyPath(t *testing.T) {
 		t.Fatalf("token response missing fields: %v", tok)
 	}
 
-	// The access token verifies through iam2's own verify path with the right
+	// The access token verifies through iam's own verify path with the right
 	// issuer, audience, subject, and tenant.
 	access := tok["access_token"].(string)
 	claims, err := verifyToken(context.Background(), db, access)
@@ -131,7 +131,7 @@ func TestToken_ErrorTaxonomy(t *testing.T) {
 		requireError(t, resp, tok, 400, "invalid_request")
 	})
 	t.Run("unsupported grant_type", func(t *testing.T) {
-		// A grant iam2 does not implement (RFC 7523 jwt-bearer) — device_code and
+		// A grant iam does not implement (RFC 7523 jwt-bearer) — device_code and
 		// password ARE supported now.
 		resp, tok := postToken(t, app, url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:jwt-bearer"}})
 		requireError(t, resp, tok, 400, "unsupported_grant_type")

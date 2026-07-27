@@ -13,7 +13,7 @@ import (
 
 // The code→session exchange: POST /v1/iam/signin. After the authorize/login flow
 // redirects back with `?code&state`, the console posts them here (code+state ride
-// the query — what the @hanzo/iam client sends — or a JSON body) and iam2 redeems
+// the query — what the @hanzo/iam client sends — or a JSON body) and iam redeems
 // the code for a durable SESSION, returning the account envelope like get-account.
 //
 // This is the session-establishment counterpart to the OAuth token endpoint: the

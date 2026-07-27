@@ -19,7 +19,7 @@ import (
 
 func openStoreTestDB(t *testing.T) orm.DB {
 	t.Helper()
-	db, err := Open("sqlite", filepath.Join(t.TempDir(), "iam2.db"))
+	db, err := Open("sqlite", filepath.Join(t.TempDir(), "iam.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -42,8 +42,8 @@ func TestGetUserBySubject_ResolvesUUIDAndNaturalKey(t *testing.T) {
 	ctx := context.Background()
 	db := openStoreTestDB(t)
 	const uuid = "e7d7fda0-4c53-4508-9d35-7ec892b7e5d7"
-	seedRow(t, db, uuid, "hanzo", "z")     // migrated: carries a UUID
-	seedRow(t, db, "", "hanzo", "legacy")  // pre-cutover: no Id
+	seedRow(t, db, uuid, "hanzo", "z")    // migrated: carries a UUID
+	seedRow(t, db, "", "hanzo", "legacy") // pre-cutover: no Id
 
 	// A UUID subject resolves by Id.
 	u, err := GetUserBySubject(ctx, db, uuid)

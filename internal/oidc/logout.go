@@ -14,7 +14,7 @@ import (
 	"github.com/hanzoai/iam/internal/store"
 )
 
-// The end-session endpoint: GET/POST /v1/iam/oauth/logout. iam2 holds no
+// The end-session endpoint: GET/POST /v1/iam/oauth/logout. iam holds no
 // server-side browser session to destroy here, so logout's security-relevant
 // job is the redirect: it bounces to post_logout_redirect_uri ONLY when that URI
 // is registered by the client named in a signature-verified id_token_hint —

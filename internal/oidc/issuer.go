@@ -29,7 +29,7 @@ var errNoIssuer = errors.New(
 
 // The per-host OIDC issuer resolver.
 //
-// iam2 runs as ONE multi-tenant instance behind the ingress for every brand host
+// iam runs as ONE multi-tenant instance behind the ingress for every brand host
 // — hanzo.id, lux.id, id.zoo.network, pars.id, and their iam.* aliases. Each
 // brand must emit its OWN issuer so a relying party that discovered via lux.id
 // validates lux.id-issued tokens (`iss` is the boundary an RP pins). A single
@@ -45,7 +45,7 @@ var errNoIssuer = errors.New(
 // That is the "header-immune issuer" property, preserved and generalized to N
 // brands.
 
-// issuerResolver maps a brand host to the OIDC issuer iam2 emits for it. It is
+// issuerResolver maps a brand host to the OIDC issuer iam emits for it. It is
 // built ONCE from config (IAM_ISSUER + IAM_ISSUER_MAP) and is immutable
 // thereafter — a value, not a place, so every request goroutine reads it without
 // a lock and no request can mutate it.

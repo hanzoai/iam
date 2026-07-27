@@ -2,7 +2,7 @@
 
 // SCIM read-side org-scope + the cross-org existence oracle — the port of the
 // iam-v1 fix da0732a1 ("scope SCIM reads to caller org + collapse the 404/403
-// existence oracle") into the iam2 architecture.
+// existence oracle") into the iam architecture.
 //
 // THREAT (as it existed in iam-v1): Get/Delete/Replace/Patch resolved the SCIM id
 // GLOBALLY, then checked scope AFTER the load — so a tenant admin got a 404 for a
@@ -10,7 +10,7 @@
 // 404-vs-403 split is a cross-org existence oracle: it confirms whether an
 // arbitrary user id / userName / email exists in a tenant the caller cannot see.
 //
-// iam2 closes it by CONSTRUCTION, one layer earlier than iam-v1 did: scopedTarget
+// iam closes it by CONSTRUCTION, one layer earlier than iam-v1 did: scopedTarget
 // (scim/users.go) re-pins the requested owner to the caller's OWN org through
 // authz.Scope for every non-super, on every verb, BEFORE the store is touched. A
 // non-super therefore never addresses a foreign row at all — the lookup key is

@@ -2,7 +2,7 @@ module github.com/hanzoai/iam
 
 go 1.26.4
 
-// Hanzo IAM v2 stack (MIGRATION.md §2) — no base, no consensus engine:
+// Hanzo IAM stack (MIGRATION.md §2) — no base, no consensus engine:
 //   - github.com/zap-proto/zip — typed HTTP handlers on the zap-proto/fiber v3 engine
 //   - github.com/hanzoai/orm   — typed Go records over SQLite / hanzoai/sql / hanzoai/datastore
 require (
@@ -12,7 +12,7 @@ require (
 	golang.org/x/crypto v0.53.0
 )
 
-// Migration-only: linked solely in `go build -tags migration` so `iam2 compare`
+// Migration-only: linked solely in `go build -tags migration` so `iam compare`
 // can read the v1 Casdoor Postgres/MySQL database. The default (serving) build
 // never links these — it is SQLite/ZAP-only, no external SQL driver.
 require (

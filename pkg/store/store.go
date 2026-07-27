@@ -1,7 +1,7 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package store is the IN-PROCESS project store surface for a host binary that
-// EMBEDS iam2 (hanzoai/cloud) rather than talking to it over HTTP. It exposes the
+// EMBEDS iam (hanzoai/cloud) rather than talking to it over HTTP. It exposes the
 // ONE project CRUD path (internal/projects) as plain functions over an explicit
 // orm.DB — there is NO package-global engine in v2, so the db a host opened with
 // server.OpenSQLite (or bound from its own orm.DB) is passed on every call.

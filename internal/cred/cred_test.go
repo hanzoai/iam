@@ -11,7 +11,7 @@ import (
 
 // TestVerify_Argon2id_RealV1FormatHash is the regression for the cutover
 // blocker: every live v1 row is argon2id, and a bcrypt-only verifier fails all
-// of them. This proves iam2 verifies a genuine argon2id PHC digest — the exact
+// of them. This proves iam verifies a genuine argon2id PHC digest — the exact
 // shape v1's Argon2idCredManager writes (github.com/alexedwards/argon2id,
 // DefaultParams).
 func TestVerify_Argon2id_RealV1FormatHash(t *testing.T) {
@@ -32,7 +32,7 @@ func TestVerify_Argon2id_RealV1FormatHash(t *testing.T) {
 	}
 }
 
-// TestVerify_BcryptStillWorks — new iam2-minted users are bcrypt; don't regress.
+// TestVerify_BcryptStillWorks — new iam-minted users are bcrypt; don't regress.
 func TestVerify_Bcrypt(t *testing.T) {
 	pw := "s3cret-pw"
 	h, _ := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.MinCost)
