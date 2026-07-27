@@ -317,8 +317,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	// admin/<super> and minted a real SuperAdmin token on the correct password.
 	// Checked BEFORE the user lookup, with the SAME opaque failure as a bad
 	// credential, so it is no org/user existence oracle.
-	if store.IsReservedOrg(org) ||
-		(org != app.Organization && !app.IsShared && app.OrgChoiceMode == "") {
+	if store.IsReservedOrg(org) || !app.ServesOrg(org) {
 		return tokenError(c, 400, "invalid_grant", "the username or password is incorrect")
 	}
 

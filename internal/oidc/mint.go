@@ -58,7 +58,7 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	// The user's org is the owner half of its own id, set server-side at
 	// authentication — never read from the request.
 	org, _, _ := strings.Cut(userID, "/")
-	if org != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
+	if !app.ServesOrg(org) {
 		return "", errors.New("the user is not permitted to sign in to this application")
 	}
 	if p.RedirectUri != "" && !app.IsRedirectUriValid(p.RedirectUri) {

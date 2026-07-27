@@ -504,7 +504,7 @@ func federationOrgAllowed(app *schema.Application) bool {
 	if store.IsSigningCertOwner(app.Owner) {
 		return true // platform app — SuperAdmin-configured, may serve any tenant
 	}
-	if app.IsShared || app.OrgChoiceMode != "" {
+	if app.IsShared || app.AllowsOrgChoice() {
 		return true
 	}
 	return org == app.Owner
