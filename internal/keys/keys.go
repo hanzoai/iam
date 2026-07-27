@@ -124,6 +124,11 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		k.SetId(id(in.Owner, in.Name))
 		k.Owner, k.Name = in.Owner, in.Name
 		apply(k, in)
+		// Scope is settable HERE and only here: it is the key's access class, chosen
+		// when the key is minted and fixed thereafter (apply deliberately does not
+		// carry it, so an update cannot flip a secret key to publish scope and blank
+		// its secret).
+		k.Scope = in.Scope
 		if k.AccessKey == "" {
 			k.AccessKey = Mint("pk", k.State)
 		}
@@ -215,18 +220,28 @@ func sameTenantUser(k *schema.Key) error {
 }
 
 // apply copies the caller-settable fields from src onto dst, leaving the
-// (owner, name) identity, storage id, and audit stamps under handler control.
+// (owner, name) identity, storage id, audit stamps AND THE CREDENTIAL ITSELF under
+// handler control.
+//
+// AccessKey/AccessSecret are deliberately NOT copied. They authenticate: a secret
+// key's sk- half resolves its owning user by exact match (store.userOwningKey), so
+// copying a caller-supplied value lets the sender choose a credential it already
+// knows and then present it as that key's principal. Minting is the only writer.
+// This matters more the moment the secret is stored as a digest rather than
+// verbatim — a chosen digest is a forgery, not merely a chosen password.
+//
+// Scope is not copied either: it is the key's ACCESS CLASS, fixed at create. Letting
+// an update flip a secret key to publish scope would blank its AccessSecret and make
+// its pk- half org-resolvable at the ingest door — a privilege change disguised as an
+// edit. Rotation and re-scoping are mint operations, not field writes.
 func apply(dst, src *schema.Key) {
 	dst.DisplayName = src.DisplayName
 	dst.Type = src.Type
 	dst.Organization = src.Organization
 	dst.Application = src.Application
 	dst.User = src.User
-	dst.AccessKey = src.AccessKey
-	dst.AccessSecret = src.AccessSecret
 	dst.ExpireTime = src.ExpireTime
 	dst.State = src.State
-	dst.Scope = src.Scope
 }
 
 // mint generates a prefixed credential half — "{pk|sk}-{live|test}-{random}"
