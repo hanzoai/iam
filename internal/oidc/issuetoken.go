@@ -87,7 +87,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		if display == "" {
 			display = user.Name
 		}
-		access, err := signer.SignUserToken(subject, user.Owner, aud, clientApp.ClientId, user.Email, display, "", store.MemberOrgRefs(ctx, db, user), ttl, now)
+		access, err := signer.SignUserToken(subject, user.Owner, aud, clientApp.ClientId, user.Email, display, user.Name, "", store.MemberOrgRefs(ctx, db, user), ttl, now)
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
