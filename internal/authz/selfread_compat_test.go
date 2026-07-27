@@ -40,6 +40,18 @@ func seedAppRow(t *testing.T, db orm.DB, owner, name, secret, cert string) {
 	}
 }
 
+// seedCertRow adds a signing cert row under an owner.
+func seedCertRow(t *testing.T, db orm.DB, owner, name string) {
+	t.Helper()
+	c := orm.New[schema.Cert](db)
+	c.Owner, c.Name = owner, name
+	c.CryptoAlgorithm = "RS256"
+	c.SetId(owner + "/" + name)
+	if err := c.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed cert %s/%s: %v", owner, name, err)
+	}
+}
+
 // basicGet issues a GET with client_secret_basic, as a confidential client does.
 func (h *harness) basicGet(t *testing.T, path, clientID, secret string) int {
 	t.Helper()
@@ -62,6 +74,9 @@ func (h *harness) basicGet(t *testing.T, path, clientID, secret string) int {
 func TestSelfRead_OverTheCompatVerbCloudActuallyCalls(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
+	// Production carries the SAME cert under two owners (seed drift, same keypair);
+	// mirror that so the org-qualified spelling the binary sends is exercised.
+	seedCertRow(t, h.db, "hanzo", signingKid)
 
 	for _, tc := range []struct {
 		name, path string
@@ -74,6 +89,10 @@ func TestSelfRead_OverTheCompatVerbCloudActuallyCalls(t *testing.T) {
 		// a 200 that is functionally the 403 it replaced. The body is asserted below.
 		{"own cert, owner-qualified", "/v1/iam/get-cert?id=admin%2F" + signingKid, 200},
 		{"own cert, bare name", "/v1/iam/get-cert?id=" + signingKid, 200},
+		// THE SHAPE THE BINARY SENDS. ai/internal/iam/cert.go:35 builds
+		// "<IAM_ORG>/<name>", so hanzo/cert-hanzo is the only spelling that matters in
+		// production; the bare form is the one I verified last time and it was not it.
+		{"own cert, org-qualified (what ai sends)", "/v1/iam/get-cert?id=hanzo%2F" + signingKid, 200},
 		// The native noun surface must agree — one policy, two spellings.
 		{"own application, noun surface", "/v1/iam/applications?owner=admin&name=hanzo-cloud", 400}, // reaches the handler = authorized; 400 is the typed read wanting a different shape
 	} {
