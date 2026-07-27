@@ -75,7 +75,7 @@ func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
 	if !got.IsAdmin {
 		t.Errorf("IsAdmin flipped false by mint")
 	}
-	if got.AccessKey == "" {
-		t.Errorf("mint did not set AccessKey")
-	}
+	// The credential no longer lives on the user row — it is a schema.Key the
+	// resolver reads. What this red-team test guards is that mint does not mutate
+	// the user's OTHER fields, which is asserted above.
 }

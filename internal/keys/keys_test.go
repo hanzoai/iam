@@ -123,3 +123,85 @@ func TestKeys_PublishableForcesSecretEmpty(t *testing.T) {
 		t.Fatalf("update let a publish key gain a secret %q", upd.AccessSecret)
 	}
 }
+
+// The round-trip that did not exist, and whose absence let a dead credential ship:
+// a key minted by mint-user-keys MUST resolve back to the user it was minted for.
+//
+// It did not. mintUserKeysHandler stamped the sk- onto schema.User.AccessKey, while
+// store.UserByAccessKey's sk- branch reads schema.Key.AccessSecret — the write and
+// the read never met, so every minted key authenticated nobody. Worse, the write
+// landed in the same field as the user's working legacy hk-, so regenerating a key
+// locked the holder out with no way back through the UI.
+func TestMintUserKey_ResolvesBackToItsUser(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	secret, err := MintUserKey(ctx, db, "acme", "ada")
+	if err != nil {
+		t.Fatalf("MintUserKey: %v", err)
+	}
+	if !strings.HasPrefix(secret, "sk-") {
+		t.Fatalf("minted secret = %q, want an sk- confidential half", secret[:3])
+	}
+
+	// The row the resolver reads must exist, name its user, and hold the secret.
+	k, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First()
+	if err != nil || k == nil {
+		t.Fatalf("no schema.Key row resolves the minted secret (err=%v) — this is the bug", err)
+	}
+	if k.User != "ada" || k.Owner != "acme" {
+		t.Fatalf("key resolves to %s/%s, want acme/ada", k.Owner, k.User)
+	}
+	if !strings.HasPrefix(k.AccessKey, "pk-") {
+		t.Fatalf("publishable half = %q, want pk-", k.AccessKey)
+	}
+	if k.Scope == schema.KeyScopePublish {
+		t.Fatal("a user's authenticating key must NOT be publish-scoped")
+	}
+}
+
+// Re-minting REPLACES the credential rather than leaving a second live secret: a
+// user holds one key, so revoking it revokes them.
+func TestMintUserKey_RemintReplacesRatherThanAccumulates(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	first, err := MintUserKey(ctx, db, "acme", "ada")
+	if err != nil {
+		t.Fatalf("first mint: %v", err)
+	}
+	second, err := MintUserKey(ctx, db, "acme", "ada")
+	if err != nil {
+		t.Fatalf("re-mint: %v", err)
+	}
+	if first == second {
+		t.Fatal("re-mint returned the same secret; it must rotate")
+	}
+	if old, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", first).First(); old != nil {
+		t.Fatal("the superseded secret still resolves — a revoked key would stay live")
+	}
+	if cur, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", second).First(); err != nil || cur == nil {
+		t.Fatalf("the current secret does not resolve: %v", err)
+	}
+}
+
+// Revoke is a statement about the END state: after it, the user holds nothing, and
+// revoking again is still success (a caller may always assert "holds no credential").
+func TestRevokeUserKey_EndStateAndIdempotent(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	secret, err := MintUserKey(ctx, db, "acme", "ada")
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	if err := RevokeUserKey(ctx, db, "acme"); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First(); k != nil {
+		t.Fatal("secret still resolves after revoke")
+	}
+	if err := RevokeUserKey(ctx, db, "acme"); err != nil {
+		t.Fatalf("revoke on an already-revoked user must succeed, got %v", err)
+	}
+}

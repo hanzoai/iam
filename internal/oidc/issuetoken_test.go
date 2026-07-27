@@ -108,13 +108,16 @@ func TestMintUserKeys_generatesReadableSkKey(t *testing.T) {
 	if !strings.HasPrefix(key, "sk-") || len(key) < 8 {
 		t.Fatalf("accessKey = %q, want an sk- key", key)
 	}
-	// The minted key is persisted on the user row (get-user / getUserKey read it).
-	u, err := store.GetUserByName(context.Background(), db, "hanzo", "alice")
-	if err != nil || u == nil {
-		t.Fatalf("reload user: %v", err)
+	// Assert the ROUND TRIP, not where the bytes landed. This test used to require
+	// the key on schema.User.AccessKey — which nothing resolves — so it passed while
+	// every minted credential authenticated nobody. What matters is that the key
+	// resolves back to its user.
+	got, err := store.UserByAccessKey(context.Background(), db, key)
+	if err != nil || got == nil {
+		t.Fatalf("minted key does not resolve to a user: %v", err)
 	}
-	if u.AccessKey != key {
-		t.Fatalf("persisted AccessKey = %q, want the minted %q", u.AccessKey, key)
+	if got.Owner != "hanzo" || got.Name != "alice" {
+		t.Fatalf("key resolved to %s/%s, want hanzo/alice", got.Owner, got.Name)
 	}
 }
 
@@ -191,12 +194,12 @@ func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 	if !strings.HasPrefix(key, "sk-") {
 		t.Fatalf("accessKey=%q, want an sk- key", key)
 	}
-	u, err := store.GetUserByName(tctx(), db, "hanzo", "mallory")
-	if err != nil || u == nil {
-		t.Fatalf("reload after mint: %v", err)
+	got, err := store.UserByAccessKey(tctx(), db, key)
+	if err != nil || got == nil {
+		t.Fatalf("minted key does not resolve to its user — the write missed the row the resolver reads: %v", err)
 	}
-	if u.AccessKey != key {
-		t.Fatalf("persisted AccessKey=%q, want the minted %q — the write missed the real row", u.AccessKey, key)
+	if got.Owner != "hanzo" || got.Name != "mallory" {
+		t.Fatalf("key resolved to %s/%s, want hanzo/mallory", got.Owner, got.Name)
 	}
 
 	// REVOKE must clear it on the same real row.

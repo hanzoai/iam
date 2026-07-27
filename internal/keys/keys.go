@@ -240,3 +240,69 @@ func Mint(prefix, state string) string {
 	_, _ = rand.Read(b[:])
 	return fmt.Sprintf("%s-%s-%s", prefix, env, hex.EncodeToString(b[:]))
 }
+
+// UserKeyName is the deterministic Name of the ONE key a user authenticates with.
+// Deterministic so a re-mint REPLACES the previous credential instead of leaving a
+// second live secret behind — a user has one key, and revoking it revokes them.
+const UserKeyName = "cloud-api"
+
+// MintUserKey (re)mints the single credential a user authenticates with and returns
+// its confidential sk- half, revealed once.
+//
+// It writes a schema.Key row because that is the ONLY thing UserByAccessKey's sk-
+// branch reads (store.userOwningKey queries schema.Key.AccessSecret). The previous
+// implementation stamped the sk- onto schema.User.AccessKey, which NOTHING resolves:
+// every key minted that way authenticated nobody, and because it overwrote the
+// user's working legacy hk- in the same field it locked the holder out with no way
+// back through the UI. Writing the row the resolver actually reads is the fix.
+//
+// Idempotent by (Owner, UserKeyName): re-minting replaces the secret in place.
+func MintUserKey(ctx context.Context, db orm.DB, owner, user string) (string, error) {
+	if strings.TrimSpace(owner) == "" || strings.TrimSpace(user) == "" {
+		return "", fmt.Errorf("keys: owner and user are required")
+	}
+	secret := Mint("sk", "")
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	existing, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, UserKeyName)).First()
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return "", err
+	}
+	if existing != nil {
+		existing.AccessSecret = secret
+		existing.User, existing.Type, existing.Scope = user, "User", ""
+		existing.UpdatedTime = now
+		if err := existing.UpdateCtx(ctx); err != nil {
+			return "", err
+		}
+		return secret, nil
+	}
+
+	k := orm.New[schema.Key](db)
+	k.SetId(id(owner, UserKeyName))
+	k.Owner, k.Name = owner, UserKeyName
+	k.DisplayName = "Cloud API key"
+	k.Type, k.User = "User", user
+	k.AccessKey = Mint("pk", "")
+	k.AccessSecret = secret
+	k.State = "Active"
+	k.CreatedTime, k.UpdatedTime = now, now
+	if err := k.CreateCtx(ctx); err != nil {
+		return "", err
+	}
+	return secret, nil
+}
+
+// RevokeUserKey deletes the user's key row. Absent is success — revoke is a
+// statement about the END state, so a caller can always assert "this user holds no
+// credential" without racing a prior revoke.
+func RevokeUserKey(ctx context.Context, db orm.DB, owner string) error {
+	k, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, UserKeyName)).First()
+	if errors.Is(err, orm.ErrNotFound) || k == nil {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return k.DeleteCtx(ctx)
+}
