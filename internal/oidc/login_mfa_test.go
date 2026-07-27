@@ -27,7 +27,7 @@ import (
 // same db the router serves (newServer opens its own).
 func newApp(t *testing.T, db orm.DB) *zip.App {
 	t.Helper()
-	app := zip.New(zip.Config{AppName: "iam2-test", DisableStartupMessage: true})
+	app := zip.New(zip.Config{AppName: "iam-test", DisableStartupMessage: true})
 	// The OIDC surface is the pre-auth PUBLIC group; login + the challenge finish
 	// both live here, so a root (empty-prefix) router registers them at their absolute
 	// paths (main renamed Route→Route on the zip-group model).

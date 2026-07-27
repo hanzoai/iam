@@ -14,7 +14,7 @@ import (
 
 // fullApp gives a test full control over the signup-relevant application fields the
 // shared harness seedApp fixes (it hardcodes Organization "hanzo" and exposes only
-// IsShared/EnableSignUp). Owner is "admin" (platform-owned, the iam2 convention);
+// IsShared/EnableSignUp). Owner is "admin" (platform-owned, the iam convention);
 // clientId == Name (the <org>-<app> convention the mint allow-lists key on).
 type fullApp struct {
 	clientID  string

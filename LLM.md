@@ -15,7 +15,7 @@ hand-rolling OAuth. Full SDK model: `~/work/hanzo/SDK-ARCHITECTURE.md`.
 - `go build ./...`
 - `go run . serve --init-data init_data.json`  (SQLite default; `--store sqlite|sql|datastore`)
 - `go run . compare --legacy postgres://…/iam` (needs `-tags migration`)
-- Image: `ghcr.io/hanzoai/iam2`. Embed via `server.Route`. Go 1.26.
+- Image: `ghcr.io/hanzoai/iam`. Embed via `server.Route`. Go 1.26.
 
 ## Endpoints (HIP-0111 — /v1 only, no /api, no vendor verbs)
 `/.well-known/openid-configuration` · `/v1/iam/.well-known/jwks` ·

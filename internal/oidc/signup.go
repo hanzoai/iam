@@ -65,7 +65,7 @@ func signupHandler(db orm.DB) zip.Handler {
 		}
 
 		// Resolve the application (by clientId when present, else by name under the
-		// admin owner — the iam2 storage convention), then enforce its policy.
+		// admin owner — the iam storage convention), then enforce its policy.
 		app, err := resolveSignupApp(ctx, db, f)
 		if err != nil {
 			return httpx.Err(c, err.Error())
@@ -159,7 +159,7 @@ func signupHandler(db orm.DB) zip.Handler {
 		// Create through the ONE canonical user path (users.Create): argon2id-hash the
 		// password once, persist, return the REDACTED row (no plaintext, no digest ever
 		// stored or returned). PasswordType is stamped "argon2id" — exactly what
-		// internal/cred verifies for a new iam2 row.
+		// internal/cred verifies for a new iam row.
 		created, err := users.New(db).Create(ctx, &users.CreateInput{
 			User: schema.User{
 				Owner:             f.Organization,

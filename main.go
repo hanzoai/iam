@@ -1,13 +1,13 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Command iam2 is the Hanzo IAM v2 identity service: a clean-room,
+// Command iam is the Hanzo IAM identity service: a clean-room,
 // proprietary rewrite of the Casdoor-fork identity layer on the native
 // Hanzo stack — zip (HTTP) over hanzoai/orm. No Casdoor, no Beego, no xorm,
 // no base, no consensus engine.
 //
 // Subcommands:
 //
-//	serve     open the entity store and serve the IAM v2 API
+//	serve     open the entity store and serve the IAM API
 //	compare   read-only v1 -> v2 drift report (needs a `-tags migration` build)
 //	version   print the build version
 //
@@ -52,15 +52,15 @@ func main() {
 	defer stop()
 
 	root := &cobra.Command{
-		Use:           "iam2",
-		Short:         "Hanzo IAM v2 — proprietary identity service (zip + orm, no Casdoor)",
+		Use:           "iam",
+		Short:         "Hanzo IAM — proprietary identity service (zip + orm, no Casdoor)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	root.AddCommand(serveCmd(), compareCmd(), provisionCmd(), versionCmd())
 
 	if err := root.ExecuteContext(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "iam2: %v\n", err)
+		fmt.Fprintf(os.Stderr, "iam: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -69,14 +69,14 @@ func serveCmd() *cobra.Command {
 	var storeBackend, dbPath, zapAddr, httpAddr, initData string
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Open the entity store and serve the IAM v2 API",
+		Short: "Open the entity store and serve the IAM API",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return serve(cmd.Context(), storeBackend, dbPath, zapAddr, httpAddr, initData)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(&storeBackend, "store", "sqlite", "storage backend: sqlite | sql | datastore")
-	f.StringVar(&dbPath, "db", "data/iam2.db", "SQLite database path (store=sqlite)")
+	f.StringVar(&dbPath, "db", "data/iam.db", "SQLite database path (store=sqlite)")
 	f.StringVar(&zapAddr, "zap", ":9653", "ZAP primary listen address")
 	f.StringVar(&httpAddr, "http", "http://:8080", "HTTP edge listen address")
 	f.StringVar(&initData, "init-data", "", "path to init_data.json to seed on boot (new-only; ${VAR} from env)")
@@ -106,7 +106,7 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initDat
 		if err != nil {
 			return fmt.Errorf("serve: seed: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "iam2: seeded from %s — created orgs=%d apps=%d providers=%d certs=%d\n",
+		fmt.Fprintf(os.Stderr, "iam: seeded from %s — created orgs=%d apps=%d providers=%d certs=%d\n",
 			initData, sum.Created["organizations"], sum.Created["applications"],
 			sum.Created["providers"], sum.Created["certs"])
 	}
@@ -115,7 +115,7 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initDat
 	// endpoint. The authz Guard gates it like any other route (fail-closed), but
 	// an identity service has no need to expose its admin CRUD as an agent tool
 	// surface, so it is disabled outright — one fewer surface to defend.
-	app := zip.New(zip.Config{AppName: "iam2", MCP: zip.MCPConfig{Disabled: true}})
+	app := zip.New(zip.Config{AppName: "iam", MCP: zip.MCPConfig{Disabled: true}})
 	routes.Route(app, db)
 	app.OnShutdown(func(context.Context) error { return db.Close() })
 
@@ -153,7 +153,7 @@ func compareCmd() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&store, "store", "sqlite", "v2 storage backend: sqlite | sql | datastore")
-	f.StringVar(&dbPath, "db", "data/iam2.db", "v2 SQLite database path (store=sqlite)")
+	f.StringVar(&dbPath, "db", "data/iam.db", "v2 SQLite database path (store=sqlite)")
 	f.StringVar(&legacy, "legacy", "", "v1 Casdoor DSN (postgres:// or mysql://)")
 	return cmd
 }
@@ -226,9 +226,9 @@ func provisionCmd() *cobra.Command {
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print the iam2 build version",
+		Short: "Print the iam build version",
 		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Fprintf(cmd.OutOrStdout(), "iam2 %s\n", version)
+			fmt.Fprintf(cmd.OutOrStdout(), "iam %s\n", version)
 		},
 	}
 }

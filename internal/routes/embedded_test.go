@@ -21,7 +21,7 @@ import (
 // In the cloud binary IAM is one of 59 subsystems on ONE *zip.App. It mounted its
 // Guard with app.Use, which is not "guard my routes" but "guard every route this
 // app will ever serve" — so `ai`, registered 97 positions later, had its /v1/models
-// gated by IAM, whose Guard then resolved the bearer against the EMBEDDED iam2.db
+// gated by IAM, whose Guard then resolved the bearer against the EMBEDDED iam.db
 // that has never seen a token minted by the external hanzo.id. Every valid request
 // 401'd with {"status":401,"error":"authentication required"} — this package's
 // Guard, wearing ai's URL.

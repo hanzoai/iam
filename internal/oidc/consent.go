@@ -22,9 +22,10 @@ import (
 // SELF-SCOPED: the target is ALWAYS the caller (callerOf), never a body field.
 //
 // Two switches, privacy-first defaults when unset:
-//   insights      default TRUE  — anonymous product usage (no query/answer text).
-//   shareTraining default FALSE — OPT-IN to contribute the user's own data to
-//                                 train Hanzo's open models.
+//
+//	insights      default TRUE  — anonymous product usage (no query/answer text).
+//	shareTraining default FALSE — OPT-IN to contribute the user's own data to
+//	                              train Hanzo's open models.
 const PathConsent = "/v1/iam/consent"
 
 // consentKey nests the consent object inside the preferences blob.

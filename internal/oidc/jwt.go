@@ -26,7 +26,7 @@ import (
 // inert until an ML-DSA Cert is configured. Keys come from the Cert entity
 // (KMS-backed); tests inject an ephemeral in-memory key through the same path.
 
-// Claims is the iam2 token claim set: the standard registered claims plus the
+// Claims is the iam token claim set: the standard registered claims plus the
 // Hanzo first-class claims the SDK and downstream validators read. owner and
 // organization are the tenant (both the org slug); scope carries the granted
 // scopes; nonce is echoed into the id_token; tokenType distinguishes an

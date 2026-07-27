@@ -9,7 +9,7 @@ import (
 	"errors"
 )
 
-// PKCE (RFC 7636) — S256 only. iam2 permanently rejects the "plain" method:
+// PKCE (RFC 7636) — S256 only. iam permanently rejects the "plain" method:
 // a downgrade to plain defeats the point of PKCE (the verifier travels in the
 // clear), so an authorize request that stored a plain challenge, or a token
 // request that presents one, is refused.

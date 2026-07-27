@@ -18,7 +18,7 @@ func memDB(t *testing.T) orm.DB {
 	_ = schema.Kinds()
 	dir := t.TempDir()
 	db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
-		Path:   filepath.Join(dir, "iam2test.db"),
+		Path:   filepath.Join(dir, "iamtest.db"),
 		Config: ormdb.SQLiteConfig{BusyTimeout: 5000, JournalMode: "WAL"},
 	})
 	if err != nil {
