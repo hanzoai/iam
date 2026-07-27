@@ -26,16 +26,16 @@ ARG GO_EXPERIMENT=jsonv2
 ENV GOEXPERIMENT=${GO_EXPERIMENT}
 
 ARG VERSION=dev
-# Two binaries from one build stage: the server (/out/iam) and the Phase-5
-# cutover migrator (/out/migrate-v1) the migration Job runs. Both are pure-Go
-# (CGO_ENABLED=0 + the same GOEXPERIMENT) and share the one module download above.
-# The migrator carries no version symbol, so it is stamped -s -w only.
+# One binary: the server (/out/iam), pure-Go (CGO_ENABLED=0 + GOEXPERIMENT).
+#
+# It used to build a second, /out/migrate-v1 — the Phase-5 cutover migrator. That
+# command was deleted in 144db2add ("iam: one IAM — drop v1 and the iam2 name")
+# and this stanza was not, so every image build since has failed at
+# `stat /src/cmd/migrate-v1: directory not found`. The Dockerfile is the only
+# consumer that still referenced it.
 RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION}" \
-      -o /out/iam . \
- && CGO_ENABLED=0 go build -trimpath \
-      -ldflags "-s -w" \
-      -o /out/migrate-v1 ./cmd/migrate-v1
+      -o /out/iam .
 
 FROM alpine:latest@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS STANDARD
 LABEL org.opencontainers.image.source="https://github.com/hanzoai/iam"
@@ -54,7 +54,6 @@ RUN apk add --no-cache ca-certificates sqlcipher && update-ca-certificates \
 USER 1000
 WORKDIR /
 COPY --from=build --chown=hanzo:hanzo /out/iam /iam
-COPY --from=build --chown=hanzo:hanzo /out/migrate-v1 /migrate-v1
 
 # Serves the IAM API over ZAP (:9653) + the HTTP edge (:8080). Bootstrap the
 # config with --init-data /etc/iam/init_data.json (mounted from the same
