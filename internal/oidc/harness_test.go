@@ -15,8 +15,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
+	"github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam2/internal/schema"
@@ -25,6 +27,11 @@ import (
 // HTTP-level test harness: mount the whole OIDC surface on a fresh store and
 // drive it through the real router (app.Fiber().Test), so every test exercises
 // the wire contract a client sees — status codes, headers, redirects, bodies.
+
+// testBudget is what one in-process request is allowed to take. A write hashes
+// with argon2id — deliberately expensive, and under -race it overruns fiber's
+// 1s default. FailOnTimeout stays on so a genuine hang is still a failure.
+var testBudget = fiber.TestConfig{Timeout: 30 * time.Second, FailOnTimeout: true}
 
 // sharedKey is one RSA key reused across tests (keygen is the slow part; the
 // crypto under test is identical regardless of which key it is).
@@ -133,7 +140,7 @@ func jsonReq(method, path string, body any) *http.Request {
 
 func do(t *testing.T, app *zip.App, req *http.Request) (*http.Response, []byte) {
 	t.Helper()
-	resp, err := app.Fiber().Test(req)
+	resp, err := app.Fiber().Test(req, testBudget)
 	if err != nil {
 		t.Fatalf("test request %s %s: %v", req.Method, req.URL.Path, err)
 	}

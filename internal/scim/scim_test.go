@@ -27,6 +27,7 @@ import (
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
+	"github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam2/internal/routes"
@@ -40,6 +41,11 @@ const (
 	secretUserHsh = "$argon2id$SENTINEL_USER_HASH"
 	scimUsers     = "/v1/iam/scim/v2/Users"
 )
+
+// testBudget is what one in-process request is allowed to take. A write hashes
+// with argon2id — deliberately expensive, and under -race it overruns fiber's
+// 1s default. FailOnTimeout stays on so a genuine hang is still a failure.
+var testBudget = fiber.TestConfig{Timeout: 30 * time.Second, FailOnTimeout: true}
 
 type harness struct {
 	app *zip.App
@@ -106,7 +112,7 @@ func (h *harness) do(t *testing.T, method, path, bearer, body string) (int, stri
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := h.app.Fiber().Test(req, testBudget)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}

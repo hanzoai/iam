@@ -28,6 +28,7 @@ import (
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
+	"github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam2/internal/routes"
@@ -104,6 +105,11 @@ func (h *harness) token(t *testing.T, sub string) string {
 	return s
 }
 
+// testBudget is what one in-process request is allowed to take. A write hashes
+// with argon2id — deliberately expensive, and under -race it overruns fiber's
+// 1s default. FailOnTimeout stays on so a genuine hang is still a failure.
+var testBudget = fiber.TestConfig{Timeout: 30 * time.Second, FailOnTimeout: true}
+
 // get issues a GET through the real router and returns (status, rawBody).
 func (h *harness) get(t *testing.T, path, bearer string) (int, string) {
 	t.Helper()
@@ -112,7 +118,7 @@ func (h *harness) get(t *testing.T, path, bearer string) (int, string) {
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := h.app.Fiber().Test(req, testBudget)
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
 	}
