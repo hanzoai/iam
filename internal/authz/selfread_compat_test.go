@@ -4,6 +4,7 @@ package authz_test
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http/httptest"
 	"testing"
@@ -68,6 +69,9 @@ func TestSelfRead_OverTheCompatVerbCloudActuallyCalls(t *testing.T) {
 	}{
 		// The exact request, both spellings of the id the caller may send.
 		{"own application, owner-qualified", "/v1/iam/get-application?id=admin%2Fhanzo-cloud", 200},
+		// 200 is not enough: Scope used to rewrite the owner to the app's SERVED org,
+		// so the read was authorized and then answered "the entity does not exist" —
+		// a 200 that is functionally the 403 it replaced. The body is asserted below.
 		{"own cert, owner-qualified", "/v1/iam/get-cert?id=admin%2F" + signingKid, 200},
 		{"own cert, bare name", "/v1/iam/get-cert?id=" + signingKid, 200},
 		// The native noun surface must agree — one policy, two spellings.
@@ -122,5 +126,45 @@ func TestSelfRead_WrongSecretIsNotAPrincipal(t *testing.T) {
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
 	if got := h.basicGet(t, "/v1/iam/get-application?id=admin%2Fhanzo-cloud", "hanzo-cloud", "wrong"); got == 200 {
 		t.Errorf("a wrong client secret read the application row")
+	}
+}
+
+// A 200 whose body says "the entity does not exist" is not a fix. Assert the row
+// actually comes back — this is the failure the first probe caught.
+func TestSelfRead_ReturnsTheRowNotAnEmptyOk(t *testing.T) {
+	h := newHarness(t)
+	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
+
+	req := httptest.NewRequest("GET", "/v1/iam/get-application?id=admin%2Fhanzo-cloud", nil)
+	req.Host = "hanzo.id"
+	req.Header.Set("Authorization", "Basic "+
+		base64.StdEncoding.EncodeToString([]byte("hanzo-cloud:s3cret")))
+	resp, err := h.app.Fiber().Test(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	var env struct {
+		Status string `json:"status"`
+		Msg    string `json:"msg"`
+		Data   struct {
+			Name  string `json:"name"`
+			Owner string `json:"owner"`
+			Cert  string `json:"cert"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode %s: %v", body, err)
+	}
+	if env.Status != "ok" {
+		t.Fatalf("self-read answered status=%q msg=%q — authorized but unable to read itself", env.Status, env.Msg)
+	}
+	if env.Data.Owner != "admin" || env.Data.Name != "hanzo-cloud" {
+		t.Errorf("got %s/%s, want admin/hanzo-cloud", env.Data.Owner, env.Data.Name)
+	}
+	if env.Data.Cert != signingKid {
+		t.Errorf("cert = %q, want %q — cloud reads this next", env.Data.Cert, signingKid)
 	}
 }
