@@ -32,7 +32,7 @@ func (h *harness) doBody(t *testing.T, method, path, bearer string, body any) (i
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := h.app.Fiber().Test(req, testBudget)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}

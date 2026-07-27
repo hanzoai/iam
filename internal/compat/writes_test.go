@@ -30,7 +30,7 @@ func (h *harness) post(t *testing.T, path, bearer string, body any) (int, string
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := h.app.Fiber().Test(req, testBudget)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
 	}

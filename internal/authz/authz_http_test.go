@@ -30,6 +30,7 @@ import (
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
+	"github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam2/internal/routes"
@@ -171,6 +172,11 @@ func (h *harness) sharedAppToken(t *testing.T, sub, ownerClaim string) string {
 	})
 }
 
+// testBudget is what one in-process request is allowed to take. A write hashes
+// with argon2id — deliberately expensive, and under -race it overruns fiber's
+// 1s default. FailOnTimeout stays on so a genuine hang is still a failure.
+var testBudget = fiber.TestConfig{Timeout: 30 * time.Second, FailOnTimeout: true}
+
 // do issues one request through the real router and returns the status code.
 func (h *harness) do(t *testing.T, method, path, bearer string, body any) int {
 	t.Helper()
@@ -187,7 +193,7 @@ func (h *harness) do(t *testing.T, method, path, bearer string, body any) int {
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := h.app.Fiber().Test(req, testBudget)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
@@ -220,7 +226,7 @@ func (h *harness) mcpToolCall(t *testing.T, bearer, tool string, args any) (stat
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := h.app.Fiber().Test(req, testBudget)
 	if err != nil {
 		t.Fatalf("mcp tools/call %s: %v", tool, err)
 	}
