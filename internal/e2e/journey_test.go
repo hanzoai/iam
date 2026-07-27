@@ -363,3 +363,116 @@ func seedUser(t *testing.T, db orm.DB, owner, name, email, password string, admi
 		t.Fatalf("seed user %s/%s: %v", owner, name, err)
 	}
 }
+
+// TestJourney_LoginThenRESTMember is the end-to-end proof of the REST migration:
+// a REAL interactive login (PKCE authorize → code → token), then that token driving
+// the member routes that replaced the POST sub-verbs.
+//
+// It exists because the member surface moved the authorization target from the
+// request BODY to the URL, and the Guard reads that target from the path while the
+// handler binds it from the framework's path binding. Those are two separate
+// readings of one URL; if they ever disagree, either every read 403s or — far worse
+// — a caller reaches a row the Guard authorized against a different key. Only a
+// full login → token → guard → handler chain exercises both at once.
+func TestJourney_LoginThenRESTMember(t *testing.T) {
+	e := boot(t)
+
+	// 1) A real login, exactly as the portal runs it.
+	verifier := "e2e-verifier-0000000000000000000000000000000000000"
+	tok := e.token(t, url.Values{
+		"grant_type": {"authorization_code"}, "code": {e.login(t, verifier)},
+		"client_id": {"hanzo-console"}, "client_secret": {"top-secret"},
+		"redirect_uri": {redirectURI}, "code_verifier": {verifier},
+	})
+	alice, _ := tok["access_token"].(string)
+	if alice == "" {
+		t.Fatalf("login produced no access token: %v", tok)
+	}
+
+	// 2) SELF-READ through the member URL. alice is a regular user, so the ONLY row
+	// she may read is her own — and the policy clause that permits it keys on the
+	// name, which now arrives from the path. A 403 here means the Guard could not
+	// see the target in the URL.
+	if code, body := e.req(t, "GET", "/v1/iam/users/hanzo/alice", alice, "", ""); code != 200 {
+		t.Fatalf("member self-read = %d, want 200; body=%s", code, body)
+	} else if !strings.Contains(body, `"name":"alice"`) {
+		t.Fatalf("member self-read returned the wrong row: %s", body)
+	}
+
+	// 3) The same URL shape aimed at another tenant is refused. This is the tenant
+	// gate reading the PATH, which is the whole point of the move.
+	if code, _ := e.req(t, "GET", "/v1/iam/users/admin/root", alice, "", ""); code != 403 {
+		t.Fatalf("cross-tenant member read = %d, want 403", code)
+	}
+
+	// 4) A SuperAdmin drives the full member lifecycle. The bodies deliberately do
+	// NOT repeat the identity: if the URL were not binding it, these would fail.
+	root := e.superToken(t)
+	if code, body := e.req(t, "POST", "/v1/iam/roles", root,
+		`{"owner":"hanzo","name":"e2e-role","displayName":"E2E"}`, "application/json"); code != 200 {
+		t.Fatalf("create role = %d; body=%s", code, body)
+	}
+	if code, body := e.req(t, "GET", "/v1/iam/roles/hanzo/e2e-role", root, "", ""); code != 200 ||
+		!strings.Contains(body, `"displayName":"E2E"`) {
+		t.Fatalf("member read = %d; body=%s", code, body)
+	}
+	// PATCH with the identity ONLY in the URL.
+	if code, body := e.req(t, "PATCH", "/v1/iam/roles/hanzo/e2e-role", root,
+		`{"displayName":"E2E-renamed"}`, "application/json"); code != 200 {
+		t.Fatalf("member update = %d; body=%s", code, body)
+	}
+	if _, body := e.req(t, "GET", "/v1/iam/roles/hanzo/e2e-role", root, "", ""); !strings.Contains(body, `"displayName":"E2E-renamed"`) {
+		t.Fatalf("update did not persist through the URL-bound identity: %s", body)
+	}
+	// PUT reaches the same handler.
+	if code, _ := e.req(t, "PUT", "/v1/iam/roles/hanzo/e2e-role", root,
+		`{"displayName":"E2E-put"}`, "application/json"); code != 200 {
+		t.Fatalf("member replace (PUT) = %d, want 200", code)
+	}
+	if code, _ := e.req(t, "DELETE", "/v1/iam/roles/hanzo/e2e-role", root, "", ""); code != 200 {
+		t.Fatalf("member delete = %d, want 200", code)
+	}
+	if code, _ := e.req(t, "GET", "/v1/iam/roles/hanzo/e2e-role", root, "", ""); code != 404 {
+		t.Fatalf("member read after delete = %d, want 404", code)
+	}
+
+	// 5) THE CONFLICT CASE. The URL names one role, the body names another. The URL
+	// must win — the authorizer ran on the URL's target, so if the body could
+	// redirect the write it would land on a row nobody authorized.
+	if code, _ := e.req(t, "POST", "/v1/iam/roles", root,
+		`{"owner":"hanzo","name":"target","displayName":"original"}`, "application/json"); code != 200 {
+		t.Fatal("setup: could not create the conflict-case role")
+	}
+	if code, _ := e.req(t, "POST", "/v1/iam/roles", root,
+		`{"owner":"hanzo","name":"decoy","displayName":"decoy"}`, "application/json"); code != 200 {
+		t.Fatal("setup: could not create the decoy role")
+	}
+	if code, body := e.req(t, "PATCH", "/v1/iam/roles/hanzo/target", root,
+		`{"owner":"hanzo","name":"decoy","displayName":"HIJACKED"}`, "application/json"); code != 200 {
+		t.Fatalf("conflict-case update = %d; body=%s", code, body)
+	}
+	if _, body := e.req(t, "GET", "/v1/iam/roles/hanzo/decoy", root, "", ""); strings.Contains(body, "HIJACKED") {
+		t.Fatal("THE BODY OVERRODE THE URL: the write landed on the decoy the authorizer never saw")
+	}
+	if _, body := e.req(t, "GET", "/v1/iam/roles/hanzo/target", root, "", ""); !strings.Contains(body, "HIJACKED") {
+		t.Fatalf("the write did not land on the URL's target: %s", body)
+	}
+}
+
+// superToken mints a signed access token for the seeded SuperAdmin. The subject is
+// the "<owner>/<name>" form the principal resolver accepts, signed by the same cert
+// the JWKS publishes — i.e. a token this deployment genuinely trusts.
+func (e *env) superToken(t *testing.T) string {
+	t.Helper()
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"sub": "admin/root",
+		"iat": time.Now().Add(-time.Minute).Unix(),
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	tok.Header["kid"] = kid
+	s, err := tok.SignedString(e.key)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return s
+}

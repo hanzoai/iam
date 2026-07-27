@@ -212,9 +212,9 @@ func TestWorkspaces_bucketAndDefaultRoundTrip(t *testing.T) {
 	}
 
 	// update the workspace: re-bind the bucket (native typed CRUD, admin-authorized).
-	if st, m := h.do(t, "POST", "/v1/iam/workspaces/update", boss,
-		`{"owner":"hanzo","name":"prod","organization":"hanzo","bucket":"hanzo-prod-v2","isDefault":true}`); st != 200 {
-		t.Fatalf("workspaces/update: status=%d body=%v", st, m)
+	if st, m := h.do(t, "PATCH", "/v1/iam/workspaces/hanzo/prod", boss,
+		`{"organization":"hanzo","bucket":"hanzo-prod-v2","isDefault":true}`); st != 200 {
+		t.Fatalf("workspaces member update: status=%d body=%v", st, m)
 	}
 	_, m = h.do(t, "GET", "/v1/iam/get-organization-workspaces?organization=hanzo", boss, "")
 	w = find(m, "prod")

@@ -15,6 +15,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/rest"
+
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
@@ -97,20 +99,10 @@ type DeleteResult struct {
 	Deleted bool `json:"deleted"`
 }
 
-// Route registers the applications CRUD surface on app, closing over db. Reads
-// use GET, create POST, update PUT, delete DELETE — every one a zip typed
-// handler.
+// Route registers the applications CRUD surface on app, closing over db.
 func Route(app *zip.App, db orm.DB) {
-	zip.Get(app, "/v1/iam/applications", listApplications(db),
-		zip.WithSummary("List applications for an owner"), zip.WithTags("applications"))
-	zip.Get(app, "/v1/iam/application", getApplication(db),
-		zip.WithSummary("Get one application by owner and name"), zip.WithTags("applications"))
-	zip.Post(app, "/v1/iam/application", Create(db),
-		zip.WithSummary("Create an application"), zip.WithTags("applications"))
-	zip.Put(app, "/v1/iam/application", Update(db),
-		zip.WithSummary("Update an application"), zip.WithTags("applications"))
-	zip.Delete(app, "/v1/iam/application", deleteApplication(db),
-		zip.WithSummary("Delete an application"), zip.WithTags("applications"))
+	rest.Collection(app, "applications", listApplications(db), Create(db))
+	rest.Member(app, "applications", getApplication(db), Update(db), deleteApplication(db))
 }
 
 // listApplications returns every application owned by in.Owner, ordered by
