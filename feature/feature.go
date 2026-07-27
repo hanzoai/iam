@@ -20,6 +20,11 @@ import (
 // orm store (internal/featurestore). A feature ignores methods it doesn't use.
 type Store interface {
 	GetUser(ctx context.Context, owner, name string) (*model.User, error)
+	// GetUserByID resolves a user by model.User.Id — the stable opaque UUID the
+	// OIDC `sub` carries, which AddUser mints server-side and UpdateUser carries
+	// forward. It is the id a module hands back to a client (a SCIM resource id),
+	// so it must be THIS value and never the orm storage id, which differs per row
+	// and is mutable for migrated rows. Returns (nil, nil) when no user matches.
 	GetUserByID(ctx context.Context, id string) (*model.User, error)
 	GetGlobalUsers(ctx context.Context, offset, limit int) ([]*model.User, int, error)
 	AddUser(ctx context.Context, u *model.User) (bool, error)
