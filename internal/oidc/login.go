@@ -183,26 +183,43 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 		return approveDevice(c, db, user, f.UserCode)
 	}
 
+	// ONE resolution of the application, ONE tenant gate, ahead of the split into the
+	// session and code exits — because the gate used to live on only ONE of them.
+	//
+	// The type=code branch asked ServesOrg; the type=login branch established a
+	// durable session bound to f.Application without resolving the app at all. So a
+	// credential refused a CODE for an app was still handed a SESSION against that
+	// same app — the artifact the portal and the gateway admin-guard read back
+	// through get-account, and the one the ambient-SSO branch later trades for a
+	// code. Stating the gate once, above the split, is what makes "this app does not
+	// serve you" true of every grant shape this tail can produce, including the
+	// second-factor finish that re-enters here.
+	//
+	// A login that names NO application resolves to nil and is not gated: there is no
+	// app to check and the session it establishes carries no application binding.
+	// type=code still demands a resolved app below.
+	app, err := resolveLoginApp(ctx, db, f)
+	if err != nil {
+		return httpx.Err(c, err.Error())
+	}
+	if app != nil && !app.ServesOrg(user.Owner) {
+		return httpx.Err(c, "the user is not permitted to sign in to this application")
+	}
+
 	// Reserved-org grant gate — the SAME store.IsReservedOrg refuse signup.go and the
 	// ROPC grant enforce, which login.go alone was missing (F-D2 tail / F-D1). A
 	// RESERVED-org principal (a SuperAdmin under "admin", a built-in/service identity)
 	// may be granted a bare SESSION or an authorization CODE ONLY through an application
 	// that itself SERVES that reserved org — the dedicated console. A shared,
 	// org-choice, or cross-tenant app must NEVER authenticate one: otherwise any shared
-	// app (whose per-type tenant gate below accepts every org) would mint a real
-	// SuperAdmin grant on the correct admin password. Enforced here, ahead of BOTH the
-	// bare-session and the type=code branches, so every credential grant shape (incl.
-	// the second-factor finish, which reaches this same tail) is bound identically. A
-	// normal-tenant login never triggers this (IsReservedOrg is false), so the shared/
-	// org-choice apps keep serving them unchanged.
-	if store.IsReservedOrg(user.Owner) {
-		app, err := resolveLoginApp(ctx, db, f)
-		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		if app == nil || user.Owner != app.Organization {
-			return httpx.Err(c, "the user is not permitted to sign in to this application")
-		}
+	// app (whose tenant gate above accepts every org) would mint a real SuperAdmin
+	// grant on the correct admin password. This is strictly NARROWER than ServesOrg —
+	// it demands the app's OWN org, ignoring IsShared and any chooser — so it stays a
+	// separate clause rather than folding into the predicate. A normal-tenant login
+	// never triggers it (IsReservedOrg is false), so the shared/org-choice apps keep
+	// serving them unchanged.
+	if store.IsReservedOrg(user.Owner) && (app == nil || user.Owner != app.Organization) {
+		return httpx.Err(c, "the user is not permitted to sign in to this application")
 	}
 
 	userID := user.Owner + "/" + user.Name
@@ -218,15 +235,8 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// type=code: mint a PKCE-bound authorization code for the OAuth flow. The org is
 	// the USER's own, from the loaded row, so a second-factor post (which carries no
 	// organization field) is checked exactly like the first.
-	app, err := resolveLoginApp(ctx, db, f)
-	if err != nil {
-		return httpx.Err(c, err.Error())
-	}
 	if app == nil {
 		return httpx.Err(c, "the application does not exist")
-	}
-	if !app.ServesOrg(user.Owner) {
-		return httpx.Err(c, "the user is not permitted to sign in to this application")
 	}
 	// Bind the code to an EXACTLY-registered redirect URI (RFC 6749 §3.1.2.3); the
 	// token endpoint re-checks it. A supplied-but-unregistered URI is refused.
