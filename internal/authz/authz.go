@@ -256,6 +256,57 @@ func pathAuthorized(path string) bool {
 	return false
 }
 
+// refuse writes the Guard's rejection in the envelope the CALLER can actually
+// parse, so one surface answers in one shape.
+//
+// The Casdoor-compatible verbs (/v1/iam/get-user, add-organization, …) are a
+// contract: every client of them branches on a STRING `status` of "ok"/"error" and
+// reads `msg`. The handlers honour that — get-account answers
+// {"status":"error","msg":"please sign in first"} — but the Guard short-circuits
+// BEFORE any handler runs, and zip's own error shape is {"status":401,
+// "error":"…"}: `status` an int where the client expects a string, and the text
+// under `error` where the client reads `msg`. So the same endpoint spoke two
+// languages depending on whether it got far enough to answer for itself, and a
+// client written against the documented one silently saw neither an ok nor a
+// recognizable error. The fix belongs here, at the source, not in every client
+// learning to tolerate both.
+//
+// Only the compat surface is reshaped. The native REST/OIDC routes keep zip's
+// numeric-status error, which is THEIR contract — this is one envelope per
+// surface, not one envelope everywhere. The HTTP status code is unchanged in both
+// cases (401/403), so anything reading the code rather than the body is unaffected.
+func refuse(c *zip.Ctx, status int, msg string) error {
+	if casdoorVerb(c.Path()) {
+		return c.JSON(status, httpx.Response{Status: "error", Msg: msg})
+	}
+	if status == 401 {
+		return zip.ErrUnauthorized(msg)
+	}
+	return zip.ErrForbidden(msg)
+}
+
+// casdoorVerbs are the request-shaped prefixes of the compat surface — the
+// verb-per-path Casdoor spelling (get-/add-/update-/delete-) that the console BFF,
+// the @hanzo/iam SDK and the cloud clients hard-code. The native surface is
+// noun-shaped (/v1/iam/users, /v1/iam/organizations), so the verb prefix is what
+// distinguishes the two contracts without a second list to keep in sync.
+var casdoorVerbs = []string{"get-", "add-", "update-", "delete-"}
+
+// casdoorVerb reports whether path is one of the compat verbs.
+func casdoorVerb(path string) bool {
+	const p = "/v1/iam/"
+	if !strings.HasPrefix(path, p) {
+		return false
+	}
+	rest := path[len(p):]
+	for _, v := range casdoorVerbs {
+		if strings.HasPrefix(rest, v) {
+			return true
+		}
+	}
+	return false
+}
+
 // Guard is the AUTHENTICATION middleware. Route it via app.Use AFTER the public
 // group and BEFORE the authed routes: the public (pre-authentication) routes are
 // registered first, so a matched public route terminates fiber's middleware walk
@@ -285,7 +336,7 @@ func Guard(db orm.DB) zip.Handler {
 		}
 		p, err := principal(c, db)
 		if err != nil {
-			return zip.ErrUnauthorized("authentication required")
+			return refuse(c, 401, "authentication required")
 		}
 		// A path-targeted resource (SCIM: /Users/{id}) carries its target in the
 		// PATH, not the query — so, like a write whose target rides in the body, the
@@ -296,7 +347,7 @@ func Guard(db orm.DB) zip.Handler {
 		if !pathAuthorized(c.Path()) {
 			rOwner, rName := ReadTarget(c)
 			if isRead(c.Method()) && !authorize(p, c.Method(), entityOf(c.Path()), rOwner, rName) {
-				return zip.ErrForbidden("forbidden")
+				return refuse(c, 403, "forbidden")
 			}
 		}
 		c.SetContext(context.WithValue(c.Context(), ctxKey{}, p))
@@ -361,6 +412,29 @@ func Authorize(ctx context.Context, op zip.Op, in any) error {
 //     denial.
 func authorize(p *Principal, method, entity, owner, name string) bool {
 	if p.Super {
+		return true
+	}
+	// An app may READ THE ROW IT AUTHENTICATED AS, and no other. Reading its own
+	// registration is the ordinary bootstrap of an OIDC relying party — it is how a
+	// client discovers its own cert, redirect URIs and enabled methods — and it
+	// reveals nothing the holder of that client's credential does not already have.
+	//
+	// The owner-pin that closed the "every client credential is a global admin"
+	// escalation is not wrong; it was missing this case, and applications are not in
+	// capFor(), so a confidential client could not read even itself and every cloud
+	// deploy 403'd on its own bootstrap.
+	//
+	// Narrow by construction, in four ways at once: only an app principal (a human's
+	// authority is decided below), only a READ (never a write to its own row — that
+	// would let a client widen its own redirect URIs or grants), only the
+	// applications entity, and only the exact (AppOwner, App) pair the request
+	// authenticated as. Both halves of the key must match, so this is self-read and
+	// not "apps may read applications": a sibling in the same org differs in `name`
+	// and stays refused, and admin/<app> vs <tenant>/<app> — the same NAME under a
+	// different owner — differs in `owner`, so neither direction of that collision
+	// is admitted. That pairing is the same one Allowed() pins capabilities to.
+	if p.App != "" && entity == "applications" && isRead(method) &&
+		owner != "" && owner == p.AppOwner && name == p.App {
 		return true
 	}
 	if store.IsReservedOrg(owner) {
