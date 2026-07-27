@@ -141,7 +141,9 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// revokeUserKeysHandler clears the target user's `hk-` key (immediate revoke).
+// revokeUserKeysHandler clears the target user's Cloud API key (immediate revoke).
+// The stored value is sk- for anything minted since the key seam was unified, and
+// hk- only for the legacy population that has not been re-keyed.
 func revokeUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

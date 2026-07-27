@@ -17,9 +17,15 @@ import (
 // empty, or unrecognized-shape key resolves to orm.ErrNotFound, never a fallback or
 // wrong user, so a bad key can never inherit another principal's identity.
 //
-//   - hk-  the durable Cloud API key stamped on the User row itself
-//          (schema.User.AccessKey), minted by issue-user-token OR by a service
-//          account (both store an hk- key on the User). The user IS the principal.
+//   - hk-  LEGACY, accept-only. The durable Cloud API key stamped on the User row
+//          itself (schema.User.AccessKey). Nothing mints this shape any more —
+//          newAccessKey() has minted sk- since the key seam was unified — so the
+//          population is fixed and can only shrink. The branch stays until the
+//          remaining stored values are re-keyed; dropping it earlier would reject
+//          every credential still carrying the old prefix.
+//   - sk-  ALSO the shape now stamped on User.AccessKey by mint-user-keys. Both
+//          resolutions below are live: on the User row (this file's userByField)
+//          and as the confidential half of a schema.Key (userOwningKey).
 //   - pk-  the publishable half of a schema.Key credential (Key.AccessKey) — resolve
 //          the key row, then its owning user.
 //   - sk-  the confidential half of a schema.Key credential (Key.AccessSecret) —
