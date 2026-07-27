@@ -105,11 +105,29 @@ func signupHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, err.Error())
 		}
 		if org == nil {
-			// v1 auto-mints the founder's own org (TenantOrgForSignup /
-			// CreatePersonalOrganization) only for a platform tenant org; that path
-			// needs an org-create helper + the Org.Parent tenant-parent model, neither
-			// of which iam2 has yet, so signup requires the org to exist. See report.
-			return httpx.Err(c, "the organization: "+f.Organization+" does not exist")
+			// Self-serve org creation — the founder signs up and their org is minted
+			// with them. It is OPT-IN per application (orgChoiceMode == orgChoiceCreate)
+			// so an app that names one tenant can never mint another: the tenant gate
+			// above already refuses a foreign org unless the app is shared or lets users
+			// choose, and this narrows "choose" to the apps that mean "create".
+			//
+			// Safe by construction, given the two checks that already ran:
+			//   - IsReservedOrg refused admin/built-in/app, so this can never mint a
+			//     reserved org — and the USER below is created under f.Organization, so
+			//     owner != "admin" and the row carries no SuperAdmin authority.
+			//   - the name is validated here rather than trusted, so a signup cannot
+			//     invent an org id containing a separator or path characters.
+			if app.OrgChoiceMode != orgChoiceCreate {
+				return httpx.Err(c, "the organization: "+f.Organization+" does not exist")
+			}
+			if msg := orgNamePolicyError(f.Organization); msg != "" {
+				return httpx.Err(c, msg)
+			}
+			created, err := store.CreateOrganization(ctx, db, f.Organization)
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			org = created
 		}
 
 		// Username policy (v1 object/check.go CheckUserSignup).
@@ -203,6 +221,40 @@ func displayName(f signupForm) string {
 
 // usernamePolicyError returns the first username rule a candidate violates, or
 // "" when it passes — the v1 CheckUserSignup rules for the Username item.
+// orgChoiceCreate is the application's opt-in to SELF-SERVE org creation: a signup
+// naming an org that does not exist mints it, with the signing-up user as its first
+// member. Any other orgChoiceMode still only lets a user CHOOSE among existing orgs,
+// so turning on self-serve is a deliberate per-app decision rather than a side effect
+// of allowing org choice at all.
+const orgChoiceCreate = "create"
+
+// orgNamePolicyError validates a self-service org name. The org name is the OWNER
+// half of every (owner, name) natural key in the store, so a permissive name here
+// would be a key-injection surface, not a cosmetic issue — hence the same "/" and
+// whitespace refusals usernamePolicyError applies, plus a length bound.
+//
+// It deliberately does NOT reject a name merely because it is taken: the caller
+// reaches this only when the lookup already returned no org, and a "taken" message
+// would turn signup into an org-existence oracle.
+func orgNamePolicyError(org string) string {
+	if len(org) <= 1 {
+		return "organization name must have at least 2 characters"
+	}
+	if len(org) > 100 {
+		return "organization name is too long"
+	}
+	if unicode.IsDigit(rune(org[0])) {
+		return "organization name cannot start with a digit"
+	}
+	if strings.IndexFunc(org, unicode.IsSpace) >= 0 {
+		return "organization name cannot contain white spaces"
+	}
+	if strings.Contains(org, "/") {
+		return "organization name cannot contain '/'"
+	}
+	return ""
+}
+
 func usernamePolicyError(username string) string {
 	if len(username) <= 1 {
 		return "username must have at least 2 characters"
