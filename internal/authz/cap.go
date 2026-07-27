@@ -58,10 +58,12 @@ var (
 	// is additionally tenant-bound by BoundToOrg.
 	CapServiceAccountRead = Cap{Name: "service-account-read", Env: "IAM_SA_LIST_ALLOWED_APPS"}
 
-	// CapKeyResolve gates resolving an opaque API key (hk-/pk-/sk-) to its owning
+	// CapKeyResolve gates resolving an opaque SECRET API key (hk-/sk-) to its owning
 	// principal via get-user?accessKey. It is a CREDENTIAL-DISCLOSURE boundary: the
 	// caller presents a secret key and learns WHO it authenticates, so it must never
-	// be an arbitrary authenticated caller. The intended sole holder is the cloud
+	// be an arbitrary authenticated caller. A public pk- is NOT resolved here: it is
+	// write-only, and its own narrower CapPublishableResolve turns it into an org, never
+	// a principal. The intended sole holder is the cloud
 	// identity boundary (SanitizeIdentity), which turns a keyed request into the same
 	// principal a JWT yields. Fail-secure exactly like the others: an unset or empty
 	// allowlist lets NO app resolve a key. Enforced additionally as app-only at the
@@ -79,6 +81,19 @@ var (
 	// name is not a signing owner and holds nothing. Under the <org>-<app> convention
 	// name == clientId, so the two are equivalent in practice. Gate unchanged.
 	CapKeyResolve = Cap{Name: "key-resolve", Env: "IAM_KEY_RESOLVE_APPS"}
+
+	// CapPublishableResolve gates resolving a WRITE-ONLY publishable pk- to just the
+	// ORG that holds it (keys.resolve → /v1/iam/resolve-key), for cloud's ingest
+	// boundary. It is strictly NARROWER than CapKeyResolve and deliberately a separate
+	// authority: this door discloses only an org (a pk- is public, shipped in client
+	// JS), NEVER a principal, so the two must not be conflated — a client granted the
+	// org-resolve capability must never thereby be able to disclose WHO a secret key
+	// authenticates. Fail-secure exactly like the others: an unset or empty allowlist
+	// lets NO app resolve a publishable key. Keyed on the application NAME (via
+	// Allowed → p.App), like every sibling Cap, with the same owner-pin (Allowed
+	// requires AppOwner ∈ reserved signing owners), so a tenant app that reuses a
+	// listed name inherits nothing.
+	CapPublishableResolve = Cap{Name: "publishable-resolve", Env: "IAM_PUBLISHABLE_RESOLVE_APPS"}
 )
 
 // Allowed reports whether p holds c.

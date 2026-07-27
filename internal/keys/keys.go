@@ -103,8 +103,9 @@ func get(db orm.DB) zip.TypedHandler[Ref, schema.Key] {
 	}
 }
 
-// create inserts a new key under (owner, name), minting any missing pk-/sk-
-// credential halves. It refuses to overwrite an existing key.
+// create inserts a new key under (owner, name), minting the missing credential
+// halves — both pk- and sk- for a secret key, only the pk- for a publishable
+// (Scope == KeyScopePublish) write-only key. It refuses to overwrite an existing key.
 func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 	return func(ctx context.Context, in *schema.Key) (*schema.Key, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -126,7 +127,13 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if k.AccessKey == "" {
 			k.AccessKey = Mint("pk", k.State)
 		}
-		if k.AccessSecret == "" {
+		if k.Scope == schema.KeyScopePublish {
+			// A publishable key is WRITE-ONLY: a pk- publishable half and NEVER a
+			// confidential sk- secret — even if the caller supplied one — so it can
+			// carry no full-access material. Its authority is resolved org-only at the
+			// ingest door (compat resolve-key → /v1/iam/resolve-key), never as a principal.
+			k.AccessSecret = ""
+		} else if k.AccessSecret == "" {
 			k.AccessSecret = Mint("sk", k.State)
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
@@ -157,6 +164,11 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 			return nil, err
 		}
 		apply(k, in)
+		if k.Scope == schema.KeyScopePublish {
+			// Keep a publishable key write-only for its whole lifecycle: an update can
+			// never attach a confidential sk- secret to a pk--only browser key.
+			k.AccessSecret = ""
+		}
 		k.UpdatedTime = time.Now().UTC().Format(time.RFC3339)
 		if err := k.UpdateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
@@ -187,12 +199,14 @@ func del(db orm.DB) zip.TypedHandler[Ref, DeleteResponse] {
 
 // sameTenantUser rejects a Key whose User field names a DIFFERENT owner than the key
 // itself — the write-side half of the F1 credential-forgery gate (store.userOwningKey
-// is the authoritative half). Key.User, AccessKey, and AccessSecret are all
+// is the authoritative half). Key.User and the credential halves are all
 // caller-supplied, and the key write is authorized only on (Owner, Name), so a
 // "/"-qualified User naming "admin/z" or a victim tenant would otherwise persist and
-// let get-user?accessKey resolve a foreign / SuperAdmin identity. A bare username or
-// an empty User is fine (both resolve within the key's own owner); a cross-tenant
-// qualified reference is refused, so no forged row is ever written.
+// let a presented sk- secret resolve — via get-user?accessKey — to that foreign /
+// SuperAdmin identity. (The public pk- half never resolves to a principal at all, so
+// this gate protects the sk- read path.) A bare username or an empty User is fine
+// (both resolve within the key's own owner); a cross-tenant qualified reference is
+// refused, so no forged row is ever written.
 func sameTenantUser(k *schema.Key) error {
 	if o, _, ok := strings.Cut(k.User, "/"); ok && o != k.Owner {
 		return zip.ErrBadRequest("key user must belong to the key's owner")
@@ -212,6 +226,7 @@ func apply(dst, src *schema.Key) {
 	dst.AccessSecret = src.AccessSecret
 	dst.ExpireTime = src.ExpireTime
 	dst.State = src.State
+	dst.Scope = src.Scope
 }
 
 // mint generates a prefixed credential half — "{pk|sk}-{live|test}-{random}"
