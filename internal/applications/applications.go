@@ -217,6 +217,31 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, err
 		}
 
+		// A write that says NOTHING about the credential must not destroy it.
+		//
+		// This verb is a full REPLACE, and every read of an application MASKS its
+		// client secret (Mask, and get-app-login before it) — so the natural admin
+		// round-trip, read the record, change one field, write it back, silently
+		// posted ClientSecret:"" and de-secreted the app. Measured on live IAM: the
+		// SuperAdmin read of hanzo-console, hanzo-app, hanzo-id and hanzo-cloud all
+		// return "" while a token-endpoint probe proves all four DO hold a secret.
+		// Any console "save" on an application page was one request away from turning
+		// a confidential client public — which the token endpoint then reads as "PKCE,
+		// demand no client auth", weakening every flow that app serves.
+		//
+		// So an OMITTED secret preserves what is stored. This is the same rule the
+		// operator upsert already settled in resolveSecret ("existing app -> preserve
+		// what it has"), stated once more here because this is the other door onto the
+		// same row; rotation stays possible, it just has to be DELIBERATE — send the
+		// new secret to change it.
+		//
+		// Clearing a secret on purpose (confidential -> public) is therefore no longer
+		// expressible as an accident. It goes through the operator upsert's explicit
+		// `public: true`, which is the one place that decision is named.
+		if in.ClientSecret == "" {
+			in.ClientSecret = existing.ClientSecret
+		}
+
 		in.Init(db)
 		in.SetId(id)
 		in.CreatedTime = existing.CreatedTime
