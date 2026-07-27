@@ -499,8 +499,20 @@ func authorize(p *Principal, method, entity, owner, name string) bool {
 		// the PUBLIC certificate this client already has to trust to verify our
 		// tokens. A bare `?id=cert-hanzo` carries no owner half, so an empty owner is
 		// admitted ONLY here, where the cert NAME is already pinned to this principal.
+		// The owner half varies by CALLER, so all three shapes are admitted — what
+		// pins this read is the NAME, not the owner. ai/internal/iam/cert.go sends
+		// "<IAM_ORG>/<name>" (hanzo/cert-hanzo), GetApplication hardcodes admin/, and
+		// a bare id carries no owner at all. Measured: admin/cert-hanzo and
+		// hanzo/cert-hanzo are two rows seeded 3ms apart carrying the IDENTICAL 4096-bit
+		// modulus, both matching the single JWKS kid=cert-hanzo — so the owner half
+		// selects between duplicates of one keypair, not between different keys.
+		//
+		// name == p.AppCert is the whole gate and it is unchanged: an app reaches the
+		// one cert its own application row names and no other, whichever owner it
+		// spells. Read-only, and Cert.Mask blanks PrivateKey, so this discloses the
+		// PUBLIC key already published at /v1/iam/.well-known/jwks.
 		if entity == "certs" && p.AppCert != "" && name == p.AppCert &&
-			(owner == "" || owner == p.AppOwner) {
+			(owner == "" || owner == p.AppOwner || owner == p.Org) {
 			return true
 		}
 	}
