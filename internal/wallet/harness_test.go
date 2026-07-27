@@ -324,6 +324,13 @@ func bearer(t *testing.T, db orm.DB, a *schema.Application, org, name string) (*
 	}
 
 	tok, err := oidc.NewRSASigner(k, "cert-wallet", "https://"+host).
+<<<<<<< HEAD
+=======
+		// Sign is (app, userID, email, name, username, scope, orgs, ttl, now).
+		// "openid" is the SCOPE; it sat in the username slot because this call
+		// predates username being a parameter, so it silently became a username
+		// and left scope holding the orgs nil.
+>>>>>>> 147201419 (test: give Sign its scope back)
 		Sign(a, org+"/"+name, "", "", "", "openid", nil, time.Hour, time.Now())
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
