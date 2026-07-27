@@ -424,6 +424,33 @@ func GetOrganizationByName(_ context.Context, db orm.DB, name string) (*schema.O
 	return o, err
 }
 
+// CreateOrganization mints a tenant organization under the "admin" owner (the v1
+// convention every other org follows), and returns it. Idempotent by construction:
+// GetOrCreate returns the existing row when two founders race the same name, so a
+// concurrent signup joins the org rather than erroring or clobbering it.
+//
+// The org owner is "admin" because that is where orgs live; this grants the org NO
+// authority. Authority is a property of the USER row — authz derives Super from
+// user.Owner == "admin" — and a self-service signup creates its user under the new
+// org, never under "admin". Callers must have refused a reserved name first
+// (IsReservedOrg), which is what keeps this from being a path to minting "admin".
+func CreateOrganization(_ context.Context, db orm.DB, name string) (*schema.Organization, error) {
+	if name == "" {
+		return nil, fmt.Errorf("organization name is required")
+	}
+	org, _, err := orm.GetOrCreate[schema.Organization](db, MembershipOwner+"/"+name, func(o *schema.Organization) {
+		o.Owner = MembershipOwner
+		o.Name = name
+		o.DisplayName = name
+		// No PasswordOptions: an empty policy means "no extra complexity rules", the
+		// same default a hand-seeded org carries.
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create organization %s: %w", name, err)
+	}
+	return org, nil
+}
+
 // AddVerificationRecord persists a freshly minted verification code. The id is
 // (owner, name); the caller sets Name to a unique value before persisting.
 // Mirrors PersistToken: the orm.Model is preserved while the caller's fields are
