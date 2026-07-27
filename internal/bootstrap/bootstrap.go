@@ -61,6 +61,20 @@ type appUpsertReq struct {
 	// a secret, so a public client could never be registered at all and its
 	// browser code->token exchange 401'd `invalid_client` forever.
 	Public bool `json:"public"`
+	// IsShared declares that this application serves EVERY organization, not only
+	// the one named in Organization. It is the honest description of a brand app —
+	// hanzo-id, hanzo-chat, a brand console — whose customers each live in their own
+	// tenant: self-service onboarding moves a founder OUT of the brand org, so
+	// `user.Owner != app.Organization` is the steady state and the app really does
+	// serve every org. Application.ServesOrg reads it as one of the three ways to
+	// say yes.
+	//
+	// A POINTER because omission must PRESERVE. This upsert is the operator's
+	// steady-state reconcile and most callers say nothing about sharing; a plain
+	// bool would read as false on every one of them and silently un-share an app —
+	// the same shape of accident that de-secreted apps through update-application.
+	// Nil means "not stated, leave it"; only an explicit true or false moves it.
+	IsShared *bool `json:"isShared"`
 }
 
 // upsertApplication idempotently creates or updates a service-account application,
@@ -114,6 +128,9 @@ func upsertApplication(db orm.DB) zip.Handler {
 			if req.Cert != "" {
 				existing.Cert = req.Cert
 			}
+			if req.IsShared != nil {
+				existing.IsShared = *req.IsShared
+			}
 			existing.EnablePassword = true
 			if err := existing.UpdateCtx(ctx); err != nil {
 				return c.JSON(500, errResp("server_error"))
@@ -126,6 +143,8 @@ func upsertApplication(db orm.DB) zip.Handler {
 			a.Organization, a.DisplayName = req.Organization, pick(req.DisplayName, req.Name)
 			a.GrantTypes, a.RedirectUris, a.Cert = req.GrantTypes, req.RedirectUris, req.Cert
 			a.EnablePassword, a.ExpireInHours = true, 1
+			// A new app is single-tenant unless it says otherwise — fail closed.
+			a.IsShared = req.IsShared != nil && *req.IsShared
 			a.Model = model
 			a.SetId("admin/" + req.Name)
 			if err := a.CreateCtx(ctx); err != nil {
