@@ -21,6 +21,14 @@
 // URI lists are how registrations drift from the app that actually calls them,
 // which presents as `invalid_client`/`redirect_uri_mismatch` long after the
 // change that caused it.
+//
+// Derivation is the default, not the whole vocabulary. A real client can hold
+// a URI no rule can produce — a desktop deep link, a loopback dev port, a
+// second callback path on a host that already has one — and the upsert
+// REPLACES the URI list rather than merging it. A document that cannot say
+// those URIs therefore deletes them on the next converge. App.Redirects and
+// App.Grants are the additive escape hatch for exactly that: the derived set
+// plus the declared exceptions, each one visible in review.
 package provision
 
 import (
@@ -69,6 +77,26 @@ type App struct {
 	// /user/oauth2/<source>/callback). Still derived per host, so one host set
 	// stays the single source of the URI list.
 	Callback string `yaml:"callback"`
+	// Redirects are literal redirect URIs APPENDED to the derived set, for the
+	// ones derivation cannot know: a desktop deep link whose path is not the
+	// app slug, a loopback dev port, a second callback path on a host that
+	// already has one. They are additive on purpose — hosts+type stay the
+	// default so a document line stays one line, and this field carries only
+	// the exceptions, where each URI is visible in review instead of hiding
+	// inside a live registration nobody reads.
+	//
+	// Without it the upsert, which REPLACES redirectUris, silently deletes
+	// every live URI a document cannot express — a converge that reports
+	// success and takes the logins down with it.
+	Redirects []string `yaml:"redirects"`
+	// Grants are extra OAuth grants APPENDED to the type's default set, for an
+	// app that is genuinely two clients behind one client_id: a browser PKCE
+	// surface AND the backend machine identity that authenticates with the same
+	// registration (client_credentials), or a device flow. Additive for the
+	// same reason as Redirects — the upsert replaces grantTypes wholesale, so a
+	// type-derived set is a silent revocation of every grant the type does not
+	// name.
+	Grants []string `yaml:"grants"`
 }
 
 // Client is the derived, serialized registration — the body of an upsert call.
@@ -191,13 +219,24 @@ func deriveApp(org Org, a App) (Client, error) {
 	// that default ever changes.
 	id := org.Name + "-" + name
 
+	// Literal extras are URIs, not paths: a bare path here would register a
+	// relative redirect that no authorize request can ever match.
+	for _, u := range a.Redirects {
+		if u = strings.TrimSpace(u); u == "" {
+			continue // union drops blanks; a trailing comma is not a defect
+		}
+		if !strings.Contains(u, "://") {
+			return Client{}, fmt.Errorf("provision: app %s/%s redirect %q must be an absolute URI", org.Name, name, u)
+		}
+	}
+
 	c := Client{
 		Organization: org.Name,
 		Name:         id,
 		ClientId:     id,
 		DisplayName:  displayName(org, name),
-		GrantTypes:   grants,
-		RedirectUris: redirects(org, a),
+		GrantTypes:   union(grants, a.Grants),
+		RedirectUris: union(redirects(org, a), a.Redirects),
 		Public:       publicByType[a.Type],
 		Cert:         strings.TrimSpace(a.Cert),
 	}
@@ -240,6 +279,25 @@ func redirects(org Org, a App) []string {
 		}
 		return uris
 	}
+}
+
+// union appends extras to base, dropping blanks and repeats and keeping the
+// order they were declared in. Order-stable and duplicate-free is what makes
+// two runs over one document produce byte-identical bodies — the property
+// --dry-run is reviewed on, and the reason a re-run is a no-op.
+func union(base, extra []string) []string {
+	seen := make(map[string]bool, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, s := range append(append([]string{}, base...), extra...) {
+		if s = strings.TrimSpace(s); s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func displayName(org Org, app string) string {
