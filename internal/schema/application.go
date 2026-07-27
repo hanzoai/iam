@@ -14,7 +14,11 @@
 
 package schema
 
-import "github.com/hanzoai/orm"
+import (
+	"strings"
+
+	"github.com/hanzoai/orm"
+)
 
 // SigninMethod is one enabled authentication method on an application
 // (e.g. Password, Verification code, WebAuthn, Face ID) with its display
@@ -237,6 +241,50 @@ func (a *Application) IsRedirectUriValid(redirectUri string) bool {
 		}
 	}
 	return false
+}
+
+// ServesOrg reports whether this application may authenticate an identity that
+// belongs to organization `org`. It is THE tenant gate — the one predicate that
+// decides whether a credential presented to this app may resolve a user in that
+// org — and every surface that needs the answer (signup, interactive login, the
+// ROPC grant, the on-behalf-of mint, the federation callback) asks it here.
+//
+// An app serves its OWN org; a SHARED app serves every org by declaration; and an
+// app that presents an org CHOOSER serves whatever the human picked. Nothing else.
+//
+// Before this existed the same three-part expression was spelled out at five call
+// sites, and one of them spelled it inverted — which is how a live-data value
+// silently disagreed with the code's own reading of itself (see AllowsOrgChoice).
+func (a *Application) ServesOrg(org string) bool {
+	if a == nil || org == "" {
+		return false
+	}
+	return org == a.Organization || a.IsShared || a.AllowsOrgChoice()
+}
+
+// orgChoosers are the ONLY OrgChoiceMode values that actually put an organization
+// chooser in front of a human — Casdoor's "Select" (pick from a list) and "Input"
+// (type one). It is an ALLOWLIST, which is what makes the predicate fail closed:
+// a value nobody anticipated gates rather than waves through.
+var orgChoosers = map[string]bool{"select": true, "input": true}
+
+// AllowsOrgChoice reports whether this application lets a person sign in under an
+// organization OTHER than the app's own, because it offers a chooser.
+//
+// The bug this closes: the gate used to be spelled `OrgChoiceMode == ""`, treating
+// the EMPTY string as "no chooser". Casdoor's actual value for "no chooser" is the
+// STRING "None", and that is what production carries — measured on live IAM, 13 of
+// 16 registered apps hold "None" and only 3 hold "". Two spellings of one state, so
+// the tenant gate was OFF for those 13 and ON for those 3, while the code read as
+// though it were uniformly on. A security control silently disabled on most of the
+// fleet, and a product inconsistency besides: the same founder could mint a code for
+// hanzo-chat and be refused by hanzo-cli.
+//
+// Both spellings now mean the same thing, decided in ONE place: "None", "", and any
+// unrecognized value all mean no chooser. Comparison is trim+lowercase so a stored
+// "none"/"NONE"/" Select " cannot reintroduce the divergence by casing alone.
+func (a *Application) AllowsOrgChoice() bool {
+	return a != nil && orgChoosers[strings.ToLower(strings.TrimSpace(a.OrgChoiceMode))]
 }
 
 // IsPasswordEnabled reports whether password sign-in is available: the explicit

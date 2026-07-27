@@ -225,7 +225,7 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	if app == nil {
 		return httpx.Err(c, "the application does not exist")
 	}
-	if user.Owner != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
+	if !app.ServesOrg(user.Owner) {
 		return httpx.Err(c, "the user is not permitted to sign in to this application")
 	}
 	// Bind the code to an EXACTLY-registered redirect URI (RFC 6749 §3.1.2.3); the
