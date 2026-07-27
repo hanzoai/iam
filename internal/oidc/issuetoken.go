@@ -113,9 +113,13 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// mintUserKeysHandler (re)generates the target user's durable `sk-` Cloud API key
-// (schema.User.AccessKey) and returns it once, over the shared authorizeMinter +
-// mintTarget seam.
+// mintUserKeysHandler (re)generates the target user's Cloud API key and returns it
+// once, over the shared authorizeMinter + mintTarget seam.
+//
+// It writes the schema.Key row that UserByAccessKey's sk- branch actually reads. It
+// used to stamp the secret on schema.User.AccessKey, which nothing resolves — so the
+// minted key authenticated nobody AND overwrote any working legacy hk- in the same
+// field, locking the holder out with no recovery through the UI.
 func mintUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -127,13 +131,8 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
-		key := newAccessKey()
-		now := nowFunc().UTC().Format(time.RFC3339)
-		if _, err := updateUser(ctx, db, user.Owner, user.Name, func(u *schema.User) error {
-			u.AccessKey = key
-			u.UpdatedTime = now
-			return nil
-		}); err != nil {
+		key, err := keys.MintUserKey(ctx, db, user.Owner, user.Name)
+		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
 		auditMint(ctx, db, c, "mint-user-keys", clientApp.ClientId, user.Owner+"/"+user.Name)
@@ -154,6 +153,13 @@ func revokeUserKeysHandler(db orm.DB) zip.Handler {
 		user, status, msg := mintTarget(ctx, db, c, clientApp)
 		if status != 0 {
 			return mintErr(c, status, msg)
+		}
+		// Revoke BOTH homes: the key row this mints today, and the legacy credential
+		// stamped on the User row. A holder still carrying an hk- must be fully
+		// revoked by one call, or "revoked" would be a lie for exactly the population
+		// that has not migrated yet.
+		if err := keys.RevokeUserKey(ctx, db, user.Owner); err != nil {
+			return mintErr(c, 500, "server_error")
 		}
 		now := nowFunc().UTC().Format(time.RFC3339)
 		if _, err := updateUser(ctx, db, user.Owner, user.Name, func(u *schema.User) error {
