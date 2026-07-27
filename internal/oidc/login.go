@@ -82,6 +82,42 @@ func loginHandler(db orm.DB) zip.Handler {
 			if id := ReadChallenge(c, f.Challenge); id != "" {
 				return finishMfa(c, db, id, f)
 			}
+			// SINGLE SIGN-ON. A code request carrying no credential but a LIVE session
+			// THIS IdP issued is a user who is already signed in asking for a grant to
+			// the next app. Re-typing the password would prove nothing new: the session
+			// cookie is tamper-evident (HMAC over the platform signing key), carries its
+			// own expiry, and its sid is checked against the Session row on every
+			// resolve, so it is revocable — and it only ever exists downstream of the
+			// full gate, second factor included, because loginGrant is what sets it.
+			//
+			// Without this every app bounced a signed-in person to a credential form:
+			// the portal's own launcher tiles landed on a login wall, which reads as
+			// "the link is dead" because the browser ends up back on the IdP.
+			//
+			// It grants NOTHING extra. The mint runs through loginGrant — the ONE
+			// minting tail — so the reserved-org gate, the app-org tenant gate, the
+			// exact redirect_uri match and the public-client PKCE requirement are the
+			// same checks, in the same order, as a password post; only the proof of
+			// identity differs. Restricted to type=code (a bare session has nothing to
+			// re-establish, and a device approval must stay a deliberate act), and the
+			// row is re-read so an account forbidden or deleted since sign-in is
+			// refused rather than riding its old session.
+			//
+			// Not a CSRF mint: /v1/iam/login is not a CORS browser path and the IdP
+			// never allows credentialed cross-origin reads (internal/cors), so only a
+			// first-party page can both send the cookie and read the code.
+			if f.Type == "code" {
+				if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
+					user, err := store.GetUserByName(ctx, db, owner, name)
+					if err != nil {
+						return httpx.Err(c, err.Error())
+					}
+					if user == nil || user.IsForbidden || user.IsDeleted {
+						return httpx.Err(c, "please sign in first")
+					}
+					return loginGrant(c, db, user, f)
+				}
+			}
 		}
 
 		if f.Organization == "" || f.Username == "" || f.Password == "" {
