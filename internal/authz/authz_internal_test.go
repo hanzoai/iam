@@ -77,19 +77,60 @@ func TestSuperIsAdminOrgOnly(t *testing.T) {
 
 func TestEntityOf(t *testing.T) {
 	cases := map[string]string{
-		"/v1/iam/users":        "users",
-		"/v1/iam/users/get":    "users",
-		"/v1/iam/users/update": "users",
-		"/v1/iam/certs/delete": "certs",
-		"/v1/iam/application":  "application",
-		"/v1/iam/audit-logs":   "audit-logs",
-		"/mcp":                 "",
-		"/healthz":             "",
-		"/v1/iam/":             "",
+		// Collection and member resolve to the SAME entity — the policy is written
+		// per entity, so the member URL that replaced the POST sub-verbs must not
+		// change which clause governs it.
+		"/v1/iam/users":                 "users",
+		"/v1/iam/users/hanzo/alice":     "users",
+		"/v1/iam/certs":                 "certs",
+		"/v1/iam/certs/admin/cert-sign": "certs",
+		"/v1/iam/applications":          "applications",
+		"/v1/iam/applications/admin/x":  "applications",
+		"/v1/iam/audit-logs":            "audit-logs",
+		// The Casdoor verb spellings fold onto the same entity noun.
+		"/v1/iam/get-user":         "users",
+		"/v1/iam/add-organization": "organizations",
+		"/mcp":                     "",
+		"/healthz":                 "",
+		"/v1/iam/":                 "",
 	}
 	for path, want := range cases {
 		if got := entityOf(path); got != want {
 			t.Errorf("entityOf(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
+// TestMemberTarget pins the ONE rule the Guard uses to find a member route's
+// authorization target: EXACTLY two segments after the entity. One segment short is
+// a collection, one long is a sub-resource, and neither may be mistaken for an
+// (owner, name) — a false positive here would hand the authorizer a target the
+// handler never acts on.
+func TestMemberTarget(t *testing.T) {
+	cases := []struct {
+		path        string
+		owner, name string
+		ok          bool
+	}{
+		{"/v1/iam/users/hanzo/alice", "hanzo", "alice", true},
+		{"/v1/iam/certs/admin/cert-sign", "admin", "cert-sign", true},
+		// A collection: no target in the path.
+		{"/v1/iam/users", "", "", false},
+		// One segment too few and one too many.
+		{"/v1/iam/users/hanzo", "", "", false},
+		{"/v1/iam/service-accounts/bot/keys/extra", "", "", false},
+		// Empty segments never form a target.
+		{"/v1/iam/users//alice", "", "", false},
+		{"/v1/iam/users/hanzo/", "", "", false},
+		// Outside the subsystem prefix entirely.
+		{"/v1/ai/users/hanzo/alice", "", "", false},
+		{"/healthz", "", "", false},
+	}
+	for _, c := range cases {
+		o, n, ok := memberTarget(c.path)
+		if o != c.owner || n != c.name || ok != c.ok {
+			t.Errorf("memberTarget(%q) = (%q,%q,%v), want (%q,%q,%v)",
+				c.path, o, n, ok, c.owner, c.name, c.ok)
 		}
 	}
 }

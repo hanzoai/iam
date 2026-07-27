@@ -235,19 +235,18 @@ func isRead(method string) bool { return method == "GET" || method == "HEAD" }
 // SAME function the Guard authorizes with: one extraction, so a handler can
 // never address a row the Guard did not authorize.
 func ReadTarget(c *zip.Ctx) (owner, name string) {
-	// A REST member route declares its target as PATH params
-	// (/v1/iam/<entity>/:owner/:name), so the target is the URL that routed the
-	// request. That is strictly more reliable than the query string it replaces:
-	// a query param can be omitted, duplicated, or disagree with what the handler
-	// binds, whereas these are the same values zip binds onto the decoded input,
-	// so the Guard authorizes exactly what the handler acts on.
+	// A REST member route carries its target in the PATH:
+	// /v1/iam/<entity>/<owner>/<name>. Read it from there first — the URL is what
+	// routed the request, and it is the same pair zip binds onto the decoded input,
+	// so the Guard authorizes exactly what the handler will act on.
 	//
-	// It is read from the ROUTE's own declared params, never inferred from the
-	// shape of the path — a route that does not declare :owner yields "" here and
-	// falls through to the query below. So this cannot silently reinterpret an
-	// unrelated path (a SCIM /Users/{id}, a /web3/nonce) as an (owner, name).
-	if o := c.Param("owner"); o != "" {
-		return o, c.Param("name")
+	// It is parsed from the path STRING rather than c.Param, because the Guard is
+	// group middleware: fiber has matched the group, not the final route, so no
+	// route params exist yet. Verified, not assumed — see TestMemberShapeIsOnly-
+	// MemberRoutes, which enumerates every registered route and fails if a
+	// member-shaped path is ever anything but a member route.
+	if o, n, ok := memberTarget(c.Path()); ok {
+		return o, n
 	}
 	owner, name = c.Query("owner"), c.Query("name")
 	if owner == "" {
@@ -270,6 +269,29 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 		}
 	}
 	return owner, name
+}
+
+// memberTarget returns the (owner, name) a REST member URL addresses — the pair
+// that IS an entity's identity in the store — from /v1/iam/<entity>/<owner>/<name>.
+//
+// EXACTLY two segments after the entity is the whole rule, which is what makes it
+// unambiguous: a collection is one segment shorter, a sub-resource one longer, and
+// nothing else under /v1/iam is a read at this depth (the SCIM subtree, the only
+// other member-shaped GET, is handler-authorized above and never reaches here).
+//
+// Two segments, not one: orm keys every row by "owner/name", and Go decodes %2F
+// back to "/" in URL.Path before routing, so a single percent-encoded segment
+// would match no route at all. The honest spelling is the only one that works.
+func memberTarget(path string) (owner, name string, ok bool) {
+	rest, found := strings.CutPrefix(path, "/v1/iam/")
+	if !found {
+		return "", "", false
+	}
+	seg := strings.Split(rest, "/")
+	if len(seg) != 3 || seg[0] == "" || seg[1] == "" || seg[2] == "" {
+		return "", "", false
+	}
+	return seg[1], seg[2], true
 }
 
 // handlerAuthorizedPrefixes are path subtrees whose target rides in the PATH, not

@@ -22,22 +22,16 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/rest"
+
 	"github.com/hanzoai/iam/internal/schema"
 )
 
 // Route registers the key CRUD routes on app, binding each handler to db.
 // Called from routes.Route once it is threaded the entity store.
 func Route(app *zip.App, db orm.DB) {
-	zip.Get(app, "/v1/iam/keys", list(db),
-		zip.WithSummary("List keys in an owner"), zip.WithTags("keys"))
-	zip.Get(app, "/v1/iam/key", get(db),
-		zip.WithSummary("Get a key by (owner, name)"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/key", create(db),
-		zip.WithSummary("Create a key"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/key/update", update(db),
-		zip.WithSummary("Update a key"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/key/delete", del(db),
-		zip.WithSummary("Delete a key"), zip.WithTags("keys"))
+	rest.Collection(app, "keys", list(db), create(db))
+	rest.Member(app, "keys", get(db), update(db), del(db))
 }
 
 // ListRequest scopes a listing to one owner.
