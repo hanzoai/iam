@@ -30,3 +30,6 @@ web/build/
 .env.*
 *.local
 .DS_Store
+
+# agent scratch — never committed
+.claude/

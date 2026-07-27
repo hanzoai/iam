@@ -4,12 +4,12 @@
 // EMBEDS iam2 (hanzoai/cloud) rather than talking to it over HTTP. It exposes the
 // ONE project CRUD path (internal/projects) as plain functions over an explicit
 // orm.DB — there is NO package-global engine in v2, so the db a host opened with
-// server.OpenSQLite (or wired from its own orm.DB) is passed on every call.
+// server.OpenSQLite (or bound from its own orm.DB) is passed on every call.
 //
 // The functions reproduce the exact orm calls internal/projects uses (the ONE
 // query path — Filter/Order/GetAll for reads, orm.New+CreateCtx for a write,
 // orm.Get+DeleteCtx for a delete) and preserve the "owner/name" id semantics, so
-// an embedder reads and writes the SAME `projects` rows the mounted /v1/iam/projects
+// an embedder reads and writes the SAME `projects` rows the registered /v1/iam/projects
 // HTTP surface serves — one store, no drift. Reads return the shared model.Project
 // (an alias of the core schema.Project), so the host never clones a project struct.
 //
@@ -33,7 +33,7 @@ import (
 func key(owner, name string) string { return owner + "/" + name }
 
 // GetProjects lists the projects owned by owner, newest first. An empty owner
-// lists EVERY project — the unscoped admin (all-orgs) view, matching the mounted
+// lists EVERY project — the unscoped admin (all-orgs) view, matching the registered
 // /v1/iam/projects listing an empty owner serves.
 func GetProjects(db orm.DB, owner string) ([]*model.Project, error) {
 	return listByOwner(db, owner)

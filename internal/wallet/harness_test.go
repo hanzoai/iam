@@ -29,8 +29,8 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 )
 
-// HTTP-level harness: every test drives the REAL mounted router behind the REAL
-// authz Guard, so it exercises the wire contract a wallet client sees — the
+// HTTP-level harness: every test drives the REAL registered router behind the REAL
+// authz Guard, so it exercises the HTTP contract a wallet client sees — the
 // envelope, the reachability, the store effects.
 
 const (
@@ -59,7 +59,7 @@ func openTestDB(t *testing.T) orm.DB {
 	return db
 }
 
-// newServer mounts the wallet surface exactly as routes.Route does: on the
+// newServer registers the wallet surface exactly as routes.Route does: on the
 // pre-authentication PUBLIC group (a root, empty-prefix router) registered
 // BEFORE the Guard, so a matched route terminates the middleware walk and the
 // Guard never runs on it. The Guard is still installed, so "anonymous
@@ -116,7 +116,7 @@ func seed(t *testing.T, db orm.DB, o opts) *schema.Application {
 
 // --- HTTP ---
 
-// do drives one request through the mounted router and returns the HTTP status
+// do drives one request through the registered router and returns the HTTP status
 // and the decoded envelope. Both matter: the status proves an error still rides
 // a 200, the envelope proves what the client reads.
 func do(t *testing.T, app *zip.App, req *http.Request) (int, map[string]any) {

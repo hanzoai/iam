@@ -214,7 +214,7 @@ func check(db orm.DB) zip.Handler {
 		// identity, before any session or code is minted. v1 runs checkMfaEnable
 		// at exactly this point with an empty verificationType (wallet login has
 		// no SMS/email pre-step). iam2 has no MFA gate yet; this is the ONE call
-		// site it wires into, so wallet login never becomes a silent MFA bypass.
+		// site it binds into, so wallet login never becomes a silent MFA bypass.
 		if factor(user, org) {
 			return httpx.Err(c, "web3: multi-factor authentication is required")
 		}

@@ -26,7 +26,7 @@ import (
 )
 
 // Route registers the key CRUD routes on app, binding each handler to db.
-// Called from routes.Mount once it is threaded the entity store.
+// Called from routes.Route once it is threaded the entity store.
 func Route(app *zip.App, db orm.DB) {
 	zip.Get(app, "/v1/iam/keys", list(db),
 		zip.WithSummary("List keys in an owner"), zip.WithTags("keys"))

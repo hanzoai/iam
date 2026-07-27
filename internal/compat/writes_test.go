@@ -3,7 +3,7 @@
 package compat_test
 
 // End-to-end tests for the Casdoor WRITE verbs + the structurally-public front
-// door, driven through the REAL mounted router (routes.Mount installs the authz
+// door, driven through the REAL registered router (routes.Route installs the authz
 // Guard + Authorize seam; the front door is registered on the pre-Guard public
 // group). They assert the three write contracts a backend swap depends on:
 // the {status,ok} envelope every client parses, authorization identical to the REST

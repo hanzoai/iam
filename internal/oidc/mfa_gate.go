@@ -22,8 +22,8 @@ import (
 // internal/mfa — enrollment decides what factors a user HAS, this decides when the
 // sign-in must present one.
 //
-// The two answers are v1's wire STRINGS (object/factor.go:50-54): the client
-// string-compares `data` against them, so they are wire format, not internal
+// The two answers are v1's protocol STRINGS (object/factor.go:50-54): the client
+// string-compares `data` against them, so they are serialized format, not internal
 // names. Any other shape and the client reads the answer as an authorization code
 // and the factor is skipped.
 const (

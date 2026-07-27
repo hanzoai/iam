@@ -16,7 +16,7 @@ import (
 	"github.com/hanzoai/iam/internal/store"
 )
 
-// multipartReq builds a real multipart/form-data POST — the wire format v1's
+// multipartReq builds a real multipart/form-data POST — the serialized format v1's
 // SendVerificationCode requires (NOT JSON), so the test exercises the multipart
 // parse path, not a urlencoded shortcut.
 func multipartReq(path string, fields map[string]string) *http.Request {

@@ -99,9 +99,9 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 }
 
 // upsert creates entity if (owner,name) is absent; otherwise counts it skipped
-// (new-only). GetOrCreate wires a fresh Model + sets the id; the defaults func
+// (new-only). GetOrCreate binds a fresh Model + sets the id; the defaults func
 // copies the entity's data fields via a JSON round-trip, which sets only the
-// json-tagged fields and leaves the wired Model's internals (db handle, key)
+// json-tagged fields and leaves the bound Model's internals (db handle, key)
 // intact — the generic-safe way to persist a fully-formed struct.
 func upsert[T any](_ context.Context, db orm.DB, owner, name string, entity *T, s *Summary, kind string) error {
 	if owner == "" {

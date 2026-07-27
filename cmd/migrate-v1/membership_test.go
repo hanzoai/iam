@@ -18,7 +18,7 @@ import (
 // reproduces the full tenancy set (home ∪ explicit).
 
 // newLegacyMembershipDB builds a legacy iam.db with the organizations, the user,
-// and a `membership` table wiring hanzo/z into hanzo, lux, zoo, and pars.
+// and a `membership` table binding hanzo/z into hanzo, lux, zoo, and pars.
 func newLegacyMembershipDB(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "iam.db")

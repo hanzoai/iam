@@ -32,7 +32,7 @@ SDK** against the endpoints below — one way, no legacy paths (HIP-0111).
 
 ## Endpoints — RFC / OIDC standard (no `/api/`, no vendor verbs)
 
-The wire contract is RFC/OpenID-standard only. There are no Casdoor verb aliases
+The HTTP contract is RFC/OpenID-standard only. There are no Casdoor verb aliases
 (`get-users`, `add-user`, `issue-user-token`, …) and no `/api/` prefix — `/v1/`
 throughout. Paths are relative to the brand `serverUrl`.
 
@@ -90,7 +90,7 @@ go run . version
 `IAM_KEY_MINT_ALLOWED_APPS`, `IAM_ADMIN_MINT_ALLOWED_APPS` (matched by the
 globally-unique `client_id`).
 
-The service is embeddable via `server.Mount` and builds on Hanzo CI
+The service is embeddable via `server.Route` and builds on Hanzo CI
 (`ghcr.io/hanzoai/iam2`).
 
 ## Client auth (HIP-0111)
