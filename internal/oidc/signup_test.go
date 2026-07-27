@@ -196,3 +196,111 @@ func TestSignup_Errors(t *testing.T) {
 		}
 	})
 }
+
+// ── self-serve organizations ─────────────────────────────────────────────────────
+
+// The founder signs up and their org is minted with them. Before this, signup
+// required the org to already exist, so "create a new account with a new
+// organization" was impossible without an operator creating the org by hand.
+func TestSignup_SelfServeOrgIsCreated(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+
+	status, env := signupReq(t, app, map[string]string{
+		"application":  "conf",
+		"organization": "acme",
+		"username":     "founder",
+		"password":     "correct horse battery staple",
+	})
+	if status != 200 || env["status"] != "ok" {
+		t.Fatalf("self-serve signup: status=%d env=%v", status, env)
+	}
+	org, err := store.GetOrganizationByName(tctx(), db, "acme")
+	if err != nil || org == nil {
+		t.Fatalf("org acme should have been created: %v", err)
+	}
+	// Orgs live under "admin" — that is where org rows go and grants the ORG nothing.
+	if org.Owner != "admin" {
+		t.Fatalf("org owner = %q, want admin", org.Owner)
+	}
+	// The decisive property: authority is a property of the USER row, and authz
+	// derives Super from user.Owner == "admin". The founder must belong to their OWN
+	// org, so self-serve signup can never mint a SuperAdmin.
+	u, err := store.GetUserByName(tctx(), db, "acme", "founder")
+	if err != nil || u == nil {
+		t.Fatalf("founder should exist in acme: %v", err)
+	}
+	if u.Owner != "acme" {
+		t.Fatalf("founder owner = %q, want acme (owner 'admin' would be SuperAdmin)", u.Owner)
+	}
+}
+
+// Self-serve creation is OPT-IN. An app that merely lets users choose among orgs,
+// or names a single tenant, must not mint one.
+func TestSignup_SelfServeOrgRefusedWithoutOptIn(t *testing.T) {
+	for _, tc := range []struct{ name, mode string }{
+		{"no org choice at all", ""},
+		{"choice, but not create", "select"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, db := newServer(t)
+			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: tc.mode})
+
+			status, env := signupReq(t, app, map[string]string{
+				"application":  "conf",
+				"organization": "acme",
+				"username":     "founder",
+				"password":     "correct horse battery staple",
+			})
+			if status == 200 && env["status"] == "ok" {
+				t.Fatalf("orgChoiceMode=%q must not mint an org", tc.mode)
+			}
+			if org, _ := store.GetOrganizationByName(tctx(), db, "acme"); org != nil {
+				t.Fatal("no org may be created without the create opt-in")
+			}
+		})
+	}
+}
+
+// THE privilege escalation to refuse: a user under "admin" is a SuperAdmin. Turning
+// on self-serve creation must not open a path to minting the reserved org, and the
+// refusal must hold even with the opt-in set.
+func TestSignup_SelfServeCannotMintReservedOrg(t *testing.T) {
+	for _, reserved := range []string{"admin", "built-in"} {
+		t.Run(reserved, func(t *testing.T) {
+			app, db := newServer(t)
+			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+
+			status, env := signupReq(t, app, map[string]string{
+				"application":  "conf",
+				"organization": reserved,
+				"username":     "attacker",
+				"password":     "correct horse battery staple",
+			})
+			if status == 200 && env["status"] == "ok" {
+				t.Fatalf("signup into reserved org %q must be refused", reserved)
+			}
+			if u, _ := store.GetUserByName(tctx(), db, reserved, "attacker"); u != nil {
+				t.Fatalf("no user may be created under reserved org %q", reserved)
+			}
+		})
+	}
+}
+
+// The org name becomes the OWNER half of every (owner, name) key, so a name
+// carrying the separator would be a key-injection surface.
+func TestSignup_SelfServeOrgNamePolicy(t *testing.T) {
+	for _, bad := range []string{"a", "1acme", "ac me", "ac/me"} {
+		app, db := newServer(t)
+		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+		status, env := signupReq(t, app, map[string]string{
+			"application":  "conf",
+			"organization": bad,
+			"username":     "founder",
+			"password":     "correct horse battery staple",
+		})
+		if status == 200 && env["status"] == "ok" {
+			t.Fatalf("org name %q must be refused", bad)
+		}
+	}
+}

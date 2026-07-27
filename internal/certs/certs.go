@@ -26,7 +26,7 @@ type Handler struct {
 
 // Route registers the certs CRUD routes on app against db. Reads are zip.Get,
 // writes are zip.Post; the create/update body is the schema.Cert row itself, so
-// the wire contract and the stored entity never drift.
+// the HTTP contract and the stored entity never drift.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/certs", h.List, zip.WithSummary("List certs for an owner"), zip.WithTags("certs"))
@@ -110,8 +110,8 @@ func (h *Handler) Create(ctx context.Context, in *schema.Cert) (*schema.Cert, er
 		return nil, zip.ErrInternal(err.Error())
 	}
 
-	// orm.New wires the store and applies defaults; overlay the decoded row,
-	// then restore the wired Model so its db handle survives the assignment.
+	// orm.New binds the store and applies defaults; overlay the decoded row,
+	// then restore the bound Model so its db handle survives the assignment.
 	cert := orm.New[schema.Cert](h.db)
 	model := cert.Model
 	*cert = *in

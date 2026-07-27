@@ -33,7 +33,7 @@ type Membership struct {
 
 // OrgRef is the lightweight (org, role) projection of a Membership that a token
 // carries in its `orgs` claim — the tenancy set a resource server reads to
-// authorize an org-switch (X-Org-Id ∈ orgs) with no round-trip. It is the wire
+// authorize an org-switch (X-Org-Id ∈ orgs) with no round-trip. It is the bind
 // value ONLY (no storage identity, no orm.Model): Membership is how the relation
 // is stored, OrgRef is how it travels in a JWT and how a consumer (cloud's
 // SanitizeIdentity) decodes it. The JSON tags (`org`, `role,omitempty`) are the

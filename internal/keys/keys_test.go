@@ -5,6 +5,7 @@ package keys
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -60,5 +61,65 @@ func TestKeys_RejectCrossTenantUserOnWrite(t *testing.T) {
 	// A same-owner update still works.
 	if _, err := u(ctx, &schema.Key{Owner: "a", Name: "own", User: "a/carol"}); err != nil {
 		t.Fatalf("update rejected a same-owner User: %v", err)
+	}
+}
+
+// A publishable key (Scope=publish) mints a pk- publishable half ONLY — never a
+// confidential sk- secret — so it can carry no full-access material. A default key
+// still mints BOTH halves (its sk- is the reader-authenticating credential).
+func TestKeys_PublishableMintsNoSecret(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	c := create(db)
+
+	pub, err := c(ctx, &schema.Key{Owner: "hanzo", Name: "site", Scope: schema.KeyScopePublish})
+	if err != nil {
+		t.Fatalf("create publish key: %v", err)
+	}
+	if !strings.HasPrefix(pub.AccessKey, "pk-") {
+		t.Fatalf("publish key AccessKey = %q, want a pk-", pub.AccessKey)
+	}
+	if pub.AccessSecret != "" {
+		t.Fatalf("publish key minted a secret %q, want none (write-only)", pub.AccessSecret)
+	}
+
+	def, err := c(ctx, &schema.Key{Owner: "hanzo", Name: "server"})
+	if err != nil {
+		t.Fatalf("create default key: %v", err)
+	}
+	if !strings.HasPrefix(def.AccessKey, "pk-") || !strings.HasPrefix(def.AccessSecret, "sk-") {
+		t.Fatalf("default key halves = %q/%q, want pk-/sk-", def.AccessKey, def.AccessSecret)
+	}
+}
+
+// A publishable key is write-only even if the caller SUPPLIES a secret: create and
+// update both force AccessSecret empty, so a browser key can never carry a confidential
+// half for its whole lifecycle.
+func TestKeys_PublishableForcesSecretEmpty(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	// Caller tries to smuggle a secret onto a publish key at create.
+	pub, err := create(db)(ctx, &schema.Key{
+		Owner: "hanzo", Name: "site", Scope: schema.KeyScopePublish,
+		AccessKey: "pk-live-CHOSEN", AccessSecret: "sk-live-SMUGGLED",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if pub.AccessSecret != "" {
+		t.Fatalf("create let a publish key keep a supplied secret %q", pub.AccessSecret)
+	}
+
+	// And again at update — the invariant holds across the key's lifecycle.
+	upd, err := update(db)(ctx, &schema.Key{
+		Owner: "hanzo", Name: "site", Scope: schema.KeyScopePublish,
+		AccessSecret: "sk-live-SMUGGLED2",
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if upd.AccessSecret != "" {
+		t.Fatalf("update let a publish key gain a secret %q", upd.AccessSecret)
 	}
 }

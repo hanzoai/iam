@@ -11,7 +11,7 @@
 // no redaction is reimplemented here.
 //
 // Authorization is NOT reimplemented either. These paths are not in authz's
-// public allowlist, so the Guard (app.Use, mounted first) authenticates every
+// public allowlist, so the Guard (app.Use, registered first) authenticates every
 // request AND authorizes the read against the exact (owner, name) it addresses —
 // resolved by the same authz.ReadTarget the handlers use, so a handler can never
 // reach a row the Guard did not authorize. Each handler then re-scopes the query
@@ -63,6 +63,13 @@ func Route(app *zip.App, db orm.DB) {
 	app.Get("/v1/iam/get-cert", getHandler(db, (*schema.Cert).Mask))
 	app.Get("/v1/iam/get-role", getHandler[schema.Role](db, nil))
 	app.Get("/v1/iam/get-permission", getHandler[schema.Permission](db, nil))
+
+	// resolve-key — the WRITE-ONLY ingest door and the dual of get-user?accessKey. It
+	// turns a publishable pk- into just the ORG that holds it (never a principal), for
+	// cloud's ingest boundary. Its target rides in ?accessKey= (no owner/name for the
+	// Guard to authorize), so it is handler-authorized (authz.handlerAuthorizedExact)
+	// and the handler authorizes itself behind CapPublishableResolve.
+	app.Get("/v1/iam/resolve-key", resolveKeyHandler(db))
 
 	// get-organization-projects — the console ScopeSwitcher's project list, keyed by
 	// ?organization= (not ?owner=). Its target rides in ?organization, which the Guard
@@ -206,7 +213,7 @@ func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 		if name == "" {
 			return httpx.Err(c, "id (owner/name) or name is required")
 		}
-		scoped, err := authz.Scope(ctx, owner)
+		scoped, err := authz.ScopeFor(ctx, c.Path(), owner, name)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -225,9 +232,11 @@ func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 }
 
 // userGetHandler serves get-user, which has TWO variants. When `?accessKey=` is
-// present it resolves an opaque API key (hk-/pk-/sk-) to its owning user — the path
+// present it resolves an opaque SECRET API key (hk-/sk-) to its owning user — the path
 // cloud's identity boundary calls to authenticate a keyed request — behind the
-// CapKeyResolve service capability. Otherwise it is the ordinary owner/name/id read.
+// CapKeyResolve service capability. A public pk- is write-only and resolves to nobody
+// here (store.UserByAccessKey refuses it); its org-only door is /v1/iam/resolve-key.
+// Otherwise it is the ordinary owner/name/id read.
 //
 // get-user is handler-authorized (authz.handlerAuthorizedExact) because the key
 // variant carries no owner/name for the Guard to authorize; so the owner/name
@@ -252,9 +261,9 @@ func userGetHandler(db orm.DB) zip.Handler {
 // keyUser is the minimal principal projection get-user?accessKey returns — EXACTLY
 // the four fields cloud's key resolver consumes (auth_apikey.go) and no more. It is
 // a TIGHTER redaction than schema.User.Mask, deliberately: Mask blanks the secret
-// digests and bearer tokens but leaves AccessKey populated, and a pk-/sk- resolution
+// digests and bearer tokens but leaves AccessKey populated, and an sk- resolution
 // must never disclose the resolved user's OTHER credential (its hk- AccessKey) to a
-// caller that only presented a project key. A projection carrying no secret field is
+// caller that only presented a secret key. A projection carrying no secret field is
 // leak-proof by construction.
 type keyUser struct {
 	Owner   string `json:"owner"`

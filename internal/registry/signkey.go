@@ -28,7 +28,7 @@ import (
 // This key is DELIBERATELY separate from the OIDC signing Certs (schema.Cert): a
 // Docker Distribution verifier keys its ROOTCERTBUNDLE trust by the libtrust key
 // id below and reads a token whose `iss` is the fixed "hanzo-iam" and whose `aud`
-// is a bare string — a different wire contract from an OIDC access token (per-host
+// is a bare string — a different HTTP contract from an OIDC access token (per-host
 // `iss`, `aud` as an array). Reusing the OIDC Signer would emit the wrong shape
 // and the registry would reject every token. So the registry carries its own key,
 // loaded from the SAME source the deployment already trusts (envSigningKey /
@@ -47,7 +47,7 @@ const (
 	// clean-room secret path (KMS → KMSSecret CR → k8s Secret → env), not an
 	// in-process KMS fetch.
 	envSigningKey = "REGISTRY_SIGNING_KEY"
-	// envSigningKeyFile is the path to a mounted PEM file, when the operator mounts
+	// envSigningKeyFile is the path to a registered PEM file, when the operator registers
 	// the Secret as a file instead of an env var.
 	envSigningKeyFile = "REGISTRY_SIGNING_KEY_FILE"
 	// envAllowEphemeral, when "true", is the EXPLICIT dev opt-in that permits a
@@ -163,8 +163,8 @@ func newJTI() (string, error) {
 }
 
 // processKeyring resolves THE registry signing key once per process, LAZILY — on
-// first registry request, not at mount — and memoizes the (keyring, error). Lazy
-// is load-bearing: mounting the IAM surface (routes.Route, which every non-registry
+// first registry request, not at registration — and memoizes the (keyring, error). Lazy
+// is load-bearing: registering the IAM surface (routes.Route, which every non-registry
 // test also does) must NOT force key resolution, or a box without a registry key
 // could not run the rest of IAM. Only an actual registry request resolves; a
 // fail-closed resolution surfaces as a 503 on THAT request (no untrusted token
@@ -202,7 +202,7 @@ func resolveKeyring() (*keyring, error) {
 }
 
 // loadSigningKey resolves the persistent registry signing key from configuration,
-// in order: envSigningKey (inline PEM), then envSigningKeyFile (a mounted PEM).
+// in order: envSigningKey (inline PEM), then envSigningKeyFile (a registered PEM).
 // Returns (nil, nil) when NO source is configured — the caller decides whether an
 // ephemeral dev key is acceptable. A configured-but-broken source is (nil, error),
 // never silently skipped.

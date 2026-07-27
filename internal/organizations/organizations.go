@@ -37,7 +37,7 @@ func NewOrganizationAPI(db orm.DB) *OrganizationAPI {
 	return &OrganizationAPI{DB: db}
 }
 
-// mount registers the five organization routes on app. Writes are POST with a
+// route registers the five organization routes on app. Writes are POST with a
 // JSON body; reads are GET whose (owner, name, paging) selector binds from the
 // request. Every handler validates its key and fails 400 if it is absent, so a
 // missing selector is loud, never a silent full-table action.
@@ -111,7 +111,7 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	}
 
 	entity := orm.New[schema.Organization](h.DB)
-	model := entity.Model // keep orm wiring (db handle, key) across the overlay
+	model := entity.Model // keep orm binding (db handle, key) across the overlay
 	*entity = org
 	entity.Model = model
 	if entity.CreatedTime == "" {

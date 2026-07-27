@@ -4,7 +4,7 @@
 // security page's initiate → verify → enable flow (RFC 6238 TOTP), plus
 // delete-mfa and set-preferred-mfa. Enrollment is SELF-SERVICE: every handler
 // acts on the AUTHENTICATED caller's own user record (authz.From), so the routes
-// mount AFTER the Guard — they need the Principal. Touching a DIFFERENT user's
+// register AFTER the Guard — they need the Principal. Touching a DIFFERENT user's
 // MFA requires admin authority over that org, authorized through the SAME seam a
 // SCIM write uses (authz.Can); the general user-write policy correctly refuses a
 // non-admin writing a user row, so self-enrollment is authorized by
@@ -39,7 +39,7 @@ import (
 // The TOTP factor type ("app") and the domain helpers are factor.App et al (internal/mfa/factor).
 
 // Route registers the MFA endpoints on app. They are RAW handlers (not typed
-// ops), so — like SCIM — each authorizes itself; callers mount app AFTER the
+// ops), so — like SCIM — each authorizes itself; callers register app AFTER the
 // Guard so a verified Principal rides the request context.
 func Route(app *zip.App, db orm.DB) {
 	app.Post("/v1/iam/mfa/setup/initiate", initiate(db))

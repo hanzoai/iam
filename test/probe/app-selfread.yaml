@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iam-selfread-probe
+  namespace: hanzo
+spec:
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: curlimages/curl:8.10.1
+      env:
+        - name: CID
+          valueFrom: { secretKeyRef: { name: hanzo-cloud-iam-creds, key: clientId } }
+        - name: CSEC
+          valueFrom: { secretKeyRef: { name: hanzo-cloud-iam-creds, key: clientSecret } }
+      command: ["sh","-c"]
+      args:
+        - |
+          B=http://iam.hanzo.svc.cluster.local
+          p(){ printf "%-52s -> HTTP %s\n" "$1" "$(curl -s --max-time 10 -o /tmp/b -w '%{http_code}' -u "$CID:$CSEC" "$B$1")"; head -c 90 /tmp/b; echo; }
+          echo "== the two reads InitAuthConfig makes, as hanzo-cloud =="
+          p "/v1/iam/get-application?id=admin%2Fhanzo-cloud"
+          p "/v1/iam/get-cert?id=cert-hanzo"
+          echo "== must STILL be refused =="
+          p "/v1/iam/get-application?id=admin%2Fhanzo-console"
+          p "/v1/iam/get-certs?owner=admin"
+          p "/v1/iam/get-users?owner=admin"

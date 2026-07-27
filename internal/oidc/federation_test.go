@@ -24,7 +24,7 @@ import (
 	"github.com/hanzoai/iam/internal/store"
 )
 
-// Federation is driven through the REAL mounted routes (authorize → IdP → callback
+// Federation is driven through the REAL registered routes (authorize → IdP → callback
 // → code → token). The external IdP is an httptest server — a real HTTP RP round
 // trip with a real OIDC discovery document, a real JWKS, and a real RS256-signed
 // id_token whose signature/issuer/audience/nonce iam2 actually verifies (Google
@@ -56,7 +56,7 @@ type mockOIDC struct {
 	email          string
 	name           string
 	emailVerified  bool
-	nonce          string // baked into the id_token; wired from the authorize redirect
+	nonce          string // baked into the id_token; bound from the authorize redirect
 	signWrong      bool   // sign with wrongKey → signature must fail
 	noneAlg        bool   // emit an alg=none (unsigned) id_token → must be rejected
 	issuerOverride string // override id_token iss (issuer-confusion test)
@@ -386,7 +386,7 @@ func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 	before := countUsers(t, db)
 	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
 	m.mu.Lock()
-	m.nonce = q.Get("nonce") // wire the transaction's real IdP nonce into the id_token
+	m.nonce = q.Get("nonce") // bind the transaction's real IdP nonce into the id_token
 	m.mu.Unlock()
 
 	resp := callback(t, app, q.Get("state"), "idp-code-1", cookie)
@@ -711,7 +711,7 @@ func TestFederation_NonAllowlistedRedirectUriRefused(t *testing.T) {
 
 // runOIDCLogin drives a full successful OIDC federation login (authorize →
 // callback) and asserts it lands an iam2 code. mutate may tweak the mock after
-// the nonce is wired.
+// the nonce is bound.
 func runOIDCLogin(t *testing.T, app *zip.App, db orm.DB, m *mockOIDC, clientID string, mutate func()) {
 	t.Helper()
 	q, cookie := beginAuthorize(t, app, clientID, fedProvGoogle)

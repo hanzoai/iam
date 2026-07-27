@@ -1,9 +1,9 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package routes mounts the IAM v2 HTTP surface on a zip App.
+// Package routes registers the IAM v2 HTTP surface on a zip App.
 //
 // Authentication is STRUCTURAL, decided by which group a route is registered on,
-// never by a hand-maintained path list. Mount wires the surface in two phases
+// never by a hand-maintained path list. Route binds the surface in two phases
 // around one authentication seam:
 //
 //   - the PUBLIC group (oidc.Route + /healthz) is registered FIRST, before the
@@ -51,9 +51,21 @@ import (
 	"github.com/hanzoai/iam/internal/workspaces"
 )
 
+// guardedPrefixes are the URL subtrees IAM authenticates — everything this
+// subsystem serves that is not in the public group.
+//
+//   - /v1/iam      the entity CRUD, the Casdoor verb aliases, SCIM, service
+//     accounts, memberships and MFA all live here.
+//   - /login/oauth the interactive authorize surface.
+//   - /mcp and /.well-known/openapi.json the framework's own projections of the typed ops registered
+//     below. They are IAM's side doors onto the same rows, so they must stay
+//     gated; when IAM is EMBEDDED the host binary owns these paths and should
+//     mount its own guard, which is why they are named here rather than assumed.
+var guardedPrefixes = []string{"/v1/iam", "/login/oauth", "/mcp", "/.well-known/openapi.json"}
+
 // Route registers the whole IAM v2 route surface on app, threading the entity
-// store db into every handler. This is the route table server.Mount embeds — the
-// one Mount(app, db) is the public entry; everything below is Route.
+// store db into every handler. This is the route table server.Route embeds — the
+// one Route(app, db) is the public entry; everything below is Route.
 func Route(app *zip.App, db orm.DB) {
 	// AUTHORIZATION of writes: the op-invoke hook authorizes every typed op on the
 	// DECODED input the handler binds — for REST and MCP alike, so the value
@@ -101,7 +113,27 @@ func Route(app *zip.App, db orm.DB) {
 	// Prepare). The resolved Principal rides the request context for the write-authz
 	// hook above; reads are authorized here (their target rides the query string, or
 	// the handler scopes a path target itself). Fails closed (401).
-	app.Use(authz.Guard(db))
+	// Mounted on the prefixes THIS SUBSYSTEM OWNS, not on the app.
+	//
+	// app.Use puts the Guard in front of every route the *zip.App will ever serve.
+	// That is coherent while IAM owns the whole app and false the moment it does
+	// not: embedded in the cloud binary IAM mounts at position 9 and `ai` registers
+	// /v1/models at 106, so IAM's Guard gated ai's routes 97 positions later — and
+	// then resolved the bearer against the EMBEDDED iam2.db, which has never seen a
+	// token minted by the external hanzo.id, so it failed closed on every valid
+	// request. The tell was the body: {"status":401,"error":"authentication
+	// required"} is this file's Guard, not ai's OpenAI-shaped error.
+	//
+	// Reordering the mounts would also have fixed it today and broken on the next
+	// reorder: a position in a slice is not a security boundary. A path prefix is.
+	//
+	// This is a SCOPING change, not a relaxation — every prefix the Guard covered
+	// that IAM actually serves is still covered, in the same order, with the same
+	// fail-closed behaviour. The public group is still registered first and still
+	// terminates the walk before this runs.
+	for _, owned := range guardedPrefixes {
+		app.Group(owned, authz.Guard(db))
+	}
 
 	// ─────────────────────────── AUTHED ───────────────────────────
 	// Typed entity CRUD. Each registers its typed ops on app (the projection into

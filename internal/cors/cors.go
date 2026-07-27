@@ -50,6 +50,31 @@ var browserPaths = map[string]bool{
 	"/v1/iam/oauth/userinfo":                         true,
 	"/v1/iam/oauth/revoke":                           true,
 	"/v1/iam/oauth/logout":                           true,
+
+	// The org surface an authenticated SPA reads about ITSELF. A console shows
+	// "which org am I acting as" and lets the user switch; that answer lives
+	// here, so without these a registered app either cannot render its own org
+	// switcher or has to route the read through its own backend — a second copy
+	// of an identity read, which is how backends end up re-implementing IAM.
+	//
+	// Opening a path here does NOT open the data: the Guard still requires a
+	// verified bearer and authorizes the exact (owner, name) addressed, so a
+	// caller sees only what its principal could already see. CORS decides which
+	// ORIGIN may read the answer; authz decides WHO. Same shape as userinfo
+	// above, which is already open and already Bearer-protected.
+	"/v1/iam/get-organizations": true,
+	"/v1/iam/get-organization":  true,
+	"/v1/iam/get-users":         true,
+	"/v1/iam/get-account":       true,
+
+	// The two writes a first-party console performs on the user's OWN behalf:
+	// create an org, invite someone to it. Both are Guard-authorized against the
+	// caller's principal, so the browser can only do what that user could
+	// already do. Listed as the NATIVE REST paths, not the Casdoor verbs — those
+	// are a compatibility surface for existing backends, not something a new
+	// browser client should learn.
+	"/v1/iam/organizations": true,
+	"/v1/iam/invitations":   true,
 }
 
 // registry answers "is this origin registered?" from the application rows,

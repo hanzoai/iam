@@ -44,27 +44,27 @@ type Store interface {
 	VerifyPassword(ctx context.Context, owner, name, plaintext string) (bool, error)
 }
 
-// Feature is one pluggable enterprise capability. Mount registers its routes on
+// Feature is one pluggable enterprise capability. Route registers its routes on
 // the shared app, backed by store. Name is for diagnostics.
 type Feature interface {
 	Name() string
-	Mount(app *zip.App, store Store) error
+	Route(app *zip.App, store Store) error
 }
 
 var registry []Feature
 
-// Register adds a feature to the set MountAll mounts. Called by the composing
+// Register adds a feature to the set RouteAll registers. Called by the composing
 // binary (cloud) or a module init — the core decides which enterprise features ship.
 func Register(f Feature) { registry = append(registry, f) }
 
 // Registered returns the registered features (diagnostics/tests).
 func Registered() []Feature { return append([]Feature(nil), registry...) }
 
-// MountAll mounts every registered feature on app with store, fail-fast: a
+// RouteAll registers every registered feature on app with store, fail-fast: a
 // registered-but-broken enterprise module surfaces loudly at boot, never a silent no-op.
-func MountAll(app *zip.App, store Store) error {
+func RouteAll(app *zip.App, store Store) error {
 	for _, f := range registry {
-		if err := f.Mount(app, store); err != nil {
+		if err := f.Route(app, store); err != nil {
 			return err
 		}
 	}

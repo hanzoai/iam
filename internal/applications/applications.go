@@ -179,7 +179,7 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, err
 		}
 
-		// Wire the decoded entity to db under its natural key and persist.
+		// Bind the decoded entity to db under its natural key and persist.
 		in.Init(db)
 		in.SetId(id)
 		if err := in.Create(); err != nil {

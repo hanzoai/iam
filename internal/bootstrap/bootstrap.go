@@ -3,7 +3,7 @@
 // Package bootstrap serves the operator-driven service-account provisioning
 // endpoints — `POST /v1/iam/admin/{applications,users}/upsert`. The Hanzo K8s
 // operator (operator-core) reconciles an IAM CR's spec.applications[]/users[] here,
-// wiring the service-account OAuth apps that KMS/signers authenticate with, with NO
+// binding the service-account OAuth apps that KMS/signers authenticate with, with NO
 // human admin in the loop. It is idempotent (create OR update by the natural key)
 // so a ~30s reconcile is a no-op once converged.
 //
