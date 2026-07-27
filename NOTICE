@@ -1,7 +1,11 @@
 Hanzo IAM
 Copyright (c) 2025 Hanzo AI, Inc.
 
-Forked from https://github.com/casdoor/casdoor at v1.31.24.
+Derived from https://github.com/casdoor/casdoor at approximately v2.374.0
+(2026-03-30). The import carries no upstream git history, so the fork point
+cannot be read from ancestry; it was located by content similarity against
+upstream tags, which places it in the v2.364.2-v2.374.0 range. Stated as
+approximate because it is approximate.
 
 This product includes software from Casdoor (https://github.com/casdoor/casdoor), licensed under Apache-2.0:
 
@@ -11,17 +15,19 @@ Upstream Casdoor ships no NOTICE file (only LICENSE); there are no Apache-2.0
 §4(d) attributions to propagate from upstream.
 
 This product also includes software from the following Apache-2.0 licensed
-Go modules, imported at their upstream paths. Their copyright notices are
-preserved in source-file headers where applicable; the upstream projects
-retain their respective rights:
+projects. These are NOT imported at their upstream paths: each is a Hanzo fork
+under a github.com/hanzoai/* module path. Upstream is named here because the
+module path no longer names it.
 
-- github.com/casbin/casbin/v2 — RBAC policy engine
-- github.com/casdoor/notify2 — multi-provider notification fan-out
-- github.com/casdoor/oss — pluggable object-storage backends (S3, GCS, Azure, etc.)
-- github.com/casdoor/casdoor-go-sdk — Go client SDK (aliased as iamsdk)
-- github.com/casdoor/go-sms-sender — SMS provider adapters
-- github.com/casdoor/gomail/v2 — SMTP send
-- github.com/casdoor/ldapserver — LDAP server framework
+- github.com/hanzoai/authz          <- github.com/casbin/casbin/v2   RBAC policy engine
+- github.com/hanzoai/notify2        <- github.com/casdoor/notify2    notification fan-out
+- github.com/hanzoai/oss            <- github.com/casdoor/oss        object-storage backends
+- github.com/hanzoai/iamsdk/v2      <- github.com/casdoor/casdoor-go-sdk  Go client SDK
+- github.com/hanzoai/ldapserver     <- github.com/casdoor/ldapserver LDAP server framework
+
+The Go client SDK is also vendored into this repository root (auth.go, user.go,
+application.go and 96 further files) as package `iam`. Those files retain their
+original Casdoor copyright notices with Hanzo's modification notice alongside.
 
 DEVIATIONS
 
