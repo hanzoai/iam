@@ -268,7 +268,7 @@ func GetSigningCert(ctx context.Context, db orm.DB, name string) (*schema.Cert, 
 	return nil, nil
 }
 
-// PersistToken wires a domain Token onto the store and creates it. Used to
+// PersistToken binds a domain Token onto the store and creates it. Used to
 // persist an authorization code minted by oidc.MintCode. The id is (owner, name);
 // callers set Name to a unique value (e.g. the code) before persisting.
 func PersistToken(ctx context.Context, db orm.DB, tok *schema.Token) error {
@@ -424,10 +424,37 @@ func GetOrganizationByName(_ context.Context, db orm.DB, name string) (*schema.O
 	return o, err
 }
 
+// CreateOrganization mints a tenant organization under the "admin" owner (the v1
+// convention every other org follows), and returns it. Idempotent by construction:
+// GetOrCreate returns the existing row when two founders race the same name, so a
+// concurrent signup joins the org rather than erroring or clobbering it.
+//
+// The org owner is "admin" because that is where orgs live; this grants the org NO
+// authority. Authority is a property of the USER row — authz derives Super from
+// user.Owner == "admin" — and a self-service signup creates its user under the new
+// org, never under "admin". Callers must have refused a reserved name first
+// (IsReservedOrg), which is what keeps this from being a path to minting "admin".
+func CreateOrganization(_ context.Context, db orm.DB, name string) (*schema.Organization, error) {
+	if name == "" {
+		return nil, fmt.Errorf("organization name is required")
+	}
+	org, _, err := orm.GetOrCreate[schema.Organization](db, MembershipOwner+"/"+name, func(o *schema.Organization) {
+		o.Owner = MembershipOwner
+		o.Name = name
+		o.DisplayName = name
+		// No PasswordOptions: an empty policy means "no extra complexity rules", the
+		// same default a hand-seeded org carries.
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create organization %s: %w", name, err)
+	}
+	return org, nil
+}
+
 // AddVerificationRecord persists a freshly minted verification code. The id is
 // (owner, name); the caller sets Name to a unique value before persisting.
 // Mirrors PersistToken: the orm.Model is preserved while the caller's fields are
-// copied onto the fresh, db-wired entity.
+// copied onto the fresh, db-bound entity.
 func AddVerificationRecord(ctx context.Context, db orm.DB, rec *schema.VerificationRecord) error {
 	r := orm.New[schema.VerificationRecord](db)
 	model := r.Model
@@ -455,7 +482,7 @@ func GetLatestVerificationRecord(_ context.Context, db orm.DB, receiver string) 
 // PersistFederationState creates a fresh in-flight federation transaction. The
 // id is (owner, name); the caller sets Name to the opaque `state` token before
 // persisting. Mirrors PersistToken — the orm.Model is preserved while the
-// caller's fields are copied onto the db-wired entity.
+// caller's fields are copied onto the db-bound entity.
 func PersistFederationState(ctx context.Context, db orm.DB, st *schema.FederationState) error {
 	s := orm.New[schema.FederationState](db)
 	model := s.Model

@@ -23,8 +23,9 @@
 //   - a user password (resolved within the NON-RESERVED candidateOrgs — a reserved-
 //     org/SuperAdmin password is not a registry credential; see userByPassword —
 //     verified through the SAME lockout choke point login uses),
-//   - a Hanzo API key (hk-/pk-/sk-, resolved via store.UserByAccessKey — which
-//     resolves the key's OWNER, any org — then gated),
+//   - a Hanzo SECRET API key (hk-/sk-, resolved via store.UserByAccessKey — which
+//     resolves the key's OWNER, any org — then gated; a public pk- is write-only and
+//     authenticates nothing here),
 //   - a confidential application's clientId:clientSecret (store.GetApplicationBy
 //     ClientId resolves GLOBALLY, so the gate on app.Owner is what stops a tenant
 //     app minted in its OWN org from becoming a privileged push identity).
@@ -74,18 +75,18 @@ const (
 
 // Route registers the registry token + JWKS endpoints on r (the PUBLIC group),
 // backed by db and the process signing keyring. Called once from routes.Route.
-// The keyring is passed as a lazy resolver (processKeyring): mounting never forces
-// key resolution, so every host that mounts the full IAM surface (routes.Route)
+// The keyring is passed as a lazy resolver (processKeyring): registering never forces
+// key resolution, so every host that registers the full IAM surface (routes.Route)
 // comes up even with no registry key configured; only an actual registry request
 // resolves, and a fail-closed resolution answers 503 (never an untrusted token).
 func Route(r zip.Router, db orm.DB) {
-	mount(r, db, processKeyring)
+	route(r, db, processKeyring)
 }
 
-// mount is the registration seam Route and the tests share: it wires a keyring
+// route is the registration seam Route and the tests share: it binds a keyring
 // resolver into a handler and registers the routes, so a test drives the SAME
 // handlers with an injected key and never touches process/env state.
-func mount(r zip.Router, db orm.DB, key func() (*keyring, error)) {
+func route(r zip.Router, db orm.DB, key func() (*keyring, error)) {
 	h := &handler{db: db, key: key}
 	r.Get(PathToken, h.token)
 	r.Post(PathToken, h.token)
@@ -218,9 +219,10 @@ func (h *handler) authenticate(ctx context.Context, id, secret string) *principa
 // bound (authenticate applies that once). Ordered, each fail-closed; first match
 // wins:
 //
-//  1. API key — an hk-/pk-/sk- value (in the secret, or the username for the
+//  1. API key — a SECRET hk-/sk- value (in the secret, or the username for the
 //     token-as-username clients) resolved through store.UserByAccessKey. Keyed by
-//     an unambiguous prefix, so it never captures a password or clientId.
+//     an unambiguous prefix, so it never captures a password or clientId. A public
+//     pk- is write-only: it authenticates nothing (store.UserByAccessKey refuses it).
 //  2. User password — resolved within the NON-RESERVED candidate org(s) and
 //     verified through the SAME lockout choke point login uses. A reserved-org
 //     (SuperAdmin) password is NOT a registry credential (see userByPassword);
@@ -415,7 +417,7 @@ func orgPasswordType(ctx context.Context, db orm.DB, org string) string {
 }
 
 // scopeAccess parses the requested Docker scope strings ("type:name:a,b") into
-// access entries, authorizing each against `privileged`. Both wire shapes are
+// access entries, authorizing each against `privileged`. Both request shapes are
 // flattened (space-separated scopes in one param, and repeated scope params), so
 // no requested repository is silently dropped by shape. A non-privileged principal
 // keeps only the `pull` action; a scope left with no authorized action is omitted

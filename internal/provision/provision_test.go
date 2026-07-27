@@ -220,3 +220,176 @@ func TestDerive_ShippedClientsArePublic(t *testing.T) {
 		}
 	}
 }
+
+// gitDoc is the case the derived-only model could not express: a server that
+// dictates its own callback path, and an app that must name its signing cert.
+const gitDoc = `
+orgs:
+  - name: hanzo
+    displayName: Hanzo
+    homepage: https://hanzo.ai
+    apps:
+      - { app: git, type: confidential, hosts: [git.hanzo.ai], cert: cert-hanzo, callback: /user/oauth2/hanzo/callback }
+      - { app: cloud, type: spa, hosts: [cloud.hanzo.ai] }
+`
+
+// Hanzo Git serves /user/oauth2/<source>/callback, not /auth/callback. Without
+// the override the derived URI is simply wrong and every login ends in
+// redirect_uri_mismatch — the exact failure Derive exists to prevent.
+func TestDerive_CallbackOverride(t *testing.T) {
+	m := derive(t, gitDoc)
+	want := "https://git.hanzo.ai/user/oauth2/hanzo/callback"
+	if got := m["hanzo-git"].RedirectUris; !contains(got, want) {
+		t.Errorf("redirectUris = %v, must contain %q", got, want)
+	}
+	// The override is per app, never global: an app that does not ask for one
+	// still gets the single standard path.
+	if got := m["hanzo-cloud"].RedirectUris; !contains(got, "https://cloud.hanzo.ai/auth/callback") {
+		t.Errorf("unoverridden app = %v, want the standard /auth/callback", got)
+	}
+}
+
+// A client with no signing cert cannot mint an id_token (issueTokens resolves
+// app.Cert to build the signer), so an OIDC consumer that identifies the user
+// from the id_token fails AFTER a successful code exchange.
+func TestDerive_CertIsCarried(t *testing.T) {
+	if got := derive(t, gitDoc)["hanzo-git"].Cert; got != "cert-hanzo" {
+		t.Errorf("cert = %q, want cert-hanzo", got)
+	}
+}
+
+// An absent cert must be OMITTED from the body, not sent empty: the upsert
+// assigns only a non-empty cert, so an empty string in the JSON would be
+// indistinguishable from "leave it alone" only by luck. Omitting says it.
+func TestDerive_EmptyCertIsOmittedFromBody(t *testing.T) {
+	b, err := json.Marshal(derive(t, gitDoc)["hanzo-cloud"])
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), "cert") {
+		t.Errorf("body = %s, must not carry a cert key when none is declared", b)
+	}
+	// ...and present when it is declared.
+	b, _ = json.Marshal(derive(t, gitDoc)["hanzo-git"])
+	if !strings.Contains(string(b), `"cert":"cert-hanzo"`) {
+		t.Errorf("body = %s, must carry the declared cert", b)
+	}
+}
+
+// A malformed callback converges silently and breaks login later, so it is
+// rejected at Derive.
+func TestDerive_RejectsBadCallback(t *testing.T) {
+	for _, cb := range []string{"user/oauth2/hanzo/callback", "/api/oauth/callback"} {
+		src := "orgs:\n  - name: hanzo\n    apps:\n      - { app: git, type: confidential, hosts: [git.hanzo.ai], callback: \"" + cb + "\" }\n"
+		d, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", cb, err)
+		}
+		if _, err := Derive(d); err == nil {
+			t.Errorf("callback %q was accepted; want a Derive error", cb)
+		}
+	}
+}
+
+// The upsert REPLACES redirectUris and grantTypes; it does not merge
+// (internal/bootstrap: `if len(req.RedirectUris) > 0 { existing.RedirectUris =
+// req.RedirectUris }`). So a document that cannot express a live URI does not
+// merely fail to add it — converging DELETES it. These are the two live shapes
+// that proved it, read off the production IAM store:
+//
+//	hanzo-app   24 URIs, incl. the desktop deep link hanzo://oauth/hanzo, the
+//	            loopback dev ports the Tauri build listens on, and
+//	            https://cowork.hanzo.ai/auth/callback. `desktop` derives exactly
+//	            one, hanzo://oauth/app — a value nothing uses.
+//	hanzo-cloud grants [authorization_code refresh_token device_code
+//	            client_credentials]: one client_id serving a browser PKCE
+//	            surface AND a backend machine identity. `spa` derives two, so
+//	            converging revokes the machine half.
+//
+// Literal extras are what let the document state that truth, and this test is
+// the guarantee they are added rather than substituted.
+func TestDerive_LiteralExtrasAreAddedToTheDerivedSet(t *testing.T) {
+	src := `
+orgs:
+  - name: hanzo
+    displayName: Hanzo
+    deepLinkScheme: hanzo
+    apps:
+      - app: app
+        type: spa
+        hosts: [hanzo.app, cowork.hanzo.ai]
+        redirects: ["hanzo://oauth/hanzo", "http://localhost:1420/oauth/callback"]
+      - app: cloud
+        type: spa
+        hosts: [cloud.hanzo.ai]
+        grants: [client_credentials, "urn:ietf:params:oauth:grant-type:device_code"]
+`
+	m := derive(t, src)
+
+	app := m["hanzo-app"]
+	for _, want := range []string{
+		"https://hanzo.app/auth/callback",       // derived from hosts
+		"https://cowork.hanzo.ai/auth/callback", // derived from hosts
+		"hanzo://oauth/hanzo",                   // literal: the deep link in use
+		"http://localhost:1420/oauth/callback",  // literal: a loopback dev port
+	} {
+		if !contains(app.RedirectUris, want) {
+			t.Errorf("redirectUris = %v, missing %s", app.RedirectUris, want)
+		}
+	}
+	if len(app.RedirectUris) != 4 {
+		t.Errorf("redirectUris = %v, want exactly the 2 derived + 2 literal", app.RedirectUris)
+	}
+
+	cloud := m["hanzo-cloud"]
+	for _, want := range []string{
+		"authorization_code", "refresh_token", // the type's default set, kept
+		"client_credentials", "urn:ietf:params:oauth:grant-type:device_code", // extras
+	} {
+		if !contains(cloud.GrantTypes, want) {
+			t.Errorf("grantTypes = %v, missing %s", cloud.GrantTypes, want)
+		}
+	}
+}
+
+// Two runs over one document must produce byte-identical bodies, or a re-run is
+// not a no-op and --dry-run is not reviewable. Extras that repeat a derived
+// value collapse instead of registering the same URI twice.
+func TestDerive_ExtrasAreDeduplicatedAndOrderStable(t *testing.T) {
+	src := `
+orgs:
+  - name: hanzo
+    apps:
+      - app: cloud
+        type: spa
+        hosts: [cloud.hanzo.ai]
+        redirects: ["https://cloud.hanzo.ai/auth/callback", "https://cloud.hanzo.ai/callback", ""]
+        grants: [refresh_token, client_credentials]
+`
+	c := derive(t, src)["hanzo-cloud"]
+	want := []string{"https://cloud.hanzo.ai/auth/callback", "https://cloud.hanzo.ai/callback"}
+	if len(c.RedirectUris) != len(want) {
+		t.Fatalf("redirectUris = %v, want %v", c.RedirectUris, want)
+	}
+	for i := range want {
+		if c.RedirectUris[i] != want[i] {
+			t.Fatalf("redirectUris = %v, want %v (order is part of the contract)", c.RedirectUris, want)
+		}
+	}
+	if got := strings.Join(c.GrantTypes, ","); got != "authorization_code,refresh_token,client_credentials" {
+		t.Errorf("grantTypes = %s, want the default set then the extras, each once", got)
+	}
+}
+
+// A path where a URI belongs registers a redirect no authorize request can
+// match, so it is a loud parse-time error, not a live redirect_uri_mismatch.
+func TestDerive_RejectsRelativeLiteralRedirect(t *testing.T) {
+	src := "orgs:\n  - name: hanzo\n    apps:\n      - { app: cloud, type: spa, hosts: [cloud.hanzo.ai], redirects: [\"/auth/callback\"] }\n"
+	d, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if _, err := Derive(d); err == nil {
+		t.Error("a relative redirect was accepted; want a Derive error")
+	}
+}

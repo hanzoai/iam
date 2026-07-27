@@ -15,7 +15,7 @@ hand-rolling OAuth. Full SDK model: `~/work/hanzo/SDK-ARCHITECTURE.md`.
 - `go build ./...`
 - `go run . serve --init-data init_data.json`  (SQLite default; `--store sqlite|sql|datastore`)
 - `go run . compare --legacy postgres://…/iam` (needs `-tags migration`)
-- Image: `ghcr.io/hanzoai/iam2`. Embed via `server.Mount`. Go 1.26.
+- Image: `ghcr.io/hanzoai/iam2`. Embed via `server.Route`. Go 1.26.
 
 ## Endpoints (HIP-0111 — /v1 only, no /api, no vendor verbs)
 `/.well-known/openid-configuration` · `/v1/iam/.well-known/jwks` ·
@@ -25,7 +25,7 @@ Brands set `serverUrl`: hanzo→iam.hanzo.ai, lux→lux.id, zoo→zoo.id,
 bootnode→id.bootno.de, pars→pars.id (white-label by domain).
 
 ## Key entry points
-- `main.go` — cobra root (`serve` / `compare` / `version`); `server/server.go` mount.
+- `main.go` — cobra root (`serve` / `compare` / `version`); `server/server.go` route registration.
 - `internal/{oidc,routes}` — OAuth2/OIDC surface; `internal/{scim,mfa,webauthn,providers,sessions,tokens,cred,authz,certs,keys}`.
 - `internal/{users,organizations,applications,roles,permission,memberships}` — entities; `pkg/model`, `pkg/store`; `MIGRATION.md` (RFC surface + phases).
 
