@@ -124,6 +124,29 @@ func Scope(ctx context.Context, owner string) (string, error) {
 	return p.Org, nil
 }
 
+// ScopeFor resolves the owner a compat READ should query — the same decision as
+// Scope, except that a self-read addresses its own owner verbatim.
+//
+// Scope pins a non-SuperAdmin to p.Org, which for an app principal is the tenant it
+// SERVES (hanzo), not the org that OWNS its row (admin). So a confidential client
+// authorized by the Guard to read admin/hanzo-cloud then had the query rewritten to
+// hanzo/hanzo-cloud and got "the entity does not exist" — authorized and still
+// unable to read itself, a 200 that is functionally the 403 it replaced.
+//
+// Rather than loosen Scope (whose pinning IS the tenant gate on the handler-authorized
+// paths — SCIM, service-accounts, memberships), the ONE self-read clause is asked
+// again here, through the same authorize() it is defined in. There is no second copy
+// of the rule: if authorize would admit this exact read, the owner it admitted is the
+// owner we query; otherwise the pin stands.
+func ScopeFor(ctx context.Context, path, owner, name string) (string, error) {
+	if p, ok := From(ctx); ok && owner != "" && authorize(p, "GET", entityOf(path), owner, name) {
+		if p.Super || (p.App != "" && owner == p.AppOwner) {
+			return owner, nil
+		}
+	}
+	return Scope(ctx, owner)
+}
+
 // Can reports whether the ctx principal may perform `method` on the entity's
 // (owner, name) — the SAME policy the op-invoke seam (Authorize) applies, exposed
 // for a RAW handler that does not pass through app.Authorize (e.g. SCIM, whose

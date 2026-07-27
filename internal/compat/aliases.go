@@ -206,7 +206,7 @@ func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 		if name == "" {
 			return httpx.Err(c, "id (owner/name) or name is required")
 		}
-		scoped, err := authz.Scope(ctx, owner)
+		scoped, err := authz.ScopeFor(ctx, c.Path(), owner, name)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
