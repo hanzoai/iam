@@ -154,7 +154,7 @@ func deviceHandler(db orm.DB) zip.Handler {
 
 		// Both URIs point at the SPA approval page a human opens, never at this
 		// JSON API. The complete form is a PATH segment because that is the route
-		// the page is mounted on (/login/oauth/device/:userCode).
+		// the page is registered on (/login/oauth/device/:userCode).
 		verify := tokenIssuer(c) + PathDeviceVerify
 		return c.JSON(200, deviceResponse{
 			DeviceCode:              deviceCode,

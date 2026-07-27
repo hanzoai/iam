@@ -79,6 +79,44 @@ func Resolve(ctx context.Context, c fiber.Ctx, db orm.DB) (owner, name string, o
 	return sc.Owner, sc.Name, true
 }
 
+// Rekey follows a live session across a change of the signed-in user's OWNING org.
+// An IAM identity IS (owner, name), so moving a user between orgs re-keys it and
+// strands every credential that names the old pair — the session cookie above all,
+// whose (Owner, Name, Application) triple keys the Session row. Self-service
+// onboarding moves its caller into the org it just founded, so without this a human
+// is silently signed OUT by their own signup.
+//
+// It re-issues the SAME session under the new owner and revokes the old sid, so the
+// browser holds exactly one live session throughout: no second credential, and the
+// stale one cannot be replayed. The identity is taken from the cookie the caller
+// already presented (verified signature, active sid) and only its Owner changes —
+// this grants no authority the caller did not already hold, and it is a no-op for a
+// caller with no session (the bearer path) or one already under newOwner.
+//
+// Reports whether the cookie was re-issued.
+func Rekey(ctx context.Context, c fiber.Ctx, db orm.DB, newOwner string) bool {
+	raw := c.Cookies(CookieName)
+	if raw == "" || newOwner == "" {
+		return false
+	}
+	key, err := keyFor(ctx, db)
+	if err != nil {
+		return false
+	}
+	sc, err := Verify(raw, key)
+	if err != nil || sc.Owner == newOwner {
+		return false
+	}
+	if !sidActive(db, sc.Owner, sc.Name, sc.Application, sc.SID) {
+		return false // not a live session — nothing to carry over
+	}
+	if err := Set(ctx, c, db, newOwner, sc.Name, sc.Application); err != nil {
+		return false
+	}
+	revokeSID(db, sc.Owner, sc.Name, sc.Application, sc.SID)
+	return true
+}
+
 // registerSID appends sid to the (owner, name, application) session row's active
 // list, creating the row if absent — the list Resolve checks for revocation.
 // Mirrors the Sessions.Create persist path exactly (one way to write a session).
@@ -98,6 +136,27 @@ func registerSID(db orm.DB, owner, name, application, sid string) error {
 	s.SessionId = []string{sid}
 	s.CreatedTime = now()
 	return s.Create()
+}
+
+// revokeSID drops one sid from the (owner, name, application) session row — the
+// inverse of registerSID, so a cookie carried over to a new key cannot be replayed
+// under the old one. Best-effort: a missing row is already revoked.
+func revokeSID(db orm.DB, owner, name, application, sid string) {
+	s, err := orm.Get[schema.Session](db, sessionID(owner, name, application))
+	if err != nil || s == nil {
+		return
+	}
+	kept := make([]string, 0, len(s.SessionId))
+	for _, id := range s.SessionId {
+		if id != sid {
+			kept = append(kept, id)
+		}
+	}
+	if len(kept) == len(s.SessionId) {
+		return
+	}
+	s.SessionId = kept
+	_ = s.Update()
 }
 
 // sidActive reports whether sid is still listed on the (owner, name, application)

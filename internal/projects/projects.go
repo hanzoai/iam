@@ -47,7 +47,7 @@ type Ref struct {
 }
 
 // Input is the writable projection of a project (the v1 add/update-project body).
-// It keeps the wire contract clean of the orm.Model bookkeeping fields.
+// It keeps the HTTP contract clean of the orm.Model bookkeeping fields.
 type Input struct {
 	Owner        string   `json:"owner"`
 	Name         string   `json:"name"`

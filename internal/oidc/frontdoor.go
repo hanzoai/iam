@@ -50,6 +50,10 @@ func routeFrontDoor(r zip.Router, db orm.DB) {
 	// move-user pair. Self-authenticates via the unified service token.
 	r.Post(PathProvision, provisionServiceHandler(db))
 	r.Post(PathUpdatePreferences, updatePreferencesHandler(db))
+	// Account-canonical data-sharing consent (insights + opt-in training) — the ONE
+	// source of truth the hanzo.id signup, the browser extension, and hanzo.ai share.
+	r.Get(PathConsent, getConsentHandler(db))
+	r.Put(PathConsent, putConsentHandler(db))
 	r.Get(PathLinkedAccounts, linkedAccountsHandler(db))
 }
 
