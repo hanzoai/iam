@@ -119,7 +119,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if display == "" {
 		display = user.Name
 	}
-	access, err := signer.SignUserToken(subject, owner, aud, clientApp.ClientId, user.Email, display, scope, store.MemberOrgRefs(ctx, db, user), ttl, now)
+	access, err := signer.SignUserToken(subject, owner, aud, clientApp.ClientId, user.Email, display, user.Name, scope, store.MemberOrgRefs(ctx, db, user), ttl, now)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}

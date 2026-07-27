@@ -4,6 +4,7 @@ package oidc
 
 import (
 	"crypto/rsa"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ func TestSign_RoundTripAndClaims(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	app := testApp()
 
-	tokenStr, err := s.Sign(app, "hanzo/alice", "alice@hanzo.ai", "Alice", "openid profile", nil, time.Hour, now)
+	tokenStr, err := s.Sign(app, "hanzo/alice", "alice@hanzo.ai", "Alice", "", "openid profile", nil, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +74,7 @@ func TestSign_ExpiredTokenRejected(t *testing.T) {
 	key := testKey(t)
 	s := NewRSASigner(key, "cert-hanzo", "https://iam.hanzo.ai")
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, err := s.Sign(testApp(), "u", "", "", "openid", nil, time.Minute, now)
+	tokenStr, err := s.Sign(testApp(), "u", "", "", "", "openid", nil, time.Minute, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +91,7 @@ func TestSign_WrongKeyRejected(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
 	other := testKey(t)
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, _ := s.Sign(testApp(), "u", "", "", "openid", nil, time.Hour, now)
+	tokenStr, _ := s.Sign(testApp(), "u", "", "", "", "openid", nil, time.Hour, now)
 	var claims Claims
 	_, err := jwt.ParseWithClaims(tokenStr, &claims, func(*jwt.Token) (any, error) { return &other.PublicKey, nil },
 		jwt.WithValidMethods([]string{"RS256"}))
@@ -119,7 +120,7 @@ func TestNewRSASignerFromCert_PEMRoundTrip(t *testing.T) {
 	}
 	// Sign+verify to prove the parsed key works.
 	now := time.Unix(1_800_000_000, 0)
-	str, err := s.Sign(testApp(), "u", "", "", "openid", nil, time.Hour, now)
+	str, err := s.Sign(testApp(), "u", "", "", "", "openid", nil, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,5 +128,40 @@ func TestNewRSASignerFromCert_PEMRoundTrip(t *testing.T) {
 	if _, err := jwt.ParseWithClaims(str, &claims, func(*jwt.Token) (any, error) { return s.PublicKey(), nil },
 		jwt.WithValidMethods([]string{"RS256"}), jwt.WithTimeFunc(func() time.Time { return now.Add(time.Minute) })); err != nil {
 		t.Fatalf("verify with cert-loaded key: %v", err)
+	}
+}
+
+// TestSignEmitsPreferredUsername pins that the username reaches the wire. Discovery
+// has advertised preferred_username in claims_supported all along while no token
+// emitted it, and `name` carries the DISPLAY name — so a resource server needing the
+// `<owner>/<name>` username had nothing to read. cloud's money path addresses a
+// wallet as `<org>/<username>`; without this claim it fell back to `name` and
+// addressed `hanzo/Zach Kelling` while the balance sat in `hanzo/z`.
+func TestSignEmitsPreferredUsername(t *testing.T) {
+	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
+	now := time.Unix(1_800_000_000, 0)
+	tokenStr, err := s.Sign(testApp(), "hanzo/z", "z@hanzo.ai", "Zach Kelling", "z", "openid profile", nil, time.Hour, now)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	var got Claims
+	if _, _, err := jwt.NewParser().ParseUnverified(tokenStr, &got); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got.PreferredUsername != "z" {
+		t.Fatalf("preferred_username = %q; want %q", got.PreferredUsername, "z")
+	}
+	// The display name is still carried, and must NOT be the username.
+	if got.Name != "Zach Kelling" {
+		t.Fatalf("name = %q; want the display name preserved", got.Name)
+	}
+	// A machine token has no user, so the claim is omitted entirely rather than
+	// emitted empty — omitempty is what keeps one struct serving both shapes.
+	machine, err := s.Sign(testApp(), "hanzo/app", "", "app", "", "openid", nil, time.Hour, now)
+	if err != nil {
+		t.Fatalf("Sign machine: %v", err)
+	}
+	if strings.Contains(machine, "preferred_username") {
+		t.Fatal("machine token must omit preferred_username, not emit it empty")
 	}
 }
