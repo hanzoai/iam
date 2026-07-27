@@ -324,7 +324,7 @@ func bearer(t *testing.T, db orm.DB, a *schema.Application, org, name string) (*
 	}
 
 	tok, err := oidc.NewRSASigner(k, "cert-wallet", "https://"+host).
-		Sign(a, org+"/"+name, "", "", "openid", nil, time.Hour, time.Now())
+		Sign(a, org+"/"+name, "", "", "", "openid", nil, time.Hour, time.Now())
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
 	}
