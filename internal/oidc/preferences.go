@@ -31,8 +31,9 @@ import (
 
 // preferencesKey is the User.Properties entry holding the cross-product preferences
 // JSON blob — the backend half of the console contract (PREFS_PROPERTY); keep in
-// lockstep.
-const preferencesKey = "hanzo.preferences"
+// lockstep. Defined once in schema, where the consent record nested inside the same
+// blob also reads it, so the two cannot drift onto different properties.
+const preferencesKey = schema.PreferencesKey
 
 // preferencesMaxBytes caps the serialized merged blob so a runaway client can't grow
 // the properties column without bound.
