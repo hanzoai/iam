@@ -27,4 +27,30 @@ type (
 	// via pkg/store — one canonical definition (schema.Project), no platform-local
 	// clone, replacing the dead iam-v1 object.Project.
 	Project = schema.Project
+
+	// Consent is a user's data-sharing answers, and Answer is the tri-state of one
+	// of them. Exported so a consumer outside this module (cloud, and any data path
+	// that must not act without an answer) reads the SAME record through the SAME
+	// predicate — Consent.MayTrain — instead of re-deriving what "granted" means.
+	// Two implementations of that question would eventually disagree, and the one
+	// that disagreed by admitting too much would be a consent violation.
+	Consent = schema.Consent
+	Answer  = schema.Answer
 )
+
+// The three states of a consent answer, and the property that holds the record.
+// Re-exported as values (not just types) because a caller comparing against a bare
+// string literal is writing the policy a second time.
+const (
+	Unanswered = schema.Unanswered
+	Granted    = schema.Granted
+	Refused    = schema.Refused
+
+	// PreferencesKey is the User.Properties entry the consent record nests inside.
+	PreferencesKey = schema.PreferencesKey
+)
+
+// ConsentOf decodes a consent record out of a preferences blob, failing closed on
+// every malformed input (see schema.ConsentOf). Exposed as a variable bound to the
+// core function so there is one implementation, not a wrapper that could drift.
+var ConsentOf = schema.ConsentOf
