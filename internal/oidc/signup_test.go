@@ -388,3 +388,81 @@ func TestOrgNamePolicyRefusesEmail(t *testing.T) {
 		}
 	}
 }
+
+// THE tenant breach. Org choice lets a founder NAME THEIR OWN org; it must never
+// admit them to a tenant that is already standing. Reproduced against production:
+// an unauthenticated POST to hanzo.id/v1/iam/signup naming application
+// "hanzo-console" (a hanzo app, orgChoiceMode=create) and organization "lux" was
+// answered {"status":"ok"} and created a user with owner "lux". Every brand and
+// every customer tenant in the one multi-brand registry was reachable that way.
+func TestSignup_CannotJoinAnExistingForeignTenant(t *testing.T) {
+	app, db := newServer(t)
+	// The app belongs to org "hanzo" (seedApp) and opts in to self-serve creation.
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+	// A tenant that already exists and belongs to someone else.
+	seedOrg(t, db, "lux")
+
+	status, env := signupReq(t, app, map[string]string{
+		"application":  "conf",
+		"organization": "lux",
+		"username":     "intruder",
+		"password":     "correct horse battery staple",
+	})
+	if status == 200 && env["status"] == "ok" {
+		t.Fatalf("REFUSAL FAILED: a stranger signed up into the foreign tenant 'lux': %v", env)
+	}
+	if u, _ := store.GetUserByName(tctx(), db, "lux", "intruder"); u != nil {
+		t.Fatalf("REFUSAL FAILED: user %q now exists inside tenant lux", u.Name)
+	}
+	// The refusal must not be an authority oracle: it is the same sentence the
+	// wrong-tenant and reserved-org refusals use, so a prober learns nothing about
+	// which orgs exist or what this app is allowed to do.
+	if msg, _ := env["msg"].(string); msg != "the user is not permitted to sign up to this application" {
+		t.Fatalf("refusal message %q distinguishes this case from the other tenant refusals", msg)
+	}
+}
+
+// The two legitimate destinations org choice DOES grant must keep working, or the
+// refusal above has simply broken signup: the app's OWN tenant, and a brand-new
+// org the caller mints for themselves.
+func TestSignup_ForeignTenantRefusalKeepsTheLegitimatePaths(t *testing.T) {
+	t.Run("the app's own tenant", func(t *testing.T) {
+		app, db := newServer(t)
+		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+		seedOrg(t, db, "hanzo")
+		status, env := signupReq(t, app, map[string]string{
+			"application": "conf", "organization": "hanzo",
+			"username": "member", "password": "correct horse battery staple",
+		})
+		if status != 200 || env["status"] != "ok" {
+			t.Fatalf("signup into the app's own tenant must still succeed: status=%d env=%v", status, env)
+		}
+	})
+
+	t.Run("a brand-new org the founder mints", func(t *testing.T) {
+		app, db := newServer(t)
+		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+		status, env := signupReq(t, app, map[string]string{
+			"application": "conf", "organization": "wayne-enterprises",
+			"username": "founder", "password": "correct horse battery staple",
+		})
+		if status != 200 || env["status"] != "ok" {
+			t.Fatalf("self-serve creation must still succeed: status=%d env=%v", status, env)
+		}
+	})
+
+	// A SHARED app is multi-tenant BY DECLARATION — that is what isShared means, and
+	// the gate above has always let it through. The new arm must not change it.
+	t.Run("a shared app may still join an existing tenant", func(t *testing.T) {
+		app, db := newServer(t)
+		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, shared: true})
+		seedOrg(t, db, "lux")
+		status, env := signupReq(t, app, map[string]string{
+			"application": "conf", "organization": "lux",
+			"username": "member", "password": "correct horse battery staple",
+		})
+		if status != 200 || env["status"] != "ok" {
+			t.Fatalf("a shared app must still admit an existing tenant: status=%d env=%v", status, env)
+		}
+	})
+}
