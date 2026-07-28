@@ -734,19 +734,31 @@ func entityOf(path string) string {
 // spellings.
 func entityNoun(seg string) string {
 	for _, v := range legacyVerbs {
-		if !strings.HasPrefix(seg, v) {
-			continue
+		if strings.HasPrefix(seg, v) {
+			seg = seg[len(v):]
+			break
 		}
-		noun := seg[len(v):]
-		if noun == "" {
-			return ""
-		}
-		// The verbs are singular, the entities plural (get-user -> users); an
-		// already-plural alias (get-memberships) is left alone.
-		if !strings.HasSuffix(noun, "s") {
-			noun += "s"
-		}
-		return noun
+	}
+	if seg == "" {
+		return ""
+	}
+	// EVERY policy clause is written in the plural — applications, certs,
+	// projects, users, organizations, keys — so every path segment is folded to
+	// the plural, not just the ones that carried a verb prefix.
+	//
+	// Pluralising only after stripping a verb is what split the policy in two.
+	// /v1/iam/get-application folded to "applications" and matched the app
+	// self-read clause; the NATIVE /v1/iam/application carries no verb, fell
+	// through as the singular "application", matched no clause, and hit the
+	// reserved-owner gate — so a relying party could read its own row over the
+	// legacy verb and was refused 403 over the native route. One policy, two
+	// answers, decided by spelling.
+	//
+	// Folding here is safe precisely because the clauses are plural: the only
+	// segments this newly changes are the singular natives (application, cert,
+	// key, user, organization, project), and each folds onto the entity it IS.
+	if !strings.HasSuffix(seg, "s") {
+		seg += "s"
 	}
 	return seg
 }
