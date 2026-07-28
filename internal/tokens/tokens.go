@@ -15,6 +15,7 @@ package tokens
 import (
 	"context"
 	"errors"
+	"github.com/hanzoai/iam/internal/authz"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -87,9 +88,16 @@ func Route(app *zip.App, db orm.DB) {
 // narrowed to one organization.
 func listTokens(db orm.DB) zip.TypedHandler[listTokensIn, listTokensOut] {
 	return func(ctx context.Context, in *listTokensIn) (*listTokensOut, error) {
+		// The owner comes from the authenticated principal, never the input: a typed
+		// GET binds nothing from the request, so filtering on in.Owner meant the
+		// "empty owner lists everything" branch ran on every REST call.
+		owner, err := authz.Scope(ctx, in.Owner)
+		if err != nil {
+			return nil, err
+		}
 		q := orm.TypedQuery[schema.Token](db)
-		if in.Owner != "" {
-			q = q.Filter("Owner=", in.Owner)
+		if owner != "" {
+			q = q.Filter("Owner=", owner)
 		}
 		if in.Organization != "" {
 			q = q.Filter("Organization=", in.Organization)

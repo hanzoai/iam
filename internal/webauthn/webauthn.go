@@ -15,6 +15,7 @@ package webauthn
 import (
 	"context"
 	"errors"
+	"github.com/hanzoai/iam/internal/authz"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -85,9 +86,16 @@ func Route(app *zip.App, db orm.DB) {
 // first.
 func listWebauthnCredentials(db orm.DB) zip.TypedHandler[listWebauthnCredentialsIn, listWebauthnCredentialsOut] {
 	return func(ctx context.Context, in *listWebauthnCredentialsIn) (*listWebauthnCredentialsOut, error) {
+		// The owner comes from the authenticated principal, never the input: a typed
+		// GET binds nothing from the request, so filtering on in.Owner meant the
+		// "empty owner lists everything" branch ran on every REST call.
+		owner, err := authz.Scope(ctx, in.Owner)
+		if err != nil {
+			return nil, err
+		}
 		q := orm.TypedQuery[schema.WebauthnCredential](db)
-		if in.Owner != "" {
-			q = q.Filter("Owner=", in.Owner)
+		if owner != "" {
+			q = q.Filter("Owner=", owner)
 		}
 		rows, err := q.Order("-CreatedTime").GetAll(ctx)
 		if err != nil {
