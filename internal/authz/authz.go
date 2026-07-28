@@ -515,6 +515,23 @@ func authorize(p *Principal, method, entity, owner, name string) bool {
 			(owner == "" || owner == p.AppOwner || owner == p.Org) {
 			return true
 		}
+		// An org's OWN PaaS machine identity may READ that org's projects, and
+		// nothing else. This is how cloud's platform resolves a tenant's
+		// projects from the canonical store here instead of a second embedded
+		// database — the split-brain where a project created at /v1/iam was
+		// invisible to the PaaS and vice versa.
+		//
+		// Narrow by construction, four ways at once, mirroring the self-read
+		// blocks above: only a READ; only the projects entity; only the
+		// caller's OWN org (owner == p.Org, so one tenant's identity can never
+		// walk another's list); and only the identity the "<org>-platform-kms"
+		// contract names — the same string cloud's SanitizeIdentity recognises
+		// in order to DENY that principal SuperAdmin. The contract is the
+		// grant, stated once; no env allowlist to drift.
+		if entity == "projects" && owner != "" && owner == p.Org &&
+			p.App == p.Org+"-platform-kms" {
+			return true
+		}
 	}
 	if store.IsReservedOrg(owner) {
 		// The ONE exception to the reserved-owner gate is the tenant registry: every
