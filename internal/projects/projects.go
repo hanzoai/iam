@@ -12,6 +12,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"github.com/hanzoai/iam/internal/authz"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -94,10 +95,20 @@ func apply(dst *schema.Project, in *Input) {
 
 // List returns the projects for one owner, newest first. An empty owner lists
 // every project (the unscoped admin view).
+// The owner is resolved by authz.Scope from the authenticated principal, never
+// taken from the input: a tenant reads only its own org, a SuperAdmin reads the
+// owner it asks for. Filtering on in.Owner instead was a confused deputy — the
+// Guard authorizes on the query string, then a typed GET binds NOTHING from it
+// (zip typed.go reads a body only for non-GET), so in.Owner arrived empty on every
+// REST call and the "empty owner lists everything" branch returned every tenant.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+	owner, err := authz.Scope(ctx, in.Owner)
+	if err != nil {
+		return nil, err
+	}
 	q := orm.TypedQuery[schema.Project](h.db)
-	if in.Owner != "" {
-		q = q.Filter("owner", in.Owner)
+	if owner != "" {
+		q = q.Filter("owner", owner)
 	}
 	rows, err := q.Order("-createdTime").GetAll(ctx)
 	if err != nil {
