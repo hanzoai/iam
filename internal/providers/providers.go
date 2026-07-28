@@ -14,6 +14,7 @@ package providers
 import (
 	"context"
 	"errors"
+	"github.com/hanzoai/iam/internal/authz"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -96,9 +97,13 @@ func Delete(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult] {
 // listProviders returns every provider in the owner scope, newest first.
 func listProviders(db orm.DB) zip.TypedHandler[listProvidersIn, listProvidersOut] {
 	return func(ctx context.Context, in *listProvidersIn) (*listProvidersOut, error) {
+		owner, err := authz.Scope(ctx, in.Owner)
+		if err != nil {
+			return nil, err
+		}
 		q := orm.TypedQuery[schema.Provider](db)
-		if in.Owner != "" {
-			q = q.Filter("Owner=", in.Owner)
+		if owner != "" {
+			q = q.Filter("Owner=", owner)
 		}
 		rows, err := q.Order("-CreatedTime").GetAll(ctx)
 		if err != nil {
