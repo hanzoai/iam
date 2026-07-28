@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"github.com/hanzoai/account"
 	"net/url"
 	"strings"
 	"time"
@@ -588,7 +589,12 @@ func billingAccountFor(owner string, refs []schema.OrgRef) string {
 		}
 		switch r.Role {
 		case store.RoleOwner, store.RoleAdmin:
-			return owner // the org pool
+			// "org:<slug>" — account.Parse REQUIRES the kind prefix and returns a
+			// zero Account without it, which Payer then ignores in favour of its
+			// shape rule. A bare slug here silently did nothing: the claim rode all
+			// the way to the gate and was dropped at the last step, so an admin kept
+			// paying from their personal wallet while the pool sat unused.
+			return account.Org(owner).String()
 		}
 	}
 	return "" // no claim ⇒ Payer's shape rule decides, unchanged
