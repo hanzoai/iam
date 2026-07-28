@@ -3,7 +3,7 @@
 package workspaces_test
 
 // Workspace tests driven through the REAL registered router (routes.Route installs
-// the Guard, the typed CRUD, and the Casdoor verb aliases). Every case is a bind
+// the Guard, the typed CRUD, and the legacy verb aliases). Every case is a bind
 // request the console ScopeSwitcher / Workspaces page sends via the /org/iam
 // proxy. The assertions pin the parity contract (add-workspace →
 // get-organization-workspaces → delete-workspace), the Organization → Workspace →

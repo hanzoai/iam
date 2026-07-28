@@ -4,7 +4,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// Wallet is the (Chain, Address) -> user binding (v1 Casdoor `wallet_link`, v2
+// Wallet is the (Chain, Address) -> user binding (v1 the legacy surface `wallet_link`, v2
 // kind "wallets") — the identity half of CAIP-122 wallet sign-in (HIP-0111).
 // One user owns many wallets (EVM + Solana + Bitcoin + …, several addresses per
 // chain). The (Chain, Address) pair is globally unique: a wallet binds to at

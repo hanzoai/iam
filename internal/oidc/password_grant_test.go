@@ -100,8 +100,8 @@ func TestPasswordGrant_unknownUser_invalidGrant_sameAsBadPassword(t *testing.T) 
 	requireError(t, resp, tok, 400, "invalid_grant")
 }
 
-// CASDOOR PARITY: a PUBLIC client (no secret, no PKCE) may complete the password
-// grant — the console/chat apps casdoor allowed. See passwordGrant's doc comment.
+// LEGACY PARITY: a PUBLIC client (no secret, no PKCE) may complete the password
+// grant — the console/chat apps legacy allowed. See passwordGrant's doc comment.
 func TestPasswordGrant_publicClient_legacyParity_succeeds(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // no secret → public client
@@ -115,7 +115,7 @@ func TestPasswordGrant_publicClient_legacyParity_succeeds(t *testing.T) {
 		"scope":      {"openid"},
 	})
 	if resp.StatusCode != 200 {
-		t.Fatalf("public-client password grant status = %d, want 200 (casdoor parity); body=%v", resp.StatusCode, tok)
+		t.Fatalf("public-client password grant status = %d, want 200 (legacy parity); body=%v", resp.StatusCode, tok)
 	}
 	access, _ := tok["access_token"].(string)
 	claims, err := verifyToken(context.Background(), db, access)

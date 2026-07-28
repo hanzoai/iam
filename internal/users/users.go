@@ -123,7 +123,7 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// client-supplied Id is DISCARDED. Id keys the token `sub` AND the authz
 	// principal, so a caller allowed to PIN it could set it to a victim's UUID and,
 	// once two rows shared it, be resolved AS the victim (tenant-admin → SuperAdmin
-	// impersonation). A migrated user's casdoor UUID enters through the migrator's
+	// impersonation). A migrated user's legacy UUID enters through the migrator's
 	// direct write, never this create path.
 	u.Id = uuid.NewString()
 	// The JSON-document store hangs no per-field DB UNIQUE constraint (the same reason

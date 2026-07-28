@@ -6,7 +6,7 @@
 // where Owner is the owning organization. Every operation is a typed zip handler
 // over hanzoai/orm; the orm string key is "owner/name". Reads scope to one owner
 // (organization); writes address one workspace by its (owner, name) key. This is
-// the ONE workspace CRUD path — the Casdoor get-organization-workspaces /
+// the ONE workspace CRUD path — the the legacy surface get-organization-workspaces /
 // add-workspace / delete-workspace verb aliases (internal/compat) reuse it via
 // New.
 package workspaces
@@ -38,7 +38,7 @@ func Route(app *zip.App, db orm.DB) {
 	zip.Post(app, "/v1/iam/workspaces/delete", h.Delete, zip.WithSummary("Delete a workspace"), zip.WithTags("workspaces"))
 }
 
-// New exposes a workspace Handler so the Casdoor add-/delete-workspace verb
+// New exposes a workspace Handler so the the legacy surface add-/delete-workspace verb
 // aliases (internal/compat) reuse the ONE workspace CRUD path, wrapped in the
 // compat envelope.
 func New(db orm.DB) *Handler { return &Handler{db: db} }

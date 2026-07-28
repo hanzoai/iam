@@ -2,7 +2,7 @@
 
 package compat_test
 
-// End-to-end tests for the Casdoor WRITE verbs + the structurally-public front
+// End-to-end tests for the the legacy surface WRITE verbs + the structurally-public front
 // door, driven through the REAL registered router (routes.Route installs the authz
 // Guard + Authorize seam; the front door is registered on the pre-Guard public
 // group). They assert the three write contracts a backend swap depends on:
@@ -109,7 +109,7 @@ func TestAddUser_crossTenantForbidden(t *testing.T) {
 	}
 }
 
-// update-user overwrites from the body (casdoor semantics) through users.Update; the
+// update-user overwrites from the body (legacy semantics) through users.Update; the
 // change is visible via the get alias and no secret leaks.
 func TestUpdateUser_super(t *testing.T) {
 	h := newHarness(t)
@@ -169,7 +169,7 @@ func TestFrontDoorPublic_ReachableWithoutBearer(t *testing.T) {
 
 // --- C2 parity write-verb aliases (the console admin mutations) ---
 
-// delete-user: a full lifecycle through the Casdoor verb (add → delete → gone).
+// delete-user: a full lifecycle through the legacy verb (add → delete → gone).
 func TestDeleteUser_lifecycle(t *testing.T) {
 	h := newHarness(t)
 	root := h.token(t, "admin/root")

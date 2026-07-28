@@ -1,9 +1,9 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package compat serves the Casdoor VERB surface (get-users, get-organizations,
+// Package compat serves the legacy VERB surface (get-users, get-organizations,
 // …) over iam's orm store, in the v1 Response envelope. It exists because every
 // live consumer — the console admin BFF, the gateway admin-api, the hanzo.id
-// portal — hard-codes the Casdoor verb spellings and the `{status,data,data2}`
+// portal — hard-codes the legacy verb spellings and the `{status,data,data2}`
 // envelope, while iam's native surface is REST (`/v1/iam/users`,
 // `/v1/iam/users/get`). Without these aliases a backend swap 404s every console
 // IAM page. The aliases are a thin routing + envelope layer over the SAME orm
@@ -38,12 +38,12 @@ import (
 // receives from a handler-authorized read (the Guard's own refusals are raw 403s).
 const unauthorized = "auth:Unauthorized operation"
 
-// Route registers the Casdoor read-verb aliases. The mask argument is the
+// Route registers the the legacy surface read-verb aliases. The mask argument is the
 // entity's schema.Mask method (the ONE redaction contract) for entities that
 // carry secrets, or nil for those that do not — nil means "no field to strip",
 // not "skip a needed redaction". Writes ride a companion file.
 func Route(app *zip.App, db orm.DB) {
-	// List reads — `?owner=&p=&pageSize=` (Casdoor shape). Owner-scoped by authz.
+	// List reads — `?owner=&p=&pageSize=` (legacy shape). Owner-scoped by authz.
 	app.Get("/v1/iam/get-organizations", listHandler(db, (*schema.Organization).Mask))
 	app.Get("/v1/iam/get-users", listHandler(db, (*schema.User).Mask))
 	app.Get("/v1/iam/get-global-users", listHandler(db, (*schema.User).Mask))
@@ -89,7 +89,7 @@ func Route(app *zip.App, db orm.DB) {
 	// a request parameter can never widen the read past the caller's tenant.
 	app.Get("/v1/iam/get-organization-workspaces", orgWorkspacesHandler(db))
 
-	// The Casdoor WRITE verbs (companion file), over the same store + authz seam.
+	// The the legacy surface WRITE verbs (companion file), over the same store + authz seam.
 	routeWrites(app, db)
 }
 
@@ -149,7 +149,7 @@ func orgWorkspacesHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// listHandler serves a Casdoor get-<entities> list for one orm kind: it scopes
+// listHandler serves a the legacy surface get-<entities> list for one orm kind: it scopes
 // the owner through authz, queries the store, redacts each row via the entity's
 // Mask, and wraps the result in the v1 envelope. Per the v1 contract a list
 // paginates ONLY when BOTH `p` and `pageSize` are present — then the total rides
@@ -202,7 +202,7 @@ func listHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 	}
 }
 
-// getHandler serves a Casdoor get-<entity> single read. The target is resolved
+// getHandler serves a the legacy surface get-<entity> single read. The target is resolved
 // by authz.ReadTarget (the same extraction the Guard authorized with), then the
 // owner is re-scoped through authz.Scope so a non-super can never read another
 // tenant's row even if it spells one in `?id`.

@@ -1,7 +1,7 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package httpx is the shared HTTP layer for the IAM v2 handlers: the
-// Casdoor-compatible Response envelope that the @hanzo/iam SDK and the hanzo.id
+// the legacy surface-compatible Response envelope that the @hanzo/iam SDK and the hanzo.id
 // portal consume, plus small helpers over zip.Ctx. Every front-door JSON
 // endpoint (get-app-login, login, signup) returns this shape; the OIDC
 // endpoints (token/authorize/userinfo) use their own RFC 6749 shapes.
@@ -16,7 +16,7 @@ import (
 	"github.com/zap-proto/zip"
 )
 
-// Response is the Casdoor-compatible envelope. status is "ok" or "error"; a
+// Response is the the legacy surface-compatible envelope. status is "ok" or "error"; a
 // non-ok status rides on a 200 (every SDK branches on status, not the HTTP
 // code — preserving that contract keeps the clients unchanged at cutover).
 type Response struct {

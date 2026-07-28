@@ -153,7 +153,7 @@ func getApplication(db orm.DB) zip.TypedHandler[ApplicationRef, schema.Applicati
 }
 
 // Create persists a new application under (in.Owner, in.Name), rejecting a
-// collision on that owner-scoped key. Exported so the Casdoor add-application
+// collision on that owner-scoped key. Exported so the the legacy surface add-application
 // alias reuses this exact logic (no duplication); the REST route and the alias
 // share the one create path.
 func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] {
@@ -191,7 +191,7 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 
 // Update overwrites the application at (in.Owner, in.Name), preserving its
 // immutable creation metadata. The (owner, name) identity is fixed by the record,
-// not editable through the body. Exported so the Casdoor update-application alias
+// not editable through the body. Exported so the the legacy surface update-application alias
 // reuses this exact logic (no duplication).
 func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] {
 	return func(ctx context.Context, in *schema.Application) (*schema.Application, error) {
@@ -254,7 +254,7 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 }
 
 // deleteApplication removes the application at (in.Owner, in.Name).
-// Delete exposes the delete handler so the Casdoor `delete-application` verb alias
+// Delete exposes the delete handler so the the legacy surface `delete-application` verb alias
 // (internal/compat) can reuse it — one delete path, wrapped in the compat envelope.
 func Delete(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult] { return deleteApplication(db) }
 

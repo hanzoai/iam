@@ -4,7 +4,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// Provider is a federated identity / connector configuration (v1 Casdoor
+// Provider is a federated identity / connector configuration (v1 the legacy surface
 // `provider`, v2 kind "providers"). One row configures a third-party endpoint
 // an application binds to — OAuth/OIDC and SAML identity providers, captcha,
 // SMS and email senders, object storage, payment gateways, and ID-verification
