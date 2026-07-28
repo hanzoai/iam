@@ -113,13 +113,42 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// mintUserKeysHandler (re)generates the target user's Cloud API key and returns it
-// once, over the shared authorizeMinter + mintTarget seam.
+// keyScope reads the requested key TYPE off the request and returns the
+// schema.Key.Scope it selects. The type is a FIELD, never a path: mint and revoke
+// are one operation each, on one credential model, and "which class of key" is an
+// argument to them — the moment it becomes a second endpoint the two classes drift.
 //
-// It writes the schema.Key row that UserByAccessKey's sk- branch actually reads. It
-// used to stamp the secret on schema.User.AccessKey, which nothing resolves — so the
-// minted key authenticated nobody AND overwrote any working legacy hk- in the same
-// field, locking the holder out with no recovery through the UI.
+//	(absent) | "secret"     -> "" (the default full key: sk- resolves the USER)
+//	"publishable"           -> schema.KeyScopePublish (pk- only, resolves an ORG)
+//
+// Anything else is refused rather than silently defaulted: a caller that asks for a
+// class we do not have must not be handed a session-equivalent secret by accident.
+func keyScope(c *zip.Ctx) (string, bool) {
+	switch strings.TrimSpace(c.Query("type")) {
+	case "", keyTypeSecret:
+		return "", true
+	case keyTypePublishable:
+		return schema.KeyScopePublish, true
+	}
+	return "", false
+}
+
+// The wire spellings of the key type. They are the names the PRODUCT uses (a
+// publishable key, a secret key), mapped here once onto the storage Scope.
+const (
+	keyTypeSecret      = "secret"
+	keyTypePublishable = "publishable"
+)
+
+// mintUserKeysHandler (re)generates the target user's key of the requested TYPE and
+// returns it once, over the shared authorizeMinter + mintTarget seam. `?type=secret`
+// (the default) yields the confidential sk-; `?type=publishable` yields the pk- that
+// is safe to ship in client JS and resolves to an org, never a principal.
+//
+// It writes the schema.Key row that the resolvers actually read. It used to stamp the
+// secret on schema.User.AccessKey, which nothing resolves — so the minted key
+// authenticated nobody AND overwrote any working legacy hk- in the same field,
+// locking the holder out with no recovery through the UI.
 func mintUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -131,7 +160,11 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
-		key, err := keys.MintUserKey(ctx, db, user.Owner, user.Name)
+		scope, ok := keyScope(c)
+		if !ok {
+			return mintErr(c, 400, "unknown key type")
+		}
+		key, err := keys.MintUserKey(ctx, db, user.Owner, user.Name, scope)
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
@@ -140,9 +173,11 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// revokeUserKeysHandler clears the target user's Cloud API key (immediate revoke).
-// The stored value is sk- for anything minted since the key seam was unified, and
-// hk- only for the legacy population that has not been re-keyed.
+// revokeUserKeysHandler clears the target user's key of the requested TYPE (immediate
+// revoke). Scoped by the same `?type` field mint takes, so revoking the browser key
+// leaves the server key working. For a secret key the stored value is sk- for anything
+// minted since the key seam was unified, and hk- only for the legacy population that
+// has not been re-keyed.
 func revokeUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -154,22 +189,30 @@ func revokeUserKeysHandler(db orm.DB) zip.Handler {
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
-		// Revoke BOTH homes: the key row this mints today, and the legacy credential
-		// stamped on the User row. A holder still carrying an hk- must be fully
-		// revoked by one call, or "revoked" would be a lie for exactly the population
-		// that has not migrated yet.
-		if err := keys.RevokeUserKey(ctx, db, user.Owner); err != nil {
+		scope, ok := keyScope(c)
+		if !ok {
+			return mintErr(c, 400, "unknown key type")
+		}
+		if err := keys.RevokeUserKey(ctx, db, user.Owner, scope); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
-		now := nowFunc().UTC().Format(time.RFC3339)
-		if _, err := updateUser(ctx, db, user.Owner, user.Name, func(u *schema.User) error {
-			u.AccessKey = ""
-			u.AccessSecret = ""
-			u.AccessSecretHash = ""
-			u.UpdatedTime = now
-			return nil
-		}); err != nil {
-			return mintErr(c, 500, "server_error")
+		// Revoke BOTH homes of the SECRET credential: the key row this mints today, and
+		// the legacy value stamped on the User row. A holder still carrying an hk- must
+		// be fully revoked by one call, or "revoked" would be a lie for exactly the
+		// population that has not migrated yet. A publishable revoke leaves the User row
+		// alone — clearing the user's secret credential is not what was asked for, and
+		// doing it would make rotating a browser key sign the holder out of the API.
+		if scope == "" {
+			now := nowFunc().UTC().Format(time.RFC3339)
+			if _, err := updateUser(ctx, db, user.Owner, user.Name, func(u *schema.User) error {
+				u.AccessKey = ""
+				u.AccessSecret = ""
+				u.AccessSecretHash = ""
+				u.UpdatedTime = now
+				return nil
+			}); err != nil {
+				return mintErr(c, 500, "server_error")
+			}
 		}
 		auditMint(ctx, db, c, "revoke-user-keys", clientApp.ClientId, user.Owner+"/"+user.Name)
 		return httpx.Ok(c, map[string]any{"affected": true})

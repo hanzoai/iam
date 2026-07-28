@@ -160,6 +160,16 @@ func capFor(entity string) Cap {
 		return CapOrgAdmin
 	case "users":
 		return CapUserAdmin
+	case "keys":
+		// The same authority that already mints, rotates and revokes a user's
+		// credential on its behalf (CapKeyMint) also READS the key set it manages —
+		// a strictly smaller disclosure than the mint it is already trusted with,
+		// and safe on its own now that every key read is masked (schema.Key.Mask
+		// blanks the confidential sk- half). Without this, the ONE key list in the
+		// system was reachable by SuperAdmin alone, so the surface a user calls to
+		// see their own keys had no truthful read at all and reported "no key"
+		// immediately after a successful mint.
+		return CapKeyMint
 	}
 	return Cap{}
 }

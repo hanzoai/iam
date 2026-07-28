@@ -27,16 +27,24 @@ import (
 
 // Route registers the key CRUD routes on app, binding each handler to db.
 // Called from routes.Route once it is threaded the entity store.
+//
+// ONE noun, plural, for every op — the same shape users.Route uses
+// (/v1/iam/users, /v1/iam/users/get, …). It used to be two nouns, `keys` for the
+// list and `key` for everything else, and that was not merely inconsistent:
+// authz.entityOf reads the FIRST path segment as the entity, so the list
+// authorized on "keys" and every write on "key". Two entity strings for one
+// entity means every capability keyed on it is dead on one of the two surfaces —
+// the same defect entityNoun was written to fix for the Casdoor verb spellings.
 func Route(app *zip.App, db orm.DB) {
 	zip.Get(app, "/v1/iam/keys", list(db),
 		zip.WithSummary("List keys in an owner"), zip.WithTags("keys"))
-	zip.Get(app, "/v1/iam/key", get(db),
-		zip.WithSummary("Get a key by (owner, name)"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/key", create(db),
+	zip.Post(app, "/v1/iam/keys", create(db),
 		zip.WithSummary("Create a key"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/key/update", update(db),
+	zip.Get(app, "/v1/iam/keys/get", get(db),
+		zip.WithSummary("Get a key by (owner, name)"), zip.WithTags("keys"))
+	zip.Post(app, "/v1/iam/keys/update", update(db),
 		zip.WithSummary("Update a key"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/key/delete", del(db),
+	zip.Post(app, "/v1/iam/keys/delete", del(db),
 		zip.WithSummary("Delete a key"), zip.WithTags("keys"))
 }
 
@@ -80,7 +88,7 @@ func list(db orm.DB) zip.TypedHandler[ListRequest, ListResponse] {
 		}
 		out := &ListResponse{Keys: make([]schema.Key, 0, len(items))}
 		for _, k := range items {
-			out.Keys = append(out.Keys, *k)
+			out.Keys = append(out.Keys, *k.Mask())
 		}
 		return out, nil
 	}
@@ -99,7 +107,7 @@ func get(db orm.DB) zip.TypedHandler[Ref, schema.Key] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		return k, nil
+		return k.Mask(), nil
 	}
 }
 
@@ -178,7 +186,9 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if err := k.UpdateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		return k, nil
+		// An edit is not a mint: the secret is revealed ONCE, by create. Echoing it
+		// from every update would turn "rename this key" into "re-read its secret".
+		return k.Mask(), nil
 	}
 }
 
@@ -256,63 +266,106 @@ func Mint(prefix, state string) string {
 	return fmt.Sprintf("%s-%s-%s", prefix, env, hex.EncodeToString(b[:]))
 }
 
-// UserKeyName is the deterministic Name of the ONE key a user authenticates with.
-// Deterministic so a re-mint REPLACES the previous credential instead of leaving a
-// second live secret behind — a user has one key, and revoking it revokes them.
-const UserKeyName = "cloud-api"
+// UserKeyName and PublishKeyName are the deterministic Names of the ONE key a user
+// holds AT EACH SCOPE. Deterministic so a re-mint REPLACES the previous credential
+// instead of leaving a second live one behind — a user has one key per scope, and
+// revoking it revokes them at that scope.
+//
+// Two rows, not one, because the two scopes are different credentials with opposite
+// exposure: the secret key authenticates its holder as the user, the publishable key
+// resolves to an org and is shipped in client JS. Holding both is the normal case (a
+// server SDK and a browser beacon), and rotating the browser key must not sign the
+// user out of their own API.
+const (
+	UserKeyName    = "cloud-api"
+	PublishKeyName = "publishable"
+)
 
-// MintUserKey (re)mints the single credential a user authenticates with and returns
-// its confidential sk- half, revealed once.
+// NameFor is the deterministic key Name for a scope: the ONE mapping from a key's
+// access class to the row that holds it, so mint, revoke and read can never
+// disagree about which row a scope means.
+func NameFor(scope string) string {
+	if scope == schema.KeyScopePublish {
+		return PublishKeyName
+	}
+	return UserKeyName
+}
+
+// MintUserKey (re)mints the single credential a user holds at `scope` and returns the
+// half its holder presents — revealed once:
 //
-// It writes a schema.Key row because that is the ONLY thing UserByAccessKey's sk-
-// branch reads (store.userOwningKey queries schema.Key.AccessSecret). The previous
-// implementation stamped the sk- onto schema.User.AccessKey, which NOTHING resolves:
-// every key minted that way authenticated nobody, and because it overwrote the
-// user's working legacy hk- in the same field it locked the holder out with no way
-// back through the UI. Writing the row the resolver actually reads is the fix.
+//   - "" (the default, secret): the confidential sk- half. Resolves to the USER
+//     (store.userOwningKey queries schema.Key.AccessSecret), so it is session-
+//     equivalent and must never be shipped to a browser.
+//   - schema.KeyScopePublish: the publishable pk- half, and NO secret is stored at
+//     all. Resolves to just the ORG (store.PublishableKeyByAccessKey), never a
+//     principal, which is exactly what makes it safe in client JS. This is the ONLY
+//     path that mints one, and its absence is why every surface configured its own
+//     ingest credential.
 //
-// Idempotent by (Owner, UserKeyName): re-minting replaces the secret in place.
-func MintUserKey(ctx context.Context, db orm.DB, owner, user string) (string, error) {
+// It writes a schema.Key row because that is the ONLY thing the resolvers read. The
+// previous implementation stamped the sk- onto schema.User.AccessKey, which NOTHING
+// resolves: every key minted that way authenticated nobody, and because it overwrote
+// the user's working legacy hk- in the same field it locked the holder out with no
+// way back through the UI. Writing the row the resolver actually reads is the fix.
+//
+// Idempotent by (Owner, NameFor(scope)): re-minting replaces the credential in place.
+func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (string, error) {
 	if strings.TrimSpace(owner) == "" || strings.TrimSpace(user) == "" {
 		return "", fmt.Errorf("keys: owner and user are required")
 	}
-	secret := Mint("sk", "")
+	publish := scope == schema.KeyScopePublish
+	// The credential the holder presents, and the ONE value returned. A publishable
+	// key has no secret half — not an empty one, none — so there is nothing else it
+	// could return and nothing a leak of the row could reveal.
+	access, secret := Mint("pk", ""), Mint("sk", "")
+	presented := secret
+	if publish {
+		secret = ""
+		presented = access
+	}
+	name := NameFor(scope)
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	existing, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, UserKeyName)).First()
+	existing, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, name)).First()
 	if err != nil && !errors.Is(err, orm.ErrNotFound) {
 		return "", err
 	}
 	if existing != nil {
-		existing.AccessSecret = secret
-		existing.User, existing.Type, existing.Scope = user, "User", ""
+		existing.AccessKey, existing.AccessSecret = access, secret
+		existing.User, existing.Type, existing.Scope = user, "User", scope
 		existing.UpdatedTime = now
 		if err := existing.UpdateCtx(ctx); err != nil {
 			return "", err
 		}
-		return secret, nil
+		return presented, nil
 	}
 
 	k := orm.New[schema.Key](db)
-	k.SetId(id(owner, UserKeyName))
-	k.Owner, k.Name = owner, UserKeyName
+	k.SetId(id(owner, name))
+	k.Owner, k.Name = owner, name
 	k.DisplayName = "Cloud API key"
+	if publish {
+		k.DisplayName = "Publishable key"
+	}
 	k.Type, k.User = "User", user
-	k.AccessKey = Mint("pk", "")
+	k.AccessKey = access
 	k.AccessSecret = secret
+	k.Scope = scope
 	k.State = "Active"
 	k.CreatedTime, k.UpdatedTime = now, now
 	if err := k.CreateCtx(ctx); err != nil {
 		return "", err
 	}
-	return secret, nil
+	return presented, nil
 }
 
-// RevokeUserKey deletes the user's key row. Absent is success — revoke is a
-// statement about the END state, so a caller can always assert "this user holds no
-// credential" without racing a prior revoke.
-func RevokeUserKey(ctx context.Context, db orm.DB, owner string) error {
-	k, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, UserKeyName)).First()
+// RevokeUserKey deletes the user's key row at `scope`. Absent is success — revoke is
+// a statement about the END state, so a caller can always assert "this user holds no
+// credential" without racing a prior revoke. Scoped, so revoking the browser key
+// leaves the server key working and vice versa.
+func RevokeUserKey(ctx context.Context, db orm.DB, owner, scope string) error {
+	k, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, NameFor(scope))).First()
 	if errors.Is(err, orm.ErrNotFound) || k == nil {
 		return nil
 	}
