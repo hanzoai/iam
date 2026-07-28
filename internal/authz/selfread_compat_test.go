@@ -93,8 +93,20 @@ func TestSelfRead_OverTheCompatVerbCloudActuallyCalls(t *testing.T) {
 		// "<IAM_ORG>/<name>", so hanzo/cert-hanzo is the only spelling that matters in
 		// production; the bare form is the one I verified last time and it was not it.
 		{"own cert, org-qualified (what ai sends)", "/v1/iam/get-cert?id=hanzo%2F" + signingKid, 200},
-		// The native noun surface must agree — one policy, two spellings.
-		{"own application, noun surface", "/v1/iam/applications?owner=admin&name=hanzo-cloud", 400}, // reaches the handler = authorized; 400 is the typed read wanting a different shape
+		// The native noun surface must agree — one policy, two spellings. The LIST
+		// route is not the self-read: ApplicationQuery carries only Owner, so
+		// ?name= is ignored and this asks to enumerate EVERY application under the
+		// reserved admin org — which a tenant app may not do. 403 is the right
+		// answer and the policy agreeing with itself.
+		//
+		// It read 400 until zip v1.17.1 taught a typed op to read the whole URL. The
+		// query never bound, so validate fired on an empty Owner and the shape
+		// complaint landed BEFORE authz could refuse — a 400 standing in for a 403,
+		// which this case then asserted as "reaches the handler = authorized".
+		{"noun surface LIST of a reserved org is refused", "/v1/iam/applications?owner=admin&name=hanzo-cloud", 403},
+		// The actual self-read on the noun surface: ONE application by its natural
+		// key, which is what the compat verb above expresses.
+		{"own application, noun surface (single)", "/v1/iam/application?owner=admin&name=hanzo-cloud", 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := h.basicGet(t, tc.path, "hanzo-cloud", "s3cret"); got != tc.want {
