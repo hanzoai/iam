@@ -325,7 +325,7 @@ func pathAuthorized(path string) bool {
 // surface, not one envelope everywhere. The HTTP status code is unchanged in both
 // cases (401/403), so anything reading the code rather than the body is unaffected.
 func refuse(c *zip.Ctx, status int, msg string) error {
-	if casdoorVerb(c.Path()) {
+	if legacyVerb(c.Path()) {
 		return c.JSON(status, httpx.Response{Status: "error", Msg: msg})
 	}
 	if status == 401 {
@@ -334,21 +334,21 @@ func refuse(c *zip.Ctx, status int, msg string) error {
 	return zip.ErrForbidden(msg)
 }
 
-// casdoorVerbs are the request-shaped prefixes of the compat surface — the
+// legacyVerbs are the request-shaped prefixes of the compat surface — the
 // verb-per-path Casdoor spelling (get-/add-/update-/delete-) that the console BFF,
 // the @hanzo/iam SDK and the cloud clients hard-code. The native surface is
 // noun-shaped (/v1/iam/users, /v1/iam/organizations), so the verb prefix is what
 // distinguishes the two contracts without a second list to keep in sync.
-var casdoorVerbs = []string{"get-", "add-", "update-", "delete-"}
+var legacyVerbs = []string{"get-", "add-", "update-", "delete-"}
 
-// casdoorVerb reports whether path is one of the compat verbs.
-func casdoorVerb(path string) bool {
+// legacyVerb reports whether path is one of the compat verbs.
+func legacyVerb(path string) bool {
 	const p = "/v1/iam/"
 	if !strings.HasPrefix(path, p) {
 		return false
 	}
 	rest := path[len(p):]
-	for _, v := range casdoorVerbs {
+	for _, v := range legacyVerbs {
 		if strings.HasPrefix(rest, v) {
 			return true
 		}
@@ -733,7 +733,7 @@ func entityOf(path string) string {
 // documented policy on both surfaces at once rather than teaching each clause two
 // spellings.
 func entityNoun(seg string) string {
-	for _, v := range casdoorVerbs {
+	for _, v := range legacyVerbs {
 		if !strings.HasPrefix(seg, v) {
 			continue
 		}
