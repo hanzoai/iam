@@ -48,6 +48,26 @@ func seedInvitation(t *testing.T, db orm.DB, owner, name string) {
 	}
 }
 
+func seedToken(t *testing.T, db orm.DB, owner, name string) {
+	t.Helper()
+	tk := orm.New[schema.Token](db)
+	tk.Owner, tk.Name = owner, name
+	tk.SetId(owner + "/" + name)
+	if err := tk.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed token %s/%s: %v", owner, name, err)
+	}
+}
+
+func seedWebauthn(t *testing.T, db orm.DB, owner, name string) {
+	t.Helper()
+	w := orm.New[schema.WebauthnCredential](db)
+	w.Owner, w.Name = owner, name
+	w.SetId(owner + "/" + name)
+	if err := w.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed webauthn %s/%s: %v", owner, name, err)
+	}
+}
+
 func seedAuditLog(t *testing.T, db orm.DB, owner, name string) {
 	t.Helper()
 	a := orm.New[schema.AuditLog](db)
@@ -74,6 +94,10 @@ func TestListRoutesNeverLeakAnotherTenant(t *testing.T) {
 	seedAuditLog(t, h.db, "hanzo", "audit-mine-hanzo")
 	seedAuditLog(t, h.db, "orgb", "audit-secret-orgb")
 	seedCert(t, h.db, "orgb", "cert-secret-orgb", "")
+	seedToken(t, h.db, "hanzo", "token-mine-hanzo")
+	seedToken(t, h.db, "orgb", "token-secret-orgb")
+	seedWebauthn(t, h.db, "hanzo", "wa-mine-hanzo")
+	seedWebauthn(t, h.db, "orgb", "wa-secret-orgb")
 
 	boss := h.token(t, "hanzo/boss") // org admin of hanzo, and of nothing else
 
@@ -85,6 +109,13 @@ func TestListRoutesNeverLeakAnotherTenant(t *testing.T) {
 		{"/v1/iam/roles?owner=hanzo", "role-mine-hanzo", "role-secret-orgb"},
 		{"/v1/iam/invitations?owner=hanzo", "invite-mine-hanzo", "invite-secret-orgb"},
 		{"/v1/iam/audit-logs?owner=hanzo", "audit-mine-hanzo", "audit-secret-orgb"},
+		{"/v1/iam/tokens?owner=hanzo", "token-mine-hanzo", "token-secret-orgb"},
+		{"/v1/iam/webauthn-credentials?owner=hanzo", "wa-mine-hanzo", "wa-secret-orgb"},
+		// organizations is the tenant registry — authz treats it as the ONE
+		// exception to the reserved-owner gate, and the route is SuperAdmin-only,
+		// so this case should refuse rather than list. Included so a future change
+		// that opens it to tenants shows up here rather than silently.
+		{"/v1/iam/organizations?owner=hanzo", "", "orgb"},
 		{"/v1/iam/certs?owner=hanzo", "", "cert-secret-orgb"}, // control: already scoped
 	} {
 		t.Run(c.route, func(t *testing.T) {
