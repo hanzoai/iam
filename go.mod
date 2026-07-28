@@ -25,8 +25,6 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/hanzoai/sqlcipher v0.1.0
-	github.com/hanzoai/sqlite v0.3.2
 	github.com/luxfi/crypto v1.20.1
 	github.com/luxwallet/connect/go v0.1.4
 	github.com/pquerna/otp v1.5.0
@@ -56,6 +54,8 @@ require (
 	github.com/hanzoai/builder v0.3.13 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/dbx v1.17.2 // indirect
+	github.com/hanzoai/sqlcipher v0.1.0 // indirect
+	github.com/hanzoai/sqlite v0.3.2 // indirect
 	github.com/hanzoai/xorm v1.4.4 // indirect
 	github.com/hanzokv/go/v9 v9.22.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
