@@ -81,11 +81,15 @@ func TestEntityOf(t *testing.T) {
 		"/v1/iam/users/get":    "users",
 		"/v1/iam/users/update": "users",
 		"/v1/iam/certs/delete": "certs",
-		"/v1/iam/application":  "application",
-		"/v1/iam/audit-logs":   "audit-logs",
-		"/mcp":                 "",
-		"/healthz":             "",
-		"/v1/iam/":             "",
+		// Singular natives fold to the plural the policy is written in. It read
+		// "application" until that split the policy: the legacy verb folded to
+		// "applications" and matched the app self-read clause, while this native
+		// route stayed singular, matched nothing, and 403'd the same caller.
+		"/v1/iam/application": "applications",
+		"/v1/iam/audit-logs":  "audit-logs",
+		"/mcp":                "",
+		"/healthz":            "",
+		"/v1/iam/":            "",
 	}
 	for path, want := range cases {
 		if got := entityOf(path); got != want {
