@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -287,21 +288,51 @@ var (
 	pwReSpecial = regexp.MustCompile("[!-/:-@[-`{-~]")
 )
 
-// passwordPolicyError returns the first complexity rule the password violates
-// under the organization's options, or "" when it passes. With no options set,
-// only the non-empty check applies (v1 parity).
+// pwFloorMinLength is the PLATFORM password floor: the minimum length every
+// password must meet no matter what the organization declares. It is the same
+// "AtLeast8" every seeded organization already carries (init_data.json), lifted
+// out of configuration and into code so that it cannot be configured away — and
+// so an organization that declares nothing is not thereby exempt.
+const pwFloorMinLength = 8
+
+// passwordPolicyError returns the first complexity rule the password violates,
+// or "" when it passes: the platform floor first, then the organization's own
+// options, which may only ever make the policy STRICTER.
+//
+// The floor exists because the option set alone is a policy an org can hold
+// EMPTY. store.CreateOrganization mints a self-serve org with no PasswordOptions,
+// so "no options" — which used to mean "any non-empty password" — was reachable
+// by an anonymous caller: a self-serve signup was accepted with the single byte
+// "a", and that account then logged in. Enforcing the floor here rather than
+// stamping defaults onto each new org keeps ONE source of truth: options are
+// additive strictness on top of an invariant, not the invariant itself.
 func passwordPolicyError(options []string, password string) string {
 	if password == "" {
 		return "password cannot be empty"
 	}
+	// Length is counted in RUNES, once, for the floor and for the org options
+	// alike — a byte count would let a handful of multi-byte characters satisfy
+	// an "8 characters" rule, and would let the floor and AtLeast8 disagree about
+	// what "8 characters" means.
+	n := utf8.RuneCountInString(password)
+	if n < pwFloorMinLength {
+		return "the password must have at least 8 characters"
+	}
+	// A password of one repeated rune ("aaaaaaaa") is the length floor's trivial
+	// evasion and cannot be a real user's choice, so refuse it outright. This is
+	// deliberately narrower than the NoRepeat option below, which refuses ANY two
+	// adjacent equal runes and would reject legitimate passwords.
+	if isSingleRepeatedRune(password) {
+		return "the password must not be a single repeated character"
+	}
 	for _, opt := range options {
 		switch opt {
 		case "AtLeast6":
-			if len(password) < 6 {
+			if n < 6 {
 				return "the password must have at least 6 characters"
 			}
 		case "AtLeast8":
-			if len(password) < 8 {
+			if n < 8 {
 				return "the password must have at least 8 characters"
 			}
 		case "Aa123":
@@ -321,6 +352,18 @@ func passwordPolicyError(options []string, password string) string {
 		}
 	}
 	return ""
+}
+
+// isSingleRepeatedRune reports whether s is one rune repeated — "a", "aaaaaaaa",
+// "………". Used by the floor to refuse the length rule's trivial evasion.
+func isSingleRepeatedRune(s string) bool {
+	first, size := utf8.DecodeRuneInString(s)
+	for _, r := range s[size:] {
+		if r != first {
+			return false
+		}
+	}
+	return true
 }
 
 // isEmailValid reports whether s parses as an email address — v1's

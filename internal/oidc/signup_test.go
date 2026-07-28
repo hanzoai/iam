@@ -304,3 +304,67 @@ func TestSignup_SelfServeOrgNamePolicy(t *testing.T) {
 		}
 	}
 }
+
+// ── the password floor ───────────────────────────────────────────────────────
+// An organization that declares NO PasswordOptions must still get a real policy.
+// This is the hole that was live: store.CreateOrganization mints a self-serve org
+// with an empty option set, an empty set used to mean "any non-empty password",
+// and an anonymous caller registered a production account with the password "a"
+// and then logged in with it.
+func TestSignup_PasswordFloorAppliesWithoutOrgOptions(t *testing.T) {
+	// Deliberately seeded with NO options — the self-serve org's shape.
+	for _, weak := range []string{"a", "aaaaaaaa", "1234567", "short"} {
+		t.Run(weak, func(t *testing.T) {
+			app, db := newServer(t)
+			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true})
+			seedOrg(t, db, "hanzo")
+
+			status, env := signupReq(t, app, map[string]string{
+				"application": "conf", "organization": "hanzo",
+				"username": "attacker", "password": weak,
+			})
+			if status == 200 && env["status"] == "ok" {
+				t.Fatalf("password %q must be refused by the floor, got %v", weak, env)
+			}
+			if u, _ := store.GetUserByName(tctx(), db, "hanzo", "attacker"); u != nil {
+				t.Fatalf("a user was created with the weak password %q", weak)
+			}
+		})
+	}
+}
+
+// The floor must not cost the funnel: a strong password into an optionless org
+// still succeeds. This is the case that must keep working.
+func TestSignup_PasswordFloorAllowsStrongPassword(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true})
+	seedOrg(t, db, "hanzo")
+
+	status, env := signupReq(t, app, map[string]string{
+		"application": "conf", "organization": "hanzo",
+		"username": "founder", "password": "correct horse battery staple",
+	})
+	if status != 200 || env["status"] != "ok" {
+		t.Fatalf("a strong password must still be accepted: status=%d env=%v", status, env)
+	}
+}
+
+// The exact production attack, end to end: a self-serve signup into an org that
+// does NOT exist, with the password "a". The org is minted with no options, so
+// only the floor stands between an anonymous caller and the account. Neither the
+// user nor a usable account may result.
+func TestSignup_SelfServeOrgStillGetsPasswordFloor(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+
+	status, env := signupReq(t, app, map[string]string{
+		"application": "conf", "organization": "nonexistent-org-zz",
+		"username": "probe-zz", "password": "a",
+	})
+	if status == 200 && env["status"] == "ok" {
+		t.Fatalf("self-serve signup with password \"a\" must be refused, got %v", env)
+	}
+	if u, _ := store.GetUserByName(tctx(), db, "nonexistent-org-zz", "probe-zz"); u != nil {
+		t.Fatal("the probe user was created despite the password floor")
+	}
+}
