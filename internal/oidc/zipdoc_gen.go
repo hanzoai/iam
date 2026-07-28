@@ -35,7 +35,7 @@ func init() {
 		Description: "Returns the sign-in methods one application actually has switched\non, so a login screen can render the right buttons for it without you\nhard-coding a list that drifts the moment you add a provider.\n\nPublic by design: it is read before anyone has signed in, and it exposes only\nwhich methods exist, never their credentials.",
 	})
 	zip.Describe("GET /v1/iam/consent", zip.Doc{
-		Description: "Returns the calling person's own privacy and communication\nchoices. Somebody who has never set them gets the defaults rather than\nnothing, so a consent screen always has something to show.",
+		Description: "Returns the calling person's own privacy and communication\nchoices. Somebody who has never set them gets the defaults rather than\nnothing, so a consent screen always has something to show — insights on, and\ntraining UNANSWERED, which is the state that means the screen still has to ask.",
 	})
 	zip.Describe("GET /v1/iam/get-account", zip.Doc{
 		Description: "Returns the signed-in person's own account and the organization\nthey belong to — what a console reads to draw the account menu.\n\nPasswords, API secrets and MFA material are stripped. It answers for a session\ncookie or a bearer token alike.",
@@ -137,6 +137,6 @@ func init() {
 		Description: "Validates the request, mints + persists an OTP, and\nreports success. The request fields are read via fiber's FormValue — the\nescape hatch zip exposes for form bodies (multipart or urlencoded) — since the\ntyped JSON Bind does not apply here. v1 also accepts countryCode/method/\ncheckUser/captchaType; iam ignores them (the captcha/forget/MFA flows those\ndrive are not ported), and CAPTCHA verification is likewise not enforced —\niam models no captcha provider — so the code is issued once the destination\nand application validate.",
 	})
 	zip.Describe("PUT /v1/iam/consent", zip.Doc{
-		Description: "Records the calling person's privacy and communication\nchoices. Only their own — there is no way to set consent for somebody else.\n\nIt merges rather than replaces, so saving a consent screen never discards a\npreference some other screen set at the same moment.",
+		Description: "Records the calling person's privacy and communication\nchoices. Only their own — there is no way to set consent for somebody else.\n\nIt merges rather than replaces, under the row lock, so saving a consent screen\nnever discards a preference some other screen set at the same moment.\n\nAn answer this version does not recognize is refused here rather than stored,\nso nothing is ever persisted for a later reader to have to interpret.",
 	})
 }
