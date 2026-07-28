@@ -3,8 +3,8 @@
 Canonical **Hanzo IAM** service: identity & access for the Hanzo cloud —
 OpenID Connect / OAuth2 with PKCE, JWKS, UserInfo, SCIM 2.0, MFA/WebAuthn,
 social federation. The server behind the `@hanzo/iam` SDK. Proprietary,
-clean-room rewrite on the Hanzo stack (`zip` over `hanzoai/orm`) — no Casdoor,
-Beego, or xorm. Retired Casdoor fork = `hanzoai/iam-v1` (do not use).
+clean-room rewrite on the Hanzo stack (`zip` over `hanzoai/orm`) — no the legacy surface,
+Beego, or xorm. Retired the legacy surface fork = `hanzoai/iam-v1` (do not use).
 
 ## Role in the model
 This is a `hanzoai/<product>` service (impl lives here, DRY — one place). It is
@@ -30,7 +30,7 @@ bootnode→id.bootno.de, pars→pars.id (white-label by domain).
 **Plural on every op** (like `users`): `authz.entityOf` reads the FIRST path segment
 as the entity, so serving the list at `keys` and the writes at `key` made two entity
 strings for one entity — and any capability keyed on it was dead on whichever half
-you did not name. Same defect `entityNoun` fixes for the Casdoor verb spellings.
+you did not name. Same defect `entityNoun` fixes for the legacy verb spellings.
 
 `Scope` is the ACCESS CLASS, fixed at create (an update that could flip it would
 blank a secret and open the ingest door):

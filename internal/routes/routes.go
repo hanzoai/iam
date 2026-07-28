@@ -10,7 +10,7 @@
 //     Guard. A matched public route terminates fiber's middleware walk, so the
 //     Guard never runs on it — membership in this group IS "public".
 //   - app.Use(authz.Guard) is the ONE authentication seam. Every route registered
-//     AFTER it — the typed entity CRUD, the Casdoor verb aliases, the SCIM
+//     AFTER it — the typed entity CRUD, the legacy verb aliases, the SCIM
 //     surface, and the framework's own /mcp + /openapi projections — requires a
 //     verified bearer.
 //
@@ -54,7 +54,7 @@ import (
 // guardedPrefixes are the URL subtrees IAM authenticates — everything this
 // subsystem serves that is not in the public group.
 //
-//   - /v1/iam      the entity CRUD, the Casdoor verb aliases, SCIM, service
+//   - /v1/iam      the entity CRUD, the legacy verb aliases, SCIM, service
 //     accounts, memberships and MFA all live here.
 //   - /login/oauth the interactive authorize surface.
 //   - /mcp and /.well-known/openapi.json the framework's own projections of the typed ops registered
@@ -108,7 +108,7 @@ func Route(app *zip.App, db orm.DB) {
 
 	// ─────────────────────────── GUARD ────────────────────────────
 	// The ONE authentication seam. Every route registered AFTER it requires a
-	// verified bearer — the typed entity CRUD below, the Casdoor verb aliases, the
+	// verified bearer — the typed entity CRUD below, the legacy verb aliases, the
 	// SCIM surface, and the framework's own /mcp + /openapi projections (added at
 	// Prepare). The resolved Principal rides the request context for the write-authz
 	// hook above; reads are authorized here (their target rides the query string, or
@@ -155,7 +155,7 @@ func Route(app *zip.App, db orm.DB) {
 	auditlogs.Route(app, db)
 	invitations.Route(app, db)
 
-	// Casdoor verb-alias layer: the get-users / get-organizations / add-organization
+	// legacy verb-alias layer: the get-users / get-organizations / add-organization
 	// / … spellings (in the v1 {status,data,data2} envelope) every live console/
 	// gateway/portal client hard-codes, served over the SAME store, redaction, and
 	// authz as the REST surface above — the transparent backend swap. After the
@@ -163,7 +163,7 @@ func Route(app *zip.App, db orm.DB) {
 	compat.Route(app, db)
 
 	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface that
-	// replaces the Casdoor entity verbs (HIP-0111). After the Guard, so it is
+	// replaces the the legacy surface entity verbs (HIP-0111). After the Guard, so it is
 	// authenticated; each handler owner-scopes via authz.Scope on the path target.
 	scim.Route(app, db)
 

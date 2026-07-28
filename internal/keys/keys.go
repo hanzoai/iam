@@ -1,7 +1,7 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package keys serves the owner-scoped CRUD surface for the `keys` entity
-// (v1 Casdoor `key`) as typed zip handlers over hanzoai/orm.
+// (v1 the legacy surface `key`) as typed zip handlers over hanzoai/orm.
 //
 // Identity is the (owner, name) pair; it maps onto the orm storage id as
 // "owner/name", exactly as the v1 record addressed itself. Reads are
@@ -34,7 +34,7 @@ import (
 // authz.entityOf reads the FIRST path segment as the entity, so the list
 // authorized on "keys" and every write on "key". Two entity strings for one
 // entity means every capability keyed on it is dead on one of the two surfaces —
-// the same defect entityNoun was written to fix for the Casdoor verb spellings.
+// the same defect entityNoun was written to fix for the legacy verb spellings.
 func Route(app *zip.App, db orm.DB) {
 	zip.Get(app, "/v1/iam/keys", list(db),
 		zip.WithSummary("List keys in an owner"), zip.WithTags("keys"))

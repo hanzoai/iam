@@ -1,8 +1,8 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Command iam is the Hanzo IAM identity service: a clean-room,
-// proprietary rewrite of the Casdoor-fork identity layer on the native
-// Hanzo stack — zip (HTTP) over hanzoai/orm. No Casdoor, no Beego, no xorm,
+// proprietary rewrite of the the legacy surface-fork identity layer on the native
+// Hanzo stack — zip (HTTP) over hanzoai/orm. No the legacy surface, no Beego, no xorm,
 // no base, no consensus engine.
 //
 // Subcommands:
@@ -53,7 +53,7 @@ func main() {
 
 	root := &cobra.Command{
 		Use:           "iam",
-		Short:         "Hanzo IAM — proprietary identity service (zip + orm, no Casdoor)",
+		Short:         "Hanzo IAM — proprietary identity service (zip + orm, no the legacy surface)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -99,7 +99,7 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initDat
 	}
 
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
-	// same file the Casdoor iam uses — so a fresh store comes up with the real
+	// same file the the legacy surface iam uses — so a fresh store comes up with the real
 	// application/provider/cert set instead of empty. New-only + idempotent.
 	if initData != "" {
 		sum, err := seed.FromInitData(ctx, db, initData)
@@ -135,8 +135,8 @@ func compareCmd() *cobra.Command {
 	var store, dbPath, legacy string
 	cmd := &cobra.Command{
 		Use:   "compare",
-		Short: "Read-only drift report: row counts per entity, v1 (Casdoor) vs v2",
-		Long: "Counts rows per entity in the v1 Casdoor database and the v2 store " +
+		Short: "Read-only drift report: row counts per entity, v1  vs v2",
+		Long: "Counts rows per entity in the v1 the legacy surface database and the v2 store " +
 			"and prints the absolute drift. Cutover is gated on drift 0. Requires a " +
 			"`-tags migration` build to link the v1 Postgres/MySQL driver.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -154,7 +154,7 @@ func compareCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&store, "store", "sqlite", "v2 storage backend: sqlite | sql | datastore")
 	f.StringVar(&dbPath, "db", "data/iam.db", "v2 SQLite database path (store=sqlite)")
-	f.StringVar(&legacy, "legacy", "", "v1 Casdoor DSN (postgres:// or mysql://)")
+	f.StringVar(&legacy, "legacy", "", "v1 the legacy surface DSN (postgres:// or mysql://)")
 	return cmd
 }
 

@@ -145,7 +145,7 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	// verifier against the challenge, the code is single-use, and it was delivered to
 	// a registered redirect_uri.
 	//
-	// CASDOOR PARITY — same bounded relaxation this file already documents for
+	// LEGACY PARITY — same bounded relaxation this file already documents for
 	// passwordGrant. Registration is not per-flow here: `hanzo-chat` and `hanzo-cloud`
 	// keep a secret for their BACKEND paths (chat's passport OpenID, cloud's
 	// client_credentials machine auth) while their SPA is a public PKCE client. The
@@ -253,9 +253,9 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 // (RFC 6749 §4.3) — the durable first-party console session (session.ts posts
 // grant_type=password with username/password).
 //
-// CASDOOR PARITY — INTENTIONAL SECURITY-POSTURE DECISION (flagged for Red review).
-// Casdoor ALLOWS a PUBLIC client (the console/chat apps: no client_secret, no PKCE)
-// to complete this grant. During the casdoor→clean-room cutover iam defaults to
+// LEGACY PARITY — INTENTIONAL SECURITY-POSTURE DECISION (flagged for Red review).
+// the legacy surface ALLOWS a PUBLIC client (the console/chat apps: no client_secret, no PKCE)
+// to complete this grant. During the legacy→clean-room cutover iam defaults to
 // the SAME behavior so console/chat logins do not 401 `invalid_client`. The exact,
 // bounded relaxation vs the prior confidential-only rule:
 //
@@ -287,7 +287,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenErrorClient(c, "client authentication failed")
 	}
 	// A confidential client (one that registered a secret) must present it; a public
-	// client (no registered secret) authenticates by its clientId alone — casdoor ROPC
+	// client (no registered secret) authenticates by its clientId alone — legacy ROPC
 	// parity. See the doc comment for the exact new surface.
 	if app.ClientSecret != "" &&
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
@@ -522,7 +522,7 @@ func tokenIssuer(c *zip.Ctx) string {
 }
 
 // subjectOf is the OIDC `sub` for a user: its stable opaque Id (the cutover-
-// continuity UUID casdoor emits and the migrator preserves), falling back to the
+// continuity UUID legacy emits and the migrator preserves), falling back to the
 // (owner/name) natural key ONLY for a pre-cutover row that carries no Id. It is
 // the single place the subject is derived, so the token's `sub`, userinfo's `sub`,
 // and the introspection `sub` can never disagree, and store.GetUserBySubject

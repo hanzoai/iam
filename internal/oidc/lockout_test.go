@@ -12,7 +12,7 @@ import (
 // F-D1: public ROPC without lockout is an online brute-force oracle. A run of wrong
 // passwords must lock the account (refused even with the correct password inside the
 // window); a correct password before the limit resets the counter. State is the
-// per-row SigninWrongTimes/LastSigninWrongTime casdoor already used.
+// per-row SigninWrongTimes/LastSigninWrongTime legacy already used.
 
 func TestPasswordGrant_lockoutAfterRepeatedWrong(t *testing.T) {
 	app, db := newServer(t)

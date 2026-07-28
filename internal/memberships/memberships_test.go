@@ -2,7 +2,7 @@
 
 package memberships_test
 
-// The Casdoor membership VERB aliases (GAP A): get-memberships / add-membership /
+// The the legacy surface membership VERB aliases (GAP A): get-memberships / add-membership /
 // delete-membership, the spellings cloud's clients/team invite path hard-codes.
 // Every case is a HTTP request driven through the REAL registered router (routes.Route
 // installs the authz Guard, then registers memberships after it), so the assertions

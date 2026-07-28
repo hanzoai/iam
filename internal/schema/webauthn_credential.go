@@ -4,7 +4,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// WebauthnCredential is a registered WebAuthn/FIDO2 passkey (v1 Casdoor kind
+// WebauthnCredential is a registered WebAuthn/FIDO2 passkey (v1 the legacy surface kind
 // "webauthn_credential", v2 kind "webauthn_credentials"). In v1 there is no
 // standalone table: the credentials live inline on the user row as the
 // `webauthnCredentials` blob column — a JSON array of go-webauthn Credential

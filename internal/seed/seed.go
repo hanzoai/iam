@@ -1,12 +1,12 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package seed bootstraps the iam store from an init_data.json file — the same
-// file the Casdoor iam uses. This is the ported InitFromFile behavior: on boot,
+// file the the legacy surface iam uses. This is the ported InitFromFile behavior: on boot,
 // upsert organizations, applications, providers, and certs so a fresh iam
 // (embedded in cloud or standalone) comes up with the real app/provider/cert
 // config instead of an empty store.
 //
-// New-only by default (like Casdoor's initDataNewOnly): an entity that already
+// New-only by default (like the legacy surface's initDataNewOnly): an entity that already
 // exists is left untouched; only missing ones are created. ${VAR} references in
 // the JSON (client ids/secrets, cert keys) are substituted from the environment
 // before parsing — the same mechanism that injects KMS-synced secrets.
@@ -51,7 +51,7 @@ type Summary struct {
 var envRef = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
 
 // substituteEnv replaces ${VAR} with os.Getenv(VAR). An unset var becomes empty
-// (Casdoor-compatible) — a provider/cert with an empty credential simply reads
+// (the legacy surface-compatible) — a provider/cert with an empty credential simply reads
 // as unconfigured downstream, never a dead-end.
 func substituteEnv(b []byte) []byte {
 	return envRef.ReplaceAllFunc(b, func(m []byte) []byte {

@@ -2,10 +2,10 @@
 
 // Package e2e_test drives the WHOLE iam surface through the real registered router
 // (routes.Route) as one integrated journey — the behavioral parity proof that the
-// old Casdoor IAM's clients work against iam. Unlike the per-package unit tests,
+// old the legacy surface IAM's clients work against iam. Unlike the per-package unit tests,
 // this chains the real flows a live client runs in sequence: OIDC discovery →
 // PKCE login → code→token → userinfo → introspect → revoke; the admin console's
-// get-account → get-organizations → get-users (the Casdoor compat surface); SCIM
+// get-account → get-organizations → get-users (the legacy compat surface); SCIM
 // 2.0 provisioning; and RFC 8693 token exchange. Every step asserts the response
 // CONTRACT the client depends on.
 package e2e_test
