@@ -368,3 +368,23 @@ func TestSignup_SelfServeOrgStillGetsPasswordFloor(t *testing.T) {
 		t.Fatal("the probe user was created despite the password floor")
 	}
 }
+
+// TestOrgNamePolicyRefusesEmail pins that a signup cannot mint one org per human.
+// A form that defaults the org field to the address just typed produced 56
+// email-shaped orgs out of 124 on the live instance — nearly half the tenant
+// registry was people. It is also the wrong money shape: account.Payer gives a
+// member of the SIGNUP org a personal wallet, and minting them an org routes
+// them down the org-pool branch instead.
+func TestOrgNamePolicyRefusesEmail(t *testing.T) {
+	for _, bad := range []string{"z@hanzo.ai", "qa_probe_x@hanzo-qa.dev", "a@b.co"} {
+		if orgNamePolicyError(bad) == "" {
+			t.Fatalf("orgNamePolicyError(%q) = \"\"; an email is never an organization", bad)
+		}
+	}
+	// A real company name still creates a real org — this refuses a shape, not the intent.
+	for _, ok := range []string{"acme", "wayne-enterprises", "hanzo"} {
+		if msg := orgNamePolicyError(ok); msg != "" {
+			t.Fatalf("orgNamePolicyError(%q) = %q; want \"\"", ok, msg)
+		}
+	}
+}
