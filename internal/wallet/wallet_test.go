@@ -731,3 +731,51 @@ func keys(m map[string]any) []string {
 	}
 	return out
 }
+
+// A RESERVED platform org is never reachable by an unauthenticated wallet
+// sign-up, even when its application row has sign-up enabled.
+//
+// Wallet login was the ONE public account-creation front door that did not
+// consult store.IsReservedOrg — signup (signup.go), onboarding, federated
+// provisioning (federation.go) and token exchange all did. The org here is not
+// caller-chosen (provision takes in.App.Organization), so this is not a
+// cross-TENANT hole; it is an ESCALATION one: authz derives Super from
+// owner == "admin", so a wallet-signed POST against an admin-owned app with
+// EnableSignUp set would have minted a SuperAdmin with no credential at all.
+//
+// All three reserved orgs are exercised, and the refusal must be byte-identical
+// to the sign-up-disabled refusal so a prober cannot learn which condition fired.
+func TestReservedOrgNeverProvisions(t *testing.T) {
+	for _, org := range []string{"admin", "built-in", "app"} {
+		t.Run(org, func(t *testing.T) {
+			app, db := newServer(t)
+			a := seed(t, db, opts{name: "app-" + org, org: org, signup: true})
+
+			code, m := signIn(t, app, a)
+			errorIs(t, code, m, "sign up is disabled")
+
+			if n := len(users(t, db)); n != 0 {
+				t.Fatalf("users = %d, want 0 — a wallet sign-in must never mint an account in the reserved org %q", n, org)
+			}
+			if n := len(wallets(t, db)); n != 0 {
+				t.Fatalf("wallets = %d, want 0 — a refusal must leave nothing behind", n)
+			}
+		})
+	}
+}
+
+// The guard is scoped to RESERVED orgs only: an ordinary tenant with sign-up
+// enabled still provisions. Without this, "close the hole" could be satisfied by
+// breaking wallet sign-up outright and the test above would still pass.
+func TestOrdinaryOrgStillProvisions(t *testing.T) {
+	app, db := newServer(t)
+	a := seed(t, db, opts{name: "app-tenant", org: "acme", signup: true})
+
+	if code, m := signIn(t, app, a); okData(t, code, m) == "" {
+		t.Fatal("an ordinary tenant's wallet sign-up must still succeed")
+	}
+	u := users(t, db)
+	if len(u) != 1 || u[0].Owner != "acme" {
+		t.Fatalf("users = %+v, want exactly one under acme", u)
+	}
+}
