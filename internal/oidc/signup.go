@@ -49,6 +49,14 @@ type signupForm struct {
 	Phone        string `json:"phone"`
 	CountryCode  string `json:"countryCode"`
 	Affiliation  string `json:"affiliation"`
+
+	// Training is the answer to the AI-training question the signup screen asks,
+	// recorded with the account rather than left for a later prompt. Absent means
+	// unanswered — which reads as refusal everywhere — so a client that does not
+	// ask cannot accidentally grant, and the screen is what turns silence into an
+	// explicit answer. A non-empty value that is not a known answer is refused
+	// outright rather than coerced.
+	Training string `json:"training"`
 }
 
 // signupHandler creates an account from the sign-up form and applies the
@@ -68,6 +76,17 @@ func signupHandler(db orm.DB) zip.Handler {
 		f.Username = strings.TrimSpace(f.Username)
 		if f.Organization == "" || f.Username == "" || f.Password == "" {
 			return httpx.Err(c, "organization, username and password are required")
+		}
+
+		// Resolve the training answer before anything is created, so an account is
+		// never persisted alongside an answer this version cannot interpret.
+		consent := schema.Consent{Insights: true, Training: schema.Answer(f.Training)}
+		if !consent.Training.Valid() {
+			return httpx.Err(c, "training must be one of: \"\", granted, refused")
+		}
+		consentBlob, err := consent.Encode("")
+		if err != nil {
+			return httpx.Err(c, "server_error")
 		}
 
 		// Resolve the application (by clientId when present, else by name under the
@@ -210,6 +229,11 @@ func signupHandler(db orm.DB) zip.Handler {
 				SignupApplication: app.Name,
 				RegisterType:      "Application Signup",
 				RegisterSource:    f.Organization + "/" + app.Name,
+				// The answer the screen collected, recorded WITH the account. A new
+				// user therefore starts with an explicit answer instead of silence,
+				// and silence — for any account created by a path that does not ask —
+				// still reads as refusal.
+				Properties: map[string]string{schema.PreferencesKey: consentBlob},
 			},
 			Password: f.Password,
 		})

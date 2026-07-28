@@ -9,7 +9,9 @@
 # explicit "granted" and nothing else, and the absence of an answer is a refusal.
 
 C = "pkg/schema/consent.go"
+G = "internal/oidc/signup.go"
 PS = "./pkg/schema/"
+PO = "./internal/oidc/"
 
 MUTANTS = [
     # The default. If a first-ever read defaults to a grant, every user who was
@@ -68,4 +70,28 @@ MUTANTS = [
         (C, "\tmerged := map[string]json.RawMessage{}\n\tif prefs != \"\" {\n\t\t_ = json.Unmarshal([]byte(prefs), &merged)\n\t}",
             "\tmerged := map[string]json.RawMessage{}\n")],
      "TestEncodePreservesOtherKeys", PS),
+
+    # The signup screen is where the answer is collected. If the handler records a
+    # grant regardless of what the screen sent, every new account is trainable and
+    # the screen is decoration.
+    ("consent: signup records a grant regardless of the answer", [
+        (G, "consent := schema.Consent{Insights: true, Training: schema.Answer(f.Training)}",
+            "consent := schema.Consent{Insights: true, Training: schema.Granted}")],
+     "TestSignup_SilenceIsRefusal|TestSignup_RefusalIsRecorded", PO),
+
+    # The signup boundary check. Without it an unrecognized answer is persisted for
+    # a later reader to interpret instead of being refused at the door.
+    ("consent: signup accepts an unknown answer", [
+        (G, "\t\tif !consent.Training.Valid() {\n\t\t\treturn httpx.Err(c, \"training must be one of: \\\"\\\", granted, refused\")\n\t\t}\n",
+            "")],
+     "TestSignup_UnknownAnswerIsRejected", PO),
+
+    # The answer has to reach the SAME property the accessor reads. Parking it under
+    # a neighbouring key discards the screen's answer while looking like it stored
+    # it. (Deleting the write instead leaves consentBlob unused, which does not
+    # compile — a NO-COMPILE is not a kill, so the mutation writes the wrong key.)
+    ("consent: signup writes the answer to the wrong property", [
+        (G, "\t\t\t\tProperties: map[string]string{schema.PreferencesKey: consentBlob},",
+            "\t\t\t\tProperties: map[string]string{\"preferences\": consentBlob},")],
+     "TestSignup_GrantIsRecorded", PO),
 ]
