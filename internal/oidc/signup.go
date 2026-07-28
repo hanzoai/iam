@@ -129,6 +129,27 @@ func signupHandler(db orm.DB) zip.Handler {
 				return httpx.Err(c, err.Error())
 			}
 			org = created
+		} else if f.Organization != app.Organization && !app.IsShared {
+			// The org ALREADY EXISTS and belongs to someone else. Org choice grants the
+			// right to name YOUR OWN org — to mint one above, or to land in the app's
+			// own tenant — never the right to walk into a tenant that is already
+			// standing. Without this arm the gate above is satisfied by a non-empty
+			// OrgChoiceMode and this branch does nothing, so an unauthenticated POST
+			// naming any existing org is made a member of it: hanzo-console, a hanzo
+			// app, minted a user with owner "lux" on the live instance. Every brand and
+			// every customer tenant in the one multi-brand registry was reachable that
+			// way, which is precisely the isolation the tenant gate exists to provide.
+			//
+			// The refusal is byte-identical to the tenant refuse above and to the
+			// reserved-org refuse, so a prober cannot distinguish "someone else's org"
+			// from "wrong tenant" from "reserved name" — no authority oracle.
+			//
+			// A signup naming a name NOBODY holds still succeeds under orgChoiceCreate,
+			// so this does leak org NON-existence to anyone willing to mint one. That is
+			// inherent to self-serve creation rather than introduced here, it is
+			// self-limiting (the probe leaves an org row behind), and it is a far
+			// smaller thing to concede than membership in an existing tenant.
+			return httpx.Err(c, "the user is not permitted to sign up to this application")
 		}
 
 		// Username policy (v1 object/check.go CheckUserSignup).
