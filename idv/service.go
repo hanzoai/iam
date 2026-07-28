@@ -130,29 +130,34 @@ func (s *Service) Verify(ctx context.Context, userID, org, providerName string, 
 	})
 
 	// 2. Sanctions screen (non-blocking; idv may be async via redirect)
-	sanctionsOK, sanctionsDetail := s.screenSanctions(ctx, req.GivenName+" "+req.FamilyName, req.DateOfBirth)
-	sanctionsStatus := CheckPassed
-	if !sanctionsOK {
-		sanctionsStatus = CheckFailed
-	}
+	sanctionsStatus, sanctionsDetail := s.screen(ctx, CheckSanctions, req.GivenName+" "+req.FamilyName, req.DateOfBirth)
 	result.Checks = append(result.Checks, CheckResult{
 		Type: CheckSanctions, Status: sanctionsStatus, Detail: sanctionsDetail,
 	})
 
 	// 3. PEP screen
-	pepOK, pepDetail := s.screenPEP(ctx, req.GivenName+" "+req.FamilyName, req.DateOfBirth)
-	pepStatus := CheckPassed
-	if !pepOK {
-		pepStatus = CheckFailed
-	}
+	pepStatus, pepDetail := s.screen(ctx, CheckPEP, req.GivenName+" "+req.FamilyName, req.DateOfBirth)
 	result.Checks = append(result.Checks, CheckResult{
 		Type: CheckPEP, Status: pepStatus, Detail: pepDetail,
 	})
 
 	// Evaluate composite: IDV is async (pending), but sanctions/PEP are sync.
-	// If sanctions or PEP failed, reject immediately.
-	if !sanctionsOK || !pepOK {
+	//
+	// A REJECTION IS A STATEMENT ABOUT A PERSON; AN ERROR IS A STATEMENT ABOUT US.
+	// Only a substantive adverse finding — the AML list actually returned a hit —
+	// rejects. An infrastructure failure (endpoint unconfigured, unreachable,
+	// unparseable) is CompositeError: we do not know, and recording "rejected" would
+	// attribute a sanctions/PEP match to someone the list never matched. Both are
+	// still fail-closed — neither approves — but they are not the same fact and must
+	// not share a status.
+	//
+	// Adverse outranks error: a confirmed hit on one screen is not softened into
+	// "unknown" because the other screen was unreachable.
+	switch {
+	case sanctionsStatus == CheckFailed || pepStatus == CheckFailed:
 		result.Status = CompositeRejected
+	case sanctionsStatus == CheckError || pepStatus == CheckError:
+		result.Status = CompositeError
 	}
 
 	return result, nil
@@ -180,78 +185,55 @@ func (s *Service) CheckStatus(ctx context.Context, providerName, verificationID 
 	return provider.CheckStatus(ctx, verificationID)
 }
 
-// screenSanctions calls the AML sanctions search endpoint.
-// Returns (clear, detail).
-func (s *Service) screenSanctions(ctx context.Context, name, dob string) (bool, string) {
+// screenLabel is the human name of a screen, used only in the hit detail.
+var screenLabel = map[string]string{CheckSanctions: "sanctions", CheckPEP: "PEP"}
+
+// screen runs ONE AML query — sanctions or PEP, distinguished by kind — against the
+// shared search endpoint (PEP entries are tagged inside the sanctions lists, so both
+// read the same route; PEP adds type=pep).
+//
+// It returns a CheckResult status, not a bool, because there are THREE outcomes and a
+// bool can only carry two. Collapsing them is what let an unset amlURL be recorded as
+// a sanctions match:
+//
+//	CheckPassed — the list was queried and returned nothing.
+//	CheckFailed — the list was queried and RETURNED A HIT. A fact about the subject.
+//	CheckError  — the list could not be queried at all. A fact about our infrastructure.
+//
+// Every non-hit failure path is CheckError. The caller keeps all three distinct.
+func (s *Service) screen(ctx context.Context, kind, name, dob string) (status, detail string) {
 	if s.amlURL == "" {
-		return false, "aml_url_not_configured"
+		return CheckError, "aml_url_not_configured"
 	}
 
-	payload, _ := json.Marshal(map[string]string{
-		"name": name,
-		"dob":  dob,
-	})
+	query := map[string]string{"name": name, "dob": dob}
+	if kind == CheckPEP {
+		query["type"] = "pep"
+	}
+	payload, _ := json.Marshal(query)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		s.amlURL+"/v1/aml/sanctions/search", bytes.NewReader(payload))
 	if err != nil {
-		return false, "request_build_failed"
+		return CheckError, "request_build_failed"
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.amlClient.Do(req)
 	if err != nil {
-		// Fail closed on network error — block until AML can be verified.
-		return false, "aml_unreachable"
+		// Fail closed on network error — never approve without a real answer.
+		return CheckError, "aml_unreachable"
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	var hits []json.RawMessage
 	if err := json.Unmarshal(body, &hits); err != nil {
-		return false, "aml_parse_error"
+		return CheckError, "aml_parse_error"
 	}
 
 	if len(hits) > 0 {
-		return false, fmt.Sprintf("%d sanctions hits", len(hits))
+		return CheckFailed, fmt.Sprintf("%d %s hits", len(hits), screenLabel[kind])
 	}
-	return true, "clear"
-}
-
-// screenPEP calls the AML sanctions search with a PEP-specific query.
-// PEP data is served from the same sanctions endpoint (PEP entries are
-// tagged in the sanctions lists). Returns (clear, detail).
-func (s *Service) screenPEP(ctx context.Context, name, dob string) (bool, string) {
-	if s.amlURL == "" {
-		return false, "aml_url_not_configured"
-	}
-
-	payload, _ := json.Marshal(map[string]string{
-		"name": name,
-		"dob":  dob,
-		"type": "pep",
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		s.amlURL+"/v1/aml/sanctions/search", bytes.NewReader(payload))
-	if err != nil {
-		return false, "request_build_failed"
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.amlClient.Do(req)
-	if err != nil {
-		// Fail closed on network error — block until PEP can be verified.
-		return false, "aml_unreachable"
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	var hits []json.RawMessage
-	if err := json.Unmarshal(body, &hits); err != nil {
-		return false, "aml_parse_error"
-	}
-
-	if len(hits) > 0 {
-		return false, fmt.Sprintf("%d PEP hits", len(hits))
-	}
-	return true, "clear"
+	return CheckPassed, "clear"
 }
