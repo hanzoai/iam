@@ -8,7 +8,7 @@ import (
 	"github.com/hanzoai/orm"
 )
 
-// User is an identity principal — the v2 form of the v1 Casdoor `user` row,
+// User is an identity principal — the v2 form of the v1 the legacy surface `user` row,
 // re-expressed on hanzoai/orm. It is the authentication entity: the only
 // credential material it persists is PasswordHash (a one-way bcrypt digest,
 // json:"-" so it never leaves the process) and the legacy hash metadata used
@@ -23,7 +23,7 @@ type User struct {
 	orm.Model[User]
 
 	// Id is the user's STABLE OPAQUE identifier — the value the OIDC `sub` claim
-	// carries. It is the v1 Casdoor per-row UUID (e.g.
+	// carries. It is the v1 the legacy surface per-row UUID (e.g.
 	// "e7d7fda0-4c53-4508-9d35-7ec892b7e5d7"), migrated verbatim so a user's `sub`
 	// is byte-identical across the cutover: every live session, external reference,
 	// and the downstream money-path principal keyed on `sub` survive unchanged. A
@@ -33,7 +33,7 @@ type User struct {
 	//
 	// It is distinct from the embedded orm.Model STORAGE KEY — the value the datastore
 	// locks and looks a row up by — which is NOT (Owner, Name) for every row: a MIGRATED
-	// casdoor row is stamped "owner/name" (SetId in the migrator), but a v2-native
+	// legacy row is stamped "owner/name" (SetId in the migrator), but a v2-native
 	// users.Create'd row is NOT — Create allocates rather than pinning a key, so its
 	// storage key is a store-assigned surrogate id (a GenerateID decimal string like
 	// "17847909129933610000001"). (Owner, Name) is therefore the natural/QUERY key

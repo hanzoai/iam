@@ -5,7 +5,7 @@ package schema
 import "github.com/hanzoai/orm"
 
 // VerificationRecord is a one-time verification code (email/SMS OTP) issued for
-// signup, sign-in, password reset, or MFA — the v2 form of the v1 Casdoor
+// signup, sign-in, password reset, or MFA — the v2 form of the v1 the legacy surface
 // `verification` row. It is verify-only credential material: Code is the secret
 // the caller must echo back, so the send endpoint returns only a status and
 // never the record.

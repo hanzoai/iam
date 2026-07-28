@@ -2,7 +2,7 @@
 
 package compat_test
 
-// End-to-end tests for the Casdoor verb aliases, driven through the REAL registered
+// End-to-end tests for the legacy verb aliases, driven through the REAL registered
 // router (routes.Route installs the authz Guard between the public group and the
 // authed routes; compat is registered after it, so gated). Every
 // case is a HTTP request a live console/gateway client sends. The assertions are
@@ -216,7 +216,7 @@ func TestGetProviders_super_noClientSecret(t *testing.T) {
 
 func TestGetUser_byId_super(t *testing.T) {
 	h := newHarness(t)
-	// The Casdoor `?id=<owner>/<name>` shape — resolved by authz.ReadTarget.
+	// The the legacy surface `?id=<owner>/<name>` shape — resolved by authz.ReadTarget.
 	status, body := h.get(t, "/v1/iam/get-user?id=hanzo/alice", h.token(t, "admin/root"))
 	if status != 200 {
 		t.Fatalf("status=%d body=%s", status, body)

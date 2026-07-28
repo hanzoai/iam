@@ -13,11 +13,11 @@ import (
 	"github.com/hanzoai/iam/internal/store"
 )
 
-// Account lockout — casdoor's compensating control for a password endpoint, kept in
+// Account lockout — legacy's compensating control for a password endpoint, kept in
 // the ONE credential package so every human-credential verify shares it: the
 // interactive login form, the ROPC password grant, the registry Basic-auth token
 // endpoint, and the LDAP-bind feature seam all call Authenticate, never the raw
-// VerifyPassword digest check. Casdoor locked an account after a run of wrong
+// VerifyPassword digest check. the legacy surface locked an account after a run of wrong
 // passwords; the public ROPC endpoint (commit D) would otherwise be an
 // unauthenticated online brute-force oracle. State lives on the user row
 // (SigninWrongTimes / LastSigninWrongTime — already in schema.User), so it is
@@ -36,11 +36,11 @@ import (
 
 const (
 	// LockThreshold is the consecutive-wrong-password count that locks an account
-	// (casdoor's SigninWrongTimesLimit). Exported so a caller's tests can drive
+	// (legacy's SigninWrongTimesLimit). Exported so a caller's tests can drive
 	// exactly the boundary without re-declaring the policy.
 	LockThreshold = 5
 	// lockWindow is how long a lock — and the running count — persists since the last
-	// wrong attempt (casdoor's LastSignWrongTimeDuration). Once it elapses the count
+	// wrong attempt (legacy's LastSignWrongTimeDuration). Once it elapses the count
 	// restarts, so an occasional typo never accumulates toward a lock.
 	lockWindow = 15 * time.Minute
 )
@@ -98,7 +98,7 @@ func Authenticate(ctx context.Context, db orm.DB, user *schema.User, password, o
 // The row's storage key is resolved ONCE via the (owner,name) query path (which stamps
 // the real orm key — a store-assigned surrogate id, a GenerateID decimal string like
 // "17847909129933610000001", for a v2-native users.Create'd row; "owner/name" for a
-// migrated casdoor row), then the lock is taken by that exact key. Reading the FRESH row and
+// migrated legacy row), then the lock is taken by that exact key. Reading the FRESH row and
 // writing it back under the held lock keeps recordAttempt's OWN write free of lost
 // updates. It does NOT, by itself, stop a DIFFERENT user-row writer from erasing this
 // counter with a stale full-row write; that is prevented by routing every such writer

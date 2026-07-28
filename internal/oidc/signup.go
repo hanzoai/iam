@@ -21,7 +21,7 @@ import (
 
 // The native front-door signup: POST /v1/iam/signup. The @hanzo/iam SDK + the
 // hanzo.id portal post the sign-up form here to create a new account. It mirrors
-// the v1 Casdoor Signup contract (controllers/account.go): the casibase
+// the v1 the legacy surface Signup contract (controllers/account.go): the casibase
 // {status,msg,data} envelope, resolve-app → enforce-policy → create-user, with
 // the password hashed (never stored plaintext) and the created row returned
 // REDACTED.

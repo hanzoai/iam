@@ -39,7 +39,7 @@
 // a silent grant.
 //
 // POLICY (owner decision, deliberately preserved — do NOT silently change):
-// "any authenticated identity may `pull` any repository" is the EXISTING Casdoor
+// "any authenticated identity may `pull` any repository" is the EXISTING the legacy surface
 // (iam-v1) behavior this port reproduces so the identity cutover is pure parity,
 // not a policy shift — BUT "authenticated" is now bounded to candidateOrgs, so a
 // foreign tenant can neither push nor pull. Pulls remain NOT per-repo-org-scoped
@@ -287,7 +287,7 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 // account (serviceAccount) — which are unaffected here and are the documented CI/
 // SuperAdmin push identity; neither is a guessable web password on a public door.
 //
-// PARITY NOTE: casdoor's registry token path resolved {admin, hanzo} passwords with
+// PARITY NOTE: legacy's registry token path resolved {admin, hanzo} passwords with
 // NO lockout at all, so this per-account lock on the registry endpoint is NEW surface
 // (added by F-D1). Narrowing the PASSWORD path to non-reserved orgs is a deliberate,
 // tested hardening of that new surface — not an incidental edit — and it aligns the
@@ -346,10 +346,10 @@ func userPrincipal(u *schema.User) *principal {
 }
 
 // userPrivileged decides whether a USER may push to the shared registry. This is
-// the v1-PARITY gate: casdoor (registry_token.go) authenticated users within
+// the v1-PARITY gate: legacy (registry_token.go) authenticated users within
 // {admin, hanzo} and granted push to any IsAdmin/SuperAdmin among them. We
 // reproduce that EXACTLY so the identity cutover is a faithful drop-in with zero
-// behavior change — a hanzo-org admin keeps push, as it does on casdoor today.
+// behavior change — a hanzo-org admin keeps push, as it does on legacy today.
 //
 // Push requires the user to be in a candidateOrg AND be an admin/SuperAdmin there.
 // The candidateOrgs bound (enforced at authentication, registry.go ~:241) is what
@@ -362,7 +362,7 @@ func userPrincipal(u *schema.User) *principal {
 // DEFERRED OWNER POLICY (do NOT tighten during the migration): whether a hanzo-org
 // HUMAN admin should keep registry push — vs. restricting push to the admin org
 // (SuperAdmins) / signing-trust orgs only — is a post-cutover hardening decision,
-// not a port detail. Narrowing it here would be a behavior change vs casdoor. If
+// not a port detail. Narrowing it here would be a behavior change vs legacy. If
 // made, do it as an explicit, tested policy change (alongside the pull org-scoping
 // decision documented at the top of this file), never as an incidental edit.
 func userPrivileged(u *schema.User) bool {

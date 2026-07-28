@@ -60,7 +60,7 @@ func routeFrontDoor(r zip.Router, db orm.DB) {
 // getAppLogin resolves an application by clientId and returns it with the
 // ClientSecret masked and each provider link enriched with its shared provider
 // record — the canonical source of truth the login UI reads to decide which
-// sign-in methods to render. Mirrors the v1 Casdoor get-app-login contract
+// sign-in methods to render. Mirrors the v1 the legacy surface get-app-login contract
 // (Response envelope, data = the masked application).
 func getAppLogin(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {

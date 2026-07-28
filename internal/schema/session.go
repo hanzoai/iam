@@ -4,7 +4,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// Session is an authenticated login session (v1 Casdoor `session`, v2 kind
+// Session is an authenticated login session (v1 the legacy surface `session`, v2 kind
 // "sessions"). One row records every live browser-session cookie a single
 // principal holds against one application, so a targeted sign-out, an
 // exclusive sign-in, or a duplicate-login check can enumerate and destroy

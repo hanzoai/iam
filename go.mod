@@ -13,7 +13,7 @@ require (
 )
 
 // Migration-only: linked solely in `go build -tags migration` so `iam compare`
-// can read the v1 Casdoor Postgres/MySQL database. The default (serving) build
+// can read the legacy v1 Postgres/MySQL database. The default (serving) build
 // never links these — it is SQLite/ZAP-only, no external SQL driver.
 require (
 	github.com/go-sql-driver/mysql v1.9.3
