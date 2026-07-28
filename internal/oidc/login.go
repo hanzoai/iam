@@ -257,12 +257,12 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 }
 
 // resolveLoginUser looks a user up by the login identifier, scoped to the org,
-// resolving NAME FIRST and email second — casdoor's own precedence
+// resolving NAME FIRST and email second — legacy's own precedence
 // (object.GetUserByFields tries the user NAME before the email/phone). This is
 // load-bearing at cutover when two rows collide on an email: e.g. org hanzo holds
 // both `hanzo/z` (name z, email z@hanzo.ai) and `hanzo/z@hanzo.ai` (name
 // z@hanzo.ai, same email). The ROPC/login username "z@hanzo.ai" must resolve to
-// the NAME match (hanzo/z@hanzo.ai) exactly as casdoor did — an email-first lookup
+// the NAME match (hanzo/z@hanzo.ai) exactly as legacy did — an email-first lookup
 // would silently authenticate the OTHER identity. The `@` gate stays only to skip
 // a pointless email lookup for a plain username.
 func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {

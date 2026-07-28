@@ -18,7 +18,7 @@ import (
 //
 // schema.User has NO single "linkedIdentities" array; a linked identity is stored as
 // the connector's own column (User.GitHub, User.Google, …) holding the federated
-// subject — the casdoor data model. So the linked accounts ARE those per-connector
+// subject — the legacy data model. So the linked accounts ARE those per-connector
 // columns that are set; this returns [{provider, subject}] for each non-empty one.
 // Each item carries only the subject string (the schema stores no per-link display
 // name / avatar / linkedAt), so a richer per-link shape is not available from iam.
@@ -28,7 +28,7 @@ import (
 const PathLinkedAccounts = "/v1/iam/linked-accounts"
 
 // connectorTags is the set of User json tags that hold a linked federated-identity
-// subject — the casdoor per-connector columns (schema/user.go "Linked
+// subject — the legacy per-connector columns (schema/user.go "Linked
 // federated-identity subjects"). ONE list; linked-accounts reflects the non-empty
 // ones out, so a new connector column is picked up by adding its tag here only.
 var connectorTags = fields(

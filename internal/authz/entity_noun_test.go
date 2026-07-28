@@ -29,7 +29,7 @@ func TestEntityNoun_FoldsVerbSpellingOntoTheEntity(t *testing.T) {
 // all of them. The keys package used to serve its list at /v1/iam/keys and every other
 // op at /v1/iam/key, which entityOf reads as two different entities ("keys" and
 // "key") — so any capability granted for keys was dead on whichever half you did not
-// name. This is the same defect entityNoun fixes for the Casdoor verb spellings,
+// name. This is the same defect entityNoun fixes for the legacy verb spellings,
 // arrived at from the other direction: an inconsistent NOUN rather than a verb.
 func TestEntityOf_EveryKeyRouteNamesOneEntity(t *testing.T) {
 	for _, path := range []string{

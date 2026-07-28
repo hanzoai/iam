@@ -30,7 +30,7 @@ import (
 
 // Path is the REST verb face: GET lists by ?user= or ?org=, POST ensures one.
 //
-// PathGet/PathAdd/PathDelete are the Casdoor VERB spellings the cloud team-invite
+// PathGet/PathAdd/PathDelete are the legacy VERB spellings the cloud team-invite
 // path (clients/team/invite.go) hard-codes — get-memberships / add-membership /
 // delete-membership. They are aliases, not a second implementation: get/add reuse
 // the very handlers the REST face registers, and delete is the one handler REST
@@ -47,7 +47,7 @@ const (
 const unauthorized = "auth:Unauthorized operation"
 
 // Route registers the membership surface on app, backed by db: the native REST
-// pair plus the Casdoor verb aliases. get/add share the REST handlers (one authz
+// pair plus the legacy verb aliases. get/add share the REST handlers (one authz
 // gate, one store call, no duplication); delete adds the revoke the REST face does
 // not carry. get-memberships is a GET whose target rides in ?user=/?org=, so it is
 // handler-authorized (authz.handlerAuthorizedPrefixes) exactly like /v1/iam/

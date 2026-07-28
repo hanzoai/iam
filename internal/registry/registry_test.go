@@ -426,7 +426,7 @@ func TestToken_User_PushOnly_Denied(t *testing.T) {
 }
 
 // TestToken_HanzoOrgAdmin_CanPush is the v1-PARITY assertion: a hanzo-org user with
-// IsAdmin=true authenticates (hanzo ∈ candidateOrgs) and IS privileged — casdoor
+// IsAdmin=true authenticates (hanzo ∈ candidateOrgs) and IS privileged — legacy
 // grants push to an IsAdmin within {admin,hanzo}, and this port preserves that
 // exactly. The real cross-tenant close is that a FOREIGN-tenant admin never reaches
 // this gate (TestToken_ForeignTenantKey_Denied). Tightening hanzo-human push to

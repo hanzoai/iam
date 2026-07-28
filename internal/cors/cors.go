@@ -70,7 +70,7 @@ var browserPaths = map[string]bool{
 	// The two writes a first-party console performs on the user's OWN behalf:
 	// create an org, invite someone to it. Both are Guard-authorized against the
 	// caller's principal, so the browser can only do what that user could
-	// already do. Listed as the NATIVE REST paths, not the Casdoor verbs — those
+	// already do. Listed as the NATIVE REST paths, not the legacy verbs — those
 	// are a compatibility surface for existing backends, not something a new
 	// browser client should learn.
 	"/v1/iam/organizations": true,

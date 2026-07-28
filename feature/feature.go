@@ -16,7 +16,7 @@ import (
 )
 
 // Store is the identity surface a feature needs — the union of the calls the
-// copied Casdoor code makes (object.* → store.*). The core implements it over its
+// copied the legacy surface code makes (object.* → store.*). The core implements it over its
 // orm store (internal/featurestore). A feature ignores methods it doesn't use.
 type Store interface {
 	GetUser(ctx context.Context, owner, name string) (*model.User, error)

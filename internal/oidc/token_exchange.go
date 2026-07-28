@@ -13,7 +13,7 @@ import (
 )
 
 // RFC 8693 OAuth 2.0 Token Exchange — the standard delegation / act-on-behalf-of
-// flow, and the replacement for the Casdoor `issue-user-token` verb (HIP-0111).
+// flow, and the replacement for the the legacy surface `issue-user-token` verb (HIP-0111).
 // A trusted, allow-listed confidential client presents a `subject_token`
 // identifying the end user it acts for and receives a fresh access token bound to
 // that user and re-scoped (RFC 8707 `resource`/`audience`) to a downstream

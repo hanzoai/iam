@@ -41,14 +41,14 @@ func TestLoopbackIPv6EphemeralPortIsAccepted(t *testing.T) {
 func TestLoopbackMatchIsPortOnly(t *testing.T) {
 	a := cliApp()
 	for _, uri := range []string{
-		"http://127.0.0.1:51234/other",          // different path
-		"http://127.0.0.1:51234/callback?x=1",   // added query
-		"http://127.0.0.1:51234/callback#frag",  // added fragment
-		"https://127.0.0.1:51234/callback",      // https is not a loopback listener
-		"http://127.0.0.2:51234/callback",       // different loopback-range IP
-		"http://127.0.0.1.evil.com/callback",    // suffix attack on the host
-		"http://evil.com/callback",              // unrelated host
-		"http://[::2]:51234/callback",           // not ::1
+		"http://127.0.0.1:51234/other",         // different path
+		"http://127.0.0.1:51234/callback?x=1",  // added query
+		"http://127.0.0.1:51234/callback#frag", // added fragment
+		"https://127.0.0.1:51234/callback",     // https is not a loopback listener
+		"http://127.0.0.2:51234/callback",      // different loopback-range IP
+		"http://127.0.0.1.evil.com/callback",   // suffix attack on the host
+		"http://evil.com/callback",             // unrelated host
+		"http://[::2]:51234/callback",          // not ::1
 	} {
 		if a.IsRedirectUriValid(uri) {
 			t.Errorf("IsRedirectUriValid(%q) = true, want false", uri)

@@ -1,4 +1,4 @@
-# Hanzo IAM — proprietary identity service (zip + orm, no Casdoor).
+# Hanzo IAM — proprietary identity service (zip + orm).
 # Multi-stage Go build → distroless-style alpine. Pure-Go (CGO_ENABLED=0);
 # hanzoai/sqlite uses the modernc engine so no cgo/musl toolchain is needed.
 
@@ -57,7 +57,7 @@ COPY --from=build --chown=hanzo:hanzo /out/iam /iam
 
 # Serves the IAM API over ZAP (:9653) + the HTTP edge (:8080). Bootstrap the
 # config with --init-data /etc/iam/init_data.json (mounted from the same
-# init_data ConfigMap the Casdoor iam uses; ${VAR} creds from the KMS-synced env).
+# init_data ConfigMap the legacy iam uses; ${VAR} creds from the KMS-synced env).
 EXPOSE 8080 9653
 ENTRYPOINT ["/iam"]
 CMD ["serve", "--db", "/data/iam.db", "--http", "http://:8080", "--zap", ":9653"]

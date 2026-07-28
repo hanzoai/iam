@@ -4,7 +4,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// Project is an organization-scoped work container (v1 Casdoor `project`, v2 kind
+// Project is an organization-scoped work container (v1 the legacy surface `project`, v2 kind
 // "projects"). An organization contains projects; a project scopes applications
 // and usage tracking and is the unit the console ScopeSwitcher selects. Identity
 // is the (Owner, Name) pair — Owner is the owning organization, so a project is a

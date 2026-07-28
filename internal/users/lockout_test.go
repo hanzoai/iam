@@ -82,7 +82,7 @@ func TestAuthenticate_ConcurrentWrongPasswords_NoLostUpdates(t *testing.T) {
 // threshold parallel wrong attempts (Red's PoC) must LOCK the account — the correct
 // password is refused afterward. Pre-fix the flood persists a counter of 1 and the
 // account never locks; the fix accumulates past the threshold and locks. The counter
-// caps AT the threshold (a locked account stops counting — casdoor semantics), so the
+// caps AT the threshold (a locked account stops counting — legacy semantics), so the
 // assertion is "reached the lock", not "== C".
 func TestAuthenticate_ConcurrentFlood_Locks(t *testing.T) {
 	ctx := context.Background()

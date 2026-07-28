@@ -71,7 +71,7 @@ func OpenSQLite(path string) (orm.DB, error) {
 }
 
 // Seed bootstraps the config (orgs/apps/providers/certs) from an init_data.json
-// path — the same file Casdoor uses. New-only + idempotent; ${VAR} from env.
+// path — the same file the legacy surface uses. New-only + idempotent; ${VAR} from env.
 // Returns the created/skipped counts. Call once at host startup after opening db.
 func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, error) {
 	return seed.FromInitData(ctx, db, initDataPath)

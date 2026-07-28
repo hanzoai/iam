@@ -11,9 +11,9 @@ provisioning, MFA / WebAuthn, service accounts, and social federation
 (Google, GitHub).
 
 It is a **clean-room, native rewrite** on the Hanzo stack — `zip` over
-`hanzoai/orm`, **no Casdoor, no Beego, no xorm**. The identity binary owns its
+`hanzoai/orm`, **no the legacy surface, no Beego, no xorm**. The identity binary owns its
 source outright and collapses to one way of doing each thing. The retired
-Casdoor/Beego fork lives at
+the legacy surface/Beego fork lives at
 [`hanzoai/iam-v1`](https://github.com/hanzoai/iam-v1) and is out of every graph.
 
 Clients never hand-roll OAuth. They authenticate through the **`@hanzo/iam`
@@ -32,7 +32,7 @@ SDK** against the endpoints below — one way, no legacy paths (HIP-0111).
 
 ## Endpoints — RFC / OIDC standard (no `/api/`, no vendor verbs)
 
-The HTTP contract is RFC/OpenID-standard only. There are no Casdoor verb aliases
+The HTTP contract is RFC/OpenID-standard only. There are no legacy verb aliases
 (`get-users`, `add-user`, `issue-user-token`, …) and no `/api/` prefix — `/v1/`
 throughout. Paths are relative to the brand `serverUrl`.
 

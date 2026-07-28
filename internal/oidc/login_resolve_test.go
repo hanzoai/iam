@@ -11,10 +11,10 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 )
 
-// USERNAME RESOLUTION PARITY. Casdoor resolves a login identifier by NAME before
+// USERNAME RESOLUTION PARITY. the legacy surface resolves a login identifier by NAME before
 // email. Two live rows in org hanzo collide on the email z@hanzo.ai: `hanzo/z`
 // (name z) and `hanzo/z@hanzo.ai` (name z@hanzo.ai). The ROPC username
-// "z@hanzo.ai" must resolve to the NAME match, matching casdoor — an email-first
+// "z@hanzo.ai" must resolve to the NAME match, matching legacy — an email-first
 // lookup would authenticate the wrong identity at cutover.
 
 func seedNamed(t *testing.T, db orm.DB, name, email string) {
@@ -39,7 +39,7 @@ func TestResolveLoginUser_NameBeatsEmailOnCollision(t *testing.T) {
 		t.Fatalf("resolveLoginUser = %v, %v; want a user", u, err)
 	}
 	if u.Name != "z@hanzo.ai" {
-		t.Errorf("resolved name = %q, want z@hanzo.ai (the NAME match, casdoor precedence), not the email match z", u.Name)
+		t.Errorf("resolved name = %q, want z@hanzo.ai (the NAME match, legacy precedence), not the email match z", u.Name)
 	}
 
 	// A plain username still resolves by name.

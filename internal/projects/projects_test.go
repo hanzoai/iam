@@ -3,7 +3,7 @@
 package projects_test
 
 // Project tests driven through the REAL registered router (routes.Route installs the
-// Guard, the typed CRUD, and the Casdoor verb aliases). Every case is a bind
+// Guard, the typed CRUD, and the legacy verb aliases). Every case is a bind
 // request the console ScopeSwitcher / Projects page sends via the /org/iam proxy.
 // The assertions pin the parity contract (add-project → get-organization-projects
 // → delete-project) and the security ones: any org member may LIST its org's

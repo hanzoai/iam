@@ -1,7 +1,7 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // This file carries the full Phase-1 field set for the `applications` entity
-// (v1 Casdoor `application`). The kind is registered once, centrally, in
+// (v1 the legacy surface `application`). The kind is registered once, centrally, in
 // schema.go's init(); nothing is registered here.
 //
 // Storage model: hanzoai/orm persists each Application as one JSON document in
@@ -108,7 +108,7 @@ type ScopeDescription struct {
 }
 
 // Application is an OAuth2/OIDC client and its hosted-login configuration
-// (v1 Casdoor `application`). It is owner-scoped and uniquely named within its
+// (v1 the legacy surface `application`). It is owner-scoped and uniquely named within its
 // owner; the (Owner, Name) pair is the natural key, materialized as the orm id
 // "<owner>/<name>". Every field below is field-complete with v1 so no auth
 // configuration is lost across the cutover.
