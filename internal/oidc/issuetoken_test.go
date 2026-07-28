@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
 
@@ -209,5 +210,100 @@ func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 	}
 	if u, _ := store.GetUserByName(tctx(), db, "hanzo", "mallory"); u.AccessKey != "" {
 		t.Fatalf("AccessKey after revoke=%q, want empty", u.AccessKey)
+	}
+}
+
+// The pk- fix, end to end on the ONE mint: `?type=publishable` yields a PUBLISHABLE
+// key. Before this there was no endpoint anywhere that minted one — IAM owned the
+// model, the resolver and the ingest door, and nothing produced the credential they
+// were written for, so every surface configured its own thing and error reporting
+// stayed a separate DSN.
+//
+// The type is a FIELD on the one mint, never a second endpoint: the two classes of key
+// differ in what they may do, not in what you call to get one.
+func TestMintUserKeys_publishableType_mintsAPkAndNeverAPrincipal(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice&type=publishable"))
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d; body=%s", resp.StatusCode, body)
+	}
+	key, _ := dataMap(t, body)["accessKey"].(string)
+	if !strings.HasPrefix(key, "pk-") {
+		t.Fatalf("accessKey = %q, want a pk- publishable key", key)
+	}
+
+	// It resolves to an ORG at the ingest door…
+	k, err := store.PublishableKeyByAccessKey(context.Background(), db, key, time.Now())
+	if err != nil || k == nil {
+		t.Fatalf("the minted publishable key does not resolve at the ingest door: %v", err)
+	}
+	if k.Owner != "hanzo" {
+		t.Fatalf("publishable key resolved to org %q, want hanzo", k.Owner)
+	}
+	// …and to NOBODY as a principal. This is the property that makes it safe to ship
+	// in a browser bundle, and it must hold for a key we minted ourselves.
+	if u, err := store.UserByAccessKey(context.Background(), db, key); err == nil && u != nil {
+		t.Fatalf("a publishable key resolved to principal %s/%s — it must never authenticate", u.Owner, u.Name)
+	}
+}
+
+// A publishable mint must not disturb the SECRET credential, and vice versa: they are
+// two keys with opposite exposure, and rotating the browser key cannot be allowed to
+// sign the holder out of their own API.
+func TestMintUserKeys_publishableAndSecretCoexist(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	_, secretBody := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice"))
+	secret, _ := dataMap(t, secretBody)["accessKey"].(string)
+	_, pubBody := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice&type=publishable"))
+	pub, _ := dataMap(t, pubBody)["accessKey"].(string)
+	if !strings.HasPrefix(secret, "sk-") || !strings.HasPrefix(pub, "pk-") {
+		t.Fatalf("halves = %q / %q, want sk- and pk-", secret, pub)
+	}
+	if u, err := store.UserByAccessKey(context.Background(), db, secret); err != nil || u == nil {
+		t.Fatalf("minting the publishable key broke the secret key: %v", err)
+	}
+
+	// Revoking the PUBLISHABLE key is scoped: the secret key still authenticates.
+	resp, body := do(t, app, keyReq(PathRevokeUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice&type=publishable"))
+	if resp.StatusCode != 200 {
+		t.Fatalf("scoped revoke status = %d; body=%s", resp.StatusCode, body)
+	}
+	if _, err := store.PublishableKeyByAccessKey(context.Background(), db, pub, time.Now()); err == nil {
+		t.Fatal("the publishable key survived its own revoke")
+	}
+	if u, err := store.UserByAccessKey(context.Background(), db, secret); err != nil || u == nil {
+		t.Fatalf("revoking the publishable key revoked the secret key: %v", err)
+	}
+}
+
+// An unknown type is REFUSED, not silently defaulted. Defaulting would hand a caller
+// that asked for a browser-safe key a session-equivalent secret instead — the failure
+// mode is a credential in the wrong place, so it must be loud.
+func TestMintUserKeys_unknownType_400(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	for _, typ := range []string{"public", "publishible", "sk", "SECRET"} {
+		resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice&type="+typ))
+		if resp.StatusCode != 400 {
+			t.Fatalf("type=%q status = %d, want 400; body=%s", typ, resp.StatusCode, body)
+		}
+	}
+	// And the two spellings that ARE the contract still work.
+	for _, typ := range []string{"", "secret", "publishable"} {
+		resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice&type="+typ))
+		if resp.StatusCode != 200 {
+			t.Fatalf("type=%q status = %d, want 200; body=%s", typ, resp.StatusCode, body)
+		}
 	}
 }

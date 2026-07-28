@@ -35,6 +35,26 @@ func (u *User) Mask() *User {
 	return &m
 }
 
+// Mask returns a copy of k with the CONFIDENTIAL half blanked and the
+// PUBLISHABLE half intact — the split that is the whole point of the key model.
+// AccessSecret (sk-) authenticates its holder as a principal, so a listing must
+// never carry it; AccessKey (pk-) is publishable by construction (it is shipped
+// in client JS and resolves to an org, never a principal), so blanking it would
+// hide from a holder the one value they need to use the key.
+//
+// Every read path returns k.Mask(). Without it a key LIST handed the reader every
+// secret in the org, and the read authorization ("who may list keys") was doing
+// the work redaction should do — so widening who may read a key list was
+// unsafe by construction. Masking is what makes the read safe on its own.
+func (k *Key) Mask() *Key {
+	if k == nil {
+		return nil
+	}
+	m := *k
+	m.AccessSecret = ""
+	return &m
+}
+
 // Mask returns a copy of o with every secret blanked to the "***" sentinel v1
 // uses (object/organization.go GetMaskedOrganization) — "***" signals "a value
 // is set but hidden", distinct from "" ("no value"), which some UIs rely on.
