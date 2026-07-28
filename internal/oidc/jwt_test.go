@@ -177,13 +177,19 @@ func TestSignEmitsPreferredUsername(t *testing.T) {
 // So the claim is what lets a real admin spend company credit without reopening
 // that hole: admins and owners name the pool, a plain member names nothing.
 func TestBillingAccountForOnlyAdminsSpendThePool(t *testing.T) {
+	// The value is "org:<slug>", never a bare slug: account.Parse Cuts on ":" and
+	// returns a ZERO Account without the kind prefix, which Payer then ignores in
+	// favour of its shape rule — so a bare slug is minted, signed, stamped into
+	// X-Billing-Account-Id, carried to the gate and dropped there, silently.
 	for _, tc := range []struct {
 		name string
 		refs []schema.OrgRef
 		want string
 	}{
-		{"owner spends the pool", []schema.OrgRef{{Org: "hanzo", Role: "owner"}}, "hanzo"},
-		{"admin spends the pool", []schema.OrgRef{{Org: "hanzo", Role: "admin"}}, "hanzo"},
+		// "org:<slug>" — the kind prefix is load-bearing: account.Parse returns a
+		// ZERO Account without it, so a bare slug is silently ignored by Payer.
+		{"owner spends the pool", []schema.OrgRef{{Org: "hanzo", Role: "owner"}}, "org:hanzo"},
+		{"admin spends the pool", []schema.OrgRef{{Org: "hanzo", Role: "admin"}}, "org:hanzo"},
 		{"plain member does not", []schema.OrgRef{{Org: "hanzo", Role: "member"}}, ""},
 		{"no role does not", []schema.OrgRef{{Org: "hanzo"}}, ""},
 		{"no membership at all", nil, ""},
@@ -191,7 +197,7 @@ func TestBillingAccountForOnlyAdminsSpendThePool(t *testing.T) {
 		// privileged the caller is elsewhere.
 		{"admin of ANOTHER org does not", []schema.OrgRef{{Org: "lux", Role: "admin"}}, ""},
 		{"admin elsewhere, member here", []schema.OrgRef{{Org: "lux", Role: "owner"}, {Org: "hanzo", Role: "member"}}, ""},
-		{"admin here, member elsewhere", []schema.OrgRef{{Org: "lux", Role: "member"}, {Org: "hanzo", Role: "admin"}}, "hanzo"},
+		{"admin here, member elsewhere", []schema.OrgRef{{Org: "lux", Role: "member"}, {Org: "hanzo", Role: "admin"}}, "org:hanzo"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := billingAccountFor("hanzo", tc.refs); got != tc.want {
