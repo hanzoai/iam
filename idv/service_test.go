@@ -15,11 +15,13 @@
 package idv
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -144,7 +146,10 @@ func TestServiceVerify_NoAMLURL(t *testing.T) {
 	}))
 	defer idvServer.Close()
 
-	// No AML URL — sanctions/PEP should FAIL (fail-closed)
+	// No AML URL — the screens cannot run. Fail-closed means we do NOT approve; it does
+	// NOT mean we reject. A rejection asserts the AML lists matched this person, and
+	// they were never queried. This test previously asserted CompositeRejected, which
+	// encoded exactly that conflation.
 	svc := NewService("")
 	svc.RegisterProvider(cidv.ProviderJumio, cidv.NewJumio(cidv.JumioConfig{
 		BaseURL:   idvServer.URL,
@@ -160,18 +165,103 @@ func TestServiceVerify_NoAMLURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Status != CompositeRejected {
-		t.Fatalf("expected rejected (AML not configured, fail-closed), got %q", result.Status)
+	if result.Status != CompositeError {
+		t.Fatalf("expected error (AML unconfigured is our failure, not an adverse finding), got %q", result.Status)
 	}
-	// Both sanctions and PEP should fail with "not configured" detail
-	if result.Checks[1].Status != CheckFailed {
-		t.Fatalf("expected sanctions/failed, got %s", result.Checks[1].Status)
+	if result.Status == CompositeApproved {
+		t.Fatal("must never approve without a real AML answer")
+	}
+	if result.Checks[1].Status != CheckError {
+		t.Fatalf("expected sanctions/error, got %s", result.Checks[1].Status)
 	}
 	if result.Checks[1].Detail != "aml_url_not_configured" {
 		t.Fatalf("expected aml_url_not_configured, got %q", result.Checks[1].Detail)
 	}
-	if result.Checks[2].Status != CheckFailed {
-		t.Fatalf("expected pep/failed, got %s", result.Checks[2].Status)
+	if result.Checks[2].Status != CheckError {
+		t.Fatalf("expected pep/error, got %s", result.Checks[2].Status)
+	}
+}
+
+// TestServiceVerify_AMLUnreachableIsErrorNotRejection: a dead AML endpoint is an
+// infrastructure fact, not a fact about the subject — same rule as an unset URL.
+func TestServiceVerify_AMLUnreachableIsErrorNotRejection(t *testing.T) {
+	idvServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"transactionReference": "txn-dead-aml",
+			"redirectUrl":          "https://verify.example.com/test",
+		})
+	}))
+	defer idvServer.Close()
+
+	// Start then immediately stop the AML server so the address refuses connections.
+	deadAML := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	deadURL := deadAML.URL
+	deadAML.Close()
+
+	svc := NewService(deadURL)
+	svc.RegisterProvider(cidv.ProviderJumio, cidv.NewJumio(cidv.JumioConfig{
+		BaseURL: idvServer.URL, APIToken: "tok", APISecret: "sec",
+	}))
+
+	result, err := svc.Verify(context.Background(), "user-3", "org-1", cidv.ProviderJumio, &cidv.VerificationRequest{
+		ApplicationID: "user-3", GivenName: "Test", FamilyName: "User",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != CompositeError {
+		t.Fatalf("expected error for unreachable AML, got %q", result.Status)
+	}
+	if result.Checks[1].Detail != "aml_unreachable" {
+		t.Fatalf("expected aml_unreachable, got %q", result.Checks[1].Detail)
+	}
+}
+
+// TestServiceVerify_AdverseOutranksError: a REAL hit must still reject even when the
+// other screen could not run. A confirmed adverse finding is not softened to "unknown"
+// because our infrastructure was partly down.
+func TestServiceVerify_AdverseOutranksError(t *testing.T) {
+	idvServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"transactionReference": "txn-mixed",
+			"redirectUrl":          "https://verify.example.com/test",
+		})
+	}))
+	defer idvServer.Close()
+
+	// Sanctions (no type=pep) returns a hit; the PEP query returns unparseable body.
+	amlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		if bytes.Contains(body, []byte(`"type":"pep"`)) {
+			w.Write([]byte("not json"))
+			return
+		}
+		json.NewEncoder(w).Encode([]map[string]string{{"name": "John Doe", "score": "0.99"}})
+	}))
+	defer amlServer.Close()
+
+	svc := NewService(amlServer.URL)
+	svc.RegisterProvider(cidv.ProviderJumio, cidv.NewJumio(cidv.JumioConfig{
+		BaseURL: idvServer.URL, APIToken: "tok", APISecret: "sec",
+	}))
+
+	result, err := svc.Verify(context.Background(), "user-4", "org-1", cidv.ProviderJumio, &cidv.VerificationRequest{
+		ApplicationID: "user-4", GivenName: "John", FamilyName: "Doe",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Checks[1].Status != CheckFailed {
+		t.Fatalf("expected sanctions/failed (real hit), got %s", result.Checks[1].Status)
+	}
+	if result.Checks[2].Status != CheckError {
+		t.Fatalf("expected pep/error (unparseable), got %s", result.Checks[2].Status)
+	}
+	if result.Status != CompositeRejected {
+		t.Fatalf("a confirmed sanctions hit must reject even when PEP errored, got %q", result.Status)
 	}
 }
 
