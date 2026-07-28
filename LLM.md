@@ -24,6 +24,41 @@ hand-rolling OAuth. Full SDK model: `~/work/hanzo/SDK-ARCHITECTURE.md`.
 Brands set `serverUrl`: hanzo→iam.hanzo.ai, lux→lux.id, zoo→zoo.id,
 bootnode→id.bootno.de, pars→pars.id (white-label by domain).
 
+## API keys — one entity, one plural noun, and the SCOPE is what differs
+
+`internal/keys`, entity `keys`, routes `/v1/iam/keys{,/get,/update,/delete}`.
+**Plural on every op** (like `users`): `authz.entityOf` reads the FIRST path segment
+as the entity, so serving the list at `keys` and the writes at `key` made two entity
+strings for one entity — and any capability keyed on it was dead on whichever half
+you did not name. Same defect `entityNoun` fixes for the Casdoor verb spellings.
+
+`Scope` is the ACCESS CLASS, fixed at create (an update that could flip it would
+blank a secret and open the ingest door):
+
+| scope | halves | resolves to | door |
+|---|---|---|---|
+| `""` (secret) | `pk-` + `sk-` | the USER | `get-user?accessKey=` (`CapKeyResolve`) |
+| `publish` | `pk-` only, NO secret | just the ORG | `resolve-key` (`CapPublishableResolve`) |
+
+**The publishable key had no producer until 2026-07-28.** The model, the resolver
+(`store.PublishableKeyByAccessKey`) and the ingest door all existed and nothing
+minted one. It is now a FIELD on the one mint:
+`POST /v1/iam/mint-user-keys?id=<owner>/<name>&type=publishable|secret` (default
+secret; unknown type → 400), same for `revoke-user-keys`. `keys.NameFor(scope)` maps
+scope → row name (`cloud-api` / `publishable`), so the two are separate rows and
+rotating a browser key does not revoke the API key.
+
+**Every read is masked.** `schema.Key.Mask()` blanks `AccessSecret` and keeps
+`AccessKey` (a `pk-` is public and its holder needs it). Before it, the key list
+handed every reader every secret in the org, which made read AUTHORIZATION stand in
+for redaction. The secret is revealed ONCE, by `create`. `capFor("keys")` =
+`CapKeyMint`: the authority that already mints a credential may read the set it
+manages.
+
+`MintUserKey` writes a `schema.Key` ROW because that is the only thing the resolvers
+read. Stamping it on `schema.User.AccessKey` authenticated nobody AND overwrote the
+holder's working legacy `hk-`, locking them out with no path back through the UI.
+
 ## Key entry points
 - `main.go` — cobra root (`serve` / `compare` / `version`); `server/server.go` route registration.
 - `internal/{oidc,routes}` — OAuth2/OIDC surface; `internal/{scim,mfa,webauthn,providers,sessions,tokens,cred,authz,certs,keys}`.
