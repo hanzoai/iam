@@ -253,6 +253,23 @@ func orgNamePolicyError(org string) string {
 	if strings.Contains(org, "/") {
 		return "organization name cannot contain '/'"
 	}
+	// An EMAIL is never an organization. A signup form that defaults the org field
+	// to the address the person just typed mints one org per human: 56 of the 124
+	// orgs on the live instance are email-shaped, so nearly half the tenant
+	// registry is people and "is this a company?" has no answer.
+	//
+	// It is also the wrong money shape. account.Payer resolves a member of the
+	// SIGNUP org to a PERSONAL wallet — Person(hanzo, name) — precisely so an
+	// individual has a balance without their own tenant. Minting them an org sends
+	// them down the Org() pool branch instead, making that special-case dead code
+	// and costing an org row plus a membership row on every signup.
+	//
+	// This refuses the SHAPE, not the intent: a real company name still creates a
+	// real org, and someone who typed their address lands in the signup org with a
+	// personal wallet, which is where they belonged.
+	if strings.ContainsRune(org, '@') {
+		return "organization name cannot be an email address — sign up as a person, or name your organization"
+	}
 	return ""
 }
 
