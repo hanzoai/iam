@@ -136,7 +136,7 @@ func TestMintUserKey_ResolvesBackToItsUser(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
 
-	secret, err := MintUserKey(ctx, db, "acme", "ada")
+	secret, err := MintUserKey(ctx, db, "acme", "ada", "")
 	if err != nil {
 		t.Fatalf("MintUserKey: %v", err)
 	}
@@ -166,11 +166,11 @@ func TestMintUserKey_RemintReplacesRatherThanAccumulates(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
 
-	first, err := MintUserKey(ctx, db, "acme", "ada")
+	first, err := MintUserKey(ctx, db, "acme", "ada", "")
 	if err != nil {
 		t.Fatalf("first mint: %v", err)
 	}
-	second, err := MintUserKey(ctx, db, "acme", "ada")
+	second, err := MintUserKey(ctx, db, "acme", "ada", "")
 	if err != nil {
 		t.Fatalf("re-mint: %v", err)
 	}
@@ -191,17 +191,17 @@ func TestRevokeUserKey_EndStateAndIdempotent(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
 
-	secret, err := MintUserKey(ctx, db, "acme", "ada")
+	secret, err := MintUserKey(ctx, db, "acme", "ada", "")
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	if err := RevokeUserKey(ctx, db, "acme"); err != nil {
+	if err := RevokeUserKey(ctx, db, "acme", ""); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First(); k != nil {
 		t.Fatal("secret still resolves after revoke")
 	}
-	if err := RevokeUserKey(ctx, db, "acme"); err != nil {
+	if err := RevokeUserKey(ctx, db, "acme", ""); err != nil {
 		t.Fatalf("revoke on an already-revoked user must succeed, got %v", err)
 	}
 }
@@ -259,10 +259,137 @@ func TestKeys_UpdateCannotReScopeOrRotate(t *testing.T) {
 	if got.Scope == schema.KeyScopePublish {
 		t.Fatal("update re-scoped a secret key to publish — that blanks the secret and opens the ingest door")
 	}
-	if got.AccessSecret != secret || got.AccessKey != access {
+	// Assert on the STORED row, not the response: the response is masked (an edit is
+	// not a mint), so reading the secret back out of it would only ever prove the mask.
+	stored, err := orm.Get[schema.Key](db, "acme/svc")
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if stored.AccessSecret != secret || stored.AccessKey != access {
 		t.Fatal("update rotated the credential to caller-supplied values")
+	}
+	if got.AccessSecret != "" {
+		t.Fatalf("update echoed the confidential secret %q — the secret is revealed once, by create", got.AccessSecret)
 	}
 	if got.DisplayName != "renamed" {
 		t.Fatalf("update failed to apply a legitimately mutable field: %q", got.DisplayName)
+	}
+}
+
+// The gap that made a publishable key unmintable: there was NO path anywhere that
+// produced one for a user. IAM owned the model (schema.KeyScopePublish), the resolver
+// (store.PublishableKeyByAccessKey) and the ingest door (compat resolve-key), and
+// nothing minted the credential they were written for — so every surface configured
+// its own thing. Type is a field on the ONE mint, and this is the proof it works.
+func TestMintUserKey_PublishableTypeMintsAPublicKeyAndNoSecret(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	got, err := MintUserKey(ctx, db, "acme", "ada", schema.KeyScopePublish)
+	if err != nil {
+		t.Fatalf("MintUserKey(publish): %v", err)
+	}
+	if !strings.HasPrefix(got, "pk-") {
+		t.Fatalf("publishable mint returned %q, want the pk- half — a browser key is the value you ship", got)
+	}
+	k, err := orm.Get[schema.Key](db, "acme/"+PublishKeyName)
+	if err != nil {
+		t.Fatalf("no publishable key row: %v", err)
+	}
+	if k.Scope != schema.KeyScopePublish {
+		t.Fatalf("row scope = %q, want %q — the resolver refuses anything else", k.Scope, schema.KeyScopePublish)
+	}
+	if k.AccessSecret != "" {
+		t.Fatalf("a publishable key stored a confidential secret %q — it must have no secret half at all", k.AccessSecret)
+	}
+	if k.AccessKey != got {
+		t.Fatalf("returned %q but stored %q; the value handed out must be the value that resolves", got, k.AccessKey)
+	}
+	if k.User != "ada" || k.Owner != "acme" {
+		t.Fatalf("publishable key filed under %s/%s, want acme/ada", k.Owner, k.User)
+	}
+}
+
+// The two scopes are two rows, so a user holds both at once and rotating one does not
+// touch the other. One row would make "rotate the key in my browser bundle" also sign
+// the holder out of their own API.
+func TestMintUserKey_ScopesAreIndependentCredentials(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	secret, err := MintUserKey(ctx, db, "acme", "ada", "")
+	if err != nil {
+		t.Fatalf("mint secret: %v", err)
+	}
+	pub, err := MintUserKey(ctx, db, "acme", "ada", schema.KeyScopePublish)
+	if err != nil {
+		t.Fatalf("mint publishable: %v", err)
+	}
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First(); k == nil {
+		t.Fatal("minting the publishable key destroyed the secret key")
+	}
+
+	// Rotating the publishable key leaves the secret key alone…
+	pub2, err := MintUserKey(ctx, db, "acme", "ada", schema.KeyScopePublish)
+	if err != nil {
+		t.Fatalf("re-mint publishable: %v", err)
+	}
+	if pub2 == pub {
+		t.Fatal("re-minting the publishable key did not rotate it")
+	}
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First(); k == nil {
+		t.Fatal("rotating the publishable key revoked the secret key")
+	}
+	// …and revoking it likewise.
+	if err := RevokeUserKey(ctx, db, "acme", schema.KeyScopePublish); err != nil {
+		t.Fatalf("revoke publishable: %v", err)
+	}
+	if _, err := orm.Get[schema.Key](db, "acme/"+PublishKeyName); err == nil {
+		t.Fatal("publishable key survived its own revoke")
+	}
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First(); k == nil {
+		t.Fatal("revoking the publishable key revoked the secret key — the whole reason they are separate rows")
+	}
+}
+
+// A key LIST must never carry a confidential secret. Before schema.Key.Mask the list
+// handed every reader every sk- in the org verbatim, which meant read AUTHORIZATION
+// was standing in for redaction — and so widening who may see their own keys could
+// not be done safely. The publishable half survives the mask on purpose: it is the
+// value the holder needs, and it authenticates nobody.
+func TestKeys_ReadsMaskTheSecretAndKeepThePublishableHalf(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	made, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "svc", User: "ada"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if made.AccessSecret == "" {
+		t.Fatal("create must reveal the secret ONCE, or a minted key is unusable")
+	}
+
+	listed, err := list(db)(ctx, &ListRequest{Owner: "acme"})
+	if err != nil || len(listed.Keys) != 1 {
+		t.Fatalf("list: %v (%d keys)", err, len(listed.Keys))
+	}
+	if listed.Keys[0].AccessSecret != "" {
+		t.Fatalf("list disclosed the confidential secret %q", listed.Keys[0].AccessSecret)
+	}
+	if listed.Keys[0].AccessKey != made.AccessKey {
+		t.Fatalf("list blanked the publishable half (%q); the holder needs it", listed.Keys[0].AccessKey)
+	}
+
+	one, err := get(db)(ctx, &Ref{Owner: "acme", Name: "svc"})
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if one.AccessSecret != "" {
+		t.Fatalf("get disclosed the confidential secret %q", one.AccessSecret)
+	}
+	// And the STORED secret is untouched — the mask is a projection, not a deletion.
+	stored, err := orm.Get[schema.Key](db, "acme/svc")
+	if err != nil || stored.AccessSecret != made.AccessSecret {
+		t.Fatal("masking a read mutated the stored credential")
 	}
 }
