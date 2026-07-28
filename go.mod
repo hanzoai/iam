@@ -51,6 +51,7 @@ require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
+	github.com/hanzoai/account v0.2.1 // indirect
 	github.com/hanzoai/builder v0.3.13 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/dbx v1.17.2 // indirect
