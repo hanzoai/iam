@@ -14,7 +14,11 @@
 
 package schema
 
-import "github.com/hanzoai/orm"
+import (
+	"net/url"
+
+	"github.com/hanzoai/orm"
+)
 
 // SigninMethod is one enabled authentication method on an application
 // (e.g. Password, Verification code, WebAuthn, Face ID) with its display
@@ -222,19 +226,73 @@ func (a *Application) GetId() string {
 	return a.Owner + "/" + a.Name
 }
 
-// IsRedirectUriValid reports whether redirectUri is EXACTLY one of the
-// application's registered redirect URIs (RFC 6749 3.1.2.3). Match is exact
-// string equality only — never a host-suffix, substring, or regex match — so a
-// trusted origin can never be leveraged to redeem another app's authorization
-// code. New callbacks are added by registering the exact URI, nothing else.
+// IsRedirectUriValid reports whether redirectUri is one of the application's
+// registered redirect URIs (RFC 6749 3.1.2.3). Match is exact string equality —
+// never a host-suffix, substring, or regex match — so a trusted origin can never
+// be leveraged to redeem another app's authorization code. New callbacks are
+// added by registering the exact URI, nothing else.
+//
+// The ONE exception is the loopback interface, where RFC 8252 §7.3 requires the
+// server to "allow any port": a native app binds an ephemeral port at runtime
+// (hanzo/cli binds 127.0.0.1:0) and therefore CANNOT know its redirect_uri at
+// registration time. Exact matching made that flow unsatisfiable — the
+// provisioner registers the portless http://127.0.0.1/callback (see
+// internal/provision, TypeCLI), the CLI sends http://127.0.0.1:51234/callback,
+// authorize answered 400 invalid_redirect_uri, the browser never came back, and
+// the CLI blocked on accept() forever. That hang was this comparison.
 func (a *Application) IsRedirectUriValid(redirectUri string) bool {
 	if redirectUri == "" {
 		return false
 	}
 	for _, registered := range a.RedirectUris {
-		if registered != "" && registered == redirectUri {
+		if registered == "" {
+			continue
+		}
+		if registered == redirectUri || loopbackPortAgnosticMatch(registered, redirectUri) {
 			return true
 		}
+	}
+	return false
+}
+
+// loopbackPortAgnosticMatch reports whether two http loopback URIs are identical
+// once the port is ignored (RFC 8252 §7.3). Everything except the port must still
+// match exactly — scheme, host, path, query and fragment — so this widens the
+// registration only along the one axis the app cannot control.
+//
+// Scoped deliberately to the IP LITERALS 127.0.0.1 and ::1. "localhost" is
+// excluded because it resolves through DNS/hosts, so it is not provably the local
+// machine (RFC 8252 §8.3 says not to rely on it); a registered localhost URI still
+// matches exactly, it just does not gain the port wildcard.
+func loopbackPortAgnosticMatch(registered, requested string) bool {
+	r, err := url.Parse(registered)
+	if err != nil {
+		return false
+	}
+	q, err := url.Parse(requested)
+	if err != nil {
+		return false
+	}
+	// Both sides must be loopback: a registered loopback URI must never be
+	// satisfied by a remote host, and vice versa.
+	if !isLoopbackLiteral(r) || !isLoopbackLiteral(q) {
+		return false
+	}
+	return r.Hostname() == q.Hostname() &&
+		r.EscapedPath() == q.EscapedPath() &&
+		r.RawQuery == q.RawQuery &&
+		r.Fragment == q.Fragment
+}
+
+// isLoopbackLiteral reports whether u is an http URI whose host is a loopback IP
+// literal. http (not https) because a loopback listener has no usable certificate.
+func isLoopbackLiteral(u *url.URL) bool {
+	if u.Scheme != "http" {
+		return false
+	}
+	switch u.Hostname() {
+	case "127.0.0.1", "::1":
+		return true
 	}
 	return false
 }

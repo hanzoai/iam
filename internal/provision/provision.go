@@ -257,6 +257,12 @@ func redirects(org Org, a App) []string {
 	case TypeCLI:
 		// Loopback, per RFC 8252 §7.3 — the port is assigned at runtime, so
 		// both the literal IP and the name are registered.
+		//
+		// Registering these PORTLESS only works because the matcher ignores the
+		// port for loopback IP literals (schema.Application.IsRedirectUriValid →
+		// loopbackPortAgnosticMatch). The two halves are one contract: when the
+		// matcher was exact-only, every CLI login died redirect_uri_mismatch and
+		// hung the client on accept(). Change one, change the other.
 		return []string{"http://127.0.0.1/callback", "http://localhost/callback"}
 
 	case TypeDesktop:
