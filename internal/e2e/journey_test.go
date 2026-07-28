@@ -167,9 +167,9 @@ func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
 	}
 }
 
-// TestJourney_AdminConsole_CasdoorSurface proves the old admin console's calls work:
+// TestJourney_AdminConsole_LegacySurface proves the old admin console's calls work:
 // get-account (the security contract), get-organizations (OrgSwitcher), get-users.
-func TestJourney_AdminConsole_CasdoorSurface(t *testing.T) {
+func TestJourney_AdminConsole_LegacySurface(t *testing.T) {
 	e := boot(t)
 	root := e.mint(t, "admin/root") // a SuperAdmin bearer
 

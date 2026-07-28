@@ -102,7 +102,7 @@ func TestPasswordGrant_unknownUser_invalidGrant_sameAsBadPassword(t *testing.T) 
 
 // CASDOOR PARITY: a PUBLIC client (no secret, no PKCE) may complete the password
 // grant — the console/chat apps casdoor allowed. See passwordGrant's doc comment.
-func TestPasswordGrant_publicClient_casdoorParity_succeeds(t *testing.T) {
+func TestPasswordGrant_publicClient_legacyParity_succeeds(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // no secret → public client
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")

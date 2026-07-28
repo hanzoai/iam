@@ -74,7 +74,7 @@ func TestAuthorize_SelfReadDoesNotLeakToHumans(t *testing.T) {
 // ONE ENVELOPE PER SURFACE. The compat verbs are verb-shaped and their clients
 // branch on a STRING status; the native surface is noun-shaped and keeps zip's
 // numeric-status error.
-func TestCasdoorVerb_SelectsTheCompatSurfaceOnly(t *testing.T) {
+func TestLegacyVerb_SelectsTheCompatSurfaceOnly(t *testing.T) {
 	for path, want := range map[string]bool{
 		"/v1/iam/get-account":       true,
 		"/v1/iam/get-application":   true,
@@ -89,8 +89,8 @@ func TestCasdoorVerb_SelectsTheCompatSurfaceOnly(t *testing.T) {
 		"/v1/iam/":                  false,
 		"/v1/other/get-thing":       false, // not the IAM surface
 	} {
-		if got := casdoorVerb(path); got != want {
-			t.Errorf("casdoorVerb(%q) = %v, want %v", path, got, want)
+		if got := legacyVerb(path); got != want {
+			t.Errorf("legacyVerb(%q) = %v, want %v", path, got, want)
 		}
 	}
 }
