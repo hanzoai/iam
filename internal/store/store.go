@@ -442,8 +442,13 @@ func CreateOrganization(_ context.Context, db orm.DB, name string) (*schema.Orga
 		o.Owner = MembershipOwner
 		o.Name = name
 		o.DisplayName = name
-		// No PasswordOptions: an empty policy means "no extra complexity rules", the
-		// same default a hand-seeded org carries.
+		// No PasswordOptions: an empty policy means "no EXTRA complexity rules on
+		// top of the platform floor" — it does NOT mean "no policy". The floor
+		// (min length, enforced in oidc.passwordPolicyError regardless of what an
+		// org declares) applies to this org exactly as it does to a hand-seeded
+		// one, so leaving this empty is safe. Do not read it as an exemption: it
+		// once was one, and an anonymous self-serve signup was accepted with the
+		// password "a".
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create organization %s: %w", name, err)
