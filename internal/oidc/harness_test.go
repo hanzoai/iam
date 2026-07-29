@@ -20,6 +20,8 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/schema"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 // HTTP-level test harness: register the whole OIDC surface on a fresh store and
@@ -137,7 +139,7 @@ func jsonReq(method, path string, body any) *http.Request {
 
 func do(t *testing.T, app *zip.App, req *http.Request) (*http.Response, []byte) {
 	t.Helper()
-	resp, err := app.Fiber().Test(req)
+	resp, err := testhttp.Do(app, req)
 	if err != nil {
 		t.Fatalf("test request %s %s: %v", req.Method, req.URL.Path, err)
 	}

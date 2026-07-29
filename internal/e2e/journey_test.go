@@ -36,6 +36,8 @@ import (
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/schema"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 const (
@@ -251,7 +253,7 @@ func (e *env) form(t *testing.T, path, clientID, secret string, form url.Values)
 	req.Host = "hanzo.id"
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(clientID+":"+secret)))
-	resp, err := e.app.Fiber().Test(req)
+	resp, err := testhttp.Do(e.app, req)
 	if err != nil {
 		t.Fatalf("form %s: %v", path, err)
 	}
@@ -275,7 +277,7 @@ func (e *env) req(t *testing.T, method, path, bearer, body, contentType string) 
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := e.app.Fiber().Test(req)
+	resp, err := testhttp.Do(e.app, req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}

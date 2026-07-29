@@ -18,6 +18,8 @@ import (
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 const svcToken = "svc-token-secret-value"
@@ -49,7 +51,7 @@ func post(t *testing.T, app *zip.App, path, token, body string) (int, map[string
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := app.Fiber().Test(req)
+	resp, err := testhttp.Do(app, req)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
 	}

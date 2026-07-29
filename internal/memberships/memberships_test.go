@@ -34,6 +34,8 @@ import (
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 const signingKid = "cert-hanzo"
@@ -126,7 +128,7 @@ func (h *harness) postBasic(t *testing.T, path string, body any, clientID, secre
 // caller asserts on the status alone.
 func (h *harness) do(t *testing.T, req *http.Request) (int, env) {
 	t.Helper()
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", req.Method, req.URL.Path, err)
 	}
