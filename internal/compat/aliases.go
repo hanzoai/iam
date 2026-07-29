@@ -107,7 +107,7 @@ func orgProjectsHandler(db orm.DB) zip.Handler {
 		}
 		owner, err := authz.Scope(ctx, requested)
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return authz.Deny(c, err)
 		}
 		q := orm.TypedQuery[schema.Project](db)
 		if owner != "" {
@@ -135,7 +135,7 @@ func orgWorkspacesHandler(db orm.DB) zip.Handler {
 		}
 		owner, err := authz.Scope(ctx, requested)
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return authz.Deny(c, err)
 		}
 		q := orm.TypedQuery[schema.Workspace](db)
 		if owner != "" {
@@ -170,7 +170,7 @@ func listHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 		ctx := c.Context()
 		owner, err := authz.Scope(ctx, c.Query("owner"))
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return authz.Deny(c, err)
 		}
 
 		base := func() *orm.ModelQuery[T] {
@@ -215,7 +215,7 @@ func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 		}
 		scoped, err := authz.ScopeFor(ctx, c.Path(), owner, name)
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return authz.Deny(c, err)
 		}
 		row, err := orm.TypedQuery[T](db).Filter("Owner=", scoped).Filter("Name=", name).First()
 		if errors.Is(err, orm.ErrNotFound) {

@@ -108,11 +108,48 @@ func From(ctx context.Context) (*Principal, bool) {
 	return p, ok
 }
 
-// Scope resolves the owner a listing is bound to: a SuperAdmin lists the owner
-// it asks for (empty = every tenant), anyone else lists only its own org. The
-// org comes from the verified bearer, so a request parameter can never widen a
-// read beyond the caller's authority — the one value authorized is the one value
-// queried. Every owner-scoped lister resolves its owner here.
+// Scope resolves the owner an org-scoped request is bound to. It is the ONE
+// place the rule lives, and the rule is:
+//
+//	AN ORG-SCOPED REQUEST IS HONOURED OR REFUSED, NEVER SILENTLY REINTERPRETED.
+//
+// A SuperAdmin — the only cross-tenant scope — is bound to the owner it names
+// (empty = every tenant). Everyone else is bound to its OWN org and may say so:
+// naming its own org, or naming none, both resolve to it. Naming a DIFFERENT org
+// is refused, because the one thing this function must never do is answer a
+// request about org B with org A's rows.
+//
+// It used to return p.Org for ANY owner, silently discarding the parameter.
+// Measured against production 2026-07-28 with the hanzo-console credential (home
+// org hanzo): ?owner=lux, ?owner=zoo and ?owner=nonexistent-org-xyz each answered
+// 200/ok with 262 `hanzo` accounts. No tenant's rows escaped IAM — the pin held —
+// so it was not a confidentiality breach here; it was MISATTRIBUTION, which is
+// worse in one specific way. Nothing in the status code, the `status` field, the
+// message or the count said the filter had been dropped, so the caller believed
+// it held tenant B while holding tenant A. An operator asked for lux, was handed
+// 262 hanzo accounts, and was one filter-and-delete from purging the wrong
+// tenant. Downstream it WAS a leak: cloud's IAM edge (cloud/iam_edge.go) checks
+// ?owner= against the calling tenant and then forwards it under ONE confidential
+// client, so every tenant's team page asked for its own org and was served the
+// edge credential's org instead. A pin that lies composes into a breach; a
+// refusal cannot.
+//
+// The refusal is NOT an org-existence oracle, and by construction rather than by
+// care: the decision is taken from the verified principal alone and never touches
+// the store, so `lux` (a real tenant), `built-in` (reserved) and
+// `nonexistent-org-xyz` (a fabrication) are the same comparison and the same
+// bytes out. Its text names the CREDENTIAL's org, never the requested one. That
+// is the same collapse cloud's per-org KMS store makes for this class of leak —
+// every spelling the caller may not have routes to ONE existence-independent
+// answer. It differs only in WHICH answer: KMS has no org parameter to refuse (it
+// reads the org from the token), so absence is its only observable and it answers
+// 404; here the org is a stated request parameter, so there IS an authorization
+// decision to report, and reporting it is the entire point.
+//
+// An empty p.Org is refused too. A non-super with no org has no org scope, and
+// returning "" would resolve to "no filter" — every tenant's rows, which is the
+// exact branch TestListRoutesNeverLeakAnotherTenant exists to keep shut. Fail
+// closed.
 func Scope(ctx context.Context, owner string) (string, error) {
 	p, ok := From(ctx)
 	if !ok {
@@ -121,8 +158,31 @@ func Scope(ctx context.Context, owner string) (string, error) {
 	if p.Super {
 		return owner, nil
 	}
+	if p.Org == "" || (owner != "" && owner != p.Org) {
+		return "", errForeignOrg(p)
+	}
 	return p.Org, nil
 }
+
+// errForeignOrg is the refusal a foreign owner earns. It is built from the
+// PRINCIPAL's own org and never from the requested one, so every org the caller
+// may not have — real, reserved, or invented — produces the byte-identical
+// answer. Naming the caller's own org discloses nothing (its rows already carry
+// it) and is what turns a bare "forbidden" into a diagnosis: you are pinned here,
+// you asked for somewhere else.
+func errForeignOrg(p *Principal) error {
+	if p.Org == "" {
+		return zip.ErrForbidden("forbidden: this credential carries no organization scope")
+	}
+	return zip.ErrForbidden("forbidden: this credential is scoped to organization " + p.Org)
+}
+
+// Deny renders a Scope/ScopeFor refusal in the envelope the caller's surface
+// speaks — the SAME shaping the Guard's own refusal uses, so one refusal looks
+// the same whether it was raised before the handler or inside it. A handler that
+// answered it with httpx.Err would send HTTP 200 carrying {"status":"error"},
+// which is how a refusal gets logged as a success.
+func Deny(c *zip.Ctx, err error) error { return refuse(c, http.StatusForbidden, err.Error()) }
 
 // ScopeFor resolves the owner a compat READ should query — the same decision as
 // Scope, except that a self-read addresses its own owner verbatim.
@@ -133,11 +193,15 @@ func Scope(ctx context.Context, owner string) (string, error) {
 // hanzo/hanzo-cloud and got "the entity does not exist" — authorized and still
 // unable to read itself, a 200 that is functionally the 403 it replaced.
 //
-// Rather than loosen Scope (whose pinning IS the tenant gate on the handler-authorized
+// Rather than loosen Scope (whose binding IS the tenant gate on the handler-authorized
 // paths — SCIM, service-accounts, memberships), the ONE self-read clause is asked
 // again here, through the same authorize() it is defined in. There is no second copy
 // of the rule: if authorize would admit this exact read, the owner it admitted is the
-// owner we query; otherwise the pin stands.
+// owner we query; otherwise Scope decides, and Scope now REFUSES a foreign owner
+// rather than rewriting it. That is the honour-or-refuse rule reaching this path
+// too: a grant honours the org it names and answers with THAT org's row, correctly
+// attributed; everything else is refused. Neither branch can hand back a row the
+// request did not ask for.
 func ScopeFor(ctx context.Context, path, owner, name string) (string, error) {
 	if p, ok := From(ctx); ok && owner != "" && authorize(p, "GET", entityOf(path), owner, name) {
 		if p.Super || (p.App != "" && owner == p.AppOwner) {

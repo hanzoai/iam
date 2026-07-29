@@ -231,15 +231,15 @@ func TestSCIM_patchDeactivate(t *testing.T) {
 
 func TestSCIM_crossTenant_denied(t *testing.T) {
 	h := newHarness(t)
-	// hanzo's admin addressing an orgb user: authz.Scope re-pins the owner to hanzo,
-	// so the lookup targets hanzo/bob (nonexistent) → 404, never orgb/bob's data.
+	// hanzo's admin addressing an orgb user: authz.Scope refuses the foreign owner
+	// outright, so the store is never consulted — neither for orgb/bob's data nor
+	// for a same-named hanzo row to answer in its place.
 	status, body := h.do(t, "GET", scimUsers+"/orgb/bob", h.token(t, "hanzo/boss"), "")
-	if status != 404 {
-		t.Fatalf("cross-tenant get status = %d, want 404 (re-scoped to own org); body=%s", status, body)
+	if status != 403 {
+		t.Fatalf("cross-tenant get status = %d, want 403 (foreign org refused); body=%s", status, body)
 	}
-	// The lookup was re-scoped to the caller's org (hanzo/bob, nonexistent) — never
-	// orgb's row. Prove it's a SCIM Error, not a leaked user resource (no userName,
-	// no orgb owner in a resource body).
+	// Prove it's a SCIM Error, not a leaked user resource (no userName, no orgb
+	// owner in a resource body).
 	if !strings.Contains(body, "urn:ietf:params:scim:api:messages:2.0:Error") {
 		t.Fatalf("cross-tenant get did not return a SCIM Error; body=%s", body)
 	}
