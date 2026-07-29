@@ -1,9 +1,8 @@
-# binaries
+# binaries — anchored to the repo root, where `go build` drops them.
+# Unanchored (`iam`) would match every path component named iam at any depth,
+# which silently hid pkg/iam/ from git.
 /iam
 /iam-v2
-iam
-iam-v2
-/iam
 /iamd
 
 # signing key material — keys live in KMS, never in the tree
