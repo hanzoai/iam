@@ -33,6 +33,8 @@ import (
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 const signingKid = "cert-hanzo"
@@ -98,7 +100,7 @@ func (h *harness) do(t *testing.T, path, bearer, body string) (int, map[string]a
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
 	}

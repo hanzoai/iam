@@ -27,6 +27,8 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/schema"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 // HTTP-level harness: every test drives the REAL registered router behind the REAL
@@ -121,7 +123,7 @@ func seed(t *testing.T, db orm.DB, o opts) *schema.Application {
 // a 200, the envelope proves what the client reads.
 func do(t *testing.T, app *zip.App, req *http.Request) (int, map[string]any) {
 	t.Helper()
-	resp, err := app.Fiber().Test(req)
+	resp, err := testhttp.Do(app, req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", req.Method, req.URL.Path, err)
 	}

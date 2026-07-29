@@ -36,6 +36,8 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/schema"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 // The two spellings an unauthorized caller must not be able to tell apart: a
@@ -95,7 +97,7 @@ func (h *harness) send(t *testing.T, method, path, auth string, body any) reply 
 	if auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}

@@ -28,6 +28,8 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 	"github.com/hanzoai/iam/internal/store"
 	"github.com/hanzoai/iam/internal/users"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 // HTTP-level harness: every test drives the REAL registered token/jwks routes through
@@ -240,7 +242,7 @@ func tokenPOST(t *testing.T, app *zip.App, id, secret, service string, scopes ..
 
 func do(t *testing.T, app *zip.App, req *http.Request) (int, map[string]any, http.Header) {
 	t.Helper()
-	resp, err := app.Fiber().Test(req)
+	resp, err := testhttp.Do(app, req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", req.Method, req.URL.Path, err)
 	}

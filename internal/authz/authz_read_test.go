@@ -14,6 +14,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 // doBody is do() plus the response body — the read surface's real contract.
@@ -32,7 +34,7 @@ func (h *harness) doBody(t *testing.T, method, path, bearer string, body any) (i
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}

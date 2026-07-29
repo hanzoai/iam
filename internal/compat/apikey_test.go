@@ -21,6 +21,8 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/schema"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 const (
@@ -53,7 +55,7 @@ func (h *harness) getBasic(t *testing.T, path, clientID, secret string) (int, st
 	req := httptest.NewRequest("GET", path, nil)
 	req.Host = "hanzo.id"
 	req.SetBasicAuth(clientID, secret)
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
 	}

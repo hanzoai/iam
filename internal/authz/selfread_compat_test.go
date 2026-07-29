@@ -12,6 +12,8 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/schema"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 // THE REQUEST CLOUD ACTUALLY MAKES.
@@ -59,7 +61,7 @@ func (h *harness) basicGet(t *testing.T, path, clientID, secret string) int {
 	req.Host = "hanzo.id"
 	req.Header.Set("Authorization", "Basic "+
 		base64.StdEncoding.EncodeToString([]byte(clientID+":"+secret)))
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
 	}
@@ -170,7 +172,7 @@ func TestSelfRead_ReturnsTheRowNotAnEmptyOk(t *testing.T) {
 	req.Host = "hanzo.id"
 	req.Header.Set("Authorization", "Basic "+
 		base64.StdEncoding.EncodeToString([]byte("hanzo-cloud:s3cret")))
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}

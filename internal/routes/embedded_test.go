@@ -14,6 +14,8 @@ import (
 
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/schema"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 // IAM EMBEDDED ALONGSIDE A SIBLING SUBSYSTEM.
@@ -50,7 +52,7 @@ func TestGuard_DoesNotGateASiblingSubsystemsRoutes(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/v1/models", nil)
 	req.Host = "api.hanzo.ai"
-	resp, err := app.Fiber().Test(req)
+	resp, err := testhttp.Do(app, req)
 	if err != nil {
 		t.Fatalf("GET /v1/models: %v", err)
 	}
@@ -91,7 +93,7 @@ func TestGuard_StillGatesIamsOwnPaths(t *testing.T) {
 	} {
 		req := httptest.NewRequest("GET", path, nil)
 		req.Host = "hanzo.id"
-		resp, err := app.Fiber().Test(req)
+		resp, err := testhttp.Do(app, req)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
 		}
