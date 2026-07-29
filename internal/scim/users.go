@@ -45,13 +45,27 @@ type scimUser struct {
 	UserName     string            `json:"userName"`
 	Name         *scimName         `json:"name,omitempty"`
 	DisplayName  string            `json:"displayName,omitempty"`
+	UserType     string            `json:"userType,omitempty"`
+	ProfileURL   string            `json:"profileUrl,omitempty"`
 	Emails       []scimMultiValued `json:"emails,omitempty"`
 	PhoneNumbers []scimMultiValued `json:"phoneNumbers,omitempty"`
 	Photos       []scimMultiValued `json:"photos,omitempty"`
+	Addresses    []scimAddress     `json:"addresses,omitempty"`
 	Active       *bool             `json:"active,omitempty"`
 	Password     string            `json:"password,omitempty"`
 	Hanzo        *hanzoUserExt     `json:"urn:ietf:params:scim:schemas:extension:hanzo:2.0:User,omitempty"`
 	Meta         *scimMeta         `json:"meta,omitempty"`
+}
+
+// scimAddress is the SCIM address sub-attribute set this service persists (RFC
+// 7643 §4.1.2). streetAddress/postalCode have no column on the identity row, so
+// they are not accepted rather than accepted-and-dropped.
+type scimAddress struct {
+	Locality string `json:"locality,omitempty"`
+	Region   string `json:"region,omitempty"`
+	Country  string `json:"country,omitempty"`
+	Type     string `json:"type,omitempty"`
+	Primary  bool   `json:"primary,omitempty"`
 }
 
 type scimName struct {
@@ -87,8 +101,11 @@ func toSCIM(u *schema.User) *scimUser {
 	s := &scimUser{
 		Schemas:     []string{schemaUser, schemaHanzoUserExt},
 		ID:          u.Owner + "/" + u.Name,
+		ExternalID:  u.ExternalId,
 		UserName:    u.Name,
 		DisplayName: u.DisplayName,
+		UserType:    u.Type,
+		ProfileURL:  u.Homepage,
 		Active:      &active,
 		Hanzo:       &hanzoUserExt{Owner: u.Owner, IsAdmin: u.IsAdmin},
 		Meta: &scimMeta{
@@ -110,7 +127,28 @@ func toSCIM(u *schema.User) *scimUser {
 	if u.Avatar != "" {
 		s.Photos = []scimMultiValued{{Value: u.Avatar, Type: "photo"}}
 	}
+	if u.Location != "" || u.Region != "" || u.CountryCode != "" {
+		s.Addresses = []scimAddress{{
+			Locality: u.Location, Region: u.Region, Country: u.CountryCode,
+			Type: "work", Primary: true,
+		}}
+	}
 	return s
+}
+
+// primaryAddress returns the primary address entry, or the first. The identity row
+// holds ONE address, so a multi-valued request collapses to the primary — the same
+// rule primaryValue applies to emails and phones.
+func primaryAddress(vs []scimAddress) (scimAddress, bool) {
+	if len(vs) == 0 {
+		return scimAddress{}, false
+	}
+	for _, v := range vs {
+		if v.Primary {
+			return v, true
+		}
+	}
+	return vs[0], true
 }
 
 // applyToUser overlays a SCIM User's mapped attributes ONTO u — which is the FULL
@@ -125,10 +163,30 @@ func applyToUser(in *scimUser, u *schema.User, allowAdmin bool) (password string
 	if in.Name != nil {
 		u.FirstName, u.LastName = in.Name.GivenName, in.Name.FamilyName
 	}
+	// externalId is the PROVISIONING CLIENT's own key for this record — the value an
+	// IdP correlates its directory entry by. It is not identity (owner/name is) and
+	// it is not a credential; carrying it is what makes a repeat sync an update
+	// rather than a duplicate create.
+	u.ExternalId = in.ExternalID
+	u.Homepage = in.ProfileURL
+	// userType is deliberately NOT applied. schema.User.Type is the IDENTITY-CLASS
+	// discriminator, not a profile label: Type == "service-account" is what
+	// serviceaccounts.is() tests (internal/serviceaccounts/serviceaccounts.go:327,
+	// gated at :216) and what oidc/provision.go mints a tenant's pk-/sk- API
+	// credential as. Honouring a client-supplied userType would let anyone who can
+	// provision a user through SCIM mint a row the service-account surface accepts —
+	// an identity-class escalation across a boundary IAM otherwise owns. It is
+	// declared mutability:readOnly in the /Schemas document (RFC 7643 §7: a readOnly
+	// attribute in a write is ignored) and projected on read only.
 	u.Email = primaryValue(in.Emails)
 	u.Phone = primaryValue(in.PhoneNumbers)
 	if v := primaryValue(in.Photos); v != "" {
 		u.Avatar = v
+	}
+	if a, ok := primaryAddress(in.Addresses); ok {
+		u.Location, u.Region, u.CountryCode = a.Locality, a.Region, a.Country
+	} else {
+		u.Location, u.Region, u.CountryCode = "", "", ""
 	}
 	// active defaults to true when omitted (RFC 7643 §4.1.1); active=false
 	// soft-disables (IsForbidden).
@@ -335,12 +393,17 @@ func patchUser(db orm.DB) zip.Handler {
 		curActive := !cur.IsForbidden && !cur.IsDeleted
 		next := scimUser{
 			UserName:     cur.Name,
+			ExternalID:   cur.ExternalId,
 			DisplayName:  cur.DisplayName,
+			ProfileURL:   cur.Homepage,
 			Active:       &curActive,
 			Name:         &scimName{GivenName: cur.FirstName, FamilyName: cur.LastName},
 			Emails:       []scimMultiValued{{Value: cur.Email, Primary: true}},
 			PhoneNumbers: []scimMultiValued{{Value: cur.Phone, Primary: true}},
-			Hanzo:        &hanzoUserExt{Owner: cur.Owner, IsAdmin: cur.IsAdmin},
+			Addresses: []scimAddress{{
+				Locality: cur.Location, Region: cur.Region, Country: cur.CountryCode, Primary: true,
+			}},
+			Hanzo: &hanzoUserExt{Owner: cur.Owner, IsAdmin: cur.IsAdmin},
 		}
 		password := ""
 		for _, op := range patch.Operations {
@@ -419,6 +482,12 @@ func setPatchPath(u *scimUser, password *string, path string, value any) error {
 		u.Active = &b
 	case "displayname":
 		u.DisplayName = str(value)
+	case "externalid":
+		u.ExternalID = str(value)
+	case "profileurl":
+		u.ProfileURL = str(value)
+	case "addresses", "addresses.locality", "addresses.region", "addresses.country":
+		patchAddress(u, path, value)
 	case "password":
 		*password = str(value)
 	case "name.givenname":
@@ -433,6 +502,33 @@ func setPatchPath(u *scimUser, password *string, path string, value any) error {
 		return errors.New("unsupported patch path: " + path)
 	}
 	return nil
+}
+
+// patchAddress applies a patch to the single address the identity row holds —
+// either the whole `addresses` value or one sub-attribute path.
+func patchAddress(u *scimUser, path string, value any) {
+	cur, _ := primaryAddress(u.Addresses)
+	cur.Primary = true
+	switch path {
+	case "addresses":
+		var m map[string]any
+		switch v := value.(type) {
+		case map[string]any:
+			m = v
+		case []any:
+			if len(v) > 0 {
+				m, _ = v[0].(map[string]any)
+			}
+		}
+		cur.Locality, cur.Region, cur.Country = str(m["locality"]), str(m["region"]), str(m["country"])
+	case "addresses.locality":
+		cur.Locality = str(value)
+	case "addresses.region":
+		cur.Region = str(value)
+	case "addresses.country":
+		cur.Country = str(value)
+	}
+	u.Addresses = []scimAddress{cur}
 }
 
 func ensureName(u *scimUser) *scimName {
