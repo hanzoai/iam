@@ -11,13 +11,31 @@
 // arbitrary user id / userName / email exists in a tenant the caller cannot see.
 //
 // iam closes it by CONSTRUCTION, one layer earlier than iam-v1 did: scopedTarget
-// (scim/users.go) re-pins the requested owner to the caller's OWN org through
-// authz.Scope for every non-super, on every verb, BEFORE the store is touched. A
-// non-super therefore never addresses a foreign row at all — the lookup key is
-// always (callerOrg, name) — so "exists in another org" and "does not exist" are
-// the SAME 404, and there is no 403 branch to distinguish them. This test pins
-// that invariant so a regression toward the iam-v1 shape (resolve-then-scope,
-// which reintroduces the 403) FAILS here.
+// (scim/users.go) resolves the requested owner through authz.Scope for every
+// non-super, on every verb, BEFORE the store is touched. So the outcome is
+// decided without a lookup, and "exists in another org" and "does not exist" are
+// the SAME answer with no branch that could distinguish them. This test pins that
+// invariant so a regression toward the iam-v1 shape (resolve-then-scope, which
+// splits 404 from 403) FAILS here.
+//
+// WHAT CHANGED, AND WHY THE ANSWER MOVED FROM 404 TO 403. Scope used to close the
+// oracle by REWRITING the foreign owner to the caller's own — /Users/orgb/bob
+// silently became a lookup of hanzo/bob. That collapsed the two probes, but only
+// because it answered a different question than the one asked, and the collapse
+// held ONLY while the name was absent from the caller's own org. Give hanzo a
+// `bob` and the same request returns 200 carrying HANZO's bob under orgb's URL —
+// a DIFFERENT HUMAN, correctly authorized, wrongly attributed. A caller that then
+// deactivates "orgb/bob" deactivates a hanzo employee. The rewrite was never a
+// safe answer; it was an answer whose danger this file happened not to sample.
+// Scope now REFUSES a foreign owner instead (authz.Scope: honoured or refused,
+// never silently reinterpreted), so the collapse no longer depends on what the
+// caller's own org happens to contain.
+//
+// The oracle stays closed, for the reason that always mattered: the refusal is
+// computed from the verified principal alone and never touches the store, so
+// foreign-exists and foreign-missing are the identical 403. Own-org-missing stays
+// 404 — that distinguishes "your org" from "not your org", which the caller
+// already knows, and discloses nothing about any tenant but its own.
 //
 // Reuses the scim_test.go harness: newHarness seeds {admin/root super, hanzo/boss
 // admin, hanzo/alice regular, orgb/bob admin}; h.token / h.do / scimUsers.
@@ -34,11 +52,10 @@ import (
 
 // TestRed_scimGet_noCrossOrgExistenceOracle proves the read path is not an
 // existence oracle: for a non-super (hanzo's org-admin), a FOREIGN-existing id
-// (orgb/bob — a real row in another tenant), a FOREIGN-missing id (orgb/ghost),
-// and an OWN-org-missing id (hanzo/ghost) are ALL the identical 404 with no
-// resource body. If scopedTarget regressed to iam-v1's resolve-globally-then-scope
-// shape, orgb/bob would resolve and yield a 403 while the others stayed 404 — this
-// test would then fail on the mismatched status.
+// (orgb/bob — a real row in another tenant) and a FOREIGN-missing id (orgb/ghost)
+// are the identical refusal with no resource body. If scopedTarget regressed to
+// iam-v1's resolve-globally-then-scope shape, orgb/bob would resolve and split the
+// two statuses — this test would fail on the mismatch.
 func TestRed_scimGet_noCrossOrgExistenceOracle(t *testing.T) {
 	h := newHarness(t)
 	boss := h.token(t, "hanzo/boss") // org-admin of hanzo, NOT super
@@ -47,19 +64,48 @@ func TestRed_scimGet_noCrossOrgExistenceOracle(t *testing.T) {
 	foreignMissingStatus, _ := h.do(t, "GET", scimUsers+"/orgb/ghost", boss, "")              // exists nowhere
 	ownMissingStatus, _ := h.do(t, "GET", scimUsers+"/hanzo/ghost", boss, "")                 // missing in own org
 
-	if foreignExistsStatus != 404 || foreignMissingStatus != 404 || ownMissingStatus != 404 {
-		t.Fatalf("VULN: read status leaks existence — foreign-exists=%d foreign-missing=%d own-missing=%d, all must be 404",
-			foreignExistsStatus, foreignMissingStatus, ownMissingStatus)
-	}
 	// The decisive oracle assertion: a row that DOES exist in another org must be
-	// indistinguishable (by status) from one that exists nowhere.
+	// indistinguishable from one that exists nowhere.
 	if foreignExistsStatus != foreignMissingStatus {
 		t.Fatalf("VULN: cross-org existence oracle — orgb/bob (exists) returned %d but orgb/ghost (missing) returned %d",
 			foreignExistsStatus, foreignMissingStatus)
 	}
-	// And no orgb resource ever leaks in the body (the lookup was re-scoped to hanzo).
+	// Both are the refusal a foreign org earns, decided without a lookup.
+	if foreignExistsStatus != 403 {
+		t.Fatalf("VULN: cross-org read returned %d, want 403 — a foreign org is refused, "+
+			"never re-aimed at the caller's own; body=%s", foreignExistsStatus, foreignExistsBody)
+	}
+	// Own-org absence stays a genuine 404: it is the honest answer to a request
+	// the caller was entitled to make.
+	if ownMissingStatus != 404 {
+		t.Fatalf("own-org missing id returned %d, want 404", ownMissingStatus)
+	}
+	// And no orgb resource ever leaks in the body.
 	if strings.Contains(foreignExistsBody, `"owner":"orgb"`) || strings.Contains(foreignExistsBody, `"userName"`) {
 		t.Fatalf("VULN: cross-org GET leaked an orgb user resource; body=%s", foreignExistsBody)
+	}
+}
+
+// THE CASE THE 404 COLLAPSE WAS BLIND TO. Re-pinning a foreign owner to the
+// caller's own org looks safe exactly as long as the requested NAME is absent
+// from the caller's org. When it is present — and a `bob`, an `admin`, an `ops`
+// exists in nearly every tenant — the same request returns 200 carrying the
+// caller's own row under the foreign tenant's URL. That is not a leak (no orgb
+// data crosses) and that is what makes it dangerous: it is a confident, correctly
+// authorized answer about the WRONG PERSON, and every downstream verb — PATCH
+// active:false, DELETE — then lands on that person.
+func TestRed_scimGet_foreignIdNeverResolvesToASameNamedLocalUser(t *testing.T) {
+	h := newHarness(t)
+	seedUser(t, h.db, "hanzo", "bob", false) // the name collision that exists in real tenants
+	boss := h.token(t, "hanzo/boss")
+
+	status, body := h.do(t, "GET", scimUsers+"/orgb/bob", boss, "")
+	if status == 200 {
+		t.Fatalf("VULN: GET /Users/orgb/bob returned 200 — it resolved hanzo/bob and "+
+			"presented it as orgb/bob; body=%s", body)
+	}
+	if strings.Contains(body, `"hanzo/bob"`) || strings.Contains(body, `"owner":"hanzo"`) {
+		t.Fatalf("VULN: a request naming tenant orgb was answered with a hanzo identity; body=%s", body)
 	}
 }
 
