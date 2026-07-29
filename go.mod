@@ -2,6 +2,17 @@ module github.com/hanzoai/iam
 
 go 1.26.5
 
+// This path carries two histories. Everything below v1.32.0 published the
+// Casdoor-derived tree (Beego/xorm, controllers/); v1.32.0 and above publish
+// this one (zip/orm, internal/). Same import path, no signal — which made
+// `go get github.com/hanzoai/iam@v1.31.28` a lineage swap that still compiles.
+//
+// Those versions now live, byte-identical, at github.com/hanzoai/iam-v1.
+// Deleting their tags here would not un-publish them: proxy.golang.org caches
+// module versions immutably and already serves 506 of them. This retraction is
+// therefore the only thing that reaches every resolver, proxied or direct.
+retract [v1.0.0, v1.31.37] // Casdoor lineage; moved to github.com/hanzoai/iam-v1
+
 // Hanzo IAM stack (MIGRATION.md §2) — no base, no consensus engine:
 //   - github.com/zap-proto/zip — typed HTTP handlers on the zap-proto/fiber v3 engine
 //   - github.com/hanzoai/orm   — typed Go records over SQLite / hanzoai/sql / hanzoai/datastore
