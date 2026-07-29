@@ -24,6 +24,75 @@ hand-rolling OAuth. Full SDK model: `~/work/hanzo/SDK-ARCHITECTURE.md`.
 Brands set `serverUrl`: hanzo→iam.hanzo.ai, lux→lux.id, zoo→zoo.id,
 bootnode→id.bootno.de, pars→pars.id (white-label by domain).
 
+## Org scope — HONOURED or REFUSED, never silently reinterpreted
+
+**The rule.** A request that NAMES an organization gets that organization's data
+or an error. It never gets a different organization's data. `authz.Scope` is the
+one place it lives; all 17 org-scoped call sites resolve their owner there.
+
+| principal | `?owner=` | result |
+|---|---|---|
+| SuperAdmin (org `admin`) | anything | honoured; empty = every tenant |
+| anyone else | absent | own org (unstated ≠ reinterpreted) |
+| anyone else | its own org | honoured |
+| anyone else | **any other org** | **403, no rows** |
+| anyone else, `p.Org == ""` | anything | **403** (no org ⇒ no scope; `""` used to mean *no filter* = every tenant) |
+
+**Why.** `Scope` used to `return p.Org` for ANY owner. Measured in production
+2026-07-28 with the `hanzo-console` credential (home org `hanzo`): `?owner=lux`,
+`?owner=zoo` and `?owner=nonexistent-org-xyz` each answered `200 {"status":"ok"}`
+with 262 **`hanzo`** accounts. Nothing in the code, the `status` field, the `msg`
+or the count said the filter had been dropped, so a fabricated org was
+indistinguishable from a real one *and* from your own. No rows escaped IAM, so it
+was not a confidentiality breach here — it was **misattribution**, which is worse
+in one specific way: you believe you hold tenant B while holding tenant A. It
+nearly caused a production purge of the wrong tenant. Downstream it *was* a leak:
+cloud's IAM edge (`cloud/iam_edge.go`) validates `?owner=` against the calling
+tenant and then forwards it under ONE confidential client, so every tenant's team
+page asked for its own org and was served the edge credential's org.
+
+**Not an existence oracle — by construction, not by care.** The refusal is decided
+from the verified principal alone and never touches the store, so `lux` (real),
+`built-in` (reserved) and `nonexistent-org-xyz` (invented) are the same comparison
+and the same bytes; the message names the CREDENTIAL's org, never the requested
+one. Same collapse cloud's per-org KMS store makes: every spelling you may not
+have routes to ONE existence-independent answer. It differs only in *which*
+answer — KMS reads the org from the token, so absence is its only observable and
+it answers 404; here the org is a stated parameter, so there is a decision to
+report and reporting it is the point.
+
+**Cross-tenant reach exists only where a grant says so**, and a grant HONOURS the
+org it names (returning that org's real data, correctly attributed) — it never
+substitutes:
+- **SuperAdmin** — every entity. The only unrestricted cross-tenant scope.
+- **`CapOrgAdmin`** — the organization REGISTRY only. Brand consoles create
+  customer orgs during onboarding and read `Organization.Founder` to resume a
+  partial one, so registry-wide reach is load-bearing, not incidental.
+
+So `get-users` and `get-organization` now **agree on the only question carrying a
+secret**: for every principal without a cross-tenant grant both refuse a foreign
+org existence-independently, so neither is an oracle. For a `CapOrgAdmin` holder
+org existence is *not* a secret — it can create orgs and read `Founder`, so hiding
+reads from it would be theatre. What can no longer happen anywhere: **being handed
+org A's rows in answer to a request that named org B.**
+
+**A rewrite is not a safe answer, only an unsampled one.** The old SCIM guard
+(`scim/read_scope_test.go`) proved foreign-exists and foreign-missing were both
+404 and called the oracle closed. It was: the re-pin turned `/Users/orgb/bob` into
+a lookup of `hanzo/bob`, absent. Seed a `hanzo/bob` — a name every tenant has —
+and the same request returns **200 carrying hanzo's bob under orgb's URL**, and
+`PATCH active:false` then deactivates a hanzo employee. Pinned by
+`TestRed_scimGet_foreignIdNeverResolvesToASameNamedLocalUser`.
+
+**Divergence still open (needs a decision, do not "fix" by widening).** The legacy
+verb lister goes through `Scope`; the native noun lister (`organizations.List`)
+filters `in.Owner` under the Guard's authorization. For a `CapOrgAdmin` app,
+`get-organizations?owner=admin` is now a 403 while `/v1/iam/organizations?owner=admin`
+returns every org row (masked). Before this change it was 403-vs-a-silently-EMPTY
+list, so nothing regressed — but one policy still answers two ways on two
+spellings. Unifying it changes a documented capability's blast radius: decide it
+deliberately, in `authorize()`, not by opening the legacy lister.
+
 ## API keys — one entity, one plural noun, and the SCOPE is what differs
 
 `internal/keys`, entity `keys`, routes `/v1/iam/keys{,/get,/update,/delete}`.
