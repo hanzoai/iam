@@ -18,15 +18,27 @@ import (
 // immutably, and it already holds them — so the retraction below is what actually
 // tells every resolver, proxied or direct, that those versions are not this module.
 //
-// This test fails if the retraction is ever dropped from go.mod.
+// Retraction is per-module, so every module path this repository publishes needs
+// its own. github.com/hanzoai/iam/pkg/iam — the Casdoor-only Embed + Mount
+// submodule, absent from this tree — is published under the canonical prefix and
+// is not reached by the root retraction above.
+//
+// This test fails if either retraction is ever dropped. Add a row when this
+// repository starts publishing another module path.
 func TestCasdoorLineageRetracted(t *testing.T) {
-	b, err := os.ReadFile("go.mod")
-	if err != nil {
-		t.Fatalf("read go.mod: %v", err)
-	}
-	const want = "retract [v1.0.0, v1.31.37]"
-	if !strings.Contains(string(b), want) {
-		t.Errorf("go.mod is missing %q\n\nWithout it, github.com/hanzoai/iam@<v1.32.0 "+
-			"silently resolves to the Casdoor tree instead of this one.", want)
+	for _, m := range []struct{ gomod, retract string }{
+		{"go.mod", "retract [v1.0.0, v1.31.37]"},
+		{"pkg/iam/go.mod", "retract [v1.18.0, v1.18.7]"},
+	} {
+		t.Run(m.gomod, func(t *testing.T) {
+			b, err := os.ReadFile(m.gomod)
+			if err != nil {
+				t.Fatalf("read %s: %v", m.gomod, err)
+			}
+			if !strings.Contains(string(b), m.retract) {
+				t.Errorf("%s is missing %q\n\nWithout it, that module path silently "+
+					"resolves to the Casdoor tree instead of this one.", m.gomod, m.retract)
+			}
+		})
 	}
 }
