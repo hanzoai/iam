@@ -25,6 +25,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
+	github.com/hanzoai/account v0.2.1
 	github.com/luxfi/crypto v1.20.1
 	github.com/luxwallet/connect/go v0.1.4
 	github.com/pquerna/otp v1.5.0
@@ -51,7 +52,6 @@ require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
-	github.com/hanzoai/account v0.2.1 // indirect
 	github.com/hanzoai/builder v0.3.13 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/dbx v1.17.2 // indirect
