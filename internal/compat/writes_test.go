@@ -18,6 +18,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 // post issues a JSON POST through the real router and returns (status, rawBody).
@@ -30,7 +32,7 @@ func (h *harness) post(t *testing.T, path, bearer string, body any) (int, string
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := h.app.Fiber().Test(req)
+	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
 	}

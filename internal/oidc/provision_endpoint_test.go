@@ -17,6 +17,8 @@ import (
 
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/schema"
+
+	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 // bootApp brings up the full IAM app over an embedded SQLite store, with the unified
@@ -48,7 +50,7 @@ func postProvision(t *testing.T, app *zip.App, token, body string) (int, map[str
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := app.Fiber().Test(req)
+	resp, err := testhttp.Do(app, req)
 	if err != nil {
 		t.Fatalf("POST /v1/iam/admin/provision: %v", err)
 	}
