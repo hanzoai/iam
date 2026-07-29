@@ -38,7 +38,7 @@ func (s *ormStore) GetUser(ctx context.Context, owner, name string) (*model.User
 // It must NOT be orm.Get, which keys on the orm STORAGE id: that is a different
 // value (a v2-native row's surrogate, a migrated row's "owner/name"), so the id
 // AddUser assigns would not resolve here, and the "owner/name" shape is both
-// mutable and slash-bearing — unusable as a SCIM /Users/{id} path segment.
+// mutable and slash-bearing — unusable as an opaque single-segment resource id.
 // Going through store also keeps the fail-closed check on a duplicated subject.
 func (s *ormStore) GetUserByID(ctx context.Context, id string) (*model.User, error) {
 	return store.GetUserById(ctx, s.db, id)
