@@ -31,9 +31,10 @@ import (
 // This is the one call a host binary makes to embed iam.
 func Route(app *zip.App, db orm.DB) {
 	routes.Route(app, db)
-	// Enterprise features (hanzoai/iam/feature — SCIM/SAML/LDAP live in the
-	// hanzoiam/* modules and Register themselves). No-op until a host registers
-	// one; fail-fast if a registered module cannot register (a boot misconfiguration).
+	// Enterprise features (hanzoai/iam/feature — SAML and LDAP live in the
+	// hanzoiam/* modules and Register themselves; SCIM is core, registered above by
+	// routes.Route). No-op until a host registers one; fail-fast if a registered
+	// module cannot register (a boot misconfiguration).
 	if err := feature.RouteAll(app, featurestore.New(db)); err != nil {
 		panic("iam: enterprise feature registration failed: " + err.Error())
 	}

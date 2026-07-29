@@ -27,8 +27,8 @@ func openFeatureStore(t *testing.T) feature.Store {
 
 // The seam's user id is the stable opaque subject: AddUser mints it server-side,
 // and the id a module reads back MUST be the one GetUserByID resolves. A module
-// (hanzoiam/scim) hands that id to a client as the resource id and gets it back on
-// the next request, so a mismatch here means every GET/PATCH/DELETE by id 404s.
+// hands that id to a client as the user's handle and gets it back on the next
+// request, so a mismatch here means every lookup by id misses.
 func TestAddUserThenGetUserByID(t *testing.T) {
 	ctx := context.Background()
 	s := openFeatureStore(t)
