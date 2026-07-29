@@ -36,8 +36,10 @@ const (
 
 // Route registers the SCIM 2.0 surface on app.
 func Route(app *zip.App, db orm.DB) {
-	// Discovery.
+	// Discovery (RFC 7644 §4) — what this service supports, and the schema it
+	// actually implements. An IdP reads these before it provisions.
 	app.Get(base+"/ServiceProviderConfig", serviceProviderConfig)
+	routeDiscovery(app)
 
 	// Users resource. The item path is {owner}/{name} because the SCIM id is
 	// "owner/name" (iam's natural key) and a client appends that opaque id
