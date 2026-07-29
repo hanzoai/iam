@@ -7,19 +7,23 @@ name: image
 # WHY THIS FILE IS NOT CALLED build.yml. Gitea collects workflows from the FIRST
 # of WORKFLOW_DIRS that exists in the pushed commit and ignores the rest
 # (modules/actions/workflows.go, listWorkflowsInDirs — it breaks on the first
-# hit), so on main this directory shadows .github/workflows entirely. But this
-# repo's v1.33.x release line is DIVERGED from main (136 ahead / 142 behind at
-# v1.33.8) and carries no .hanzo/workflows, so when a v* tag on that line syncs
-# to the mirror, Gitea collects its .github/workflows/build.yml instead — and
-# that file logs in with hanzo-dev + GH_PAT, which exists as a git.hanzo.ai org
-# secret. It would therefore SUCCEED, racing GitHub Actions to push the same
-# immutable ghcr.io/hanzoai/iam:v<X.Y.Z> from the same commit: two digests
-# behind one name, exactly the platform v4.4.5 incident. Gitea's disable list is
-# keyed on the workflow FILENAME (services/actions/notifier_helper.go checks
-# cfg.IsWorkflowDisabled(wf.EntryName)), so `build.yml` is disabled on this repo
-# to block that legacy builder, and this file carries a distinct name so the
-# block cannot also silence it. Delete the release line's builder — or unify the
-# two lines — and `build.yml` can be re-enabled and this note removed.
+# hit), so on main this directory shadows .github/workflows entirely. The
+# Casdoor-lineage branches carried no .hanzo/workflows, so when a v* tag on one
+# of them synced to the mirror, Gitea collected its .github/workflows/build.yml
+# instead — and that file logs in with hanzo-dev + GH_PAT, which exists as a
+# git.hanzo.ai org secret. It would therefore SUCCEED, racing GitHub Actions to
+# push the same immutable ghcr.io/hanzoai/iam:v<X.Y.Z> from the same commit: two
+# digests behind one name, exactly the platform v4.4.5 incident. Gitea's disable
+# list is keyed on the workflow FILENAME (services/actions/notifier_helper.go
+# checks cfg.IsWorkflowDisabled(wf.EntryName)), so `build.yml` was disabled on
+# this repo to block that legacy builder, and this file carries a distinct name
+# so the block could not also silence it.
+#
+# That second lineage is now DELETED, not disabled: every .github/workflows
+# builder (build/cicd/release/docker-deploy) was removed from all 133 branches
+# that carried one, so no tree in this repo can collect a second builder on
+# either forge. The release line has also converged — v1.33.20…v1.33.31 are all
+# commits on main. This is the only file in the repo that builds an image.
 #
 # WHY THIS FILE EXISTS. `.github/workflows/build.yml` was neutralized to a
 # dispatch-only echo on 2026-07-24 (f267b4ae8) in favour of a native pipeline
@@ -57,7 +61,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # THE GATE. Not decoration: the GitHub builders this file replaces gated their
+  # push behind tests (docker-deploy.yml's `docker` job declared
+  # `needs: [go-tests, go-build, frontend-build]`), so deleting them without a
+  # gate here would have traded two builders for one UNGATED builder — a strictly
+  # worse posture than the duplication it fixes. `make test` is the repo's single
+  # declared gate (`go test ./... -race -count=1`); it is named here rather than
+  # inlined so a human and CI keep running the identical command.
+  test:
+    runs-on: [hanzo-build-linux-amd64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # GOPRIVATE keeps hanzoai/orm + hanzoai/sqlite off the proxy/sumdb; the
+      # rewrite is what lets `go mod download` actually read them. Same token the
+      # image build mounts as GIT_AUTH_TOKEN — one credential, two consumers.
+      - name: Authenticate private module fetches
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
+
+      - run: make test
+        env:
+          GOPRIVATE: github.com/hanzoai/*
+
   build:
+    needs: [test]
     runs-on: [hanzo-build-linux-amd64]
     steps:
       - uses: actions/checkout@v4
@@ -84,6 +117,14 @@ jobs:
           push: true
           provenance: false
           tags: ghcr.io/hanzoai/iam:${{ steps.meta.outputs.tag }}
+          # The Dockerfile already carries `-X main.version=${VERSION}`, but its
+          # `ARG VERSION=dev` default was never overridden here — so every image
+          # this builder shipped reported `iam dev` from `/iam version` and could
+          # not name its own lineage. Measured on the live pod, 2026-07-27. Pass
+          # the SAME string used as the image tag: `iam sha-d2aa268` then states
+          # exactly which artifact is running, with no second identifier to drift.
+          build-args: |
+            VERSION=${{ steps.meta.outputs.tag }}
           # The Dockerfile mounts this to rewrite github.com to an authenticated
           # fetch for the private hanzoai modules. Without it `go mod download`
           # fails on hanzoai/orm.
