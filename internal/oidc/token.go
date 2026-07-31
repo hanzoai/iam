@@ -156,7 +156,8 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	//
 	// A code with NO PKCE challenge still requires the secret, so this is not a
 	// downgrade path: an attacker cannot skip client auth by omitting PKCE.
-	if app.ClientSecret != "" && (clientSecret != "" || tok.CodeChallenge == "") {
+	clientAuthed := app.ClientSecret != "" && (clientSecret != "" || tok.CodeChallenge == "")
+	if clientAuthed {
 		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 			return tokenErrorClient(c, "client authentication failed")
 		}
@@ -179,7 +180,11 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	}
 
 	// One-shot: burn the code, then mint the grant's tokens onto the same row.
-	tok.CodeIsUsed = true
+	// PublicGrant carries the relaxation above FORWARD: refresh must be decided
+	// on how this grant was authenticated, not on whether the registration
+	// happens to hold a secret, or the client that just exchanged a code without
+	// one is refused the moment it tries to refresh.
+	tok.CodeIsUsed, tok.PublicGrant = true, !clientAuthed
 	resp, err := issueTokens(ctx, db, c, app, tok, newFamilyID(tok), now)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
@@ -477,7 +482,7 @@ func appTTL(app *schema.Application) time.Duration {
 	if app.ExpireInHours > 0 {
 		return time.Duration(app.ExpireInHours * float64(time.Hour))
 	}
-	return time.Hour
+	return time.Duration(schema.DefaultExpireInHours * float64(time.Hour))
 }
 
 // refreshTTL is the refresh-token lifetime (RefreshExpireInHours); when unset it

@@ -393,3 +393,52 @@ func TestDerive_RejectsRelativeLiteralRedirect(t *testing.T) {
 		t.Error("a relative redirect was accepted; want a Derive error")
 	}
 }
+
+// A declared refresh lifetime reaches the wire under the SAME name the model
+// stores it under, and an UNDECLARED one is omitted so a converge preserves what
+// the app already has instead of resetting every lifetime on every run.
+func TestDerive_TokenLifetimes(t *testing.T) {
+	m := derive(t, `
+orgs:
+  - name: hanzo
+    apps:
+      - { app: cli,  type: cli, refreshExpireInHours: 720 }
+      - { app: svc,  type: service, expireInHours: 8, refreshExpireInHours: 24 }
+      - { app: mcp,  type: cli }
+`)
+	cli := m["hanzo-cli"]
+	if cli.RefreshExpireInHours == nil || *cli.RefreshExpireInHours != 720 {
+		t.Fatalf("hanzo-cli refreshExpireInHours = %v, want 720", cli.RefreshExpireInHours)
+	}
+	if cli.ExpireInHours != nil {
+		t.Errorf("undeclared expireInHours must stay nil, got %v", *cli.ExpireInHours)
+	}
+	body, _ := json.Marshal(m["hanzo-mcp"])
+	if strings.Contains(string(body), "ExpireInHours") || strings.Contains(string(body), "expireInHours") {
+		t.Errorf("an app that declares no lifetime must send none: %s", body)
+	}
+	if svc := m["hanzo-svc"]; svc.ExpireInHours == nil || *svc.ExpireInHours != 8 {
+		t.Errorf("hanzo-svc expireInHours = %v, want 8", svc.ExpireInHours)
+	}
+}
+
+// A refresh token that does not outlive its access token is a grant that can
+// never be exchanged — the exact state hanzo-cli shipped in. The document is
+// refused rather than converged, and the rule is total: an UNDECLARED access
+// lifetime is the server's default, not zero.
+func TestDerive_RejectsARefreshThatDiesWithItsAccessToken(t *testing.T) {
+	for name, src := range map[string]string{
+		"equal to the default": `orgs: [{name: hanzo, apps: [{app: cli, type: cli, refreshExpireInHours: 1}]}]`,
+		"under the default":    `orgs: [{name: hanzo, apps: [{app: cli, type: cli, refreshExpireInHours: 0.5}]}]`,
+		"equal to declared":    `orgs: [{name: hanzo, apps: [{app: cli, type: cli, expireInHours: 8, refreshExpireInHours: 8}]}]`,
+		"negative":             `orgs: [{name: hanzo, apps: [{app: cli, type: cli, refreshExpireInHours: -1}]}]`,
+	} {
+		d, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("%s: Parse: %v", name, err)
+		}
+		if _, err := Derive(d); err == nil {
+			t.Errorf("%s: Derive accepted a refresh lifetime that cannot work", name)
+		}
+	}
+}
