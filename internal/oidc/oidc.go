@@ -126,7 +126,11 @@ func Discovery(c *zip.Ctx) error {
 		"claims_supported": []string{
 			"iss", "sub", "aud", "iat", "exp", "nbf", "jti", "nonce", "azp",
 			"owner", "organization", "scope", "tokenType",
-			"name", "preferred_username", "email", "email_verified",
+			// `name` and `preferred_username` are both the USERNAME here; the human's
+			// name is `displayName`. Advertising a claim nothing emits is what left
+			// consumers reading `name` as a display name for a year, so the list says
+			// exactly what a token carries.
+			"name", "preferred_username", "displayName", "email", "email_verified",
 			"picture", "address", "phone", "groups", "is_verified",
 		},
 	})
