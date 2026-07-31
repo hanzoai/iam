@@ -37,21 +37,35 @@ type Claims struct {
 	Scope        string `json:"scope,omitempty"`
 	Owner        string `json:"owner,omitempty"`
 	Organization string `json:"organization,omitempty"`
-	Email        string `json:"email,omitempty"`
-	Name         string `json:"name,omitempty"`
-	// PreferredUsername is the IAM USERNAME (the `<name>` half of `<owner>/<name>`,
-	// e.g. "z"), not a display name. OIDC gives `name` display semantics, so a
-	// resource server that needs the username has nothing else to read: this token
-	// carried only sub (a UUID), email, and `name` = DisplayName ("Zach Kelling").
+	Email string `json:"email,omitempty"`
+	// Name is the IAM USERNAME (the `<name>` half of `<owner>/<name>`, e.g. "z"),
+	// never a display name. With Owner it forms the ONE address every Hanzo surface
+	// names a principal by — `hanzo auth login` files its credential under
+	// `owner/name` read straight off these claims, so whatever lands here IS the
+	// principal downstream believes it holds.
 	//
-	// Discovery has advertised preferred_username in claims_supported all along
-	// while no token ever emitted it, and downstream paid for the gap. cloud's
-	// money path addresses a wallet as `<org>/<username>`; with no username claim
-	// it fell back to `name` and addressed `hanzo/Zach Kelling` — a wallet no
-	// funding path can name — while the balance sat in `hanzo/z`. Every signed-in
-	// completion then 402'd with a funded account. Emitting the username is what
-	// makes the address derivable rather than guessed.
+	// OIDC gives `name` display semantics and this token used to honour that,
+	// carrying DisplayName ("Zach Kelling") while the account was "z". Adding
+	// preferred_username gave the username somewhere to live but left `name`
+	// display-sourced, so the wrong-principal reading stayed on the wire for every
+	// consumer that reads `name` — the CLI among them. The display name now has its
+	// own claim (Display) and `name` states the username, always. That is a
+	// deliberate divergence from OIDC's display reading of `name`, taken because
+	// one address for a principal beats two spellings that disagree.
+	Name string `json:"name,omitempty"`
+	// PreferredUsername is the OIDC-standard spelling of the same username, kept
+	// because discovery advertises it in claims_supported and cloud's money path
+	// already reads it: a wallet is addressed `<org>/<username>`, and when the only
+	// username-shaped claim was a display-sourced `name` it addressed
+	// `hanzo/Zach Kelling` — a wallet no funding path can name — while the balance
+	// sat in `hanzo/z`. It is sourced from the SAME field as Name (Identity.Name),
+	// so the two cannot drift apart the way `name` drifted from the account.
 	PreferredUsername string `json:"preferred_username,omitempty"`
+	// Display is the human-facing name — what a console greets you by. It is
+	// profile data, never an address: nothing may resolve a principal from it.
+	// `displayName` is the spelling schema.User, SCIM and whoami already use, so
+	// this value keeps its one name across every surface that carries it.
+	Display string `json:"displayName,omitempty"`
 	// BillingAccount names WHICH LEDGER this token spends from — the org pool, or
 	// empty to let the consumer's shape rule pick. account.Payer honours it above
 	// every other signal precisely because it is SIGNED: a caller cannot name its
@@ -69,6 +83,26 @@ type Claims struct {
 	// token, which has no membership, never carries it), so one struct still serves
 	// both an app token and a user token without emitting an empty claim.
 	Orgs []schema.OrgRef `json:"orgs,omitempty"`
+}
+
+// Identity is WHO a token speaks for: the caller-resolved values every mint
+// path turns into claims. It exists because those values used to travel as six
+// adjacent positional strings, two of which — the username and the display name
+// — are both human-readable and were therefore swappable at the call site. They
+// were swapped, on all three mint paths at once, and the swap type-checks.
+//
+// One field per value, resolved in ONE place (identityOf), makes the swap
+// unrepresentable: Name is the username, Display is the human's name, and no
+// call site restates the difference. Zero value = no principal profile (a
+// machine token, or a since-deleted user); every claim it feeds is omitempty, so
+// the token omits them rather than emitting them empty.
+type Identity struct {
+	Id      string // the OIDC `sub` — stable and opaque
+	Email   string
+	Name    string // the IAM USERNAME, the `<name>` half of `<owner>/<name>`
+	Display string // the human-facing name; never an address
+	Billing string
+	Orgs    []schema.OrgRef
 }
 
 // Signer signs tokens with one key under one algorithm. Immutable after
@@ -134,40 +168,54 @@ func NewRSASigner(key *rsa.PrivateKey, kid, issuer string) *Signer {
 	return &Signer{method: jwt.SigningMethodRS256, key: key, kid: kid, alg: "RS256", issuer: issuer}
 }
 
-// Sign issues a signed access token for (app, user) with the given scope. now is
-// injected for testability; ttl is the token lifetime. The audience is the app's
-// clientId (validators fail closed when aud != clientId). orgs is the caller-
-// resolved membership set (home org first); nil for a machine token, which omits
-// the claim — the Signer stays decoupled from schema.User, so the caller resolves
-// the tenancy (store.MemberOrgRefs) and passes it.
-func (s *Signer) Sign(app *schema.Application, userID, email, name, username, billing, scope string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
-	if s == nil {
-		return "", errors.New("jwt: nil signer")
-	}
+// claims is the ONE place an Identity becomes a claim set. Every mint path goes
+// through it, so `name`, `preferred_username` and `displayName` are sourced from
+// the same two fields on every token shape and cannot be filled differently by
+// one path than another. The caller supplies only what genuinely differs between
+// shapes: the tenant, the audience, the acting client, and the token type.
+func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, scope, kind string, ttl time.Duration, now time.Time) (Claims, error) {
 	jti, err := newOpaqueToken()
 	if err != nil {
-		return "", err
+		return Claims{}, err
 	}
-	claims := Claims{
+	return Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
-			Subject:   userID,
-			Audience:  audienceFor(app, ""),
+			Subject:   id.Id,
+			Audience:  aud,
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 			NotBefore: jwt.NewNumericDate(now),
 			IssuedAt:  jwt.NewNumericDate(now),
 			ID:        jti,
 		},
 		Scope:             scope,
-		Owner:             app.Organization,
-		Organization:      app.Organization,
-		Email:             email,
-		Name:              name,
-		PreferredUsername: username,
-		BillingAccount:    billing,
-		Azp:               app.ClientId,
-		TokenType:         "access-token",
-		Orgs:              orgs,
+		Owner:             owner,
+		Organization:      owner,
+		Email:             id.Email,
+		Name:              id.Name,
+		PreferredUsername: id.Name,
+		Display:           id.Display,
+		BillingAccount:    id.Billing,
+		Azp:               azp,
+		TokenType:         kind,
+		Orgs:              id.Orgs,
+	}, nil
+}
+
+// Sign issues a signed access token for (app, identity) with the given scope. now
+// is injected for testability; ttl is the token lifetime. The audience is the
+// app's clientId (validators fail closed when aud != clientId). The owner claim is
+// the APP's org. id.Orgs is the caller-resolved membership set (home org first);
+// nil for a machine token, which omits the claim — the Signer stays decoupled from
+// schema.User, so the caller resolves the tenancy (store.MemberOrgRefs) and passes
+// it.
+func (s *Signer) Sign(app *schema.Application, id Identity, scope string, ttl time.Duration, now time.Time) (string, error) {
+	if s == nil {
+		return "", errors.New("jwt: nil signer")
+	}
+	claims, err := s.claims(id, app.Organization, audienceFor(app, ""), app.ClientId, scope, "access-token", ttl, now)
+	if err != nil {
+		return "", err
 	}
 	return s.signClaims(claims)
 }
@@ -183,34 +231,13 @@ func (s *Signer) Sign(app *schema.Application, userID, email, name, username, bi
 // JWKS verifies it — the token is indistinguishable from one the user obtained
 // directly, which is the point. The Signer stays decoupled from schema.User: the
 // handler resolves and passes the values it authorized.
-func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, username, billing, scope string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
+func (s *Signer) SignUserToken(id Identity, owner, aud, azp, scope string, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
-	jti, err := newOpaqueToken()
+	claims, err := s.claims(id, owner, jwt.ClaimStrings{aud}, azp, scope, "access-token", ttl, now)
 	if err != nil {
 		return "", err
-	}
-	claims := Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    s.issuer,
-			Subject:   subject,
-			Audience:  jwt.ClaimStrings{aud},
-			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
-			NotBefore: jwt.NewNumericDate(now),
-			IssuedAt:  jwt.NewNumericDate(now),
-			ID:        jti,
-		},
-		Scope:             scope,
-		Owner:             owner,
-		Organization:      owner,
-		Email:             email,
-		Name:              name,
-		PreferredUsername: username,
-		BillingAccount:    billing,
-		Azp:               azp,
-		TokenType:         "access-token",
-		Orgs:              orgs,
 	}
 	return s.signClaims(claims)
 }
@@ -219,36 +246,15 @@ func (s *Signer) SignUserToken(subject, owner, aud, azp, email, name, username, 
 // token by carrying the echoed nonce and by declaring tokenType "id-token"; the
 // audience is the client the token was minted for (the RP), and iss matches the
 // discovery issuer so a standard OIDC client validates it.
-func (s *Signer) SignID(app *schema.Application, userID, email, name, username, billing, scope, nonce string, orgs []schema.OrgRef, ttl time.Duration, now time.Time) (string, error) {
+func (s *Signer) SignID(app *schema.Application, id Identity, scope, nonce string, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
-	jti, err := newOpaqueToken()
+	claims, err := s.claims(id, app.Organization, jwt.ClaimStrings{app.ClientId}, app.ClientId, scope, "id-token", ttl, now)
 	if err != nil {
 		return "", err
 	}
-	claims := Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    s.issuer,
-			Subject:   userID,
-			Audience:  jwt.ClaimStrings{app.ClientId},
-			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			ID:        jti,
-		},
-		Scope:             scope,
-		Owner:             app.Organization,
-		Organization:      app.Organization,
-		Email:             email,
-		Name:              name,
-		PreferredUsername: username,
-		BillingAccount:    billing,
-		Nonce:             nonce,
-		Azp:               app.ClientId,
-		TokenType:         "id-token",
-		Orgs:              orgs,
-	}
+	claims.Nonce = nonce
 	return s.signClaims(claims)
 }
 
