@@ -24,6 +24,70 @@ hand-rolling OAuth. Full SDK model: `~/work/hanzo/SDK-ARCHITECTURE.md`.
 Brands set `serverUrl`: hanzo→iam.hanzo.ai, lux→lux.id, zoo→zoo.id,
 bootnode→id.bootno.de, pars→pars.id (white-label by domain).
 
+## A principal is `owner`/`name` — org and USERNAME, on every surface
+
+**The rule.** `owner` is the org. `name` is the USERNAME (`<name>` of
+`<owner>/<name>`). A display name never appears in `name`, in a token or in
+UserInfo; it has its own claim, `displayName`. `preferred_username` is the
+OIDC-standard spelling of the same username and is sourced from the same field,
+so the two cannot drift.
+
+**Why.** `hanzo auth login` files its credential under the token's own
+`owner`/`name`, so those claims ARE the principal downstream believes it holds.
+`userClaims` computed `name = DisplayName, else Name` — OIDC's display reading of
+`name`, inherited from the v1 `Userinfo` struct and present since the in-tree
+server was written (`73b7ef63e`). Measured on iam.hanzo.ai 2026-07-30: a login as
+account `z` minted `name: "Zach Kelling"` and the CLI filed `hanzo/Zach Kelling`,
+an account that does not exist. cloud's money path had already paid for the same
+reading — it addresses a wallet `<org>/<username>`, addressed `hanzo/Zach Kelling`
+and 402'd every completion while the balance sat in `hanzo/z`. `5c0ea823f`
+answered that by ADDING `preferred_username` and deliberately leaving `name`
+display-sourced, which gave the username a home without evicting the display name
+from the claim consumers actually read; the CLI then hit the wall from the other
+side. One address for a principal beats two spellings that disagree, so `name` is
+the username and OIDC's display reading of it is the thing we diverge from.
+
+**One resolution, one claim builder.** Three mint paths — the code/refresh/password
+grant, the console's issue-user-token, and the RFC 8693 exchange — had each
+SEPARATELY written the `DisplayName, else Name` fallback, so fixing one would have
+left two. `identityOf` is now the only user→claims resolution and `Signer.claims`
+the only place an `Identity` becomes a claim set. The values also stopped
+travelling as six adjacent positional strings: two of them are human-readable and
+were therefore swappable at the call site, they WERE swapped on all three paths,
+and it type-checked (the wallet harness had lost a scope into the username slot
+the same way). UserInfo answers identically — it and the token describe one
+principal, and a client holding either must not get two names for it.
+
+## Usernames — one rule, at the write
+
+`schema.Username`: trim, lowercase, `^[a-z0-9][a-z0-9._-]{0,62}$`. Normalization
+settles case and padding; everything else is REFUSED rather than rewritten,
+because quietly turning what someone typed into a different principal is the
+failure being avoided. One character is legal (the account this was written over
+is `z`); a leading digit is legal (nothing resolves a principal numerically).
+
+Ten entry points reach a user row and exactly ONE used to validate the name it
+wrote. The rule now lives at `users.Create` — the choke point six of them share —
+plus the three that write through orm directly (bootstrap's first-admin seed, the
+wallet identity, the onboarding credential). `CreateInput.AuthzTarget` normalizes
+too, so the pair AUTHORIZED is the pair STORED. Service accounts keep only what is
+theirs: `<org>-` binding and segmentation.
+
+**Social signup derives from the ADDRESS, never the profile.** `schema.Handle`
+takes the email local part and refuses a string with no `@` or a local part with
+whitespace — without both, "Zach Kelling" is a local part whose space gets dropped
+and the profile name silently becomes the username `zachkelling`. Dedupe is a
+numeric suffix (`z`, `z2`, `z3`), replacing a random 8-hex suffix on every name
+that made collisions impossible by making every username unrecognisable.
+
+**Case does not make a second person, and stored names are NOT rewritten** —
+renaming moves real principals. `store.GetUserByName` resolves exact, then folded,
+then over the org for a legacy mixed-case row, and FAILS CLOSED on an ambiguous
+fold (the rule `GetUserById` already applies to a duplicated subject), so whoever
+registered "ALICE" alongside "Alice" is never resolved as the other. `users.lookup`
+goes through it rather than repeating the query — restating it is how Create's
+uniqueness check stayed case-SENSITIVE while the rule it guards is not.
+
 ## Org scope — HONOURED or REFUSED, never silently reinterpreted
 
 **The rule.** A request that NAMES an organization gets that organization's data
