@@ -223,9 +223,17 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 // provision creates a fresh user for a first-seen wallet. No password is set —
 // this is a wallet-only identity; the user can add email/password later.
 func provision(ctx context.Context, db orm.DB, in login, address string, now time.Time) (*schema.User, error) {
+	// Machine-generated, but still checked against THE username rule: a generated
+	// name is only conformant while whatever generates it stays conformant, and this
+	// path writes through orm directly rather than users.Create, so nothing else
+	// would notice if a new chain's identifier stopped fitting.
+	uname, err := schema.Username(name(in.Proof.Chain, address))
+	if err != nil {
+		return nil, err
+	}
 	u := orm.New[schema.User](db)
 	u.Owner = in.App.Organization
-	u.Name = name(in.Proof.Chain, address)
+	u.Name = uname
 	u.Type = "normal-user"
 	u.DisplayName = fmt.Sprintf("%s:%s", in.Proof.Chain, short(address))
 	u.Avatar = in.Org.DefaultAvatar

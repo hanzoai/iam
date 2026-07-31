@@ -281,16 +281,25 @@ func mint(sa *schema.User) (key, secret string, err error) {
 // the result is not a well-formed handle, so a malformed name is refused at the
 // boundary rather than persisted.
 func canonical(org, name string) string {
-	if name == "" {
+	// A service account is a user row, so its name is a USERNAME first — charset,
+	// case and length come from schema.Username, the one place they are decided.
+	// This file used to re-enumerate the charset itself, which is how a service
+	// account could hold a name no human account could.
+	full, err := schema.Username(name)
+	if err != nil {
 		return ""
 	}
-	if !boundTo(org, name) {
-		name = org + "-" + name
+	if !boundTo(org, full) {
+		// Re-checked after prefixing: binding can push a legal agent name past the
+		// length bound, and the BOUND name is what gets stored.
+		if full, err = schema.Username(org + "-" + full); err != nil {
+			return ""
+		}
 	}
-	if !valid(name) {
+	if !segmented(full) {
 		return ""
 	}
-	return name
+	return full
 }
 
 // boundTo reports whether name already carries the "<org>-" prefix with a
@@ -300,21 +309,18 @@ func boundTo(org, name string) bool {
 	return len(name) > len(prefix) && strings.HasPrefix(name, prefix)
 }
 
-// valid reports whether name is a well-formed handle: alphanumerics with single
-// -/_/. separators between segments, never leading, trailing, or doubled. A
-// handle is an identity, so anything else is refused rather than normalized.
-func valid(name string) bool {
-	if name == "" || sep(rune(name[0])) || sep(rune(name[len(name)-1])) {
+// segmented reports whether name's separators are single and interior — the one
+// thing a service-account handle asks for BEYOND being a valid username, which
+// schema.Username has already established (so a leading separator is impossible
+// here and is not re-checked). `<org>-<agent>` is a two-segment structure that
+// gets read back apart, so a trailing or doubled separator would name an empty
+// segment.
+func segmented(name string) bool {
+	if name == "" || sep(rune(name[len(name)-1])) {
 		return false
 	}
-	for i, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case sep(r):
-			if i > 0 && sep(rune(name[i-1])) {
-				return false // doubled separator
-			}
-		default:
+	for i := 1; i < len(name); i++ {
+		if sep(rune(name[i])) && sep(rune(name[i-1])) {
 			return false
 		}
 	}

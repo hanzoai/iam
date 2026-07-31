@@ -152,10 +152,16 @@ func signupHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the user is not permitted to sign up to this application")
 		}
 
-		// Username policy (v1 object/check.go CheckUserSignup).
-		if msg := usernamePolicyError(f.Username); msg != "" {
-			return httpx.Err(c, msg)
+		// THE username rule (schema.Username), applied at the door so the caller gets
+		// the reason rather than a bare conflict — and so every check BELOW this line
+		// runs against the value that will actually be stored. Probing uniqueness with
+		// the raw spelling while storing the normalized one is how "Alice" gets admitted
+		// next to an existing "alice".
+		username, err := schema.Username(f.Username)
+		if err != nil {
+			return httpx.Err(c, err.Error())
 		}
+		f.Username = username
 		// Uniqueness within the org — one opaque check per identifier.
 		if taken, err := userExists(ctx, db, f.Organization, f.Username); err != nil {
 			return httpx.Err(c, err.Error())
@@ -253,7 +259,7 @@ const orgChoiceCreate = "create"
 // orgNamePolicyError validates a self-service org name. The org name is the OWNER
 // half of every (owner, name) natural key in the store, so a permissive name here
 // would be a key-injection surface, not a cosmetic issue — hence the same "/" and
-// whitespace refusals usernamePolicyError applies, plus a length bound.
+// whitespace refusals schema.Username applies to the name half, plus a length bound.
 //
 // It deliberately does NOT reject a name merely because it is taken: the caller
 // reaches this only when the lookup already returned no org, and a "taken" message
@@ -290,29 +296,6 @@ func orgNamePolicyError(org string) string {
 	// personal wallet, which is where they belonged.
 	if strings.ContainsRune(org, '@') {
 		return "organization name cannot be an email address — sign up as a person, or name your organization"
-	}
-	return ""
-}
-
-func usernamePolicyError(username string) string {
-	if len(username) <= 1 {
-		return "username must have at least 2 characters"
-	}
-	if unicode.IsDigit(rune(username[0])) {
-		return "username cannot start with a digit"
-	}
-	if isEmailValid(username) {
-		return "username cannot be an email address"
-	}
-	if strings.IndexFunc(username, unicode.IsSpace) >= 0 {
-		return "username cannot contain white spaces"
-	}
-	// "/" is the (owner/name) natural-key AND the owner/name-subject separator, so a
-	// name carrying one could introduce a spurious separator into the sub. Forbid it
-	// at the door so the subject discriminator (store.GetUserBySubject) can never be
-	// confused by a self-service-registered name.
-	if strings.Contains(username, "/") {
-		return "username cannot contain '/'"
 	}
 	return ""
 }
