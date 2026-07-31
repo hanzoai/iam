@@ -49,11 +49,24 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 	}
 
 	// Client authentication: the presented client must be the grant's client, and
-	// a confidential client must present its secret.
+	// a confidential client must present its secret (RFC 6749 §6).
+	//
+	// Confidential is a property of the GRANT, not only of the registration —
+	// tok.PublicGrant, set at establishment by the SAME bounded relaxation
+	// authorizationCodeGrant documents: `hanzo-cli` and every @hanzo/iam SPA keep
+	// a registered secret for a backend path while the surface that signs in is a
+	// public PKCE client that holds none. Demanding the secret here contradicts
+	// the exchange that just succeeded without it: the client cannot acquire one
+	// an hour later, so every refresh 401s invalid_client and the session dies at
+	// the access token's expiry — an hourly browser re-login for exactly the
+	// clients refresh_token exists for. Measured on hanzo-cli, 2026-07-31.
+	//
+	// It never widens: a grant that WAS client-authenticated still must
+	// authenticate, and a presented secret is always verified.
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	if app.ClientSecret != "" {
+	if app.ClientSecret != "" && (clientSecret != "" || !tok.PublicGrant) {
 		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 			return tokenErrorClient(c, "client authentication failed")
 		}
@@ -98,6 +111,10 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		Nonce:        tok.Nonce,
 		Resource:     tok.Resource,
 		RedirectUri:  tok.RedirectUri,
+		// The successor is the SAME grant, so it carries the same establishment
+		// fact. Dropping it would make only the FIRST refresh work and the second
+		// 401 — a session that dies an hour late instead of on time.
+		PublicGrant: tok.PublicGrant,
 	}
 	nu.Name = "rt-" + nameSeed[:24]
 	resp, err := issueTokens(ctx, db, c, app, nu, tok.RefreshFamily, now)

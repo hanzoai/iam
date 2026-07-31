@@ -75,6 +75,19 @@ type appUpsertReq struct {
 	// the same shape of accident that de-secreted apps through update-application.
 	// Nil means "not stated, leave it"; only an explicit true or false moves it.
 	IsShared *bool `json:"isShared"`
+	// ExpireInHours and RefreshExpireInHours are the application's token
+	// lifetimes. They are the ONLY declarative way to say that a refresh token
+	// must OUTLIVE its access token: with neither stated, oidc.refreshTTL clamps
+	// the refresh lifetime to the access lifetime, so the refresh_token grant the
+	// registration advertises expires at the same instant as the token it was
+	// meant to renew and can never be exercised. `hanzo-cli` sat in exactly that
+	// state — a browser re-login every hour, and a live refresh returning 401.
+	//
+	// POINTERS, for the same reason as IsShared: a plain float would read as 0 on
+	// every reconcile that says nothing and reset a deliberate lifetime back to
+	// the default. Nil means "not stated, leave it".
+	ExpireInHours        *float64 `json:"expireInHours"`
+	RefreshExpireInHours *float64 `json:"refreshExpireInHours"`
 }
 
 // upsertApplication idempotently creates or updates a service-account application,
@@ -131,6 +144,8 @@ func upsertApplication(db orm.DB) zip.Handler {
 			if req.IsShared != nil {
 				existing.IsShared = *req.IsShared
 			}
+			existing.ExpireInHours = ttl(req.ExpireInHours, existing.ExpireInHours)
+			existing.RefreshExpireInHours = ttl(req.RefreshExpireInHours, existing.RefreshExpireInHours)
 			existing.EnablePassword = true
 			if err := existing.UpdateCtx(ctx); err != nil {
 				return c.JSON(500, errResp("server_error"))
@@ -142,7 +157,9 @@ func upsertApplication(db orm.DB) zip.Handler {
 			a.ClientId, a.ClientSecret = req.ClientId, req.ClientSecret
 			a.Organization, a.DisplayName = req.Organization, pick(req.DisplayName, req.Name)
 			a.GrantTypes, a.RedirectUris, a.Cert = req.GrantTypes, req.RedirectUris, req.Cert
-			a.EnablePassword, a.ExpireInHours = true, 1
+			a.EnablePassword = true
+			a.ExpireInHours = ttl(req.ExpireInHours, schema.DefaultExpireInHours)
+			a.RefreshExpireInHours = ttl(req.RefreshExpireInHours, 0)
 			// A new app is single-tenant unless it says otherwise — fail closed.
 			a.IsShared = req.IsShared != nil && *req.IsShared
 			a.Model = model
@@ -287,6 +304,17 @@ func decode(c *zip.Ctx, v any) error {
 }
 
 func errResp(msg string) map[string]any { return map[string]any{"status": "error", "msg": msg} }
+
+// ttl applies an optionally-declared token lifetime: nil PRESERVES cur (an
+// omitted field never resets a deliberate lifetime on a steady-state reconcile),
+// a stated value wins — including an explicit 0, which is how a document says
+// "back to the default".
+func ttl(declared *float64, cur float64) float64 {
+	if declared == nil {
+		return cur
+	}
+	return *declared
+}
 
 // pick returns a if non-empty (trimmed), else b.
 func pick(a, b string) string {

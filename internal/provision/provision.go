@@ -44,6 +44,8 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
+
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // Doc is a provision document: the complete app graph for one or more orgs.
@@ -97,6 +99,20 @@ type App struct {
 	// type-derived set is a silent revocation of every grant the type does not
 	// name.
 	Grants []string `yaml:"grants"`
+	// ExpireInHours and RefreshExpireInHours are this client's token lifetimes.
+	// Same names as the wire and the stored model, so one value has one name from
+	// document to registration.
+	//
+	// RefreshExpireInHours is the ONLY way to say that a refresh token must
+	// OUTLIVE its access token, and saying nothing is not neutral: with it unset
+	// the token endpoint clamps the refresh lifetime to the ACCESS lifetime, so
+	// the refresh_token grant every interactive type derives expires at the same
+	// instant as the token it exists to renew. That is not a short session, it is
+	// a dead grant — `hanzo-cli` sat in it, and every command an hour after login
+	// reopened a browser. Undeclared (0) is OMITTED from the upsert so a converge
+	// preserves whatever the app already has.
+	ExpireInHours        float64 `yaml:"expireInHours"`
+	RefreshExpireInHours float64 `yaml:"refreshExpireInHours"`
 }
 
 // Client is the derived, serialized registration — the body of an upsert call.
@@ -118,6 +134,11 @@ type Client struct {
 	// Cert is the signing cert name. Omitted from the body when empty so the
 	// upsert preserves the app's current cert (it assigns only a non-empty one).
 	Cert string `json:"cert,omitempty"`
+	// Token lifetimes, in hours. POINTERS so an undeclared lifetime is OMITTED
+	// and the upsert preserves what the app has — a plain float would send 0 on
+	// every converge and reset every app's lifetimes to the default.
+	ExpireInHours        *float64 `json:"expireInHours,omitempty"`
+	RefreshExpireInHours *float64 `json:"refreshExpireInHours,omitempty"`
 }
 
 // App types. A document that names anything else is rejected at Derive rather
@@ -230,20 +251,59 @@ func deriveApp(org Org, a App) (Client, error) {
 		}
 	}
 
+	if err := checkLifetimes(org, name, a); err != nil {
+		return Client{}, err
+	}
+
 	c := Client{
-		Organization: org.Name,
-		Name:         id,
-		ClientId:     id,
-		DisplayName:  displayName(org, name),
-		GrantTypes:   union(grants, a.Grants),
-		RedirectUris: union(redirects(org, a), a.Redirects),
-		Public:       publicByType[a.Type],
-		Cert:         strings.TrimSpace(a.Cert),
+		Organization:         org.Name,
+		Name:                 id,
+		ClientId:             id,
+		DisplayName:          displayName(org, name),
+		GrantTypes:           union(grants, a.Grants),
+		RedirectUris:         union(redirects(org, a), a.Redirects),
+		Public:               publicByType[a.Type],
+		Cert:                 strings.TrimSpace(a.Cert),
+		ExpireInHours:        stated(a.ExpireInHours),
+		RefreshExpireInHours: stated(a.RefreshExpireInHours),
 	}
 	if c.RedirectUris == nil && a.Type != TypeService {
 		return Client{}, fmt.Errorf("provision: app %s declares no hosts and type %q needs a redirect", id, a.Type)
 	}
 	return c, nil
+}
+
+// checkLifetimes rejects a token-lifetime pair that cannot work, so the defect
+// is a loud parse error instead of a converged registration whose advertised
+// refresh_token grant is dead on arrival. A refresh token that expires no later
+// than the access token it renews is not a short session — it is a grant that
+// can never be exercised once, which is exactly the state `hanzo-cli` shipped
+// in. Measured against the effective access lifetime, so the rule is total: an
+// undeclared access lifetime is the server's default, not zero.
+func checkLifetimes(org Org, name string, a App) error {
+	if a.ExpireInHours < 0 || a.RefreshExpireInHours < 0 {
+		return fmt.Errorf("provision: app %s/%s declares a negative token lifetime", org.Name, name)
+	}
+	access := a.ExpireInHours
+	if access == 0 {
+		access = schema.DefaultExpireInHours
+	}
+	if a.RefreshExpireInHours > 0 && a.RefreshExpireInHours <= access {
+		return fmt.Errorf("provision: app %s/%s refreshExpireInHours %g must outlive expireInHours %g "+
+			"— a refresh token that dies with its access token can never be exchanged",
+			org.Name, name, a.RefreshExpireInHours, access)
+	}
+	return nil
+}
+
+// stated turns a declared lifetime into the wire's optional field. 0 means
+// UNDECLARED and is omitted, so a converge preserves the lifetime the app
+// already has rather than resetting every unstated app on every run.
+func stated(hours float64) *float64 {
+	if hours <= 0 {
+		return nil
+	}
+	return &hours
 }
 
 // redirects builds the callback set for one app. Hosts are only meaningful for

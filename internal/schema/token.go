@@ -67,4 +67,17 @@ type Token struct {
 	RefreshFamily   string `json:"refreshFamily,omitempty" orm:"index"`
 	RefreshConsumed bool   `json:"refreshConsumed,omitempty"`
 	RefreshExpireIn int64  `json:"refreshExpireIn,omitempty"`
+
+	// PublicGrant records that this grant was established WITHOUT client
+	// authentication — a PKCE code exchange from a client that presented no
+	// secret. Whether a client is confidential is a property of the GRANT, not
+	// only of the registration: `hanzo-cli` and every @hanzo/iam SPA keep a
+	// registered secret for a BACKEND path while the surface that actually signs
+	// in is a public PKCE client that cannot hold one. authorizationCodeGrant
+	// already makes exactly that bounded relaxation; this is the same fact,
+	// recorded so refreshTokenGrant can honour it instead of demanding a secret
+	// the client never had (which 401s invalid_client and kills the session at
+	// the access token's expiry). Carried across rotation, so the second refresh
+	// behaves like the first.
+	PublicGrant bool `json:"publicGrant,omitempty"`
 }
