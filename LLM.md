@@ -192,6 +192,41 @@ manages.
 read. Stamping it on `schema.User.AccessKey` authenticated nobody AND overwrote the
 holder's working legacy `hk-`, locking them out with no path back through the UI.
 
+## Refresh — confidential is a property of the GRANT, and a lifetime must be SAID
+
+Two independent defects made `refresh_token` unusable for every client that signs
+in through a browser, so a session died at the access token's expiry and the user
+logged in again. Measured on `hanzo-cli` 2026-07-31: a live refresh answered
+`401 invalid_client`, and the refresh token was already expired anyway.
+
+**Client auth.** `authorizationCodeGrant` has a documented relaxation — a
+registration that HOLDS a secret still serves a public PKCE surface (`hanzo-cli`,
+and every `@hanzo/iam` SPA whose secret exists for a backend path), so a code
+exchange that presents no secret is authenticated by PKCE instead.
+`refreshTokenGrant` did not have it and demanded the secret unconditionally: the
+client completed the exchange without one, cannot acquire one, and is refused the
+moment it tries to renew. The fact is now recorded where it belongs — on the
+GRANT, `schema.Token.PublicGrant`, set at establishment and carried across
+rotation (drop it and only the FIRST refresh works). It never widens: a grant
+established WITH the secret still needs it, and a presented secret is always
+verified.
+
+**Lifetime.** `refreshTTL` falls back to `appTTL` when `RefreshExpireInHours` is
+unset — v1 parity, and dead on arrival: the refresh token expires at the same
+instant as the token it renews. Nothing could say otherwise, because the upsert
+body carried no lifetime field at all. `expireInHours` / `refreshExpireInHours`
+now travel document → `provision.App` → upsert → model under ONE name, as
+POINTERS on the wire so an omitted lifetime PRESERVES (a plain float would reset
+every app on every converge). `provision.checkLifetimes` REFUSES a refresh
+lifetime that does not outlive the access lifetime, measured against
+`schema.DefaultExpireInHours` when the access lifetime is unstated — so the state
+`hanzo-cli` shipped in cannot be declared again.
+
+Every other app still carries `refreshExpireInHours: 0` and is therefore still on
+the dead-on-arrival default. The fix is one line per app in that org's provision
+document; it is deliberately not a changed global default, because session
+lifetime is POLICY and the OSS mechanism ships no policy.
+
 ## Key entry points
 - `main.go` — cobra root (`serve` / `compare` / `version`); `server/server.go` route registration.
 - `internal/{oidc,routes}` — OAuth2/OIDC surface; `internal/{scim,mfa,webauthn,providers,sessions,tokens,cred,authz,certs,keys}`.

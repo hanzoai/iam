@@ -20,6 +20,13 @@ import (
 	"github.com/hanzoai/orm"
 )
 
+// DefaultExpireInHours is the access-token lifetime an application that declares
+// none is issued. ONE value with ONE home: the token endpoint falls back to it
+// (oidc.appTTL), the bootstrap upsert seeds a new registration with it, and the
+// provision validator measures a declared refresh lifetime against it. Three
+// copies of "1" is how a refresh token comes to be born already expired.
+const DefaultExpireInHours = 1.0
+
 // SigninMethod is one enabled authentication method on an application
 // (e.g. Password, Verification code, WebAuthn, Face ID) with its display
 // label and applicability rule.
