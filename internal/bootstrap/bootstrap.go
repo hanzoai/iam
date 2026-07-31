@@ -219,9 +219,19 @@ func upsertUser(db orm.DB) zip.Handler {
 				return c.JSON(500, errResp("server_error"))
 			}
 		} else {
+			// A new row obeys THE username rule; an existing one is found above and
+			// merely updated, so a legacy name is never rewritten by an upsert that
+			// happened to touch it. This path writes through orm directly rather than
+			// users.Create (it seeds the first admin, before any principal exists), so
+			// it states the rule itself — the one place that has to.
+			name, err := schema.Username(req.Name)
+			if err != nil {
+				return c.JSON(400, errResp(err.Error()))
+			}
+			req.Name = name // the id and the response report what was STORED
 			u := orm.New[schema.User](db)
 			model := u.Model
-			u.Owner, u.Name = req.Owner, req.Name
+			u.Owner, u.Name = req.Owner, name
 			u.DisplayName, u.Email, u.Phone, u.IsAdmin = req.DisplayName, req.Email, req.Phone, req.IsAdmin
 			if hash != "" {
 				u.PasswordHash, u.PasswordType = hash, cred.TypeArgon2id

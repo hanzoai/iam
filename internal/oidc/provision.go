@@ -210,7 +210,14 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// org; the tenant can never call unmetered. Idempotent: a replay returns the
 		// stored (hashed) credential's public access key, never a second one and never
 		// the secret again.
-		saName := cl.slug + "-default"
+		// A credential is a user row, so its name obeys THE username rule like any
+		// other principal's. The slug is already lowercase and bounded to leave room
+		// for the suffix (maxOrgSlug), so this refuses nothing that onboarding can
+		// legitimately reach — it states the invariant the derivation relies on.
+		saName, err := schema.Username(cl.slug + "-default")
+		if err != nil {
+			return &fault{400, err.Error()}
+		}
 		sa, err := store.GetUserByName(ctx, tx, cl.slug, saName)
 		if err != nil {
 			return &fault{500, "server_error"}

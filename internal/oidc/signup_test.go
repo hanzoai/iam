@@ -152,15 +152,24 @@ func TestSignup_Errors(t *testing.T) {
 		}
 	})
 
-	t.Run("username policy violated", func(t *testing.T) {
+	// A DISPLAY NAME is not a username in any spelling. This is the shape that put
+	// `name: "Zach Kelling"` on a live token — the claim was mis-sourced there, but
+	// the same string must never be able to arrive as a username either, or the two
+	// hypotheses become indistinguishable in the data.
+	t.Run("display name refused as username", func(t *testing.T) {
 		app, db := newServer(t)
 		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", signup: true})
 		seedOrg(t, db, "hanzo")
 		body := newbieBody()
-		body["username"] = "1bad" // starts with a digit
+		body["username"] = "Zach Kelling"
 		_, env := signupReq(t, app, body)
 		if env["status"] != "error" {
-			t.Fatalf("digit-leading username must be refused, got %v", env)
+			t.Fatalf("a display name must be refused as a username, got %v", env)
+		}
+		for _, spelling := range []string{"Zach Kelling", "zach kelling"} {
+			if u, _ := store.GetUserByName(context.Background(), db, "hanzo", spelling); u != nil {
+				t.Errorf("a user named %q was created", spelling)
+			}
 		}
 	})
 
