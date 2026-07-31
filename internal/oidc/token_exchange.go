@@ -114,12 +114,8 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	}
 	ttl := appTTL(clientApp)
 	scope := param(c, "scope")
-	subject := subjectOf(user) // the stable `sub` (UUID, or owner/name pre-cutover)
-	display := user.DisplayName
-	if display == "" {
-		display = user.Name
-	}
-	access, err := signer.SignUserToken(subject, owner, aud, clientApp.ClientId, user.Email, display, user.Name, billingAccountFor(user.Owner, store.MemberOrgRefs(ctx, db, user)), scope, store.MemberOrgRefs(ctx, db, user), ttl, now)
+	id := identityOf(ctx, db, user) // the ONE user→claims resolution
+	access, err := signer.SignUserToken(id, owner, aud, clientApp.ClientId, scope, ttl, now)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}

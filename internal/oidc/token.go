@@ -221,9 +221,13 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 500, "server_error", "")
 	}
 	sub := app.GetId() // <appOwner>/<appName>, per v1
-	// A machine token has no user and therefore no membership set — nil orgs omits
-	// the claim, so an app token can never carry a tenancy it did not earn.
-	access, err := signer.Sign(app, sub, "", app.Name, "", "", scope, nil, ttl, now)
+	// A machine token's principal is the APP, so its username is the app name — the
+	// `<name>` half of the same `<owner>/<name>` shape a user token carries, which
+	// is what lets a resource server read `owner`/`name` without first asking which
+	// kind of token it holds. It has no user and therefore no membership set — nil
+	// orgs omits the claim, so an app token can never carry a tenancy it did not
+	// earn, and no display name means no display claim.
+	access, err := signer.Sign(app, Identity{Id: sub, Name: app.Name}, scope, ttl, now)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
@@ -380,9 +384,9 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	if err != nil {
 		return tokenResponse{}, err
 	}
-	sub, email, name, username, billing, orgs := userClaims(ctx, db, row.User)
+	id := userClaims(ctx, db, row.User)
 
-	access, err := signer.Sign(app, sub, email, name, username, billing, row.Scope, orgs, ttl, now)
+	access, err := signer.Sign(app, id, row.Scope, ttl, now)
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -412,7 +416,7 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 		Scope:        row.Scope,
 	}
 	if hasScope(row.Scope, "openid") {
-		idt, err := signer.SignID(app, sub, email, name, username, billing, row.Scope, row.Nonce, orgs, ttl, now)
+		idt, err := signer.SignID(app, id, row.Scope, row.Nonce, ttl, now)
 		if err != nil {
 			return tokenResponse{}, err
 		}
@@ -507,8 +511,8 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 	if err != nil {
 		return "", err
 	}
-	sub, _, _, _, _, orgs := userClaims(ctx, db, tok.User)
-	return signer.Sign(app, sub, "", "", "", "", tok.Scope, orgs, ttl, now)
+	id := userClaims(ctx, db, tok.User)
+	return signer.Sign(app, Identity{Id: id.Id, Orgs: id.Orgs}, tok.Scope, ttl, now)
 }
 
 // tokenIssuer is the canonical OIDC issuer for this request — the value discovery
@@ -537,31 +541,44 @@ func subjectOf(u *schema.User) string {
 	return u.Owner + "/" + u.Name
 }
 
-// userClaims loads a user's token-facing claims in ONE lookup: its subject (the
-// stable `sub`), email, display name, and membership set (store.MemberOrgRefs —
-// home org first, deduped). It is the single resolution both the
-// code/refresh/password mint (issueTokens) and the direct-sign path share, so the
-// `sub`, `orgs` claim, and profile can never be sourced two different ways. userID
-// is the token row's (owner/name) User key. A subject with no user row (a machine
-// token, or a since-deleted user) yields the passed-in id as sub, empty profile,
-// and nil orgs — the claim is omitted, not forged.
-func userClaims(ctx context.Context, db orm.DB, userID string) (sub, email, name, username, billing string, orgs []schema.OrgRef) {
+// identityOf is the ONE resolution of a loaded user into token claims: its stable
+// `sub`, email, USERNAME, display name, ledger, and membership set
+// (store.MemberOrgRefs — home org first, deduped). Every mint path — the
+// code/refresh/password grant, the console's issue-user-token, and the RFC 8693
+// exchange — builds its Identity here, so the `sub`, `orgs` claim and profile
+// cannot be sourced three different ways.
+//
+// They were. Each of those paths separately wrote `name = DisplayName, else
+// Name`, which put a human's display name in the claim the CLI files its
+// credential under: a login as "z" minted `name: "Zach Kelling"` and every
+// downstream surface then named a principal that does not exist. `name` is the
+// username here and nowhere else decides.
+func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
+	refs := store.MemberOrgRefs(ctx, db, u)
+	return Identity{
+		Id:      subjectOf(u),
+		Email:   u.Email,
+		Name:    u.Name,
+		Display: u.DisplayName,
+		Billing: billingAccountFor(u.Owner, refs),
+		Orgs:    refs,
+	}
+}
+
+// userClaims resolves the token-facing Identity for a token row's (owner/name)
+// User key, in ONE lookup, through identityOf. A subject with no user row (a
+// machine token, or a since-deleted user) yields the passed-in id as sub and an
+// otherwise zero Identity — every profile claim is then omitted, not forged.
+func userClaims(ctx context.Context, db orm.DB, userID string) Identity {
 	owner, uname := splitSub(userID)
 	if owner == "" || uname == "" {
-		return userID, "", "", "", "", nil
+		return Identity{Id: userID}
 	}
 	u, err := store.GetUserByName(ctx, db, owner, uname)
 	if err != nil || u == nil {
-		return userID, "", "", "", "", nil
+		return Identity{Id: userID}
 	}
-	name = u.DisplayName
-	if name == "" {
-		name = u.Name
-	}
-	// u.Name is the IAM username — the `<name>` half of `<owner>/<name>` and the
-	// only value downstream can address a wallet with. DisplayName is for humans.
-	refs := store.MemberOrgRefs(ctx, db, u)
-	return subjectOf(u), u.Email, name, u.Name, billingAccountFor(owner, refs), refs
+	return identityOf(ctx, db, u)
 }
 
 // billingAccountFor decides WHICH LEDGER this person spends from, and says so in

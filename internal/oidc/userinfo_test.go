@@ -80,8 +80,12 @@ func TestUserinfo_ClaimsByScope(t *testing.T) {
 		"aud":                "conf",
 		"owner":              "hanzo",
 		"organization":       "hanzo",
+		// `name` is the USERNAME, the same answer the access token gives: UserInfo and
+		// the token describe one principal, so they must not name it two ways. The
+		// human's name rides in displayName.
 		"preferred_username": "alice",
-		"name":               "Alice Example",
+		"name":               "alice",
+		"displayName":        "Alice Example",
 		"email":              "alice@hanzo.ai",
 		"email_verified":     true,
 		"phone":              "+15551234567",
