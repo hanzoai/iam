@@ -13,7 +13,6 @@ package users
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -72,8 +71,18 @@ type UpdateInput struct {
 // is in.User.Owner, not a top-level field. Create binds the same values via this
 // method, so the value the authorization seam authorizes is exactly the value
 // written (internal/authz reads the same method through its owned interface).
+//
+// The name is normalized through schema.Username so the value authorized is the
+// value STORED, not the spelling that arrived: authorizing "Alice" and then
+// writing "alice" would put the authorization one principal away from the write.
+// An unusable name keeps its raw spelling here and is refused by Create — a name
+// that cannot be stored must not become a target that was silently approved.
 func (in *CreateInput) AuthzTarget() (owner, name string) {
-	return strings.TrimSpace(in.User.Owner), strings.TrimSpace(in.User.Name)
+	owner = strings.TrimSpace(in.User.Owner)
+	if name, err := schema.Username(in.User.Name); err == nil {
+		return owner, name
+	}
+	return owner, strings.TrimSpace(in.User.Name)
 }
 
 // AuthzTarget reports the (owner, name) this update binds, from the nested record
@@ -104,9 +113,18 @@ type DeleteOutput struct {
 // (owner, name) it binds is in.AuthzTarget() — the exact pair the authorization
 // seam authorized, so execution cannot address a different owner than was checked.
 func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error) {
-	owner, name := in.AuthzTarget()
-	if owner == "" || name == "" {
+	owner, _ := in.AuthzTarget()
+	if owner == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	// THE username rule, at the ONE write every create path reaches: password
+	// signup, social federation, SCIM, the legacy add-user verb, the typed CRUD
+	// create and the embedder seam all land here. Stating it at the door of each of
+	// those instead left six of them stating nothing, and whatever bytes arrived
+	// became a principal.
+	name, err := schema.Username(in.User.Name)
+	if err != nil {
+		return nil, zip.ErrBadRequest(err.Error())
 	}
 
 	existing, err := a.lookup(ctx, owner, name)
@@ -284,18 +302,14 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 
 // lookup resolves a single user by its (owner, name) natural key. It returns
 // (nil, nil) when no row matches — a not-found is not an error here.
+//
+// It goes through store.GetUserByName rather than repeating the query, so this
+// entity's own CRUD resolves a name exactly the way login, token minting and the
+// subject decoder do. Restating it here is how Create's uniqueness check came to
+// be case-SENSITIVE while the rule it guards is not — it would have admitted an
+// "Alice" alongside an existing "alice" and called them different people.
 func (a *API) lookup(ctx context.Context, owner, name string) (*schema.User, error) {
-	u, err := orm.TypedQuery[schema.User](a.db).
-		Filter("Owner=", owner).
-		Filter("Name=", name).
-		First()
-	if err != nil {
-		if errors.Is(err, orm.ErrNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return u, nil
+	return store.GetUserByName(ctx, a.db, owner, name)
 }
 
 // hashPassword derives a one-way argon2id digest (SOTA) via the ONE cred.Hash —

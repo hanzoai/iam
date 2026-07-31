@@ -96,12 +96,57 @@ func GetApplicationByName(_ context.Context, db orm.DB, owner, name string) (*sc
 
 // GetUserByName resolves a user by (owner, name) — owner is the organization.
 // Returns (nil, nil) when absent.
-func GetUserByName(_ context.Context, db orm.DB, owner, name string) (*schema.User, error) {
+//
+// Case does not distinguish principals. New names are normalized to lowercase at
+// creation (schema.Username), but rows written before that rule are stored as they
+// arrived, and renaming them would move real principals — so the RESOLUTION
+// tolerates case instead of the data being rewritten. Three steps, cheapest first:
+// the exact key, then the folded key (both indexed lookups, and between them they
+// answer every all-lowercase row, which is all of them going forward), then a
+// case-insensitive pass over the org for a legacy mixed-case row.
+//
+// It FAILS CLOSED when the folding is ambiguous — the same rule GetUserById
+// applies to a duplicated subject. If "Alice" and "ALICE" both exist, "alice"
+// names neither of them in particular, and answering with the storage engine's
+// arbitrary first row would let whoever registered the second one be resolved as
+// the first. An exact match always wins, so a row that is spelled the way it was
+// asked for is never subject to this.
+func GetUserByName(ctx context.Context, db orm.DB, owner, name string) (*schema.User, error) {
 	u, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).Filter("Name=", name).First()
-	if err == orm.ErrNotFound {
+	if err == nil {
+		return u, nil
+	}
+	if err != orm.ErrNotFound {
+		return nil, err
+	}
+	folded := strings.ToLower(strings.TrimSpace(name))
+	if folded == "" {
 		return nil, nil
 	}
-	return u, err
+	if folded != name {
+		u, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).Filter("Name=", folded).First()
+		if err == nil {
+			return u, nil
+		}
+		if err != orm.ErrNotFound {
+			return nil, err
+		}
+	}
+	us, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var match *schema.User
+	for _, cand := range us {
+		if !strings.EqualFold(cand.Name, folded) {
+			continue
+		}
+		if match != nil {
+			return nil, fmt.Errorf("store: %q and %q in organization %q both fold to %q — ambiguous username", match.Name, cand.Name, owner, folded)
+		}
+		match = cand
+	}
+	return match, nil
 }
 
 // GetUserById resolves a user by its stable opaque Id — the UUID the OIDC `sub`
