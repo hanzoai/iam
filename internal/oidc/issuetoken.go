@@ -82,12 +82,8 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		}
 		ttl := appTTL(clientApp)
 		natural := user.Owner + "/" + user.Name
-		subject := subjectOf(user) // the stable `sub` (UUID, or owner/name pre-cutover)
-		display := user.DisplayName
-		if display == "" {
-			display = user.Name
-		}
-		access, err := signer.SignUserToken(subject, user.Owner, aud, clientApp.ClientId, user.Email, display, user.Name, billingAccountFor(user.Owner, store.MemberOrgRefs(ctx, db, user)), "", store.MemberOrgRefs(ctx, db, user), ttl, now)
+		id := identityOf(ctx, db, user) // the ONE user→claims resolution
+		access, err := signer.SignUserToken(id, user.Owner, aud, clientApp.ClientId, "", ttl, now)
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
