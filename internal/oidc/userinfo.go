@@ -86,8 +86,14 @@ func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string
 	}
 	scope := row.Scope
 	if hasScope(scope, "profile") {
+		// `name` is the USERNAME here, matching the token claim exactly. UserInfo and
+		// the access token answer the same question — who is this principal — so they
+		// must not answer it with two different strings: a client that reads `name`
+		// from whichever it has in hand would otherwise hold a different identity
+		// depending on which call it made. The human's name has its own claim.
 		putIf(info, "preferred_username", u.Name)
-		putIf(info, "name", u.DisplayName)
+		putIf(info, "name", u.Name)
+		putIf(info, "displayName", u.DisplayName)
 		putIf(info, "picture", u.Avatar)
 		putIf(info, "real_name", u.RealName)
 		if len(u.Groups) > 0 {

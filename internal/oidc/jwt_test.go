@@ -31,7 +31,7 @@ func TestSign_RoundTripAndClaims(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	app := testApp()
 
-	tokenStr, err := s.Sign(app, "hanzo/alice", "alice@hanzo.ai", "Alice", "", "", "openid profile", nil, time.Hour, now)
+	tokenStr, err := s.Sign(app, Identity{Id: "hanzo/alice", Email: "alice@hanzo.ai", Name: "alice"}, "openid profile", time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestSign_ExpiredTokenRejected(t *testing.T) {
 	key := testKey(t)
 	s := NewRSASigner(key, "cert-hanzo", "https://iam.hanzo.ai")
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, err := s.Sign(testApp(), "u", "", "", "", "", "openid", nil, time.Minute, now)
+	tokenStr, err := s.Sign(testApp(), Identity{Id: "u"}, "openid", time.Minute, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestSign_WrongKeyRejected(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
 	other := testKey(t)
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, _ := s.Sign(testApp(), "u", "", "", "", "", "openid", nil, time.Hour, now)
+	tokenStr, _ := s.Sign(testApp(), Identity{Id: "u"}, "openid", time.Hour, now)
 	var claims Claims
 	_, err := jwt.ParseWithClaims(tokenStr, &claims, func(*jwt.Token) (any, error) { return &other.PublicKey, nil },
 		jwt.WithValidMethods([]string{"RS256"}))
@@ -120,7 +120,7 @@ func TestNewRSASignerFromCert_PEMRoundTrip(t *testing.T) {
 	}
 	// Sign+verify to prove the parsed key works.
 	now := time.Unix(1_800_000_000, 0)
-	str, err := s.Sign(testApp(), "u", "", "", "", "", "openid", nil, time.Hour, now)
+	str, err := s.Sign(testApp(), Identity{Id: "u"}, "openid", time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,38 +131,66 @@ func TestNewRSASignerFromCert_PEMRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSignEmitsPreferredUsername pins that the username reaches the wire. Discovery
-// has advertised preferred_username in claims_supported all along while no token
-// emitted it, and `name` carries the DISPLAY name — so a resource server needing the
-// `<owner>/<name>` username had nothing to read. cloud's money path addresses a
-// wallet as `<org>/<username>`; without this claim it fell back to `name` and
-// addressed `hanzo/Zach Kelling` while the balance sat in `hanzo/z`.
-func TestSignEmitsPreferredUsername(t *testing.T) {
+// TestSignNamesTheUsernameNeverTheDisplayName pins the claim the whole platform
+// addresses a principal by.
+//
+// `hanzo auth login` files its credential under `owner`/`name` read straight off
+// the minted token, so those two claims ARE the principal downstream believes it
+// holds. A real login as account "z" minted `name: "Zach Kelling"` — the human's
+// display name, a label with a space in it — and every surface downstream then
+// named an account that does not exist. cloud's money path had already been bitten
+// by the same reading: it addresses a wallet `<org>/<username>`, addressed
+// `hanzo/Zach Kelling`, and 402'd every completion while the balance sat in
+// `hanzo/z`.
+//
+// So: `name` is the username, `preferred_username` is the same username, and the
+// display name is carried under its own claim where nothing resolves an account
+// from it.
+func TestSignNamesTheUsernameNeverTheDisplayName(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, err := s.Sign(testApp(), "hanzo/z", "z@hanzo.ai", "Zach Kelling", "z", "", "openid profile", nil, time.Hour, now)
+	z := Identity{Id: "hanzo/z", Email: "z@hanzo.ai", Name: "z", Display: "Zach Kelling"}
+
+	// Both token shapes, from the one claim builder — an id_token that disagreed
+	// with its access token would be the same defect wearing a different name.
+	access, err := s.Sign(testApp(), z, "openid profile", time.Hour, now)
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	var got Claims
-	if _, _, err := jwt.NewParser().ParseUnverified(tokenStr, &got); err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if got.PreferredUsername != "z" {
-		t.Fatalf("preferred_username = %q; want %q", got.PreferredUsername, "z")
-	}
-	// The display name is still carried, and must NOT be the username.
-	if got.Name != "Zach Kelling" {
-		t.Fatalf("name = %q; want the display name preserved", got.Name)
-	}
-	// A machine token has no user, so the claim is omitted entirely rather than
-	// emitted empty — omitempty is what keeps one struct serving both shapes.
-	machine, err := s.Sign(testApp(), "hanzo/app", "", "app", "", "", "openid", nil, time.Hour, now)
+	idt, err := s.SignID(testApp(), z, "openid profile", "n-1", time.Hour, now)
 	if err != nil {
-		t.Fatalf("Sign machine: %v", err)
+		t.Fatalf("SignID: %v", err)
 	}
-	if strings.Contains(machine, "preferred_username") {
-		t.Fatal("machine token must omit preferred_username, not emit it empty")
+	for _, tc := range []struct{ shape, token string }{{"access", access}, {"id", idt}} {
+		var got Claims
+		if _, _, err := jwt.NewParser().ParseUnverified(tc.token, &got); err != nil {
+			t.Fatalf("%s: parse: %v", tc.shape, err)
+		}
+		if got.Name != "z" {
+			t.Fatalf("%s token: name = %q; want the USERNAME %q — the CLI files credentials under owner/name", tc.shape, got.Name, "z")
+		}
+		if got.PreferredUsername != "z" {
+			t.Fatalf("%s token: preferred_username = %q; want %q", tc.shape, got.PreferredUsername, "z")
+		}
+		if got.Display != "Zach Kelling" {
+			t.Fatalf("%s token: displayName = %q; want the human name carried in its own claim", tc.shape, got.Display)
+		}
+		if got.Owner != "hanzo" {
+			t.Fatalf("%s token: owner = %q; want the ORG %q", tc.shape, got.Owner, "hanzo")
+		}
+	}
+
+	// A principal with no profile (a machine token, or a since-deleted user) omits
+	// every profile claim rather than emitting it empty — omitempty is what keeps
+	// one struct serving both token shapes.
+	bare, err := s.Sign(testApp(), Identity{Id: "hanzo/app"}, "openid", time.Hour, now)
+	if err != nil {
+		t.Fatalf("Sign bare: %v", err)
+	}
+	for _, claim := range []string{"preferred_username", "displayName", `"name"`} {
+		if strings.Contains(bare, claim) {
+			t.Fatalf("a profile-less token must omit %s, not emit it empty", claim)
+		}
 	}
 }
 
