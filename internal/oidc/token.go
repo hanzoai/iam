@@ -262,17 +262,26 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 // (RFC 6749 §4.3) — the durable first-party console session (session.ts posts
 // grant_type=password with username/password).
 //
-// LEGACY PARITY — INTENTIONAL SECURITY-POSTURE DECISION (flagged for Red review).
-// the legacy surface ALLOWS a PUBLIC client (the console/chat apps: no client_secret, no PKCE)
-// to complete this grant. During the legacy→clean-room cutover iam defaults to
-// the SAME behavior so console/chat logins do not 401 `invalid_client`. The exact,
-// bounded relaxation vs the prior confidential-only rule:
+// CONFIDENTIAL CLIENTS ONLY. A client that stores no secret cannot complete this
+// grant, because the stored secret is the only thing that authenticates the CALLER
+// here — unlike the code and device grants, ROPC has neither a PKCE challenge nor a
+// human approval step to stand in for it. Without that rule the endpoint takes a
+// username and password from anyone who knows a public client_id.
 //
-//   - A PUBLIC client (no registered ClientSecret) MAY now complete the password
-//     grant with NO client_secret and NO PKCE. This is the ONLY thing newly allowed.
+// This REPLACES an earlier legacy-parity relaxation that let a public client
+// complete the grant so console/chat logins would not 401 `invalid_client` during
+// the legacy→clean-room cutover. That relaxation was dormant — every live Hanzo
+// registration is confidential and takes the secret path — and it became actively
+// dangerous the moment a client had to go public for an unrelated reason:
+// `hanzo-cli` needs no stored secret to run the device grant, and under the old
+// rule that flip alone would have opened unauthenticated ROPC. Registration shape
+// must not be able to open a credential surface.
+//
 //   - A CONFIDENTIAL client (one that registered a secret) is UNCHANGED: it MUST
-//     still present that secret, verified constant-time — a supplied-but-wrong
+//     present that secret, verified constant-time — a supplied-but-wrong
 //     secret is still 401.
+//   - A PUBLIC client is refused outright, and signs its human in with the device
+//     grant (RFC 8628) or the PKCE code flow instead.
 //
 // Every OTHER control is untouched: publicTokenEndpointForbidden still bars internal
 // (<org>-iam) and reserved-org (admin/built-in/app) apps from this endpoint; the app
@@ -295,12 +304,33 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	if app == nil {
 		return tokenErrorClient(c, "client authentication failed")
 	}
-	// A confidential client (one that registered a secret) must present it; a public
-	// client (no registered secret) authenticates by its clientId alone — legacy ROPC
-	// parity. See the doc comment for the exact new surface.
+	// A confidential client (one that registered a secret) must present it.
 	if app.ClientSecret != "" &&
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 		return tokenErrorClient(c, "client authentication failed")
+	}
+	// ROPC requires a CONFIDENTIAL client, and this is the check that makes that
+	// structural rather than a property of whichever clients happen to exist.
+	//
+	// A public client stores no secret — that absence is the whole definition
+	// (bootstrap.resolveSecret) — so without this the endpoint would accept a
+	// username and password from anyone who knows a public client_id. That is an
+	// unauthenticated credential-stuffing oracle against every user in the tenant
+	// and an account-lockout lever against any named one; the registered secret
+	// was the ONLY thing that ever gated it. OAuth 2.1 drops the grant entirely
+	// for this reason.
+	//
+	// It is not hypothetical: `hanzo-cli` had to become public so a CLI could run
+	// the device grant at all (a stored secret it cannot present is `invalid_client`
+	// at /v1/iam/oauth/device), and the same flip silently made ROPC reachable
+	// without a credential. Registration shape must not be able to open this
+	// surface, so the rule lives HERE and not in a provision document.
+	//
+	// A public client signs a human in with the device grant (RFC 8628) or the
+	// PKCE code flow, both of which authenticate the USER rather than trusting the
+	// caller with their password.
+	if app.ClientSecret == "" {
+		return tokenErrorClient(c, "the password grant requires a confidential client")
 	}
 	if publicTokenEndpointForbidden(app) {
 		return tokenErrorClient(c, "client is not permitted on this endpoint")
