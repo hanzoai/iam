@@ -37,8 +37,9 @@ const preferencesKey = "hanzo.preferences"
 // the properties column without bound.
 const preferencesMaxBytes = 64 * 1024
 
-// updatePreferencesHandler shallow-merges the posted partial onto the caller's stored
-// preferences and returns the merged object.
+// updatePreferencesHandler saves the calling person's own settings and returns
+// the full set afterwards. Send only the settings you are changing — the rest
+// are kept, so two screens can save at once without one undoing the other.
 func updatePreferencesHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

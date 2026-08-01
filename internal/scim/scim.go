@@ -97,8 +97,11 @@ func scimError(c *zip.Ctx, status int, detail, scimType string) error {
 	return c.JSON(status, body)
 }
 
-// serviceProviderConfig advertises the features this SCIM service supports
-// (RFC 7644 §5). Filtering + PATCH are supported; bulk + ETag + sort are not.
+// serviceProviderConfig tells your identity provider which parts of SCIM this
+// directory supports, so it configures itself instead of you filling in a form.
+//
+// Filtering and partial updates are supported. Bulk operations, sorting and
+// entity tags are not — an IdP that reads this will not attempt them.
 func serviceProviderConfig(c *zip.Ctx) error {
 	return scimJSON(c, 200, map[string]any{
 		"schemas":          []string{schemaSPConfig},

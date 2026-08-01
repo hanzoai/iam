@@ -95,11 +95,10 @@ func Route(app *zip.App, db orm.DB) {
 	routeWrites(app, db)
 }
 
-// orgProjectsHandler serves get-organization-projects: the org's project list for
-// the console ScopeSwitcher. The requested org rides in ?organization= (or ?owner=
-// as a fallback); authz.Scope pins a non-super to its own org, so a request
-// parameter can never widen the read past the caller's tenant. Projects carry no
-// secrets, so no Mask is applied.
+// orgProjectsHandler returns one organization's projects — what a scope switcher
+// lists so somebody can move between them.
+//
+// You see your own organization and no other, whatever the request asks for.
 func orgProjectsHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -123,11 +122,10 @@ func orgProjectsHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// orgWorkspacesHandler serves get-organization-workspaces: the org's workspace
-// list for the console ScopeSwitcher. The requested org rides in ?organization=
-// (or ?owner= as a fallback); authz.Scope pins a non-super to its own org, so a
-// request parameter can never widen the read past the caller's tenant. Workspaces
-// carry no secrets, so no Mask is applied.
+// orgWorkspacesHandler returns one organization's workspaces — what a scope
+// switcher lists so somebody can move between them.
+//
+// You see your own organization and no other, whatever the request asks for.
 func orgWorkspacesHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -151,11 +149,13 @@ func orgWorkspacesHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// listHandler serves a the legacy surface get-<entities> list for one orm kind: it scopes
-// the owner through authz, queries the store, redacts each row via the entity's
-// Mask, and wraps the result in the v1 envelope. Per the v1 contract a list
-// paginates ONLY when BOTH `p` and `pageSize` are present — then the total rides
-// in data2; otherwise the full owner-scoped set is returned with no data2.
+// listHandler lists one kind of record in your organization — the older spelling
+// of the collection reads on the REST surface, over the same data and the same
+// permissions.
+//
+// Secrets are stripped from every row. Send both a page number and a page size to
+// page, and the total comes back alongside; send neither and you get the whole
+// set. You see your own organization and no other, whatever the request asks for.
 //
 // Scoping note (intentional, fail-closed): iam's ownership model is mixed —
 // users/roles/permissions are owned by their tenant org, while organizations/
@@ -204,10 +204,11 @@ func listHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 	}
 }
 
-// getHandler serves a the legacy surface get-<entity> single read. The target is resolved
-// by authz.ReadTarget (the same extraction the Guard authorized with), then the
-// owner is re-scoped through authz.Scope so a non-super can never read another
-// tenant's row even if it spells one in `?id`.
+// getHandler reads one record — the older spelling of the single reads on the
+// REST surface, over the same data and the same permissions.
+//
+// Secrets are stripped. Naming a record in another organization does not reach
+// it, however the request spells it.
 func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -233,12 +234,14 @@ func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 	}
 }
 
-// userGetHandler serves get-user, which has TWO variants. When `?accessKey=` is
-// present it resolves an opaque SECRET API key (hk-/sk-) to its owning user — the path
-// cloud's identity boundary calls to authenticate a keyed request — behind the
-// CapKeyResolve service capability. A public pk- is write-only and resolves to nobody
-// here (store.UserByAccessKey refuses it); its org-only door is /v1/iam/resolve-key.
-// Otherwise it is the ordinary owner/name/id read.
+// userGetHandler reads one person, two ways.
+//
+// Name them and it is an ordinary read, with secrets stripped. Or hand it a
+// SECRET API key and it answers with the person that key belongs to — how a
+// service of yours turns a credential on an incoming request into an identity.
+//
+// A publishable key resolves to nobody here, deliberately: it is safe to ship in
+// a browser precisely because it names an organization and never a person.
 //
 // get-user is handler-authorized (authz.handlerAuthorizedExact) because the key
 // variant carries no owner/name for the Guard to authorize; so the owner/name

@@ -48,12 +48,14 @@ type fedMfaForm struct {
 	RecoveryCode string `json:"recoveryCode"`
 }
 
-// federationMfaHandler finishes a parked federated login: it spends the challenge,
-// loads the PINNED user from its subject (never the request), verifies the second
-// factor through the shared factor seam, and only then mints the code for the
-// pinned authorize request. Fail-closed at every step; taking the challenge spends
-// it, so a wrong factor burns it and a fresh federation is required to retry —
-// exactly as the password gate behaves.
+// federationMfaHandler completes a sign-in that came in through another identity
+// provider and still owes a second factor. The person supplies the factor here
+// and the login finishes.
+//
+// The account is fixed when the challenge is issued, not by the request, so no
+// one can redirect a half-finished login onto somebody else's account. A wrong
+// factor uses the challenge up: retrying means starting the sign-in again, the
+// same as a mistyped password.
 func federationMfaHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var f fedMfaForm

@@ -66,9 +66,9 @@ type challenge struct {
 	Version        string `json:"version"`
 }
 
-// nonce mints a single-use login challenge bound to the request-derived brand
-// host. chain and address are advisory scoping hints; the authoritative binding
-// happens in check against the SIGNED message.
+// nonce starts a wallet sign-in: it returns a one-time challenge for the wallet
+// to sign. The challenge is good once and is tied to the site that asked for it,
+// so a signature collected elsewhere cannot be replayed here.
 func nonce(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		chain := wc.Chain(trim(c.Query("chain")))
@@ -152,9 +152,11 @@ const (
 	maxAddress = 256
 )
 
-// check verifies a signed proof and signs the user in — this IS the login, so it
-// returns the same success shape as the password login: the user id for a bare
-// sign-in, or a PKCE-bound authorization code when type=code.
+// check completes a wallet sign-in: it verifies the signed challenge and, if it
+// holds, signs the wallet's owner in.
+//
+// This IS the login — it answers exactly as a password sign-in does, so the rest
+// of your flow does not branch on how somebody arrived.
 func check(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var f proof

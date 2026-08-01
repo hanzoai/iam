@@ -69,8 +69,8 @@ type request struct {
 	Role string `json:"role"`
 }
 
-// list serves GET /v1/iam/memberships?user=<owner/name> or ?org=<slug> — one
-// identity's orgs, or one org's roster.
+// list answers either question about who belongs where: which organizations one
+// person can act in, or who can act in one organization.
 //
 // Both are org-scoped: a non-SuperAdmin may ask about ITS OWN org's roster, or
 // about a user whose home org is its own, and nothing else. The bound comes from
@@ -104,8 +104,9 @@ func list(db orm.DB) zip.Handler {
 	}
 }
 
-// ensure serves POST /v1/iam/memberships — grant an identity the right to act in
-// an org. Granting membership IS the org's authority to give, so it takes the
+// ensure lets a person or an application act in an organization. It is the grant
+// behind "add someone to the team", and it is safe to repeat — granting a
+// membership that already exists changes nothing. Granting membership IS the org's authority to give, so it takes the
 // same gate a write to that org's own registry row takes: a SuperAdmin, an admin
 // of the org itself, or an org-admin-capable confidential client. One rule, one
 // place (internal/authz).
@@ -137,8 +138,10 @@ func ensure(db orm.DB) zip.Handler {
 	}
 }
 
-// remove serves POST /v1/iam/delete-membership {user, org} — revoke an identity's
-// right to act in an org. It is the mirror of ensure and takes the SAME gate:
+// remove takes away a person's or an application's right to act in an
+// organization. Their account survives; what ends is their access to that
+// organization. Revoking a membership that is already gone reports that nothing
+// was removed rather than failing, so a retry is safe. It is the mirror of ensure and takes the SAME gate:
 // revoking membership is the org's authority to give or take, so a SuperAdmin, an
 // admin of the org itself, or an org-admin-capable confidential client. Idempotent
 // through the store — deleting an absent membership reports removed=false, never an

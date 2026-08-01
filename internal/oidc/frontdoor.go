@@ -55,11 +55,12 @@ func routeFrontDoor(r zip.Router, db orm.DB) {
 	r.Get(PathLinkedAccounts, linkedAccountsHandler(db))
 }
 
-// getAppLogin resolves an application by clientId and returns it with the
-// ClientSecret masked and each provider link enriched with its shared provider
-// record — the canonical source of truth the login UI reads to decide which
-// sign-in methods to render. Mirrors the v1 the legacy surface get-app-login contract
-// (Response envelope, data = the masked application).
+// getAppLogin returns everything a login screen needs to draw itself for one
+// application: its branding, and each sign-in method it offers with the provider
+// details that method needs.
+//
+// The client secret is masked. Read before anyone has signed in, so it carries
+// only what is safe for a browser to see.
 func getAppLogin(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		if rt := c.Query("responseType"); rt != "" && rt != "code" {
@@ -81,10 +82,12 @@ func getAppLogin(db orm.DB) zip.Handler {
 	}
 }
 
-// authMethods reports the enabled sign-in methods for an application so the SDK
-// <Login> self-configures instead of hard-coding a provider list. This endpoint
-// does NOT exist in v1 — it is the clean seam that lets one <Login> render the
-// right buttons for any app. Pure read over the resolved application.
+// authMethods returns the sign-in methods one application actually has switched
+// on, so a login screen can render the right buttons for it without you
+// hard-coding a list that drifts the moment you add a provider.
+//
+// Public by design: it is read before anyone has signed in, and it exposes only
+// which methods exist, never their credentials.
 func authMethods(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		clientId := c.Query("clientId")

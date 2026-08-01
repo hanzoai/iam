@@ -19,7 +19,11 @@ import (
 // subject is taken from the signed `sub`, so the response can only ever describe
 // the token's own principal (no cross-tenant read).
 
-// userinfoHandler serves the userinfo endpoint.
+// userinfoHandler returns the profile claims for whoever the access token
+// belongs to — the standard OpenID Connect way to find out who is calling you
+// without your application storing anything itself.
+//
+// The token must still be live: revoke it and this stops answering.
 func userinfoHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		bearer := httpx.Bearer(c)
