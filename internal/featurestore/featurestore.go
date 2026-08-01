@@ -14,7 +14,7 @@ import (
 
 	"github.com/hanzoai/iam/feature"
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/model"
 )

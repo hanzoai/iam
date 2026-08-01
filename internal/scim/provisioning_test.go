@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 const enterpriseURN = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"

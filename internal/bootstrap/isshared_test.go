@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // isShared is the honest declaration that an application serves EVERY organization,

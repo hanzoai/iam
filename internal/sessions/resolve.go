@@ -10,7 +10,7 @@ import (
 	"github.com/zap-proto/fiber/v3"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // sessionTTL is the portal session lifetime — 14 days, matching the refresh

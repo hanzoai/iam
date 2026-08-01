@@ -13,7 +13,7 @@ import (
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // The login-time second-factor gate. A verified password proves ONE factor;

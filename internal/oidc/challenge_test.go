@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // ITEM 4: TakeChallenge burns a login challenge exactly once. A captured MFA passcode

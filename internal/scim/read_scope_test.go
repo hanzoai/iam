@@ -47,7 +47,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // TestRed_scimGet_noCrossOrgExistenceOracle proves the read path is not an

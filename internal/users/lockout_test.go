@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // TestAuthenticate_ConcurrentWrongPasswords_NoLostUpdates is the crisp atomicity
