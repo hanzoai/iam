@@ -222,10 +222,19 @@ lifetime that does not outlive the access lifetime, measured against
 `schema.DefaultExpireInHours` when the access lifetime is unstated — so the state
 `hanzo-cli` shipped in cannot be declared again.
 
-Every other app still carries `refreshExpireInHours: 0` and is therefore still on
-the dead-on-arrival default. The fix is one line per app in that org's provision
-document; it is deliberately not a changed global default, because session
-lifetime is POLICY and the OSS mechanism ships no policy.
+**Which half bit whom** (measured over all 286 live applications on hanzo.id).
+Most first-party clients already carried `expireInHours: 168` +
+`refreshExpireInHours: 720` from the v1 era, so for `hanzo-cloud`, `hanzo-chat`,
+`hanzo-platform`, `hanzo-world` the LIFETIME was fine and only the CLIENT-AUTH
+half was broken — they held a 30-day refresh token they could not spend. One fix
+unblocks all of them: driven live after the change, each does code→token 200 then
+refresh 200 with a new access token, presenting no secret at either step.
+`hanzo-cli` was the rare client with BOTH lifetimes at 0, which is why it was the
+one that hurt. Still at 0, and therefore still dead on arrival: `hanzo-mcp` (now
+declared, same as the CLI), `hanzo-git`, `hanzo-zrok`, `hanzo-admin`, and every
+auto-created per-signup `app-<email>` client. The fix is one line per app in that
+org's provision document; it is deliberately NOT a changed global default,
+because session lifetime is POLICY and this mechanism ships no policy.
 
 ## Key entry points
 - `main.go` — cobra root (`serve` / `compare` / `version`); `server/server.go` route registration.
