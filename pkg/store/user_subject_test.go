@@ -9,7 +9,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // The subject→user decoder is the ONE place `sub` is resolved. A UUID subject (no

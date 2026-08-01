@@ -8,7 +8,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // putApp inserts a raw application row (bypassing the applications create guard) to

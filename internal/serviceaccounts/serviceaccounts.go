@@ -36,7 +36,7 @@ import (
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/keys"
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // Paths — the verb face the live consumers call (team's bot member sync reads

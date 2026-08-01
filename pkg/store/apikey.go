@@ -10,7 +10,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // API-key → principal resolution: the ONE way an opaque Hanzo API key is turned

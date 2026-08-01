@@ -10,7 +10,7 @@ func init() {
 	zip.Describe("GET /v1/iam/permissions", zip.Doc{
 		Description: "Returns the permissions in one organization, newest first — each one a\ngrant saying which people or roles may do what, and to which resources.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Permission].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
 			"Permission.createdTime": "Descriptive metadata.",
 			"Permission.model":       "Authorization model, targets, and decision. AuthzModel carries the v1\n`model` column (the named authz model); it is not the Go identifier\n`Model` because that name is taken by the embedded orm.Model[Permission]\nmixin. The HTTP contract is unchanged — json:\"model\".",
 			"Permission.owner":       "Identity — the (owner, name) natural key.",
@@ -21,7 +21,7 @@ func init() {
 	zip.Describe("GET /v1/iam/permissions/get", zip.Doc{
 		Description: "Returns one permission: who it grants to, what it allows, and the\nresources it covers.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Permission].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
 			"Permission.createdTime": "Descriptive metadata.",
 			"Permission.model":       "Authorization model, targets, and decision. AuthzModel carries the v1\n`model` column (the named authz model); it is not the Go identifier\n`Model` because that name is taken by the embedded orm.Model[Permission]\nmixin. The HTTP contract is unchanged — json:\"model\".",
 			"Permission.owner":       "Identity — the (owner, name) natural key.",
@@ -32,7 +32,7 @@ func init() {
 	zip.Describe("POST /v1/iam/permissions", zip.Doc{
 		Description: "Grants a permission — the call that gives a person or a role the ability to\ndo something. Adding refuses to overwrite a grant that already exists, so\nwidening an existing one is an update, never an accident.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Permission].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
 			"Permission.createdTime": "Descriptive metadata.",
 			"Permission.model":       "Authorization model, targets, and decision. AuthzModel carries the v1\n`model` column (the named authz model); it is not the Go identifier\n`Model` because that name is taken by the embedded orm.Model[Permission]\nmixin. The HTTP contract is unchanged — json:\"model\".",
 			"Permission.owner":       "Identity — the (owner, name) natural key.",
@@ -46,7 +46,7 @@ func init() {
 	zip.Describe("POST /v1/iam/permissions/update", zip.Doc{
 		Description: "Changes who a permission grants to, what it allows, or the resources it\ncovers. Access changes as soon as the write lands. What the permission is\ncalled does not change, and neither does when it was created.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Permission].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
 			"Permission.createdTime": "Descriptive metadata.",
 			"Permission.model":       "Authorization model, targets, and decision. AuthzModel carries the v1\n`model` column (the named authz model); it is not the Go identifier\n`Model` because that name is taken by the embedded orm.Model[Permission]\nmixin. The HTTP contract is unchanged — json:\"model\".",
 			"Permission.owner":       "Identity — the (owner, name) natural key.",

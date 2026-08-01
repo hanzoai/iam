@@ -9,7 +9,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // Persistence for wallet sign-in (HIP-0111): the challenge (mint, atomic burn,
