@@ -7,7 +7,9 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/application", zip.Doc{})
+	zip.Describe("DELETE /v1/iam/application", zip.Doc{
+		Description: "Removes an application. Anyone mid-sign-in through it is\nturned away and its client credentials stop working, so retire the integration\nbefore deleting it.",
+	})
 	zip.Describe("GET /v1/iam/application", zip.Doc{
 		Description: "Returns one application: its sign-in methods, its allowed\nredirect URIs and the client credentials your integration authenticates with.",
 		Fields: map[string]string{
@@ -73,7 +75,9 @@ func init() {
 			"Organization.orgBalance":                                       "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("POST /v1/iam/applications/delete", zip.Doc{})
+	zip.Describe("POST /v1/iam/applications/delete", zip.Doc{
+		Description: "Removes an application. Anyone mid-sign-in through it is\nturned away and its client credentials stop working, so retire the integration\nbefore deleting it.",
+	})
 	zip.Describe("POST /v1/iam/applications/update", zip.Doc{
 		Description: "Changes an application's display, its sign-in methods and the redirect\nURIs it may return to — the call that makes login work from a new host. Which\norganization it belongs to and what it is named are fixed when it is created\nand are not editable here.\n\nExported so the legacy update-application alias reuses this exact path — one\nupdate, two spellings.",
 		Fields: map[string]string{
