@@ -26,15 +26,15 @@ const PathAuthMethods = "/v1/iam/auth/methods"
 // that caller, so — like the rest of this group — they are reachable without a
 // Guard-verified bearer yet never act on anyone but the resolved caller.
 func routeFrontDoor(r zip.Router, db orm.DB) {
-	httpx.Alias(r.Get, PathAuthApplication, LegacyPathAuthApplication, getAppLogin(db))
+	zip.Alias(r.Get, PathAuthApplication, LegacyPathAuthApplication, getAppLogin(db))
 	r.Get(PathAuthMethods, authMethods(db))
 	// The account read is anonymous-safe (returns {status:"error"} unauthenticated)
 	// and a security contract — the gateway admin-guard reads its `owner`.
-	httpx.Alias(r.Get, PathAccount, LegacyPathAccount, getAccount(db))
+	zip.Alias(r.Get, PathAccount, LegacyPathAccount, getAccount(db))
 	// Account creation + email/phone OTP send. signup is JSON; the OTP send is
 	// multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
 	r.Post(PathSignup, signupHandler(db))
-	httpx.Alias(r.Post, PathVerificationCodes, LegacyPathVerificationCodes, sendVerificationCode(db))
+	zip.Alias(r.Post, PathVerificationCodes, LegacyPathVerificationCodes, sendVerificationCode(db))
 
 	// The session/identity front door the console drives once a user is signed in:
 	// signin (the code→session exchange), whoami (lightweight identity), onboard
@@ -47,7 +47,7 @@ func routeFrontDoor(r zip.Router, db orm.DB) {
 	// orchestrator calls (on behalf of a named user) instead of a create-org +
 	// move-user pair. Self-authenticates via the unified service token.
 	r.Post(PathProvision, provisionServiceHandler(db))
-	httpx.Alias(r.Post, PathPreferences, LegacyPathPreferences, updatePreferencesHandler(db))
+	zip.Alias(r.Post, PathPreferences, LegacyPathPreferences, updatePreferencesHandler(db))
 	// Account-canonical data-sharing consent (insights + opt-in training) — the ONE
 	// source of truth the hanzo.id signup, the browser extension, and hanzo.ai share.
 	r.Get(PathConsent, getConsentHandler(db))

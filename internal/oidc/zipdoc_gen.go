@@ -19,14 +19,29 @@ func init() {
 	zip.Describe("GET /v1/iam/.well-known/openid-configuration", zip.Doc{
 		Description: "Returns the OpenID Connect discovery document — the one URL you\npoint a standards-compliant client at so it can find every other endpoint on\nits own, instead of you configuring them by hand.\n\nIt advertises only what is actually implemented, so a client that reads it\ncannot ask for a flow that will fail: the authorization-code flow, PKCE with\nS256, the supported grants, and the signing algorithms whose public keys the\nJWKS really publishes.\n\nThe issuer is derived from the host you asked on and is the same value the\ntokens carry, so a client that pins the issuer never sees it change.",
 	})
+	zip.Describe("GET /v1/iam/account", zip.Doc{
+		Description: "Returns the signed-in person's own account and the organization\nthey belong to — what a console reads to draw the account menu.\n\nPasswords, API secrets and MFA material are stripped. It answers for a session\ncookie or a bearer token alike.",
+	})
+	zip.Describe("GET /v1/iam/auth/application", zip.Doc{
+		Description: "Returns everything a login screen needs to draw itself for one\napplication: its branding, and each sign-in method it offers with the provider\ndetails that method needs.\n\nThe client secret is masked. Read before anyone has signed in, so it carries\nonly what is safe for a browser to see.",
+	})
 	zip.Describe("GET /v1/iam/auth/methods", zip.Doc{
 		Description: "Returns the sign-in methods one application actually has switched\non, so a login screen can render the right buttons for it without you\nhard-coding a list that drifts the moment you add a provider.\n\nPublic by design: it is read before anyone has signed in, and it exposes only\nwhich methods exist, never their credentials.",
 	})
 	zip.Describe("GET /v1/iam/consent", zip.Doc{
 		Description: "Returns the calling person's own privacy and communication\nchoices. Somebody who has never set them gets the defaults rather than\nnothing, so a consent screen always has something to show.",
 	})
+	zip.Describe("GET /v1/iam/get-account", zip.Doc{
+		Description: "Returns the signed-in person's own account and the organization\nthey belong to — what a console reads to draw the account menu.\n\nPasswords, API secrets and MFA material are stripped. It answers for a session\ncookie or a bearer token alike.",
+	})
+	zip.Describe("GET /v1/iam/get-app-login", zip.Doc{
+		Description: "Returns everything a login screen needs to draw itself for one\napplication: its branding, and each sign-in method it offers with the provider\ndetails that method needs.\n\nThe client secret is masked. Read before anyone has signed in, so it carries\nonly what is safe for a browser to see.",
+	})
 	zip.Describe("GET /v1/iam/linked-accounts", zip.Doc{
 		Description: "Returns the sign-in identities linked to the calling\nperson's account — every provider they can currently sign in with. It is what\na security page lists next to the option to disconnect one.",
+	})
+	zip.Describe("GET /v1/iam/oauth/authorize", zip.Doc{
+		Description: "Starts a sign-in — the address you send a browser to, and the\nbeginning of every OAuth and OpenID Connect flow.\n\nIt shows the person the right way to sign in for the application they are\nsigning in to, hands off to another identity provider if that is what they\npick, and ends by returning them to the application with a one-time code.\n\nIt returns only to an address the application has registered. That check\nhappens before anything else, so a request naming an unregistered address is\nrefused where the person can see it rather than being bounced onwards.",
 	})
 	zip.Describe("GET /v1/iam/oauth/callback", zip.Doc{
 		Description: "Completes the round-trip: it resolves and burns the\nsingle-use transaction (checking expiry + browser binding), exchanges and\nverifies the IdP response, links or provisions the local user, and mints the\niam authorization code the relying party expects — then redirects to the\noriginal redirect_uri with code + state.",
@@ -43,6 +58,24 @@ func init() {
 	zip.Describe("POST /v1/iam/admin/provision", zip.Doc{
 		Description: "Sets up an account on someone's behalf — the same\nonboarding a person gets themselves, driven by one of your own services\ninstead of by them.\n\nIt authenticates as your service rather than as a person, which is why the\nperson to provision is named in the request. The setup it performs is\nidentical to self-service onboarding; there is one provisioning path, not\ntwo that can drift.",
 	})
+	zip.Describe("POST /v1/iam/issue-user-token", zip.Doc{
+		Description: "Mints an access token for the `?id=<owner>/<name>` target\nuser (optional `?aud=` resource, RFC 8707), issued by the authenticated +\nallow-listed confidential client. The token's subject + owner are the TARGET\nUSER's, so a resource server scopes on the validated owner claim to the user's\ntenant — indistinguishable from a token the user obtained directly. Response is\nthe camelCase `{accessToken, expiresIn}` body identity.ts consumes. Equivalent to\nthe RFC 8693 token-exchange grant, minus the subject_token proof (the console has\nthe user's id, not a token) — the reason this compat shim exists.",
+	})
+	zip.Describe("POST /v1/iam/keys/mint", zip.Doc{
+		Description: "(re)generates the target user's key of the requested TYPE and\nreturns it once, over the shared authorizeMinter + mintTarget seam. `?type=secret`\n(the default) yields the confidential sk-; `?type=publishable` yields the pk- that\nis safe to ship in client JS and resolves to an org, never a principal.\n\nIt writes the schema.Key row that the resolvers actually read. It used to stamp the\nsecret on schema.User.AccessKey, which nothing resolves — so the minted key\nauthenticated nobody AND overwrote any working legacy hk- in the same field,\nlocking the holder out with no recovery through the UI.",
+	})
+	zip.Describe("POST /v1/iam/keys/revoke", zip.Doc{
+		Description: "Clears the target user's key of the requested TYPE (immediate\nrevoke). Scoped by the same `?type` field mint takes, so revoking the browser key\nleaves the server key working. For a secret key the stored value is sk- for anything\nminted since the key seam was unified, and hk- only for the legacy population that\nhas not been re-keyed.",
+	})
+	zip.Describe("POST /v1/iam/login", zip.Doc{
+		Description: "Signs a person in with the credential they typed, and — when the\nrequest is part of an OAuth flow — hands back the one-time code that finishes\nit. A second factor, if the account has one, is asked for and required here.\n\nThe password is compared against a stored one-way hash and is never logged,\nechoed or stored as typed.",
+	})
+	zip.Describe("POST /v1/iam/mint-user-keys", zip.Doc{
+		Description: "(re)generates the target user's key of the requested TYPE and\nreturns it once, over the shared authorizeMinter + mintTarget seam. `?type=secret`\n(the default) yields the confidential sk-; `?type=publishable` yields the pk- that\nis safe to ship in client JS and resolves to an org, never a principal.\n\nIt writes the schema.Key row that the resolvers actually read. It used to stamp the\nsecret on schema.User.AccessKey, which nothing resolves — so the minted key\nauthenticated nobody AND overwrote any working legacy hk- in the same field,\nlocking the holder out with no recovery through the UI.",
+	})
+	zip.Describe("POST /v1/iam/oauth/authorize", zip.Doc{
+		Description: "Starts a sign-in — the address you send a browser to, and the\nbeginning of every OAuth and OpenID Connect flow.\n\nIt shows the person the right way to sign in for the application they are\nsigning in to, hands off to another identity provider if that is what they\npick, and ends by returning them to the application with a one-time code.\n\nIt returns only to an address the application has registered. That check\nhappens before anything else, so a request naming an unregistered address is\nrefused where the person can see it rather than being bounced onwards.",
+	})
 	zip.Describe("POST /v1/iam/oauth/device", zip.Doc{
 		Description: "Starts a sign-in on a device with no browser and no keyboard —\na TV, a CLI, a headless box. It returns a short code to show the person and\nthe address to send them to on a phone or laptop.\n\nNothing is granted until a human approves it there; until then the code is\njust a pending request.",
 	})
@@ -58,11 +91,23 @@ func init() {
 	zip.Describe("POST /v1/iam/oauth/revoke", zip.Doc{
 		Description: "Retires a token before it expires — what you call when someone\nsigns out or a credential may have leaked.\n\nRevoking an access token kills that token. Revoking a REFRESH token kills the\nwhole chain it belongs to, so no further access tokens can be minted from it\nand every token already minted from it dies with it.\n\nA token that is not yours, or that never existed, answers success and does\nnothing — so the endpoint cannot be used to discover which tokens are real.",
 	})
+	zip.Describe("POST /v1/iam/oauth/token", zip.Doc{
+		Description: "Exchanges what your application is holding for the tokens it\nneeds — the one-time code from a finished sign-in, a refresh token, or your\nown client credentials when the caller is a program rather than a person.\n\nA refresh returns a NEW refresh token and retires the one you sent. If a\nretired one is ever presented again the whole chain is revoked, on the\nassumption that a token which came back from the dead was copied — so a stolen\nrefresh token buys an attacker one use and costs them the session.\n\nResponses are never cached, by any hop.",
+	})
 	zip.Describe("POST /v1/iam/oauth/userinfo", zip.Doc{
 		Description: "Returns the profile claims for whoever the access token\nbelongs to — the standard OpenID Connect way to find out who is calling you\nwithout your application storing anything itself.\n\nThe token must still be live: revoke it and this stops answering.",
 	})
 	zip.Describe("POST /v1/iam/onboard", zip.Doc{
 		Description: "Finishes setting up the account of whoever is calling — it\ncreates their organization if they have none and puts them in it, so a person\nwho has just signed up lands somewhere they can work.\n\nIt always acts on the caller and never on somebody named in the request, so\nthere is no way to onboard another person's account through it.",
+	})
+	zip.Describe("POST /v1/iam/preferences", zip.Doc{
+		Description: "Saves the calling person's own settings and returns\nthe full set afterwards. Send only the settings you are changing — the rest\nare kept, so two screens can save at once without one undoing the other.",
+	})
+	zip.Describe("POST /v1/iam/revoke-user-keys", zip.Doc{
+		Description: "Clears the target user's key of the requested TYPE (immediate\nrevoke). Scoped by the same `?type` field mint takes, so revoking the browser key\nleaves the server key working. For a secret key the stored value is sk- for anything\nminted since the key seam was unified, and hk- only for the legacy population that\nhas not been re-keyed.",
+	})
+	zip.Describe("POST /v1/iam/send-verification-code", zip.Doc{
+		Description: "Validates the request, mints + persists an OTP, and\nreports success. The request fields are read via fiber's FormValue — the\nescape hatch zip exposes for form bodies (multipart or urlencoded) — since the\ntyped JSON Bind does not apply here. v1 also accepts countryCode/method/\ncheckUser/captchaType; iam ignores them (the captcha/forget/MFA flows those\ndrive are not ported), and CAPTCHA verification is likewise not enforced —\niam models no captcha provider — so the code is issued once the destination\nand application validate.",
 	})
 	zip.Describe("POST /v1/iam/signin", zip.Doc{
 		Description: "Completes a sign-in: it exchanges the one-time code your\napplication was handed at the end of the login flow for a live session, and\nreturns the signed-in account.\n\nThe code works once. This is the call that turns a finished login into\nsomething your application can act on.",
@@ -70,8 +115,17 @@ func init() {
 	zip.Describe("POST /v1/iam/signup", zip.Doc{
 		Description: "Creates an account from the sign-up form and applies the\napplication's own sign-up rules — whether self-service registration is open at\nall, and which fields it requires.\n\nThe password is hashed before it is stored and is never returned.",
 	})
+	zip.Describe("POST /v1/iam/tokens/issue", zip.Doc{
+		Description: "Mints an access token for the `?id=<owner>/<name>` target\nuser (optional `?aud=` resource, RFC 8707), issued by the authenticated +\nallow-listed confidential client. The token's subject + owner are the TARGET\nUSER's, so a resource server scopes on the validated owner claim to the user's\ntenant — indistinguishable from a token the user obtained directly. Response is\nthe camelCase `{accessToken, expiresIn}` body identity.ts consumes. Equivalent to\nthe RFC 8693 token-exchange grant, minus the subject_token proof (the console has\nthe user's id, not a token) — the reason this compat shim exists.",
+	})
 	zip.Describe("POST /v1/iam/unlink", zip.Doc{
 		Description: "Disconnects one sign-in identity from an account, so that provider can\nno longer be used to sign in as that person. Their account and every other way\nthey sign in are untouched. Two principals may do it, and\nonly two: the account holder itself, and a SuperAdmin (a member of the reserved\nadmin org, the one predicate). An ORG ADMIN deliberately may NOT — unlinking is\nnot tenant administration, it is unpicking someone's own sign-in method, so the\ngeneric org-admin rule is the wrong answer here.\n\nA holder unlinking itself must also be permitted by the application — the\nprovider link's CanUnlink flag — so an organization that mandates federated\nsign-in cannot have its users strand themselves. A SuperAdmin is not bound by\nthat flag; it is the platform's own recovery path. Fail-closed throughout.",
+	})
+	zip.Describe("POST /v1/iam/update-preferences", zip.Doc{
+		Description: "Saves the calling person's own settings and returns\nthe full set afterwards. Send only the settings you are changing — the rest\nare kept, so two screens can save at once without one undoing the other.",
+	})
+	zip.Describe("POST /v1/iam/verification-codes", zip.Doc{
+		Description: "Validates the request, mints + persists an OTP, and\nreports success. The request fields are read via fiber's FormValue — the\nescape hatch zip exposes for form bodies (multipart or urlencoded) — since the\ntyped JSON Bind does not apply here. v1 also accepts countryCode/method/\ncheckUser/captchaType; iam ignores them (the captcha/forget/MFA flows those\ndrive are not ported), and CAPTCHA verification is likewise not enforced —\niam models no captcha provider — so the code is issued once the destination\nand application validate.",
 	})
 	zip.Describe("PUT /v1/iam/consent", zip.Doc{
 		Description: "Records the calling person's privacy and communication\nchoices. Only their own — there is no way to set consent for somebody else.\n\nIt merges rather than replaces, so saving a consent screen never discards a\npreference some other screen set at the same moment.",

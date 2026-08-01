@@ -32,7 +32,6 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/internal/store"
 )
@@ -44,7 +43,7 @@ import (
 // Guard so a verified Principal rides the request context.
 // The MFA surface hangs off the /v1/iam/mfa noun. The two verb-noun spellings it
 // arrived with stay reachable for pinned consumers and are taught nowhere; see
-// httpx.Alias.
+// zip.Alias.
 const (
 	PathDisable         = "/v1/iam/mfa/disable"
 	PathPreferred       = "/v1/iam/mfa/preferred"
@@ -56,8 +55,8 @@ func Route(app *zip.App, db orm.DB) {
 	app.Post("/v1/iam/mfa/setup/initiate", initiate(db))
 	app.Post("/v1/iam/mfa/setup/verify", verify(db))
 	app.Post("/v1/iam/mfa/setup/enable", enable(db))
-	httpx.Alias(app.Post, PathDisable, LegacyPathDisable, disable(db))
-	httpx.Alias(app.Post, PathPreferred, LegacyPathPreferred, setPreferred(db))
+	zip.Alias(app.Post, PathDisable, LegacyPathDisable, disable(db))
+	zip.Alias(app.Post, PathPreferred, LegacyPathPreferred, setPreferred(db))
 }
 
 // setupReq is the union of fields the enrollment handshake posts. owner/name

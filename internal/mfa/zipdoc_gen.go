@@ -7,6 +7,15 @@ import (
 )
 
 func init() {
+	zip.Describe("POST /v1/iam/delete-mfa", zip.Doc{
+		Description: "Turns off the authenticator app for an account, so sign-in stops\nasking for a code. People may do this for themselves; doing it for somebody\nelse takes an administrator, which is what makes it the reset path when a\nphone is lost.",
+	})
+	zip.Describe("POST /v1/iam/mfa/disable", zip.Doc{
+		Description: "Turns off the authenticator app for an account, so sign-in stops\nasking for a code. People may do this for themselves; doing it for somebody\nelse takes an administrator, which is what makes it the reset path when a\nphone is lost.",
+	})
+	zip.Describe("POST /v1/iam/mfa/preferred", zip.Doc{
+		Description: "Picks which second factor an account is asked for first when it\nhas more than one enrolled.",
+	})
 	zip.Describe("POST /v1/iam/mfa/setup/enable", zip.Doc{
 		Description: "Finishes the enrolment: from here the account's sign-ins ask for a code\nfrom the authenticator app. Repeating it re-enrols rather than failing.",
 	})
@@ -15,5 +24,8 @@ func init() {
 	})
 	zip.Describe("POST /v1/iam/mfa/setup/verify", zip.Doc{
 		Description: "Checks a six-digit code against an enrolment in progress, so somebody\ncan confirm their authenticator app is set up correctly before it starts being\nrequired. Clocks a step out either way are accepted.\nA valid code → {status:\"ok\"}; an invalid one → 200 {status:\"error\"} (the\ncasibase convention: clients branch on status, not the HTTP code).",
+	})
+	zip.Describe("POST /v1/iam/set-preferred-mfa", zip.Doc{
+		Description: "Picks which second factor an account is asked for first when it\nhas more than one enrolled.",
 	})
 }
