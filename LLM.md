@@ -321,6 +321,43 @@ issued to and a refresh token was being presented under a different id.
 - `internal/{oidc,routes}` — OAuth2/OIDC surface; `internal/{scim,mfa,webauthn,providers,sessions,tokens,cred,authz,certs,keys}`.
 - `internal/{users,organizations,applications,roles,permission,memberships}` — entities; `pkg/model`, `pkg/store`; `MIGRATION.md` (RFC surface + phases).
 
+## Sign-up is risk-gated (`internal/risk`, `internal/oidc/signup_gate.go`)
+
+`POST /v1/iam/signup` asks the platform scoring plane — `POST /v1/risk/decide`,
+stage `signup` — before it writes anything. IAM does **not** score: velocity,
+address/ASN reputation, disposable-mailbox lists and multi-account linkage live
+in the risk plane over a per-org feature surface IAM cannot see, and a second
+scorer would be a second answer to one question.
+
+**Order is the design.** Every deterministic check (app policy, reserved org,
+tenant gate, username, uniqueness, email, password floor) runs FIRST, then the
+gate, then every write. So a typo costs no screen, and a refused sign-up leaves
+nothing behind — including the organization, which self-serve creation used to
+mint *before* the user was validated.
+
+**Outcomes.** `allow`/`review` → the account is created. `challenge` → answered
+with the protocol string `RequiredVerify` (beside `RequiredMfa`/`NextMfa`); the
+client calls `send-verification-code` and re-posts the sign-up with `code`,
+checked by the existing `CheckVerificationCode`. `block`/`restrict` → one opaque
+refusal carrying a decision reference and nothing else.
+
+**Fail policy — one function, `risk.unavailable`.** An ordinary sign-up ALLOWS
+when the scorer is unreachable (never break login). A sign-up that would MINT A
+TENANT is a grant of standing authority and REFUSES — but only on an ARMED
+deployment. `RISK_URL` unset means no risk plane was ever wired here, and
+refusing to onboard because a component does not exist is an outage, not a
+defense; that case allows and is recorded as `scorer-absent`. Same semantic as
+the cloud edge, whose arming signal is the per-org `mode=live`.
+
+**Records.** Durable first: every decision is a `schema.AuditLog` row
+(`signup.risk.<action>`) written before the client is answered, carrying the
+decision id, action, score, cause, refusal and `scored` — never the request body,
+because the sign-up form carries a password. The analytics COPY goes to
+`/v1/event` afterwards, best-effort, on its own background context.
+
+Config: `RISK_URL` (scorer origin), `EVENT_URL` (analytics door), credential =
+the unified service token (`httpx.ServiceToken`). All three unset = inert gate.
+
 ## OPEN P0 — self-service signup enrolls strangers in the staff tenant
 
 `hanzo-console` / `hanzo-cloud` / `hanzo-gitea` / `hanzo-bot` carry
