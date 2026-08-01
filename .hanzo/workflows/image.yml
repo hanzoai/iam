@@ -54,6 +54,13 @@ name: image
 on:
   push:
     branches: [main]
+    # A `v*` tag is a RELEASE and must produce an image named after it. Without
+    # this line the builder answered only to branch pushes, so every `git tag`
+    # published nothing: v1.33.32 through v1.33.37 were all cut and none of them
+    # has an image. Production ran `sha-ba43c54` — a commit newer than the last
+    # BUILT release (v1.33.31) and older than two tagged ones — so the estate's
+    # IdP was running code no version names.
+    tags: ['v*']
   workflow_dispatch:
 
 concurrency:
@@ -95,8 +102,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A tag push publishes the TAG; a branch push publishes an immutable
+      # sha-<7>. Both are traceable, and only the first is deployable — the
+      # estate's guards require a semver tag (or a digest) in any manifest.
+      # This step is also the source of `-X main.version`, so on a release the
+      # binary now reports the same string as the image, instead of every build
+      # calling itself a commit.
       - id: meta
-        run: echo "tag=sha-$(echo "$GITHUB_SHA" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) tag="${GITHUB_REF#refs/tags/}" ;;
+            *)            tag="sha-$(echo "$GITHUB_SHA" | cut -c1-7)" ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
         with:
