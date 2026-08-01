@@ -30,6 +30,17 @@ import (
 // parse; the data is the REDACTED entity (each Create/Update returns Mask()).
 //
 // Read verbs ride aliases.go; these are the "Writes ride a companion file" half.
+//
+// NONE of these carries an explicit operationId, and that is the rule rather than
+// an omission. A legacy verb alias delegates to the canonical op; the only thing
+// that distinguishes the two IS the address, so the address names it — zip's
+// path-derived default (post_v1_iam_update_provider). Naming them by hand
+// restated what the path already says AND collided: five of them
+// (add/update/delete-provider, update/delete-organization) claimed the same id as
+// the REST twin they delegate to, which OpenAPI forbids — one operationId, one
+// operation — so every generated client would bind whichever it read last. The
+// canonical REST op keeps the hand-picked SDK name; the alias is named for where
+// it is.
 
 // routeWrites registers the the legacy surface write-verb aliases on app. Called from Route
 // (aliases.go) so reads and writes share the one Guard/Authorize seam.
@@ -46,78 +57,78 @@ func routeWrites(app *zip.App, db orm.DB) {
 		func(ctx context.Context, in *organizations.CreateOrganizationInput) (*httpx.Response, error) {
 			return envelope(orgs.Create(ctx, in))
 		},
-		zip.WithOperationID("addOrganization"), zip.WithSummary("Create an organization (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Create an organization (legacy verb)"), zip.WithTags("compat"))
 
 	zip.Post(app, "/v1/iam/add-user",
 		func(ctx context.Context, in *userBody) (*httpx.Response, error) {
 			return envelope(usersAPI.Create(ctx, &users.CreateInput{User: in.User, Password: in.Password}))
 		},
-		zip.WithOperationID("addUser"), zip.WithSummary("Create a user (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Create a user (legacy verb)"), zip.WithTags("compat"))
 
 	zip.Post(app, "/v1/iam/update-user",
 		func(ctx context.Context, in *userBody) (*httpx.Response, error) {
 			return envelope(usersAPI.Update(ctx, &users.UpdateInput{User: in.User, Password: in.Password}))
 		},
-		zip.WithOperationID("updateUser"), zip.WithSummary("Update a user (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Update a user (legacy verb)"), zip.WithTags("compat"))
 
 	zip.Post(app, "/v1/iam/update-application",
 		func(ctx context.Context, in *schema.Application) (*httpx.Response, error) {
 			return envelope(appUpdate(ctx, in))
 		},
-		zip.WithOperationID("updateApplication"), zip.WithSummary("Update an application (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Update an application (legacy verb)"), zip.WithTags("compat"))
 
 	// delete-user — the console IamAdminApi + /org/iam admin mutation.
 	zip.Post(app, "/v1/iam/delete-user",
 		func(ctx context.Context, in *userBody) (*httpx.Response, error) {
 			return envelope(usersAPI.Delete(ctx, &users.Ref{Owner: in.Owner, Name: in.Name}))
 		},
-		zip.WithOperationID("deleteUser"), zip.WithSummary("Delete a user (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Delete a user (legacy verb)"), zip.WithTags("compat"))
 
 	// Applications: add-/delete- (update-application already above).
 	zip.Post(app, "/v1/iam/add-application",
 		func(ctx context.Context, in *schema.Application) (*httpx.Response, error) {
 			return envelope(appCreate(ctx, in))
 		},
-		zip.WithOperationID("addApplication"), zip.WithSummary("Create an application (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Create an application (legacy verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-application",
 		func(ctx context.Context, in *schema.Application) (*httpx.Response, error) {
 			return envelope(appDelete(ctx, &applications.ApplicationRef{Owner: in.Owner, Name: in.Name}))
 		},
-		zip.WithOperationID("deleteApplication"), zip.WithSummary("Delete an application (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Delete an application (legacy verb)"), zip.WithTags("compat"))
 
 	// Providers: add-/update-/delete- (console admin Providers page).
 	zip.Post(app, "/v1/iam/add-provider",
 		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) {
 			return envelope(provAdd(ctx, in))
 		},
-		zip.WithOperationID("addProvider"), zip.WithSummary("Create a provider (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Create a provider (legacy verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/update-provider",
 		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) {
 			return envelope(provUpdate(ctx, in))
 		},
-		zip.WithOperationID("updateProvider"), zip.WithSummary("Update a provider (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Update a provider (legacy verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-provider",
 		func(ctx context.Context, in *schema.Provider) (*httpx.Response, error) {
 			return envelope(provDelete(ctx, in))
 		},
-		zip.WithOperationID("deleteProvider"), zip.WithSummary("Delete a provider (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Delete a provider (legacy verb)"), zip.WithTags("compat"))
 
 	// Roles: add-/update-/delete- (console admin Roles page).
 	zip.Post(app, "/v1/iam/add-role",
 		func(ctx context.Context, in *roles.Input) (*httpx.Response, error) {
 			return envelope(rolesH.Create(ctx, in))
 		},
-		zip.WithOperationID("addRole"), zip.WithSummary("Create a role (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Create a role (legacy verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/update-role",
 		func(ctx context.Context, in *roles.Input) (*httpx.Response, error) {
 			return envelope(rolesH.Update(ctx, in))
 		},
-		zip.WithOperationID("updateRole"), zip.WithSummary("Update a role (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Update a role (legacy verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-role",
 		func(ctx context.Context, in *roles.Ref) (*httpx.Response, error) {
 			return envelope(rolesH.Delete(ctx, in))
 		},
-		zip.WithOperationID("deleteRole"), zip.WithSummary("Delete a role (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Delete a role (legacy verb)"), zip.WithTags("compat"))
 
 	// Projects: add-/delete- (console ScopeSwitcher; the read rides get-organization-projects
 	// in aliases.go). Owner is the org, so app.Authorize gates a write to an org-admin
@@ -126,12 +137,12 @@ func routeWrites(app *zip.App, db orm.DB) {
 		func(ctx context.Context, in *projects.Input) (*httpx.Response, error) {
 			return envelope(projectsH.Create(ctx, in))
 		},
-		zip.WithOperationID("addProject"), zip.WithSummary("Create a project (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Create a project (legacy verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-project",
 		func(ctx context.Context, in *projects.Ref) (*httpx.Response, error) {
 			return envelope(projectsH.Delete(ctx, in))
 		},
-		zip.WithOperationID("deleteProject"), zip.WithSummary("Delete a project (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Delete a project (legacy verb)"), zip.WithTags("compat"))
 
 	// Workspaces: add-/delete- (console ScopeSwitcher; the read rides
 	// get-organization-workspaces in aliases.go). Owner is the org, so app.Authorize
@@ -140,24 +151,24 @@ func routeWrites(app *zip.App, db orm.DB) {
 		func(ctx context.Context, in *workspaces.Input) (*httpx.Response, error) {
 			return envelope(workspacesH.Create(ctx, in))
 		},
-		zip.WithOperationID("addWorkspace"), zip.WithSummary("Create a workspace (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Create a workspace (legacy verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-workspace",
 		func(ctx context.Context, in *workspaces.Ref) (*httpx.Response, error) {
 			return envelope(workspacesH.Delete(ctx, in))
 		},
-		zip.WithOperationID("deleteWorkspace"), zip.WithSummary("Delete a workspace (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Delete a workspace (legacy verb)"), zip.WithTags("compat"))
 
 	// Organizations: update-/delete- (add-organization already above).
 	zip.Post(app, "/v1/iam/update-organization",
 		func(ctx context.Context, in *organizations.UpdateOrganizationInput) (*httpx.Response, error) {
 			return envelope(orgs.Update(ctx, in))
 		},
-		zip.WithOperationID("updateOrganization"), zip.WithSummary("Update an organization (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Update an organization (legacy verb)"), zip.WithTags("compat"))
 	zip.Post(app, "/v1/iam/delete-organization",
 		func(ctx context.Context, in *organizations.DeleteOrganizationInput) (*httpx.Response, error) {
 			return envelope(orgs.Delete(ctx, in))
 		},
-		zip.WithOperationID("deleteOrganization"), zip.WithSummary("Delete an organization (legacy verb)"), zip.WithTags("compat"))
+		zip.WithSummary("Delete an organization (legacy verb)"), zip.WithTags("compat"))
 }
 
 // userBody is the bare-user body the the legacy surface add-user/update-user verbs post (the
