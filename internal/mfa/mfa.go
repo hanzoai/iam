@@ -33,7 +33,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/mfa/factor"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // The TOTP factor type ("app") and the domain helpers are factor.App et al (internal/mfa/factor).

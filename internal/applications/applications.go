@@ -17,7 +17,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // authorizeOrganization gates the Organization an application will SERVE (the

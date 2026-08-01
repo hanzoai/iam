@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // SINGLE SIGN-ON off a live IAM session. A signed-in person asking for a grant to

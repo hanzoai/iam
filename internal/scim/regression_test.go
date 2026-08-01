@@ -14,7 +14,7 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // seedRichUser seeds a user with MFA enrollment + a soft-delete-adjacent field set,

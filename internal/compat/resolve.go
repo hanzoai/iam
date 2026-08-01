@@ -10,7 +10,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // resolve-key is the WRITE-ONLY ingest door and the exact DUAL of get-user?accessKey:

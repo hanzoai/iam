@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // Create is the ONE write every account-creation path reaches — password signup,

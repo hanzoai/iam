@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 	"github.com/hanzoai/iam/internal/users"
 )
 

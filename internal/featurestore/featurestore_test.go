@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/hanzoai/iam/feature"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 	"github.com/hanzoai/iam/pkg/model"
 )
 

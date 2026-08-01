@@ -16,7 +16,7 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // openTestDB opens a fresh SQLite store; the schema init registers the kinds.

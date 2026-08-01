@@ -9,7 +9,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // RFC 8693 OAuth 2.0 Token Exchange — the standard delegation / act-on-behalf-of

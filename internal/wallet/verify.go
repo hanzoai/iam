@@ -15,7 +15,7 @@ import (
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // The chain-agnostic wallet-login core, decomplected from HTTP: the handler
