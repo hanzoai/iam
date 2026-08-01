@@ -82,6 +82,16 @@ func setTokenCacheHeaders(c *zip.Ctx) {
 	c.SetHeader("Pragma", "no-cache")
 }
 
+// tokenHandler exchanges what your application is holding for the tokens it
+// needs — the one-time code from a finished sign-in, a refresh token, or your
+// own client credentials when the caller is a program rather than a person.
+//
+// A refresh returns a NEW refresh token and retires the one you sent. If a
+// retired one is ever presented again the whole chain is revoked, on the
+// assumption that a token which came back from the dead was copied — so a stolen
+// refresh token buys an attacker one use and costs them the session.
+//
+// Responses are never cached, by any hop.
 func tokenHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)

@@ -40,9 +40,9 @@ import (
 // r. POST-only: they mint/rotate a credential — never over a cacheable GET (a
 // client_secret in a query string would reach logs/proxies).
 func routeIssueToken(r zip.Router, db orm.DB) {
-	httpx.Alias(r.Post, PathTokensIssue, LegacyPathTokensIssue, issueUserTokenHandler(db))
-	httpx.Alias(r.Post, PathKeysMint, LegacyPathKeysMint, mintUserKeysHandler(db))
-	httpx.Alias(r.Post, PathKeysRevoke, LegacyPathKeysRevoke, revokeUserKeysHandler(db))
+	zip.Alias(r.Post, PathTokensIssue, LegacyPathTokensIssue, issueUserTokenHandler(db))
+	zip.Alias(r.Post, PathKeysMint, LegacyPathKeysMint, mintUserKeysHandler(db))
+	zip.Alias(r.Post, PathKeysRevoke, LegacyPathKeysRevoke, revokeUserKeysHandler(db))
 }
 
 // issueUserTokenHandler mints an access token for the `?id=<owner>/<name>` target

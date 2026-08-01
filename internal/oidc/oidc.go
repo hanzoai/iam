@@ -59,8 +59,10 @@ func Route(r zip.Router, db orm.DB) {
 	// client that looks for `oauth-authorization-server` finds the AS too.
 	r.Get(PathASMetadata, Discovery)
 	r.Get(PathASMetadataV1, Discovery)
-	r.Get(PathJWKS, jwks)
-	r.Get(PathJWKSRoot, jwks)
+	// One handler, two addresses: the same key set under the subsystem's prefix
+	// and at the host root, because a relying party configured with either must
+	// find it.
+	zip.Alias(r.Get, PathJWKS, PathJWKSRoot, jwks)
 
 	// OAuth2 / OIDC protocol endpoints.
 	r.Get(PathAuthorize, authorizeHandler(db))
