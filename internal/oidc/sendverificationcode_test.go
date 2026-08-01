@@ -34,7 +34,7 @@ func multipartReq(path string, fields map[string]string) *http.Request {
 
 func sendCode(t *testing.T, app *zip.App, fields map[string]string) (int, map[string]any) {
 	t.Helper()
-	resp, raw := do(t, app, multipartReq(PathSendVerificationCode, fields))
+	resp, raw := do(t, app, multipartReq(PathVerificationCodes, fields))
 	return resp.StatusCode, decode(t, raw)
 }
 
@@ -91,7 +91,7 @@ func TestSendVerificationCode_UrlencodedAlsoWorks(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
 	seedOrg(t, db, "hanzo")
 
-	resp, raw := do(t, app, formReq("POST", PathSendVerificationCode, url.Values{
+	resp, raw := do(t, app, formReq("POST", PathVerificationCodes, url.Values{
 		"dest":          {"someone@hanzo.ai"},
 		"type":          {"email"},
 		"applicationId": {"admin/conf"},

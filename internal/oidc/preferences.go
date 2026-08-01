@@ -26,8 +26,7 @@ import (
 // stored object, so concurrent products/devices setting DIFFERENT keys don't clobber
 // each other; the merged object is returned so the caller keeps every other key.
 
-// PathUpdatePreferences is the canonical self-preferences endpoint.
-const PathUpdatePreferences = "/v1/iam/update-preferences"
+// PathPreferences (canonical.go) is the self-preferences endpoint.
 
 // preferencesKey is the User.Properties entry holding the cross-product preferences
 // JSON blob — the backend half of the console contract (PREFS_PROPERTY); keep in

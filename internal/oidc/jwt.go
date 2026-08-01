@@ -37,7 +37,7 @@ type Claims struct {
 	Scope        string `json:"scope,omitempty"`
 	Owner        string `json:"owner,omitempty"`
 	Organization string `json:"organization,omitempty"`
-	Email string `json:"email,omitempty"`
+	Email        string `json:"email,omitempty"`
 	// Name is the IAM USERNAME (the `<name>` half of `<owner>/<name>`, e.g. "z"),
 	// never a display name. With Owner it forms the ONE address every Hanzo surface
 	// names a principal by — `hanzo auth login` files its credential under

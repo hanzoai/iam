@@ -12,8 +12,8 @@ import (
 	"github.com/hanzoai/iam/internal/store"
 )
 
-// PathGetAccount is the native front-door account endpoint — what the hanzo.id
-// portal's account page and the gateway admin-guard call.
+// PathAccount (canonical.go) is the native front-door account endpoint — what
+// the hanzo.id portal's account page and the gateway admin-guard call.
 //
 // SECURITY CONTRACT. The gateway admin-guard derives the global-admin
 // (SuperAdmin) predicate from the `owner` this returns — a caller is a global
@@ -22,9 +22,7 @@ import (
 // and every secret (password hash, access secret, TOTP, recovery codes) MUST be
 // redacted. Anonymous callers get {status:"error"} (200, casibase convention),
 // never a leak: the admin-guard reads status=="error" → not-admin, fail-closed.
-const PathGetAccount = "/v1/iam/get-account"
-
-// accountResponse mirrors v1's Response for get-account (the casibase envelope).
+// accountResponse mirrors v1's Response for the account read (the casibase envelope).
 type accountResponse struct {
 	Status string `json:"status"`
 	Msg    string `json:"msg,omitempty"`
