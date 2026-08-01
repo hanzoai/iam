@@ -36,8 +36,11 @@ type resolveResponse struct {
 // It names an organization and never a person: no path through it can load or
 // return a user, so a key you put in client code cannot become a way to learn
 // who anyone is. A key that is expired, secret rather than publishable, or
-// simply unknown all answer identically, so nothing here can be probed to
-// discover which keys exist.
+// simply unknown all answer with the same sentence, and with a `code` saying
+// which of those it was. Only a confidential service that already proved it may
+// resolve keys at all ever reads that code — there is no anonymous caller here
+// to probe for which keys exist — and telling it apart is what lets the holder
+// be told to re-mint an expired key instead of hunting a configuration error.
 func resolveKeyHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -48,8 +51,11 @@ func resolveKeyHandler(db orm.DB) zip.Handler {
 		k, err := store.PublishableKeyByAccessKey(ctx, db, c.Query("accessKey"), time.Now())
 		if err != nil {
 			// Not found, not a pk-, not publishable, expired, or a store error — one
-			// opaque envelope, no oracle (store.PublishableKeyByAccessKey fails closed).
-			return httpx.Err(c, "the entity does not exist")
+			// envelope, and `code` distinguishes them for the confidential app that
+			// already passed CapPublishableResolve above. A store fault yields no
+			// reason at all (store.Reason returns ""), so infrastructure trouble is
+			// never reported to the holder as a bad key.
+			return httpx.ErrCode(c, "the entity does not exist", string(store.Reason(err)))
 		}
 		return httpx.Ok(c, resolveResponse{Org: k.Owner, Scope: k.Scope})
 	}

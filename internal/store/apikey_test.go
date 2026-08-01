@@ -203,3 +203,99 @@ func TestPublishableKeyByAccessKey(t *testing.T) {
 		}
 	}
 }
+
+// ── the reason, not just the refusal ─────────────────────────────────────────
+
+// Every refusal still fails closed AND now says which refusal it was. "the entity
+// does not exist" was one sentence for causes that call for opposite actions: a
+// revoked key needs re-minting, a pk- at the secret door needs the other door, and a
+// cross-tenant key row is an ATTACK — none of which the holder or an operator could
+// tell apart. The reason is additive: errors.Is(err, orm.ErrNotFound) still holds for
+// every case, so no existing caller changes behavior.
+func TestUserByAccessKey_ReasonsAreDistinguishable(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "hk-live-ALICEKEY")
+	seedKey(t, db, "hanzo", "org-key", "", "pk-live-ORGONLY", "sk-live-ORGONLY")
+	// An attacker's own-org key naming a foreign identity — the same-tenant pin.
+	seedKey(t, db, "attackerOrg", "forge", "victimorg/ceo", "pk-live-FORGE", "sk-live-FORGE")
+	// A key naming a same-tenant user that does not exist — a dangling row.
+	seedKey(t, db, "hanzo", "dangling", "hanzo/ghost", "pk-live-GHOST", "sk-live-GHOST")
+
+	for _, tc := range []struct {
+		name string
+		key  string
+		want KeyFailure
+	}{
+		{"revoked or never-minted hk", "hk-live-NOSUCH", KeyUnknown},
+		{"unknown sk", "sk-live-NOSUCH", KeyUnknown},
+		{"a pk- at the SECRET door", "pk-live-ORGONLY", KeyWrongDoor},
+		{"an unrecognized shape", "fw_deadbeef", KeyWrongDoor},
+		{"empty", "", KeyWrongDoor},
+		{"cross-tenant key row is a SECURITY event", "sk-live-FORGE", KeyForeignUser},
+		{"user-less key row cannot name a principal", "sk-live-ORGONLY", KeyForeignUser},
+		{"key naming a nonexistent same-tenant user", "sk-live-GHOST", KeyDanglingUser},
+	} {
+		got, err := UserByAccessKey(ctx, db, tc.key)
+		if got != nil {
+			t.Fatalf("%s: resolved %+v, want nil — every case must still fail closed", tc.name, got)
+		}
+		if !errors.Is(err, orm.ErrNotFound) {
+			t.Fatalf("%s: err=%v, want it to still satisfy errors.Is(_, orm.ErrNotFound)", tc.name, err)
+		}
+		if r := Reason(err); r != tc.want {
+			t.Errorf("%s: reason = %q, want %q", tc.name, r, tc.want)
+		}
+	}
+}
+
+// The publishable door tells its three refusals apart. This is the trio the cloud
+// fork's own test annotated as "unknown / not publishable / expired" while having no
+// way to distinguish them — the annotation is now executable.
+func TestPublishableKeyByAccessKey_ReasonsAreDistinguishable(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	seedPublishKey(t, db, "hanzo", "site-exp", "pk-live-EXPIRED", "2020-01-01T00:00:00Z")
+	seedKey(t, db, "hanzo", "secret", "hanzo/alice", "pk-live-SECRETHALF", "sk-live-x")
+
+	for _, tc := range []struct {
+		name string
+		key  string
+		want KeyFailure
+	}{
+		{"unknown", "pk-live-NOSUCH", KeyUnknown},
+		{"not publishable", "pk-live-SECRETHALF", KeyNotPublishable},
+		{"expired", "pk-live-EXPIRED", KeyExpired},
+		{"not a pk- at all", "sk-live-x", KeyWrongDoor},
+	} {
+		k, err := PublishableKeyByAccessKey(ctx, db, tc.key, now)
+		if k != nil {
+			t.Fatalf("%s: resolved %+v, want nil", tc.name, k)
+		}
+		if !errors.Is(err, orm.ErrNotFound) {
+			t.Fatalf("%s: err=%v, want errors.Is(_, orm.ErrNotFound)", tc.name, err)
+		}
+		if r := Reason(err); r != tc.want {
+			t.Errorf("%s: reason = %q, want %q", tc.name, r, tc.want)
+		}
+	}
+}
+
+// A real store fault is NOT a bad credential. Reason yields "" for anything that is
+// not a not-found, so a caller can never render infrastructure trouble to a user as
+// "your key is invalid".
+func TestReason_StoreFaultIsNotAKeyFailure(t *testing.T) {
+	if r := Reason(errors.New("dial tcp: connection refused")); r != "" {
+		t.Fatalf("Reason(store fault) = %q, want \"\"", r)
+	}
+	if r := Reason(nil); r != "" {
+		t.Fatalf("Reason(nil) = %q, want \"\"", r)
+	}
+	// A bare orm.ErrNotFound from a path predating KeyError still reads as unknown.
+	if r := Reason(orm.ErrNotFound); r != KeyUnknown {
+		t.Fatalf("Reason(orm.ErrNotFound) = %q, want %q", r, KeyUnknown)
+	}
+}

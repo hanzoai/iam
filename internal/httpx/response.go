@@ -22,11 +22,18 @@ import (
 type Response struct {
 	Status string `json:"status"`
 	Msg    string `json:"msg"`
-	Sub    string `json:"sub,omitempty"`
-	Name   string `json:"name,omitempty"`
-	Data   any    `json:"data"`
-	Data2  any    `json:"data2,omitempty"`
-	Data3  any    `json:"data3,omitempty"`
+	// Code is a STABLE machine-readable reason, where the human `msg` is
+	// deliberately generic. `msg` is prose for a person and several distinct causes
+	// legitimately share one sentence; a caller that must BRANCH on the cause — or
+	// tell its own user which of them happened — cannot parse prose. Optional, so
+	// every existing envelope is byte-identical and no SDK changes.
+	Code string `json:"code,omitempty"`
+	Sub  string `json:"sub,omitempty"`
+	Name string `json:"name,omitempty"`
+
+	Data  any `json:"data"`
+	Data2 any `json:"data2,omitempty"`
+	Data3 any `json:"data3,omitempty"`
 }
 
 // ServiceToken returns the configured unified service token — the first non-empty
@@ -66,7 +73,13 @@ func Ok(c *zip.Ctx, data any, more ...any) error {
 // Err writes 200 { status:"error", msg } — the SDK contract (branch on status,
 // not HTTP code).
 func Err(c *zip.Ctx, msg string) error {
-	return c.JSON(200, Response{Status: "error", Msg: msg})
+	return ErrCode(c, msg, "")
+}
+
+// ErrCode is Err carrying a machine-readable reason alongside the human message.
+// ONE implementation writes the error envelope; Err is this with no reason to give.
+func ErrCode(c *zip.Ctx, msg, code string) error {
+	return c.JSON(200, Response{Status: "error", Msg: msg, Code: code})
 }
 
 // Bearer returns the token from an `Authorization: Bearer <token>` header, or "".

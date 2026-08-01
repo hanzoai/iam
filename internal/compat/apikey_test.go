@@ -40,6 +40,7 @@ const (
 type keyEnv struct {
 	Status string `json:"status"`
 	Msg    string `json:"msg"`
+	Code   string `json:"code"`
 	Data   struct {
 		Owner   string `json:"owner"`
 		Name    string `json:"name"`
@@ -229,5 +230,54 @@ func TestGetUserByAccessKey_EmptyFallsThrough(t *testing.T) {
 	status, body := h.get(t, "/v1/iam/get-user?accessKey=&id=hanzo/alice", h.token(t, "admin/root"))
 	if status != 200 || !strings.Contains(body, "alice") {
 		t.Fatalf("empty accessKey did not fall through to owner/name read: status=%d body=%s", status, body)
+	}
+}
+
+// The refusal REASON reaches the wire while the human sentence stays uniform.
+//
+// "the entity does not exist" is IAM's generic answer, and cloud rendered it verbatim
+// to users: a holder whose key had been revoked was told their entity was gone and
+// went looking for a deleted organization instead of minting a new key. The prose is
+// deliberately unchanged — nothing that reads `msg` can tell the causes apart — and
+// the machine-readable `code` carries the reason to the confidential app that already
+// passed CapKeyResolve to get here.
+func TestGetUserByAccessKey_RefusalCarriesItsReason(t *testing.T) {
+	h := newHarness(t)
+	keyFixtures(t, h)
+
+	for _, tc := range []struct{ name, key, wantCode string }{
+		{"revoked / never minted", "hk-live-NOSUCHKEY", "key_unknown"},
+		{"unknown secret half", "sk-live-NOSUCHKEY", "key_unknown"},
+		{"a publishable key at the SECRET door", projPK, "key_wrong_door"},
+		{"an unrecognized shape", "fw_deadbeef", "key_wrong_door"},
+	} {
+		_, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+tc.key, resolverApp, svcSecret)
+		var e keyEnv
+		_ = json.Unmarshal([]byte(body), &e)
+		if e.Status != "error" || e.Msg != "the entity does not exist" {
+			t.Fatalf("%s: env=%+v — the human sentence must stay uniform", tc.name, e)
+		}
+		if e.Code != tc.wantCode {
+			t.Errorf("%s: code = %q, want %q", tc.name, e.Code, tc.wantCode)
+		}
+		// The credential must never be echoed back, in any field.
+		if strings.Contains(body, tc.key) {
+			t.Errorf("%s: the refusal echoed the presented key: %s", tc.name, body)
+		}
+	}
+}
+
+// The AUTH refusal is not a key reason. A caller that fails the CapKeyResolve gate
+// gets the unauthorized envelope and NO code at all — so a non-cap caller can never
+// use `code` as an existence oracle for keys it may not resolve.
+func TestGetUserByAccessKey_NonCapCallerLearnsNoReason(t *testing.T) {
+	h := newHarness(t)
+	keyFixtures(t, h)
+
+	_, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+keyUserHK, otherApp, svcSecret)
+	var e keyEnv
+	_ = json.Unmarshal([]byte(body), &e)
+	if e.Status != "error" || e.Code != "" {
+		t.Fatalf("non-cap caller env=%+v, want an error with NO code", e)
 	}
 }
