@@ -98,11 +98,17 @@ func Route(r zip.Router, db orm.DB) {
 	routeIssueToken(r, db)
 }
 
-// Discovery serves the OIDC discovery document, host-relative (issuer derived
-// from the request host, the same value the tokens carry as `iss`) so a strict
-// client never splits origin. It advertises only what iam implements: the
-// authorization-code flow, S256 PKCE, the three supported grants, and the
-// signing algorithms whose public keys the JWKS actually publishes.
+// Discovery returns the OpenID Connect discovery document — the one URL you
+// point a standards-compliant client at so it can find every other endpoint on
+// its own, instead of you configuring them by hand.
+//
+// It advertises only what is actually implemented, so a client that reads it
+// cannot ask for a flow that will fail: the authorization-code flow, PKCE with
+// S256, the supported grants, and the signing algorithms whose public keys the
+// JWKS really publishes.
+//
+// The issuer is derived from the host you asked on and is the same value the
+// tokens carry, so a client that pins the issuer never sees it change.
 func Discovery(c *zip.Ctx) error {
 	iss := tokenIssuer(c)
 	return c.JSON(200, map[string]any{

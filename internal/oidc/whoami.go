@@ -18,7 +18,11 @@ import (
 // PathWhoami is the canonical lightweight-identity endpoint.
 const PathWhoami = "/v1/iam/whoami"
 
-// whoamiHandler reports the resolved caller's identity in the casibase envelope.
+// whoamiHandler tells you who the current caller is — the lightweight check a
+// page makes on load to decide whether to render signed-in or signed-out.
+//
+// It answers for a session cookie or a bearer token alike, and says plainly when
+// nobody is signed in rather than failing.
 func whoamiHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

@@ -53,7 +53,9 @@ func consentOf(prefs string) consentView {
 	return v
 }
 
-// getConsentHandler returns the caller's own consent (defaults when never set).
+// getConsentHandler returns the calling person's own privacy and communication
+// choices. Somebody who has never set them gets the defaults rather than
+// nothing, so a consent screen always has something to show.
 func getConsentHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -69,8 +71,11 @@ func getConsentHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// putConsentHandler writes the caller's consent into the one preferences blob,
-// under the row lock so a concurrent preferences write on another key is preserved.
+// putConsentHandler records the calling person's privacy and communication
+// choices. Only their own — there is no way to set consent for somebody else.
+//
+// It merges rather than replaces, so saving a consent screen never discards a
+// preference some other screen set at the same moment.
 func putConsentHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

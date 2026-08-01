@@ -94,9 +94,12 @@ func target(c *zip.Ctx, req *setupReq) (owner, name string, err error) {
 	return owner, name, nil
 }
 
-// initiate mints a fresh TOTP secret + otpauth URL + a single recovery code and
-// returns them for the client to display (QR + backup code). Nothing is
-// persisted — the secret is committed only by enable. Response:
+// initiate starts enrolling an authenticator app: it returns a fresh secret, a
+// URL to render as a QR code, and one recovery code to keep somewhere safe.
+//
+// Nothing is switched on yet. The enrolment counts only once it is confirmed with
+// a code from the app, so abandoning this step leaves the account exactly as it
+// was. Response:
 // {status:"ok", data:{secret, url, recoveryCodes:[code]}}.
 func initiate(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
@@ -122,7 +125,9 @@ func initiate(db orm.DB) zip.Handler {
 	}
 }
 
-// verify checks a passcode against the client-echoed secret (RFC 6238, ±1 step).
+// verify checks a six-digit code against an enrolment in progress, so somebody
+// can confirm their authenticator app is set up correctly before it starts being
+// required. Clocks a step out either way are accepted.
 // A valid code → {status:"ok"}; an invalid one → 200 {status:"error"} (the
 // casibase convention: clients branch on status, not the HTTP code).
 func verify(db orm.DB) zip.Handler {
@@ -144,8 +149,8 @@ func verify(db orm.DB) zip.Handler {
 	}
 }
 
-// enable commits the client-held secret + recovery code to the target user and
-// marks TOTP the preferred factor. An idempotent overwrite of the MFA fields.
+// enable finishes the enrolment: from here the account's sign-ins ask for a code
+// from the authenticator app. Repeating it re-enrols rather than failing.
 func enable(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var req setupReq
@@ -180,7 +185,10 @@ func enable(db orm.DB) zip.Handler {
 	}
 }
 
-// disable clears every TOTP field on the target user (delete-mfa).
+// disable turns off the authenticator app for an account, so sign-in stops
+// asking for a code. People may do this for themselves; doing it for somebody
+// else takes an administrator, which is what makes it the reset path when a
+// phone is lost.
 func disable(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var req setupReq
@@ -206,7 +214,8 @@ func disable(db orm.DB) zip.Handler {
 	}
 }
 
-// setPreferred selects which enrolled factor is preferred.
+// setPreferred picks which second factor an account is asked for first when it
+// has more than one enrolled.
 func setPreferred(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var req setupReq

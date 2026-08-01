@@ -47,7 +47,9 @@ type linkedAccount struct {
 	Subject  string `json:"subject"`
 }
 
-// linkedAccountsHandler returns the caller's linked identities.
+// linkedAccountsHandler returns the sign-in identities linked to the calling
+// person's account — every provider they can currently sign in with. It is what
+// a security page lists next to the option to disconnect one.
 func linkedAccountsHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

@@ -90,11 +90,13 @@ type appUpsertReq struct {
 	RefreshExpireInHours *float64 `json:"refreshExpireInHours"`
 }
 
-// upsertApplication idempotently creates or updates a service-account application,
-// keyed by (Owner="admin", Name) — applications are platform-owned. Returns
-// {status:"ok", action:"created"|"updated", data:{name, organization, clientId,
-// clientSecret}} — the shape operator-core parses. A missing clientSecret preserves
-// the existing one (no rotation on a steady-state reconcile) or is generated.
+// upsertApplication creates an application or updates it in place, so a
+// deployment can declare the applications it needs and run the same declaration
+// on every environment and on every redeploy.
+//
+// It says which of the two it did. Leave the client secret out and the existing
+// one is kept — so re-running your deployment does not rotate a credential your
+// running services are holding.
 func upsertApplication(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		if !httpx.ServiceTokenAuth(c) {
@@ -190,9 +192,11 @@ type userUpsertReq struct {
 	IsAdmin      bool   `json:"isAdmin"`
 }
 
-// upsertUser idempotently creates or updates a user keyed by (Owner, Name). The
-// password is argon2id-hashed (SOTA; never stored plaintext); an empty password preserves
-// the existing credential. Returns {status:"ok", action, data:{owner, name}}.
+// upsertUser creates a person or updates them in place, so a deployment can
+// declare the accounts it needs and re-run that declaration safely.
+//
+// Passwords are hashed before they are stored. Leave the password out and their
+// current one is kept, so a redeploy never locks somebody out.
 func upsertUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		if !httpx.ServiceTokenAuth(c) {
