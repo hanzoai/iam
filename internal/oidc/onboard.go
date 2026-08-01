@@ -67,8 +67,12 @@ type onboardForm struct {
 	Personal bool   `json:"personal"`
 }
 
-// onboardHandler is the SELF-SERVICE front door: it resolves the caller from its
-// own session/bearer (never the body), so onboarding only ever moves the caller.
+// onboardHandler finishes setting up the account of whoever is calling — it
+// creates their organization if they have none and puts them in it, so a person
+// who has just signed up lands somewhere they can work.
+//
+// It always acts on the caller and never on somebody named in the request, so
+// there is no way to onboard another person's account through it.
 func onboardHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		owner, name, ok := callerOf(c.Context(), c, db)
@@ -112,11 +116,14 @@ type provisionForm struct {
 	Personal bool   `json:"personal"`
 }
 
-// provisionServiceHandler is the service-token admin provision. Self-authenticated
-// by the unified service token (Bearer), like the operator bootstrap endpoints — it
-// acts on behalf of the named user, so the caller comes from the body, not a
-// session. The converge itself is the SAME provision() primitive the self-service
-// front door drives; there is one and only one provisioning path.
+// provisionServiceHandler sets up an account on someone's behalf — the same
+// onboarding a person gets themselves, driven by one of your own services
+// instead of by them.
+//
+// It authenticates as your service rather than as a person, which is why the
+// person to provision is named in the request. The setup it performs is
+// identical to self-service onboarding; there is one provisioning path, not
+// two that can drift.
 func provisionServiceHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		if !httpx.ServiceTokenAuth(c) {

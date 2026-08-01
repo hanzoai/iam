@@ -82,8 +82,12 @@ type minted struct {
 	AccessSecret string `json:"accessSecret"`
 }
 
-// create serves POST /v1/iam/service-accounts: provision the identity and mint
-// its first key, returning the raw secret exactly once.
+// create makes a service account — an identity for a program rather than a
+// person, for a script, a bot or a deployment that has to authenticate on its
+// own.
+//
+// It comes back with its first key, and the secret half is shown ONCE, here.
+// There is no way to read it again; if you lose it, rotate.
 func create(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var in request
@@ -137,8 +141,9 @@ func create(db orm.DB) zip.Handler {
 	}
 }
 
-// list serves GET /v1/iam/service-accounts?organization=<org>: names and
-// metadata, never secrets. Paginated in memory over the already org-scoped
+// list returns your organization's service accounts — what each is called and
+// when it was created. Never their secrets: a key's secret half exists in a
+// response exactly once, when it is minted. Paginated in memory over the already org-scoped
 // slice — the set per org is small, so a dedicated count query is overkill
 // (v1 service_account.go:296-307).
 func list(db orm.DB) zip.Handler {

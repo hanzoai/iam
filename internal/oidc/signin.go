@@ -32,7 +32,12 @@ type signinForm struct {
 	State string `json:"state"`
 }
 
-// signinHandler redeems an authorization code for a session and returns the account.
+// signinHandler completes a sign-in: it exchanges the one-time code your
+// application was handed at the end of the login flow for a live session, and
+// returns the signed-in account.
+//
+// The code works once. This is the call that turns a finished login into
+// something your application can act on.
 func signinHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

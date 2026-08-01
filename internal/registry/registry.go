@@ -129,10 +129,13 @@ type principal struct {
 	privileged bool
 }
 
-// token handles GET and POST /v1/iam/registry/token. Two client flows reach it:
-// the docker GET flow (Basic header + query scopes) and the containerd/BuildKit
-// OAuth2 POST flow (form username/password + form scopes). Either way it
-// authenticates the credential and returns a short-lived scoped JWT.
+// token signs a container client in to your registry. `docker login`, and every
+// build tool that pushes or pulls images, lands here: it exchanges the
+// credential for a short-lived token scoped to exactly the repositories that
+// credential may touch.
+//
+// Both of the shapes container tooling uses are accepted, so the same login works
+// whichever client your pipeline runs.
 func (h *handler) token(c *zip.Ctx) error {
 	kr, err := h.key()
 	if err != nil {
@@ -168,10 +171,13 @@ func (h *handler) token(c *zip.Ctx) error {
 	})
 }
 
-// jwks serves the verifying key so registry:2's ROOTCERTBUNDLE (and any relying
-// party) verifies the tokens this endpoint issues. Fails closed (503) when no
-// trusted key resolves — the same key backs signing and this JWKS, so publishing
-// one without the other would be incoherent.
+// jwks publishes the public key your registry uses to verify the tokens issued
+// above — the one URL to configure so the registry trusts logins without holding
+// any secret of its own.
+//
+// If no signing key is available it refuses rather than publishing an empty set,
+// because a registry that trusts nothing looks identical to one that trusts
+// everything until somebody tries to push.
 func (h *handler) jwks(c *zip.Ctx) error {
 	kr, err := h.key()
 	if err != nil {

@@ -14,11 +14,12 @@ import (
 	"github.com/hanzoai/iam/internal/store"
 )
 
-// The end-session endpoint: GET/POST /v1/iam/oauth/logout. iam holds no
-// server-side browser session to destroy here, so logout's security-relevant
-// job is the redirect: it bounces to post_logout_redirect_uri ONLY when that URI
-// is registered by the client named in a signature-verified id_token_hint —
-// never to an unvalidated absolute URL (open-redirect defense).
+// logoutHandler ends a sign-in session and sends the browser back to your
+// application. Accepts GET or POST, so it works as a plain link.
+//
+// It returns only to an address the application has registered, and only when
+// the request carries an id_token whose signature verifies — so nobody can turn
+// your logout link into a redirect to a site of their choosing.
 func logoutHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		redirect := param(c, "post_logout_redirect_uri")

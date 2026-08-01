@@ -32,9 +32,11 @@ type accountResponse struct {
 	Data2  any    `json:"data2,omitempty"`
 }
 
-// getAccount resolves the signed-in caller and returns their REDACTED account +
-// organization. Resolution (callerOf) is by session cookie first — the portal +
-// gateway-admin-guard path — then bearer access token — the API path.
+// getAccount returns the signed-in person's own account and the organization
+// they belong to — what a console reads to draw the account menu.
+//
+// Passwords, API secrets and MFA material are stripped. It answers for a session
+// cookie or a bearer token alike.
 func getAccount(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
