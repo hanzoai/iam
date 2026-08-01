@@ -15,7 +15,42 @@ hand-rolling OAuth. Full SDK model: `~/work/hanzo/SDK-ARCHITECTURE.md`.
 - `go build ./...`
 - `go run . serve --init-data init_data.json`  (SQLite default; `--store sqlite|sql|datastore`)
 - `go run . compare --legacy postgres://…/iam` (needs `-tags migration`)
-- Image: `ghcr.io/hanzoai/iam`. Embed via `server.Route`. Go 1.26.
+- Image: `ghcr.io/hanzoai/iam`. Go 1.26.
+
+## Embedding — a host GRAFTS the app, it does not adapt a handler
+
+Two entry points, and they are different verbs for different situations:
+
+| call | what it does | when |
+|---|---|---|
+| `server.NewApp(db) *zip.App` | the whole IAM surface as a self-contained app | a host composing IAM in process: `app.Graft(iamserver.NewApp(db))` |
+| `server.Route(app, db)` | registers IAM's routes ONTO the host's app | only when the host genuinely wants IAM's routes co-mingled with its own. It also brings IAM's root-level routes onto the host, which is what shadowed a host console once |
+
+`server.Handler(db) http.Handler` is **deleted** (was: `adaptor.FiberApp(NewApp(db).Fiber())`).
+It existed so a host could hang the whole surface on one wildcard —
+`app.All("/v1/iam/*", zip.AdaptNetHTTP(iamserver.Handler(db)))` — and that
+adapter is where IAM's knowledge died. `AdaptNetHTTP` takes an `http.Handler`
+and returns a closure, so the App went in and a bare function came out, and
+IAM's **94 typed ops** went with it. hanzoai/cloud published five wildcard path
+keys and 35 placeholder operations where 78 real paths and 94 typed operations
+were — no schema, no MCP tool, no CLI command, no SDK method for any of them.
+
+`zip.Graft` (zip v1.18.16) is the composition that keeps them: the host's router
+learns IAM's route patterns AND its op registry, while IAM's own router keeps
+IAM's behaviour — its `Use(authz.Guard)` seam, its error handler, its config.
+Serving is unchanged and strictly cheaper (no net/http round trip). IAM's
+`Authorizer` still runs on IAM's ops; the host never re-authorizes them under
+its own rules. Named types are published as `iam.<Type>`, because a composed
+document carries more than one app's `Application`.
+
+**Liveness is not IAM's.** `/healthz`, `/readyz` and `/metrics` are zip's ops
+surface (HIP-0119 §1) — a SECOND listener the DEPLOYMENT brings up when it names
+`OPS_PORT`, never the public one. IAM used to register `/healthz` on its public
+group; that was hand-rolling a path the framework owns, on the wrong listener,
+and it is also what made IAM un-composable: a host registers `/healthz` as the
+HOST's, because it must answer while every subsystem is still cold. Two
+claimants on one liveness address is what once served `{"binary":"iam2"}` out of
+a shared binary.
 
 ## Endpoints (HIP-0111 — /v1 only, no /api, no vendor verbs)
 `/.well-known/openid-configuration` · `/v1/iam/.well-known/jwks` ·

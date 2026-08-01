@@ -203,7 +203,6 @@ func TestRegularUserSelfServiceOnly(t *testing.T) {
 func TestPublicRoutesNeedNoBearer(t *testing.T) {
 	h := newHarness(t)
 	public := []struct{ method, path string }{
-		{"GET", "/healthz"},
 		{"GET", "/.well-known/openid-configuration"},
 		{"GET", "/v1/iam/.well-known/openid-configuration"},
 		{"GET", "/v1/iam/.well-known/jwks"},
