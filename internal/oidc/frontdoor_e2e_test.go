@@ -10,7 +10,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // sessionCookieFor drives a bare (type=login) portal sign-in for hanzo/alice and

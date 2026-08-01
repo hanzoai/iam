@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // Confidential-client capabilities — the port of the v1 gate (object/app_authz.go

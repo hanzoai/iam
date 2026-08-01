@@ -39,7 +39,7 @@ import (
 	"github.com/hanzoai/iam/internal/routes"
 	_ "github.com/hanzoai/iam/internal/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/internal/seed"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".

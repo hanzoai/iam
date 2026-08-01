@@ -8,7 +8,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // The userinfo endpoint: GET/POST /v1/iam/oauth/userinfo. A bearer must satisfy

@@ -11,7 +11,7 @@ import (
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // credentialType is the User.Type discriminator for the tenant's default API

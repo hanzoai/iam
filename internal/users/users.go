@@ -22,7 +22,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // API binds the user handlers to an orm store. Construct once at boot and register.

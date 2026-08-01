@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // ensureSigningKey fills a signing cert's PrivateKey when init_data supplies the

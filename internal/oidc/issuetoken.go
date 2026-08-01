@@ -15,7 +15,7 @@ import (
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // The confidential-client on-behalf-of primitives. A trusted, allow-listed backend

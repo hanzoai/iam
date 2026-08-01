@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // A user minted natively in v2 gets a stable opaque UUID `sub` on create, ALWAYS
