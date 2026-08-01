@@ -34,11 +34,12 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/compare"
+	"github.com/hanzoai/iam/internal/cors"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/provision"
 	"github.com/hanzoai/iam/internal/routes"
-	_ "github.com/hanzoai/iam/pkg/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/internal/seed"
+	_ "github.com/hanzoai/iam/pkg/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -95,6 +96,15 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initDat
 	// rather than silently minting tokens under the wrong `iss`; an unset map keeps
 	// the single-issuer (IAM_ISSUER) behavior unchanged.
 	if err := oidc.InitIssuerResolver(); err != nil {
+		return fmt.Errorf("serve: %w", err)
+	}
+
+	// Pin the first-party console origins (IAM_SESSION_ORIGINS) before the
+	// listener opens, for the same reason and in the same shape: a malformed
+	// entry fails the boot LOUD rather than silently denying one brand's console
+	// its sign-out while every other brand keeps working. An unset list is valid
+	// and grants nothing.
+	if err := cors.Check(); err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
 
