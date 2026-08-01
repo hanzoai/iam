@@ -23,14 +23,16 @@ type Handler struct {
 	db orm.DB
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the roles CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/roles", h.List, zip.WithSummary("List roles for an owner"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles", h.Create, zip.WithSummary("Create a role"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/get", h.Get, zip.WithSummary("Get one role"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/update", h.Update, zip.WithSummary("Update a role"), zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/delete", h.Delete, zip.WithSummary("Delete a role"), zip.WithTags("roles"))
+	zip.Get(app, "/v1/iam/roles", h.List, zip.WithTags("roles"))
+	zip.Post(app, "/v1/iam/roles", h.Create, zip.WithTags("roles"))
+	zip.Post(app, "/v1/iam/roles/get", h.Get, zip.WithTags("roles"))
+	zip.Post(app, "/v1/iam/roles/update", h.Update, zip.WithTags("roles"))
+	zip.Post(app, "/v1/iam/roles/delete", h.Delete, zip.WithTags("roles"))
 }
 
 // Ref addresses one role by its owner-scoped natural key.
@@ -90,15 +92,19 @@ func apply(dst *schema.Role, in *Input) {
 	dst.IsEnabled = in.IsEnabled
 }
 
-// List returns the roles for one owner, newest first. An empty owner lists
-// every role (the unscoped admin view).
-// The owner is resolved by authz.Scope from the authenticated principal, never
-// taken from the input: a tenant reads only its own org, a SuperAdmin reads the
-// owner it asks for. Filtering on in.Owner instead was a confused deputy — the
-// Guard authorizes on the query string, then a typed GET binds NOTHING from it
-// (zip typed.go reads a body only for non-GET), so in.Owner arrived empty on every
-// REST call and the "empty owner lists everything" branch returned every tenant.
+// List returns your organization's roles, newest first — each a named group of
+// people that permissions are granted to.
+//
+// You see your own organization's roles and no one else's; which organization
+// that is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+	// The owner is resolved by authz.Scope from the authenticated principal,
+	// never taken from the input: a tenant reads only its own org, a SuperAdmin
+	// reads the owner it asks for. Filtering on in.Owner instead was a confused
+	// deputy — the Guard authorizes on the query string, then a typed GET binds
+	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
+	// arrived empty on every REST call and the "empty owner lists everything"
+	// branch returned every tenant.
 	owner, err := authz.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
@@ -114,7 +120,7 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	return &ListOutput{Roles: roles, Total: len(roles)}, nil
 }
 
-// Get returns one role addressed by (owner, name).
+// Get returns one role: who is in it, and the roles it includes.
 func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Role, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -126,7 +132,10 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Role, error) {
 	return role, nil
 }
 
-// Create persists a new role. It rejects a duplicate (owner, name).
+// Create makes a role — a named group of people that permissions are granted to.
+// Granting to a role rather than to each person is what keeps access correct as
+// your team changes: add someone to the role and they inherit everything it can
+// do. A name already used in your organization is refused.
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Role, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -154,8 +163,9 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Role, error) {
 	return role, nil
 }
 
-// Update mutates an existing role's grant set. Identity and created stamp are
-// immutable; a missing role is a 404.
+// Update changes who is in a role, or which roles it includes. Access changes for
+// everyone in it as soon as the write lands. What the role is called does not
+// change, and neither does when it was created.
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Role, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -171,7 +181,8 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Role, error) {
 	return role, nil
 }
 
-// Delete removes one role addressed by (owner, name).
+// Delete removes a role. Everyone in it loses the access it carried; their
+// accounts, and any other role they hold, are untouched.
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")

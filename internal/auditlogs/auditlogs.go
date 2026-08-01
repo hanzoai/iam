@@ -25,14 +25,16 @@ type Handler struct {
 	db orm.DB
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the audit-log CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/audit-logs", h.List, zip.WithSummary("List audit logs for an owner"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs", h.Create, zip.WithSummary("Create an audit log"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/get", h.Get, zip.WithSummary("Get one audit log"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/update", h.Update, zip.WithSummary("Update an audit log"), zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/delete", h.Delete, zip.WithSummary("Delete an audit log"), zip.WithTags("audit-logs"))
+	zip.Get(app, "/v1/iam/audit-logs", h.List, zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs", h.Create, zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs/get", h.Get, zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs/update", h.Update, zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs/delete", h.Delete, zip.WithTags("audit-logs"))
 }
 
 // Ref addresses one audit log by its owner-scoped natural key.
@@ -97,15 +99,20 @@ func apply(dst *schema.AuditLog, in *Input) {
 	dst.IsTriggered = in.IsTriggered
 }
 
-// List returns the audit logs for one owner, newest first. An empty owner lists
-// every log (the unscoped admin view).
-// The owner is resolved by authz.Scope from the authenticated principal, never
-// taken from the input: a tenant reads only its own org, a SuperAdmin reads the
-// owner it asks for. Filtering on in.Owner instead was a confused deputy — the
-// Guard authorizes on the query string, then a typed GET binds NOTHING from it
-// (zip typed.go reads a body only for non-GET), so in.Owner arrived empty on every
-// REST call and the "empty owner lists everything" branch returned every tenant.
+// List returns your organization's audit trail, newest first — who did
+// what, when, and from where. It is the record you reach for during a security
+// review or an incident.
+//
+// You see your own organization's audit trail and no one else's; which organization that
+// is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+	// The owner is resolved by authz.Scope from the authenticated principal,
+	// never taken from the input: a tenant reads only its own org, a SuperAdmin
+	// reads the owner it asks for. Filtering on in.Owner instead was a confused
+	// deputy — the Guard authorizes on the query string, then a typed GET binds
+	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
+	// arrived empty on every REST call and the "empty owner lists everything"
+	// branch returned every tenant.
 	owner, err := authz.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
@@ -121,7 +128,8 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	return &ListOutput{AuditLogs: logs, Total: len(logs)}, nil
 }
 
-// Get returns one audit log addressed by (owner, name).
+// Get returns one audit entry in full: the action, the person or key behind it,
+// and the request it came in on.
 func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.AuditLog, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -133,7 +141,8 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.AuditLog, error) {
 	return log, nil
 }
 
-// Create persists a new audit log. It rejects a duplicate (owner, name).
+// Create records an audit entry, so activity from your own systems lands in the
+// same trail as everything the Hanzo Cloud records for you.
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.AuditLog, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -161,9 +170,9 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.AuditLog, erro
 	return log, nil
 }
 
-// Update mutates an existing audit log in place. Identity and created stamp are
-// immutable; a missing log is a 404. Audit rows are append-only in normal
-// operation — this path is for administrative correction only.
+// Update corrects an audit entry. The trail is append-only in normal operation
+// and nothing in the Hanzo Cloud rewrites it — this exists for an administrator
+// to correct an entry their own systems recorded wrongly.
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.AuditLog, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -179,7 +188,8 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.AuditLog, erro
 	return log, nil
 }
 
-// Delete removes one audit log addressed by (owner, name).
+// Delete removes an audit entry. Retention policy is normally what should expire
+// a trail; deleting by hand leaves a gap a reviewer will notice.
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")

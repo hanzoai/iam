@@ -24,16 +24,18 @@ type Handler struct {
 	db orm.DB
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the certs CRUD routes on app against db. Reads are zip.Get,
 // writes are zip.Post; the create/update body is the schema.Cert row itself, so
 // the HTTP contract and the stored entity never drift.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/certs", h.List, zip.WithSummary("List certs for an owner"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs", h.Create, zip.WithSummary("Create a cert"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/get", h.Get, zip.WithSummary("Get one cert"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/update", h.Update, zip.WithSummary("Update a cert"), zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/delete", h.Delete, zip.WithSummary("Delete a cert"), zip.WithTags("certs"))
+	zip.Get(app, "/v1/iam/certs", h.List, zip.WithTags("certs"))
+	zip.Post(app, "/v1/iam/certs", h.Create, zip.WithTags("certs"))
+	zip.Post(app, "/v1/iam/certs/get", h.Get, zip.WithTags("certs"))
+	zip.Post(app, "/v1/iam/certs/update", h.Update, zip.WithTags("certs"))
+	zip.Post(app, "/v1/iam/certs/delete", h.Delete, zip.WithTags("certs"))
 }
 
 // Ref addresses one cert by its owner-scoped natural key.
@@ -61,10 +63,13 @@ type DeleteOutput struct {
 // key builds the orm string key from the (owner, name) natural key.
 func key(owner, name string) string { return owner + "/" + name }
 
-// List returns the certs the caller may read, newest first, secrets masked. The
-// owner is resolved by authz.Scope from the authenticated principal — a tenant
-// reads only its own org, a SuperAdmin reads the owner it asks for — so a query
-// parameter can never widen a listing beyond the bearer's authority.
+// List returns your organization's signing certificates, newest first — the keys
+// the tokens your applications verify are signed with. Private key material is
+// masked.
+//
+// You see your own organization's certificates and no one else's; which
+// organization that is comes from your credentials, not from the request, so a
+// query parameter can never widen the listing.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 	owner, err := authz.Scope(ctx, in.Owner)
 	if err != nil {
@@ -85,7 +90,8 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	return &ListOutput{Certs: out, Total: len(out)}, nil
 }
 
-// Get returns one cert addressed by (owner, name), secrets masked.
+// Get returns one signing certificate — its algorithm, its validity window and
+// its public half. The private key is masked.
 func (h *Handler) Get(_ context.Context, in *Ref) (*schema.Cert, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -97,8 +103,9 @@ func (h *Handler) Get(_ context.Context, in *Ref) (*schema.Cert, error) {
 	return cert.Mask(), nil
 }
 
-// Create persists a new cert. It rejects a duplicate (owner, name) and stamps
-// CreatedTime when the caller leaves it blank.
+// Create adds a signing certificate your applications can verify tokens against
+// — the call you make to bring your own key, or to stage the next one before a
+// rotation. A name already used in your organization is refused.
 func (h *Handler) Create(ctx context.Context, in *schema.Cert) (*schema.Cert, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -127,8 +134,8 @@ func (h *Handler) Create(ctx context.Context, in *schema.Cert) (*schema.Cert, er
 	return cert, nil
 }
 
-// Update overwrites a cert's mutable fields. Identity (owner, name) and the
-// CreatedTime stamp are immutable; a missing cert is a 404.
+// Update changes a signing certificate's settings. What it is called does not
+// change, and neither does when it was added.
 func (h *Handler) Update(ctx context.Context, in *schema.Cert) (*schema.Cert, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -153,7 +160,8 @@ func (h *Handler) Update(ctx context.Context, in *schema.Cert) (*schema.Cert, er
 	return cert, nil
 }
 
-// Delete removes one cert addressed by (owner, name).
+// Delete removes a signing certificate. Tokens signed with it can no longer be
+// verified, so retire it only once nothing is still presenting them.
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")

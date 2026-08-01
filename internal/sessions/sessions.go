@@ -31,23 +31,20 @@ const maxSessionIds = 100
 // Sessions binds the session CRUD operations to an orm store.
 type Sessions struct{ db orm.DB }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the session operations on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Sessions{db: db}
 	zip.Post(app, "/v1/iam/sessions/list", h.List,
-		zip.WithSummary("List an owner's sessions, newest first"),
 		zip.WithTags("sessions"), zip.WithOperationID("listSessions"))
 	zip.Post(app, "/v1/iam/sessions/get", h.Get,
-		zip.WithSummary("Get one session by owner/name/application"),
 		zip.WithTags("sessions"), zip.WithOperationID("getSession"))
 	zip.Post(app, "/v1/iam/sessions/create", h.Create,
-		zip.WithSummary("Create or merge a session (upsert)"),
 		zip.WithTags("sessions"), zip.WithOperationID("createSession"))
 	zip.Post(app, "/v1/iam/sessions/update", h.Update,
-		zip.WithSummary("Replace a session's cookie list"),
 		zip.WithTags("sessions"), zip.WithOperationID("updateSession"))
 	zip.Post(app, "/v1/iam/sessions/delete", h.Delete,
-		zip.WithSummary("Delete a session"),
 		zip.WithTags("sessions"), zip.WithOperationID("deleteSession"))
 }
 
@@ -98,8 +95,9 @@ type DeleteSessionOut struct {
 	Deleted bool `json:"deleted"`
 }
 
-// List returns every session for an owner, optionally filtered by principal
-// and/or application, ordered newest-first on CreatedTime.
+// List returns who is currently signed in to your organization, newest first, and
+// can be narrowed to one person or one application. It is what you read before
+// signing someone out.
 func (h *Sessions) List(ctx context.Context, in *ListSessionsIn) (*ListSessionsOut, error) {
 	q := orm.TypedQuery[schema.Session](h.db).Filter("Owner=", in.Owner)
 	if in.Name != "" {
@@ -115,7 +113,8 @@ func (h *Sessions) List(ctx context.Context, in *ListSessionsIn) (*ListSessionsO
 	return &ListSessionsOut{Sessions: sessions}, nil
 }
 
-// Get resolves one session by its full (owner, name, application) key.
+// Get returns one person's session in one application — when it began and which
+// browsers or devices are still carrying it.
 func (h *Sessions) Get(_ context.Context, in *SessionRef) (*schema.Session, error) {
 	s, err := orm.Get[schema.Session](h.db, sessionID(in.Owner, in.Name, in.Application))
 	if err != nil {
@@ -127,9 +126,13 @@ func (h *Sessions) Get(_ context.Context, in *SessionRef) (*schema.Session, erro
 	return s, nil
 }
 
-// Create upserts a session: a new key is inserted, an existing one has its
-// incoming cookie ids merged in (deduped, capped, or — under ExclusiveSignin —
-// collapsed to the single incoming cookie), mirroring v1 AddSession.
+// Create records a sign-in. Signing in again from another browser adds to the
+// session rather than replacing it, so one person can be signed in from a laptop
+// and a phone at once.
+//
+// Ask for an exclusive sign-in and the opposite holds: the new sign-in is the only
+// one left and every other browser is signed out. That is the setting to use when
+// one person may hold only one live session at a time.
 func (h *Sessions) Create(_ context.Context, in *CreateSessionIn) (*schema.Session, error) {
 	id := sessionID(in.Owner, in.Name, in.Application)
 
@@ -160,8 +163,9 @@ func (h *Sessions) Create(_ context.Context, in *CreateSessionIn) (*schema.Sessi
 	return s, nil
 }
 
-// Update replaces the cookie list of an existing session. The key is
-// immutable, so a missing row is a 404 rather than an implicit insert.
+// Update replaces the set of browsers a session covers — signing out the ones you
+// leave off while the session itself stays live. A session that does not exist is
+// reported as missing rather than created.
 func (h *Sessions) Update(_ context.Context, in *UpdateSessionIn) (*schema.Session, error) {
 	s, err := orm.Get[schema.Session](h.db, sessionID(in.Owner, in.Name, in.Application))
 	if err != nil {
@@ -177,8 +181,11 @@ func (h *Sessions) Update(_ context.Context, in *UpdateSessionIn) (*schema.Sessi
 	return s, nil
 }
 
-// Delete removes a session by key. A missing row reports Deleted=false rather
-// than an error, so the call is idempotent.
+// Delete signs a person out of one application — the session ends and every
+// browser carrying it stops being authenticated.
+//
+// A session that is already gone reports that nothing was deleted rather than an
+// error, so the call is safe to repeat.
 func (h *Sessions) Delete(_ context.Context, in *SessionRef) (*DeleteSessionOut, error) {
 	s, err := orm.Get[schema.Session](h.db, sessionID(in.Owner, in.Name, in.Application))
 	if err != nil {

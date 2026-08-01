@@ -24,14 +24,16 @@ type Handler struct {
 	db orm.DB
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the invitations CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/invitations", h.List, zip.WithSummary("List invitations for an owner"), zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations", h.Create, zip.WithSummary("Create an invitation"), zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations/get", h.Get, zip.WithSummary("Get one invitation"), zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations/update", h.Update, zip.WithSummary("Update an invitation"), zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations/delete", h.Delete, zip.WithSummary("Delete an invitation"), zip.WithTags("invitations"))
+	zip.Get(app, "/v1/iam/invitations", h.List, zip.WithTags("invitations"))
+	zip.Post(app, "/v1/iam/invitations", h.Create, zip.WithTags("invitations"))
+	zip.Post(app, "/v1/iam/invitations/get", h.Get, zip.WithTags("invitations"))
+	zip.Post(app, "/v1/iam/invitations/update", h.Update, zip.WithTags("invitations"))
+	zip.Post(app, "/v1/iam/invitations/delete", h.Delete, zip.WithTags("invitations"))
 }
 
 // Ref addresses one invitation by its owner-scoped natural key.
@@ -99,15 +101,20 @@ func apply(dst *schema.Invitation, in *Input) {
 	dst.State = in.State
 }
 
-// List returns the invitations for one owner, newest first. An empty owner
-// lists every invitation (the unscoped admin view).
-// The owner is resolved by authz.Scope from the authenticated principal, never
-// taken from the input: a tenant reads only its own org, a SuperAdmin reads the
-// owner it asks for. Filtering on in.Owner instead was a confused deputy — the
-// Guard authorizes on the query string, then a typed GET binds NOTHING from it
-// (zip typed.go reads a body only for non-GET), so in.Owner arrived empty on every
-// REST call and the "empty owner lists everything" branch returned every tenant.
+// List returns your organization's invitations, newest first — who has
+// been asked to join, on what terms, and how many seats each invitation still
+// has left.
+//
+// You see your own organization's invitations and no one else's; which organization that
+// is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+	// The owner is resolved by authz.Scope from the authenticated principal,
+	// never taken from the input: a tenant reads only its own org, a SuperAdmin
+	// reads the owner it asks for. Filtering on in.Owner instead was a confused
+	// deputy — the Guard authorizes on the query string, then a typed GET binds
+	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
+	// arrived empty on every REST call and the "empty owner lists everything"
+	// branch returned every tenant.
 	owner, err := authz.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
@@ -123,7 +130,8 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	return &ListOutput{Invitations: invitations, Total: len(invitations)}, nil
 }
 
-// Get returns one invitation addressed by (owner, name).
+// Get returns one invitation: who it is for, what it grants on acceptance, and
+// when it expires.
 func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Invitation, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -135,7 +143,9 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Invitation, error) 
 	return invitation, nil
 }
 
-// Create persists a new invitation. It rejects a duplicate (owner, name).
+// Create issues an invitation to join your organization — the code or link a new
+// member redeems, with the role they arrive holding and the date it stops
+// working. A name already used in the organization is refused.
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -163,8 +173,8 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, er
 	return invitation, nil
 }
 
-// Update mutates an existing invitation. Identity and created stamp are
-// immutable; a missing invitation is a 404.
+// Update changes an invitation's terms — the role it grants, how many may redeem
+// it, or when it expires. What it is called does not change.
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Invitation, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -180,7 +190,8 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Invitation, er
 	return invitation, nil
 }
 
-// Delete removes one invitation addressed by (owner, name).
+// Delete withdraws an invitation. It stops being redeemable at once; anyone who
+// already joined through it keeps their account.
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
