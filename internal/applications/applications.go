@@ -274,14 +274,13 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 	}
 }
 
-// deleteApplication removes an application. Anyone mid-sign-in through it is
-// turned away and its client credentials stop working, so retire the integration
-// before deleting it.
-//
 // Delete exposes the same handler to the legacy delete-application alias — one
 // delete path, wrapped in that surface's envelope.
 func Delete(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult] { return deleteApplication(db) }
 
+// deleteApplication removes an application. Anyone mid-sign-in through it is
+// turned away and its client credentials stop working, so retire the integration
+// before deleting it.
 func deleteApplication(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult] {
 	return func(ctx context.Context, in *ApplicationRef) (*DeleteResult, error) {
 		if in.Owner == "" || in.Name == "" {
