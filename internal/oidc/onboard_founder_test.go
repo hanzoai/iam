@@ -154,7 +154,7 @@ func TestOnboard_FounderGetsAFirstClassOrg(t *testing.T) {
 	if fresh == "" {
 		t.Fatalf("onboarding did not re-issue the session cookie across the re-key")
 	}
-	req := formReqNoBody("GET", PathGetAccount)
+	req := formReqNoBody("GET", PathAccount)
 	req.Header.Set("Cookie", fresh)
 	_, body := do(t, app, req)
 	acct := decode(t, body)
@@ -167,7 +167,7 @@ func TestOnboard_FounderGetsAFirstClassOrg(t *testing.T) {
 	}
 
 	// The superseded cookie is revoked, not left as a second live credential.
-	old := formReqNoBody("GET", PathGetAccount)
+	old := formReqNoBody("GET", PathAccount)
 	old.Header.Set("Cookie", cookie)
 	_, oldBody := do(t, app, old)
 	if decode(t, oldBody)["status"] == "ok" {

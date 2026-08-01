@@ -2,7 +2,7 @@
 
 // Package mfa serves the TOTP multi-factor enrollment surface — the account
 // security page's initiate → verify → enable flow (RFC 6238 TOTP), plus
-// delete-mfa and set-preferred-mfa. Enrollment is SELF-SERVICE: every handler
+// disabling a factor and choosing the preferred one. Enrollment is SELF-SERVICE: every handler
 // acts on the AUTHENTICATED caller's own user record (authz.From), so the routes
 // register AFTER the Guard — they need the Principal. Touching a DIFFERENT user's
 // MFA requires admin authority over that org, authorized through the SAME seam a
@@ -32,6 +32,7 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/internal/store"
 )
@@ -41,18 +42,28 @@ import (
 // Route registers the MFA endpoints on app. They are RAW handlers (not typed
 // ops), so — like SCIM — each authorizes itself; callers register app AFTER the
 // Guard so a verified Principal rides the request context.
+// The MFA surface hangs off the /v1/iam/mfa noun. The two verb-noun spellings it
+// arrived with stay reachable for pinned consumers and are taught nowhere; see
+// httpx.Alias.
+const (
+	PathDisable         = "/v1/iam/mfa/disable"
+	PathPreferred       = "/v1/iam/mfa/preferred"
+	LegacyPathDisable   = "/v1/iam/delete-mfa"
+	LegacyPathPreferred = "/v1/iam/set-preferred-mfa"
+)
+
 func Route(app *zip.App, db orm.DB) {
 	app.Post("/v1/iam/mfa/setup/initiate", initiate(db))
 	app.Post("/v1/iam/mfa/setup/verify", verify(db))
 	app.Post("/v1/iam/mfa/setup/enable", enable(db))
-	app.Post("/v1/iam/delete-mfa", disable(db))
-	app.Post("/v1/iam/set-preferred-mfa", setPreferred(db))
+	httpx.Alias(app.Post, PathDisable, LegacyPathDisable, disable(db))
+	httpx.Alias(app.Post, PathPreferred, LegacyPathPreferred, setPreferred(db))
 }
 
 // setupReq is the union of fields the enrollment handshake posts. owner/name
 // address the target user (default: the caller itself); secret/passcode/
 // recoveryCodes carry the client-held enrollment material; mfaType selects the
-// preferred factor for set-preferred-mfa.
+// preferred factor for the preferred-factor endpoint.
 type setupReq struct {
 	Owner         string   `json:"owner"`
 	Name          string   `json:"name"`
@@ -195,7 +206,7 @@ func disable(db orm.DB) zip.Handler {
 	}
 }
 
-// setPreferred selects which enrolled factor is preferred (set-preferred-mfa).
+// setPreferred selects which enrolled factor is preferred.
 func setPreferred(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var req setupReq

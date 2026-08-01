@@ -75,11 +75,11 @@ func TestUserinfo_ClaimsByScope(t *testing.T) {
 		t.Fatalf("userinfo status = %d, body %v", status, info)
 	}
 	want := map[string]any{
-		"sub":                "hanzo/alice",
-		"iss":                "https://hanzo.id",
-		"aud":                "conf",
-		"owner":              "hanzo",
-		"organization":       "hanzo",
+		"sub":          "hanzo/alice",
+		"iss":          "https://hanzo.id",
+		"aud":          "conf",
+		"owner":        "hanzo",
+		"organization": "hanzo",
 		// `name` is the USERNAME, the same answer the access token gives: UserInfo and
 		// the token describe one principal, so they must not name it two ways. The
 		// human's name rides in displayName.

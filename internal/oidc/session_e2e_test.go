@@ -39,7 +39,7 @@ func TestSession_LoginCookieResolvesGetAccount(t *testing.T) {
 	}
 
 	// 2) get-account WITH the cookie (no bearer) → resolves alice, redacted.
-	req := formReqNoBody("GET", PathGetAccount)
+	req := formReqNoBody("GET", PathAccount)
 	req.Header.Set("Cookie", cookieKV(cookie))
 	resp2, body2 := do(t, app, req)
 	env := decode(t, body2)
@@ -64,7 +64,7 @@ func TestSession_ForgedCookieRejected(t *testing.T) {
 
 	// A hand-built cookie with a bogus payload + mac — no valid signature exists
 	// without the platform cert key.
-	req := formReqNoBody("GET", PathGetAccount)
+	req := formReqNoBody("GET", PathAccount)
 	req.Header.Set("Cookie", "hanzo_session=eyJvIjoiYWRtaW4ifQ.deadbeef")
 	resp, body := do(t, app, req)
 	if resp.StatusCode != 200 || decode(t, body)["status"] != "error" {
