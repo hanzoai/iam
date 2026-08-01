@@ -75,16 +75,22 @@ const signupRefusal = "we could not complete this sign-up"
 // (challenged or refused), in which case the caller must not proceed — the same
 // contract as the MFA gate, so the two read alike at their call sites.
 //
+// app is the SERVER-RESOLVED application: the row the handler looked up by the
+// presented clientId or name. Its Organization is the one tenant on this request
+// that no client chose, and it is therefore the tenant every side effect below is
+// keyed to — the decision record, the scorer's scope, the analytics copy.
+//
 // mintsTenant says this sign-up would create the organization as well as the
 // user. That is a grant of standing authority — a new tenant, its wallet, its
 // billing identity, its first admin — so it takes the FAIL-CLOSED branch of the
 // policy in internal/risk.
-func signupGate(c *zip.Ctx, db orm.DB, sc *risk.Client, f signupForm, mintsTenant bool) (bool, error) {
+func signupGate(c *zip.Ctx, db orm.DB, sc *risk.Client, app *schema.Application, f signupForm, mintsTenant bool) (bool, error) {
 	email := strings.ToLower(strings.TrimSpace(f.Email))
+	tenant := signupTenant(app)
 	q := risk.Query{
 		Stage:      risk.StageSignup,
-		Org:        f.Organization,
-		Subject:    risk.Subject{Kind: "account", ID: f.Organization + "/" + f.Username},
+		Org:        tenant,
+		Subject:    risk.Subject{Kind: "account", ID: tenant + "/" + f.Username},
 		Privileged: mintsTenant,
 		Signals:    signupSignals(c, f, email, mintsTenant),
 	}
@@ -94,8 +100,8 @@ func signupGate(c *zip.Ctx, db orm.DB, sc *risk.Client, f signupForm, mintsTenan
 	// store before the outcome reaches the client, and the analytics copy is emitted
 	// afterwards and best-effort. Wired the other way — record via the event door —
 	// a bus hiccup would lose the evidence and the loss would be invisible.
-	recordSignupDecision(c, db, f, v, mintsTenant)
-	emitSignupEvent(f.Organization, v, q.Subject.ID)
+	recordSignupDecision(c, db, tenant, f, v, mintsTenant)
+	emitSignupEvent(tenant, v, q.Subject.ID)
 
 	if v.Allowed() {
 		return false, nil
@@ -163,6 +169,12 @@ func signupSignals(c *zip.Ctx, f signupForm, email string, mintsTenant bool) map
 		"clientId":    f.ClientId,
 		"username":    f.Username,
 		"mintsTenant": boolString(mintsTenant),
+		// The organization the caller ASKED to join. A signal, deliberately —
+		// signals are the scorer's evidence and may be anything the request said,
+		// where the tenant (Query.Org) is the keyspace the scorer works in and must
+		// be the server's own answer. Sending it here keeps the fact without letting
+		// the fact choose the tenant.
+		"requestedOrg": f.Organization,
 	}
 	if email != "" {
 		s["email"] = email
@@ -187,30 +199,55 @@ func boolString(b bool) string {
 	return "false"
 }
 
-// clientIP is the caller's address as the edge forwarded it: the FIRST hop in
-// X-Forwarded-For, which is the client the proxy saw. Empty when there is no
-// forwarded chain — an empty address is honest, and inventing one would put a
-// proxy's own address into a velocity counter.
-func clientIP(c *zip.Ctx) string {
-	xff := strings.TrimSpace(c.Header("X-Forwarded-For"))
-	if xff == "" {
+// clientIP is the caller's address, by the ONE rule — httpx.ClientIP. It goes
+// into a velocity counter and into a durable audit row, and both are places a
+// client-chosen value must never reach: the LEFT-most X-Forwarded-For entry is
+// whatever the caller typed, so reading it let one host present a million
+// addresses, poison another address's reputation, and evade its own.
+func clientIP(c *zip.Ctx) string { return httpx.ClientIP(c) }
+
+// signupTenant is the tenant a sign-up's side effects belong to: the organization
+// that owns the APPLICATION the registration was posted to.
+//
+// IT IS NEVER f.Organization. That field is a request body written by an
+// unauthenticated caller — the whole point of a sign-up is that nobody has
+// authenticated yet — and using it as the owner of a durable row let anyone on
+// the internet choose which tenant's append-only audit trail received a write. A
+// shared application admits any existing organization by design, so the choice
+// reached real tenants; an org-choice application admits names that do not exist
+// yet, so it also let rows be pre-seeded under a name someone would later be
+// given. Either way the tenant column meant "whatever was typed".
+//
+// The application is resolved SERVER-SIDE, by a store lookup on the presented
+// clientId, and its Organization is a value the request cannot set. Choosing a
+// different application still only ever writes to the tenant whose front door was
+// actually knocked on, which is a true fact about the event rather than a claim
+// about it. The organization the caller REQUESTED is kept — as a detail of the
+// record, where a claim belongs, not as its key.
+func signupTenant(app *schema.Application) string {
+	if app == nil {
 		return ""
 	}
-	if i := strings.IndexByte(xff, ','); i > 0 {
-		return strings.TrimSpace(xff[:i])
-	}
-	return xff
+	return app.Organization
 }
 
 // recordSignupDecision writes the judgement to the append-only audit trail — the
 // durable record, in IAM's own store, written before the client is answered.
 //
-// It records the DECISION, never the request body: the sign-up form carries a
-// password, and an audit row is exactly the kind of place a password must never
-// reach. A failed write is logged into the response of nothing — it must not turn
-// a legitimate sign-up into an error, because the alternative to an unrecorded
-// allow is a person who cannot create an account.
-func recordSignupDecision(c *zip.Ctx, db orm.DB, f signupForm, v risk.Verdict, mintsTenant bool) {
+// tenant is the server-derived owner (signupTenant). It records the DECISION,
+// never the request body: the sign-up form carries a password, and an audit row is
+// exactly the kind of place a password must never reach. A failed write is logged
+// into the response of nothing — it must not turn a legitimate sign-up into an
+// error, because the alternative to an unrecorded allow is a person who cannot
+// create an account.
+func recordSignupDecision(c *zip.Ctx, db orm.DB, tenant string, f signupForm, v risk.Verdict, mintsTenant bool) {
+	if tenant == "" {
+		// No resolved application means no tenant to attribute the event to, and an
+		// unattributable row in a per-tenant trail is worse than no row: it is a
+		// record nobody owns and nobody reviews. The handler refuses such a request
+		// before the gate runs, so this is a guard, not a path.
+		return
+	}
 	detail, err := json.Marshal(map[string]any{
 		"decision":    v.ID,
 		"action":      v.Action,
@@ -219,6 +256,12 @@ func recordSignupDecision(c *zip.Ctx, db orm.DB, f signupForm, v risk.Verdict, m
 		"refusal":     v.Refusal,
 		"scored":      v.Scored(),
 		"mintsTenant": mintsTenant,
+		// The organization the CALLER asked for — a claim, recorded as one. It is
+		// what makes the row still answer "who did they say they were" without
+		// letting that answer choose the row's owner.
+		"requestedOrg": f.Organization,
+		"application":  f.Application,
+		"clientId":     f.ClientId,
 	})
 	if err != nil {
 		return
@@ -229,10 +272,10 @@ func recordSignupDecision(c *zip.Ctx, db orm.DB, f signupForm, v risk.Verdict, m
 		return
 	}
 	row := orm.New[schema.AuditLog](db)
-	row.Owner = f.Organization
+	row.Owner = tenant
 	row.Name = id
 	row.CreatedTime = time.Now().UTC().Format(time.RFC3339)
-	row.Organization = f.Organization
+	row.Organization = tenant
 	row.User = f.Username
 	row.ClientIp = clientIP(c)
 	row.Method = http.MethodPost
@@ -240,7 +283,7 @@ func recordSignupDecision(c *zip.Ctx, db orm.DB, f signupForm, v risk.Verdict, m
 	row.Action = "signup.risk." + v.Action
 	row.Object = string(detail)
 	row.Response = v.Refusal
-	row.SetId(f.Organization + "/" + id)
+	row.SetId(tenant + "/" + id)
 	_ = row.CreateCtx(c.Context())
 }
 
