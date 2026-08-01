@@ -66,6 +66,12 @@ func routeLogin(r zip.Router, db orm.DB) {
 	r.Post(PathLogin, loginHandler(db))
 }
 
+// loginHandler signs a person in with the credential they typed, and — when the
+// request is part of an OAuth flow — hands back the one-time code that finishes
+// it. A second factor, if the account has one, is asked for and required here.
+//
+// The password is compared against a stored one-way hash and is never logged,
+// echoed or stored as typed.
 func loginHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var f loginForm

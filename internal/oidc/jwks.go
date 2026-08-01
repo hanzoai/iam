@@ -32,6 +32,13 @@ var signingAlgs = map[string]bool{
 }
 
 // jwksHandler serves GET /v1/iam/.well-known/jwks.
+// jwksHandler publishes the public keys that verify the tokens issued here — the
+// one URL you point a service at so it can check a token itself, offline, without
+// calling back and without holding any secret of ours.
+//
+// Keys appear here before they start signing and stay after they stop, so a
+// rotation never leaves a live token unverifiable. Nothing private is ever
+// published.
 func jwksHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		certs, err := store.ListCerts(c.Context(), db)

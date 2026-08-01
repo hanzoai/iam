@@ -41,6 +41,16 @@ type authorizeRequest struct {
 	provider            string
 }
 
+// authorizeHandler starts a sign-in — the address you send a browser to, and the
+// beginning of every OAuth and OpenID Connect flow.
+//
+// It shows the person the right way to sign in for the application they are
+// signing in to, hands off to another identity provider if that is what they
+// pick, and ends by returning them to the application with a one-time code.
+//
+// It returns only to an address the application has registered. That check
+// happens before anything else, so a request naming an unregistered address is
+// refused where the person can see it rather than being bounced onwards.
 func authorizeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
