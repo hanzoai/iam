@@ -281,10 +281,18 @@ type keyUser struct {
 // its owning principal. The gate is service-only and fail-secure: the caller must be
 // a confidential app (p.App != "") holding CapKeyResolve — a human, even a
 // SuperAdmin, is refused, because a capability is held vacuously by non-apps and key
-// resolution is a machine-identity boundary, never an interactive admin action. An
-// unknown/unresolvable key answers the same not-exist envelope every other get- verb
-// uses, so a prober cannot distinguish a missing key from a denied one beyond the
-// auth refusal.
+// resolution is a machine-identity boundary, never an interactive admin action.
+//
+// THE `msg` STAYS UNIFORM AND THE `code` SAYS WHY. Every unresolvable key answers the
+// same not-exist sentence every other get- verb uses, so nothing that reads the prose
+// can tell a missing key from a denied one. The machine-readable reason rides beside
+// it because THE GATE ABOVE IS THE BOUNDARY, not the vagueness of this sentence: a
+// caller that reaches this line has already proven it is a confidential app holding
+// CapKeyResolve, and such a caller can resolve any key it likes to a full principal.
+// Telling it which refusal occurred discloses nothing it could not already obtain,
+// and withholding it is what made a revoked key indistinguishable from a deleted org
+// for every human downstream. There is no anonymous reader of this envelope to
+// oracle.
 func resolveUserByAccessKey(c *zip.Ctx, db orm.DB, key string) error {
 	ctx := c.Context()
 	p, ok := authz.From(ctx)
@@ -293,7 +301,7 @@ func resolveUserByAccessKey(c *zip.Ctx, db orm.DB, key string) error {
 	}
 	u, err := store.UserByAccessKey(ctx, db, key)
 	if errors.Is(err, orm.ErrNotFound) {
-		return httpx.Err(c, "the entity does not exist")
+		return httpx.ErrCode(c, "the entity does not exist", string(store.Reason(err)))
 	}
 	if err != nil {
 		return httpx.Err(c, err.Error())
