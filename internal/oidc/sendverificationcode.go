@@ -154,13 +154,25 @@ func generateCode(n int) (string, error) {
 	return fmt.Sprintf("%0*d", n, k), nil
 }
 
-// CheckVerificationCode reports whether code matches the latest unused,
-// unexpired verification record sent to receiver — the check side of the OTP
-// surface, which the signup email/phone gate calls ahead of account creation at
-// cutover. The compare is constant-time; an expired or absent record fails
-// closed. It does NOT consume the record (the caller marks it used on the flow
-// it gates).
-func CheckVerificationCode(ctx context.Context, db orm.DB, receiver, code string) (bool, error) {
+// SpendVerificationCode verifies code against the latest unused, unexpired
+// record sent to receiver AND CONSUMES IT — the check side of the OTP surface,
+// which the sign-up risk gate calls before an account is created.
+//
+// PRESENTING A CODE SPENDS IT. That is what makes a one-time code one-time, and
+// it is not a detail: the gate asks for a code precisely to establish that ONE
+// person controls ONE address, so a code that stayed valid for the rest of its
+// ten minutes would let one proven address open account after account — defeating
+// the multi-account control it was issued to enforce.
+//
+// The record is burned BEFORE the answer is returned, mirroring the
+// authorization-code redemption beside it (signin.go): a replay loses the race
+// and gets nothing. A burn that cannot be written fails CLOSED — an unspendable
+// code is not a spent one, and answering true would hand out the reuse this
+// function exists to prevent.
+//
+// The compare is constant-time; an expired, absent or already-spent record fails
+// closed with one opaque answer, so a prober cannot tell them apart.
+func SpendVerificationCode(ctx context.Context, db orm.DB, receiver, code string) (bool, error) {
 	if receiver == "" || code == "" {
 		return false, nil
 	}
@@ -174,5 +186,12 @@ func CheckVerificationCode(ctx context.Context, db orm.DB, receiver, code string
 	if nowFunc().Unix()-rec.Time > int64(verificationCodeTTL/time.Second) {
 		return false, nil
 	}
-	return cred.ConstantTimeEqual(rec.Code, code), nil
+	if !cred.ConstantTimeEqual(rec.Code, code) {
+		return false, nil
+	}
+	rec.IsUsed = true
+	if err := rec.UpdateCtx(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
 }

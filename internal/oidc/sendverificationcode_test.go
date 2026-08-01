@@ -11,8 +11,10 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -40,7 +42,8 @@ func sendCode(t *testing.T, app *zip.App, fields map[string]string) (int, map[st
 
 // The happy path parses the multipart form, persists a 6-digit unused code
 // bound to the receiver, and reports ok — and that code then verifies through
-// CheckVerificationCode while a wrong one fails closed.
+// SpendVerificationCode while a wrong one fails closed AND the right one is
+// spent by being presented.
 func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
@@ -72,15 +75,31 @@ func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 		t.Errorf("record.User = %q, want hanzo/alice (resolved from the dest)", rec.User)
 	}
 
-	// The validation surface: the persisted code verifies, a wrong one does not.
-	if ok, err := CheckVerificationCode(ctx, db, "alice@hanzo.ai", rec.Code); err != nil || !ok {
-		t.Fatalf("correct code must verify: ok=%v err=%v", ok, err)
-	}
-	if ok, _ := CheckVerificationCode(ctx, db, "alice@hanzo.ai", "000000"); ok {
+	// The validation surface: a wrong code and a wrong receiver both fail closed,
+	// and neither spends anything.
+	if ok, _ := SpendVerificationCode(ctx, db, "alice@hanzo.ai", "000000"); ok {
 		t.Error("a wrong code must not verify")
 	}
-	if ok, _ := CheckVerificationCode(ctx, db, "nobody@hanzo.ai", rec.Code); ok {
+	if ok, _ := SpendVerificationCode(ctx, db, "nobody@hanzo.ai", rec.Code); ok {
 		t.Error("a code must not verify for a different receiver")
+	}
+
+	// The right code verifies ONCE. Presenting it spends it, which is what makes a
+	// one-time code one-time — without this, one proven address could answer a
+	// sign-up challenge again and again for the rest of the ten-minute window and
+	// open account after account.
+	if ok, err := SpendVerificationCode(ctx, db, "alice@hanzo.ai", rec.Code); err != nil || !ok {
+		t.Fatalf("correct code must verify: ok=%v err=%v", ok, err)
+	}
+	if ok, _ := SpendVerificationCode(ctx, db, "alice@hanzo.ai", rec.Code); ok {
+		t.Fatal("a spent code must not verify a second time")
+	}
+	spent, err := orm.Get[schema.VerificationRecord](db, rec.Owner+"/"+rec.Name)
+	if err != nil {
+		t.Fatalf("re-read the record: %v", err)
+	}
+	if !spent.IsUsed {
+		t.Fatal("the record must be marked used, not merely unreachable by the lookup")
 	}
 }
 

@@ -31,8 +31,10 @@ package oidc
 //	                  The client is told RequiredVerify, calls
 //	                  POST /v1/iam/send-verification-code, and re-posts the
 //	                  sign-up with the code. Verification is the EXISTING
-//	                  primitive (CheckVerificationCode) — one way to prove an
-//	                  address, whoever asked for the proof.
+//	                  primitive (SpendVerificationCode) — one way to prove an
+//	                  address, whoever asked for the proof — and presenting a code
+//	                  SPENDS it, or one proven address would open account after
+//	                  account and the control would prove nothing.
 //	block           — refused, opaquely, with a reference the person can quote.
 //
 // FAIL POLICY. Owned by internal/risk, in one function, so it cannot drift:
@@ -104,7 +106,9 @@ func signupGate(c *zip.Ctx, db orm.DB, sc *risk.Client, f signupForm, mintsTenan
 		// carries a valid code for the address it claims has answered it, and
 		// proceeds. Anything else is told what is owed.
 		if ok, err := signupCodeVerified(c.Context(), db, email, f.Code); err != nil {
-			return true, httpx.Err(c, err.Error())
+			// One opaque answer: a store failure must not become an oracle for
+			// whether an address has a code outstanding.
+			return true, httpx.Err(c, "the verification code is invalid or expired")
 		} else if ok {
 			return false, nil
 		}
@@ -117,8 +121,15 @@ func signupGate(c *zip.Ctx, db orm.DB, sc *risk.Client, f signupForm, mintsTenan
 }
 
 // signupCodeVerified reports whether the sign-up presented a valid verification
-// code for the address it claims. It reuses CheckVerificationCode — the ONE way
-// an address is proven in this service — rather than introducing a second.
+// code for the address it claims, and SPENDS it when it did. It reuses
+// SpendVerificationCode — the ONE way an address is proven in this service —
+// rather than introducing a second.
+//
+// Spending here rather than after the account is written is deliberate. By the
+// time the gate runs, every rule the sign-up could break has already passed, so
+// almost nothing between here and the create can fail; and verifying without
+// spending leaves a window in which two concurrent sign-ups answer one challenge.
+// A one-time code is spent by being presented.
 //
 // An empty address or an empty code is simply "not proven": a challenge to a
 // sign-up that supplied no email cannot be answered, and saying so is honest.
@@ -126,7 +137,7 @@ func signupCodeVerified(ctx context.Context, db orm.DB, email, code string) (boo
 	if email == "" || strings.TrimSpace(code) == "" {
 		return false, nil
 	}
-	return CheckVerificationCode(ctx, db, email, strings.TrimSpace(code))
+	return SpendVerificationCode(ctx, db, email, strings.TrimSpace(code))
 }
 
 func refusalWithRef(v risk.Verdict) string {
