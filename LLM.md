@@ -236,6 +236,51 @@ auto-created per-signup `app-<email>` client. The fix is one line per app in tha
 org's provision document; it is deliberately NOT a changed global default,
 because session lifetime is POLICY and this mechanism ships no policy.
 
+## Device grant — a CLI holds NO secret, and ROPC must then refuse it
+
+`hanzo auth login` died on `invalid_client: client authentication failed`
+straight out of `POST /v1/iam/oauth/device`, for every client, so nobody could
+sign in from a terminal.
+
+**Cause.** `deviceHandler` requires the stored secret from any registration that
+HAS one (RFC 8628 §3.1 → 6749 §3.2.1), and every Hanzo client was declared
+`type: confidential` in the provision document — deliberately, because
+`client_credentials` and the password grant authenticate with that secret and a
+public upsert DELETES it (`bootstrap.resolveSecret`). So all 12 held one, and a
+CLI can never present one. The code exchange survived the same registration
+shape only because `authorizationCodeGrant` skips client auth when a PKCE
+challenge is present; the device grant carries no challenge to skip on, so it
+had no such escape. `invalid_client` distinguishes the two cases — `client_id is
+invalid` means unknown, `client authentication failed` means known-and-holds-a-
+secret — which is how the cause was read straight off the wire.
+
+**Fix.** `hanzo-cli` is `type: cli` in the universe provision document: PUBLIC,
+no stored secret, loopback redirects per RFC 8252 §7.3, with the device grant
+declared through the additive `grants:` field rather than added to
+`grantsByType[cli]` — same reason `redirects` is additive, a type default would
+silently hand RFC 8628 to every future CLI client in every org. No image was
+needed; `make iam-provision` converged it.
+
+**The rule this forced.** Going public silently opened ROPC. `passwordGrant`
+gates on the `enablePassword` FLAG, not on `grantTypes`, so removing `password`
+from the document changed nothing — and the grant had a legacy-parity relaxation
+that let a public client through, carried so console/chat would not 401 during
+the cutover. With no stored secret and no PKCE challenge and no human approval
+step, "public" there means anyone who knows the client_id can post a username and
+password. `passwordGrant` now REFUSES a client with no stored secret. The
+relaxation was dormant (every live registration is confidential and takes the
+secret path), so nothing that worked broke. The rule lives on the GRANT, not in a
+document, because registration shape must not be able to open a credential
+surface — the same lesson as `Token.PublicGrant` above, in the other direction.
+
+**One client id.** `hanzo-cli` is the id BOTH CLIs authenticate as — Rust
+`hanzoai/cli` (`src/iam/oauth.rs` `CLIENT_ID`) and the Go control CLI
+(`hanzoai/cloud` `cli/cli.go` `defaultClientID`). The Go one had been borrowing a
+different first-party client per flow (`hanzo-app` for device, `hanzo-console`
+for password and refresh); besides being unregistrable, that guaranteed renewal
+could never work, because a device_code is redeemable only by the client it was
+issued to and a refresh token was being presented under a different id.
+
 ## Key entry points
 - `main.go` — cobra root (`serve` / `compare` / `version`); `server/server.go` route registration.
 - `internal/{oidc,routes}` — OAuth2/OIDC surface; `internal/{scim,mfa,webauthn,providers,sessions,tokens,cred,authz,certs,keys}`.
