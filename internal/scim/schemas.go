@@ -175,6 +175,9 @@ func routeDiscovery(app *zip.App) {
 	app.Get(base+"/ResourceTypes/:name", getResourceType)
 }
 
+// listSchemas returns the attribute definitions this directory understands, so
+// your identity provider knows which fields it may send and what they mean
+// before it sends any.
 func listSchemas(c *zip.Ctx) error {
 	out := make([]any, 0, len(schemas))
 	for _, s := range schemas {
@@ -183,6 +186,7 @@ func listSchemas(c *zip.Ctx) error {
 	return scimList(c, len(out), 1, len(out), out)
 }
 
+// getSchema returns one attribute definition in full.
 func getSchema(c *zip.Ctx) error {
 	id := c.Param("id")
 	for _, s := range schemas {
@@ -193,6 +197,9 @@ func getSchema(c *zip.Ctx) error {
 	return scimError(c, 404, "Schema "+id+" not found", "")
 }
 
+// listResourceTypes returns the kinds of record this directory provisions and
+// the address of each, so your identity provider discovers them rather than
+// having them configured by hand.
 func listResourceTypes(c *zip.Ctx) error {
 	out := make([]any, 0, len(resourceTypes))
 	for _, r := range resourceTypes {
@@ -201,6 +208,7 @@ func listResourceTypes(c *zip.Ctx) error {
 	return scimList(c, len(out), 1, len(out), out)
 }
 
+// getResourceType returns one provisionable record kind in full.
 func getResourceType(c *zip.Ctx) error {
 	name := c.Param("name")
 	for _, r := range resourceTypes {

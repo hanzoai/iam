@@ -37,7 +37,9 @@ type unlinkForm struct {
 	} `json:"user"`
 }
 
-// unlink clears one provider link from one account. Two principals may do it, and
+// unlink disconnects one sign-in identity from an account, so that provider can
+// no longer be used to sign in as that person. Their account and every other way
+// they sign in are untouched. Two principals may do it, and
 // only two: the account holder itself, and a SuperAdmin (a member of the reserved
 // admin org, the one predicate). An ORG ADMIN deliberately may NOT — unlinking is
 // not tenant administration, it is unpicking someone's own sign-in method, so the

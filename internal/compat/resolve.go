@@ -29,16 +29,15 @@ type resolveResponse struct {
 	Scope string `json:"scope"`
 }
 
-// resolveKeyHandler serves GET /v1/iam/resolve-key?accessKey=<pk->. It authorizes one
-// notch narrower than get-user?accessKey: the caller must be a confidential app
-// (p.App != "") holding CapPublishableResolve — its OWN least-privilege capability,
-// deliberately NOT the CapKeyResolve that discloses a principal, so a client granted
-// org-resolve can never thereby disclose WHO a secret key authenticates. A human (a
-// capability is vacuous for a non-app) and any un-listed app are refused with the same
-// opaque envelope. store.PublishableKeyByAccessKey enforces the rest fail-closed (pk-
-// prefix, publishable scope, unexpired); an unresolvable key answers the same not-exist
-// envelope get-user uses, so a prober cannot tell a missing key from a non-publishable
-// one, and — critically — NO code path here ever loads or returns a user.
+// resolveKeyHandler answers which organization a PUBLISHABLE key belongs to —
+// what a service of yours calls to attribute a request that arrived carrying a
+// key shipped in a browser.
+//
+// It names an organization and never a person: no path through it can load or
+// return a user, so a key you put in client code cannot become a way to learn
+// who anyone is. A key that is expired, secret rather than publishable, or
+// simply unknown all answer identically, so nothing here can be probed to
+// discover which keys exist.
 func resolveKeyHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

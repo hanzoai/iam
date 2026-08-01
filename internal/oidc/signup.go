@@ -50,7 +50,11 @@ type signupForm struct {
 	Affiliation  string `json:"affiliation"`
 }
 
-// signupHandler validates the front-door signup policy and creates the account.
+// signupHandler creates an account from the sign-up form and applies the
+// application's own sign-up rules — whether self-service registration is open at
+// all, and which fields it requires.
+//
+// The password is hashed before it is stored and is never returned.
 func signupHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var f signupForm

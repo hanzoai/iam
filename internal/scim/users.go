@@ -210,9 +210,11 @@ func primaryValue(vs []scimMultiValued) string {
 	return vs[0].Value
 }
 
-// listUsers serves GET /Users — owner-scoped, filterable by `userName|emails eq
-// "x"`, paginated. Listing is an org-admin (or super) operation: a regular user is
-// refused (authz.Can with an empty name fails the self-read clause).
+// listUsers returns the people in your organization to your identity provider,
+// in the standard SCIM shape, so an IdP can reconcile its directory against
+// ours. Searchable by username or email address, and paged.
+//
+// Reading the whole list takes an administrator; an ordinary person is refused.
 func listUsers(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -255,8 +257,8 @@ func listUsers(db orm.DB) zip.Handler {
 	}
 }
 
-// getUser serves GET /Users/{owner}/{name}. A regular user may read only its own
-// record (authz self-read clause); an org-admin/super may read any in scope.
+// getUser returns one person in the standard SCIM shape. An administrator may
+// read anyone in the organization; everyone else may read only themselves.
 func getUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -278,9 +280,11 @@ func getUser(db orm.DB) zip.Handler {
 	}
 }
 
-// createUser serves POST /Users. Provisioning a user requires org-admin (or super)
-// — the SAME policy the typed CRUD applies at the op seam, enforced here because a
-// raw handler bypasses that seam. Only a SuperAdmin may set isAdmin.
+// createUser provisions a person from your identity provider — how a new hire
+// gets an account here automatically when they are added over there.
+//
+// Takes an administrator. Making someone an administrator takes more than that,
+// so an IdP integration cannot escalate anyone by setting a flag.
 func createUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -318,10 +322,13 @@ func createUser(db orm.DB) zip.Handler {
 	}
 }
 
-// replaceUser serves PUT /Users/{owner}/{name} — a full replace of the mapped
-// attributes, overlaid onto the CURRENT row so every unmapped persisted field (MFA
-// enrollment, IsDeleted, Type, Groups, Ldap) is preserved — never rebuilt from a
-// blank record (which would silently strip MFA and resurrect a deleted account).
+// replaceUser overwrites a person's SCIM attributes with what your identity
+// provider sends — how a change made there lands here.
+//
+// Only the attributes SCIM describes are replaced. Anything the standard does not
+// cover — their multi-factor enrolment above all — survives untouched, so a
+// routine sync from your IdP can never quietly strip someone's second factor or
+// bring a deleted account back.
 func replaceUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -354,10 +361,11 @@ func replaceUser(db orm.DB) zip.Handler {
 	}
 }
 
-// patchUser serves PATCH /Users/{owner}/{name} (RFC 7644 §3.5.2). It reads the
-// FULL current row, applies the operations to a SCIM projection, overlays the
-// result back onto that same full row, and writes it — so a partial change never
-// blanks the rest of the record (MFA, IsDeleted, …).
+// patchUser applies a partial change from your identity provider — one attribute
+// moved, not the whole record resent.
+//
+// The change is applied onto the person as they currently are, so everything you
+// did not mention keeps its value, including the parts SCIM does not describe.
 func patchUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -426,7 +434,9 @@ func patchUser(db orm.DB) zip.Handler {
 	}
 }
 
-// deleteUser serves DELETE /Users/{owner}/{name}. Requires org-admin (or super).
+// deleteUser deprovisions a person — how removing someone in your identity
+// provider removes their access here. Their sessions stop working immediately.
+// Takes an administrator.
 func deleteUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

@@ -96,11 +96,12 @@ func routeDevice(r zip.Router, db orm.DB) {
 	r.Post(PathDevice, deviceHandler(db))
 }
 
-// deviceHandler serves the device authorization request (RFC 8628 §3.1): it
-// mints the device_code/user_code pair and tells the device where to send its
-// human. A confidential client must authenticate its secret here (§3.1 → RFC
-// 6749 §3.2.1); a public device client presents only its client_id. The row it
-// creates grants nothing until a human approves it.
+// deviceHandler starts a sign-in on a device with no browser and no keyboard —
+// a TV, a CLI, a headless box. It returns a short code to show the person and
+// the address to send them to on a phone or laptop.
+//
+// Nothing is granted until a human approves it there; until then the code is
+// just a pending request.
 func deviceHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)

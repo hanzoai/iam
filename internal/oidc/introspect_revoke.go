@@ -52,10 +52,15 @@ func authConfidentialClient(ctx context.Context, db orm.DB, c *zip.Ctx) (name st
 	return app.Name, true
 }
 
-// introspectHandler implements RFC 7662. Active iff the grant row still exists
-// (revocation-aware, the same liveness check userinfo makes) AND the JWT verifies
-// under the trusted keys. The response carries the standard introspection claims;
-// an inactive/absent/unauthenticated-target token returns only `{active:false}`.
+// introspectHandler answers whether an access token is still good, and what it
+// is good for — the check a resource server of yours makes before honouring a
+// token it did not mint.
+//
+// A token counts as active only if it verifies AND has not been revoked, so a
+// revoked token reads as dead here immediately rather than until it expires. A
+// token that is unknown, expired or revoked answers simply that it is not
+// active, and nothing more — the endpoint is not a way to learn about tokens you
+// were not given.
 func introspectHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
@@ -116,11 +121,15 @@ func introspectHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// revokeHandler implements RFC 7009. A confidential client revokes a token that
-// was issued to IT (§2.1) — an access token deletes that grant row; a refresh
-// token revokes the whole rotation family so no further access tokens can be
-// minted and every sibling dies. A token belonging to another client, or an
-// unknown token, is a silent 200 (no revocation, no oracle — §2.2).
+// revokeHandler retires a token before it expires — what you call when someone
+// signs out or a credential may have leaked.
+//
+// Revoking an access token kills that token. Revoking a REFRESH token kills the
+// whole chain it belongs to, so no further access tokens can be minted from it
+// and every token already minted from it dies with it.
+//
+// A token that is not yours, or that never existed, answers success and does
+// nothing — so the endpoint cannot be used to discover which tokens are real.
 func revokeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
