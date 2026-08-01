@@ -9,6 +9,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/risk"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -33,7 +34,11 @@ func routeFrontDoor(r zip.Router, db orm.DB) {
 	zip.Alias(r.Get, PathAccount, LegacyPathAccount, getAccount(db))
 	// Account creation + email/phone OTP send. signup is JSON; the OTP send is
 	// multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
-	r.Post(PathSignup, signupHandler(db))
+	// ONE scorer client for the process: it holds a connection pool and reads its
+	// configuration once. An unconfigured deployment gets a client that answers
+	// "absent", which the fail policy in internal/risk turns into an allow for an
+	// ordinary sign-up and a refusal for one that would mint a tenant.
+	r.Post(PathSignup, signupHandler(db, risk.New(httpx.ServiceToken())))
 	zip.Alias(r.Post, PathVerificationCodes, LegacyPathVerificationCodes, sendVerificationCode(db))
 
 	// The session/identity front door the console drives once a user is signed in:

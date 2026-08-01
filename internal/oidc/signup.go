@@ -14,6 +14,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/risk"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 	"github.com/hanzoai/iam/internal/users"
@@ -48,14 +49,25 @@ type signupForm struct {
 	Phone        string `json:"phone"`
 	CountryCode  string `json:"countryCode"`
 	Affiliation  string `json:"affiliation"`
+	// Code answers a RequiredVerify challenge: the verification code sent to
+	// Email by POST /v1/iam/send-verification-code. Absent on an unchallenged
+	// sign-up, which is most of them.
+	Code string `json:"code"`
 }
 
-// signupHandler creates an account from the sign-up form and applies the
+// signupHandler creates an account from the sign-up form, applies the
 // application's own sign-up rules — whether self-service registration is open at
-// all, and which fields it requires.
+// all, and which fields it requires — and has the registration judged before
+// anything is written.
+//
+// THE ORDER IS THE DESIGN: every deterministic check, then the risk gate, then
+// every write. A sign-up that breaks a rule is refused without costing a screen,
+// and a sign-up that is refused leaves nothing behind — including the
+// organization, which self-serve creation used to mint before the user was
+// validated at all.
 //
 // The password is hashed before it is stored and is never returned.
-func signupHandler(db orm.DB) zip.Handler {
+func signupHandler(db orm.DB, sc *risk.Client) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var f signupForm
 		if err := c.Bind(&f); err != nil {
@@ -109,7 +121,12 @@ func signupHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
-		if org == nil {
+		// mintsTenant: this sign-up would create the ORGANIZATION as well as the
+		// user. Decided here, from a read, and acted on further down — because it is
+		// both the thing that must be validated before anything is written AND the
+		// thing that makes the risk gate fail CLOSED. A tenant is standing authority.
+		mintsTenant := org == nil
+		if mintsTenant {
 			// Self-serve org creation — the founder signs up and their org is minted
 			// with them. It is OPT-IN per application (orgChoiceMode == orgChoiceCreate)
 			// so an app that names one tenant can never mint another: the tenant gate
@@ -128,11 +145,11 @@ func signupHandler(db orm.DB) zip.Handler {
 			if msg := orgNamePolicyError(f.Organization); msg != "" {
 				return httpx.Err(c, msg)
 			}
-			created, err := store.CreateOrganization(ctx, db, f.Organization)
-			if err != nil {
-				return httpx.Err(c, err.Error())
-			}
-			org = created
+			// The org does not exist yet, so it has no PasswordOptions of its own. The
+			// platform floor in passwordPolicyError still applies — it is the invariant
+			// options can only make stricter, never an option itself. The row itself is
+			// written after the gate, so a refused registration leaves no orphan org.
+			org = &schema.Organization{Name: f.Organization}
 		} else if f.Organization != app.Organization && !app.IsShared {
 			// The org ALREADY EXISTS and belongs to someone else. Org choice grants the
 			// right to name YOUR OWN org — to mint one above, or to land in the app's
@@ -186,6 +203,23 @@ func signupHandler(db orm.DB) zip.Handler {
 		// Password policy (v1 org.PasswordOptions complexity).
 		if msg := passwordPolicyError(org.PasswordOptions, f.Password); msg != "" {
 			return httpx.Err(c, msg)
+		}
+
+		// THE RISK GATE. Every deterministic refusal is behind us, so this is the
+		// first cost the sign-up incurs and the last decision before anything is
+		// written. It answers the request itself when it challenges or refuses.
+		if answered, err := signupGate(c, db, sc, f, mintsTenant); answered || err != nil {
+			return err
+		}
+
+		// FIRST WRITE. The tenant is minted only now, after the sign-up has passed
+		// every rule and the gate — so a refused registration leaves no orphan org.
+		if mintsTenant {
+			created, err := store.CreateOrganization(ctx, db, f.Organization)
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			org = created
 		}
 
 		// Create through the ONE canonical user path (users.Create): argon2id-hash the
