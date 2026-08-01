@@ -15,7 +15,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 

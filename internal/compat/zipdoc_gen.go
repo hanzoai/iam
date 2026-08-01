@@ -71,10 +71,10 @@ func init() {
 		Description: "Registers an application in your organization — one product or site your\npeople sign in to, with its own client credentials, sign-in methods and\nallowed redirect URIs.\n\nThe older spelling of POST /v1/iam/application. A name already used in the\norganization is refused rather than overwritten.",
 		Fields: map[string]string{
 			"Application.clientId": "ClientId is the OAuth2/OIDC client identifier and the GLOBAL key every\nconfidential-client resolver authenticates against (store.GetApplicationByClientId,\nthe mint gates, Basic auth). It MUST be globally unique across ALL owners — a\ncollision would let one app shadow another at that key. This store persists each\nentity as a JSON document in a shared table, so there is no per-field column to\ncarry a DB UNIQUE index; uniqueness is enforced at the write in\napplications.Create/Update (ensureClientIdUnique), exactly as the (owner,name)\nnatural key is, and store.GetApplicationByClientId resolves admin-preferring as\ndefense-in-depth.",
-			"Model[github.com/hanzoai/iam/internal/schema.Application].id":  "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Cert].id":         "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Organization].id": "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id":     "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Application].id":  "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id":         "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id":     "Persisted fields",
 			"Organization.failedSigninLimit":                                "Per-organization signin throttle. Zero means \"inherit the application\ndefault\"; a non-zero value overrides it. Safe bounds are clamped by the\nresource service before persistence.",
 			"Organization.founder":                                          "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
 			"Organization.orgBalance":                                       "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
@@ -83,7 +83,7 @@ func init() {
 	zip.Describe("POST /v1/iam/add-organization", zip.Doc{
 		Description: "Creates an organization — the account everything else in your directory\nhangs from. Users, applications, roles, projects and workspaces are all\nnamed inside one organization, so this is the first write in a new tenant.\n\nThe older spelling of POST /v1/iam/organizations. Both reach the same\ncreate, so a name already taken is refused here too.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Organization].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
 			"Organization.failedSigninLimit":                                "Per-organization signin throttle. Zero means \"inherit the application\ndefault\"; a non-zero value overrides it. Safe bounds are clamped by the\nresource service before persistence.",
 			"Organization.founder":                                          "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
 			"Organization.orgBalance":                                       "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
@@ -95,7 +95,7 @@ func init() {
 	zip.Describe("POST /v1/iam/add-provider", zip.Doc{
 		Description: "Adds an identity provider your people can sign in with, or a service your\napplications send through — a social or enterprise login, an email or SMS\nsender, a storage or payment connector.\n\nA provider is configured once here and then switched on per application, so\nseveral applications can share one set of credentials.\n\nThe older spelling of POST /v1/iam/providers.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/add-role", zip.Doc{
@@ -104,9 +104,9 @@ func init() {
 	zip.Describe("POST /v1/iam/add-user", zip.Doc{
 		Description: "Adds a person to your organization and, if you send a password, sets the\none they will sign in with. The password is hashed before it is stored and\nis never returned to you or to anyone else.\n\nUsernames are checked against one rule wherever an account is created —\nthis verb, password signup, a social sign-in, or SCIM — so a name accepted\nhere is a name accepted everywhere.\n\nThe older spelling of POST /v1/iam/users, and it posts the user's fields at\nthe top level rather than wrapped in {user, password}.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Permission].id": "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Role].id":       "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.User].id":       "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Role].id":       "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.User].id":       "Persisted fields",
 			"Permission.createdTime":                                      "Descriptive metadata.",
 			"Permission.model":                                            "Authorization model, targets, and decision. AuthzModel carries the v1\n`model` column (the named authz model); it is not the Go identifier\n`Model` because that name is taken by the embedded orm.Model[Permission]\nmixin. The HTTP contract is unchanged — json:\"model\".",
 			"Permission.owner":                                            "Identity — the (owner, name) natural key.",
@@ -132,10 +132,10 @@ func init() {
 		Description: "Deletes an application. Anyone mid-sign-in through it is turned away and\nits client credentials stop working, so retire the integration first.\n\nThe older spelling of DELETE /v1/iam/application.",
 		Fields: map[string]string{
 			"Application.clientId": "ClientId is the OAuth2/OIDC client identifier and the GLOBAL key every\nconfidential-client resolver authenticates against (store.GetApplicationByClientId,\nthe mint gates, Basic auth). It MUST be globally unique across ALL owners — a\ncollision would let one app shadow another at that key. This store persists each\nentity as a JSON document in a shared table, so there is no per-field column to\ncarry a DB UNIQUE index; uniqueness is enforced at the write in\napplications.Create/Update (ensureClientIdUnique), exactly as the (owner,name)\nnatural key is, and store.GetApplicationByClientId resolves admin-preferring as\ndefense-in-depth.",
-			"Model[github.com/hanzoai/iam/internal/schema.Application].id":  "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Cert].id":         "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Organization].id": "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id":     "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Application].id":  "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id":         "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id":     "Persisted fields",
 			"Organization.failedSigninLimit":                                "Per-organization signin throttle. Zero means \"inherit the application\ndefault\"; a non-zero value overrides it. Safe bounds are clamped by the\nresource service before persistence.",
 			"Organization.founder":                                          "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
 			"Organization.orgBalance":                                       "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
@@ -150,7 +150,7 @@ func init() {
 	zip.Describe("POST /v1/iam/delete-provider", zip.Doc{
 		Description: "Removes a provider. Sign-in through it stops for every application that\nused it, so detach those applications first if they have no other method.\n\nThe older spelling of POST /v1/iam/providers/delete.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/delete-role", zip.Doc{
@@ -159,9 +159,9 @@ func init() {
 	zip.Describe("POST /v1/iam/delete-user", zip.Doc{
 		Description: "Removes a person from your organization. Their sessions stop working and\nthe account is gone, not suspended — to keep the record and only stop\nsign-in, update the user instead.\n\nThe older spelling of POST /v1/iam/users/delete.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Permission].id": "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Role].id":       "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.User].id":       "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Role].id":       "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.User].id":       "Persisted fields",
 			"Permission.createdTime":                                      "Descriptive metadata.",
 			"Permission.model":                                            "Authorization model, targets, and decision. AuthzModel carries the v1\n`model` column (the named authz model); it is not the Go identifier\n`Model` because that name is taken by the embedded orm.Model[Permission]\nmixin. The HTTP contract is unchanged — json:\"model\".",
 			"Permission.owner":                                            "Identity — the (owner, name) natural key.",
@@ -187,10 +187,10 @@ func init() {
 		Description: "Updates one of your applications — its display, its sign-in methods and the\nredirect URIs it is allowed to return to. Which organization and name the\napplication has are fixed when it is created and are not editable here.\n\nA redirect URI you add becomes an allowed sign-in origin, so this is the\ncall that makes login work from a new host.\n\nThe older spelling of PUT /v1/iam/application.",
 		Fields: map[string]string{
 			"Application.clientId": "ClientId is the OAuth2/OIDC client identifier and the GLOBAL key every\nconfidential-client resolver authenticates against (store.GetApplicationByClientId,\nthe mint gates, Basic auth). It MUST be globally unique across ALL owners — a\ncollision would let one app shadow another at that key. This store persists each\nentity as a JSON document in a shared table, so there is no per-field column to\ncarry a DB UNIQUE index; uniqueness is enforced at the write in\napplications.Create/Update (ensureClientIdUnique), exactly as the (owner,name)\nnatural key is, and store.GetApplicationByClientId resolves admin-preferring as\ndefense-in-depth.",
-			"Model[github.com/hanzoai/iam/internal/schema.Application].id":  "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Cert].id":         "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Organization].id": "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id":     "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Application].id":  "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id":         "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id":     "Persisted fields",
 			"Organization.failedSigninLimit":                                "Per-organization signin throttle. Zero means \"inherit the application\ndefault\"; a non-zero value overrides it. Safe bounds are clamped by the\nresource service before persistence.",
 			"Organization.founder":                                          "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
 			"Organization.orgBalance":                                       "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
@@ -199,7 +199,7 @@ func init() {
 	zip.Describe("POST /v1/iam/update-organization", zip.Doc{
 		Description: "Updates your organization — its display, its default settings and the\nsign-in rules everyone in it inherits.\n\nThe older spelling of POST /v1/iam/organizations/update.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Organization].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
 			"Organization.failedSigninLimit":                                "Per-organization signin throttle. Zero means \"inherit the application\ndefault\"; a non-zero value overrides it. Safe bounds are clamped by the\nresource service before persistence.",
 			"Organization.founder":                                          "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
 			"Organization.orgBalance":                                       "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
@@ -208,7 +208,7 @@ func init() {
 	zip.Describe("POST /v1/iam/update-provider", zip.Doc{
 		Description: "Updates a provider's settings or rotates the credentials it holds. The\nchange takes effect on the next sign-in through it — sessions already\nissued are unaffected.\n\nThe older spelling of POST /v1/iam/providers/update.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/update-role", zip.Doc{
@@ -217,9 +217,9 @@ func init() {
 	zip.Describe("POST /v1/iam/update-user", zip.Doc{
 		Description: "Updates one of your users' profile, roles or credentials. Send a password\nto reset it; leave it out and the current one stands.\n\nThe older spelling of POST /v1/iam/users/update, with the user's fields at\nthe top level rather than wrapped in {user, password}.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Permission].id": "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.Role].id":       "Persisted fields",
-			"Model[github.com/hanzoai/iam/internal/schema.User].id":       "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Role].id":       "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.User].id":       "Persisted fields",
 			"Permission.createdTime":                                      "Descriptive metadata.",
 			"Permission.model":                                            "Authorization model, targets, and decision. AuthzModel carries the v1\n`model` column (the named authz model); it is not the Go identifier\n`Model` because that name is taken by the embedded orm.Model[Permission]\nmixin. The HTTP contract is unchanged — json:\"model\".",
 			"Permission.owner":                                            "Identity — the (owner, name) natural key.",

@@ -17,7 +17,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // Handler binds the audit-log operations to one orm store.

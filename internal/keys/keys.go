@@ -22,7 +22,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc

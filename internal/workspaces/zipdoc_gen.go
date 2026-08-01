@@ -10,13 +10,13 @@ func init() {
 	zip.Describe("GET /v1/iam/workspaces", zip.Doc{
 		Description: "Returns your organization's workspaces, newest first — the scope a\nteam works in, alongside projects rather than instead of them.\n\nYou see your own organization's workspaces and no one else's; which organization that\nis comes from your credentials, not from the request.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Workspace].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Workspace].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/workspaces", zip.Doc{
 		Description: "Makes a workspace inside your organization — the scope a team works in,\nalongside projects rather than instead of them. A name already used in the\norganization is refused.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Workspace].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Workspace].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/workspaces/delete", zip.Doc{
@@ -25,13 +25,13 @@ func init() {
 	zip.Describe("POST /v1/iam/workspaces/get", zip.Doc{
 		Description: "Returns one workspace: what it is called and how it is set up.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Workspace].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Workspace].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/workspaces/update", zip.Doc{
 		Description: "Changes a workspace's settings. What it is called does not change, and\nneither does when it was created.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Workspace].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Workspace].id": "Persisted fields",
 		},
 	})
 }

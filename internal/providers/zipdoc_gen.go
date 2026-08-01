@@ -10,31 +10,31 @@ func init() {
 	zip.Describe("GET /v1/iam/providers", zip.Doc{
 		Description: "Returns your organization's providers, newest first — the\nidentity providers your people sign in with, and the senders and connectors\nyour applications go through.\n\nYou see your own organization's providers and no one else's; which organization\nthat is comes from your credentials, not from the request.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/providers", zip.Doc{
 		Description: "Adds an identity provider your people can sign in with, or a\nservice your applications send through — a social or enterprise login, an email\nor SMS sender, a storage or payment connector.\n\nA provider is configured once and then switched on per application, so several\napplications can share one set of credentials.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/providers/delete", zip.Doc{
 		Description: "Removes a provider. Sign-in through it stops for every\napplication that used it, so give those applications another method first.\n\nA provider that is already gone answers \"nothing changed\" rather than an\nerror, so the call is safe to repeat.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/providers/get", zip.Doc{
 		Description: "Returns one provider: what it connects to and how it is\nconfigured. Its credentials come back masked.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/providers/update", zip.Doc{
 		Description: "Changes a provider's settings or rotates the credentials it\nholds. The change takes effect on the next sign-in through it — sessions\nalready issued are unaffected.\n\nA provider that is not there answers \"nothing changed\" rather than an error, so\nthe call is safe to repeat.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.Provider].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
 		},
 	})
 }

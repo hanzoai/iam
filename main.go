@@ -37,7 +37,7 @@ import (
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/provision"
 	"github.com/hanzoai/iam/internal/routes"
-	_ "github.com/hanzoai/iam/internal/schema" // registers the v2 entity kinds
+	_ "github.com/hanzoai/iam/pkg/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/internal/seed"
 	"github.com/hanzoai/iam/pkg/store"
 )

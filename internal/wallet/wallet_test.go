@@ -11,7 +11,7 @@ import (
 	"github.com/hanzoai/orm"
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // errorIs asserts the envelope is a REFUSAL carrying msg — on a 200, because

@@ -21,7 +21,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // initData is the subset of the init_data.json shape iam seeds. Users and the

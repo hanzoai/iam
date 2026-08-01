@@ -14,7 +14,7 @@ import (
 	"github.com/hanzoai/iam/internal/projects"
 	"github.com/hanzoai/iam/internal/providers"
 	"github.com/hanzoai/iam/internal/roles"
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/internal/workspaces"
 )

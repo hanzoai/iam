@@ -6,7 +6,7 @@ import (
 
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // getAccountReq drives GET the account endpoint with an optional bearer,
