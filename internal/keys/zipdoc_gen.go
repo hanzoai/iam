@@ -17,7 +17,7 @@ func init() {
 			"Key.owner":       "Owner is the tenant that holds the key; Name is unique within Owner.",
 			"Key.scope":       "Scope is the key's ACCESS CLASS, orthogonal to Type (which names the bound\nprincipal). Empty (the default, \"secret\") is a full key: a pk- publishable\nhalf AND a confidential sk- half, the sk- authenticating a server-side reader.\nKeyScopePublish is a WRITE-ONLY publishable key — a pk- half only, no secret —\nthat resolves to just an ORG (never a principal) at the ingest door and is safe\nto ship in client JS. A missing value on an existing row reads as the default,\nso every pre-Scope key is a secret key unchanged.",
 			"Key.type":        "Type is the scope the key is bound to — \"Organization\", \"Application\",\n\"User\", or \"General\" — and Organization / Application / User name the\nconcrete principal for whichever scope Type selects.",
-			"Model[github.com/hanzoai/iam/internal/schema.Key].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Key].id": "Persisted fields",
 		},
 	})
 	zip.Describe("GET /v1/iam/keys/get", zip.Doc{
@@ -30,7 +30,7 @@ func init() {
 			"Key.owner":       "Owner is the tenant that holds the key; Name is unique within Owner.",
 			"Key.scope":       "Scope is the key's ACCESS CLASS, orthogonal to Type (which names the bound\nprincipal). Empty (the default, \"secret\") is a full key: a pk- publishable\nhalf AND a confidential sk- half, the sk- authenticating a server-side reader.\nKeyScopePublish is a WRITE-ONLY publishable key — a pk- half only, no secret —\nthat resolves to just an ORG (never a principal) at the ingest door and is safe\nto ship in client JS. A missing value on an existing row reads as the default,\nso every pre-Scope key is a secret key unchanged.",
 			"Key.type":        "Type is the scope the key is bound to — \"Organization\", \"Application\",\n\"User\", or \"General\" — and Organization / Application / User name the\nconcrete principal for whichever scope Type selects.",
-			"Model[github.com/hanzoai/iam/internal/schema.Key].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Key].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/keys", zip.Doc{
@@ -43,7 +43,7 @@ func init() {
 			"Key.owner":       "Owner is the tenant that holds the key; Name is unique within Owner.",
 			"Key.scope":       "Scope is the key's ACCESS CLASS, orthogonal to Type (which names the bound\nprincipal). Empty (the default, \"secret\") is a full key: a pk- publishable\nhalf AND a confidential sk- half, the sk- authenticating a server-side reader.\nKeyScopePublish is a WRITE-ONLY publishable key — a pk- half only, no secret —\nthat resolves to just an ORG (never a principal) at the ingest door and is safe\nto ship in client JS. A missing value on an existing row reads as the default,\nso every pre-Scope key is a secret key unchanged.",
 			"Key.type":        "Type is the scope the key is bound to — \"Organization\", \"Application\",\n\"User\", or \"General\" — and Organization / Application / User name the\nconcrete principal for whichever scope Type selects.",
-			"Model[github.com/hanzoai/iam/internal/schema.Key].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Key].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/keys/delete", zip.Doc{
@@ -59,7 +59,7 @@ func init() {
 			"Key.owner":       "Owner is the tenant that holds the key; Name is unique within Owner.",
 			"Key.scope":       "Scope is the key's ACCESS CLASS, orthogonal to Type (which names the bound\nprincipal). Empty (the default, \"secret\") is a full key: a pk- publishable\nhalf AND a confidential sk- half, the sk- authenticating a server-side reader.\nKeyScopePublish is a WRITE-ONLY publishable key — a pk- half only, no secret —\nthat resolves to just an ORG (never a principal) at the ingest door and is safe\nto ship in client JS. A missing value on an existing row reads as the default,\nso every pre-Scope key is a secret key unchanged.",
 			"Key.type":        "Type is the scope the key is bound to — \"Organization\", \"Application\",\n\"User\", or \"General\" — and Organization / Application / User name the\nconcrete principal for whichever scope Type selects.",
-			"Model[github.com/hanzoai/iam/internal/schema.Key].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.Key].id": "Persisted fields",
 		},
 	})
 }

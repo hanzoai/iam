@@ -11,7 +11,7 @@ import (
 	"github.com/hanzoai/orm"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // seedZ is the account the live bug was reproduced on: username "z", display

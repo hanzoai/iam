@@ -10,13 +10,13 @@ func init() {
 	zip.Describe("GET /v1/iam/audit-logs", zip.Doc{
 		Description: "Returns your organization's audit trail, newest first — who did\nwhat, when, and from where. It is the record you reach for during a security\nreview or an incident.\n\nYou see your own organization's audit trail and no one else's; which organization that\nis comes from your credentials, not from the request.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.AuditLog].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.AuditLog].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/audit-logs", zip.Doc{
 		Description: "Records an audit entry, so activity from your own systems lands in the\nsame trail as everything the Hanzo Cloud records for you.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.AuditLog].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.AuditLog].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/audit-logs/delete", zip.Doc{
@@ -25,13 +25,13 @@ func init() {
 	zip.Describe("POST /v1/iam/audit-logs/get", zip.Doc{
 		Description: "Returns one audit entry in full: the action, the person or key behind it,\nand the request it came in on.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.AuditLog].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.AuditLog].id": "Persisted fields",
 		},
 	})
 	zip.Describe("POST /v1/iam/audit-logs/update", zip.Doc{
 		Description: "Corrects an audit entry. The trail is append-only in normal operation\nand nothing in the Hanzo Cloud rewrites it — this exists for an administrator\nto correct an entry their own systems recorded wrongly.",
 		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/internal/schema.AuditLog].id": "Persisted fields",
+			"Model[github.com/hanzoai/iam/pkg/schema.AuditLog].id": "Persisted fields",
 		},
 	})
 }

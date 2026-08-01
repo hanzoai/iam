@@ -20,7 +20,7 @@ import (
 	"github.com/hanzoai/iam/feature"
 	"github.com/hanzoai/iam/internal/featurestore"
 	"github.com/hanzoai/iam/internal/routes"
-	_ "github.com/hanzoai/iam/internal/schema" // registers the entity kinds
+	_ "github.com/hanzoai/iam/pkg/schema" // registers the entity kinds
 	"github.com/hanzoai/iam/internal/seed"
 )
 

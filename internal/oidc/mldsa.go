@@ -11,7 +11,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/luxfi/crypto/pq/mldsa/mldsa65"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // ML-DSA-65 (FIPS 204, NIST security level 3) as a first-class JWT signing
