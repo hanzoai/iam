@@ -67,7 +67,6 @@ func TestBrowserPaths_ExactlyTheOIDCBrowserSurface(t *testing.T) {
 		"/v1/iam/admin/applications/upsert",
 		"/v1/iam/admin/users/upsert",
 		"/v1/iam/login",
-		"/healthz",
 		"/v1/iam/oauth/authorize", // a top-level redirect, not a fetch
 	} {
 		if browserPaths[p] {

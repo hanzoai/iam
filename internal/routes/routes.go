@@ -6,9 +6,10 @@
 // never by a hand-maintained path list. Route binds the surface in two phases
 // around one authentication seam:
 //
-//   - the PUBLIC group (oidc.Route + /healthz) is registered FIRST, before the
-//     Guard. A matched public route terminates fiber's middleware walk, so the
-//     Guard never runs on it — membership in this group IS "public".
+//   - the PUBLIC group (oidc.Route and the other pre-auth doors) is registered
+//     FIRST, before the Guard. A matched public route terminates fiber's
+//     middleware walk, so the Guard never runs on it — membership in this group
+//     IS "public".
 //   - app.Use(authz.Guard) is the ONE authentication seam. Every route registered
 //     AFTER it — the typed entity CRUD, the legacy verb aliases, the SCIM
 //     surface, and the framework's own /mcp + /openapi projections — requires a
@@ -17,6 +18,16 @@
 // A public route therefore can never be accidentally gated, and an authed route
 // can never be accidentally public: the decision is where you register, not an
 // allow-list that can drift out of sync with the routes.
+//
+// LIVENESS IS NOT HERE. /healthz, /readyz and /metrics are zip's ops surface
+// (zip/ops.go, HIP-0119 §1): a SECOND listener the DEPLOYMENT brings up when it
+// names OPS_PORT, never the public one — a liveness probe must not queue behind
+// public traffic. A route this package registered was iam hand-rolling a path
+// the framework owns, on the wrong listener, and it made iam unable to be
+// composed into a host: cloud registers /healthz as the HOST's, because it must
+// answer while every subsystem is still cold. Two claimants on one liveness
+// address is the shape that already served {"binary":"iam2"} out of the shared
+// cloud binary. One address, one owner, and this is not iam's.
 package routes
 
 import (
@@ -89,7 +100,6 @@ func Route(app *zip.App, db orm.DB) {
 	app.Use(cors.Allow(db))
 
 	public := app.Group("")
-	public.Get("/healthz", health)
 	oidc.Route(public, db)
 	// Operator bootstrap upsert (admin/{applications,users}/upsert) — self-authenticated
 	// by the unified service token (Bearer), not a user principal, so it is PUBLIC.
@@ -177,13 +187,4 @@ func Route(app *zip.App, db orm.DB) {
 	// initiate/verify/enable/disable flow. After the Guard: self-service on the
 	// caller's own user (authz.From); a cross-user reset needs admin (authz.Can).
 	mfa.Route(app, db)
-}
-
-// health is the Phase-1 liveness probe.
-func health(c *zip.Ctx) error {
-	return c.JSON(200, map[string]string{
-		"status": "ok",
-		"phase":  "1",
-		"binary": "iam",
-	})
 }
