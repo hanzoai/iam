@@ -337,8 +337,13 @@ mint *before* the user was validated.
 
 **Outcomes.** `allow`/`review` → the account is created. `challenge` → answered
 with the protocol string `RequiredVerify` (beside `RequiredMfa`/`NextMfa`); the
-client calls `send-verification-code` and re-posts the sign-up with `code`,
-checked by the existing `CheckVerificationCode`. `block`/`restrict` → one opaque
+client calls `send-verification-code` and re-posts the sign-up with `code`.
+Presenting a code SPENDS it (`SpendVerificationCode`, was `CheckVerificationCode`):
+a code that survived being presented would let one proven address open account
+after account for the rest of its ten-minute window, which is exactly the
+multi-account abuse the challenge exists to stop. Burned before the answer
+returns, mirroring authorization-code redemption; a burn that cannot be written
+fails closed. `block`/`restrict` → one opaque
 refusal carrying a decision reference and nothing else.
 
 **Fail policy — one function, `risk.unavailable`.** An ordinary sign-up ALLOWS

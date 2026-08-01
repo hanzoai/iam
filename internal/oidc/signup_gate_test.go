@@ -339,3 +339,36 @@ func signupBody(org, user string) map[string]string {
 		"password":     "correct horse battery staple",
 	}
 }
+
+// The whole point of challenging a sign-up is to establish that ONE person
+// controls ONE address. A code that stayed valid after being presented would let
+// one proven address open account after account for the rest of its ten-minute
+// window — defeating exactly the multi-account control the challenge exists for.
+func TestSignupGate_AVerificationCodeAnswersOneChallengeOnly(t *testing.T) {
+	app, db, _ := gateServer(t, always(risk.ActionChallenge))
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s", redirectURIs: []string{testRedirect}, signup: true})
+	seedOrg(t, db, "hanzo")
+
+	code := seedVerification(t, db, "one@example.com")
+
+	first := signupBody("hanzo", "accountone")
+	first["email"] = "one@example.com"
+	first["code"] = code
+	if _, env := signupReq(t, app, first); env["status"] != "ok" || env["data"] == RequiredVerify {
+		t.Fatalf("the first sign-up must complete: %v", env)
+	}
+	if u, _ := store.GetUserByName(context.Background(), db, "hanzo", "accountone"); u == nil {
+		t.Fatal("the first account was not created")
+	}
+
+	// The SAME code, the same address, a different username: refused.
+	second := signupBody("hanzo", "accounttwo")
+	second["email"] = "two@example.com" // a different address, so uniqueness does not mask it
+	second["code"] = code
+	if _, env := signupReq(t, app, second); env["data"] != RequiredVerify {
+		t.Fatalf("a spent code must not answer a second challenge: %v", env)
+	}
+	if u, _ := store.GetUserByName(context.Background(), db, "hanzo", "accounttwo"); u != nil {
+		t.Fatal("a replayed code created a second account")
+	}
+}
