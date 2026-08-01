@@ -45,7 +45,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // Doc is a provision document: the complete app graph for one or more orgs.

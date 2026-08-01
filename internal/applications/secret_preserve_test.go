@@ -7,7 +7,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // THE ADMIN ROUND-TRIP MUST NOT DE-SECRET AN APP.
