@@ -28,14 +28,16 @@ type Handler struct {
 	db orm.DB
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the workspaces CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/workspaces", h.List, zip.WithSummary("List workspaces for an owner"), zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces", h.Create, zip.WithSummary("Create a workspace"), zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces/get", h.Get, zip.WithSummary("Get one workspace"), zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces/update", h.Update, zip.WithSummary("Update a workspace"), zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces/delete", h.Delete, zip.WithSummary("Delete a workspace"), zip.WithTags("workspaces"))
+	zip.Get(app, "/v1/iam/workspaces", h.List, zip.WithTags("workspaces"))
+	zip.Post(app, "/v1/iam/workspaces", h.Create, zip.WithTags("workspaces"))
+	zip.Post(app, "/v1/iam/workspaces/get", h.Get, zip.WithTags("workspaces"))
+	zip.Post(app, "/v1/iam/workspaces/update", h.Update, zip.WithTags("workspaces"))
+	zip.Post(app, "/v1/iam/workspaces/delete", h.Delete, zip.WithTags("workspaces"))
 }
 
 // New exposes a workspace Handler so the the legacy surface add-/delete-workspace verb
@@ -95,15 +97,19 @@ func apply(dst *schema.Workspace, in *Input) {
 	dst.IsDefault = in.IsDefault
 }
 
-// List returns the workspaces for one owner, newest first. An empty owner lists
-// every workspace (the unscoped admin view).
-// The owner is resolved by authz.Scope from the authenticated principal, never
-// taken from the input: a tenant reads only its own org, a SuperAdmin reads the
-// owner it asks for. Filtering on in.Owner instead was a confused deputy — the
-// Guard authorizes on the query string, then a typed GET binds NOTHING from it
-// (zip typed.go reads a body only for non-GET), so in.Owner arrived empty on every
-// REST call and the "empty owner lists everything" branch returned every tenant.
+// List returns your organization's workspaces, newest first — the scope a
+// team works in, alongside projects rather than instead of them.
+//
+// You see your own organization's workspaces and no one else's; which organization that
+// is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+	// The owner is resolved by authz.Scope from the authenticated principal,
+	// never taken from the input: a tenant reads only its own org, a SuperAdmin
+	// reads the owner it asks for. Filtering on in.Owner instead was a confused
+	// deputy — the Guard authorizes on the query string, then a typed GET binds
+	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
+	// arrived empty on every REST call and the "empty owner lists everything"
+	// branch returned every tenant.
 	owner, err := authz.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
@@ -119,7 +125,7 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	return &ListOutput{Workspaces: rows, Total: len(rows)}, nil
 }
 
-// Get returns one workspace addressed by (owner, name).
+// Get returns one workspace: what it is called and how it is set up.
 func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Workspace, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -131,7 +137,9 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Workspace, error) {
 	return w, nil
 }
 
-// Create persists a new workspace. It rejects a duplicate (owner, name).
+// Create makes a workspace inside your organization — the scope a team works in,
+// alongside projects rather than instead of them. A name already used in the
+// organization is refused.
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Workspace, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -159,8 +167,8 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Workspace, err
 	return w, nil
 }
 
-// Update mutates an existing workspace. Identity and created stamp are immutable;
-// a missing workspace is a 404.
+// Update changes a workspace's settings. What it is called does not change, and
+// neither does when it was created.
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Workspace, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -176,7 +184,8 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Workspace, err
 	return w, nil
 }
 
-// Delete removes one workspace addressed by (owner, name).
+// Delete removes a workspace. The people and roles in your organization are
+// unchanged; what goes is the scope itself.
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")

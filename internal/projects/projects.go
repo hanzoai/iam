@@ -26,14 +26,16 @@ type Handler struct {
 	db orm.DB
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the projects CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/projects", h.List, zip.WithSummary("List projects for an owner"), zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects", h.Create, zip.WithSummary("Create a project"), zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects/get", h.Get, zip.WithSummary("Get one project"), zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects/update", h.Update, zip.WithSummary("Update a project"), zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects/delete", h.Delete, zip.WithSummary("Delete a project"), zip.WithTags("projects"))
+	zip.Get(app, "/v1/iam/projects", h.List, zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects", h.Create, zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/get", h.Get, zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/update", h.Update, zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/delete", h.Delete, zip.WithTags("projects"))
 }
 
 // New exposes a project Handler so the the legacy surface add-/delete-project verb aliases
@@ -93,15 +95,20 @@ func apply(dst *schema.Project, in *Input) {
 	dst.IsDefault = in.IsDefault
 }
 
-// List returns the projects for one owner, newest first. An empty owner lists
-// every project (the unscoped admin view).
-// The owner is resolved by authz.Scope from the authenticated principal, never
-// taken from the input: a tenant reads only its own org, a SuperAdmin reads the
-// owner it asks for. Filtering on in.Owner instead was a confused deputy — the
-// Guard authorizes on the query string, then a typed GET binds NOTHING from it
-// (zip typed.go reads a body only for non-GET), so in.Owner arrived empty on every
-// REST call and the "empty owner lists everything" branch returned every tenant.
+// List returns your organization's projects, newest first — the scope
+// people pick between when their work is separated by product or client rather
+// than by team.
+//
+// You see your own organization's projects and no one else's; which organization that
+// is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+	// The owner is resolved by authz.Scope from the authenticated principal,
+	// never taken from the input: a tenant reads only its own org, a SuperAdmin
+	// reads the owner it asks for. Filtering on in.Owner instead was a confused
+	// deputy — the Guard authorizes on the query string, then a typed GET binds
+	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
+	// arrived empty on every REST call and the "empty owner lists everything"
+	// branch returned every tenant.
 	owner, err := authz.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
@@ -117,7 +124,7 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	return &ListOutput{Projects: rows, Total: len(rows)}, nil
 }
 
-// Get returns one project addressed by (owner, name).
+// Get returns one project: what it is called and how it is set up.
 func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Project, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -129,7 +136,9 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Project, error) {
 	return p, nil
 }
 
-// Create persists a new project. It rejects a duplicate (owner, name).
+// Create makes a project inside your organization — the scope people pick
+// between when their work is separated by product or client rather than by team.
+// A name already used in the organization is refused.
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Project, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -157,8 +166,8 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Project, error
 	return p, nil
 }
 
-// Update mutates an existing project. Identity and created stamp are immutable; a
-// missing project is a 404.
+// Update changes a project's settings. What it is called does not change, and
+// neither does when it was created.
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Project, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -174,7 +183,9 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Project, error
 	return p, nil
 }
 
-// Delete removes one project addressed by (owner, name).
+// Delete removes a project. The people and roles in your organization are
+// unchanged; what goes is the scope itself, so move anything addressed by it
+// first.
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")

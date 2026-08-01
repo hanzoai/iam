@@ -19,6 +19,8 @@ import (
 
 const orgBase = "/v1/iam/organizations"
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the organization CRUD surface on app, backed by db.
 func Route(app *zip.App, db orm.DB) {
 	NewOrganizationAPI(db).route(app)
@@ -43,15 +45,15 @@ func NewOrganizationAPI(db orm.DB) *OrganizationAPI {
 // missing selector is loud, never a silent full-table action.
 func (h *OrganizationAPI) route(app *zip.App) {
 	zip.Post[CreateOrganizationInput, schema.Organization](app, orgBase, h.Create,
-		zip.WithOperationID("createOrganization"), zip.WithSummary("Create an organization"), zip.WithTags("organizations"))
+		zip.WithOperationID("createOrganization"), zip.WithTags("organizations"))
 	zip.Get[ListOrganizationsInput, ListOrganizationsOutput](app, orgBase, h.List,
-		zip.WithOperationID("listOrganizations"), zip.WithSummary("List organizations"), zip.WithTags("organizations"))
+		zip.WithOperationID("listOrganizations"), zip.WithTags("organizations"))
 	zip.Get[GetOrganizationInput, schema.Organization](app, orgBase+"/get", h.Get,
-		zip.WithOperationID("getOrganization"), zip.WithSummary("Get one organization by owner and name"), zip.WithTags("organizations"))
+		zip.WithOperationID("getOrganization"), zip.WithTags("organizations"))
 	zip.Post[UpdateOrganizationInput, schema.Organization](app, orgBase+"/update", h.Update,
-		zip.WithOperationID("updateOrganization"), zip.WithSummary("Update an organization"), zip.WithTags("organizations"))
+		zip.WithOperationID("updateOrganization"), zip.WithTags("organizations"))
 	zip.Post[DeleteOrganizationInput, DeleteOrganizationOutput](app, orgBase+"/delete", h.Delete,
-		zip.WithOperationID("deleteOrganization"), zip.WithSummary("Delete an organization"), zip.WithTags("organizations"))
+		zip.WithOperationID("deleteOrganization"), zip.WithTags("organizations"))
 }
 
 // CreateOrganizationInput carries the full organization as the request body.
@@ -95,7 +97,9 @@ type DeleteOrganizationOutput struct {
 	Affected bool `json:"affected"`
 }
 
-// Create inserts a new organization, refusing a duplicate (owner, name).
+// Create makes a new organization — the account your users, applications, roles,
+// projects and workspaces are all named inside. It is the first write in a new
+// tenant, and a name already in use is refused rather than taken over.
 func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInput) (*schema.Organization, error) {
 	org := in.Organization
 	if org.Owner == "" || org.Name == "" {
@@ -123,7 +127,8 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	return entity.Mask(), nil
 }
 
-// Get resolves one organization by (owner, name).
+// Get returns one organization: its display, its defaults and the sign-in rules
+// everyone in it inherits.
 func (h *OrganizationAPI) Get(ctx context.Context, in *GetOrganizationInput) (*schema.Organization, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -138,7 +143,8 @@ func (h *OrganizationAPI) Get(ctx context.Context, in *GetOrganizationInput) (*s
 	return org.Mask(), nil
 }
 
-// List returns organizations newest-first, optionally scoped by owner and paged.
+// List returns the organizations you can see, newest first. Narrow it to one
+// parent account, and set a limit and offset to page through the rest.
 func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) (*ListOrganizationsOutput, error) {
 	q := orm.TypedQuery[schema.Organization](h.DB)
 	if in.Owner != "" {
@@ -160,8 +166,9 @@ func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) 
 	return &ListOrganizationsOutput{Organizations: orgs, Count: len(orgs)}, nil
 }
 
-// Update overwrites an existing organization, preserving its storage identity
-// (orm key, id, audit timestamps) and its original creation time.
+// Update changes an organization's display, its defaults and the sign-in rules
+// everyone in it inherits. Which organization it is does not change, and neither
+// does when it was created.
 func (h *OrganizationAPI) Update(ctx context.Context, in *UpdateOrganizationInput) (*schema.Organization, error) {
 	desired := in.Organization
 	if desired.Owner == "" || desired.Name == "" {
@@ -188,7 +195,11 @@ func (h *OrganizationAPI) Update(ctx context.Context, in *UpdateOrganizationInpu
 	return existing.Mask(), nil
 }
 
-// Delete removes an organization. The built-in admin organization is protected.
+// Delete removes an organization and everything named inside it. There is no
+// undo, and every session issued under it stops working.
+//
+// The built-in admin organization cannot be deleted — losing it would leave the
+// account with no way back in.
 func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInput) (*DeleteOrganizationOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")

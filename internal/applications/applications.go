@@ -97,24 +97,22 @@ type DeleteResult struct {
 	Deleted bool `json:"deleted"`
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the applications CRUD surface on app, closing over db. Reads
 // use GET, create POST, update PUT, delete DELETE — every one a zip typed
 // handler.
 func Route(app *zip.App, db orm.DB) {
-	zip.Get(app, "/v1/iam/applications", listApplications(db),
-		zip.WithSummary("List applications for an owner"), zip.WithTags("applications"))
-	zip.Get(app, "/v1/iam/application", getApplication(db),
-		zip.WithSummary("Get one application by owner and name"), zip.WithTags("applications"))
-	zip.Post(app, "/v1/iam/application", Create(db),
-		zip.WithSummary("Create an application"), zip.WithTags("applications"))
-	zip.Put(app, "/v1/iam/application", Update(db),
-		zip.WithSummary("Update an application"), zip.WithTags("applications"))
-	zip.Delete(app, "/v1/iam/application", deleteApplication(db),
-		zip.WithSummary("Delete an application"), zip.WithTags("applications"))
+	zip.Get(app, "/v1/iam/applications", listApplications(db), zip.WithTags("applications"))
+	zip.Get(app, "/v1/iam/application", getApplication(db), zip.WithTags("applications"))
+	zip.Post(app, "/v1/iam/application", Create(db), zip.WithTags("applications"))
+	zip.Put(app, "/v1/iam/application", Update(db), zip.WithTags("applications"))
+	zip.Delete(app, "/v1/iam/application", deleteApplication(db), zip.WithTags("applications"))
 }
 
-// listApplications returns every application owned by in.Owner, ordered by
-// creation time descending.
+// listApplications returns the applications in one organization, newest first —
+// each product or site your people sign in to, with the sign-in methods and
+// redirect URIs it allows.
 func listApplications(db orm.DB) zip.TypedHandler[ApplicationQuery, ApplicationListResult] {
 	return func(ctx context.Context, in *ApplicationQuery) (*ApplicationListResult, error) {
 		if in.Owner == "" {
@@ -134,7 +132,8 @@ func listApplications(db orm.DB) zip.TypedHandler[ApplicationQuery, ApplicationL
 	}
 }
 
-// getApplication returns the application at (in.Owner, in.Name).
+// getApplication returns one application: its sign-in methods, its allowed
+// redirect URIs and the client credentials your integration authenticates with.
 func getApplication(db orm.DB) zip.TypedHandler[ApplicationRef, schema.Application] {
 	return func(ctx context.Context, in *ApplicationRef) (*schema.Application, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -152,10 +151,13 @@ func getApplication(db orm.DB) zip.TypedHandler[ApplicationRef, schema.Applicati
 	}
 }
 
-// Create persists a new application under (in.Owner, in.Name), rejecting a
-// collision on that owner-scoped key. Exported so the the legacy surface add-application
-// alias reuses this exact logic (no duplication); the REST route and the alias
-// share the one create path.
+// Create registers an application in your organization — one product or site
+// your people sign in to, with its own client credentials, sign-in methods and
+// allowed redirect URIs. A name already used in the organization is refused
+// rather than overwritten.
+//
+// Exported so the legacy add-application alias reuses this exact path — one
+// create, two spellings.
 func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] {
 	return func(ctx context.Context, in *schema.Application) (*schema.Application, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -189,10 +191,13 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 	}
 }
 
-// Update overwrites the application at (in.Owner, in.Name), preserving its
-// immutable creation metadata. The (owner, name) identity is fixed by the record,
-// not editable through the body. Exported so the the legacy surface update-application alias
-// reuses this exact logic (no duplication).
+// Update changes an application's display, its sign-in methods and the redirect
+// URIs it may return to — the call that makes login work from a new host. Which
+// organization it belongs to and what it is named are fixed when it is created
+// and are not editable here.
+//
+// Exported so the legacy update-application alias reuses this exact path — one
+// update, two spellings.
 func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] {
 	return func(ctx context.Context, in *schema.Application) (*schema.Application, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -253,9 +258,12 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 	}
 }
 
-// deleteApplication removes the application at (in.Owner, in.Name).
-// Delete exposes the delete handler so the the legacy surface `delete-application` verb alias
-// (internal/compat) can reuse it — one delete path, wrapped in the compat envelope.
+// deleteApplication removes an application. Anyone mid-sign-in through it is
+// turned away and its client credentials stop working, so retire the integration
+// before deleting it.
+//
+// Delete exposes the same handler to the legacy delete-application alias — one
+// delete path, wrapped in that surface's envelope.
 func Delete(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult] { return deleteApplication(db) }
 
 func deleteApplication(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult] {

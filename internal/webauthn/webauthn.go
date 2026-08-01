@@ -54,36 +54,34 @@ type webauthnCredentialMutationResult struct {
 	WebauthnCredential *schema.WebauthnCredential `json:"webauthnCredential,omitempty"`
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the passkey surface on app, closing over the entity store.
 func Route(app *zip.App, db orm.DB) {
 	zip.Get[listWebauthnCredentialsIn, listWebauthnCredentialsOut](app, "/v1/iam/webauthn-credentials", listWebauthnCredentials(db),
 		zip.WithOperationID("listWebauthnCredentials"),
-		zip.WithSummary("List webauthn credentials in an owner scope"),
 		zip.WithTags("webauthn_credentials"))
 
 	zip.Post[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials/get", getWebauthnCredential(db),
 		zip.WithOperationID("getWebauthnCredential"),
-		zip.WithSummary("Get one webauthn credential by (owner, name)"),
 		zip.WithTags("webauthn_credentials"))
 
 	zip.Post[schema.WebauthnCredential, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials", addWebauthnCredential(db),
 		zip.WithOperationID("addWebauthnCredential"),
-		zip.WithSummary("Create a webauthn credential"),
 		zip.WithTags("webauthn_credentials"))
 
 	zip.Post[schema.WebauthnCredential, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/update", updateWebauthnCredential(db),
 		zip.WithOperationID("updateWebauthnCredential"),
-		zip.WithSummary("Update an existing webauthn credential"),
 		zip.WithTags("webauthn_credentials"))
 
 	zip.Post[webauthnCredentialKey, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/delete", deleteWebauthnCredential(db),
 		zip.WithOperationID("deleteWebauthnCredential"),
-		zip.WithSummary("Delete a webauthn credential by (owner, name)"),
 		zip.WithTags("webauthn_credentials"))
 }
 
-// listWebauthnCredentials returns every credential in the owner scope, newest
-// first.
+// listWebauthnCredentials returns the passkeys and security keys registered in
+// your organization, newest first — which device each belongs to and when it was
+// last used.
 func listWebauthnCredentials(db orm.DB) zip.TypedHandler[listWebauthnCredentialsIn, listWebauthnCredentialsOut] {
 	return func(ctx context.Context, in *listWebauthnCredentialsIn) (*listWebauthnCredentialsOut, error) {
 		// The owner comes from the authenticated principal, never the input: a typed
@@ -105,7 +103,8 @@ func listWebauthnCredentials(db orm.DB) zip.TypedHandler[listWebauthnCredentials
 	}
 }
 
-// getWebauthnCredential resolves one credential by its (owner, name) key.
+// getWebauthnCredential returns one passkey or security key: whose it is, what
+// device it lives on, and when it was registered.
 func getWebauthnCredential(db orm.DB) zip.TypedHandler[webauthnCredentialKey, webauthnCredentialResult] {
 	return func(_ context.Context, in *webauthnCredentialKey) (*webauthnCredentialResult, error) {
 		c, err := orm.Get[schema.WebauthnCredential](db, webauthnCredentialId(in.Owner, in.Name))
@@ -119,8 +118,8 @@ func getWebauthnCredential(db orm.DB) zip.TypedHandler[webauthnCredentialKey, we
 	}
 }
 
-// addWebauthnCredential creates a credential from the request body, keyed by
-// (owner, name).
+// addWebauthnCredential registers a passkey or security key for a person, so they
+// can sign in with their device instead of a password.
 func addWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredential, webauthnCredentialResult] {
 	return func(ctx context.Context, in *schema.WebauthnCredential) (*webauthnCredentialResult, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -141,8 +140,11 @@ func addWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredential
 	}
 }
 
-// updateWebauthnCredential read-modify-writes a credential in place. A missing
-// row is reported as Unaffected (v1 returns false), not an error.
+// updateWebauthnCredential renames a registered passkey or security key, so a
+// person can tell their devices apart.
+//
+// A credential that is not there answers "nothing changed" rather than an error,
+// so the call is safe to repeat.
 func updateWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredential, webauthnCredentialMutationResult] {
 	return func(ctx context.Context, in *schema.WebauthnCredential) (*webauthnCredentialMutationResult, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -168,8 +170,11 @@ func updateWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredent
 	}
 }
 
-// deleteWebauthnCredential removes a credential by key. A missing row is
-// Unaffected.
+// deleteWebauthnCredential removes a passkey or security key — what you call when
+// a device is lost. Make sure the person has another way to sign in first.
+//
+// A credential that is already gone answers "nothing changed" rather than an
+// error, so the call is safe to repeat.
 func deleteWebauthnCredential(db orm.DB) zip.TypedHandler[webauthnCredentialKey, webauthnCredentialMutationResult] {
 	return func(ctx context.Context, in *webauthnCredentialKey) (*webauthnCredentialMutationResult, error) {
 		c, err := orm.Get[schema.WebauthnCredential](db, webauthnCredentialId(in.Owner, in.Name))
