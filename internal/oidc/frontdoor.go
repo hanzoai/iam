@@ -14,13 +14,11 @@ import (
 )
 
 // Front-door JSON endpoints the @hanzo/iam SDK + hanzo.id portal call: the login
-// UI descriptors (get-app-login, auth/methods), the account read (get-account),
-// account creation (signup), and OTP send (send-verification-code). Login itself
-// is routeLogin; the OIDC/OAuth surface is Route.
-const (
-	PathGetAppLogin = "/v1/iam/get-app-login"
-	PathAuthMethods = "/v1/iam/auth/methods"
-)
+// UI descriptors (auth/application, auth/methods), the account read (account),
+// account creation (signup), and OTP send (verification-codes). Login itself is
+// routeLogin; the OIDC/OAuth surface is Route. The verb-noun spellings four of
+// these once had are in canonical.go, still reachable and taught nowhere.
+const PathAuthMethods = "/v1/iam/auth/methods"
 
 // routeFrontDoor registers the front-door endpoints the hosted hanzo.id portal
 // and the @hanzo/iam SDK call, on the PUBLIC group r. Each handler RESOLVES the
@@ -28,19 +26,19 @@ const (
 // that caller, so — like the rest of this group — they are reachable without a
 // Guard-verified bearer yet never act on anyone but the resolved caller.
 func routeFrontDoor(r zip.Router, db orm.DB) {
-	r.Get(PathGetAppLogin, getAppLogin(db))
+	httpx.Alias(r.Get, PathAuthApplication, LegacyPathAuthApplication, getAppLogin(db))
 	r.Get(PathAuthMethods, authMethods(db))
-	// get-account is anonymous-safe (returns {status:"error"} unauthenticated)
+	// The account read is anonymous-safe (returns {status:"error"} unauthenticated)
 	// and a security contract — the gateway admin-guard reads its `owner`.
-	r.Get(PathGetAccount, getAccount(db))
-	// Account creation + email/phone OTP send. signup is JSON; send-verification-code
-	// is multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
+	httpx.Alias(r.Get, PathAccount, LegacyPathAccount, getAccount(db))
+	// Account creation + email/phone OTP send. signup is JSON; the OTP send is
+	// multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
 	r.Post(PathSignup, signupHandler(db))
-	r.Post(PathSendVerificationCode, sendVerificationCode(db))
+	httpx.Alias(r.Post, PathVerificationCodes, LegacyPathVerificationCodes, sendVerificationCode(db))
 
 	// The session/identity front door the console drives once a user is signed in:
 	// signin (the code→session exchange), whoami (lightweight identity), onboard
-	// (first-run org creation + move), update-preferences (self, shallow-merge), and
+	// (first-run org creation + move), preferences (self, shallow-merge), and
 	// linked-accounts (the caller's linked identities).
 	r.Post(PathSignin, signinHandler(db))
 	r.Get(PathWhoami, whoamiHandler(db))
@@ -49,7 +47,7 @@ func routeFrontDoor(r zip.Router, db orm.DB) {
 	// orchestrator calls (on behalf of a named user) instead of a create-org +
 	// move-user pair. Self-authenticates via the unified service token.
 	r.Post(PathProvision, provisionServiceHandler(db))
-	r.Post(PathUpdatePreferences, updatePreferencesHandler(db))
+	httpx.Alias(r.Post, PathPreferences, LegacyPathPreferences, updatePreferencesHandler(db))
 	// Account-canonical data-sharing consent (insights + opt-in training) — the ONE
 	// source of truth the hanzo.id signup, the browser extension, and hanzo.ai share.
 	r.Get(PathConsent, getConsentHandler(db))

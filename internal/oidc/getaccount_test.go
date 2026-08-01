@@ -9,11 +9,11 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 )
 
-// getAccountReq drives GET /v1/iam/get-account with an optional bearer,
+// getAccountReq drives GET the account endpoint with an optional bearer,
 // returning the status code and decoded envelope.
 func getAccountReq(t *testing.T, app *zip.App, bearer string) (int, map[string]any) {
 	t.Helper()
-	req := formReqNoBody("GET", PathGetAccount)
+	req := formReqNoBody("GET", PathAccount)
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}

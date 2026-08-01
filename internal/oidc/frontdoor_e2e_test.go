@@ -65,7 +65,7 @@ func TestSignin_CodeExchangeSetsSessionAndReturnsAccount(t *testing.T) {
 	if !strings.HasPrefix(cookie, "hanzo_session=") {
 		t.Fatalf("signin did not set the session cookie: %q", cookie)
 	}
-	req := formReqNoBody("GET", PathGetAccount)
+	req := formReqNoBody("GET", PathAccount)
 	req.Header.Set("Cookie", cookieKV(cookie))
 	resp2, body2 := do(t, app, req)
 	if resp2.StatusCode != 200 || decode(t, body2)["status"] != "ok" {
@@ -128,7 +128,7 @@ func TestUpdatePreferences_ShallowMergeRoundTrip(t *testing.T) {
 	cookie := sessionCookieFor(t, app)
 
 	post := func(patch any) map[string]any {
-		req := jsonReq("POST", PathUpdatePreferences, patch)
+		req := jsonReq("POST", PathPreferences, patch)
 		req.Header.Set("Cookie", cookie)
 		resp, body := do(t, app, req)
 		env := decode(t, body)
