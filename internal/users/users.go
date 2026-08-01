@@ -33,17 +33,19 @@ type API struct{ db orm.DB }
 // minted at signup is byte-identical to one minted through the CRUD surface.
 func New(db orm.DB) *API { return &API{db: db} }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the typed user CRUD handlers on app. Reads use zip.Get and
 // writes use zip.Post; both project the same transport-agnostic handler to REST
 // and MCP, so the (owner, name) identity in each typed request is honored on
 // every transport.
 func Route(app *zip.App, db orm.DB) {
 	a := &API{db: db}
-	zip.Post(app, "/v1/iam/users", a.Create, zip.WithTags("users"), zip.WithSummary("Create a user"))
-	zip.Get(app, "/v1/iam/users", a.List, zip.WithTags("users"), zip.WithSummary("List users in an org"))
-	zip.Get(app, "/v1/iam/users/get", a.Get, zip.WithTags("users"), zip.WithSummary("Get a user by (owner, name)"))
-	zip.Post(app, "/v1/iam/users/update", a.Update, zip.WithTags("users"), zip.WithSummary("Update a user"))
-	zip.Post(app, "/v1/iam/users/delete", a.Delete, zip.WithTags("users"), zip.WithSummary("Delete a user"))
+	zip.Post(app, "/v1/iam/users", a.Create, zip.WithTags("users"))
+	zip.Get(app, "/v1/iam/users", a.List, zip.WithTags("users"))
+	zip.Get(app, "/v1/iam/users/get", a.Get, zip.WithTags("users"))
+	zip.Post(app, "/v1/iam/users/update", a.Update, zip.WithTags("users"))
+	zip.Post(app, "/v1/iam/users/delete", a.Delete, zip.WithTags("users"))
 }
 
 // Ref identifies one user by its natural key.
@@ -109,9 +111,15 @@ type DeleteOutput struct {
 	Deleted bool `json:"deleted"`
 }
 
-// Create inserts a new owner-scoped user, hashing the plaintext password. The
-// (owner, name) it binds is in.AuthzTarget() — the exact pair the authorization
-// seam authorized, so execution cannot address a different owner than was checked.
+// Create adds a person to your organization. Send a password and it becomes the
+// one they sign in with; it is hashed before it is stored and never comes back
+// in any response.
+//
+// The username is checked against the same rule every account in the Hanzo Cloud
+// is held to, whichever way it was created — this call, password signup, a social
+// sign-in, or SCIM — so a name accepted here works everywhere.
+//
+// A name already taken in your organization is refused rather than overwritten.
 func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error) {
 	owner, _ := in.AuthzTarget()
 	if owner == "" {
@@ -181,7 +189,9 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	return u.Mask(), nil
 }
 
-// Get returns one user by (owner, name), redacted.
+// Get returns one person in your organization, by the organization they belong
+// to and their username. Passwords, API secrets and MFA material are stripped
+// from the response.
 func (a *API) Get(ctx context.Context, in *Ref) (*schema.User, error) {
 	u, err := a.lookup(ctx, in.Owner, in.Name)
 	if err != nil {
@@ -193,7 +203,9 @@ func (a *API) Get(ctx context.Context, in *Ref) (*schema.User, error) {
 	return u.Mask(), nil
 }
 
-// List returns a redacted page of users within one owner.
+// List returns a page of the people in your organization, with the total so you
+// can page through the rest. Passwords, API secrets and MFA material are stripped
+// from every entry.
 func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 	if strings.TrimSpace(in.Owner) == "" {
 		return nil, zip.ErrBadRequest("owner is required")
@@ -220,9 +232,13 @@ func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 	return &ListOutput{Users: list, Total: total}, nil
 }
 
-// Update replaces the mutable fields of an existing user. Immutable identity
-// (orm id, creation time) and the stored digest are preserved unless a new
-// plaintext password is supplied.
+// Update changes a person's profile, their roles, or the credentials they sign
+// in with. Send a password to reset it; leave it out and their current one keeps
+// working.
+//
+// Who they are does not change: their organization, username and the identifier
+// their existing sessions are keyed on all survive the write, so an update never
+// signs anyone out.
 func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error) {
 	owner, name := in.AuthzTarget()
 	if owner == "" || name == "" {
@@ -285,7 +301,9 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	return u.Mask(), nil
 }
 
-// Delete removes a user by (owner, name).
+// Delete removes a person from your organization. Their sessions stop working
+// immediately and the account is gone rather than suspended — to keep the record
+// and only stop sign-in, update the user instead.
 func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	existing, err := a.lookup(ctx, in.Owner, in.Name)
 	if err != nil {
