@@ -360,6 +360,28 @@ decision id, action, score, cause, refusal and `scored` — never the request bo
 because the sign-up form carries a password. The analytics COPY goes to
 `/v1/event` afterwards, best-effort, on its own background context.
 
+**The tenant is the SERVER's answer, never the body's** (`signupTenant`). Sign-up
+is the one endpoint where nobody has authenticated, so `f.Organization` is a string
+an anonymous caller typed. Using it as the owner of a durable row let anyone choose
+which tenant's append-only audit trail received a write and which tenant's per-org
+risk state was touched: a SHARED application admits any existing organization by
+design, so the choice reached real tenants, and an org-choice application admits
+names that do not exist yet, so rows could be pre-seeded under a name someone would
+later be given. The APPLICATION is resolved server-side from the presented
+clientId, and its organization owns the event — the tenant whose front door was
+actually knocked on. The organization the caller asked for is kept as evidence: a
+`requestedOrg` signal to the scorer and a field in the record's detail, where a
+claim belongs, not as the key.
+
+**The client address is `httpx.ClientIP`** — the socket peer for a direct caller,
+else the right-most X-Forwarded-For entry that is not one of our own proxies
+(`IAM_TRUSTED_PROXIES`, defaulting to private space). It feeds a per-address
+velocity counter and a durable audit column, and the LEFT-most entry is the one the
+client writes: reading it let one host present a fresh address per attempt (evading
+its own velocity) or repeatedly name a victim's address (poisoning theirs). Same
+rule as `hanzoai/cloud`'s `ClientIP`; the shared home for it is the zip framework,
+which owns the Ctx.
+
 Config: `RISK_URL` (scorer origin), `EVENT_URL` (analytics door), credential =
 the unified service token (`httpx.ServiceToken`). All three unset = inert gate.
 

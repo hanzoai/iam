@@ -15,9 +15,9 @@ import (
 
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/risk"
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/internal/users"
 )
 
 // The native front-door signup: POST /v1/iam/signup. The @hanzo/iam SDK + the
@@ -208,7 +208,7 @@ func signupHandler(db orm.DB, sc *risk.Client) zip.Handler {
 		// THE RISK GATE. Every deterministic refusal is behind us, so this is the
 		// first cost the sign-up incurs and the last decision before anything is
 		// written. It answers the request itself when it challenges or refuses.
-		if answered, err := signupGate(c, db, sc, f, mintsTenant); answered || err != nil {
+		if answered, err := signupGate(c, db, sc, app, f, mintsTenant); answered || err != nil {
 			return err
 		}
 

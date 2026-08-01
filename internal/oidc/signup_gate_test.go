@@ -221,30 +221,110 @@ func TestSignupGate_PrivilegedIsDerivedNotDeclared(t *testing.T) {
 
 // -------------------------------------------------------------- tenant scoping
 
-// The tenant the decision is about is sent as the header, and it is the org the
-// sign-up names — never one the body could redirect.
-func TestSignupGate_ScoresUnderTheSignupsOwnTenant(t *testing.T) {
+// REGRESSION — the tenant a sign-up is judged and recorded under is the SERVER's
+// answer, never the body's. It used to be f.Organization: a request field, on the
+// one endpoint where by definition nobody has authenticated. A SHARED application
+// admits any existing organization by design, so that field reached real tenants —
+// an unauthenticated POST chose which tenant's per-org risk state was touched and
+// which tenant's append-only audit trail received a durable row.
+//
+// The application is resolved server-side from the presented clientId, and its
+// organization is the tenant. The organization the caller asked for is still sent —
+// as a SIGNAL, which is evidence, not as the keyspace.
+func TestSignupGate_ScoresUnderTheApplicationsTenantNotTheBodys(t *testing.T) {
 	app, db, asked := gateServer(t, always(risk.ActionAllow))
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s", redirectURIs: []string{testRedirect}, signup: true, shared: true})
-	seedOrg(t, db, "hanzo")
+	seedOrg(t, db, "hanzo") // the application's own org
 	seedOrg(t, db, "globex")
 
 	signupReq(t, app, signupBody("hanzo", "ann"))
-	signupReq(t, app, signupBody("globex", "bob"))
+	signupReq(t, app, signupBody("globex", "bob")) // names a DIFFERENT existing tenant
 
 	if len(*asked) != 2 {
 		t.Fatalf("asked %d times, want 2", len(*asked))
 	}
-	if (*asked)[0]["_org"] != "hanzo" || (*asked)[1]["_org"] != "globex" {
-		t.Fatalf("each sign-up must be scored under its OWN tenant: %v, %v",
-			(*asked)[0]["_org"], (*asked)[1]["_org"])
-	}
 	for i, q := range *asked {
+		if q["_org"] != "hanzo" {
+			t.Fatalf("query %d was scored under %v — the body moved the tenant", i, q["_org"])
+		}
 		sub, _ := q["subject"].(map[string]any)
-		want := []string{"hanzo/ann", "globex/bob"}[i]
+		want := []string{"hanzo/ann", "hanzo/bob"}[i]
 		if sub["id"] != want {
 			t.Fatalf("subject %d = %v, want %q", i, sub["id"], want)
 		}
+	}
+	// The requested org is not lost — it is evidence, in the signals.
+	sig, _ := (*asked)[1]["signals"].(map[string]any)
+	if sig["requestedOrg"] != "globex" {
+		t.Fatalf("the requested org must still reach the scorer as a signal: %v", sig)
+	}
+}
+
+// The same property on the DURABLE side: an unauthenticated caller must not be
+// able to write a row into another tenant's audit trail by naming it.
+func TestSignupGate_TheAuditRowCannotBeAimedAtAnotherTenant(t *testing.T) {
+	app, db, _ := gateServer(t, always(risk.ActionBlock))
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s", redirectURIs: []string{testRedirect}, signup: true, shared: true})
+	seedOrg(t, db, "hanzo") // the application's own org
+	seedOrg(t, db, "globex")
+
+	signupReq(t, app, signupBody("globex", "mallory"))
+
+	victim, err := orm.TypedQuery[schema.AuditLog](db).Filter("owner", "globex").GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("query audit: %v", err)
+	}
+	if len(victim) != 0 {
+		t.Fatalf("an unauthenticated request wrote %d row(s) into globex's audit trail", len(victim))
+	}
+	mine, err := orm.TypedQuery[schema.AuditLog](db).Filter("owner", "hanzo").GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("query audit: %v", err)
+	}
+	if len(mine) != 1 {
+		t.Fatalf("the event belongs to the application's own tenant: got %d rows", len(mine))
+	}
+	if mine[0].Organization != "hanzo" || !strings.Contains(mine[0].Object, `"requestedOrg":"globex"`) {
+		t.Fatalf("the row must be owned by the app's tenant and RECORD the claim: %+v", mine[0])
+	}
+	// The row id is keyed on the same server-derived tenant, so the natural key
+	// cannot be aimed either.
+	if !strings.HasPrefix(mine[0].Id(), "hanzo/") {
+		t.Fatalf("the record's id must be keyed under the server-derived tenant: %q", mine[0].Id())
+	}
+}
+
+// REGRESSION — the address a sign-up is judged and recorded by is the one OUR
+// edge observed, not the one the caller typed. It was the LEFT-MOST
+// X-Forwarded-For entry: a field the client writes, feeding a per-address
+// velocity counter and a durable audit column, so one host could present a fresh
+// address per attempt (evading its own velocity) or repeatedly name a victim's
+// address (poisoning theirs).
+func TestSignupGate_TheClientAddressCannotBeForged(t *testing.T) {
+	app, db, asked := gateServer(t, always(risk.ActionBlock))
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s", redirectURIs: []string{testRedirect}, signup: true})
+	seedOrg(t, db, "hanzo")
+
+	req := jsonReq("POST", PathSignup, signupBody("hanzo", "newbie"))
+	// The client writes the first entry; our edge appends what it actually saw.
+	req.Header.Set("X-Forwarded-For", "9.9.9.9, 203.0.113.9")
+	if _, err := app.Fiber().Test(req); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(*asked) != 1 {
+		t.Fatalf("asked %d times, want 1", len(*asked))
+	}
+	sig, _ := (*asked)[0]["signals"].(map[string]any)
+	if sig["ip"] != "203.0.113.9" {
+		t.Fatalf("the scorer was given ip=%v, want the observed 203.0.113.9", sig["ip"])
+	}
+	rows, err := orm.TypedQuery[schema.AuditLog](db).Filter("owner", "hanzo").GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("query audit: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ClientIp != "203.0.113.9" {
+		t.Fatalf("the durable record must carry the observed address, got %d rows / %q", len(rows), rows[0].ClientIp)
 	}
 }
 
