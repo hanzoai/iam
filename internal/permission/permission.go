@@ -22,20 +22,17 @@ type Handlers struct {
 	db orm.DB
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the permission routes on app, backed by db. It is called
 // from routes.Route once the store is open.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handlers{db: db}
-	zip.Get(app, "/v1/iam/permissions", h.List,
-		zip.WithSummary("List permissions for an owner"), zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/permissions", h.Add,
-		zip.WithSummary("Create a permission"), zip.WithTags("permissions"))
-	zip.Get(app, "/v1/iam/permissions/get", h.Get,
-		zip.WithSummary("Get one permission by owner and name"), zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/permissions/update", h.Update,
-		zip.WithSummary("Update a permission"), zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/permissions/delete", h.Delete,
-		zip.WithSummary("Delete a permission"), zip.WithTags("permissions"))
+	zip.Get(app, "/v1/iam/permissions", h.List, zip.WithTags("permissions"))
+	zip.Post(app, "/v1/iam/permissions", h.Add, zip.WithTags("permissions"))
+	zip.Get(app, "/v1/iam/permissions/get", h.Get, zip.WithTags("permissions"))
+	zip.Post(app, "/v1/iam/permissions/update", h.Update, zip.WithTags("permissions"))
+	zip.Post(app, "/v1/iam/permissions/delete", h.Delete, zip.WithTags("permissions"))
 }
 
 // permissionID is the owner-scoped orm key: "owner/name".
@@ -62,8 +59,8 @@ type DeleteResponse struct {
 	Deleted bool `json:"deleted"`
 }
 
-// List returns every permission owned by in.Owner, ordered newest first,
-// mirroring v1 GetPermissions (Desc created_time).
+// List returns the permissions in one organization, newest first — each one a
+// grant saying which people or roles may do what, and to which resources.
 func (h *Handlers) List(ctx context.Context, in *ListRequest) (*ListResponse, error) {
 	if in.Owner == "" {
 		return nil, zip.ErrBadRequest("owner is required")
@@ -78,7 +75,8 @@ func (h *Handlers) List(ctx context.Context, in *ListRequest) (*ListResponse, er
 	return &ListResponse{Permissions: items}, nil
 }
 
-// Get returns one permission by its (owner, name) key.
+// Get returns one permission: who it grants to, what it allows, and the
+// resources it covers.
 func (h *Handlers) Get(ctx context.Context, in *Ref) (*schema.Permission, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -93,8 +91,9 @@ func (h *Handlers) Get(ctx context.Context, in *Ref) (*schema.Permission, error)
 	return p, nil
 }
 
-// Add creates a permission under the (owner, name) key. It refuses to
-// overwrite an existing grant — updates go through Update.
+// Add grants a permission — the call that gives a person or a role the ability to
+// do something. Adding refuses to overwrite a grant that already exists, so
+// widening an existing one is an update, never an accident.
 func (h *Handlers) Add(ctx context.Context, in *schema.Permission) (*schema.Permission, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -113,8 +112,9 @@ func (h *Handlers) Add(ctx context.Context, in *schema.Permission) (*schema.Perm
 	return in, nil
 }
 
-// Update replaces the mutable state of an existing permission, preserving its
-// key and creation time (v1 AllCols update semantics).
+// Update changes who a permission grants to, what it allows, or the resources it
+// covers. Access changes as soon as the write lands. What the permission is
+// called does not change, and neither does when it was created.
 func (h *Handlers) Update(ctx context.Context, in *schema.Permission) (*schema.Permission, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -135,7 +135,8 @@ func (h *Handlers) Update(ctx context.Context, in *schema.Permission) (*schema.P
 	return in, nil
 }
 
-// Delete removes a permission by its (owner, name) key.
+// Delete revokes a permission. Everyone who held access only through it loses
+// that access immediately; grants they hold by another route are untouched.
 func (h *Handlers) Delete(ctx context.Context, in *Ref) (*DeleteResponse, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")

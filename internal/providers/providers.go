@@ -53,31 +53,28 @@ type mutationResult struct {
 	Provider *schema.Provider `json:"provider,omitempty"`
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the provider surface on app, closing over the entity store.
 func Route(app *zip.App, db orm.DB) {
 	zip.Get[listProvidersIn, listProvidersOut](app, "/v1/iam/providers", listProviders(db),
 		zip.WithOperationID("listProviders"),
-		zip.WithSummary("List providers in an owner scope"),
 		zip.WithTags("providers"))
 
 	zip.Post[providerKey, providerResult](app, "/v1/iam/providers/get", getProvider(db),
 		zip.WithOperationID("getProvider"),
-		zip.WithSummary("Get one provider by (owner, name)"),
 		zip.WithTags("providers"))
 
 	zip.Post[schema.Provider, providerResult](app, "/v1/iam/providers", addProvider(db),
 		zip.WithOperationID("addProvider"),
-		zip.WithSummary("Create a provider"),
 		zip.WithTags("providers"))
 
 	zip.Post[schema.Provider, mutationResult](app, "/v1/iam/providers/update", updateProvider(db),
 		zip.WithOperationID("updateProvider"),
-		zip.WithSummary("Update an existing provider"),
 		zip.WithTags("providers"))
 
 	zip.Post[providerKey, mutationResult](app, "/v1/iam/providers/delete", deleteProvider(db),
 		zip.WithOperationID("deleteProvider"),
-		zip.WithSummary("Delete a provider by (owner, name)"),
 		zip.WithTags("providers"))
 }
 
@@ -94,7 +91,12 @@ func Delete(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult] {
 	}
 }
 
-// listProviders returns every provider in the owner scope, newest first.
+// listProviders returns your organization's providers, newest first — the
+// identity providers your people sign in with, and the senders and connectors
+// your applications go through.
+//
+// You see your own organization's providers and no one else's; which organization
+// that is comes from your credentials, not from the request.
 func listProviders(db orm.DB) zip.TypedHandler[listProvidersIn, listProvidersOut] {
 	return func(ctx context.Context, in *listProvidersIn) (*listProvidersOut, error) {
 		owner, err := authz.Scope(ctx, in.Owner)
@@ -116,7 +118,8 @@ func listProviders(db orm.DB) zip.TypedHandler[listProvidersIn, listProvidersOut
 	}
 }
 
-// getProvider resolves one provider by its (owner, name) key.
+// getProvider returns one provider: what it connects to and how it is
+// configured. Its credentials come back masked.
 func getProvider(db orm.DB) zip.TypedHandler[providerKey, providerResult] {
 	return func(_ context.Context, in *providerKey) (*providerResult, error) {
 		p, err := orm.Get[schema.Provider](db, providerId(in.Owner, in.Name))
@@ -130,7 +133,12 @@ func getProvider(db orm.DB) zip.TypedHandler[providerKey, providerResult] {
 	}
 }
 
-// addProvider creates a provider from the request body, keyed by (owner, name).
+// addProvider adds an identity provider your people can sign in with, or a
+// service your applications send through — a social or enterprise login, an email
+// or SMS sender, a storage or payment connector.
+//
+// A provider is configured once and then switched on per application, so several
+// applications can share one set of credentials.
 func addProvider(db orm.DB) zip.TypedHandler[schema.Provider, providerResult] {
 	return func(ctx context.Context, in *schema.Provider) (*providerResult, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -151,8 +159,12 @@ func addProvider(db orm.DB) zip.TypedHandler[schema.Provider, providerResult] {
 	}
 }
 
-// updateProvider read-modify-writes a provider in place. A missing row is
-// reported as Unaffected (v1 UpdateProvider returns false), not an error.
+// updateProvider changes a provider's settings or rotates the credentials it
+// holds. The change takes effect on the next sign-in through it — sessions
+// already issued are unaffected.
+//
+// A provider that is not there answers "nothing changed" rather than an error, so
+// the call is safe to repeat.
 func updateProvider(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult] {
 	return func(ctx context.Context, in *schema.Provider) (*mutationResult, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -178,7 +190,11 @@ func updateProvider(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult]
 	}
 }
 
-// deleteProvider removes a provider by key. A missing row is Unaffected.
+// deleteProvider removes a provider. Sign-in through it stops for every
+// application that used it, so give those applications another method first.
+//
+// A provider that is already gone answers "nothing changed" rather than an
+// error, so the call is safe to repeat.
 func deleteProvider(db orm.DB) zip.TypedHandler[providerKey, mutationResult] {
 	return func(ctx context.Context, in *providerKey) (*mutationResult, error) {
 		p, err := orm.Get[schema.Provider](db, providerId(in.Owner, in.Name))

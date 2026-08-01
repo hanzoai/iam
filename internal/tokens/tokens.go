@@ -56,36 +56,34 @@ type tokenMutation struct {
 	Token    *schema.Token `json:"token,omitempty"`
 }
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the token surface on app, closing over the entity store.
 func Route(app *zip.App, db orm.DB) {
 	zip.Get[listTokensIn, listTokensOut](app, "/v1/iam/tokens", listTokens(db),
 		zip.WithOperationID("listTokens"),
-		zip.WithSummary("List tokens in an owner scope"),
 		zip.WithTags("tokens"))
 
 	zip.Post[tokenKey, tokenResult](app, "/v1/iam/tokens/get", getToken(db),
 		zip.WithOperationID("getToken"),
-		zip.WithSummary("Get one token by (owner, name)"),
 		zip.WithTags("tokens"))
 
 	zip.Post[schema.Token, tokenResult](app, "/v1/iam/tokens", addToken(db),
 		zip.WithOperationID("addToken"),
-		zip.WithSummary("Create a token"),
 		zip.WithTags("tokens"))
 
 	zip.Post[schema.Token, tokenMutation](app, "/v1/iam/tokens/update", updateToken(db),
 		zip.WithOperationID("updateToken"),
-		zip.WithSummary("Update an existing token"),
 		zip.WithTags("tokens"))
 
 	zip.Post[tokenKey, tokenMutation](app, "/v1/iam/tokens/delete", deleteToken(db),
 		zip.WithOperationID("deleteToken"),
-		zip.WithSummary("Delete a token by (owner, name)"),
 		zip.WithTags("tokens"))
 }
 
-// listTokens returns every token in the owner scope, newest first, optionally
-// narrowed to one organization.
+// listTokens returns the access tokens issued in your organization, newest
+// first, and can be narrowed to one organization. Use it to see what is currently
+// authorized before revoking anything.
 func listTokens(db orm.DB) zip.TypedHandler[listTokensIn, listTokensOut] {
 	return func(ctx context.Context, in *listTokensIn) (*listTokensOut, error) {
 		// The owner comes from the authenticated principal, never the input: a typed
@@ -110,7 +108,8 @@ func listTokens(db orm.DB) zip.TypedHandler[listTokensIn, listTokensOut] {
 	}
 }
 
-// getToken resolves one token by its (owner, name) key.
+// getToken returns one access token: who and what it was issued to, and when it
+// expires.
 func getToken(db orm.DB) zip.TypedHandler[tokenKey, tokenResult] {
 	return func(_ context.Context, in *tokenKey) (*tokenResult, error) {
 		t, err := orm.Get[schema.Token](db, tokenId(in.Owner, in.Name))
@@ -124,7 +123,8 @@ func getToken(db orm.DB) zip.TypedHandler[tokenKey, tokenResult] {
 	}
 }
 
-// addToken creates a token from the request body, keyed by (owner, name).
+// addToken records an access token — the credential an application or integration
+// presents on a caller's behalf.
 func addToken(db orm.DB) zip.TypedHandler[schema.Token, tokenResult] {
 	return func(ctx context.Context, in *schema.Token) (*tokenResult, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -145,8 +145,10 @@ func addToken(db orm.DB) zip.TypedHandler[schema.Token, tokenResult] {
 	}
 }
 
-// updateToken read-modify-writes a token in place. A missing row is reported as
-// Unaffected (v1 UpdateToken returns false), not an error.
+// updateToken changes an access token's scope or expiry.
+//
+// A token that is not there answers "nothing changed" rather than an error, so
+// the call is safe to repeat.
 func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
 	return func(ctx context.Context, in *schema.Token) (*tokenMutation, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -172,7 +174,11 @@ func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
 	}
 }
 
-// deleteToken removes a token by key. A missing row is Unaffected.
+// deleteToken revokes an access token. Whatever was using it stops being
+// authorized at once.
+//
+// A token that is already gone answers "nothing changed" rather than an error, so
+// the call is safe to repeat.
 func deleteToken(db orm.DB) zip.TypedHandler[tokenKey, tokenMutation] {
 	return func(ctx context.Context, in *tokenKey) (*tokenMutation, error) {
 		t, err := orm.Get[schema.Token](db, tokenId(in.Owner, in.Name))

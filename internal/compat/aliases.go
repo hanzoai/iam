@@ -38,6 +38,8 @@ import (
 // receives from a handler-authorized read (the Guard's own refusals are raw 403s).
 const unauthorized = "auth:Unauthorized operation"
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the the legacy surface read-verb aliases. The mask argument is the
 // entity's schema.Mask method (the ONE redaction contract) for entities that
 // carry secrets, or nil for those that do not — nil means "no field to strip",

@@ -25,6 +25,8 @@ import (
 	"github.com/hanzoai/iam/internal/schema"
 )
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the key CRUD routes on app, binding each handler to db.
 // Called from routes.Route once it is threaded the entity store.
 //
@@ -36,16 +38,11 @@ import (
 // entity means every capability keyed on it is dead on one of the two surfaces —
 // the same defect entityNoun was written to fix for the legacy verb spellings.
 func Route(app *zip.App, db orm.DB) {
-	zip.Get(app, "/v1/iam/keys", list(db),
-		zip.WithSummary("List keys in an owner"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/keys", create(db),
-		zip.WithSummary("Create a key"), zip.WithTags("keys"))
-	zip.Get(app, "/v1/iam/keys/get", get(db),
-		zip.WithSummary("Get a key by (owner, name)"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/keys/update", update(db),
-		zip.WithSummary("Update a key"), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/keys/delete", del(db),
-		zip.WithSummary("Delete a key"), zip.WithTags("keys"))
+	zip.Get(app, "/v1/iam/keys", list(db), zip.WithTags("keys"))
+	zip.Post(app, "/v1/iam/keys", create(db), zip.WithTags("keys"))
+	zip.Get(app, "/v1/iam/keys/get", get(db), zip.WithTags("keys"))
+	zip.Post(app, "/v1/iam/keys/update", update(db), zip.WithTags("keys"))
+	zip.Post(app, "/v1/iam/keys/delete", del(db), zip.WithTags("keys"))
 }
 
 // ListRequest scopes a listing to one owner.
@@ -73,7 +70,8 @@ type DeleteResponse struct {
 // "owner/name" identity the v1 record used.
 func id(owner, name string) string { return owner + "/" + name }
 
-// list returns every key under in.Owner, newest first.
+// list returns your organization's API keys, newest first — what each is called,
+// what it may reach, and its publishable half. Secret halves are never listed.
 func list(db orm.DB) zip.TypedHandler[ListRequest, ListResponse] {
 	return func(ctx context.Context, in *ListRequest) (*ListResponse, error) {
 		if in.Owner == "" {
@@ -94,7 +92,8 @@ func list(db orm.DB) zip.TypedHandler[ListRequest, ListResponse] {
 	}
 }
 
-// get resolves one key by (owner, name).
+// get returns one API key: what it is called, what it may reach, and when it was
+// issued.
 func get(db orm.DB) zip.TypedHandler[Ref, schema.Key] {
 	return func(_ context.Context, in *Ref) (*schema.Key, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -111,9 +110,13 @@ func get(db orm.DB) zip.TypedHandler[Ref, schema.Key] {
 	}
 }
 
-// create inserts a new key under (owner, name), minting the missing credential
-// halves — both pk- and sk- for a secret key, only the pk- for a publishable
-// (Scope == KeyScopePublish) write-only key. It refuses to overwrite an existing key.
+// create issues an API key. A standard key comes back as a publishable half you
+// may ship in client code and a secret half you must not — the secret is shown
+// once, at creation, and cannot be retrieved afterwards. A publish-scoped key is
+// issued with the publishable half only, so there is no secret to leak.
+//
+// A name already used in your organization is refused rather than reissued, so
+// creating twice never silently invalidates a key that is in production.
 func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 	return func(ctx context.Context, in *schema.Key) (*schema.Key, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -159,8 +162,8 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 	}
 }
 
-// update overwrites the mutable fields of an existing key, keyed by
-// (owner, name), and re-stamps UpdatedTime.
+// update changes what a key is called or what it may reach. The credential
+// itself is not reissued — the key in your deployment keeps working.
 func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 	return func(ctx context.Context, in *schema.Key) (*schema.Key, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -192,7 +195,8 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 	}
 }
 
-// del removes a key by (owner, name).
+// del revokes an API key. Anything still presenting it stops being authorized at
+// once, so roll the replacement out before you revoke.
 func del(db orm.DB) zip.TypedHandler[Ref, DeleteResponse] {
 	return func(ctx context.Context, in *Ref) (*DeleteResponse, error) {
 		if in.Owner == "" || in.Name == "" {
