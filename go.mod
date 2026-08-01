@@ -19,7 +19,7 @@ retract [v1.0.0, v1.31.37] // Casdoor lineage; moved to github.com/hanzoai/iam-v
 require (
 	github.com/hanzoai/orm v0.6.16
 	github.com/spf13/cobra v1.10.2
-	github.com/zap-proto/zip v1.17.7
+	github.com/zap-proto/zip v1.18.16
 	golang.org/x/crypto v0.53.0
 )
 
@@ -36,6 +36,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
+	github.com/hanzoai/account v0.2.1
 	github.com/luxfi/crypto v1.20.1
 	github.com/luxwallet/connect/go v0.1.4
 	github.com/pquerna/otp v1.5.0
@@ -51,18 +52,12 @@ require (
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
-	github.com/dop251/goja v0.0.0-20260607120635-348e6bea910d // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/evanw/esbuild v0.28.1 // indirect
-	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.4 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
-	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
-	github.com/hanzoai/account v0.2.1 // indirect
 	github.com/hanzoai/builder v0.3.13 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/dbx v1.17.2 // indirect

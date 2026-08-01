@@ -12,11 +12,9 @@ package server
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
-	"github.com/zap-proto/fiber/v3/middleware/adaptor"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/feature"
@@ -41,25 +39,31 @@ func Route(app *zip.App, db orm.DB) {
 }
 
 // NewApp builds a STANDALONE iam zip.App over db — the whole IAM surface
-// registered and Prepared as one self-contained app. A host that registers iam as a
-// wildcard sub-handler (app.All("/v1/iam/*", zip.AdaptNetHTTP(h))) rather than
-// co-mingling iam's routes onto its own app uses this together with Handler; the
-// caller owns the returned app's Shutdown.
+// registered as one self-contained app. It is what a host GRAFTS:
+//
+//	app.Graft(iamserver.NewApp(db))
+//
+// zip.Graft composes the app in process — the host's router learns iam's route
+// patterns and its OP REGISTRY, while iam's own router keeps iam's behaviour
+// (its Use chain, its Guard, its error handler). The caller owns the returned
+// app's Shutdown; a Graft adopts it.
+//
+// Prepare renders iam's OWN document, tool list and call plane onto iam's own
+// control plane. A graft does not adopt those — a zip Declaration excludes the
+// control plane, so the host keeps its own /docs, MCP door and op plane and the
+// composed document is the HOST's.
+//
+// There is no net/http adaptation any more. Handler() used to exist for a host
+// that hung the whole surface on one wildcard, and it went through
+// adaptor.FiberApp: the App went in, an http.Handler came out, and iam's 94
+// typed ops went with it — invisible to the host's OpenAPI document, MCP tool
+// list, CLI and call plane. A host published a wildcard where 94 typed
+// operations were. Graft is the composition that keeps them.
 func NewApp(db orm.DB) *zip.App {
 	app := zip.New(zip.Config{AppName: "iam", DisableStartupMessage: true})
 	Route(app, db)
 	app.Prepare()
 	return app
-}
-
-// Handler adapts a standalone iam app (NewApp) to a net/http handler, so a host
-// router serves the whole IAM surface behind ONE wildcard route. This is the
-// drop-in shape hanzoai/cloud uses to swap the legacy Beego IAM catch-all for
-// iam: registered at the /v1/iam/* (and root /.well-known/*) wildcards, the
-// specific self-service routes layered in front still win by Fiber specificity,
-// so the swap is collision-free — the same topology the Beego catch-all had.
-func Handler(db orm.DB) http.Handler {
-	return adaptor.FiberApp(NewApp(db).Fiber())
 }
 
 // OpenSQLite opens an embedded SQLite store for iam at path (WAL). The host may
