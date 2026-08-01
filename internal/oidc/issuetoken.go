@@ -21,12 +21,12 @@ import (
 // The confidential-client on-behalf-of primitives. A trusted, allow-listed backend
 // (the console BFF as `hanzo-console`) authenticates as the confidential CLIENT —
 // not an end-user bearer — and acts on a `?id=<owner>/<name>` target user: mint a
-// short-lived user-bound access token (`issue-user-token`), or (re)generate/revoke
-// the user's durable `hk-` Cloud API key.
+// short-lived user-bound access token (`tokens/issue`), or (re)generate/revoke the
+// user's durable `hk-` Cloud API key (`keys/mint`, `keys/revoke`).
 //
-// `issue-user-token` is the CANONICAL FORWARD path's transitional twin: the RFC
-// 8693 Token Exchange grant on /oauth/token is the standard (HIP-0111), and this
-// verb is the COMPAT SHIM the console still calls (identity.ts `issueUserToken` →
+// `tokens/issue` is the CANONICAL FORWARD path's transitional twin: the RFC 8693
+// Token Exchange grant on the token endpoint is the standard (HIP-0111), and this
+// one is the COMPAT SHIM the console still calls (identity.ts `issueUserToken` →
 // `adminBearer` backs EVERY /v1/* BFF proxy call). It mints over the exact same
 // authorizeMinter allow-list + reserved-org gate + SignUserToken as token exchange
 // — same authority, same audit — so the console works unchanged during the cutover,
@@ -35,19 +35,14 @@ import (
 //
 // They are NOT Bearer-gated (they live in the PUBLIC group, before the Guard); each
 // does its own tighter authentication through the ONE authorizeMinter seam.
-const (
-	PathIssueUserToken = "/v1/iam/issue-user-token"
-	PathMintUserKeys   = "/v1/iam/mint-user-keys"
-	PathRevokeUserKeys = "/v1/iam/revoke-user-keys"
-)
 
 // routeIssueToken registers the confidential-client primitives on the PUBLIC group
 // r. POST-only: they mint/rotate a credential — never over a cacheable GET (a
 // client_secret in a query string would reach logs/proxies).
 func routeIssueToken(r zip.Router, db orm.DB) {
-	r.Post(PathIssueUserToken, issueUserTokenHandler(db))
-	r.Post(PathMintUserKeys, mintUserKeysHandler(db))
-	r.Post(PathRevokeUserKeys, revokeUserKeysHandler(db))
+	httpx.Alias(r.Post, PathTokensIssue, LegacyPathTokensIssue, issueUserTokenHandler(db))
+	httpx.Alias(r.Post, PathKeysMint, LegacyPathKeysMint, mintUserKeysHandler(db))
+	httpx.Alias(r.Post, PathKeysRevoke, LegacyPathKeysRevoke, revokeUserKeysHandler(db))
 }
 
 // issueUserTokenHandler mints an access token for the `?id=<owner>/<name>` target

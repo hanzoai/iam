@@ -32,8 +32,7 @@ import (
 // code and returns {status:"ok"} honestly — it does NOT fabricate a "sent" claim.
 // Delivery plugs in at the marked seam below with no shape change.
 
-// PathSendVerificationCode is the canonical front-door OTP-send endpoint.
-const PathSendVerificationCode = "/v1/iam/send-verification-code"
+// PathVerificationCodes (canonical.go) is the front-door OTP-send endpoint.
 
 // verificationCodeLength is the OTP digit count (v1 getRandomCode(6)).
 const verificationCodeLength = 6

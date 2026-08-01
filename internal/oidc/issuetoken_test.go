@@ -63,7 +63,7 @@ func TestIssueUserToken_mintsTargetUserToken(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
-	resp, body := do(t, app, keyReq(PathIssueUserToken, "hanzo-console", "top-secret", "?id=hanzo/alice&aud=hanzo-cloud"))
+	resp, body := do(t, app, keyReq(PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/alice&aud=hanzo-cloud"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d; body=%s", resp.StatusCode, body)
 	}
@@ -89,7 +89,7 @@ func TestIssueUserToken_notAllowlisted_403(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
-	resp, _ := do(t, app, keyReq(PathIssueUserToken, "hanzo-console", "top-secret", "?id=hanzo/alice"))
+	resp, _ := do(t, app, keyReq(PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/alice"))
 	if resp.StatusCode != 403 {
 		t.Fatalf("off-allow-list issue-user-token = %d, want 403", resp.StatusCode)
 	}
@@ -101,7 +101,7 @@ func TestMintUserKeys_generatesReadableSkKey(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
-	resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice"))
+	resp, body := do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/alice"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d; body=%s", resp.StatusCode, body)
 	}
@@ -128,9 +128,9 @@ func TestRevokeUserKeys_clearsTheKey(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
-	do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice"))
+	do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/alice"))
 
-	resp, body := do(t, app, keyReq(PathRevokeUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice"))
+	resp, body := do(t, app, keyReq(PathKeysRevoke, "hanzo-console", "top-secret", "?id=hanzo/alice"))
 	if resp.StatusCode != 200 || decode(t, body)["status"] != "ok" {
 		t.Fatalf("revoke status = %d; body=%s", resp.StatusCode, body)
 	}
@@ -146,7 +146,7 @@ func TestMintUserKeys_notAllowlisted_403(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
-	resp, _ := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice"))
+	resp, _ := do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/alice"))
 	if resp.StatusCode != 403 {
 		t.Fatalf("off-allow-list mint status = %d, want 403", resp.StatusCode)
 	}
@@ -158,7 +158,7 @@ func TestMintUserKeys_forbiddenUser_403(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedForbiddenUser(t, db, "hanzo", "banned")
 
-	resp, _ := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/banned"))
+	resp, _ := do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/banned"))
 	if resp.StatusCode != 403 {
 		t.Fatalf("forbidden-user mint status = %d, want 403", resp.StatusCode)
 	}
@@ -187,7 +187,7 @@ func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 	}
 
 	// MINT must persist the sk- key on the real (surrogate-keyed) row.
-	resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/mallory"))
+	resp, body := do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/mallory"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("mint status=%d body=%s — saveUser missed the surrogate-key row (ITEM 1)", resp.StatusCode, body)
 	}
@@ -204,7 +204,7 @@ func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 	}
 
 	// REVOKE must clear it on the same real row.
-	resp, body = do(t, app, keyReq(PathRevokeUserKeys, "hanzo-console", "top-secret", "?id=hanzo/mallory"))
+	resp, body = do(t, app, keyReq(PathKeysRevoke, "hanzo-console", "top-secret", "?id=hanzo/mallory"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("revoke status=%d body=%s", resp.StatusCode, body)
 	}
@@ -227,7 +227,7 @@ func TestMintUserKeys_publishableType_mintsAPkAndNeverAPrincipal(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
-	resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice&type=publishable"))
+	resp, body := do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/alice&type=publishable"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d; body=%s", resp.StatusCode, body)
 	}
@@ -260,9 +260,9 @@ func TestMintUserKeys_publishableAndSecretCoexist(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
-	_, secretBody := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice"))
+	_, secretBody := do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/alice"))
 	secret, _ := dataMap(t, secretBody)["accessKey"].(string)
-	_, pubBody := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice&type=publishable"))
+	_, pubBody := do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/alice&type=publishable"))
 	pub, _ := dataMap(t, pubBody)["accessKey"].(string)
 	if !strings.HasPrefix(secret, "sk-") || !strings.HasPrefix(pub, "pk-") {
 		t.Fatalf("halves = %q / %q, want sk- and pk-", secret, pub)
@@ -272,7 +272,7 @@ func TestMintUserKeys_publishableAndSecretCoexist(t *testing.T) {
 	}
 
 	// Revoking the PUBLISHABLE key is scoped: the secret key still authenticates.
-	resp, body := do(t, app, keyReq(PathRevokeUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice&type=publishable"))
+	resp, body := do(t, app, keyReq(PathKeysRevoke, "hanzo-console", "top-secret", "?id=hanzo/alice&type=publishable"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("scoped revoke status = %d; body=%s", resp.StatusCode, body)
 	}
@@ -294,14 +294,14 @@ func TestMintUserKeys_unknownType_400(t *testing.T) {
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
 	for _, typ := range []string{"public", "publishible", "sk", "SECRET"} {
-		resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice&type="+typ))
+		resp, body := do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/alice&type="+typ))
 		if resp.StatusCode != 400 {
 			t.Fatalf("type=%q status = %d, want 400; body=%s", typ, resp.StatusCode, body)
 		}
 	}
 	// And the two spellings that ARE the contract still work.
 	for _, typ := range []string{"", "secret", "publishable"} {
-		resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/alice&type="+typ))
+		resp, body := do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/alice&type="+typ))
 		if resp.StatusCode != 200 {
 			t.Fatalf("type=%q status = %d, want 200; body=%s", typ, resp.StatusCode, body)
 		}
