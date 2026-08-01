@@ -51,7 +51,6 @@ func Route(r zip.Router, db orm.DB) {
 	// and the /v1/iam-prefixed path, matching the live hanzo.id surface. Both
 	// paths are the same handler over the same keys — one key set, two spellings
 	// of where to find it.
-	jwks := jwksHandler(db)
 	r.Get(PathDiscovery, Discovery)
 	r.Get(PathDiscoveryV1, Discovery)
 	// RFC 8414 OAuth Authorization Server Metadata — the same self-consistent
@@ -62,7 +61,7 @@ func Route(r zip.Router, db orm.DB) {
 	// One handler, two addresses: the same key set under the subsystem's prefix
 	// and at the host root, because a relying party configured with either must
 	// find it.
-	zip.Alias(r.Get, PathJWKS, PathJWKSRoot, jwks)
+	zip.Alias(r.Get, PathJWKS, PathJWKSRoot, jwksHandler(db))
 
 	// OAuth2 / OIDC protocol endpoints.
 	r.Get(PathAuthorize, authorizeHandler(db))

@@ -31,7 +31,6 @@ var signingAlgs = map[string]bool{
 	"MLDSA65": true,
 }
 
-// jwksHandler serves GET /v1/iam/.well-known/jwks.
 // jwksHandler publishes the public keys that verify the tokens issued here — the
 // one URL you point a service at so it can check a token itself, offline, without
 // calling back and without holding any secret of ours.
