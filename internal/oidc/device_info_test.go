@@ -18,10 +18,11 @@ import (
 //
 // These tests pin the property that fixes it: the name comes off the CODE.
 
-// deviceInfoGet drives GET /v1/iam/oauth/device/:userCode with an optional session.
+// deviceInfoGet drives POST /v1/iam/oauth/device/info with an optional session.
+// The code rides the BODY, never a request line — it is the one secret here.
 func deviceInfoGet(t *testing.T, app *zip.App, userCode, cookie string) map[string]any {
 	t.Helper()
-	req := formReqNoBody("GET", PathDevice+"/"+url.PathEscape(userCode))
+	req := jsonReq("POST", PathDeviceInfo, map[string]string{"userCode": userCode})
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}

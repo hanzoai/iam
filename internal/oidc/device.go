@@ -94,12 +94,18 @@ type deviceResponse struct {
 // public device client by its client_id — so it needs no bearer and joins no
 // allow-list, membership in this group is what makes it reachable.
 //
-// The sibling GET names the client a pending user_code belongs to. It is on the
+// The sibling POST names the client a pending user_code belongs to. It is on the
 // same public group and authenticates the same way every browser path here does:
 // by the session cookie, resolved inline.
+//
+// POST for a read, deliberately, and for the reason RFC 7662 introspection beside
+// it is POST: the argument is a SECRET. A user_code in a request line is copied
+// into ingress and proxy access logs, which a POST body is not — and this flow's
+// own approval page ships a scrubUrl() to keep the code out of the address bar,
+// so putting it back into every request line would undo that on the server side.
 func routeDevice(r zip.Router, db orm.DB) {
 	r.Post(PathDevice, deviceHandler(db))
-	r.Get(PathDevice+"/:userCode", deviceInfoHandler(db))
+	r.Post(PathDeviceInfo, deviceInfoHandler(db))
 }
 
 // deviceInfo is what the approval page must show a human: WHICH application is
@@ -143,8 +149,20 @@ func deviceInfoHandler(db orm.DB) zip.Handler {
 			return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
 		}
 
+		// JSON body from the approval page, form/query for anything else — the same
+		// bind-then-fall-back the login front door uses, so one endpoint serves both
+		// without a second spelling of the request.
+		var f struct {
+			UserCode string `json:"userCode"`
+		}
+		_ = c.Bind(&f)
+		userCode := f.UserCode
+		if userCode == "" {
+			userCode = param(c, "userCode")
+		}
+
 		const refuse = "the user code is invalid or expired"
-		row, err := store.GetTokenByUserCode(ctx, db, c.Param("userCode"))
+		row, err := store.GetTokenByUserCode(ctx, db, userCode)
 		if err != nil {
 			return httpx.Err(c, refuse)
 		}
