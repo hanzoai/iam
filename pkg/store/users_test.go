@@ -49,7 +49,7 @@ func TestGetMailableUsers(t *testing.T) {
 
 	for _, u := range []*model.User{
 		{Owner: "hanzo", Name: "ada", Email: "ada@hanzo.ai", DisplayName: "Ada",
-			PasswordHash: "$argon2id$v=19$secret", TotpSecret: "SEED", AccessSecretHash: "hk-hash"},
+			PasswordHash: "$argon2id$v=19$secret", TotpSecret: "SEED", AccessSecretHash: "argon2id-digest-sentinel"},
 		{Owner: "hanzo", Name: "bob", Email: "bob@hanzo.ai", EmailVerified: true},
 		{Owner: "hanzo", Name: "gone", Email: "gone@hanzo.ai", IsDeleted: true},
 		{Owner: "hanzo", Name: "banned", Email: "banned@hanzo.ai", IsForbidden: true},

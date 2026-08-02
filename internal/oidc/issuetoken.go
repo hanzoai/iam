@@ -22,7 +22,7 @@ import (
 // (the console BFF as `hanzo-console`) authenticates as the confidential CLIENT —
 // not an end-user bearer — and acts on a `?id=<owner>/<name>` target user: mint a
 // short-lived user-bound access token (`tokens/issue`), or (re)generate/revoke the
-// user's durable `hk-` Cloud API key (`keys/mint`, `keys/revoke`).
+// user's durable Cloud API key (`keys/mint`, `keys/revoke`).
 //
 // `tokens/issue` is the CANONICAL FORWARD path's transitional twin: the RFC 8693
 // Token Exchange grant on the token endpoint is the standard (HIP-0111), and this
@@ -136,10 +136,9 @@ const (
 // (the default) yields the confidential sk-; `?type=publishable` yields the pk- that
 // is safe to ship in client JS and resolves to an org, never a principal.
 //
-// It writes the schema.Key row that the resolvers actually read. It used to stamp the
-// secret on schema.User.AccessKey, which nothing resolves — so the minted key
-// authenticated nobody AND overwrote any working legacy hk- in the same field,
-// locking the holder out with no recovery through the UI.
+// It writes the schema.Key row that the resolvers actually read. schema.User.AccessKey
+// is not a credential and nothing resolves it, so a key stamped there would
+// authenticate nobody.
 func mintUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -166,9 +165,8 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 
 // revokeUserKeysHandler clears the target user's key of the requested TYPE (immediate
 // revoke). Scoped by the same `?type` field mint takes, so revoking the browser key
-// leaves the server key working. For a secret key the stored value is sk- for anything
-// minted since the key seam was unified, and hk- only for the legacy population that
-// has not been re-keyed.
+// leaves the server key working. A secret key's stored value is the sk- in its
+// schema.Key row.
 func revokeUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -187,12 +185,12 @@ func revokeUserKeysHandler(db orm.DB) zip.Handler {
 		if err := keys.RevokeUserKey(ctx, db, user.Owner, scope); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
-		// Revoke BOTH homes of the SECRET credential: the key row this mints today, and
-		// the legacy value stamped on the User row. A holder still carrying an hk- must
-		// be fully revoked by one call, or "revoked" would be a lie for exactly the
-		// population that has not migrated yet. A publishable revoke leaves the User row
-		// alone — clearing the user's secret credential is not what was asked for, and
-		// doing it would make rotating a browser key sign the holder out of the API.
+		// Clear the User row's credential fields too. Nothing resolves them, so this is
+		// not what makes the revoke effective — the key row above is — but leaving stale
+		// credential material behind after an explicit revoke would be its own defect. A
+		// publishable revoke leaves the User row alone: clearing the user's secret
+		// credential is not what was asked for, and doing it would make rotating a
+		// browser key sign the holder out of the API.
 		if scope == "" {
 			now := nowFunc().UTC().Format(time.RFC3339)
 			if _, err := updateUser(ctx, db, user.Owner, user.Name, func(u *schema.User) error {
@@ -360,17 +358,15 @@ func defaultUserAudience(ctx context.Context, db orm.DB, user *schema.User, clie
 // newAccessKey mints the user's durable Cloud API key through the ONE key minter,
 // keys.Mint — the same one schema.Key's halves come from.
 //
-// It is `sk-`, not a third prefix. A durable full-access bearer credential IS the
-// confidential half; naming it `hk-` invented a parallel credential family that
-// meant the same thing, so every consumer had to know all three prefixes
-// (`hk-/pk-/sk-` appears verbatim in the gateway filter, the audit redactor, the
-// registry resolver, and this package's own gate comment). One concept, one
-// spelling: `pk-` is publishable, `sk-` is secret, and there is no third thing.
+// It is `sk-` because a durable full-access bearer credential IS the confidential
+// half. There are exactly two shapes estate-wide — `pk-` is publishable, `sk-` is
+// secret — so a consumer (the gateway filter, the audit redactor, the registry
+// resolver) has two spellings to know and no third family meaning the same thing as
+// one of them.
 //
-// Forward-only and non-breaking: resolution is an exact-value lookup
-// (store.UserByAccessKey), never a prefix match, so keys already issued keep
-// working while every NEW key is minted as `sk-`. The prefix carries no authority
-// — it is a human-readable label on an opaque random token.
+// The prefix carries no authority: it is a human-readable label on an opaque random
+// token, and resolution is an exact-value lookup (store.UserByAccessKey), never a
+// prefix match.
 func newAccessKey() string {
 	return keys.Mint("sk", "")
 }

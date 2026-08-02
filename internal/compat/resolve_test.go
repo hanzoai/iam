@@ -120,7 +120,7 @@ func TestResolveKey_RefusesNonPublishable(t *testing.T) {
 	for _, tc := range []struct{ name, key string }{
 		{"secret key's pk- half", secretKeyPK},
 		{"an sk- confidential half", secretKeySK},
-		{"an hk-", "hk-live-anything"},
+		{"a retired prefix", "hk-live-anything"},
 		{"unknown pk-", "pk-live-NOSUCH"},
 		{"empty", ""},
 	} {
