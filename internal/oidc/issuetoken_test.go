@@ -13,9 +13,9 @@ import (
 
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/internal/users"
 )
 
 // The `sk-` Cloud API-key primitives (mint/revoke). A confidential, allow-listed
@@ -168,7 +168,7 @@ func TestMintUserKeys_forbiddenUser_403(t *testing.T) {
 // SetId("owner/name"), so the row's storage key HAPPENS to equal "owner/name" and the
 // pre-fix owner/name-keyed read resolves it. A user minted through the ONE canonical
 // users.Create path (signup / SCIM / federation / CRUD) gets a store-ASSIGNED surrogate
-// key (a GenerateID decimal string) and a UUID sub — the exact post-cutover account
+// key (a decimal string) and a UUID sub — the exact post-cutover account
 // shape — for which an "owner/name" lookup MISSES. The pre-fix saveUser then errored
 // (orm.ErrNotFound → 500) and no sk- key was ever minted or revoked for a new signup.
 // This drives mint AND revoke against a create-path user; it FAILS before the fix (mint

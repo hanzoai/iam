@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/hanzoai/iam/pkg/pkce"
 )
 
 // The hanzo-cli login, end to end, exactly as the CLI performs it
@@ -38,7 +40,7 @@ func TestCLILoopbackPKCEFlow_EndToEnd(t *testing.T) {
 	seedUser(t, db, "z", "z@hanzo.ai", "***REMOVED***")
 
 	verifier := "KmKyPMK1T4JxydUiDsLmCaz79cqcmYqoBCpaeWWoxrU"
-	challenge := ComputeS256Challenge(verifier)
+	challenge := pkce.Challenge(verifier)
 
 	// 1. authorize — the ephemeral port must be accepted.
 	q := url.Values{
@@ -144,7 +146,7 @@ func TestCLILoopback_CodeBoundToExactPort(t *testing.T) {
 		"password":      "***REMOVED***",
 		"clientId":      "hanzo-cli",
 		"redirectUri":   runtimeRedirect,
-		"codeChallenge": ComputeS256Challenge(verifier),
+		"codeChallenge": pkce.Challenge(verifier),
 	})
 	if code == "" {
 		t.Fatal("no code minted")

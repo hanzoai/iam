@@ -13,6 +13,8 @@ package oidc
 import (
 	"net/url"
 	"testing"
+
+	"github.com/hanzoai/iam/pkg/pkce"
 )
 
 const browserVerifier = "browser-client-verifier-000000000000000000000000"
@@ -27,7 +29,7 @@ func TestBrowserClient_PKCECodeNeedsNoSecret(t *testing.T) {
 	code, _, _ := loginForCode(t, app, map[string]string{
 		"organization": "hanzo", "username": "alice", "password": "pw",
 		"clientId": "hanzo-chat", "redirectUri": testRedirect, "scope": "openid",
-		"codeChallenge": ComputeS256Challenge(browserVerifier), "codeChallengeMethod": "S256",
+		"codeChallenge": pkce.Challenge(browserVerifier), "codeChallengeMethod": "S256",
 	})
 	if code == "" {
 		t.Fatal("setup: no authorization code minted")
@@ -52,7 +54,7 @@ func TestBrowserClient_WrongSecretStillFails(t *testing.T) {
 	code, _, _ := loginForCode(t, app, map[string]string{
 		"organization": "hanzo", "username": "alice", "password": "pw",
 		"clientId": "hanzo-chat", "redirectUri": testRedirect, "scope": "openid",
-		"codeChallenge": ComputeS256Challenge(browserVerifier), "codeChallengeMethod": "S256",
+		"codeChallenge": pkce.Challenge(browserVerifier), "codeChallengeMethod": "S256",
 	})
 
 	resp, m := exchangeCode(t, app, url.Values{

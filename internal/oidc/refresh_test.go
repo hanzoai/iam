@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/zap-proto/zip"
 )
 
@@ -15,7 +16,7 @@ func grantViaPKCE(t *testing.T, app *zip.App, clientID, scope string) map[string
 	t.Helper()
 	verifier := "verifier-abcdefghijklmnopqrstuvwxyz-0123456789"
 	params := loginParams(clientID, scope)
-	params["codeChallenge"] = ComputeS256Challenge(verifier)
+	params["codeChallenge"] = pkce.Challenge(verifier)
 	params["codeChallengeMethod"] = "S256"
 	code, _, _ := loginForCode(t, app, params)
 	resp, tok := exchangeCode(t, app, url.Values{
@@ -128,7 +129,7 @@ func grantWithSecret(t *testing.T, app *zip.App, clientID, secret, scope string)
 	t.Helper()
 	verifier := "verifier-abcdefghijklmnopqrstuvwxyz-0123456789"
 	params := loginParams(clientID, scope)
-	params["codeChallenge"] = ComputeS256Challenge(verifier)
+	params["codeChallenge"] = pkce.Challenge(verifier)
 	params["codeChallengeMethod"] = "S256"
 	code, _, _ := loginForCode(t, app, params)
 	resp, tok := exchangeCode(t, app, url.Values{
