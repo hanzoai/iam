@@ -602,12 +602,13 @@ func subjectOf(u *schema.User) string {
 func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 	refs := store.MemberOrgRefs(ctx, db, u)
 	return Identity{
-		Id:      subjectOf(u),
-		Email:   u.Email,
-		Name:    u.Name,
-		Display: u.DisplayName,
-		Billing: billingAccountFor(u.Owner, refs),
-		Orgs:    refs,
+		Id:       subjectOf(u),
+		Email:    u.Email,
+		Verified: u.EmailVerified,
+		Name:     u.Name,
+		Display:  u.DisplayName,
+		Billing:  billingAccountFor(u.Owner, refs),
+		Orgs:     refs,
 	}
 }
 

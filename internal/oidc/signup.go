@@ -4,6 +4,7 @@ package oidc
 
 import (
 	"context"
+	"log/slog"
 	"net/mail"
 	"regexp"
 	"strings"
@@ -215,6 +216,39 @@ func signupHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+
+		// A CONSUMER SIGNUP GETS ITS OWN TENANT, not a seat in the app's org. Under
+		// orgChoicePersonal the account is provisioned into an org derived from the
+		// person's own username the moment it exists, so nobody is ever left sitting in
+		// the shared signup org — which is a co-tenancy with Hanzo's own org, and the
+		// org is the only isolation boundary cloud's read paths have (see
+		// provisionPersonalOrg for what is readable from inside it).
+		//
+		// SIGNUP IS ATOMIC ACROSS THE TWO WRITES. If provisioning fails the new user is
+		// removed and the whole signup reports failure, because the alternative is
+		// worse than either outcome: a "successful" signup stranded in the shared org
+		// is precisely the exposure this exists to prevent, and it would be reported to
+		// the caller as success. Better no account than an account in the wrong tenant.
+		// The person simply signs up again; nothing partial survives to be cleaned up
+		// by hand.
+		if app.OrgChoiceMode == orgChoicePersonal {
+			out, perr := provisionPersonalOrg(ctx, db, f.Organization, f.Username, displayName(f))
+			if perr != nil {
+				if _, derr := users.New(db).Delete(ctx, &users.Ref{Owner: f.Organization, Name: f.Username}); derr != nil {
+					// The account exists in the signup org and could not be withdrawn.
+					// Say so loudly — this is the one path that leaves a row needing a
+					// human, and a silent failure here is an account nobody knows is
+					// exposed.
+					slog.Error("signup: could not withdraw a user whose org provisioning failed",
+						"org", f.Organization, "user", f.Username, "provision_err", perr, "delete_err", derr)
+				}
+				return httpx.Err(c, perr.Error())
+			}
+			// The row was MOVED, so the copy returned by Create names an org the user
+			// no longer belongs to. Report where they actually are — the SPA reads this
+			// to address the account it just made.
+			created.Owner = out.org
+		}
 		return httpx.Ok(c, created)
 	}
 }
@@ -259,6 +293,23 @@ func displayName(f signupForm) string {
 // so turning on self-serve is a deliberate per-app decision rather than a side effect
 // of allowing org choice at all.
 const orgChoiceCreate = "create"
+
+// orgChoicePersonal is the application's opt-in to ONE TENANT PER PERSON: every
+// signup is provisioned into an org derived from its own username, immediately, and
+// the signup form never asks. It is the consumer funnel, where "what is your
+// company called?" has no answer and asking it is how half a tenant registry ends
+// up being email addresses.
+//
+// It is a THIRD value of the same field rather than a new flag because it answers
+// the same one question — how does a signup get its org — and two independent
+// switches could be set to contradict each other. "" takes the app's own org,
+// `create` lets the person name one, `personal` derives it. Exactly one is true of
+// any application.
+//
+// Every gate that relaxes on `OrgChoiceMode != ""` must relax for this value too,
+// and does: an account provisioned into its own org has to be able to log back in
+// through the very app it signed up on, whose own org is no longer its own.
+const orgChoicePersonal = "personal"
 
 // orgNamePolicyError validates a self-service org name. The org name is the OWNER
 // half of every (owner, name) natural key in the store, so a permissive name here
