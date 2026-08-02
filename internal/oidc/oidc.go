@@ -38,6 +38,18 @@ const (
 	PathDeviceVerify = "/login/oauth/device"
 )
 
+// CodeLoginRequired is the STABLE machine-readable reason for "this needs a
+// signed-in session and there isn't one". The human `msg` beside it is prose and
+// several causes share it; a caller that must ROUTE on the cause — the device
+// approval page deciding to show a sign-in form rather than an error — cannot
+// parse prose.
+//
+// It exists because the alternative was a lie: an unauthenticated device approval
+// used to fall through to the credential check and answer "organization, username
+// and password are required", naming three fields that page has never rendered and
+// never sends. An error must describe the thing the caller can actually do.
+const CodeLoginRequired = "login_required"
+
 // Route registers the entire OIDC/OAuth2 surface on r, backed by db. This is the
 // one entry point the route table calls — discovery, JWKS, the protocol
 // endpoints, and the front door are all bound here so the surface lives in one
