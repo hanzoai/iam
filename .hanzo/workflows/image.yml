@@ -102,19 +102,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # A tag push publishes the TAG; a branch push publishes an immutable
-      # sha-<7>. Both are traceable, and only the first is deployable — the
-      # estate's guards require a semver tag (or a digest) in any manifest.
-      # This step is also the source of `-X main.version`, so on a release the
-      # binary now reports the same string as the image, instead of every build
-      # calling itself a commit.
+      # ONLY a `v*` tag publishes. A branch push still BUILDS — that is the
+      # check that main compiles and the image assembles — but it pushes
+      # nothing.
+      #
+      # It used to publish an immutable `sha-<7>` alongside, on the reasoning
+      # that both are traceable and only the tag is deployable. Traceable is not
+      # the bar: a registry that accumulates a tag per commit makes "what is
+      # released" a question you answer by reading git rather than by reading
+      # the registry, and it is how production came to run `sha-ba43c54` — a
+      # commit newer than the last built release and older than two tagged ones,
+      # so the estate's IdP ran code no version named. A release is a version.
+      # Nothing else earns a name in the registry.
       - id: meta
         run: |
           case "$GITHUB_REF" in
-            refs/tags/v*) tag="${GITHUB_REF#refs/tags/}" ;;
-            *)            tag="sha-$(echo "$GITHUB_SHA" | cut -c1-7)" ;;
+            refs/tags/v*) tag="${GITHUB_REF#refs/tags/}"; push=true ;;
+            *)            tag="ghcr.io/hanzoai/iam:unpublished"; push=false ;;
           esac
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "push=$push" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
         with:
@@ -132,9 +139,9 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
-          push: true
+          push: ${{ steps.meta.outputs.push }}
           provenance: false
-          tags: ghcr.io/hanzoai/iam:${{ steps.meta.outputs.tag }}
+          tags: ${{ startsWith(github.ref, 'refs/tags/v') && format('ghcr.io/hanzoai/iam:{0}', steps.meta.outputs.tag) || steps.meta.outputs.tag }}
           # The Dockerfile already carries `-X main.version=${VERSION}`, but its
           # `ARG VERSION=dev` default was never overridden here — so every image
           # this builder shipped reported `iam dev` from `/iam version` and could
