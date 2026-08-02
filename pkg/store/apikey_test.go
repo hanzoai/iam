@@ -38,37 +38,53 @@ func seedKey(t *testing.T, db orm.DB, owner, name, user, pk, sk string) {
 	}
 }
 
-// UserByAccessKey resolves each SECRET key shape (hk-, sk-) to the correct user and
-// FAILS CLOSED on a public pk- — the WRITE-ONLY invariant a wrong resolution would
+// UserByAccessKey resolves the SECRET shape (sk-) to the correct user and FAILS
+// CLOSED on a public pk- — the WRITE-ONLY invariant a wrong resolution would
 // violate. A pk- ships in client JS, so turning it into a read identity is the
 // browser-key catastrophe; it must authenticate no read here.
 func TestUserByAccessKey_ResolvesSecretsRefusesPublishable(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
 
-	u := seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "hk-live-ALICEKEY")
+	u := seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "")
 	// A schema.Key credential (pk- publishable half + sk- secret half) belonging to
 	// hanzo/alice.
 	seedKey(t, db, "hanzo", "alice-key", "hanzo/alice", "pk-live-PROJ", "sk-live-SECRET")
 
-	// The SECRET shapes resolve to the owning user.
-	for _, tc := range []struct{ name, key string }{
-		{"hk on the user row", "hk-live-ALICEKEY"},
-		{"sk confidential half", "sk-live-SECRET"},
-	} {
-		got, err := UserByAccessKey(ctx, db, tc.key)
-		if err != nil {
-			t.Fatalf("%s: %v", tc.name, err)
-		}
-		if got == nil || got.Owner != u.Owner || got.Name != u.Name {
-			t.Fatalf("%s resolved %+v, want hanzo/alice", tc.name, got)
-		}
+	// The SECRET shape resolves to the owning user.
+	got, err := UserByAccessKey(ctx, db, "sk-live-SECRET")
+	if err != nil {
+		t.Fatalf("sk confidential half: %v", err)
+	}
+	if got == nil || got.Owner != u.Owner || got.Name != u.Name {
+		t.Fatalf("sk confidential half resolved %+v, want hanzo/alice", got)
 	}
 
 	// The PUBLIC pk- publishable half — even though its Key names a real owning user
 	// in the key's own tenant — resolves to NOBODY. It is write-only, never a principal.
 	if got, err := UserByAccessKey(ctx, db, "pk-live-PROJ"); !errors.Is(err, orm.ErrNotFound) || got != nil {
 		t.Fatalf("publishable pk- resolved %+v (err=%v), want (nil, ErrNotFound) — a pk- must never authenticate a read", got, err)
+	}
+}
+
+// schema.User.AccessKey IS NOT A CREDENTIAL. There are two key shapes, both living on
+// schema.Key; a value on the User row authenticates nobody no matter how it is spelled.
+//
+// The fixture is deliberately a live user carrying a retired-prefix value in that exact
+// field, because that is the only arrangement a resurrected prefix branch would resolve.
+// Asserting on a value no row bears would pass with the branch back in place and guard
+// nothing.
+func TestUserByAccessKey_UserRowValueIsNotACredential(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedKeyUser(t, db, "hanzo", "carol", "carol@hanzo.ai", "hk-live-CAROLROW")
+
+	got, err := UserByAccessKey(ctx, db, "hk-live-CAROLROW")
+	if !errors.Is(err, orm.ErrNotFound) || got != nil {
+		t.Fatalf("a user-row value authenticated %+v (err=%v) — schema.User.AccessKey must never be a credential", got, err)
+	}
+	if r := Reason(err); r != KeyUnknown {
+		t.Errorf("reason = %q, want %q (the actionable 'mint a new one' path)", r, KeyUnknown)
 	}
 }
 
@@ -128,14 +144,16 @@ func TestUserByAccessKey_RejectsCrossTenantUserRef(t *testing.T) {
 func TestUserByAccessKey_FailsClosed(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
-	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "hk-live-ALICEKEY")
+	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "")
 	// An org-scoped key with NO user reference — cannot be attributed to a principal.
 	seedKey(t, db, "hanzo", "org-key", "", "pk-live-ORGONLY", "sk-live-ORGONLY")
 
 	for _, tc := range []struct{ name, key string }{
 		{"empty", ""},
 		{"whitespace", "   "},
-		{"unknown hk", "hk-live-NOSUCH"},
+		// A retired prefix is not a key. Kept as a fixture so that re-adding a branch
+		// for it breaks a test rather than passing silently.
+		{"retired prefix", "hk-live-NOSUCH"},
 		{"unknown pk", "pk-live-NOSUCH"},
 		{"unknown sk", "sk-live-NOSUCH"},
 		{"unrecognized prefix", "fw_deadbeef"},
@@ -192,7 +210,7 @@ func TestPublishableKeyByAccessKey(t *testing.T) {
 	for _, tc := range []struct{ name, key string }{
 		{"secret key's pk- half (Scope != publish)", "pk-live-SECRETHALF"},
 		{"an sk- confidential half (wrong prefix)", "sk-live-x"},
-		{"an hk- (wrong prefix)", "hk-live-x"},
+		{"a retired prefix", "hk-live-x"},
 		{"expired publish key", "pk-live-EXPIRED"},
 		{"unknown pk-", "pk-live-NOSUCH"},
 		{"empty", ""},
@@ -216,7 +234,7 @@ func TestUserByAccessKey_ReasonsAreDistinguishable(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
 
-	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "hk-live-ALICEKEY")
+	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "")
 	seedKey(t, db, "hanzo", "org-key", "", "pk-live-ORGONLY", "sk-live-ORGONLY")
 	// An attacker's own-org key naming a foreign identity — the same-tenant pin.
 	seedKey(t, db, "attackerOrg", "forge", "victimorg/ceo", "pk-live-FORGE", "sk-live-FORGE")
@@ -228,11 +246,14 @@ func TestUserByAccessKey_ReasonsAreDistinguishable(t *testing.T) {
 		key  string
 		want KeyFailure
 	}{
-		{"revoked or never-minted hk", "hk-live-NOSUCH", KeyUnknown},
 		{"unknown sk", "sk-live-NOSUCH", KeyUnknown},
 		{"a pk- at the SECRET door", "pk-live-ORGONLY", KeyWrongDoor},
-		{"an unrecognized shape", "fw_deadbeef", KeyWrongDoor},
-		{"empty", "", KeyWrongDoor},
+		// Not a shape this estate issues → KeyUnknown, never KeyWrongDoor. WrongDoor
+		// advises "use your secret key", which is a lie to someone holding no key at
+		// all; KeyUnknown is what renders the actionable "mint a new one" in cloud.
+		{"a retired prefix", "hk-live-NOSUCH", KeyUnknown},
+		{"an unrecognized shape", "fw_deadbeef", KeyUnknown},
+		{"empty", "", KeyUnknown},
 		{"cross-tenant key row is a SECURITY event", "sk-live-FORGE", KeyForeignUser},
 		{"user-less key row cannot name a principal", "sk-live-ORGONLY", KeyForeignUser},
 		{"key naming a nonexistent same-tenant user", "sk-live-GHOST", KeyDanglingUser},

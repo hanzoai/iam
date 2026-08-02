@@ -19,24 +19,22 @@ import (
 // key resolves to orm.ErrNotFound, never a fallback or wrong user, so a bad key can
 // never inherit another principal's identity.
 //
-// Only a SECRET credential authenticates a reader — a PUBLIC value never does:
+// There are exactly TWO key shapes, and only the SECRET one authenticates a reader:
 //
-//   - hk-  LEGACY, accept-only. The durable Cloud API key stamped on the User row
-//          itself (schema.User.AccessKey). Nothing mints this shape any more —
-//          newAccessKey() has minted sk- since the key seam was unified — so the
-//          population is fixed and can only shrink. The branch stays until the
-//          remaining stored values are re-keyed; dropping it earlier would reject
-//          every credential still carrying the old prefix.
 //   - sk-  the confidential half of a schema.Key credential (Key.AccessSecret) —
-//          resolve the key row, then its owning user (same-tenant pinned).
+//          resolve the key row, then its owning user (same-tenant pinned). This is
+//          the ONE durable full-access bearer credential; keys.Mint issues it.
+//   - pk-  the PUBLISHABLE half (Key.AccessKey). Refused here, always.
 //
-// A pk- (a schema.Key's PUBLISHABLE half, Key.AccessKey) is deliberately NOT a case
-// here: it is WRITE-ONLY and MUST NEVER resolve to a principal. A pk- is public — it
-// ships in client JS — so turning it into a read identity is the browser-key
-// catastrophe. It falls through to orm.ErrNotFound, on EVERY caller of this function
-// (get-user?accessKey AND the registry token path), so a public key authenticates no
-// read anywhere. Its ONLY resolution is org-only, at the ingest door
+// A pk- is deliberately NOT a resolving case: it is WRITE-ONLY and MUST NEVER become
+// a principal. A pk- is public — it ships in client JS — so turning it into a read
+// identity is the browser-key catastrophe. It is refused on EVERY caller of this
+// function (get-user?accessKey AND the registry token path), so a public key
+// authenticates no read anywhere. Its ONLY resolution is org-only, at the ingest door
 // (keys.resolve → /v1/iam/resolve-key), and only for a publishable key.
+//
+// Any other string is not a key. It carries no shape this estate mints, so it cannot
+// be told apart from a value that was never issued at all, and it resolves to nobody.
 
 // ── why a key did not resolve ────────────────────────────────────────────────
 //
@@ -53,14 +51,16 @@ import (
 type KeyFailure string
 
 const (
-	// KeyWrongDoor: a shape this door does not answer for. A pk- (or anything
-	// unrecognized) at the SECRET door, or a non-pk- at the publishable one. The
-	// credential may be perfectly valid — it was presented at the wrong door.
+	// KeyWrongDoor: a REAL credential presented at the door that does not answer for
+	// it — a pk- at the SECRET door, or a non-pk- at the publishable one. The holder
+	// has a working key; they used the wrong half. Reserved for exactly that, so the
+	// advice it carries ("use your secret sk- key") is always true when it is given.
 	KeyWrongDoor KeyFailure = "key_wrong_door"
-	// KeyUnknown: a well-shaped key that no row bears. Never minted, already
-	// revoked, or — for the legacy hk- population — clobbered when a later mint
-	// overwrote schema.User.AccessKey (see keys.MintUserKey). The holder's cure is
-	// to mint a new key; nothing about their org is wrong.
+	// KeyUnknown: no live credential answers to this value. Never minted, already
+	// revoked, or carrying a prefix this estate does not issue — the holder cannot
+	// tell those apart and does not need to, because the cure is the same one: mint a
+	// new key. Nothing about their org is wrong. This is the honest answer for any
+	// string that is not a live sk-, which is why the default case lands here.
 	KeyUnknown KeyFailure = "key_unknown"
 	// KeyForeignUser: an sk- row resolved, but it names a user in ANOTHER tenant.
 	// The same-tenant pin (userOwningKey) refused it. This is a SECURITY EVENT, not
@@ -104,39 +104,36 @@ func Reason(err error) KeyFailure {
 func notFound(r KeyFailure) error { return &KeyError{Reason: r} }
 
 // UserByAccessKey resolves an opaque API key to the user it authenticates, or a
-// KeyError (an orm.ErrNotFound naming its cause) for an empty/unknown/unrecognized/
-// publishable key. It never returns a wrong user: each SECRET shape (hk-/sk-)
-// resolves through its own exact-match lookup, an sk- key whose row names no
-// resolvable user fails closed rather than guessing one, and a public pk- resolves to
-// nobody at all.
+// KeyError (an orm.ErrNotFound naming its cause) for anything else. It never returns
+// a wrong user: only a live sk- resolves, through an exact-match lookup pinned to the
+// key row's own tenant; an sk- whose row names no resolvable user fails closed rather
+// than guessing one; and a public pk- resolves to nobody at all.
 //
-// NOTE ON EXPIRY: neither secret shape can report KeyExpired, because neither has an
-// expiry to read. An hk- lives on the User row, which carries no lifetime at all; an
-// sk- resolves through userOwningKey, which does not consult keyLive. Revocation is
-// deletion (or clearing the field), so for a secret key "gone" is the only
-// termination and KeyUnknown is the honest answer.
+// The two shapes are refused for DIFFERENT reasons, and the difference is the whole
+// value of the answer. A pk- is a real credential at the wrong door (KeyWrongDoor —
+// "use your secret key"). Anything else answers to no live credential at all
+// (KeyUnknown — "mint a new one"), whether it was revoked, never issued, or carries
+// some prefix this estate does not mint. There is no third case, because there is no
+// third shape: a value that is not a pk- and not a live sk- is simply not a key, and
+// special-casing any particular non-key spelling would invent the third family back.
+//
+// NOTE ON EXPIRY: an sk- cannot report KeyExpired — it resolves through userOwningKey,
+// which does not consult keyLive. Revocation is deletion, so for a secret key "gone"
+// is the only termination and KeyUnknown is the honest answer.
 func UserByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, error) {
 	key = strings.TrimSpace(key)
 	switch {
-	case strings.HasPrefix(key, "hk-"):
-		return userByField(ctx, db, "AccessKey", key)
 	case strings.HasPrefix(key, "sk-"):
 		return userOwningKey(ctx, db, "AccessSecret", key)
-	default:
-		// A pk- publishable half lands here with every other unrecognized value: it
-		// is WRITE-ONLY and never a principal (see the package note above). Fail closed.
+	case strings.HasPrefix(key, "pk-"):
+		// WRITE-ONLY and never a principal (see the package note above). Fail closed,
+		// and say so as the wrong door: this holder has a working key, just not here.
 		return nil, notFound(KeyWrongDoor)
-	}
-}
-
-// userByField resolves the single User row whose `field` equals val (the hk- path:
-// the credential lives on the User itself). Not-found is orm.ErrNotFound.
-func userByField(_ context.Context, db orm.DB, field, val string) (*schema.User, error) {
-	u, err := orm.TypedQuery[schema.User](db).Filter(field+"=", val).First()
-	if err == orm.ErrNotFound {
+	default:
+		// Not a shape this estate issues, so no live credential can answer to it.
+		// Fail closed, and tell the holder the one thing that helps: mint a new key.
 		return nil, notFound(KeyUnknown)
 	}
-	return u, err
 }
 
 // userOwningKey resolves the schema.Key whose `field` equals val (the sk- path:

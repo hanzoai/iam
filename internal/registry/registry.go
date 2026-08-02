@@ -23,7 +23,7 @@
 //   - a user password (resolved within the NON-RESERVED candidateOrgs — a reserved-
 //     org/SuperAdmin password is not a registry credential; see userByPassword —
 //     verified through the SAME lockout choke point login uses),
-//   - a Hanzo SECRET API key (hk-/sk-, resolved via store.UserByAccessKey — which
+//   - a Hanzo SECRET API key (sk-, resolved via store.UserByAccessKey — which
 //     resolves the key's OWNER, any org — then gated; a public pk- is write-only and
 //     authenticates nothing here),
 //   - a confidential application's clientId:clientSecret (store.GetApplicationBy
@@ -225,7 +225,7 @@ func (h *handler) authenticate(ctx context.Context, id, secret string) *principa
 // bound (authenticate applies that once). Ordered, each fail-closed; first match
 // wins:
 //
-//  1. API key — a SECRET hk-/sk- value (in the secret, or the username for the
+//  1. API key — a SECRET sk- value (in the secret, or the username for the
 //     token-as-username clients) resolved through store.UserByAccessKey. Keyed by
 //     an unambiguous prefix, so it never captures a password or clientId. A public
 //     pk- is write-only: it authenticates nothing (store.UserByAccessKey refuses it).

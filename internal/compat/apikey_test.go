@@ -3,12 +3,12 @@
 package compat_test
 
 // GAP B — get-user?accessKey: cloud's identity boundary resolves an opaque SECRET API
-// key (hk-/sk-) to {owner,name,email,isAdmin} to authenticate a keyed request. It is
+// key (sk-) to {owner,name,email,isAdmin} to authenticate a keyed request. It is
 // SECURITY-CRITICAL: the caller presents a secret key and learns who it belongs to,
 // so it is gated behind the CapKeyResolve service capability, fails closed on an
 // unknown key, and NEVER leaks a secret field — in particular never the resolved
-// user's OTHER credential (its hk- AccessKey) on an sk- resolution. A PUBLIC pk- is
-// write-only and is REFUSED here (its org-only dual is /v1/iam/resolve-key).
+// user's OTHER credential (the value on its User row) on an sk- resolution. A PUBLIC
+// pk- is write-only and is REFUSED here (its org-only dual is /v1/iam/resolve-key).
 
 import (
 	"context"
@@ -30,7 +30,10 @@ const (
 	otherApp    = "hanzo-noresolve" // admin-owned app WITHOUT the capability
 	svcSecret   = "resolver-secret"
 
-	keyUserHK         = "hk-live-KEYUSERHK" // the user's own durable Cloud API key
+	// A value stamped on schema.User.AccessKey. NOTHING resolves that field, so this
+	// authenticates nobody — it is a sentinel proving both that a user-row value is
+	// never a credential and that its retired prefix is not a key shape.
+	userRowKey        = "hk-live-KEYUSERHK"
 	keyUserSecretHash = "SENTINEL_ACCESS_SECRET_HASH"
 	projPK            = "pk-live-KEYUSERPK"       // publishable half of a schema.Key
 	projSK            = "sk-live-KEYUSERPKSECRET" // confidential half of the same Key
@@ -65,9 +68,9 @@ func (h *harness) getBasic(t *testing.T, path, clientID, secret string) (int, st
 	return resp.StatusCode, string(b)
 }
 
-// keyFixtures seeds the two service apps, the target user (with an hk- key + secret
-// sentinels), and a schema.Key (pk-/sk-) belonging to that user; then arms the
-// CapKeyResolve allowlist with resolverApp only.
+// keyFixtures seeds the two service apps, the target user (with secret sentinels and a
+// non-resolving value on its User row), and a schema.Key (pk-/sk-) belonging to that
+// user; then arms the CapKeyResolve allowlist with resolverApp only.
 func keyFixtures(t *testing.T, h *harness) {
 	t.Helper()
 	seedClientApp(t, h.db, resolverApp, svcSecret)
@@ -76,7 +79,7 @@ func keyFixtures(t *testing.T, h *harness) {
 	u := orm.New[schema.User](h.db)
 	u.Owner, u.Name, u.Email = "hanzo", "keyuser", "keyuser@hanzo.ai"
 	u.IsAdmin = true
-	u.AccessKey = keyUserHK
+	u.AccessKey = userRowKey
 	u.AccessSecret = projSK // a secret half on the user row too — must never surface
 	u.AccessSecretHash = keyUserSecretHash
 	u.PasswordHash = secretUserHash
@@ -109,7 +112,7 @@ func seedClientApp(t *testing.T, db orm.DB, name, secret string) {
 	}
 }
 
-// A cap-holding service caller resolves each SECRET key shape to the right user, with
+// A cap-holding service caller resolves the SECRET key shape to the right user, with
 // the exact {owner,name,email,isAdmin} cloud consumes — and NO secret ever appears —
 // while the PUBLIC publishable pk- is REFUSED, so a public key can never become a read
 // principal at cloud's identity boundary.
@@ -118,7 +121,6 @@ func TestGetUserByAccessKey_ResolvesSecretsRefusesPublishable(t *testing.T) {
 	keyFixtures(t, h)
 
 	for _, tc := range []struct{ name, key string }{
-		{"hk on user row", keyUserHK},
 		{"sk confidential half", projSK},
 	} {
 		status, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+tc.key, resolverApp, svcSecret)
@@ -137,8 +139,8 @@ func TestGetUserByAccessKey_ResolvesSecretsRefusesPublishable(t *testing.T) {
 			t.Fatalf("%s: data=%+v, want hanzo/keyuser keyuser@hanzo.ai isAdmin=true", tc.name, e.Data)
 		}
 		// No secret material, and — critically — not the user's OTHER credential
-		// (its hk- key) when an sk- key was the one presented.
-		for _, secret := range []string{secretUserHash, keyUserSecretHash, keyUserHK} {
+		// (the value on its User row) when an sk- key was the one presented.
+		for _, secret := range []string{secretUserHash, keyUserSecretHash, userRowKey} {
 			if tc.key != secret && strings.Contains(body, secret) {
 				t.Fatalf("%s: SECRET LEAK %q in body:\n%s", tc.name, secret, body)
 			}
@@ -155,6 +157,35 @@ func TestGetUserByAccessKey_ResolvesSecretsRefusesPublishable(t *testing.T) {
 	}
 	if strings.Contains(body, "keyuser") {
 		t.Fatalf("publishable pk- leaked the principal identity: %s", body)
+	}
+}
+
+// There are exactly TWO key shapes. A value carrying a retired prefix is not a key —
+// not a deprecated one, not an accepted-for-now one — and it authenticates NOBODY even
+// when that exact value is stamped on a real, live user's row.
+//
+// This is the sharp end of the one-way property: keyFixtures puts userRowKey on
+// hanzo/keyuser, so a resurrected prefix branch (or any new read of
+// schema.User.AccessKey as a credential) would resolve it to an ADMIN principal and
+// fail here loudly. The refusal must also carry key_unknown, which is what renders the
+// actionable "mint a new one at cloud.hanzo.ai/keys" for the holder — never
+// key_wrong_door, whose advice ("use your secret key") would be a lie to someone whose
+// credential no longer exists.
+func TestGetUserByAccessKey_RetiredPrefixIsNotAKey(t *testing.T) {
+	h := newHarness(t)
+	keyFixtures(t, h)
+
+	_, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+userRowKey, resolverApp, svcSecret)
+	var e keyEnv
+	_ = json.Unmarshal([]byte(body), &e)
+	if e.Status != "error" {
+		t.Fatalf("a retired prefix resolved: env=%+v body=%s", e, body)
+	}
+	if e.Code != "key_unknown" {
+		t.Errorf("code = %q, want key_unknown (the actionable 'mint a new one' path)", e.Code)
+	}
+	if strings.Contains(body, "keyuser") {
+		t.Fatalf("a retired prefix leaked the principal identity: %s", body)
 	}
 }
 
@@ -195,7 +226,7 @@ func TestGetUserByAccessKey_NonCapDenied(t *testing.T) {
 	h := newHarness(t)
 	keyFixtures(t, h)
 
-	status, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+keyUserHK, otherApp, svcSecret)
+	status, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+projSK, otherApp, svcSecret)
 	var e keyEnv
 	_ = json.Unmarshal([]byte(body), &e)
 	if e.Status != "error" || e.Msg != "auth:Unauthorized operation" {
@@ -246,10 +277,11 @@ func TestGetUserByAccessKey_RefusalCarriesItsReason(t *testing.T) {
 	keyFixtures(t, h)
 
 	for _, tc := range []struct{ name, key, wantCode string }{
-		{"revoked / never minted", "hk-live-NOSUCHKEY", "key_unknown"},
+		{"revoked / never minted", "sk-live-NOSUCHKEY2", "key_unknown"},
 		{"unknown secret half", "sk-live-NOSUCHKEY", "key_unknown"},
 		{"a publishable key at the SECRET door", projPK, "key_wrong_door"},
-		{"an unrecognized shape", "fw_deadbeef", "key_wrong_door"},
+		{"an unrecognized shape", "fw_deadbeef", "key_unknown"},
+		{"a retired prefix", "hk-live-NOSUCHKEY", "key_unknown"},
 	} {
 		_, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+tc.key, resolverApp, svcSecret)
 		var e keyEnv
@@ -274,7 +306,7 @@ func TestGetUserByAccessKey_NonCapCallerLearnsNoReason(t *testing.T) {
 	h := newHarness(t)
 	keyFixtures(t, h)
 
-	_, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+keyUserHK, otherApp, svcSecret)
+	_, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+projSK, otherApp, svcSecret)
 	var e keyEnv
 	_ = json.Unmarshal([]byte(body), &e)
 	if e.Status != "error" || e.Code != "" {

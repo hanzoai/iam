@@ -12,7 +12,7 @@ import (
 )
 
 // updateUser is the ONE way the pre-authentication OIDC surface writes back a user
-// row: onboarding's org move, self-service preferences, the confidential-client hk-
+// row: onboarding's org move, self-service preferences, the confidential-client
 // key mint/revoke, and federated link/unlink all go through it, so every user-row
 // write shares a single correct read-modify-write. mutate edits the FRESH row in place
 // (setting only the fields the caller owns); updateUser persists it and returns it.
@@ -25,7 +25,7 @@ import (
 //     row (SetId in the migrator), or a store-assigned surrogate id (a decimal
 //     string) for a v2-native users.Create'd row (Create allocates, it never
 //     pins the key). A plain orm.Get(owner+"/"+name) resolves ONLY migrated rows, so a
-//     post-cutover signup was missed and its hk- key mint/revoke silently 500'd. The
+//     post-cutover signup was missed and its key mint/revoke silently 500'd. The
 //     lock is taken by that exact resolved key, so both shapes are written.
 //
 //   - NO STALE FULL-ROW CLOBBER. The read-modify-write runs inside a GetForUpdate

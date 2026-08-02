@@ -227,8 +227,15 @@ for redaction. The secret is revealed ONCE, by `create`. `capFor("keys")` =
 manages.
 
 `MintUserKey` writes a `schema.Key` ROW because that is the only thing the resolvers
-read. Stamping it on `schema.User.AccessKey` authenticated nobody AND overwrote the
-holder's working legacy `hk-`, locking them out with no path back through the UI.
+read. Stamping it on `schema.User.AccessKey` authenticated nobody — nothing resolves
+that field, and it is not a credential.
+
+**Two key shapes, estate-wide.** `pk-` is publishable and `sk-` is secret; there is no
+third. `store.UserByAccessKey` resolves a live `sk-` (pinned to the key row's own
+tenant), refuses a `pk-` as `key_wrong_door` — a real credential at the wrong door —
+and answers `key_unknown` for everything else, which is what renders the actionable
+"mint a new one at cloud.hanzo.ai/keys". A value carrying any other prefix is not a
+key, so it takes that same unknown path rather than a branch of its own.
 
 ## Refresh — confidential is a property of the GRANT, and a lifetime must be SAID
 
