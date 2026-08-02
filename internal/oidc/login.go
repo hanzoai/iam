@@ -104,15 +104,28 @@ func loginHandler(db orm.DB) zip.Handler {
 			// minting tail — so the reserved-org gate, the app-org tenant gate, the
 			// exact redirect_uri match and the public-client PKCE requirement are the
 			// same checks, in the same order, as a password post; only the proof of
-			// identity differs. Restricted to type=code (a bare session has nothing to
-			// re-establish, and a device approval must stay a deliberate act), and the
-			// row is re-read so an account forbidden or deleted since sign-in is
-			// refused rather than riding its old session.
+			// identity differs. The row is re-read so an account forbidden or deleted
+			// since sign-in is refused rather than riding its old session.
+			//
+			// type=device rides this too, and must: the approval page posts NO
+			// credential (the human is already signed in — that is the whole point of
+			// approving on a phone), so excluding it here dropped every approval
+			// through to the credential check below and answered "organization,
+			// username and password are required". The RFC 8628 flow could not
+			// complete at all; `hanzo login` hung at "Waiting for approval…" forever.
+			//
+			// This does not weaken the "deliberate act" the exclusion was protecting.
+			// The deliberate act is the human opening the verification URI and
+			// transcribing the user_code their own device shows — approveDevice binds
+			// the approver's proven identity onto exactly that pending code, and a code
+			// nobody typed approves nothing. What the exclusion actually required was a
+			// full password re-entry from someone already authenticated, which no
+			// device flow asks for and which this page never sends.
 			//
 			// Not a CSRF mint: /v1/iam/login is not a CORS browser path and the IdP
 			// never allows credentialed cross-origin reads (internal/cors), so only a
 			// first-party page can both send the cookie and read the code.
-			if f.Type == "code" {
+			if f.Type == "code" || f.Type == "device" {
 				if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
 					user, err := store.GetUserByName(ctx, db, owner, name)
 					if err != nil {

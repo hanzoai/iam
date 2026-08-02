@@ -582,3 +582,89 @@ func withdrawGrants(t *testing.T, db orm.DB, name string) {
 		t.Fatalf("withdraw grants: %v", err)
 	}
 }
+
+// approveWithSessionOnly approves the way the approval PAGE actually does: a
+// session cookie and the user_code, and NOT one credential field. Every other
+// device test here posts organization+username+password (approveAs), which is a
+// shape the product never sends — the page exists precisely because the human is
+// already signed in.
+func approveWithSessionOnly(t *testing.T, app *zip.App, cookie, userCode string) map[string]any {
+	t.Helper()
+	req := jsonReq("POST", PathLogin, map[string]string{
+		"type": "device", "userCode": userCode, "application": "hanzo-app",
+	})
+	req.Header.Set("Cookie", cookie)
+	_, body := do(t, app, req)
+	return decode(t, body)
+}
+
+// A signed-in human approves a device WITHOUT re-entering a password.
+//
+// This is the whole RFC 8628 terminal leg and it was broken: the session branch
+// in login.go was gated to type=code, so a credential-less type=device post fell
+// through to the credential check and answered "organization, username and
+// password are required" — with HTTP 200, so nothing looked wrong. `hanzo login`
+// hung at "Waiting for approval…" forever and no test noticed, because every
+// device test approved with a full password.
+func TestDevice_ApproveFromSessionWithoutCredentials(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedRichUser(t, db)
+	seedDeviceApp(t, db, "hanzo-app")
+
+	_, da := requestDevice(t, app, "hanzo-app", "openid profile")
+	deviceCode, userCode := da["device_code"].(string), da["user_code"].(string)
+
+	cookie := sessionCookieFor(t, app)
+	if m := approveWithSessionOnly(t, app, cookie, userCode); m["status"] != "ok" {
+		t.Fatalf("a signed-in human must approve without re-entering a password, got: %v", m)
+	}
+
+	// The approval binds the SESSION's identity onto the row — the same binding
+	// the credentialed path makes, so the device is signed in as the approver.
+	row, _ := store.GetTokenByCode(tctx(), db, deviceCode)
+	if row == nil || row.User != "hanzo/alice" {
+		t.Fatalf("approval must bind the approver onto the row, got %+v", row)
+	}
+
+	// And the device's poll now completes, which is the point of the whole flow.
+	resp, m := pollDevice(t, app, "hanzo-app", deviceCode)
+	if resp.StatusCode != 200 {
+		t.Fatalf("poll after session approval: status %d: %v", resp.StatusCode, m)
+	}
+	if access, _ := m["access_token"].(string); access == "" {
+		t.Fatalf("an approved device must mint a token: %v", m)
+	}
+}
+
+// Anonymous is still refused. Dropping the type=code restriction must not turn
+// the approval endpoint into one an unauthenticated caller can drive: without a
+// session there is no identity to bind, and a device that could be approved by
+// nobody would be a device anybody could take over.
+func TestDevice_ApproveWithoutSessionIsRefused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedRichUser(t, db)
+	seedDeviceApp(t, db, "hanzo-app")
+
+	_, da := requestDevice(t, app, "hanzo-app", "openid profile")
+	deviceCode, userCode := da["device_code"].(string), da["user_code"].(string)
+
+	// No Cookie header at all.
+	_, body := do(t, app, jsonReq("POST", PathLogin, map[string]string{
+		"type": "device", "userCode": userCode, "application": "hanzo-app",
+	}))
+	if m := decode(t, body); m["status"] != "error" {
+		t.Fatalf("anonymous device approval must be refused, got: %v", m)
+	}
+
+	// Nothing was bound, and the device is still waiting.
+	row, _ := store.GetTokenByCode(tctx(), db, deviceCode)
+	if row != nil && row.User != "" {
+		t.Fatalf("a refused approval must bind nobody, got user=%q", row.User)
+	}
+	resp, m := pollDevice(t, app, "hanzo-app", deviceCode)
+	if resp.StatusCode == 200 {
+		t.Fatalf("an unapproved device must not mint: %v", m)
+	}
+}
