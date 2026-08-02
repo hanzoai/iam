@@ -13,6 +13,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -92,8 +93,85 @@ type deviceResponse struct {
 // authenticates the CLIENT inline — a confidential client by its secret, a
 // public device client by its client_id — so it needs no bearer and joins no
 // allow-list, membership in this group is what makes it reachable.
+//
+// The sibling GET names the client a pending user_code belongs to. It is on the
+// same public group and authenticates the same way every browser path here does:
+// by the session cookie, resolved inline.
 func routeDevice(r zip.Router, db orm.DB) {
 	r.Post(PathDevice, deviceHandler(db))
+	r.Get(PathDevice+"/:userCode", deviceInfoHandler(db))
+}
+
+// deviceInfo is what the approval page must show a human: WHICH application is
+// asking to sign in. Both fields come off the pending device code's own
+// application — never off the portal the browser happens to be on.
+type deviceInfo struct {
+	ClientId    string `json:"clientId"`
+	DisplayName string `json:"displayName"`
+}
+
+// deviceInfoHandler answers "what am I approving?" for a pending device code.
+//
+// The approval page exists to tell a human WHICH application they are authorizing;
+// a page that names the wrong one defeats the control it implements. It used to
+// render the portal's own app name — a constant, `hanzo-console` for every code —
+// so a device code minted by `hanzo-cli` was approved under a screen naming a
+// different application entirely. The client is a property of the CODE, so it is
+// read from the code's row here and nowhere else.
+//
+// Requires a signed-in session, and answers with the same ONE opaque refusal
+// approveDevice uses. That is deliberate: the user_code is only 40 bits and is the
+// one secret in this flow, so an unauthenticated lookup — or one that
+// distinguished unknown from expired from already-approved — would be an oracle
+// for hunting live codes. Gated and opaque, it reveals strictly less than the
+// approval the same caller could already attempt.
+func deviceInfoHandler(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		setTokenCacheHeaders(c)
+		ctx := c.Context()
+
+		// The identity is the browser's session, exactly as the approval itself
+		// resolves it. Not signed in is not a refusal to explain — it is the
+		// page's cue to sign the human in first, so it carries the stable code
+		// the SPA branches on.
+		owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db)
+		if !ok {
+			return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
+		}
+		user, err := store.GetUserByName(ctx, db, owner, name)
+		if err != nil || user == nil || user.IsForbidden || user.IsDeleted {
+			return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
+		}
+
+		const refuse = "the user code is invalid or expired"
+		row, err := store.GetTokenByUserCode(ctx, db, c.Param("userCode"))
+		if err != nil {
+			return httpx.Err(c, refuse)
+		}
+		if row == nil || !isDevice(row) || row.CodeIsUsed || row.User != "" ||
+			expired(row.CodeExpireIn, nowFunc()) {
+			return httpx.Err(c, refuse)
+		}
+		// The same tenant boundary approveDevice enforces: what you may LOOK AT is
+		// exactly what you may approve, so this leaks nothing the caller could not
+		// already have learned by approving.
+		if row.Organization == "" {
+			return httpx.Err(c, refuse)
+		}
+		if !store.IsSuperAdmin(user.Owner) && user.Owner != row.Organization {
+			return httpx.Err(c, "your organization may not approve this device sign-in")
+		}
+
+		app, err := resolveTokenApp(ctx, db, row)
+		if err != nil || app == nil {
+			return httpx.Err(c, refuse)
+		}
+		label := app.DisplayName
+		if label == "" {
+			label = app.Name
+		}
+		return httpx.Ok(c, deviceInfo{ClientId: app.ClientId, DisplayName: label})
+	}
 }
 
 // deviceHandler starts a sign-in on a device with no browser and no keyboard —
