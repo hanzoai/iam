@@ -37,8 +37,8 @@ import (
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/provision"
 	"github.com/hanzoai/iam/internal/routes"
-	_ "github.com/hanzoai/iam/pkg/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/internal/seed"
+	_ "github.com/hanzoai/iam/pkg/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -66,12 +66,12 @@ func main() {
 }
 
 func serveCmd() *cobra.Command {
-	var storeBackend, dbPath, zapAddr, httpAddr, initData string
+	var storeBackend, dbPath, zapAddr, httpAddr, opsAddr, initData string
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Open the entity store and serve the IAM API",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return serve(cmd.Context(), storeBackend, dbPath, zapAddr, httpAddr, initData)
+			return serve(cmd.Context(), storeBackend, dbPath, zapAddr, httpAddr, opsAddr, initData)
 		},
 	}
 	f := cmd.Flags()
@@ -79,11 +79,17 @@ func serveCmd() *cobra.Command {
 	f.StringVar(&dbPath, "db", "data/iam.db", "SQLite database path (store=sqlite)")
 	f.StringVar(&zapAddr, "zap", ":9653", "ZAP primary listen address")
 	f.StringVar(&httpAddr, "http", "http://:8080", "HTTP edge listen address")
+	// The third listener, said the same way as the other two. /healthz, /readyz
+	// and /metrics live here and never on the public port, so a probe does not
+	// queue behind public traffic (HIP-0119 §1). Empty means this process owns no
+	// ops listener — right for a grafted iam, where the HOST owns liveness
+	// (HIP-0106 §1.3(f)); wrong for a standalone one, which is why it defaults on.
+	f.StringVar(&opsAddr, "ops", zip.DefaultOpsAddr, "ops listen address for /healthz, /readyz and /metrics (empty: none)")
 	f.StringVar(&initData, "init-data", "", "path to init_data.json to seed on boot (new-only; ${VAR} from env)")
 	return cmd
 }
 
-func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initData string) error {
+func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr, initData string) error {
 	db, err := openStore(storeBackend, dbPath)
 	if err != nil {
 		return err
@@ -115,7 +121,7 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initDat
 	// endpoint. The authz Guard gates it like any other route (fail-closed), but
 	// an identity service has no need to expose its admin CRUD as an agent tool
 	// surface, so it is disabled outright — one fewer surface to defend.
-	app := zip.New(zip.Config{AppName: "iam", MCP: zip.MCPConfig{Disabled: true}})
+	app := zip.New(zip.Config{AppName: "iam", MCP: zip.MCPConfig{Disabled: true}, OpsAddr: opsAddr})
 	routes.Route(app, db)
 	app.OnShutdown(func(context.Context) error { return db.Close() })
 
