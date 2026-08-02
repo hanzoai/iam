@@ -79,6 +79,48 @@ func Resolve(ctx context.Context, c fiber.Ctx, db orm.DB) (owner, name string, o
 	return sc.Owner, sc.Name, true
 }
 
+// Clear ends the browser session — the inverse of Set, and the ONE way to sign a
+// browser out. It does BOTH halves, because either alone leaves a live session:
+// revokeSID drops the sid from the Session row so a captured copy of the cookie
+// is dead server-side (Resolve's sidActive check fails), and the cookie is
+// expired on the response so the browser stops presenting it.
+//
+// A cookie-only clear would be security theatre: anyone holding a copy of the
+// cookie value stays signed in, which is exactly the person a logout on a shared
+// machine defends against. So the revocation is not best-effort decoration — it
+// is the logout.
+//
+// The cookie is expired FIRST and unconditionally, before any parse: a cookie
+// that no longer verifies (expired signature, rotated key) still must not be left
+// in the browser. Returns the identity that was signed out, so the caller can
+// revoke that principal's tokens too, and ok=false when there was no live session
+// to end (already signed out — an idempotent no-op, never an error).
+func Clear(ctx context.Context, c fiber.Ctx, db orm.DB) (owner, name, application string, ok bool) {
+	c.Cookie(&fiber.Cookie{
+		Name:     CookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   true,
+		HTTPOnly: true,
+		SameSite: fiber.CookieSameSiteLaxMode,
+	})
+	raw := c.Cookies(CookieName)
+	if raw == "" {
+		return "", "", "", false
+	}
+	key, err := keyFor(ctx, db)
+	if err != nil {
+		return "", "", "", false
+	}
+	sc, err := Verify(raw, key)
+	if err != nil {
+		return "", "", "", false
+	}
+	revokeSID(db, sc.Owner, sc.Name, sc.Application, sc.SID)
+	return sc.Owner, sc.Name, sc.Application, true
+}
+
 // Rekey follows a live session across a change of the signed-in user's OWNING org.
 // An IAM identity IS (owner, name), so moving a user between orgs re-keys it and
 // strands every credential that names the old pair — the session cookie above all,
