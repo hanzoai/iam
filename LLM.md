@@ -55,7 +55,9 @@ a shared binary.
 ## Endpoints (HIP-0111 — /v1 only, no /api, no vendor verbs)
 `/.well-known/openid-configuration` · `/v1/iam/.well-known/jwks` ·
 `/v1/iam/oauth/{authorize,token,introspect,revoke,userinfo,logout,callback}` ·
-`/v1/iam/scim/v2/Users`. PKCE `S256` always; `client_id` = `<org>-<app>`.
+`/v1/iam/oauth/device` + `/v1/iam/oauth/device/info` (RFC 8628; `info` names the
+client a pending `user_code` belongs to, session-gated, code in the BODY because
+a request line reaches access logs) · `/v1/iam/scim/v2/Users`. PKCE `S256` always; `client_id` = `<org>-<app>`.
 Brands set `serverUrl`: hanzo→iam.hanzo.ai, lux→lux.id, zoo→zoo.id,
 bootnode→id.bootno.de, pars→pars.id (white-label by domain).
 
