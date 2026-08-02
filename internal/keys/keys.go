@@ -309,9 +309,8 @@ func NameFor(scope string) string {
 //
 // It writes a schema.Key row because that is the ONLY thing the resolvers read. The
 // previous implementation stamped the sk- onto schema.User.AccessKey, which NOTHING
-// resolves: every key minted that way authenticated nobody, and because it overwrote
-// the user's working legacy hk- in the same field it locked the holder out with no
-// way back through the UI. Writing the row the resolver actually reads is the fix.
+// resolves: every key minted that way authenticated nobody. Writing the row the
+// resolver actually reads is the fix.
 //
 // Idempotent by (Owner, NameFor(scope)): re-minting replaces the credential in place.
 func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (string, error) {

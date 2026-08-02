@@ -134,9 +134,9 @@ func TestUpdate_IdIsImmutable(t *testing.T) {
 	}
 }
 
-// A user's credential is not a profile field. hk- resolves a user by exact match on
-// AccessKey (store.UserByAccessKey), so a body that carries one plants a credential
-// the sender already knows and can then present AS that user. It is also what would
+// A user's credential is not a profile field. A body that carries credential material
+// plants a value the sender already knows onto the row, so these fields are cleared on
+// create and carried from the stored row on update. It is also what would
 // let a retired prefix be re-introduced at will, which makes any census of the legacy
 // population meaningless. Minting is the only writer.
 func TestUsers_CredentialIsNotAProfileField(t *testing.T) {
@@ -146,7 +146,7 @@ func TestUsers_CredentialIsNotAProfileField(t *testing.T) {
 
 	made, err := api.Create(ctx, &CreateInput{
 		User: schema.User{Owner: "hanzo", Name: "ada", Email: "ada@hanzo.ai",
-			AccessKey: "hk-live-planted-at-create"},
+			AccessKey: "sk-live-planted-at-create"},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -164,7 +164,7 @@ func TestUsers_CredentialIsNotAProfileField(t *testing.T) {
 
 	got, err := api.Update(ctx, &UpdateInput{
 		User: schema.User{Owner: "hanzo", Name: "ada", Email: "ada@hanzo.ai",
-			DisplayName: "Ada L", AccessKey: "hk-live-planted-by-admin"},
+			DisplayName: "Ada L", AccessKey: "sk-live-planted-by-admin"},
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)

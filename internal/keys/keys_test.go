@@ -129,9 +129,7 @@ func TestKeys_PublishableForcesSecretEmpty(t *testing.T) {
 //
 // It did not. mintUserKeysHandler stamped the sk- onto schema.User.AccessKey, while
 // store.UserByAccessKey's sk- branch reads schema.Key.AccessSecret — the write and
-// the read never met, so every minted key authenticated nobody. Worse, the write
-// landed in the same field as the user's working legacy hk-, so regenerating a key
-// locked the holder out with no way back through the UI.
+// the read never met, so every minted key authenticated nobody.
 func TestMintUserKey_ResolvesBackToItsUser(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()

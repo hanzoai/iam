@@ -165,11 +165,10 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// Never trust a client-supplied digest; the hash is derived here or nowhere.
 	u.PasswordHash, u.PasswordSalt = "", ""
 	u.PasswordType = ""
-	// Nor a client-supplied CREDENTIAL. These fields authenticate: hk- resolves a user
-	// by exact match on AccessKey (store.UserByAccessKey), so a body that carries one
-	// plants a credential the sender already knows onto the new row and can then
-	// present as that user. Minting is the ONLY writer — /v1/iam/mint-user-keys — so
-	// these are cleared here the same way the password digest is.
+	// Nor a client-supplied CREDENTIAL. These fields are credential material, so a
+	// body that carries one plants a value the sender already knows onto the new row.
+	// Minting is the ONLY writer — /v1/iam/mint-user-keys — so these are cleared here
+	// the same way the password digest is.
 	u.AccessKey, u.AccessSecret, u.AccessSecretHash = "", "", ""
 	if in.Password != "" {
 		hash, err := hashPassword(in.Password)
@@ -272,9 +271,8 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	u.LastSigninWrongTime = existing.LastSigninWrongTime
 	// Credentials are carried from the stored row and any body value is IGNORED. This
 	// is a full-row write, so without this a caller with user-admin scope could plant
-	// a known hk- on any user in reach and then authenticate AS them, and could
-	// re-introduce a retired prefix at will — which is also what makes a census of
-	// the legacy population meaningless. Rotation goes through mint/revoke only.
+	// known credential material on any user in reach. Rotation goes through the
+	// mint/revoke seam only.
 	u.AccessKey = existing.AccessKey
 	u.AccessSecret = existing.AccessSecret
 	u.AccessSecretHash = existing.AccessSecretHash

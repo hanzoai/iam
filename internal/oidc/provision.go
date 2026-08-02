@@ -28,8 +28,8 @@ const credentialType = "service-account"
 // The two halves carry DIFFERENT prefixes because they are different things, and the
 // prefix is the only thing a human reading a log or a config file has to tell them
 // apart: pk- is the publishable lookup handle (stored verbatim, safe to show), sk- is
-// the confidential half (digested, revealed once). Minting both as `hk-` made an
-// exposed secret indistinguishable from a harmless handle at a glance.
+// the confidential half (digested, revealed once). Minting both under one prefix
+// would make an exposed secret indistinguishable from a harmless handle at a glance.
 func mintCredential(sa *schema.User) (accessKey, secret string, err error) {
 	accessKey, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
 	hash, err := cred.Hash(secret)

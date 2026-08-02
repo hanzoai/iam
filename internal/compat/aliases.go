@@ -267,7 +267,7 @@ func userGetHandler(db orm.DB) zip.Handler {
 // the four fields cloud's key resolver consumes (auth_apikey.go) and no more. It is
 // a TIGHTER redaction than schema.User.Mask, deliberately: Mask blanks the secret
 // digests and bearer tokens but leaves AccessKey populated, and an sk- resolution
-// must never disclose the resolved user's OTHER credential (its hk- AccessKey) to a
+// must never disclose the resolved user's OTHER credential (the value on its User row) to a
 // caller that only presented a secret key. A projection carrying no secret field is
 // leak-proof by construction.
 type keyUser struct {
