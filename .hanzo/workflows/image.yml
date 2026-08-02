@@ -1,7 +1,7 @@
 name: image
 # THE builder for ghcr.io/hanzoai/iam from main, on Hanzo's own forge.
 #
-#   git.hanzo.ai push (incl. mirror-sync from GitHub) → act_runner
+#   git.hanzo.ai push (from GitHub via sync-from-github.yml) → act_runner
 #   → buildx → ghcr.io/hanzoai/iam:sha-<7>
 #
 # WHY THIS FILE IS NOT CALLED build.yml. Gitea collects workflows from the FIRST
