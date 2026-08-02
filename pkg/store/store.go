@@ -409,6 +409,19 @@ func ListTokensByRefreshFamily(ctx context.Context, db orm.DB, family string) ([
 	return orm.TypedQuery[schema.Token](db).Filter("RefreshFamily=", family).GetAll(ctx)
 }
 
+// ListTokensByUserApp returns every token row one user holds for one application
+// — the grant an RP-initiated logout retires. User is the "owner/name" pair the
+// mint stamps on the row, and BOTH filters are required: a query missing either
+// would revoke across users or across applications, so an empty argument returns
+// nothing rather than matching everything.
+func ListTokensByUserApp(ctx context.Context, db orm.DB, user, application string) ([]*schema.Token, error) {
+	if user == "" || application == "" {
+		return nil, nil
+	}
+	return orm.TypedQuery[schema.Token](db).
+		Filter("User=", user).Filter("Application=", application).GetAll(ctx)
+}
+
 // DeleteToken removes a token row by (owner, name). A missing row is not an
 // error — revocation is idempotent.
 func DeleteToken(ctx context.Context, db orm.DB, tok *schema.Token) error {
