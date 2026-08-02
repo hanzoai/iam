@@ -321,6 +321,46 @@ issued to and a refresh token was being presented under a different id.
 - `internal/{oidc,routes}` — OAuth2/OIDC surface; `internal/{scim,mfa,webauthn,providers,sessions,tokens,cred,authz,certs,keys}`.
 - `internal/{users,organizations,applications,roles,permission,memberships}` — entities; `pkg/model`, `pkg/store`; `MIGRATION.md` (RFC surface + phases).
 
+## CORS — two questions, and the edge answers a third
+
+`internal/cors` decides two things about an `Origin`, and conflating them is a
+privilege escalation:
+
+1. **May it read?** The DERIVED allowlist — any origin some application already
+   registered a `redirect_uri` on. A tenant admin can write into this set, so it
+   only ever grants reads of answers that carry no ambient authority.
+2. **May it send the SSO cookie and read the answer?** `IAM_SESSION_ORIGINS`, a
+   comma-separated list of **exact** origins. Never a suffix, never derived from
+   (1). A malformed entry **panics at route registration**, which is the one
+   place both `iam serve` and the cloud binary that embeds IAM pass through.
+
+The `[cookie]` paths are exactly the five sites `hanzoai/js-iam`
+`src/browser.ts` sends `credentials: "include"` to — `POST /v1/iam/login`,
+`GET /v1/iam/web3/nonce`, `POST /v1/iam/web3/verify`, `POST /v1/iam/oauth/revoke`,
+`POST /v1/iam/oauth/logout`. A browser DISCARDS a credentialed response that
+lacks `Access-Control-Allow-Credentials`, so withholding it on one of them
+withholds no privilege — it breaks the call. Only `POST /v1/iam/login` actually
+spends the cookie (the single-sign-on branch mints an authorization code from
+it); revoke, logout and both wallet legs never read or clear it, so the SDK's
+`credentials: "include"` there is inert and the SDK is where that gets fixed.
+**`logout` not ending the portal session is a real open defect**, not a CORS one.
+
+`IAM_TRUSTED_ORIGIN_SUFFIXES` is a DIFFERENT list, read nowhere in this repo.
+Never wire it to question 2: the fleet serves `<slug>.hanzo.app` as
+customer-published sites, so a suffix read of it would name every customer page
+a first-party console.
+
+**A proxy can override all of this.** Measured 2026-08-01: hitting the cluster
+ingress directly with `Host: iam.hanzo.ai` returns `server: zip`, `Vary: Origin`
+and no ACAO; the same request through Cloudflare returns
+`Access-Control-Allow-Credentials: true` plus the reflected origin. The
+`hanzo.ai` zone reflects a suffix set (`hanzo.ai`, `hanzo.app`, `hanzo.bot`,
+`lux.network`, `zoo.ngo`, `zoo.network`, `pars.ai`, `bootno.de`, `ad.nexus`) and
+the `hanzo.id` zone reflects **any** origin. `*.hanzo.ai` is SAME-SITE with
+`iam.hanzo.ai`, so `SameSite=Lax` does not withhold `hanzo_session` — that is the
+reachable path. No Go change closes it; the edge rule has to be narrowed, and
+this package must answer correctly FIRST or the narrowing breaks every login.
+
 ## OPEN P0 — self-service signup enrolls strangers in the staff tenant
 
 `hanzo-console` / `hanzo-cloud` / `hanzo-gitea` / `hanzo-bot` carry

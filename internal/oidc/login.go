@@ -10,10 +10,10 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/internal/sessions"
-	"github.com/hanzoai/iam/pkg/store"
 	"github.com/hanzoai/iam/internal/users"
+	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // The credential login front door: POST /v1/iam/login. The @hanzo/iam SDK +
@@ -109,9 +109,24 @@ func loginHandler(db orm.DB) zip.Handler {
 			// row is re-read so an account forbidden or deleted since sign-in is
 			// refused rather than riding its old session.
 			//
-			// Not a CSRF mint: /v1/iam/login is not a CORS browser path and the IdP
-			// never allows credentialed cross-origin reads (internal/cors), so only a
-			// first-party page can both send the cookie and read the code.
+			// READ THIS BRANCH AS: a page that can both send the cookie and read the
+			// answer takes the account over. It mints a spendable authorization code
+			// from ambient authority alone, so the ONLY thing standing between it and
+			// any page a signed-in user visits is who may read a credentialed
+			// cross-origin answer here.
+			//
+			// internal/cors is where that is decided, and it decides it by EXACT
+			// origin: this path is open to a browser, and credentialed to the exact
+			// first-party console origins in IAM_SESSION_ORIGINS — never to a suffix,
+			// never to the redirect_uri-derived allowlist a tenant can write into.
+			//
+			// That guarantee is this process's alone. A reverse proxy that appends
+			// Access-Control-Allow-Origin ahead of us overrides it, and one on the
+			// hanzo.ai and hanzo.id zones did: it reflected *.hanzo.ai — SAME-SITE
+			// with the IdP host, so SameSite=Lax does not withhold the cookie — with
+			// Access-Control-Allow-Credentials: true. Any page on a hanzo.ai
+			// subdomain could reach this branch. Narrowing an edge rule is therefore
+			// part of this branch's threat model, not an unrelated concern.
 			if f.Type == "code" {
 				if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
 					user, err := store.GetUserByName(ctx, db, owner, name)
