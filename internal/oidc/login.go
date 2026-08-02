@@ -132,10 +132,27 @@ func loginHandler(db orm.DB) zip.Handler {
 						return httpx.Err(c, err.Error())
 					}
 					if user == nil || user.IsForbidden || user.IsDeleted {
-						return httpx.Err(c, "please sign in first")
+						return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
 					}
 					return loginGrant(c, db, user, f)
 				}
+				// No session, and this flow has no credential to fall back on: the
+				// approval page posts none, by design. Falling through told the human
+				// "organization, username and password are required" — naming three
+				// fields that page does not have and will never show them — so the
+				// only reading was that their credential was wrong, when what was
+				// missing was a sign-in on this browser. Say the thing they can act on.
+				//
+				// The prose differs per flow (only one of them is a device) but the
+				// REASON is one value: CodeLoginRequired is what the page routes on to
+				// show a sign-in form and return here with the user_code intact. A
+				// caller that had to branch on the sentence would break the first time
+				// the sentence was reworded.
+				msg := "please sign in first"
+				if f.Type == "device" {
+					msg = "please sign in first, then approve the device"
+				}
+				return httpx.ErrCode(c, msg, CodeLoginRequired)
 			}
 		}
 
