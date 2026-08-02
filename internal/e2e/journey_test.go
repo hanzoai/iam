@@ -33,8 +33,8 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/routes"
+	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 
 	"github.com/hanzoai/iam/internal/testhttp"
@@ -223,7 +223,7 @@ func (e *env) login(t *testing.T, verifier string) string {
 	body, _ := json.Marshal(map[string]string{
 		"type": "code", "organization": "hanzo", "username": "alice@hanzo.ai", "password": "pw",
 		"clientId": "hanzo-console", "redirectUri": redirectURI, "scope": "openid profile email offline_access",
-		"codeChallenge": oidc.ComputeS256Challenge(verifier), "codeChallengeMethod": "S256",
+		"codeChallenge": pkce.Challenge(verifier), "codeChallengeMethod": "S256",
 	})
 	st, resp := e.req(t, "POST", "/v1/iam/login", "", string(body), "application/json")
 	if st != 200 {

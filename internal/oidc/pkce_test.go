@@ -5,27 +5,24 @@ package oidc
 import (
 	"errors"
 	"testing"
+
+	"github.com/hanzoai/iam/pkg/pkce"
 )
 
-func TestComputeS256Challenge_RFC7636Vector(t *testing.T) {
-	// The canonical RFC 7636 Appendix B test vector.
-	verifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
-	want := "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-	if got := ComputeS256Challenge(verifier); got != want {
-		t.Fatalf("S256 challenge = %q, want %q (RFC 7636 vector)", got, want)
-	}
-}
+// The RFC 7636 Appendix B vector is pinned where the derivation lives, in
+// pkg/pkce. These tests cover what is this package's own: the verification
+// policy around it.
 
 func TestVerifyPKCE_HappyPath(t *testing.T) {
 	verifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
-	challenge := ComputeS256Challenge(verifier)
+	challenge := pkce.Challenge(verifier)
 	if err := VerifyPKCE(verifier, challenge, "S256"); err != nil {
 		t.Fatalf("valid verifier rejected: %v", err)
 	}
 }
 
 func TestVerifyPKCE_WrongVerifierRejected(t *testing.T) {
-	challenge := ComputeS256Challenge("the-real-verifier-value-0000000000000000000")
+	challenge := pkce.Challenge("the-real-verifier-value-0000000000000000000")
 	err := VerifyPKCE("a-different-verifier-value-000000000000000000", challenge, "S256")
 	if !errors.Is(err, ErrPKCEMismatch) {
 		t.Fatalf("wrong verifier: got %v, want ErrPKCEMismatch", err)
@@ -43,7 +40,7 @@ func TestVerifyPKCE_PlainRejected(t *testing.T) {
 }
 
 func TestVerifyPKCE_MissingVerifier(t *testing.T) {
-	challenge := ComputeS256Challenge("some-verifier-0000000000000000000000000000000")
+	challenge := pkce.Challenge("some-verifier-0000000000000000000000000000000")
 	if err := VerifyPKCE("", challenge, "S256"); !errors.Is(err, ErrPKCEMissing) {
 		t.Fatalf("empty verifier with a stored challenge: got %v, want ErrPKCEMissing", err)
 	}

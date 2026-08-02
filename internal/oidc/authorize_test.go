@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/hanzoai/iam/pkg/pkce"
 )
 
 const testRedirect = "https://app.example/callback"
@@ -85,7 +87,7 @@ func TestAuthorize_DelegatesValidRequest(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}})
 
-	challenge := ComputeS256Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")
+	challenge := pkce.Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")
 	q := url.Values{
 		"response_type":  {"code"},
 		"client_id":      {"pub"},

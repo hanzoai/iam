@@ -20,6 +20,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -264,7 +265,7 @@ func beginAuthorize(t *testing.T, app *zip.App, clientID, provider string) (url.
 		"redirect_uri":          {testRedirect},
 		"scope":                 {"openid email profile"},
 		"state":                 {fedAppState},
-		"code_challenge":        {ComputeS256Challenge(fedVerifier)},
+		"code_challenge":        {pkce.Challenge(fedVerifier)},
 		"code_challenge_method": {"S256"},
 		"provider":              {provider},
 	}
@@ -700,7 +701,7 @@ func TestFederation_NonAllowlistedRedirectUriRefused(t *testing.T) {
 	q := url.Values{
 		"response_type": {"code"}, "client_id": {"webapp"},
 		"redirect_uri":   {"https://evil.example/steal"},
-		"code_challenge": {ComputeS256Challenge(fedVerifier)},
+		"code_challenge": {pkce.Challenge(fedVerifier)},
 		"provider":       {fedProvGoogle},
 	}
 	resp, _ := do(t, app, formReqNoBody("GET", PathAuthorize+"?"+q.Encode()))
@@ -775,7 +776,7 @@ func federationAuthorizeQuery(clientID string) url.Values {
 		"response_type":         {"code"},
 		"client_id":             {clientID},
 		"redirect_uri":          {testRedirect},
-		"code_challenge":        {ComputeS256Challenge(fedVerifier)},
+		"code_challenge":        {pkce.Challenge(fedVerifier)},
 		"code_challenge_method": {"S256"},
 		"state":                 {fedAppState},
 		"provider":              {fedProvGoogle},
