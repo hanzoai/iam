@@ -3,8 +3,9 @@
 Canonical **Hanzo IAM** service: identity & access for the Hanzo cloud —
 OpenID Connect / OAuth2 with PKCE, JWKS, UserInfo, SCIM 2.0, MFA/WebAuthn,
 social federation. The server behind the `@hanzo/iam` SDK. Proprietary,
-clean-room rewrite on the Hanzo stack (`zip` over `hanzoai/orm`) — no the legacy surface,
-Beego, or xorm. Retired the legacy surface fork = `hanzoai/iam-v1` (do not use).
+clean-room rewrite on the Hanzo stack (`zip` over `hanzoai/orm`) — no Casdoor,
+Beego, or xorm. The retired Casdoor fork is `hanzoai/iam-v1` (archived, do not use);
+its versions are retracted here — see `TestCasdoorLineageRetracted`.
 
 ## Role in the model
 This is a `hanzoai/<product>` service (impl lives here, DRY — one place). It is
