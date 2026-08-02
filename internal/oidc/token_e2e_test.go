@@ -15,6 +15,7 @@ import (
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 
+	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -79,7 +80,7 @@ func TestTokenExchange_EndToEnd(t *testing.T) {
 
 	// --- authorize side: mint a PKCE-bound code and persist it ---
 	verifier := "e2e-verifier-000000000000000000000000000000000000"
-	code, err := MintCode(app, "hanzo/alice", "openid profile", ComputeS256Challenge(verifier), "S256", "", now)
+	code, err := MintCode(app, "hanzo/alice", "openid profile", pkce.Challenge(verifier), "S256", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}

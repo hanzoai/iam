@@ -12,6 +12,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -474,7 +475,7 @@ func TestDevice_AuthorizationCodeIsNotRedeemableAsDeviceCode(t *testing.T) {
 	code, _, _ := loginForCode(t, app, map[string]string{
 		"organization": "hanzo", "username": "alice", "password": "pw",
 		"clientId": "hanzo-app", "redirectUri": testRedirect, "scope": "openid",
-		"codeChallenge": ComputeS256Challenge(verifier), "codeChallengeMethod": "S256",
+		"codeChallenge": pkce.Challenge(verifier), "codeChallengeMethod": "S256",
 	})
 	if code == "" {
 		t.Fatal("setup: no authorization code minted")

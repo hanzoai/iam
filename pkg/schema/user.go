@@ -35,7 +35,7 @@ type User struct {
 	// locks and looks a row up by — which is NOT (Owner, Name) for every row: a MIGRATED
 	// legacy row is stamped "owner/name" (SetId in the migrator), but a v2-native
 	// users.Create'd row is NOT — Create allocates rather than pinning a key, so its
-	// storage key is a store-assigned surrogate id (a GenerateID decimal string like
+	// storage key is a store-assigned surrogate id (a decimal string like
 	// "17847909129933610000001"). (Owner, Name) is therefore the natural/QUERY key
 	// (unique, indexed), not necessarily the storage key: resolve a row for a locked
 	// write by its REAL key (store.GetUserByName(...).Key().Encode(), which stamps both
