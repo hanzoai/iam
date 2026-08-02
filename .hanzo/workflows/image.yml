@@ -114,13 +114,36 @@ jobs:
       # commit newer than the last built release and older than two tagged ones,
       # so the estate's IdP ran code no version named. A release is a version.
       # Nothing else earns a name in the registry.
+      #
+      # Three outputs, each with ONE meaning, because the single `tag` output
+      # they replace had two: a bare `v1.34.6` on a tag push but a WHOLE image
+      # ref on a branch push. Every consumer then had to know which case it was
+      # in, and the verify step below did not — it prefixed the repo again and
+      # asked the registry for `ghcr.io/hanzoai/iam:ghcr.io/hanzoai/iam:
+      # unpublished`, which cannot resolve, so it burned its six retries and
+      # failed the job. Every push to main was red, on a builder that had in
+      # fact built the image correctly.
+      #
+      #   version — what the binary reports (`/iam version`)
+      #   image   — the full destination ref
+      #   push    — whether this ref is published at all
       - id: meta
         run: |
           case "$GITHUB_REF" in
-            refs/tags/v*) tag="${GITHUB_REF#refs/tags/}"; push=true ;;
-            *)            tag="ghcr.io/hanzoai/iam:unpublished"; push=false ;;
+            refs/tags/v*)
+              version="${GITHUB_REF#refs/tags/}"
+              image="ghcr.io/hanzoai/iam:${version}"
+              push=true ;;
+            *)
+              # An unpublished build is honestly `dev` — an empty VERSION would
+              # override the Dockerfile's `ARG VERSION=dev` with nothing and
+              # link a blank version into the binary.
+              version=dev
+              image="ghcr.io/hanzoai/iam:unpublished"
+              push=false ;;
           esac
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "push=$push" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
@@ -141,15 +164,15 @@ jobs:
           platforms: linux/amd64
           push: ${{ steps.meta.outputs.push }}
           provenance: false
-          tags: ${{ startsWith(github.ref, 'refs/tags/v') && format('ghcr.io/hanzoai/iam:{0}', steps.meta.outputs.tag) || steps.meta.outputs.tag }}
+          tags: ${{ steps.meta.outputs.image }}
           # The Dockerfile already carries `-X main.version=${VERSION}`, but its
           # `ARG VERSION=dev` default was never overridden here — so every image
           # this builder shipped reported `iam dev` from `/iam version` and could
           # not name its own lineage. Measured on the live pod, 2026-07-27. Pass
-          # the SAME string used as the image tag: `iam sha-d2aa268` then states
-          # exactly which artifact is running, with no second identifier to drift.
+          # the release the tag names, so `/iam version` and the image tag are
+          # the same string with no second identifier to drift.
           build-args: |
-            VERSION=${{ steps.meta.outputs.tag }}
+            VERSION=${{ steps.meta.outputs.version }}
           # The Dockerfile mounts this to rewrite github.com to an authenticated
           # fetch for the private hanzoai modules. Without it `go mod download`
           # fails on hanzoai/orm.
@@ -159,10 +182,15 @@ jobs:
       # build-push-action can exit 0 before the manifest is resolvable at the
       # registry. Prove the image actually pulls, so a green run always means a
       # usable image rather than a future ImagePullBackOff.
+      #
+      # Only when something was published: a branch build pushes nothing, so
+      # there is no manifest at the registry to resolve and asking for one
+      # fails a run that did exactly what it should.
       - name: Verify the pushed image resolves
+        if: steps.meta.outputs.push == 'true'
         run: |
           set -euo pipefail
-          img="ghcr.io/hanzoai/iam:${{ steps.meta.outputs.tag }}"
+          img="${{ steps.meta.outputs.image }}"
           for i in 1 2 3 4 5 6; do
             if docker manifest inspect "$img" >/dev/null 2>&1; then
               echo "$img is pullable"; exit 0
