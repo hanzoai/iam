@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -415,7 +416,48 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 	if !app.EnableSignUp {
 		return nil, errors.New("federation: this application does not allow to sign up new account")
 	}
-	return provisionFederatedUser(ctx, db, app, prov, binding, id)
+	u, err := provisionFederatedUser(ctx, db, app, prov, binding, id)
+	if err != nil {
+		return nil, err
+	}
+	// A SOCIAL signup is a signup, so it lands where a password signup lands: in an
+	// org of its own. Federation reaches this line with the account already created
+	// in the APP's org, which for the live consumer apps is the shared signup org —
+	// the co-tenancy the personal-org policy exists to prevent. Leaving this branch
+	// out would have closed the exposure for the password door and left it standing
+	// on the social one, which is the same half-applied-policy shape as the
+	// EnableSignUp check just above.
+	//
+	// It matters most on THIS door. A federated identity arrives with an address the
+	// IdP already vouched for, so social is the path that can be funded today; an
+	// account funded while still inside the shared org would be the worst of both.
+	//
+	// Atomic, like the password door: a failure to provision withdraws the account
+	// rather than leaving one behind in the shared org, reported as a successful
+	// login.
+	if app.OrgChoiceMode == orgChoicePersonal {
+		out, perr := provisionPersonalOrg(ctx, db, u.Owner, u.Name, id.displayName)
+		if perr != nil {
+			if _, derr := users.New(db).Delete(ctx, &users.Ref{Owner: u.Owner, Name: u.Name}); derr != nil {
+				slog.Error("federation: could not withdraw a user whose org provisioning failed",
+					"org", u.Owner, "user", u.Name, "provision_err", perr, "delete_err", derr)
+			}
+			return nil, perr
+		}
+		// The row was MOVED, so the handle in hand names an org the account no longer
+		// belongs to — and everything downstream (the subject it mints, the org whose
+		// MFA policy it reads) is keyed on that pair. Re-read under the new owner so
+		// one identity, not two spellings of it, leaves this function.
+		moved, mErr := store.GetUserByName(ctx, db, out.org, u.Name)
+		if mErr != nil {
+			return nil, mErr
+		}
+		if moved == nil {
+			return nil, errors.New("federation: provisioned account could not be resolved in its new organization")
+		}
+		return moved, nil
+	}
+	return u, nil
 }
 
 // provisionFederatedUser creates a new federated account through the ONE
