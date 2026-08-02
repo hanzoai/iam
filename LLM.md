@@ -323,7 +323,37 @@ issued to and a refresh token was being presented under a different id.
 - `internal/{oidc,routes}` — OAuth2/OIDC surface; `internal/{scim,mfa,webauthn,providers,sessions,tokens,cred,authz,certs,keys}`.
 - `internal/{users,organizations,applications,roles,permission,memberships}` — entities; `pkg/model`, `pkg/store`; `MIGRATION.md` (RFC surface + phases).
 
-## OPEN P0 — self-service signup enrolls strangers in the staff tenant
+## FIXED — self-service signup enrolled strangers in the staff tenant
+
+**Closed by `orgChoiceMode: "personal"`** (internal/oidc: `orgChoicePersonal`,
+`provisionPersonalOrg`). A signup — password OR social — is now provisioned into
+an org derived from its own username the moment the account exists, so nobody is
+left holding a signed `member` claim for the `hanzo` tenant. The two doors that
+admit sign-up (`hanzo-console`, `hanzo-app`) carry the mode in universe
+`infra/k8s/iam/init_data.json`.
+
+It reuses `provision()` rather than adding a second provisioning path, so
+self-serve signup, the onboarding front door and the service-token admin
+provision converge to identical tenant state. Signup is atomic across the two
+writes: a provisioning failure withdraws the account instead of reporting
+success for one stranded in the shared org.
+
+Two corrections to the note below, both since verified:
+- `server.Seed` is **no longer new-only** for application POLICY. `reconcileApp`
+  re-applies `appPolicyKeys` (enableSignUp, enablePassword, enableCodeSignin,
+  enableSigninSession, orgChoiceMode, isShared, organization) on every boot, so
+  `init_data.json` IS the durable remediation and `update-application` is not
+  required. Everything else on the row — redirectUris, grants, clientSecret,
+  cert — is still left alone.
+- Federation ignored `EnableSignUp` entirely, so turning the flag off closed the
+  password and wallet doors while "Continue with Google" kept minting accounts on
+  the same app. The check now sits on the branch that CREATES an account, so
+  closing sign-up no longer locks existing users out.
+
+The original report, kept because it is the measured blast radius and the reason
+the fix is shaped the way it is:
+
+## (historical) OPEN P0 — self-service signup enrolls strangers in the staff tenant
 
 `hanzo-console` / `hanzo-cloud` / `hanzo-gitea` / `hanzo-bot` carry
 `enableSignUp: true` with `organization: hanzo` (universe
@@ -348,14 +378,13 @@ closes it — `provision` (onboard.go) refuses an existing org the caller did no
 found ("an existing one is refused by the create-conflict check"), while
 `signup` happily joins one. Two doors to the same end state, one locked.
 
-NOT fixed unilaterally: every candidate fix trades off badly without an owner
-decision. Turning `enableSignUp` off on those apps closes it instantly but stops
-customer signup; note also that `server.Seed` is **new-only**, so editing
-`init_data.json` does NOT change a live app row — remediation must go through
-`update-application`, which then needs a GitOps record. The durable fix is to
-stop reading storage `Owner` as membership (`MemberOrgRefs`), with
-`BackfillMemberships` already writing the explicit rows that would replace it.
-Decide, then do it in ONE place.
+The asymmetry was resolved in signup's favour rather than by closing the door:
+the caller gets their OWN org, so there is no existing org to join and nothing to
+refuse. `MemberOrgRefs` still emits `user.Owner` as the home entry — correctly,
+since that org is now the person's own — so the deeper change (stop reading
+storage `Owner` as membership, using the rows `BackfillMemberships` already
+writes) is no longer load-bearing for this bug and can be sequenced on its own
+merits.
 
 ## Brand rules (hard)
 - Never call Hanzo an "LLM gateway"; never position vs LiteLLM. Full AI cloud, not a proxy.
