@@ -1,0 +1,80 @@
+name: Sync from GitHub
+# git.hanzo.ai is the build plane (.hanzo/workflows/image.yml cuts the image)
+# but development also lands on github.com/hanzoai/iam. This job is what carries
+# commits between them, and it is the ONLY one — the GitHub-side push nudge
+# (.github/workflows/sync.yaml) was deleted with it.
+#
+# WHY PULL, NOT PUSH. Four mechanisms could in principle sync this repo; three
+# provably cannot:
+#   - org webhook -> git.hanzo.ai/v1/sync, and cron.update_mirrors: BOTH are
+#     mirror-sync. This repo is mirror:false, and the forge rejects it outright:
+#     POST /v1/repos/hanzoai/iam/mirror-sync -> 400 {"message":"Repository is
+#     not a mirror"}. Those paths cover the ~2,300 mirror repos, never this one.
+#   - GitHub Actions push: needs a forge-WRITE token (FORGE_TOKEN) inside
+#     GitHub's secret store. It was never set here, so every run since the
+#     workflow was tightened failed `FORGE_TOKEN is not set` — 8 red runs on
+#     2026-08-02 alone — while main drifted 2 commits / ~3h behind GitHub.
+#
+# So this repo had ZERO working sync paths, and image.yml never saw a commit.
+#
+# The pull needs no new secret: GH_PAT is already a git.hanzo.ai ORG secret for
+# hanzoai (created 2026-07-19), so it is in scope for every repo here. The only
+# credential is READ-only against GitHub, held in-cluster; the forge write is
+# done by the runner's own workflow token against the instance URL that
+# actions/checkout already uses. Nothing needs a forge-write key in GitHub.
+#
+# Fast-forward only: a divergence fails LOUDLY rather than force-pushing either
+# side.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+concurrency:
+  group: sync-from-github
+  cancel-in-progress: false
+jobs:
+  ff-main:
+    runs-on: [hanzo-build-linux-amd64]
+    steps:
+      - name: Checkout forge main (full history for the ancestry check)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Persist the token-auth remote so the push below reuses it.
+          persist-credentials: true
+      - name: Fast-forward main from github.com/hanzoai/iam
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_PAT:-}" ]; then
+            echo "::error::GH_PAT is not set — refusing to sync silently."
+            exit 1
+          fi
+          git fetch --quiet "https://x-access-token:${GH_PAT}@github.com/hanzoai/iam.git" main
+          LOCAL="$(git rev-parse HEAD)"
+          REMOTE="$(git rev-parse FETCH_HEAD)"
+          if [ "$LOCAL" = "$REMOTE" ]; then
+            echo "in sync at $LOCAL"
+            exit 0
+          fi
+          if git merge-base --is-ancestor "$LOCAL" "$REMOTE"; then
+            echo "fast-forwarding $LOCAL -> $REMOTE"
+            git push origin "$REMOTE:refs/heads/main"
+            # A push made with the workflow token does NOT trigger other
+            # workflows (loop prevention) — so synced commits would never cut
+            # an image. Dispatch the builder explicitly; a real ff means real
+            # commits arrived, so bypassing its paths judgement is correct.
+            curl -fsS --max-time 20 -X POST \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "${{ github.server_url }}/v1/repos/${{ github.repository }}/actions/workflows/image.yml/dispatches" \
+              -d '{"ref":"main"}' \
+              && echo "image dispatched" || echo "image dispatch failed (non-fatal — next direct push will build)"
+          elif git merge-base --is-ancestor "$REMOTE" "$LOCAL"; then
+            echo "forge is AHEAD of GitHub ($REMOTE ancestor of $LOCAL) — nothing to pull."
+            echo "(GitHub catch-up is a separate concern; never force from here.)"
+          else
+            echo "::error::main DIVERGED between GitHub ($REMOTE) and forge ($LOCAL) — refusing to force. Reconcile manually."
+            exit 1
+          fi
