@@ -54,6 +54,8 @@ const (
 const CodeLoginRequired = "login_required"
 
 // Route registers the entire OIDC/OAuth2 surface on r, backed by db. This is the
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // one entry point the route table calls — discovery, JWKS, the protocol
 // endpoints, and the front door are all bound here so the surface lives in one
 // place. r is the PUBLIC group (registered before the router's authentication

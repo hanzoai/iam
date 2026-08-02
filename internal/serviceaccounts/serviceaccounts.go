@@ -266,7 +266,7 @@ func read(p *authz.Principal, org string) bool {
 // persists. The raw secret is returned to the caller and never written.
 //
 // pk- for the handle, sk- for the secret: the prefix is what tells a reader which
-// half they are holding. Minting both as `hk-` erased that distinction.
+// half they are holding. Minting both under one prefix erases that distinction.
 func mint(sa *schema.User) (key, secret string, err error) {
 	key, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
 	hash, err := cred.Hash(secret)

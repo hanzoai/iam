@@ -16,7 +16,7 @@ import "github.com/hanzoai/orm"
 // Neither half is derivable from the other.
 //
 // "Write-only" is load-bearing and enforced, not a label: a pk-* NEVER resolves
-// to a read-capable principal (store.UserByAccessKey routes only hk-/sk- to a
+// to a read-capable principal (store.UserByAccessKey routes only sk- to a
 // user; a pk- is refused there), so it is safe to embed in client JS. Its only
 // resolution is org-only, at the ingest door (keys.resolve → /v1/iam/resolve-key),
 // and only for a publishable key (Scope == "publish"). The confidential sk-* is

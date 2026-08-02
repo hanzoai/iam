@@ -58,7 +58,7 @@ var (
 	// is additionally tenant-bound by BoundToOrg.
 	CapServiceAccountRead = Cap{Name: "service-account-read", Env: "IAM_SA_LIST_ALLOWED_APPS"}
 
-	// CapKeyResolve gates resolving an opaque SECRET API key (hk-/sk-) to its owning
+	// CapKeyResolve gates resolving an opaque SECRET API key (sk-) to its owning
 	// principal via get-user?accessKey. It is a CREDENTIAL-DISCLOSURE boundary: the
 	// caller presents a secret key and learns WHO it authenticates, so it must never
 	// be an arbitrary authenticated caller. A public pk- is NOT resolved here: it is

@@ -136,18 +136,6 @@ func seedUser(t *testing.T, db orm.DB, org, name, password string, isAdmin bool)
 	}
 }
 
-func seedUserKey(t *testing.T, db orm.DB, org, name, accessKey string) {
-	t.Helper()
-	u := orm.New[schema.User](db)
-	u.Owner = org
-	u.Name = name
-	u.AccessKey = accessKey
-	u.SetId(org + "/" + name)
-	if err := u.CreateCtx(context.Background()); err != nil {
-		t.Fatalf("seed user key: %v", err)
-	}
-}
-
 // seedKeyRow creates a user in org `org` (IsAdmin as given) plus a schema.Key
 // (pk- publishable + sk- secret halves) that belongs to it — the shape whose SECRET
 // sk- half store.UserByAccessKey resolves to a user (the public pk- half is write-only
@@ -456,9 +444,10 @@ func TestToken_HanzoOrgAdmin_CanPush(t *testing.T) {
 // narrowed to non-reserved orgs (see TestToken_SuperAdminPassword_Denied).
 func TestToken_SuperAdminKey_CanPush(t *testing.T) {
 	app, db, _ := newServer(t)
-	seedUserKey(t, db, "admin", "z", "hk-SUPERADMINkey0001") // owner==admin ⇒ SuperAdmin
+	// owner==admin ⇒ SuperAdmin
+	seedKeyRow(t, db, "admin", "z", true, "pk-SUPERADMINkey0001", "sk-SUPERADMINkey0001")
 
-	status, body, _ := tokenGET(t, app, "z", "hk-SUPERADMINkey0001",
+	status, body, _ := tokenGET(t, app, "z", "sk-SUPERADMINkey0001",
 		"registry.hanzo.ai", "repository:hanzo/app:pull,push")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
@@ -499,14 +488,14 @@ func TestToken_SuperAdminPassword_Denied(t *testing.T) {
 	}
 }
 
-// TestToken_ApiKey_Password proves the hk- API-key credential path: the key rides
-// in the password field (docker login -u <anything> -p hk-...) and resolves to its
+// TestToken_ApiKey_Password proves the SECRET API-key credential path: the key rides
+// in the password field (docker login -u <anything> -p sk-...) and resolves to its
 // owning user through the ONE key resolver.
 func TestToken_ApiKey_Password(t *testing.T) {
 	app, db, _ := newServer(t)
-	seedUserKey(t, db, "hanzo", "dave", "hk-DEADBEEFdeadbeef00")
+	seedKeyRow(t, db, "hanzo", "dave", false, "pk-DEADBEEFdeadbeef00", "sk-DEADBEEFdeadbeef00")
 
-	status, body, _ := tokenGET(t, app, "dave", "hk-DEADBEEFdeadbeef00",
+	status, body, _ := tokenGET(t, app, "dave", "sk-DEADBEEFdeadbeef00",
 		"registry.hanzo.ai", "repository:hanzo/app:pull")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
@@ -523,12 +512,12 @@ func TestToken_ApiKey_Password(t *testing.T) {
 }
 
 // TestToken_ApiKey_Username proves the token-as-username shape (docker login -u
-// hk-... -p x) also resolves via the same key path.
+// sk-... -p x) also resolves via the same key path.
 func TestToken_ApiKey_Username(t *testing.T) {
 	app, db, _ := newServer(t)
-	seedUserKey(t, db, "hanzo", "erin", "hk-CAFEBABEcafebabe11")
+	seedKeyRow(t, db, "hanzo", "erin", false, "pk-CAFEBABEcafebabe11", "sk-CAFEBABEcafebabe11")
 
-	status, body, _ := tokenGET(t, app, "hk-CAFEBABEcafebabe11", "x",
+	status, body, _ := tokenGET(t, app, "sk-CAFEBABEcafebabe11", "x",
 		"registry.hanzo.ai", "repository:hanzo/app:pull")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
