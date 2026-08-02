@@ -4,6 +4,9 @@ package oidc
 
 import (
 	"context"
+	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -107,6 +110,15 @@ type provisioned struct {
 type fault struct {
 	status int
 	msg    string
+	// slugTaken marks the ONE refusal that a different slug would resolve: the org
+	// name is already standing and is not this caller's to complete. It exists so an
+	// automatic name search (provisionPersonalOrg) can retry on exactly that reason
+	// and on nothing else — the other 409 here means "you already have an org", which
+	// no amount of renaming fixes and which a retry loop would spin on forever.
+	//
+	// A field rather than a message comparison: the message is a human sentence that
+	// will be reworded, and control flow must not depend on its spelling.
+	slugTaken bool
 }
 
 func (f *fault) Error() string { return f.msg }
@@ -119,10 +131,10 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 	// primitive every caller inherits, so the property holds even if a future caller
 	// forgets the check.
 	if len(cl.slug) < minOrgSlug {
-		return provisioned{}, &fault{400, "org name too short"}
+		return provisioned{}, &fault{status: 400, msg: "org name too short"}
 	}
 	if store.IsReservedOrg(cl.slug) {
-		return provisioned{}, &fault{400, "\"" + cl.slug + "\" is reserved"}
+		return provisioned{}, &fault{status: 400, msg: "\"" + cl.slug + "\" is reserved"}
 	}
 
 	var out provisioned
@@ -134,7 +146,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// identity, so the replay converges instead of failing "user does not exist".
 		user, err := store.GetUserByName(ctx, tx, cl.owner, cl.name)
 		if err != nil {
-			return &fault{500, "server_error"}
+			return &fault{status: 500, msg: "server_error"}
 		}
 		if user == nil {
 			if u, e := store.GetUserByName(ctx, tx, cl.slug, cl.name); e == nil {
@@ -142,7 +154,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 			}
 		}
 		if user == nil {
-			return &fault{400, "the user does not exist"}
+			return &fault{status: 400, msg: "the user does not exist"}
 		}
 		founder := user.Model.Id() // stable surrogate storage id — survives the Owner re-key
 
@@ -153,14 +165,14 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// additional orgs are a separate (membership) flow. A brand-new signup (admin
 		// of nothing yet) is first-run and passes.
 		if user.IsAdmin && user.Owner != cl.slug {
-			return &fault{409, "you already have an organization; additional orgs are added separately"}
+			return &fault{status: 409, msg: "you already have an organization; additional orgs are added separately"}
 		}
 
 		// Ensure the org by its (Owner="admin", Name=slug) natural key, stamping the
 		// founder on create.
 		org, err := store.GetOrganizationByName(ctx, tx, cl.slug)
 		if err != nil {
-			return &fault{500, "server_error"}
+			return &fault{status: 500, msg: "server_error"}
 		}
 		orgCreated := org == nil
 		if orgCreated {
@@ -173,7 +185,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 			o.CreatedTime = provisionNow()
 			o.SetId("admin/" + cl.slug)
 			if err := o.CreateCtx(ctx); err != nil {
-				return &fault{500, "server_error"}
+				return &fault{status: 500, msg: "server_error"}
 			}
 		}
 		out.orgCreated = orgCreated
@@ -187,7 +199,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// RESUMES to one org + admin instead of stranding on a permanent 409, and a
 		// second identity can never complete, join, or hijack the org.
 		if !orgCreated && !(user.Owner == cl.slug && user.IsAdmin) && org.Founder != founder {
-			return &fault{409, "the organization \"" + cl.slug + "\" already exists"}
+			return &fault{status: 409, msg: "the organization \"" + cl.slug + "\" already exists", slugTaken: true}
 		}
 
 		// Move the caller into the org as its admin (changing Owner re-keys the
@@ -199,7 +211,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 			user.IsAdmin = true
 			user.UpdatedTime = provisionNow()
 			if err := user.UpdateCtx(ctx); err != nil {
-				return &fault{500, "server_error"}
+				return &fault{status: 500, msg: "server_error"}
 			}
 		}
 		out.movedFrom = wasOwner
@@ -216,11 +228,11 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// legitimately reach — it states the invariant the derivation relies on.
 		saName, err := schema.Username(cl.slug + "-default")
 		if err != nil {
-			return &fault{400, err.Error()}
+			return &fault{status: 400, msg: err.Error()}
 		}
 		sa, err := store.GetUserByName(ctx, tx, cl.slug, saName)
 		if err != nil {
-			return &fault{500, "server_error"}
+			return &fault{status: 500, msg: "server_error"}
 		}
 		keyCreated := sa == nil
 		if keyCreated {
@@ -231,10 +243,10 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 			sa.SetId(cl.slug + "/" + saName)
 			accessKey, secret, mErr := mintCredential(sa)
 			if mErr != nil {
-				return &fault{500, "server_error"}
+				return &fault{status: 500, msg: "server_error"}
 			}
 			if err := sa.CreateCtx(ctx); err != nil {
-				return &fault{500, "server_error"}
+				return &fault{status: 500, msg: "server_error"}
 			}
 			out.accessKey = accessKey
 			out.accessSecret = secret // shown once, on first mint
@@ -252,7 +264,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// quietly demote them. Idempotent on the (user, org) pair, so a replay adds
 		// nothing.
 		if _, err := store.EnsureMembership(ctx, tx, cl.slug+"/"+cl.name, cl.slug, store.RoleOwner); err != nil {
-			return &fault{500, "server_error"}
+			return &fault{status: 500, msg: "server_error"}
 		}
 		// The move RE-KEYS the caller (user ids are "<owner>/<name>"), which strands
 		// the membership row filed under the OLD id: it names an identity that no
@@ -261,7 +273,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// of memberships. Idempotent (a missing row reports false, never an error).
 		if wasOwner != cl.slug {
 			if _, err := store.DeleteMembership(ctx, tx, wasOwner+"/"+cl.name, wasOwner); err != nil {
-				return &fault{500, "server_error"}
+				return &fault{status: 500, msg: "server_error"}
 			}
 		}
 		out.org = cl.slug
@@ -277,3 +289,81 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 // provisionNow is the RFC3339 string timestamp for a freshly created/updated row,
 // matching the v1-compatible stamp onboarding writes elsewhere.
 func provisionNow() string { return time.Now().UTC().Format(time.RFC3339) }
+
+// personalOrgAttempts bounds the automatic name search below. Bounded, because an
+// unbounded search against a contended name is a transaction held open for as long
+// as an attacker cares to contend it; generous, because the search only advances
+// when a name is genuinely taken. It matches federatedNameAttempts, which bounds
+// the username search for the same reason.
+const personalOrgAttempts = 32
+
+// provisionPersonalOrg gives a brand-new account its OWN tenant, deriving the org
+// name from the person's username and resolving collisions by numbering.
+//
+// WHY EVERY SIGNUP GETS AN ORG. Landing a stranger in the shared signup org makes
+// them a CO-TENANT of Hanzo's own org, and org membership is the only isolation
+// boundary cloud's read paths have: /v1/projects, /v1/git/repos, /v1/git/keys and
+// the finance ledger each filter on `org = ?` and nothing else. An account parked
+// in the signup org can therefore read the platform's own projects, repositories,
+// deploy keys and transaction history. One real org per person closes all of them
+// at the boundary they ALREADY enforce, instead of teaching twenty read paths
+// about one special org — which is the same fix twenty times, and nineteen chances
+// to forget.
+//
+// It is also what makes the account billable. cloud grants the starter credit only
+// where the caller's home org is their own; it excludes the shared signup org by
+// name, deliberately, as anti-abuse. So an account that never left the signup org
+// could never be funded. The org and the grant were two halves of one thing and
+// only one of them had shipped.
+//
+// ONE PROVISIONING PATH. This is a name search WRAPPED AROUND provision(); it
+// creates nothing itself. The org row, the founder's move, the membership and the
+// metered default key are all provision()'s, so a self-serve signup, the onboarding
+// front door and the service-token admin provision converge to identical tenant
+// state and cannot drift apart.
+func provisionPersonalOrg(ctx context.Context, db orm.DB, owner, name, display string) (provisioned, error) {
+	base := personalOrgSlug(name)
+	if base == "" {
+		return provisioned{}, &fault{status: 400, msg: "cannot derive an organization name from this username"}
+	}
+	if display == "" {
+		display = name
+	}
+	// Start the numbering at 2 when the bare name cannot be an org in its own right:
+	// too short for minOrgSlug ("a"), or a reserved system name ("admin"). Both are
+	// legal USERNAMES, and neither may cost someone their signup — "a" becomes "a2"
+	// and "admin" becomes "admin2". Deciding it here keeps provision()'s reserved-org
+	// refusal absolute, which is what makes it a security primitive.
+	start := 1
+	if len(base) < minOrgSlug || store.IsReservedOrg(base) {
+		start = 2
+	}
+	for n := start; n < start+personalOrgAttempts; n++ {
+		slug := base
+		if n > 1 {
+			suffix := strconv.Itoa(n)
+			// The slug is the stem of a DERIVED credential name ("<slug>-default")
+			// that schema.Username bounds, so the suffix comes OUT of the stem's
+			// budget rather than on top of it — otherwise a maximum-length name would
+			// provision an org whose own default key cannot be named.
+			if len(slug)+len(suffix) > maxOrgSlug {
+				slug = slug[:maxOrgSlug-len(suffix)]
+			}
+			slug = strings.TrimRight(slug, "-") + suffix
+		}
+		out, err := provision(ctx, db, claim{owner: owner, name: name, slug: slug, display: display, personal: true})
+		if err == nil {
+			return out, nil
+		}
+		// Advance ONLY on "that name is someone else's". Every other refusal — the
+		// caller already has an org, the user vanished, the store failed — is answered
+		// by returning it, because renaming cannot address any of them and retrying
+		// would turn a clear error into a spin.
+		var ft *fault
+		if errors.As(err, &ft) && ft.slugTaken {
+			continue
+		}
+		return provisioned{}, err
+	}
+	return provisioned{}, &fault{status: 409, msg: "could not allocate an organization name"}
+}

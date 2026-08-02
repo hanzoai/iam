@@ -395,6 +395,26 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 
 	// 3. Provision a fresh account. Federated accounts carry NO password (the
 	// digest stays empty, so password login fails closed) and are never admin.
+	//
+	// THE SIGN-UP POLICY IS THE APP'S, AND IT BINDS EVERY DOOR — this one included.
+	// It is asserted HERE, at the mint, and deliberately not at beginFederation:
+	// steps 1 and 2 above are SIGN-IN for someone who already has an account, and
+	// closing signup must never lock out an existing user. Only the branch that
+	// creates a NEW account is a signup, so only this branch answers for the flag.
+	//
+	// Without this check the flag meant nothing on the social path. Password signup
+	// (signup.go) and the wallet front door (wallet/verify.go) both refuse when
+	// EnableSignUp is false, so an operator who turned it off — the documented way
+	// to close registration — believed the estate was shut while "Continue with
+	// Google" kept minting accounts on the very same app. A policy enforced on two
+	// of three doors is not a policy; it is a door that is easy to miss.
+	//
+	// The refusal is deliberately indistinguishable from the org refusal above and
+	// carries no detail about the account: a prober learns that this app will not
+	// mint, never whether the address it offered already exists here.
+	if !app.EnableSignUp {
+		return nil, errors.New("federation: this application does not allow to sign up new account")
+	}
 	return provisionFederatedUser(ctx, db, app, prov, binding, id)
 }
 

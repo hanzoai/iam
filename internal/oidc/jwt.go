@@ -38,6 +38,20 @@ type Claims struct {
 	Owner        string `json:"owner,omitempty"`
 	Organization string `json:"organization,omitempty"`
 	Email        string `json:"email,omitempty"`
+	// EmailVerified is the ISSUER's assertion that Email was PROVEN to belong to
+	// whoever holds this token — an OTP round-trip completed here, or an upstream
+	// IdP that verifies addresses saying so. It is not "the address parses" and it
+	// is not "the user typed it"; both of those are free.
+	//
+	// It is a claim rather than a lookup because the consumer that needs it most is
+	// cloud's money path, which decides on headers and must not make a database
+	// round trip per request to learn whether a signup is a person.
+	//
+	// ABSENT MEANS FALSE, EVERYWHERE, and `omitempty` is what says so: an
+	// unverified token carries no such key, and a consumer that has not been taught
+	// this claim reads the zero value. That is the safe direction — the failure of
+	// a verification signal must never be read as "verified".
+	EmailVerified bool `json:"email_verified,omitempty"`
 	// Name is the IAM USERNAME (the `<name>` half of `<owner>/<name>`, e.g. "z"),
 	// never a display name. With Owner it forms the ONE address every Hanzo surface
 	// names a principal by — `hanzo auth login` files its credential under
@@ -97,12 +111,13 @@ type Claims struct {
 // machine token, or a since-deleted user); every claim it feeds is omitempty, so
 // the token omits them rather than emitting them empty.
 type Identity struct {
-	Id      string // the OIDC `sub` — stable and opaque
-	Email   string
-	Name    string // the IAM USERNAME, the `<name>` half of `<owner>/<name>`
-	Display string // the human-facing name; never an address
-	Billing string
-	Orgs    []schema.OrgRef
+	Id       string // the OIDC `sub` — stable and opaque
+	Email    string
+	Verified bool   // Email was PROVEN (OTP round-trip, or a verifying IdP), not merely supplied
+	Name     string // the IAM USERNAME, the `<name>` half of `<owner>/<name>`
+	Display  string // the human-facing name; never an address
+	Billing  string
+	Orgs     []schema.OrgRef
 }
 
 // Signer signs tokens with one key under one algorithm. Immutable after
@@ -192,6 +207,7 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		Owner:             owner,
 		Organization:      owner,
 		Email:             id.Email,
+		EmailVerified:     id.Verified,
 		Name:              id.Name,
 		PreferredUsername: id.Name,
 		Display:           id.Display,

@@ -379,7 +379,7 @@ func TestFederation_AuthorizeRedirectsToGitHub(t *testing.T) {
 // code→token exchange then completes unchanged and carries the new user's sub.
 func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{signup: true, clientID: "webapp", redirectURIs: []string{testRedirect}})
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 
@@ -438,7 +438,7 @@ func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 // primary VERIFIED email.
 func TestFederation_GitHubCallbackProvisionsViaVerifiedEmail(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{signup: true, clientID: "webapp", redirectURIs: []string{testRedirect}})
 	m := newMockGitHub(t)
 	seedGitHubProvider(t, db, "webapp", m)
 
@@ -467,7 +467,7 @@ func TestFederation_GitHubCallbackProvisionsViaVerifiedEmail(t *testing.T) {
 // account is created on the second login.
 func TestFederation_ReloginBySubjectIsStable(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{signup: true, clientID: "webapp", redirectURIs: []string{testRedirect}})
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 
@@ -504,7 +504,7 @@ func TestFederation_LinksExistingAccountByVerifiedEmail(t *testing.T) {
 // account, so an unproven address can never take over an existing one.
 func TestFederation_UnverifiedEmailDoesNotAutoLink(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{signup: true, clientID: "webapp", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "victim", "victim@example.com", "pw")
 	m := newMockOIDC(t, fedGoogleCID)
 	m.email = "victim@example.com"
@@ -880,7 +880,7 @@ func TestRedTeam_FederationMintsSuperAdmin_TenantOwnedApp(t *testing.T) {
 // happy path.
 func TestFederation_PlatformAppLegitimateOrgAllowed(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}}) // Owner=admin, Org=hanzo
+	seedApp(t, db, appOpts{signup: true, clientID: "webapp", redirectURIs: []string{testRedirect}}) // Owner=admin, Org=hanzo
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 	runOIDCLogin(t, app, db, m, "webapp", nil)
