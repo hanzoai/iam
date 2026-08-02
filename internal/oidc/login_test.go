@@ -11,6 +11,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -46,7 +47,7 @@ func TestLoginToTokenFlow(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 
 	verifier := "login-verifier-000000000000000000000000000000000"
-	challenge := ComputeS256Challenge(verifier)
+	challenge := pkce.Challenge(verifier)
 
 	// --- login side: resolve app+user, verify password, mint the code ---
 	user, err := resolveLoginUser(ctx, db, "hanzo", "alice@hanzo.ai") // login by EMAIL

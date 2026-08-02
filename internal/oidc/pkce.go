@@ -3,10 +3,10 @@
 package oidc
 
 import (
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"errors"
+
+	"github.com/hanzoai/iam/pkg/pkce"
 )
 
 // PKCE (RFC 7636) — S256 only. iam permanently rejects the "plain" method:
@@ -26,13 +26,6 @@ var (
 	// presented (or vice-versa).
 	ErrPKCEMissing = errors.New("pkce: code_verifier required")
 )
-
-// ComputeS256Challenge derives the RFC 7636 S256 challenge from a verifier:
-// BASE64URL-ENCODE(SHA256(ASCII(verifier))), no padding.
-func ComputeS256Challenge(verifier string) string {
-	sum := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
-}
 
 // VerifyPKCE checks a code_verifier against a stored (challenge, method).
 //
@@ -54,13 +47,13 @@ func VerifyPKCE(verifier, challenge, method string) error {
 		}
 		return nil // no PKCE on either side; caller enforces public-client policy
 	}
-	if method != "S256" {
+	if method != pkce.Method {
 		return ErrPKCEPlainRejected
 	}
 	if verifier == "" {
 		return ErrPKCEMissing
 	}
-	want := ComputeS256Challenge(verifier)
+	want := pkce.Challenge(verifier)
 	if subtle.ConstantTimeCompare([]byte(want), []byte(challenge)) != 1 {
 		return ErrPKCEMismatch
 	}

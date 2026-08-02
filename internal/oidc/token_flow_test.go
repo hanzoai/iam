@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/zap-proto/zip"
 )
 
@@ -91,7 +92,7 @@ func TestAuthCodeFlow_PublicPKCE(t *testing.T) {
 
 	verifier := "verifier-abcdefghijklmnopqrstuvwxyz-0123456789"
 	params := loginParams("pub", "openid")
-	params["codeChallenge"] = ComputeS256Challenge(verifier)
+	params["codeChallenge"] = pkce.Challenge(verifier)
 	params["codeChallengeMethod"] = "S256"
 
 	t.Run("valid verifier", func(t *testing.T) {

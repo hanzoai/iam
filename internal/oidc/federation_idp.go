@@ -24,6 +24,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -277,7 +278,7 @@ func oidcAuthorizeURL(cfg oidcConfig, p *schema.Provider, st *schema.FederationS
 	v.Set("scope", ensureOpenID(providerScopes(p, "openid email profile")))
 	v.Set("state", st.Name)
 	v.Set("nonce", st.IdpNonce)
-	v.Set("code_challenge", ComputeS256Challenge(st.IdpVerifier))
+	v.Set("code_challenge", pkce.Challenge(st.IdpVerifier))
 	v.Set("code_challenge_method", "S256")
 	return joinQuery(cfg.authURL, v)
 }
@@ -377,7 +378,7 @@ func githubAuthorizeURL(p *schema.Provider, st *schema.FederationState, callback
 	v.Set("state", st.Name)
 	v.Set("allow_signup", "true")
 	if p.EnablePkce {
-		v.Set("code_challenge", ComputeS256Challenge(st.IdpVerifier))
+		v.Set("code_challenge", pkce.Challenge(st.IdpVerifier))
 		v.Set("code_challenge_method", "S256")
 	}
 	return joinQuery(firstNonEmpty(p.CustomAuthUrl, githubAuthorizeEndpoint), v)

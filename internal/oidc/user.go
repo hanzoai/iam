@@ -22,8 +22,8 @@ import (
 //
 //   - RIGHT KEY, BOTH SHAPES. The storage key is resolved via the (owner,name) query
 //     path, which stamps the row's REAL orm key: "owner/name" for a migrated legacy
-//     row (SetId in the migrator), or a store-assigned surrogate id (a GenerateID
-//     decimal string) for a v2-native users.Create'd row (Create allocates, it never
+//     row (SetId in the migrator), or a store-assigned surrogate id (a decimal
+//     string) for a v2-native users.Create'd row (Create allocates, it never
 //     pins the key). A plain orm.Get(owner+"/"+name) resolves ONLY migrated rows, so a
 //     post-cutover signup was missed and its hk- key mint/revoke silently 500'd. The
 //     lock is taken by that exact resolved key, so both shapes are written.
