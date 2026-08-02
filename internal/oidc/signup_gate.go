@@ -189,7 +189,11 @@ func signupSignals(c *zip.Ctx, f signupForm, email string, mintsTenant bool) map
 		s["phone"] = f.Phone
 		s["countryCode"] = f.CountryCode
 	}
-	return s
+	// A fact we do not have is ABSENT, never empty — the header that did not
+	// arrive, the address the load balancer did not pass on. An empty string is a
+	// value a scorer can group by, and grouping by it puts every signup with no
+	// address in one bucket.
+	return risk.Facts(s)
 }
 
 func boolString(b bool) string {

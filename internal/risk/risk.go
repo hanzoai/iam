@@ -238,6 +238,27 @@ func unavailable(q Query, why string) Verdict {
 	return Verdict{Action: ActionAllow, Refusal: why}
 }
 
+// Facts drops the empty values from a signal map, because a fact we do not have
+// must be ABSENT rather than empty. An empty string is a VALUE: a scorer keying
+// velocity on "ip" would group every signup whose client address never arrived —
+// behind a load balancer that terminates the connection without passing the peer,
+// that is all of them — into one very busy caller and refuse the lot. "We do not
+// know" and "it is the empty string" are different answers and only one of them
+// is true.
+//
+// Stated once, at the seam every question passes through, so no gate has to
+// remember it. The cloud edge states the same rule at its own seam
+// (cloud.Facts); the two are one rule with one meaning, in the two processes
+// that ask this scorer.
+func Facts(m map[string]string) map[string]string {
+	for k, v := range m {
+		if v == "" {
+			delete(m, k)
+		}
+	}
+	return m
+}
+
 func known(a string) bool {
 	switch a {
 	case ActionAllow, ActionReview, ActionChallenge, ActionRestrict, ActionBlock:

@@ -199,3 +199,19 @@ func TestDecide_NilClientIsSafe(t *testing.T) {
 		t.Fatalf("a nil client must allow an ordinary sign-up, got %q", v.Action)
 	}
 }
+
+// A fact we do not have is ABSENT, not empty. An empty string is a VALUE, and a
+// scorer keying velocity on one would group every signup whose client address
+// never arrived into a single very busy caller — and refuse the lot.
+func TestFacts_AMissingFactIsAbsent(t *testing.T) {
+	got := Facts(map[string]string{"ip": "", "username": "ada", "language": "", "mintsTenant": "false"})
+	if _, ok := got["ip"]; ok {
+		t.Error("an empty ip was sent as a fact; the scorer will treat it as an identity")
+	}
+	if _, ok := got["language"]; ok {
+		t.Error("an empty Accept-Language was sent as a fact")
+	}
+	if got["username"] != "ada" || got["mintsTenant"] != "false" {
+		t.Errorf("a real fact was dropped: %v", got)
+	}
+}
