@@ -46,8 +46,8 @@ func TestOriginOf_SkipsNonBrowserRedirects(t *testing.T) {
 	}
 }
 
-// Only endpoints a browser-side OIDC client actually calls are opened. Widening
-// this set is a security decision, so the set is asserted rather than assumed.
+// Only endpoints a browser-side client actually calls are opened. Widening this
+// set is a security decision, so the set is asserted rather than assumed.
 func TestBrowserPaths_ExactlyTheOIDCBrowserSurface(t *testing.T) {
 	// These MUST be open — the failure that motivated this package was the
 	// token endpoint and discovery being blocked.
@@ -57,20 +57,46 @@ func TestBrowserPaths_ExactlyTheOIDCBrowserSurface(t *testing.T) {
 		"/v1/iam/.well-known/jwks",
 		"/v1/iam/oauth/userinfo",
 	} {
-		if !browserPaths[p] {
-			t.Errorf("%s must be reachable cross-origin", p)
+		if browserPaths[p] != bearer {
+			t.Errorf("%s must be reachable cross-origin, proving itself with a Bearer", p)
 		}
 	}
-	// These MUST NOT be: admin/bootstrap surfaces and the credential-login
-	// endpoint are not for cross-origin browser use.
+	// The sign-in and sign-out surface the shipped SDK calls with credentials.
+	// It is open AND cookie-bearing, to an exact console origin only.
+	for _, p := range []string{
+		"/v1/iam/login",
+		"/v1/iam/web3/nonce",
+		"/v1/iam/web3/verify",
+		"/v1/iam/oauth/revoke",
+		"/v1/iam/oauth/logout",
+	} {
+		if browserPaths[p] != cookie {
+			t.Errorf("%s must be reachable cross-origin WITH credentials: hanzoai/js-iam "+
+				"sends it with credentials:\"include\" and a browser discards the answer "+
+				"unless the credential is allowed", p)
+		}
+	}
+	// These MUST NOT be reachable at all: admin/bootstrap surfaces, and a
+	// top-level redirect that is never a fetch.
 	for _, p := range []string{
 		"/v1/iam/admin/applications/upsert",
 		"/v1/iam/admin/users/upsert",
-		"/v1/iam/login",
 		"/v1/iam/oauth/authorize", // a top-level redirect, not a fetch
 	} {
-		if browserPaths[p] {
+		if browserPaths[p] != absent {
 			t.Errorf("%s must NOT be opened cross-origin", p)
+		}
+	}
+}
+
+// The zero value of the table is the CLOSED state. A path nobody listed must
+// read as `absent`, never as the safest-looking of the two real answers — that
+// is what makes a typo in a path fail closed instead of quietly becoming a
+// Bearer-readable endpoint.
+func TestBrowserPaths_AMissIsClosedNotBearer(t *testing.T) {
+	for _, p := range []string{"", "/", "/v1/iam/lo gin", "/v1/iam/LOGIN", "/v1/iam/login/"} {
+		if got := browserPaths[p]; got != absent {
+			t.Errorf("browserPaths[%q] = %v, want absent — a miss must be closed", p, got)
 		}
 	}
 }
@@ -111,9 +137,9 @@ func TestBrowserPaths_CoverTheConsoleOrgSurface(t *testing.T) {
 		"/v1/iam/get-users",
 		"/v1/iam/get-account",
 	} {
-		if !browserPaths[p] {
-			t.Errorf("%s must be reachable cross-origin: a console reads it to show "+
-				"which org the user is acting as", p)
+		if browserPaths[p] != bearer {
+			t.Errorf("%s must be reachable cross-origin with a Bearer: a console reads it to "+
+				"show which org the user is acting as, and never with the ambient cookie", p)
 		}
 	}
 }
@@ -127,8 +153,10 @@ func TestBrowserPaths_StayClosedByDefault(t *testing.T) {
 		"/v1/iam/get-providers",  // provider secrets
 		"/v1/iam/delete-user",    // a write
 		"/v1/iam/registry/token", // docker client, not a browser
+		"/v1/iam/signin",         // code->session exchange; a top-level navigation
+		"/v1/iam/signup",         // the SDK posts it same-origin from the IdP's own SPA
 	} {
-		if browserPaths[p] {
+		if browserPaths[p] != absent {
 			t.Errorf("%s is open to browsers but nothing browser-side calls it", p)
 		}
 	}
