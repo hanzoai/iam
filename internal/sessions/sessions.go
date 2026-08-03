@@ -22,6 +22,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // maxSessionIds caps the retained cookie list per session, matching the v1
@@ -98,6 +99,12 @@ type DeleteSessionOut struct {
 // List returns who is currently signed in to your organization, newest first, and
 // can be narrowed to one person or one application. It is what you read before
 // signing someone out.
+//
+// Each session comes back describing itself: the application's human name and
+// homepage, and per browser cookie the device it rides in, when it started and
+// when it was last used. That is the ONE session read — the account page derives
+// "last used app" from it rather than from a second table that could disagree
+// with which sessions are actually live.
 func (h *Sessions) List(ctx context.Context, in *ListSessionsIn) (*ListSessionsOut, error) {
 	q := orm.TypedQuery[schema.Session](h.db).Filter("Owner=", in.Owner)
 	if in.Name != "" {
@@ -110,7 +117,35 @@ func (h *Sessions) List(ctx context.Context, in *ListSessionsIn) (*ListSessionsO
 	if err != nil {
 		return nil, err
 	}
+	Enrich(ctx, h.db, sessions)
 	return &ListSessionsOut{Sessions: sessions}, nil
+}
+
+// Enrich resolves each session's application into the display fields and drops
+// observations of cookies that are no longer live, so a reader sees exactly the
+// sessions that would still authenticate.
+//
+// Best-effort and read-only: an application row that has been deleted leaves the
+// label empty rather than failing the read, because a session outliving its
+// application must still be listable — and signable-out.
+func Enrich(ctx context.Context, db orm.DB, sessions []*schema.Session) {
+	apps := map[string]*schema.Application{}
+	for _, s := range sessions {
+		if s == nil {
+			continue
+		}
+		s.Seen = prune(s.Seen, s.SessionId)
+		app, cached := apps[s.Application]
+		if !cached {
+			app, _ = store.GetApplicationByAppName(ctx, db, s.Application)
+			apps[s.Application] = app
+		}
+		if app == nil {
+			continue
+		}
+		s.ApplicationDisplayName = app.DisplayName
+		s.HomepageUrl = app.HomepageUrl
+	}
 }
 
 // Get returns one person's session in one application — when it began and which
