@@ -33,6 +33,15 @@ func Route(app *zip.App, db orm.DB) {
 	// hanzoiam/* modules and Register themselves; SCIM is core, registered above by
 	// routes.Route). No-op until a host registers one; fail-fast if a registered
 	// module cannot register (a boot misconfiguration).
+	//
+	// A feature registers on THIS app, which is not the guarded group, so it is
+	// unauthenticated unless it says otherwise — it owns that decision. That is
+	// the right default for the two modules there are (a SAML assertion consumer
+	// and metadata endpoint must answer a browser that holds no IAM bearer, the
+	// same way the OIDC surface does), and it is a real change from when
+	// routes.Route put a Guard in front of the whole app and this line inherited
+	// it by accident of coming after. Registry is empty in this repo, so nothing
+	// today moved; a module that wants gating must reach for authz.Guard itself.
 	if err := feature.RouteAll(app, featurestore.New(db)); err != nil {
 		panic("iam: enterprise feature registration failed: " + err.Error())
 	}

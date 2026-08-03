@@ -61,6 +61,24 @@ func openTestDB(t *testing.T) orm.DB {
 	return db
 }
 
+// TestGuardedProbeIsGated proves the Guard this harness installs is LIVE. Every
+// other test here asserts a wallet route is reachable without a bearer; that
+// only means something if a route on the Guard's scope is not.
+func TestGuardedProbeIsGated(t *testing.T) {
+	app, _ := newServer(t)
+	if status, _ := get(t, app, guardedProbe); status != http.StatusUnauthorized {
+		t.Fatalf("GET %s unauthenticated = %d, want 401 — the Guard is inert, so "+
+			"the anonymous-reachability tests below prove nothing", guardedProbe, status)
+	}
+}
+
+// guardedProbe is a route registered on the Guard's scope so the Guard in this
+// harness has something to wrap. TestGuardedProbeIsGated asserts it 401s, which
+// is what makes "the Guard is still installed" a checked fact rather than a
+// comment — an inert Guard would let every wallet reachability test below pass
+// for the wrong reason.
+const guardedProbe = "/v1/iam/wallet-test-guarded"
+
 // newServer registers the wallet surface exactly as routes.Route does: on the
 // pre-authentication PUBLIC group (a root, empty-prefix router) registered
 // BEFORE the Guard, so a matched route terminates the middleware walk and the
@@ -71,7 +89,17 @@ func newServer(t *testing.T) (*zip.App, orm.DB) {
 	db := openTestDB(t)
 	app := zip.New(zip.Config{AppName: "iam-wallet-test", DisableStartupMessage: true})
 	Route(app.Group(""), db)
-	app.Use(authz.Guard(db))
+	// The Guard is mounted the way routes.Route mounts it — on a group that holds
+	// the routes it gates — and that group is given a route, so the Guard is live
+	// rather than inert: guardedProbe really does 401 without a bearer
+	// (TestGuardedProbeIsGated). Anonymous reachability of the wallet routes is
+	// therefore proved against the real fail-closed default and not around it,
+	// which is the whole point of installing a Guard in a wallet test.
+	authed := app.Group("")
+	authed.Use(authz.Guard(db))
+	authed.Get(guardedProbe, func(c *zip.Ctx) error {
+		return c.JSON(http.StatusOK, map[string]string{"probe": "reached"})
+	})
 	app.Authorize(authz.Authorize)
 	return app, db
 }
