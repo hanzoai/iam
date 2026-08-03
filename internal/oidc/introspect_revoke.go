@@ -9,6 +9,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -33,23 +34,31 @@ func routeIntrospectRevoke(r zip.Router, db orm.DB) {
 	r.Post(PathRevoke, revokeHandler(db))
 }
 
-// authConfidentialClient authenticates the calling client and requires it to be
-// CONFIDENTIAL (holds a verified secret). Introspection and revocation are
-// privileged token-management operations; a public client may not call them.
-// Constant-time secret compare; a nil app or empty stored secret fails closed.
-func authConfidentialClient(ctx context.Context, db orm.DB, c *zip.Ctx) (name string, ok bool) {
+// authTokenClient authenticates the CALLING CLIENT, and only the client:
+// client_id names it, and a client that HOLDS a secret must present it
+// (constant-time). A client that holds none is PUBLIC, and client_id is the whole
+// of what it can present — the same bounded relaxation authorizationCodeGrant and
+// refreshTokenGrant already make for the loopback PKCE clients. It never widens a
+// confidential client: a stored secret is always demanded and always verified,
+// and a nil/unknown app fails closed.
+//
+// It reads NOTHING about the token, so the status code it produces cannot tell an
+// unauthenticated caller whether the token it sent exists (RFC 7009 §2.2). WHAT a
+// caller may then do is a separate question, answered by each handler below.
+func authTokenClient(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.Application, bool) {
 	clientID, clientSecret := clientAuth(c)
 	if clientID == "" {
-		return "", false
+		return nil, false
 	}
 	app, err := store.GetApplicationByClientId(ctx, db, clientID)
-	if err != nil || app == nil || app.ClientSecret == "" {
-		return "", false
+	if err != nil || app == nil {
+		return nil, false
 	}
-	if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
-		return "", false
+	if app.ClientSecret != "" &&
+		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+		return nil, false
 	}
-	return app.Name, true
+	return app, true
 }
 
 // introspectHandler answers whether an access token is still good, and what it
@@ -65,7 +74,11 @@ func introspectHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
 		ctx := c.Context()
-		if _, ok := authConfidentialClient(ctx, db, c); !ok {
+		// Introspection reports on tokens the caller did not necessarily issue, so
+		// it stays CONFIDENTIAL-only: RFC 7662 §2.1 addresses it to a protected
+		// resource, and a public client_id is unauthenticated by construction.
+		app, ok := authTokenClient(ctx, db, c)
+		if !ok || app.ClientSecret == "" {
 			return tokenErrorClient(c, "client authentication failed")
 		}
 
@@ -130,14 +143,30 @@ func introspectHandler(db orm.DB) zip.Handler {
 //
 // A token that is not yours, or that never existed, answers success and does
 // nothing — so the endpoint cannot be used to discover which tokens are real.
+//
+// PUBLIC clients revoke too, and must: sign-out is the only control a long-lived
+// refresh token has. hanzo-cli is a public PKCE client holding a 30-day rotating
+// refresh token, so a confidential-only revocation endpoint made `hanzo auth
+// logout` a LOCAL DELETE — the credential it dropped stayed spendable at
+// hanzo.id for the rest of the month, with nothing able to kill it. Measured
+// 2026-08-01: revoke answered 401 invalid_client and the refresh token went on
+// minting access tokens.
+//
+// Widening authentication does not widen authority. The caller must still POSSESS
+// the token — and possession already permits USE, of which revocation is the
+// strict opposite — and the row must belong to the client that presents it, so a
+// public client_id buys the ability to destroy exactly what its holder could
+// otherwise spend. RFC 6749 §3.2.1 is the same reading: a client with no
+// credentials identifies itself with client_id.
 func revokeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
 		ctx := c.Context()
-		clientName, ok := authConfidentialClient(ctx, db, c)
+		app, ok := authTokenClient(ctx, db, c)
 		if !ok {
 			return tokenErrorClient(c, "client authentication failed")
 		}
+		clientName := app.Name
 
 		tokenStr := param(c, "token")
 		if tokenStr == "" {
