@@ -30,18 +30,30 @@ func TestCookie_ForgedOwnerRejected(t *testing.T) {
 	key := SessionKey("platform-cert-pem")
 	value := Issue(Cookie{Owner: "maxpower", Name: "dave", Application: "hanzo-cloud"}, key, time.Hour)
 
-	// Re-encode the payload with owner="admin", keep the original MAC.
-	payloadB64, macB64, _ := strings.Cut(value, ".")
-	payload, _ := base64.RawURLEncoding.DecodeString(payloadB64)
-	var c Cookie
-	_ = json.Unmarshal(payload, &c)
+	c, err := Verify(value, key)
+	if err != nil {
+		t.Fatal(err)
+	}
 	c.Owner = "admin" // the privilege-escalation attempt
-	forged, _ := json.Marshal(c)
-	tampered := base64.RawURLEncoding.EncodeToString(forged) + "." + macB64
 
-	if _, err := Verify(tampered, key); err != ErrCookieSignature {
+	if _, err := Verify(forge(t, value, *c), key); err != ErrCookieSignature {
 		t.Fatalf("forged owner=admin must fail signature, got err=%v", err)
 	}
+}
+
+// forge re-encodes a NEW payload behind the ORIGINAL cookie's MAC — the shape
+// every tamper takes, so each test states only which field it rewrote.
+func forge(t *testing.T, original string, c Cookie) string {
+	t.Helper()
+	_, macB64, ok := strings.Cut(original, ".")
+	if !ok {
+		t.Fatalf("not a cookie: %q", original)
+	}
+	payload, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(payload) + "." + macB64
 }
 
 func TestCookie_WrongKeyRejected(t *testing.T) {

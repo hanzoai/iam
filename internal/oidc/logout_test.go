@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam/internal/sessions"
 )
 
 // signIn drives a bare portal sign-in and returns the "name=value" session cookie.
@@ -23,7 +25,7 @@ func signIn(t *testing.T, app *zip.App, application string) string {
 		t.Fatalf("sign-in failed: status=%d body=%s", resp.StatusCode, body)
 	}
 	cookie := cookieKV(resp.Header.Get("Set-Cookie"))
-	if !strings.HasPrefix(cookie, "hanzo_session=") || len(cookie) < len("hanzo_session=")+8 {
+	if !strings.HasPrefix(cookie, sessions.CookieName+"=") || len(cookie) < len(sessions.CookieName)+9 {
 		t.Fatalf("sign-in set no usable session cookie: %q", cookie)
 	}
 	return cookie
@@ -87,7 +89,7 @@ func TestLogout_EndsTheSession(t *testing.T) {
 	}
 
 	// And the browser is told to drop it.
-	if sc := resp.Header.Get("Set-Cookie"); !strings.Contains(sc, "hanzo_session=;") {
+	if sc := resp.Header.Get("Set-Cookie"); !strings.Contains(sc, sessions.CookieName+"=;") {
 		t.Errorf("logout did not expire the session cookie: %q", sc)
 	}
 }
