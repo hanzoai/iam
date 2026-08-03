@@ -14,9 +14,48 @@ import (
 )
 
 // CookieName is the portal session cookie the native front-door sets on a bare
-// (type=login) sign-in and that get-account resolves the caller from. One name,
-// platform-wide.
-const CookieName = "hanzo_session"
+// (type=login) sign-in, that get-account resolves the caller from, and that the
+// authorize endpoint reads to answer "is anyone signed in here?" without showing
+// a login screen. One name, platform-wide.
+//
+// # Why this cookie is HOST-ONLY, and why the browser is made to enforce it
+//
+// It is scoped to the ISSUER ORIGIN alone (no Domain attribute), so hanzo.id
+// holds it and no other host ever receives it. The alternative — Domain=.hanzo.ai
+// — is what "share the session with every app" sounds like it needs, and it is
+// the wrong trade:
+//
+//   - A Domain cookie is sent to EVERY host under that domain, and the cookie
+//     spec offers no way to name a subset. There is no "all subdomains except
+//     the ones a customer controls".
+//   - This fleet publishes tenant-facing hosts under its own zones, and an
+//     operator can add one at any time. A single XSS, a single misrouted
+//     wildcard, a single parked subdomain, and the parent-domain cookie is
+//     readable by a page nobody vetted. That is the whole IdP session, for every
+//     app at once.
+//   - Nothing about SSO requires it. The second app reaches the IdP by TOP-LEVEL
+//     REDIRECT, and a host-only cookie is presented on that navigation exactly
+//     as a Domain cookie would be (SameSite=Lax sends it on a top-level GET).
+//     The Domain attribute would buy only the ability to read the session from
+//     JavaScript on another host — which is precisely what must never happen.
+//
+// The `__Host-` prefix makes that decision the BROWSER's rather than ours. A
+// user agent refuses to store a `__Host-`-prefixed cookie unless it is Secure,
+// Path=/, and carries NO Domain — so a sibling host physically cannot set one.
+//
+// That is not decoration: without the prefix a hostile or merely compromised
+// sibling host can Set-Cookie `hanzo_session=<its own valid session>;
+// Domain=.hanzo.ai`, the browser then presents TWO cookies of this name to the
+// IdP, and which one wins is a matter of ordering. The victim is silently signed
+// in as the attacker — session fixation. Silent SSO makes that strictly worse,
+// because the fixed session then propagates to every downstream app with no
+// screen the victim could have noticed. The prefix is therefore a PRECONDITION
+// of the silent flow, not an improvement on it.
+//
+// Renaming retires every session issued under the old name: they no longer
+// resolve, and each human signs in once more. That is the intended one-time
+// cost of moving the guarantee into the browser.
+const CookieName = "__Host-hanzo_session"
 
 // Cookie is the tamper-evident session a signed cookie carries. It keys the
 // Session row directly — (Owner, Name, Application) — so resolution needs no
@@ -29,6 +68,20 @@ type Cookie struct {
 	Application string `json:"a"`
 	SID         string `json:"s"`
 	Expiry      int64  `json:"e"` // unix seconds
+
+	// AuthTime is when the human actually proved who they are — the OIDC
+	// `auth_time`, in unix seconds. It is NOT the cookie's issue time and must
+	// not be refreshed by anything short of a real re-authentication, because
+	// its whole job is to answer a relying party that asks `max_age`: "was this
+	// person's password (and second factor) checked recently enough for what I
+	// am about to let them do?"
+	//
+	// Before silent re-authentication that question answered itself — every
+	// authorize hit rendered a login form, so every grant was fresh. Once a
+	// session can be spent without any prompt, an ignored max_age silently
+	// hands a step-up-sensitive client a months-old sign-in. So the session
+	// carries the answer.
+	AuthTime int64 `json:"i"`
 }
 
 var (
@@ -58,13 +111,19 @@ func NewSID() string {
 
 // Issue serializes and signs a session cookie: base64url(payload).base64url(mac).
 // A caller that leaves SID empty gets a fresh one; Expiry ≤ 0 defaults to ttl
-// from now.
+// from now, and AuthTime ≤ 0 to now — a cookie minted without one IS the moment
+// the credential was checked. A caller CARRYING one forward (a re-key) passes it
+// in, so moving a session never looks like a fresh sign-in to `max_age`.
 func Issue(c Cookie, key []byte, ttl time.Duration) string {
+	now := time.Now()
 	if c.SID == "" {
 		c.SID = NewSID()
 	}
 	if c.Expiry <= 0 {
-		c.Expiry = time.Now().Add(ttl).Unix()
+		c.Expiry = now.Add(ttl).Unix()
+	}
+	if c.AuthTime <= 0 {
+		c.AuthTime = now.Unix()
 	}
 	payload, _ := json.Marshal(c)
 	return b64(payload) + "." + b64(mac(payload, key))

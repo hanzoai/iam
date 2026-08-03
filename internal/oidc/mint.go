@@ -47,7 +47,29 @@ type Mint struct {
 //     minted against.
 //   - PKCE: S256 only (never "plain"), and a public client must present a
 //     challenge — no downgrade.
+//   - Reserved-org confinement: a built-in/SuperAdmin principal is grantable
+//     ONLY through an application that serves its own reserved org.
 func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID string, p Mint) (string, error) {
+	// The user's org is the owner half of its own id, set server-side at
+	// authentication — never read from the request.
+	org, _, _ := strings.Cut(userID, "/")
+
+	// Reserved-org confinement, ahead of the type split so EVERY grant shape is
+	// bound identically — a bare session, an authorization code, a wallet
+	// sign-in, and the silent SSO grant alike. A RESERVED-org principal (a
+	// SuperAdmin under "admin", a built-in service identity) may be granted only
+	// through an application that itself serves that reserved org — the dedicated
+	// console. Otherwise any SHARED application (whose tenant rule below accepts
+	// every org by design) would mint a real SuperAdmin grant, and silent SSO
+	// would mint it with no interaction at all.
+	//
+	// It lived in login.go, which meant it held for a typed password and for
+	// nothing else. Here it holds for every front door, including the ones not
+	// written yet.
+	if store.IsReservedOrg(org) && (app == nil || org != app.Organization) {
+		return "", errors.New("the user is not permitted to sign in to this application")
+	}
+
 	// A bare sign-in needs no application: report the identity and stop.
 	if p.Type != "code" {
 		return userID, nil
@@ -55,9 +77,6 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	if app == nil {
 		return "", errors.New("the application does not exist")
 	}
-	// The user's org is the owner half of its own id, set server-side at
-	// authentication — never read from the request.
-	org, _, _ := strings.Cut(userID, "/")
 	if org != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
 		return "", errors.New("the user is not permitted to sign in to this application")
 	}
