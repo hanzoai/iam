@@ -9,6 +9,7 @@ import (
 
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -62,7 +63,7 @@ func TestSignin_CodeExchangeSetsSessionAndReturnsAccount(t *testing.T) {
 	}
 	// It establishes the durable session get-account resolves from.
 	cookie := resp.Header.Get("Set-Cookie")
-	if !strings.HasPrefix(cookie, "hanzo_session=") {
+	if !strings.HasPrefix(cookie, sessions.CookieName+"=") {
 		t.Fatalf("signin did not set the session cookie: %q", cookie)
 	}
 	req := formReqNoBody("GET", PathAccount)

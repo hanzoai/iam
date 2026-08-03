@@ -228,35 +228,28 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// type=device: approve a pending RFC 8628 device authorization against the
 	// identity now fully proven (device.go). Device approval has its OWN tenant model —
 	// a SuperAdmin may deliberately approve a device across tenants (device.go), a
-	// blessed capability — so the reserved-org grant gate below (which binds a
-	// SuperAdmin to its own-org app) does NOT apply to it; it precedes that gate.
+	// blessed capability — so the reserved-org confinement MintFor enforces (which
+	// binds a SuperAdmin to its own-org app) does NOT apply to it; it precedes it.
 	if f.Type == "device" {
 		return approveDevice(c, db, user, f.UserCode)
 	}
 
-	// Reserved-org grant gate — the SAME store.IsReservedOrg refuse signup.go and the
-	// ROPC grant enforce, which login.go alone was missing (F-D2 tail / F-D1). A
-	// RESERVED-org principal (a SuperAdmin under "admin", a built-in/service identity)
-	// may be granted a bare SESSION or an authorization CODE ONLY through an application
-	// that itself SERVES that reserved org — the dedicated console. A shared,
-	// org-choice, or cross-tenant app must NEVER authenticate one: otherwise any shared
-	// app (whose per-type tenant gate below accepts every org) would mint a real
-	// SuperAdmin grant on the correct admin password. Enforced here, ahead of BOTH the
-	// bare-session and the type=code branches, so every credential grant shape (incl.
-	// the second-factor finish, which reaches this same tail) is bound identically. A
-	// normal-tenant login never triggers this (IsReservedOrg is false), so the shared/
-	// org-choice apps keep serving them unchanged.
-	if store.IsReservedOrg(user.Owner) {
-		app, err := resolveLoginApp(ctx, db, f)
-		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		if app == nil || user.Owner != app.Organization {
-			return httpx.Err(c, "the user is not permitted to sign in to this application")
-		}
+	app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
+	if err != nil {
+		return httpx.Err(c, err.Error())
 	}
 
-	userID := user.Owner + "/" + user.Name
+	// Everything between "this is the user" and "here is the grant" — reserved-org
+	// confinement, the tenant rule, the exact redirect_uri match, S256-only PKCE
+	// and the public-client challenge requirement — is MintFor's, not this
+	// handler's. It was restated here once and drifted: the reserved-org gate
+	// existed in this copy and nowhere else, so the wallet front door and (now)
+	// silent SSO would each have had to remember it. One mint path, one set of
+	// rules, no front door that can forget one.
+	out, err := MintFor(ctx, db, app, user.Owner+"/"+user.Name, f.mint())
+	if err != nil {
+		return httpx.Err(c, err.Error())
+	}
 
 	// Establish the durable session the portal + the gateway admin-guard read via
 	// get-account. It happens for EVERY interactive grant shape, because the thing
@@ -278,51 +271,27 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 		_ = sessions.Set(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
 	}
 
-	// type=login: a bare portal sign-in. The session above IS the grant, so there is
-	// nothing left to mint — report the user id.
-	if f.Type != "code" {
-		return httpx.Ok(c, userID)
-	}
+	// One return, one meaning: MintFor already yields the user id for a bare portal
+	// sign-in and the authorization code for the code flow, so the SDK reads `data`
+	// the same way either way. The old `if f.Type != "code"` early return restated
+	// that distinction a second time and is gone — it is the same braiding of grant
+	// shape into an unrelated decision that cost the fleet its single sign-on above.
+	return httpx.Ok(c, out)
+}
 
-	// type=code: mint a PKCE-bound authorization code for the OAuth flow. The org is
-	// the USER's own, from the loaded row, so a second-factor post (which carries no
-	// organization field) is checked exactly like the first.
-	app, err := resolveLoginApp(ctx, db, f)
-	if err != nil {
-		return httpx.Err(c, err.Error())
+// mint is the authorize passthrough this form carries, in the shape the one mint
+// path takes.
+func (f loginForm) mint() Mint {
+	return Mint{
+		Type:                f.Type,
+		RedirectUri:         f.RedirectUri,
+		State:               f.State,
+		Scope:               f.Scope,
+		Nonce:               f.Nonce,
+		CodeChallenge:       f.CodeChallenge,
+		CodeChallengeMethod: f.CodeChallengeMethod,
+		Resource:            f.Resource,
 	}
-	if app == nil {
-		return httpx.Err(c, "the application does not exist")
-	}
-	if user.Owner != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
-		return httpx.Err(c, "the user is not permitted to sign in to this application")
-	}
-	// Bind the code to an EXACTLY-registered redirect URI (RFC 6749 §3.1.2.3); the
-	// token endpoint re-checks it. A supplied-but-unregistered URI is refused.
-	if f.RedirectUri != "" && !app.IsRedirectUriValid(f.RedirectUri) {
-		return httpx.Err(c, "invalid redirect_uri")
-	}
-	method := normalizeChallengeMethod(f.CodeChallenge, f.CodeChallengeMethod)
-	if f.CodeChallenge != "" && method != "S256" {
-		return httpx.Err(c, "only S256 PKCE is supported")
-	}
-	// A public client (no secret) must use PKCE — no downgrade.
-	if app.ClientSecret == "" && f.CodeChallenge == "" {
-		return httpx.Err(c, "PKCE is required for public clients")
-	}
-	code, err := MintCode(app, userID, f.Scope, f.CodeChallenge, method, f.Resource, nowFunc())
-	if err != nil {
-		return httpx.Err(c, err.Error())
-	}
-	// Bind the redirect_uri and nonce onto the code so the token exchange can
-	// re-verify the redirect and echo the nonce into the id_token.
-	code.RedirectUri = f.RedirectUri
-	code.Nonce = f.Nonce
-	if err := store.PersistToken(ctx, db, code); err != nil {
-		return httpx.Err(c, err.Error())
-	}
-	// The SDK reads data as the authorization code to exchange at /token.
-	return httpx.Ok(c, code.Code)
 }
 
 // resolveLoginUser looks a user up by the login identifier, scoped to the org,
@@ -340,18 +309,6 @@ func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string) (*
 	}
 	if strings.Contains(identifier, "@") {
 		return store.GetUserByEmail(ctx, db, org, identifier)
-	}
-	return nil, nil
-}
-
-// resolveLoginApp resolves the OAuth app for a type=code login: by clientId when
-// present, else by (org, application name).
-func resolveLoginApp(ctx context.Context, db orm.DB, f loginForm) (*schema.Application, error) {
-	if f.ClientId != "" {
-		return store.GetApplicationByClientId(ctx, db, f.ClientId)
-	}
-	if f.Application != "" {
-		return store.GetApplicationByName(ctx, db, "admin", f.Application)
 	}
 	return nil, nil
 }

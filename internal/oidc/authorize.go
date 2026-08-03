@@ -17,10 +17,22 @@ import (
 // of the authorization-code flow. iam validates the request BEFORE it trusts
 // any redirect: an unknown client_id or an unregistered redirect_uri is answered
 // in place and NEVER redirected to (RFC 6749 §4.1.2.1), closing the open-redirect
-// and code-injection surface that a bare pass-through would leave open. A
-// well-formed request is delegated to the hosted login UI (matching v1), which
-// collects credentials and posts to /v1/iam/login; that endpoint mints the
-// PKCE-bound code and the browser lands back on the registered redirect_uri.
+// and code-injection surface that a bare pass-through would leave open.
+//
+// A validated request then has THREE possible answers, and which one it gets is
+// the whole of single sign-on:
+//
+//	the session answers it   — a code, straight back to the registered
+//	                           redirect_uri, no screen (prompt.go)
+//	nobody is signed in, and — error=login_required, back to the registered
+//	the client said none       redirect_uri, still no screen
+//	otherwise                — the hosted login UI, which collects credentials
+//	                           and posts to /v1/iam/login
+//
+// Before this, only the third existed: every request rendered a login page,
+// prompt=none included. A relying party therefore had no way to ask "is anyone
+// signed in?" without putting a login screen in front of a user who already
+// was — which is not a missing feature, it is the absence of SSO.
 
 // hostedLoginPath is the default hosted-login route the authorize endpoint hands
 // a validated request to when the application pins no SigninUrl of its own.
@@ -39,14 +51,22 @@ type authorizeRequest struct {
 	resource            string
 	responseMode        string
 	provider            string
+	prompt              string
 }
 
 // authorizeHandler starts a sign-in — the address you send a browser to, and the
 // beginning of every OAuth and OpenID Connect flow.
 //
-// It shows the person the right way to sign in for the application they are
-// signing in to, hands off to another identity provider if that is what they
-// pick, and ends by returning them to the application with a one-time code.
+// If the person is ALREADY signed in here, it does not ask them again: it
+// returns them to the application with a one-time code and they never see this
+// page. Otherwise it shows the right way to sign in for the application they are
+// signing in to, or hands off to another identity provider if that is what they
+// pick.
+//
+// A client can say what it wants with `prompt`: `none` means answer without any
+// screen at all — with the code if a session exists, with an error if not, but
+// never with a page; `login` means ask for the password again even if a session
+// exists; `select_account` means let the person choose which identity to use.
 //
 // It returns only to an address the application has registered. That check
 // happens before anything else, so a request naming an unregistered address is
@@ -87,16 +107,49 @@ func authorizeHandler(db orm.DB) zip.Handler {
 			return authorizeErrorRedirect(c, q, "invalid_request", "PKCE is required for public clients")
 		}
 
+		p := parsePrompt(q.prompt)
+		if p.combined {
+			return authorizeErrorRedirect(c, q, "invalid_request", "prompt=none must not be combined with other values")
+		}
+
 		// A request that names a social `provider` is federated to that external
 		// IdP (Google/GitHub, …) instead of the hosted credential login. The
 		// client + redirect_uri + PKCE policy above are already enforced, so the
 		// federation broker starts from a validated request and a trusted target.
+		//
+		// It is decided BEFORE the session is consulted, because naming a provider
+		// is an explicit instruction about WHICH identity to authenticate — the
+		// person pressed "continue with Google" — and an ambient session is not an
+		// answer to that. Which also means it can never be silent: the external IdP
+		// is the one who decides, and reaching it is an interaction.
 		if q.provider != "" {
+			if p.none {
+				return authorizeErrorRedirect(c, q, errInteractionRequired, "an external identity provider cannot be used without interaction")
+			}
 			return beginFederation(c, db, app, q, method)
 		}
 
-		// Delegate to the hosted login with a clean, re-encoded request. The login
-		// page posts credentials to /v1/iam/login, which mints the code.
+		// SINGLE SIGN-ON. A live session answers the request outright — this is
+		// the branch that means "log in once at the issuer and every other app
+		// already knows you". It is skipped only when the client asked for a
+		// screen (prompt=login / select_account), and its refusals are the OIDC
+		// error codes prompt=none is owed.
+		if !p.interactive() {
+			code, refusal := silentGrant(c, db, app, q)
+			if refusal == "" {
+				return authorizeCodeRedirect(c, q, code)
+			}
+			if p.none {
+				return authorizeErrorRedirect(c, q, refusal, "no interaction was permitted and the request could not be answered from an existing session")
+			}
+		}
+
+		// prompt=none has now been answered one way or the other; reaching here
+		// with it set means the client asked for no UI and for a UI at once, which
+		// `combined` already refused. Everything else gets the hosted login with a
+		// clean, re-encoded request. The login page posts credentials to
+		// /v1/iam/login, which mints the code.
+		q.prompt = p.forwarded()
 		return c.Redirect(302, hostedLoginTarget(app)+"?"+authorizeForwardQuery(q, method))
 	}
 }
@@ -116,6 +169,7 @@ func authorizeParams(c *zip.Ctx) authorizeRequest {
 		resource:            param(c, "resource"),
 		responseMode:        param(c, "response_mode"),
 		provider:            param(c, "provider"),
+		prompt:              param(c, "prompt"),
 	}
 }
 
@@ -145,7 +199,25 @@ func authorizeForwardQuery(q authorizeRequest, method string) string {
 	}
 	setIfPresent(v, "resource", q.resource)
 	setIfPresent(v, "response_mode", q.responseMode)
+	// The surviving prompt is carried to the page, because the page is what has
+	// to act on it: `select_account` is a request to show an account CHOOSER
+	// rather than a bare credential form, and only the UI can do that. `none`
+	// never reaches here — it is answered above, without a page, which is what it
+	// asked for.
+	setIfPresent(v, "prompt", q.prompt)
 	return v.Encode()
+}
+
+// authorizeCodeRedirect returns a successful silent authorization to the client:
+// the code and the state, on the registered redirect_uri.
+//
+// It is the SAME return path an interactive sign-in takes — the browser lands on
+// the client's callback with a code it exchanges at /token — so nothing
+// downstream can tell the two apart, and nothing downstream has to.
+func authorizeCodeRedirect(c *zip.Ctx, q authorizeRequest, code string) error {
+	v := url.Values{}
+	v.Set("code", code)
+	return authorizeRedirect(c, q, v)
 }
 
 // authorizeErrorRedirect bounces a protocol error back to the (already
@@ -154,6 +226,20 @@ func authorizeErrorRedirect(c *zip.Ctx, q authorizeRequest, code, desc string) e
 	v := url.Values{}
 	v.Set("error", code)
 	setIfPresent(v, "error_description", desc)
+	return authorizeRedirect(c, q, v)
+}
+
+// authorizeRedirect returns the browser to the redirect_uri carrying v, in the
+// requested response mode, with `state` echoed.
+//
+// Success and failure share it deliberately. They are the same act — hand these
+// parameters to the client's registered address — and splitting them is how a
+// server ends up echoing state on one and forgetting it on the other, or
+// honouring response_mode=fragment for an error and not for a code.
+//
+// It runs only AFTER redirect_uri has been matched against the application's
+// registered list, which is what makes appending to it safe.
+func authorizeRedirect(c *zip.Ctx, q authorizeRequest, v url.Values) error {
 	setIfPresent(v, "state", q.state)
 
 	sep := "?"
