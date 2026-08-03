@@ -78,7 +78,9 @@ func boot(t *testing.T) *env {
 
 	app := zip.New(zip.Config{AppName: "iam-e2e", DisableStartupMessage: true})
 	routes.Route(app, db)
-	app.Prepare()
+	if err := app.Build(); err != nil {
+		t.Fatalf("build: %v", err)
+	}
 	return &env{app: app, key: key, db: db}
 }
 

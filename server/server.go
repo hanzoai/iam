@@ -39,30 +39,41 @@ func Route(app *zip.App, db orm.DB) {
 }
 
 // NewApp builds a STANDALONE iam zip.App over db — the whole IAM surface
-// registered as one self-contained app. It is what a host GRAFTS:
+// registered as one self-contained app. It is what a host COMPOSES:
 //
-//	app.Graft(iamserver.NewApp(db))
+//	app.Use(iamserver.NewApp(db))
 //
-// zip.Graft composes the app in process — the host's router learns iam's route
-// patterns and its OP REGISTRY, while iam's own router keeps iam's behaviour
-// (its Use chain, its Guard, its error handler). The caller owns the returned
-// app's Shutdown; a Graft adopts it.
+// An App is a Component, so composing one is the same verb as adding
+// middleware — zip.Graft was a second name for this and is gone. The host's
+// router learns iam's route patterns and its OP REGISTRY, while iam's own
+// router keeps iam's behaviour (its Use chain, its Guard, its error handler),
+// and iam's Guard reaches iam's subtree only. The caller owns the returned
+// app's Shutdown; composing adopts it.
 //
-// Prepare renders iam's OWN document, tool list and call plane onto iam's own
-// control plane. A graft does not adopt those — a zip Declaration excludes the
-// control plane, so the host keeps its own /docs, MCP door and op plane and the
-// composed document is the HOST's.
+// Build renders iam's OWN document, tool list and call plane onto iam's own
+// control plane, and returns the verdict on the composition — which is why it
+// replaced zip's old Prepare, whose silence meant a program that did not
+// compose was only discovered by starting a server. A host does not adopt
+// those projections — a zip Declaration excludes the control plane, so the host
+// keeps its own /docs, MCP door and op plane and the composed document is the
+// HOST's.
+//
+// A failed Build is a wiring error in this package, not a runtime condition the
+// caller can act on, so it panics for the same reason [Route] panics on a
+// feature module that cannot register.
 //
 // There is no net/http adaptation any more. Handler() used to exist for a host
 // that hung the whole surface on one wildcard, and it went through
 // adaptor.FiberApp: the App went in, an http.Handler came out, and iam's 94
 // typed ops went with it — invisible to the host's OpenAPI document, MCP tool
 // list, CLI and call plane. A host published a wildcard where 94 typed
-// operations were. Graft is the composition that keeps them.
+// operations were. Composing the App is what keeps them.
 func NewApp(db orm.DB) *zip.App {
 	app := zip.New(zip.Config{AppName: "iam", DisableStartupMessage: true})
 	Route(app, db)
-	app.Prepare()
+	if err := app.Build(); err != nil {
+		panic("iam: app does not compose: " + err.Error())
+	}
 	return app
 }
 
