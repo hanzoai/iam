@@ -80,10 +80,9 @@ func Route(app *zip.App, db orm.DB) {
 	// the oauth/* protocol endpoints (authorize, token, userinfo, logout,
 	// introspect, revoke), credential login, the confidential-client key minters,
 	// and the front door (get-app-login, auth/methods, get-account, signup, signin,
-	// whoami, onboard, …). Registered on a root (empty-prefix) group BEFORE the
-	// Guard, at their absolute paths, so a matched public route terminates the
-	// middleware walk and the Guard never runs on it. There is no allow-list to
-	// keep in sync: a route is public because it is registered here.
+	// whoami, onboard, …). Registered on a root (empty-prefix) group that holds no
+	// Guard, at their absolute paths. There is no allow-list to keep in sync, and
+	// no ordering to preserve: a route is public because it is registered here.
 	// CORS for the browser-side OIDC surface, BEFORE any route matches so it
 	// covers the public group without a route opting in. The allowlist is derived
 	// from registered redirect URIs — provision a host and login works from it.
@@ -175,9 +174,9 @@ func Route(app *zip.App, db orm.DB) {
 	app.Use(authz.Control(db))
 
 	// ─────────────────────────── AUTHED ───────────────────────────
-	// Typed entity CRUD. Each registers its typed ops on app (the projection into
-	// REST + OpenAPI + MCP needs *App); registered after the Guard, so all are
-	// gated.
+	// Typed entity CRUD. Each registers its typed ops on `authed` — a *zip.App,
+	// which the projection into REST + OpenAPI + MCP and zipdoc's static prefix
+	// resolution both need. On the guarded group, so all are gated.
 	users.Route(authed, db)
 	organizations.Route(authed, db)
 	applications.Route(authed, db)
@@ -197,23 +196,23 @@ func Route(app *zip.App, db orm.DB) {
 	// legacy verb-alias layer: the get-users / get-organizations / add-organization
 	// / … spellings (in the v1 {status,data,data2} envelope) every live console/
 	// gateway/portal client hard-codes, served over the SAME store, redaction, and
-	// authz as the REST surface above — the transparent backend swap. After the
-	// Guard, so it shares the one Guard/Authorize seam.
+	// authz as the REST surface above — the transparent backend swap. On the
+	// guarded group, so it shares the one Guard/Authorize seam.
 	compat.Route(authed, db)
 
 	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface that
-	// replaces the the legacy surface entity verbs (HIP-0111). After the Guard, so it is
-	// authenticated; each handler owner-scopes via authz.Scope on the path target.
+	// replaces the the legacy surface entity verbs (HIP-0111). On the guarded group, so
+	// it is authenticated; each handler owner-scopes via authz.Scope on the path target.
 	scim.Route(authed, db)
 
 	// Agent/bot identities (service accounts) + the (User x Org x Role) membership
-	// relation. After the Guard: each self-authorizes writes via the Principal +
+	// relation. On the guarded group: each self-authorizes writes via the Principal +
 	// capabilities the Guard attached, and org-scopes reads via authz.Scope.
 	serviceaccounts.Route(authed, db)
 	memberships.Route(authed, db)
 
 	// TOTP multi-factor enrollment (RFC 6238) — the account security page's
-	// initiate/verify/enable/disable flow. After the Guard: self-service on the
+	// initiate/verify/enable/disable flow. On the guarded group: self-service on the
 	// caller's own user (authz.From); a cross-user reset needs admin (authz.Can).
 	mfa.Route(authed, db)
 }
