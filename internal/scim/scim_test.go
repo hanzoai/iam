@@ -74,7 +74,9 @@ func newHarness(t *testing.T) *harness {
 
 	app := zip.New(zip.Config{AppName: "scim-test", DisableStartupMessage: true})
 	routes.Route(app, db)
-	app.Prepare()
+	if err := app.Build(); err != nil {
+		t.Fatalf("build: %v", err)
+	}
 	return &harness{app: app, key: key, db: db}
 }
 

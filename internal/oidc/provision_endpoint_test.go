@@ -38,7 +38,9 @@ func bootApp(t *testing.T) (*zip.App, orm.DB) {
 	t.Cleanup(func() { _ = db.Close() })
 	app := zip.New(zip.Config{AppName: "provision-endpoint-test", DisableStartupMessage: true})
 	routes.Route(app, db)
-	app.Prepare()
+	if err := app.Build(); err != nil {
+		t.Fatalf("build: %v", err)
+	}
 	return app, db
 }
 
