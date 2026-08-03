@@ -3,21 +3,30 @@
 // Package routes registers the IAM HTTP surface on a zip App.
 //
 // Authentication is STRUCTURAL, decided by which group a route is registered on,
-// never by a hand-maintained path list. Route binds the surface in two phases
-// around one authentication seam:
+// never by a hand-maintained path list. Route binds the surface as two groups:
 //
-//   - the PUBLIC group (oidc.Route and the other pre-auth doors) is registered
-//     FIRST, before the Guard. A matched public route terminates fiber's
-//     middleware walk, so the Guard never runs on it — membership in this group
-//     IS "public".
-//   - app.Use(authz.Guard) is the ONE authentication seam. Every route registered
-//     AFTER it — the typed entity CRUD, the legacy verb aliases, the SCIM
-//     surface, and the framework's own /mcp + /openapi projections — requires a
+//   - the PUBLIC group (oidc.Route and the other pre-auth doors) holds no Guard,
+//     so membership in it IS "public".
+//   - the AUTHED group holds authz.Guard. Every route registered on it — the
+//     typed entity CRUD, the legacy verb aliases, the SCIM surface — requires a
 //     verified bearer.
 //
 // A public route therefore can never be accidentally gated, and an authed route
 // can never be accidentally public: the decision is where you register, not an
 // allow-list that can drift out of sync with the routes.
+//
+// THE GUARD IS SCOPED, and it is a group rather than app.Use for that reason.
+// zip places middleware by depth: on the app it becomes router middleware, in
+// front of every request the BINARY will ever serve. IAM is one subsystem among
+// many in the cloud binary, so that seam authenticated its siblings' routes
+// against IAM's own store — and answered for addresses no one had declared. A
+// group reaches its own routes and stops.
+//
+// Authentication is therefore mounted TWICE, and the second is not a duplicate:
+// authz.Control gates the framework's own /mcp, OpenAPI and docs projections,
+// which zip installs directly on the served app's router with no middleware and
+// which no group can reach. Scoping the Guard is exactly what takes those out of
+// its reach, so the two lines are one decision with two mounting points.
 //
 // LIVENESS IS NOT HERE. /healthz, /readyz and /metrics are zip's ops surface
 // (zip/ops.go, HIP-0119 §1): a SECOND listener the DEPLOYMENT brings up when it
@@ -66,13 +75,6 @@ import (
 // store db into every handler. This is the route table server.Route embeds — the
 // one Route(app, db) is the public entry; everything below is Route.
 func Route(app *zip.App, db orm.DB) {
-	// AUTHORIZATION of writes: the op-invoke hook authorizes every typed op on the
-	// DECODED input the handler binds — for REST and MCP alike, so the value
-	// authorized is the value written. Writes to the reserved admin/built-in owners
-	// (the signing-cert poisoning gate) stay SuperAdmin-only. Installed once; it is
-	// order-independent (it fires inside each typed op, not as middleware).
-	app.Authorize(authz.Authorize)
-
 	// ─────────────────────────── PUBLIC ───────────────────────────
 	// The pre-authentication surface: OIDC discovery/JWKS + RFC 8414 AS metadata,
 	// the oauth/* protocol endpoints (authorize, token, userinfo, logout,
@@ -105,74 +107,113 @@ func Route(app *zip.App, db orm.DB) {
 	registry.Route(public, db)
 
 	// ─────────────────────────── GUARD ────────────────────────────
-	// The ONE authentication seam. Every route registered AFTER it requires a
-	// verified bearer — the typed entity CRUD below, the legacy verb aliases, the
-	// SCIM surface, and the framework's own /mcp + /openapi projections (added at
-	// Build). The resolved Principal rides the request context for the write-authz
-	// hook above; reads are authorized here (their target rides the query string, or
-	// the handler scopes a path target itself). Fails closed (401).
+	// The ONE authentication seam, on a group that HOLDS the routes it guards.
+	// Every route registered on `authed` requires a verified bearer — the typed
+	// entity CRUD below, the legacy verb aliases, the SCIM surface. The resolved
+	// Principal rides the request context for the write-authz hook above; reads
+	// are authorized here (their target rides the query string, or the handler
+	// scopes a path target itself). Fails closed (401).
 	//
-	// The seam is THIS app's, and it reaches exactly this app's subtree. zip
-	// anchors middleware lexically: a node's environment is the stack inherited at
-	// its INCLUSION SITE plus the entries preceding it at its own level. So the
-	// public group above, included BEFORE this line, is not reached by it, and a
-	// host that composes IAM keeps its own routes out of it by construction —
-	// embedded in the cloud binary, `ai`'s /v1/models is a sibling subtree, not a
-	// later position in one flat list.
+	// It is a GROUP that holds the Guard, not app.Use, and that difference IS the
+	// fix. zip places middleware by DEPTH (zip/build.go materialise): a handler
+	// on the app becomes ROUTER middleware — a barrier in front of every request
+	// the binary will ever serve, including addresses this package never
+	// declared — while a handler inside an included definition is composed into
+	// the CHAIN of that definition's own routes and reaches nothing else.
 	//
-	// That is what makes one Use correct here where it once was not. Under the
-	// flat model a Use was "in front of every route the app will EVER serve", so
-	// IAM mounted at position 9 gated ai's /v1/models at position 106 and resolved
-	// its bearer against the embedded iam.db, which has never seen a token minted
-	// by the external hanzo.id — 401 on every valid request. The tell was the
-	// body: {"status":401,"error":"authentication required"} is this Guard, not
-	// ai's OpenAI-shaped error. Naming the prefixes IAM owns was the fix available
-	// then. It is not available now and no longer needed: zip refuses a definition
-	// that declares middleware with no routes beneath it, because under lexical
-	// anchoring such middleware is inert, and a prefix group holding the Guard
-	// with the routes registered on the app is exactly that shape.
-	app.Use(authz.Guard(db))
+	// Under app.Use, IAM mounted at position 9 gated ai's /v1/models at position
+	// 106 and resolved its bearer against the embedded iam.db, which has never
+	// seen a token minted by the external hanzo.id — 401 on every valid request.
+	// The tell was the body: {"status":401,"error":"authentication required"} is
+	// this Guard, not ai's OpenAI-shaped error. The same barrier also answered
+	// addresses NOTHING declares, which is why a typo'd path returned this
+	// Guard's 401 where a 404 was the truth. A group confines both: a definition
+	// does not answer for addresses it does not declare.
+	//
+	// The prefix is empty because IAM's routes are registered at their canonical
+	// ABSOLUTE paths (/v1/iam/…, /scim/v2/…, /login/oauth/…) and a group prefix
+	// would rewrite every one of them. A group earns its scope from being a
+	// subtree, not from having a prefix — the public group above is the same
+	// shape, and this one differs only in holding the Guard.
+	//
+	// Group returns the Router interface, but a group IS an *App (zip/compose.go
+	// group) and this needs the concrete type twice over: the sub-Routes below
+	// take *zip.App because zipdoc must resolve each op's path prefix statically,
+	// and the group needs its OWN Authorize hook.
+	authed := app.Group("").(*zip.App)
+	authed.Use(authz.Guard(db))
+
+	// AUTHORIZATION of writes, on the SAME group, for the same reason. The
+	// op-invoke hook authorizes every typed op on the DECODED input the handler
+	// binds — for REST and MCP alike, so the value authorized is the value
+	// written. Writes to the reserved admin/built-in owners (the signing-cert
+	// poisoning gate) stay SuperAdmin-only. It fires inside each typed op rather
+	// than as middleware, so it is order-independent; what it is NOT is
+	// app-independent.
+	//
+	// zip reads `app.authorizer` off the app an op was REGISTERED on, and a group
+	// inherits nothing. That cuts both ways, and both cuts are load-bearing:
+	//
+	//   - the group MUST have it. Without it every decoded write here runs
+	//     unauthorized — authenticated by the Guard, then unchecked — which is a
+	//     regular user editing another org's records with a valid bearer.
+	//   - the app must NOT. On the host app it became the HOST's authorizer, so a
+	//     sibling subsystem's typed op was authorized by IAM's rules against a
+	//     principal IAM's Guard never attached: 403 forbidden on every valid
+	//     call. That is the Guard's 401 wearing a different status code — same
+	//     overreach, same cause, one seam over — and scoping only the Guard would
+	//     have left every TYPED sibling op broken while the raw ones recovered.
+	authed.Authorize(authz.Authorize)
+
+	// The same authentication, mounted a second time for the ONE surface a
+	// scoped seam cannot reach: the framework's own /mcp door and OpenAPI
+	// document, which Build installs directly on the served app's router with no
+	// middleware, having never been registered through any group. Control is
+	// depth-0 for that reason and acts on those three addresses only — see
+	// authz.Control. Without it the MCP door would dispatch tools/call into this
+	// same admin CRUD unauthenticated.
+	app.Use(authz.Control(db))
 
 	// ─────────────────────────── AUTHED ───────────────────────────
 	// Typed entity CRUD. Each registers its typed ops on app (the projection into
 	// REST + OpenAPI + MCP needs *App); registered after the Guard, so all are
 	// gated.
-	users.Route(app, db)
-	organizations.Route(app, db)
-	applications.Route(app, db)
-	providers.Route(app, db)
-	roles.Route(app, db)
-	projects.Route(app, db)
-	workspaces.Route(app, db)
-	permission.Route(app, db)
-	certs.Route(app, db)
-	keys.Route(app, db)
-	webauthn.Route(app, db)
-	sessions.Route(app, db)
-	tokens.Route(app, db)
-	auditlogs.Route(app, db)
-	invitations.Route(app, db)
+	users.Route(authed, db)
+	organizations.Route(authed, db)
+	applications.Route(authed, db)
+	providers.Route(authed, db)
+	roles.Route(authed, db)
+	projects.Route(authed, db)
+	workspaces.Route(authed, db)
+	permission.Route(authed, db)
+	certs.Route(authed, db)
+	keys.Route(authed, db)
+	webauthn.Route(authed, db)
+	sessions.Route(authed, db)
+	tokens.Route(authed, db)
+	auditlogs.Route(authed, db)
+	invitations.Route(authed, db)
 
 	// legacy verb-alias layer: the get-users / get-organizations / add-organization
 	// / … spellings (in the v1 {status,data,data2} envelope) every live console/
 	// gateway/portal client hard-codes, served over the SAME store, redaction, and
 	// authz as the REST surface above — the transparent backend swap. After the
 	// Guard, so it shares the one Guard/Authorize seam.
-	compat.Route(app, db)
+	compat.Route(authed, db)
 
 	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface that
 	// replaces the the legacy surface entity verbs (HIP-0111). After the Guard, so it is
 	// authenticated; each handler owner-scopes via authz.Scope on the path target.
-	scim.Route(app, db)
+	scim.Route(authed, db)
 
 	// Agent/bot identities (service accounts) + the (User x Org x Role) membership
 	// relation. After the Guard: each self-authorizes writes via the Principal +
 	// capabilities the Guard attached, and org-scopes reads via authz.Scope.
-	serviceaccounts.Route(app, db)
-	memberships.Route(app, db)
+	serviceaccounts.Route(authed, db)
+	memberships.Route(authed, db)
 
 	// TOTP multi-factor enrollment (RFC 6238) — the account security page's
 	// initiate/verify/enable/disable flow. After the Guard: self-service on the
 	// caller's own user (authz.From); a cross-user reset needs admin (authz.Can).
-	mfa.Route(app, db)
+	mfa.Route(authed, db)
 }
