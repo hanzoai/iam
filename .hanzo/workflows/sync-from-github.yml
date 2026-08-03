@@ -78,3 +78,49 @@ jobs:
             echo "::error::main DIVERGED between GitHub ($REMOTE) and forge ($LOCAL) — refusing to force. Reconcile manually."
             exit 1
           fi
+
+      # Carry release tags, not just main.
+      #
+      # image.yml publishes ONLY for refs/tags/v* — its meta step sets push=true
+      # there and push=false everywhere else, naming the result `unpublished`.
+      # This job fetched and pushed `main` alone and dispatched with ref: main, so
+      # a `v*` tag cut on GitHub reached neither the forge nor the builder, and the
+      # dispatch it DID make could never publish. That is why iam.yaml already
+      # recorded "v1.34.5 was tagged in git and never built", and why v1.33.32..37
+      # have no images either. A release that builds nothing looks exactly like one
+      # that shipped, which is what makes it expensive to notice.
+      #
+      # The workflow token deliberately does not trigger other workflows (loop
+      # prevention), so pushing the tag is not enough: the build is dispatched
+      # explicitly on the TAG ref, the only ref image.yml will publish.
+      - name: Carry release tags to the forge and build them
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet --tags "https://x-access-token:${GH_PAT}@github.com/hanzoai/iam.git" 'refs/tags/v*:refs/tags/v*' || true
+          new=""
+          for t in $(git tag --list 'v*' | sort -V); do
+            if ! git ls-remote --exit-code --tags origin "refs/tags/$t" >/dev/null 2>&1; then
+              new="$new $t"
+            fi
+          done
+          new=$(echo $new)
+          if [ -z "$new" ]; then echo "no unpushed release tags"; exit 0; fi
+          count=$(echo "$new" | wc -w | tr -d ' ')
+          # A cap, stated out loud. A tag storm has starved this CI before, and a
+          # silent truncation would read as "everything built".
+          if [ "$count" -gt 5 ]; then
+            echo "::error::$count unpushed tags ($new) — refusing to dispatch that many builds at once. Push and build them deliberately."
+            exit 1
+          fi
+          for t in $new; do
+            echo "pushing and building $t"
+            git push origin "refs/tags/$t"
+            curl -fsS --max-time 20 -X POST \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "${{ github.server_url }}/v1/repos/${{ github.repository }}/actions/workflows/image.yml/dispatches" \
+              -d "{\"ref\":\"$t\"}" \
+              && echo "  dispatched $t" || echo "::warning::dispatch failed for $t — tag is on the forge; build it by hand"
+          done
