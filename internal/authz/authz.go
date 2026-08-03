@@ -420,18 +420,27 @@ func legacyVerb(path string) bool {
 	return false
 }
 
-// Guard is the AUTHENTICATION middleware. Route it via app.Use AFTER the public
-// group and BEFORE the authed routes: the public (pre-authentication) routes are
-// registered first, so a matched public route terminates fiber's middleware walk
-// and the Guard never runs on it — public vs gated is decided structurally, by
-// which group a route is registered on, not by an allow-list. Every route the
-// Guard does wrap — the typed CRUD handlers and the framework's /mcp and /openapi
-// surfaces alike — requires a valid bearer (401 otherwise) whose Principal is
-// attached to the request context for the authorization hook downstream. A read's
-// authorization target rides in the query string, so reads are authorized here; a
-// write's rides in the body, decoded once by the op and authorized at the op-invoke
-// seam (Authorize) on that exact decoded value — this middleware never re-parses a
-// write body, which is what let the old target extraction diverge from execution.
+// Guard is the AUTHENTICATION middleware. Mount it with Use on the GROUP that
+// holds the routes it gates — routes.Route registers IAM's authed surface on
+// such a group — never on the app itself. zip places middleware by depth: on the
+// app it becomes router middleware, a barrier in front of every request the
+// binary will ever serve, so IAM embedded beside other subsystems authenticated
+// THEIR routes against IAM's store and 401'd every valid request. Inside a
+// group it is composed into that group's own route chains and reaches nothing
+// else.
+//
+// Public vs gated stays structural — a public route is one registered on the
+// pre-authentication group instead of on the guarded one, never an entry in an
+// allow-list — and scoping now runs in the other direction too: a sibling
+// subsystem sharing the app is not IAM's to authenticate.
+//
+// Every route it wraps requires a valid bearer (401 otherwise) whose Principal
+// is attached to the request context for the authorization hook downstream. A
+// read's authorization target rides in the query string, so reads are authorized
+// here; a write's rides in the body, decoded once by the op and authorized at
+// the op-invoke seam (Authorize) on that exact decoded value — this middleware
+// never re-parses a write body, which is what let the old target extraction
+// diverge from execution.
 func Guard(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		// A CORS preflight carries no credentials BY DEFINITION — the browser
@@ -468,10 +477,49 @@ func Guard(db orm.DB) zip.Handler {
 	}
 }
 
-// Authorize is the AUTHORIZATION hook, installed via app.Authorize so the
-// framework runs it at every typed op's invoke seam — after the request is
-// decoded into its typed In and validated, before the handler runs, for REST and
-// MCP alike. It authorizes the DECODED target: the exact (owner, name) the
+// mcpPath is where zip mounts the MCP door. zip exports SpecPath and DocsPath
+// but keeps this one unexported (zip/mcp.go defaultMCPPath), and IAM never moves
+// it — MCPConfig.Path is left at its default wherever IAM builds an app.
+const mcpPath = "/mcp"
+
+// Control gates the framework's OWN projections: the MCP door, the OpenAPI
+// document and the docs UI. It is the SECOND mounting of the one Guard, and it
+// exists because those three addresses are not routes anybody registered.
+//
+// zip installs them at Build, directly onto the served app's router, with no
+// middleware and after every entry in the program (zip/build.go materialise:
+// "control routes are not entries at all"). A scoped seam therefore cannot reach
+// them — a group's middleware is composed into that group's own route chains,
+// and these are in no group — so the only seam that can is a depth-0 one.
+//
+// That is the whole reason authentication is mounted twice. Gating them matters
+// because the MCP door dispatches tools/call straight into the typed ops: it is
+// the same admin CRUD the REST surface exposes, reached by a different
+// transport, and the op-invoke hook alone does not close it (Authorize admits a
+// read whose decoded target is empty, on the REST-shaped assumption that the
+// Guard already ran). Unauthenticated, that combination lists users.
+//
+// Narrow by construction, and that is what keeps it from being the bug it
+// replaces: it is a depth-0 handler, so it is consulted on every request, but it
+// ACTS only on the three addresses the framework itself owns and hands every
+// other path straight on. A sibling subsystem's route is not one of them.
+func Control(db orm.DB) zip.Handler {
+	guard := Guard(db) // one authentication decision, mounted twice, never copied
+	return func(c *zip.Ctx) error {
+		switch c.Path() {
+		case mcpPath, zip.SpecPath, zip.DocsPath:
+			return guard(c)
+		}
+		return c.Continue()
+	}
+}
+
+// Authorize is the AUTHORIZATION hook. It is installed with Authorize on the
+// GROUP the typed ops register on — never on the app, which on a shared binary
+// would make IAM's rules the HOST's and refuse a sibling subsystem's ops 403 —
+// and the framework runs it at every typed op's invoke seam: after the request
+// is decoded into its typed In and validated, before the handler runs, for REST
+// and MCP alike. It authorizes the DECODED target: the exact (owner, name) the
 // handler will bind, read from the same struct the handler runs on, so the value
 // authorized cannot diverge from the value written.
 //
@@ -481,9 +529,14 @@ func Guard(db orm.DB) zip.Handler {
 // arguments DO decode a target into In), is authorized against authorize().
 //
 // Every typed op is authed by construction — the public surface is raw handlers
-// in the pre-Guard group, none of which is a typed op — so this hook needs no
+// on the unguarded group, none of which is a typed op — so this hook needs no
 // public bypass: whenever it runs, the Guard has already run and attached a
-// principal (over REST, before the op; over MCP, on the gated /mcp route).
+// principal (over REST, on the guarded group the op registered on; over MCP, on
+// the /mcp route authz.Control gates). That second clause is why Control is not
+// optional. The owner == "" read admitted just below trusts the Guard to have
+// authorized the query-string target, and over MCP the arguments decode into In
+// rather than the query — so an ungated door would reach this line with no
+// principal, no decoded target, and an admission.
 func Authorize(ctx context.Context, op zip.Op, in any) error {
 	owner, name := decodedTarget(in)
 	if owner == "" && isRead(op.Method) {
