@@ -127,7 +127,7 @@ func create(db orm.DB) zip.Handler {
 		// would change the M2M subject shape, so it is deferred to a deliberate migration
 		// rather than folded into this security rework.
 		sa.SetId(in.Organization + "/" + name)
-		key, secret, err := mint(sa)
+		key, secret, err := mint(c.Context(), sa)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -177,7 +177,7 @@ func rotate(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
-		key, secret, err := mint(sa)
+		key, secret, err := mint(c.Context(), sa)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -267,9 +267,9 @@ func read(p *authz.Principal, org string) bool {
 //
 // pk- for the handle, sk- for the secret: the prefix is what tells a reader which
 // half they are holding. Minting both under one prefix erases that distinction.
-func mint(sa *schema.User) (key, secret string, err error) {
+func mint(ctx context.Context, sa *schema.User) (key, secret string, err error) {
 	key, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
-	hash, err := cred.Hash(secret)
+	hash, err := cred.Hash(ctx, secret)
 	if err != nil {
 		return "", "", zip.ErrInternal("hash service account secret: " + err.Error())
 	}

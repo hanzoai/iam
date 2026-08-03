@@ -70,7 +70,7 @@ func Authenticate(ctx context.Context, db orm.DB, user *schema.User, password, o
 	if user == nil {
 		return false, false
 	}
-	passwordOK := VerifyPassword(user, password, orgPasswordType)
+	passwordOK := VerifyPassword(ctx, user, password, orgPasswordType)
 	return recordAttempt(ctx, db, user.Owner, user.Name, passwordOK, now)
 }
 

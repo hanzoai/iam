@@ -120,7 +120,7 @@ func newServer(t *testing.T) (*zip.App, orm.DB, *keyring) {
 
 func seedUser(t *testing.T, db orm.DB, org, name, password string, isAdmin bool) {
 	t.Helper()
-	hash, err := cred.Hash(password)
+	hash, err := cred.Hash(t.Context(), password)
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
