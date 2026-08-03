@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/hanzoai/iam/internal/sessions"
 )
 
 // The full portal session path: a bare (type=login) sign-in sets the session
@@ -29,7 +31,7 @@ func TestSession_LoginCookieResolvesGetAccount(t *testing.T) {
 		t.Fatalf("login status=%d body=%s", resp.StatusCode, body)
 	}
 	cookie := resp.Header.Get("Set-Cookie")
-	if !strings.HasPrefix(cookie, "hanzo_session=") {
+	if !strings.HasPrefix(cookie, sessions.CookieName+"=") {
 		t.Fatalf("login did not set the session cookie: %q", cookie)
 	}
 	for _, want := range []string{"HttpOnly", "secure", "SameSite=Lax", "path=/"} {
@@ -65,7 +67,7 @@ func TestSession_ForgedCookieRejected(t *testing.T) {
 	// A hand-built cookie with a bogus payload + mac — no valid signature exists
 	// without the platform cert key.
 	req := formReqNoBody("GET", PathAccount)
-	req.Header.Set("Cookie", "hanzo_session=eyJvIjoiYWRtaW4ifQ.deadbeef")
+	req.Header.Set("Cookie", sessions.CookieName+"=eyJvIjoiYWRtaW4ifQ.deadbeef")
 	resp, body := do(t, app, req)
 	if resp.StatusCode != 200 || decode(t, body)["status"] != "error" {
 		t.Fatalf("forged cookie must not authenticate: status=%d body=%s", resp.StatusCode, body)
