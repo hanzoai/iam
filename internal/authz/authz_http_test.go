@@ -142,7 +142,9 @@ func newHarness(t *testing.T) *harness {
 	// side-door tests drive the ACTUAL routes — the same surface a served app
 	// exposes — not a route that never got registered. MCP is left ENABLED here
 	// (unlike prod) so the tests prove the guard, not a disabled feature, closes it.
-	app.Prepare()
+	if err := app.Build(); err != nil {
+		t.Fatalf("build: %v", err)
+	}
 	return &harness{app: app, key: key, db: db}
 }
 
