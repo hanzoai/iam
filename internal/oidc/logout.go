@@ -51,23 +51,34 @@ func logoutHandler(db orm.DB) zip.Handler {
 		// (1) End the session. Unconditional and first: it must happen whether or
 		// not a hint is supplied, whether or not a redirect is asked for, and
 		// whether or not any of what follows succeeds.
-		owner, name, application, hadSession := sessions.Clear(ctx, c.Fiber(), db)
+		//
+		// RP-initiated logout ends the WHOLE browser session — every identity it
+		// holds — because the cookie is one credential and there is no way for a
+		// relying party to name which identity it meant. An account page that wants
+		// to sign out exactly one identity has PathHubSignOut for it, which is
+		// where that choice belongs.
+		ended, _ := sessions.Clear(ctx, c.Fiber(), db)
 
 		// The hint is verified — a forged or unsigned one yields nil — and is the
 		// only thing that can name an application here, for BOTH the revocation and
 		// the redirect. Resolved once.
 		app := appFromIDTokenHint(ctx, db, param(c, "id_token_hint"))
 
-		// (2) Retire the grant this relying party holds for this user. Scoped to
-		// (user, app) deliberately: signing out of one application must not silently
-		// tear down every other application the person is signed into, which is what
-		// a revoke-everything would do.
-		if hadSession && app != nil {
-			revokeGrant(ctx, db, owner+"/"+name, app.Name)
-		} else if hadSession && application != "" {
-			// No hint: retire the grant for the application the session itself names,
-			// so a plain browser logout still leaves no mintable refresh token behind.
-			revokeGrant(ctx, db, owner+"/"+name, application)
+		// (2) Retire the grant this relying party holds for each identity that was
+		// signed out. Scoped to (user, app) deliberately: signing out of one
+		// application must not silently tear down every other application the
+		// person is signed into, which is what a revoke-everything would do — and
+		// which the account page offers explicitly instead.
+		for _, id := range ended {
+			switch {
+			case app != nil:
+				revokeGrant(ctx, db, id.Owner+"/"+id.Name, app.Name)
+			case id.Application != "":
+				// No hint: retire the grant for the application the session itself
+				// names, so a plain browser logout still leaves no mintable refresh
+				// token behind.
+				revokeGrant(ctx, db, id.Owner+"/"+id.Name, id.Application)
+			}
 		}
 
 		// (3) Redirect only to an address the identified application registered.

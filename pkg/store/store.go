@@ -84,6 +84,25 @@ func morePreferredApp(a, b *schema.Application) bool {
 	return a.Owner+"/"+a.Name < b.Owner+"/"+b.Name
 }
 
+// GetApplicationByAppName resolves an application from its NAME alone — what a
+// Session row carries, since a session's key is (owner=the USER's org, name,
+// application) and the application's own owner is not part of it.
+//
+// A name can repeat across owners, so this reuses preferredApp: the same total
+// order clientId resolution uses, platform row first, never storage/heap order.
+// Returns (nil, nil) when nothing matches — an unknown application is a display
+// gap, never an error that could fail a session read.
+func GetApplicationByAppName(ctx context.Context, db orm.DB, name string) (*schema.Application, error) {
+	if name == "" {
+		return nil, nil
+	}
+	apps, err := orm.TypedQuery[schema.Application](db).Filter("Name=", name).GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return preferredApp(apps), nil
+}
+
 // GetApplicationByName resolves an application by (owner, name).
 func GetApplicationByName(_ context.Context, db orm.DB, owner, name string) (*schema.Application, error) {
 	app, err := orm.TypedQuery[schema.Application](db).
@@ -420,6 +439,21 @@ func ListTokensByUserApp(ctx context.Context, db orm.DB, user, application strin
 	}
 	return orm.TypedQuery[schema.Token](db).
 		Filter("User=", user).Filter("Application=", application).GetAll(ctx)
+}
+
+// ListTokensByUser returns every token row one user holds, in EVERY application
+// — what a sign-out-everywhere retires, where ListTokensByUserApp is what an
+// RP-initiated logout of a single application retires.
+//
+// User is the "owner/name" pair the mint stamps on the row. An empty argument
+// returns nothing rather than matching everything: the whole point of this query
+// is that it deletes what it finds, so a missing filter must never widen to the
+// entire table.
+func ListTokensByUser(ctx context.Context, db orm.DB, user string) ([]*schema.Token, error) {
+	if user == "" {
+		return nil, nil
+	}
+	return orm.TypedQuery[schema.Token](db).Filter("User=", user).GetAll(ctx)
 }
 
 // DeleteToken removes a token row by (owner, name). A missing row is not an

@@ -94,6 +94,10 @@ func Route(r zip.Router, db orm.DB) {
 	routeLogin(r, db)
 	routeFrontDoor(r, db)
 
+	// The account hub — every identity this browser holds, everywhere each is
+	// signed in, and the three widths of sign-out. Self-scoped from the cookie.
+	routeHub(r, db)
+
 	// Identity federation: the external-IdP callback (Google/GitHub, …). The
 	// authorize endpoint kicks a federation off when the request names a
 	// `provider`; this registers the fixed return endpoint the IdP redirects to.

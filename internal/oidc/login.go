@@ -260,9 +260,11 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 
 	// type=login: a bare portal sign-in. Establish the durable session the portal +
 	// the gateway admin-guard read via get-account, then report the user id. The
-	// cookie is best-effort — a session failure never blocks a valid login.
+	// sign-in ADDS this identity to the ones the browser already holds and makes it
+	// active; it never clobbers another. The cookie is best-effort — a session
+	// failure never blocks a valid login.
 	if f.Type != "code" {
-		_ = sessions.Set(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
+		_ = sessions.Add(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
 		return httpx.Ok(c, userID)
 	}
 
