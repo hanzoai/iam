@@ -14,10 +14,9 @@
 // authz.Scope and authz.Can cover it without a module having to reimplement them:
 // SCIM is served there (internal/scim, at /v1/iam/scim/v2), never through this seam.
 //
-// A module gets NO authorization for free. The Guard is mounted on the prefixes
-// IAM owns (internal/routes.guardedPrefixes), not on the app, so a module that
-// registers outside them is unauthenticated — the one thing a Feature must get
-// right on its own.
+// A module gets NO authorization for free. IAM's Guard is anchored in IAM's own
+// subtree (internal/routes.Route), so a module that registers anywhere else is
+// unauthenticated — the one thing a Feature must get right on its own.
 package feature
 
 import (
