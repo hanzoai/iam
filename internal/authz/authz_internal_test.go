@@ -69,7 +69,7 @@ func TestSuperIsAdminOrgOnly(t *testing.T) {
 
 // Public vs gated is no longer a path allow-list this package owns — it is
 // STRUCTURAL, decided by which group a route is registered on in routes.Route
-// (the public group before the Guard, everything else after it). The boundary is
+// (the public group holds no Guard, the authed group holds it). The boundary is
 // therefore proven end-to-end over the real registered router: TestPublicRoutesNeedNoBearer
 // (public routes reachable without a bearer), TestUnauthenticatedWriteIs401 /
 // TestCrossOrgWriteIs403 (authed routes gated), and TestFrameworkSideDoorsAreGated
