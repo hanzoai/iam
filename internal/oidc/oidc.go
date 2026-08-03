@@ -142,7 +142,17 @@ func Discovery(c *zip.Ctx) error {
 		"response_types_supported":              []string{"code"},
 		"response_modes_supported":              []string{"query", "fragment", "form_post"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token", "client_credentials", "password", grantTypeTokenExchange, deviceGrant},
-		"subject_types_supported":               []string{"public"},
+		// The sign-in modes a client may ask for. Advertised because a relying
+		// party CANNOT discover them by trying: a server that ignores prompt=none
+		// answers with a login page, which to the client is indistinguishable from
+		// a server that honoured it and found no session. Saying so here is what
+		// lets a client rely on the silent flow instead of guessing.
+		//
+		// `consent` is absent because there is no consent screen to show, and
+		// `create` because there is no signup-first mode on this endpoint. This
+		// document advertises only what is implemented.
+		"prompt_values_supported": promptValues,
+		"subject_types_supported": []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256", "RS512", "ES256", "ES384", "ES512", "MLDSA65"},
 		"scopes_supported":                      []string{"openid", "email", "profile", "address", "phone", "offline_access"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
