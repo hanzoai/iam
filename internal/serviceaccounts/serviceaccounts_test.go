@@ -14,7 +14,7 @@ import (
 // is stored, never the plaintext, and a rotation retires the prior secret.
 func TestMint_HashesSecretOnceNeverPlaintext(t *testing.T) {
 	sa := &schema.User{Owner: "hanzo", Name: "hanzo-bot"}
-	key, secret, err := mint(sa)
+	key, secret, err := mint(t.Context(), sa)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,19 +30,19 @@ func TestMint_HashesSecretOnceNeverPlaintext(t *testing.T) {
 	if sa.AccessSecretHash == "" || sa.AccessSecretHash == secret {
 		t.Fatal("the secret must be stored as a digest, never verbatim")
 	}
-	if !cred.Verify(cred.TypeArgon2id, secret, sa.AccessSecretHash) {
+	if !cred.Verify(t.Context(), cred.TypeArgon2id, secret, sa.AccessSecretHash) {
 		t.Fatal("the stored argon2id digest must verify the returned secret")
 	}
 
 	// Rotate: a fresh mint invalidates the prior secret.
-	_, secret2, err := mint(sa)
+	_, secret2, err := mint(t.Context(), sa)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if secret2 == secret {
 		t.Fatal("rotation must mint a fresh secret")
 	}
-	if cred.Verify(cred.TypeArgon2id, secret, sa.AccessSecretHash) {
+	if cred.Verify(t.Context(), cred.TypeArgon2id, secret, sa.AccessSecretHash) {
 		t.Fatal("the prior secret must stop verifying after rotation")
 	}
 }

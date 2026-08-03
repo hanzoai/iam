@@ -47,10 +47,10 @@ func TestPasswordHashPersists(t *testing.T) {
 		t.Fatal("AccessSecretHash did not persist")
 	}
 	// The retrieved hash actually verifies the password.
-	if !users.VerifyPassword(got, "s3cret-pw", "") {
+	if !users.VerifyPassword(t.Context(), got, "s3cret-pw", "") {
 		t.Fatal("persisted hash does not verify the password")
 	}
-	if users.VerifyPassword(got, "wrong-pw", "") {
+	if users.VerifyPassword(t.Context(), got, "wrong-pw", "") {
 		t.Fatal("wrong password verified — bcrypt broken")
 	}
 }

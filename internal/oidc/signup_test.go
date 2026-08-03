@@ -80,10 +80,10 @@ func TestSignup_HappyPathCreatesRedactedUser(t *testing.T) {
 	if stored.PasswordType != "argon2id" {
 		t.Errorf("PasswordType = %q, want argon2id", stored.PasswordType)
 	}
-	if !users.VerifyPassword(stored, pw, "") {
+	if !users.VerifyPassword(t.Context(), stored, pw, "") {
 		t.Error("stored hash does not verify the signup password")
 	}
-	if users.VerifyPassword(stored, "wrong", "") {
+	if users.VerifyPassword(t.Context(), stored, "wrong", "") {
 		t.Error("a wrong password verified — hashing is broken")
 	}
 }

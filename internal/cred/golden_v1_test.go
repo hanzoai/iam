@@ -27,11 +27,11 @@ const (
 // TestGolden_V1Argon2idDigestVerifies is the cutover-parity assertion: a digest
 // written by the LIVE v1 code path verifies under iam's cred.Verify.
 func TestGolden_V1Argon2idDigestVerifies(t *testing.T) {
-	if !Verify(TypeArgon2id, goldenV1Password, goldenV1Digest) {
+	if !Verify(t.Context(), TypeArgon2id, goldenV1Password, goldenV1Digest) {
 		t.Fatal("iam REJECTED a digest produced by v1's Argon2idCredManager — " +
 			"credential parity is broken; every live login would fail at cutover")
 	}
-	if Verify(TypeArgon2id, "not-the-password", goldenV1Digest) {
+	if Verify(t.Context(), TypeArgon2id, "not-the-password", goldenV1Digest) {
 		t.Fatal("wrong password ACCEPTED against the v1 golden digest")
 	}
 }
@@ -54,12 +54,12 @@ func TestGolden_ResolvedThroughRowType(t *testing.T) {
 	if typ != TypeArgon2id {
 		t.Fatalf("resolve: got %q", typ)
 	}
-	if !Verify(typ, goldenV1Password, goldenV1Digest) {
+	if !Verify(t.Context(), typ, goldenV1Password, goldenV1Digest) {
 		t.Fatal("row-resolved argon2id failed to verify the v1 golden digest")
 	}
 	// And the bug that shipped: resolving to bcrypt against this digest must FAIL,
 	// never pass.
-	if Verify(TypeBcrypt, goldenV1Password, goldenV1Digest) {
+	if Verify(t.Context(), TypeBcrypt, goldenV1Password, goldenV1Digest) {
 		t.Fatal("v1 argon2id digest verified under bcrypt — auth bypass")
 	}
 }

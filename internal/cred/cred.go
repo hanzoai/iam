@@ -18,6 +18,7 @@
 package cred
 
 import (
+	"context"
 	"crypto/subtle"
 
 	"github.com/alexedwards/argon2id"
@@ -60,19 +61,31 @@ func Supported(passwordType string) bool {
 // and is currently unused.
 //
 // Fails closed: an unknown/empty type, an empty hash, or a malformed digest
-// returns false.
-func Verify(passwordType, plaintext, hashed string) bool {
+// returns false. A ctx cancelled while queued for an argon2id slot is also
+// false — the caller has gone, so there is no verdict to reach.
+//
+// ctx bounds the WAIT, never the derivation. argon2id holds 64 MiB for its whole
+// run and only a bounded number may run at once (gate.go); a caller that has
+// already given up releases its place rather than being handed the memory.
+func Verify(ctx context.Context, passwordType, plaintext, hashed string) bool {
 	if hashed == "" || !Supported(passwordType) {
 		return false
 	}
 	switch passwordType {
 	case TypeArgon2id:
+		if err := acquire(ctx); err != nil {
+			return false
+		}
+		defer release()
 		// ComparePasswordAndHash is constant-time internally and parses the PHC
 		// parameters from the digest itself; a malformed digest returns an error,
 		// which we treat as "no match" (never a panic, never a pass).
 		match, err := argon2id.ComparePasswordAndHash(plaintext, hashed)
 		return err == nil && match
 	case TypeBcrypt:
+		// Ungated on purpose: bcrypt's cost is CPU and a few KiB of state, so it
+		// is not the resource this gate protects and queueing it behind argon2id
+		// would slow a cheap verify for nothing.
 		return bcrypt.CompareHashAndPassword([]byte(hashed), []byte(plaintext)) == nil
 	}
 	return false
@@ -96,7 +109,15 @@ var hashParams = &argon2id.Params{
 // cost parameters and a per-hash random salt are embedded in the returned string,
 // so Verify needs no external salt or config. The plaintext is never logged or
 // stored; only this one-way digest is.
-func Hash(plaintext string) (string, error) {
+//
+// ctx bounds the wait for a derivation slot (gate.go), not the derivation. It
+// returns ctx.Err() if the caller goes away before one is free, and no digest —
+// a caller must never persist a partial or unqueued credential.
+func Hash(ctx context.Context, plaintext string) (string, error) {
+	if err := acquire(ctx); err != nil {
+		return "", err
+	}
+	defer release()
 	return argon2id.CreateHash(plaintext, hashParams)
 }
 

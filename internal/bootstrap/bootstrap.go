@@ -214,7 +214,7 @@ func upsertUser(db orm.DB) zip.Handler {
 
 		var hash string
 		if req.Password != "" {
-			h, err := cred.Hash(req.Password)
+			h, err := cred.Hash(ctx, req.Password)
 			if err != nil {
 				return c.JSON(500, errResp("server_error"))
 			}

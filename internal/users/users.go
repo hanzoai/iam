@@ -171,7 +171,7 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// the same way the password digest is.
 	u.AccessKey, u.AccessSecret, u.AccessSecretHash = "", "", ""
 	if in.Password != "" {
-		hash, err := hashPassword(in.Password)
+		hash, err := hashPassword(ctx, in.Password)
 		if err != nil {
 			return nil, zip.ErrInternal("hash password: " + err.Error())
 		}
@@ -281,7 +281,7 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	u.PasswordType = existing.PasswordType
 	u.PasswordSalt = existing.PasswordSalt
 	if in.Password != "" {
-		hash, err := hashPassword(in.Password)
+		hash, err := hashPassword(ctx, in.Password)
 		if err != nil {
 			return nil, zip.ErrInternal("hash password: " + err.Error())
 		}
@@ -330,8 +330,8 @@ func (a *API) lookup(ctx context.Context, owner, name string) (*schema.User, err
 
 // hashPassword derives a one-way argon2id digest (SOTA) via the ONE cred.Hash —
 // the single place password hashing lives, so every mint is the same strong scheme.
-func hashPassword(plaintext string) (string, error) {
-	return cred.Hash(plaintext)
+func hashPassword(ctx context.Context, plaintext string) (string, error) {
+	return cred.Hash(ctx, plaintext)
 }
 
 // VerifyPassword reports whether plaintext matches the user's stored digest,
@@ -346,11 +346,11 @@ func hashPassword(plaintext string) (string, error) {
 //
 // It is the single verify choke point for the login path — the digest itself
 // never leaves the store, so verification happens here, against the row.
-func VerifyPassword(u *schema.User, plaintext, orgPasswordType string) bool {
+func VerifyPassword(ctx context.Context, u *schema.User, plaintext, orgPasswordType string) bool {
 	if u == nil || u.PasswordHash == "" {
 		return false
 	}
-	return cred.Verify(cred.Resolve(u.PasswordType, orgPasswordType), plaintext, u.PasswordHash)
+	return cred.Verify(ctx, cred.Resolve(u.PasswordType, orgPasswordType), plaintext, u.PasswordHash)
 }
 
 // nowRFC3339 is the single timestamp format for v1-compatible string times.

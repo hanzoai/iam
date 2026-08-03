@@ -30,9 +30,9 @@ const credentialType = "service-account"
 // apart: pk- is the publishable lookup handle (stored verbatim, safe to show), sk- is
 // the confidential half (digested, revealed once). Minting both under one prefix
 // would make an exposed secret indistinguishable from a harmless handle at a glance.
-func mintCredential(sa *schema.User) (accessKey, secret string, err error) {
+func mintCredential(ctx context.Context, sa *schema.User) (accessKey, secret string, err error) {
 	accessKey, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
-	hash, err := cred.Hash(secret)
+	hash, err := cred.Hash(ctx, secret)
 	if err != nil {
 		return "", "", err
 	}
@@ -229,7 +229,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 			sa.Type, sa.DisplayName = credentialType, "Default API key"
 			sa.CreatedTime = provisionNow()
 			sa.SetId(cl.slug + "/" + saName)
-			accessKey, secret, mErr := mintCredential(sa)
+			accessKey, secret, mErr := mintCredential(ctx, sa)
 			if mErr != nil {
 				return &fault{500, "server_error"}
 			}

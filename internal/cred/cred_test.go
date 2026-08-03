@@ -24,10 +24,10 @@ func TestVerify_Argon2id_RealV1FormatHash(t *testing.T) {
 	if len(hash) < 20 || hash[:9] != "$argon2id" {
 		t.Fatalf("not an argon2id PHC digest: %q", hash)
 	}
-	if !Verify(TypeArgon2id, pw, hash) {
+	if !Verify(t.Context(), TypeArgon2id, pw, hash) {
 		t.Fatal("argon2id: correct password REJECTED — this is the cutover blocker")
 	}
-	if Verify(TypeArgon2id, "wrong password", hash) {
+	if Verify(t.Context(), TypeArgon2id, "wrong password", hash) {
 		t.Fatal("argon2id: wrong password ACCEPTED")
 	}
 }
@@ -36,10 +36,10 @@ func TestVerify_Argon2id_RealV1FormatHash(t *testing.T) {
 func TestVerify_Bcrypt(t *testing.T) {
 	pw := "s3cret-pw"
 	h, _ := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.MinCost)
-	if !Verify(TypeBcrypt, pw, string(h)) {
+	if !Verify(t.Context(), TypeBcrypt, pw, string(h)) {
 		t.Fatal("bcrypt: correct password rejected")
 	}
-	if Verify(TypeBcrypt, "nope", string(h)) {
+	if Verify(t.Context(), TypeBcrypt, "nope", string(h)) {
 		t.Fatal("bcrypt: wrong password accepted")
 	}
 }
@@ -51,10 +51,10 @@ func TestVerify_CrossSchemeFailsClosed(t *testing.T) {
 	argon, _ := argon2id.CreateHash(pw, argon2id.DefaultParams)
 	bc, _ := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.MinCost)
 
-	if Verify(TypeBcrypt, pw, argon) {
+	if Verify(t.Context(), TypeBcrypt, pw, argon) {
 		t.Fatal("argon2id digest verified under bcrypt — auth bypass")
 	}
-	if Verify(TypeArgon2id, pw, string(bc)) {
+	if Verify(t.Context(), TypeArgon2id, pw, string(bc)) {
 		t.Fatal("bcrypt digest verified under argon2id — auth bypass")
 	}
 }
@@ -71,7 +71,7 @@ func TestVerify_FailsClosedOnGarbage(t *testing.T) {
 		{"ARGON2ID", "pw", "$argon2id$v=19$x"},   // case-sensitive: not supported
 	}
 	for _, c := range cases {
-		if Verify(c.typ, c.pw, c.hash) {
+		if Verify(t.Context(), c.typ, c.pw, c.hash) {
 			t.Fatalf("verify(%q, hash=%q) returned TRUE — must fail closed", c.typ, c.hash)
 		}
 	}
