@@ -80,10 +80,10 @@ func TestGuardedProbeIsGated(t *testing.T) {
 const guardedProbe = "/v1/iam/wallet-test-guarded"
 
 // newServer registers the wallet surface exactly as routes.Route does: on the
-// pre-authentication PUBLIC group (a root, empty-prefix router) registered
-// BEFORE the Guard, so a matched route terminates the middleware walk and the
-// Guard never runs on it. The Guard is still installed, so "anonymous
-// reachability" is proved against the real fail-closed default, not around it.
+// pre-authentication PUBLIC group, which holds no Guard — that is what makes it
+// public, not the order it was registered in. The Guard is still installed, on
+// its own group, so "anonymous reachability" is proved against the real
+// fail-closed default and not around it.
 func newServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	db := openTestDB(t)
