@@ -78,8 +78,10 @@ func signinHandler(db orm.DB) zip.Handler {
 		}
 
 		// Establish the durable session the portal + gateway admin-guard read via
-		// get-account. Its sid is registered for revocation (sessions.Set).
-		if err := sessions.Set(ctx, c.Fiber(), db, owner, name, tok.Application); err != nil {
+		// get-account. Its sid is registered for revocation, and it JOINS whatever
+		// identities the browser already holds rather than replacing them
+		// (sessions.Add) — redeeming a code for a@ must not sign z@ out.
+		if err := sessions.Add(ctx, c.Fiber(), db, owner, name, tok.Application); err != nil {
 			return httpx.Err(c, err.Error())
 		}
 

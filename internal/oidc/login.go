@@ -37,6 +37,18 @@ type loginForm struct {
 	Password     string `json:"password"`
 	Type         string `json:"type"` // "code" (PKCE authorize) | "device" (RFC 8628 approval) | "login" (bare session)
 
+	// Identity is an `owner/name` SELECTOR naming which of the identities this
+	// browser already holds the request should act as — the account chooser's
+	// answer, and `hanzo auth use` in a browser.
+	//
+	// It is not a credential and it cannot become one. It is looked up in the
+	// HMAC-signed session cookie, so it can only ever name a principal that has
+	// ALREADY completed a full sign-in on this browser; a selector matching
+	// nothing selects nothing, and the request is answered as though no session
+	// existed. Sending it alongside a password is refused rather than reconciled
+	// — two different answers to "who is signing in" is not a preference.
+	Identity string `json:"identity"`
+
 	// UserCode is the RFC 8628 code the device displays, transcribed by the human
 	// approving it (type=device).
 	UserCode string `json:"userCode"`
@@ -80,6 +92,14 @@ func loginHandler(db orm.DB) zip.Handler {
 		}
 		adoptQuery(c, &f)
 		ctx := c.Context()
+
+		// A credential and an identity selector are two different answers to "who
+		// is signing in", and there is no sensible reconciliation of the two. It is
+		// refused rather than ranked, so no future reader has to remember which one
+		// this endpoint decided wins.
+		if f.Identity != "" && (f.Username != "" || f.Password != "") {
+			return httpx.Err(c, "send either a credential or an identity to select, never both")
+		}
 
 		// A post carrying no fresh credential but naming an outstanding challenge is
 		// the SECOND half of a sign-in this endpoint already gated: the second-factor
@@ -140,16 +160,42 @@ func loginHandler(db orm.DB) zip.Handler {
 			// Access-Control-Allow-Credentials: true. Any page on a hanzo.ai
 			// subdomain could reach this branch. Narrowing an edge rule is therefore
 			// part of this branch's threat model, not an unrelated concern.
+			// THE CHOOSER'S ANSWER, and the account page's switcher: the SELECTED
+			// identity is who this request acts as, and the grant is minted for the
+			// identity Use HANDS BACK — never re-read from the cookie afterwards.
+			//
+			// That distinction is not stylistic. A cookie mutation is written to the
+			// RESPONSE; the REQUEST still carries the session the browser arrived
+			// with. Re-resolving here therefore answers with the PREVIOUSLY active
+			// identity, and the chooser hands the app an authorization code for the
+			// person the human just switched AWAY from — clicking "z@" signs you into
+			// the app as a@, silently, with the account page showing z@ afterwards
+			// because the NEXT request finally sees the new cookie. It read correctly
+			// and it was wrong; only driving the real endpoint showed it. The value
+			// Use returns is the one fact that is true within this request, so it is
+			// the only thing allowed to answer.
+			//
+			// It is a selection among identities the browser ALREADY HOLDS, never an
+			// authentication — sessions.Use looks the selector up inside the signed
+			// cookie and mints nothing, so this endpoint cannot be talked into acting
+			// as a principal that never signed in here. It also leaves auth_time
+			// alone: switching back to an identity that authenticated a month ago
+			// must not present it to a relying party as a fresh sign-in.
+			if f.Identity != "" {
+				owner, name, wellFormed := sessions.ParseIdentity(f.Identity)
+				if !wellFormed {
+					return httpx.Err(c, "identity must be owner/name")
+				}
+				selected, ok := sessions.Use(ctx, c.Fiber(), db, owner, name)
+				if !ok {
+					return httpx.ErrCode(c, "that account is not signed in on this browser", CodeLoginRequired)
+				}
+				return grantAs(c, db, selected.Owner, selected.Name, f)
+			}
+
 			if f.Type == "code" || f.Type == "device" {
 				if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
-					user, err := store.GetUserByName(ctx, db, owner, name)
-					if err != nil {
-						return httpx.Err(c, err.Error())
-					}
-					if user == nil || user.IsForbidden || user.IsDeleted {
-						return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
-					}
-					return loginGrant(c, db, user, f)
+					return grantAs(c, db, owner, name, f)
 				}
 				// No session, and this flow has no credential to fall back on: the
 				// approval page posts none, by design. Falling through told the human
@@ -213,15 +259,67 @@ func loginHandler(db orm.DB) zip.Handler {
 			return nil
 		}
 
-		return loginGrant(c, db, user, f)
+		return signedIn(c, db, user, f)
 	}
+}
+
+// grantAs completes a credential-LESS grant for an identity the browser already
+// proved — the silent hop and the chooser's selection alike.
+//
+// The row is RE-READ rather than taken from the session, so an account forbidden
+// or deleted since sign-in is refused instead of riding its old session. Both
+// callers reach the same one, so neither can forget the check.
+func grantAs(c *zip.Ctx, db orm.DB, owner, name string, f loginForm) error {
+	ctx := c.Context()
+	user, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil {
+		return httpx.Err(c, err.Error())
+	}
+	if user == nil || user.IsForbidden || user.IsDeleted {
+		return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
+	}
+	return loginGrant(c, db, user, f)
+}
+
+// signedIn is what a CREDENTIAL just being checked means: the browser now holds
+// this identity, and then the grant is minted.
+//
+// It is separated from loginGrant because the two facts had been braided, and
+// the braid was a bug in both directions.
+//
+// One direction: the session write ran under `if f.Type != "code"`, so the ONE
+// path humans actually walk — every app sends them through the code flow — minted
+// a code and left no session behind. The silent-SSO branch was fully built and
+// had nothing to read, so hanzo.id asked for the password again at every app. WHO
+// the identity provider remembers is not a function of WHICH grant shape the
+// relying party asked for; the two questions had no business sharing a branch.
+//
+// The other direction, and the one this lane depends on: the SSO and chooser
+// paths reach loginGrant WITHOUT a credential, and they must not run this. Adding
+// the identity again there would mint a second sid and stamp a fresh auth_time on
+// a sign-in that happened days ago — a switch laundering a stale credential past
+// a relying party's max_age. Only the two paths that actually verified something
+// (the password post and the second-factor finish) call signedIn.
+//
+// Adding NEVER drops what the browser already holds (sessions.Add), so signing in
+// as a@ while z@ is present yields two live identities rather than a replacement.
+// The cookie is best-effort — a session failure never blocks a valid login.
+func signedIn(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
+	// A device approval establishes no browser session of its own: the approver is
+	// already signed in on this browser, and the grant it completes belongs to the
+	// device at the other end of the flow.
+	if f.Type != "device" {
+		_ = sessions.Add(c.Context(), c.Fiber(), db, user.Owner, user.Name, f.Application)
+	}
+	return loginGrant(c, db, user, f)
 }
 
 // loginGrant completes a sign-in that has passed the gate: a device approval, a
 // bare portal session, or a PKCE-bound authorization code. It is the ONE minting
-// tail every interactive path reaches — the credential post and the second-factor
-// finish alike — so the checks between "this is the user" and "here is the grant"
-// are stated once and cannot be true of one path and false of another.
+// tail every interactive path reaches — the credential post, the second-factor
+// finish, the silent hop and the chooser's selection alike — so the checks
+// between "this is the user" and "here is the grant" are stated once and cannot
+// be true of one path and false of another.
 func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	ctx := c.Context()
 
@@ -251,12 +349,6 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 		return httpx.Err(c, err.Error())
 	}
 
-	// type=login: a bare portal sign-in. Establish the durable session the portal,
-	// the gateway admin-guard, and the authorize endpoint's silent grant all read.
-	// The cookie is best-effort — a session failure never blocks a valid login.
-	if f.Type != "code" {
-		_ = sessions.Set(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
-	}
 	// The SDK reads data as the user id (bare sign-in) or the authorization code
 	// to exchange at /token.
 	return httpx.Ok(c, out)

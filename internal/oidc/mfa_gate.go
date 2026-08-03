@@ -184,7 +184,10 @@ func finishMfa(c *zip.Ctx, db orm.DB, id string, f loginForm) error {
 			return httpx.Err(c, err.Error())
 		}
 	}
-	return loginGrant(c, db, user, f)
+	// The second factor is the other half of a credential check, so this is a real
+	// sign-in: the identity joins the browser's session here, exactly as the
+	// password-only path does. signedIn, never loginGrant — see login.go.
+	return signedIn(c, db, user, f)
 }
 
 // remember opens the "don't ask again" window: now + the ORG's MfaRememberInHours.
