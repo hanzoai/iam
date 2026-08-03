@@ -258,11 +258,29 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 
 	userID := user.Owner + "/" + user.Name
 
-	// type=login: a bare portal sign-in. Establish the durable session the portal +
-	// the gateway admin-guard read via get-account, then report the user id. The
-	// cookie is best-effort — a session failure never blocks a valid login.
-	if f.Type != "code" {
+	// Establish the durable session the portal + the gateway admin-guard read via
+	// get-account. It happens for EVERY interactive grant shape, because the thing
+	// being recorded is that a human proved who they are to the IDENTITY PROVIDER —
+	// and that is true whether they walked away with a bare portal sign-in or an
+	// authorization code. The grant shape the RELYING PARTY asked for is a separate
+	// question and has no business deciding whether the IdP remembers the human.
+	//
+	// Braiding those two together is what cost the fleet its single sign-on. This
+	// ran under `if f.Type != "code"`, so the ONE path humans actually walk — every
+	// app sends them through the code flow — minted a code and left no session. The
+	// silent-SSO branch above was fully built, tested and correct, and simply had
+	// nothing to read: hanzo.id asked for the password again on every app.
+	//
+	// Only when there is no live session, so a silent hop reuses the session it
+	// arrived with instead of minting a second sid on every app the person opens.
+	// Best-effort throughout — a session failure never blocks a valid login.
+	if _, _, live := sessions.Resolve(ctx, c.Fiber(), db); !live {
 		_ = sessions.Set(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
+	}
+
+	// type=login: a bare portal sign-in. The session above IS the grant, so there is
+	// nothing left to mint — report the user id.
+	if f.Type != "code" {
 		return httpx.Ok(c, userID)
 	}
 
