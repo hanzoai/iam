@@ -32,13 +32,32 @@ const PathSignedOut = "/login?signed_out=1"
 // happen here now, in this order:
 //
 //  1. The browser session dies — sid revoked server-side AND the cookie expired
-//     (sessions.Clear). Server-side revocation is the load-bearing half: a copy
-//     of the cookie taken before logout must not still resolve.
+//     (sessions.Clear/ClearAll). Server-side revocation is the load-bearing
+//     half: a copy of the cookie taken before logout must not still resolve.
 //  2. The relying party's tokens are revoked when an id_token_hint names it, so
 //     the refresh token cannot mint a fresh access token after the human left.
 //     Revocation state is authoritative — a JWT's `exp` still reads valid for
 //     days, so expiry is necessary but never sufficient.
 //  3. Only then is a redirect considered, and only to a REGISTERED uri.
+//
+// # WHICH identity, now that a browser can hold several
+//
+// One rule, and it is the safe one in both directions: A REQUEST THAT NAMES AN
+// IDENTITY SIGNS OUT THAT IDENTITY; A REQUEST THAT NAMES NONE SIGNS OUT EVERY
+// IDENTITY.
+//
+//	id_token_hint  — the relying party names the human it holds a session for
+//	                 (OIDC Core). Precise: signing out of one app must not tear
+//	                 down an identity that app never saw.
+//	logout_hint    — `owner/name`, the account page's per-identity sign-out.
+//	neither        — everything.
+//
+// The "neither" case is where the security lives. A bare sign-out link, with no
+// qualifier, is the shared-machine case: someone got up and pressed the button.
+// Leaving a second identity live behind them because it merely was not the
+// ACTIVE one would be a logout that reports success while a session survives —
+// the same failure this endpoint spent a release having, one identity to the
+// right. So a bare logout is complete, and partiality must be asked for.
 //
 // The open-redirect guard is unchanged: a redirect happens only when a VERIFIED
 // id_token_hint identifies the application and that application has registered
@@ -48,26 +67,30 @@ func logoutHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
 
-		// (1) End the session. Unconditional and first: it must happen whether or
-		// not a hint is supplied, whether or not a redirect is asked for, and
-		// whether or not any of what follows succeeds.
-		owner, name, application, hadSession := sessions.Clear(ctx, c.Fiber(), db)
-
 		// The hint is verified — a forged or unsigned one yields nil — and is the
 		// only thing that can name an application here, for BOTH the revocation and
-		// the redirect. Resolved once.
-		app := appFromIDTokenHint(ctx, db, param(c, "id_token_hint"))
+		// the redirect. Resolved once, BEFORE the session ends, because naming the
+		// identity to sign out is part of what it resolves.
+		hint := param(c, "id_token_hint")
+		app := appFromIDTokenHint(ctx, db, hint)
 
-		// (2) Retire the grant this relying party holds for this user. Scoped to
-		// (user, app) deliberately: signing out of one application must not silently
-		// tear down every other application the person is signed into, which is what
-		// a revoke-everything would do.
-		if hadSession && app != nil {
-			revokeGrant(ctx, db, owner+"/"+name, app.Name)
-		} else if hadSession && application != "" {
-			// No hint: retire the grant for the application the session itself names,
-			// so a plain browser logout still leaves no mintable refresh token behind.
-			revokeGrant(ctx, db, owner+"/"+name, application)
+		// (1) End the session(s). Unconditional and first: it must happen whether or
+		// not a hint is supplied, whether or not a redirect is asked for, and
+		// whether or not any of what follows succeeds.
+		ended := endSession(ctx, c, db, hint)
+
+		// (2) Retire the grant each relying party holds for each signed-out
+		// identity. Scoped to (user, app) deliberately: signing out of one
+		// application must not silently tear down every other application that
+		// person is signed into, which is what a revoke-everything would do.
+		for _, id := range ended {
+			target := id.Application
+			if app != nil {
+				target = app.Name
+			}
+			if target != "" {
+				revokeGrant(ctx, db, id.String(), target)
+			}
 		}
 
 		// (3) Redirect only to an address the identified application registered.
@@ -93,6 +116,60 @@ func logoutHandler(db orm.DB) zip.Handler {
 		}
 		return c.JSON(200, map[string]string{"status": "ok"})
 	}
+}
+
+// endSession applies the one rule this endpoint states: a request that NAMES an
+// identity ends that identity, a request that names none ends every identity.
+// It returns the identities actually signed out, so the caller can retire their
+// grants — empty when there was no live session to end.
+//
+// A named identity is matched against the SIGNED SET this browser already holds
+// (sessions.Clear), so a hint can only ever end a session the caller was already
+// carrying. Naming somebody else's identity ends nothing and leaves this
+// browser's session untouched.
+func endSession(ctx context.Context, c *zip.Ctx, db orm.DB, hint string) []sessions.Identity {
+	if owner, name, named := logoutTarget(ctx, c, db, hint); named {
+		if id, ok := sessions.Clear(ctx, c.Fiber(), db, owner, name); ok {
+			return []sessions.Identity{*id}
+		}
+		return nil
+	}
+	ended, _ := sessions.ClearAll(ctx, c.Fiber(), db)
+	return ended
+}
+
+// logoutTarget resolves WHICH identity a logout request names, or named=false
+// when it names none (which means all of them).
+//
+// `logout_hint` carries the `owner/name` selector the account page's per-identity
+// sign-out sends — the same string form the CLI takes for `hanzo auth logout
+// <identity>`. `id_token_hint` is the relying party naming the human IT holds a
+// session for, resolved through the token's `sub` to the real (owner, name); it
+// is the OIDC-native spelling and it is checked SECOND so an explicit selector
+// always wins.
+//
+// Every failure — an unparseable selector, a forged or expired id_token_hint, a
+// subject with no user row — reports named=false and therefore ends EVERY
+// identity. That direction is deliberate: a hint this server cannot believe must
+// never be allowed to narrow a sign-out, because narrowing is the outcome that
+// leaves a session alive. The worst an attacker gains from feeding this endpoint
+// a hint it rejects is a more complete logout than they asked for.
+func logoutTarget(ctx context.Context, c *zip.Ctx, db orm.DB, hint string) (owner, name string, named bool) {
+	if sel := param(c, "logout_hint"); sel != "" {
+		return sessions.ParseIdentity(sel)
+	}
+	if hint == "" {
+		return "", "", false
+	}
+	claims, err := verifyToken(ctx, db, hint)
+	if err != nil {
+		return "", "", false
+	}
+	u, err := store.GetUserBySubject(ctx, db, claims.Subject)
+	if err != nil || u == nil {
+		return "", "", false
+	}
+	return u.Owner, u.Name, true
 }
 
 // wantsHTML reports whether the caller is a browser NAVIGATING here rather than a

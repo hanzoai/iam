@@ -25,33 +25,49 @@ func TestCookieName_IsBrowserEnforcedHostOnly(t *testing.T) {
 	}
 }
 
-// auth_time is recorded at issue, because a session that cannot say WHEN the
-// human authenticated cannot answer a relying party's max_age — and after silent
-// re-authentication, nothing else asks.
-func TestCookie_RecordsAuthTime(t *testing.T) {
+// auth_time is PER IDENTITY, and a fresh sign-in refreshes only its own.
+//
+// This is what a session-wide auth_time would have got wrong. Signing in as a@
+// says nothing about how long ago z@ typed a password; one shared timestamp
+// would let the new sign-in answer a relying party's max_age on the OLD
+// identity's behalf the moment the human switched back. A session that cannot
+// say WHEN each human authenticated cannot answer max_age at all — and after
+// silent re-authentication, nothing else asks.
+func TestCookie_AuthTimeIsPerIdentity(t *testing.T) {
 	key := SessionKey("cert")
-	before := time.Now().Unix()
-	got, err := Verify(Issue(Cookie{Owner: "hanzo", Name: "alice"}, key, time.Hour), key)
+	stale := id("hanzo", "z")
+	stale.AuthTime = time.Now().Add(-72 * time.Hour).Unix()
+	fresh := id("hanzo", "a")
+
+	got, err := Verify(Issue(session(stale, fresh), key, time.Hour), key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.AuthTime < before || got.AuthTime > time.Now().Unix() {
-		t.Fatalf("AuthTime = %d, want ~now (%d)", got.AuthTime, before)
+	if z := got.Find("hanzo", "z"); z == nil || z.AuthTime != stale.AuthTime {
+		t.Fatalf("z@'s auth_time must survive a@ signing in, got %+v", z)
+	}
+	if a := got.Find("hanzo", "a"); a == nil || a.AuthTime != fresh.AuthTime {
+		t.Fatalf("a@ must carry its own auth_time, got %+v", a)
 	}
 }
 
-// An auth_time carried IN is preserved, never refreshed. Re-keying a session
-// across an org move is a change of address, not a re-authentication: nobody
-// typed anything, so it must not launder a stale sign-in past max_age.
+// An auth_time carried IN is preserved, never refreshed — by Put, and therefore
+// by every verb that re-files an identity. Re-keying across an org move, and
+// SELECTING an identity in the chooser, are changes of address and of attention:
+// nobody typed anything, so neither may launder a stale sign-in past max_age.
 func TestCookie_CarriedAuthTimeSurvives(t *testing.T) {
 	key := SessionKey("cert")
 	original := time.Now().Add(-72 * time.Hour).Unix()
-	got, err := Verify(Issue(Cookie{Owner: "newco", Name: "alice", AuthTime: original}, key, time.Hour), key)
+	moved := id("newco", "alice")
+	moved.AuthTime = original
+
+	got, err := Verify(Issue(session(moved), key, time.Hour), key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.AuthTime != original {
-		t.Fatalf("AuthTime = %d, want the carried %d — a re-key must not look like a fresh sign-in", got.AuthTime, original)
+	cur := got.Current()
+	if cur == nil || cur.AuthTime != original {
+		t.Fatalf("AuthTime = %+v, want the carried %d — a re-key must not look like a fresh sign-in", cur, original)
 	}
 }
 
@@ -59,12 +75,14 @@ func TestCookie_CarriedAuthTimeSurvives(t *testing.T) {
 // freshness the sign-in never had.
 func TestCookie_AuthTimeIsSigned(t *testing.T) {
 	key := SessionKey("cert")
-	value := Issue(Cookie{Owner: "hanzo", Name: "alice", AuthTime: time.Now().Add(-30 * 24 * time.Hour).Unix()}, key, time.Hour)
+	old := id("hanzo", "alice")
+	old.AuthTime = time.Now().Add(-30 * 24 * time.Hour).Unix()
+	value := Issue(session(old), key, time.Hour)
 	c, err := Verify(value, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.AuthTime = time.Now().Unix() // "I authenticated just now"
+	c.Identities[0].AuthTime = time.Now().Unix() // "I authenticated just now"
 	forged := forge(t, value, *c)
 	if _, err := Verify(forged, key); err != ErrCookieSignature {
 		t.Fatalf("a rewritten auth_time must fail the signature, got %v", err)
