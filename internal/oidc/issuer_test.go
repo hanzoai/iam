@@ -5,6 +5,7 @@ package oidc
 import (
 	"context"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -355,48 +356,83 @@ func discoveryIssuer(t *testing.T, app *zip.App, host string) (issuer, jwksURI s
 // IdP callback must be one org-constant string because a social provider holds
 // ONE OAuth client with a FIXED redirect_uri list. Braided, every brand sent a
 // redirect_uri the provider had never seen and social login failed everywhere.
-func TestFederationOriginIsOrgConstantWhileIssuerStaysPerBrand(t *testing.T) {
+// A cross-host fold is REFUSED AT BOOT, because the browser could not complete a
+// sign-in against it.
+//
+// This test used to assert that iam.hanzo.ai's callback folds onto hanzo.id — the
+// stated purpose of the split, so a provider console holds one redirect_uri per org
+// instead of one per brand host. The separation of issuer from callback origin is
+// right, and the issuer half still holds and is still asserted below. The fold half
+// cannot work yet: beginFederation sets the `hanzo_fed` anti-forgery cookie on the
+// host that served it with NO Domain attribute (host-only, deliberately — it is the
+// login-CSRF defence), and the callback refuses an empty cookie with no exemption.
+// Set on iam.hanzo.ai, it is never presented to hanzo.id, so every social sign-in on
+// that brand would fail closed — at a human's first login attempt, not at deploy,
+// with an error naming the symptom rather than the config.
+//
+// Failing to boot is the honest answer, matching how this file already treats a
+// misconfigured issuer. Completing the feature means the begin leg redirecting to
+// the federation origin so the cookie is written THERE first; when that lands, this
+// test flips back to asserting the fold.
+func TestFederationOriginCrossHostFoldIsRefusedAtBoot(t *testing.T) {
 	t.Setenv("IAM_ISSUER", "https://hanzo.id")
 	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id","iam.hanzo.ai":"https://iam.hanzo.ai"}`)
-	// One callback per ORG — every Hanzo brand host folds onto hanzo.id.
 	t.Setenv("IAM_FEDERATION_ORIGIN", "https://hanzo.id")
 	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.id":"https://hanzo.id","iam.hanzo.ai":"https://hanzo.id","lux.id":"https://lux.id"}`)
 
+	prevIss, prevFed := activeResolver.Load(), activeFederationResolver.Load()
+	t.Cleanup(func() { activeResolver.Store(prevIss); activeFederationResolver.Store(prevFed) })
+	activeResolver.Store(nil)
+	activeFederationResolver.Store(nil)
+	if err := InitIssuerResolver(); err != nil {
+		t.Fatalf("InitIssuerResolver: %v", err)
+	}
+
+	err := InitFederationResolver()
+	if err == nil {
+		t.Fatal("InitFederationResolver accepted a cross-host fold; the hanzo_fed cookie " +
+			"is host-only, so every social sign-in on iam.hanzo.ai would fail closed")
+	}
+	for _, want := range []string{"iam.hanzo.ai", "hanzo_fed", "host-only"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("boot error must name %q so the operator can act on it; got: %v", want, err)
+		}
+	}
+	// The resolver must NOT be installed on a refusal — a half-applied config is
+	// how a boot guard turns into the outage it was meant to prevent.
+	if activeFederationResolver.Load() != nil {
+		t.Error("a refused federation config was installed anyway")
+	}
+	// The ISSUER half of the split is untouched and still per-brand: that is what an
+	// RP pins, and it is correct today.
+	if got := resolveIssuer("iam.hanzo.ai"); got != "https://iam.hanzo.ai" {
+		t.Errorf("issuer for iam.hanzo.ai = %q, want per-brand https://iam.hanzo.ai", got)
+	}
+}
+
+// A same-host map changes no origin, so it is a no-op and must still boot — the
+// guard rejects unreachable folds, not the feature's existence.
+func TestFederationOriginSameHostMapBoots(t *testing.T) {
+	t.Setenv("IAM_ISSUER", "https://hanzo.id")
+	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
+	t.Setenv("IAM_FEDERATION_ORIGIN", "https://hanzo.id")
+	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
+
+	prevIss, prevFed := activeResolver.Load(), activeFederationResolver.Load()
+	t.Cleanup(func() { activeResolver.Store(prevIss); activeFederationResolver.Store(prevFed) })
 	activeResolver.Store(nil)
 	activeFederationResolver.Store(nil)
 	if err := InitIssuerResolver(); err != nil {
 		t.Fatalf("InitIssuerResolver: %v", err)
 	}
 	if err := InitFederationResolver(); err != nil {
-		t.Fatalf("InitFederationResolver: %v", err)
+		t.Fatalf("a same-host federation map must boot: %v", err)
 	}
-
-	// The issuer still varies per brand — this is what an RP pins.
-	if got := resolveIssuer("iam.hanzo.ai"); got != "https://iam.hanzo.ai" {
-		t.Errorf("issuer for iam.hanzo.ai = %q, want per-brand https://iam.hanzo.ai", got)
-	}
-	// ...while both Hanzo hosts hand the IdP the SAME callback origin.
-	a, b := resolveFederationOrigin("hanzo.id"), resolveFederationOrigin("iam.hanzo.ai")
-	if a != b {
-		t.Errorf("federation origin differs across hosts of one org: %q vs %q", a, b)
-	}
-	if a != "https://hanzo.id" {
-		t.Errorf("federation origin = %q, want https://hanzo.id", a)
-	}
-	// A different org keeps its own single origin.
 	if got := resolveFederationOrigin("lux.id"); got != "https://lux.id" {
 		t.Errorf("lux federation origin = %q, want https://lux.id", got)
 	}
-	// The split is real: for iam.hanzo.ai the two values now DISAGREE, which is
-	// exactly what the braided implementation could not express.
-	if resolveIssuer("iam.hanzo.ai") == resolveFederationOrigin("iam.hanzo.ai") {
-		t.Error("issuer and federation origin are still the same value; the split did nothing")
-	}
 }
 
-// Unset must change nothing: the federation origin falls back to the issuer, so
-// deploying this before the config lands is a no-op rather than a silent
-// redirect of the IdP leg to somewhere new.
 func TestFederationOriginUnsetFollowsIssuer(t *testing.T) {
 	t.Setenv("IAM_ISSUER", "https://hanzo.id")
 	t.Setenv("IAM_ISSUER_MAP", `{"lux.id":"https://lux.id"}`)
