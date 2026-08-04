@@ -1,9 +1,9 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
-// Command iam is the Hanzo IAM identity service: a clean-room,
-// proprietary rewrite of the the legacy surface-fork identity layer on the native
-// Hanzo stack — zip (HTTP) over hanzoai/orm. No the legacy surface, no Beego, no xorm,
-// no base, no consensus engine.
+// Command iam is the Hanzo IAM identity service: a clean-room rewrite of the
+// legacy fork's identity layer on the native Hanzo stack — zip (HTTP) over
+// hanzoai/orm. No Beego, no xorm, no base, no consensus engine.
 //
 // Subcommands:
 //
@@ -53,7 +53,7 @@ func main() {
 
 	root := &cobra.Command{
 		Use:           "iam",
-		Short:         "Hanzo IAM — proprietary identity service (zip + orm, no the legacy surface)",
+		Short:         "Hanzo IAM — identity service (zip + orm)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

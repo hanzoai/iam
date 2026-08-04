@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package store is the IN-PROCESS entity store surface for a host binary that
 // EMBEDS iam (hanzoai/cloud) rather than talking to it over HTTP. It exposes the
