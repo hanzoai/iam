@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package registry serves the Docker Registry v2 token endpoint the self-hosted
 // OCI registry (registry:2 at registry.hanzo.ai) authenticates docker push/pull

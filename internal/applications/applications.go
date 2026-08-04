@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package applications is the Phase-1 typed CRUD surface for the `applications`
 // entity. Every operation is a zip typed handler (decode In -> run -> encode

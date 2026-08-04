@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package wallet is native multi-chain wallet sign-in for IAM (HIP-0111):
 // keyless CAIP-122 challenge/response over github.com/luxwallet/connect/go —

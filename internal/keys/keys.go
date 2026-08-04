@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package keys serves the owner-scoped CRUD surface for the `keys` entity
 // (v1 the legacy surface `key`) as typed zip handlers over hanzoai/orm.
