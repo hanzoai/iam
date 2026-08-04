@@ -104,7 +104,6 @@ func authMethods(db orm.DB) zip.Handler {
 		store.EnrichProviders(c.Context(), db, app)
 
 		oauth := []map[string]string{}
-		web3 := false
 		for _, it := range app.Providers {
 			if it == nil || it.Provider == nil || !it.CanSignIn {
 				continue
@@ -112,10 +111,7 @@ func authMethods(db orm.DB) zip.Handler {
 			if !offerable(it.Provider) {
 				continue // hidden until real creds land — never a dead-end button
 			}
-			switch strings.ToLower(it.Provider.Category) {
-			case "web3":
-				web3 = true
-			case "oauth":
+			if strings.EqualFold(it.Provider.Category, "oauth") {
 				oauth = append(oauth, map[string]string{
 					"name": it.Name,
 					"type": it.Provider.Type,
@@ -123,13 +119,30 @@ func authMethods(db orm.DB) zip.Handler {
 				})
 			}
 		}
+
+		// Wallet sign-in is a capability of THIS BINARY, not of an application's
+		// provider list, so it is asked of the package that serves it. It used to
+		// be read off a linked provider of category "web3" — the seeded
+		// Web3Onboard row, whose clientId is the unexpanded literal
+		// `${IAM_WEB3_CLIENT_ID}` and which names a third-party library this build
+		// does not import. So every login screen reported web3:false while
+		// /v1/iam/web3/nonce answered on seven chain families, and the flag tracked
+		// a row that governed nothing.
+		//
+		// The chain list is the SAME one the nonce/verify endpoints gate on, so a
+		// screen cannot offer a chain the endpoint refuses.
+		names := schema.WalletChains()
 		return httpx.Ok(c, map[string]any{
 			"password": app.EnablePassword,
 			"code":     app.EnableCodeSignin,
 			"webauthn": app.EnableWebAuthn,
-			"web3":     web3,
-			"oauth":    oauth,
-			"signup":   app.EnableSignUp,
+			"web3":     len(names) > 0,
+			// The families a wallet may sign in with, so a screen can render the
+			// right options instead of hardcoding a list that drifts from the
+			// verifier. Additive: `web3` stays the boolean every client reads.
+			"web3Chains": names,
+			"oauth":      oauth,
+			"signup":     app.EnableSignUp,
 		})
 	}
 }
