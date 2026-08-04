@@ -78,7 +78,7 @@ func getAppLogin(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the application does not exist")
 		}
 		store.EnrichProviders(c.Context(), db, app)
-		return httpx.Ok(c, maskApp(app))
+		return httpx.Ok(c, loginView(app))
 	}
 }
 
@@ -109,7 +109,7 @@ func authMethods(db orm.DB) zip.Handler {
 			if it == nil || it.Provider == nil || !it.CanSignIn {
 				continue
 			}
-			if !isConfigured(it.Provider) {
+			if !offerable(it.Provider) {
 				continue // hidden until real creds land — never a dead-end button
 			}
 			switch strings.ToLower(it.Provider.Category) {
@@ -134,16 +134,35 @@ func authMethods(db orm.DB) zip.Handler {
 	}
 }
 
-// isConfigured reports whether a provider holds a real (non-placeholder)
-// credential — the guard that keeps an unconfigured provider's button hidden so
-// it never dead-ends the OAuth redirect.
-func isConfigured(p *schema.Provider) bool {
+// offerable reports whether a provider can actually COMPLETE a sign-in, which is
+// the only honest reason to draw a button for it. A method fails that in two
+// independent ways, and checking only the first is what put dead buttons on the
+// login screen:
+//
+//   - NO REAL CREDENTIAL — a placeholder client id, never filled in.
+//   - NO DIALECT THAT CAN DRIVE IT. idpKind is the ONE authority for "can we
+//     federate this?", and it is what the authorize leg already consults. GitLab
+//     is the live example: a real-looking client id passes the credential check,
+//     so the button rendered, and then beginFederation refused it with "provider
+//     is not a supported federation type". The button existed only to fail.
+//
+// Both callers now ask THIS question — the login screen and the authorize leg —
+// so what is offered and what is driveable can no longer disagree. Give GitLab an
+// issuerUrl and it becomes a real OIDC provider here and its button returns, with
+// nothing else to change.
+//
+// Web3 is exempt from the dialect check because it never reaches the federation
+// broker at all: it is native challenge/response with no OAuth client.
+func offerable(p *schema.Provider) bool {
 	if p == nil {
 		return false
 	}
 	// Web3 is native challenge/response — no OAuth client to configure.
 	if strings.EqualFold(p.Category, "Web3") {
 		return true
+	}
+	if idpKind(p) == "" {
+		return false
 	}
 	id := strings.ToLower(strings.TrimSpace(p.ClientId))
 	if id == "" {
@@ -155,22 +174,33 @@ func isConfigured(p *schema.Provider) bool {
 		!strings.Contains(id, "change")
 }
 
-// maskApp returns a copy-safe view of the application with the client secret and
-// every provider's secret removed — get-app-login is called by the browser, so
-// no secret may cross it.
-func maskApp(app *schema.Application) *schema.Application {
+// loginView returns what a login screen may see of an application: no secrets,
+// and no sign-in method that cannot complete.
+//
+// Both halves are here because this response IS the login screen's source of
+// truth — the SDK calls it "the canonical source of truth for which methods
+// exist" — so a provider present here is a button rendered. It previously
+// answered with EVERY provider while /v1/iam/auth/methods answered with the
+// offerable ones: two endpoints, two answers to one question, and the browser
+// read the unfiltered one. Filtering here is what makes them agree.
+func loginView(app *schema.Application) *schema.Application {
 	if app == nil {
 		return nil
 	}
-	masked := *app
-	masked.ClientSecret = ""
-	for _, it := range masked.Providers {
-		if it != nil && it.Provider != nil {
-			p := *it.Provider
-			p.ClientSecret = ""
-			p.ClientSecret2 = ""
-			it.Provider = &p
+	view := *app
+	view.ClientSecret = ""
+	kept := make([]*schema.ProviderItem, 0, len(view.Providers))
+	for _, it := range view.Providers {
+		if it == nil || it.Provider == nil || !offerable(it.Provider) {
+			continue
 		}
+		p := *it.Provider
+		p.ClientSecret = ""
+		p.ClientSecret2 = ""
+		item := *it
+		item.Provider = &p
+		kept = append(kept, &item)
 	}
-	return &masked
+	view.Providers = kept
+	return &view
 }
