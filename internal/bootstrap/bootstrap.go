@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -153,6 +154,23 @@ func upsertApplication(db orm.DB) zip.Handler {
 				return c.JSON(500, errResp("server_error"))
 			}
 		} else {
+			// A new application must NAME a signing cert, or it is not a
+			// registration — it is a login that fails after the user has already
+			// authenticated. Resolved here, where "brand new" is known, rather
+			// than left to be discovered at the token endpoint.
+			//
+			// The cert ROW is deliberately not required to exist yet: an app that
+			// records `cert-hanzo` signs correctly the moment that cert does,
+			// whereas demanding it up front would order application creation
+			// behind cert seeding and break a first-boot reconcile that has not
+			// reached the certs. The name is the durable fact; its resolution is
+			// the token endpoint's job.
+			if req.Cert = resolveCert(req.Cert, req.Organization); req.Cert == "" {
+				return c.JSON(400, errResp(fmt.Sprintf(
+					"application %q would have no signing cert and no organization to "+
+						"derive one from, so it could never issue a token: state `cert`",
+					req.Name)))
+			}
 			a := orm.New[schema.Application](db)
 			model := a.Model
 			a.Owner, a.Name = "admin", req.Name
@@ -296,6 +314,36 @@ func resolveSecret(public bool, requested string, hasExisting bool, existing str
 	default:
 		return randomSecret()
 	}
+}
+
+// resolveCert decides the signing cert a NEW application is created with. Same
+// shape as resolveSecret, and split out for the same reason: it is the ONE place
+// the rule lives.
+//
+// It is not cosmetic, and it fails LATE if it is wrong. issueTokens resolves
+// app.Cert to sign, so an application created without one authenticates the user,
+// mints an authorization code, redeems it — and only then discovers it has
+// nothing to sign with, answering the token exchange `500 server_error`. From the
+// browser that is indistinguishable from an outage, and it is exactly the state
+// `hanzo-tabs` shipped in.
+//
+//   - requested -> honour it.
+//   - otherwise -> the organization's own cert. Every application here already
+//     follows one signing identity per org (`cert-hanzo`, `cert-lux`,
+//     `cert-adnexus`…), so the default is that convention, not an invention.
+//
+// The caller VERIFIES the result resolves to a real cert and refuses the
+// registration otherwise. Only the create path consults this: on an existing
+// application a blank request means "not stated", never "clear it", which is what
+// lets a document add the field without rotating anything.
+func resolveCert(requested, org string) string {
+	if r := strings.TrimSpace(requested); r != "" {
+		return r
+	}
+	if org = strings.TrimSpace(org); org != "" {
+		return "cert-" + org
+	}
+	return ""
 }
 
 // decode reads the raw JSON body (content-type independent) into v.
