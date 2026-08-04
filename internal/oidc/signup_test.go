@@ -103,8 +103,8 @@ func TestSignup_Errors(t *testing.T) {
 		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", signup: true})
 		seedOrg(t, db, "hanzo")
 		status, env := signupReq(t, app, map[string]string{"application": "conf", "organization": "hanzo"})
-		if status != 200 || env["status"] != "error" {
-			t.Fatalf("status=%d env=%v, want 200 error", status, env)
+		if status != 400 || env["status"] != "error" {
+			t.Fatalf("status=%d env=%v, want 400 error", status, env)
 		}
 	})
 

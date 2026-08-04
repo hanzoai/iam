@@ -69,8 +69,8 @@ func TestSignup_reservedOrg_refusedThroughSharedApp(t *testing.T) {
 				"password":     "correct horse battery staple",
 				"email":        "eve@evil.example",
 			})
-			if status != 200 || env["status"] != "error" {
-				t.Fatalf("signup into reserved org %q: status=%d env=%v, want 200 error", reserved, status, env)
+			if status != 400 || env["status"] != "error" {
+				t.Fatalf("signup into reserved org %q: status=%d env=%v, want 400 error", reserved, status, env)
 			}
 			// The escalation is prevented: NO user row exists under the reserved org.
 			if u, _ := store.GetUserByName(context.Background(), db, reserved, "eve"); u != nil {
@@ -116,8 +116,8 @@ func TestSignup_adminOrgApp_cannotMintSuperAdmin(t *testing.T) {
 		"username":     "eve",
 		"password":     "correct horse battery staple",
 	})
-	if status != 200 || env["status"] != "error" {
-		t.Fatalf("admin-org-app signup into admin: status=%d env=%v, want 200 error", status, env)
+	if status != 400 || env["status"] != "error" {
+		t.Fatalf("admin-org-app signup into admin: status=%d env=%v, want 400 error", status, env)
 	}
 	if u, _ := store.GetUserByName(context.Background(), db, "admin", "eve"); u != nil {
 		t.Fatal("a SuperAdmin was minted via an admin-org signup app — invariant 1 breached")
@@ -137,8 +137,8 @@ func TestSignup_orgChoiceApp_reservedOrgRefused(t *testing.T) {
 		"username":     "eve",
 		"password":     "correct horse battery staple",
 	})
-	if status != 200 || env["status"] != "error" {
-		t.Fatalf("org-choice signup into admin: status=%d env=%v, want 200 error", status, env)
+	if status != 400 || env["status"] != "error" {
+		t.Fatalf("org-choice signup into admin: status=%d env=%v, want 400 error", status, env)
 	}
 	if u, _ := store.GetUserByName(context.Background(), db, "admin", "eve"); u != nil {
 		t.Fatal("a SuperAdmin was minted via an org-choice signup app — invariant 1 breached")

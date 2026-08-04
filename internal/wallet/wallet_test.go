@@ -14,12 +14,15 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
-// errorIs asserts the envelope is a REFUSAL carrying msg — on a 200, because
-// every SDK branches on status, not the HTTP code.
+// errorIs asserts the envelope is a REFUSAL carrying msg, under a status that
+// AGREES with it. The envelope still carries the reason — that is the SDK
+// contract and it is unchanged — but a refusal no longer arrives dressed as a
+// success, so a caller that checks the transport first reaches the same verdict
+// as one that parses the body.
 func errorIs(t *testing.T, code int, m map[string]any, msg string) {
 	t.Helper()
-	if code != 200 {
-		t.Fatalf("status = %d, want 200 (errors ride the envelope)", code)
+	if code < 400 || code > 499 {
+		t.Fatalf("status = %d, want a 4xx: a refused request must not read as a completed one", code)
 	}
 	if m["status"] != "error" {
 		t.Fatalf("status = %v, want error: %v", m["status"], m)
@@ -121,9 +124,11 @@ func TestAnonymous(t *testing.T) {
 	if code, m := get(t, app, PathNonce+"?chain=evm"); code != 200 || m["status"] != "ok" {
 		t.Fatalf("nonce is not anonymous-reachable: %d %v", code, m)
 	}
-	// verify reaches its handler (it refuses on the merits, not on auth).
+	// verify reaches its handler (it refuses on the MERITS, not on auth) — the
+	// refusal is the handler's own, so it names the malformed message rather than
+	// authentication, and it carries a status that agrees it was refused.
 	code, m := post(t, app, PathVerify, body(a, wc.ChainEVM, addr, "nope", "0x00"), nil)
-	if code != 200 {
+	if code < 400 || code > 499 {
 		t.Fatalf("verify is not anonymous-reachable: %d %v", code, m)
 	}
 	if msg, _ := m["msg"].(string); strings.Contains(msg, "authentication") {
