@@ -114,12 +114,19 @@ jobs:
           # ones. Backfilling the history is deliberately NOT done here — pushing
           # those tags would fire image.yml once per tag, which is the tag storm the
           # cap exists to prevent.
-          high=$(git ls-remote --tags --refs origin 'refs/tags/v*' 2>/dev/null \
-                 | sed 's#.*refs/tags/##' | sort -V | tail -1)
-          echo "forge's highest release tag: ${high:-<none>}"
+          # ONE round trip for the forge's whole tag list, then compare locally.
+          # Asking `git ls-remote` per tag is ~170 network calls against this repo's
+          # tag count: it is what made the step take a minute-plus, and it is 170
+          # chances for one transient failure to kill the job under `set -e`.
+          git ls-remote --tags --refs origin 'refs/tags/v*' 2>/dev/null \
+            | sed 's#.*refs/tags/##' | sort -V > /tmp/forge-tags || true
+          high=$(tail -1 /tmp/forge-tags)
+          echo "forge holds $(wc -l < /tmp/forge-tags | tr -d ' ') release tags; highest: ${high:-<none>}"
           new=""
           for t in $(git tag --list 'v*' | sort -V); do
-            if git ls-remote --exit-code --tags origin "refs/tags/$t" >/dev/null 2>&1; then
+            # `if !` rather than `cmd && continue`: a bare failing AND-list is
+            # itself a failed statement, which `set -e` turns into an exit.
+            if grep -qxF "$t" /tmp/forge-tags; then
               continue                                   # already on the forge
             fi
             if [ -n "$high" ] && [ "$(printf '%s\n%s\n' "$high" "$t" | sort -V | tail -1)" = "$high" ]; then
