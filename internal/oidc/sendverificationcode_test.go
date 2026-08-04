@@ -44,10 +44,10 @@ func sendCode(t *testing.T, app *zip.App, fields map[string]string) (int, map[st
 // CheckVerificationCode while a wrong one fails closed.
 func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 	// A send that reports success must actually be able to send: DeliveryConfigured
-	// gates the endpoint, so these persist/verify tests configure a notify address
-	// the way any real deployment does. Without one the endpoint now refuses rather
-	// than answering ok, which is its own test below.
-	t.Setenv("IAM_NOTIFY_ADDR", "notify.hanzo.svc:8000")
+	// gates the endpoint, so these persist/verify tests bind a sender the way any
+	// real deployment does. Unbound, the endpoint refuses rather than answering ok,
+	// which is its own test below.
+	bindSender(t, &fakeSender{})
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
 	seedOrg(t, db, "hanzo")
@@ -94,10 +94,10 @@ func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 // the code path is not multipart-only.
 func TestSendVerificationCode_UrlencodedAlsoWorks(t *testing.T) {
 	// A send that reports success must actually be able to send: DeliveryConfigured
-	// gates the endpoint, so these persist/verify tests configure a notify address
-	// the way any real deployment does. Without one the endpoint now refuses rather
-	// than answering ok, which is its own test below.
-	t.Setenv("IAM_NOTIFY_ADDR", "notify.hanzo.svc:8000")
+	// gates the endpoint, so these persist/verify tests bind a sender the way any
+	// real deployment does. Unbound, the endpoint refuses rather than answering ok,
+	// which is its own test below.
+	bindSender(t, &fakeSender{})
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
 	seedOrg(t, db, "hanzo")
@@ -151,7 +151,7 @@ func TestSendVerificationCode_Errors(t *testing.T) {
 // against production, a send to probe@example.invalid — an address that cannot
 // exist — answered ok.
 func TestSendVerificationCode_RefusesWhenNothingCanDeliver(t *testing.T) {
-	t.Setenv("IAM_NOTIFY_ADDR", "")
+	bindSender(t, nil)
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
 	seedOrg(t, db, "hanzo")
