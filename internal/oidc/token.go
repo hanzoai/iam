@@ -198,7 +198,7 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	tok.CodeIsUsed, tok.PublicGrant = true, !clientAuthed
 	resp, err := issueTokens(ctx, db, c, app, tok, newFamilyID(tok), now)
 	if err != nil {
-		return tokenError(c, 500, "server_error", "")
+		return mintError(c, err)
 	}
 	if err := store.SaveToken(ctx, db, tok); err != nil {
 		return tokenError(c, 500, "server_error", "")
@@ -234,7 +234,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	ttl := appTTL(app)
 	signer, err := signerFor(ctx, db, app, tokenIssuer(c))
 	if err != nil {
-		return tokenError(c, 500, "server_error", "")
+		return mintError(c, err)
 	}
 	sub := app.GetId() // <appOwner>/<appName>, per v1
 	// A machine token's principal is the APP, so its username is the app name — the
@@ -245,7 +245,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	// earn, and no display name means no display claim.
 	access, err := signer.Sign(app, Identity{Id: sub, Name: app.Name}, scope, ttl, now)
 	if err != nil {
-		return tokenError(c, 500, "server_error", "")
+		return mintError(c, err)
 	}
 	row := &schema.Token{
 		Owner:           app.Owner,
@@ -410,7 +410,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	}
 	resp, err := issueTokens(ctx, db, c, app, row, newFamilyID(row), now)
 	if err != nil {
-		return tokenError(c, 500, "server_error", "")
+		return mintError(c, err)
 	}
 	if err := store.PersistToken(ctx, db, row); err != nil {
 		return tokenError(c, 500, "server_error", "")
@@ -535,6 +535,21 @@ func refreshTTL(app *schema.Application) time.Duration {
 	return appTTL(app)
 }
 
+// ErrNoSigningCert is an application registered with no resolvable signing cert.
+//
+// It is a MISCONFIGURED REGISTRATION, not a bad request, and it is the one
+// internal failure this endpoint names out loud. Everything else answers a bare
+// `server_error` because describing it would build an oracle — but this describes
+// the caller's own registration, reveals nothing about any credential, code or
+// user, and is otherwise undiagnosable from outside: the user authenticates, the
+// code is minted and redeemed, and only then does the exchange die on a 500 that
+// looks exactly like an outage. `hanzo-tabs` shipped in that state, and the only
+// evidence anywhere was `{"error":"server_error"}` in a browser console.
+//
+// bootstrap.resolveCert now prevents an application from being CREATED this way;
+// this is the answer for one that already was.
+var ErrNoSigningCert = errors.New("token: application has no trusted signing cert")
+
 // signerFor loads the application's signing cert from the trusted platform
 // signing-cert owners and builds a Signer with the given canonical issuer. Using
 // the same trusted resolution as the JWKS and verification keeps the three
@@ -545,9 +560,20 @@ func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer s
 		return nil, err
 	}
 	if cert == nil {
-		return nil, errors.New("token: application has no trusted signing cert")
+		return nil, ErrNoSigningCert
 	}
 	return NewSignerFromCert(cert, app, issuer)
+}
+
+// mintError answers a token-minting failure: the opaque `server_error` for
+// anything internal, and a named one for the misconfiguration a client operator
+// can actually act on. ONE place, so every grant answers alike.
+func mintError(c *zip.Ctx, err error) error {
+	if errors.Is(err, ErrNoSigningCert) {
+		return tokenError(c, 500, "server_error",
+			"this application has no signing cert, so no token can be issued for it")
+	}
+	return tokenError(c, 500, "server_error", "")
 }
 
 // signAccessToken signs a bare access token for a token row under the given
