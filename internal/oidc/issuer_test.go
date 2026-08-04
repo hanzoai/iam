@@ -349,3 +349,82 @@ func discoveryIssuer(t *testing.T, app *zip.App, host string) (issuer, jwksURI s
 	jwksURI, _ = d["jwks_uri"].(string)
 	return issuer, jwksURI
 }
+
+// The federation origin is a DIFFERENT value from the issuer, and the split is
+// the whole point: the issuer must stay per-brand (an RP pins `iss`), while the
+// IdP callback must be one org-constant string because a social provider holds
+// ONE OAuth client with a FIXED redirect_uri list. Braided, every brand sent a
+// redirect_uri the provider had never seen and social login failed everywhere.
+func TestFederationOriginIsOrgConstantWhileIssuerStaysPerBrand(t *testing.T) {
+	t.Setenv("IAM_ISSUER", "https://hanzo.id")
+	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id","iam.hanzo.ai":"https://iam.hanzo.ai"}`)
+	// One callback per ORG — every Hanzo brand host folds onto hanzo.id.
+	t.Setenv("IAM_FEDERATION_ORIGIN", "https://hanzo.id")
+	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.id":"https://hanzo.id","iam.hanzo.ai":"https://hanzo.id","lux.id":"https://lux.id"}`)
+
+	activeResolver.Store(nil)
+	activeFederationResolver.Store(nil)
+	if err := InitIssuerResolver(); err != nil {
+		t.Fatalf("InitIssuerResolver: %v", err)
+	}
+	if err := InitFederationResolver(); err != nil {
+		t.Fatalf("InitFederationResolver: %v", err)
+	}
+
+	// The issuer still varies per brand — this is what an RP pins.
+	if got := resolveIssuer("iam.hanzo.ai"); got != "https://iam.hanzo.ai" {
+		t.Errorf("issuer for iam.hanzo.ai = %q, want per-brand https://iam.hanzo.ai", got)
+	}
+	// ...while both Hanzo hosts hand the IdP the SAME callback origin.
+	a, b := resolveFederationOrigin("hanzo.id"), resolveFederationOrigin("iam.hanzo.ai")
+	if a != b {
+		t.Errorf("federation origin differs across hosts of one org: %q vs %q", a, b)
+	}
+	if a != "https://hanzo.id" {
+		t.Errorf("federation origin = %q, want https://hanzo.id", a)
+	}
+	// A different org keeps its own single origin.
+	if got := resolveFederationOrigin("lux.id"); got != "https://lux.id" {
+		t.Errorf("lux federation origin = %q, want https://lux.id", got)
+	}
+	// The split is real: for iam.hanzo.ai the two values now DISAGREE, which is
+	// exactly what the braided implementation could not express.
+	if resolveIssuer("iam.hanzo.ai") == resolveFederationOrigin("iam.hanzo.ai") {
+		t.Error("issuer and federation origin are still the same value; the split did nothing")
+	}
+}
+
+// Unset must change nothing: the federation origin falls back to the issuer, so
+// deploying this before the config lands is a no-op rather than a silent
+// redirect of the IdP leg to somewhere new.
+func TestFederationOriginUnsetFollowsIssuer(t *testing.T) {
+	t.Setenv("IAM_ISSUER", "https://hanzo.id")
+	t.Setenv("IAM_ISSUER_MAP", `{"lux.id":"https://lux.id"}`)
+	t.Setenv("IAM_FEDERATION_ORIGIN", "")
+	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", "")
+
+	activeResolver.Store(nil)
+	activeFederationResolver.Store(nil)
+	if err := InitIssuerResolver(); err != nil {
+		t.Fatalf("InitIssuerResolver: %v", err)
+	}
+	if err := InitFederationResolver(); err != nil {
+		t.Fatalf("InitFederationResolver on empty config: %v", err)
+	}
+	for _, h := range []string{"lux.id", "hanzo.id", "unknown.example"} {
+		if got, want := resolveFederationOrigin(h), resolveIssuer(h); got != want {
+			t.Errorf("unset federation origin for %q = %q, want issuer %q", h, got, want)
+		}
+	}
+}
+
+// A non-https or malformed pin must fail the BOOT, not degrade: this value is
+// handed to an external IdP.
+func TestFederationOriginBadConfigFailsBoot(t *testing.T) {
+	t.Setenv("IAM_FEDERATION_ORIGIN", "http://not-https.example")
+	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", "")
+	activeFederationResolver.Store(nil)
+	if err := InitFederationResolver(); err == nil {
+		t.Error("InitFederationResolver accepted a non-https origin; want a hard boot error")
+	}
+}
