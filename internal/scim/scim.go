@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package scim serves the SCIM 2.0 protocol (RFC 7644) over iam's identity store
 // — the STANDARD identity-provisioning surface that replaces the the legacy surface entity

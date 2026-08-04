@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package pkce is the RFC 7636 S256 transform, in one importable place.
 //

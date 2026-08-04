@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package invitations serves the IAM v2 CRUD surface for the `invitations`
 // entity: a pending org-membership invite owner-scoped by (owner, name). Every

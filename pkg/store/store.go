@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package store is the IAM object layer: thin, typed reads over hanzoai/orm
 // against the Phase-1 entities. It replaces the v1 xorm ormer.Engine fluent

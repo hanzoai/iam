@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // This file carries the full Phase-1 field set for the `applications` entity
 // (v1 the legacy surface `application`). The kind is registered once, centrally, in

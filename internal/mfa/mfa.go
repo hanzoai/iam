@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package mfa serves the TOTP multi-factor enrollment surface — the account
 // security page's initiate → verify → enable flow (RFC 6238 TOTP), plus

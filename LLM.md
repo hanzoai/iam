@@ -2,10 +2,28 @@
 
 Canonical **Hanzo IAM** service: identity & access for the Hanzo cloud —
 OpenID Connect / OAuth2 with PKCE, JWKS, UserInfo, SCIM 2.0, MFA/WebAuthn,
-social federation. The server behind the `@hanzo/iam` SDK. Proprietary,
-clean-room rewrite on the Hanzo stack (`zip` over `hanzoai/orm`) — no Casdoor,
+social federation. The server behind the `@hanzo/iam` SDK. A clean-room
+rewrite on the Hanzo stack (`zip` over `hanzoai/orm`) — no Casdoor,
 Beego, or xorm. The retired Casdoor fork is `hanzoai/iam-v1` (archived, do not use);
 its versions are retracted here — see `TestCasdoorLineageRetracted`.
+
+## License — `MIT OR Apache-2.0`
+Dual-licensed at the user's option: `LICENSE-MIT` + `LICENSE-APACHE` (canonical
+texts, never edited), `LICENSE` declares the pair. HIP-0130 puts `iam` in the OSS
+core tier, so the previous "confidential and proprietary / All rights reserved"
+LICENSE contradicted both the HIP and the repo's own public visibility. Every Go
+file carries `// SPDX-License-Identifier: MIT OR Apache-2.0` instead of the old
+`All rights reserved` header; `go.mod` has no license field, and this repo ships
+no Cargo/npm/PyPI manifest, so the SPDX headers plus the three files are the
+whole declaration.
+
+Relicensing was Hanzo's alone to do: the tree is original work, not a fork
+(`fork: false`, its root commit is its own, and no `v1.*` Casdoor tag is an
+ancestor of `main`). Note the Casdoor-lineage tags `v1.0.0`–`v1.31.37` are still
+present on this remote even though `go.mod` says they "now live at
+`hanzoai/iam-v1`" — anyone checking out one of those tags gets Apache-2.0
+Casdoor code under this repo's name. The retraction covers module resolution,
+not `git checkout`.
 
 ## Role in the model
 This is a `hanzoai/<product>` service (impl lives here, DRY — one place). It is

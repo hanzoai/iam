@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package authz is the IAM v2 authorization seam in front of the Phase-1 entity
 // CRUD, which is otherwise unauthenticated — the door an attacker would walk

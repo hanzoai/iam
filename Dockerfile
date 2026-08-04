@@ -1,4 +1,4 @@
-# Hanzo IAM — proprietary identity service (zip + orm).
+# Hanzo IAM — identity service (zip + orm).
 # Multi-stage Go build → distroless-style alpine. Pure-Go (CGO_ENABLED=0);
 # hanzoai/sqlite uses the modernc engine so no cgo/musl toolchain is needed.
 
