@@ -144,28 +144,42 @@ func TestWriteAliases_requireAuth(t *testing.T) {
 
 // The FRONT-DOOR session routes are structurally PUBLIC — registered on the
 // pre-Guard group, so reachable WITHOUT a bearer (the portal + gateway admin-guard
-// call them with a session cookie). An anonymous caller gets the casibase
-// {status:"error"} (200), never a 401 and never a leak.
+// call them with a session cookie). What proves that is the HANDLER's own envelope
+// coming back: the Guard refuses before any handler runs and answers its own
+// shape, so a body carrying {"status":"error"} is evidence the request got past
+// it. The STATUS is a separate fact, and these routes differ honestly:
+//
+//   - whoami / get-account ASK a question ("who am I?"), and "nobody" is a
+//     complete answer — 200.
+//   - linked-accounts asks for a RESOURCE that requires an identity, so an
+//     anonymous caller is refused — a 4xx carrying CodeLoginRequired, which is
+//     the machine-readable "sign in" (see internal/httpx on why not 401).
+//
+// Neither leaks, and neither is the Guard's blanket refusal.
 func TestFrontDoorPublic_ReachableWithoutBearer(t *testing.T) {
 	h := newHarness(t)
 	for _, tc := range []struct {
 		method, path string
+		want         int
 	}{
-		{"GET", "/v1/iam/get-account"},
-		{"GET", "/v1/iam/whoami"},
-		{"GET", "/v1/iam/linked-accounts"},
+		{"GET", "/v1/iam/get-account", 200},
+		{"GET", "/v1/iam/whoami", 200},
+		{"GET", "/v1/iam/linked-accounts", 400},
 	} {
 		status, body := h.get(t, tc.path, "")
-		if status != 200 {
-			t.Fatalf("%s %s without a bearer status=%d, want 200 (public); body=%s", tc.method, tc.path, status, body)
+		// Past the Guard: the handler's own envelope, not the Guard's shape.
+		if !strings.Contains(body, `"status":"error"`) {
+			t.Fatalf("anonymous %s %s must reach the handler and return its error envelope; status=%d body=%s",
+				tc.method, tc.path, status, body)
 		}
-		if !strings.Contains(body, "\"error\"") {
-			t.Fatalf("anonymous %s must be the casibase error envelope; body=%s", tc.path, body)
+		if status != tc.want {
+			t.Fatalf("%s %s without a bearer status=%d, want %d; body=%s", tc.method, tc.path, status, tc.want, body)
 		}
 	}
-	// signin (a POST) is public too — anonymous, no code → a 200 error, not a 401.
-	if status, body := h.post(t, "/v1/iam/signin", "", map[string]any{}); status != 200 || !strings.Contains(body, "\"error\"") {
-		t.Fatalf("anonymous signin status=%d body=%s, want 200 error (public)", status, body)
+	// signin (a POST) is public too: it REACHES its handler and is refused on the
+	// merits ("code is required"), which is a 4xx — not the Guard's blanket 401.
+	if status, body := h.post(t, "/v1/iam/signin", "", map[string]any{}); status != 400 || !strings.Contains(body, `"status":"error"`) {
+		t.Fatalf("anonymous signin status=%d body=%s, want 400 + the handler's envelope (public)", status, body)
 	}
 }
 
