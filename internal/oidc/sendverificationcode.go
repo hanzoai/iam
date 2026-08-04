@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
-	"os"
 	"strings"
 	"time"
 
@@ -33,16 +32,38 @@ import (
 // code and returns {status:"ok"} honestly — it does NOT fabricate a "sent" claim.
 // Delivery plugs in at the marked seam below with no shape change.
 
+// Sender delivers one minted verification code. It is the ONE seam between this
+// endpoint and hanzoai/notify, whose send surface lives in cloud at
+// POST /v1/notify/send/{email,sms} and reads the org's own Twilio credential from
+// KMS. Implementations carry the transport; nothing here knows or cares which.
+type Sender interface {
+	// Send delivers code to dest over channel ("email" or "phone"). A non-nil
+	// error means the person did NOT receive it.
+	Send(ctx context.Context, channel, dest, code string) error
+}
+
+// sender is bound once at boot, before the server accepts a request, and read
+// thereafter — the same package-seam idiom as nowFunc below. nil means nothing
+// can deliver.
+var sender Sender
+
+// BindSender installs the delivery transport. Call it at boot; a nil sender (or
+// never calling this) leaves code sign-in correctly switched off everywhere.
+func BindSender(s Sender) { sender = s }
+
 // DeliveryConfigured reports whether a code this endpoint mints can actually reach
 // a person. It is the ONE authority for that question, read by the send endpoint
 // AND by the login descriptor, so a screen can never offer a code the server cannot
 // send — the same rule `offerable` applies to social buttons and `WalletChains` to
 // wallet sign-in.
 //
-// Delivery belongs to hanzoai/notify and is not bound here yet, so the honest
-// answer today is no. It is keyed on the ADDRESS rather than a constant, so wiring
-// notify flips this on by configuration with no code change and no second switch to
-// remember.
+// It answers from the BOUND SENDER, not from configuration. Keying it on
+// IAM_NOTIFY_ADDR instead was a trap I built and then measured: nothing else in
+// this repo read that variable, so setting it would have restored the button and
+// silenced the refusal below while still sending precisely nothing — the exact
+// {status:"ok"} lie it was written to remove, re-armed. An address is a claim that
+// delivery exists; a sender IS delivery. Bind one and this turns on by itself,
+// with no second switch to remember.
 //
 // Why this matters more than it looks: without it the endpoint mints a code,
 // persists it, and answers {status:"ok"}. That is defensible as "the code exists",
@@ -51,7 +72,7 @@ import (
 // Measured against production: a send to probe@example.invalid, an address that
 // cannot exist, answered ok.
 func DeliveryConfigured() bool {
-	return strings.TrimSpace(os.Getenv("IAM_NOTIFY_ADDR")) != ""
+	return sender != nil
 }
 
 // PathVerificationCodes (canonical.go) is the front-door OTP-send endpoint.
@@ -153,19 +174,23 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			return httpx.Err(c, err.Error())
 		}
 
-		// --- DELIVERY SEAM ---------------------------------------------------
-		// v1 hands (org, user, dest, code) to hanzoai/notify here
-		// (object.SendVerificationCodeToEmail / …ToPhone). notify owns the
-		// per-tenant SendGrid/SMTP/Resend/Twilio provider + template. When it is
-		// bound the send call slots in exactly here and the persisted record above
-		// stays the source of truth for verification.
+		// --- DELIVERY ---------------------------------------------------------
+		// The persisted record above stays the source of truth for verification;
+		// this is only the act of getting the code to the person. notify owns the
+		// per-tenant provider + template.
 		// ---------------------------------------------------------------------
-		if !DeliveryConfigured() {
+		if sender == nil {
 			// Say so rather than answering ok. The record above is still written, so
 			// a code that IS delivered by some other means still verifies — but the
 			// caller asked us to send one and we cannot, and reporting success for
 			// that leaves a person waiting on a message that will never arrive.
 			return httpx.Err(c, "verification codes cannot be delivered: no notify service is configured")
+		}
+		if err := sender.Send(ctx, typ, dest, code); err != nil {
+			// Report the real outcome. Answering ok because the code was minted
+			// would recreate the same lie one layer down: the send is what the
+			// caller asked for, and it failed.
+			return httpx.Err(c, "verification code could not be delivered: "+err.Error())
 		}
 
 		return httpx.Ok(c, nil)
