@@ -1,4 +1,4 @@
-# The test gate. One command, run identically by a human and by CI.
+# The test entry point. One command, run identically by a human and by CI.
 #
 # Not a bare `go test ./...`: that reuses cached PASS results, so a stale build
 # can report green for code you just changed, and it runs without the race
@@ -23,7 +23,7 @@ help: ## Show this help.
 generate: ## Lift every typed handler's doc comment into its zipdoc_gen.go.
 	go generate -run zipdoc ./...
 
-test: ## Run the full suite — the gate. Everything must be green to ship.
+test: ## Run the full suite. Everything must be green to ship.
 	@set -e; for d in $$(grep -rl '^//go:generate go run github.com/zap-proto/zip/cmd/zipdoc' --include='*.go' . | xargs -n1 dirname | sort -u); do 	  (cd $$d && go run github.com/zap-proto/zip/cmd/zipdoc -check) || { echo "$$d/zipdoc_gen.go is stale — run: make generate"; exit 1; }; 	done
 	go test ./... -race -count=1
 
