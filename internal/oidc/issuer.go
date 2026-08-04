@@ -238,3 +238,87 @@ func resolveIssuer(host string) string {
 	}
 	return envIssuerResolver().issuerFor(host)
 }
+
+// The federation-origin resolver — the origin an EXTERNAL IdP calls back to.
+//
+// This is a DIFFERENT VALUE from the issuer, and braiding the two is what broke
+// social sign-in on every brand. They pull in opposite directions:
+//
+//   - The issuer must be PER-BRAND. An RP that discovered via lux.id pins `iss`
+//     to lux.id and rejects a hanzo.id-issued token. That is why the map exists.
+//   - The IdP callback must be PER-ORG-CONSTANT. Google and GitHub each hold ONE
+//     OAuth client per org with a FIXED list of authorized redirect URIs. A
+//     per-brand callback means every brand sends a redirect_uri the provider has
+//     never seen, and the provider answers `redirect_uri_mismatch`.
+//
+// Measured on the live fleet before this split: Google accepted exactly ONE URI
+// for the Hanzo client, while iam sent `https://<brand-host>/v1/iam/oauth/callback`
+// — hanzo.id, lux.id, zoolabs.id and pars.id each sending their own, none of them
+// registered. Every social login failed, and it failed AT THE PROVIDER, which is
+// why it read for days as a credentials or KMS problem. It never was: the
+// client_id reached Google intact every time.
+//
+// Registering every brand host with every provider is the other way out, and it
+// is the wrong one — it makes each social provider carry a list of our apps and
+// grows with every brand we add. One origin per org means the provider knows
+// about the org and nothing else.
+//
+// Same type, same validation, same header-immunity as the issuer resolver — one
+// mechanism, two instances, so there is no second notion of "a pinned origin".
+// UNSET IS A NO-OP: with no IAM_FEDERATION_ORIGIN configured this falls through
+// to resolveIssuer, which is exactly today's behaviour.
+var activeFederationResolver atomic.Pointer[issuerResolver]
+
+// envFederationResolver builds the federation-origin resolver from
+// IAM_FEDERATION_ORIGIN + IAM_FEDERATION_ORIGIN_MAP once, lazily. Unlike the
+// issuer it is OPTIONAL: nothing pinned yields nil, and resolveFederationOrigin
+// falls back to the issuer. A malformed map degrades to the bare default rather
+// than booting a config an attacker could steer.
+var envFederationResolver = sync.OnceValue(func() *issuerResolver {
+	def := os.Getenv("IAM_FEDERATION_ORIGIN")
+	m := os.Getenv("IAM_FEDERATION_ORIGIN_MAP")
+	if strings.TrimSpace(def) == "" && strings.TrimSpace(m) == "" {
+		return nil
+	}
+	r, err := newIssuerResolver(def, m, false)
+	if err != nil {
+		if r, err = newIssuerResolver(def, "", false); err != nil {
+			return nil
+		}
+	}
+	return r
+})
+
+// InitFederationResolver parses the federation origin config once at startup. A
+// malformed or non-https pin is a HARD error, on the same footing as the issuer:
+// a bad value here does not mint wrong tokens, but it does hand an external IdP a
+// callback origin, so it must fail the boot LOUD rather than degrade silently.
+// Called from serve() alongside InitIssuerResolver.
+func InitFederationResolver() error {
+	def := os.Getenv("IAM_FEDERATION_ORIGIN")
+	m := os.Getenv("IAM_FEDERATION_ORIGIN_MAP")
+	if strings.TrimSpace(def) == "" && strings.TrimSpace(m) == "" {
+		return nil // unconfigured → federation follows the issuer, as before
+	}
+	r, err := newIssuerResolver(def, m, false)
+	if err != nil {
+		return err
+	}
+	activeFederationResolver.Store(r)
+	return nil
+}
+
+// resolveFederationOrigin is THE seam the IdP callback origin routes through.
+// host is the same TRUSTED request host the issuer resolver takes, so a
+// client-supplied header can at most SELECT a configured org's origin — it can
+// never inject one, and the federation leg keeps the header-immunity the issuer
+// leg has. Unconfigured → the issuer, i.e. the pre-split behaviour.
+func resolveFederationOrigin(host string) string {
+	if r := activeFederationResolver.Load(); r != nil {
+		return r.issuerFor(host)
+	}
+	if r := envFederationResolver(); r != nil {
+		return r.issuerFor(host)
+	}
+	return resolveIssuer(host)
+}
