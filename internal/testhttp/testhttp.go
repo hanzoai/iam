@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 )
 
@@ -36,5 +35,5 @@ const timeout = 2 * time.Minute
 // Do issues req against app's registered router in process and returns the
 // response. The caller closes the body.
 func Do(app *zip.App, req *http.Request) (*http.Response, error) {
-	return app.Fiber().Test(req, fiber.TestConfig{Timeout: timeout, FailOnTimeout: true})
+	return app.Test(req, zip.TestConfig{Timeout: timeout, FailOnTimeout: true})
 }
