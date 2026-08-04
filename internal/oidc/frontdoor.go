@@ -134,7 +134,11 @@ func authMethods(db orm.DB) zip.Handler {
 		names := schema.WalletChains()
 		return httpx.Ok(c, map[string]any{
 			"password": app.EnablePassword,
-			"code":     app.EnableCodeSignin,
+			// Offered only when a code can actually be delivered. The app switch says
+			// the org WANTS email/SMS codes; DeliveryConfigured says the server can
+			// send one. Both must hold, or the screen shows a method that ends in a
+			// person waiting for a message nobody sent.
+			"code":     app.EnableCodeSignin && DeliveryConfigured(),
 			"webauthn": app.EnableWebAuthn,
 			"web3":     len(names) > 0,
 			// The families a wallet may sign in with, so a screen can render the
@@ -202,6 +206,11 @@ func loginView(app *schema.Application) *schema.Application {
 	}
 	view := *app
 	view.ClientSecret = ""
+	// Same rule as the provider list below: this response IS the login screen's
+	// source of truth, so a switch left on for a method the server cannot perform
+	// would draw the button anyway. The org's stored setting is untouched — only
+	// what the browser is told.
+	view.EnableCodeSignin = view.EnableCodeSignin && DeliveryConfigured()
 	kept := make([]*schema.ProviderItem, 0, len(view.Providers))
 	for _, it := range view.Providers {
 		if it == nil || it.Provider == nil || !offerable(it.Provider) {

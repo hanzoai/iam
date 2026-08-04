@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
@@ -31,6 +32,27 @@ import (
 // ZAP). notify is not bound into iam yet, so this endpoint persists a verifiable
 // code and returns {status:"ok"} honestly — it does NOT fabricate a "sent" claim.
 // Delivery plugs in at the marked seam below with no shape change.
+
+// DeliveryConfigured reports whether a code this endpoint mints can actually reach
+// a person. It is the ONE authority for that question, read by the send endpoint
+// AND by the login descriptor, so a screen can never offer a code the server cannot
+// send — the same rule `offerable` applies to social buttons and `WalletChains` to
+// wallet sign-in.
+//
+// Delivery belongs to hanzoai/notify and is not bound here yet, so the honest
+// answer today is no. It is keyed on the ADDRESS rather than a constant, so wiring
+// notify flips this on by configuration with no code change and no second switch to
+// remember.
+//
+// Why this matters more than it looks: without it the endpoint mints a code,
+// persists it, and answers {status:"ok"}. That is defensible as "the code exists",
+// and it is not what a caller hears — the login screen asked to SEND one, so ok
+// means sent, and the person waits for a message that was never going to arrive.
+// Measured against production: a send to probe@example.invalid, an address that
+// cannot exist, answered ok.
+func DeliveryConfigured() bool {
+	return strings.TrimSpace(os.Getenv("IAM_NOTIFY_ADDR")) != ""
+}
 
 // PathVerificationCodes (canonical.go) is the front-door OTP-send endpoint.
 
@@ -134,10 +156,17 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 		// --- DELIVERY SEAM ---------------------------------------------------
 		// v1 hands (org, user, dest, code) to hanzoai/notify here
 		// (object.SendVerificationCodeToEmail / …ToPhone). notify owns the
-		// per-tenant SendGrid/SMTP/Resend/Twilio provider + template. It is not
-		// bound into iam yet; when it is, the send call slots in exactly here and
-		// the persisted record above stays the source of truth for verification.
+		// per-tenant SendGrid/SMTP/Resend/Twilio provider + template. When it is
+		// bound the send call slots in exactly here and the persisted record above
+		// stays the source of truth for verification.
 		// ---------------------------------------------------------------------
+		if !DeliveryConfigured() {
+			// Say so rather than answering ok. The record above is still written, so
+			// a code that IS delivered by some other means still verifies — but the
+			// caller asked us to send one and we cannot, and reporting success for
+			// that leaves a person waiting on a message that will never arrive.
+			return httpx.Err(c, "verification codes cannot be delivered: no notify service is configured")
+		}
 
 		return httpx.Ok(c, nil)
 	}
