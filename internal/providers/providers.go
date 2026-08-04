@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package providers is the Phase-1 typed CRUD surface for the `providers`
 // entity, owner-scoped by the (owner, name) natural key.

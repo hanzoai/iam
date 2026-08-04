@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package cors lets a registered browser client complete OIDC against this
 // IdP from its own origin, and lets a first-party console sign a user in and

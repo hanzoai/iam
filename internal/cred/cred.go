@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package cred verifies a stored password digest against a plaintext, resolving
 // the algorithm FROM THE STORED ROW — never from a constant.
