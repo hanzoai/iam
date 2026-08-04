@@ -213,6 +213,21 @@ var appPolicyKeys = []string{
 	"enableSignUp",
 	"enablePassword",
 	"enableCodeSignin",
+	// Passkeys. Omitting this was the exact defect this whole function exists to
+	// fix, one field over: init_data.json declares enableWebAuthn TRUE on 37 of 83
+	// applications — hanzo-app, hanzo-chat, hanzo-cloud, hanzo-console, hanzo-id,
+	// hanzo-world among them — and production answered `webauthn:false` on every
+	// single one, because upsert is new-only and the reconcile did not govern the
+	// key. The declared state said passkeys were on for two thirds of the estate
+	// and no login screen ever offered one, with nothing logged and nothing to
+	// read: the only way to see the disagreement was to diff the ConfigMap against
+	// /v1/iam/auth/methods.
+	//
+	// It belongs here by this list's own test — the declared value should always
+	// win. Whether an app offers passkeys is identity POLICY, not registration
+	// drift: it names no external party, no redirect and no secret, so unlike
+	// redirectUris there is no legitimate live value for it to clobber.
+	"enableWebAuthn",
 	"enableSigninSession",
 	"orgChoiceMode",
 	"isShared",
