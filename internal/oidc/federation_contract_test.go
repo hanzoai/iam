@@ -47,19 +47,26 @@ func TestFederationCallbackIsTheRegisteredContract(t *testing.T) {
 	}
 }
 
-// What a pinned origin BUYS, and the reason the registered list is short: every
-// host of one org folds onto ONE callback, so a provider holds one URI per org
-// rather than one per brand host. Without this, adding a brand silently adds a
-// redirect_uri that no provider has ever heard of.
+// What a pinned origin WOULD buy, and why it is not on offer yet.
 //
-// This is the case the test above cannot see, because with nothing pinned the
-// federation resolver falls through to the per-brand issuer and the two spellings
-// agree. Configure the split and they diverge — which is the whole point.
-func TestFederationCallbackIsOneUriPerOrg(t *testing.T) {
+// I wrote this test asserting that every host of one org folds onto ONE callback,
+// so a provider console holds one redirect_uri per org rather than one per brand
+// host. That property is desirable and it is NOT reachable: the begin leg sets the
+// `hanzo_fed` browser-binding cookie on the host that served it, host-only, and the
+// callback refuses an empty cookie — so a callback on a different host is never
+// given the cookie and every social sign-in on that brand fails closed. Asserting
+// it here made a broken configuration look supported.
+//
+// InitFederationResolver now refuses that config at boot
+// (TestFederationOriginCrossHostFoldIsRefusedAtBoot pins the refusal and its
+// wording). What remains true, and what this pins, is that a SAME-HOST map is a
+// no-op: each brand keeps its own callback, which is the list actually registered
+// with Google and GitHub today.
+func TestFederationCallbackPerBrandUnderASameHostMap(t *testing.T) {
 	t.Setenv("IAM_ISSUER", "https://hanzo.id")
-	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","iam.hanzo.ai":"https://iam.hanzo.ai","lux.id":"https://lux.id"}`)
+	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
 	t.Setenv("IAM_FEDERATION_ORIGIN", "https://hanzo.id")
-	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.id":"https://hanzo.id","iam.hanzo.ai":"https://hanzo.id","lux.id":"https://lux.id"}`)
+	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
 
 	prevIss, prevFed := activeResolver.Load(), activeFederationResolver.Load()
 	t.Cleanup(func() { activeResolver.Store(prevIss); activeFederationResolver.Store(prevFed) })
@@ -72,26 +79,13 @@ func TestFederationCallbackIsOneUriPerOrg(t *testing.T) {
 		t.Fatalf("InitFederationResolver: %v", err)
 	}
 
-	// Two hosts of ONE org, one registered callback between them.
-	one := resolveFederationOrigin("hanzo.id") + PathFederationCallback
-	two := resolveFederationOrigin("iam.hanzo.ai") + PathFederationCallback
-	if one != two {
-		t.Errorf("one org handed the IdP TWO callbacks: %s and %s\n"+
-			"Every extra URI here is one more line a provider console must hold.", one, two)
-	}
-	if one != "https://hanzo.id/v1/iam/oauth/callback" {
-		t.Errorf("hanzo callback = %s, want https://hanzo.id/v1/iam/oauth/callback", one)
-	}
-
-	// A different org keeps its OWN single callback — folding is per org, not global.
-	if got := resolveFederationOrigin("lux.id") + PathFederationCallback; got != "https://lux.id/v1/iam/oauth/callback" {
-		t.Errorf("lux callback = %s, want https://lux.id/v1/iam/oauth/callback", got)
-	}
-
-	// And the issuer is NOT dragged along: an RP that discovered via iam.hanzo.ai
-	// still pins that issuer, which is the value the split exists to keep separate.
-	if got := resolveIssuer("iam.hanzo.ai"); got != "https://iam.hanzo.ai" {
-		t.Errorf("issuer for iam.hanzo.ai = %s, want the per-brand https://iam.hanzo.ai "+
-			"(the callback folded, the issuer must not)", got)
+	for host, want := range map[string]string{
+		"hanzo.id": "https://hanzo.id/v1/iam/oauth/callback",
+		"lux.id":   "https://lux.id/v1/iam/oauth/callback",
+	} {
+		if got := resolveFederationOrigin(host) + PathFederationCallback; got != want {
+			t.Errorf("callback for %s = %s, want %s — each brand keeps its own until the "+
+				"begin leg can set the cookie on a folded origin", host, got, want)
+		}
 	}
 }

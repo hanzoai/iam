@@ -304,7 +304,59 @@ func InitFederationResolver() error {
 	if err != nil {
 		return err
 	}
+	if err := federationOriginIsReachable(r, m); err != nil {
+		return err
+	}
 	activeFederationResolver.Store(r)
+	return nil
+}
+
+// federationOriginIsReachable refuses, AT BOOT, a federation origin the browser
+// could not complete a sign-in against.
+//
+// The begin leg sets the `hanzo_fed` anti-forgery cookie on whatever host served
+// it, with NO Domain attribute — deliberately host-only, because it is the
+// login-CSRF defence. The callback then REQUIRES it: an empty cookie is refused
+// ("the federation session could not be verified"), with no exemption.
+//
+// So pointing a host's callback at a DIFFERENT host cannot work. The cookie is
+// written on the host the person started at and is never presented to the origin
+// the IdP returns to, so every social sign-in on that brand fails closed — not at
+// deploy time, but the first time a human tries to log in, with an error that
+// describes the symptom rather than the config.
+//
+// That is the whole intended use of these two variables ("one callback per org",
+// so a provider console holds one redirect_uri instead of one per brand host), and
+// it is unreachable until the begin leg also sets the cookie on the federation
+// origin — a redirect hop that does not exist yet. Refusing to boot is the honest
+// answer: this file already fails loud on a misconfigured ISSUER rather than
+// silently minting tokens under the wrong `iss`, and the same reasoning applies to
+// silently breaking every social login.
+//
+// Same-host folding is still permitted, because it changes no origin: a map that
+// sends a host to its own issuer origin is a no-op and passes.
+func federationOriginIsReachable(fed *issuerResolver, mapJSON string) error {
+	if strings.TrimSpace(mapJSON) == "" {
+		return nil // only a default is pinned; per-host folding is what breaks
+	}
+	var hosts map[string]string
+	if err := json.Unmarshal([]byte(mapJSON), &hosts); err != nil {
+		return nil // newIssuerResolver already judged the map; do not double-report
+	}
+	for host := range hosts {
+		fedOrigin := fed.issuerFor(host)
+		issOrigin := resolveIssuer(host)
+		if fedOrigin == "" || issOrigin == "" || fedOrigin == issOrigin {
+			continue
+		}
+		return fmt.Errorf(
+			"IAM_FEDERATION_ORIGIN_MAP points %s at %s while its issuer is %s: the "+
+				"hanzo_fed browser-binding cookie is host-only, so it is set on %s and "+
+				"never presented to %s, and every social sign-in on that host would fail "+
+				"closed. Folding callbacks onto one origin needs the begin leg to set the "+
+				"cookie there first",
+			host, fedOrigin, issOrigin, issOrigin, fedOrigin)
+	}
 	return nil
 }
 
