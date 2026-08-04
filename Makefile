@@ -27,8 +27,9 @@ test: ## Run the full suite — the gate. Everything must be green to ship.
 	@set -e; for d in $$(grep -rl '^//go:generate go run github.com/zap-proto/zip/cmd/zipdoc' --include='*.go' . | xargs -n1 dirname | sort -u); do 	  (cd $$d && go run github.com/zap-proto/zip/cmd/zipdoc -check) || { echo "$$d/zipdoc_gen.go is stale — run: make generate"; exit 1; }; 	done
 	go test ./... -race -count=1
 
-build: ## Build every package.
+build: ## Compile every package; write the server binary to ./iam.
 	go build ./...
+	go build -o iam .
 
 fmt: ## Format.
 	go fmt ./...
@@ -39,10 +40,12 @@ vet: ## Vet.
 lint: vet ## Lint — go vet, the one static check this repo runs.
 
 # The ONE artifact this repo writes to disk: the server binary from the root
-# package. `build` above cannot leave it — `go build ./...` names more than one
-# package, so Go compiles and DISCARDS every object; it is a compile check. The
-# binary appears when you `go build .`, which is what the Dockerfile does
-# (`go build -o /out/iam .`) and what .gitignore anchors as `/iam`.
+# package, which `build` emits and .gitignore anchors as `/iam`. `go build ./...`
+# alone cannot leave it — naming more than one package makes Go compile and
+# DISCARD every object — so `build` runs both steps: the module-wide compile
+# check, then the binary the Dockerfile ships (`go build -o /out/iam .`). Five
+# packages (server, feature, internal/{e2e,featurestore,testhttp}) are unreachable
+# from main, so dropping the first step would stop compiling them.
 #
 # NOT the zipdoc_gen.go files. Those are generated, but they are COMMITTED —
 # a consumer building this module does not run go generate — so removing them
