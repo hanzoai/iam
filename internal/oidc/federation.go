@@ -448,7 +448,7 @@ func federationProvider(app *schema.Application, name string) *schema.Provider {
 		if it == nil || it.Name != name || !it.CanSignIn || it.Provider == nil {
 			continue
 		}
-		if !isConfigured(it.Provider) {
+		if !offerable(it.Provider) {
 			continue
 		}
 		return it.Provider
