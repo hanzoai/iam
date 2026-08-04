@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/zap-proto/zip"
@@ -42,6 +43,11 @@ func sendCode(t *testing.T, app *zip.App, fields map[string]string) (int, map[st
 // bound to the receiver, and reports ok — and that code then verifies through
 // CheckVerificationCode while a wrong one fails closed.
 func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
+	// A send that reports success must actually be able to send: DeliveryConfigured
+	// gates the endpoint, so these persist/verify tests configure a notify address
+	// the way any real deployment does. Without one the endpoint now refuses rather
+	// than answering ok, which is its own test below.
+	t.Setenv("IAM_NOTIFY_ADDR", "notify.hanzo.svc:8000")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
 	seedOrg(t, db, "hanzo")
@@ -87,6 +93,11 @@ func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 // A urlencoded body reaches the same handler (fiber's FormValue reads both) —
 // the code path is not multipart-only.
 func TestSendVerificationCode_UrlencodedAlsoWorks(t *testing.T) {
+	// A send that reports success must actually be able to send: DeliveryConfigured
+	// gates the endpoint, so these persist/verify tests configure a notify address
+	// the way any real deployment does. Without one the endpoint now refuses rather
+	// than answering ok, which is its own test below.
+	t.Setenv("IAM_NOTIFY_ADDR", "notify.hanzo.svc:8000")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
 	seedOrg(t, db, "hanzo")
@@ -129,5 +140,35 @@ func TestSendVerificationCode_Errors(t *testing.T) {
 				t.Fatalf("status=%d env=%v, want 200 error", status, env)
 			}
 		})
+	}
+}
+
+// With nothing able to deliver, the endpoint says so instead of answering ok.
+//
+// It used to mint the code, persist it, and return {status:"ok"} — defensible as
+// "the code exists", and not what the caller hears: the login screen asked to SEND
+// one, so ok means sent, and the person waits for a message nobody sent. Measured
+// against production, a send to probe@example.invalid — an address that cannot
+// exist — answered ok.
+func TestSendVerificationCode_RefusesWhenNothingCanDeliver(t *testing.T) {
+	t.Setenv("IAM_NOTIFY_ADDR", "")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
+	seedOrg(t, db, "hanzo")
+	seedRichUser(t, db)
+
+	status, env := sendCode(t, app, map[string]string{
+		"dest": "alice@hanzo.ai", "type": "email",
+		"applicationId": "admin/conf", "checkType": "none", "method": "signup",
+	})
+	if status != 200 {
+		t.Fatalf("transport status = %d, want 200 (the envelope carries the verdict)", status)
+	}
+	if env["status"] != "error" {
+		t.Errorf("status = %v, want error — reporting success for a send that cannot happen "+
+			"is what left people waiting on a message nobody sent", env["status"])
+	}
+	if msg, _ := env["msg"].(string); !strings.Contains(msg, "deliver") {
+		t.Errorf("msg = %q, want it to name delivery so the cause is actionable", msg)
 	}
 }
