@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package e2e_test drives the WHOLE iam surface through the real registered router
 // (routes.Route) as one integrated journey — the behavioral parity proof that the

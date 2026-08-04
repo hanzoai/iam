@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package projects serves the IAM v2 CRUD surface for the `projects` entity: an
 // organization-scoped work container owner-scoped by (owner, name), where Owner

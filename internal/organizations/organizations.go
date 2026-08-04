@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package organizations implements the IAM v2 organization resource as typed
 // zip handlers over hanzoai/orm. The entity is owner-scoped: the (owner, name)

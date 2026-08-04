@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package featurestore implements feature.Store over the iam orm store, so the
 // hanzoiam/* enterprise modules read/write the SAME identity data as the core.
