@@ -19,7 +19,7 @@ retract [v1.0.0, v1.31.37] // Casdoor lineage; moved to github.com/hanzoai/iam-v
 require (
 	github.com/hanzoai/orm v0.6.16
 	github.com/spf13/cobra v1.10.2
-	github.com/zap-proto/zip v1.24.1
+	github.com/zap-proto/zip v1.24.2
 	golang.org/x/crypto v0.54.0
 )
 
