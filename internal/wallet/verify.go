@@ -66,13 +66,17 @@ type login struct {
 // supported reports whether a chain family is one this build knows. Per-chain
 // verifier readiness is a separate gate; an unverifiable chain fails closed in
 // VerifyProof.
+//
+// It reads schema.WalletChains — the SAME list the login descriptor advertises
+// from — so a screen can never offer a chain these endpoints refuse. The names
+// are pinned against the luxwallet constants by TestWalletChainsMatchSDK.
 func supported(chain wc.Chain) bool {
-	switch chain {
-	case wc.ChainEVM, wc.ChainSolana, wc.ChainBitcoin, wc.ChainTON, wc.ChainXRP, wc.ChainPolkadot, wc.ChainCardano:
-		return true
-	default:
-		return false
+	for _, name := range schema.WalletChains() {
+		if wc.Chain(name) == chain {
+			return true
+		}
 	}
+	return false
 }
 
 // verify is the one server-side entry point for wallet login. It fails closed at

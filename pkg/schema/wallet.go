@@ -4,6 +4,25 @@ package schema
 
 import "github.com/hanzoai/orm"
 
+// WalletChains is the ONE list of chain families wallet sign-in accepts. It sits
+// in this leaf package because two callers that must never disagree both need it:
+// the nonce/verify endpoints GATE on it, and the login descriptor ADVERTISES from
+// it. A screen offering a chain the verifier refuses is the same defect as a
+// social button that dead-ends, and one list is what makes that unrepresentable.
+//
+// Names, not SDK types, so this package stays dependency-free; internal/wallet
+// pins them against the luxwallet constants in its own test, so a rename upstream
+// fails the build rather than silently narrowing what can sign in.
+//
+// The login descriptor previously reported web3 from an application's linked
+// PROVIDER of category "web3" — the seeded Web3Onboard row, whose clientId is the
+// unexpanded literal `${IAM_WEB3_CLIENT_ID}` and which names a third-party library
+// this build does not import. Native seven-chain sign-in was therefore advertised
+// as absent on every screen while its endpoints answered normally.
+func WalletChains() []string {
+	return []string{"evm", "solana", "bitcoin", "ton", "xrp", "polkadot", "cardano"}
+}
+
 // Wallet is the (Chain, Address) -> user binding (v1 the legacy surface `wallet_link`, v2
 // kind "wallets") — the identity half of CAIP-122 wallet sign-in (HIP-0111).
 // One user owns many wallets (EVM + Solana + Bitcoin + …, several addresses per
