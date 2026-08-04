@@ -479,7 +479,7 @@ func federationCallbackURL(c *zip.Ctx) string {
 // that brand's pinned origin, header-immune and never steered to an attacker
 // origin. See resolveIssuer for the fail-closed resolution order.
 func federationBaseURL(c *zip.Ctx) string {
-	return resolveIssuer(c.Host())
+	return resolveFederationOrigin(c.Host())
 }
 
 // federationOrgAllowed reports whether a federated (external) identity may be

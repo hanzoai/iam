@@ -104,6 +104,16 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 		return fmt.Errorf("serve: %w", err)
 	}
 
+	// Pin the ORG-constant origin external IdPs call back to. Separate from the
+	// issuer on purpose: the issuer must vary per brand (an RP pins `iss`), while
+	// a social provider holds ONE OAuth client per org with a FIXED redirect_uri
+	// list — so a per-brand callback is one the provider has never seen and it
+	// answers redirect_uri_mismatch. Unset keeps the pre-split behaviour (the
+	// federation origin follows the issuer).
+	if err := oidc.InitFederationResolver(); err != nil {
+		return fmt.Errorf("serve: %w", err)
+	}
+
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
 	// same file the the legacy surface iam uses — so a fresh store comes up with the real
 	// application/provider/cert set instead of empty. New-only + idempotent.
