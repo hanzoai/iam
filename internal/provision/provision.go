@@ -59,7 +59,49 @@ type Org struct {
 	DisplayName    string `yaml:"displayName"`
 	Homepage       string `yaml:"homepage"`
 	DeepLinkScheme string `yaml:"deepLinkScheme"`
-	Apps           []App  `yaml:"apps"`
+	// Owner is the org's ONE human superuser. There is no built-in admin: the
+	// seeded owner IS the admin, and it belongs to the ORG, never to an app —
+	// so it is declared here beside the org, not inside `apps`. Optional so an
+	// org that manages its humans elsewhere parses unchanged (the document is
+	// decoded with yaml.Strict(), so an undeclared field is a hard error, not a
+	// silent skip).
+	Owner *Owner `yaml:"owner"`
+	Apps  []App  `yaml:"apps"`
+}
+
+// Owner is an org's superuser account, declared as data so it converges like
+// every client does.
+//
+// The password is NEVER in the document. PasswordRef names where it lives
+// (`kms://<path>`), IAM resolves it at apply time, and stores only a hash.
+// A converge that resolves no secret PRESERVES the existing credential rather
+// than clearing it, so re-running never locks the owner out of a live tenant.
+type Owner struct {
+	Email       string `yaml:"email"`
+	DisplayName string `yaml:"displayName"`
+	// PasswordRef is a `kms://<path>` locator, never a literal password. A
+	// literal is rejected: a credential in a git-tracked file is a leak the
+	// moment it is written, and this file is git-tracked by design.
+	PasswordRef string `yaml:"passwordRef"`
+}
+
+// Validate rejects an owner that is unusable or unsafe to apply.
+func (o *Owner) Validate(org string) error {
+	if o == nil {
+		return nil
+	}
+	if !strings.Contains(o.Email, "@") {
+		return fmt.Errorf("provision: org %s: owner.email %q is not an email address", org, o.Email)
+	}
+	if o.PasswordRef == "" {
+		return fmt.Errorf("provision: org %s: owner.passwordRef is required (kms://<path>)", org)
+	}
+	if !strings.HasPrefix(o.PasswordRef, "kms://") {
+		return fmt.Errorf(
+			"provision: org %s: owner.passwordRef must be a kms:// locator, got %q — a password literal must never live in this document",
+			org, o.PasswordRef)
+	}
+	return nil
 }
 
 // App is one OAuth client, declared by name + type + the hosts it is served on.
@@ -190,7 +232,36 @@ func Parse(b []byte) (*Doc, error) {
 	if len(d.Orgs) == 0 {
 		return nil, errors.New("provision: document declares no orgs")
 	}
+	// Validate owners at PARSE time, not apply time: a malformed owner should
+	// fail the plan a reviewer reads, not halfway through mutating a live tenant.
+	for _, org := range d.Orgs {
+		if err := org.Owner.Validate(org.Name); err != nil {
+			return nil, err
+		}
+	}
 	return &d, nil
+}
+
+// Owners returns each org's declared superuser, in document order. Separate
+// from Derive because an owner is NOT a client: it is a human account with a
+// SuperAdmin binding, applied through a different endpoint. Keeping the two
+// derivations apart is what stops an owner from being registered as an OAuth
+// client (an app that could then be used to authenticate AS the superuser).
+func Owners(d *Doc) []OrgOwner {
+	var out []OrgOwner
+	for _, org := range d.Orgs {
+		if org.Owner == nil {
+			continue
+		}
+		out = append(out, OrgOwner{Org: org.Name, Owner: *org.Owner})
+	}
+	return out
+}
+
+// OrgOwner pairs an org with its declared superuser.
+type OrgOwner struct {
+	Org   string
+	Owner Owner
 }
 
 // Derive turns a document into the full set of client registrations, in a
