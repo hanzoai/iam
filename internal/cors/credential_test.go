@@ -23,7 +23,6 @@ import (
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
-	"github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -124,7 +123,7 @@ func harness(t *testing.T, listed consoles) func(method, path, origin string) pr
 		if method == http.MethodOptions {
 			req.Header.Set("Access-Control-Request-Method", "POST")
 		}
-		res, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
+		res, err := app.Test(req, zip.TestConfig{Timeout: 0, FailOnTimeout: false})
 		if err != nil {
 			// The transport refused to parse the header (a control character, say).
 			// The request never reached the middleware, so nothing was echoed —
@@ -370,7 +369,7 @@ func TestACRLFInTheOriginIsNeverEchoedBack(t *testing.T) {
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/v1/iam/login", nil)
 		req.Header.Set("Origin", o)
-		res, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
+		res, err := app.Test(req, zip.TestConfig{Timeout: 0, FailOnTimeout: false})
 		if err != nil {
 			continue // the transport refused it outright; the same miss, one layer earlier
 		}
