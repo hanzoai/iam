@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package provision converges an IAM instance onto a declarative org+app
 // document. It is the MECHANISM half of provisioning and ships ZERO brands:

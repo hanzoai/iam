@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package seed bootstraps the iam store from an init_data.json file — the same
 // file the the legacy surface iam uses. This is the ported InitFromFile behavior: on boot,

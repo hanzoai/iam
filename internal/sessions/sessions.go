@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package sessions serves the IAM v2 session resource as typed zip operations
 // over hanzoai/orm. Every operation is a zip.Post[In, Out] typed handler, so a

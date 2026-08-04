@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package tokens is the Phase-1 typed CRUD surface for the `tokens` entity
 // (an issued OAuth2/OIDC token record), owner-scoped by the (owner, name)
