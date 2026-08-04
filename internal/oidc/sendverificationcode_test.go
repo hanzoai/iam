@@ -136,8 +136,8 @@ func TestSendVerificationCode_Errors(t *testing.T) {
 			m := base()
 			mutate(m)
 			status, env := sendCode(t, app, m)
-			if status != 200 || env["status"] != "error" {
-				t.Fatalf("status=%d env=%v, want 200 error", status, env)
+			if status != 400 || env["status"] != "error" {
+				t.Fatalf("status=%d env=%v, want 400 error", status, env)
 			}
 		})
 	}
@@ -161,8 +161,9 @@ func TestSendVerificationCode_RefusesWhenNothingCanDeliver(t *testing.T) {
 		"dest": "alice@hanzo.ai", "type": "email",
 		"applicationId": "admin/conf", "checkType": "none", "method": "signup",
 	})
-	if status != 200 {
-		t.Fatalf("transport status = %d, want 200 (the envelope carries the verdict)", status)
+	if status != 400 {
+		t.Fatalf("transport status = %d, want 400 — a send that cannot happen is a refusal, "+
+			"and the transport must say so before the envelope repeats it", status)
 	}
 	if env["status"] != "error" {
 		t.Errorf("status = %v, want error — reporting success for a send that cannot happen "+

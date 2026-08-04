@@ -16,9 +16,17 @@ import (
 	"github.com/zap-proto/zip"
 )
 
-// Response is the the legacy surface-compatible envelope. status is "ok" or "error"; a
-// non-ok status rides on a 200 (every SDK branches on status, not the HTTP
-// code — preserving that contract keeps the clients unchanged at cutover).
+// Response is the the legacy surface-compatible envelope. status is "ok" or
+// "error", and it stays the field an SDK branches on for the REASON a call
+// failed. The HTTP status says whether it failed at all, and the two agree:
+// a refusal is a 4xx carrying status:"error".
+//
+// It used to ride on a 200. That inherited the upstream's habit of using the
+// envelope as the only channel, and it made every refusal indistinguishable from
+// a success to the layer that checks first — `res.ok` in fetch,
+// `raise_for_status()` in requests, `StatusCode/100 == 2` in Go. A signup that was
+// refused therefore READ as a signup that had happened, and the caller went on to
+// the next step of an onboarding that did not exist.
 type Response struct {
 	Status string `json:"status"`
 	Msg    string `json:"msg"`
@@ -70,17 +78,36 @@ func Ok(c *zip.Ctx, data any, more ...any) error {
 	return c.JSON(200, r)
 }
 
-// Err writes 200 { status:"error", msg } — the SDK contract (branch on status,
-// not HTTP code).
+// Fail writes { status:"error", msg, code } under an HTTP status that MATCHES it.
+// ONE implementation writes the error envelope; everything below names a status
+// for it, and nothing else in this package may write one.
+func Fail(c *zip.Ctx, status int, msg, code string) error {
+	return c.JSON(status, Response{Status: "error", Msg: msg, Code: code})
+}
+
+// Err writes a refusal the CALLER can act on: bad input, a credential we would
+// not take, a name already spoken for. 400 is the honest default for this
+// surface — these are front-door validation and authentication failures, and the
+// caller is the one holding the thing that was wrong. A handler that knows better
+// says so by calling Fail with the status it means.
 func Err(c *zip.Ctx, msg string) error {
 	return ErrCode(c, msg, "")
 }
 
 // ErrCode is Err carrying a machine-readable reason alongside the human message.
-// ONE implementation writes the error envelope; Err is this with no reason to give.
 func ErrCode(c *zip.Ctx, msg, code string) error {
-	return c.JSON(200, Response{Status: "error", Msg: msg, Code: code})
+	return Fail(c, 400, msg, code)
 }
+
+// A note on 401. Several refusals here are authentication failures ("please sign
+// in first", CodeLoginRequired) and 401 is their honest status. They are NOT
+// spelled that way, deliberately: these handlers sit on the PRE-GUARD group, and
+// the Guard's own refusal is a 401 too, so a handler that answered 401 would
+// become indistinguishable from a route that was never public — which is exactly
+// what internal/authz's public-route tests assert on. Separating those two needs
+// the Guard to be told apart from a handler by something other than the status,
+// which is a change to the authz surface and not to this envelope. Until then the
+// machine-readable `code` carries the distinction, which is what it is for.
 
 // Bearer returns the token from an `Authorization: Bearer <token>` header, or "".
 func Bearer(c *zip.Ctx) string {
