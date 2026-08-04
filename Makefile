@@ -5,7 +5,10 @@
 # detector, which is where this repo's store and session defects actually show
 # up. -count=1 defeats the cache; -race is the point.
 
-.PHONY: test build fmt vet generate
+.PHONY: help generate test build lint fmt vet clean
+
+help: ## Show this help.
+	@awk 'BEGIN{FS=":.*##";printf "\nUsage: make <target>\n\nTargets:\n"} /^[a-zA-Z_-]+:.*##/{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # Prose reaches the document ONLY through this step. Go drops comments at compile
 # time, so an operation's description cannot be read off the running binary: the
@@ -32,3 +35,17 @@ fmt: ## Format.
 
 vet: ## Vet.
 	go vet ./...
+
+lint: vet ## Lint — go vet, the one static check this repo runs.
+
+# The ONE artifact this repo writes to disk: the server binary from the root
+# package. `build` above cannot leave it — `go build ./...` names more than one
+# package, so Go compiles and DISCARDS every object; it is a compile check. The
+# binary appears when you `go build .`, which is what the Dockerfile does
+# (`go build -o /out/iam .`) and what .gitignore anchors as `/iam`.
+#
+# NOT the zipdoc_gen.go files. Those are generated, but they are COMMITTED —
+# a consumer building this module does not run go generate — so removing them
+# deletes tracked source. `make generate` rewrites them; clean never touches them.
+clean: ## Remove the built binary.
+	rm -f iam
