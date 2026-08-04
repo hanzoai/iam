@@ -99,11 +99,33 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --quiet --tags "https://x-access-token:${GH_PAT}@github.com/hanzoai/iam.git" 'refs/tags/v*:refs/tags/v*' || true
+
+          # ONLY tags NEWER than the forge's highest — not every tag it lacks.
+          #
+          # "Every tag the forge lacks" is unreachable as an invariant and wedged
+          # this job for days. The forge repo was created without history's tags,
+          # so ~160 of them (v1.0.0 … v1.31.x) are permanently "unpushed"; the cap
+          # below saw 160, exited 1 on EVERY run, and the tag step never reached a
+          # real release. That is why v1.34.5 and v1.34.8 were tagged and never
+          # built — starved behind ancient tags nobody wanted rebuilt.
+          #
+          # Anchoring on the forge's own highest tag makes the set converge: it is
+          # empty in the steady state, and after a release it holds exactly the new
+          # ones. Backfilling the history is deliberately NOT done here — pushing
+          # those tags would fire image.yml once per tag, which is the tag storm the
+          # cap exists to prevent.
+          high=$(git ls-remote --tags --refs origin 'refs/tags/v*' 2>/dev/null \
+                 | sed 's#.*refs/tags/##' | sort -V | tail -1)
+          echo "forge's highest release tag: ${high:-<none>}"
           new=""
           for t in $(git tag --list 'v*' | sort -V); do
-            if ! git ls-remote --exit-code --tags origin "refs/tags/$t" >/dev/null 2>&1; then
-              new="$new $t"
+            if git ls-remote --exit-code --tags origin "refs/tags/$t" >/dev/null 2>&1; then
+              continue                                   # already on the forge
             fi
+            if [ -n "$high" ] && [ "$(printf '%s\n%s\n' "$high" "$t" | sort -V | tail -1)" = "$high" ]; then
+              continue                                   # older than the forge's highest — history, not a release
+            fi
+            new="$new $t"
           done
           new=$(echo $new)
           if [ -z "$new" ]; then echo "no unpushed release tags"; exit 0; fi
