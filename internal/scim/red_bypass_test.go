@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // RED-TEAM PROOF (throwaway). These tests assert the SECURE behavior a SCIM
 // provisioning surface must have — org-admin required for user writes, no

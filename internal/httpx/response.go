@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package httpx is the shared HTTP layer for the IAM v2 handlers: the
 // the legacy surface-compatible Response envelope that the @hanzo/iam SDK and the hanzo.id

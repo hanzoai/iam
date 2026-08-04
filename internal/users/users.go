@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package users registers the Phase-1 typed CRUD surface for the IAM v2 user
 // entity on a zip App, backed by hanzoai/orm. Every operation is owner-scoped

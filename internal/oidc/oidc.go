@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package oidc serves the IAM OpenID Connect / OAuth2 surface on zip. The
 // handlers are RAW zip handlers (func(c *zip.Ctx) error), not typed generics,

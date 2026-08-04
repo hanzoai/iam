@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package compare implements the Phase-0 drift gate: it counts rows per
 // entity in the v1 the legacy surface database and the v2 orm store and prints the

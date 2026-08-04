@@ -2,7 +2,7 @@
 
 **Identity & access for the Hanzo cloud — OpenID Connect / OAuth2 with PKCE, standards only.**
 
-![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8) ![Standards](https://img.shields.io/badge/standards-OIDC%20%C2%B7%20OAuth2%20%C2%B7%20SCIM%202.0-informational) ![License](https://img.shields.io/badge/license-proprietary-lightgrey)
+![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8) ![Standards](https://img.shields.io/badge/standards-OIDC%20%C2%B7%20OAuth2%20%C2%B7%20SCIM%202.0-informational) ![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)
 
 Hanzo IAM is the identity service behind every Hanzo sign-in: OpenID Connect
 discovery, the authorize + token endpoints (authorization code + PKCE, refresh,
@@ -114,7 +114,7 @@ table.
 
 ## License
 
-Proprietary — see [LICENSE](./LICENSE). Confidential to Hanzo AI, Inc.
+Dual-licensed under [MIT](./LICENSE-MIT) or [Apache-2.0](./LICENSE-APACHE) at your option, as the OSS core tier of HIP-0130.
 
 ## Hanzo — the Open AI Cloud
 

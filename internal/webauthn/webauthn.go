@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package webauthn is the Phase-1 typed CRUD surface for the
 // `webauthn_credentials` entity (a registered passkey), owner-scoped by the
