@@ -306,3 +306,67 @@ func TestSeed_ReconcileNeverStripsRegistration(t *testing.T) {
 		t.Fatalf("clientSecret must survive: %q", app.ClientSecret)
 	}
 }
+
+// Passkeys must converge like every other declared policy flag.
+//
+// Regression, measured against production: init_data.json declared
+// enableWebAuthn TRUE on 37 of 83 applications — hanzo-app, hanzo-chat,
+// hanzo-cloud, hanzo-console, hanzo-id and hanzo-world among them — while
+// /v1/iam/auth/methods answered `webauthn:false` for every one. upsert is
+// new-only and enableWebAuthn was absent from appPolicyKeys, so the declared
+// value never reached a seeded row. Two thirds of the estate was supposed to
+// offer passkeys and no login screen ever did, with nothing logged: the only way
+// to see it was to diff the ConfigMap against the live endpoint.
+func TestSeed_ReconcileConvergesWebAuthn(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "init_data.json")
+
+	// A seeded row with passkeys OFF — the production state.
+	off := `{
+  "organizations": [{"owner":"admin","name":"hanzo"}],
+  "applications": [{"owner":"admin","name":"hanzo-console","clientId":"hanzo-console","organization":"hanzo","enablePassword":true,"enableWebAuthn":false}]
+}`
+	if err := os.WriteFile(path, []byte(off), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FromInitData(ctx, db, path); err != nil {
+		t.Fatal(err)
+	}
+	app, err := orm.Get[schema.Application](db, "admin/hanzo-console")
+	if err != nil || app == nil {
+		t.Fatalf("seed application: %v", err)
+	}
+	if app.EnableWebAuthn {
+		t.Fatal("fixture should start with passkeys disabled")
+	}
+
+	// The operator declares passkeys on. A converging seed must apply it.
+	on := `{
+  "organizations": [{"owner":"admin","name":"hanzo"}],
+  "applications": [{"owner":"admin","name":"hanzo-console","clientId":"hanzo-console","organization":"hanzo","enablePassword":true,"enableWebAuthn":true}]
+}`
+	if err := os.WriteFile(path, []byte(on), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FromInitData(ctx, db, path); err != nil {
+		t.Fatal(err)
+	}
+	app, _ = orm.Get[schema.Application](db, "admin/hanzo-console")
+	if !app.EnableWebAuthn {
+		t.Fatal("declared enableWebAuthn=true did not converge onto the existing row")
+	}
+
+	// ...and it converges BACK off, so the file stays authoritative in both
+	// directions. A one-way flag would be a trapdoor, not a declaration.
+	if err := os.WriteFile(path, []byte(off), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FromInitData(ctx, db, path); err != nil {
+		t.Fatal(err)
+	}
+	app, _ = orm.Get[schema.Application](db, "admin/hanzo-console")
+	if app.EnableWebAuthn {
+		t.Fatal("declared enableWebAuthn=false did not converge back off")
+	}
+}
