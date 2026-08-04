@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package server is the PUBLIC embedding surface of iam: a host binary (cloud)
 // imports this and registers the full IAM HTTP surface onto its own zip app,

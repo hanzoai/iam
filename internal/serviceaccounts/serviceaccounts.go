@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package serviceaccounts serves the agent/bot identity surface at
 // /v1/iam/service-accounts — create an identity and mint its first key, list an

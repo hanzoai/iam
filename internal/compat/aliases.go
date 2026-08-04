@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package compat serves the legacy VERB surface (get-users, get-organizations,
 // …) over iam's orm store, in the v1 Response envelope. It exists because every

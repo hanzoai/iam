@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package model exposes the iam core's identity value types to external feature
 // modules (hanzoiam/*) WITHOUT leaking internal/. They are ALIASES of the core

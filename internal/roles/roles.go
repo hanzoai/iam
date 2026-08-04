@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package roles serves the IAM v2 CRUD surface for the `roles` entity: a named
 // grant bundle owner-scoped by (owner, name). Every operation is a typed zip

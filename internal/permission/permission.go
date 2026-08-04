@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package permission serves the IAM v2 permission CRUD surface as typed zip
 // handlers over hanzoai/orm. Every permission is owner-scoped: its identity is

@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package workspaces serves the IAM v2 CRUD surface for the `workspaces` entity:
 // an organization-scoped container that sits between the organization and its

@@ -1,4 +1,5 @@
-// Copyright 2026 Hanzo AI, Inc. All rights reserved.
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // SCIM read-side org-scope + the cross-org existence oracle — the port of the
 // iam-v1 fix da0732a1 ("scope SCIM reads to caller org + collapse the 404/403
