@@ -58,32 +58,95 @@ func ServiceToken() string {
 	return ""
 }
 
-// ServiceTokenAuth reports whether the request carries the unified service token as
-// a Bearer credential, compared in constant time. An unset expected token, or any
+// ServiceAuth reports whether an `Authorization` header VALUE carries the unified
+// service token, compared in constant time. An unset expected token, or any
 // mismatch, is false — fail closed: no token configured means no service surface.
-func ServiceTokenAuth(c *zip.Ctx) bool {
+//
+// It takes the header rather than the request because a TYPED op never sees a
+// *zip.Ctx: the credential arrives on its input, declared `header:"Authorization"`,
+// and the check has to run on that value. So this is the ONE implementation and
+// ServiceTokenAuth is the same check on a raw handler's request — the same split
+// as Good/Bad against Ok/Fail below, a value and a place.
+func ServiceAuth(h string) bool {
 	expected := ServiceToken()
 	if expected == "" {
 		return false
 	}
-	got := Bearer(c)
+	got := token(h)
 	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
+}
+
+// ServiceTokenAuth reports whether the request carries the unified service token as
+// a Bearer credential.
+func ServiceTokenAuth(c *zip.Ctx) bool { return ServiceAuth(c.Header("Authorization")) }
+
+// Answer is a Response together with the status it rides on — the envelope as a
+// VALUE, for a handler that returns its reply instead of writing it.
+//
+// A typed op is a function, so its answer has to BE a value: zip renders what the
+// handler returns and there is no *zip.Ctx to write through. The status has to
+// ride with it because this envelope's whole contract is that the two agree — a
+// refusal is a 4xx carrying status:"error" — and a typed op that returned a bare
+// Response would answer every refusal 200 and break exactly that.
+//
+// The wire shape is Response's and only Response's: the embedding promotes its
+// fields, `code` is unexported, so an Answer and the Response inside it marshal
+// to the same bytes. One envelope, two ways of holding it, no second shape to
+// keep in sync.
+//
+// It is a distinct type rather than a method on Response because zip reads
+// [zip.StatusCoder] off the value an op returns and refuses any status the op did
+// not declare with zip.WithStatus. Response is already returned by typed ops that
+// declare none (internal/compat), so teaching Response to state a status would
+// make every one of them answer a status zip then refuses.
+type Answer struct {
+	Response
+	code int
+}
+
+// StatusCode is [zip.StatusCoder]: the status this answer rides on. Zero means
+// the answer never named one, and 200 is what an unnamed answer has always been.
+func (a *Answer) StatusCode() int {
+	if a.code == 0 {
+		return 200
+	}
+	return a.code
+}
+
+// Good is the 200 { status:"ok", data } envelope. The success half of the pair,
+// as a value.
+func Good(data any, more ...any) *Answer {
+	a := &Answer{Response: Response{Status: "ok", Data: data}, code: 200}
+	if len(more) > 0 {
+		a.Data2 = more[0]
+	}
+	return a
+}
+
+// Bad is the { status:"error", msg, code } envelope under the status that
+// matches it. The refusal half of the pair, as a value.
+func Bad(status int, msg, code string) *Answer {
+	return &Answer{Response: Response{Status: "error", Msg: msg, Code: code}, code: status}
 }
 
 // Ok writes 200 { status:"ok", data }.
 func Ok(c *zip.Ctx, data any, more ...any) error {
-	r := Response{Status: "ok", Data: data}
-	if len(more) > 0 {
-		r.Data2 = more[0]
-	}
-	return c.JSON(200, r)
+	return write(c, Good(data, more...))
 }
 
 // Fail writes { status:"error", msg, code } under an HTTP status that MATCHES it.
 // ONE implementation writes the error envelope; everything below names a status
 // for it, and nothing else in this package may write one.
 func Fail(c *zip.Ctx, status int, msg, code string) error {
-	return c.JSON(status, Response{Status: "error", Msg: msg, Code: code})
+	return write(c, Bad(status, msg, code))
+}
+
+// write sends an Answer through a raw handler's Ctx. Unexported: a typed op
+// RETURNS its answer and never needs this, so the only callers are the two
+// writers above — which is what makes Good/Bad the one place each variant of the
+// envelope is built, whether it is returned or written.
+func write(c *zip.Ctx, a *Answer) error {
+	return c.JSON(a.StatusCode(), a.Response)
 }
 
 // Err writes a refusal the CALLER can act on: bad input, a credential we would
@@ -111,9 +174,12 @@ func ErrCode(c *zip.Ctx, msg, code string) error {
 // machine-readable `code` carries the distinction, which is what it is for.
 
 // Bearer returns the token from an `Authorization: Bearer <token>` header, or "".
-func Bearer(c *zip.Ctx) string {
+func Bearer(c *zip.Ctx) string { return token(c.Header("Authorization")) }
+
+// token is the credential an `Authorization: Bearer <token>` header VALUE carries,
+// or "". The parse lives here once, for the request half and the value half alike.
+func token(h string) string {
 	const p = "Bearer "
-	h := c.Header("Authorization")
 	if len(h) > len(p) && h[:len(p)] == p {
 		return h[len(p):]
 	}

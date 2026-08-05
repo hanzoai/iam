@@ -20,7 +20,7 @@ func newUnlinkServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	db := openTestDB(t)
 	app := zip.New(zip.Config{AppName: "iam-unlink-test", DisableStartupMessage: true})
-	Route(app.Group(""), db) // public: authorize/login/token AND the self-authenticating unlink
+	Route(app.Group("").(*zip.App), db) // public: authorize/login/token AND the self-authenticating unlink
 	return app, db
 }
 

@@ -47,6 +47,8 @@ const (
 // unauthorized is v1's refusal message, verbatim.
 const unauthorized = "auth:Unauthorized operation"
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the membership surface on app, backed by db: the native REST
 // pair plus the legacy verb aliases. get/add share the REST handlers (one authz
 // gate, one store call, no duplication); delete adds the revoke the REST face does
@@ -54,13 +56,40 @@ const unauthorized = "auth:Unauthorized operation"
 // handler-authorized (authz.handlerAuthorizedPrefixes) exactly like /v1/iam/
 // memberships — the list handler's own scoped() check is the tenant gate; the two
 // write verbs are POSTs the Guard never pre-authorizes, so each self-authorizes.
+//
+// The two READS are typed ops, so both addresses are in the OpenAPI document, the
+// SDKs, the CLI and the MCP tool list. NEITHER names an operationId: what
+// distinguishes them IS the address, so the address names them (zip's path-derived
+// default), and a hand-picked id would collide — one operationId, one operation.
+// The writes stay raw: typing them would newly route them through the op-invoke
+// authorizer on a decoded (Owner, Name) their bodies do not carry, changing who
+// may grant. That is a decision, not a projection.
+//
+// A typed read still reaches that authorizer, and is admitted by construction: it
+// admits a GET whose decoded input names no owner, and `lookup` declares no Owner
+// field and no AuthzTarget() for it to read. scoped() remains the whole tenant
+// gate. A refusal is a VALUE (httpx.Bad), never a returned error — an error
+// renders zip's {"status":<int>,"error":…} instead of this surface's envelope.
 func Route(app *zip.App, db orm.DB) {
-	app.Get(Path, list(db))
+	zip.Get[lookup, httpx.Answer](app, Path, list(db),
+		zip.WithStatus(200, 400),
+		zip.WithTags("memberships"))
 	app.Post(Path, ensure(db))
 
-	app.Get(PathGet, list(db))
+	zip.Get[lookup, httpx.Answer](app, PathGet, list(db),
+		zip.WithStatus(200, 400),
+		zip.WithTags("memberships"))
 	app.Post(PathAdd, ensure(db))
 	app.Post(PathDelete, remove(db))
+}
+
+// lookup is the list request: exactly one of the identity whose organizations are
+// wanted, or the organization whose roster is.
+type lookup struct {
+	// User is "<homeOrg>/<username>" — which organizations that identity may act in.
+	User string `json:"user"`
+	// Org is an organization — who may act in it.
+	Org string `json:"org"`
 }
 
 // request is the ensure body.
@@ -78,30 +107,26 @@ type request struct {
 // the verified credential via authz.Scope, so a request parameter can never
 // widen it — a membership row names who may act and spend in an org, so a
 // cross-tenant read is a customer roster leak.
-func list(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		ctx := c.Context()
-		user, org := c.Query("user"), c.Query("org")
-		if (user == "") == (org == "") {
-			return httpx.Err(c, "exactly one of user or org is required")
+func list(db orm.DB) zip.TypedHandler[lookup, httpx.Answer] {
+	return func(ctx context.Context, in *lookup) (*httpx.Answer, error) {
+		if (in.User == "") == (in.Org == "") {
+			return httpx.Bad(400, "exactly one of user or org is required", ""), nil
 		}
-		if org != "" {
-			if !scoped(ctx, org) {
-				return httpx.Err(c, unauthorized)
+		if in.Org != "" {
+			if !scoped(ctx, in.Org) {
+				return httpx.Bad(400, unauthorized, ""), nil
 			}
-			rows, err := store.MembershipsByOrg(ctx, db, org)
-			return listed(c, rows, err)
+			return listed(store.MembershipsByOrg(ctx, db, in.Org))
 		}
 		// A user id is "<homeOrg>/<name>": its home org is the tenant bound here.
-		home, _, found := strings.Cut(user, "/")
+		home, _, found := strings.Cut(in.User, "/")
 		if !found || home == "" {
-			return httpx.Err(c, "user must be <owner>/<name>")
+			return httpx.Bad(400, "user must be <owner>/<name>", ""), nil
 		}
 		if !scoped(ctx, home) {
-			return httpx.Err(c, unauthorized)
+			return httpx.Bad(400, unauthorized, ""), nil
 		}
-		rows, err := store.MembershipsByUser(ctx, db, user)
-		return listed(c, rows, err)
+		return listed(store.MembershipsByUser(ctx, db, in.User))
 	}
 }
 
@@ -197,10 +222,11 @@ func scoped(ctx context.Context, org string) bool {
 	return err == nil && got == org
 }
 
-// listed writes a membership listing, or the error envelope on failure.
-func listed(c *zip.Ctx, rows []*schema.Membership, err error) error {
+// listed answers a membership listing, or the error envelope on failure. It takes
+// the store call's pair so the two branches of list read as one line each.
+func listed(rows []*schema.Membership, err error) (*httpx.Answer, error) {
 	if err != nil {
-		return httpx.Err(c, err.Error())
+		return httpx.Bad(400, err.Error(), ""), nil
 	}
-	return c.JSON(200, httpx.Response{Status: "ok", Data: rows, Data2: len(rows)})
+	return httpx.Good(rows, len(rows)), nil
 }

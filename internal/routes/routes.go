@@ -89,7 +89,14 @@ func Route(app *zip.App, db orm.DB) {
 	// from registered redirect URIs — provision a host and login works from it.
 	app.Use(cors.Allow(db))
 
-	public := app.Group("")
+	// The concrete type, for the same reason the guarded group below takes it:
+	// zipdoc resolves an op's path prefix STATICALLY, and it cannot see through a
+	// zip.Router parameter — an op registered on one would have its doc comment
+	// filed under the wrong path and dropped from the document and the MCP tool.
+	// The public group has typed ops now, so it needs the same handle the authed
+	// group has always needed. Its prefix is empty either way; nothing about the
+	// mount changes.
+	public := app.Group("").(*zip.App)
 	oidc.Route(public, db)
 	// Operator bootstrap upsert (admin/{applications,users}/upsert) — self-authenticated
 	// by the unified service token (Bearer), not a user principal, so it is PUBLIC.
