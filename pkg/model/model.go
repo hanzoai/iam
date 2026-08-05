@@ -9,6 +9,14 @@ package model
 import "github.com/hanzoai/iam/pkg/schema"
 
 type (
+	// Claims is what a verified iam token says — the registered claims plus the
+	// Hanzo first-class ones (owner/organization tenancy, scope, the username
+	// `name` carries, the `orgs` membership set, billing_account). It is an ALIAS
+	// of the core's own claim type, so the struct a host reads is bit-for-bit the
+	// struct iam mints and validates; a consumer-side copy of this shape is how
+	// claim readers drift apart.
+	Claims = schema.Claims
+
 	User         = schema.User
 	Application  = schema.Application
 	Organization = schema.Organization
