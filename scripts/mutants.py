@@ -1,17 +1,30 @@
-# Mutation table for hanzoai/iam. The engine is cloud's scripts/mutate.py, which is
-# strict-scored (a mutant that fails to COMPILE, or whose anchor drifted, or whose
-# -run matched nothing, is a hard FAILURE and never a kill). This file is only the
-# data: which property to break, and which test must go red when it does.
+# Mutation table for hanzoai/iam. The engine is scripts/mutate.py NEXT TO THIS
+# FILE, which is strict-scored (a mutant that fails to COMPILE, or whose anchor
+# drifted, or whose -run matched nothing, is a hard FAILURE and never a kill).
+# This file is only the data: which property to break, and which test must go red
+# when it does.
 #
-#   MUTATE_ROOT=<iam tree> MUTATE_TABLE=<this file> <cloud>/scripts/mutate.py [filter]
+#   scripts/mutate.py [name-substring-filter]
 #
-# Every row here breaks one clause of a single sentence: consent to train is an
-# explicit "granted" and nothing else, and the absence of an answer is a refusal.
+# The engine lives here rather than in a sibling repo because a score nobody can
+# reproduce from this checkout is a claim, not a measurement.
+#
+# Two sentences are under test. The FIRST: consent to train is an explicit
+# "granted" and nothing else, and the absence of an answer is a refusal. The
+# SECOND: that answer has exactly one writer — the person it is about — so no
+# other write path may forge it, destroy it, or answer a question the request
+# never asked, and the evidence for it cannot be authored or erased by anyone.
 
 C = "pkg/schema/consent.go"
 G = "internal/oidc/signup.go"
+U = "internal/users/users.go"
+P = "internal/oidc/preferences.go"
+T = "internal/oidc/consent.go"
+A = "internal/auditlogs/auditlogs.go"
 PS = "./pkg/schema/"
 PO = "./internal/oidc/"
+PU = "./internal/users/"
+PA = "./internal/auditlogs/"
 
 MUTANTS = [
     # The default. If a first-ever read defaults to a grant, every user who was
@@ -79,19 +92,96 @@ MUTANTS = [
             "consent := schema.Consent{Insights: true, Training: schema.Granted}")],
      "TestSignup_SilenceIsRefusal|TestSignup_RefusalIsRecorded", PO),
 
-    # The signup boundary check. Without it an unrecognized answer is persisted for
-    # a later reader to interpret instead of being refused at the door.
-    ("consent: signup accepts an unknown answer", [
+    # An unknown answer reaching the record through signup now takes TWO gates
+    # falling: the screen's own boundary check, and the store's refusal to encode
+    # an answer it cannot read. Removing either alone leaves the property standing
+    # — which is the point of having both, and why this mutant breaks the pair.
+    # A single-edit version of this row SURVIVES, correctly, and a runner that
+    # scored it a kill would be reporting depth this system has as depth it lacks.
+    ("consent: signup accepts an unknown answer (both gates)", [
         (G, "\t\tif !consent.Training.Valid() {\n\t\t\treturn httpx.Err(c, \"training must be one of: \\\"\\\", granted, refused\")\n\t\t}\n",
-            "")],
+            ""),
+        (C, "\tif !c.Training.Valid() {\n\t\treturn nil, fmt.Errorf(",
+            "\tif false && !c.Training.Valid() {\n\t\treturn nil, fmt.Errorf(")],
      "TestSignup_UnknownAnswerIsRejected", PO),
 
-    # The answer has to reach the SAME property the accessor reads. Parking it under
-    # a neighbouring key discards the screen's answer while looking like it stored
-    # it. (Deleting the write instead leaves consentBlob unused, which does not
-    # compile — a NO-COMPILE is not a kill, so the mutation writes the wrong key.)
-    ("consent: signup writes the answer to the wrong property", [
-        (G, "\t\t\t\tProperties: map[string]string{schema.PreferencesKey: consentBlob},",
-            "\t\t\t\tProperties: map[string]string{\"preferences\": consentBlob},")],
+    # The answer has to REACH the create path. Signup is the one caller entitled to
+    # state one, and it says so by filling the off-the-wire seam; dropping the
+    # answer there discards what the screen collected while still creating the
+    # account, which looks like success from every angle except the record.
+    ("consent: signup drops the answer the screen collected", [
+        (G, "\t\t\tConsent: &consent,",
+            "\t\t\tConsent: nil,")],
      "TestSignup_GrantIsRecorded", PO),
+
+    # --- the SECOND sentence: one writer, and evidence nobody else can author ---
+
+    # The full-row update carrying the stored answer. Without it a body that names
+    # a consent FORGES one, and a body with no properties at all DESTROYS one —
+    # the same missing line is both attacks, which is why one mutant kills two
+    # tests.
+    ("one-writer: a full-row update takes consent from the body", [
+        (U, "\tif err := u.CarryConsentFrom(existing); err != nil {\n\t\treturn nil, zip.ErrInternal(err.Error())\n\t}\n",
+            "")],
+     "TestUpdateCannotForgeAConsent|TestUpdateCannotDestroyAConsent", PU),
+
+    # The create path dropping a caller-supplied answer. Provisioning is done BY
+    # somebody, never by the person the answer is about, so a consent in a create
+    # body is an assertion on another's behalf.
+    ("one-writer: a create body may assert a consent", [
+        (U, "\tif err := u.SetConsent(in.Consent); err != nil {\n\t\treturn nil, zip.ErrBadRequest(err.Error())\n\t}\n",
+            "")],
+     "TestCreateDropsACallerSuppliedConsent", PU),
+
+    # The preferences surface refusing the one key that is not a preference.
+    # Without it there is a second, unvalidated, unaudited writer of the record.
+    ("one-writer: preferences can write the consent key", [
+        (P, "\tif _, ok := patchMap[schema.ConsentKey]; ok {\n\t\treturn \"\", nil, fmt.Errorf(\"consent is not a preference; use PUT %s to answer\", PathConsent)\n\t}\n",
+            "")],
+     "TestPreferencesRefusesTheConsentKey", PO),
+
+    # The tri-state on the wire. Collapsing "absent" into the zero value makes a
+    # save of one switch silently answer the other question — the person answers
+    # one thing and has a second answer changed for them.
+    ("one-writer: an absent field answers its question anyway", [
+        (T, "\t\t\tif in.Insights != nil {\n\t\t\t\tnext.Insights = *in.Insights\n\t\t\t}\n",
+            "\t\t\tnext.Insights = in.Insights != nil && *in.Insights\n")],
+     "TestConsentPutLeavesAnUnaskedQuestionAlone", PO),
+
+    # The write half refusing what the read half normalizes. Without it an answer
+    # this version cannot interpret is persisted for a later reader to guess at.
+    ("one-writer: the write half stores an answer it cannot read", [
+        (C, "\tif !c.Training.Valid() {\n\t\treturn nil, fmt.Errorf(",
+            "\tif false && !c.Training.Valid() {\n\t\treturn nil, fmt.Errorf(")],
+     "TestEncodeRefusesAnAnswerItWouldHaveToNormalize", PS),
+
+    # The audit covering the WHOLE record. Narrowing it back to the training
+    # answer leaves an insights withdrawal unevidenced — a consent event with no
+    # trail, which is the state Article 7(1) asks us not to be in.
+    ("evidence: only the training answer is audited", [
+        (T, "\tif from == to {\n\t\treturn nil\n\t}\n",
+            "\tif from.Training == to.Training {\n\t\treturn nil\n\t}\n")],
+     "TestConsentChangeIsAudited", PO),
+
+    # The ingress address staying out of the row. It identifies our own pod, not
+    # the person, while still being personal data with a retention obligation.
+    ("evidence: the audit row records the ingress address", [
+        (T, "\tlog.StatusCode = 200\n",
+            "\tlog.ClientIp = c.Fiber().IP()\n\tlog.StatusCode = 200\n")],
+     "TestConsentChangeIsAudited", PO),
+
+    # The reserved namespace on the way in. Without it an org admin mints a
+    # consent-training row granting permission nobody gave, indistinguishable
+    # from the one the consent endpoint writes.
+    ("evidence: the audit CRUD can forge a platform row", [
+        (A, "\tif err := refusePlatformAction(in.Action); err != nil {\n\t\treturn nil, err\n\t}\n\tswitch _, err := orm.Get[schema.AuditLog](h.db, key(in.Owner, in.Name)); {",
+            "\tswitch _, err := orm.Get[schema.AuditLog](h.db, key(in.Owner, in.Name)); {")],
+     "TestCreateRefusesAPlatformAction", PA),
+
+    # And on the way out. A row recording a refusal is exactly the row an
+    # interested party would want gone.
+    ("evidence: the audit CRUD can delete a platform row", [
+        (A, "\tif err := refusePlatformAction(log.Action); err != nil {\n\t\treturn nil, err\n\t}\n\tif err := log.DeleteCtx",
+            "\tif err := log.DeleteCtx")],
+     "TestDeleteRefusesAPlatformRow", PA),
 ]

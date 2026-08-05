@@ -60,6 +60,13 @@ type Ref struct {
 type CreateInput struct {
 	User     schema.User `json:"user"`
 	Password string      `json:"password,omitempty"`
+	// Consent is the data subject's OWN answer, and it is the only way one enters
+	// a new account: Create drops any consent the body carried and records this
+	// instead. `json:"-"` keeps it off the wire, so it can be set only by an
+	// in-process caller — the signup screen, which is the one place the person
+	// answers for themselves. A request cannot reach it, which is the point: no
+	// caller can assert a consent on somebody else's behalf.
+	Consent *schema.Consent `json:"-"`
 }
 
 // UpdateInput carries the desired user state plus an optional new plaintext
@@ -171,6 +178,16 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// Minting is the ONLY writer — /v1/iam/mint-user-keys — so these are cleared here
 	// the same way the password digest is.
 	u.AccessKey, u.AccessSecret, u.AccessSecretHash = "", "", ""
+	// Nor a client-supplied CONSENT. A create body carries whatever properties the
+	// sender wrote, and the sender is whoever is provisioning the account — an org
+	// admin, an IdP, a migration — never the person the answer is about. So any
+	// consent in the body is DROPPED here, and the only way one enters a new
+	// account is in.Consent, which is off the wire (json:"-") and set by the
+	// signup screen, where the person answers for themselves. A new user with no
+	// answer reads as Unanswered, which refuses.
+	if err := u.SetConsent(in.Consent); err != nil {
+		return nil, zip.ErrBadRequest(err.Error())
+	}
 	if in.Password != "" {
 		hash, err := hashPassword(in.Password)
 		if err != nil {
@@ -289,6 +306,20 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 		u.PasswordHash = hash
 		u.PasswordType = cred.TypeArgon2id
 		u.PasswordSalt = ""
+	}
+	// The consent record is the DATA SUBJECT's own answer, so it is carried from
+	// the stored row and a body-supplied one is IGNORED — the same rule as the
+	// credentials above, for the same reason: this is a full-row write that any
+	// org admin can perform on any member. Without it, one request both FORGES a
+	// grant (by sending one) and DESTROYS a real answer (by sending a body with
+	// no properties, which is what a partial client sends) — silently, and with
+	// no audit row, because nothing here knows it happened. Consent is written by
+	// the person it is about, at PUT /v1/iam/consent, and nowhere else.
+	//
+	// Every OTHER property still comes from the body: this carries the one record
+	// that is not the caller's to state, not the whole map.
+	if err := u.CarryConsentFrom(existing); err != nil {
+		return nil, zip.ErrInternal(err.Error())
 	}
 
 	// Retarget the decoded value at the stored row (same orm key), then update.
