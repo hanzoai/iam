@@ -1,8 +1,28 @@
-// Deprecated: the in-process Embed + Mount entry points belonged to the
-// Casdoor-derived lineage of github.com/hanzoai/iam, retired at v1.32.0. They
-// live on, byte-identical, at github.com/hanzoai/iam-v1/pkg/iam. v2 has no
+// Deprecated: THIS MODULE PATH — github.com/hanzoai/iam/pkg/iam — is the last
+// Casdoor-lineage module resolvable under the canonical prefix; see the
+// retraction note below for why it is retracted rather than deleted. Depend on
+// github.com/hanzoai/iam itself.
+//
+// What this note used to say, and why it was wrong. It read: "v2 has no
 // in-process embed — IAM is a binary you run, not a library you link into your
-// server; talk to it over HTTP with github.com/hanzoai/iamsdk/v2.
+// server; talk to it over HTTP with github.com/hanzoai/iamsdk/v2." Every clause
+// of that is false, and it was false while it was being read as guidance:
+//
+//   - IAM IS linked in-process, in production, by the thing that matters most.
+//     hanzoai/cloud requires github.com/hanzoai/iam v1.34.20 with NO replace
+//     directive, imports `iamserver "github.com/hanzoai/iam/server"` in
+//     apps/iam/iam.go, and composes iamserver.NewApp(db) into cloud's own router
+//     via zip.Graft. 25 non-vendor .go files across cloud import
+//     github.com/hanzoai/iam/*.
+//   - So "a binary you run, not a library you link into your server" inverts the
+//     actual deployment. It is both, and the in-process path is the live one.
+//   - github.com/hanzoai/iamsdk is not somewhere to send anyone: it redirects to
+//     a private repo, so the link is a 404 for any reader outside the org, and
+//     the SDK is being retired.
+//
+// Retiring an entry point is a claim about the code. Check it against the code
+// before writing it down — this one shipped, propagated into the docs as an
+// `iamsdk` import path that never existed, and stayed there.
 module github.com/hanzoai/iam/pkg/iam
 
 go 1.26.5
