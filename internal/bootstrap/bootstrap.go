@@ -14,13 +14,21 @@
 // token is system-level (bypasses the org-membership gate), so these routes live in
 // the PUBLIC group (before the Guard) and self-authenticate here. An unset token
 // fails closed: no service token configured → no bootstrap.
+//
+// Both are TYPED ops, so the credential is DECLARED — `header:"Authorization"` on
+// the input — rather than read out of a request the op cannot see. That is what
+// makes them ops at all: a fact no projection can read is not a fact the API has,
+// and the document, the tool schema and the command now all name the header the
+// call needs. It carries `json:"-"`, so the body and the query string cannot
+// supply it; a transport with no headers (MCP, the call plane) presents nothing
+// and is refused, which is the same fail-closed answer an unset token gets.
 package bootstrap
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -35,19 +43,122 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the bootstrap upsert endpoints on the PUBLIC group r (they
 // self-authenticate via the service token, not a bearer principal).
-func Route(r zip.Router, db orm.DB) {
-	r.Post("/v1/iam/admin/applications/upsert", upsertApplication(db))
-	r.Post("/v1/iam/admin/users/upsert", upsertUser(db))
+//
+// r is the CONCRETE *zip.App a group already is: zipdoc resolves an op's path
+// prefix STATICALLY and cannot see through a zip.Router parameter, so a typed op
+// registered on one would have its doc comment filed under the wrong path and
+// dropped from both the document and the MCP tool. The prefix is empty either
+// way; nothing about the mount changes.
+//
+// Every status each op can answer is DECLARED, because zip refuses one that is
+// not — and because the document publishes exactly this set, so a generated
+// client has a branch for each. These two answer their refusals in their own
+// envelope (see reply), which is what a declared non-2xx is for.
+func Route(r *zip.App, db orm.DB) {
+	zip.Post[registration, reply](r, "/v1/iam/admin/applications/upsert", upsertApplication(db),
+		zip.WithOperationID("upsertApplication"),
+		zip.WithStatus(200, 400, 401, 500),
+		zip.WithTags("bootstrap"))
+
+	zip.Post[person, reply](r, "/v1/iam/admin/users/upsert", upsertUser(db),
+		zip.WithOperationID("upsertUser"),
+		zip.WithStatus(200, 400, 401, 500),
+		zip.WithTags("bootstrap"))
 }
 
-func unauthorized(c *zip.Ctx) error {
-	return c.JSON(401, map[string]any{"status": "error", "msg": "a valid service token is required"})
+// reply is what both upserts answer, and the STATUS it rides on — this surface's
+// envelope as a VALUE, because a typed op returns its answer instead of writing
+// one. It is NOT httpx.Answer: these two predate that envelope and say `action`
+// (created or updated) where it says `code`, and carry no `data` at all on a
+// refusal. The operator parses this shape, so it is the shape that stays.
+//
+// The fields are in alphabetical order deliberately. Each of these bodies used to
+// be a map[string]any, encoding/json sorts a map's keys, and the wire may not move
+// under an operator that is already parsing it — so the struct emits the same
+// bytes in the same order.
+type reply struct {
+	Action string `json:"action,omitempty"`
+	Data   any    `json:"data,omitempty"`
+	Msg    string `json:"msg,omitempty"`
+	Status string `json:"status"`
+
+	code int
 }
 
-// appUpsertReq is the operator's application upsert body (operator-core UpsertRequest).
-type appUpsertReq struct {
+// StatusCode is [zip.StatusCoder]: the status this answer rides on. Zero means
+// the answer never named one, and 200 is what an unnamed answer has always been.
+func (r *reply) StatusCode() int {
+	if r.code == 0 {
+		return 200
+	}
+	return r.code
+}
+
+// done is the 200 {status:"ok", action, data} answer — created or updated, and
+// what the upsert left behind.
+func done(action string, data any) *reply {
+	return &reply{Action: action, Data: data, Status: "ok", code: 200}
+}
+
+// refuse is the {status:"error", msg} answer under the status that matches it.
+// ONE function writes a refusal here; every one below names its status.
+//
+// It returns a VALUE rather than an error, and that is the whole contract: a
+// non-nil error renders zip's own {status,error} envelope, which is not what this
+// surface has ever answered.
+func refuse(status int, msg string) *reply {
+	return &reply{Msg: msg, Status: "error", code: status}
+}
+
+// credential is what an application upsert answers with: the registration as it
+// now stands, including the client secret — the operator is the caller, and this
+// is where it learns a secret it did not send. Alphabetical, per reply.
+type credential struct {
+	ClientId     string `json:"clientId"`
+	ClientSecret string `json:"clientSecret"`
+	Name         string `json:"name"`
+	Organization string `json:"organization"`
+}
+
+// account is what a user upsert answers with: the natural key of the row it
+// created or updated — the name as STORED, which the username rule may have
+// rewritten. Alphabetical, per reply.
+type account struct {
+	Name  string `json:"name"`
+	Owner string `json:"owner"`
+}
+
+// decoded is what happened when the request body was read, carried on the input
+// because the handler is the only thing that may answer for it.
+//
+// zip renders a decode failure as its own {status,error} envelope and skips the
+// decoder entirely when there is no body — so an op that does neither has to learn
+// both facts itself. Unexported, so it is on no wire and in no schema.
+type decoded struct {
+	sent bool
+	err  error
+}
+
+// check is the refusal a body earns before a handler looks at it, or nil when it
+// arrived and parsed. The two sentences are the ones this surface has always
+// answered.
+func (d decoded) check() *reply {
+	switch {
+	case !d.sent:
+		return refuse(400, "invalid body: empty request body")
+	case d.err != nil:
+		return refuse(400, "invalid body: "+d.err.Error())
+	}
+	return nil
+}
+
+// registration is the application an operator declares (operator-core's
+// UpsertRequest), plus the service credential it presents.
+type registration struct {
 	Organization string   `json:"organization"`
 	Name         string   `json:"name"`
 	ClientId     string   `json:"clientId"`
@@ -90,6 +201,27 @@ type appUpsertReq struct {
 	// the default. Nil means "not stated, leave it".
 	ExpireInHours        *float64 `json:"expireInHours"`
 	RefreshExpireInHours *float64 `json:"refreshExpireInHours"`
+	// Auth is the `Authorization: Bearer <token>` header, the unified service
+	// token this surface authenticates on. `json:"-"` keeps it off the body and
+	// out of the query string, so the header is the only way to present it.
+	Auth string `json:"-" header:"Authorization"`
+
+	decoded
+}
+
+// UnmarshalJSON decodes the body and RECORDS the outcome instead of failing on it,
+// so the handler stays the only thing that answers — see decoded.
+//
+// `body` is the same fields with none of the methods, which is what keeps this
+// from calling itself. It is also what a mismatched field is reported against, so
+// the message names the body rather than a Go type the caller has never heard of.
+func (r *registration) UnmarshalJSON(b []byte) error {
+	type body registration
+	var v body
+	err := json.Unmarshal(b, &v)
+	*r = registration(v)
+	r.decoded = decoded{sent: true, err: err}
+	return nil
 }
 
 // upsertApplication creates an application or updates it in place, so a
@@ -99,60 +231,58 @@ type appUpsertReq struct {
 // It says which of the two it did. Leave the client secret out and the existing
 // one is kept — so re-running your deployment does not rotate a credential your
 // running services are holding.
-func upsertApplication(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		if !httpx.ServiceTokenAuth(c) {
-			return unauthorized(c)
+func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
+	return func(ctx context.Context, in *registration) (*reply, error) {
+		if !httpx.ServiceAuth(in.Auth) {
+			return refuse(401, "a valid service token is required"), nil
 		}
-		ctx := c.Context()
-		var req appUpsertReq
-		if err := decode(c, &req); err != nil {
-			return c.JSON(400, errResp("invalid body: "+err.Error()))
+		if bad := in.check(); bad != nil {
+			return bad, nil
 		}
-		req.Name = strings.TrimSpace(req.Name)
-		if req.Name == "" {
-			return c.JSON(400, errResp("name is required"))
+		in.Name = strings.TrimSpace(in.Name)
+		if in.Name == "" {
+			return refuse(400, "name is required"), nil
 		}
 
-		existing, err := store.GetApplicationByName(ctx, db, "admin", req.Name)
+		existing, err := store.GetApplicationByName(ctx, db, "admin", in.Name)
 		if err != nil {
-			return c.JSON(500, errResp("server_error"))
+			return refuse(500, "server_error"), nil
 		}
 		var existingSecret string
 		if existing != nil {
 			existingSecret = existing.ClientSecret
 		}
-		req.ClientSecret = resolveSecret(req.Public, req.ClientSecret, existing != nil, existingSecret)
-		if req.ClientId == "" {
-			req.ClientId = req.Name // <org>-<app> convention: clientId == name
+		in.ClientSecret = resolveSecret(in.Public, in.ClientSecret, existing != nil, existingSecret)
+		if in.ClientId == "" {
+			in.ClientId = in.Name // <org>-<app> convention: clientId == name
 		}
 
 		action := "created"
 		if existing != nil {
 			action = "updated"
-			existing.ClientId = req.ClientId
-			existing.ClientSecret = req.ClientSecret
-			existing.Organization = pick(req.Organization, existing.Organization)
-			if req.DisplayName != "" {
-				existing.DisplayName = req.DisplayName
+			existing.ClientId = in.ClientId
+			existing.ClientSecret = in.ClientSecret
+			existing.Organization = pick(in.Organization, existing.Organization)
+			if in.DisplayName != "" {
+				existing.DisplayName = in.DisplayName
 			}
-			if len(req.GrantTypes) > 0 {
-				existing.GrantTypes = req.GrantTypes
+			if len(in.GrantTypes) > 0 {
+				existing.GrantTypes = in.GrantTypes
 			}
-			if len(req.RedirectUris) > 0 {
-				existing.RedirectUris = req.RedirectUris
+			if len(in.RedirectUris) > 0 {
+				existing.RedirectUris = in.RedirectUris
 			}
-			if req.Cert != "" {
-				existing.Cert = req.Cert
+			if in.Cert != "" {
+				existing.Cert = in.Cert
 			}
-			if req.IsShared != nil {
-				existing.IsShared = *req.IsShared
+			if in.IsShared != nil {
+				existing.IsShared = *in.IsShared
 			}
-			existing.ExpireInHours = ttl(req.ExpireInHours, existing.ExpireInHours)
-			existing.RefreshExpireInHours = ttl(req.RefreshExpireInHours, existing.RefreshExpireInHours)
+			existing.ExpireInHours = ttl(in.ExpireInHours, existing.ExpireInHours)
+			existing.RefreshExpireInHours = ttl(in.RefreshExpireInHours, existing.RefreshExpireInHours)
 			existing.EnablePassword = true
 			if err := existing.UpdateCtx(ctx); err != nil {
-				return c.JSON(500, errResp("server_error"))
+				return refuse(500, "server_error"), nil
 			}
 		} else {
 			// A new application must NAME a signing cert, or it is not a
@@ -166,41 +296,39 @@ func upsertApplication(db orm.DB) zip.Handler {
 			// behind cert seeding and break a first-boot reconcile that has not
 			// reached the certs. The name is the durable fact; its resolution is
 			// the token endpoint's job.
-			if req.Cert = resolveCert(req.Cert, req.Organization); req.Cert == "" {
-				return c.JSON(400, errResp(fmt.Sprintf(
+			if in.Cert = resolveCert(in.Cert, in.Organization); in.Cert == "" {
+				return refuse(400, fmt.Sprintf(
 					"application %q would have no signing cert and no organization to "+
 						"derive one from, so it could never issue a token: state `cert`",
-					req.Name)))
+					in.Name)), nil
 			}
 			a := orm.New[schema.Application](db)
 			model := a.Model
-			a.Owner, a.Name = "admin", req.Name
-			a.ClientId, a.ClientSecret = req.ClientId, req.ClientSecret
-			a.Organization, a.DisplayName = req.Organization, pick(req.DisplayName, req.Name)
-			a.GrantTypes, a.RedirectUris, a.Cert = req.GrantTypes, req.RedirectUris, req.Cert
+			a.Owner, a.Name = "admin", in.Name
+			a.ClientId, a.ClientSecret = in.ClientId, in.ClientSecret
+			a.Organization, a.DisplayName = in.Organization, pick(in.DisplayName, in.Name)
+			a.GrantTypes, a.RedirectUris, a.Cert = in.GrantTypes, in.RedirectUris, in.Cert
 			a.EnablePassword = true
-			a.ExpireInHours = ttl(req.ExpireInHours, schema.DefaultExpireInHours)
-			a.RefreshExpireInHours = ttl(req.RefreshExpireInHours, 0)
+			a.ExpireInHours = ttl(in.ExpireInHours, schema.DefaultExpireInHours)
+			a.RefreshExpireInHours = ttl(in.RefreshExpireInHours, 0)
 			// A new app is single-tenant unless it says otherwise — fail closed.
-			a.IsShared = req.IsShared != nil && *req.IsShared
+			a.IsShared = in.IsShared != nil && *in.IsShared
 			a.Model = model
-			a.SetId("admin/" + req.Name)
+			a.SetId("admin/" + in.Name)
 			if err := a.CreateCtx(ctx); err != nil {
-				return c.JSON(500, errResp("server_error"))
+				return refuse(500, "server_error"), nil
 			}
 		}
-		return c.JSON(200, map[string]any{
-			"status": "ok", "action": action,
-			"data": map[string]any{
-				"name": req.Name, "organization": req.Organization,
-				"clientId": req.ClientId, "clientSecret": req.ClientSecret,
-			},
-		})
+		return done(action, &credential{
+			ClientId: in.ClientId, ClientSecret: in.ClientSecret,
+			Name: in.Name, Organization: in.Organization,
+		}), nil
 	}
 }
 
-// userUpsertReq is the operator's user upsert body.
-type userUpsertReq struct {
+// person is the user an operator declares, plus the service credential it
+// presents.
+type person struct {
 	Owner        string `json:"owner"`
 	Name         string `json:"name"`
 	DisplayName  string `json:"displayName"`
@@ -209,6 +337,20 @@ type userUpsertReq struct {
 	Password     string `json:"password"`
 	PasswordType string `json:"passwordType"`
 	IsAdmin      bool   `json:"isAdmin"`
+	// Auth is the `Authorization: Bearer <token>` header — see registration.Auth.
+	Auth string `json:"-" header:"Authorization"`
+
+	decoded
+}
+
+// UnmarshalJSON decodes the body and RECORDS the outcome — see registration's.
+func (p *person) UnmarshalJSON(b []byte) error {
+	type body person
+	var v body
+	err := json.Unmarshal(b, &v)
+	*p = person(v)
+	p.decoded = decoded{sent: true, err: err}
+	return nil
 }
 
 // upsertUser creates a person or updates them in place, so a deployment can
@@ -216,47 +358,45 @@ type userUpsertReq struct {
 //
 // Passwords are hashed before they are stored. Leave the password out and their
 // current one is kept, so a redeploy never locks somebody out.
-func upsertUser(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		if !httpx.ServiceTokenAuth(c) {
-			return unauthorized(c)
+func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
+	return func(ctx context.Context, in *person) (*reply, error) {
+		if !httpx.ServiceAuth(in.Auth) {
+			return refuse(401, "a valid service token is required"), nil
 		}
-		ctx := c.Context()
-		var req userUpsertReq
-		if err := decode(c, &req); err != nil {
-			return c.JSON(400, errResp("invalid body: "+err.Error()))
+		if bad := in.check(); bad != nil {
+			return bad, nil
 		}
-		req.Owner, req.Name = strings.TrimSpace(req.Owner), strings.TrimSpace(req.Name)
-		if req.Owner == "" || req.Name == "" {
-			return c.JSON(400, errResp("owner and name are required"))
+		in.Owner, in.Name = strings.TrimSpace(in.Owner), strings.TrimSpace(in.Name)
+		if in.Owner == "" || in.Name == "" {
+			return refuse(400, "owner and name are required"), nil
 		}
 
 		var hash string
-		if req.Password != "" {
-			h, err := cred.Hash(req.Password)
+		if in.Password != "" {
+			h, err := cred.Hash(in.Password)
 			if err != nil {
-				return c.JSON(500, errResp("server_error"))
+				return refuse(500, "server_error"), nil
 			}
 			hash = h
 		}
 
-		existing, err := store.GetUserByName(ctx, db, req.Owner, req.Name)
+		existing, err := store.GetUserByName(ctx, db, in.Owner, in.Name)
 		if err != nil {
-			return c.JSON(500, errResp("server_error"))
+			return refuse(500, "server_error"), nil
 		}
 		action := "created"
 		if existing != nil {
 			action = "updated"
-			existing.DisplayName = pick(req.DisplayName, existing.DisplayName)
-			existing.Email = pick(req.Email, existing.Email)
-			existing.Phone = pick(req.Phone, existing.Phone)
-			existing.IsAdmin = req.IsAdmin
+			existing.DisplayName = pick(in.DisplayName, existing.DisplayName)
+			existing.Email = pick(in.Email, existing.Email)
+			existing.Phone = pick(in.Phone, existing.Phone)
+			existing.IsAdmin = in.IsAdmin
 			if hash != "" {
 				existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, cred.TypeArgon2id, ""
 			}
 			existing.UpdatedTime = now()
 			if err := existing.UpdateCtx(ctx); err != nil {
-				return c.JSON(500, errResp("server_error"))
+				return refuse(500, "server_error"), nil
 			}
 		} else {
 			// A new row obeys THE username rule; an existing one is found above and
@@ -264,29 +404,26 @@ func upsertUser(db orm.DB) zip.Handler {
 			// happened to touch it. This path writes through orm directly rather than
 			// users.Create (it seeds the first admin, before any principal exists), so
 			// it states the rule itself — the one place that has to.
-			name, err := schema.Username(req.Name)
+			name, err := schema.Username(in.Name)
 			if err != nil {
-				return c.JSON(400, errResp(err.Error()))
+				return refuse(400, err.Error()), nil
 			}
-			req.Name = name // the id and the response report what was STORED
+			in.Name = name // the id and the response report what was STORED
 			u := orm.New[schema.User](db)
 			model := u.Model
-			u.Owner, u.Name = req.Owner, name
-			u.DisplayName, u.Email, u.Phone, u.IsAdmin = req.DisplayName, req.Email, req.Phone, req.IsAdmin
+			u.Owner, u.Name = in.Owner, name
+			u.DisplayName, u.Email, u.Phone, u.IsAdmin = in.DisplayName, in.Email, in.Phone, in.IsAdmin
 			if hash != "" {
 				u.PasswordHash, u.PasswordType = hash, cred.TypeArgon2id
 			}
 			u.CreatedTime, u.UpdatedTime = now(), now()
 			u.Model = model
-			u.SetId(req.Owner + "/" + req.Name)
+			u.SetId(in.Owner + "/" + in.Name)
 			if err := u.CreateCtx(ctx); err != nil {
-				return c.JSON(500, errResp("server_error"))
+				return refuse(500, "server_error"), nil
 			}
 		}
-		return c.JSON(200, map[string]any{
-			"status": "ok", "action": action,
-			"data": map[string]any{"owner": req.Owner, "name": req.Name},
-		})
+		return done(action, &account{Name: in.Name, Owner: in.Owner}), nil
 	}
 }
 
@@ -346,17 +483,6 @@ func resolveCert(requested, org string) string {
 	}
 	return ""
 }
-
-// decode reads the raw JSON body (content-type independent) into v.
-func decode(c *zip.Ctx, v any) error {
-	body := c.Body()
-	if len(body) == 0 {
-		return errors.New("empty request body")
-	}
-	return json.Unmarshal(body, v)
-}
-
-func errResp(msg string) map[string]any { return map[string]any{"status": "error", "msg": msg} }
 
 // ttl applies an optionally-declared token lifetime: nil PRESERVES cur (an
 // omitted field never resets a deliberate lifetime on a steady-state reconcile),

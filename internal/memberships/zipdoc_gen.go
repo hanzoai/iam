@@ -9,9 +9,19 @@ import (
 func init() {
 	zip.Describe("GET /v1/iam/get-memberships", zip.Doc{
 		Description: "Answers either question about who belongs where: which organizations one\nperson can act in, or who can act in one organization.\n\nBoth are org-scoped: a non-SuperAdmin may ask about ITS OWN org's roster, or\nabout a user whose home org is its own, and nothing else. The bound comes from\nthe verified credential via authz.Scope, so a request parameter can never\nwiden it — a membership row names who may act and spend in an org, so a\ncross-tenant read is a customer roster leak.",
+		Fields: map[string]string{
+			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+			"lookup.org":    "Org is an organization — who may act in it.",
+			"lookup.user":   "User is \"<homeOrg>/<username>\" — which organizations that identity may act in.",
+		},
 	})
 	zip.Describe("GET /v1/iam/memberships", zip.Doc{
 		Description: "Answers either question about who belongs where: which organizations one\nperson can act in, or who can act in one organization.\n\nBoth are org-scoped: a non-SuperAdmin may ask about ITS OWN org's roster, or\nabout a user whose home org is its own, and nothing else. The bound comes from\nthe verified credential via authz.Scope, so a request parameter can never\nwiden it — a membership row names who may act and spend in an org, so a\ncross-tenant read is a customer roster leak.",
+		Fields: map[string]string{
+			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+			"lookup.org":    "Org is an organization — who may act in it.",
+			"lookup.user":   "User is \"<homeOrg>/<username>\" — which organizations that identity may act in.",
+		},
 	})
 	zip.Describe("POST /v1/iam/add-membership", zip.Doc{
 		Description: "Lets a person or an application act in an organization. It is the grant\nbehind \"add someone to the team\", and it is safe to repeat — granting a\nmembership that already exists changes nothing. Granting membership IS the org's authority to give, so it takes the\nsame gate a write to that org's own registry row takes: a SuperAdmin, an admin\nof the org itself, or an org-admin-capable confidential client. One rule, one\nplace (internal/authz).",

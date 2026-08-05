@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,12 +95,8 @@ func (h *harness) token(t *testing.T, sub string) string {
 
 func (h *harness) get(t *testing.T, path, bearer string) (int, env) {
 	t.Helper()
-	req := httptest.NewRequest("GET", path, nil)
-	req.Host = "hanzo.id"
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	return h.do(t, req)
+	status, body := h.read(t, path, bearer)
+	return status, envOf(body)
 }
 
 func (h *harness) post(t *testing.T, path string, body any, bearer string) (int, env) {
@@ -131,15 +128,40 @@ func (h *harness) postBasic(t *testing.T, path string, body any, clientID, secre
 // caller asserts on the status alone.
 func (h *harness) do(t *testing.T, req *http.Request) (int, env) {
 	t.Helper()
+	status, body := h.raw(t, req)
+	return status, envOf(body)
+}
+
+// envOf decodes the v1 envelope a body carries — the ONE decode, so `get` and
+// `do` cannot drift into reading the same bytes two ways.
+func envOf(body string) env {
+	var e env
+	_ = json.Unmarshal([]byte(body), &e)
+	return e
+}
+
+// raw is do without the decode — the status and the body VERBATIM, for a case
+// whose subject IS the bytes.
+func (h *harness) raw(t *testing.T, req *http.Request) (int, string) {
+	t.Helper()
 	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", req.Method, req.URL.Path, err)
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	var e env
-	_ = json.Unmarshal(body, &e)
-	return resp.StatusCode, e
+	return resp.StatusCode, string(body)
+}
+
+// read drives one GET and returns the status and the body verbatim.
+func (h *harness) read(t *testing.T, url, bearer string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest("GET", url, nil)
+	req.Host = "hanzo.id"
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	return h.raw(t, req)
 }
 
 // env is the v1 Response envelope the clients parse.
@@ -294,6 +316,86 @@ func TestEnsureMembership_reservedOrgRequiresSuper(t *testing.T) {
 		map[string]string{"user": "hanzo/alice", "org": "admin", "role": "admin"}, h.token(t, "admin/root"))
 	if sup.Status != "ok" {
 		t.Fatalf("SuperAdmin ensure into admin env=%+v, want ok", sup)
+	}
+}
+
+// ---- the read as a typed op ------------------------------------------------
+
+// The list is a TYPED op at BOTH addresses, so it reaches two seams a raw handler
+// never did: zip's query binder, and the op-invoke authorizer (authz.Authorize).
+// Both are silent when they work and fatal when they do not — a binder that missed
+// ?org= answers "exactly one of user or org is required", an authorizer that saw a
+// target answers 403 — so these cases assert the RAW BODY BYTES at each address.
+//
+// The bytes are the point. Typing this read is a projection, not a change: same
+// address, same status, same envelope, before and after.
+func TestList_wire(t *testing.T) {
+	h := newHarness(t)
+	seedMembership(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
+	seedMembership(t, h.db, "hanzo/boss", "hanzo", store.RoleAdmin)
+	boss := h.token(t, "hanzo/boss")
+
+	// Both addresses, one handler, one answer.
+	for _, path := range []string{"/v1/iam/memberships", "/v1/iam/get-memberships"} {
+		t.Run(path, func(t *testing.T) {
+			status, body := h.read(t, path+"?org=hanzo", boss)
+			if status != 200 {
+				t.Fatalf("status=%d body=%s, want 200", status, body)
+			}
+			if !strings.HasPrefix(body, `{"status":"ok","msg":"","data":[`) || !strings.HasSuffix(body, `],"data2":2}`) {
+				t.Fatalf("body=%s, want the v1 envelope with data2=2", body)
+			}
+			// The other question the same op answers: one identity's orgs.
+			status, body = h.read(t, path+"?user=hanzo/alice", boss)
+			if status != 200 || !strings.HasSuffix(body, `],"data2":1}`) {
+				t.Fatalf("?user status=%d body=%s, want 200 with data2=1", status, body)
+			}
+		})
+	}
+}
+
+// The refusals, byte for byte at both addresses: 400 carrying {status:"error",
+// msg, data:null}.
+func TestList_refusals(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss") // admin of hanzo, NOT of orgb
+	const denied = `{"status":"error","msg":"auth:Unauthorized operation","data":null}`
+	for _, c := range []struct{ name, query, want string }{
+		{"neither", "", `{"status":"error","msg":"exactly one of user or org is required","data":null}`},
+		{"both", "?user=hanzo/alice&org=hanzo", `{"status":"error","msg":"exactly one of user or org is required","data":null}`},
+		// The angle brackets arrive escaped: encoding/json escapes HTML by
+		// default, so the bytes carry the < form. The brackets are the
+		// message's, the escaping is the encoder's, and the escaped form is what
+		// this address has always put on the wire — assert the bytes, not the
+		// message.
+		{"unqualified user", "?user=alice", `{"status":"error","msg":"user must be \u003cowner\u003e/\u003cname\u003e","data":null}`},
+		{"cross-tenant org", "?org=orgb", denied},
+		{"cross-tenant user", "?user=orgb/bob", denied},
+	} {
+		for _, path := range []string{"/v1/iam/memberships", "/v1/iam/get-memberships"} {
+			t.Run(c.name+" "+path, func(t *testing.T) {
+				status, body := h.read(t, path+c.query, boss)
+				if status != 400 || body != c.want {
+					t.Fatalf("status=%d body=%s, want 400 %s", status, body, c.want)
+				}
+			})
+		}
+	}
+}
+
+// The op-invoke authorizer admits this read because its input names no owner —
+// `lookup` declares no Owner field and no AuthzTarget(). An unknown query key is
+// therefore just an unknown query key: it is ignored by the binder and can never
+// become the target the authorizer decides on. Give the input an Owner field and
+// this is a 403, which is why the case is here rather than in a comment.
+func TestList_ownerQueryIsNotATarget(t *testing.T) {
+	h := newHarness(t)
+	seedMembership(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
+	for _, path := range []string{"/v1/iam/memberships", "/v1/iam/get-memberships"} {
+		status, body := h.read(t, path+"?org=hanzo&owner=orgb&name=whatever", h.token(t, "hanzo/boss"))
+		if status != 200 {
+			t.Fatalf("%s status=%d body=%s, want 200 — the read is authorized by scoped(), not by ?owner=", path, status, body)
+		}
 	}
 }
 

@@ -159,7 +159,7 @@ type App struct {
 }
 
 // Client is the derived, serialized registration — the body of an upsert call.
-// It is deliberately the shape bootstrap.appUpsertReq accepts, minus the
+// It is deliberately the shape bootstrap.registration accepts, minus the
 // secret: see the package comment for why the secret is never sent.
 type Client struct {
 	Organization string   `json:"organization"`

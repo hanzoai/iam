@@ -30,9 +30,18 @@ func init() {
 	})
 	zip.Describe("GET /v1/iam/auth/application", zip.Doc{
 		Description: "Returns everything a login screen needs to draw itself for one\napplication: its branding, and each sign-in method it offers with the provider\ndetails that method needs.\n\nThe client secret is masked. Read before anyone has signed in, so it carries\nonly what is safe for a browser to see.",
+		Fields: map[string]string{
+			"Response.code":       "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+			"screen.clientId":     "ClientId is the application's OAuth client id — the one field that selects\nwhich login screen this is.",
+			"screen.responseType": "ResponseType is the OAuth response type the screen will ask for. Only \"code\"\nis served; anything else is refused here rather than at the authorize leg,\nwhere the person has already typed a password.",
+		},
 	})
 	zip.Describe("GET /v1/iam/auth/methods", zip.Doc{
 		Description: "Returns the sign-in methods one application actually has switched\non, so a login screen can render the right buttons for it without you\nhard-coding a list that drifts the moment you add a provider.\n\nPublic by design: it is read before anyone has signed in, and it exposes only\nwhich methods exist, never their credentials.",
+		Fields: map[string]string{
+			"Response.code":  "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+			"offer.clientId": "ClientId is the application's OAuth client id.",
+		},
 	})
 	zip.Describe("GET /v1/iam/consent", zip.Doc{
 		Description: "Returns the calling person's own privacy and communication\nchoices. Somebody who has never set them gets the defaults rather than\nnothing, so a consent screen always has something to show — insights on, and\ntraining UNANSWERED, which is the state that means the screen still has to ask.",
@@ -42,6 +51,11 @@ func init() {
 	})
 	zip.Describe("GET /v1/iam/get-app-login", zip.Doc{
 		Description: "Returns everything a login screen needs to draw itself for one\napplication: its branding, and each sign-in method it offers with the provider\ndetails that method needs.\n\nThe client secret is masked. Read before anyone has signed in, so it carries\nonly what is safe for a browser to see.",
+		Fields: map[string]string{
+			"Response.code":       "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+			"screen.clientId":     "ClientId is the application's OAuth client id — the one field that selects\nwhich login screen this is.",
+			"screen.responseType": "ResponseType is the OAuth response type the screen will ask for. Only \"code\"\nis served; anything else is refused here rather than at the authorize leg,\nwhere the person has already typed a password.",
+		},
 	})
 	zip.Describe("GET /v1/iam/linked-accounts", zip.Doc{
 		Description: "Returns the sign-in identities linked to the calling\nperson's account — every provider they can currently sign in with. It is what\na security page lists next to the option to disconnect one.",
