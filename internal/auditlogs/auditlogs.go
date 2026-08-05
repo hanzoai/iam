@@ -148,6 +148,9 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.AuditLog, erro
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	if err := refusePlatformAction(in.Action); err != nil {
+		return nil, err
+	}
 	switch _, err := orm.Get[schema.AuditLog](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
 		return nil, zip.ErrConflict("audit log already exists")
@@ -182,6 +185,15 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.AuditLog, erro
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	// Neither the row you are correcting nor the correction may be a platform
+	// record: the first would rewrite evidence, the second would forge it by
+	// relabelling a row you own.
+	if err := refusePlatformAction(log.Action); err != nil {
+		return nil, err
+	}
+	if err := refusePlatformAction(in.Action); err != nil {
+		return nil, err
+	}
 	apply(log, in)
 	if err := log.UpdateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
@@ -199,10 +211,32 @@ func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	if err := refusePlatformAction(log.Action); err != nil {
+		return nil, err
+	}
 	if err := log.DeleteCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return &DeleteOutput{Deleted: true}, nil
+}
+
+// refusePlatformAction rejects an action the PLATFORM writes about itself.
+//
+// This surface exists so your own systems can file their activity in the same
+// trail. It is not a way to author the platform's half of it. A consent grant, a
+// credential issued: those rows are the evidence that a thing happened, and
+// evidence anybody can write is not evidence — an org admin could mint a
+// "consent-training" row granting permission nobody gave, or delete the one
+// recording a refusal, and the trail would read exactly the same either way.
+//
+// So the platform's actions are reserved: not creatable here, and not alterable
+// or removable here once written. Retention expires them; nothing else does.
+func refusePlatformAction(action string) error {
+	if schema.PlatformWritten(action) {
+		return zip.ErrForbidden("the action " + action + " is written by the platform; " +
+			"audit rows recording it cannot be created, corrected or deleted through this surface")
+	}
+	return nil
 }
 
 // mapErr translates an orm lookup error into the matching HTTP status.

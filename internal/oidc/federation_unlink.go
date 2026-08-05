@@ -90,7 +90,7 @@ func unlink(db orm.DB) zip.Handler {
 			return httpx.Err(c, "this provider can't be unlinked")
 		}
 
-		if _, err := updateUser(ctx, db, f.User.Owner, f.User.Name, func(fresh *schema.User) error {
+		if _, err := updateUser(ctx, db, f.User.Owner, f.User.Name, func(_ orm.DB, fresh *schema.User) error {
 			*b.ref(fresh) = ""
 			return nil
 		}); err != nil {

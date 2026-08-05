@@ -3,7 +3,10 @@
 
 package schema
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Consent is a user's answer to the data-sharing questions, and this file is the
 // ONE place those answers are defined, decoded, and interpreted. It lives beside
@@ -28,12 +31,15 @@ import "encoding/json"
 
 // PreferencesKey is the User.Properties entry holding the cross-product
 // preferences JSON blob (the console-side twin is PREFS_PROPERTY; keep in
-// lockstep). Consent nests inside it under consentKey, so there is ONE store and
+// lockstep). Consent nests inside it under ConsentKey, so there is ONE store and
 // ONE merge — no parallel table to drift.
 const PreferencesKey = "hanzo.preferences"
 
-// consentKey nests the consent object inside the preferences blob.
-const consentKey = "consent"
+// ConsentKey nests the consent object inside the preferences blob. It is
+// exported because the preferences surface — which may write every OTHER key in
+// that blob — has to name the one key it must refuse, and naming it by its own
+// string literal there would be a second spelling to drift.
+const ConsentKey = "consent"
 
 // Answer is the state of a consent question: not yet answered, granted, or
 // refused. The zero value is Unanswered, so a record that was never written, a
@@ -90,7 +96,7 @@ func ConsentOf(prefs string) Consent {
 	if json.Unmarshal([]byte(prefs), &m) != nil {
 		return c
 	}
-	raw, ok := m[consentKey]
+	raw, ok := m[ConsentKey]
 	if !ok {
 		return c
 	}
@@ -112,19 +118,132 @@ func (u *User) Consent() Consent { return ConsentOf(u.Properties[PreferencesKey]
 // Encode writes c back into a preferences blob, preserving every other top-level
 // key. It is the write half of ConsentOf and lives next to it so the read and the
 // write cannot disagree about where consent is nested.
-func (c Consent) Encode(prefs string) (string, error) {
+//
+// An answer this version does not recognize is REFUSED rather than written. The
+// read half normalizes an unrecognized token to Unanswered; without the same rule
+// here the write half would happily persist one for that normalization to keep
+// hiding, and the stored record would say something no reader can act on.
+func (c Consent) Encode(prefs string) (string, error) { return setConsent(prefs, &c) }
+
+// member encodes c as the stored consent record, REFUSING an answer this version
+// cannot read. It is the one place a Consent value becomes bytes, so no writer
+// can differ from another about what is storable — and the refusal cannot be
+// present on one write path and missing on the next.
+func (c Consent) member() (json.RawMessage, error) {
+	if !c.Training.Valid() {
+		return nil, fmt.Errorf("training %q is not one of: %q, %q, %q",
+			c.Training, Unanswered, Granted, Refused)
+	}
+	return json.Marshal(c)
+}
+
+// setConsent encodes an answer and writes it into a preferences blob. A nil
+// answer REMOVES the record.
+func setConsent(prefs string, answer *Consent) (string, error) {
+	if answer == nil {
+		return setConsentMember(prefs, nil)
+	}
+	raw, err := answer.member()
+	if err != nil {
+		return "", err
+	}
+	return setConsentMember(prefs, raw)
+}
+
+// setConsentMember is the ONE mutation of the consent member of a preferences
+// blob: `raw` replaces it, a nil `raw` removes it, and every other top-level key
+// survives either way. Everything that writes a consent record goes through here,
+// so there is one merge and no second implementation to disagree with it.
+func setConsentMember(prefs string, raw json.RawMessage) (string, error) {
 	merged := map[string]json.RawMessage{}
 	if prefs != "" {
 		_ = json.Unmarshal([]byte(prefs), &merged)
 	}
-	cj, err := json.Marshal(c)
-	if err != nil {
-		return "", err
+	if raw == nil {
+		delete(merged, ConsentKey)
+	} else {
+		merged[ConsentKey] = raw
 	}
-	merged[consentKey] = cj
 	out, err := json.Marshal(merged)
 	if err != nil {
 		return "", err
 	}
 	return string(out), nil
+}
+
+// consentMember returns the raw consent record in u's preferences, and whether
+// there is one at all. The distinction matters to [User.CarryConsentFrom]: a user
+// who has never answered must stay unanswered, not acquire a default-valued
+// record that looks like one.
+func (u *User) consentMember() (json.RawMessage, bool) {
+	blob := u.Properties[PreferencesKey]
+	if blob == "" {
+		return nil, false
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal([]byte(blob), &m) != nil {
+		return nil, false
+	}
+	raw, ok := m[ConsentKey]
+	return raw, ok
+}
+
+// putConsentMember stores raw as u's consent record, doing the map bookkeeping
+// once for every writer.
+func (u *User) putConsentMember(raw json.RawMessage) error {
+	prior := u.Properties[PreferencesKey]
+	if prior == "" && raw == nil {
+		return nil // nothing recorded, so nothing to strip
+	}
+	blob, err := setConsentMember(prior, raw)
+	if err != nil {
+		return err
+	}
+	if u.Properties == nil {
+		u.Properties = map[string]string{}
+	}
+	u.Properties[PreferencesKey] = blob
+	return nil
+}
+
+// SetConsent records `answer` as this user's consent, or REMOVES any record when
+// answer is nil, leaving every other preference untouched.
+//
+// This is the write-side twin of [User.Consent]: the accessor pair is the whole
+// public contract for the record, so no caller needs to know which property holds
+// the blob, how it is nested, or how to merge it — and no caller can write a
+// consent by assembling that blob itself.
+//
+// The nil case is what a create path uses. A user record arriving in a REQUEST
+// carries whatever properties the sender wrote, so a path that accepts one runs
+// it through here to drop any consent the sender asserted: an answer must come
+// from the person it is about, not from whoever created their account.
+func (u *User) SetConsent(answer *Consent) error {
+	if answer == nil {
+		return u.putConsentMember(nil)
+	}
+	raw, err := answer.member()
+	if err != nil {
+		return err
+	}
+	return u.putConsentMember(raw)
+}
+
+// CarryConsentFrom makes u's consent record exactly the one STORED on prior,
+// discarding whatever consent u arrived carrying — and leaving every other
+// property u carries alone.
+//
+// This is what a full-row update does with the record. Such a write replaces the
+// whole user from a request body, so without this an administrator editing a
+// colleague's profile either FORGES an answer (by sending one) or DESTROYS the
+// real one (by sending a body with no properties at all, which is what a partial
+// client sends). Neither is something a third party may do to somebody's consent,
+// and both are silent. The answer is carried from the stored row for the same
+// reason the credential fields are: it is not the caller's to state.
+//
+// The raw record is carried rather than a decoded one, so a user who never
+// answered stays unanswered instead of acquiring a default-valued record.
+func (u *User) CarryConsentFrom(prior *User) error {
+	raw, _ := prior.consentMember()
+	return u.putConsentMember(raw)
 }

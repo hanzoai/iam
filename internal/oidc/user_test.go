@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hanzoai/orm"
+
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/internal/users"
 )
 
 // ITEM 2: a full-row user writer (onboard / preferences / the sk- key mint-revoke) must
@@ -73,7 +75,7 @@ func TestUpdateUser_preservesConcurrentLockoutCount(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	advanceTo3("fixed")
-	if _, err := updateUser(ctx, db, "hanzo", "fixed", func(u *schema.User) error {
+	if _, err := updateUser(ctx, db, "hanzo", "fixed", func(_ orm.DB, u *schema.User) error {
 		u.DisplayName = "changed"
 		return nil
 	}); err != nil {
@@ -129,7 +131,7 @@ func TestUpdateUser_concurrentWithLockIncrement_exactCount(t *testing.T) {
 			defer wg.Done()
 			<-start
 			// The full-row writer under test; it must not clobber the counter.
-			_, _ = updateUser(ctx, db, "hanzo", "race", func(u *schema.User) error {
+			_, _ = updateUser(ctx, db, "hanzo", "race", func(_ orm.DB, u *schema.User) error {
 				u.DisplayName = fmt.Sprintf("d%d", n)
 				return nil
 			})
