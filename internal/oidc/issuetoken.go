@@ -97,7 +97,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		if err := store.PersistToken(ctx, db, row); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
-		auditMint(ctx, db, c, "issue-user-token", clientApp.ClientId, natural)
+		auditMint(ctx, db, c, schema.ActionIssueUserToken, clientApp.ClientId, natural)
 		return httpx.Ok(c, map[string]any{
 			"accessToken": access,
 			"expiresIn":   int(ttl.Seconds()),
@@ -159,7 +159,7 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
-		auditMint(ctx, db, c, "mint-user-keys", clientApp.ClientId, user.Owner+"/"+user.Name)
+		auditMint(ctx, db, c, schema.ActionMintUserKeys, clientApp.ClientId, user.Owner+"/"+user.Name)
 		return httpx.Ok(c, map[string]any{"accessKey": key})
 	}
 }
@@ -194,7 +194,7 @@ func revokeUserKeysHandler(db orm.DB) zip.Handler {
 		// browser key sign the holder out of the API.
 		if scope == "" {
 			now := nowFunc().UTC().Format(time.RFC3339)
-			if _, err := updateUser(ctx, db, user.Owner, user.Name, func(u *schema.User) error {
+			if _, err := updateUser(ctx, db, user.Owner, user.Name, func(_ orm.DB, u *schema.User) error {
 				u.AccessKey = ""
 				u.AccessSecret = ""
 				u.AccessSecretHash = ""
@@ -204,7 +204,7 @@ func revokeUserKeysHandler(db orm.DB) zip.Handler {
 				return mintErr(c, 500, "server_error")
 			}
 		}
-		auditMint(ctx, db, c, "revoke-user-keys", clientApp.ClientId, user.Owner+"/"+user.Name)
+		auditMint(ctx, db, c, schema.ActionRevokeUserKeys, clientApp.ClientId, user.Owner+"/"+user.Name)
 		return httpx.Ok(c, map[string]any{"affected": true})
 	}
 }

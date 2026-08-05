@@ -45,7 +45,13 @@ import (
 // value captured before the lock — the point is to act on the fresh row. The returned
 // row reflects the committed state (a read-only view; it is bound to the closed
 // transaction, like the wallet burn's returned challenge).
-func updateUser(ctx context.Context, db orm.DB, owner, name string, mutate func(*schema.User) error) (*schema.User, error) {
+//
+// mutate also receives the TRANSACTION. A caller whose change is only accountable
+// alongside a second row — a consent answer and the audit row that evidences it —
+// writes both through this handle, so they commit together or not at all. Most
+// callers ignore it; the parameter is there so the one that must not write a
+// half-record has no second mechanism to reach for.
+func updateUser(ctx context.Context, db orm.DB, owner, name string, mutate func(orm.DB, *schema.User) error) (*schema.User, error) {
 	keyed, err := store.GetUserByName(ctx, db, owner, name)
 	if err != nil {
 		return nil, err
@@ -61,7 +67,7 @@ func updateUser(ctx context.Context, db orm.DB, owner, name string, mutate func(
 		if err != nil {
 			return err
 		}
-		if err := mutate(fresh); err != nil {
+		if err := mutate(tx, fresh); err != nil {
 			return err
 		}
 		if err := fresh.UpdateCtx(ctx); err != nil {

@@ -63,7 +63,7 @@ func updatePreferencesHandler(db orm.DB) zip.Handler {
 		// never clobbered by this full-row write.
 		body := c.Fiber().Body()
 		var merged map[string]json.RawMessage
-		if _, err := updateUser(ctx, db, owner, name, func(u *schema.User) error {
+		if _, err := updateUser(ctx, db, owner, name, func(_ orm.DB, u *schema.User) error {
 			mergedJSON, m, err := mergePreferences(u.Properties[preferencesKey], body)
 			if err != nil {
 				return err
@@ -91,6 +91,16 @@ func mergePreferences(existing string, patch []byte) (string, map[string]json.Ra
 	patchMap := map[string]json.RawMessage{}
 	if err := json.Unmarshal(patch, &patchMap); err != nil {
 		return "", nil, fmt.Errorf("preferences must be a JSON object: %w", err)
+	}
+
+	// Consent rides the same blob but is NOT a preference: it is a record of what
+	// a person answered, it is validated against a closed set of answers, and a
+	// change to it is audited. None of that is true of a shallow merge, so a patch
+	// naming the key is refused rather than served — reaching consent through the
+	// generic surface would be a second, unvalidated, unaudited writer of the one
+	// record that most needs a single one. There is exactly one way to answer.
+	if _, ok := patchMap[schema.ConsentKey]; ok {
+		return "", nil, fmt.Errorf("consent is not a preference; use PUT %s to answer", PathConsent)
 	}
 
 	merged := map[string]json.RawMessage{}

@@ -135,7 +135,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err := store.PersistToken(ctx, db, row); err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	auditMint(ctx, db, c, "token-exchange", clientApp.ClientId, natural)
+	auditMint(ctx, db, c, schema.ActionTokenExchange, clientApp.ClientId, natural)
 
 	// 6) RFC 8693 §2.2 response.
 	return c.JSON(200, map[string]any{
