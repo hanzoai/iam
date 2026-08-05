@@ -4,6 +4,7 @@
 package oidc
 
 import (
+	"context"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -26,9 +27,31 @@ const PathAuthMethods = "/v1/iam/auth/methods"
 // caller itself (callerOf: session cookie first, then bearer) and SELF-SCOPES to
 // that caller, so — like the rest of this group — they are reachable without a
 // Guard-verified bearer yet never act on anyone but the resolved caller.
-func routeFrontDoor(r zip.Router, db orm.DB) {
-	zip.Alias(r.Get, PathAuthApplication, LegacyPathAuthApplication, getAppLogin(db))
-	r.Get(PathAuthMethods, authMethods(db))
+func routeFrontDoor(r *zip.App, db orm.DB) {
+	// The two login-screen descriptors are TYPED ops. Their whole input is a client
+	// id off the query string and their answer is this envelope, so nothing about
+	// them needed a raw handler — and a raw handler is what kept them out of the
+	// schema, the MCP tool list, the CLI and every generated SDK. Registered on the
+	// PUBLIC group, which carries no op-invoke authorizer, so typing them changes
+	// what they PUBLISH and nothing about who may call them.
+	//
+	// The older spelling of the first is the SAME op at its legacy address, so one
+	// function decides both answers and they cannot drift.
+	//
+	// It carries the same tag as its canonical twin rather than "compat", and that
+	// is a deliberate limit on the blast radius of a TYPING change. The compat tag
+	// is how an address is kept OUT of the published document, and this address is
+	// in it today — as an untyped route, which has no way to say compat. Tagging it
+	// now would delete a published path, and a published path that disappears is
+	// what cloud's per-product floor exists to refuse. Retiring the spelling is a
+	// surface decision that lowers that floor in the same commit; this is not that
+	// commit.
+	zip.Get[screen, httpx.Answer](r, PathAuthApplication, getAppLogin(db),
+		zip.WithStatus(200, 400), zip.WithTags("auth"))
+	zip.Get[screen, httpx.Answer](r, LegacyPathAuthApplication, getAppLogin(db),
+		zip.WithStatus(200, 400), zip.WithTags("auth"))
+	zip.Get[offer, httpx.Answer](r, PathAuthMethods, authMethods(db),
+		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	// The account read is anonymous-safe (returns {status:"error"} unauthenticated)
 	// and a security contract — the gateway admin-guard reads its `owner`.
 	zip.Alias(r.Get, PathAccount, LegacyPathAccount, getAccount(db))
@@ -62,24 +85,23 @@ func routeFrontDoor(r zip.Router, db orm.DB) {
 //
 // The client secret is masked. Read before anyone has signed in, so it carries
 // only what is safe for a browser to see.
-func getAppLogin(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		if rt := c.Query("responseType"); rt != "" && rt != "code" {
-			return httpx.Err(c, "response_type is required (must be code)")
+func getAppLogin(db orm.DB) zip.TypedHandler[screen, httpx.Answer] {
+	return func(ctx context.Context, in *screen) (*httpx.Answer, error) {
+		if in.ResponseType != "" && in.ResponseType != "code" {
+			return httpx.Bad(400, "response_type is required (must be code)", ""), nil
 		}
-		clientId := c.Query("clientId")
-		if clientId == "" {
-			return httpx.Err(c, "clientId is required")
+		if in.ClientId == "" {
+			return httpx.Bad(400, "clientId is required", ""), nil
 		}
-		app, err := store.GetApplicationByClientId(c.Context(), db, clientId)
+		app, err := store.GetApplicationByClientId(ctx, db, in.ClientId)
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return httpx.Bad(400, err.Error(), ""), nil
 		}
 		if app == nil {
-			return httpx.Err(c, "the application does not exist")
+			return httpx.Bad(400, "the application does not exist", ""), nil
 		}
-		store.EnrichProviders(c.Context(), db, app)
-		return httpx.Ok(c, loginView(app))
+		store.EnrichProviders(ctx, db, app)
+		return httpx.Good(loginView(app)), nil
 	}
 }
 
@@ -89,20 +111,19 @@ func getAppLogin(db orm.DB) zip.Handler {
 //
 // Public by design: it is read before anyone has signed in, and it exposes only
 // which methods exist, never their credentials.
-func authMethods(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		clientId := c.Query("clientId")
-		if clientId == "" {
-			return httpx.Err(c, "clientId is required")
+func authMethods(db orm.DB) zip.TypedHandler[offer, httpx.Answer] {
+	return func(ctx context.Context, in *offer) (*httpx.Answer, error) {
+		if in.ClientId == "" {
+			return httpx.Bad(400, "clientId is required", ""), nil
 		}
-		app, err := store.GetApplicationByClientId(c.Context(), db, clientId)
+		app, err := store.GetApplicationByClientId(ctx, db, in.ClientId)
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return httpx.Bad(400, err.Error(), ""), nil
 		}
 		if app == nil {
-			return httpx.Err(c, "the application does not exist")
+			return httpx.Bad(400, "the application does not exist", ""), nil
 		}
-		store.EnrichProviders(c.Context(), db, app)
+		store.EnrichProviders(ctx, db, app)
 
 		oauth := []map[string]string{}
 		for _, it := range app.Providers {
@@ -133,7 +154,7 @@ func authMethods(db orm.DB) zip.Handler {
 		// The chain list is the SAME one the nonce/verify endpoints gate on, so a
 		// screen cannot offer a chain the endpoint refuses.
 		names := schema.WalletChains()
-		return httpx.Ok(c, map[string]any{
+		return httpx.Good(map[string]any{
 			"password": app.EnablePassword,
 			// Offered only when a code can actually be delivered. The app switch says
 			// the org WANTS email/SMS codes; DeliveryConfigured says the server can
@@ -148,8 +169,26 @@ func authMethods(db orm.DB) zip.Handler {
 			"web3Chains": names,
 			"oauth":      oauth,
 			"signup":     app.EnableSignUp,
-		})
+		}), nil
 	}
+}
+
+// screen is what a login screen names when it asks how to draw itself: the
+// application, and the OAuth response type it intends to use.
+type screen struct {
+	// ClientId is the application's OAuth client id — the one field that selects
+	// which login screen this is.
+	ClientId string `json:"clientId"`
+	// ResponseType is the OAuth response type the screen will ask for. Only "code"
+	// is served; anything else is refused here rather than at the authorize leg,
+	// where the person has already typed a password.
+	ResponseType string `json:"responseType"`
+}
+
+// offer is the application whose enabled sign-in methods are being asked for.
+type offer struct {
+	// ClientId is the application's OAuth client id.
+	ClientId string `json:"clientId"`
 }
 
 // offerable reports whether a provider can actually COMPLETE a sign-in, which is

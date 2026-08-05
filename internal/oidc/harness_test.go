@@ -70,7 +70,7 @@ func newServer(t *testing.T) (*zip.App, orm.DB) {
 	app := zip.New(zip.Config{AppName: "iam-test", DisableStartupMessage: true})
 	// The whole OIDC surface is the pre-authentication PUBLIC group; a root
 	// (empty-prefix) router registers it at its absolute paths, no Guard.
-	Route(app.Group(""), db)
+	Route(app.Group("").(*zip.App), db)
 	return app, db
 }
 

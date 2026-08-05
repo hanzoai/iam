@@ -32,7 +32,7 @@ func newApp(t *testing.T, db orm.DB) *zip.App {
 	// The OIDC surface is the pre-auth PUBLIC group; login + the challenge finish
 	// both live here, so a root (empty-prefix) router registers them at their absolute
 	// paths (main renamed Route→Route on the zip-group model).
-	Route(app.Group(""), db)
+	Route(app.Group("").(*zip.App), db)
 	return app
 }
 
