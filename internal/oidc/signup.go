@@ -84,10 +84,6 @@ func signupHandler(db orm.DB) zip.Handler {
 		if !consent.Training.Valid() {
 			return httpx.Err(c, "training must be one of: \"\", granted, refused")
 		}
-		consentBlob, err := consent.Encode("")
-		if err != nil {
-			return httpx.Err(c, "server_error")
-		}
 
 		// Resolve the application (by clientId when present, else by name under the
 		// admin owner — the iam storage convention), then enforce its policy.
@@ -229,13 +225,16 @@ func signupHandler(db orm.DB) zip.Handler {
 				SignupApplication: app.Name,
 				RegisterType:      "Application Signup",
 				RegisterSource:    f.Organization + "/" + app.Name,
-				// The answer the screen collected, recorded WITH the account. A new
-				// user therefore starts with an explicit answer instead of silence,
-				// and silence — for any account created by a path that does not ask —
-				// still reads as refusal.
-				Properties: map[string]string{schema.PreferencesKey: consentBlob},
 			},
 			Password: f.Password,
+			// The answer the screen collected, recorded WITH the account. A new
+			// user therefore starts with an explicit answer instead of silence, and
+			// silence — for any account created by a path that does not ask — still
+			// reads as refusal. It rides the typed seam rather than a properties
+			// blob assembled here, because that blob is exactly what Create drops:
+			// this is the one caller entitled to state an answer, and being
+			// in-process is what distinguishes it from a request that claims to be.
+			Consent: &consent,
 		})
 		if err != nil {
 			return httpx.Err(c, err.Error())
