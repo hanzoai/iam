@@ -21,7 +21,11 @@ package scim
 // which is exactly what applyToUser does. `password` is writeOnly: accepted, never
 // returned.
 
-import "github.com/zap-proto/zip"
+import (
+	"context"
+
+	"github.com/zap-proto/zip"
+)
 
 // attribute is one SCIM attribute definition (RFC 7643 §7).
 type attribute struct {
@@ -165,57 +169,77 @@ var resourceTypes = []resourceTypeDoc{{
 	Meta:             meta{ResourceType: "ResourceType", Location: base + "/ResourceTypes/User"},
 }}
 
+// urn addresses one Schema. A SCIM schema's id IS a URN
+// (urn:ietf:params:scim:schemas:core:2.0:User), and the whole segment is it.
+type urn struct {
+	Id string `json:"id"`
+}
+
+// kind addresses one ResourceType. The wire name is unchanged — `json:"name"` is
+// what /ResourceTypes/:name binds — but the Go field is deliberately NOT Name:
+// the op-invoke authorizer reads a top-level string field called Name as the
+// record it must authorize, and this segment titles a protocol document ("User",
+// the resource TYPE), not a row in anyone's tenant.
+type kind struct {
+	Kind string `json:"name"`
+}
+
 // routeDiscovery registers the discovery subtree. These documents are the same
 // for every tenant — static protocol metadata carrying no identity data — so they
 // are authenticated (the Guard covers the whole /v1/iam/scim/ subtree) but not
 // org-scoped, exactly like /ServiceProviderConfig.
+//
+// An item that is not published answers the SCIM Error (RFC 7644 §3.12) as a
+// VALUE under a declared 404, never as a returned Go error: zip renders an error
+// as its own {status,code,error} envelope, and a SCIM client parses one shape.
 func routeDiscovery(app *zip.App) {
-	app.Get(base+"/Schemas", listSchemas)
-	app.Get(base+"/Schemas/:id", getSchema)
-	app.Get(base+"/ResourceTypes", listResourceTypes)
-	app.Get(base+"/ResourceTypes/:name", getResourceType)
-}
+	// Returns the attribute definitions this directory understands, so
+	// your identity provider knows which fields it may send and what they mean
+	// before it sends any.
+	zip.Get[nothing, listResponse](app, base+"/Schemas",
+		func(context.Context, *nothing) (*listResponse, error) {
+			out := make([]any, 0, len(schemas))
+			for _, s := range schemas {
+				out = append(out, s)
+			}
+			return page(len(out), 1, len(out), out), nil
+		},
+		zip.WithStatus(200), zip.WithTags("scim"))
 
-// listSchemas returns the attribute definitions this directory understands, so
-// your identity provider knows which fields it may send and what they mean
-// before it sends any.
-func listSchemas(c *zip.Ctx) error {
-	out := make([]any, 0, len(schemas))
-	for _, s := range schemas {
-		out = append(out, s)
-	}
-	return scimList(c, len(out), 1, len(out), out)
-}
+	// Returns one attribute definition in full.
+	zip.Get[urn, answer](app, base+"/Schemas/:id",
+		func(_ context.Context, in *urn) (*answer, error) {
+			for _, s := range schemas {
+				if s.ID == in.Id {
+					return &answer{doc: s}, nil
+				}
+			}
+			return missing("Schema " + in.Id + " not found"), nil
+		},
+		zip.WithStatus(200, 404), zip.WithTags("scim"))
 
-// getSchema returns one attribute definition in full.
-func getSchema(c *zip.Ctx) error {
-	id := c.Param("id")
-	for _, s := range schemas {
-		if s.ID == id {
-			return scimJSON(c, 200, s)
-		}
-	}
-	return scimError(c, 404, "Schema "+id+" not found", "")
-}
+	// Returns the kinds of record this directory provisions and
+	// the address of each, so your identity provider discovers them rather than
+	// having them configured by hand.
+	zip.Get[nothing, listResponse](app, base+"/ResourceTypes",
+		func(context.Context, *nothing) (*listResponse, error) {
+			out := make([]any, 0, len(resourceTypes))
+			for _, r := range resourceTypes {
+				out = append(out, r)
+			}
+			return page(len(out), 1, len(out), out), nil
+		},
+		zip.WithStatus(200), zip.WithTags("scim"))
 
-// listResourceTypes returns the kinds of record this directory provisions and
-// the address of each, so your identity provider discovers them rather than
-// having them configured by hand.
-func listResourceTypes(c *zip.Ctx) error {
-	out := make([]any, 0, len(resourceTypes))
-	for _, r := range resourceTypes {
-		out = append(out, r)
-	}
-	return scimList(c, len(out), 1, len(out), out)
-}
-
-// getResourceType returns one provisionable record kind in full.
-func getResourceType(c *zip.Ctx) error {
-	name := c.Param("name")
-	for _, r := range resourceTypes {
-		if r.Name == name {
-			return scimJSON(c, 200, r)
-		}
-	}
-	return scimError(c, 404, "ResourceType "+name+" not found", "")
+	// Returns one provisionable record kind in full.
+	zip.Get[kind, answer](app, base+"/ResourceTypes/:name",
+		func(_ context.Context, in *kind) (*answer, error) {
+			for _, r := range resourceTypes {
+				if r.Name == in.Kind {
+					return &answer{doc: r}, nil
+				}
+			}
+			return missing("ResourceType " + in.Kind + " not found"), nil
+		},
+		zip.WithStatus(200, 404), zip.WithTags("scim"))
 }

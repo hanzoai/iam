@@ -55,12 +55,45 @@ const serviceAccount = "service-account"
 // unauthorized is v1's refusal message, verbatim.
 const unauthorized = "auth:Unauthorized operation"
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the service-account surface on app, backed by db.
+//
+// The LIST is a typed op — so it is in the OpenAPI document, the SDKs, the CLI
+// and the MCP tool list, which a raw handler is in none of. The three credential
+// writes stay raw, deliberately: a typed op also passes through the op-invoke
+// authorizer (authz.Authorize), and routing a write through it would authorize
+// the decoded (Owner, Name) — which these bodies do not carry — instead of the
+// admin() gate each already applies. That is a change to WHO may mint, so it is
+// a decision, not a projection.
+//
+// The read reaches that authorizer and is admitted, by construction: it admits a
+// GET whose decoded input names no owner, and `query` declares no Owner field and
+// no AuthzTarget() for it to read. The tenant gate is unmoved — read() on the
+// ?organization= the handler itself binds, exactly as before.
+//
+// A refusal is a VALUE here (httpx.Bad), never a returned error: an error renders
+// zip's {"status":<int>,"error":…} instead of this surface's envelope.
 func Route(app *zip.App, db orm.DB) {
-	app.Get(Path, list(db))
+	zip.Get[query, httpx.Answer](app, Path, list(db),
+		zip.WithStatus(200, 400),
+		zip.WithTags("service-accounts"))
 	app.Post(Path, create(db))
 	app.Post(PathKeys, rotate(db))
 	app.Delete(PathOne, revoke(db))
+}
+
+// query is the list request: the organization to enumerate, and optionally which
+// page of it.
+type query struct {
+	// Organization is the organization whose service accounts to list. Required.
+	Organization string `json:"organization"`
+	// P is the 1-indexed page to return. Paging takes both p and pageSize —
+	// leave either out, or send something that is not a number, and the whole
+	// list comes back.
+	P int `json:"p"`
+	// Size is how many accounts a page holds.
+	Size int `json:"pageSize"`
 }
 
 // request is the create body: the owning org, the agent handle (bare or already
@@ -147,26 +180,26 @@ func create(db orm.DB) zip.Handler {
 // response exactly once, when it is minted. Paginated in memory over the already org-scoped
 // slice — the set per org is small, so a dedicated count query is overkill
 // (v1 service_account.go:296-307).
-func list(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		org := c.Query("organization")
-		if org == "" {
-			return httpx.Err(c, "organization is required")
+func list(db orm.DB) zip.TypedHandler[query, httpx.Answer] {
+	return func(ctx context.Context, in *query) (*httpx.Answer, error) {
+		if in.Organization == "" {
+			return httpx.Bad(400, "organization is required", ""), nil
 		}
-		p, ok := authz.From(c.Context())
-		if !ok || !read(p, org) {
-			return httpx.Err(c, unauthorized)
+		p, ok := authz.From(ctx)
+		if !ok || !read(p, in.Organization) {
+			return httpx.Bad(400, unauthorized, ""), nil
 		}
 		all, err := orm.TypedQuery[schema.User](db).
-			Filter("Owner=", org).Filter("Type=", serviceAccount).Order("Name").GetAll(c.Context())
+			Filter("Owner=", in.Organization).Filter("Type=", serviceAccount).Order("Name").GetAll(ctx)
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return httpx.Bad(400, err.Error(), ""), nil
 		}
 		for _, sa := range all {
 			redact(sa)
 		}
-		page := paginate(all, atoi(c.Query("p")), atoi(c.Query("pageSize")))
-		return c.JSON(200, httpx.Response{Status: "ok", Data: page, Data2: len(all)})
+		// data2 is the TOTAL, not the page length — v1's contract, so a caller
+		// paging through knows how far it has to go.
+		return httpx.Good(paginate(all, in.P, in.Size), len(all)), nil
 	}
 }
 
@@ -376,16 +409,4 @@ func paginate(all []*schema.User, page, size int) []*schema.User {
 		end = len(all)
 	}
 	return all[start:end]
-}
-
-// atoi parses a non-negative paging parameter; anything else is 0 ("unset").
-func atoi(s string) int {
-	n := 0
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return 0
-		}
-		n = n*10 + int(r-'0')
-	}
-	return n
 }

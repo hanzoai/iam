@@ -63,7 +63,7 @@ const CodeLoginRequired = "login_required"
 // Guard): the whole OIDC/OAuth + front-door surface is pre-authentication by
 // construction, so membership in this group IS what makes it reachable without a
 // bearer — there is no separate allow-list to keep in sync.
-func Route(r zip.Router, db orm.DB) {
+func Route(r *zip.App, db orm.DB) {
 	// Discovery and the JWKS are each served at BOTH the root well-known path
 	// (RFC 8414 §3, where a bare-origin client and the gateway's default look)
 	// and the /v1/iam-prefixed path, matching the live hanzo.id surface. Both

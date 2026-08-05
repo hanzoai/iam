@@ -43,6 +43,8 @@ const (
 	PathVerify = "/v1/iam/web3/verify"
 )
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the wallet sign-in surface on the PUBLIC route group (before
 // the authz Guard): a wallet holder has no token until this flow gives them one,
 // so membership in the public group is what makes the two endpoints reachable
