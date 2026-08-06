@@ -74,6 +74,17 @@ type authorizeRequest struct {
 // refused where the person can see it rather than being bounced onwards.
 func authorizeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
+		// A sign-in must run AT its brand's issuer, because everything a flow
+		// sets along the way — the hanzo_fed browser binding, the session — is a
+		// host-only cookie, while the IdP callback and `iss` are pinned to the
+		// issuer. Answering on an alias host (iam.hanzo.ai, www.zoolabs.id, any
+		// host the map folds) strands those cookies and social sign-in fails
+		// closed at the callback. So an alias is answered with the same request
+		// relocated to the issuer, before anything is minted or set; 307 keeps
+		// the method. See issuerRelocation for the fail-closed guards.
+		if loc, ok := issuerRelocation(c); ok {
+			return c.Redirect(307, loc)
+		}
 		ctx := c.Context()
 		q := authorizeParams(c)
 
