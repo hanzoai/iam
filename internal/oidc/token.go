@@ -244,7 +244,11 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	// kind of token it holds. It has no user and therefore no membership set — nil
 	// orgs omits the claim, so an app token can never carry a tenancy it did not
 	// earn, and no display name means no display claim.
-	access, err := signer.Sign(app, Identity{Id: sub, Name: app.Name}, scope, ttl, now)
+	access, err := signer.Sign(app, Identity{
+		Id:      sub,
+		Name:    app.Name,
+		Billing: machineBillingAccount(app.Organization),
+	}, scope, ttl, now)
 	if err != nil {
 		return mintError(c, err)
 	}
@@ -652,6 +656,36 @@ func userClaims(ctx context.Context, db orm.DB, userID string) Identity {
 		return Identity{Id: userID}
 	}
 	return identityOf(ctx, db, u)
+}
+
+// machineBillingAccount decides WHICH LEDGER a MACHINE credential spends from.
+//
+// A client_credentials token has no person behind it — the app IS the org acting
+// — so it spends the ORG POOL. That is already what account.Payer's shape rule
+// concludes for a machine in EVERY org but one: the rule makes the signup org
+// special and hands anyone in it a PERSONAL wallet. A machine has no person, so
+// that wallet is a ghost — no funding path can name "<signupOrg>/<appName>", an
+// admin grant credits the pool and a deposit names a real member — leaving it $0
+// forever while the org's balance sits one key away. Hanzo's own first-party
+// services all authenticate this way and all live in the signup org, so every one
+// of them billed a wallet that could not be funded and 402'd against a funded org.
+//
+// The claim is not new authority, it is the same answer stated where it cannot be
+// lost: Payer only INFERRED machine-ness before, from a User.Type a user can set
+// on themselves, and no layer populated it on the token path at all.
+//
+// THE AUTHORITY WAS ALREADY CHECKED, at registration. Pointing an application at
+// an org requires SuperAdmin or that org's own admin (applications.
+// authorizeOrganization → authz.CanSetOrg), which is the SAME bar billingAccountFor
+// applies to a person before it names the pool. A plain member of the signup org
+// cannot register an app there, so this cannot become the free-rider path onto the
+// platform's balance that the personal-wallet rule exists to prevent.
+//
+// Only the app's OWN organization is ever named — the same value the `owner` claim
+// carries — so a machine token can never name another tenant's ledger, and an
+// org-less app yields the zero Account, hence no claim and the unchanged fallback.
+func machineBillingAccount(org string) string {
+	return account.Org(org).String()
 }
 
 // billingAccountFor decides WHICH LEDGER this person spends from, and says so in
