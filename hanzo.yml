@@ -1,0 +1,30 @@
+# Canonical CI/CD config for hanzoai/iam — the one file both the hanzoai/ci
+# reusable (.hanzo/workflows/cicd.yml) and platform.hanzo.ai read.
+#
+# GATE ONLY. The image already has exactly one builder and it is deliberate:
+# .hanzo/workflows/image.yml, which tags by COMMIT SHA (a semver tag that gets
+# re-pushed leaves two digests behind one name, which is how platform's v4.4.5
+# came to mean two builds) and mounts the token `go mod download` needs for the
+# private hanzoai/orm + hanzoai/sqlite modules. That file's own header documents
+# why it is the ONLY file in this repo that builds an image. Declaring `images:`
+# here would make a second one, which is the exact failure it was written to end.
+#
+# The gate is the repo's own: `make test`. Two halves, both real —
+#   * zipdoc -check in every directory that generates one: a codegen-freshness
+#     refusal, so a handler doc comment that no longer matches its generated
+#     zipdoc_gen.go fails the build instead of drifting silently.
+#   * `go test ./... -race -count=1`: the whole suite (140 test files), under the
+#     race detector, with caching off so a green means it ran here and now.
+# `go build ./...` runs first so a plain compile break fails in seconds rather
+# than after the full race build.
+#
+# Note on what is NOT here: no `-tags skipCi`. Files guarded `//go:build !skipCi`
+# vanish under that tag and `go test` then reports "[no tests to run]" and exits
+# 0 — a green over zero tests. This tree carries no such guard and this gate
+# passes no such tag; both halves of that have to stay true.
+test:
+  - name: build
+    run: |
+      set -e
+      go build ./...
+      make test
