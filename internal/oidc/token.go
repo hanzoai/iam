@@ -664,11 +664,17 @@ func userClaims(ctx context.Context, db orm.DB, userID string) Identity {
 // — so it spends the ORG POOL. That is already what account.Payer's shape rule
 // concludes for a machine in EVERY org but one: the rule makes the signup org
 // special and hands anyone in it a PERSONAL wallet. A machine has no person, so
-// that wallet is a ghost — no funding path can name "<signupOrg>/<appName>", an
-// admin grant credits the pool and a deposit names a real member — leaving it $0
-// forever while the org's balance sits one key away. Hanzo's own first-party
-// services all authenticate this way and all live in the signup org, so every one
-// of them billed a wallet that could not be funded and 402'd against a funded org.
+// that wallet is one nothing funds: the console credits an ORG, and a staff grant
+// defaults to the org pool, so "<signupOrg>/<appName>" sits at $0 while the org's
+// balance is one key away. Hanzo's own first-party services all authenticate this
+// way and all live in the signup org, so every one of them billed an unfunded
+// wallet and 402'd against a funded org.
+//
+// The deposit side is NOT yet symmetric, and saying so is the point: a grant that
+// explicitly NAMES an application resolves through principal.WalletFor, which asks
+// Payer with no machine signal and therefore still addresses that same personal
+// wallet — money put there is now money nothing spends. Closing that is a change
+// where the grant is resolved, not here; this seam only fixes what the token says.
 //
 // The claim is not new authority, it is the same answer stated where it cannot be
 // lost: Payer only INFERRED machine-ness before, from a User.Type a user can set
