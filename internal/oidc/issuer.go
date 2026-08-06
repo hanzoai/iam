@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/zap-proto/zip"
 )
 
 // devFallbackIssuer is the ONE fixed, non-host-derived issuer this package ever
@@ -374,4 +377,50 @@ func resolveFederationOrigin(host string) string {
 		return r.issuerFor(host)
 	}
 	return resolveIssuer(host)
+}
+
+// issuerRelocation reports whether a front-door request arrived on a host other
+// than its brand's pinned issuer, and if so, the absolute URL of the SAME
+// request at that issuer.
+//
+// This is the redirect hop the boot check (federationOriginIsReachable) names as
+// missing. A browser flow leaves host-only cookies behind at every step — the
+// hanzo_fed browser binding on the federation begin, the session on a password
+// login — while the IdP callback and the tokens' `iss` live at the PINNED
+// issuer. Serving the front door on an alias host therefore strands those
+// cookies where nothing returns: measured live, an authorize on iam.hanzo.ai
+// set hanzo_fed on iam.hanzo.ai and registered the Google callback at hanzo.id,
+// so every social sign-in begun there failed closed with "the federation
+// session could not be verified". One relocation before anything is minted or
+// set, and every downstream leg — hosted login, session, federation begin and
+// callback — shares one origin by construction.
+//
+// The target is trusted config (never the request), so this can relocate but
+// not open-redirect. Fail-closed: a blank issuer, an unparsable issuer, or an
+// issuer the resolver does not map to ITSELF (a miswritten fold that would
+// ping-pong browsers) all answer "no relocation" — the pre-hop behaviour.
+func issuerRelocation(c *zip.Ctx) (string, bool) {
+	r := activeResolver.Load()
+	if r == nil {
+		r = envIssuerResolver()
+	}
+	if r == nil {
+		// Nothing pinned (a hand-built server; a real boot hard-errors first).
+		// The fixed fallback is a fail-closed placeholder, not an address to
+		// steer browsers to.
+		return "", false
+	}
+	host := normalizeHost(c.Host())
+	iss := r.issuerFor(host)
+	if host == "" || iss == "" || iss == "https://"+host {
+		return "", false
+	}
+	u, err := url.Parse(iss)
+	if err != nil || u.Host == "" {
+		return "", false
+	}
+	if r.issuerFor(u.Host) != iss {
+		return "", false
+	}
+	return iss + c.Fiber().OriginalURL(), true
 }
