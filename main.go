@@ -116,31 +116,27 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 	}
 
 	// Bind the transport that carries a verification code to a person. Everything
-	// code-shaped is switched off until this line runs with a real address: email
-	// and SMS sign-in, and the email and SMS second factors, all read
-	// `oidc.DeliveryConfigured`, which reports on the BOUND SENDER rather than on
-	// configuration. So an unset IAM_NOTIFY_ADDR is not a half-configured state —
-	// notify.New returns nil, nothing is bound, and every screen goes on hiding
-	// the methods this process cannot complete. Setting it turns all four on at
-	// once, with no second switch to remember.
+	// code-shaped is off until this line binds something: email sign-in, SMS
+	// sign-in, and the email and SMS second factors all read
+	// `oidc.DeliveryConfigured`, which reports on the BOUND SENDER and never on
+	// configuration — so one binding lights all four and there is no second switch
+	// to remember.
 	//
-	// The secret is a KMS-issued machine-identity credential, mounted; what goes on
-	// the wire is a short-lived client_credentials token minted from it, never the
-	// secret. Any piece missing means no client, so nothing is half-configured.
+	// There is nothing to configure. notify is a cloud plugin reached by a ZAP op
+	// over its unix socket, so the peer is resolved from the shared runtime
+	// directory rather than from an address, and the org travels as an ARGUMENT
+	// rather than as the identity of a credential. That is what lets this process
+	// send for every white-label tenant it answers for while holding no secret to
+	// mint, mount or rotate. Reachability is proven by a dial at boot, here, where
+	// a failure is a log line instead of a dead login screen.
 	//
-	// Deliberately NOT fatal when unset: password and social sign-in are complete
-	// without it, and an identity service that refuses to boot because it cannot
-	// send SMS is worse than one that honestly offers fewer methods.
-	if n := notify.New(
-		os.Getenv("IAM_NOTIFY_ADDR"),
-		os.Getenv("IAM_NOTIFY_CLIENT_ID"),
-		os.Getenv("IAM_NOTIFY_CLIENT_SECRET"),
-		os.Getenv("IAM_NOTIFY_ORG"),
-		os.Getenv("IAM_NOTIFY_TOKEN_URL"),
-	); n != nil {
+	// Deliberately NOT fatal when unreachable: password and social sign-in are
+	// complete without it, and an identity service that refuses to boot because it
+	// cannot send SMS is worse than one that honestly offers fewer methods.
+	if n := notify.New(); n != nil {
 		oidc.BindSender(n)
 	} else {
-		fmt.Fprintln(os.Stderr, "iam: notify machine identity not configured — email/SMS codes and their second factors stay off")
+		fmt.Fprintln(os.Stderr, "iam: notify is not reachable on the plane — email/SMS codes and their second factors stay off")
 	}
 
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
