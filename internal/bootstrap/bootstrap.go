@@ -201,6 +201,11 @@ type registration struct {
 	// the default. Nil means "not stated, leave it".
 	ExpireInHours        *float64 `json:"expireInHours"`
 	RefreshExpireInHours *float64 `json:"refreshExpireInHours"`
+	// EnableCodeSignin offers sign-in by an emailed or texted one-time code
+	// beside the password. A POINTER for the same reason as IsShared: a plain
+	// bool reads as false on every reconcile that says nothing and would switch
+	// the method off for every app whose caller never mentioned it.
+	EnableCodeSignin *bool `json:"enableCodeSignin"`
 	// Auth is the `Authorization: Bearer <token>` header, the unified service
 	// token this surface authenticates on. `json:"-"` keeps it off the body and
 	// out of the query string, so the header is the only way to present it.
@@ -278,6 +283,9 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			if in.IsShared != nil {
 				existing.IsShared = *in.IsShared
 			}
+			if in.EnableCodeSignin != nil {
+				existing.EnableCodeSignin = *in.EnableCodeSignin
+			}
 			existing.ExpireInHours = ttl(in.ExpireInHours, existing.ExpireInHours)
 			existing.RefreshExpireInHours = ttl(in.RefreshExpireInHours, existing.RefreshExpireInHours)
 			existing.EnablePassword = true
@@ -313,6 +321,10 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			a.RefreshExpireInHours = ttl(in.RefreshExpireInHours, 0)
 			// A new app is single-tenant unless it says otherwise — fail closed.
 			a.IsShared = in.IsShared != nil && *in.IsShared
+			// Same rule for code sign-in: a new app offers only the password until
+			// it asks for more, so an unstated setting is off rather than inherited
+			// from a default nobody wrote down.
+			a.EnableCodeSignin = in.EnableCodeSignin != nil && *in.EnableCodeSignin
 			a.Model = model
 			a.SetId("admin/" + in.Name)
 			if err := a.CreateCtx(ctx); err != nil {
@@ -389,7 +401,7 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			action = "updated"
 			existing.DisplayName = pick(in.DisplayName, existing.DisplayName)
 			existing.Email = pick(in.Email, existing.Email)
-			existing.Phone = pick(in.Phone, existing.Phone)
+			existing.Phone = store.NormalizePhone(pick(in.Phone, existing.Phone))
 			existing.IsAdmin = in.IsAdmin
 			if hash != "" {
 				existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, cred.TypeArgon2id, ""
@@ -412,7 +424,7 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			u := orm.New[schema.User](db)
 			model := u.Model
 			u.Owner, u.Name = in.Owner, name
-			u.DisplayName, u.Email, u.Phone, u.IsAdmin = in.DisplayName, in.Email, in.Phone, in.IsAdmin
+			u.DisplayName, u.Email, u.Phone, u.IsAdmin = in.DisplayName, in.Email, store.NormalizePhone(in.Phone), in.IsAdmin
 			if hash != "" {
 				u.PasswordHash, u.PasswordType = hash, cred.TypeArgon2id
 			}
