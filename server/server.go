@@ -20,6 +20,7 @@ import (
 
 	"github.com/hanzoai/iam/feature"
 	"github.com/hanzoai/iam/internal/featurestore"
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/seed"
 	_ "github.com/hanzoai/iam/pkg/schema" // registers the entity kinds
@@ -102,3 +103,34 @@ func OpenSQLite(path string) (orm.DB, error) {
 func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, error) {
 	return seed.FromInitData(ctx, db, initDataPath)
 }
+
+// Sender delivers one minted verification code. It is re-exported here because
+// the seam itself lives in an internal package: a HOST binary that grafts IAM
+// (cloud embeds it with server.NewApp) has to be able to supply the transport,
+// and internal/oidc is by definition unreachable from outside this module.
+//
+// Composition is exactly what this package is for, and delivery is composition:
+// which wire carries a code is the host's decision, never IAM's.
+type Sender = oidc.Sender
+
+// BindSender installs the delivery transport for email and SMS codes. Call it at
+// boot, before serving.
+//
+// Everything code-shaped stays OFF until this is called with a non-nil sender:
+// email sign-in, SMS sign-in, and the email and SMS second factors all read one
+// predicate, and that predicate reports on the BOUND SENDER rather than on any
+// configuration. So there is no half-configured state to reason about — a host
+// that can deliver binds one and all four turn on together.
+//
+// The two hosts differ in the only way that matters, which is how the TENANT
+// travels. A standalone iam reaches notify over the wire as a principal of one
+// org, so its transport is pinned to that org and refuses any other. A grafted
+// iam is in the same process as notify and can pass the org explicitly, so it
+// serves every tenant with no credential at all. One seam, two transports —
+// which is what a seam is for.
+func BindSender(s Sender) { oidc.BindSender(s) }
+
+// DeliveryConfigured reports whether a verification code can actually reach a
+// person, so a host can assert on its own wiring. It answers from the bound
+// sender, never from configuration.
+func DeliveryConfigured() bool { return oidc.DeliveryConfigured() }
