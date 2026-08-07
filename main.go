@@ -58,7 +58,7 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), compareCmd(), provisionCmd(), versionCmd())
+	root.AddCommand(serveCmd(), compareCmd(), provisionCmd(), phonesCmd(), versionCmd())
 
 	if err := root.ExecuteContext(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "iam: %v\n", err)
