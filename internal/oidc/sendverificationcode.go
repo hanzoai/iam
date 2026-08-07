@@ -38,9 +38,17 @@ import (
 // POST /v1/notify/send/{email,sms} and reads the org's own Twilio credential from
 // KMS. Implementations carry the transport; nothing here knows or cares which.
 type Sender interface {
-	// Send delivers code to dest over channel ("email" or "phone"). A non-nil
-	// error means the person did NOT receive it.
-	Send(ctx context.Context, channel, dest, code string) error
+	// Send delivers code to dest over channel ("email" or "phone") on behalf of
+	// org. A non-nil error means the person did NOT receive it.
+	//
+	// org is REQUIRED, and it is the tenant whose record this code was minted
+	// under (rec.Owner) — not a brand string and not a default. notify resolves
+	// the provider credential from the org's own KMS entry, so a send with the
+	// wrong org reaches the wrong account's Twilio and a send with none cannot be
+	// routed at all. It is a parameter rather than something the transport is
+	// constructed with because one bound sender serves every tenant this process
+	// answers for.
+	Send(ctx context.Context, org, channel, dest, code string) error
 }
 
 // sender is bound once at boot, before the server accepts a request, and read
@@ -187,7 +195,10 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			// that leaves a person waiting on a message that will never arrive.
 			return httpx.Err(c, "verification codes cannot be delivered: no notify service is configured")
 		}
-		if err := sender.Send(ctx, typ, dest, code); err != nil {
+		// rec.Owner, not org.Name read again: the code that was persisted and the
+		// code that goes out must be attributed to the SAME tenant, so they read
+		// the one value.
+		if err := sender.Send(ctx, rec.Owner, typ, dest, code); err != nil {
 			// Report the real outcome. Answering ok because the code was minted
 			// would recreate the same lie one layer down: the send is what the
 			// caller asked for, and it failed.
@@ -207,6 +218,62 @@ func generateCode(n int) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%0*d", n, k), nil
+}
+
+// verificationMaxAttempts bounds wrong guesses against ONE delivered code.
+//
+// Five, not one. Burning the code on the first miss is the strongest bound and
+// the wrong trade: anyone who knows your address can post a wrong code while your
+// real one is live and destroy it, so a one-attempt rule hands out a denial of
+// service to any stranger. Five leaves a typo survivable and still cuts the search
+// space from a million to five.
+const verificationMaxAttempts = 5
+
+// ConsumeVerificationCode verifies code against the latest live record for
+// receiver and SPENDS the outcome — the check side of the OTP surface for callers
+// where the code IS the credential.
+//
+// It exists beside [CheckVerificationCode] because a code that authenticates must
+// be accounted for and a code that merely gates a signup need not be. Verifying
+// and spending are one operation here on purpose: split across two calls, every
+// caller would have to remember to spend, and the one that forgot would leave a
+// replayable login credential lying in the table.
+//
+//   - a hit marks the record used, so the code is one-time
+//   - a miss counts, and the count is what makes the code unguessable; at
+//     [verificationMaxAttempts] the record is spent so the run cannot continue
+//
+// Reports whether the code was accepted. A spent, expired or absent record is a
+// plain false: the caller must not distinguish them, or it answers "that address
+// has a code outstanding" to anyone who asks.
+func ConsumeVerificationCode(ctx context.Context, db orm.DB, receiver, code string) (bool, error) {
+	if receiver == "" || code == "" {
+		return false, nil
+	}
+	rec, err := store.GetLatestVerificationRecord(ctx, db, receiver)
+	if err != nil || rec == nil {
+		return false, err
+	}
+	if nowFunc().Unix()-rec.Time > int64(verificationCodeTTL/time.Second) {
+		return false, nil
+	}
+	if cred.ConstantTimeEqual(rec.Code, code) {
+		rec.IsUsed = true
+		if err := store.SaveVerificationRecord(ctx, db, rec); err != nil {
+			// The code was right, but a record that cannot be spent is a record that
+			// can be replayed. Refuse rather than admit a credential we cannot retire.
+			return false, err
+		}
+		return true, nil
+	}
+	rec.Attempts++
+	if rec.Attempts >= verificationMaxAttempts {
+		rec.IsUsed = true
+	}
+	if err := store.SaveVerificationRecord(ctx, db, rec); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 // CheckVerificationCode reports whether code matches the latest unused,

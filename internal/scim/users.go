@@ -13,9 +13,9 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/internal/users"
 )
 
 const (
@@ -180,7 +180,7 @@ func applyToUser(in *scimUser, u *schema.User, allowAdmin bool) (password string
 	// declared mutability:readOnly in the /Schemas document (RFC 7643 §7: a readOnly
 	// attribute in a write is ignored) and projected on read only.
 	u.Email = primaryValue(in.Emails)
-	u.Phone = primaryValue(in.PhoneNumbers)
+	u.Phone = store.NormalizePhone(primaryValue(in.PhoneNumbers))
 	if v := primaryValue(in.Photos); v != "" {
 		u.Avatar = v
 	}
