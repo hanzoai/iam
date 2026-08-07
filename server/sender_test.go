@@ -32,3 +32,20 @@ func TestAHostCanBindDelivery(t *testing.T) {
 		t.Fatal("unbinding did not switch delivery off — the predicate must follow the sender")
 	}
 }
+
+// PlaneSender must return an UNTYPED nil when notify is unreachable. A typed nil
+// in an interface is not nil, so BindSender would hold a sender, DeliveryConfigured
+// would answer true, and the login screen would offer a code it cannot send — the
+// exact lie this predicate exists to prevent.
+func TestPlaneSenderIsUntypedNilWithNoPeer(t *testing.T) {
+	t.Setenv("ZIP_RUNTIME_DIR", t.TempDir()) // no notify socket here
+	s := PlaneSender()
+	if s != nil {
+		t.Fatal("PlaneSender returned non-nil with no notify peer — delivery would look configured")
+	}
+	BindSender(s)
+	t.Cleanup(func() { BindSender(nil) })
+	if DeliveryConfigured() {
+		t.Fatal("binding an unreachable sender reported delivery configured")
+	}
+}
