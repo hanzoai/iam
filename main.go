@@ -34,6 +34,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/compare"
+	"github.com/hanzoai/iam/internal/notify"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/provision"
 	"github.com/hanzoai/iam/internal/routes"
@@ -57,7 +58,7 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), compareCmd(), provisionCmd(), versionCmd())
+	root.AddCommand(serveCmd(), compareCmd(), provisionCmd(), phonesCmd(), versionCmd())
 
 	if err := root.ExecuteContext(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "iam: %v\n", err)
@@ -112,6 +113,24 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 	// federation origin follows the issuer).
 	if err := oidc.InitFederationResolver(); err != nil {
 		return fmt.Errorf("serve: %w", err)
+	}
+
+	// Bind the transport that carries a verification code to a person. Everything
+	// code-shaped is switched off until this line runs with a real address: email
+	// and SMS sign-in, and the email and SMS second factors, all read
+	// `oidc.DeliveryConfigured`, which reports on the BOUND SENDER rather than on
+	// configuration. So an unset IAM_NOTIFY_ADDR is not a half-configured state —
+	// notify.New returns nil, nothing is bound, and every screen goes on hiding
+	// the methods this process cannot complete. Setting it turns all four on at
+	// once, with no second switch to remember.
+	//
+	// Deliberately NOT fatal when unset: password and social sign-in are complete
+	// without it, and an identity service that refuses to boot because it cannot
+	// send SMS is worse than one that honestly offers fewer methods.
+	if n := notify.New(os.Getenv("IAM_NOTIFY_ADDR"), os.Getenv("IAM_NOTIFY_TOKEN")); n != nil {
+		oidc.BindSender(n)
+	} else {
+		fmt.Fprintln(os.Stderr, "iam: IAM_NOTIFY_ADDR unset — email/SMS codes and their second factors stay off")
 	}
 
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
