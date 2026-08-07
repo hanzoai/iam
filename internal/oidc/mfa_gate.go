@@ -103,6 +103,23 @@ func allowList(user *schema.User, org *schema.Organization, verificationType str
 	return allow
 }
 
+// mfaDestination is where a delivered second factor is sent: the address the
+// ACCOUNT holds, resolved from the factor type and from nothing the caller said.
+// Empty means the user has no address for that factor, which is a refusal — a
+// challenge cannot be answered over a channel the account does not own.
+func mfaDestination(user *schema.User, mfaType string) string {
+	if user == nil {
+		return ""
+	}
+	switch mfaType {
+	case factor.SMS:
+		return store.NormalizePhone(user.Phone)
+	case factor.Email:
+		return user.Email
+	}
+	return ""
+}
+
 // remembered reports whether the user's "don't ask again" window is still open. An
 // unparsable or empty deadline is not a skip: this fails CLOSED, to the challenge.
 func remembered(user *schema.User, now time.Time) bool {
@@ -159,13 +176,35 @@ func finishMfa(c *zip.Ctx, db orm.DB, id string, f loginForm) error {
 		if f.MfaType == "" || f.MfaType == ch.Payload {
 			return httpx.Err(c, "invalid multi-factor authentication type")
 		}
-		if f.MfaType != factor.App {
-			// Only TOTP has a verifier here. Refuse anything else rather than wave it
-			// through: a factor with no verification is not a factor.
+		switch f.MfaType {
+		case factor.App:
+			if !factor.Verify(user.TotpSecret, f.Passcode) {
+				return httpx.Err(c, "the multi-factor authentication code is incorrect")
+			}
+		case factor.SMS, factor.Email:
+			// A texted or emailed second factor is a delivered code, verified by the
+			// same one-time machinery a code SIGN-IN uses: spent on success, counted
+			// on a miss. These were refused outright while nothing could deliver a
+			// code — correct then, since a factor with no verification is not a
+			// factor, and no longer true now that one can be sent.
+			//
+			// The destination is the user's OWN stored address and never anything
+			// off the request. Letting the caller name it would turn the second
+			// factor inside out: an attacker holding a first factor could have the
+			// code sent to an address they control and answer their own challenge.
+			dest := mfaDestination(user, f.MfaType)
+			if dest == "" || !DeliveryConfigured() {
+				return httpx.Err(c, "invalid multi-factor authentication type")
+			}
+			ok, err := ConsumeVerificationCode(ctx, db, dest, f.Passcode)
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			if !ok {
+				return httpx.Err(c, "the multi-factor authentication code is incorrect")
+			}
+		default:
 			return httpx.Err(c, "invalid multi-factor authentication type")
-		}
-		if !factor.Verify(user.TotpSecret, f.Passcode) {
-			return httpx.Err(c, "the multi-factor authentication code is incorrect")
 		}
 	case f.RecoveryCode != "":
 		// A recovery code is one-time: the hit is removed and the row written whether

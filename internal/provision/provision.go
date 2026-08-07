@@ -142,6 +142,10 @@ type App struct {
 	// type-derived set is a silent revocation of every grant the type does not
 	// name.
 	Grants []string `yaml:"grants"`
+	// CodeSignin offers sign-in by an emailed or texted one-time code beside the
+	// password. A POINTER so saying nothing preserves the app's current setting
+	// rather than turning the method off — see Client.EnableCodeSignin.
+	CodeSignin *bool `yaml:"codeSignin"`
 	// ExpireInHours and RefreshExpireInHours are this client's token lifetimes.
 	// Same names as the wire and the stored model, so one value has one name from
 	// document to registration.
@@ -182,6 +186,17 @@ type Client struct {
 	// every converge and reset every app's lifetimes to the default.
 	ExpireInHours        *float64 `json:"expireInHours,omitempty"`
 	RefreshExpireInHours *float64 `json:"refreshExpireInHours,omitempty"`
+	// EnableCodeSignin offers sign-in by an emailed or texted one-time code
+	// alongside the password. A POINTER for the same reason the lifetimes are:
+	// an undeclared setting is OMITTED and the upsert preserves what the app has,
+	// where a plain bool would send false on every converge and silently switch
+	// the method off for every app whose document does not mention it.
+	//
+	// Declaring it true is a request, not a guarantee: the login descriptor also
+	// requires the server to have a delivery transport bound, so an app that asks
+	// for code sign-in on a deployment that cannot send one still advertises only
+	// what it can finish.
+	EnableCodeSignin *bool `json:"enableCodeSignin,omitempty"`
 }
 
 // App types. A document that names anything else is rejected at Derive rather
@@ -338,6 +353,7 @@ func deriveApp(org Org, a App) (Client, error) {
 		Cert:                 strings.TrimSpace(a.Cert),
 		ExpireInHours:        stated(a.ExpireInHours),
 		RefreshExpireInHours: stated(a.RefreshExpireInHours),
+		EnableCodeSignin:     a.CodeSignin,
 	}
 	if c.RedirectUris == nil && a.Type != TypeService {
 		return Client{}, fmt.Errorf("provision: app %s declares no hosts and type %q needs a redirect", id, a.Type)
