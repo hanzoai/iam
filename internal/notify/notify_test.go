@@ -32,7 +32,7 @@ func spy(t *testing.T, status int) (*Client, *captured) {
 		_, _ = w.Write([]byte(`{"status":"error","msg":"twilio: 21608 unverified number"}`))
 	}))
 	t.Cleanup(srv.Close)
-	return New(srv.URL, "tok"), got
+	return New(srv.URL, "tok", "hanzo"), got
 }
 
 // A blank address yields NO client, and that nil is the entire delivery switch:
@@ -40,11 +40,11 @@ func spy(t *testing.T, status int) (*Client, *captured) {
 // false and every screen keeps hiding the methods this process cannot finish.
 func TestNoAddressMeansNoClient(t *testing.T) {
 	for _, addr := range []string{"", "   "} {
-		if c := New(addr, "tok"); c != nil {
+		if c := New(addr, "tok", "hanzo"); c != nil {
 			t.Errorf("New(%q) returned a client; an unset address must not look like delivery", addr)
 		}
 	}
-	if New("https://api.hanzo.ai", "") == nil {
+	if New("https://api.hanzo.ai", "", "hanzo") == nil {
 		t.Error("a real address must yield a client even with no token")
 	}
 }
@@ -80,11 +80,11 @@ func TestOrgIsRequiredAndTravels(t *testing.T) {
 	}
 
 	c, got = spy(t, 200)
-	if err := c.Send(context.Background(), "lux", "email", "a@b.test", "123456"); err != nil {
+	if err := c.Send(context.Background(), "hanzo", "email", "a@b.test", "123456"); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
-	if got.org != "lux" {
-		t.Errorf("X-Org-Id = %q, want lux", got.org)
+	if got.org != "hanzo" {
+		t.Errorf("X-Org-Id = %q, want hanzo", got.org)
 	}
 	if got.auth != "Bearer tok" {
 		t.Errorf("Authorization = %q, want the service token", got.auth)
@@ -96,7 +96,7 @@ func TestOrgIsRequiredAndTravels(t *testing.T) {
 // wrong one on most of them.
 func TestMessageCarriesTheCodeAndNoBrand(t *testing.T) {
 	c, got := spy(t, 200)
-	if err := c.Send(context.Background(), "zoo", "phone", "+14155550134", "246810"); err != nil {
+	if err := c.Send(context.Background(), "hanzo", "phone", "+14155550134", "246810"); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if !strings.Contains(got.body.Body, "246810") {
@@ -138,5 +138,33 @@ func TestUnknownChannelIsRefused(t *testing.T) {
 	}
 	if got.path != "" {
 		t.Fatal("an unknown channel reached the network")
+	}
+}
+
+// A credential is a principal of ONE tenant and notify sends as the principal,
+// so a code minted for another org would go out through THIS org's provider --
+// delivered, but billed and attributed to the wrong company. Refuse instead.
+func TestSendingForAnotherTenantIsRefused(t *testing.T) {
+	c, got := spy(t, 200)
+	err := c.Send(context.Background(), "lux", "phone", "+14155550134", "123456")
+	if err == nil {
+		t.Fatal("a send for another tenant must be refused, not routed through this org's provider")
+	}
+	if !strings.Contains(err.Error(), "lux") || !strings.Contains(err.Error(), "hanzo") {
+		t.Errorf("error %q should name both the credential's org and the one asked for", err)
+	}
+	if got.path != "" {
+		t.Fatal("a cross-tenant send reached the network")
+	}
+}
+
+// An org with no address, or an address with no org, is not delivery. Both must
+// yield nil so nothing is bound and the login screens keep hiding code sign-in.
+func TestOrgIsPartOfTheDeliveryClaim(t *testing.T) {
+	if New("https://api.hanzo.ai", "tok", "") != nil {
+		t.Error("an address with no org looked like delivery")
+	}
+	if New("", "tok", "hanzo") != nil {
+		t.Error("an org with no address looked like delivery")
 	}
 }
