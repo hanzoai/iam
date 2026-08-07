@@ -99,6 +99,46 @@ type Principal struct {
 	AppCert string
 	Admin   bool
 	Super   bool
+	// Orgs is the set of organizations this person may act in — their HOME org
+	// plus every org they hold a membership in, which is the SAME set the token's
+	// `orgs` claim carries. It exists because "the org you belong to" and "the org
+	// that owns your account" are different questions, and the policy used to
+	// answer the first with the second: an org's own member could not read that
+	// org's row unless it happened to be their account's owner. One person, many
+	// orgs is the product; this is where the policy learns it. Empty for an app
+	// principal (a machine's scope is its served tenant, never a membership).
+	Orgs map[string]string // org -> role (owner|admin|member)
+}
+
+// memberOf reports whether p may act in org through its HOME org or a
+// membership. It is the ONE membership question the policy asks, so a clause
+// never re-derives the set.
+func (p *Principal) memberOf(org string) bool {
+	if org == "" {
+		return false
+	}
+	if org == p.Org {
+		return true
+	}
+	_, ok := p.Orgs[org]
+	return ok
+}
+
+// adminOf reports whether p may CHANGE org — its own org as an org admin, or an
+// org it holds an owner/admin membership in. A plain member never qualifies:
+// belonging to an org is permission to see it, not to edit it.
+func (p *Principal) adminOf(org string) bool {
+	if org == "" {
+		return false
+	}
+	if org == p.Org && p.Admin {
+		return true
+	}
+	switch p.Orgs[org] {
+	case store.RoleOwner, store.RoleAdmin:
+		return true
+	}
+	return false
 }
 
 type ctxKey struct{}
@@ -673,7 +713,15 @@ func authorize(p *Principal, method, entity, owner, name string) bool {
 		if p.App != "" {
 			return Allowed(p, CapOrgAdmin)
 		}
-		return name == p.Org && (isRead(method) || p.Admin)
+		// A person reads any org they BELONG to, and edits the ones they help run.
+		// Membership is the authority, not the account's owner half: a human's
+		// account lives in one IAM tenant while the orgs they work in are a set, so
+		// keying this on p.Org alone refused an org's own admin the org they
+		// administer — which is what made a second org invisible in every console.
+		if isRead(method) {
+			return p.memberOf(name)
+		}
+		return p.adminOf(name)
 	}
 	// A confidential client's authority is its capability allowlist and nothing
 	// else — never Super, never Admin; an unmapped entity or unset allowlist denies.
@@ -777,7 +825,10 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 		if u.IsForbidden || u.IsDeleted {
 			return nil, errRevoked
 		}
-		return &Principal{Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Super: u.Owner == adminOrg}, nil
+		return &Principal{
+			Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Super: u.Owner == adminOrg,
+			Orgs: membershipRoles(ctx, db, u.Owner+"/"+u.Name),
+		}, nil
 	}
 	// No user row. A machine token's subject is "<appOwner>/<appName>", which names
 	// an APPLICATION — so it resolves to the SAME confidential-client Principal the
@@ -810,6 +861,24 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 	// authority. Fail closed by construction: on the raw CRUD this authorizes to
 	// nothing.
 	return &Principal{Org: owner}, nil
+}
+
+// membershipRoles reads the org->role set a person may act in. A store error is
+// not fatal: it yields an EMPTY set, which is the same authority the policy gave
+// before memberships existed (home org only), so a store blip narrows a decision
+// and never widens one. The read is one indexed query on the user key.
+func membershipRoles(ctx context.Context, db orm.DB, user string) map[string]string {
+	rows, err := store.MembershipsByUser(ctx, db, user)
+	if err != nil || len(rows) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(rows))
+	for _, m := range rows {
+		if m != nil && m.Org != "" {
+			out[m.Org] = m.Role
+		}
+	}
+	return out
 }
 
 // app resolves an `Authorization: Basic <clientId>:<clientSecret>` credential into
