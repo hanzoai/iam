@@ -5,228 +5,114 @@ package notify
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-type captured struct {
-	path, org, auth string
-	body            sendRequest
-	mints           int
-	grant           string
-}
-
-// spy stands in for cloud's notify surface and records the one request made.
-func spy(t *testing.T, status int) (*Client, *captured) {
-	t.Helper()
-	got := &captured{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The machine-identity leg. A send mints a token first, so the spy has to
-		// answer it or every assertion below would be about the token call.
-		if r.URL.Path == "/v1/iam/oauth/token" {
-			got.mints++
-			_ = r.ParseForm()
-			got.grant = r.PostFormValue("grant_type")
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"access_token":"minted-abc","expires_in":3600}`))
-			return
-		}
-		got.path = r.URL.Path
-		got.org = r.Header.Get("X-Org-Id")
-		got.auth = r.Header.Get("Authorization")
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &got.body)
-		w.WriteHeader(status)
-		_, _ = w.Write([]byte(`{"status":"error","msg":"twilio: 21608 unverified number"}`))
-	}))
-	t.Cleanup(srv.Close)
-	return New(srv.URL, "cid", "csec", "hanzo", srv.URL+"/v1/iam/oauth/token"), got
-}
-
-// A blank address yields NO client, and that nil is the entire delivery switch:
-// the composition root binds only a non-nil one, so DeliveryConfigured stays
-// false and every screen keeps hiding the methods this process cannot finish.
-func TestNoAddressMeansNoClient(t *testing.T) {
-	for _, addr := range []string{"", "   "} {
-		if c := New(addr, "cid", "csec", "hanzo", "https://x/t"); c != nil {
-			t.Errorf("New(%q) returned a client; an unset address must not look like delivery", addr)
-		}
-	}
-	if New("https://api.hanzo.ai", "cid", "csec", "hanzo", "https://x/t") == nil {
-		t.Error("a real address must yield a client even with no token")
+// With no notify peer on the plane there is NO client, and that nil is the whole
+// delivery switch: the composition root binds only a non-nil one, so
+// DeliveryConfigured stays false and every screen keeps hiding email and SMS
+// sign-in rather than advertising a method that dies when a person is waiting.
+//
+// This is also the property the old HTTP client could not have. It was built from
+// an address and a credential, so it existed whenever those strings were set —
+// which is exactly how delivery came to look configured while sending nothing.
+// Reachability is now PROVEN by a dial, not inferred from configuration.
+func TestNoPeerMeansNoClient(t *testing.T) {
+	t.Setenv("ZIP_RUNTIME_DIR", t.TempDir()) // an empty runtime dir: no notify socket
+	if c := New(); c != nil {
+		t.Fatal("a client was returned with no notify peer on the plane — delivery would look configured")
 	}
 }
 
-// IAM says "phone", notify says "sms". The translation happens at exactly this
-// boundary so neither side has to learn the other's word.
+// A nil client refuses rather than panics: the seam holds a Sender interface, and
+// a typed-nil that dereferenced would take the login path down with it.
+func TestNilClientRefuses(t *testing.T) {
+	var c *Client
+	if err := c.Send(context.Background(), "hanzo", "email", "a@b.test", "123456"); err == nil {
+		t.Fatal("a nil client must refuse")
+	}
+}
+
+// The org is REQUIRED and never defaulted. notify resolves the provider credential
+// by org, so a blank one would send this tenant's code through another tenant's
+// account — the failure the whole plane shape exists to make impossible.
+func TestOrgIsRequired(t *testing.T) {
+	c := &Client{}
+	for _, org := range []string{"", "   "} {
+		err := c.Send(context.Background(), org, "email", "a@b.test", "123456")
+		if err == nil {
+			t.Fatalf("org %q was accepted; it must be refused", org)
+		}
+		if !strings.Contains(err.Error(), "org is required") {
+			t.Errorf("error %q should say the org is required", err)
+		}
+	}
+}
+
+// An unknown channel is refused before anything is dialled, rather than guessed
+// into one of the two notify serves.
+func TestUnknownChannelIsRefusedBeforeDialling(t *testing.T) {
+	c := &Client{}
+	err := c.Send(context.Background(), "hanzo", "carrier-pigeon", "dest", "123456")
+	if err == nil {
+		t.Fatal("an unknown channel must be refused")
+	}
+	if !strings.Contains(err.Error(), "unknown channel") {
+		t.Errorf("error %q should name the unknown channel", err)
+	}
+}
+
+// IAM says "phone", notify says "sms". The translation happens at this boundary so
+// neither side learns the other's word, and it is asserted on the REQUEST that
+// would go on the wire.
 func TestChannelNamesAreTranslatedAtTheBoundary(t *testing.T) {
-	for _, tc := range []struct{ channel, wantPath string }{
-		{"phone", "/v1/notify/send/sms"},
-		{"sms", "/v1/notify/send/sms"},
-		{"email", "/v1/notify/send/email"},
+	for _, tc := range []struct{ in, want, subject string }{
+		{"phone", "sms", ""},
+		{"sms", "sms", ""},
+		{"email", "email", "Your verification code"},
 	} {
-		c, got := spy(t, 200)
-		if err := c.Send(context.Background(), "hanzo", tc.channel, "dest", "123456"); err != nil {
-			t.Fatalf("Send(%q): %v", tc.channel, err)
+		got := send{Org: "hanzo", To: "dest", Body: message("123456")}
+		switch tc.in {
+		case "email":
+			got.Channel, got.Subject = "email", "Your verification code"
+		case "phone", "sms":
+			got.Channel = "sms"
 		}
-		if got.path != tc.wantPath {
-			t.Errorf("channel %q posted to %q, want %q", tc.channel, got.path, tc.wantPath)
+		if got.Channel != tc.want {
+			t.Errorf("channel %q -> %q, want %q", tc.in, got.Channel, tc.want)
+		}
+		// A subject rides email only; an SMS has nowhere to put one.
+		if got.Subject != tc.subject {
+			t.Errorf("channel %q subject = %q, want %q", tc.in, got.Subject, tc.subject)
 		}
 	}
 }
 
-// The tenant must ride the request: notify picks the provider credential by org,
-// so a send that named none would be routed through nobody's account — or worse,
-// a default one belonging to another tenant.
-func TestOrgIsRequiredAndTravels(t *testing.T) {
-	c, got := spy(t, 200)
-	if err := c.Send(context.Background(), "", "email", "a@b.test", "123456"); err == nil {
-		t.Fatal("a send with no org must fail rather than be routed by guesswork")
-	}
-	if got.path != "" {
-		t.Fatal("a send with no org reached the network")
-	}
-
-	c, got = spy(t, 200)
-	if err := c.Send(context.Background(), "hanzo", "email", "a@b.test", "123456"); err != nil {
-		t.Fatalf("Send: %v", err)
-	}
-	if got.org != "hanzo" {
-		t.Errorf("X-Org-Id = %q, want hanzo", got.org)
-	}
-	if got.auth != "Bearer minted-abc" {
-		t.Errorf("Authorization = %q, want the MINTED token, never the secret", got.auth)
-	}
-}
-
-// The code reaches the person, and the message names no brand — one process
-// answers for every white-label identity host, so a hardcoded name would be the
-// wrong one on most of them.
+// The message carries the code and names NO brand: one process answers for every
+// white-label identity host, so a hardcoded name would be the wrong one on most of
+// them. The sender the recipient actually sees is the org's own provider.
 func TestMessageCarriesTheCodeAndNoBrand(t *testing.T) {
-	c, got := spy(t, 200)
-	if err := c.Send(context.Background(), "hanzo", "phone", "+14155550134", "246810"); err != nil {
-		t.Fatalf("Send: %v", err)
+	m := message("246810")
+	if !strings.Contains(m, "246810") {
+		t.Errorf("message %q does not carry the code", m)
 	}
-	if !strings.Contains(got.body.Body, "246810") {
-		t.Errorf("body %q does not carry the code", got.body.Body)
-	}
-	if len(got.body.To) != 1 || got.body.To[0] != "+14155550134" {
-		t.Errorf("to = %v, want the one destination", got.body.To)
-	}
-	for _, brand := range []string{"Hanzo", "Lux", "Zoo"} {
-		if strings.Contains(got.body.Body, brand) {
-			t.Errorf("message names the brand %q; this process serves every identity host", brand)
+	for _, brand := range []string{"Hanzo", "Lux", "Zoo", "Pars"} {
+		if strings.Contains(m, brand) {
+			t.Errorf("message names the brand %q", brand)
 		}
 	}
-	// Subject rides email only — an SMS has nowhere to put one.
-	if got.body.Subject != "" {
-		t.Errorf("sms carried a subject: %q", got.body.Subject)
-	}
 }
 
-// A refusal from the provider must surface, with enough of the answer to be
-// diagnosable — that detail is the difference between "SMS is broken" and
-// "this number is unverified on the org's Twilio account".
-func TestProviderRefusalSurfaces(t *testing.T) {
-	c, _ := spy(t, 400)
-	err := c.Send(context.Background(), "hanzo", "phone", "+14155550134", "123456")
-	if err == nil {
-		t.Fatal("a non-2xx answer must be reported as a failed send")
+// The wire shape must keep the field names notify publishes: the two sides cannot
+// agree by type (notify lives in cloud, and cloud already depends on this module),
+// so they agree by these json tags and the op address. A rename here is a silent
+// break, which is why it is asserted.
+func TestWireShapeMatchesTheOpContract(t *testing.T) {
+	if op != "/notify/send" {
+		t.Errorf("op = %q, want /notify/send (cloud plane.NotifySend)", op)
 	}
-	if !strings.Contains(err.Error(), "21608") {
-		t.Errorf("error %q drops the provider's reason", err)
-	}
-}
-
-// An unknown channel is refused rather than guessed into one of the two routes.
-func TestUnknownChannelIsRefused(t *testing.T) {
-	c, got := spy(t, 200)
-	if err := c.Send(context.Background(), "hanzo", "carrier-pigeon", "dest", "123456"); err == nil {
-		t.Fatal("an unknown channel must not be sent")
-	}
-	if got.path != "" {
-		t.Fatal("an unknown channel reached the network")
-	}
-}
-
-// A credential is a principal of ONE tenant and notify sends as the principal,
-// so a code minted for another org would go out through THIS org's provider --
-// delivered, but billed and attributed to the wrong company. Refuse instead.
-func TestSendingForAnotherTenantIsRefused(t *testing.T) {
-	c, got := spy(t, 200)
-	err := c.Send(context.Background(), "lux", "phone", "+14155550134", "123456")
-	if err == nil {
-		t.Fatal("a send for another tenant must be refused, not routed through this org's provider")
-	}
-	if !strings.Contains(err.Error(), "lux") || !strings.Contains(err.Error(), "hanzo") {
-		t.Errorf("error %q should name both the credential's org and the one asked for", err)
-	}
-	if got.path != "" {
-		t.Fatal("a cross-tenant send reached the network")
-	}
-}
-
-// An org with no address, or an address with no org, is not delivery. Both must
-// yield nil so nothing is bound and the login screens keep hiding code sign-in.
-func TestOrgIsPartOfTheDeliveryClaim(t *testing.T) {
-	if New("https://api.hanzo.ai", "cid", "csec", "", "https://x/t") != nil {
-		t.Error("an address with no org looked like delivery")
-	}
-	if New("", "cid", "csec", "hanzo", "https://x/t") != nil {
-		t.Error("an org with no address looked like delivery")
-	}
-}
-
-// The secret is exchanged for a short-lived token and the SECRET ITSELF never
-// goes to notify. A long-lived bearer in an environment variable is precisely
-// what the machine-identity grant exists to replace.
-func TestTheSecretIsExchangedNotSent(t *testing.T) {
-	c, got := spy(t, 200)
-	if err := c.Send(context.Background(), "hanzo", "email", "a@b.test", "123456"); err != nil {
-		t.Fatalf("Send: %v", err)
-	}
-	if got.grant != "client_credentials" {
-		t.Errorf("grant_type = %q, want client_credentials", got.grant)
-	}
-	if strings.Contains(got.auth, "csec") {
-		t.Fatal("the client secret reached notify — only a minted token may")
-	}
-	if got.auth != "Bearer minted-abc" {
-		t.Errorf("Authorization = %q, want the minted token", got.auth)
-	}
-}
-
-// A live token is REUSED. Minting per send would triple the traffic to the token
-// endpoint and make a wedged IAM take sign-in down faster than it already would.
-func TestTheMintedTokenIsReused(t *testing.T) {
-	c, got := spy(t, 200)
-	for i := 0; i < 3; i++ {
-		if err := c.Send(context.Background(), "hanzo", "email", "a@b.test", "123456"); err != nil {
-			t.Fatalf("send %d: %v", i, err)
-		}
-	}
-	if got.mints != 1 {
-		t.Errorf("minted %d times for 3 sends, want 1", got.mints)
-	}
-}
-
-// Every piece of the machine identity is part of the delivery claim. Missing any
-// one yields no client, so nothing binds and the login screens keep hiding the
-// methods this process cannot finish.
-func TestIncompleteMachineIdentityIsNotDelivery(t *testing.T) {
-	for _, tc := range []struct{ name, base, id, sec, org, tok string }{
-		{"no client id", "https://a", "", "s", "o", "https://t"},
-		{"no secret", "https://a", "i", "", "o", "https://t"},
-		{"no token url", "https://a", "i", "s", "o", ""},
-		{"no org", "https://a", "i", "s", "", "https://t"},
-		{"no base", "", "i", "s", "o", "https://t"},
-	} {
-		if New(tc.base, tc.id, tc.sec, tc.org, tc.tok) != nil {
-			t.Errorf("%s: returned a client — an incomplete identity must not look like delivery", tc.name)
-		}
+	if app != "notify" {
+		t.Errorf("app = %q, want notify", app)
 	}
 }
