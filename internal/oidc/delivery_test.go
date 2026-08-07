@@ -16,8 +16,8 @@ type fakeSender struct {
 	sent []string
 }
 
-func (f *fakeSender) Send(_ context.Context, channel, dest, code string) error {
-	f.sent = append(f.sent, channel+":"+dest+":"+code)
+func (f *fakeSender) Send(_ context.Context, org, channel, dest, code string) error {
+	f.sent = append(f.sent, org+":"+channel+":"+dest+":"+code)
 	return f.err
 }
 
@@ -114,13 +114,13 @@ func TestSendFailureIsReportedNotSwallowed(t *testing.T) {
 	f := &fakeSender{err: errors.New("twilio: 21608 unverified number")}
 	bindSender(t, f)
 
-	if err := sender.Send(context.Background(), "email", "someone@example.com", "123456"); err == nil {
+	if err := sender.Send(context.Background(), "hanzo", "email", "someone@example.com", "123456"); err == nil {
 		t.Fatal("a failing sender must surface its error to the endpoint")
 	}
 	if len(f.sent) != 1 {
 		t.Fatalf("sender was called %d times, want 1", len(f.sent))
 	}
-	if f.sent[0] != "email:someone@example.com:123456" {
-		t.Errorf("sender got %q — channel, destination and code must all reach it", f.sent[0])
+	if f.sent[0] != "hanzo:email:someone@example.com:123456" {
+		t.Errorf("sender got %q — org, channel, destination and code must all reach it", f.sent[0])
 	}
 }
