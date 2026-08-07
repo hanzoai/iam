@@ -233,6 +233,13 @@ var appPolicyKeys = []string{
 	"orgChoiceMode",
 	"isShared",
 	"organization",
+	// Which identity providers an app offers is the same kind of fact as
+	// enableWebAuthn: it decides who may sign in, names only provider RECORDS
+	// (no redirect, no secret), and has no legitimate live drift. Without it,
+	// an app registered by the provision document (which cannot say providers)
+	// could never gain a social button from declared state — hanzo-cli sat
+	// password-only while init_data.json said otherwise.
+	"providers",
 }
 
 // upsert creates entity if (owner,name) is absent; otherwise counts it skipped
