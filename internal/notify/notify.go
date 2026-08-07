@@ -19,21 +19,40 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Client posts one message per code to notify's send surface.
 type Client struct {
-	base  string
-	token string
-	org   string
-	http  *http.Client
+	base string
+	org  string
+	http *http.Client
+
+	// The machine identity this process presents. A client_credentials grant is
+	// the ONE way a service authenticates here: the secret is issued and rotated
+	// in KMS and reaches this process as a mounted credential, and what goes on
+	// the wire is a short-lived token minted from it — never the secret itself,
+	// and never a long-lived bearer sitting in an environment variable for the
+	// life of a pod.
+	clientID     string
+	clientSecret string
+	tokenURL     string
+
+	// The minted token, reused until shortly before it expires. Guarded because
+	// several sign-ins can be sending at once, and a mutex here means one refresh
+	// rather than one per concurrent send.
+	mu     sync.Mutex
+	tok    string
+	tokExp time.Time
 }
 
 // New builds a client against notify's base URL — the cloud origin that serves
-// /v1/notify, e.g. "https://api.hanzo.ai". token authenticates this service to
-// that surface, and org is the ONE tenant that token is a principal of.
+// /v1/notify, e.g. "https://api.hanzo.ai". The machine identity (clientID +
+// clientSecret, issued and rotated in KMS) is what this service authenticates
+// with, and org is the ONE tenant that identity is a principal of.
 //
 // org is required for a reason that is easy to get wrong. notify derives the
 // sending tenant from the VALIDATED PRINCIPAL and explicitly not from any header
@@ -50,16 +69,21 @@ type Client struct {
 // BOUND SENDER and never from this address — an address is a claim that delivery
 // exists, and this constructor is where the claim gets tested. A base with no org
 // is the same kind of empty claim and yields nil too.
-func New(base, token, org string) *Client {
+func New(base, clientID, clientSecret, org, tokenURL string) *Client {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	org = strings.TrimSpace(org)
-	if base == "" || org == "" {
+	clientID = strings.TrimSpace(clientID)
+	clientSecret = strings.TrimSpace(clientSecret)
+	tokenURL = strings.TrimSpace(tokenURL)
+	if base == "" || org == "" || clientID == "" || clientSecret == "" || tokenURL == "" {
 		return nil
 	}
 	return &Client{
-		base:  base,
-		token: strings.TrimSpace(token),
-		org:   org,
+		base:         base,
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		tokenURL:     tokenURL,
+		org:          org,
 		// A verification code is worthless late: the person is sitting on a login
 		// screen waiting for it. Bound the attempt so a wedged provider surfaces as
 		// a failed send the caller can report, rather than holding the request open.
@@ -120,13 +144,15 @@ func (c *Client) Send(ctx context.Context, org, channel, dest, code string) erro
 	if err != nil {
 		return err
 	}
+	bearer, err := c.bearer(ctx)
+	if err != nil {
+		return fmt.Errorf("notify: machine identity could not authenticate: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	// The tenant travels as the principal's org header, which is how every other
 	// caller of this surface names one.
 	req.Header.Set("X-Org-Id", org)
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	req.Header.Set("Authorization", "Bearer "+bearer)
 
 	res, err := c.http.Do(req)
 	if err != nil {
@@ -150,4 +176,55 @@ func (c *Client) Send(ctx context.Context, org, channel, dest, code string) erro
 // tenant — so the body only has to carry the code and say not to share it.
 func message(code string) string {
 	return "Your verification code is " + code + ". It expires in 10 minutes. If you did not request it, ignore this message and do not share it with anyone."
+}
+
+// bearer returns a live access token for this machine identity, minting one when
+// the cached token is absent or close to expiry.
+//
+// The grant is client_credentials — the standard machine door, which IAM already
+// serves — so nothing here invents an authentication scheme. What reaches notify
+// is always a short-lived token; the secret it was minted from never leaves this
+// process. The 60-second skew means a token is replaced slightly before it dies
+// rather than after a send has already failed on it.
+func (c *Client) bearer(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.tok != "" && time.Now().Add(60*time.Second).Before(c.tokExp) {
+		return c.tok, nil
+	}
+	form := url.Values{
+		"grant_type":    {"client_credentials"},
+		"client_id":     {c.clientID},
+		"client_secret": {c.clientSecret},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	res, err := c.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	if res.StatusCode >= 300 {
+		// Never echo the form: it carries the client secret.
+		return "", fmt.Errorf("token endpoint refused the machine identity (%d)", res.StatusCode)
+	}
+	var out struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil || out.AccessToken == "" {
+		return "", fmt.Errorf("token endpoint returned no access_token")
+	}
+	ttl := time.Duration(out.ExpiresIn) * time.Second
+	if ttl <= 0 {
+		// No expiry stated: hold it briefly rather than forever, so a revoked or
+		// rotated identity stops working in minutes instead of at pod restart.
+		ttl = 5 * time.Minute
+	}
+	c.tok, c.tokExp = out.AccessToken, time.Now().Add(ttl)
+	return c.tok, nil
 }
