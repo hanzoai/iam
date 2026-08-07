@@ -16,6 +16,8 @@ import (
 type captured struct {
 	path, org, auth string
 	body            sendRequest
+	mints           int
+	grant           string
 }
 
 // spy stands in for cloud's notify surface and records the one request made.
@@ -23,6 +25,16 @@ func spy(t *testing.T, status int) (*Client, *captured) {
 	t.Helper()
 	got := &captured{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The machine-identity leg. A send mints a token first, so the spy has to
+		// answer it or every assertion below would be about the token call.
+		if r.URL.Path == "/v1/iam/oauth/token" {
+			got.mints++
+			_ = r.ParseForm()
+			got.grant = r.PostFormValue("grant_type")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"minted-abc","expires_in":3600}`))
+			return
+		}
 		got.path = r.URL.Path
 		got.org = r.Header.Get("X-Org-Id")
 		got.auth = r.Header.Get("Authorization")
@@ -32,7 +44,7 @@ func spy(t *testing.T, status int) (*Client, *captured) {
 		_, _ = w.Write([]byte(`{"status":"error","msg":"twilio: 21608 unverified number"}`))
 	}))
 	t.Cleanup(srv.Close)
-	return New(srv.URL, "tok", "hanzo"), got
+	return New(srv.URL, "cid", "csec", "hanzo", srv.URL+"/v1/iam/oauth/token"), got
 }
 
 // A blank address yields NO client, and that nil is the entire delivery switch:
@@ -40,11 +52,11 @@ func spy(t *testing.T, status int) (*Client, *captured) {
 // false and every screen keeps hiding the methods this process cannot finish.
 func TestNoAddressMeansNoClient(t *testing.T) {
 	for _, addr := range []string{"", "   "} {
-		if c := New(addr, "tok", "hanzo"); c != nil {
+		if c := New(addr, "cid", "csec", "hanzo", "https://x/t"); c != nil {
 			t.Errorf("New(%q) returned a client; an unset address must not look like delivery", addr)
 		}
 	}
-	if New("https://api.hanzo.ai", "", "hanzo") == nil {
+	if New("https://api.hanzo.ai", "cid", "csec", "hanzo", "https://x/t") == nil {
 		t.Error("a real address must yield a client even with no token")
 	}
 }
@@ -86,8 +98,8 @@ func TestOrgIsRequiredAndTravels(t *testing.T) {
 	if got.org != "hanzo" {
 		t.Errorf("X-Org-Id = %q, want hanzo", got.org)
 	}
-	if got.auth != "Bearer tok" {
-		t.Errorf("Authorization = %q, want the service token", got.auth)
+	if got.auth != "Bearer minted-abc" {
+		t.Errorf("Authorization = %q, want the MINTED token, never the secret", got.auth)
 	}
 }
 
@@ -161,10 +173,60 @@ func TestSendingForAnotherTenantIsRefused(t *testing.T) {
 // An org with no address, or an address with no org, is not delivery. Both must
 // yield nil so nothing is bound and the login screens keep hiding code sign-in.
 func TestOrgIsPartOfTheDeliveryClaim(t *testing.T) {
-	if New("https://api.hanzo.ai", "tok", "") != nil {
+	if New("https://api.hanzo.ai", "cid", "csec", "", "https://x/t") != nil {
 		t.Error("an address with no org looked like delivery")
 	}
-	if New("", "tok", "hanzo") != nil {
+	if New("", "cid", "csec", "hanzo", "https://x/t") != nil {
 		t.Error("an org with no address looked like delivery")
+	}
+}
+
+// The secret is exchanged for a short-lived token and the SECRET ITSELF never
+// goes to notify. A long-lived bearer in an environment variable is precisely
+// what the machine-identity grant exists to replace.
+func TestTheSecretIsExchangedNotSent(t *testing.T) {
+	c, got := spy(t, 200)
+	if err := c.Send(context.Background(), "hanzo", "email", "a@b.test", "123456"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if got.grant != "client_credentials" {
+		t.Errorf("grant_type = %q, want client_credentials", got.grant)
+	}
+	if strings.Contains(got.auth, "csec") {
+		t.Fatal("the client secret reached notify — only a minted token may")
+	}
+	if got.auth != "Bearer minted-abc" {
+		t.Errorf("Authorization = %q, want the minted token", got.auth)
+	}
+}
+
+// A live token is REUSED. Minting per send would triple the traffic to the token
+// endpoint and make a wedged IAM take sign-in down faster than it already would.
+func TestTheMintedTokenIsReused(t *testing.T) {
+	c, got := spy(t, 200)
+	for i := 0; i < 3; i++ {
+		if err := c.Send(context.Background(), "hanzo", "email", "a@b.test", "123456"); err != nil {
+			t.Fatalf("send %d: %v", i, err)
+		}
+	}
+	if got.mints != 1 {
+		t.Errorf("minted %d times for 3 sends, want 1", got.mints)
+	}
+}
+
+// Every piece of the machine identity is part of the delivery claim. Missing any
+// one yields no client, so nothing binds and the login screens keep hiding the
+// methods this process cannot finish.
+func TestIncompleteMachineIdentityIsNotDelivery(t *testing.T) {
+	for _, tc := range []struct{ name, base, id, sec, org, tok string }{
+		{"no client id", "https://a", "", "s", "o", "https://t"},
+		{"no secret", "https://a", "i", "", "o", "https://t"},
+		{"no token url", "https://a", "i", "s", "o", ""},
+		{"no org", "https://a", "i", "s", "", "https://t"},
+		{"no base", "", "i", "s", "o", "https://t"},
+	} {
+		if New(tc.base, tc.id, tc.sec, tc.org, tc.tok) != nil {
+			t.Errorf("%s: returned a client — an incomplete identity must not look like delivery", tc.name)
+		}
 	}
 }
