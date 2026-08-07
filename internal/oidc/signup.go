@@ -15,9 +15,9 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/internal/users"
 )
 
 // The native front-door signup: POST /v1/iam/signup. The @hanzo/iam SDK + the
@@ -218,7 +218,7 @@ func signupHandler(db orm.DB) zip.Handler {
 				LastName:          f.LastName,
 				Email:             email,
 				EmailVerified:     false,
-				Phone:             f.Phone,
+				Phone:             store.NormalizePhone(f.Phone),
 				CountryCode:       f.CountryCode,
 				Affiliation:       f.Affiliation,
 				Avatar:            org.DefaultAvatar,

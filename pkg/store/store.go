@@ -210,6 +210,85 @@ func GetUserByEmail(_ context.Context, db orm.DB, owner, email string) (*schema.
 	return u, err
 }
 
+// ErrPhoneAmbiguous reports that a phone number identifies more than one account
+// in an org, so it identifies nobody. Returned instead of a user, on purpose —
+// see [GetUserByPhone].
+var ErrPhoneAmbiguous = errors.New("phone number matches more than one account")
+
+// NormalizePhone reduces a phone number to the ONE form this system stores and
+// compares: a leading "+" if the caller gave one, then digits, nothing else.
+//
+// It exists because a phone typed by a human ("(415) 555-0134", "415-555-0134",
+// "+1 415 555 0134") and a phone written by SCIM are the same number in different
+// clothes, and an equality lookup cannot see through clothes. Applying it on WRITE
+// and on READ is what makes one number one value; applying it on only one side
+// would be a lookup that silently never matches.
+//
+// It deliberately does NOT infer a country code. Guessing "+1" for a bare
+// ten-digit string would silently claim a number in one country for a user in
+// another, and this function has no idea which country anyone is in. A number
+// stored without a country code matches only a number typed without one, which is
+// the honest behaviour; making country codes canonical is a data decision for
+// whoever collects the number, not a guess for a string function.
+func NormalizePhone(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	for i, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '+' && i == 0:
+			b.WriteRune(r)
+		}
+	}
+	out := b.String()
+	if out == "+" {
+		return ""
+	}
+	return out
+}
+
+// GetUserByPhone resolves a user by (owner, phone) — the SMS-login identifier.
+//
+// It FAILS CLOSED on ambiguity, and that is the whole reason it is not a copy of
+// [GetUserByEmail]. `schema.User.Phone` is indexed but NOT unique, so two rows in
+// one org can carry the same number; a `.First()` would then hand back an
+// arbitrary one of them and the caller would authenticate a person against
+// somebody else's account. That is the same defect class as the cross-org
+// collision the login path already refuses to rely on. A number that names two
+// accounts names none, so this returns [ErrPhoneAmbiguous] and lets the caller
+// refuse rather than choose.
+//
+// phone is normalized here so every caller compares the same way; a blank or
+// punctuation-only argument returns (nil, nil) rather than matching the many rows
+// that legitimately store no phone at all.
+func GetUserByPhone(ctx context.Context, db orm.DB, owner, phone string) (*schema.User, error) {
+	phone = NormalizePhone(phone)
+	if phone == "" {
+		return nil, nil
+	}
+	// Two, not one: enough to detect a collision, and bounded so a shared number
+	// on many rows cannot pull them all into memory.
+	us, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).Filter("Phone=", phone).Limit(2).GetAll(ctx)
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch len(us) {
+	case 0:
+		return nil, nil
+	case 1:
+		return us[0], nil
+	default:
+		return nil, ErrPhoneAmbiguous
+	}
+}
+
 // GetTokenByCode resolves a token row by its authorization code. Returns
 // (nil, nil) when no row carries the code.
 func GetTokenByCode(_ context.Context, db orm.DB, code string) (*schema.Token, error) {
@@ -541,6 +620,16 @@ func GetLatestVerificationRecord(_ context.Context, db orm.DB, receiver string) 
 		return nil, nil
 	}
 	return rec, err
+}
+
+// SaveVerificationRecord persists a change to an existing verification record —
+// spending it, or counting a wrong guess against it. The row is addressed by the
+// (owner, name) id it was created under, so this updates rather than inserts.
+func SaveVerificationRecord(ctx context.Context, db orm.DB, rec *schema.VerificationRecord) error {
+	if rec == nil {
+		return nil
+	}
+	return rec.UpdateCtx(ctx)
 }
 
 // PersistFederationState creates a fresh in-flight federation transaction. The

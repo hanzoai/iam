@@ -18,6 +18,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // Handler binds the invitations operations to one orm store.
@@ -96,7 +97,7 @@ func apply(dst *schema.Invitation, in *Input) {
 	dst.Application = in.Application
 	dst.Username = in.Username
 	dst.Email = in.Email
-	dst.Phone = in.Phone
+	dst.Phone = store.NormalizePhone(in.Phone)
 	dst.SignupGroup = in.SignupGroup
 	dst.DefaultCode = in.DefaultCode
 	dst.State = in.State
