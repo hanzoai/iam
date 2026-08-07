@@ -61,6 +61,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/oidc"
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -778,14 +779,36 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 		}
 		return &Principal{Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Super: u.Owner == adminOrg}, nil
 	}
-	// No user row. A machine token's subject is "<appOwner>/<appName>" — org-scoped
-	// to the app's owner half, carrying no admin/super authority. Anything else — an
-	// opaque UUID subject with no live user row (a since-deleted user, or a forgery
-	// the trusted-key verify already blocks) — establishes NO principal, fail closed.
-	owner, _, hasSlash := strings.Cut(claims.Subject, "/")
+	// No user row. A machine token's subject is "<appOwner>/<appName>", which names
+	// an APPLICATION — so it resolves to the SAME confidential-client Principal the
+	// Basic path builds, from the same row. A client is one principal however it
+	// presents its credential: client_secret_basic on the request, or the bearer it
+	// minted with client_credentials from that identical secret. It was not, and the
+	// asymmetry was silent and total — a bearer took the branch below, arriving with
+	// App empty (so every capability clause was skipped: an allowlisted client could
+	// not exercise the one capability it is allowlisted FOR) and Org set to the app
+	// row's OWNER half rather than the tenant it SERVES (so even the tenant rule
+	// refused it). Both halves of its authority were wrong at once, which is why the
+	// console's org reads and membership grants answered 403 while the same client,
+	// on the same secret, was authorized over Basic.
+	//
+	// This grants nothing new: the Principal is built by the same helper, from the
+	// same row, and is still never Admin and never Super — its whole authority
+	// remains capFor()/Allowed(), pinned to a reserved signing owner.
+	owner, name, hasSlash := strings.Cut(claims.Subject, "/")
 	if !hasSlash || owner == "" {
 		return nil, errNoSubject
 	}
+	if name != "" {
+		if a, err := store.GetApplicationByName(ctx, db, owner, name); err == nil && a != nil {
+			return appPrincipal(a), nil
+		}
+	}
+	// A subject that names neither a live user nor a live application — an opaque
+	// UUID with no row (a since-deleted user, or a forgery the trusted-key verify
+	// already blocks) — is org-scoped only, carrying no admin, super, or app
+	// authority. Fail closed by construction: on the raw CRUD this authorizes to
+	// nothing.
 	return &Principal{Org: owner}, nil
 }
 
@@ -816,11 +839,20 @@ func app(c *zip.Ctx, db orm.DB) (*Principal, bool) {
 	if subtle.ConstantTimeCompare([]byte(a.ClientSecret), []byte(secret)) != 1 {
 		return nil, false
 	}
-	// AppOwner is the app row's OWNING org (a.Owner: "admin"/"built-in" for a platform
-	// app), NOT a.Organization (the tenant it SERVES). cap.go pins every capability to
-	// this being a reserved signing owner, so a tenant-owned app named/clientId'd like
-	// a console holds nothing. Org carries the served tenant, as before.
-	return &Principal{App: a.Name, AppOwner: a.Owner, AppCert: a.Cert, Org: a.Organization}, true
+	return appPrincipal(a), true
+}
+
+// appPrincipal is the ONE shape a confidential client's authority takes, so the
+// two ways it can present that authority — client_secret_basic on the request,
+// or the bearer it minted with those same credentials — cannot resolve to
+// different principals.
+//
+// AppOwner is the app row's OWNING org (a.Owner: "admin"/"built-in" for a
+// platform app), NOT a.Organization (the tenant it SERVES). cap.go pins every
+// capability to this being a reserved signing owner, so a tenant-owned app
+// named/clientId'd like a console holds nothing. Org carries the served tenant.
+func appPrincipal(a *schema.Application) *Principal {
+	return &Principal{App: a.Name, AppOwner: a.Owner, AppCert: a.Cert, Org: a.Organization}
 }
 
 // entityOf returns the resource segment of an /v1/iam/<entity>[/verb] path, or
