@@ -27,27 +27,39 @@ import (
 type Client struct {
 	base  string
 	token string
+	org   string
 	http  *http.Client
 }
 
 // New builds a client against notify's base URL — the cloud origin that serves
 // /v1/notify, e.g. "https://api.hanzo.ai". token authenticates this service to
-// that surface and may be empty where the hop is already inside the trust
-// boundary.
+// that surface, and org is the ONE tenant that token is a principal of.
+//
+// org is required for a reason that is easy to get wrong. notify derives the
+// sending tenant from the VALIDATED PRINCIPAL and explicitly not from any header
+// the caller supplies (`principal.OrgFrom`, "never a client header"), so a
+// service credential can only ever send as its own org. This process, though,
+// answers for every white-label identity host — so a client that quietly posted
+// on behalf of any tenant would put lux and zoo codes through hanzo's Twilio
+// while reporting success. Naming the org here makes that structural: a send for
+// anyone else is refused below rather than mis-routed.
 //
 // A blank base yields nil, and nil is the whole switch: the composition root
 // binds only a non-nil client, so `DeliveryConfigured` stays false and every
 // screen keeps hiding code sign-in. That is why availability is read from the
 // BOUND SENDER and never from this address — an address is a claim that delivery
-// exists, and this constructor is where the claim gets tested.
-func New(base, token string) *Client {
+// exists, and this constructor is where the claim gets tested. A base with no org
+// is the same kind of empty claim and yields nil too.
+func New(base, token, org string) *Client {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
-	if base == "" {
+	org = strings.TrimSpace(org)
+	if base == "" || org == "" {
 		return nil
 	}
 	return &Client{
 		base:  base,
 		token: strings.TrimSpace(token),
+		org:   org,
 		// A verification code is worthless late: the person is sitting on a login
 		// screen waiting for it. Bound the attempt so a wedged provider surfaces as
 		// a failed send the caller can report, rather than holding the request open.
@@ -78,6 +90,17 @@ func (c *Client) Send(ctx context.Context, org, channel, dest, code string) erro
 		// and guessing a default would send this tenant's code through somebody
 		// else's account.
 		return fmt.Errorf("notify: org is required to route a verification code")
+	}
+	if org != c.org {
+		// REFUSE rather than mis-route. This credential is a principal of exactly
+		// one tenant and notify sends as the principal, so a code minted for
+		// another org would go out through THIS org's provider — delivered, and
+		// billed and attributed to the wrong tenant. A loud failure here surfaces
+		// as "codes cannot be delivered" on that brand's login screen, which is the
+		// truth; the alternative is a code that silently arrives from the wrong
+		// company. Sending for more than one tenant needs a notify entry that
+		// accepts an explicit org from a cross-tenant service principal.
+		return fmt.Errorf("notify: this credential sends only for org %q, not %q", c.org, org)
 	}
 	var path, subject string
 	switch channel {
