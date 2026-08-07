@@ -20,6 +20,7 @@ import (
 
 	"github.com/hanzoai/iam/feature"
 	"github.com/hanzoai/iam/internal/featurestore"
+	"github.com/hanzoai/iam/internal/notify"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/seed"
@@ -134,3 +135,26 @@ func BindSender(s Sender) { oidc.BindSender(s) }
 // person, so a host can assert on its own wiring. It answers from the bound
 // sender, never from configuration.
 func DeliveryConfigured() bool { return oidc.DeliveryConfigured() }
+
+// PlaneSender is the delivery transport, for a host that grafts IAM.
+//
+// It exists so there is ONE implementation of "how a verification code reaches a
+// person" rather than one per composition root. IAM's own binary binds this from
+// main; a host that embeds IAM (cloud, which mounts notify in the same process)
+// binds the SAME thing instead of writing a second sender that would have to be
+// kept in step — two senders is two places for the org, the channel mapping and
+// the message to drift.
+//
+// It returns nil when notify is not reachable, and nil is the whole delivery
+// switch: bind it unconditionally and [DeliveryConfigured] still answers honestly,
+// so the login descriptor hides email and SMS sign-in rather than advertising a
+// method that would fail with a person waiting on it.
+func PlaneSender() Sender {
+	if c := notify.New(); c != nil {
+		return c
+	}
+	// A typed nil in an interface is NOT nil, and BindSender would then hold a
+	// sender that reports delivery configured and refuses every send. Return an
+	// untyped nil so the predicate stays truthful.
+	return nil
+}
