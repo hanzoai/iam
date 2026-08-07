@@ -389,7 +389,7 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			action = "updated"
 			existing.DisplayName = pick(in.DisplayName, existing.DisplayName)
 			existing.Email = pick(in.Email, existing.Email)
-			existing.Phone = pick(in.Phone, existing.Phone)
+			existing.Phone = store.NormalizePhone(pick(in.Phone, existing.Phone))
 			existing.IsAdmin = in.IsAdmin
 			if hash != "" {
 				existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, cred.TypeArgon2id, ""
@@ -412,7 +412,7 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			u := orm.New[schema.User](db)
 			model := u.Model
 			u.Owner, u.Name = in.Owner, name
-			u.DisplayName, u.Email, u.Phone, u.IsAdmin = in.DisplayName, in.Email, in.Phone, in.IsAdmin
+			u.DisplayName, u.Email, u.Phone, u.IsAdmin = in.DisplayName, in.Email, store.NormalizePhone(in.Phone), in.IsAdmin
 			if hash != "" {
 				u.PasswordHash, u.PasswordType = hash, cred.TypeArgon2id
 			}

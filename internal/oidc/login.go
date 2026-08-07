@@ -11,6 +11,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -36,7 +37,11 @@ type loginForm struct {
 	Organization string `json:"organization"`
 	Username     string `json:"username"` // email OR username
 	Password     string `json:"password"`
-	Type         string `json:"type"` // "code" (PKCE authorize) | "device" (RFC 8628 approval) | "login" (bare session)
+	// Code is a one-time code delivered to the identifier in Username, offered
+	// INSTEAD of Password. Present means "sign me in with this code"; the two are
+	// alternatives and a request carrying a code never reaches the password check.
+	Code string `json:"code"`
+	Type string `json:"type"` // "code" (PKCE authorize) | "device" (RFC 8628 approval) | "login" (bare session)
 
 	// UserCode is the RFC 8628 code the device displays, transcribed by the human
 	// approving it (type=device).
@@ -172,13 +177,36 @@ func loginHandler(db orm.DB) zip.Handler {
 			}
 		}
 
-		if f.Organization == "" || f.Username == "" || f.Password == "" {
+		// One credential is required, not specifically a password: a code stands in
+		// its place. Spelling this as "password == ''" refused every code sign-in
+		// here, before the arm that knows how to read one.
+		if f.Organization == "" || f.Username == "" || (f.Password == "" && f.Code == "") {
 			return httpx.Err(c, "organization, username and password are required")
 		}
 
 		user, err := resolveLoginUser(ctx, db, f.Organization, f.Username)
 		if err != nil {
 			return httpx.Err(c, err.Error())
+		}
+
+		// A code in place of a password: the SAME door, one arm further in. Sign-in
+		// by email or SMS proves possession of an address the account already
+		// holds, which is one factor exactly as a password is, so it joins here
+		// rather than at a second endpoint — the MFA gate, the device approval and
+		// the PKCE tail below are then true of it by construction instead of by a
+		// second implementation that has to be kept in step.
+		if f.Code != "" {
+			ok, err := codeLogin(ctx, db, f, user)
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			if !ok {
+				return httpx.Err(c, "the code is incorrect or has expired")
+			}
+			// The code proved the channel it arrived on, so the gate is told WHICH
+			// factor is already satisfied and offers a different one — an email code
+			// is never answered by demanding a second email code.
+			return afterFirstFactor(c, db, user, f, verificationChannel(f.Username))
 		}
 		// The hash algorithm is a property of the ROW, not a constant: use the
 		// user's PasswordType, falling back to the organization's (v1's
@@ -198,24 +226,80 @@ func loginHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the username or password is incorrect")
 		}
 
-		// The password proved ONE factor. The gate holds the sign-in when a second
-		// factor is outstanding — before ANY token or device approval — and answers
-		// the request itself; a false means nothing more is owed. The verificationType
-		// is "" because a password proves none of the offerable factors.
-		org, err := store.GetOrganizationByName(ctx, db, user.Owner)
-		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		gated, err := gate(c, db, user, org, "")
-		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		if gated {
-			return nil
-		}
-
-		return loginGrant(c, db, user, f)
+		// The password proves none of the offerable second factors, so the gate is
+		// told "" and may ask for any of them.
+		return afterFirstFactor(c, db, user, f, "")
 	}
+}
+
+// afterFirstFactor runs everything owed between "this is the user" and the grant.
+// The gate holds the sign-in when a second factor is outstanding — before ANY
+// token or device approval — and answers the request itself; false means nothing
+// more is owed.
+//
+// proven names the factor the FIRST credential already satisfied, so the gate can
+// exclude it (mfa_gate.allowList drops the matching factor): a password proves
+// none and passes "", while an emailed or texted code proves that channel and must
+// not be answered by demanding the same channel again. Both credential arms end
+// here so the rules between proof and grant are stated once and cannot drift into
+// being true of one arm and false of the other.
+func afterFirstFactor(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm, proven string) error {
+	ctx := c.Context()
+	org, err := store.GetOrganizationByName(ctx, db, user.Owner)
+	if err != nil {
+		return httpx.Err(c, err.Error())
+	}
+	gated, err := gate(c, db, user, org, proven)
+	if err != nil {
+		return httpx.Err(c, err.Error())
+	}
+	if gated {
+		return nil
+	}
+	return loginGrant(c, db, user, f)
+}
+
+// verificationChannel names the factor a code delivered to identifier proves —
+// the same two words the MFA factors use, so the value can be handed straight to
+// the gate.
+func verificationChannel(identifier string) string {
+	if strings.Contains(identifier, "@") {
+		return factor.Email
+	}
+	return factor.SMS
+}
+
+// codeLogin verifies a one-time code as the whole first factor.
+//
+// It is deliberately strict about WHEN it may run, because it is a way into an
+// account that never involves a password:
+//
+//   - the application must have code sign-in switched on (EnableCodeSignin), the
+//     same per-app policy the login descriptor advertises;
+//   - delivery must be configured, or this process could not have sent the code
+//     it is being asked to trust;
+//   - the code is spent by [ConsumeVerificationCode] whatever the outcome — one
+//     use on a hit, one counted guess on a miss.
+//
+// A missing user is NOT an early return. The code is consumed first regardless,
+// so a caller cannot learn which addresses have accounts by watching whether a
+// wrong code was counted, and the answer is the same opaque false either way.
+func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (bool, error) {
+	if !DeliveryConfigured() {
+		return false, nil
+	}
+	app, err := store.GetApplicationByClientId(ctx, db, f.ClientId)
+	if err != nil {
+		return false, err
+	}
+	if app == nil || !app.EnableCodeSignin {
+		return false, nil
+	}
+	ok, err := ConsumeVerificationCode(ctx, db, f.Username, f.Code)
+	if err != nil || !ok {
+		return false, err
+	}
+	return user != nil, nil
 }
 
 // loginGrant completes a sign-in that has passed the gate: a device approval, a
@@ -311,7 +395,37 @@ func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string) (*
 	if strings.Contains(identifier, "@") {
 		return store.GetUserByEmail(ctx, db, org, identifier)
 	}
+	// Phone LAST, and only for something shaped like a phone number. It runs after
+	// name so a user literally named "12345" still wins their own row, and the
+	// shape gate keeps an ordinary username from turning into a phone lookup.
+	//
+	// GetUserByPhone refuses to pick between two rows carrying one number
+	// (ErrPhoneAmbiguous). That error is returned, not swallowed into "no such
+	// user": the caller must not authenticate anyone against a number that
+	// identifies two accounts.
+	if looksLikePhone(identifier) {
+		return store.GetUserByPhone(ctx, db, org, identifier)
+	}
 	return nil, nil
+}
+
+// looksLikePhone reports whether an identifier is worth a phone lookup: at least
+// seven digits, and nothing but digits and the punctuation people put in phone
+// numbers. It is a SHAPE test, not validation — the lookup itself decides whether
+// the number names anyone. Seven is the shortest national subscriber number in
+// general use, and requiring it keeps short numeric usernames out of this arm.
+func looksLikePhone(s string) bool {
+	digits := 0
+	for i, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			digits++
+		case r == '+' && i == 0, r == ' ', r == '-', r == '(', r == ')', r == '.':
+		default:
+			return false
+		}
+	}
+	return digits >= 7
 }
 
 // loginOrgPasswordType returns the organization's PasswordType — the fallback
