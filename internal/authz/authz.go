@@ -203,11 +203,18 @@ func Deny(c *zip.Ctx, err error) error { return refuse(c, http.StatusForbidden, 
 // too: a grant honours the org it names and answers with THAT org's row, correctly
 // attributed; everything else is refused. Neither branch can hand back a row the
 // request did not ask for.
+//
+// The grant is honoured WHOLE. An earlier shape re-narrowed the honoured set to
+// supers and app self-reads after authorize() had already admitted the read —
+// a second copy of the policy, and a stale one: it predated the organizations
+// exception (a tenant's own org row lives under the reserved admin owner), so a
+// member's GET of admin/<their org> was admitted by the policy and then refused
+// by this re-narrowing. The native REST twin, authorized by the Guard alone,
+// answered 200 for the same principal and row — one policy, two answers. If
+// authorize() says yes to this exact (owner, name) read, that IS the decision.
 func ScopeFor(ctx context.Context, path, owner, name string) (string, error) {
 	if p, ok := From(ctx); ok && owner != "" && authorize(p, "GET", entityOf(path), owner, name) {
-		if p.Super || (p.App != "" && owner == p.AppOwner) {
-			return owner, nil
-		}
+		return owner, nil
 	}
 	return Scope(ctx, owner)
 }

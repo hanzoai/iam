@@ -188,6 +188,34 @@ func TestGetUsers_unpaged_hasNoData2(t *testing.T) {
 	}
 }
 
+// A tenant's org row lives under the reserved admin owner, and the policy's
+// organizations exception admits a member's read of it. The compat surface must
+// answer the SAME way the native REST twin does: ScopeFor honours the grant
+// authorize() already made, instead of re-narrowing it to supers and app
+// self-reads — the re-narrowing is exactly what made the console's
+// get-organization read 403 for every signed-in member, so the org's
+// displayName and logo fell back to the person's monogram.
+func TestGetOrganization_memberReadsOwnOrg(t *testing.T) {
+	h := newHarness(t)
+	status, body := h.get(t, "/v1/iam/get-organization?id=admin/hanzo", h.token(t, "hanzo/alice"))
+	if status != 200 {
+		t.Fatalf("member read of own org = %d, want 200; body=%s", status, body)
+	}
+	assertNoSecretLeak(t, body)
+	if !strings.Contains(body, "\"name\":\"hanzo\"") {
+		t.Fatalf("expected the hanzo org row; body=%s", body)
+	}
+}
+
+// The grant is exact: another tenant's member still cannot read this org.
+func TestGetOrganization_foreignMemberStillRefused(t *testing.T) {
+	h := newHarness(t)
+	status, _ := h.get(t, "/v1/iam/get-organization?id=admin/hanzo", h.token(t, "orgb/bob"))
+	if status != 403 {
+		t.Fatalf("foreign member read of admin/hanzo = %d, want 403", status)
+	}
+}
+
 func TestGetOrganizations_super_listsAll_masked(t *testing.T) {
 	h := newHarness(t)
 	status, body := h.get(t, "/v1/iam/get-organizations", h.token(t, "admin/root"))
