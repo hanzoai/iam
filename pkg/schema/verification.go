@@ -32,4 +32,11 @@ type VerificationRecord struct {
 	Code       string `json:"code"`
 	Time       int64  `json:"time"`
 	IsUsed     bool   `json:"isUsed"`
+	// Attempts counts wrong codes submitted against this record. A six-digit code
+	// live for ten minutes is a million guesses if nothing counts them, which is
+	// fine for a code that only gates a signup and NOT fine for one that is a
+	// login credential on its own. Bounding the count is what makes the two uses
+	// the same strength. Absent on rows written before this field existed, which
+	// reads as zero — the right starting value.
+	Attempts int `json:"attempts,omitempty"`
 }
