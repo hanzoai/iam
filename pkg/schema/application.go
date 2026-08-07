@@ -248,6 +248,43 @@ func (a *Application) GetId() string {
 // internal/provision, TypeCLI), the CLI sends http://127.0.0.1:51234/callback,
 // authorize answered 400 invalid_redirect_uri, the browser never came back, and
 // the CLI blocked on accept() forever. That hang was this comparison.
+// ServesAnyOrg reports whether this application admits a principal whose org is
+// not its own. It is the ONE spelling of tenant isolation's exemption, and it
+// exists because that predicate was written out four times — in mint, token,
+// signup and federation — and every copy got the same thing wrong.
+//
+// The trap is `OrgChoiceMode`. It names the org picker the signup page offers,
+// and its vocabulary is "None" | "Select" | "Input" (plus our own "create"). So
+// "None" and "" mean exactly the same thing: this app offers NO org choice, and
+// is therefore confined to its own tenant. Every copy of the rule tested only
+// `== ""`, which reads as that but is not — an application carrying the
+// CANONICAL "None" fell through to the exemption and accepted a session from any
+// org at all. Measured before this existed: a session owned by "hanzo" minted a
+// valid authorization code for zoo-console, an application owned by "zoo".
+//
+// Nothing declared it that way on purpose. All 77 seeded applications carry "",
+// and the two that carried "None" (zoo-console, pars-console) were edited live
+// through the admin console — which writes the canonical spelling, so the UI's
+// correct value was the one the check could not read.
+//
+// A set, not a comparison, because the failure was a comparison that looked
+// complete. Adding a mode now means adding it here, where the reading of it is.
+func (a *Application) ServesAnyOrg() bool {
+	if a.IsShared {
+		return true
+	}
+	switch a.OrgChoiceMode {
+	case "", orgChoiceNone:
+		return false
+	}
+	return true
+}
+
+// orgChoiceNone is the admin console's spelling of "offer no org picker" — the
+// same statement as the empty string, which is what a never-edited application
+// carries. Both must read as confined.
+const orgChoiceNone = "None"
+
 func (a *Application) IsRedirectUriValid(redirectUri string) bool {
 	if redirectUri == "" {
 		return false
