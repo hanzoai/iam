@@ -78,7 +78,7 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	if app == nil {
 		return "", errors.New("the application does not exist")
 	}
-	if org != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
+	if org != app.Organization && !app.ServesAnyOrg() {
 		return "", errors.New("the user is not permitted to sign in to this application")
 	}
 	if p.RedirectUri != "" && !app.IsRedirectUriValid(p.RedirectUri) {

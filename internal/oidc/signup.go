@@ -117,7 +117,7 @@ func signupHandler(db orm.DB) zip.Handler {
 		// Tenant isolation: the requested org must be the app's own org, a shared
 		// app, or an app that lets users choose their org — the same gate login
 		// enforces, so a signup cannot land a user in an arbitrary tenant.
-		if f.Organization != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
+		if f.Organization != app.Organization && !app.ServesAnyOrg() {
 			return httpx.Err(c, "the user is not permitted to sign up to this application")
 		}
 

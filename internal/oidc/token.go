@@ -374,7 +374,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	// Checked BEFORE the user lookup, with the SAME opaque failure as a bad
 	// credential, so it is no org/user existence oracle.
 	if store.IsReservedOrg(org) ||
-		(org != app.Organization && !app.IsShared && app.OrgChoiceMode == "") {
+		(org != app.Organization && !app.ServesAnyOrg()) {
 		return tokenError(c, 400, "invalid_grant", "the username or password is incorrect")
 	}
 
