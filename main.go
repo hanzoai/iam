@@ -124,13 +124,23 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 	// the methods this process cannot complete. Setting it turns all four on at
 	// once, with no second switch to remember.
 	//
+	// The secret is a KMS-issued machine-identity credential, mounted; what goes on
+	// the wire is a short-lived client_credentials token minted from it, never the
+	// secret. Any piece missing means no client, so nothing is half-configured.
+	//
 	// Deliberately NOT fatal when unset: password and social sign-in are complete
 	// without it, and an identity service that refuses to boot because it cannot
 	// send SMS is worse than one that honestly offers fewer methods.
-	if n := notify.New(os.Getenv("IAM_NOTIFY_ADDR"), os.Getenv("IAM_NOTIFY_TOKEN"), os.Getenv("IAM_NOTIFY_ORG")); n != nil {
+	if n := notify.New(
+		os.Getenv("IAM_NOTIFY_ADDR"),
+		os.Getenv("IAM_NOTIFY_CLIENT_ID"),
+		os.Getenv("IAM_NOTIFY_CLIENT_SECRET"),
+		os.Getenv("IAM_NOTIFY_ORG"),
+		os.Getenv("IAM_NOTIFY_TOKEN_URL"),
+	); n != nil {
 		oidc.BindSender(n)
 	} else {
-		fmt.Fprintln(os.Stderr, "iam: IAM_NOTIFY_ADDR/IAM_NOTIFY_ORG unset — email/SMS codes and their second factors stay off")
+		fmt.Fprintln(os.Stderr, "iam: notify machine identity not configured — email/SMS codes and their second factors stay off")
 	}
 
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
