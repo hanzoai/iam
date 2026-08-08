@@ -22,6 +22,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/cred"
+	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -318,6 +319,19 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 		u.PasswordType = cred.TypeArgon2id
 		u.PasswordSalt = ""
 	}
+	// Multi-factor state is carried from the stored row and any body value is IGNORED,
+	// the same rule as the credentials above and for a sharper version of the same
+	// reason. This is a full-row write, so an ordinary admin profile edit that simply
+	// omits these columns — which is what every partial client sends — TURNED THE
+	// SECOND FACTOR OFF, silently and with nothing in the audit trail saying so; and a
+	// body that supplies them PLANTS a factor (a TotpSecret the caller knows, a
+	// recovery digest they minted) on anyone in reach. factor.Copy is handed the whole
+	// block rather than a line per column so that "what IS multi-factor state" stays
+	// declared in exactly one place; the sibling SCIM surface already has the
+	// regression test for this (internal/scim/regression_test.go) and the native CRUD
+	// had none. Factors are written by internal/mfa and the login gate, through
+	// factor.Save, and nowhere else.
+	factor.Copy(u, existing)
 	// The consent record is the DATA SUBJECT's own answer, so it is carried from
 	// the stored row and a body-supplied one is IGNORED — the same rule as the
 	// credentials above, for the same reason: this is a full-row write that any
