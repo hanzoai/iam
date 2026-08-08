@@ -160,8 +160,12 @@ func authMethods(db orm.DB) zip.TypedHandler[offer, httpx.Answer] {
 			// the org WANTS email/SMS codes; DeliveryConfigured says the server can
 			// send one. Both must hold, or the screen shows a method that ends in a
 			// person waiting for a message nobody sent.
-			"code":     app.EnableCodeSignin && DeliveryConfigured(),
-			"webauthn": app.EnableWebAuthn,
+			"code": app.EnableCodeSignin && DeliveryConfigured(),
+			// The same two halves, for the same reason: PasskeySignin says whether a
+			// registered passkey can be challenged at all. The raw switch stood here
+			// alone, so every screen was told webauthn:true while the assertion
+			// ceremony does not exist.
+			"webauthn": app.EnableWebAuthn && schema.PasskeySignin(),
 			"web3":     len(names) > 0,
 			// The families a wallet may sign in with, so a screen can render the
 			// right options instead of hardcoding a list that drifts from the
@@ -251,6 +255,7 @@ func loginView(app *schema.Application) *schema.Application {
 	// would draw the button anyway. The org's stored setting is untouched — only
 	// what the browser is told.
 	view.EnableCodeSignin = view.EnableCodeSignin && DeliveryConfigured()
+	view.EnableWebAuthn = view.EnableWebAuthn && schema.PasskeySignin()
 	kept := make([]*schema.ProviderItem, 0, len(view.Providers))
 	for _, it := range view.Providers {
 		if it == nil || it.Provider == nil || !offerable(it.Provider) {
