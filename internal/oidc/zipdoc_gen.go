@@ -87,6 +87,9 @@ func init() {
 	zip.Describe("POST /v1/iam/keys/revoke", zip.Doc{
 		Description: "Clears the target user's key of the requested TYPE (immediate\nrevoke). Scoped by the same `?type` field mint takes, so revoking the browser key\nleaves the server key working. A secret key's stored value is the sk- in its\nschema.Key row.",
 	})
+	zip.Describe("POST /v1/iam/link", zip.Doc{
+		Description: "Starts connecting another sign-in identity to the account you are already\nsigned in as. It answers with the provider's URL for the browser to follow; when\nthe provider returns, that identity is attached and you come back to returnUri.\n\nYour account is fixed here, from the credential you are already holding, and is\ncarried server-side for the rest of the round-trip — so nothing that happens at\nthe provider can point the link at somebody else.",
+	})
 	zip.Describe("POST /v1/iam/login", zip.Doc{
 		Description: "Signs a person in with the credential they typed, and — when the\nrequest is part of an OAuth flow — hands back the one-time code that finishes\nit. A second factor, if the account has one, is asked for and required here.\n\nThe password is compared against a stored one-way hash and is never logged,\nechoed or stored as typed.",
 	})

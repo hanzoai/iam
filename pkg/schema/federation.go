@@ -52,6 +52,14 @@ type FederationState struct {
 	CodeChallengeMethod string `json:"codeChallengeMethod"`
 	Resource            string `json:"resource"`
 
+	// Subject is the account this transaction ATTACHES the verified provider
+	// identity to: "<org>/<name>", set from the CALLER's already-proven identity
+	// when a signed-in person deliberately connects a provider (PathLink), and
+	// empty for a sign-in. It is the whole difference between the two flows, and it
+	// is never read from a request — a transaction that could be told whose account
+	// to attach to would be an account takeover with one forged parameter.
+	Subject string `json:"subject,omitempty"`
+
 	// IdP-leg verification material (single-use; never leaves the process, never
 	// logged). IdpVerifier is the PKCE code_verifier for the IdP token exchange;
 	// IdpNonce is the nonce sent to an OIDC IdP and checked against the returned
