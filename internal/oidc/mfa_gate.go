@@ -42,18 +42,20 @@ const (
 	NextMfa = "NextMfa"
 )
 
-// gate is the second-factor decision — the ONE place a sign-in is held. It answers
+// Gate is the second-factor decision — the ONE place a sign-in is held. It answers
 // the request itself and reports true when it did; a false means this principal has
 // proven everything it owes and the caller may mint.
 //
 // Every path that signs a user in calls this BEFORE minting a token or approving a
 // device — one function, every call site, because a gate that exists in one branch
-// is not a gate.
+// is not a gate. It is exported for the front doors outside this package (the
+// wallet's, internal/wallet) for exactly that reason: a second copy of the policy
+// is how one of them ends up not having it.
 //
 // verificationType names the factor the caller already proved, so the challenge
 // never offers it back. "" excludes nothing (a password proves none of the
-// offerable factors).
-func gate(c *zip.Ctx, db orm.DB, user *schema.User, org *schema.Organization, verificationType string) (bool, error) {
+// offerable factors, and neither does a wallet signature).
+func Gate(c *zip.Ctx, db orm.DB, user *schema.User, org *schema.Organization, verificationType string) (bool, error) {
 	ctx := c.Context()
 	now := nowFunc()
 

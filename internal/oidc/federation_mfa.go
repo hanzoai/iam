@@ -101,7 +101,7 @@ func federationMfaHandler(db orm.DB) zip.Handler {
 		if !app.IsRedirectUriValid(p.RedirectUri) {
 			return httpx.Err(c, "invalid redirect_uri")
 		}
-		loc, err := federationMint(ctx, db, app, user, p, nowFunc())
+		loc, err := federationMint(c, db, app, user, p, nowFunc())
 		if err != nil {
 			if err == errPKCERequired {
 				return httpx.Err(c, "PKCE is required for public clients")
