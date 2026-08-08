@@ -344,6 +344,46 @@ for password and refresh); besides being unregistrable, that guaranteed renewal
 could never work, because a device_code is redeemable only by the client it was
 issued to and a refresh token was being presented under a different id.
 
+## A login descriptor states BOTH halves, or it is a lie
+
+Every sign-in method on `/v1/iam/auth/methods` and `get-app-login` is the AND of
+two independent facts, and publishing only the first is how a screen ends up
+drawing a button that cannot finish:
+
+    the application switch   the org WANTS this method
+    the capability           this BUILD can perform it
+
+    password   app.EnablePassword
+    code       app.EnableCodeSignin  && DeliveryConfigured()   (a bound Sender)
+    webauthn   app.EnableWebAuthn    && schema.PasskeySignin() (an assertion ceremony)
+    web3       schema.WalletChains()                           (what verify accepts)
+    oauth      offerable(provider)   (real credential AND a driveable dialect)
+
+`loginView` masks the same switches on the legacy descriptor, so the two cannot
+disagree — the browser reads whichever one still lies. The org's stored setting is
+never edited; only what a screen is told.
+
+`PasskeySignin()` is a leaf constant today because internal/webauthn registers
+passkeys and holds nothing that CHALLENGES one; it lives in `pkg/schema` for the
+reason `WalletChains` does — internal/webauthn cannot be imported from
+internal/oidc (webauthn → authz → oidc). It stops being a constant the day the
+ceremony lands, with no second switch to remember.
+
+## A verification code has ONE receiver key
+
+`receiverKey` (internal/oidc/sendverificationcode.go) is the single canonical form
+a code's destination is stored under, matched by, and delivered to. A phone number
+is `store.NormalizePhone`d; anything else is verbatim, because NormalizePhone keeps
+only digits and would leave an email with nothing to match on.
+
+All three sites route through it — the send that writes the record, and both
+readers (`ConsumeVerificationCode`, `CheckVerificationCode`). Deciding the shape
+once is what makes the write and the read unable to disagree: the record used an
+exact `Receiver=` compare while the ACCOUNT on the same request resolves through
+`GetUserByPhone`, which normalizes first, so "+1 415 555 0134" at send and
+"+14155550134" at login found the right user and then answered "the code is
+incorrect or has expired".
+
 ## Key entry points
 - `main.go` — cobra root (`serve` / `compare` / `version`); `server/server.go` route registration.
 - `internal/{oidc,routes}` — OAuth2/OIDC surface; `internal/{scim,mfa,webauthn,providers,sessions,tokens,cred,authz,certs,keys}`.
