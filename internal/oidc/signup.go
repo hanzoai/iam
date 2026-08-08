@@ -188,15 +188,20 @@ func signupHandler(db orm.DB) zip.Handler {
 		} else if taken {
 			return httpx.Err(c, "username already exists")
 		}
-		email := strings.ToLower(strings.TrimSpace(f.Email))
+		email := store.NormalizeEmail(f.Email)
 		if email != "" {
 			if !isEmailValid(email) {
 				return httpx.Err(c, "email is invalid")
 			}
-			if existing, err := store.GetUserByEmail(ctx, db, f.Organization, email); err != nil {
-				return httpx.Err(c, err.Error())
-			} else if existing != nil {
+			// An address that already names an account is taken, and an address that
+			// names TWO is taken twice over — ErrEmailAmbiguous is a uniqueness answer
+			// here, not a lookup failure, so it lands on the uniqueness message rather
+			// than reporting the store's broken invariant to a stranger.
+			switch existing, err := store.GetUserByEmail(ctx, db, f.Organization, email); {
+			case err == store.ErrEmailAmbiguous, existing != nil:
 				return httpx.Err(c, "email already exists")
+			case err != nil:
+				return httpx.Err(c, err.Error())
 			}
 		}
 		// Password policy (v1 org.PasswordOptions complexity).
