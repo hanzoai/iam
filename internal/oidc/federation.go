@@ -230,6 +230,15 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			return fedErrorRedirect(c, st, "access_denied", "the identity provider could not be verified")
 		}
 
+		// A transaction minted by PathLink names the account it attaches to, and that
+		// is the whole of what it does: a link is not a sign-in, so no code is minted
+		// and no session is opened. The subject was fixed from the caller's proven
+		// identity at begin time, so nothing that happened at the provider can point
+		// it elsewhere.
+		if st.Subject != "" {
+			return fedAttachRedirect(c, db, st, prov, identity)
+		}
+
 		user, err := linkOrProvision(ctx, db, app, prov, identity)
 		if err != nil {
 			return fedResolveErrorRedirect(c, st, err)
@@ -396,6 +405,34 @@ func fedResolveErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) 
 		return fedErrorRedirect(c, st, "access_denied", "the provider shared no email address for this account")
 	}
 	return fedErrorRedirect(c, st, "server_error", "")
+}
+
+// errSubjectLinked reports that the provider identity just verified is already
+// attached to a DIFFERENT account. One provider identity, one account — the same
+// shape as the wallet's one-wallet-one-identity rule — so it is refused rather than
+// moved, which would quietly unlink somebody else.
+var errSubjectLinked = errors.New("federation: this identity is already connected to another account")
+
+// fedAttachRedirect completes a LINK: attach the verified subject to the pinned
+// account and return the browser to the caller's validated returnUri, saying which
+// provider was connected — or why it was not. It answers in the shape a page can
+// read on arrival, since a link has no code to hand back.
+func fedAttachRedirect(c *zip.Ctx, db orm.DB, st *schema.FederationState, prov *schema.Provider, id federatedIdentity) error {
+	binding, known := connectorFor(prov.Type)
+	if !known {
+		return fedErrorRedirect(c, st, "invalid_request", "provider has no local identity binding")
+	}
+	owner, name, _ := strings.Cut(st.Subject, "/")
+	switch err := attach(c.Context(), db, owner, name, binding, id.subject); {
+	case err == nil:
+	case errors.Is(err, errSubjectLinked):
+		return fedErrorRedirect(c, st, "access_denied", "that account is already connected to someone else")
+	default:
+		return fedErrorRedirect(c, st, "server_error", "")
+	}
+	v := url.Values{}
+	v.Set("linked", prov.Name)
+	return c.Redirect(302, joinQuery(st.RedirectUri, v))
 }
 
 // linkOrProvision resolves the local identity for a verified federated login,
