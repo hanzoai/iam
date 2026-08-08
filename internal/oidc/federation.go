@@ -232,11 +232,7 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 
 		user, err := linkOrProvision(ctx, db, app, prov, identity)
 		if err != nil {
-			// A held address is a decision, not a fault: say so, and say what to do.
-			if errors.Is(err, errAddressHeld) {
-				return fedErrorRedirect(c, st, "access_denied", "an account already uses this email address — sign in with its password")
-			}
-			return fedErrorRedirect(c, st, "server_error", "")
+			return fedResolveErrorRedirect(c, st, err)
 		}
 		if user.IsForbidden || user.IsDeleted {
 			return fedErrorRedirect(c, st, "access_denied", "the account is not permitted")
@@ -369,11 +365,38 @@ func fedMintErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) err
 	return fedErrorRedirect(c, st, "server_error", "")
 }
 
-// errAddressHeld reports that the address the IdP asserted already names a local
-// account this federated identity is not entitled to adopt. It is a refusal the
-// person can act on — sign in with the password that account already has — so the
-// callback answers access_denied with a reason rather than an opaque server_error.
-var errAddressHeld = errors.New("federation: the address already names an account")
+// The ways resolving a local identity is REFUSED rather than broken. Each is a
+// decision the person or the tenant can act on, which is why they are named:
+// answering an opaque server_error tells someone to try again forever. None of
+// them reveals whether an account exists.
+var (
+	// errAddressHeld: the address the IdP asserted already names a local account
+	// this federated identity is not entitled to adopt. Sign in with the password
+	// that account already has.
+	errAddressHeld = errors.New("federation: the address already names an account")
+	// errNoFederatedSignup: this application is not open for registration, and the
+	// identity is new. The same refusal the password and wallet doors give.
+	errNoFederatedSignup = errors.New("federation: the account does not exist and sign up is disabled")
+	// errNoFederatedEmail: the provider shared no address, so there is nothing to
+	// name the account after and no way to reach the person again.
+	errNoFederatedEmail = errors.New("federation: the provider shared no email address")
+)
+
+// fedResolveErrorRedirect maps a linkOrProvision failure to the RP redirect_uri:
+// a named refusal leaves as access_denied with its reason, everything else as an
+// opaque server_error. One mapper, so a new refusal is stated once and the
+// callback does not accumulate a branch per error.
+func fedResolveErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) error {
+	switch {
+	case errors.Is(err, errAddressHeld):
+		return fedErrorRedirect(c, st, "access_denied", "an account already uses this email address — sign in with its password")
+	case errors.Is(err, errNoFederatedSignup):
+		return fedErrorRedirect(c, st, "access_denied", "this application is not open for registration")
+	case errors.Is(err, errNoFederatedEmail):
+		return fedErrorRedirect(c, st, "access_denied", "the provider shared no email address for this account")
+	}
+	return fedErrorRedirect(c, st, "server_error", "")
+}
 
 // linkOrProvision resolves the local identity for a verified federated login,
 // PROVISION-DON'T-PROMOTE: (1) an account already linked to this provider
@@ -452,10 +475,28 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 		}
 	}
 
-	// 3. Provision a fresh account — no row holds this address, which is now a
-	// property of reaching this line rather than something to re-check. Federated
-	// accounts carry NO password (the digest stays empty, so password login fails
-	// closed) and are never admin.
+	// 3. Provision a fresh account — but only where the application lets anyone
+	// register, and only for someone who can be named and reached.
+	//
+	// EnableSignUp is the tenant's own registration switch, enforced at the password
+	// door (signup.go) and the wallet door (wallet/verify.go) and not here, so an app
+	// with it OFF still got brand-new accounts from any enabled social provider: the
+	// one door a tenant could not close was the externally-driven one.
+	if !app.EnableSignUp {
+		return nil, errNoFederatedSignup
+	}
+	// An address is what an account is named after and reached at, so a provider
+	// that shares none is refused rather than turned into a row nobody can use. A
+	// GitHub App ignores the requested scope and answers /user/emails with 403 when
+	// its "Email addresses" permission is missing — which used to mint an account
+	// named after the PROVIDER ("github", then "github2") with an empty email, never
+	// matched to the person's real account and with no way back in.
+	if id.email == "" {
+		return nil, errNoFederatedEmail
+	}
+	// No row holds this address, which is now a property of reaching this line rather
+	// than something to re-check. Federated accounts carry NO password (the digest
+	// stays empty, so password login fails closed) and are never admin.
 	return provisionFederatedUser(ctx, db, app, prov, binding, id)
 }
 
