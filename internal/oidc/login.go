@@ -12,6 +12,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -263,10 +264,10 @@ func afterFirstFactor(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm, pro
 // the same two words the MFA factors use, so the value can be handed straight to
 // the gate.
 func verificationChannel(identifier string) string {
-	if strings.Contains(identifier, "@") {
-		return factor.Email
+	if store.LooksLikePhone(identifier) {
+		return factor.SMS
 	}
-	return factor.SMS
+	return factor.Email
 }
 
 // codeLogin verifies a one-time code as the whole first factor.
@@ -278,14 +279,14 @@ func verificationChannel(identifier string) string {
 //     same per-app policy the login descriptor advertises;
 //   - delivery must be configured, or this process could not have sent the code
 //     it is being asked to trust;
-//   - the code is spent by [ConsumeVerificationCode] whatever the outcome — one
+//   - the code is spent by [otp.Consume] whatever the outcome — one
 //     use on a hit, one counted guess on a miss.
 //
 // A missing user is NOT an early return. The code is consumed first regardless,
 // so a caller cannot learn which addresses have accounts by watching whether a
 // wrong code was counted, and the answer is the same opaque false either way.
 func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (bool, error) {
-	if !DeliveryConfigured() {
+	if !otp.DeliveryConfigured() {
 		return false, nil
 	}
 	app, err := store.GetApplicationByClientId(ctx, db, f.ClientId)
@@ -295,7 +296,7 @@ func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (
 	if app == nil || !app.EnableCodeSignin {
 		return false, nil
 	}
-	ok, err := ConsumeVerificationCode(ctx, db, f.Username, f.Code)
+	ok, err := otp.Consume(ctx, db, f.Username, f.Code, nowFunc())
 	if err != nil || !ok {
 		return false, err
 	}
@@ -403,29 +404,10 @@ func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string) (*
 	// (ErrPhoneAmbiguous). That error is returned, not swallowed into "no such
 	// user": the caller must not authenticate anyone against a number that
 	// identifies two accounts.
-	if looksLikePhone(identifier) {
+	if store.LooksLikePhone(identifier) {
 		return store.GetUserByPhone(ctx, db, org, identifier)
 	}
 	return nil, nil
-}
-
-// looksLikePhone reports whether an identifier is worth a phone lookup: at least
-// seven digits, and nothing but digits and the punctuation people put in phone
-// numbers. It is a SHAPE test, not validation — the lookup itself decides whether
-// the number names anyone. Seven is the shortest national subscriber number in
-// general use, and requiring it keeps short numeric usernames out of this arm.
-func looksLikePhone(s string) bool {
-	digits := 0
-	for i, r := range s {
-		switch {
-		case r >= '0' && r <= '9':
-			digits++
-		case r == '+' && i == 0, r == ' ', r == '-', r == '(', r == ')', r == '.':
-		default:
-			return false
-		}
-	}
-	return digits >= 7
 }
 
 // loginOrgPasswordType returns the organization's PasswordType — the fallback

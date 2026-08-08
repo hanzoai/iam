@@ -20,7 +20,7 @@ import (
 
 	"github.com/hanzoai/iam/feature"
 	"github.com/hanzoai/iam/internal/featurestore"
-	"github.com/hanzoai/iam/internal/oidc"
+	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/seed"
 	_ "github.com/hanzoai/iam/pkg/schema" // registers the entity kinds
@@ -110,11 +110,11 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 // IAM composes it. The expiry sentence is rendered from the same constant that
 // expires the record, so a transport never has to know — or restate — how long a
 // code lasts.
-type Message = oidc.Message
+type Message = otp.Message
 
 // Sender carries one Message. It is re-exported here because the seam itself lives
 // in an internal package: a HOST binary that grafts IAM (cloud embeds it with
-// server.NewApp) has to be able to supply the transport, and internal/oidc is by
+// server.NewApp) has to be able to supply the transport, and internal/otp is by
 // definition unreachable from outside this module.
 //
 // Composition is exactly what this package is for, and delivery is composition:
@@ -126,7 +126,7 @@ type Message = oidc.Message
 // looking for the service's socket FILE, and got it wrong in both directions: a
 // file left behind by a dead pod reported delivery that could not happen, and a
 // service that was merely not started yet reported none that could.
-type Sender = oidc.Sender
+type Sender = otp.Sender
 
 // BindSender installs the delivery transport for email and SMS codes. Call it at
 // boot, before serving.
@@ -140,9 +140,9 @@ type Sender = oidc.Sender
 // Binding is therefore an ASSERTION by the host: it says a code given to this
 // transport reaches a person. A host that cannot say that binds nothing, and every
 // screen keeps offering only the methods that work.
-func BindSender(s Sender) { oidc.BindSender(s) }
+func BindSender(s Sender) { otp.BindSender(s) }
 
 // DeliveryConfigured reports whether a verification code can actually reach a
 // person, so a host can assert on its own wiring. It answers from the bound
 // sender, never from configuration.
-func DeliveryConfigured() bool { return oidc.DeliveryConfigured() }
+func DeliveryConfigured() bool { return otp.DeliveryConfigured() }

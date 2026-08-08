@@ -52,8 +52,9 @@ const challengeOwner = "admin"
 
 // MintChallenge persists a fresh challenge for subject ("owner/name") and returns
 // its opaque id. payload is the kind's own state — the just-used verification type
-// for the MFA gate. now is injected for testability.
-func MintChallenge(ctx context.Context, db orm.DB, kind, subject, payload string, now time.Time) (string, error) {
+// for the MFA gate; offered is the set of second factors that may answer it. now is
+// injected for testability.
+func MintChallenge(ctx context.Context, db orm.DB, kind, subject, payload string, offered []string, now time.Time) (string, error) {
 	id, err := newOpaqueToken()
 	if err != nil {
 		return "", err
@@ -65,6 +66,7 @@ func MintChallenge(ctx context.Context, db orm.DB, kind, subject, payload string
 	c.Kind = kind
 	c.Subject = subject
 	c.Payload = payload
+	c.Offered = offered
 	c.ExpireIn = now.Add(challengeTTL).Unix()
 	c.SetId(challengeOwner + "/" + id)
 	if err := c.CreateCtx(ctx); err != nil {

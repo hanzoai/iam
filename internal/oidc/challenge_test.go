@@ -11,6 +11,8 @@ import (
 
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
+
+	"github.com/hanzoai/iam/internal/mfa/factor"
 )
 
 // ITEM 4: TakeChallenge burns a login challenge exactly once. A captured MFA passcode
@@ -23,7 +25,7 @@ func TestTakeChallenge_concurrentBurn_exactlyOneWinner(t *testing.T) {
 	ctx := tctx()
 	now := time.Now()
 
-	id, err := MintChallenge(ctx, db, KindMfa, "hanzo/alice", "", now)
+	id, err := MintChallenge(ctx, db, KindMfa, "hanzo/alice", "", []string{factor.App}, now)
 	if err != nil {
 		t.Fatalf("mint challenge: %v", err)
 	}

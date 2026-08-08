@@ -11,7 +11,6 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -80,24 +79,12 @@ func federationMfaHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, ErrChallenge.Error())
 		}
 
-		// Verify the factor — the ONE factor seam, shared with the password gate.
-		switch {
-		case f.Passcode != "":
-			if f.MfaType != factor.App {
-				return httpx.Err(c, "invalid multi-factor authentication type")
-			}
-			if !factor.Verify(user.TotpSecret, f.Passcode) {
-				return httpx.Err(c, "the multi-factor authentication code is incorrect")
-			}
-		case f.RecoveryCode != "":
-			if !factor.UseRecovery(user, f.RecoveryCode) {
-				return httpx.Err(c, "the recovery code is incorrect")
-			}
-			if err := factor.Save(ctx, db, user); err != nil {
-				return httpx.Err(c, err.Error())
-			}
-		default:
-			return httpx.Err(c, "missing passcode or recovery code")
+		// Verify the factor through the ONE seam, shared with the password gate. It used
+		// to be a second switch here that called itself the shared one while accepting
+		// only TOTP, so an account holding just an emailed or texted factor could answer
+		// a password login and not this one.
+		if err := proveFactor(ctx, db, user, ch, f.MfaType, f.Passcode, f.RecoveryCode); err != nil {
+			return httpx.Err(c, err.Error())
 		}
 
 		// Resume the ORIGINAL authorize request from the PINNED payload — never from

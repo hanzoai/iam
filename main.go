@@ -116,7 +116,7 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 
 	// NO DELIVERY TRANSPORT IS BOUND HERE, and the line below is the whole reason.
 	//
-	// Everything code-shaped reads one predicate — oidc.DeliveryConfigured, which
+	// Everything code-shaped reads one predicate — otp.DeliveryConfigured, which
 	// reports on the BOUND SENDER and never on configuration — so email sign-in, SMS
 	// sign-in and the email and SMS second factors are exactly as available as the
 	// transport a composition root supplies. This root supplies none, so all four

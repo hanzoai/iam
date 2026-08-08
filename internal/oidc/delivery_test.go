@@ -5,31 +5,32 @@ package oidc
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
 
+	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
-// fakeSender records what it was asked to deliver and fails on demand.
+// fakeSender records what it was asked to deliver and fails on demand. It keeps the
+// whole Message, because the code now travels inside the worded body — where a person
+// reads it, and the only place a test can learn it from either (see codeIn).
 type fakeSender struct {
 	err  error
-	sent []Message
+	sent []otp.Message
 }
 
-func (f *fakeSender) Send(_ context.Context, m Message) error {
+func (f *fakeSender) Send(_ context.Context, m otp.Message) error {
 	f.sent = append(f.sent, m)
 	return f.err
 }
 
-// bindSender installs s for the duration of one test and restores the previous
-// binding after, so these tests can run in any order.
-func bindSender(t *testing.T, s Sender) {
+// bindSender installs s for the duration of one test and unbinds after, so these
+// tests can run in any order. Nothing binds a sender at package init, so unbound is
+// the state to return to.
+func bindSender(t *testing.T, s otp.Sender) {
 	t.Helper()
-	prev := sender
-	sender = s
-	t.Cleanup(func() { sender = prev })
+	otp.BindSender(s)
+	t.Cleanup(func() { otp.BindSender(nil) })
 }
 
 // A code sign-in is offered only when a code can actually reach a person.
@@ -58,7 +59,7 @@ func TestCodeSigninNeedsBothTheSwitchAndDelivery(t *testing.T) {
 			} else {
 				bindSender(t, nil)
 			}
-			if got := tc.enabled && DeliveryConfigured(); got != tc.want {
+			if got := tc.enabled && otp.DeliveryConfigured(); got != tc.want {
 				t.Errorf("code offered = %v, want %v (switch=%v bound=%v)",
 					got, tc.want, tc.enabled, tc.bound)
 			}
@@ -76,13 +77,13 @@ func TestCodeSigninNeedsBothTheSwitchAndDelivery(t *testing.T) {
 func TestDeliveryIsDecidedByTheSenderNotAnAddress(t *testing.T) {
 	bindSender(t, nil)
 	t.Setenv("IAM_NOTIFY_ADDR", "notify.hanzo.svc:8000")
-	if DeliveryConfigured() {
+	if otp.DeliveryConfigured() {
 		t.Error("an address alone reported delivery configured — nothing would have been sent")
 	}
 
 	bindSender(t, &fakeSender{})
 	t.Setenv("IAM_NOTIFY_ADDR", "")
-	if !DeliveryConfigured() {
+	if !otp.DeliveryConfigured() {
 		t.Error("a bound sender must report delivery configured, address or not")
 	}
 }
@@ -116,49 +117,16 @@ func TestSendFailureIsReportedNotSwallowed(t *testing.T) {
 	f := &fakeSender{err: errors.New("twilio: 21608 unverified number")}
 	bindSender(t, f)
 
-	if err := sender.Send(context.Background(), message("hanzo", "email", "someone@example.com", "123456")); err == nil {
+	// Addressed by hand: what the words say is otp's business (and otp's test); what
+	// this asserts is that a transport failure reaches the endpoint.
+	m := otp.Message{Org: "hanzo", Channel: otp.Email, To: "someone@example.com", Body: "code 123456"}
+	if err := f.Send(context.Background(), m); err == nil {
 		t.Fatal("a failing sender must surface its error to the endpoint")
 	}
 	if len(f.sent) != 1 {
 		t.Fatalf("sender was called %d times, want 1", len(f.sent))
 	}
-	got := f.sent[0]
-	if got.Org != "hanzo" || got.Channel != "email" || got.To != "someone@example.com" {
-		t.Errorf("sender got %+v — the tenant, channel and destination must all reach it", got)
-	}
-	if !strings.Contains(got.Body, "123456") {
-		t.Errorf("the body %q does not carry the code", got.Body)
-	}
-}
-
-// The message IAM composes carries the code, states the SAME expiry the record is
-// checked against, and names no brand.
-//
-// The expiry is the reason this composition lives here rather than in a transport.
-// One process answers for every white-label identity host and every one of them
-// expires a code after verificationCodeTTL, so a transport writing its own sentence
-// would be restating a policy it cannot read — and the two would part company the
-// first time the TTL moved. This asserts they agree.
-func TestTheMessageStatesTheRealExpiryAndNoBrand(t *testing.T) {
-	m := message("hanzo", "phone", "+15550100", "246810")
-
-	if !strings.Contains(m.Body, "246810") {
-		t.Errorf("body %q does not carry the code", m.Body)
-	}
-	want := fmt.Sprintf("expires in %d minutes", int(verificationCodeTTL.Minutes()))
-	if !strings.Contains(m.Body, want) {
-		t.Errorf("body %q does not state the real expiry (%q from verificationCodeTTL)", m.Body, want)
-	}
-	for _, brand := range []string{"Hanzo", "Lux", "Zoo", "Pars"} {
-		if strings.Contains(m.Body, brand) {
-			t.Errorf("body names the brand %q — one process answers for every white-label host", brand)
-		}
-	}
-	// A subject rides email only; an SMS has nowhere to put one.
-	if m.Subject != "" {
-		t.Errorf("an sms carried a subject %q", m.Subject)
-	}
-	if s := message("hanzo", "email", "a@b.test", "1").Subject; s == "" {
-		t.Error("an email carried no subject")
+	if got := f.sent[0]; got.Org != "hanzo" || got.Channel != otp.Email || got.To != "someone@example.com" {
+		t.Errorf("sender got %+v — org, channel and destination must all reach it", got)
 	}
 }
