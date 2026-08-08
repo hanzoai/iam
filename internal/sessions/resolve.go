@@ -203,6 +203,43 @@ func Rekey(ctx context.Context, c fiber.Ctx, db orm.DB, newOwner string) bool {
 	return true
 }
 
+// RevokeOthers ends every session (owner, name) holds EXCEPT the one this request
+// carries — across every application, since an identity's sessions are one row per
+// application and a person is signed in to all of them.
+//
+// It is what a change to somebody's second factor owes. A session established before
+// the factor existed reaches the grant with NO credential of any kind (the code and
+// device flows resolve the cookie instead of asking), so enrolling 2FA evicted nobody
+// and a stolen session kept minting authorization codes for its full 14 days. The
+// request's own session is kept because it just proved the factor — signing the person
+// out of the browser they are enrolling in would strand them mid-ceremony.
+//
+// Best-effort throughout: a session that cannot be read is one that will not resolve.
+func RevokeOthers(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name string) {
+	keep := ""
+	if sc, ok := Current(ctx, c, db); ok {
+		keep = sc.SID
+	}
+	rows, err := orm.TypedQuery[schema.Session](db).
+		Filter("Owner=", owner).Filter("Name=", name).GetAll(ctx)
+	if err != nil {
+		return
+	}
+	for _, s := range rows {
+		kept := make([]string, 0, 1)
+		for _, sid := range s.SessionId {
+			if sid == keep {
+				kept = append(kept, sid)
+			}
+		}
+		if len(kept) == len(s.SessionId) {
+			continue
+		}
+		s.SessionId = kept
+		_ = s.Update()
+	}
+}
+
 // registerSID appends sid to the (owner, name, application) session row's active
 // list, creating the row if absent — the list Resolve checks for revocation.
 // Mirrors the Sessions.Create persist path exactly (one way to write a session).

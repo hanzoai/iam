@@ -11,6 +11,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -157,10 +158,10 @@ func authMethods(db orm.DB) zip.TypedHandler[offer, httpx.Answer] {
 		return httpx.Good(map[string]any{
 			"password": app.EnablePassword,
 			// Offered only when a code can actually be delivered. The app switch says
-			// the org WANTS email/SMS codes; DeliveryConfigured says the server can
+			// the org WANTS email/SMS codes; otp.DeliveryConfigured says the server can
 			// send one. Both must hold, or the screen shows a method that ends in a
 			// person waiting for a message nobody sent.
-			"code": app.EnableCodeSignin && DeliveryConfigured(),
+			"code": app.EnableCodeSignin && otp.DeliveryConfigured(),
 			// The same two halves, for the same reason: PasskeySignin says whether a
 			// registered passkey can be challenged at all. The raw switch stood here
 			// alone, so every screen was told webauthn:true while the assertion
@@ -254,7 +255,7 @@ func loginView(app *schema.Application) *schema.Application {
 	// source of truth, so a switch left on for a method the server cannot perform
 	// would draw the button anyway. The org's stored setting is untouched — only
 	// what the browser is told.
-	view.EnableCodeSignin = view.EnableCodeSignin && DeliveryConfigured()
+	view.EnableCodeSignin = view.EnableCodeSignin && otp.DeliveryConfigured()
 	view.EnableWebAuthn = view.EnableWebAuthn && schema.PasskeySignin()
 	kept := make([]*schema.ProviderItem, 0, len(view.Providers))
 	for _, it := range view.Providers {

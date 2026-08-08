@@ -93,3 +93,33 @@ func TestGetUserByPhoneIsOrgScoped(t *testing.T) {
 		t.Fatalf("cross-tenant resolve: org lux reached %s", got.Name)
 	}
 }
+
+// LooksLikePhone must not swallow ordinary usernames, and must not miss the shapes
+// people actually type. It is a SHAPE test — whether the number names anyone is the
+// lookup's business, not this function's. Sign-in's identifier resolution and the
+// verification code's receiver key both ask it, which is why there is one copy.
+func TestLooksLikePhone(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want bool
+	}{
+		{"+14155550134", true},
+		{"+1 (415) 555-0134", true},
+		{"415-555-0134", true},
+		{"4155550134", true},
+
+		// Not phones: a username, an email, and a short numeric handle that a
+		// seven-digit floor deliberately keeps out of the phone arm.
+		{"zeekay", false},
+		{"someone@example.com", false},
+		{"12345", false},
+		{"", false},
+		{"user123456789", false},
+		// A "+" is only meaningful leading; mid-string it is not phone punctuation.
+		{"415+555+0134", false},
+	} {
+		if got := store.LooksLikePhone(tc.in); got != tc.want {
+			t.Errorf("LooksLikePhone(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}

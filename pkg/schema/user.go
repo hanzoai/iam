@@ -265,9 +265,17 @@ type User struct {
 	MfaAccounts         []MfaAccount     `json:"mfaAccounts,omitempty"`
 	MfaItems            []*MfaItem       `json:"mfaItems,omitempty"`
 	MfaRememberDeadline string           `json:"mfaRememberDeadline,omitempty"`
-	NeedUpdatePassword  bool             `json:"needUpdatePassword,omitempty"`
-	IpWhitelist         string           `json:"ipWhitelist,omitempty"`
-	ApplicationScopes   []ConsentRecord  `json:"applicationScopes,omitempty"`
+	// MfaRememberDigest is the digest of the token held by the ONE browser the
+	// deadline above applies to. Without it the deadline is account-wide and "don't
+	// ask again on this browser" switches the second factor off everywhere. It is a
+	// digest, never the token, so a database dump yields nothing presentable — and it
+	// carries a REAL json tag because orm persists via json.Marshal, so `json:"-"`
+	// would never be stored (the trap PasswordHash documents above); Mask() strips it
+	// from every response instead.
+	MfaRememberDigest  string          `json:"mfaRememberDigest,omitempty"`
+	NeedUpdatePassword bool            `json:"needUpdatePassword,omitempty"`
+	IpWhitelist        string          `json:"ipWhitelist,omitempty"`
+	ApplicationScopes  []ConsentRecord `json:"applicationScopes,omitempty"`
 }
 
 // Address is a structured postal address held on a user.

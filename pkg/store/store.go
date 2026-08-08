@@ -264,6 +264,32 @@ func GetUserByEmail(ctx context.Context, db orm.DB, owner, email string) (*schem
 // see [GetUserByPhone].
 var ErrPhoneAmbiguous = errors.New("phone number matches more than one account")
 
+// LooksLikePhone reports whether an identifier is a phone NUMBER rather than an
+// address or a username: at least seven digits, and nothing but digits and the
+// punctuation people put in phone numbers. Seven is the shortest national subscriber
+// number in general use, and requiring it keeps a short numeric username out of the
+// phone arm.
+//
+// It is a SHAPE test, not validation — whether the number names anyone is a lookup's
+// business. It lives here, beside [NormalizePhone], because the two answer one
+// question together ("is this a number, and what is its canonical form") and every
+// caller that normalizes has first to decide whether it should. Sign-in's identifier
+// resolution and the verification code's receiver key both ask it, and a second copy
+// would be a second answer.
+func LooksLikePhone(s string) bool {
+	digits := 0
+	for i, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			digits++
+		case r == '+' && i == 0, r == ' ', r == '-', r == '(', r == ')', r == '.':
+		default:
+			return false
+		}
+	}
+	return digits >= 7
+}
+
 // NormalizePhone reduces a phone number to the ONE form this system stores and
 // compares: a leading "+" if the caller gave one, then digits, nothing else.
 //

@@ -14,9 +14,11 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -44,7 +46,7 @@ func sendCode(t *testing.T, app *zip.App, fields map[string]string) (int, map[st
 
 // The happy path parses the multipart form, persists a 6-digit unused code
 // bound to the receiver, and reports ok — and that code then verifies through
-// CheckVerificationCode while a wrong one fails closed.
+// otp.Check while a wrong one fails closed.
 func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 	// A send that reports success must actually be able to send: DeliveryConfigured
 	// gates the endpoint, so these persist/verify tests bind a sender the way any
@@ -74,21 +76,21 @@ func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 	if rec.Type != "email" || rec.IsUsed {
 		t.Errorf("record type/used = %q/%v, want email/false", rec.Type, rec.IsUsed)
 	}
-	if len(rec.Code) != verificationCodeLength {
-		t.Errorf("code = %q, want %d digits", rec.Code, verificationCodeLength)
+	if len(rec.Code) != otp.Length {
+		t.Errorf("code = %q, want %d digits", rec.Code, otp.Length)
 	}
 	if rec.User != "hanzo/alice" {
 		t.Errorf("record.User = %q, want hanzo/alice (resolved from the dest)", rec.User)
 	}
 
 	// The validation surface: the persisted code verifies, a wrong one does not.
-	if ok, err := CheckVerificationCode(ctx, db, "alice@hanzo.ai", rec.Code); err != nil || !ok {
+	if ok, err := otp.Check(ctx, db, "alice@hanzo.ai", rec.Code, time.Now()); err != nil || !ok {
 		t.Fatalf("correct code must verify: ok=%v err=%v", ok, err)
 	}
-	if ok, _ := CheckVerificationCode(ctx, db, "alice@hanzo.ai", "000000"); ok {
+	if ok, _ := otp.Check(ctx, db, "alice@hanzo.ai", "000000", time.Now()); ok {
 		t.Error("a wrong code must not verify")
 	}
-	if ok, _ := CheckVerificationCode(ctx, db, "nobody@hanzo.ai", rec.Code); ok {
+	if ok, _ := otp.Check(ctx, db, "nobody@hanzo.ai", rec.Code, time.Now()); ok {
 		t.Error("a code must not verify for a different receiver")
 	}
 }
@@ -215,7 +217,7 @@ func TestPhoneCodeMatchesHoweverTheNumberWasTyped(t *testing.T) {
 			}
 			code := codeIn(t, m.Body)
 
-			ok, err := ConsumeVerificationCode(context.Background(), db, tc.typed, code)
+			ok, err := otp.Consume(context.Background(), db, tc.typed, code, time.Now())
 			if err != nil {
 				t.Fatalf("consume: %v", err)
 			}
@@ -226,29 +228,13 @@ func TestPhoneCodeMatchesHoweverTheNumberWasTyped(t *testing.T) {
 	}
 }
 
-// An address is not a number: NormalizePhone keeps only digits, so canonicalizing
-// an email would leave nothing to match on. One function decides which is which,
-// so the write and the read cannot disagree about it.
-func TestReceiverKeyLeavesAnythingThatIsNotAPhoneAlone(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{"alice@hanzo.ai", "alice@hanzo.ai"},
-		{"zeekay", "zeekay"},
-		{"+1 (415) 555-0134", "+14155550134"},
-		{"415-555-0134", "4155550134"},
-	} {
-		if got := receiverKey(tc.in); got != tc.want {
-			t.Errorf("receiverKey(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 // codeIn reads the six digits out of a delivered message body, so a test can spend
 // the code the person would have typed rather than reaching into the table.
 func codeIn(t *testing.T, body string) string {
 	t.Helper()
-	digits := regexp.MustCompile(`\d{` + fmt.Sprint(verificationCodeLength) + `}`).FindString(body)
+	digits := regexp.MustCompile(`\d{` + fmt.Sprint(otp.Length) + `}`).FindString(body)
 	if digits == "" {
-		t.Fatalf("no %d-digit code in the delivered body %q", verificationCodeLength, body)
+		t.Fatalf("no %d-digit code in the delivered body %q", otp.Length, body)
 	}
 	return digits
 }
