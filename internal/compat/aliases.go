@@ -265,17 +265,27 @@ func userGetHandler(db orm.DB) zip.Handler {
 }
 
 // keyUser is the minimal principal projection get-user?accessKey returns — EXACTLY
-// the four fields cloud's key resolver consumes (auth_apikey.go) and no more. It is
+// the fields cloud's key resolver consumes (auth_apikey.go) and no more. It is
 // a TIGHTER redaction than schema.User.Mask, deliberately: Mask blanks the secret
 // digests and bearer tokens but leaves AccessKey populated, and an sk- resolution
 // must never disclose the resolved user's OTHER credential (the value on its User row) to a
 // caller that only presented a secret key. A projection carrying no secret field is
 // leak-proof by construction.
+//
+// BillingAccount is here because WHO PAYS travels with the identity or it is
+// guessed. account.Payer honours the named account above all else and otherwise
+// falls back to a shape rule that hands anyone in the signup org a PERSONAL
+// wallet — a ghost for a machine, which no funding path can name. Omitting the
+// field did not leave the payer unknown, it made it confidently wrong: every
+// first-party service key resolved to an unfundable wallet and 402'd against a
+// funded org pool. It names a LEDGER, never a secret, so the projection stays
+// leak-proof.
 type keyUser struct {
-	Owner   string `json:"owner"`
-	Name    string `json:"name"`
-	Email   string `json:"email"`
-	IsAdmin bool   `json:"isAdmin"`
+	Owner          string `json:"owner"`
+	Name           string `json:"name"`
+	Email          string `json:"email"`
+	IsAdmin        bool   `json:"isAdmin"`
+	BillingAccount string `json:"billing_account,omitempty"`
 }
 
 // resolveUserByAccessKey authenticates the SERVICE caller and resolves an API key to
@@ -307,7 +317,13 @@ func resolveUserByAccessKey(c *zip.Ctx, db orm.DB, key string) error {
 	if err != nil {
 		return httpx.Err(c, err.Error())
 	}
-	return httpx.Ok(c, keyUser{Owner: u.Owner, Name: u.Name, Email: u.Email, IsAdmin: u.IsAdmin})
+	return httpx.Ok(c, keyUser{
+		Owner:          u.Owner,
+		Name:           u.Name,
+		Email:          u.Email,
+		IsAdmin:        u.IsAdmin,
+		BillingAccount: store.BillingAccount(u, store.MemberOrgRefs(ctx, db, u)),
+	})
 }
 
 // maskAll redacts every row through the entity's Mask (a no-op when the entity

@@ -637,7 +637,7 @@ func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 		Email:   u.Email,
 		Name:    u.Name,
 		Display: u.DisplayName,
-		Billing: billingAccountFor(u.Owner, refs),
+		Billing: store.BillingAccount(u, refs),
 		Orgs:    refs,
 	}
 }
@@ -686,42 +686,6 @@ func userClaims(ctx context.Context, db orm.DB, userID string) Identity {
 // org-less app yields the zero Account, hence no claim and the unchanged fallback.
 func machineBillingAccount(org string) string {
 	return account.Org(org).String()
-}
-
-// billingAccountFor decides WHICH LEDGER this person spends from, and says so in
-// a signed claim so no downstream layer has to guess.
-//
-// account.Payer honours a `billing_account` claim above everything else; absent
-// one it falls back to a shape rule, and that rule makes the SIGNUP ORG special:
-// a member of any other org spends the ORG POOL, but a member of "hanzo" gets a
-// PERSONAL wallet. That asymmetry is deliberate and load-bearing — every
-// self-signup lands in hanzo, and keying them on the pool let a brand-new $0
-// account read Hanzo's balance and sail through the gate.
-//
-// The cost is that a real org ADMIN in hanzo is treated like a random signup:
-// they hold company credit in the pool and are billed against their own empty
-// personal wallet instead. Naming the pool for admins and owners fixes that
-// without reopening the free-rider hole, because a plain member still gets no
-// claim and still falls through to a personal wallet.
-//
-// Only the caller's HOME org is considered: this claim says where THIS token
-// spends, and a token minted for one tenant must never name another's ledger.
-func billingAccountFor(owner string, refs []schema.OrgRef) string {
-	for _, r := range refs {
-		if r.Org != owner {
-			continue
-		}
-		switch r.Role {
-		case store.RoleOwner, store.RoleAdmin:
-			// "org:<slug>" — account.Parse REQUIRES the kind prefix and returns a
-			// zero Account without it, which Payer then ignores in favour of its
-			// shape rule. A bare slug here silently did nothing: the claim rode all
-			// the way to the gate and was dropped at the last step, so an admin kept
-			// paying from their personal wallet while the pool sat unused.
-			return account.Org(owner).String()
-		}
-	}
-	return "" // no claim ⇒ Payer's shape rule decides, unchanged
 }
 
 // splitSub splits a subject "owner/name" into its two parts.
