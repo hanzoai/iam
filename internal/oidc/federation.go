@@ -231,6 +231,10 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 
 		user, err := linkOrProvision(ctx, db, app, prov, identity)
 		if err != nil {
+			// A held address is a decision, not a fault: say so, and say what to do.
+			if errors.Is(err, errAddressHeld) {
+				return fedErrorRedirect(c, st, "access_denied", "an account already uses this email address — sign in with its password")
+			}
 			return fedErrorRedirect(c, st, "server_error", "")
 		}
 		if user.IsForbidden || user.IsDeleted {
@@ -349,11 +353,18 @@ func fedMintErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) err
 	return fedErrorRedirect(c, st, "server_error", "")
 }
 
+// errAddressHeld reports that the address the IdP asserted already names a local
+// account this federated identity is not entitled to adopt. It is a refusal the
+// person can act on — sign in with the password that account already has — so the
+// callback answers access_denied with a reason rather than an opaque server_error.
+var errAddressHeld = errors.New("federation: the address already names an account")
+
 // linkOrProvision resolves the local identity for a verified federated login,
 // PROVISION-DON'T-PROMOTE: (1) an account already linked to this provider
-// subject, else (2) an existing account matched by a VERIFIED IdP email (linked
-// now), else (3) a freshly provisioned account. It NEVER sets isAdmin and never
-// grants an existing account anything — federation only authenticates.
+// subject, else (2) the account that already holds this address — linked when both
+// sides proved the address, refused otherwise — else (3) a freshly provisioned
+// account. It NEVER sets isAdmin and never grants an existing account anything —
+// federation only authenticates.
 func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, prov *schema.Provider, id federatedIdentity) (*schema.User, error) {
 	// Innermost guard on the mint itself: never provision/link a federated identity
 	// into a reserved system org (SuperAdmin) or a tenant this app may not serve.
@@ -376,12 +387,43 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 		return u, nil
 	}
 
-	// 2. Link to an existing account ONLY on a VERIFIED IdP email. An unverified
-	// email never links (it would let an unproven address take over an account).
-	if id.emailVerified && id.email != "" {
-		if u, err := store.GetUserByEmail(ctx, db, org, id.email); err != nil {
+	// 2. An account already holds this address. Resolve that FIRST, whether or not
+	// the IdP vouched for the address, because every answer below turns on it — and
+	// because an ambiguous address (ErrEmailAmbiguous) must refuse here too rather
+	// than be walked past into a third row on the same address.
+	if id.email != "" {
+		u, err := store.GetUserByEmail(ctx, db, org, id.email)
+		if err != nil {
 			return nil, err
-		} else if u != nil {
+		}
+		if u != nil {
+			// The link requires proof on BOTH sides, and only one side was ever checked.
+			//
+			// The IdP side was: an unverified IdP email never links, "it would let an
+			// unproven address take over an account". The LOCAL side is the side signup
+			// never proves — it writes EmailVerified: false and nothing a password signup
+			// can reach ever sets it — so the sentence was true and half-enforced. An
+			// attacker signed up with a stranger's address and their own passphrase; when
+			// the real owner arrived with a VERIFIED Google identity, this adopted the
+			// attacker's row, flipped EmailVerified to true, and left the digest alone.
+			// Both parties then held the account, silently, for good. 218 live rows are in
+			// that shape today.
+			//
+			// So: link only onto a row that an unproven credential cannot already open —
+			// one whose own address was proven, or one that carries no password at all.
+			// Otherwise refuse, and do NOT fall through to provision: a second row on one
+			// address is the ambiguity the lookup above refuses to resolve.
+			//
+			// Refusing is the whole cure available here. Adopting the row anyway and
+			// clearing its digest would also evict the attacker, but it silently
+			// destroys the credential of every one of those 218 people the first time
+			// they click a social button, and which of the two parties is at the browser
+			// is exactly what this cannot know. The person who has a password signs in
+			// with it; the person who does not was never locked out. Proving the address
+			// AT SIGNUP is what actually drains the pool.
+			if !id.emailVerified || (!u.EmailVerified && u.PasswordHash != "") {
+				return nil, errAddressHeld
+			}
 			linked, err := updateUser(ctx, db, u.Owner, u.Name, func(_ orm.DB, fresh *schema.User) error {
 				*binding.ref(fresh) = id.subject
 				fresh.EmailVerified = true
@@ -394,8 +436,10 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 		}
 	}
 
-	// 3. Provision a fresh account. Federated accounts carry NO password (the
-	// digest stays empty, so password login fails closed) and are never admin.
+	// 3. Provision a fresh account — no row holds this address, which is now a
+	// property of reaching this line rather than something to re-check. Federated
+	// accounts carry NO password (the digest stays empty, so password login fails
+	// closed) and are never admin.
 	return provisionFederatedUser(ctx, db, app, prov, binding, id)
 }
 
