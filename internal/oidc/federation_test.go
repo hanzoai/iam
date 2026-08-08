@@ -161,7 +161,11 @@ type mockGitHub struct {
 	name         string
 	profileEmail string
 	emails       []map[string]any // {email, primary, verified}
-	tokenForm    url.Values
+	// emailsForbidden makes /user/emails answer 403, which is what a GitHub APP
+	// whose "Email addresses" permission is missing really does — GitHub Apps
+	// ignore the requested `scope`, so the read fails and no address arrives.
+	emailsForbidden bool
+	tokenForm       url.Values
 }
 
 func newMockGitHub(t *testing.T) *mockGitHub {
@@ -187,6 +191,10 @@ func newMockGitHub(t *testing.T) *mockGitHub {
 	mux.HandleFunc("/user/emails", func(w http.ResponseWriter, _ *http.Request) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
+		if m.emailsForbidden {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		writeJSON(w, m.emails)
 	})
 	mux.HandleFunc("/user", func(w http.ResponseWriter, _ *http.Request) {
@@ -381,7 +389,7 @@ func TestFederation_AuthorizeRedirectsToGitHub(t *testing.T) {
 // code→token exchange then completes unchanged and carries the new user's sub.
 func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 
@@ -440,7 +448,7 @@ func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 // primary VERIFIED email.
 func TestFederation_GitHubCallbackProvisionsViaVerifiedEmail(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
 	m := newMockGitHub(t)
 	seedGitHubProvider(t, db, "webapp", m)
 
@@ -469,7 +477,7 @@ func TestFederation_GitHubCallbackProvisionsViaVerifiedEmail(t *testing.T) {
 // account is created on the second login.
 func TestFederation_ReloginBySubjectIsStable(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 
@@ -877,6 +885,9 @@ func seedFederationTarget(t *testing.T, db orm.DB, appClientID, appOwner, serves
 	a.Owner, a.Name, a.ClientId = appOwner, appClientID, appClientID
 	a.Organization = serves
 	a.EnablePassword = true
+	// Registration ON, so a refusal below can only be the ORG gate refusing — never
+	// the app's own signup switch standing in for it.
+	a.EnableSignUp = true
 	a.ExpireInHours = 1
 	a.RedirectUris = []string{testRedirect}
 	a.Providers = []*schema.ProviderItem{{Owner: provOwner, Name: fedProvGoogle, CanSignIn: true}}
@@ -996,7 +1007,7 @@ func TestRedTeam_FederationMintsSuperAdmin_TenantOwnedApp(t *testing.T) {
 // happy path.
 func TestFederation_PlatformAppLegitimateOrgAllowed(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}}) // Owner=admin, Org=hanzo
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}}) // Owner=admin, Org=hanzo
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 	runOIDCLogin(t, app, db, m, "webapp", nil)
