@@ -53,7 +53,9 @@ type Message struct {
 	Org string
 	// Channel is "email" or "phone".
 	Channel string
-	// To is the address or number the person gave.
+	// To is the address or number the code was minted for, in the one canonical
+	// form the record is keyed on (receiverKey) — so what was stored and what was
+	// sent cannot differ.
 	To string
 	// Subject rides email only; an SMS has nowhere to put one.
 	Subject string
@@ -182,8 +184,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 		}
 
 		// Validate the destination by type and, for email, resolve the target user
-		// (metadata on the record). Phone user-resolution + E.164 normalization need
-		// a phone library iam does not carry yet — the record still persists.
+		// (metadata on the record).
 		var user *schema.User
 		switch typ {
 		case "email":
@@ -194,10 +195,15 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 				return httpx.Err(c, err.Error())
 			}
 		case "phone":
-			// dest is required (checked above); accepted as-is.
+			// dest is required (checked above); its shape is the wallet of whoever
+			// typed it. receiverKey is what makes the spelling not matter.
 		default:
 			return httpx.Err(c, "unsupported verification type: "+typ)
 		}
+		// From here on, ONE spelling of the destination: the record is written under
+		// it and the message goes to it, so what was stored and what was sent cannot
+		// disagree — the same reason rec.Owner is read once below.
+		dest = receiverKey(dest)
 
 		code, err := generateCode(verificationCodeLength)
 		if err != nil {
@@ -252,6 +258,28 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 	}
 }
 
+// receiverKey is the ONE form a code's destination is stored and matched in.
+//
+// A phone number is stripped of the punctuation people put in numbers, because the
+// person typing it when the code is SENT and the person typing it when the code is
+// SPENT are the same person spelling one number two ways: "+1 415 555 0134" and
+// "+14155550134". The account already resolves either way — GetUserByPhone
+// normalizes — so the record has to as well, or the login finds the right user and
+// then answers "the code is incorrect or has expired", which is a failure with no
+// honest explanation available to the screen.
+//
+// Anything else is its own key, verbatim: NormalizePhone keeps only digits, so
+// running it over an email address would leave nothing to match on. Both callers
+// route through here rather than each testing the shape, so the write and the read
+// cannot diverge — the identical reason the phone LOOKUP normalizes inside
+// GetUserByPhone instead of at its call sites.
+func receiverKey(dest string) string {
+	if looksLikePhone(dest) {
+		return store.NormalizePhone(dest)
+	}
+	return dest
+}
+
 // generateCode returns an n-digit numeric OTP drawn from crypto/rand, uniformly
 // (no modulo bias) and zero-padded to a fixed width.
 func generateCode(n int) (string, error) {
@@ -293,7 +321,7 @@ func ConsumeVerificationCode(ctx context.Context, db orm.DB, receiver, code stri
 	if receiver == "" || code == "" {
 		return false, nil
 	}
-	rec, err := store.GetLatestVerificationRecord(ctx, db, receiver)
+	rec, err := store.GetLatestVerificationRecord(ctx, db, receiverKey(receiver))
 	if err != nil || rec == nil {
 		return false, err
 	}
@@ -329,7 +357,7 @@ func CheckVerificationCode(ctx context.Context, db orm.DB, receiver, code string
 	if receiver == "" || code == "" {
 		return false, nil
 	}
-	rec, err := store.GetLatestVerificationRecord(ctx, db, receiver)
+	rec, err := store.GetLatestVerificationRecord(ctx, db, receiverKey(receiver))
 	if err != nil {
 		return false, err
 	}
