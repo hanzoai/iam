@@ -22,6 +22,7 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 
 	"github.com/hanzoai/iam/internal/testhttp"
 )
@@ -312,5 +313,42 @@ func TestGetUserByAccessKey_NonCapCallerLearnsNoReason(t *testing.T) {
 	_ = json.Unmarshal([]byte(body), &e)
 	if e.Status != "error" || e.Code != "" {
 		t.Fatalf("non-cap caller env=%+v, want an error with NO code", e)
+	}
+}
+
+// A MACHINE key resolves to the ORG POOL, and the wire says so.
+//
+// This is the money defect on the key door. account.Payer falls back to a shape
+// rule when nothing names a payer, and that rule hands anyone in the signup org a
+// PERSONAL wallet. A service account has no person, so "hanzo/<name>" is a wallet
+// no funding path can name — an admin grant credits the pool, a deposit names a
+// real member — and it reads $0 forever. The projection omitted the payer
+// entirely, so every first-party service key 402'd ("Insufficient balance")
+// against an org pool holding millions, and minting a fresh key never helped:
+// every new key resolved exactly the same way.
+//
+// The assertion is on the RAW BODY because the field is a WIRE CONTRACT with the
+// gateway's resolver (it decodes into iam.User's `billing_account`); a struct that
+// agrees with itself would prove nothing about the name on the wire.
+func TestGetUserByAccessKey_MachineNamesTheOrgPool(t *testing.T) {
+	h := newHarness(t)
+	keyFixtures(t, h)
+
+	// Make the resolved principal a machine — what a service account IS.
+	u, err := store.GetUserByName(context.Background(), h.db, "hanzo", "keyuser")
+	if err != nil || u == nil {
+		t.Fatalf("load key user: %v", err)
+	}
+	u.Type = schema.ServiceAccount
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatalf("mark service account: %v", err)
+	}
+
+	status, body := h.getBasic(t, "/v1/iam/get-user?accessKey="+projSK, resolverApp, svcSecret)
+	if status != 200 {
+		t.Fatalf("resolve: status=%d body=%s", status, body)
+	}
+	if !strings.Contains(body, `"billing_account":"org:hanzo"`) {
+		t.Fatalf("key resolution named no ledger — the gateway will fall back to a ghost personal wallet and 402: %s", body)
 	}
 }
