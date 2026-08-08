@@ -35,9 +35,29 @@ func keyFor(ctx context.Context, db orm.DB) ([]byte, error) {
 // Set issues a signed session cookie for a FRESH sign-in of (owner, name,
 // application) — the credential was just checked, so auth_time is now. It
 // registers the sid in the Session row for revocation and writes the cookie on
-// the response. This is what a bare (type=login) portal sign-in calls.
+// the response. This is what the code→session exchange calls, where a session
+// MUST be issued for the subject the redeemed code names, whoever this browser
+// was signed in as a moment ago.
 func Set(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application string) error {
 	return set(ctx, c, db, Cookie{Owner: owner, Name: name, Application: application})
+}
+
+// Open is what an interactive FRONT DOOR calls once it has proven who someone is:
+// the IdP now remembers this human in this browser. Every front door calls it —
+// the credential post, the wallet signature, the return from another identity
+// provider — because what is being recorded is that a human authenticated HERE,
+// and that is true however they did it. The grant shape the relying party asked
+// for is a separate question and has no business deciding whether the IdP
+// remembers the human; braiding those two together is what cost the fleet its
+// single sign-on once already (see loginGrant).
+//
+// A browser that already carries a live session keeps it, so a silent hop across
+// apps does not mint a second sid for every app the person opens.
+func Open(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application string) error {
+	if _, _, live := Resolve(ctx, c, db); live {
+		return nil
+	}
+	return Set(ctx, c, db, owner, name, application)
 }
 
 // set is the ONE place a session cookie reaches a browser: mint the sid, record

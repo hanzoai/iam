@@ -250,7 +250,7 @@ func afterFirstFactor(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm, pro
 	if err != nil {
 		return httpx.Err(c, err.Error())
 	}
-	gated, err := gate(c, db, user, org, proven)
+	gated, err := Gate(c, db, user, org, proven)
 	if err != nil {
 		return httpx.Err(c, err.Error())
 	}
@@ -350,12 +350,10 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// silent-SSO branch above was fully built, tested and correct, and simply had
 	// nothing to read: hanzo.id asked for the password again on every app.
 	//
-	// Only when there is no live session, so a silent hop reuses the session it
-	// arrived with instead of minting a second sid on every app the person opens.
-	// Best-effort throughout — a session failure never blocks a valid login.
-	if _, _, live := sessions.Resolve(ctx, c.Fiber(), db); !live {
-		_ = sessions.Set(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
-	}
+	// sessions.Open is that rule, and it is where the wallet front door and the
+	// return from another identity provider read it from too. Best-effort — a
+	// session failure never blocks a valid login.
+	_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
 
 	// One return, one meaning: MintFor already yields the user id for a bare portal
 	// sign-in and the authorization code for the code flow, so the SDK reads `data`
