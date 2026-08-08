@@ -100,6 +100,9 @@ func Route(r *zip.App, db orm.DB) {
 	// `provider`; this registers the fixed return endpoint the IdP redirects to.
 	routeFederation(r, db)
 	routeFederationMfa(r, db)
+	// The two halves of the linking law: connect a provider to the account you
+	// already hold, and disconnect one.
+	routeLink(r, db)
 	routeUnlink(r, db)
 
 	// RFC 7662 introspection + RFC 7009 revocation — the standard token-management
