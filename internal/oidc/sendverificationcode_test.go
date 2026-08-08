@@ -16,9 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/otp"
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -69,7 +71,7 @@ func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	rec, err := store.GetLatestVerificationRecord(ctx, db, "alice@hanzo.ai")
+	rec, err := store.GetLatestVerificationRecord(ctx, db, "hanzo", "alice@hanzo.ai")
 	if err != nil || rec == nil {
 		t.Fatalf("verification record not persisted: %v (nil=%v)", err, rec == nil)
 	}
@@ -84,14 +86,17 @@ func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 	}
 
 	// The validation surface: the persisted code verifies, a wrong one does not.
-	if ok, err := otp.Check(ctx, db, "alice@hanzo.ai", rec.Code, time.Now()); err != nil || !ok {
+	if ok, err := otp.Check(ctx, db, "hanzo", "alice@hanzo.ai", rec.Code, time.Now()); err != nil || !ok {
 		t.Fatalf("correct code must verify: ok=%v err=%v", ok, err)
 	}
-	if ok, _ := otp.Check(ctx, db, "alice@hanzo.ai", "000000", time.Now()); ok {
+	if ok, _ := otp.Check(ctx, db, "hanzo", "alice@hanzo.ai", "000000", time.Now()); ok {
 		t.Error("a wrong code must not verify")
 	}
-	if ok, _ := otp.Check(ctx, db, "nobody@hanzo.ai", rec.Code, time.Now()); ok {
+	if ok, _ := otp.Check(ctx, db, "hanzo", "nobody@hanzo.ai", rec.Code, time.Now()); ok {
 		t.Error("a code must not verify for a different receiver")
+	}
+	if ok, _ := otp.Check(ctx, db, "elsewhere", "alice@hanzo.ai", rec.Code, time.Now()); ok {
+		t.Error("a code must not verify for another organization holding the same address")
 	}
 }
 
@@ -115,7 +120,7 @@ func TestSendVerificationCode_UrlencodedAlsoWorks(t *testing.T) {
 	if env := decode(t, raw); resp.StatusCode != 200 || env["status"] != "ok" {
 		t.Fatalf("status=%d env=%v, want 200 ok", resp.StatusCode, env)
 	}
-	if rec, _ := store.GetLatestVerificationRecord(context.Background(), db, "someone@hanzo.ai"); rec == nil {
+	if rec, _ := store.GetLatestVerificationRecord(context.Background(), db, "hanzo", "someone@hanzo.ai"); rec == nil {
 		t.Error("urlencoded send did not persist a record")
 	}
 }
@@ -199,6 +204,9 @@ func TestPhoneCodeMatchesHoweverTheNumberWasTyped(t *testing.T) {
 			app, db := newServer(t)
 			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
 			seedOrg(t, db, "hanzo")
+			// A delivered code is bound to the account it was minted for, so the phone
+			// arm needs one to be a credential at all.
+			seedPhoneUser(t, db, "carol", tc.sent)
 
 			status, env := sendCode(t, app, map[string]string{
 				"dest": tc.sent, "type": "phone", "applicationId": "admin/conf",
@@ -217,7 +225,8 @@ func TestPhoneCodeMatchesHoweverTheNumberWasTyped(t *testing.T) {
 			}
 			code := codeIn(t, m.Body)
 
-			ok, err := otp.Consume(context.Background(), db, tc.typed, code, time.Now())
+			carol, _ := store.GetUserByName(context.Background(), db, "hanzo", "carol")
+			ok, err := otp.Consume(context.Background(), db, carol, tc.typed, code, time.Now())
 			if err != nil {
 				t.Fatalf("consume: %v", err)
 			}
@@ -237,4 +246,18 @@ func codeIn(t *testing.T, body string) string {
 		t.Fatalf("no %d-digit code in the delivered body %q", otp.Length, body)
 	}
 	return digits
+}
+
+// seedPhoneUser creates a user in org "hanzo" carrying a phone number, stored in the
+// canonical form every write site normalizes to.
+func seedPhoneUser(t *testing.T, db orm.DB, name, phone string) {
+	t.Helper()
+	u := orm.New[schema.User](db)
+	u.Owner = "hanzo"
+	u.Name = name
+	u.Phone = store.NormalizePhone(phone)
+	u.SetId("hanzo/" + name)
+	if err := u.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed phone user: %v", err)
+	}
 }
