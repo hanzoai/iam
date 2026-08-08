@@ -18,6 +18,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -273,7 +274,7 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		}
 
 		// No second factor owed — complete exactly as before, through the one mint.
-		loc, err := federationMint(ctx, db, app, user, p, now)
+		loc, err := federationMint(c, db, app, user, p, now)
 		if err != nil {
 			return fedMintErrorRedirect(c, st, err)
 		}
@@ -304,7 +305,8 @@ var errPKCERequired = errors.New("federation: PKCE is required for public client
 // and returns the RP redirect (redirect_uri?code&state). It is the ONE mint path
 // both the no-factor completion and the post-2FA resume reach, so a federated code
 // can never be minted two different ways.
-func federationMint(ctx context.Context, db orm.DB, app *schema.Application, user *schema.User, p fedResumeParams, now time.Time) (string, error) {
+func federationMint(c *zip.Ctx, db orm.DB, app *schema.Application, user *schema.User, p fedResumeParams, now time.Time) (string, error) {
+	ctx := c.Context()
 	// A public client must have carried a PKCE challenge, re-asserted at the mint so
 	// a minted code is never redeemable without proof.
 	if app.ClientSecret == "" && p.CodeChallenge == "" {
@@ -320,6 +322,11 @@ func federationMint(ctx context.Context, db orm.DB, app *schema.Application, use
 	if err := store.PersistToken(ctx, db, codeRow); err != nil {
 		return "", err
 	}
+	// Someone just proved who they are to this IdP through another provider, so the
+	// IdP remembers them — the same tail loginGrant has. Without it a Google or
+	// GitHub sign-in left the person anonymous on hanzo.id itself and re-prompted by
+	// every other app: the relying party got its code and the IdP forgot the human.
+	_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, app.Name)
 	v := url.Values{}
 	v.Set("code", codeRow.Code)
 	setIfPresent(v, "state", p.AppState)

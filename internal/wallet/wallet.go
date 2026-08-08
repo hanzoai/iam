@@ -33,6 +33,7 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/oidc"
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -216,12 +217,20 @@ func check(db orm.DB) zip.Handler {
 		}
 
 		// The multi-factor gate belongs HERE — after the wallet proves the
-		// identity, before any session or code is minted. v1 runs checkMfaEnable
-		// at exactly this point with an empty verificationType (wallet login has
-		// no SMS/email pre-step). iam has no MFA gate yet; this is the ONE call
-		// site it binds into, so wallet login never becomes a silent MFA bypass.
-		if factor(user, org) {
-			return httpx.Err(c, "web3: multi-factor authentication is required")
+		// identity, before any session or code is minted. It is oidc's ONE gate,
+		// called rather than copied: a wallet is attachable to any existing
+		// identity, so a second factor a password login demands must not be
+		// skippable by signing in with the wallet on the same account. A signature
+		// proves none of the offerable factors, so the gate is told "" and may ask
+		// for any of them; it answers the request itself (NextMfa) and the person
+		// finishes at /v1/iam/login with the challenge it set, exactly as the
+		// password path does.
+		gated, err := oidc.Gate(c, db, user, org, "")
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		if gated {
+			return nil
 		}
 
 		data, err := oidc.MintFor(ctx, db, app, user.Owner+"/"+user.Name, oidc.Mint{
@@ -236,15 +245,15 @@ func check(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		// The wallet holder is now signed in to the IDENTITY PROVIDER, so the IdP
+		// remembers them — the same tail every interactive front door has. Without
+		// it a bare wallet sign-in returned a user id and no session, and the portal
+		// sent the person to a page whose bootstrap found nobody signed in and
+		// bounced them back to the credential form.
+		_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, app.Name)
 		return httpx.Ok(c, data)
 	}
 }
-
-// factor reports whether user must clear a second factor before a session is
-// minted. iam has no MFA gate yet, so it always reports "not required" — the
-// call site above exists so the gate lands in one place rather than being
-// rediscovered, and so its absence is visible rather than silent.
-func factor(_ *schema.User, _ *schema.Organization) bool { return false }
 
 // session resolves the authenticated caller, but ONLY on a same-site request.
 //
