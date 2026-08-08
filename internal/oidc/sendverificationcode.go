@@ -33,22 +33,40 @@ import (
 // code and returns {status:"ok"} honestly — it does NOT fabricate a "sent" claim.
 // Delivery plugs in at the marked seam below with no shape change.
 
-// Sender delivers one minted verification code. It is the ONE seam between this
-// endpoint and hanzoai/notify, whose send surface lives in cloud at
-// POST /v1/notify/send/{email,sms} and reads the org's own Twilio credential from
-// KMS. Implementations carry the transport; nothing here knows or cares which.
+// Message is one verification code, worded and addressed, ready to carry.
+//
+// It is a message rather than a code because the WORDS are OTP policy and belong
+// to the OTP. The text says how long the code lasts, and that number is
+// verificationCodeTTL — one constant, read by the thing that expires the record and
+// by the sentence that tells a person about it. A transport that composed its own
+// sentence would be restating a policy it cannot see, and the two would drift the
+// first time the TTL moved.
+//
+// So this side owns the content and the transport owns the wire. Channel is IAM's
+// word ("email" or "phone"); translating it into whatever the carrier calls it
+// happens at the transport, which is the only place that knows.
+type Message struct {
+	// Org is the tenant whose record this code was minted under (rec.Owner) — not
+	// a brand string and not a default. A carrier resolves the sending account
+	// from the org's own credential, so the wrong org reaches the wrong account
+	// and none cannot be routed at all.
+	Org string
+	// Channel is "email" or "phone".
+	Channel string
+	// To is the address or number the person gave.
+	To string
+	// Subject rides email only; an SMS has nowhere to put one.
+	Subject string
+	// Body is the text the person reads.
+	Body string
+}
+
+// Sender carries one Message. It is the ONE seam between this endpoint and the
+// delivery service, and it holds the transport and nothing else — no wording, no
+// provider, no credential.
 type Sender interface {
-	// Send delivers code to dest over channel ("email" or "phone") on behalf of
-	// org. A non-nil error means the person did NOT receive it.
-	//
-	// org is REQUIRED, and it is the tenant whose record this code was minted
-	// under (rec.Owner) — not a brand string and not a default. notify resolves
-	// the provider credential from the org's own KMS entry, so a send with the
-	// wrong org reaches the wrong account's Twilio and a send with none cannot be
-	// routed at all. It is a parameter rather than something the transport is
-	// constructed with because one bound sender serves every tenant this process
-	// answers for.
-	Send(ctx context.Context, org, channel, dest, code string) error
+	// Send delivers m. A non-nil error means the person did NOT receive it.
+	Send(ctx context.Context, m Message) error
 }
 
 // sender is bound once at boot, before the server accepts a request, and read
@@ -92,6 +110,31 @@ const verificationCodeLength = 6
 // verificationCodeTTL bounds how long a sent code stays redeemable (v1's
 // verificationCodeTimeout default, 10 minutes).
 const verificationCodeTTL = 10 * time.Minute
+
+// message words one code for one person.
+//
+// It NAMES NO BRAND. One process answers for every white-label identity host, so a
+// hardcoded name would be the wrong name on most of them; the identity a recipient
+// sees is the org's own sending account, which the carrier resolves per tenant.
+//
+// The expiry is rendered from verificationCodeTTL, so the sentence a person reads
+// and the deadline the record is checked against are the same fact. Writing "10
+// minutes" here as a literal would be a second copy of a policy this file already
+// holds.
+func message(org, channel, dest, code string) Message {
+	m := Message{
+		Org:     org,
+		Channel: channel,
+		To:      dest,
+		Body: fmt.Sprintf("Your verification code is %s. It expires in %d minutes. "+
+			"If you did not request it, ignore this message and do not share it with anyone.",
+			code, int(verificationCodeTTL.Minutes())),
+	}
+	if channel == "email" {
+		m.Subject = "Your verification code"
+	}
+	return m
+}
 
 // sendVerificationCode validates the request, mints + persists an OTP, and
 // reports success. The request fields are read via fiber's FormValue — the
@@ -198,7 +241,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 		// rec.Owner, not org.Name read again: the code that was persisted and the
 		// code that goes out must be attributed to the SAME tenant, so they read
 		// the one value.
-		if err := sender.Send(ctx, rec.Owner, typ, dest, code); err != nil {
+		if err := sender.Send(ctx, message(rec.Owner, typ, dest, code)); err != nil {
 			// Report the real outcome. Answering ok because the code was minted
 			// would recreate the same lie one layer down: the send is what the
 			// caller asked for, and it failed.

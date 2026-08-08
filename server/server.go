@@ -20,7 +20,6 @@ import (
 
 	"github.com/hanzoai/iam/feature"
 	"github.com/hanzoai/iam/internal/featurestore"
-	"github.com/hanzoai/iam/internal/notify"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/seed"
@@ -105,13 +104,28 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 	return seed.FromInitData(ctx, db, initDataPath)
 }
 
-// Sender delivers one minted verification code. It is re-exported here because
-// the seam itself lives in an internal package: a HOST binary that grafts IAM
-// (cloud embeds it with server.NewApp) has to be able to supply the transport,
-// and internal/oidc is by definition unreachable from outside this module.
+// Message is one verification code, worded and addressed. Re-exported with Sender
+// for the same reason: a host outside this module has to be able to read one.
+//
+// IAM composes it. The expiry sentence is rendered from the same constant that
+// expires the record, so a transport never has to know — or restate — how long a
+// code lasts.
+type Message = oidc.Message
+
+// Sender carries one Message. It is re-exported here because the seam itself lives
+// in an internal package: a HOST binary that grafts IAM (cloud embeds it with
+// server.NewApp) has to be able to supply the transport, and internal/oidc is by
+// definition unreachable from outside this module.
 //
 // Composition is exactly what this package is for, and delivery is composition:
-// which wire carries a code is the host's decision, never IAM's.
+// which wire carries a code is the host's decision, never IAM's. THE HOST IS THE
+// ONLY ONE THAT CAN MAKE IT. The delivery service is a cloud app reached over the
+// internal plane, and in the fleet it is started on demand — so "can a code be
+// delivered here" is answered by the router that owns the app list and can bring
+// the app up, and IAM links neither. This module used to answer it anyway, by
+// looking for the service's socket FILE, and got it wrong in both directions: a
+// file left behind by a dead pod reported delivery that could not happen, and a
+// service that was merely not started yet reported none that could.
 type Sender = oidc.Sender
 
 // BindSender installs the delivery transport for email and SMS codes. Call it at
@@ -123,38 +137,12 @@ type Sender = oidc.Sender
 // configuration. So there is no half-configured state to reason about — a host
 // that can deliver binds one and all four turn on together.
 //
-// The two hosts differ in the only way that matters, which is how the TENANT
-// travels. A standalone iam reaches notify over the wire as a principal of one
-// org, so its transport is pinned to that org and refuses any other. A grafted
-// iam is in the same process as notify and can pass the org explicitly, so it
-// serves every tenant with no credential at all. One seam, two transports —
-// which is what a seam is for.
+// Binding is therefore an ASSERTION by the host: it says a code given to this
+// transport reaches a person. A host that cannot say that binds nothing, and every
+// screen keeps offering only the methods that work.
 func BindSender(s Sender) { oidc.BindSender(s) }
 
 // DeliveryConfigured reports whether a verification code can actually reach a
 // person, so a host can assert on its own wiring. It answers from the bound
 // sender, never from configuration.
 func DeliveryConfigured() bool { return oidc.DeliveryConfigured() }
-
-// PlaneSender is the delivery transport, for a host that grafts IAM.
-//
-// It exists so there is ONE implementation of "how a verification code reaches a
-// person" rather than one per composition root. IAM's own binary binds this from
-// main; a host that embeds IAM (cloud, which mounts notify in the same process)
-// binds the SAME thing instead of writing a second sender that would have to be
-// kept in step — two senders is two places for the org, the channel mapping and
-// the message to drift.
-//
-// It returns nil when notify is not reachable, and nil is the whole delivery
-// switch: bind it unconditionally and [DeliveryConfigured] still answers honestly,
-// so the login descriptor hides email and SMS sign-in rather than advertising a
-// method that would fail with a person waiting on it.
-func PlaneSender() Sender {
-	if c := notify.New(); c != nil {
-		return c
-	}
-	// A typed nil in an interface is NOT nil, and BindSender would then hold a
-	// sender that reports delivery configured and refuses every send. Return an
-	// untyped nil so the predicate stays truthful.
-	return nil
-}

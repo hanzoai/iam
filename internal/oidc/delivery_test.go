@@ -5,6 +5,8 @@ package oidc
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -13,11 +15,11 @@ import (
 // fakeSender records what it was asked to deliver and fails on demand.
 type fakeSender struct {
 	err  error
-	sent []string
+	sent []Message
 }
 
-func (f *fakeSender) Send(_ context.Context, org, channel, dest, code string) error {
-	f.sent = append(f.sent, org+":"+channel+":"+dest+":"+code)
+func (f *fakeSender) Send(_ context.Context, m Message) error {
+	f.sent = append(f.sent, m)
 	return f.err
 }
 
@@ -114,13 +116,49 @@ func TestSendFailureIsReportedNotSwallowed(t *testing.T) {
 	f := &fakeSender{err: errors.New("twilio: 21608 unverified number")}
 	bindSender(t, f)
 
-	if err := sender.Send(context.Background(), "hanzo", "email", "someone@example.com", "123456"); err == nil {
+	if err := sender.Send(context.Background(), message("hanzo", "email", "someone@example.com", "123456")); err == nil {
 		t.Fatal("a failing sender must surface its error to the endpoint")
 	}
 	if len(f.sent) != 1 {
 		t.Fatalf("sender was called %d times, want 1", len(f.sent))
 	}
-	if f.sent[0] != "hanzo:email:someone@example.com:123456" {
-		t.Errorf("sender got %q — org, channel, destination and code must all reach it", f.sent[0])
+	got := f.sent[0]
+	if got.Org != "hanzo" || got.Channel != "email" || got.To != "someone@example.com" {
+		t.Errorf("sender got %+v — the tenant, channel and destination must all reach it", got)
+	}
+	if !strings.Contains(got.Body, "123456") {
+		t.Errorf("the body %q does not carry the code", got.Body)
+	}
+}
+
+// The message IAM composes carries the code, states the SAME expiry the record is
+// checked against, and names no brand.
+//
+// The expiry is the reason this composition lives here rather than in a transport.
+// One process answers for every white-label identity host and every one of them
+// expires a code after verificationCodeTTL, so a transport writing its own sentence
+// would be restating a policy it cannot read — and the two would part company the
+// first time the TTL moved. This asserts they agree.
+func TestTheMessageStatesTheRealExpiryAndNoBrand(t *testing.T) {
+	m := message("hanzo", "phone", "+15550100", "246810")
+
+	if !strings.Contains(m.Body, "246810") {
+		t.Errorf("body %q does not carry the code", m.Body)
+	}
+	want := fmt.Sprintf("expires in %d minutes", int(verificationCodeTTL.Minutes()))
+	if !strings.Contains(m.Body, want) {
+		t.Errorf("body %q does not state the real expiry (%q from verificationCodeTTL)", m.Body, want)
+	}
+	for _, brand := range []string{"Hanzo", "Lux", "Zoo", "Pars"} {
+		if strings.Contains(m.Body, brand) {
+			t.Errorf("body names the brand %q — one process answers for every white-label host", brand)
+		}
+	}
+	// A subject rides email only; an SMS has nowhere to put one.
+	if m.Subject != "" {
+		t.Errorf("an sms carried a subject %q", m.Subject)
+	}
+	if s := message("hanzo", "email", "a@b.test", "1").Subject; s == "" {
+		t.Error("an email carried no subject")
 	}
 }
