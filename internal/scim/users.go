@@ -235,7 +235,11 @@ func listUsers(db orm.DB) zip.Handler {
 			case "username":
 				q = q.Filter("Name=", value)
 			case "emails", "emails.value":
-				q = q.Filter("Email=", value)
+				// Normalized, because Create/Update normalize what they STORE. A raw
+				// filter compares the caller's spelling against a canonical column, so
+				// an IdP that sent "Alice@Example.com" found nobody and provisioned a
+				// SECOND account for a person who already had one.
+				q = q.Filter("Email=", store.NormalizeEmail(value))
 			default:
 				return scimError(c, 400, "unsupported filter attribute: "+field, "invalidFilter")
 			}
