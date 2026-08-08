@@ -8,8 +8,8 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -401,41 +401,32 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 
 // provisionFederatedUser creates a new federated account through the ONE
 // canonical user-create path (users.Create, no password → no login-able digest),
-// stamping the provider subject on its connector column. The username is derived
-// from the EMAIL and collision-checked; the email's verified flag is carried
-// straight from the IdP.
+// stamping the provider subject on its connector column. The username comes from
+// allocateName — the same derivation a password signup with no username of its own
+// gets — and the email's verified flag is carried straight from the IdP.
 //
-// What an IdP hands over is an address and a display name, and only the address
-// may become an identity: a Google profile says "Zach Kelling", which is not a
-// username in any spelling and must never be turned into one. schema.Handle takes
-// the local part; the display name reaches DisplayName and stops there.
+// The display name reaches DisplayName and stops there: only the ADDRESS may
+// become an identity, which is allocateName's rule to keep.
 func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Application, prov *schema.Provider, binding connectorBinding, id federatedIdentity) (*schema.User, error) {
 	org := app.Organization
-	for attempt := 1; attempt <= federatedNameAttempts; attempt++ {
-		name := federatedUsername(id.email, prov.Type, attempt)
-		taken, err := userExists(ctx, db, org, name)
-		if err != nil {
-			return nil, err
-		}
-		if taken {
-			continue
-		}
-		u := schema.User{
-			Owner:             org,
-			Name:              name,
-			Type:              "normal-user",
-			DisplayName:       firstNonEmpty(id.displayName, name),
-			Email:             id.email,
-			EmailVerified:     id.emailVerified,
-			Avatar:            id.avatar,
-			SignupApplication: app.Name,
-			RegisterType:      "Federation",
-			RegisterSource:    org + "/" + prov.Name,
-		}
-		*binding.ref(&u) = id.subject
-		return users.New(db).Create(ctx, &users.CreateInput{User: u})
+	name, err := allocateName(ctx, db, org, id.email, prov.Type)
+	if err != nil {
+		return nil, fmt.Errorf("federation: %w", err)
 	}
-	return nil, errors.New("federation: could not allocate a unique username")
+	u := schema.User{
+		Owner:             org,
+		Name:              name,
+		Type:              "normal-user",
+		DisplayName:       firstNonEmpty(id.displayName, name),
+		Email:             id.email,
+		EmailVerified:     id.emailVerified,
+		Avatar:            id.avatar,
+		SignupApplication: app.Name,
+		RegisterType:      "Federation",
+		RegisterSource:    org + "/" + prov.Name,
+	}
+	*binding.ref(&u) = id.subject
+	return users.New(db).Create(ctx, &users.CreateInput{User: u})
 }
 
 // federationProvider resolves the app's ProviderItem named name to its shared
@@ -603,34 +594,3 @@ func connectorFor(providerType string) (connectorBinding, bool) {
 	return b, ok
 }
 
-// federatedNameAttempts bounds the dedupe walk: the first free suffix wins, and a
-// name that is still taken after this many tries means something is wrong with the
-// derivation, not that the org is full.
-const federatedNameAttempts = 32
-
-// federatedUsername derives the username for a provisioned account from the email
-// local part (schema.Handle), falling back to the provider name and then "user"
-// when nothing usable survives. attempt 1 asks for the bare handle; each later
-// attempt appends its number, so z@hanzo.ai becomes "z", then "z2", "z3" — a
-// person gets the name they would have chosen, and the suffix appears only when it
-// has to.
-//
-// It replaced a random 8-hex suffix on EVERY name ("z-3f9ab21c"), which made
-// collisions impossible by making every name unrecognisable. Collisions are the
-// caller's loop to handle; a username is meant to be typed and read.
-func federatedUsername(email, providerType string, attempt int) string {
-	base := schema.Handle(email)
-	if base == "" {
-		// No usable address. The provider TYPE ("google", "github") is the only other
-		// value here that is not a human's name — the display name is deliberately
-		// never consulted, on any branch.
-		base, _ = schema.Username(providerType)
-	}
-	if base == "" {
-		base = "user"
-	}
-	if attempt > 1 {
-		base += strconv.Itoa(attempt)
-	}
-	return base
-}
