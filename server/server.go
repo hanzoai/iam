@@ -13,6 +13,7 @@ package server
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
@@ -81,11 +82,51 @@ func Route(app *zip.App, db orm.DB) {
 // operations were. Composing the App is what keeps them.
 func NewApp(db orm.DB) *zip.App {
 	app := zip.New(zip.Config{AppName: "iam", DisableStartupMessage: true})
+	// A nil store is a HOST that could not open one, and it changes what every op
+	// ANSWERS — never which addresses exist. Those are different kinds of fact: the
+	// route table is fixed by this code, the store is a property of the machine the
+	// code is running on, and braiding them makes the published document depend on
+	// whether a volume happened to be mounted when it was generated.
+	//
+	// cloud used to express this by registering a DIFFERENT surface — five wildcards
+	// answering 503 instead of the App — so an absent volume replaced 94 typed
+	// operations with 15 undescribed catch-alls in its OpenAPI document, its MCP tool
+	// list, its SDKs and its CLI. Two route tables for one program, chosen at boot by
+	// a stat() call.
+	//
+	// Refusing in FRONT of the routes gives one table and one registration: every
+	// address IAM declares still exists, still documents itself, and answers 503
+	// until the store is there. It also means no handler dereferences the nil.
+	if db == nil {
+		app.Use(zip.H(unavailable))
+	}
 	Route(app, db)
 	if err := app.Build(); err != nil {
 		panic("iam: app does not compose: " + err.Error())
 	}
 	return app
+}
+
+// unavailable answers every identity request 503 while there is no store to serve
+// from, and is installed only in that case.
+//
+// It states the fault in the body rather than leaving the status to speak alone: the
+// caller is a relying party or a console, and "iam has no store" is the difference
+// between waiting a minute and re-registering an OIDC client. Retry-After says the
+// condition is transient, which it is — a volume gets mounted, not fixed.
+//
+// It ANSWERS rather than returning the error for a host to render, because the host
+// may not render it faithfully: cloud installs an error-flattening filter on its /v1
+// group that rewrites any PROPAGATED error to 500, so a returned 503 would reach a
+// relying party as an internal error and hide the one fact worth saying. Answering
+// writes the status before any such filter can see it.
+func unavailable(c *zip.Ctx) error {
+	c.SetHeader("Retry-After", "30")
+	return c.JSON(http.StatusServiceUnavailable, map[string]any{
+		"status": http.StatusServiceUnavailable,
+		"code":   "iam_no_store",
+		"error":  "iam has no identity store open, so no identity request can be answered",
+	})
 }
 
 // OpenSQLite opens an embedded SQLite store for iam at path (WAL). The host may
