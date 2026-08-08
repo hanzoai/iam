@@ -34,7 +34,6 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/compare"
-	"github.com/hanzoai/iam/internal/notify"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/provision"
 	"github.com/hanzoai/iam/internal/routes"
@@ -115,29 +114,31 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 		return fmt.Errorf("serve: %w", err)
 	}
 
-	// Bind the transport that carries a verification code to a person. Everything
-	// code-shaped is off until this line binds something: email sign-in, SMS
-	// sign-in, and the email and SMS second factors all read
-	// `oidc.DeliveryConfigured`, which reports on the BOUND SENDER and never on
-	// configuration — so one binding lights all four and there is no second switch
-	// to remember.
+	// NO DELIVERY TRANSPORT IS BOUND HERE, and the line below is the whole reason.
 	//
-	// There is nothing to configure. notify is a cloud plugin reached by a ZAP op
-	// over its unix socket, so the peer is resolved from the shared runtime
-	// directory rather than from an address, and the org travels as an ARGUMENT
-	// rather than as the identity of a credential. That is what lets this process
-	// send for every white-label tenant it answers for while holding no secret to
-	// mint, mount or rotate. Reachability is proven by a dial at boot, here, where
-	// a failure is a log line instead of a dead login screen.
+	// Everything code-shaped reads one predicate — oidc.DeliveryConfigured, which
+	// reports on the BOUND SENDER and never on configuration — so email sign-in, SMS
+	// sign-in and the email and SMS second factors are exactly as available as the
+	// transport a composition root supplies. This root supplies none, so all four
+	// stay off and say so.
 	//
-	// Deliberately NOT fatal when unreachable: password and social sign-in are
-	// complete without it, and an identity service that refuses to boot because it
-	// cannot send SMS is worse than one that honestly offers fewer methods.
-	if n := notify.New(); n != nil {
-		oidc.BindSender(n)
-	} else {
-		fmt.Fprintln(os.Stderr, "iam: notify is not reachable on the plane — email/SMS codes and their second factors stay off")
-	}
+	// notify is a cloud app reached by a ZAP op over its unix socket, and in the
+	// fleet it is started ON DEMAND by the router that owns the app list. This binary
+	// is not that router: it cannot start notify, and it cannot tell a notify that is
+	// absent from one that is merely cold. It used to guess — it looked for
+	// notify.sock and bound a sender when the FILE was there — which reported
+	// delivery from a socket a dead pod left behind and reported none for a service
+	// one call would have woken. A guess that can be wrong in both directions is
+	// worse than an honest no.
+	//
+	// Delivery lives where the router lives. cloud grafts this surface with
+	// server.Route and binds its own transport with server.BindSender, and that is
+	// the one deployment where a code can actually reach a person.
+	//
+	// Deliberately NOT fatal: password and social sign-in are complete without it,
+	// and an identity service that refuses to boot because it cannot send SMS is
+	// worse than one that honestly offers fewer methods.
+	fmt.Fprintln(os.Stderr, "iam: this binary binds no delivery transport — email/SMS codes and their second factors stay off (a grafting host supplies one)")
 
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
 	// same file the the legacy surface iam uses — so a fresh store comes up with the real
