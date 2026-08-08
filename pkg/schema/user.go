@@ -5,6 +5,7 @@ package schema
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/hanzoai/orm"
 )
@@ -346,4 +347,27 @@ type CartItem struct {
 type ConsentRecord struct {
 	Application   string   `json:"application,omitempty"`
 	GrantedScopes []string `json:"grantedScopes,omitempty"`
+}
+
+// ServiceAccount is the User.Type IAM writes for a MACHINE identity — a
+// credential with no person behind it. IAM is the authority on what its own rows
+// are, so the predicate reading this field lives beside the field rather than in
+// a downstream library's opinion of the string. "application" is the sibling
+// shape other Hanzo services stamp for the same idea, and Machine accepts both.
+const ServiceAccount = "service-account"
+
+// Machine reports whether this row is a machine identity rather than a person.
+//
+// It decides WHICH LEDGER the principal spends from (store.BillingAccount): a
+// machine has no person, so a personal wallet keyed on its name is one no funding
+// path can name and it reads $0 forever.
+func (u *User) Machine() bool {
+	if u == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(u.Type)) {
+	case ServiceAccount, "application":
+		return true
+	}
+	return false
 }

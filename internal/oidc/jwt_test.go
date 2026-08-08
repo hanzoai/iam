@@ -12,6 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // testKey is a small (fast) RSA key — fine for tests; production uses the Cert.
@@ -229,8 +230,9 @@ func TestBillingAccountForOnlyAdminsSpendThePool(t *testing.T) {
 		{"admin here, member elsewhere", []schema.OrgRef{{Org: "lux", Role: "member"}, {Org: "hanzo", Role: "admin"}}, "org:hanzo"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := billingAccountFor("hanzo", tc.refs); got != tc.want {
-				t.Fatalf("billingAccountFor = %q; want %q", got, tc.want)
+			u := &schema.User{Owner: "hanzo", Name: "someone"}
+			if got := store.BillingAccount(u, tc.refs); got != tc.want {
+				t.Fatalf("store.BillingAccount = %q; want %q", got, tc.want)
 			}
 		})
 	}
