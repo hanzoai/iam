@@ -73,6 +73,11 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	// move-user pair. Self-authenticates via the unified service token.
 	r.Post(PathProvision, provisionServiceHandler(db))
 	zip.Alias(r.Post, PathPreferences, LegacyPathPreferences, updatePreferencesHandler(db))
+	// The ONE place a person's own password is written — a rotation proved by the
+	// password being replaced, and a recovery proved by a code delivered to the
+	// account's own address. Self-scoped like consent below it; it mints nothing, so a
+	// reset is followed by an ordinary sign-in.
+	r.Put(PathPassword, putPasswordHandler(db))
 	// Account-canonical data-sharing consent (insights + opt-in training) — the ONE
 	// source of truth the hanzo.id signup, the browser extension, and hanzo.ai share.
 	r.Get(PathConsent, getConsentHandler(db))
