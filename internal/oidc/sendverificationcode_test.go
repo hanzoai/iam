@@ -6,10 +6,12 @@ package oidc
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -173,4 +175,80 @@ func TestSendVerificationCode_RefusesWhenNothingCanDeliver(t *testing.T) {
 	if msg, _ := env["msg"].(string); !strings.Contains(msg, "deliver") {
 		t.Errorf("msg = %q, want it to name delivery so the cause is actionable", msg)
 	}
+}
+
+// A phone code has to survive the person spelling their own number two ways.
+//
+// The record was written under `dest` exactly as typed and matched back with an
+// exact Receiver compare, while the ACCOUNT on the same request resolves through
+// GetUserByPhone, which normalizes first. So "+1 415 555 0134" at send and
+// "+14155550134" at login found the right user and then answered "the code is
+// incorrect or has expired" — a refusal with no honest explanation available to
+// the screen, and one nobody would meet until the first customer of the phone arm.
+func TestPhoneCodeMatchesHoweverTheNumberWasTyped(t *testing.T) {
+	for _, tc := range []struct{ sent, typed string }{
+		{"+1 (415) 555-0134", "+14155550134"},
+		{"+14155550134", "+1 415 555 0134"},
+		{"415-555-0134", "4155550134"},
+	} {
+		t.Run(tc.sent+" then "+tc.typed, func(t *testing.T) {
+			sender := &fakeSender{}
+			bindSender(t, sender)
+			app, db := newServer(t)
+			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
+			seedOrg(t, db, "hanzo")
+
+			status, env := sendCode(t, app, map[string]string{
+				"dest": tc.sent, "type": "phone", "applicationId": "admin/conf",
+			})
+			if status != 200 || env["status"] != "ok" {
+				t.Fatalf("send status=%d env=%v, want 200 ok", status, env)
+			}
+			if len(sender.sent) != 1 {
+				t.Fatalf("sender saw %d deliveries, want 1", len(sender.sent))
+			}
+			// The message went to ONE canonical spelling, which is also the one the
+			// record is keyed on.
+			m := sender.sent[0]
+			if m.To != store.NormalizePhone(tc.sent) {
+				t.Errorf("delivered to %q, want the canonical %q", m.To, store.NormalizePhone(tc.sent))
+			}
+			code := codeIn(t, m.Body)
+
+			ok, err := ConsumeVerificationCode(context.Background(), db, tc.typed, code)
+			if err != nil {
+				t.Fatalf("consume: %v", err)
+			}
+			if !ok {
+				t.Errorf("a code sent to %q did not verify when typed as %q", tc.sent, tc.typed)
+			}
+		})
+	}
+}
+
+// An address is not a number: NormalizePhone keeps only digits, so canonicalizing
+// an email would leave nothing to match on. One function decides which is which,
+// so the write and the read cannot disagree about it.
+func TestReceiverKeyLeavesAnythingThatIsNotAPhoneAlone(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"alice@hanzo.ai", "alice@hanzo.ai"},
+		{"zeekay", "zeekay"},
+		{"+1 (415) 555-0134", "+14155550134"},
+		{"415-555-0134", "4155550134"},
+	} {
+		if got := receiverKey(tc.in); got != tc.want {
+			t.Errorf("receiverKey(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// codeIn reads the six digits out of a delivered message body, so a test can spend
+// the code the person would have typed rather than reaching into the table.
+func codeIn(t *testing.T, body string) string {
+	t.Helper()
+	digits := regexp.MustCompile(`\d{` + fmt.Sprint(verificationCodeLength) + `}`).FindString(body)
+	if digits == "" {
+		t.Fatalf("no %d-digit code in the delivered body %q", verificationCodeLength, body)
+	}
+	return digits
 }
