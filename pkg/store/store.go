@@ -95,6 +95,47 @@ func GetApplicationByName(_ context.Context, db orm.DB, owner, name string) (*sc
 	return app, err
 }
 
+// GetApplicationNamed resolves an application from a NAME ALONE — for the callers
+// that hold a name and no owner, which is what a User's SignupApplication is.
+//
+// A name is not the whole key, so those callers used to supply the owner they
+// assumed: "admin". Applications are NOT all platform-owned — a tenant registers
+// its own (federationOrgAllowed distinguishes the two cases, and the red-team
+// suite exercises a tenant-owned app) — so that lookup missed the row entirely
+// for every tenant-registered app and its caller read the miss as policy.
+//
+// Among rows sharing a name the platform-preferred one wins, by the SAME total
+// order clientId resolution uses (morePreferredApp), so this is deterministic on
+// every backend and can never resolve a tenant row ahead of a platform one.
+// Returns (nil, nil) when the name is empty or unmatched.
+func GetApplicationNamed(ctx context.Context, db orm.DB, name string) (*schema.Application, error) {
+	if name == "" {
+		return nil, nil
+	}
+	apps, err := orm.TypedQuery[schema.Application](db).Filter("Name=", name).GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return preferredApp(apps), nil
+}
+
+// HasWallet reports whether any wallet is bound to the account (owner, user) — one
+// of the ways it can be signed in as, which is what the credential inventory in
+// internal/oidc asks before it lets a person remove another one. The wallet flow's
+// own lookups are keyed by (chain, address) because they answer a different
+// question: WHICH account a signature belongs to.
+func HasWallet(ctx context.Context, db orm.DB, owner, user string) (bool, error) {
+	if owner == "" || user == "" {
+		return false, nil
+	}
+	_, err := orm.TypedQuery[schema.Wallet](db).
+		Filter("Owner=", owner).Filter("User=", user).First()
+	if err == orm.ErrNotFound {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // GetUserByName resolves a user by (owner, name) — owner is the organization.
 // Returns (nil, nil) when absent.
 //

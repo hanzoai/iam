@@ -348,8 +348,11 @@ func appInList(env, clientID string) bool {
 // can't be resolved — the caller then pins `?aud=` for a cross-app resource.
 func defaultUserAudience(ctx context.Context, db orm.DB, user *schema.User, clientApp *schema.Application) string {
 	if user.SignupApplication != "" {
-		// Applications are platform-owned (owner "admin").
-		if ua, err := store.GetApplicationByName(ctx, db, "admin", user.SignupApplication); err == nil && ua != nil {
+		// A name is all the User row records, and a tenant-registered application is
+		// not owned by the platform registry — so the row is resolved by name, not by
+		// an assumed owner. Assuming "admin" silently fell through to the minting
+		// client's audience for every user of a tenant-registered app.
+		if ua, err := store.GetApplicationNamed(ctx, db, user.SignupApplication); err == nil && ua != nil {
 			return ua.ClientId
 		}
 	}
