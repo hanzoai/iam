@@ -5,8 +5,10 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"net/mail"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -74,8 +76,8 @@ func signupHandler(db orm.DB) zip.Handler {
 
 		f.Organization = strings.TrimSpace(f.Organization)
 		f.Username = strings.TrimSpace(f.Username)
-		if f.Organization == "" || f.Username == "" || f.Password == "" {
-			return httpx.Err(c, "organization, username and password are required")
+		if f.Organization == "" || f.Password == "" {
+			return httpx.Err(c, "organization and password are required")
 		}
 
 		// Resolve the training answer before anything is created, so an account is
@@ -172,22 +174,15 @@ func signupHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the user is not permitted to sign up to this application")
 		}
 
-		// THE username rule (schema.Username), applied at the door so the caller gets
-		// the reason rather than a bare conflict — and so every check BELOW this line
-		// runs against the value that will actually be stored. Probing uniqueness with
-		// the raw spelling while storing the normalized one is how "Alice" gets admitted
-		// next to an existing "alice".
-		username, err := schema.Username(f.Username)
-		if err != nil {
-			return httpx.Err(c, err.Error())
+		// Password policy (v1 org.PasswordOptions complexity) BEFORE either uniqueness
+		// check, so no answer about who already has an account is free: a probe has to
+		// bring a password this org would actually accept to learn anything. It reads
+		// in the right order too — the rules that are about the request alone come
+		// first, and only then does anything look at the directory.
+		if msg := passwordPolicyError(org.PasswordOptions, f.Password); msg != "" {
+			return httpx.Err(c, msg)
 		}
-		f.Username = username
-		// Uniqueness within the org — one opaque check per identifier.
-		if taken, err := userExists(ctx, db, f.Organization, f.Username); err != nil {
-			return httpx.Err(c, err.Error())
-		} else if taken {
-			return httpx.Err(c, "username already exists")
-		}
+
 		email := store.NormalizeEmail(f.Email)
 		if email != "" {
 			if !isEmailValid(email) {
@@ -204,9 +199,49 @@ func signupHandler(db orm.DB) zip.Handler {
 				return httpx.Err(c, err.Error())
 			}
 		}
-		// Password policy (v1 org.PasswordOptions complexity).
-		if msg := passwordPolicyError(org.PasswordOptions, f.Password); msg != "" {
-			return httpx.Err(c, msg)
+
+		// The username. A caller that NAMES one gets exactly that name or a refusal —
+		// provisioning a known name is a real use, and silently substituting another
+		// would hand back a different principal than the one asked for. A caller that
+		// names none gets one minted from the address, through the SAME derivation
+		// federated signup walks (allocateName), so the two ways an account enters this
+		// store agree on what an address is worth as a name.
+		//
+		// The signup screen has no username field, and the portal used to fill the gap
+		// in the browser with `email.split('@')[0]`. That guess cost two dead ends: a
+		// plus-address — `alice+hanzo@gmail.com`, one of the commonest real address
+		// forms — was refused outright, because "+" is not in the username charset and
+		// nothing on that path reduced the local part to the charset; and the SECOND
+		// person whose local part collided was refused "username already exists", about
+		// a field they were never shown and could not change. Both are gone the moment
+		// the derivation moves to the side that can see the directory: schema.Handle
+		// drops the subaddress marker, and the walk that federation has always done
+		// hands out `alice2`.
+		if f.Username == "" {
+			if email == "" {
+				return httpx.Err(c, "an email address or a username is required")
+			}
+			name, err := allocateName(ctx, db, f.Organization, email, "")
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			f.Username = name
+		} else {
+			// THE username rule (schema.Username), applied at the door so the caller gets
+			// the reason rather than a bare conflict — and so the uniqueness check runs
+			// against the value that will actually be stored. Probing uniqueness with the
+			// raw spelling while storing the normalized one is how "Alice" gets admitted
+			// next to an existing "alice".
+			name, err := schema.Username(f.Username)
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			f.Username = name
+			if taken, err := userExists(ctx, db, f.Organization, name); err != nil {
+				return httpx.Err(c, err.Error())
+			} else if taken {
+				return httpx.Err(c, "username already exists")
+			}
 		}
 
 		// Create through the ONE canonical user path (users.Create): argon2id-hash the
@@ -264,6 +299,52 @@ func resolveSignupApp(ctx context.Context, db orm.DB, f signupForm) (*schema.App
 func userExists(ctx context.Context, db orm.DB, org, name string) (bool, error) {
 	u, err := store.GetUserByName(ctx, db, org, name)
 	return u != nil, err
+}
+
+// nameAttempts bounds the dedupe walk: the first free suffix wins, and a name
+// that is still taken after this many tries means something is wrong with the
+// derivation, not that the org is full.
+const nameAttempts = 32
+
+// allocateName mints the username a NEW account gets in org: the handle its
+// address yields, or the first free variant of it. It is the ONE derivation both
+// ways into this store use — a password signup with no username of its own, and a
+// federated signup, which never has one.
+//
+// What an address yields is schema.Handle's to decide, and only the ADDRESS may
+// become an identity: an IdP profile says "Zach Kelling", which is not a username
+// in any spelling and must never be turned into one. fallback is the value to
+// derive from when the address yields nothing — the provider TYPE ("google") for a
+// federated signup, which is the only other value on that path that is not a
+// human's name. Empty when the caller has no such value.
+//
+// Attempt 1 asks for the bare handle; each later attempt appends its number, so
+// alice@gmail.com becomes "alice", then "alice2", "alice3" — a person gets the name
+// they would have chosen, and the suffix appears only when it has to. That
+// replaced a random 8-hex suffix on EVERY name ("z-3f9ab21c"), which made
+// collisions impossible by making every name unrecognisable.
+func allocateName(ctx context.Context, db orm.DB, org, email, fallback string) (string, error) {
+	base := schema.Handle(email)
+	if base == "" {
+		base, _ = schema.Username(fallback)
+	}
+	if base == "" {
+		base = "user"
+	}
+	for attempt := 1; attempt <= nameAttempts; attempt++ {
+		name := base
+		if attempt > 1 {
+			name += strconv.Itoa(attempt)
+		}
+		taken, err := userExists(ctx, db, org, name)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return name, nil
+		}
+	}
+	return "", errors.New("could not allocate a unique username")
 }
 
 // displayName is the user's display name: the supplied name, a "First Last"
