@@ -18,9 +18,9 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/internal/users"
 )
 
 // Identity federation — iam as an OIDC/OAuth2 Relying Party to external IdPs.
@@ -268,8 +268,8 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			// a federated login cannot enroll one inline, so it fails closed.
 			return fedErrorRedirect(c, st, "access_denied", "two-factor authentication must be set up before signing in")
 		}
-		if factor.Enabled(user) && !remembered(user, now) {
-			return federationChallenge(c, db, st, user, p, now)
+		if factor.Enabled(user) && !remembered(c, user, now) {
+			return federationChallenge(c, db, st, user, p, org, now)
 		}
 
 		// No second factor owed — complete exactly as before, through the one mint.
@@ -332,12 +332,21 @@ func federationMint(ctx context.Context, db orm.DB, app *schema.Application, use
 // challenge concept — carrying the resume params as its payload. The browser is
 // sent to the hosted 2FA page; the challenge id rides the httpOnly cookie, never a
 // URL segment.
-func federationChallenge(c *zip.Ctx, db orm.DB, st *schema.FederationState, user *schema.User, p fedResumeParams, now time.Time) error {
+//
+// The offer is computed by the SAME allowList the password gate uses, and a federated
+// login proves none of the offerable factors, so it excludes nothing. Any delivered
+// factor on the offer gets its code sent here for the same reason it does there: the
+// resume page has no destination to name and must not be given one.
+func federationChallenge(c *zip.Ctx, db orm.DB, st *schema.FederationState, user *schema.User, p fedResumeParams, org *schema.Organization, now time.Time) error {
 	payload, err := json.Marshal(p)
 	if err != nil {
 		return fedErrorRedirect(c, st, "server_error", "")
 	}
-	id, err := MintChallenge(c.Context(), db, KindFederation, user.Owner+"/"+user.Name, string(payload), now)
+	allow := deliver(c, db, user, allowList(user, org, ""), now)
+	if len(allow) == 0 {
+		return fedErrorRedirect(c, st, "access_denied", "your second factor could not be sent")
+	}
+	id, err := MintChallenge(c.Context(), db, KindFederation, user.Owner+"/"+user.Name, string(payload), offeredTypes(allow), now)
 	if err != nil {
 		return fedErrorRedirect(c, st, "server_error", "")
 	}

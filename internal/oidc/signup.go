@@ -30,7 +30,7 @@ import (
 //
 // Password sign-up only in this increment (the enabled-method the portal drives);
 // the email/phone-OTP-gated sign-up variant plugs its verification check
-// (CheckVerificationCode) in ahead of the create at cutover.
+// (otp.Check) in ahead of the create at cutover.
 
 // PathSignup is the canonical front-door signup endpoint.
 const PathSignup = "/v1/iam/signup"

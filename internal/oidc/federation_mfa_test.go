@@ -14,6 +14,8 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/otp"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // The federated-login second-factor gate, driven through the REAL registered routes
@@ -128,7 +130,7 @@ func TestFederationMfa_RecoveryCodeResumes(t *testing.T) {
 
 	p := fedResumeParams{ClientId: "webapp", RedirectUri: testRedirect, AppState: fedAppState, Scope: "openid"}
 	payload, _ := json.Marshal(p)
-	id, err := MintChallenge(context.Background(), db, KindFederation, "hanzo/alice", string(payload), time.Now())
+	id, err := MintChallenge(context.Background(), db, KindFederation, "hanzo/alice", string(payload), []string{factor.App}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +177,7 @@ func TestFederationMfa_ChallengeSingleUseAndExpiring(t *testing.T) {
 	mk := func(now time.Time) string {
 		p := fedResumeParams{ClientId: "webapp", RedirectUri: testRedirect, AppState: fedAppState, Scope: "openid"}
 		payload, _ := json.Marshal(p)
-		id, err := MintChallenge(context.Background(), db, KindFederation, "hanzo/alice", string(payload), now)
+		id, err := MintChallenge(context.Background(), db, KindFederation, "hanzo/alice", string(payload), []string{factor.App}, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -218,7 +220,7 @@ func TestFederationMfa_UserAndRedirectPinned(t *testing.T) {
 
 	p := fedResumeParams{ClientId: "webapp", RedirectUri: testRedirect, AppState: fedAppState, Scope: "openid"}
 	payload, _ := json.Marshal(p)
-	id, err := MintChallenge(context.Background(), db, KindFederation, "hanzo/alice", string(payload), time.Now())
+	id, err := MintChallenge(context.Background(), db, KindFederation, "hanzo/alice", string(payload), []string{factor.App}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,5 +264,100 @@ func TestFederationMfa_NoChallengeFailsClosed(t *testing.T) {
 	}
 	if n := tokens(t, db); n != 0 {
 		t.Fatalf("%d token(s) minted with no challenge", n)
+	}
+}
+
+// A DELIVERED factor answers a federated login too. This is the drift the one shared
+// verify closes: there were two switches, and the federated one accepted only TOTP
+// while calling itself "the ONE factor seam, shared with the password gate". An
+// account holding just an emailed or texted factor could answer a password login and
+// not this one — it was simply locked out of signing in through Google.
+func TestFederationMfa_DeliveredFactorResumes(t *testing.T) {
+	app, db := newServer(t)
+	f := &fakeSender{}
+	bindSender(t, f)
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	seedUser(t, db, "alice", "alice@example.com", "pw")
+	proveEmail(t, db, "alice") // linkable by address; see fedEnroll
+
+	// An EMAIL factor and nothing else — no authenticator on the row.
+	u := userRow(t, db, "alice")
+	factor.Add(u, factor.Email, "")
+	if err := factor.Prefer(u, factor.Email); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce")
+	m.mu.Unlock()
+
+	resp := callback(t, app, q.Get("state"), "idp-code-1", cookie)
+	if loc := resp.Header.Get("Location"); !strings.HasSuffix(loc, PathMfaVerify) {
+		t.Fatalf("a federated login owing a delivered factor went to %q", loc)
+	}
+	if n := tokens(t, db); n != 0 {
+		t.Fatalf("%d token row(s) persisted before the second factor", n)
+	}
+	// The challenge SENT the code, to the address on the account.
+	if len(f.sent) != 1 {
+		t.Fatalf("sent %d messages, want one code to the account's own address", len(f.sent))
+	}
+	if m := f.sent[0]; m.Org != "hanzo" || m.Channel != otp.Email || m.To != "alice@example.com" {
+		t.Fatalf("sent %+v, want one code to the account's own address", m)
+	}
+	code := codeIn(t, f.sent[0].Body)
+
+	req := jsonReq("POST", PathFederationMfa, map[string]string{"mfaType": factor.Email, "passcode": code})
+	req.Header.Set("Cookie", challengeCookie+"="+challengeOf(t, resp))
+	_, body := do(t, app, req)
+	mm := decode(t, body)
+	if mm["status"] != "ok" {
+		t.Fatalf("a delivered factor was refused on the federated resume: %v", mm["msg"])
+	}
+	if rurl, _ := mm["data"].(string); !strings.HasPrefix(rurl, testRedirect) {
+		t.Fatalf("resume returned %q, want the RP redirect", rurl)
+	}
+}
+
+// The federated resume checks the offer too, on the same challenge row and through
+// the same function. An account holding only an authenticator cannot be resumed with
+// an emailed code.
+func TestFederationMfa_RefusesAFactorItDidNotOffer(t *testing.T) {
+	app, db := newServer(t)
+	bindSender(t, &fakeSender{})
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
+	fedEnroll(t, db, "alice", "alice@example.com") // authenticator only
+
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce")
+	m.mu.Unlock()
+	resp := callback(t, app, q.Get("state"), "idp-code-1", cookie)
+
+	// A live code for her address, minted for another purpose entirely.
+	if err := otp.Issue(context.Background(), db, "hanzo", "alice@example.com", "", nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "alice@example.com")
+	if err != nil || rec == nil {
+		t.Fatalf("seed code not persisted: %v", err)
+	}
+
+	req := jsonReq("POST", PathFederationMfa, map[string]string{"mfaType": factor.Email, "passcode": rec.Code})
+	req.Header.Set("Cookie", challengeCookie+"="+challengeOf(t, resp))
+	_, body := do(t, app, req)
+	if mm := decode(t, body); mm["status"] != "error" {
+		t.Fatalf("an emailed code resumed an authenticator-only federated login: %#v", mm)
+	}
+	if n := tokens(t, db); n != 0 {
+		t.Fatalf("%d token row(s) persisted", n)
 	}
 }

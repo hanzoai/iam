@@ -15,7 +15,9 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // The MFA gate at login, driven through the REAL registered router. The contract is
@@ -347,7 +349,10 @@ func TestLegacyPlaintextRecoveryCodeStillVerifies(t *testing.T) {
 }
 
 // TestPasscodeRefusedWhenItRepeatsTheUsedFactor — v1 controllers/auth.go:1325.
-// The factor already used to get here cannot answer for the one still owed.
+// The factor already used to get here cannot answer for the one still owed. The
+// gate never OFFERS the just-used factor (allowList drops it), so a challenge that
+// was minted after an app factor and is answered with the app factor is answering
+// something it was not offered.
 func TestPasscodeRefusedWhenItRepeatsTheUsedFactor(t *testing.T) {
 	db := openTestDB(t)
 	app := newApp(t, db)
@@ -355,8 +360,9 @@ func TestPasscodeRefusedWhenItRepeatsTheUsedFactor(t *testing.T) {
 	secret := enrolled(t, db, "alice", "pw")
 	u := userRow(t, db, "alice")
 
-	// A challenge whose payload says "the app factor was already used".
-	id, err := MintChallenge(context.Background(), db, KindMfa, "hanzo/"+u.Name, factor.App, time.Now())
+	// A challenge minted the way the gate mints one for an app-only account whose app
+	// factor was already used: nothing left to offer.
+	id, err := MintChallenge(context.Background(), db, KindMfa, "hanzo/"+u.Name, factor.App, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,6 +375,140 @@ func TestPasscodeRefusedWhenItRepeatsTheUsedFactor(t *testing.T) {
 	}
 	if n := tokens(t, db); n != 0 {
 		t.Fatalf("%d token row(s) persisted", n)
+	}
+}
+
+// TestChallengeRefusesAFactorItDidNotOffer — the downgrade this closes. alice holds
+// ONLY an authenticator; nothing on her row enables email. A challenge answered with
+// mfaType=email and a live code for her address used to mint, because the finish
+// checked only that the answering factor differed from the one already proven. Her
+// deliberate choice of TOTP silently became possession of a mailbox.
+//
+// The code seeded here is worse than a stray one: it is filed under a DIFFERENT
+// tenant and bound to no user, because a verification record resolves by address
+// alone. One delivered code was valid for every purpose that shares the address.
+func TestChallengeRefusesAFactorItDidNotOffer(t *testing.T) {
+	db := openTestDB(t)
+	app := newApp(t, db)
+	bindSender(t, &fakeSender{})
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "s3cret"})
+	secret := enrolled(t, db, "alice", "pw")
+	_ = secret
+
+	// The password login: the offer is her authenticator and nothing else.
+	resp, body := do(t, app, jsonReq("POST", PathLogin, map[string]string{
+		"organization": "hanzo", "username": "alice", "password": "pw",
+		"type": "code", "clientId": "hanzo-app",
+	}))
+	m := decode(t, body)
+	if m["data"] != NextMfa {
+		t.Fatalf("data = %q, want %q", m["data"], NextMfa)
+	}
+	list, _ := m["data2"].([]any)
+	if len(list) != 1 {
+		t.Fatalf("the offer carried %d factors, want only the authenticator: %#v", len(list), list)
+	}
+
+	// A live code for her address, minted by another tenant for another purpose.
+	if err := otp.Issue(context.Background(), db, "lux", "alice@hanzo.ai", "", nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "alice@hanzo.ai")
+	if err != nil || rec == nil {
+		t.Fatalf("seed code not persisted: %v", err)
+	}
+
+	_, body2 := do(t, app, jsonReq("POST", PathLogin, map[string]any{
+		"type": "code", "clientId": "hanzo-app", "challenge": challengeOf(t, resp),
+		"mfaType": factor.Email, "passcode": rec.Code,
+	}))
+	if m2 := decode(t, body2); m2["status"] != "error" {
+		t.Fatalf("an emailed code answered an authenticator-only challenge: %#v", m2)
+	}
+	if n := tokens(t, db); n != 0 {
+		t.Fatalf("%d token row(s) persisted — TOTP was downgraded to mailbox possession", n)
+	}
+}
+
+// TestPreferredFactorNobodyHoldsDivertsToEnrollment — factor.Enabled reads
+// PreferredMfaType, so a row naming a factor it does not hold reported "MFA is on"
+// and then had nothing to challenge with. The password alone minted a code. The gate
+// must not read an empty offer as "everything owed has been proven".
+func TestPreferredFactorNobodyHoldsDivertsToEnrollment(t *testing.T) {
+	db := openTestDB(t)
+	app := newApp(t, db)
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "s3cret"})
+	seedUser(t, db, "bob", "bob@hanzo.ai", "pw")
+
+	u := userRow(t, db, "bob")
+	u.PreferredMfaType = factor.SMS // nothing enrolled; no phone on file
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, body := do(t, app, jsonReq("POST", PathLogin, map[string]string{
+		"organization": "hanzo", "username": "bob", "password": "pw", "type": "code", "clientId": "hanzo-app",
+	}))
+	m := decode(t, body)
+	if m["data"] != RequiredMfa {
+		t.Fatalf("data = %#v, want %q — a factor nobody holds waved the sign-in through", m["data"], RequiredMfa)
+	}
+	if n := tokens(t, db); n != 0 {
+		t.Fatalf("%d token row(s) persisted", n)
+	}
+}
+
+// TestTextedFactorIsSentAndAnswered — the whole SMS second factor, end to end. It
+// could not be completed by anyone before: the gate answered NextMfa and delivered
+// NOTHING, and the one send endpoint filed a record under the punctuation somebody
+// typed while the verify looked it up under the account's digits.
+func TestTextedFactorIsSentAndAnswered(t *testing.T) {
+	db := openTestDB(t)
+	app := newApp(t, db)
+	f := &fakeSender{}
+	bindSender(t, f)
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "s3cret"})
+	seedUser(t, db, "carol", "carol@hanzo.ai", "pw")
+
+	// A phone stored the way a person types one, and an SMS factor enrolled on it.
+	u := userRow(t, db, "carol")
+	u.Phone = "+1 (415) 555-0134"
+	factor.Add(u, factor.SMS, "")
+	if err := factor.Prefer(u, factor.SMS); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, body := do(t, app, jsonReq("POST", PathLogin, map[string]string{
+		"organization": "hanzo", "username": "carol", "password": "pw", "type": "code", "clientId": "hanzo-app",
+	}))
+	if m := decode(t, body); m["data"] != NextMfa {
+		t.Fatalf("data = %#v, want %q", m["data"], NextMfa)
+	}
+	if len(f.sent) != 1 {
+		t.Fatalf("the challenge sent %d messages, want 1 — nothing delivers the code", len(f.sent))
+	}
+	// The code goes to the account's OWN number, in the canonical spelling the record
+	// is keyed on — which is what makes the delivered code verifiable below.
+	if m := f.sent[0]; m.Org != "hanzo" || m.Channel != otp.Phone || m.To != "+14155550134" {
+		t.Fatalf("sent %+v — the code must go to the account's own number, normalized", m)
+	}
+	code := codeIn(t, f.sent[0].Body)
+
+	// The code that was actually delivered verifies. Filed under the digits, found
+	// under the digits.
+	_, body2 := do(t, app, jsonReq("POST", PathLogin, map[string]any{
+		"type": "code", "clientId": "hanzo-app", "challenge": challengeOf(t, resp),
+		"mfaType": factor.SMS, "passcode": code,
+	}))
+	m2 := decode(t, body2)
+	if m2["status"] != "ok" {
+		t.Fatalf("the delivered code was refused: %v", m2["msg"])
+	}
+	if got, _ := m2["data"].(string); got == "" || got == NextMfa {
+		t.Fatalf("data = %#v, want an authorization code", m2["data"])
 	}
 }
 
@@ -391,7 +531,7 @@ func TestRememberDeadlineRoundTrips(t *testing.T) {
 
 	login := map[string]string{"organization": "hanzo", "username": "alice", "password": "pw", "type": "code", "clientId": "hanzo-app"}
 	resp, _ := do(t, app, jsonReq("POST", PathLogin, login))
-	_, body := do(t, app, jsonReq("POST", PathLogin, map[string]any{
+	answered, body := do(t, app, jsonReq("POST", PathLogin, map[string]any{
 		"type": "code", "clientId": "hanzo-app", "challenge": challengeOf(t, resp),
 		"mfaType": factor.App, "passcode": passcode(t, secret), "enableMfaRemember": true,
 	}))
@@ -404,30 +544,54 @@ func TestRememberDeadlineRoundTrips(t *testing.T) {
 	if stored == "" {
 		t.Fatal("enableMfaRemember wrote no deadline")
 	}
-	if !remembered(userRow(t, db, "alice"), time.Now()) {
-		t.Fatalf("the gate cannot read back the deadline it wrote (%q) — the window is silently dead", stored)
-	}
+	token := rememberOf(t, answered)
 
-	// A future deadline SKIPS the challenge: the next password login mints.
-	_, body2 := do(t, app, jsonReq("POST", PathLogin, login))
+	// THIS browser skips the challenge: it presents the token the window was opened
+	// with, and the next password login mints.
+	same := jsonReq("POST", PathLogin, login)
+	same.Header.Set("Cookie", rememberCookie+"="+token)
+	_, body2 := do(t, app, same)
 	m2 := decode(t, body2)
 	if m2["data"] == NextMfa {
-		t.Fatal("a live remember window still challenged")
+		t.Fatal("a live remember window still challenged the browser that opened it")
 	}
 	if code, _ := m2["data"].(string); code == "" {
 		t.Fatalf("remembered login did not mint: %#v", m2)
 	}
 
-	// A PAST deadline challenges again.
+	// ANOTHER browser does NOT. This is the defect: the deadline lived on the user
+	// row alone, so a factor proven once skipped the factor everywhere — including for
+	// whoever else held the password.
+	_, body3 := do(t, app, jsonReq("POST", PathLogin, login))
+	if m3 := decode(t, body3); m3["data"] != NextMfa {
+		t.Fatalf("a browser carrying no remember token skipped the factor: %#v — "+
+			"\"don't ask again on this browser\" turned 2FA off for the account", m3)
+	}
+
+	// A PAST deadline challenges again, token or no token.
 	u := userRow(t, db, "alice")
 	u.MfaRememberDeadline = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
 	if err := u.UpdateCtx(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	_, body3 := do(t, app, jsonReq("POST", PathLogin, login))
-	if m3 := decode(t, body3); m3["data"] != NextMfa {
-		t.Fatalf("an expired remember window skipped the gate: %#v", m3)
+	expired := jsonReq("POST", PathLogin, login)
+	expired.Header.Set("Cookie", rememberCookie+"="+token)
+	_, body4 := do(t, app, expired)
+	if m4 := decode(t, body4); m4["data"] != NextMfa {
+		t.Fatalf("an expired remember window skipped the gate: %#v", m4)
 	}
+}
+
+// rememberOf extracts the remember token the gate set on a browser.
+func rememberOf(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	for _, ck := range resp.Cookies() {
+		if ck.Name == rememberCookie && ck.Value != "" {
+			return ck.Value
+		}
+	}
+	t.Fatal("enableMfaRemember set no remember cookie — nothing binds the window to a browser")
+	return ""
 }
 
 // TestZeroRememberWindowStillChallenges pins the LIVE configuration: every
@@ -525,4 +689,49 @@ func store2GetTokenByCode(db orm.DB, code string) (*schema.Token, error) {
 		return nil, nil
 	}
 	return t, err
+}
+
+// TestEmailOnlyAccountIsNotAskedTwice — the third branch of an empty offer, and the
+// only one that proceeds. An account whose ONLY factor is its email address signs in
+// with an emailed code: that code IS the factor, so nothing further is owed and the
+// grant is minted. Collapsing this case with the two refusals in either direction is a
+// bug both ways — waving the others through downgrades 2FA, and refusing this one
+// makes an email-only account unable to sign in at all.
+func TestEmailOnlyAccountIsNotAskedTwice(t *testing.T) {
+	db := openTestDB(t)
+	app := newApp(t, db)
+	f := &fakeSender{}
+	bindSender(t, f)
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "s3cret", codeSignin: true})
+	seedUser(t, db, "erin", "erin@hanzo.ai", "pw")
+
+	u := userRow(t, db, "erin")
+	factor.Add(u, factor.Email, "")
+	if err := factor.Prefer(u, factor.Email); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// A code to her address, then a sign-in with it instead of a password.
+	if err := otp.Issue(context.Background(), db, "hanzo", "erin@hanzo.ai", "", u, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "erin@hanzo.ai")
+	if err != nil || rec == nil {
+		t.Fatalf("code not persisted: %v", err)
+	}
+
+	_, body := do(t, app, jsonReq("POST", PathLogin, map[string]string{
+		"organization": "hanzo", "username": "erin@hanzo.ai", "code": rec.Code,
+		"type": "code", "clientId": "hanzo-app",
+	}))
+	m := decode(t, body)
+	if m["status"] != "ok" {
+		t.Fatalf("an email-only account could not sign in with its own factor: %v", m["msg"])
+	}
+	if code, _ := m["data"].(string); code == "" || code == NextMfa || code == RequiredMfa {
+		t.Fatalf("data = %#v, want an authorization code — the factor that was already proven was demanded again", m["data"])
+	}
 }
