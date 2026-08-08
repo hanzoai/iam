@@ -287,17 +287,23 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	// unlock a user mid-attack (F-6).
 	u.SigninWrongTimes = existing.SigninWrongTimes
 	u.LastSigninWrongTime = existing.LastSigninWrongTime
-	// Credentials are carried from the stored row and any body value is IGNORED. This
-	// is a full-row write, so without this a caller with user-admin scope could plant
-	// known credential material on any user in reach. Rotation goes through the
-	// mint/revoke seam only.
+	// Every secret is carried from the stored row and any body value is IGNORED —
+	// the password digest, the key secret, the bearer material, the authenticator
+	// seed and its recovery codes. CarrySecretsFrom is the inverse of Mask, so the
+	// set is exactly what a reader cannot see: this is a full-row write and every
+	// body reaching it came from a masked read, so a stated secret is either an
+	// erasure (the field arrived blank) or a plant by a caller with user-admin
+	// scope. Each of these has its own seam — password reset below, key rotation at
+	// mint/revoke, multi-factor enrolment in internal/mfa.
+	u.CarrySecretsFrom(existing)
+	// AccessKey and PasswordType are READABLE, so they are not Mask's to carry — but
+	// they are the halves that make the carried secrets interpretable (a digest with
+	// no type cannot be verified; a secret with no key cannot be used), so a partial
+	// body must not orphan them either.
 	u.AccessKey = existing.AccessKey
-	u.AccessSecret = existing.AccessSecret
-	u.AccessSecretHash = existing.AccessSecretHash
-	// Preserve the existing digest unless a new plaintext password is supplied.
-	u.PasswordHash = existing.PasswordHash
 	u.PasswordType = existing.PasswordType
-	u.PasswordSalt = existing.PasswordSalt
+	// A new plaintext password is the one secret a caller MAY state, through its own
+	// field rather than the user row.
 	if in.Password != "" {
 		hash, err := hashPassword(in.Password)
 		if err != nil {
