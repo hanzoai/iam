@@ -261,3 +261,53 @@ func seedPhoneUser(t *testing.T, db orm.DB, name, phone string) {
 		t.Fatalf("seed phone user: %v", err)
 	}
 }
+
+// An address that identifies two accounts must be answered EXACTLY as an address
+// that identifies none — no oracle on an unauthenticated door.
+//
+// The resolver now refuses to pick between duplicate rows (store.ErrEmailAmbiguous)
+// and that refusal is right. Echoing it here was not: this endpoint takes an
+// address from anyone, so "matches more than one account" tells a stranger the
+// address is real and worth attacking. The endpoint already declines to say
+// whether a user was found; an ambiguous one must join that silence.
+func TestAmbiguousAddressLeaksNothing(t *testing.T) {
+	bindSender(t, &fakeSender{})
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
+	seedOrg(t, db, "hanzo")
+	// Two rows, one address — the state the resolver refuses to choose within.
+	seedUserInOrg(t, db, "hanzo", "ada", "dup@example.com", "pw-ada")
+	seedUserInOrg(t, db, "hanzo", "grace", "dup@example.com", "pw-grace")
+
+	dupStatus, dupBody := sendCode(t, app, map[string]string{
+		"dest": "dup@example.com", "type": "email",
+		"applicationId": "admin/conf", "captchaType": "none",
+	})
+	noneStatus, noneBody := sendCode(t, app, map[string]string{
+		"dest": "nobody@example.com", "type": "email",
+		"applicationId": "admin/conf", "captchaType": "none",
+	})
+
+	// NOT VACUOUS: the absent-address case must reach the SEND, not die at an
+	// earlier guard. Two requests that both fail on a missing field would compare
+	// equal and prove nothing — which is exactly what the first draft of this test
+	// did.
+	if noneStatus != 200 || noneBody["status"] != "ok" {
+		t.Fatalf("control request did not reach the send (status=%d body=%v) — the comparison below would be vacuous", noneStatus, noneBody)
+	}
+	// Status AND message must match: either alone would leave the other as the
+	// oracle.
+	if dupStatus != noneStatus {
+		t.Errorf("status differs: ambiguous=%d absent=%d — the difference IS the oracle", dupStatus, noneStatus)
+	}
+	dupMsg, _ := dupBody["msg"].(string)
+	noneMsg, _ := noneBody["msg"].(string)
+	if dupMsg != noneMsg {
+		t.Errorf("message differs:\n  ambiguous: %q\n  absent:    %q\nan ambiguous address must be indistinguishable from an absent one", dupMsg, noneMsg)
+	}
+	for _, leak := range []string{"more than one", "ambiguous", "matches"} {
+		if strings.Contains(strings.ToLower(dupMsg), leak) {
+			t.Errorf("answer names the ambiguity (%q): %q", leak, dupMsg)
+		}
+	}
+}

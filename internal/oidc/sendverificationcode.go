@@ -85,8 +85,15 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			if !isEmailValid(dest) {
 				return httpx.Err(c, "email is invalid")
 			}
+			// An ambiguous address is treated as NO USER, not reported. This door
+			// is unauthenticated too, so echoing the resolver would tell a stranger
+			// which addresses exist — and the endpoint below already handles a nil
+			// user without saying whether one was found.
 			if user, err = store.GetUserByEmail(ctx, db, org.Name, dest); err != nil {
-				return httpx.Err(c, err.Error())
+				if !errors.Is(err, store.ErrEmailAmbiguous) {
+					return httpx.Err(c, "verification code cannot be sent")
+				}
+				user = nil
 			}
 		case otp.Phone:
 			// GetUserByPhone normalizes its argument and refuses to pick between two rows
