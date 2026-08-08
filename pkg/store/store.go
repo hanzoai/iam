@@ -201,13 +201,62 @@ func GetUserBySubject(ctx context.Context, db orm.DB, sub string) (*schema.User,
 	return GetUserById(ctx, db, sub)
 }
 
+// ErrEmailAmbiguous reports that an email address identifies more than one
+// account in an org, so it identifies nobody. Returned instead of a user, on
+// purpose — the same refusal [GetUserByPhone] makes, for the same reason.
+var ErrEmailAmbiguous = errors.New("email address matches more than one account")
+
+// NormalizeEmail reduces an email address to the ONE form this system stores and
+// compares: trimmed, and lowercase throughout.
+//
+// Lowercasing the LOCAL part as well as the domain is a deliberate choice, and it
+// is the choice already made everywhere an address is written — signup and both
+// IdP readers each lowered the whole thing before this function existed. RFC 5321
+// permits a local part to be case-sensitive; no mail provider anyone signs up
+// with treats it that way, and a system that stores Alice@x and alice@x as two
+// accounts hands one person two identities and the other person's address to
+// nobody.
+//
+// Applying it on WRITE and on READ is what makes one address one value. Applied
+// on only one side it is a lookup that silently never matches: signup lowered on
+// the way in while [GetUserByEmail] compared the raw spelling, so anyone who
+// capitalized a letter of their own address created an account and was then told
+// "the username or password is incorrect" for the password they had just chosen —
+// forever, and with no way to tell why.
+func NormalizeEmail(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
 // GetUserByEmail resolves a user by (owner, email) — the email-login identifier.
-func GetUserByEmail(_ context.Context, db orm.DB, owner, email string) (*schema.User, error) {
-	u, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).Filter("Email=", email).First()
+//
+// It FAILS CLOSED on ambiguity for the same reason [GetUserByPhone] does: the
+// document store hangs no per-field UNIQUE constraint, so two rows in one org can
+// carry one address, and a `.First()` would hand back an arbitrary one of them for
+// the caller to authenticate somebody against. Which row that is is not even
+// stable — the query carries no ORDER BY, so it is whatever the index yields. An
+// address that names two accounts names none.
+func GetUserByEmail(ctx context.Context, db orm.DB, owner, email string) (*schema.User, error) {
+	email = NormalizeEmail(email)
+	if email == "" {
+		return nil, nil
+	}
+	// Two, not one: enough to detect a collision, bounded so an address shared by
+	// many rows cannot pull them all into memory.
+	us, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).Filter("Email=", email).Limit(2).GetAll(ctx)
 	if err == orm.ErrNotFound {
 		return nil, nil
 	}
-	return u, err
+	if err != nil {
+		return nil, err
+	}
+	switch len(us) {
+	case 0:
+		return nil, nil
+	case 1:
+		return us[0], nil
+	default:
+		return nil, ErrEmailAmbiguous
+	}
 }
 
 // ErrPhoneAmbiguous reports that a phone number identifies more than one account
@@ -253,14 +302,17 @@ func NormalizePhone(s string) string {
 
 // GetUserByPhone resolves a user by (owner, phone) — the SMS-login identifier.
 //
-// It FAILS CLOSED on ambiguity, and that is the whole reason it is not a copy of
-// [GetUserByEmail]. `schema.User.Phone` is indexed but NOT unique, so two rows in
-// one org can carry the same number; a `.First()` would then hand back an
-// arbitrary one of them and the caller would authenticate a person against
-// somebody else's account. That is the same defect class as the cross-org
-// collision the login path already refuses to rely on. A number that names two
-// accounts names none, so this returns [ErrPhoneAmbiguous] and lets the caller
-// refuse rather than choose.
+// It FAILS CLOSED on ambiguity, exactly as [GetUserByEmail] does: `schema.User.
+// Phone` is indexed but NOT unique, so two rows in one org can carry the same
+// number; a `.First()` would then hand back an arbitrary one of them and the
+// caller would authenticate a person against somebody else's account. That is the
+// same defect class as the cross-org collision the login path already refuses to
+// rely on. A number that names two accounts names none, so this returns
+// [ErrPhoneAmbiguous] and lets the caller refuse rather than choose.
+//
+// One ambiguity policy for every identifier is the point. This one was argued
+// here first and the address was left picking arbitrarily for a while, which is
+// how a rule stated in one place drifts from the rule next door.
 //
 // phone is normalized here so every caller compares the same way; a blank or
 // punctuation-only argument returns (nil, nil) rather than matching the many rows
