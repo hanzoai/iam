@@ -346,7 +346,7 @@ func TestFederationMfa_RefusesAFactorItDidNotOffer(t *testing.T) {
 	if err := otp.Issue(context.Background(), db, "hanzo", "alice@example.com", "", nil, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "alice@example.com")
+	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "hanzo", "alice@example.com")
 	if err != nil || rec == nil {
 		t.Fatalf("seed code not persisted: %v", err)
 	}

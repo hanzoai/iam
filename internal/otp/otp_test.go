@@ -46,6 +46,24 @@ func (r *recorder) Send(_ context.Context, m Message) error {
 // only place a test can learn it from.
 var sixDigits = regexp.MustCompile(`\b\d{6}\b`)
 
+// account creates the user a code is minted FOR. A code is bound to an account, so a
+// test that spends one needs a row to bind to — an address alone is not an identity.
+func account(t *testing.T, db orm.DB, owner, name, email, phone string) *schema.User {
+	t.Helper()
+	u := orm.New[schema.User](db)
+	u.Owner, u.Name, u.Email = owner, name, email
+	u.Phone = store.NormalizePhone(phone)
+	u.SetId(owner + "/" + name)
+	if err := u.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	got, err := store.GetUserByName(context.Background(), db, owner, name)
+	if err != nil || got == nil {
+		t.Fatalf("re-read user: %v", err)
+	}
+	return got
+}
+
 func bind(t *testing.T, s Sender) {
 	t.Helper()
 	BindSender(s)
@@ -62,7 +80,8 @@ func TestOneNumberIsOneReceiverHoweverItIsTyped(t *testing.T) {
 	bind(t, r)
 	now := time.Now()
 
-	if err := Issue(context.Background(), db, "hanzo", "+1 (415) 555-0134", "", nil, now); err != nil {
+	carol := account(t, db, "hanzo", "carol", "", "+14155550134")
+	if err := Issue(context.Background(), db, "hanzo", "+1 (415) 555-0134", "", carol, now); err != nil {
 		t.Fatalf("issue: %v", err)
 	}
 	code := r.sent[0][strings.LastIndex(r.sent[0], ":")+1:]
@@ -76,7 +95,7 @@ func TestOneNumberIsOneReceiverHoweverItIsTyped(t *testing.T) {
 		"+1-415-555-0134",    // dashes instead of brackets
 		" +1 415 555 0134  ", // and whatever whitespace came along
 	} {
-		ok, err := Check(context.Background(), db, presented, code, now)
+		ok, err := Check(context.Background(), db, "hanzo", presented, code, now)
 		if err != nil {
 			t.Fatalf("check %q: %v", presented, err)
 		}
@@ -88,7 +107,7 @@ func TestOneNumberIsOneReceiverHoweverItIsTyped(t *testing.T) {
 	// A number missing its country code is a DIFFERENT address, not the same one
 	// spelled differently. Normalizing punctuation is safe; inferring a country is a
 	// guess, and a guess here routes somebody's second factor to another country.
-	if ok, _ := Check(context.Background(), db, "415-555-0134", code, now); ok {
+	if ok, _ := Check(context.Background(), db, "hanzo", "415-555-0134", code, now); ok {
 		t.Fatal("a national-format number matched an E.164 record — the key is inferring a country code")
 	}
 
@@ -105,15 +124,16 @@ func TestConsumeSpendsTheCode(t *testing.T) {
 	bind(t, r)
 	now := time.Now()
 
-	if err := Issue(context.Background(), db, "hanzo", "ada@example.com", "", nil, now); err != nil {
+	ada := account(t, db, "hanzo", "ada", "ada@example.com", "")
+	if err := Issue(context.Background(), db, "hanzo", "ada@example.com", "", ada, now); err != nil {
 		t.Fatalf("issue: %v", err)
 	}
 	code := r.sent[0][strings.LastIndex(r.sent[0], ":")+1:]
 
-	if ok, err := Consume(context.Background(), db, "ada@example.com", code, now); err != nil || !ok {
+	if ok, err := Consume(context.Background(), db, ada, "ada@example.com", code, now); err != nil || !ok {
 		t.Fatalf("first use: ok=%v err=%v", ok, err)
 	}
-	if ok, _ := Consume(context.Background(), db, "ada@example.com", code, now); ok {
+	if ok, _ := Consume(context.Background(), db, ada, "ada@example.com", code, now); ok {
 		t.Fatal("the same code was accepted twice — a replayable credential is left in the table")
 	}
 }
@@ -127,17 +147,18 @@ func TestWrongGuessesAreBounded(t *testing.T) {
 	bind(t, r)
 	now := time.Now()
 
-	if err := Issue(context.Background(), db, "hanzo", "ada@example.com", "", nil, now); err != nil {
+	ada := account(t, db, "hanzo", "ada", "ada@example.com", "")
+	if err := Issue(context.Background(), db, "hanzo", "ada@example.com", "", ada, now); err != nil {
 		t.Fatalf("issue: %v", err)
 	}
 	code := r.sent[0][strings.LastIndex(r.sent[0], ":")+1:]
 
 	for i := 0; i < MaxAttempts; i++ {
-		if ok, _ := Consume(context.Background(), db, "ada@example.com", "000000", now); ok {
+		if ok, _ := Consume(context.Background(), db, ada, "ada@example.com", "000000", now); ok {
 			t.Fatal("a wrong code verified")
 		}
 	}
-	if ok, _ := Consume(context.Background(), db, "ada@example.com", code, now); ok {
+	if ok, _ := Consume(context.Background(), db, ada, "ada@example.com", code, now); ok {
 		t.Fatalf("the code survived %d wrong guesses — the search space is not bounded", MaxAttempts)
 	}
 }
@@ -149,22 +170,24 @@ func TestExpiredCodeIsRefused(t *testing.T) {
 	bind(t, &recorder{})
 	now := time.Now()
 
-	if err := Issue(context.Background(), db, "hanzo", "ada@example.com", "", nil, now); err != nil {
+	ada := account(t, db, "hanzo", "ada", "ada@example.com", "")
+	if err := Issue(context.Background(), db, "hanzo", "ada@example.com", "", ada, now); err != nil {
 		t.Fatalf("issue: %v", err)
 	}
-	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "ada@example.com")
+	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "hanzo", "ada@example.com")
 	if err != nil || rec == nil {
 		t.Fatalf("record not persisted: %v", err)
 	}
-	if ok, _ := Check(context.Background(), db, "ada@example.com", rec.Code, now.Add(TTL+time.Second)); ok {
+	if ok, _ := Check(context.Background(), db, "hanzo", "ada@example.com", rec.Code, now.Add(TTL+time.Second)); ok {
 		t.Fatal("a code outlived its TTL")
 	}
 }
 
-// With nothing bound to deliver, the record is still written — a code that reaches the
-// person some other way still verifies — but the caller is TOLD the send did not
-// happen. Reporting success would leave somebody waiting for a message that is not
-// coming, which is the exact {status:"ok"} lie this refusal exists to remove.
+// With nothing bound to deliver, the caller is TOLD the send did not happen and
+// NOTHING IS MINTED. Reporting success would leave somebody waiting for a message
+// that is not coming — the exact {status:"ok"} lie this refusal exists to remove —
+// and filing the record anyway left a code nobody could receive for a redeeming
+// caller to nonetheless have to trust.
 func TestUnboundDeliveryIsReportedNotFaked(t *testing.T) {
 	db := openDB(t)
 	BindSender(nil)
@@ -175,6 +198,9 @@ func TestUnboundDeliveryIsReportedNotFaked(t *testing.T) {
 	}
 	if DeliveryConfigured() {
 		t.Fatal("delivery reported configured with no sender bound")
+	}
+	if rec, _ := store.GetLatestVerificationRecord(context.Background(), db, "hanzo", "ada@example.com"); rec != nil {
+		t.Fatal("a send that cannot happen left a redeemable code behind")
 	}
 }
 
