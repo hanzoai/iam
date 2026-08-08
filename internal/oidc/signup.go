@@ -41,15 +41,20 @@ type signupForm struct {
 	Application  string `json:"application"`
 	ClientId     string `json:"clientId"`
 	Organization string `json:"organization"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-	Name         string `json:"name"` // display name
-	FirstName    string `json:"firstName"`
-	LastName     string `json:"lastName"`
-	Email        string `json:"email"`
-	Phone        string `json:"phone"`
-	CountryCode  string `json:"countryCode"`
-	Affiliation  string `json:"affiliation"`
+
+	// Username is OPTIONAL. A caller that names one is asking for that exact name
+	// and gets it or a refusal; a caller that names none — the signup screen, which
+	// has no such field — gets one minted from the address. Either way the value
+	// stored is IAM's to decide, never the spelling that arrived.
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	Name        string `json:"name"` // display name
+	FirstName   string `json:"firstName"`
+	LastName    string `json:"lastName"`
+	Email       string `json:"email"`
+	Phone       string `json:"phone"`
+	CountryCode string `json:"countryCode"`
+	Affiliation string `json:"affiliation"`
 
 	// Training is the answer to the AI-training question the signup screen asks,
 	// recorded with the account rather than left for a later prompt. Absent means
