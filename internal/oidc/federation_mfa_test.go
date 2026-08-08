@@ -28,6 +28,11 @@ import (
 func fedEnroll(t *testing.T, db orm.DB, name, email string) string {
 	t.Helper()
 	seedUser(t, db, name, email, "pw")
+	// The callback reaches this account by its ADDRESS, and an address is only
+	// linkable once it has been proven — otherwise federation refuses rather than
+	// adopt a row an unproven password already opens. These tests are about the MFA
+	// gate, so they state the premise instead of relying on it.
+	proveEmail(t, db, name)
 	secret, _, err := factor.Enroll("hanzo/"+name, "Hanzo")
 	if err != nil {
 		t.Fatal(err)
@@ -144,6 +149,7 @@ func TestFederationMfa_UnenrolledUserFlowsThrough(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "bob", "alice@example.com", "pw") // matches the mock email, NO factor
+	proveEmail(t, db, "bob")                          // linkable by address; see fedEnroll
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 
