@@ -36,6 +36,35 @@ func (u *User) Mask() *User {
 	return &m
 }
 
+// CarrySecretsFrom makes u's secret material exactly the material STORED on prior,
+// discarding whatever u arrived carrying and leaving every other field alone.
+//
+// It is the inverse of [User.Mask] and belongs beside it, line for line: what a
+// reader CANNOT SEE, a writer CANNOT STATE. A full-row update replaces the whole
+// user from a request body, and every such body is derived from a masked read — so
+// each field Mask blanks arrives back empty, and without this the write erases it.
+// The two functions are one decision read in two directions, so a secret added to
+// Mask has its sibling line here in view.
+//
+// The lost authenticator seed is why this exists. TotpSecret and RecoveryCodes were
+// masked but not carried, so a client that read its own account and posted it back
+// wiped both while leaving preferredMfaType set: an account still asked for a code
+// at sign-in, no longer held the seed that answers, and had no recovery code left
+// to escape with. Multi-factor material is enrolled through its own seam
+// (internal/mfa, whose factor.Copy is the one declaration of those columns), the
+// same way a password goes through the reset seam — it was never a full-row
+// writer's to state.
+func (u *User) CarrySecretsFrom(prior *User) {
+	if u == nil || prior == nil {
+		return
+	}
+	u.PasswordHash, u.PasswordSalt = prior.PasswordHash, prior.PasswordSalt
+	u.AccessSecret, u.AccessSecretHash, u.AccessToken = prior.AccessSecret, prior.AccessSecretHash, prior.AccessToken
+	u.OriginalToken, u.OriginalRefreshToken = prior.OriginalToken, prior.OriginalRefreshToken
+	u.TotpSecret, u.RecoveryCodes = prior.TotpSecret, prior.RecoveryCodes
+	u.VerificationCode = prior.VerificationCode
+}
+
 // Mask returns a copy of k with the CONFIDENTIAL half blanked and the
 // PUBLISHABLE half intact — the split that is the whole point of the key model.
 // AccessSecret (sk-) authenticates its holder as a principal, so a listing must
