@@ -154,7 +154,132 @@ func isBcrypt(s string) bool {
 // Enabled reports whether the user has multi-factor sign-in on. The predicate is
 // PreferredMfaType != "" and nothing else (v1 object/user.go:1641): the per-factor
 // enabled flags say which factors exist, not whether the gate runs.
+//
+// It is only a truthful answer while [Prefer] is the sole writer of that column,
+// which is the invariant Prefer exists to hold: a preferred factor nobody enrolled
+// told the gate "this account has a second factor" and then left it nothing to ask
+// for, so the sign-in reported MFA on and required the password alone.
 func Enabled(u *schema.User) bool { return u != nil && u.PreferredMfaType != "" }
+
+// Has reports whether the account actually HOLDS mfaType — the material to verify
+// it with is on the row. It is [Props]'s own answer, named so that a policy decision
+// about a factor reads as a predicate instead of a projection.
+func Has(u *schema.User, mfaType string) bool { return Props(u, mfaType).Enabled }
+
+// Held lists the factors the account holds, in [Types] order.
+func Held(u *schema.User) []string {
+	held := make([]string, 0, len(Types))
+	for _, t := range Types {
+		if Has(u, t) {
+			held = append(held, t)
+		}
+	}
+	return held
+}
+
+// Add records that the account now holds mfaType. secret is the verifier's material
+// and is meaningful only for [App] — a delivered factor's "secret" is the address
+// itself, which the row already carries, so possession is a flag.
+//
+// This and [Remove] are the ONLY writers of the per-factor columns. Before them
+// MfaPhoneEnabled and MfaEmailEnabled had four readers and no writer at all: the
+// gate consulted flags nothing could ever set, so a texted or emailed second factor
+// was unreachable for every account that had not been edited in the database.
+//
+// It does not touch the preference — [Prefer] owns that, so "the account holds this"
+// and "the account is asked for this first" stay two decisions.
+func Add(u *schema.User, mfaType, secret string) {
+	if u == nil {
+		return
+	}
+	switch mfaType {
+	case App:
+		u.TotpSecret = secret
+	case SMS:
+		u.MfaPhoneEnabled = true
+	case Email:
+		u.MfaEmailEnabled = true
+	}
+}
+
+// Remove records that the account no longer holds mfaType, discarding its verifier
+// material. The preference is left to [Prefer], which repoints it at a factor that
+// remains.
+func Remove(u *schema.User, mfaType string) {
+	if u == nil {
+		return
+	}
+	switch mfaType {
+	case App:
+		u.TotpSecret = ""
+	case SMS:
+		u.MfaPhoneEnabled = false
+	case Email:
+		u.MfaEmailEnabled = false
+	}
+}
+
+// ErrNotHeld is the refusal when a preference names a factor the account does not
+// hold.
+var ErrNotHeld = errors.New("that factor is not enrolled on this account")
+
+// Prefer points the account's preferred factor at mfaType. It is the ONE writer of
+// PreferredMfaType, and it holds the invariant the login gate depends on: the
+// preferred type names a factor the account actually HOLDS.
+//
+// mfaType "" means "whatever is left" — it repoints at the first held factor and
+// clears the column when none remains, which is what [Remove] needs so that dropping
+// the preferred factor cannot leave the preference dangling.
+//
+// A named factor the account does not hold is refused with [ErrNotHeld] rather than
+// stored. Storing it was the whole defect: PreferredMfaType accepted any string —
+// "sms" with nothing enrolled, or "carrier-pigeon" — and since [Enabled] reads that
+// column, the account reported multi-factor sign-in while the gate had no factor to
+// challenge and let the password through alone.
+func Prefer(u *schema.User, mfaType string) error {
+	if u == nil {
+		return errNoUser
+	}
+	if mfaType == "" {
+		u.PreferredMfaType = ""
+		if held := Held(u); len(held) > 0 {
+			u.PreferredMfaType = held[0]
+		}
+		return nil
+	}
+	if !Has(u, mfaType) {
+		return ErrNotHeld
+	}
+	u.PreferredMfaType = mfaType
+	return nil
+}
+
+// Destination is where a DELIVERED factor's code is sent: the address the ACCOUNT
+// holds, resolved from the factor type and from nothing a caller said. Empty means
+// the account has no address for that factor, which is a refusal — a challenge
+// cannot be answered over a channel the account does not own.
+//
+// It is domain, not transport, and it lives here rather than beside either caller
+// because the send and the check MUST resolve the same address. When the challenge
+// sends to one spelling and the verify looks up another, the correct code is refused;
+// see otp.Receiver, which is the other half of that guarantee.
+func Destination(u *schema.User, mfaType string) string {
+	if u == nil {
+		return ""
+	}
+	switch mfaType {
+	case SMS:
+		return store.NormalizePhone(u.Phone)
+	case Email:
+		return u.Email
+	}
+	return ""
+}
+
+// Delivered reports whether mfaType is a factor whose code has to be SENT — as
+// opposed to [App], which the authenticator derives locally and which therefore
+// works with no notify bound at all.
+func Delivered(mfaType string) bool { return mfaType == SMS || mfaType == Email }
 
 // Prompt reports whether the organization REQUIRES a factor the user has not
 // enrolled yet — the sign-in must divert to enrollment before it can finish. The
@@ -247,6 +372,7 @@ func Copy(dst, src *schema.User) {
 	dst.MfaPushReceiver = src.MfaPushReceiver
 	dst.MfaPushProvider = src.MfaPushProvider
 	dst.MfaRememberDeadline = src.MfaRememberDeadline
+	dst.MfaRememberDigest = src.MfaRememberDigest
 }
 
 // Save writes u's multi-factor state — and ONLY that — onto its stored row. It is

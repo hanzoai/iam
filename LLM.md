@@ -354,7 +354,7 @@ drawing a button that cannot finish:
     the capability           this BUILD can perform it
 
     password   app.EnablePassword
-    code       app.EnableCodeSignin  && DeliveryConfigured()   (a bound Sender)
+    code       app.EnableCodeSignin  && otp.DeliveryConfigured() (a bound Sender)
     webauthn   app.EnableWebAuthn    && schema.PasskeySignin() (an assertion ceremony)
     web3       schema.WalletChains()                           (what verify accepts)
     oauth      offerable(provider)   (real credential AND a driveable dialect)
@@ -371,18 +371,41 @@ ceremony lands, with no second switch to remember.
 
 ## A verification code has ONE receiver key
 
-`receiverKey` (internal/oidc/sendverificationcode.go) is the single canonical form
-a code's destination is stored under, matched by, and delivered to. A phone number
-is `store.NormalizePhone`d; anything else is verbatim, because NormalizePhone keeps
-only digits and would leave an email with nothing to match on.
+`otp.Receiver` (internal/otp) is the single canonical form a code's destination is
+stored under, matched by, and delivered to. A phone number is
+`store.NormalizePhone`d; anything else is verbatim, because NormalizePhone keeps only
+digits and would leave an email with nothing to match on. Which one it IS is
+`store.LooksLikePhone`, beside NormalizePhone, because "is this a number" and "what
+is its canonical form" are one question and sign-in's identifier resolution asks it
+too.
 
-All three sites route through it — the send that writes the record, and both
-readers (`ConsumeVerificationCode`, `CheckVerificationCode`). Deciding the shape
-once is what makes the write and the read unable to disagree: the record used an
-exact `Receiver=` compare while the ACCOUNT on the same request resolves through
-`GetUserByPhone`, which normalizes first, so "+1 415 555 0134" at send and
-"+14155550134" at login found the right user and then answered "the code is
-incorrect or has expired".
+EVERY site routes through it, because they all live in the one package: the send that
+writes the record, both readers (`otp.Consume`, `otp.Check`), and the second-factor
+challenge's own send. Deciding the shape once is what makes the write and the read
+unable to disagree: the record used an exact `Receiver=` compare while the ACCOUNT on
+the same request resolves through `GetUserByPhone`, which normalizes first, so
+"+1 415 555 0134" at send and "+14155550134" at login found the right user and then
+answered "the code is incorrect or has expired".
+
+## internal/otp is the one-time code; internal/mfa/factor is the second factor
+
+Two words that are easy to braid and must not be. `otp` is a secret SENT to an
+address to prove somebody holds it — mint, word, file, deliver, spend — and it is a
+LEAF (store + schema + cred). `factor` is what a second factor IS: `app` (TOTP, whose
+secret never travels), `sms`, `email`; whether a passcode verifies; which factors an
+account HOLDS (`factor.Has`/`Held`); where a delivered one goes (`factor.Destination`,
+the address on the ACCOUNT and never one from a request); and the ONE writer of each
+column (`Add`/`Remove`/`Prefer`/`Save`).
+
+`Prefer` holds the invariant the login gate depends on: `PreferredMfaType` names a
+factor the account HOLDS. `factor.Enabled` is that column, so a preferred type nobody
+enrolled reported "MFA is on" and then left the gate nothing to ask for.
+
+The enrolment surface (internal/mfa) and the login gate
+(internal/oidc/mfa_gate.go) are the two callers, and neither owns a second copy of
+any of it: one `proveFactor` verifies a challenge answer for both the password and the
+federated resume, and the challenge row carries the factors it was minted OFFERING so
+an answer is checked against that offer rather than recomputed.
 
 ## Key entry points
 - `main.go` — cobra root (`serve` / `compare` / `version`); `server/server.go` route registration.

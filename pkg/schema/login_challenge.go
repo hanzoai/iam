@@ -27,7 +27,16 @@ import "github.com/hanzoai/orm"
 // presents the id alone. Subject is the "owner/name" of the principal the ceremony
 // is for — the ONE place a finish learns whom it is acting as (never a request
 // parameter). Payload is the kind's own state: the just-used verification type for
-// an MFA challenge. Used makes it one-shot; ExpireIn (unix) bounds it.
+// an MFA challenge, the pinned authorize request for a federated one. Used makes it
+// one-shot; ExpireIn (unix) bounds it.
+//
+// Offered is what may ANSWER it — the second factors the sign-in was held offering.
+// It is a property of the challenge rather than of either kind's payload, because
+// both kinds have one and the answer is checked against the offer for both. Deciding
+// it once, here, is also what makes the check honest: a finish that recomputed the
+// offer would follow the account as it changed between the hold and the answer, and
+// the finish that had NO offer to check accepted any factor at all — an
+// authenticator-only account was passable with an emailed code.
 type LoginChallenge struct {
 	orm.Model[LoginChallenge]
 
@@ -35,9 +44,10 @@ type LoginChallenge struct {
 	Name        string `json:"name" orm:"index"`
 	CreatedTime string `json:"createdTime"`
 
-	Kind     string `json:"kind"`
-	Subject  string `json:"subject"`
-	Payload  string `json:"payload"`
-	Used     bool   `json:"used"`
-	ExpireIn int64  `json:"expireIn"`
+	Kind     string   `json:"kind"`
+	Subject  string   `json:"subject"`
+	Payload  string   `json:"payload"`
+	Offered  []string `json:"offered"`
+	Used     bool     `json:"used"`
+	ExpireIn int64    `json:"expireIn"`
 }

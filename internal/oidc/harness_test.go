@@ -56,6 +56,7 @@ type appOpts struct {
 	refreshHours float64
 	shared       bool     // IsShared → accepts users from any org
 	signup       bool     // EnableSignUp → the app allows new-account creation
+	codeSignin   bool     // EnableCodeSignin → the app allows sign-in by emailed/texted code
 	orgChoice    string   // OrgChoiceMode → "" none, "create" = self-serve org creation
 	grants       []string // declared OAuth grants; a grant absent here is refused
 }
@@ -102,6 +103,7 @@ func seedApp(t *testing.T, db orm.DB, o appOpts) *schema.Application {
 	a.Cert = "cert-" + o.clientID
 	a.EnablePassword = true
 	a.EnableSignUp = o.signup
+	a.EnableCodeSignin = o.codeSignin
 	a.ExpireInHours = 1
 	a.RefreshExpireInHours = o.refreshHours
 	a.RedirectUris = o.redirectURIs
