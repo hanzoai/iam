@@ -33,6 +33,10 @@ func (u *User) Mask() *User {
 	m.OriginalToken, m.OriginalRefreshToken = "", ""
 	m.TotpSecret, m.RecoveryCodes = "", nil
 	m.VerificationCode = "" // a live one-time code — as secret as the TOTP seed
+	// The remember-this-browser digest is a BEARER: presenting it is what SKIPS the
+	// second factor, so a reader who can see it walks past MFA. It carries a live
+	// json tag, so omitting it here published it on every user read.
+	m.MfaRememberDigest = ""
 	return &m
 }
 
@@ -63,6 +67,7 @@ func (u *User) CarrySecretsFrom(prior *User) {
 	u.OriginalToken, u.OriginalRefreshToken = prior.OriginalToken, prior.OriginalRefreshToken
 	u.TotpSecret, u.RecoveryCodes = prior.TotpSecret, prior.RecoveryCodes
 	u.VerificationCode = prior.VerificationCode
+	u.MfaRememberDigest = prior.MfaRememberDigest
 }
 
 // Mask returns a copy of k with the CONFIDENTIAL half blanked and the

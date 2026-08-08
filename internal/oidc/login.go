@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -187,7 +188,19 @@ func loginHandler(db orm.DB) zip.Handler {
 
 		user, err := resolveLoginUser(ctx, db, f.Organization, f.Username)
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			// NEVER the resolver's own words. This is an UNAUTHENTICATED door and
+			// nothing has been proven about the caller yet, so anything specific
+			// here is an account-existence oracle: "matches more than one account"
+			// tells a stranger that the address they typed is real, and which
+			// addresses are worth attacking. An ambiguous identifier is answered
+			// with the SAME opaque refusal a wrong password gets — the refusal this
+			// endpoint already spent care making indistinguishable from "no such
+			// user". The operator still learns everything from the server log; the
+			// caller learns only that the credential did not work.
+			if errors.Is(err, store.ErrEmailAmbiguous) || errors.Is(err, store.ErrPhoneAmbiguous) {
+				return httpx.Err(c, "the username or password is incorrect")
+			}
+			return httpx.Err(c, "sign-in is unavailable")
 		}
 
 		// A code in place of a password: the SAME door, one arm further in. Sign-in
