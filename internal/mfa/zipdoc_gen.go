@@ -8,24 +8,21 @@ import (
 
 func init() {
 	zip.Describe("POST /v1/iam/delete-mfa", zip.Doc{
-		Description: "Turns off the authenticator app for an account, so sign-in stops\nasking for a code. People may do this for themselves; doing it for somebody\nelse takes an administrator, which is what makes it the reset path when a\nphone is lost.",
+		Description: "Turns a factor off, so sign-in stops asking for it. Naming no factor turns\noff ALL of them — the reset path. People may do this for themselves; doing it for\nsomebody else takes an administrator, which is what makes it the way back in when a\nphone is lost.\n\nThe recovery codes go with the last factor: they are the way past a challenge, so\nkeeping them alive for an account with nothing to challenge would leave a standing\ncredential behind.",
 	})
 	zip.Describe("POST /v1/iam/mfa/disable", zip.Doc{
-		Description: "Turns off the authenticator app for an account, so sign-in stops\nasking for a code. People may do this for themselves; doing it for somebody\nelse takes an administrator, which is what makes it the reset path when a\nphone is lost.",
+		Description: "Turns a factor off, so sign-in stops asking for it. Naming no factor turns\noff ALL of them — the reset path. People may do this for themselves; doing it for\nsomebody else takes an administrator, which is what makes it the way back in when a\nphone is lost.\n\nThe recovery codes go with the last factor: they are the way past a challenge, so\nkeeping them alive for an account with nothing to challenge would leave a standing\ncredential behind.",
 	})
 	zip.Describe("POST /v1/iam/mfa/preferred", zip.Doc{
-		Description: "Picks which second factor an account is asked for first when it\nhas more than one enrolled.",
+		Description: "Picks which second factor an account is asked for first when it has\nmore than one. Only a factor the account actually holds: storing an unheld one told\nthe login gate \"MFA is on\" — factor.Enabled reads that column — while leaving it\nnothing to ask for, so the sign-in required the password alone.",
 	})
 	zip.Describe("POST /v1/iam/mfa/setup/enable", zip.Doc{
-		Description: "Finishes the enrolment: from here the account's sign-ins ask for a code\nfrom the authenticator app. Repeating it re-enrols rather than failing.",
+		Description: "Finishes the enrolment: from here the account's sign-ins ask for this factor.\nIt requires the proof initiate handed out — a passcode from the authenticator, or the\ncode that was sent — and verifies it BEFORE writing anything.\n\nIt used to write on the strength of a `secret` field alone. A client that skipped\nthe verify step, scanned the QR into the wrong app, or was simply buggy switched on\na factor no code would ever satisfy, and the account was then locked out with no\nself-service way back: the gate holds the sign-in before minting, so the person\ncannot obtain the bearer that disable requires.\n\nThe recovery codes are minted here and returned ONCE, on the first factor the\naccount adds. Answering with them is the way back in when no factor can be\nproduced, so they are the same value the row's digests were made from — by\nconstruction, not by a client echoing them back.",
 	})
 	zip.Describe("POST /v1/iam/mfa/setup/initiate", zip.Doc{
-		Description: "Starts enrolling an authenticator app: it returns a fresh secret, a\nURL to render as a QR code, and one recovery code to keep somewhere safe.\n\nNothing is switched on yet. The enrolment counts only once it is confirmed with\na code from the app, so abandoning this step leaves the account exactly as it\nwas. Response:\n{status:\"ok\", data:{secret, url, recoveryCodes:[code]}}.",
-	})
-	zip.Describe("POST /v1/iam/mfa/setup/verify", zip.Doc{
-		Description: "Checks a six-digit code against an enrolment in progress, so somebody\ncan confirm their authenticator app is set up correctly before it starts being\nrequired. Clocks a step out either way are accepted.\nA valid code → {status:\"ok\"}; an invalid one → 200 {status:\"error\"} (the\ncasibase convention: clients branch on status, not the HTTP code).",
+		Description: "Starts enrolling a factor and hands over whatever the person needs to prove\nthey hold it:\n\n\tapp   a fresh secret and the otpauth:// URL to render as a QR code\n\tsms   a code texted to the number on the account\n\temail a code mailed to the address on the account\n\nNothing is switched on yet, so abandoning this step leaves the account exactly as\nit was. Response: {status:\"ok\", data:{mfaType, secret, url}} — secret and url only\nfor the authenticator.",
 	})
 	zip.Describe("POST /v1/iam/set-preferred-mfa", zip.Doc{
-		Description: "Picks which second factor an account is asked for first when it\nhas more than one enrolled.",
+		Description: "Picks which second factor an account is asked for first when it has\nmore than one. Only a factor the account actually holds: storing an unheld one told\nthe login gate \"MFA is on\" — factor.Enabled reads that column — while leaving it\nnothing to ask for, so the sign-in required the password alone.",
 	})
 }
