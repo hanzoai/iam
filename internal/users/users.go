@@ -153,6 +153,10 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 
 	u := &in.User
 	u.Owner, u.Name = owner, name
+	// THE email rule, at the same one write, for the same reason: an address is a
+	// sign-in identifier too, and store.GetUserByEmail compares the canonical form.
+	// A row written in any other spelling is a row nobody can sign in to by address.
+	u.Email = store.NormalizeEmail(u.Email)
 	// The stable opaque identity (the OIDC `sub`) is ALWAYS minted server-side; a
 	// client-supplied Id is DISCARDED. Id keys the token `sub` AND the authz
 	// principal, so a caller allowed to PIN it could set it to a victim's UUID and,
@@ -272,6 +276,7 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 
 	u := &in.User
 	u.Owner, u.Name = owner, name
+	u.Email = store.NormalizeEmail(u.Email)
 	// Preserve immutable identity and creation provenance. Id is the stable OIDC
 	// `sub` (and the authz principal key): like CreatedTime it is carried from the
 	// stored row and a body-supplied value is IGNORED — mutating it would move the
