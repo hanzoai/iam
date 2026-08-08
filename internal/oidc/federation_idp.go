@@ -27,6 +27,7 @@ import (
 
 	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // The Relying-Party side of federation: iam as an OIDC/OAuth2 CLIENT of an
@@ -318,7 +319,7 @@ func oidcExchange(ctx context.Context, cfg oidcConfig, p *schema.Provider, st *s
 	}
 	return federatedIdentity{
 		subject:       claims.Subject,
-		email:         strings.ToLower(strings.TrimSpace(claims.Email)),
+		email:         store.NormalizeEmail(claims.Email),
 		emailVerified: truthy(claims.EmailVerified),
 		displayName:   claims.Name,
 		avatar:        claims.Picture,
@@ -447,7 +448,7 @@ func githubExchange(ctx context.Context, p *schema.Provider, st *schema.Federati
 	}
 	return federatedIdentity{
 		subject:       strconv.FormatInt(gu.ID, 10),
-		email:         strings.ToLower(strings.TrimSpace(email)),
+		email:         store.NormalizeEmail(email),
 		emailVerified: verified,
 		displayName:   name,
 		avatar:        gu.AvatarURL,
