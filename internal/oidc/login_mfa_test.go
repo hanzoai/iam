@@ -409,11 +409,13 @@ func TestChallengeRefusesAFactorItDidNotOffer(t *testing.T) {
 		t.Fatalf("the offer carried %d factors, want only the authenticator: %#v", len(list), list)
 	}
 
-	// A live code for her address, minted by another tenant for another purpose.
+	// A live code for her address, minted by another tenant for another purpose. It is
+	// read back under THAT tenant, because a code is filed per organization — one
+	// address in two orgs is two independent codes.
 	if err := otp.Issue(context.Background(), db, "lux", "alice@hanzo.ai", "", nil, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "alice@hanzo.ai")
+	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "lux", "alice@hanzo.ai")
 	if err != nil || rec == nil {
 		t.Fatalf("seed code not persisted: %v", err)
 	}
@@ -718,7 +720,7 @@ func TestEmailOnlyAccountIsNotAskedTwice(t *testing.T) {
 	if err := otp.Issue(context.Background(), db, "hanzo", "erin@hanzo.ai", "", u, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "erin@hanzo.ai")
+	rec, err := store.GetLatestVerificationRecord(context.Background(), db, "hanzo", "erin@hanzo.ai")
 	if err != nil || rec == nil {
 		t.Fatalf("code not persisted: %v", err)
 	}

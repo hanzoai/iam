@@ -282,9 +282,10 @@ func verificationChannel(identifier string) string {
 //   - the code is spent by [otp.Consume] whatever the outcome — one
 //     use on a hit, one counted guess on a miss.
 //
-// A missing user is NOT an early return. The code is consumed first regardless,
-// so a caller cannot learn which addresses have accounts by watching whether a
-// wrong code was counted, and the answer is the same opaque false either way.
+// A code stands for the account it was MINTED for, which is why the resolved user
+// goes into the consume rather than only the identifier off the request. Every
+// refusal is the same opaque false, so nothing here tells a caller which addresses
+// have accounts.
 func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (bool, error) {
 	if !otp.DeliveryConfigured() {
 		return false, nil
@@ -296,11 +297,7 @@ func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (
 	if app == nil || !app.EnableCodeSignin {
 		return false, nil
 	}
-	ok, err := otp.Consume(ctx, db, f.Username, f.Code, nowFunc())
-	if err != nil || !ok {
-		return false, err
-	}
-	return user != nil, nil
+	return otp.Consume(ctx, db, user, f.Username, f.Code, nowFunc())
 }
 
 // loginGrant completes a sign-in that has passed the gate: a device approval, a
