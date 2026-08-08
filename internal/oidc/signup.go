@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/hanzoai/orm"
@@ -128,36 +127,27 @@ func signupHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, err.Error())
 		}
 		if org == nil {
-			// Self-serve org creation — the founder signs up and their org is minted
-			// with them. It is OPT-IN per application (orgChoiceMode == orgChoiceCreate)
-			// so an app that names one tenant can never mint another: the tenant gate
-			// above already refuses a foreign org unless the app is shared or lets users
-			// choose, and this narrows "choose" to the apps that mean "create".
+			// Signup does not mint organizations. It used to, opt-in per app, and that
+			// made an UNAUTHENTICATED request able to add a row to the tenant registry:
+			// 26 of the 51 org-holding orgs on the live instance hold exactly one user,
+			// among them orgs left behind by probes.
 			//
-			// Safe by construction, given the two checks that already ran:
-			//   - IsReservedOrg refused admin/built-in/app, so this can never mint a
-			//     reserved org — and the USER below is created under f.Organization, so
-			//     owner != "admin" and the row carries no SuperAdmin authority.
-			//   - the name is validated here rather than trusted, so a signup cannot
-			//     invent an org id containing a separator or path characters.
-			if app.OrgChoiceMode != orgChoiceCreate {
-				return httpx.Err(c, "the organization: "+f.Organization+" does not exist")
-			}
-			if msg := orgNamePolicyError(f.Organization); msg != "" {
-				return httpx.Err(c, msg)
-			}
-			created, err := store.CreateOrganization(ctx, db, f.Organization)
-			if err != nil {
-				return httpx.Err(c, err.Error())
-			}
-			org = created
-		} else if f.Organization != app.Organization && !app.IsShared {
-			// The org ALREADY EXISTS and belongs to someone else. Org choice grants the
-			// right to name YOUR OWN org — to mint one above, or to land in the app's
-			// own tenant — never the right to walk into a tenant that is already
-			// standing. Without this arm the gate above is satisfied by a non-empty
-			// OrgChoiceMode and this branch does nothing, so an unauthenticated POST
-			// naming any existing org is made a member of it: hanzo-console, a hanzo
+			// Nothing asked for it either. The screen posts the app's own org and asks
+			// for the organization in ONBOARDING, and POST /v1/iam/onboard is a better
+			// answer to the same question in every respect: it authenticates the caller,
+			// acts only on the caller, is idempotent, and provisions the org's metered
+			// credential in the same atomic step — so it lands a person somewhere they
+			// can actually work, where this landed them in an org with no billing
+			// account. Two ways to create an org, one of them needing no identity and
+			// producing the worse result, is one way too many.
+			return httpx.Err(c, "the organization: "+f.Organization+" does not exist")
+		}
+		if f.Organization != app.Organization && !app.IsShared {
+			// The org EXISTS and belongs to someone else. Org choice grants the right to
+			// land in the app's own tenant, never the right to walk into a tenant that
+			// is already standing. Without this arm the gate above is satisfied by a
+			// non-empty OrgChoiceMode and this branch does nothing, so an unauthenticated
+			// POST naming any existing org is made a member of it: hanzo-console, a hanzo
 			// app, minted a user with owner "lux" on the live instance. Every brand and
 			// every customer tenant in the one multi-brand registry was reachable that
 			// way, which is precisely the isolation the tenant gate exists to provide.
@@ -165,12 +155,6 @@ func signupHandler(db orm.DB) zip.Handler {
 			// The refusal is byte-identical to the tenant refuse above and to the
 			// reserved-org refuse, so a prober cannot distinguish "someone else's org"
 			// from "wrong tenant" from "reserved name" — no authority oracle.
-			//
-			// A signup naming a name NOBODY holds still succeeds under orgChoiceCreate,
-			// so this does leak org NON-existence to anyone willing to mint one. That is
-			// inherent to self-serve creation rather than introduced here, it is
-			// self-limiting (the probe leaves an org row behind), and it is a far
-			// smaller thing to concede than membership in an existing tenant.
 			return httpx.Err(c, "the user is not permitted to sign up to this application")
 		}
 
@@ -359,59 +343,6 @@ func displayName(f signupForm) string {
 		return f.Name
 	}
 	return f.Username
-}
-
-// usernamePolicyError returns the first username rule a candidate violates, or
-// "" when it passes — the v1 CheckUserSignup rules for the Username item.
-// orgChoiceCreate is the application's opt-in to SELF-SERVE org creation: a signup
-// naming an org that does not exist mints it, with the signing-up user as its first
-// member. Any other orgChoiceMode still only lets a user CHOOSE among existing orgs,
-// so turning on self-serve is a deliberate per-app decision rather than a side effect
-// of allowing org choice at all.
-const orgChoiceCreate = "create"
-
-// orgNamePolicyError validates a self-service org name. The org name is the OWNER
-// half of every (owner, name) natural key in the store, so a permissive name here
-// would be a key-injection surface, not a cosmetic issue — hence the same "/" and
-// whitespace refusals schema.Username applies to the name half, plus a length bound.
-//
-// It deliberately does NOT reject a name merely because it is taken: the caller
-// reaches this only when the lookup already returned no org, and a "taken" message
-// would turn signup into an org-existence oracle.
-func orgNamePolicyError(org string) string {
-	if len(org) <= 1 {
-		return "organization name must have at least 2 characters"
-	}
-	if len(org) > 100 {
-		return "organization name is too long"
-	}
-	if unicode.IsDigit(rune(org[0])) {
-		return "organization name cannot start with a digit"
-	}
-	if strings.IndexFunc(org, unicode.IsSpace) >= 0 {
-		return "organization name cannot contain white spaces"
-	}
-	if strings.Contains(org, "/") {
-		return "organization name cannot contain '/'"
-	}
-	// An EMAIL is never an organization. A signup form that defaults the org field
-	// to the address the person just typed mints one org per human: 56 of the 124
-	// orgs on the live instance are email-shaped, so nearly half the tenant
-	// registry is people and "is this a company?" has no answer.
-	//
-	// It is also the wrong money shape. account.Payer resolves a member of the
-	// SIGNUP org to a PERSONAL wallet — Person(hanzo, name) — precisely so an
-	// individual has a balance without their own tenant. Minting them an org sends
-	// them down the Org() pool branch instead, making that special-case dead code
-	// and costing an org row plus a membership row on every signup.
-	//
-	// This refuses the SHAPE, not the intent: a real company name still creates a
-	// real org, and someone who typed their address lands in the signup org with a
-	// personal wallet, which is where they belonged.
-	if strings.ContainsRune(org, '@') {
-		return "organization name cannot be an email address — sign up as a person, or name your organization"
-	}
-	return ""
 }
 
 // Password-complexity option matchers — the v1 object/check_password_complexity.go
