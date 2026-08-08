@@ -209,52 +209,15 @@ func TestSignup_Errors(t *testing.T) {
 
 // ── self-serve organizations ─────────────────────────────────────────────────────
 
-// The founder signs up and their org is minted with them. Before this, signup
-// required the org to already exist, so "create a new account with a new
-// organization" was impossible without an operator creating the org by hand.
-func TestSignup_SelfServeOrgIsCreated(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
-
-	status, env := signupReq(t, app, map[string]string{
-		"application":  "conf",
-		"organization": "acme",
-		"username":     "founder",
-		"password":     "correct horse battery staple",
-	})
-	if status != 200 || env["status"] != "ok" {
-		t.Fatalf("self-serve signup: status=%d env=%v", status, env)
-	}
-	org, err := store.GetOrganizationByName(tctx(), db, "acme")
-	if err != nil || org == nil {
-		t.Fatalf("org acme should have been created: %v", err)
-	}
-	// Orgs live under "admin" — that is where org rows go and grants the ORG nothing.
-	if org.Owner != "admin" {
-		t.Fatalf("org owner = %q, want admin", org.Owner)
-	}
-	// The decisive property: authority is a property of the USER row, and authz
-	// derives Super from user.Owner == "admin". The founder must belong to their OWN
-	// org, so self-serve signup can never mint a SuperAdmin.
-	u, err := store.GetUserByName(tctx(), db, "acme", "founder")
-	if err != nil || u == nil {
-		t.Fatalf("founder should exist in acme: %v", err)
-	}
-	if u.Owner != "acme" {
-		t.Fatalf("founder owner = %q, want acme (owner 'admin' would be SuperAdmin)", u.Owner)
-	}
-}
-
-// Self-serve creation is OPT-IN. An app that merely lets users choose among orgs,
-// or names a single tenant, must not mint one.
-func TestSignup_SelfServeOrgRefusedWithoutOptIn(t *testing.T) {
-	for _, tc := range []struct{ name, mode string }{
-		{"no org choice at all", ""},
-		{"choice, but not create", "select"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+// Signup does not mint organizations, whatever the app's org-choice mode says.
+// An unauthenticated request must not be able to add a row to the tenant registry,
+// and it does not need to: POST /v1/iam/onboard creates a person's org from their
+// own authenticated session, atomically, with its metered credential.
+func TestSignup_DoesNotMintAnOrganization(t *testing.T) {
+	for _, mode := range []string{"", "select", "create"} {
+		t.Run("orgChoiceMode="+mode, func(t *testing.T) {
 			app, db := newServer(t)
-			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: tc.mode})
+			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: mode})
 
 			status, env := signupReq(t, app, map[string]string{
 				"application":  "conf",
@@ -263,10 +226,13 @@ func TestSignup_SelfServeOrgRefusedWithoutOptIn(t *testing.T) {
 				"password":     "correct horse battery staple",
 			})
 			if status == 200 && env["status"] == "ok" {
-				t.Fatalf("orgChoiceMode=%q must not mint an org", tc.mode)
+				t.Fatalf("orgChoiceMode=%q minted an org from an unauthenticated signup: %v", mode, env)
 			}
 			if org, _ := store.GetOrganizationByName(tctx(), db, "acme"); org != nil {
-				t.Fatal("no org may be created without the create opt-in")
+				t.Fatal("an organization row was created")
+			}
+			if u, _ := store.GetUserByName(tctx(), db, "acme", "founder"); u != nil {
+				t.Fatal("a user was created in an org that does not exist")
 			}
 		})
 	}
@@ -294,24 +260,6 @@ func TestSignup_SelfServeCannotMintReservedOrg(t *testing.T) {
 				t.Fatalf("no user may be created under reserved org %q", reserved)
 			}
 		})
-	}
-}
-
-// The org name becomes the OWNER half of every (owner, name) key, so a name
-// carrying the separator would be a key-injection surface.
-func TestSignup_SelfServeOrgNamePolicy(t *testing.T) {
-	for _, bad := range []string{"a", "1acme", "ac me", "ac/me"} {
-		app, db := newServer(t)
-		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
-		status, env := signupReq(t, app, map[string]string{
-			"application":  "conf",
-			"organization": bad,
-			"username":     "founder",
-			"password":     "correct horse battery staple",
-		})
-		if status == 200 && env["status"] == "ok" {
-			t.Fatalf("org name %q must be refused", bad)
-		}
 	}
 }
 
@@ -359,46 +307,6 @@ func TestSignup_PasswordFloorAllowsStrongPassword(t *testing.T) {
 	}
 }
 
-// The exact production attack, end to end: a self-serve signup into an org that
-// does NOT exist, with the password "a". The org is minted with no options, so
-// only the floor stands between an anonymous caller and the account. Neither the
-// user nor a usable account may result.
-func TestSignup_SelfServeOrgStillGetsPasswordFloor(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
-
-	status, env := signupReq(t, app, map[string]string{
-		"application": "conf", "organization": "nonexistent-org-zz",
-		"username": "probe-zz", "password": "a",
-	})
-	if status == 200 && env["status"] == "ok" {
-		t.Fatalf("self-serve signup with password \"a\" must be refused, got %v", env)
-	}
-	if u, _ := store.GetUserByName(tctx(), db, "nonexistent-org-zz", "probe-zz"); u != nil {
-		t.Fatal("the probe user was created despite the password floor")
-	}
-}
-
-// TestOrgNamePolicyRefusesEmail pins that a signup cannot mint one org per human.
-// A form that defaults the org field to the address just typed produced 56
-// email-shaped orgs out of 124 on the live instance — nearly half the tenant
-// registry was people. It is also the wrong money shape: account.Payer gives a
-// member of the SIGNUP org a personal wallet, and minting them an org routes
-// them down the org-pool branch instead.
-func TestOrgNamePolicyRefusesEmail(t *testing.T) {
-	for _, bad := range []string{"z@hanzo.ai", "qa_probe_x@hanzo-qa.dev", "a@b.co"} {
-		if orgNamePolicyError(bad) == "" {
-			t.Fatalf("orgNamePolicyError(%q) = \"\"; an email is never an organization", bad)
-		}
-	}
-	// A real company name still creates a real org — this refuses a shape, not the intent.
-	for _, ok := range []string{"acme", "wayne-enterprises", "hanzo"} {
-		if msg := orgNamePolicyError(ok); msg != "" {
-			t.Fatalf("orgNamePolicyError(%q) = %q; want \"\"", ok, msg)
-		}
-	}
-}
-
 // THE tenant breach. Org choice lets a founder NAME THEIR OWN org; it must never
 // admit them to a tenant that is already standing. Reproduced against production:
 // an unauthenticated POST to hanzo.id/v1/iam/signup naming application
@@ -432,9 +340,9 @@ func TestSignup_CannotJoinAnExistingForeignTenant(t *testing.T) {
 	}
 }
 
-// The two legitimate destinations org choice DOES grant must keep working, or the
-// refusal above has simply broken signup: the app's OWN tenant, and a brand-new
-// org the caller mints for themselves.
+// The legitimate destinations must keep working, or the refusal above has simply
+// broken signup: the app's OWN tenant, and any tenant a SHARED app declares it
+// serves. A brand-new org is no longer one of them — signup does not mint orgs.
 func TestSignup_ForeignTenantRefusalKeepsTheLegitimatePaths(t *testing.T) {
 	t.Run("the app's own tenant", func(t *testing.T) {
 		app, db := newServer(t)
@@ -446,18 +354,6 @@ func TestSignup_ForeignTenantRefusalKeepsTheLegitimatePaths(t *testing.T) {
 		})
 		if status != 200 || env["status"] != "ok" {
 			t.Fatalf("signup into the app's own tenant must still succeed: status=%d env=%v", status, env)
-		}
-	})
-
-	t.Run("a brand-new org the founder mints", func(t *testing.T) {
-		app, db := newServer(t)
-		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
-		status, env := signupReq(t, app, map[string]string{
-			"application": "conf", "organization": "wayne-enterprises",
-			"username": "founder", "password": "correct horse battery staple",
-		})
-		if status != 200 || env["status"] != "ok" {
-			t.Fatalf("self-serve creation must still succeed: status=%d env=%v", status, env)
 		}
 	})
 
