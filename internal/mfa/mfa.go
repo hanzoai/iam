@@ -216,7 +216,7 @@ func enable(db orm.DB) zip.Handler {
 			}
 			factor.Add(u, mfaType, req.Secret)
 		case factor.SMS, factor.Email:
-			ok, err := otp.Consume(c.Context(), db, factor.Destination(u, mfaType), req.Passcode, nowFunc())
+			ok, err := otp.Consume(c.Context(), db, u, factor.Destination(u, mfaType), req.Passcode, nowFunc())
 			if err != nil {
 				return c.JSON(500, errResp("server_error"))
 			}

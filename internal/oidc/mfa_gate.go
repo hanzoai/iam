@@ -292,7 +292,7 @@ func proveFactor(ctx context.Context, db orm.DB, user *schema.User, ch *schema.L
 			// the request. Letting the caller name it would turn the second factor inside
 			// out: an attacker holding a first factor could have the code sent to an
 			// address they control and answer their own challenge.
-			ok, err := otp.Consume(ctx, db, factor.Destination(user, mfaType), passcode, nowFunc())
+			ok, err := otp.Consume(ctx, db, user, factor.Destination(user, mfaType), passcode, nowFunc())
 			if err != nil {
 				return err
 			}

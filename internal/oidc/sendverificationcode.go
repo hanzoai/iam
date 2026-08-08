@@ -74,10 +74,11 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the organization does not exist")
 		}
 
-		// Validate the destination by type and, for email, resolve the target user
-		// (metadata on the record). A number is accepted as typed — otp.Receiver files
-		// it under its digits, so the punctuation somebody used here cannot decide
-		// whether the code verifies later.
+		// Validate the destination by type and resolve the account it belongs to. The
+		// resolved account is what BINDS the code — otp.Consume refuses a record minted
+		// for anybody else — so this is credential material, not metadata. A number is
+		// accepted as typed: otp.Receiver files it under its digits, so the punctuation
+		// somebody used here cannot decide whether the code verifies later.
 		var user *schema.User
 		switch typ {
 		case otp.Email:
@@ -88,6 +89,14 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 				return httpx.Err(c, err.Error())
 			}
 		case otp.Phone:
+			// GetUserByPhone normalizes its argument and refuses to pick between two rows
+			// carrying one number (ErrPhoneAmbiguous). Returned, not swallowed: a code we
+			// cannot attribute to one account must not be minted, because the binding is
+			// what makes it a credential. Without resolving here the SMS arm filed records
+			// that named nobody and could therefore be spent by nobody.
+			if user, err = store.GetUserByPhone(ctx, db, org.Name, dest); err != nil {
+				return httpx.Err(c, err.Error())
+			}
 		default:
 			return httpx.Err(c, "unsupported verification type: "+typ)
 		}
@@ -95,7 +104,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 		if err := otp.Issue(ctx, db, org.Name, dest, fc.IP(), user, nowFunc()); err != nil {
 			// Report the real outcome. Answering ok because the code was minted would be
 			// the same lie one layer down: the send is what the caller asked for.
-			if errors.Is(err, otp.ErrNoDelivery) {
+			if errors.Is(err, otp.ErrNoDelivery) || errors.Is(err, otp.ErrTooSoon) {
 				return httpx.Err(c, err.Error())
 			}
 			return httpx.Err(c, "verification code could not be delivered: "+err.Error())

@@ -164,6 +164,18 @@ func DeliveryConfigured() bool {
 // failed.
 var ErrNoDelivery = errors.New("verification codes cannot be delivered: no notify service is configured")
 
+// ErrTooSoon is the refusal when a live code for that address is younger than
+// [ResendInterval]. Its own error because its answer is different in kind: nothing
+// is wrong, the code is already on its way.
+var ErrTooSoon = errors.New("a verification code was just sent; wait a moment before asking for another")
+
+// ResendInterval is the minimum wait between two codes to one address. It is the
+// smallest bound that makes a reissue a decision rather than a race: long enough
+// that a double-click cannot strand the code already in flight, short enough that
+// somebody who genuinely did not receive one is not stuck. The record's own Time
+// carries it, so no counter is added anywhere.
+const ResendInterval = 30 * time.Second
+
 // Receiver is the ONE spelling a code is filed and found under.
 //
 // A phone number is punctuated differently everywhere it is typed — "+1 (415)
@@ -194,15 +206,37 @@ func Receiver(dest string) string {
 // send endpoint and the second-factor challenge both call it, which is what makes
 // the row a code is filed under and the row that verifies it the same row.
 //
-// user is the account the code belongs to when the caller knows it (a second-factor
-// challenge always does; a bare phone send does not). It is metadata on the record,
-// never the lookup key — the key is the address.
+// user is the account the code is FOR. It is not metadata: [Consume] refuses a
+// record minted for anybody else, so this is what makes the code a credential for
+// one person rather than for whoever holds the address. A caller that cannot
+// resolve an account (the signup gate, proving an address before any user exists)
+// passes nil, and the record it files can prove an address but can sign nobody in.
 //
-// The record is persisted BEFORE the send is attempted and stays persisted when the
-// send fails, so a code that reaches the person by some other means still verifies.
-// A failed send is reported: the caller asked for a code to go out, and saying
-// nothing would leave somebody waiting for a message that is not coming.
+// ONE LIVE CODE PER ADDRESS, and a deliberate act to replace it. Two issues left
+// two redeemable records ordered by a UNIX SECOND, so a double-click made "the
+// latest code" a coin flip — the code the person holds may be the one that no
+// longer resolves, and a wrong guess is charged to whichever row won the tie.
+// Anyone who knew an address could do that on purpose, unthrottled, and on SMS
+// each attempt spent the org's own carrier budget. So a reissue inside
+// [ResendInterval] is refused, and otherwise the outstanding code is retired
+// before its replacement is filed: there is no tie left to break.
+//
+// Nothing is minted when nothing can carry it. The refusal is unchanged; what it
+// no longer leaves behind is a code nobody can receive that a redeeming caller
+// would still have to trust. A send that FAILS keeps its record, because that code
+// may well have gone out.
 func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *schema.User, now time.Time) error {
+	if sender == nil {
+		return ErrNoDelivery
+	}
+	receiver := Receiver(dest)
+	outstanding, err := store.GetLatestVerificationRecord(ctx, db, org, receiver)
+	if err != nil {
+		return err
+	}
+	if outstanding != nil && now.Unix()-outstanding.Time < int64(ResendInterval/time.Second) {
+		return ErrTooSoon
+	}
 	code, err := generate(Length)
 	if err != nil {
 		return err
@@ -217,7 +251,7 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 		CreatedTime: now.UTC().Format(time.RFC3339),
 		RemoteAddr:  remoteAddr,
 		Type:        Channel(dest),
-		Receiver:    Receiver(dest),
+		Receiver:    receiver,
 		Code:        code,
 		Provider:    "demo",
 		Time:        now.Unix(),
@@ -226,11 +260,14 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 	if user != nil {
 		rec.User = user.Owner + "/" + user.Name
 	}
+	if outstanding != nil {
+		outstanding.IsUsed = true
+		if err := outstanding.UpdateCtx(ctx); err != nil {
+			return err
+		}
+	}
 	if err := store.AddVerificationRecord(ctx, db, rec); err != nil {
 		return err
-	}
-	if sender == nil {
-		return ErrNoDelivery
 	}
 	// The persisted row is read back for every value: the code that was filed and the
 	// code that goes out must be one tenant, one channel and one address, so they read
@@ -252,55 +289,104 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 //   - a miss counts, and the count is what makes the code unguessable; at
 //     [MaxAttempts] the record is spent so the run cannot continue
 //
-// Reports whether the code was accepted. A spent, expired or absent record is a
-// plain false: the caller must not distinguish them, or it answers "that address
-// has a code outstanding" to anyone who asks.
-func Consume(ctx context.Context, db orm.DB, receiver, code string, now time.Time) (bool, error) {
-	rec, err := live(ctx, db, receiver, code, now)
+// The record must have been minted FOR user, in user's own organization. A code is
+// delivered to an ADDRESS, and an address is not an identity: sign-in resolves an
+// identifier NAME first, so org hanzo holding both `hanzo/z` (email z@hanzo.ai) and
+// `hanzo/z@hanzo.ai` means the account a code was minted for and the account it
+// signs in AS are two different rows. [Issue] has always stamped the account and
+// nothing read it, so a code stood for whoever the request said it stood for. Every
+// caller already holds the resolved user, so the binding costs nothing and tells no
+// caller anything it did not know.
+//
+// The compare-and-spend runs inside a GetForUpdate transaction, the same guard the
+// login challenge's burn uses. Read → compare → bump → write left the attempt
+// counter open to the lost-update class internal/users/lockout.go exists to close:
+// measured, 16 concurrent wrong guesses advanced the count by 3, so the [MaxAttempts]
+// bound — the whole reason six digits is strong enough to be a credential — was
+// defeated by parallelism. Serializing it also closes the window in which two racing
+// correct submissions both spend one code.
+//
+// Reports whether the code was accepted. A spent, expired, absent or wrongly-bound
+// record is a plain false: the caller must not distinguish them, or it answers "that
+// address has a code outstanding" to anyone who asks.
+func Consume(ctx context.Context, db orm.DB, user *schema.User, receiver, code string, now time.Time) (bool, error) {
+	if user == nil {
+		return false, nil
+	}
+	rec, err := live(ctx, db, user.Owner, receiver, code, now)
 	if err != nil || rec == nil {
 		return false, err
 	}
-	if cred.ConstantTimeEqual(rec.Code, code) {
-		rec.IsUsed = true
-		if err := store.SaveVerificationRecord(ctx, db, rec); err != nil {
-			// The code was right, but a record that cannot be spent is a record that can
-			// be replayed. Refuse rather than admit a credential we cannot retire.
-			return false, err
+	// The record names the account it was minted for, and only that account may spend
+	// it. An unstamped record was filed for an address with no user — it proves the
+	// address and is a credential for nobody.
+	if rec.User == "" || rec.User != user.Owner+"/"+user.Name {
+		return false, nil
+	}
+	storageID := rec.Key().Encode()
+
+	var accepted bool
+	txErr := db.RunInTransaction(ctx, func(tx orm.DB) error {
+		fresh, err := orm.GetForUpdate[schema.VerificationRecord](tx, storageID)
+		if err != nil {
+			return err
 		}
-		return true, nil
+		// Re-checked under the lock, on the FRESH row: the record the query chose may
+		// have been spent by a concurrent submission between the two reads.
+		if fresh.IsUsed || now.Unix()-fresh.Time > int64(TTL/time.Second) {
+			return nil
+		}
+		if cred.ConstantTimeEqual(fresh.Code, code) {
+			fresh.IsUsed = true
+			// The code was right, but a record that cannot be spent is a record that can
+			// be replayed. The error aborts the transaction and leaves accepted false —
+			// refuse rather than admit a credential we cannot retire.
+			if err := fresh.UpdateCtx(ctx); err != nil {
+				return err
+			}
+			accepted = true
+			return nil
+		}
+		fresh.Attempts++
+		if fresh.Attempts >= MaxAttempts {
+			fresh.IsUsed = true
+		}
+		return fresh.UpdateCtx(ctx)
+	})
+	if txErr != nil {
+		return false, txErr
 	}
-	rec.Attempts++
-	if rec.Attempts >= MaxAttempts {
-		rec.IsUsed = true
-	}
-	if err := store.SaveVerificationRecord(ctx, db, rec); err != nil {
-		return false, err
-	}
-	return false, nil
+	return accepted, nil
 }
 
-// Check reports whether code matches the latest live record for receiver WITHOUT
-// spending it — for a flow that gates something else and marks the record used on
-// its own completion. The compare is constant-time; an expired or absent record
-// fails closed.
-func Check(ctx context.Context, db orm.DB, receiver, code string, now time.Time) (bool, error) {
-	rec, err := live(ctx, db, receiver, code, now)
+// Check reports whether code matches the latest live record for receiver within
+// owner WITHOUT spending it — for a flow that gates something else and marks the
+// record used on its own completion. The compare is constant-time; an expired or
+// absent record fails closed.
+func Check(ctx context.Context, db orm.DB, owner, receiver, code string, now time.Time) (bool, error) {
+	rec, err := live(ctx, db, owner, receiver, code, now)
 	if err != nil || rec == nil {
 		return false, err
 	}
 	return cred.ConstantTimeEqual(rec.Code, code), nil
 }
 
-// live resolves the newest unspent, unexpired record for receiver, keyed the ONE
-// way [Receiver] defines — so a caller that presents the number as a human typed it
-// finds the row that was filed under its digits. A blank receiver or code is nothing
-// to look up; an expired record is nothing either, and both answer (nil, nil) so the
-// caller cannot tell them apart.
-func live(ctx context.Context, db orm.DB, receiver, code string, now time.Time) (*schema.VerificationRecord, error) {
-	if receiver == "" || code == "" {
+// live resolves the newest unspent, unexpired record for receiver WITHIN owner,
+// keyed the ONE way [Receiver] defines — so a caller that presents the number as a
+// human typed it finds the row that was filed under its digits. A blank owner,
+// receiver or code is nothing to look up; an expired record is nothing either, and
+// all of them answer (nil, nil) so the caller cannot tell them apart.
+//
+// The owner scope is tenant isolation. An address is not unique across
+// organizations — two orgs can each hold a user at alice@example.com — so unscoped
+// this answered across every tenant at once: a newer foreign record won the
+// ordering, and a person's own live code was not even the row the compare ran
+// against.
+func live(ctx context.Context, db orm.DB, owner, receiver, code string, now time.Time) (*schema.VerificationRecord, error) {
+	if owner == "" || receiver == "" || code == "" {
 		return nil, nil
 	}
-	rec, err := store.GetLatestVerificationRecord(ctx, db, Receiver(receiver))
+	rec, err := store.GetLatestVerificationRecord(ctx, db, owner, Receiver(receiver))
 	if err != nil || rec == nil {
 		return nil, err
 	}

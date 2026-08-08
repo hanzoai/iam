@@ -727,28 +727,25 @@ func AddVerificationRecord(ctx context.Context, db orm.DB, rec *schema.Verificat
 }
 
 // GetLatestVerificationRecord resolves the most recent UNUSED verification
-// record sent to receiver — the row the check path validates a submitted code
-// against. Returns (nil, nil) when none exists.
-func GetLatestVerificationRecord(_ context.Context, db orm.DB, receiver string) (*schema.VerificationRecord, error) {
-	if receiver == "" {
+// record sent to receiver WITHIN owner — the row the check path validates a
+// submitted code against. Returns (nil, nil) when none exists.
+//
+// The owner filter is tenant isolation: an address is not unique across
+// organizations, so unscoped this answered across every tenant at once. Every
+// caller resolves the account first and therefore knows the org, so the scope costs
+// nothing and closes it at the lookup rather than by a check each caller must
+// remember.
+func GetLatestVerificationRecord(_ context.Context, db orm.DB, owner, receiver string) (*schema.VerificationRecord, error) {
+	if owner == "" || receiver == "" {
 		return nil, nil
 	}
 	rec, err := orm.TypedQuery[schema.VerificationRecord](db).
-		Filter("Receiver=", receiver).Filter("IsUsed=", false).Order("-Time").First()
+		Filter("Owner=", owner).Filter("Receiver=", receiver).
+		Filter("IsUsed=", false).Order("-Time").First()
 	if err == orm.ErrNotFound {
 		return nil, nil
 	}
 	return rec, err
-}
-
-// SaveVerificationRecord persists a change to an existing verification record —
-// spending it, or counting a wrong guess against it. The row is addressed by the
-// (owner, name) id it was created under, so this updates rather than inserts.
-func SaveVerificationRecord(ctx context.Context, db orm.DB, rec *schema.VerificationRecord) error {
-	if rec == nil {
-		return nil
-	}
-	return rec.UpdateCtx(ctx)
 }
 
 // PersistFederationState creates a fresh in-flight federation transaction. The
