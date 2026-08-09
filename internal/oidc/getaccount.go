@@ -82,10 +82,17 @@ func accountEnvelopeFor(ctx context.Context, db orm.DB, owner, name string) (acc
 // and gateway-admin-guard path) then bearer access token (the API path) — two
 // credentials, one identity. ok=false means no valid session or token.
 func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, ok bool) {
-	if o, n, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
-		return o, n, true
+	return callerFrom(ctx, db, c.Fiber().Cookies(sessions.CookieName), httpx.Bearer(c))
+}
+
+// callerFrom is callerOf for a typed handler, which zip hands no *Ctx — it gets
+// the same two credentials as bound header values instead. Same order and the
+// same checks: session cookie first (the portal), then bearer (the API). callerOf
+// delegates here so one of the two cannot quietly become the lenient one.
+func callerFrom(ctx context.Context, db orm.DB, sessionCookie, bearer string) (owner, name string, ok bool) {
+	if sc, ok := sessions.CurrentValue(ctx, sessionCookie, db); ok {
+		return sc.Owner, sc.Name, true
 	}
-	bearer := httpx.Bearer(c)
 	if bearer == "" {
 		return "", "", false
 	}
