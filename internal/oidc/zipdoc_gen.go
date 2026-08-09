@@ -158,5 +158,13 @@ func init() {
 	})
 	zip.Describe("PUT /v1/iam/password", zip.Doc{
 		Description: "Replaces the calling person's password. Only their own —\nthere is no shape of this request that writes somebody else's.\n\nProve who you are with the password you are replacing, or — when you cannot\nsign in at all — with a code sent to the address the account already holds.\nExactly one of the two: a request carrying both proves nothing more than\neither, and answering it would mean deciding which one mattered.\n\nA reset also clears the account lockout, in the SAME transaction as the\ndigest. Replacing a credential retires the run of guesses against the old one,\nand without this a person who reset a forgotten password was still refused for\nup to fifteen more minutes — with the brand-new password they had just chosen.",
+		Fields: map[string]string{
+			"Response.code":             "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+			"passwordBody.code":         "Code is the one-time code delivered to the account's own address.",
+			"passwordBody.oldPassword":  "OldPassword is the credential being replaced, the proof a signed-in caller\ngives instead of a code.",
+			"passwordBody.organization": "The account being recovered, for a caller who cannot be signed in. Read on\nthe CODE arm only — a signed-in caller is resolved from its own session or\ntoken, never from these.",
+			"passwordBody.password":     "Password is the new credential. It must satisfy the platform floor and the\norganization's own complexity options.",
+			"passwordBody.username":     "email, username OR phone",
+		},
 	})
 }
