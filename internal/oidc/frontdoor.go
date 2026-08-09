@@ -77,7 +77,8 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	// password being replaced, and a recovery proved by a code delivered to the
 	// account's own address. Self-scoped like consent below it; it mints nothing, so a
 	// reset is followed by an ordinary sign-in.
-	r.Put(PathPassword, putPasswordHandler(db))
+	zip.Put[passwordBody, httpx.Answer](r, PathPassword, putPasswordHandler(db),
+		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	// Account-canonical data-sharing consent (insights + opt-in training) — the ONE
 	// source of truth the hanzo.id signup, the browser extension, and hanzo.ai share.
 	r.Get(PathConsent, getConsentHandler(db))

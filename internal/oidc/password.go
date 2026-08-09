@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"context"
-	"encoding/json"
+	"net/http"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -13,6 +13,7 @@ import (
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/otp"
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -72,6 +73,37 @@ type passwordBody struct {
 	// Password is the new credential. It must satisfy the platform floor and the
 	// organization's own complexity options.
 	Password string `json:"password"`
+
+	// The two credentials a signed-in caller can present, bound from the request
+	// headers so this stays a typed op. `json:"-"` keeps them off the body and out
+	// of the query string, so the header is the only way to present either.
+	//
+	// Both, because the two arms of this endpoint serve two callers: the portal
+	// holds a session cookie, an API client holds a bearer. Resolving only one of
+	// them would silently take password change away from the other.
+	Cookie string `json:"-" header:"Cookie"`
+	Auth   string `json:"-" header:"Authorization"`
+}
+
+// sessionCookie is the session value carried by a raw `Cookie` header, or "".
+// A typed op is handed the header rather than the request, so the parse that
+// fiber's c.Cookies does lives here instead.
+func sessionCookie(header string) string {
+	for _, c := range readCookies(header) {
+		if c.Name == sessions.CookieName {
+			return c.Value
+		}
+	}
+	return ""
+}
+
+// readCookies parses a Cookie header with the standard library's own rules, so a
+// quoted value or an unusual separator is read exactly as net/http reads it.
+func readCookies(header string) []*http.Cookie {
+	if header == "" {
+		return nil
+	}
+	return (&http.Request{Header: http.Header{"Cookie": []string{header}}}).Cookies()
 }
 
 // putPasswordHandler replaces the calling person's password. Only their own —
@@ -86,50 +118,45 @@ type passwordBody struct {
 // digest. Replacing a credential retires the run of guesses against the old one,
 // and without this a person who reset a forgotten password was still refused for
 // up to fifteen more minutes — with the brand-new password they had just chosen.
-func putPasswordHandler(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		ctx := c.Context()
-		var in passwordBody
-		if err := json.Unmarshal(c.Fiber().Body(), &in); err != nil {
-			return httpx.Err(c, "the request must be a JSON object")
-		}
+func putPasswordHandler(db orm.DB) zip.TypedHandler[passwordBody, httpx.Answer] {
+	return func(ctx context.Context, in *passwordBody) (*httpx.Answer, error) {
 		if in.Password == "" {
-			return httpx.Err(c, "password cannot be empty")
+			return httpx.Bad(400, "password cannot be empty", ""), nil
 		}
 		if (in.Code == "") == (in.OldPassword == "") {
-			return httpx.Err(c, "send either the current password or a verification code, not both")
+			return httpx.Bad(400, "send either the current password or a verification code, not both", ""), nil
 		}
 
 		var user *schema.User
 		if in.Code != "" {
 			var err error
-			if user, err = codeSubject(ctx, db, in); err != nil {
-				return httpx.Err(c, err.Error())
+			if user, err = codeSubject(ctx, db, *in); err != nil {
+				return httpx.Bad(400, err.Error(), ""), nil
 			}
 			if user == nil {
-				return httpx.Err(c, errPasswordCode)
+				return httpx.Bad(400, errPasswordCode, ""), nil
 			}
 		} else {
-			owner, name, ok := callerOf(ctx, c, db)
+			owner, name, ok := callerFrom(ctx, db, sessionCookie(in.Cookie), httpx.BearerValue(in.Auth))
 			if !ok {
-				return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
+				return httpx.Bad(400, "please sign in first", CodeLoginRequired), nil
 			}
 			var err error
 			if user, err = store.GetUserByName(ctx, db, owner, name); err != nil {
-				return httpx.Err(c, err.Error())
+				return httpx.Bad(400, err.Error(), ""), nil
 			}
 			if user == nil {
-				return httpx.Err(c, "the user does not exist")
+				return httpx.Bad(400, "the user does not exist", ""), nil
 			}
 			// The one human-credential check, so a rotation is subject to the same
 			// lockout as a login and a correct old password clears the running count.
 			ok, locked := users.Authenticate(ctx, db, user, in.OldPassword,
 				loginOrgPasswordType(ctx, db, user.Owner), nowFunc())
 			if locked {
-				return httpx.Err(c, "too many failed attempts; the account is temporarily locked")
+				return httpx.Bad(400, "too many failed attempts; the account is temporarily locked", ""), nil
 			}
 			if !ok {
-				return httpx.Err(c, "the current password is incorrect")
+				return httpx.Bad(400, "the current password is incorrect", ""), nil
 			}
 		}
 
@@ -138,18 +165,18 @@ func putPasswordHandler(db orm.DB) zip.Handler {
 		// registered cannot be arrived at by resetting either.
 		org, err := store.GetOrganizationByName(ctx, db, user.Owner)
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return httpx.Bad(400, err.Error(), ""), nil
 		}
 		var options []string
 		if org != nil {
 			options = org.PasswordOptions
 		}
 		if msg := passwordPolicyError(options, in.Password); msg != "" {
-			return httpx.Err(c, msg)
+			return httpx.Bad(400, msg, ""), nil
 		}
 		hash, err := cred.Hash(in.Password)
 		if err != nil {
-			return httpx.Err(c, "server_error")
+			return httpx.Bad(400, "server_error", ""), nil
 		}
 
 		// One row-locked write for the digest AND the lockout, through the same seam
@@ -167,9 +194,9 @@ func putPasswordHandler(db orm.DB) zip.Handler {
 			u.UpdatedTime = provisionNow()
 			return nil
 		}); err != nil {
-			return httpx.Err(c, err.Error())
+			return httpx.Bad(400, err.Error(), ""), nil
 		}
-		return httpx.Ok(c, nil)
+		return httpx.Good(nil), nil
 	}
 }
 
