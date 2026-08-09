@@ -176,6 +176,10 @@ func ErrCode(c *zip.Ctx, msg, code string) error {
 // Bearer returns the token from an `Authorization: Bearer <token>` header, or "".
 func Bearer(c *zip.Ctx) string { return token(c.Header("Authorization")) }
 
+// BearerValue is Bearer for a caller holding the header VALUE rather than the
+// request — a typed handler, which zip binds headers into and hands no *Ctx.
+func BearerValue(authorization string) string { return token(authorization) }
+
 // token is the credential an `Authorization: Bearer <token>` header VALUE carries,
 // or "". The parse lives here once, for the request half and the value half alike.
 func token(h string) string {

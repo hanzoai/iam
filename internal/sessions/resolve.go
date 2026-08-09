@@ -115,7 +115,14 @@ func set(ctx context.Context, c fiber.Ctx, db orm.DB, sc Cookie) error {
 // row — so a logout, a re-key, or an operator revoking a session kills a captured
 // copy of the cookie immediately rather than at expiry.
 func Current(ctx context.Context, c fiber.Ctx, db orm.DB) (*Cookie, bool) {
-	raw := c.Cookies(CookieName)
+	return CurrentValue(ctx, c.Cookies(CookieName), db)
+}
+
+// CurrentValue is Current for a caller holding the cookie VALUE rather than the
+// request — a typed handler, which zip binds headers into and hands no request.
+// Current delegates here, so both halves run the identical checks and neither can
+// drift into being the lenient one.
+func CurrentValue(ctx context.Context, raw string, db orm.DB) (*Cookie, bool) {
 	if raw == "" {
 		return nil, false
 	}
