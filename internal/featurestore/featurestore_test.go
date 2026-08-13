@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/hanzoai/iam/feature"
-	"github.com/hanzoai/iam/pkg/store"
 	"github.com/hanzoai/iam/pkg/model"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 func openFeatureStore(t *testing.T) feature.Store {
