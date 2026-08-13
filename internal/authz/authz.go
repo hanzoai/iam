@@ -74,10 +74,11 @@ import (
 )
 
 // adminOrg is the reserved organization whose membership IS SuperAdmin — the one
-// cross-tenant scope, the one predicate. The broader reserved-owner set
-// {admin, built-in} the poisoning gate protects lives in ONE place,
-// store.IsSigningCertOwner, shared with the token verifier and the JWKS.
-const adminOrg = "admin"
+// cross-tenant scope, the one predicate. It is store's value, not a copy of it,
+// so the word is spelled once. The broader reserved-owner set {admin, built-in}
+// the poisoning gate protects lives in ONE place, store.IsSigningCertOwner,
+// shared with the token verifier and the JWKS.
+const adminOrg = store.AdminOrg
 
 // Principal is the identity a gated request acts as, resolved from a verified
 // bearer. Org is the tenant (the authenticated principal's own org, from the
