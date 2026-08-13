@@ -47,6 +47,10 @@ import (
 const (
 	foreignRealOrg = "lux"
 	fabricatedOrg  = "nonexistent-org-xyz"
+	// reservedOrg is the organization whose membership IS SuperAdmin, spelled here
+	// because these tests are the package's outside view (authz_test) and the
+	// constant is unexported. store.IsSuperAdmin holds the same word.
+	reservedOrg = "admin"
 )
 
 // ---- request helpers -------------------------------------------------------
@@ -506,5 +510,64 @@ func TestScopeRead_AStrangerIsStillRefused(t *testing.T) {
 	got := h.send(t, "GET", "/v1/iam/get-organization-projects?organization="+foreignRealOrg, boss, nil)
 	if got.status != 403 {
 		t.Fatalf("a non-member read of %s = %d, want 403: %s", foreignRealOrg, got.status, got.body)
+	}
+}
+
+// An operator is someone an existing operator put IN the reserved org, and that
+// grant reaches every tenant. This asks it on `users` deliberately: users is the
+// STRICT clause, the one ordinary membership never opens, so a 200 here can only
+// come from Super.
+//
+// The repro is z@hanzo.ai. It holds the admin membership row, and IAM read the
+// HOME org to decide sudo — so the operator grant bought nothing on IAM's own
+// surface, while memberships.mayGrant already refused that same row to anyone but
+// a SuperAdmin and cloud already honoured it. Two answers to one question.
+func TestSuper_ReservedMembershipReachesEveryTenant(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+	// Anchored in a brand org, as every operator who also does ordinary work is.
+	seedUser(t, h.db, "hanzo", "operator", false, false, false)
+	seedMembership(t, h.db, "hanzo/operator", reservedOrg, "admin")
+	operator := asUser(h.token(t, "hanzo/operator"))
+
+	got := h.send(t, "GET", "/v1/iam/get-users?owner="+foreignRealOrg, operator, nil)
+	if got.status != 200 {
+		t.Fatalf("GET get-users?owner=%s as a member of %q = %d, want 200 — the reserved "+
+			"org is the one cross-tenant scope and its membership IS the grant: %s",
+			foreignRealOrg, reservedOrg, got.status, got.body)
+	}
+	// And it must answer for the tenant ASKED FOR — masquerade, not a home-org read.
+	owners := got.owners(t)
+	if owners[foreignRealOrg] == 0 {
+		t.Fatalf("GET get-users?owner=%s returned no %s rows (owners=%v); a SuperAdmin must be "+
+			"handed the tenant it named, not its own", foreignRealOrg, foreignRealOrg, owners)
+	}
+	for owner := range owners {
+		if owner != foreignRealOrg {
+			t.Errorf("GET get-users?owner=%s returned a row owned by %q — masquerade answers "+
+				"for the tenant asked for and nothing else", foreignRealOrg, owner)
+		}
+	}
+}
+
+// The other half, and the reason the reserved org is named rather than membership
+// in general: ordinary membership still carries NO authority outside organizations.
+// Belonging to a tenant lets you SEE that tenant (ScopeRead); it never makes you an
+// operator of it, and never reaches a third one.
+func TestSuper_OrdinaryMembershipIsNotSudo(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+	seedUser(t, h.db, "hanzo", "member", false, false, false)
+	seedMembership(t, h.db, "hanzo/member", foreignRealOrg, "admin")
+	member := asUser(h.token(t, "hanzo/member"))
+
+	got := h.send(t, "GET", "/v1/iam/get-users?owner="+foreignRealOrg, member, nil)
+	if got.status != 403 {
+		t.Fatalf("GET get-users?owner=%s as an ADMIN of %s = %d, want 403 — administering a "+
+			"tenant is not platform sudo, and users is the strict clause: %s",
+			foreignRealOrg, foreignRealOrg, got.status, got.body)
+	}
+	if owners := got.owners(t); len(owners) > 0 {
+		t.Errorf("the refusal shipped rows owned by %v", owners)
 	}
 }
