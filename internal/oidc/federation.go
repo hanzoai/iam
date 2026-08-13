@@ -731,4 +731,3 @@ func connectorFor(providerType string) (connectorBinding, bool) {
 	b, ok := connectorRegistry[strings.ToLower(strings.TrimSpace(providerType))]
 	return b, ok
 }
-

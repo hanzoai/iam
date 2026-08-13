@@ -10,9 +10,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/internal/users"
 )
 
 // seedOrg creates an organization row (owner "admin", v1 convention) with the

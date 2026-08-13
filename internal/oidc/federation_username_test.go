@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/internal/users"
 )
 
 // The dedupe walk against a real store: the first free name wins, so the second
