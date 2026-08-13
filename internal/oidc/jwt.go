@@ -84,6 +84,22 @@ type Claims struct {
 	// token, which has no membership, never carries it), so one struct still serves
 	// both an app token and a user token without emitting an empty claim.
 	Orgs []schema.OrgRef `json:"orgs,omitempty"`
+	// Groups is the same membership set as flat names, under the name OIDC
+	// consumers already read. `orgs` carries a role per org, which is what our own
+	// resource servers need and what a generic consumer cannot parse: a relying
+	// party that maps a groups claim reads strings, so an object list stringifies
+	// to `map[Org:admin Role:admin]` and matches nothing.
+	//
+	// It is DERIVED from Orgs at the one place Orgs is set, so the two cannot
+	// disagree about who belongs where — a second list assembled from a second
+	// query is how a consumer comes to grant on stale membership.
+	//
+	// This is the claim that carries SuperAdmin to a federated app, and it carries
+	// it as MEMBERSHIP: an operator anchored in a brand org appears here with the
+	// reserved org among their groups. Reading the home org instead is the drift
+	// corrected across this estate — it denies every operator who also does
+	// ordinary work, which is nearly all of them.
+	Groups []string `json:"groups,omitempty"`
 }
 
 // Identity is WHO a token speaks for: the caller-resolved values every mint
@@ -200,7 +216,23 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		Azp:               azp,
 		TokenType:         kind,
 		Orgs:              id.Orgs,
+		Groups:            groupsOf(id.Orgs),
 	}, nil
+}
+
+// groupsOf flattens the membership set to the names a groups claim carries.
+// Nil in, nil out, so a machine token omits the claim exactly as it omits orgs.
+func groupsOf(orgs []schema.OrgRef) []string {
+	if len(orgs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(orgs))
+	for _, o := range orgs {
+		if o.Org != "" {
+			out = append(out, o.Org)
+		}
+	}
+	return out
 }
 
 // Sign issues a signed access token for (app, identity) with the given scope. now
