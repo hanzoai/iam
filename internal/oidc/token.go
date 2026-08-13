@@ -19,9 +19,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/internal/users"
 )
 
 // The token endpoint: POST /v1/iam/oauth/token. It dispatches the three grant
