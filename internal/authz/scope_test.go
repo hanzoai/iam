@@ -443,3 +443,68 @@ func TestScope_UnstatedOwnerStillMeansOwnOrg(t *testing.T) {
 		t.Errorf("get-users with no owner returned %v, want hanzo only", owners)
 	}
 }
+
+// seedMembership grants a user the right to act in an org that is not their
+// home. It is the shape a real console user has: one account, several orgs.
+func seedMembership(t *testing.T, db orm.DB, user, org, role string) {
+	t.Helper()
+	m := orm.New[schema.Membership](db)
+	m.Owner, m.Name = org, user+"@"+org
+	m.User, m.Org, m.Role = user, org, role
+	m.SetId(org + "/" + user)
+	if err := m.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed membership %s in %s: %v", user, org, err)
+	}
+}
+
+// THE PRODUCTION BUG, and its exact repro. z@hanzo.ai administers several orgs;
+// the console's switcher listed them and clicking one did nothing, because
+// get-organization-projects?organization=<other> answered 403 and the switcher
+// swallowed it. The account's HOME org was the only org it could read — the
+// membership set, which IAM itself mints into the token's `orgs` claim to
+// authorize exactly this switch, was ignored on IAM's own surface.
+func TestScopeRead_AnOrgYouBelongToOpens(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+	// A hanzo account that ADMINISTERS the other tenant, the way a real operator does.
+	seedUser(t, h.db, "hanzo", "crossorg", false, false, false)
+	seedMembership(t, h.db, "hanzo/crossorg", foreignRealOrg, "admin")
+	crossorg := asUser(h.token(t, "hanzo/crossorg"))
+
+	for _, path := range []string{
+		"/v1/iam/get-organization-projects?organization=" + foreignRealOrg,
+		"/v1/iam/get-organization-workspaces?organization=" + foreignRealOrg,
+	} {
+		t.Run(path, func(t *testing.T) {
+			got := h.send(t, "GET", path, crossorg, nil)
+			if got.status != 200 {
+				t.Fatalf("GET %s = %d, want 200 — a member of %s cannot read it: %s",
+					path, got.status, foreignRealOrg, got.body)
+			}
+			// It must answer for the org ASKED FOR, never quietly for the home org.
+			var env struct {
+				Data []map[string]any `json:"data"`
+			}
+			_ = json.Unmarshal([]byte(got.body), &env)
+			for _, row := range env.Data {
+				if row["owner"] != foreignRealOrg {
+					t.Errorf("GET %s returned a row owned by %v — answering for the home org "+
+						"is the misattribution the strict clause existed to prevent", path, row["owner"])
+				}
+			}
+		})
+	}
+}
+
+// The other half, and the reason this is a separate entry point: belonging to an
+// org is permission to SEE it. A stranger is still refused, byte-identically.
+func TestScopeRead_AStrangerIsStillRefused(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+	boss := asUser(h.token(t, "hanzo/boss")) // no membership anywhere but hanzo
+
+	got := h.send(t, "GET", "/v1/iam/get-organization-projects?organization="+foreignRealOrg, boss, nil)
+	if got.status != 403 {
+		t.Fatalf("a non-member read of %s = %d, want 403: %s", foreignRealOrg, got.status, got.body)
+	}
+}
