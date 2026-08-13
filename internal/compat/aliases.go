@@ -107,7 +107,7 @@ func orgProjectsHandler(db orm.DB) zip.Handler {
 		if requested == "" {
 			requested = c.Query("owner")
 		}
-		owner, err := authz.Scope(ctx, requested)
+		owner, err := authz.ScopeRead(ctx, requested)
 		if err != nil {
 			return authz.Deny(c, err)
 		}
@@ -134,7 +134,7 @@ func orgWorkspacesHandler(db orm.DB) zip.Handler {
 		if requested == "" {
 			requested = c.Query("owner")
 		}
-		owner, err := authz.Scope(ctx, requested)
+		owner, err := authz.ScopeRead(ctx, requested)
 		if err != nil {
 			return authz.Deny(c, err)
 		}
