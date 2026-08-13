@@ -12,6 +12,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // Unlink self-authenticates (session cookie / bearer) on the public OIDC surface,
@@ -239,6 +240,41 @@ func TestUnlink_SuperAdminMayRemoveTheOnlyCredential(t *testing.T) {
 
 	if _, m := doUnlink(t, app, super, "GitHub", "hanzo", "alice"); m["status"] != "ok" {
 		t.Fatalf("a SuperAdmin must be able to force the unlink, got %v", m["msg"])
+	}
+}
+
+// The operator who actually exists. Anchored in a brand org, holding the
+// reserved-org membership an existing SuperAdmin granted — the deliberate,
+// signed, revocable way operators are made. Asking the HOME org refused exactly
+// this identity, so the platform's recovery path was shut to every operator who
+// is also an ordinary member of some brand. TestUnlink_CrossUserRefused is the
+// other half: without that membership the same request is still refused.
+func TestUnlink_BrandAnchoredOperatorMayRemoveTheOnlyCredential(t *testing.T) {
+	app, db := newUnlinkServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+	seedUser(t, db, "op", "op@hanzo.ai", "pw") // home org hanzo, NOT the reserved org
+	if _, err := store.EnsureMembership(tctx(), db, "hanzo/op", store.AdminOrg, store.RoleAdmin); err != nil {
+		t.Fatalf("grant the reserved-org membership: %v", err)
+	}
+	linkGitHub(t, db, "alice", "gh-alice", true)
+	clearPassword(t, db, "alice")
+
+	code, _, _ := loginForCode(t, app, map[string]string{
+		"organization": "hanzo", "username": "op", "password": "pw",
+		"clientId": "conf", "redirectUri": testRedirect, "scope": "openid",
+	})
+	_, tok := exchangeCode(t, app, url.Values{
+		"code": {code}, "client_id": {"conf"}, "client_secret": {"s3cret"}, "redirect_uri": {testRedirect},
+	})
+	operator, _ := tok["access_token"].(string)
+	if operator == "" {
+		t.Fatalf("the operator must be able to sign in: %v", tok)
+	}
+
+	if _, m := doUnlink(t, app, operator, "GitHub", "hanzo", "alice"); m["status"] != "ok" {
+		t.Fatalf("an operator holding the reserved-org membership must be able to force "+
+			"the unlink, got %v", m["msg"])
 	}
 }
 
