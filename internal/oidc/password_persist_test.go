@@ -11,9 +11,9 @@ import (
 
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/internal/users"
 )
 
 // TestPasswordHashPersists is the regression for the json:"-"-drops-from-storage
