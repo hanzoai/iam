@@ -237,3 +237,57 @@ func TestBillingAccountForOnlyAdminsSpendThePool(t *testing.T) {
 		})
 	}
 }
+
+// A federated app reads a groups claim as STRINGS, so the membership set has to
+// appear under that name as flat org names — `orgs` carries a role per org and
+// stringifies to `map[Org:admin Role:admin]`, which matches nothing.
+//
+// The case that matters is the operator anchored in a BRAND org: the reserved
+// org is in their membership set and never their home org, so a consumer that
+// maps groups→admin must see `admin` here. Reading the home org instead denies
+// every operator who also does ordinary work.
+func TestSign_GroupsCarriesMembershipNotTheHomeOrg(t *testing.T) {
+	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
+	now := time.Unix(1_800_000_000, 0)
+	id := Identity{Id: "hanzo/z", Email: "z@hanzo.ai", Name: "z", Orgs: []schema.OrgRef{
+		{Org: "hanzo", Role: store.RoleAdmin}, // home org, first
+		{Org: "admin", Role: store.RoleAdmin}, // the operator grant
+		{Org: "lux", Role: store.RoleAdmin},
+	}}
+	tokenStr, err := s.Sign(testApp(), id, "openid profile", time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Claims
+	if _, _, err := jwt.NewParser().ParseUnverified(tokenStr, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"hanzo", "admin", "lux"}
+	if strings.Join(got.Groups, ",") != strings.Join(want, ",") {
+		t.Fatalf("groups = %v, want %v", got.Groups, want)
+	}
+	// The whole point: a consumer mapping groups→admin admits this identity.
+	var reserved bool
+	for _, g := range got.Groups {
+		if g == "admin" {
+			reserved = true
+		}
+	}
+	if !reserved {
+		t.Error("the reserved org is absent from groups, so a federated app cannot see the operator")
+	}
+}
+
+// A machine token has no membership, so it carries neither claim — an empty
+// groups list published as `[]` would read as "belongs to nothing" rather than
+// "was never asked", and omitempty is what keeps those distinguishable.
+func TestSign_MachineTokenOmitsGroups(t *testing.T) {
+	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
+	tokenStr, err := s.Sign(testApp(), Identity{Id: "app/machine"}, "openid", time.Hour, time.Unix(1_800_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(tokenStr, "groups") {
+		t.Error("a machine token must omit the groups claim entirely")
+	}
+}
