@@ -296,18 +296,29 @@ func TestDevice_ConfidentialClientAuth(t *testing.T) {
 // that is the identity an operator signs a CLI into any brand with.
 func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		org   string // approver's org; the device app lives in "hanzo"
-		allow bool
+		name string
+		org  string // approver's org; the device app lives in "hanzo"
+		// operator grants a membership in the reserved org — how an operator is
+		// actually made. The one below is anchored in a FOREIGN tenant and still
+		// crosses, which is the whole point: asking the home org denied every
+		// operator who is also an ordinary member of some brand.
+		operator bool
+		allow    bool
 	}{
-		{"same org approves", "hanzo", true},
-		{"foreign org refused", "lux", false},
-		{"superadmin crosses tenants", "admin", true},
+		{"same org approves", "hanzo", false, true},
+		{"foreign org refused", "lux", false, false},
+		{"superadmin crosses tenants", "admin", false, true},
+		{"brand-anchored operator crosses tenants", "lux", true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, db := newServer(t)
 			seedApp(t, db, appOpts{clientID: "hanzo-app", grants: deviceGrants}) // org "hanzo"
 			seedUserInOrg(t, db, tc.org, "eve", "eve@"+tc.org+".example", "pw")
+			if tc.operator {
+				if _, err := store.EnsureMembership(tctx(), db, tc.org+"/eve", store.AdminOrg, store.RoleAdmin); err != nil {
+					t.Fatalf("grant the reserved-org membership: %v", err)
+				}
+			}
 
 			_, da := requestDevice(t, app, "hanzo-app", "openid")
 			deviceCode, userCode := da["device_code"].(string), da["user_code"].(string)

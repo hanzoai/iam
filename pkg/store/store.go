@@ -461,12 +461,44 @@ func GetTokenByUserCode(_ context.Context, db orm.DB, userCode string) (*schema.
 	return t, err
 }
 
-// IsSuperAdmin reports whether owner is the reserved admin organization — THE
-// SuperAdmin predicate, the only cross-tenant scope there is. It mirrors authz's
-// own adminOrg so a subsystem BELOW the authz seam (the device-approval tenant
-// gate) can ask the same question without importing authz. A per-org isAdmin
+// AdminOrg is the reserved organization, and the one spelling of it. Belonging
+// to it is SuperAdmin — the only cross-tenant scope there is.
+const AdminOrg = "admin"
+
+// IsSuperAdmin reports whether the identity owner/name BELONGS to the reserved
+// organization: anchored there, or holding a membership there. THE SuperAdmin
+// predicate, for a subsystem BELOW the authz seam (device approval, federation
+// unlink) that cannot import authz — authz imports oidc, so the dependency only
+// runs one way. It asks what authz.Principal.Super asks and what the published
+// authz.Claims.PlatformSudo asks of a signed token, so one identity is an
+// operator everywhere or nowhere.
+//
+// It takes an IDENTITY, not an org name, because that is the shape of the
+// question. Asking only the home org made this unanswerable for the operators
+// who actually exist: an operator is someone an existing SuperAdmin put IN the
+// reserved org (memberships.mayGrant refuses that row to anyone else), and most
+// are anchored in a brand org because they also do ordinary work.
+//
+// Fails CLOSED: an unreadable membership set is not a grant. A per-org isAdmin
 // flag is a different, org-scoped question and never answers this one.
-func IsSuperAdmin(owner string) bool { return owner == "admin" }
+func IsSuperAdmin(ctx context.Context, db orm.DB, owner, name string) bool {
+	if owner == AdminOrg {
+		return true
+	}
+	if owner == "" || name == "" {
+		return false
+	}
+	rows, err := MembershipsByUser(ctx, db, owner+"/"+name)
+	if err != nil {
+		return false
+	}
+	for _, m := range rows {
+		if m != nil && m.Org == AdminOrg {
+			return true
+		}
+	}
+	return false
+}
 
 // reservedServiceOrg is the system organization that owns service/app principals —
 // reserved alongside the signing-cert owners, but not itself a signing owner.
@@ -481,8 +513,8 @@ const reservedServiceOrg = "app"
 // The set is the SuperAdmin/signing trust boundary — admin and built-in, i.e.
 // IsSigningCertOwner, composed so a newly-reserved signing owner is covered here for
 // free — plus the service-principal org "app". A user created under any of these is a
-// platform identity, not a customer: a user under "admin" is a SuperAdmin (authz
-// derives Super from owner == "admin"), and a signing/built-in or service org is
+// platform identity, not a customer: a user under AdminOrg belongs to the reserved
+// org and is therefore a SuperAdmin, and a signing/built-in or service org is
 // platform trust material. These orgs are seeded, onboarded by a SuperAdmin, or
 // provisioned by the operator's service token — never reached by a public signup or
 // an external login. Fail-closed by construction: an unknown org is NOT reserved, so

@@ -177,7 +177,7 @@ func deviceInfoHandler(db orm.DB) zip.Handler {
 		if row.Organization == "" {
 			return httpx.Err(c, refuse)
 		}
-		if !store.IsSuperAdmin(user.Owner) && user.Owner != row.Organization {
+		if !store.IsSuperAdmin(ctx, db, user.Owner, user.Name) && user.Owner != row.Organization {
 			return httpx.Err(c, "your organization may not approve this device sign-in")
 		}
 
@@ -375,7 +375,7 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 	if row.Organization == "" {
 		return httpx.Err(c, refuse)
 	}
-	if !store.IsSuperAdmin(user.Owner) && user.Owner != row.Organization {
+	if !store.IsSuperAdmin(ctx, db, user.Owner, user.Name) && user.Owner != row.Organization {
 		return httpx.Err(c, "your organization may not approve this device sign-in")
 	}
 
