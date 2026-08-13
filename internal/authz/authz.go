@@ -206,6 +206,46 @@ func Scope(ctx context.Context, owner string) (string, error) {
 	return p.Org, nil
 }
 
+// ScopeRead is [Scope] for a READ: the org a listing is filtered by.
+//
+// It differs in ONE clause, and that clause is not new — [Can] already states it
+// for the org registry: "a person reads any org they BELONG to, and edits the ones
+// they help run." A human's account lives in one IAM tenant while the orgs they
+// work in are a set, so keying a read on p.Org alone refuses an org's own admin
+// the org they administer. Measured in production: get-organization-projects
+// ?organization=lux answered 403 for a caller holding an admin membership in lux,
+// the console's switcher swallowed it, and an org the picker said you ran would
+// not open. The membership set is read from the store when the principal is built
+// (membershipRoles) — it is never a claim the caller supplies.
+//
+// WRITES DO NOT COME THROUGH HERE, and that is the whole reason this is a second
+// entry point rather than a widened Scope. Scope keeps its stricter clause, so a
+// plain member still cannot mint a token or a cert in an org they merely belong
+// to, and the handler-authorized write surfaces (SCIM, service-accounts,
+// memberships) are untouched. Only a read whose target rides in the QUERY — the
+// switcher's project and workspace lists — asks this question.
+func ScopeRead(ctx context.Context, owner string) (string, error) {
+	p, ok := From(ctx)
+	if !ok {
+		return "", zip.ErrForbidden("no principal")
+	}
+	if p.Super {
+		return owner, nil
+	}
+	// No org named: the caller's own, exactly as Scope resolves it. An empty p.Org
+	// has no scope to fall back to and returning "" would mean "no filter".
+	if owner == "" {
+		if p.Org == "" {
+			return "", errForeignOrg(p)
+		}
+		return p.Org, nil
+	}
+	if !p.memberOf(owner) {
+		return "", errForeignOrg(p)
+	}
+	return owner, nil
+}
+
 // errForeignOrg is the refusal a foreign owner earns. It is built from the
 // PRINCIPAL's own org and never from the requested one, so every org the caller
 // may not have — real, reserved, or invented — produces the byte-identical
