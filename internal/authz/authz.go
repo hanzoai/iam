@@ -29,7 +29,7 @@
 //
 // Three scopes, never conflated (conflation is privilege escalation):
 //
-//   - SuperAdmin — the principal's organization is the reserved "admin" org.
+//   - SuperAdmin — the principal belongs to the reserved "admin" org.
 //     The ONLY cross-tenant scope. Required for every write to a platform-owned
 //     (admin/built-in) resource: the signing-cert poisoning gate, admin-scoped
 //     application/provider registration, every reserved surface.
@@ -37,8 +37,16 @@
 //     resource its org owns; never another org's, never a platform-owned one.
 //   - Regular user — self-service only: reading its own user record.
 //
-// One predicate governs SuperAdmin everywhere: the principal's organization is
-// "admin". That organization comes from the token SUBJECT — the authenticated
+// One predicate governs SuperAdmin everywhere: the principal BELONGS to the
+// reserved "admin" org — its home org is "admin", or it holds a membership there.
+// Membership is how an operator is actually made (an existing SuperAdmin grants
+// it; memberships.mayGrant refuses a reserved target to anyone else), and it is
+// the same question the published authz.Claims.PlatformSudo asks of the signed
+// `orgs` set, so one token reads identically here and at every consumer. Asking
+// only the home org denied every operator anchored in a brand org — which is
+// every operator who also does ordinary work.
+//
+// The home org comes from the token SUBJECT — the authenticated
 // principal's own owner/name — never from the token's `owner`/`organization`
 // claims. Those name the APPLICATION's org and diverge from the user's org for a
 // shared app, so trusting them would let a tenant user sign in through a shared
@@ -74,7 +82,7 @@ const adminOrg = "admin"
 // Principal is the identity a gated request acts as, resolved from a verified
 // bearer. Org is the tenant (the authenticated principal's own org, from the
 // subject); User is its name within that org (empty for a machine token); Admin
-// is the org-admin flag; Super is the SuperAdmin predicate (Org == adminOrg).
+// is the org-admin flag; Super is the SuperAdmin predicate (memberOf adminOrg).
 type Principal struct {
 	Org  string
 	User string
@@ -865,10 +873,23 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 		if u.IsForbidden || u.IsDeleted {
 			return nil, errRevoked
 		}
-		return &Principal{
-			Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Super: u.Owner == adminOrg,
+		// Super is MEMBERSHIP of the reserved org, never the home org. Home is where
+		// an identity is ANCHORED — its billing, its default scope. Platform authority
+		// is a different question, and its answer is that an existing SuperAdmin put
+		// this identity IN the reserved org: a deliberate, signed, revocable grant that
+		// only a SuperAdmin can make (memberships.mayGrant refuses a reserved target to
+		// anyone else). Asking the home org instead conflated the two and denied every
+		// operator anchored in a brand org — which is every operator who also does
+		// ordinary work — so the reserved org was unreachable in practice while the
+		// code looked right. memberOf answers home-or-membership in one place, which is
+		// what the published authz.Claims.PlatformSudo asks of the signed set, so one
+		// token now reads the same here and at every consumer.
+		p := &Principal{
+			Org: u.Owner, User: u.Name, Admin: u.IsAdmin,
 			Orgs: membershipRoles(ctx, db, u.Owner+"/"+u.Name),
-		}, nil
+		}
+		p.Super = p.memberOf(adminOrg)
+		return p, nil
 	}
 	// No user row. A machine token's subject is "<appOwner>/<appName>", which names
 	// an APPLICATION — so it resolves to the SAME confidential-client Principal the
