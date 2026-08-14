@@ -286,6 +286,14 @@ type keyUser struct {
 	Email          string `json:"email"`
 	IsAdmin        bool   `json:"isAdmin"`
 	BillingAccount string `json:"billing_account,omitempty"`
+	// Scope is what this CREDENTIAL may reach — the key row's own limit, as
+	// distinct from what the user it resolves to may reach. Empty means the key
+	// carries no limit, which is what a key minted before limits existed carries
+	// and means unrestricted.
+	//
+	// A resource server cannot enforce a per-key limit it is never told, and this
+	// is the only door that knows both halves at once.
+	Scope string `json:"scope,omitempty"`
 }
 
 // resolveUserByAccessKey authenticates the SERVICE caller and resolves an API key to
@@ -310,7 +318,7 @@ func resolveUserByAccessKey(c *zip.Ctx, db orm.DB, key string) error {
 	if !ok || p.App == "" || !authz.Allowed(p, authz.CapKeyResolve) {
 		return httpx.Err(c, unauthorized)
 	}
-	u, err := store.UserByAccessKey(ctx, db, key)
+	u, scope, err := store.UserAndScopeByAccessKey(ctx, db, key)
 	if errors.Is(err, orm.ErrNotFound) {
 		return httpx.ErrCode(c, "the entity does not exist", string(store.Reason(err)))
 	}
@@ -323,6 +331,7 @@ func resolveUserByAccessKey(c *zip.Ctx, db orm.DB, key string) error {
 		Email:          u.Email,
 		IsAdmin:        u.IsAdmin,
 		BillingAccount: store.BillingAccount(u, store.MemberOrgRefs(ctx, db, u)),
+		Scope:          scope,
 	})
 }
 
