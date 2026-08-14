@@ -186,7 +186,15 @@ func loginHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "organization, username and password are required")
 		}
 
-		user, err := resolveLoginUser(ctx, db, f.Organization, f.Username)
+		// The application is resolved before the identifier because it is part of
+		// WHERE the identifier resolves: an application that founds an org per person
+		// is the only thing that still knows where its accounts went.
+		app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
+		if err != nil {
+			return httpx.Err(c, "sign-in is unavailable")
+		}
+
+		user, err := resolveLoginUser(ctx, db, app, f.Organization, f.Username)
 		if err != nil {
 			// NEVER the resolver's own words. This is an UNAUTHENTICATED door and
 			// nothing has been proven about the caller yet, so anything specific
@@ -388,8 +396,37 @@ func (f loginForm) mint() Mint {
 	}
 }
 
-// resolveLoginUser looks a user up by the login identifier, scoped to the org,
-// resolving NAME FIRST and email second — legacy's own precedence
+// resolveLoginUser looks a user up by the login identifier: in the org the form
+// names, then among the accounts the application itself registered.
+//
+// The second reach is what makes a per-person tenant reachable. A login screen
+// names the APPLICATION's org — it is the only org the screen can know, since the
+// person has not been identified yet — so an account that WORKS in an org of its
+// own is not in the org being searched. Its own application is the one thing that
+// still knows it, and [store.GetSignupByEmail] is that reach: this application's
+// own accounts, by the address they registered with, ambiguity refused, reserved
+// orgs unreachable.
+//
+// It is not a cross-org lookup by address. Resolving an address across every org
+// couples the accounts that merely share one — their lockout counters above all —
+// and that stays refused: nothing here reads a row another application created,
+// or one that no application created.
+//
+// The org arm runs FIRST and is untouched, so every account that lives in the
+// application's org resolves exactly as it always did, staff included.
+func resolveLoginUser(ctx context.Context, db orm.DB, app *schema.Application, org, identifier string) (*schema.User, error) {
+	user, err := resolveInOrg(ctx, db, org, identifier)
+	if err != nil || user != nil {
+		return user, err
+	}
+	if app == nil {
+		return nil, nil
+	}
+	return store.GetSignupByEmail(ctx, db, app.Name, identifier)
+}
+
+// resolveInOrg resolves the login identifier within one org, resolving NAME FIRST
+// and email second — legacy's own precedence
 // (object.GetUserByFields tries the user NAME before the email/phone). This is
 // load-bearing at cutover when two rows collide on an email: e.g. org hanzo holds
 // both `hanzo/z` (name z, email z@hanzo.ai) and `hanzo/z@hanzo.ai` (name
@@ -397,7 +434,7 @@ func (f loginForm) mint() Mint {
 // the NAME match (hanzo/z@hanzo.ai) exactly as legacy did — an email-first lookup
 // would silently authenticate the OTHER identity. The `@` gate stays only to skip
 // a pointless email lookup for a plain username.
-func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {
+func resolveInOrg(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {
 	if u, err := store.GetUserByName(ctx, db, org, identifier); err != nil || u != nil {
 		return u, err
 	}
