@@ -240,7 +240,11 @@ func PublishableKeyByAccessKey(ctx context.Context, db orm.DB, key string, now t
 	// secret key's public half at the ingest door and should present its pk-;
 	// "expired" means the right key simply ran out and must be re-minted. Collapsing
 	// them sent the second holder hunting for a configuration error they did not have.
-	if k.Scope != schema.KeyScopePublish {
+	// The CLASS, not the whole scope: a limited publishable key carries its reach
+	// in the same field ("publish,model:zen5"), and comparing the whole string
+	// would refuse it here — the browser key would resolve to no org and every
+	// beacon it sends would be dropped.
+	if schema.ClassOf(k.Scope) != schema.KeyScopePublish {
 		return nil, notFound(KeyNotPublishable)
 	}
 	if !keyLive(k, now) {
