@@ -457,3 +457,56 @@ func TestMintUserKey_retiresTheSharedRow(t *testing.T) {
 		t.Fatal("the org-wide secret still resolves after a mint")
 	}
 }
+
+// A LIMIT MUST NOT CHANGE WHAT KIND OF KEY YOU GET.
+//
+// Scope carries two facts in one field: the access CLASS ("publish") and the
+// REACH a credential is limited to ("model:zen5"). They were compared as one
+// string, so asking for a limited browser key minted a SECRET key instead —
+// under the secret row's name, with a confidential sk- half, returned to a
+// caller who asked for something safe to put in a browser bundle. Measured in
+// production: the limit was echoed back by the mint and stored nowhere.
+func TestALimitDoesNotChangeTheKeyClass(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	plain, err := MintUserKey(ctx, db, "hanzo", "alice", schema.KeyScopePublish)
+	if err != nil {
+		t.Fatalf("publishable: %v", err)
+	}
+	limited, err := MintUserKey(ctx, db, "hanzo", "alice", schema.KeyScopePublish+",model:zen5,project:acme")
+	if err != nil {
+		t.Fatalf("limited publishable: %v", err)
+	}
+
+	// BOTH are publishable: the pk- half is what the holder presents.
+	for name, got := range map[string]string{"unlimited": plain, "limited": limited} {
+		if !strings.HasPrefix(got, "pk-") {
+			t.Fatalf("%s publishable key presented %q — a limit must not turn a browser key into a secret one", name, got[:3])
+		}
+	}
+
+	// ONE row, because a limit is not a second key class. Re-minting replaces
+	// the credential in place, exactly as it does without a limit.
+	// ONE row, addressed by the name the publishable class gives it — a limit
+	// must not spill into a second row under the SECRET key's name, which is
+	// exactly what comparing the whole scope did.
+	k, err := orm.TypedQuery[schema.Key](db).Filter("Id=", "hanzo/"+PublishKeyName).First()
+	if err != nil || k == nil {
+		t.Fatalf("the limited key must live in the publishable row: %v", err)
+	}
+	if secret, _ := orm.TypedQuery[schema.Key](db).Filter("Id=", "hanzo/alice-"+UserKeyName).First(); secret != nil {
+		t.Fatalf("a limited publishable mint wrote a SECRET row too: %+v", secret.Name)
+	}
+	// The reach is STORED, which is what makes it enforceable downstream.
+	if k.Scope != schema.KeyScopePublish+",model:zen5,project:acme" {
+		t.Fatalf("scope = %q, want the class AND the reach", k.Scope)
+	}
+	// And the key stays write-only: a publishable row never holds a secret.
+	if k.AccessSecret != "" {
+		t.Fatal("a limited publishable key must still carry NO confidential half")
+	}
+	if schema.ClassOf(k.Scope) != schema.KeyScopePublish {
+		t.Fatalf("ClassOf(%q) must read the class", k.Scope)
+	}
+}
