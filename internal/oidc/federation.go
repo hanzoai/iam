@@ -456,8 +456,17 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 	}
 
 	// 1. Already linked by the provider's stable subject — the authoritative match
-	// for a returning federated user (immune to email churn/ambiguity).
+	// for a returning federated user (immune to email churn/ambiguity). In the
+	// application's org, then among the accounts the application registered, which
+	// is where they are once it has founded each of them an org: the subject is what
+	// says "this is the same person", and a reach that stops at the application's own
+	// org would answer "new" every time and hand them another account.
 	if u, err := store.GetUserByConnector(ctx, db, org, binding.field, id.subject); err != nil {
+		return nil, err
+	} else if u != nil {
+		return u, nil
+	}
+	if u, err := store.GetSignupByConnector(ctx, db, app.Name, binding.field, id.subject); err != nil {
 		return nil, err
 	} else if u != nil {
 		return u, nil
@@ -471,6 +480,15 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 		u, err := store.GetUserByEmail(ctx, db, org, id.email)
 		if err != nil {
 			return nil, err
+		}
+		// And among the accounts this application registered — the same reach as the
+		// subject above. Without it an address held by someone the application founded
+		// an org for reads as free, the branch below never runs, and they are given a
+		// second account on the address they already hold.
+		if u == nil {
+			if u, err = store.GetSignupByEmail(ctx, db, app.Name, id.email); err != nil {
+				return nil, err
+			}
 		}
 		if u != nil {
 			// The link requires proof on BOTH sides, and only one side was ever checked.
@@ -564,7 +582,24 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 		RegisterSource:    org + "/" + prov.Name,
 	}
 	*binding.ref(&u) = id.subject
-	return users.New(db).Create(ctx, &users.CreateInput{User: u})
+	created, err := users.New(db).Create(ctx, &users.CreateInput{User: u})
+	if err != nil || app.OrgChoiceMode != orgChoiceCreate {
+		return created, err
+	}
+	// A founding application registers the account in its own org and the account
+	// WORKS in an org of its own — the same statement the password door makes, and
+	// the same converge, so a person arrives in the same place whichever door they
+	// came through.
+	slug, err := charter(ctx, db, created)
+	if err != nil {
+		return nil, fmt.Errorf("federation: %w", err)
+	}
+	// Re-read rather than patch the row in hand: the converge moved the account and
+	// made it its org's admin, and the caller mints this person's first token from
+	// what comes back. A row carrying the pre-move owner would name an identity that
+	// no longer exists, and one carrying the pre-move role would state the wrong
+	// standing in their own org.
+	return store.GetUserByName(ctx, db, slug, created.Name)
 }
 
 // federationProvider resolves the app's ProviderItem named name to its shared

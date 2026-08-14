@@ -85,6 +85,58 @@ func TestGetSignupByEmailRefusesAnAmbiguousAddress(t *testing.T) {
 	}
 }
 
+// The subject is what says "this is the same person" on a return visit, so the
+// application has to find them wherever founding put them.
+func TestGetSignupByConnectorFindsAReturningPerson(t *testing.T) {
+	db := userDB(t)
+	addUser(t, db, &model.User{Owner: "ada", Name: "ada", Google: "idp-1", SignupApplication: "hanzo-cloud"})
+
+	got, err := store.GetSignupByConnector(context.Background(), db, "hanzo-cloud", "google", "idp-1")
+	if err != nil {
+		t.Fatalf("GetSignupByConnector: %v", err)
+	}
+	if got == nil || got.Name != "ada" {
+		t.Fatalf("got %v, want ada", got)
+	}
+}
+
+// Another application's link, an empty subject and an unnamed application all
+// resolve nobody: an empty filter would match every unlinked row in the store.
+func TestGetSignupByConnectorReadsOnlyItsOwnAccounts(t *testing.T) {
+	db := userDB(t)
+	addUser(t, db, &model.User{Owner: "bob", Name: "bob", Google: "idp-2", SignupApplication: "other"})
+	addUser(t, db, &model.User{Owner: "eve", Name: "eve", SignupApplication: "hanzo-cloud"})
+
+	for _, c := range []struct{ application, field, subject string }{
+		{"hanzo-cloud", "google", "idp-2"},
+		{"hanzo-cloud", "google", ""},
+		{"", "google", "idp-2"},
+		{"hanzo-cloud", "", "idp-2"},
+	} {
+		got, err := store.GetSignupByConnector(context.Background(), db, c.application, c.field, c.subject)
+		if err != nil {
+			t.Fatalf("GetSignupByConnector(%q,%q,%q): %v", c.application, c.field, c.subject, err)
+		}
+		if got != nil {
+			t.Fatalf("GetSignupByConnector(%q,%q,%q) resolved %s", c.application, c.field, c.subject, got.Name)
+		}
+	}
+}
+
+// A reserved owner is unreachable by subject too, for the reason it is by address.
+func TestGetSignupByConnectorNeverReachesAReservedOrg(t *testing.T) {
+	db := userDB(t)
+	addUser(t, db, &model.User{Owner: "admin", Name: "super", Google: "idp-1", SignupApplication: "hanzo-cloud"})
+
+	got, err := store.GetSignupByConnector(context.Background(), db, "hanzo-cloud", "google", "idp-1")
+	if err != nil {
+		t.Fatalf("GetSignupByConnector: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("resolved %s/%s — a reserved org", got.Owner, got.Name)
+	}
+}
+
 // A reserved owner is never reachable here. The admin org holds the SuperAdmin,
 // and nothing should file one of its rows under an application's signup — if
 // something does, this must not be the door that authenticates it.
