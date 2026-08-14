@@ -244,10 +244,17 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	// kind of token it holds. It has no user and therefore no membership set — nil
 	// orgs omits the claim, so an app token can never carry a tenancy it did not
 	// earn, and no display name means no display claim.
+	//
+	// The class is resolved HERE, from the grant, for the same reason the billing
+	// account is: this endpoint is the only place that knows the token was minted
+	// against a client secret with no person present. Said in the token, a consumer
+	// reads a fact; left unsaid, it guesses — and the guess available to it reports
+	// every shared app's machine as a person.
 	access, err := signer.Sign(app, Identity{
 		Id:      sub,
 		Name:    app.Name,
 		Billing: machineBillingAccount(app.Organization),
+		Type:    schema.Program,
 	}, scope, ttl, now)
 	if err != nil {
 		return mintError(c, err)
