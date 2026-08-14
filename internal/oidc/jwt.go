@@ -75,9 +75,24 @@ type Claims struct {
 	// Empty is meaningful, not missing: it means "no explicit entitlement", and
 	// the consumer falls back to the behaviour it already had.
 	BillingAccount string `json:"billing_account,omitempty"`
-	Nonce          string `json:"nonce,omitempty"`
-	Azp            string `json:"azp,omitempty"`
-	TokenType      string `json:"tokenType,omitempty"`
+	// Type is the principal's identity CLASS — schema.Program for a token
+	// the client_credentials grant minted, absent for a person. It is the same fact
+	// billing_account already states, said as identity rather than as money, and
+	// it is stated for the same reason: IAM resolves it from the GRANT SHAPE, so
+	// only IAM can say it and a caller cannot forge it.
+	//
+	// A consumer needs both because they answer different questions. Money asks
+	// which ledger (the org pool); attribution asks whose spend this is, and a
+	// program's spend is nobody's — it belongs in an agent column with the person
+	// column left empty. Without this claim a consumer had to INFER the class,
+	// and the available inference (the token's audience equals its name) is true
+	// only while the app is single-tenant: audienceFor qualifies a SHARED app's
+	// audience with its org, so the inference silently reports every shared app's
+	// machine as a person.
+	Type      string `json:"type,omitempty"`
+	Nonce     string `json:"nonce,omitempty"`
+	Azp       string `json:"azp,omitempty"`
+	TokenType string `json:"tokenType,omitempty"`
 	// Orgs is the membership set — the tenancy the identity may act in, home org
 	// first — a resource server reads to authorize an org-switch (X-Org-Id ∈ orgs)
 	// with no round-trip. omitempty ⇒ a nil set omits the claim entirely (a machine
@@ -119,6 +134,7 @@ type Identity struct {
 	Name    string // the IAM USERNAME, the `<name>` half of `<owner>/<name>`
 	Display string // the human-facing name; never an address
 	Billing string
+	Type    string // the identity CLASS; empty for a person (schema.Program)
 	Orgs    []schema.OrgRef
 }
 
@@ -213,6 +229,7 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		PreferredUsername: id.Name,
 		Display:           id.Display,
 		BillingAccount:    id.Billing,
+		Type:              id.Type,
 		Azp:               azp,
 		TokenType:         kind,
 		Orgs:              id.Orgs,

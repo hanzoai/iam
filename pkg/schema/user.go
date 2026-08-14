@@ -352,9 +352,20 @@ type ConsentRecord struct {
 // ServiceAccount is the User.Type IAM writes for a MACHINE identity — a
 // credential with no person behind it. IAM is the authority on what its own rows
 // are, so the predicate reading this field lives beside the field rather than in
-// a downstream library's opinion of the string. "application" is the sibling
+// a downstream library's opinion of the string. Program below is the sibling
 // shape other Hanzo services stamp for the same idea, and Machine accepts both.
 const ServiceAccount = "service-account"
+
+// Program is the other word, and it is the one a TOKEN carries: the class of a
+// machine with no user row, where the registration itself IS the principal.
+//
+// Its wire spelling is the older of the two, and that is deliberate. A row is read
+// by IAM, which knows both words; a token is read by every service that validates
+// one, each pinned to its own copy of the predicate — and an earlier account
+// library matches ONLY this spelling. Stating the newer word in a token would read
+// as a person wherever the reader had not caught up, which is precisely the
+// failure the claim exists to end. The wire takes the word everyone knows.
+const Program = "application"
 
 // Machine reports whether this row is a machine identity rather than a person.
 //
@@ -366,7 +377,7 @@ func (u *User) Machine() bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(u.Type)) {
-	case ServiceAccount, "application":
+	case ServiceAccount, Program:
 		return true
 	}
 	return false
