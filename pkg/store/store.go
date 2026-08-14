@@ -929,3 +929,30 @@ func GetUserByConnector(_ context.Context, db orm.DB, owner, field, subject stri
 	}
 	return u, err
 }
+
+// GetSignupByConnector is [GetUserByConnector] over the accounts an APPLICATION
+// registered, for the same reason [GetSignupByEmail] exists: an application that
+// founds an org per person has its accounts spread across the orgs it founded, so
+// its own org is not where a returning person is.
+//
+// The provider's subject is the authoritative match for a returning federated
+// user — immune to email churn — so this is the reach that has to work, or a
+// person who signed in with the same social identity yesterday is treated as new
+// and given a second account today.
+func GetSignupByConnector(_ context.Context, db orm.DB, application, field, subject string) (*schema.User, error) {
+	if application == "" || field == "" || subject == "" {
+		return nil, nil
+	}
+	u, err := orm.TypedQuery[schema.User](db).
+		Filter("SignupApplication=", application).Filter(field+"=", subject).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	if err != nil || u == nil {
+		return nil, err
+	}
+	if IsReservedOrg(u.Owner) {
+		return nil, nil
+	}
+	return u, nil
+}
