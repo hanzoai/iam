@@ -3,7 +3,11 @@
 
 package schema
 
-import "github.com/hanzoai/orm"
+import (
+	"strings"
+
+	"github.com/hanzoai/orm"
+)
 
 // Key is an API access credential (v1 the legacy surface `key`, v2 kind "keys").
 //
@@ -73,3 +77,19 @@ type Key struct {
 // resolver (store.PublishableKeyByAccessKey), and the ingest door (compat resolve-key)
 // agree on. The empty Scope is the default full/secret key.
 const KeyScopePublish = "publish"
+
+// ClassOf reads the ACCESS CLASS out of a Scope, ignoring any reach beside it.
+//
+// Scope carries two independent facts in one comma-separated field: the class
+// (KeyScopePublish, or empty for a confidential key) and the REACH a credential
+// is limited to ("model:zen5"). Everything that decides what KIND of key this is
+// asks this; everything that enforces a limit reads the rest.
+//
+// They were compared as one string, so a limited publishable key was not equal
+// to KeyScopePublish — it minted a SECRET key under the secret row's name, and
+// the resolver that keeps a pk- write-only stopped recognising it. The class is
+// the first entry because that is the half this package's readers act on.
+func ClassOf(scope string) string {
+	class, _, _ := strings.Cut(scope, ",")
+	return strings.TrimSpace(class)
+}
