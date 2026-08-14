@@ -194,13 +194,13 @@ func TestRevokeUserKey_EndStateAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	if err := RevokeUserKey(ctx, db, "acme", ""); err != nil {
+	if err := RevokeUserKey(ctx, db, "acme", "ada", ""); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First(); k != nil {
 		t.Fatal("secret still resolves after revoke")
 	}
-	if err := RevokeUserKey(ctx, db, "acme", ""); err != nil {
+	if err := RevokeUserKey(ctx, db, "acme", "ada", ""); err != nil {
 		t.Fatalf("revoke on an already-revoked user must succeed, got %v", err)
 	}
 }
@@ -340,7 +340,7 @@ func TestMintUserKey_ScopesAreIndependentCredentials(t *testing.T) {
 		t.Fatal("rotating the publishable key revoked the secret key")
 	}
 	// …and revoking it likewise.
-	if err := RevokeUserKey(ctx, db, "acme", schema.KeyScopePublish); err != nil {
+	if err := RevokeUserKey(ctx, db, "acme", "ada", schema.KeyScopePublish); err != nil {
 		t.Fatalf("revoke publishable: %v", err)
 	}
 	if _, err := orm.Get[schema.Key](db, "acme/"+PublishKeyName); err == nil {
@@ -390,5 +390,70 @@ func TestKeys_ReadsMaskTheSecretAndKeepThePublishableHalf(t *testing.T) {
 	stored, err := orm.Get[schema.Key](db, "acme/svc")
 	if err != nil || stored.AccessSecret != made.AccessSecret {
 		t.Fatal("masking a read mutated the stored credential")
+	}
+}
+
+// Two members of one org hold two secret keys. The row used to be named by scope
+// alone, so (owner, scope) identified a session-equivalent credential and an org
+// had exactly ONE secret key row: the second member to mint overwrote the first
+// member's key in place. Measured against production before the fix — user B's key
+// authenticated, user A minted, and B's next call came back "not recognized".
+func TestMintUserKey_oneMemberDoesNotRevokeAnother(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	ada, err := MintUserKey(ctx, db, "acme", "ada", "")
+	if err != nil {
+		t.Fatalf("mint ada: %v", err)
+	}
+	bob, err := MintUserKey(ctx, db, "acme", "bob", "")
+	if err != nil {
+		t.Fatalf("mint bob: %v", err)
+	}
+	if ada == bob {
+		t.Fatal("two members were handed the same secret")
+	}
+	for who, secret := range map[string]string{"ada": ada, "bob": bob} {
+		k, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First()
+		if err != nil || k == nil {
+			t.Fatalf("%s's secret stopped resolving once the other member minted", who)
+		}
+		if k.User != who {
+			t.Fatalf("%s's secret resolves to %q", who, k.User)
+		}
+	}
+
+	// …and one member's revoke reaches only their own row.
+	if err := RevokeUserKey(ctx, db, "acme", "ada", ""); err != nil {
+		t.Fatalf("revoke ada: %v", err)
+	}
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", bob).First(); k == nil {
+		t.Fatal("revoking ada's key revoked bob's")
+	}
+}
+
+// The org-wide secret row an older build left behind still authenticates, as
+// whichever member minted last — a live credential nobody can see in their own
+// listing or revoke from their own account. Minting retires it.
+func TestMintUserKey_retiresTheSharedRow(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	shared := orm.New[schema.Key](db)
+	shared.SetId("acme/" + UserKeyName)
+	shared.Owner, shared.Name = "acme", UserKeyName
+	shared.Type, shared.User = "User", "ada"
+	shared.AccessKey, shared.AccessSecret = Mint("pk", ""), Mint("sk", "")
+	shared.State = "Active"
+	if err := shared.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed shared row: %v", err)
+	}
+	stale := shared.AccessSecret
+
+	if _, err := MintUserKey(ctx, db, "acme", "bob", ""); err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", stale).First(); k != nil {
+		t.Fatal("the org-wide secret still resolves after a mint")
 	}
 }
