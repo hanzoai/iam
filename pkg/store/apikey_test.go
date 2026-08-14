@@ -321,3 +321,74 @@ func TestReason_StoreFaultIsNotAKeyFailure(t *testing.T) {
 		t.Fatalf("Reason(orm.ErrNotFound) = %q, want %q", r, KeyUnknown)
 	}
 }
+
+// A KEY'S OWN LIMIT REACHES THE RESOLVER.
+//
+// The resolver reads the Key row to find the user and used to discard everything
+// else on it. So a resource server could learn WHO a key speaks for and never how
+// much of that authority the key carries — which made a per-key limit
+// unenforceable no matter what was stored, and is why the Scope column had one
+// value in the whole estate.
+//
+// One lookup answers both, because it is one row: a second call would be a second
+// read and a second chance for the two halves to disagree about the same key.
+func TestUserAndScopeByAccessKey_CarriesTheKeysOwnLimit(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "")
+	seedScopedKey(t, db, "hanzo", "limited", "hanzo/alice", "pk-live-L", "sk-live-L", "model:zen5,project:acme")
+	seedKey(t, db, "hanzo", "unlimited", "hanzo/alice", "pk-live-U", "sk-live-U")
+
+	u, scope, err := UserAndScopeByAccessKey(ctx, db, "sk-live-L")
+	if err != nil {
+		t.Fatalf("limited key: %v", err)
+	}
+	if u == nil || u.Name != "alice" {
+		t.Fatalf("limited key resolved %+v, want hanzo/alice", u)
+	}
+	if scope != "model:zen5,project:acme" {
+		t.Fatalf("scope = %q, want the key row's own limit", scope)
+	}
+
+	// A key with no limit answers "" — unrestricted, which is every key minted
+	// before limits existed. Empty must never read as "denied everything".
+	if _, scope, err = UserAndScopeByAccessKey(ctx, db, "sk-live-U"); err != nil {
+		t.Fatalf("unlimited key: %v", err)
+	}
+	if scope != "" {
+		t.Fatalf("an unlimited key must answer an empty scope, got %q", scope)
+	}
+
+	// Two keys of ONE user carry different limits, which is the whole point: the
+	// limit is a property of the credential, not of the person.
+	if _, s1, _ := UserAndScopeByAccessKey(ctx, db, "sk-live-L"); s1 == "" {
+		t.Fatal("one user's two keys must be able to differ")
+	}
+
+	// The refusals still refuse, and still say nothing about a scope.
+	if _, scope, err := UserAndScopeByAccessKey(ctx, db, "pk-live-L"); err == nil || scope != "" {
+		t.Fatal("a publishable key must resolve to no principal and no scope")
+	}
+	if _, scope, err := UserAndScopeByAccessKey(ctx, db, "sk-live-NOPE"); err == nil || scope != "" {
+		t.Fatal("an unknown key must fail closed with no scope")
+	}
+
+	// UserByAccessKey is the same lookup with the scope dropped, so the two can
+	// never disagree about who a key speaks for.
+	plain, err := UserByAccessKey(ctx, db, "sk-live-L")
+	if err != nil || plain == nil || plain.Name != u.Name {
+		t.Fatalf("the narrow door must answer the same user: %+v %v", plain, err)
+	}
+}
+
+func seedScopedKey(t *testing.T, db orm.DB, owner, name, user, pk, sk, scope string) {
+	t.Helper()
+	k := orm.New[schema.Key](db)
+	k.Owner, k.Name, k.User = owner, name, user
+	k.AccessKey, k.AccessSecret, k.Scope = pk, sk, scope
+	k.SetId(owner + "/" + name)
+	if err := k.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed scoped key: %v", err)
+	}
+}

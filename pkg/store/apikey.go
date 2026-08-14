@@ -122,18 +122,34 @@ func notFound(r KeyFailure) error { return &KeyError{Reason: r} }
 // which does not consult keyLive. Revocation is deletion, so for a secret key "gone"
 // is the only termination and KeyUnknown is the honest answer.
 func UserByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, error) {
+	u, _, err := UserAndScopeByAccessKey(ctx, db, key)
+	return u, err
+}
+
+// UserAndScopeByAccessKey is UserByAccessKey plus the key row's own Scope — what
+// that CREDENTIAL may reach, as distinct from what its holder may.
+//
+// One lookup, because it is one row: the resolver already reads the Key to find
+// the user, and dropping the scope on the way out is what made a per-key limit
+// unenforceable — a resource server could learn WHO a key speaks for and never
+// how much of that authority the key carries. A second call would be a second
+// read of the same row and a second chance for the two answers to disagree.
+//
+// Scope is "" for a key that names no limit, which is every key minted before
+// limits existed and means unrestricted.
+func UserAndScopeByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, string, error) {
 	key = strings.TrimSpace(key)
 	switch {
 	case strings.HasPrefix(key, "sk-"):
-		return userOwningKey(ctx, db, "AccessSecret", key)
+		return userAndScopeOwningKey(ctx, db, "AccessSecret", key)
 	case strings.HasPrefix(key, "pk-"):
 		// WRITE-ONLY and never a principal (see the package note above). Fail closed,
 		// and say so as the wrong door: this holder has a working key, just not here.
-		return nil, notFound(KeyWrongDoor)
+		return nil, "", notFound(KeyWrongDoor)
 	default:
 		// Not a shape this estate issues, so no live credential can answer to it.
 		// Fail closed, and tell the holder the one thing that helps: mint a new key.
-		return nil, notFound(KeyUnknown)
+		return nil, "", notFound(KeyUnknown)
 	}
 }
 
@@ -154,13 +170,13 @@ func UserByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, 
 // only ever speak for a user in the org that owns the key, and a non-super can never
 // own a key under a reserved org (authorize gates keys writes), so no sk- key can
 // resolve to a SuperAdmin or cross-tenant identity.
-func userOwningKey(ctx context.Context, db orm.DB, field, val string) (*schema.User, error) {
+func userAndScopeOwningKey(ctx context.Context, db orm.DB, field, val string) (*schema.User, string, error) {
 	k, err := orm.TypedQuery[schema.Key](db).Filter(field+"=", val).First()
 	if err == orm.ErrNotFound {
-		return nil, notFound(KeyUnknown)
+		return nil, "", notFound(KeyUnknown)
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	owner, name := keyUserRef(k)
 	// Same-tenant pin: the resolved user MUST live in the key row's own org. A
@@ -168,16 +184,16 @@ func userOwningKey(ctx context.Context, db orm.DB, field, val string) (*schema.U
 	// and say WHICH refusal this was: a cross-tenant reference is an attack signal
 	// and must not read to an operator as a mistyped key.
 	if owner == "" || name == "" || owner != k.Owner {
-		return nil, notFound(KeyForeignUser)
+		return nil, "", notFound(KeyForeignUser)
 	}
 	u, err := GetUserByName(ctx, db, owner, name)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if u == nil {
-		return nil, notFound(KeyDanglingUser)
+		return nil, "", notFound(KeyDanglingUser)
 	}
-	return u, nil
+	return u, k.Scope, nil
 }
 
 // keyUserRef extracts the (owner, name) of the user a schema.Key belongs to. The
