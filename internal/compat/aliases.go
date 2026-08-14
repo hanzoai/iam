@@ -25,6 +25,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -318,7 +319,7 @@ func resolveUserByAccessKey(c *zip.Ctx, db orm.DB, key string) error {
 	if !ok || p.App == "" || !authz.Allowed(p, authz.CapKeyResolve) {
 		return httpx.Err(c, unauthorized)
 	}
-	u, scope, err := store.UserAndScopeByAccessKey(ctx, db, key)
+	u, scope, err := store.UserAndScopeByAccessKey(ctx, db, key, time.Now())
 	if errors.Is(err, orm.ErrNotFound) {
 		return httpx.ErrCode(c, "the entity does not exist", string(store.Reason(err)))
 	}

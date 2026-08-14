@@ -260,7 +260,7 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 	if strings.TrimSpace(key) == "" {
 		return nil
 	}
-	u, err := store.UserByAccessKey(ctx, h.db, key)
+	u, err := store.UserByAccessKey(ctx, h.db, key, time.Now())
 	if err != nil || u == nil {
 		return nil
 	}

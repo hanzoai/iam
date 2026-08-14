@@ -14,6 +14,11 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
+// now is the instant every test in this file resolves a key at. Both key doors take
+// the instant as a parameter, so a lifetime test moves the EXPIRY rather than the
+// clock and the suite has no wall-clock dependence at all.
+var now = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
 // seedKeyUser creates the user a resolved key belongs to.
 func seedKeyUser(t *testing.T, db orm.DB, owner, name, email, hk string) *schema.User {
 	t.Helper()
@@ -53,7 +58,7 @@ func TestUserByAccessKey_ResolvesSecretsRefusesPublishable(t *testing.T) {
 	seedKey(t, db, "hanzo", "alice-key", "hanzo/alice", "pk-live-PROJ", "sk-live-SECRET")
 
 	// The SECRET shape resolves to the owning user.
-	got, err := UserByAccessKey(ctx, db, "sk-live-SECRET")
+	got, err := UserByAccessKey(ctx, db, "sk-live-SECRET", now)
 	if err != nil {
 		t.Fatalf("sk confidential half: %v", err)
 	}
@@ -63,7 +68,7 @@ func TestUserByAccessKey_ResolvesSecretsRefusesPublishable(t *testing.T) {
 
 	// The PUBLIC pk- publishable half — even though its Key names a real owning user
 	// in the key's own tenant — resolves to NOBODY. It is write-only, never a principal.
-	if got, err := UserByAccessKey(ctx, db, "pk-live-PROJ"); !errors.Is(err, orm.ErrNotFound) || got != nil {
+	if got, err := UserByAccessKey(ctx, db, "pk-live-PROJ", now); !errors.Is(err, orm.ErrNotFound) || got != nil {
 		t.Fatalf("publishable pk- resolved %+v (err=%v), want (nil, ErrNotFound) — a pk- must never authenticate a read", got, err)
 	}
 }
@@ -80,7 +85,7 @@ func TestUserByAccessKey_UserRowValueIsNotACredential(t *testing.T) {
 	ctx := context.Background()
 	seedKeyUser(t, db, "hanzo", "carol", "carol@hanzo.ai", "hk-live-CAROLROW")
 
-	got, err := UserByAccessKey(ctx, db, "hk-live-CAROLROW")
+	got, err := UserByAccessKey(ctx, db, "hk-live-CAROLROW", now)
 	if !errors.Is(err, orm.ErrNotFound) || got != nil {
 		t.Fatalf("a user-row value authenticated %+v (err=%v) — schema.User.AccessKey must never be a credential", got, err)
 	}
@@ -98,12 +103,12 @@ func TestUserByAccessKey_BareUserRefWithinTenant(t *testing.T) {
 	seedKeyUser(t, db, "hanzo", "bob", "bob@hanzo.ai", "")
 	seedKey(t, db, "hanzo", "bob-key", "bob", "pk-live-BOB", "sk-live-BOB")
 
-	got, err := UserByAccessKey(ctx, db, "sk-live-BOB")
+	got, err := UserByAccessKey(ctx, db, "sk-live-BOB", now)
 	if err != nil || got == nil || got.Owner != "hanzo" || got.Name != "bob" {
 		t.Fatalf("bare-user sk resolved %+v err=%v, want hanzo/bob", got, err)
 	}
 	// The pk- half of the same key resolves to nobody (write-only).
-	if got, err := UserByAccessKey(ctx, db, "pk-live-BOB"); !errors.Is(err, orm.ErrNotFound) || got != nil {
+	if got, err := UserByAccessKey(ctx, db, "pk-live-BOB", now); !errors.Is(err, orm.ErrNotFound) || got != nil {
 		t.Fatalf("bare-user pk- resolved %+v err=%v, want (nil, ErrNotFound)", got, err)
 	}
 }
@@ -133,7 +138,7 @@ func TestUserByAccessKey_RejectsCrossTenantUserRef(t *testing.T) {
 		"pk-live-FORGESUPER", "sk-live-FORGESUPER",
 		"pk-live-FORGEVICTIM", "sk-live-FORGEVICTIM",
 	} {
-		got, err := UserByAccessKey(ctx, db, key)
+		got, err := UserByAccessKey(ctx, db, key, now)
 		if !errors.Is(err, orm.ErrNotFound) || got != nil {
 			t.Fatalf("FORGERY: key %q resolved to %+v (err=%v), want (nil, ErrNotFound)", key, got, err)
 		}
@@ -162,7 +167,7 @@ func TestUserByAccessKey_FailsClosed(t *testing.T) {
 		{"user-less pk resolves nobody", "pk-live-ORGONLY"},
 		{"user-less sk resolves nobody", "sk-live-ORGONLY"},
 	} {
-		got, err := UserByAccessKey(ctx, db, tc.key)
+		got, err := UserByAccessKey(ctx, db, tc.key, now)
 		if !errors.Is(err, orm.ErrNotFound) || got != nil {
 			t.Fatalf("%s: got (%+v, %v), want (nil, ErrNotFound)", tc.name, got, err)
 		}
@@ -192,7 +197,6 @@ func seedPublishKey(t *testing.T, db orm.DB, owner, name, pk, expire string) {
 func TestPublishableKeyByAccessKey(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	seedPublishKey(t, db, "hanzo", "site", "pk-live-PUBLISH", "")                           // never expires
 	seedPublishKey(t, db, "hanzo", "site-exp", "pk-live-EXPIRED", "2020-01-01T00:00:00Z")   // long expired
@@ -259,7 +263,7 @@ func TestUserByAccessKey_ReasonsAreDistinguishable(t *testing.T) {
 		{"user-less key row cannot name a principal", "sk-live-ORGONLY", KeyForeignUser},
 		{"key naming a nonexistent same-tenant user", "sk-live-GHOST", KeyDanglingUser},
 	} {
-		got, err := UserByAccessKey(ctx, db, tc.key)
+		got, err := UserByAccessKey(ctx, db, tc.key, now)
 		if got != nil {
 			t.Fatalf("%s: resolved %+v, want nil — every case must still fail closed", tc.name, got)
 		}
@@ -278,7 +282,6 @@ func TestUserByAccessKey_ReasonsAreDistinguishable(t *testing.T) {
 func TestPublishableKeyByAccessKey_ReasonsAreDistinguishable(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	seedPublishKey(t, db, "hanzo", "site-exp", "pk-live-EXPIRED", "2020-01-01T00:00:00Z")
 	seedKey(t, db, "hanzo", "secret", "hanzo/alice", "pk-live-SECRETHALF", "sk-live-x")
@@ -340,7 +343,7 @@ func TestUserAndScopeByAccessKey_CarriesTheKeysOwnLimit(t *testing.T) {
 	seedScopedKey(t, db, "hanzo", "limited", "hanzo/alice", "pk-live-L", "sk-live-L", "model:zen5,project:acme")
 	seedKey(t, db, "hanzo", "unlimited", "hanzo/alice", "pk-live-U", "sk-live-U")
 
-	u, scope, err := UserAndScopeByAccessKey(ctx, db, "sk-live-L")
+	u, scope, err := UserAndScopeByAccessKey(ctx, db, "sk-live-L", now)
 	if err != nil {
 		t.Fatalf("limited key: %v", err)
 	}
@@ -353,7 +356,7 @@ func TestUserAndScopeByAccessKey_CarriesTheKeysOwnLimit(t *testing.T) {
 
 	// A key with no limit answers "" — unrestricted, which is every key minted
 	// before limits existed. Empty must never read as "denied everything".
-	if _, scope, err = UserAndScopeByAccessKey(ctx, db, "sk-live-U"); err != nil {
+	if _, scope, err = UserAndScopeByAccessKey(ctx, db, "sk-live-U", now); err != nil {
 		t.Fatalf("unlimited key: %v", err)
 	}
 	if scope != "" {
@@ -362,21 +365,21 @@ func TestUserAndScopeByAccessKey_CarriesTheKeysOwnLimit(t *testing.T) {
 
 	// Two keys of ONE user carry different limits, which is the whole point: the
 	// limit is a property of the credential, not of the person.
-	if _, s1, _ := UserAndScopeByAccessKey(ctx, db, "sk-live-L"); s1 == "" {
+	if _, s1, _ := UserAndScopeByAccessKey(ctx, db, "sk-live-L", now); s1 == "" {
 		t.Fatal("one user's two keys must be able to differ")
 	}
 
 	// The refusals still refuse, and still say nothing about a scope.
-	if _, scope, err := UserAndScopeByAccessKey(ctx, db, "pk-live-L"); err == nil || scope != "" {
+	if _, scope, err := UserAndScopeByAccessKey(ctx, db, "pk-live-L", now); err == nil || scope != "" {
 		t.Fatal("a publishable key must resolve to no principal and no scope")
 	}
-	if _, scope, err := UserAndScopeByAccessKey(ctx, db, "sk-live-NOPE"); err == nil || scope != "" {
+	if _, scope, err := UserAndScopeByAccessKey(ctx, db, "sk-live-NOPE", now); err == nil || scope != "" {
 		t.Fatal("an unknown key must fail closed with no scope")
 	}
 
 	// UserByAccessKey is the same lookup with the scope dropped, so the two can
 	// never disagree about who a key speaks for.
-	plain, err := UserByAccessKey(ctx, db, "sk-live-L")
+	plain, err := UserByAccessKey(ctx, db, "sk-live-L", now)
 	if err != nil || plain == nil || plain.Name != u.Name {
 		t.Fatalf("the narrow door must answer the same user: %+v %v", plain, err)
 	}
@@ -390,5 +393,103 @@ func seedScopedKey(t *testing.T, db orm.DB, owner, name, user, pk, sk, scope str
 	k.SetId(owner + "/" + name)
 	if err := k.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed scoped key: %v", err)
+	}
+}
+
+// ref names a resolved user as owner/name — the whole of what a refusal test needs
+// to say. A user record carries credential material, so an auth test states WHO it
+// resolved and never prints the row.
+func ref(u *schema.User) string {
+	if u == nil {
+		return "nobody"
+	}
+	return u.Owner + "/" + u.Name
+}
+
+// seedSecretKeyExpiring creates an sk- credential with an explicit RFC3339 expiry
+// ("" for never), so a lifetime test states the expiry rather than waiting for one.
+func seedSecretKeyExpiring(t *testing.T, db orm.DB, owner, name, user, sk, expire string) {
+	t.Helper()
+	k := orm.New[schema.Key](db)
+	k.Owner, k.Name, k.User = owner, name, user
+	k.AccessSecret = sk
+	k.ExpireTime = expire
+	k.SetId(owner + "/" + name)
+	if err := k.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed secret key: %v", err)
+	}
+}
+
+// FORBIDDING A USER ENDS THEIR SECRET KEY. A principal's standing is one fact, so a
+// user the JWT door refuses (internal/authz reads IsForbidden/IsDeleted off the
+// loaded record) is refused at the key door too. Both terminations are covered.
+//
+// Each case carries its own KNOWN-POSITIVE: the identical key resolves while the
+// user is in good standing and stops the moment the bit is set. Without that control
+// a refusal proves nothing — a fixture that never resolved at all would look exactly
+// like a working gate.
+func TestUserByAccessKey_ForbiddenUserCannotAuthenticate(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		set  func(u *schema.User)
+	}{
+		{"forbidden", func(u *schema.User) { u.IsForbidden = true }},
+		{"deleted", func(u *schema.User) { u.IsDeleted = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := memDB(t)
+			ctx := context.Background()
+			u := seedKeyUser(t, db, "hanzo", "dave", "dave@hanzo.ai", "")
+			seedKey(t, db, "hanzo", "dave-key", "hanzo/dave", "pk-live-DAVE", "sk-live-DAVE")
+
+			got, err := UserByAccessKey(ctx, db, "sk-live-DAVE", now)
+			if err != nil || got == nil || got.Name != "dave" {
+				t.Fatalf("control: live key resolved (%s, %v), want hanzo/dave — the fixture "+
+					"must work before its refusal means anything", ref(got), err)
+			}
+
+			tc.set(u)
+			if err := u.UpdateCtx(ctx); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err = UserByAccessKey(ctx, db, "sk-live-DAVE", now)
+			if !errors.Is(err, orm.ErrNotFound) || got != nil {
+				t.Fatalf("a %s user authenticated as %s (err=%v) — the key must stop with the principal",
+					tc.name, ref(got), err)
+			}
+			if r := Reason(err); r != KeyForbiddenUser {
+				t.Errorf("reason = %q, want %q — the credential is intact, the principal is not", r, KeyForbiddenUser)
+			}
+		})
+	}
+}
+
+// AN EXPIRY THAT IS SET IS AN EXPIRY THAT IS HONORED, on the secret door exactly as
+// on the publishable one — one keyLive, one meaning.
+//
+// The two cases are the control pair: the same shape, the same instant, an expiry on
+// either side of it. A gate that refused both would fail the first, so this cannot
+// pass by refusing everything.
+func TestUserByAccessKey_ExpiredSecretKeyIsRefused(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedKeyUser(t, db, "hanzo", "erin", "erin@hanzo.ai", "")
+	seedSecretKeyExpiring(t, db, "hanzo", "erin-live", "hanzo/erin", "sk-live-ERINLIVE",
+		now.Add(time.Hour).Format(time.RFC3339))
+	seedSecretKeyExpiring(t, db, "hanzo", "erin-past", "hanzo/erin", "sk-live-ERINPAST",
+		now.Add(-time.Hour).Format(time.RFC3339))
+
+	got, err := UserByAccessKey(ctx, db, "sk-live-ERINLIVE", now)
+	if err != nil || got == nil || got.Name != "erin" {
+		t.Fatalf("control: unexpired key resolved (%s, %v), want hanzo/erin", ref(got), err)
+	}
+
+	got, err = UserByAccessKey(ctx, db, "sk-live-ERINPAST", now)
+	if !errors.Is(err, orm.ErrNotFound) || got != nil {
+		t.Fatalf("an expired secret key authenticated as %s (err=%v)", ref(got), err)
+	}
+	if r := Reason(err); r != KeyExpired {
+		t.Errorf("reason = %q, want %q — the holder must be told to re-mint", r, KeyExpired)
 	}
 }
