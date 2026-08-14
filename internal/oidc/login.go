@@ -426,8 +426,8 @@ func resolveLoginUser(ctx context.Context, db orm.DB, app *schema.Application, o
 }
 
 // resolveInOrg resolves the login identifier within one org, resolving NAME FIRST
-// and email second — legacy's own precedence
-// (object.GetUserByFields tries the user NAME before the email/phone). This is
+// and email second — legacy's own precedence (object.GetUserByFields tries the
+// user NAME before the email/phone). This is
 // load-bearing at cutover when two rows collide on an email: e.g. org hanzo holds
 // both `hanzo/z` (name z, email z@hanzo.ai) and `hanzo/z@hanzo.ai` (name
 // z@hanzo.ai, same email). The ROPC/login username "z@hanzo.ai" must resolve to
