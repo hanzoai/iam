@@ -33,7 +33,7 @@ func init() {
 		},
 	})
 	zip.Describe("GET /v1/iam/users/get", zip.Doc{
-		Description: "Returns one person in your organization, by the organization they belong\nto and their username. Passwords, API secrets and MFA material are stripped\nfrom the response.",
+		Description: "Returns one person in your organization, addressed by their username or by\ntheir email address. Passwords, API secrets and MFA material are stripped from\nthe response.\n\nAn address that names two accounts names none: the read refuses rather than\npicking one, and says so instead of reporting \"no such user\". Handing back an\narbitrary one of two rows is how somebody gets added to a team under a\ncolleague's identity.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
 			"Model[github.com/hanzoai/iam/pkg/schema.Role].id":       "Persisted fields",

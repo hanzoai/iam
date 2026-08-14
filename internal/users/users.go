@@ -56,6 +56,22 @@ type Ref struct {
 	Name  string `json:"name" validate:"required"`
 }
 
+// Lookup addresses one user for READING: always within one organization, by the
+// username OR by the email address. The two are different handles on the same
+// person and a caller holds whichever it was given — a console holds the
+// username, and everything that adds somebody to a team holds the address they
+// were typed in as.
+//
+// Reading is the only operation that takes an address. A write still takes the
+// natural key (Ref), because an address is a mutable attribute and resolving one
+// to decide WHO GETS WRITTEN puts a rename between the authorization and the
+// write.
+type Lookup struct {
+	Owner string `json:"owner" validate:"required"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
 // CreateInput carries a full user profile plus a write-only plaintext password.
 // Password is never persisted — it is hashed into schema.User.PasswordHash.
 type CreateInput struct {
@@ -211,18 +227,50 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	return u.Mask(), nil
 }
 
-// Get returns one person in your organization, by the organization they belong
-// to and their username. Passwords, API secrets and MFA material are stripped
-// from the response.
-func (a *API) Get(ctx context.Context, in *Ref) (*schema.User, error) {
-	u, err := a.lookup(ctx, in.Owner, in.Name)
-	if err != nil {
-		return nil, zip.ErrInternal(err.Error())
+// Get returns one person in your organization, addressed by their username or by
+// their email address. Passwords, API secrets and MFA material are stripped from
+// the response.
+//
+// An address that names two accounts names none: the read refuses rather than
+// picking one, and says so instead of reporting "no such user". Handing back an
+// arbitrary one of two rows is how somebody gets added to a team under a
+// colleague's identity.
+func (a *API) Get(ctx context.Context, in *Lookup) (*schema.User, error) {
+	name, email := strings.TrimSpace(in.Name), strings.TrimSpace(in.Email)
+	if (name == "") == (email == "") {
+		return nil, zip.ErrBadRequest("exactly one of name or email is required")
 	}
-	if u == nil {
-		return nil, zip.ErrNotFound("user " + in.Owner + "/" + in.Name + " not found")
+	u, err := a.resolve(ctx, in.Owner, name, email)
+	switch {
+	case err == store.ErrEmailAmbiguous:
+		return nil, zip.ErrConflict(err.Error())
+	case err != nil:
+		return nil, zip.ErrInternal(err.Error())
+	case u == nil:
+		return nil, zip.ErrNotFound("user " + in.Owner + "/" + firstOf(name, email) + " not found")
 	}
 	return u.Mask(), nil
+}
+
+// resolve reads the one user an address names within owner. Both arms go through
+// store, which owns what an address IS — the username rule (case-folding, the
+// legacy mixed-case fallback) and the email rule (normalization, and failing
+// closed when one address names two rows). Restating either here would make this
+// surface disagree with the one login authenticates against.
+func (a *API) resolve(ctx context.Context, owner, name, email string) (*schema.User, error) {
+	if name != "" {
+		return a.lookup(ctx, owner, name)
+	}
+	return store.GetUserByEmail(ctx, a.db, owner, email)
+}
+
+// firstOf returns the first non-empty of two strings — which of the two handles
+// the caller actually used, for the not-found message.
+func firstOf(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // List returns a page of the people in your organization, with the total so you

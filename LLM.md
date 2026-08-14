@@ -486,6 +486,77 @@ stop reading storage `Owner` as membership (`MemberOrgRefs`), with
 `BackfillMemberships` already writing the explicit rows that would replace it.
 Decide, then do it in ONE place.
 
+## Onboarding an ORGANISATION — what works, and the three places it stops
+
+Founding the org works and is the good part. `POST /v1/iam/onboard` (session) and
+`POST /v1/iam/admin/provision` (service token) both drive one converge: org row +
+founder moved in as its admin + one `<slug>-default` metered credential + the
+founder's owner membership. Driven live 2026-08-13 against hanzo.id: org created,
+`pk-live-…`/`sk-live-…` returned once, roster correct.
+
+Adding the SECOND person is where it stops, in three independent places, and only
+the first of them is fixed here.
+
+**1. The invite could not resolve anybody — fixed.** cloud's `sendInvite`
+(`apps/team/invite.go`) resolves the invitee with
+`GET /v1/iam/users/get?owner=<org>&email=<addr>`. `users/get` took `{owner, name}`
+with BOTH required and **no email field at all**, so every invite — of a member,
+of a stranger, of anyone — answered `400 field "name" is required` and the RPC
+reported "no Hanzo account for <addr> in this org". A schema error wearing the
+message of a business rule, which is why it read as working-as-intended and
+survived. The read now takes `Lookup{Owner, Name|Email}` and both arms go through
+store, so this surface and the login that authenticates the same address cannot
+disagree about who it names. Ambiguity is REPORTED (409), never flattened to
+not-found: two rows in one org can carry one address, and answering with an
+arbitrary one of them is how a person joins a team under a colleague's identity.
+Authorization is unchanged by construction — a REST read's target rides in the
+query and `authz.ReadTarget` reads `owner`/`name`, so an address read authorizes
+exactly like `?owner=<org>` already did and discloses strictly less than the org
+listing the same caller may already fetch. `Ref` (both halves required) still
+addresses the WRITES: an address is a mutable attribute, and resolving one to
+decide who gets written puts a rename between the authorization and the write.
+
+**2. The invitee has no account IN the org, and nothing can give them one.**
+Signup files everyone under the APP's org and refuses any other, so a teammate
+who signs up at hanzo.id is `hanzo/<name>`, never `acme/<name>` — and an invite
+scoped to `?owner=acme` will not find them however it is spelled. `add-membership`
+IS the working grant (measured: the invitee's next token carried
+`orgs:[{hanzo,member},{zzb2b1,member}]` and `/v1/projects` with `X-Org-Id` then
+answered 200), but it takes an identity that already exists. The `invitations`
+entity — `/v1/iam/invitations` CRUD over `schema.Invitation`, carrying Email,
+Code, Quota, UsedCount, State — is **redeemed by nothing**: no signup hook, no
+accept endpoint, no reference outside its own package and the route table. So
+there is no invite for a person who does not yet have an account, which is the
+ordinary B2B case. The console's onboarding step says "Pick an organization you
+belong to, or create a new one" above a form that only creates one
+(`id` `pkgs/onboarding` OrgStep states this deliberately: "Joining an existing org
+happens by invitation, handled outside this flow" — there is no outside).
+
+**3. Founding an org locks the founder out of the front door.** The move re-keys
+the identity, and sign-in resolves the account inside the org the FORM states —
+`resolveLoginUser(ctx, db, f.Organization, identifier)`. The portal always states
+the APP's org (`id` `pkgs/auth/src/ui/LoginForm.tsx`: `app?.organization`), which
+for `hanzo-console` is `hanzo`. Measured 2026-08-13 in a real browser: a founder
+moved into their new org typed the correct password at hanzo.id and got "the
+username or password is incorrect"; the control — the same password, the same
+screen, a probe still sitting in `hanzo` — signed in and landed on `/onboarding`.
+The server already supports the right answer (`organization=<slug>` posted to
+`/v1/iam/login` returns 200 for the same account); nothing tells the screen which
+org to name. Orgs that were hand-given an application of their own are unaffected
+— `karma-style`→`karma`, `sdm-cloud`→`sdm` — which is why this has not been
+reported: every org with a live customer has an app, and every self-service org
+does not.
+
+NOT fixed here, deliberately. Every candidate touches an authentication boundary:
+a cross-org fallback by address is the F-2 collision this repo removed on purpose
+(it resolved `z@hanzo.ai` onto `admin/*` and coupled lockout counters across
+rows), a domain→org map is a new tenant primitive the Organization schema has no
+field for, and an org picker on the login screen is policy about what a stranger
+may learn. Decide it, then do it in ONE place — and note the same 2026-08-13
+census that measured it: 82 orgs, 354 human accounts, **279 of them (79%) sitting
+in org `hanzo`**, which is the P0 above and the reason the second person has
+nowhere to be.
+
 ## Brand rules (hard)
 - Never call Hanzo an "LLM gateway"; never position vs LiteLLM. Full AI cloud, not a proxy.
 - `/v1/` only, never `/api/`. Zen models are our own family — never name upstream models.
