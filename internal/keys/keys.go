@@ -144,7 +144,7 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if k.AccessKey == "" {
 			k.AccessKey = Mint("pk", k.State)
 		}
-		if k.Scope == schema.KeyScopePublish {
+		if ClassOf(k.Scope) == schema.KeyScopePublish {
 			// A publishable key is WRITE-ONLY: a pk- publishable half and NEVER a
 			// confidential sk- secret — even if the caller supplied one — so it can
 			// carry no full-access material. Its authority is resolved org-only at the
@@ -181,7 +181,7 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 			return nil, err
 		}
 		apply(k, in)
-		if k.Scope == schema.KeyScopePublish {
+		if ClassOf(k.Scope) == schema.KeyScopePublish {
 			// Keep a publishable key write-only for its whole lifecycle: an update can
 			// never attach a confidential sk- secret to a pk--only browser key.
 			k.AccessSecret = ""
@@ -301,11 +301,26 @@ const (
 // A publishable key resolves the ORG and never a principal, so one row per org is
 // the whole truth about it and the user plays no part in its name.
 func NameFor(user, scope string) string {
-	if scope == schema.KeyScopePublish {
+	if ClassOf(scope) == schema.KeyScopePublish {
 		return PublishKeyName
 	}
 	return user + "-" + UserKeyName
 }
+
+// ClassOf reads the ACCESS CLASS out of a scope, ignoring any reach entries
+// beside it.
+//
+// Scope carries two independent facts in one comma-separated field: the class
+// ("publish", or empty for a confidential key) and the REACH a credential is
+// limited to ("model:zen5"). The class decides which key is minted and what the
+// row is named; the reach decides nothing here and is stored verbatim for the
+// resource server to enforce.
+//
+// They were the same string once, so a limited publishable key compared
+// unequal to KeyScopePublish and minted a SECRET key under the secret name —
+// the caller asked for a browser credential and got a session-equivalent one.
+// The class is the first entry because that is the one this package acts on.
+func ClassOf(scope string) string { return schema.ClassOf(scope) }
 
 // MintUserKey (re)mints the single credential a user holds at `scope` and returns the
 // half its holder presents — revealed once:
@@ -330,7 +345,7 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 	if strings.TrimSpace(owner) == "" || strings.TrimSpace(user) == "" {
 		return "", fmt.Errorf("keys: owner and user are required")
 	}
-	publish := scope == schema.KeyScopePublish
+	publish := ClassOf(scope) == schema.KeyScopePublish
 	// The credential the holder presents, and the ONE value returned. A publishable
 	// key has no secret half — not an empty one, none — so there is nothing else it
 	// could return and nothing a leak of the row could reveal.
