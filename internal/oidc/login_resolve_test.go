@@ -28,14 +28,14 @@ func seedNamed(t *testing.T, db orm.DB, name, email string) {
 	}
 }
 
-func TestResolveLoginUser_NameBeatsEmailOnCollision(t *testing.T) {
+func TestResolveInOrg_NameBeatsEmailOnCollision(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
 	// Two identities sharing one email; one is NAMED after that email.
 	seedNamed(t, db, "z", "z@hanzo.ai")
 	seedNamed(t, db, "z@hanzo.ai", "z@hanzo.ai")
 
-	u, err := resolveLoginUser(ctx, db, "hanzo", "z@hanzo.ai")
+	u, err := resolveInOrg(ctx, db, "hanzo", "z@hanzo.ai")
 	if err != nil || u == nil {
 		t.Fatalf("resolveLoginUser = %v, %v; want a user", u, err)
 	}
@@ -44,18 +44,18 @@ func TestResolveLoginUser_NameBeatsEmailOnCollision(t *testing.T) {
 	}
 
 	// A plain username still resolves by name.
-	if got, _ := resolveLoginUser(ctx, db, "hanzo", "z"); got == nil || got.Name != "z" {
+	if got, _ := resolveInOrg(ctx, db, "hanzo", "z"); got == nil || got.Name != "z" {
 		t.Errorf("username z resolved to %v, want hanzo/z", got)
 	}
 }
 
-func TestResolveLoginUser_EmailFallbackWhenNoNameMatch(t *testing.T) {
+func TestResolveInOrg_EmailFallbackWhenNoNameMatch(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
 	// Only an email match exists (the name is a plain handle).
 	seedNamed(t, db, "alice", "alice@hanzo.ai")
 
-	u, err := resolveLoginUser(ctx, db, "hanzo", "alice@hanzo.ai")
+	u, err := resolveInOrg(ctx, db, "hanzo", "alice@hanzo.ai")
 	if err != nil || u == nil || u.Name != "alice" {
 		t.Fatalf("email fallback failed: %v, %v", u, err)
 	}
