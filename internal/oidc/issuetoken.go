@@ -183,7 +183,7 @@ func revokeUserKeysHandler(db orm.DB) zip.Handler {
 		if !ok {
 			return mintErr(c, 400, "unknown key type")
 		}
-		if err := keys.RevokeUserKey(ctx, db, user.Owner, scope); err != nil {
+		if err := keys.RevokeUserKey(ctx, db, user.Owner, user.Name, scope); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
 		// Clear the User row's credential fields too. Nothing resolves them, so this is

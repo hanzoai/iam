@@ -271,10 +271,10 @@ func Mint(prefix, state string) string {
 	return fmt.Sprintf("%s-%s-%s", prefix, env, hex.EncodeToString(b[:]))
 }
 
-// UserKeyName and PublishKeyName are the deterministic Names of the ONE key a user
-// holds AT EACH SCOPE. Deterministic so a re-mint REPLACES the previous credential
-// instead of leaving a second live one behind — a user has one key per scope, and
-// revoking it revokes them at that scope.
+// UserKeyName and PublishKeyName are the deterministic name STEMS of the ONE key a
+// user holds AT EACH SCOPE (NameFor spells the rest). Deterministic so a re-mint
+// REPLACES the previous credential instead of leaving a second live one behind — a
+// user has one key per scope, and revoking it revokes them at that scope.
 //
 // Two rows, not one, because the two scopes are different credentials with opposite
 // exposure: the secret key authenticates its holder as the user, the publishable key
@@ -286,14 +286,25 @@ const (
 	PublishKeyName = "publishable"
 )
 
-// NameFor is the deterministic key Name for a scope: the ONE mapping from a key's
-// access class to the row that holds it, so mint, revoke and read can never
-// disagree about which row a scope means.
-func NameFor(scope string) string {
+// NameFor is the deterministic key Name for the credential `user` holds at `scope`:
+// the ONE mapping from a key's access class to the row that holds it, so mint,
+// revoke and read can never disagree about which row a scope means.
+//
+// A secret key authenticates a USER, so the user is part of the row's identity. It
+// used to be the scope alone, which made "(owner, scope)" the identity of a
+// session-equivalent credential and gave an entire org ONE secret key row: the
+// second member to mint overwrote the first member's key in place, silently
+// revoking them, and the row's User field then named only whoever minted last — so
+// every other member's GET reported no key while their live credential kept
+// authenticating as someone else's row. Naming the user makes that unrepresentable.
+//
+// A publishable key resolves the ORG and never a principal, so one row per org is
+// the whole truth about it and the user plays no part in its name.
+func NameFor(user, scope string) string {
 	if scope == schema.KeyScopePublish {
 		return PublishKeyName
 	}
-	return UserKeyName
+	return user + "-" + UserKeyName
 }
 
 // MintUserKey (re)mints the single credential a user holds at `scope` and returns the
@@ -313,7 +324,8 @@ func NameFor(scope string) string {
 // resolves: every key minted that way authenticated nobody. Writing the row the
 // resolver actually reads is the fix.
 //
-// Idempotent by (Owner, NameFor(scope)): re-minting replaces the credential in place.
+// Idempotent by (Owner, NameFor(user, scope)): re-minting replaces that user's
+// credential in place, and leaves every other member of the org untouched.
 func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (string, error) {
 	if strings.TrimSpace(owner) == "" || strings.TrimSpace(user) == "" {
 		return "", fmt.Errorf("keys: owner and user are required")
@@ -328,8 +340,23 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 		secret = ""
 		presented = access
 	}
-	name := NameFor(scope)
+	name := NameFor(user, scope)
 	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Retire the org-wide secret row an older build left behind. Its secret still
+	// authenticates, as whichever member minted last — a live session-equivalent
+	// credential nobody can see in their own listing and nobody can revoke from
+	// their own account. Minting is the moment this org is known to be moving to
+	// per-user rows, so it is the moment the shared one stops existing.
+	if !publish {
+		if shared, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, UserKeyName)).First(); err == nil && shared != nil {
+			if err := shared.DeleteCtx(ctx); err != nil {
+				return "", err
+			}
+		} else if err != nil && !errors.Is(err, orm.ErrNotFound) {
+			return "", err
+		}
+	}
 
 	existing, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, name)).First()
 	if err != nil && !errors.Is(err, orm.ErrNotFound) {
@@ -367,9 +394,10 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 // RevokeUserKey deletes the user's key row at `scope`. Absent is success — revoke is
 // a statement about the END state, so a caller can always assert "this user holds no
 // credential" without racing a prior revoke. Scoped, so revoking the browser key
-// leaves the server key working and vice versa.
-func RevokeUserKey(ctx context.Context, db orm.DB, owner, scope string) error {
-	k, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, NameFor(scope))).First()
+// leaves the server key working and vice versa; and named by the same NameFor the
+// mint used, so one member's revoke cannot reach another member's secret key.
+func RevokeUserKey(ctx context.Context, db orm.DB, owner, user, scope string) error {
+	k, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, NameFor(user, scope))).First()
 	if errors.Is(err, orm.ErrNotFound) || k == nil {
 		return nil
 	}
