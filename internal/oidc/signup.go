@@ -93,7 +93,7 @@ func signupHandler(db orm.DB) zip.Handler {
 
 		// Resolve the application (by clientId when present, else by name under the
 		// admin owner — the iam storage convention), then enforce its policy.
-		app, err := resolveSignupApp(ctx, db, f)
+		app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -187,6 +187,18 @@ func signupHandler(db orm.DB) zip.Handler {
 			case err != nil:
 				return httpx.Err(c, err.Error())
 			}
+			// And among the accounts this application founded orgs for, which are no
+			// longer in the org just searched. Founding empties the application's org of
+			// exactly the accounts this is checking against, so without this the address
+			// reads as free the moment its owner moves out — the second person registers
+			// it, and then NEITHER of them can sign in, because one address across two of
+			// one application's accounts names nobody.
+			switch existing, err := store.GetSignupByEmail(ctx, db, app.Name, email); {
+			case err == store.ErrEmailAmbiguous, existing != nil:
+				return httpx.Err(c, "email already exists")
+			case err != nil:
+				return httpx.Err(c, err.Error())
+			}
 		}
 
 		// The username. A caller that NAMES one gets exactly that name or a refusal —
@@ -268,20 +280,99 @@ func signupHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+
+		// The account is REGISTERED in the application's org — that is what every
+		// check above just decided — and at a founding application it WORKS in an org
+		// of its own, which this founds and moves it into.
+		//
+		// The two are different things. The application's org is where a username is
+		// unique and where the sign-in screen looks; the tenant is what holds
+		// credentials, connections and spend. An application open to strangers must
+		// keep them apart, or everyone it registers is a member of whichever tenant
+		// that application happens to belong to.
+		//
+		// Signup still does not mint an org the CALLER names — the refusal above is
+		// untouched, and it is what stopped an unauthenticated POST adding a row to
+		// the tenant registry. This slug is DERIVED, from an account this request has
+		// just created, so nothing about it is the caller's to choose.
+		//
+		// It is the same converge onboarding drives, not a second one: org + founder
+		// moved in as its admin + its owner membership + the org's metered credential,
+		// idempotent and resumable. So a person who signs up and a person who onboards
+		// arrive in the same state, and there is one place where founding an org is
+		// written down.
+		if app.OrgChoiceMode == orgChoiceCreate {
+			org, err := charter(ctx, db, created)
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			// The move re-keyed the row, so the response must name where the account
+			// actually is. Returning the pre-move owner tells the client to address an
+			// identity that no longer exists.
+			created.Owner = org
+		}
 		return httpx.Ok(c, created)
 	}
 }
 
-// resolveSignupApp resolves the signup's OAuth app: by clientId when present,
-// else by (admin, application name) — mirroring resolveLoginApp.
-func resolveSignupApp(ctx context.Context, db orm.DB, f signupForm) (*schema.Application, error) {
-	if f.ClientId != "" {
-		return store.GetApplicationByClientId(ctx, db, f.ClientId)
+// charter founds the organization an account works in and moves the account into
+// it, returning the org's name.
+//
+// The name is derived from the account, never taken from a request: a signup is
+// unauthenticated, and a caller that could NAME the org would be writing a row of
+// its choosing into the tenant registry.
+func charter(ctx context.Context, db orm.DB, user *schema.User) (string, error) {
+	// personalOrgSlug caps its derivation at maxOrgSlug, and the walk appends to
+	// what it returns, so the base is trimmed to leave the suffix room. A slug over
+	// that bound cannot be founded at all: provision derives the org's credential
+	// name from it, and that name has a bound of its own — so an account whose
+	// address is merely long would otherwise be refused at the end of its signup,
+	// for a rule about a name it never chose.
+	base := personalOrgSlug(user.Name)
+	if room := maxOrgSlug - len(strconv.Itoa(nameAttempts)); len(base) > room {
+		base = base[:room]
 	}
-	if f.Application != "" {
-		return store.GetApplicationByName(ctx, db, "admin", f.Application)
+	slug, err := allocate(base, func(s string) (bool, error) { return orgSlugFree(ctx, db, s) })
+	if err != nil {
+		return "", err
 	}
-	return nil, nil
+	out, err := provision(ctx, db, claim{
+		owner: user.Owner, name: user.Name,
+		slug: slug, display: user.Name, personal: true,
+	})
+	if err != nil {
+		return "", err
+	}
+	return out.org, nil
+}
+
+// orgChoiceCreate is the application's declaration that a signup FOUNDS the
+// person's own organization: they are its sole member, and they join a team org
+// — hanzo, lux, zoo or any customer's — separately, by membership. An
+// application that declares anything else registers its accounts in its own org
+// and leaves the tenant to onboarding.
+//
+// It is the mode the org picker already names, read where the founding happens.
+// Application.ServesAnyOrg reads the same value for the tenant exemption, which
+// this makes true rather than merely permitted: a founding app's accounts really
+// do live in orgs that are not its own.
+const orgChoiceCreate = "create"
+
+// orgSlugFree reports whether slug may be founded as a new organization: long
+// enough to be one, not a reserved system owner, and not already standing.
+//
+// All three are reasons a slug is unavailable, so they are one predicate — a
+// derivation that walked only past TAKEN names would hand provision a name it
+// refuses, and the person's signup would fail on a rule they never saw.
+func orgSlugFree(ctx context.Context, db orm.DB, slug string) (bool, error) {
+	if len(slug) < minOrgSlug || len(slug) > maxOrgSlug || store.IsReservedOrg(slug) {
+		return false, nil
+	}
+	org, err := store.GetOrganizationByName(ctx, db, slug)
+	if err != nil {
+		return false, err
+	}
+	return org == nil, nil
 }
 
 // userExists reports whether a user (org, name) already exists.
@@ -295,6 +386,32 @@ func userExists(ctx context.Context, db orm.DB, org, name string) (bool, error) 
 // derivation, not that the org is full.
 const nameAttempts = 32
 
+// allocate returns base, or the first numbered variant of it that free accepts —
+// alice, alice2, alice3. A person gets the name they would have chosen and the
+// suffix appears only when it has to.
+//
+// One walk, because a signup derives two names under the same rule (the username,
+// and the slug of the org it founds) and they must not drift into disagreeing
+// about what the second Alice is called. What "free" means belongs to the caller:
+// a username is free when the org has nobody by it, a slug when no organization
+// may be, is, or already stands under it.
+func allocate(base string, free func(string) (bool, error)) (string, error) {
+	for attempt := 1; attempt <= nameAttempts; attempt++ {
+		candidate := base
+		if attempt > 1 {
+			candidate += strconv.Itoa(attempt)
+		}
+		ok, err := free(candidate)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("could not allocate a unique name")
+}
+
 // allocateName mints the username a NEW account gets in org: the handle its
 // address yields, or the first free variant of it. It is the ONE derivation both
 // ways into this store use — a password signup with no username of its own, and a
@@ -307,11 +424,9 @@ const nameAttempts = 32
 // federated signup, which is the only other value on that path that is not a
 // human's name. Empty when the caller has no such value.
 //
-// Attempt 1 asks for the bare handle; each later attempt appends its number, so
-// alice@gmail.com becomes "alice", then "alice2", "alice3" — a person gets the name
-// they would have chosen, and the suffix appears only when it has to. That
-// replaced a random 8-hex suffix on EVERY name ("z-3f9ab21c"), which made
-// collisions impossible by making every name unrecognisable.
+// The walk is [allocate]'s: alice@gmail.com becomes "alice", then "alice2",
+// "alice3". That replaced a random 8-hex suffix on EVERY name ("z-3f9ab21c"),
+// which made collisions impossible by making every name unrecognisable.
 func allocateName(ctx context.Context, db orm.DB, org, email, fallback string) (string, error) {
 	base := schema.Handle(email)
 	if base == "" {
@@ -320,20 +435,10 @@ func allocateName(ctx context.Context, db orm.DB, org, email, fallback string) (
 	if base == "" {
 		base = "user"
 	}
-	for attempt := 1; attempt <= nameAttempts; attempt++ {
-		name := base
-		if attempt > 1 {
-			name += strconv.Itoa(attempt)
-		}
+	return allocate(base, func(name string) (bool, error) {
 		taken, err := userExists(ctx, db, org, name)
-		if err != nil {
-			return "", err
-		}
-		if !taken {
-			return name, nil
-		}
-	}
-	return "", errors.New("could not allocate a unique username")
+		return !taken, err
+	})
 }
 
 // displayName is the user's display name: the supplied name, a "First Last"

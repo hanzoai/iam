@@ -212,7 +212,14 @@ func codeSubject(ctx context.Context, db orm.DB, in passwordBody) (*schema.User,
 	}
 	// The SAME resolution login uses, so the account a code recovers is the account
 	// that identifier signs in as — name first, then email, then phone.
-	user, err := resolveLoginUser(ctx, db, in.Organization, in.Username)
+	//
+	// Within the org the caller names, and only there: this body carries no
+	// application, so the reach login makes into the accounts an application
+	// founded orgs for is not available here. A person in an org of their own
+	// therefore recovers a forgotten password once this op is told which
+	// application is asking — and until then this resolves nobody and the reset
+	// is refused, rather than resetting somebody else's credential.
+	user, err := resolveLoginUser(ctx, db, nil, in.Organization, in.Username)
 	if err != nil {
 		return nil, err
 	}
