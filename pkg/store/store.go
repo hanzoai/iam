@@ -300,6 +300,53 @@ func GetUserByEmail(ctx context.Context, db orm.DB, owner, email string) (*schem
 	}
 }
 
+// GetSignupByEmail resolves an account an APPLICATION registered, by the address
+// it registered with — [schema.User.SignupApplication] paired with Email.
+//
+// It exists because an application's org is where an account is registered, not
+// the tenant the person works in. An application that founds an org per person
+// has its accounts spread across every org it founded, so scoping its sign-in to
+// its own org resolves nobody; this is the scope that matches the population.
+//
+// It is NARROWER than a cross-org lookup by address, which is a different thing
+// and stays refused: it reads only the rows this application itself created, so
+// an account belonging to another application — or seeded, or imported, all of
+// which carry no SignupApplication at all — is unreachable through it. An empty
+// application therefore matches nothing rather than everything.
+//
+// Ambiguity FAILS CLOSED, as [GetUserByEmail] does and for the same reason: two
+// rows carrying one address name nobody, and handing back an arbitrary one is how
+// a person is authenticated as somebody else.
+func GetSignupByEmail(ctx context.Context, db orm.DB, application, email string) (*schema.User, error) {
+	email = NormalizeEmail(email)
+	if application == "" || email == "" {
+		return nil, nil
+	}
+	us, err := orm.TypedQuery[schema.User](db).
+		Filter("SignupApplication=", application).Filter("Email=", email).Limit(2).GetAll(ctx)
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch len(us) {
+	case 0:
+		return nil, nil
+	case 1:
+		// A reserved owner is never reachable this way. Nothing should ever file a
+		// row of the admin org under an application's signup, and if something does,
+		// this must not be the door that authenticates it — the reserved orgs hold
+		// the SuperAdmin and the signing certs.
+		if IsReservedOrg(us[0].Owner) {
+			return nil, nil
+		}
+		return us[0], nil
+	default:
+		return nil, ErrEmailAmbiguous
+	}
+}
+
 // ErrPhoneAmbiguous reports that a phone number identifies more than one account
 // in an org, so it identifies nobody. Returned instead of a user, on purpose —
 // see [GetUserByPhone].
