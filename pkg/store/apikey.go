@@ -70,11 +70,15 @@ const (
 	// KeyDanglingUser: an sk- row resolved and named a same-tenant user that does
 	// not exist. A data-integrity fault in the key table, not the holder's doing.
 	KeyDanglingUser KeyFailure = "key_dangling_user"
+	// KeyForbiddenUser: the key resolved to a real same-tenant user who may not act
+	// — forbidden or deleted. The credential is intact; the PRINCIPAL behind it is
+	// not, which is a different fact from a missing key and is reported as one.
+	KeyForbiddenUser KeyFailure = "key_forbidden_user"
 	// KeyNotPublishable: a real key addressed by its pk- half whose scope is not
 	// publish. The browser door refuses it precisely because it is a secret.
 	KeyNotPublishable KeyFailure = "key_not_publishable"
 	// KeyExpired: the row exists and is the right scope, but its lifetime has run
-	// out. Only the publishable door can report this — see the note on keyLive.
+	// out. Both doors report it, from the one keyLive.
 	KeyExpired KeyFailure = "key_expired"
 )
 
@@ -118,11 +122,18 @@ func notFound(r KeyFailure) error { return &KeyError{Reason: r} }
 // third shape: a value that is not a pk- and not a live sk- is simply not a key, and
 // special-casing any particular non-key spelling would invent the third family back.
 //
-// NOTE ON EXPIRY: an sk- cannot report KeyExpired — it resolves through userOwningKey,
-// which does not consult keyLive. Revocation is deletion, so for a secret key "gone"
-// is the only termination and KeyUnknown is the honest answer.
-func UserByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, error) {
-	u, _, err := UserAndScopeByAccessKey(ctx, db, key)
+// THREE WAYS A CREDENTIAL ENDS, and this door honors all three. A key row that is
+// gone answers KeyUnknown; a row past its ExpireTime answers KeyExpired; a key whose
+// USER is forbidden or deleted answers KeyForbiddenUser. Deletion, expiry and the
+// principal's own standing are independent facts, so each ends a key on its own and
+// none has to be spelled as one of the others.
+//
+// The last is what makes this door agree with the JWT door: internal/authz reads the
+// LOADED user record and refuses a forbidden or deleted principal, and a principal
+// that may not act through one credential shape may not act through the other. One
+// identity, one standing, however it authenticates.
+func UserByAccessKey(ctx context.Context, db orm.DB, key string, now time.Time) (*schema.User, error) {
+	u, _, err := UserAndScopeByAccessKey(ctx, db, key, now)
 	return u, err
 }
 
@@ -137,11 +148,15 @@ func UserByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, 
 //
 // Scope is "" for a key that names no limit, which is every key minted before
 // limits existed and means unrestricted.
-func UserAndScopeByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, string, error) {
+//
+// `now` is a parameter for the same reason it is one on the publishable door: the
+// lifetime decision is then a pure function of the row and the instant, testable
+// without moving a clock.
+func UserAndScopeByAccessKey(ctx context.Context, db orm.DB, key string, now time.Time) (*schema.User, string, error) {
 	key = strings.TrimSpace(key)
 	switch {
 	case strings.HasPrefix(key, "sk-"):
-		return userAndScopeOwningKey(ctx, db, "AccessSecret", key)
+		return userAndScopeOwningKey(ctx, db, "AccessSecret", key, now)
 	case strings.HasPrefix(key, "pk-"):
 		// WRITE-ONLY and never a principal (see the package note above). Fail closed,
 		// and say so as the wrong door: this holder has a working key, just not here.
@@ -170,7 +185,7 @@ func UserAndScopeByAccessKey(ctx context.Context, db orm.DB, key string) (*schem
 // only ever speak for a user in the org that owns the key, and a non-super can never
 // own a key under a reserved org (authorize gates keys writes), so no sk- key can
 // resolve to a SuperAdmin or cross-tenant identity.
-func userAndScopeOwningKey(ctx context.Context, db orm.DB, field, val string) (*schema.User, string, error) {
+func userAndScopeOwningKey(ctx context.Context, db orm.DB, field, val string, now time.Time) (*schema.User, string, error) {
 	k, err := orm.TypedQuery[schema.Key](db).Filter(field+"=", val).First()
 	if err == orm.ErrNotFound {
 		return nil, "", notFound(KeyUnknown)
@@ -183,8 +198,17 @@ func userAndScopeOwningKey(ctx context.Context, db orm.DB, field, val string) (*
 	// "/"-qualified User naming a foreign owner is a forgery attempt — fail closed,
 	// and say WHICH refusal this was: a cross-tenant reference is an attack signal
 	// and must not read to an operator as a mistyped key.
+	//
+	// It stays FIRST so that signal keeps its own answer: a forged reference is
+	// reported as forgery whatever else is also wrong with the row.
 	if owner == "" || name == "" || owner != k.Owner {
 		return nil, "", notFound(KeyForeignUser)
+	}
+	// The key's own lifetime, read exactly as the publishable door reads it — one
+	// keyLive, one meaning, both doors. An expiry that is set is an expiry that is
+	// honored, so a key cannot display a lifetime it does not have.
+	if !keyLive(k, now) {
+		return nil, "", notFound(KeyExpired)
 	}
 	u, err := GetUserByName(ctx, db, owner, name)
 	if err != nil {
@@ -192,6 +216,13 @@ func userAndScopeOwningKey(ctx context.Context, db orm.DB, field, val string) (*
 	}
 	if u == nil {
 		return nil, "", notFound(KeyDanglingUser)
+	}
+	// The principal's standing, read from the LOADED record — the same fact the JWT
+	// door reads before it admits a subject. Forbidding a user is therefore a complete
+	// act: it ends every credential that speaks for them, not only the ones that are
+	// tokens.
+	if u.IsForbidden || u.IsDeleted {
+		return nil, "", notFound(KeyForbiddenUser)
 	}
 	return u, k.Scope, nil
 }

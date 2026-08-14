@@ -114,7 +114,7 @@ func TestMintUserKeys_generatesReadableSkKey(t *testing.T) {
 	// the key on schema.User.AccessKey — which nothing resolves — so it passed while
 	// every minted credential authenticated nobody. What matters is that the key
 	// resolves back to its user.
-	got, err := store.UserByAccessKey(context.Background(), db, key)
+	got, err := store.UserByAccessKey(context.Background(), db, key, time.Now())
 	if err != nil || got == nil {
 		t.Fatalf("minted key does not resolve to a user: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 	if !strings.HasPrefix(key, "sk-") {
 		t.Fatalf("accessKey=%q, want an sk- key", key)
 	}
-	got, err := store.UserByAccessKey(tctx(), db, key)
+	got, err := store.UserByAccessKey(tctx(), db, key, time.Now())
 	if err != nil || got == nil {
 		t.Fatalf("minted key does not resolve to its user — the write missed the row the resolver reads: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestMintUserKeys_publishableType_mintsAPkAndNeverAPrincipal(t *testing.T) {
 	}
 	// …and to NOBODY as a principal. This is the property that makes it safe to ship
 	// in a browser bundle, and it must hold for a key we minted ourselves.
-	if u, err := store.UserByAccessKey(context.Background(), db, key); err == nil && u != nil {
+	if u, err := store.UserByAccessKey(context.Background(), db, key, time.Now()); err == nil && u != nil {
 		t.Fatalf("a publishable key resolved to principal %s/%s — it must never authenticate", u.Owner, u.Name)
 	}
 }
@@ -268,7 +268,7 @@ func TestMintUserKeys_publishableAndSecretCoexist(t *testing.T) {
 	if !strings.HasPrefix(secret, "sk-") || !strings.HasPrefix(pub, "pk-") {
 		t.Fatalf("halves = %q / %q, want sk- and pk-", secret, pub)
 	}
-	if u, err := store.UserByAccessKey(context.Background(), db, secret); err != nil || u == nil {
+	if u, err := store.UserByAccessKey(context.Background(), db, secret, time.Now()); err != nil || u == nil {
 		t.Fatalf("minting the publishable key broke the secret key: %v", err)
 	}
 
@@ -280,7 +280,7 @@ func TestMintUserKeys_publishableAndSecretCoexist(t *testing.T) {
 	if _, err := store.PublishableKeyByAccessKey(context.Background(), db, pub, time.Now()); err == nil {
 		t.Fatal("the publishable key survived its own revoke")
 	}
-	if u, err := store.UserByAccessKey(context.Background(), db, secret); err != nil || u == nil {
+	if u, err := store.UserByAccessKey(context.Background(), db, secret, time.Now()); err != nil || u == nil {
 		t.Fatalf("revoking the publishable key revoked the secret key: %v", err)
 	}
 }
