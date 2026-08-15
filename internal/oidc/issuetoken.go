@@ -250,7 +250,14 @@ func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Ap
 	if owner == "" || name == "" {
 		return nil, 200, "id (owner/name) is required"
 	}
-	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp) {
+	// This mints a user's token from the CLIENT's credential alone, so the reserved
+	// set it refuses has to be the set of operators, not the set of reserved org
+	// NAMES. Reading the name caught owner=admin and missed the operator anchored in
+	// a brand org holding a membership in the reserved one — the shape most of them
+	// actually have — and that identity's token is the same SuperAdmin token.
+	// IsSigningCertOwner stays beside it: it also covers built-in, which is signing
+	// material rather than an operator. The allow-list is untouched.
+	if (store.IsSigningCertOwner(owner) || store.PasskeyOwed(ctx, db, owner, name)) && !adminMintAllowed(clientApp) {
 		return nil, 403, "client is not permitted to act for a reserved-org user"
 	}
 	user, err := store.GetUserByName(ctx, db, owner, name)
