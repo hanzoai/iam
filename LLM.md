@@ -355,7 +355,7 @@ drawing a button that cannot finish:
 
     password   app.EnablePassword
     code       app.EnableCodeSignin  && otp.DeliveryConfigured() (a bound Sender)
-    webauthn   app.EnableWebAuthn    && schema.PasskeySignin() (an assertion ceremony)
+    webauthn   app.EnableWebAuthn                     (the ceremony is compiled in)
     web3       schema.WalletChains()                           (what verify accepts)
     oauth      offerable(provider)   (real credential AND a driveable dialect)
 
@@ -363,11 +363,54 @@ drawing a button that cannot finish:
 disagree — the browser reads whichever one still lies. The org's stored setting is
 never edited; only what a screen is told.
 
-`PasskeySignin()` is a leaf constant today because internal/webauthn registers
-passkeys and holds nothing that CHALLENGES one; it lives in `pkg/schema` for the
-reason `WalletChains` does — internal/webauthn cannot be imported from
-internal/oidc (webauthn → authz → oidc). It stops being a constant the day the
-ceremony lands, with no second switch to remember.
+Passkeys are the one row where the second half is now a constant true, so it is
+not written: `internal/oidc/webauthn.go` carries the assertion ceremony in every
+build, so a server that can serve this descriptor can always challenge a passkey.
+The predicate that used to stand there (`schema.PasskeySignin`) is gone rather
+than pinned to true — a switch nobody can turn off is not a switch.
+
+## The two WebAuthn ceremonies
+
+`internal/oidc/webauthn.go` holds both halves of the standard, on
+`github.com/go-webauthn/webauthn`: registration enrolls a passkey, assertion signs
+in with one. Four addresses, already called by the hosted login and account pages:
+
+    GET  /v1/iam/webauthn/signup/begin    POST /v1/iam/webauthn/signup/finish
+    GET  /v1/iam/webauthn/signin/begin    POST /v1/iam/webauthn/signin/finish
+
+It lives in `internal/oidc` because it is a LOGIN FRONT DOOR, and the three rules a
+front door must not forget are unexported here: `callerOf` (cookie-or-bearer, which
+is how the portal enrolls with no bearer), `Gate` (the org's second factor), and
+`loginGrant` (the one mint path and the session it opens). The passkey ROWS stay in
+`internal/webauthn` — one table, written by the ceremony, listed and revoked there,
+keyed by the same `schema.CredentialName`.
+
+Half-finished ceremonies ride the existing `LoginChallenge` primitive under two new
+kinds, `KindRegister` and `KindAssert`; the go-webauthn session is the row's
+`Payload`, the subject is the row's `Subject`, and `TakeChallenge` burns it
+atomically. So a replayed assertion loses, and a finish learns whose ceremony it is
+from the burned row rather than from the request.
+
+**RP ID is the issuer's host** — `resolveIssuer(host)` parsed, nothing new to
+configure. A passkey is bound to ONE relying party for life and the front door
+already relocates every request onto its brand's pinned issuer, so the passkey works
+at exactly the origin that brand's tokens are issued from. `hanzo.id` and
+`hanzo.ai` are separate registrable domains, so ONE passkey cannot serve both:
+`admin.hanzo.ai` never runs a ceremony, it federates to `hanzo.id` and the passkey
+is challenged there.
+
+**User verification is enforced twice, deliberately.** The relying-party config asks
+the browser for it (that is what makes the phone demand Face ID), and the finish
+reads the UV bit off the signed authenticator data. The library's own check derives
+from `session.UserVerification`, which makes a JSON round trip through the challenge
+row; the direct read depends on the assertion alone, so a field lost in transit
+cannot silently downgrade a passkey to possession. Each half has a test that fails
+when only that half is reverted.
+
+Sign-in is username-first: `signin/begin` takes `?owner=&name=`, and the challenge
+is bound to that person. Credentials are enrolled as resident keys, so they ARE
+discoverable passkeys on the device — but usernameless (discoverable) sign-in is not
+wired, and the login form's username field is required for this method.
 
 ## A verification code has ONE receiver key
 

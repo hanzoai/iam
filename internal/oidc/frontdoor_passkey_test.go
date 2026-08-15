@@ -4,26 +4,25 @@
 package oidc
 
 import (
+	"net/http"
 	"testing"
 
-	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// A passkey button must not be drawable while nothing can challenge a passkey.
+// A passkey button is drawn exactly when the organization asks for one — and what
+// it is drawn for answers.
 //
-// Both descriptors reported webauthn from the application switch alone, so every
-// screen was told the method exists: /v1/iam/auth/methods answered webauthn:true
-// and get-app-login answered enableWebAuthn:true, for hanzo-console, hanzo-cloud,
-// hanzo-app, hanzo-chat, hanzo-id, pars-console and zoo-console alike — while the
-// four plausible ceremony paths (/v1/iam/webauthn/signin/begin,
-// /webauthn/assertion/options, /webauthn-signin-begin, /webauthn/login) all answer
-// a JSON 404 and internal/webauthn holds only credential CRUD.
+// The two halves used to be separate questions: the application switch said the org
+// WANTED passkeys, and a second predicate said whether this build could challenge
+// one, because nothing could. Both descriptors are now the switch alone, so this
+// asserts the pair that replaced it — the switch reaches the screen, and the address
+// the screen will call is registered.
 //
-// The two descriptors are read here rather than the predicate, because what a
-// screen is TOLD is the defect; a client that trusts the descriptor is exactly the
-// design every other method on it already assumes.
-func TestPasskeyIsNotOfferedWithoutACeremony(t *testing.T) {
+// Reachability is checked against the descriptor's own claim rather than trusted,
+// because "the button renders" and "the ceremony exists" are exactly the two facts
+// that were allowed to disagree before.
+func TestPasskeyIsOfferedAndItsCeremonyAnswers(t *testing.T) {
 	app, db := newServer(t)
 	a := seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	a.EnableWebAuthn = true
@@ -33,29 +32,54 @@ func TestPasskeyIsNotOfferedWithoutACeremony(t *testing.T) {
 
 	_, body := do(t, app, formReqNoBody("GET", PathAuthMethods+"?clientId=conf"))
 	methods, _ := decode(t, body)["data"].(map[string]any)
-	if methods["webauthn"] != false {
-		t.Errorf("auth/methods webauthn = %v, want false: the org wants passkeys and the "+
-			"server cannot challenge one", methods["webauthn"])
+	if methods["webauthn"] != true {
+		t.Errorf("auth/methods webauthn = %v, want true: the org asked for passkeys and "+
+			"the server can challenge one", methods["webauthn"])
 	}
 
 	_, body = do(t, app, formReqNoBody("GET", LegacyPathAuthApplication+"?clientId=conf&responseType=code"))
 	view, _ := decode(t, body)["data"].(map[string]any)
-	if view["enableWebAuthn"] != false {
-		t.Errorf("get-app-login enableWebAuthn = %v, want false: the two descriptors must "+
+	if view["enableWebAuthn"] != true {
+		t.Errorf("get-app-login enableWebAuthn = %v, want true: the two descriptors must "+
 			"agree, or the browser reads whichever one still lies", view["enableWebAuthn"])
 	}
 
-	// The org's stored setting is untouched — a descriptor masks what it publishes,
-	// it does not edit the running config, so the switch is already correct on the
-	// day the ceremony lands.
+	// The ceremony the descriptor just advertised. A 404 here means the screen draws
+	// a button whose endpoint does not exist — the defect this pair replaced.
+	for _, path := range []string{PathWebauthnRegisterBegin, PathWebauthnLoginBegin} {
+		resp, _ := do(t, app, formReqNoBody("GET", path))
+		if resp.StatusCode == http.StatusNotFound {
+			t.Errorf("GET %s = 404: the login screen is told a passkey works and the "+
+				"ceremony it would call is not registered", path)
+		}
+	}
+
+	// A descriptor MASKS what it publishes, it never edits the running config.
 	stored, err := store.GetApplicationByClientId(tctx(), db, "conf")
 	if err != nil {
 		t.Fatalf("reload app: %v", err)
 	}
 	if !stored.EnableWebAuthn {
-		t.Error("masking the descriptor cleared the application's own EnableWebAuthn switch")
+		t.Error("reading the descriptor cleared the application's own EnableWebAuthn switch")
 	}
-	if schema.PasskeySignin() {
-		t.Error("PasskeySignin() = true with no assertion ceremony in internal/webauthn")
+}
+
+// The other direction: an organization that has NOT asked for passkeys is not
+// offered one. Without this, "webauthn: true" would pass for the trivial reason
+// that the field is hardcoded true rather than read from the switch.
+func TestPasskeyIsNotOfferedWhenTheOrgHasNotAskedForIt(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "off", secret: "s3cret", redirectURIs: []string{testRedirect}})
+
+	_, body := do(t, app, formReqNoBody("GET", PathAuthMethods+"?clientId=off"))
+	methods, _ := decode(t, body)["data"].(map[string]any)
+	if methods["webauthn"] != false {
+		t.Errorf("auth/methods webauthn = %v with the switch off, want false", methods["webauthn"])
+	}
+
+	_, body = do(t, app, formReqNoBody("GET", LegacyPathAuthApplication+"?clientId=off&responseType=code"))
+	view, _ := decode(t, body)["data"].(map[string]any)
+	if view["enableWebAuthn"] == true {
+		t.Error("get-app-login enableWebAuthn = true with the switch off")
 	}
 }

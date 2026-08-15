@@ -95,6 +95,11 @@ func Route(r *zip.App, db orm.DB) {
 	routeLogin(r, db)
 	routeFrontDoor(r, db)
 
+	// The two WebAuthn ceremonies: enroll a passkey, and sign in with one. Both
+	// are public — a passkey sign-in has no bearer to present, and the enrollment
+	// pair authenticates itself from the portal's session cookie.
+	routeWebauthn(r, db)
+
 	// Identity federation: the external-IdP callback (Google/GitHub, …). The
 	// authorize endpoint kicks a federation off when the request names a
 	// `provider`; this registers the fixed return endpoint the IdP redirects to.

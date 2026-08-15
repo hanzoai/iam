@@ -37,6 +37,12 @@ const challengeTTL = 5 * time.Minute
 const (
 	KindMfa        = "mfa"
 	KindFederation = "federation"
+	// The two WebAuthn ceremonies (webauthn.go). They are separate kinds because
+	// they prove different things and must never substitute for one another: a
+	// challenge minted to ENROLL a passkey, answered as a SIGN-IN, would be a
+	// sign-in nobody authenticated.
+	KindRegister = "webauthn-register"
+	KindAssert   = "webauthn-assert"
 )
 
 // ErrChallenge is the ONE opaque failure for every way a challenge can be refused
