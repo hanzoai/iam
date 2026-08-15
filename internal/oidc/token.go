@@ -442,7 +442,10 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	if err != nil {
 		return tokenResponse{}, err
 	}
-	id := userClaims(ctx, db, row.User)
+	id, err := userClaims(ctx, db, row.User)
+	if err != nil {
+		return tokenResponse{}, err
+	}
 
 	access, err := signer.Sign(app, id, row.Scope, ttl, now)
 	if err != nil {
@@ -585,6 +588,13 @@ func mintError(c *zip.Ctx, err error) error {
 		return tokenError(c, 500, "server_error",
 			"this application has no signing cert, so no token can be issued for it")
 	}
+	// The grant's subject no longer names a usable user. That is the holder's
+	// credential being dead, not this server being broken, so it is a 400
+	// invalid_grant: a client that retries a 500 forever would spin, while
+	// invalid_grant tells it to sign in again (RFC 6749 §5.2).
+	if errors.Is(err, ErrNoSubject) {
+		return tokenError(c, 400, "invalid_grant", "the grant's subject no longer names a user")
+	}
 	return tokenError(c, 500, "server_error", "")
 }
 
@@ -595,7 +605,10 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 	if err != nil {
 		return "", err
 	}
-	id := userClaims(ctx, db, tok.User)
+	id, err := userClaims(ctx, db, tok.User)
+	if err != nil {
+		return "", err
+	}
 	return signer.Sign(app, Identity{Id: id.Id, Orgs: id.Orgs}, tok.Scope, ttl, now)
 }
 
@@ -650,20 +663,58 @@ func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 }
 
 // userClaims resolves the token-facing Identity for a token row's (owner/name)
-// User key, in ONE lookup, through identityOf. A subject with no user row (a
-// machine token, or a since-deleted user) yields the passed-in id as sub and an
-// otherwise zero Identity — every profile claim is then omitted, not forged.
-func userClaims(ctx context.Context, db orm.DB, userID string) Identity {
+// User key, in ONE lookup, through identityOf.
+//
+// A SUBJECT THAT NAMES NO USER FAILS THE MINT. It used to yield the passed-in id
+// as sub and an otherwise zero Identity, on the reasoning that omitting a profile
+// claim is safer than forging one. That is true of the profile and false of the
+// rest: the nameless Identity carries no Name, no Orgs and no Billing either, and
+// downstream those absences are not "unknown", they are ANSWERS. account.Payer
+// reads a missing name in the signup org as "not a person" and bills the account
+// beside it — the platform's own. So the safest-looking value in this function was
+// a credential that spends a balance its holder was never granted.
+//
+// The subject can stop resolving while a live token still pins it: the refresh
+// grant copies its predecessor's User key forward at every rotation, so a user
+// that is deleted, or RE-KEYED underneath that key (which founding a personal org
+// does), leaves a token family whose every future rotation mints one of these. It
+// renews itself, which is why refusing at the mint is the fix and not a check at
+// one door.
+//
+// The two failures are DIFFERENT and must not be flattened. A store error is a
+// fault — the row may well exist — so the request fails and the caller retries.
+// A resolved-but-absent row is a dead credential: the grant's subject is gone, the
+// holder must obtain a new one, and no retry will help.
+//
+// Gone, banned and soft-deleted are ONE answer here: none of them may be handed a
+// fresh credential. The password grant already refused the latter two before
+// minting; the code, device and refresh grants did not, so a ban took effect
+// everywhere except on the paths that renew access. Stated once, at the single
+// place every grant resolves its subject, rather than three times at three doors.
+//
+// This never touches a machine: client_credentials signs its own Identity from the
+// app (see clientCredentialsGrant) and never calls this. Every path that does is a
+// grant made to a PERSON, where the user row must exist by construction.
+func userClaims(ctx context.Context, db orm.DB, userID string) (Identity, error) {
 	owner, uname := splitSub(userID)
 	if owner == "" || uname == "" {
-		return Identity{Id: userID}
+		return Identity{}, ErrNoSubject
 	}
 	u, err := store.GetUserByName(ctx, db, owner, uname)
-	if err != nil || u == nil {
-		return Identity{Id: userID}
+	if err != nil {
+		return Identity{}, err
 	}
-	return identityOf(ctx, db, u)
+	if u == nil || u.IsDeleted || u.IsForbidden {
+		return Identity{}, ErrNoSubject
+	}
+	return identityOf(ctx, db, u), nil
 }
+
+// ErrNoSubject is a grant whose subject no longer names a usable user: deleted,
+// banned, or re-keyed while a token that pinned the old key was still alive. It is
+// a dead credential rather than a fault, so the token endpoint answers
+// invalid_grant — the holder must sign in again, and a retry cannot help.
+var ErrNoSubject = errors.New("oidc: the grant's subject no longer names a user")
 
 // machineBillingAccount decides WHICH LEDGER a MACHINE credential spends from.
 //
