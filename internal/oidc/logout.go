@@ -147,11 +147,25 @@ func revokeGrant(ctx context.Context, db orm.DB, user, application string) {
 // appFromIDTokenHint resolves the application an id_token_hint was issued to, but
 // only when the hint's signature verifies. A forged or unsigned hint yields nil,
 // so it can never authorize a redirect.
+//
+// verifyHint, so the EXPIRY is not enforced — one parameter, one meaning, the
+// same rule the silent authorize applies. A relying party sends the last id
+// token it holds, and an id token is short next to the session it describes: a
+// browser signed in for longer than one has run out of them entirely, because a
+// refresh renews the access token and leaves the id token as first issued. Read
+// with expiry enforced, every such logout loses its hint — which is the ONE
+// thing that names the application, so the grant stays mintable and the person
+// is left at the issuer instead of back where they signed out.
+//
+// It costs nothing to accept. A hint is not a credential and grants nothing; it
+// only names who the client believes is signed in. The signature stays
+// mandatory, the application still comes from the token's own audience, and the
+// redirect still has to be one that application registered.
 func appFromIDTokenHint(ctx context.Context, db orm.DB, hint string) *schema.Application {
 	if hint == "" {
 		return nil
 	}
-	claims, err := verifyToken(ctx, db, hint)
+	claims, err := verifyHint(ctx, db, hint)
 	if err != nil || len(claims.Audience) == 0 {
 		return nil
 	}

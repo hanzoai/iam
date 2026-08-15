@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zap-proto/zip"
 
@@ -317,5 +318,19 @@ func TestLogout_RedirectSafety(t *testing.T) {
 		if !strings.Contains(loc, "state=s-9") {
 			t.Fatalf("state not echoed: %q", loc)
 		}
+	})
+
+	// The hint a relying party actually holds. An id token is short next to the
+	// session it describes — a refresh renews the access token and leaves the id
+	// token as first issued — so a browser signed in for any length of time sends
+	// an expired one. It still names the application, which is all the redirect
+	// asks of it, and the signature is still what makes it trustworthy.
+	t.Run("expired hint still names the application", func(t *testing.T) {
+		q := url.Values{
+			"post_logout_redirect_uri": {testRedirect},
+			"id_token_hint":            {idTokenFor(t, db, "hanzo", "alice", "conf", -time.Hour)},
+		}
+		resp, _ := do(t, app, formReqNoBody("GET", PathLogout+"?"+q.Encode()))
+		requireRedirect(t, resp, testRedirect)
 	})
 }
