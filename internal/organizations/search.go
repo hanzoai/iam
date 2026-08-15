@@ -6,6 +6,8 @@ package organizations
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -108,24 +110,31 @@ func (h *OrganizationAPI) Search(ctx context.Context, in *SearchOrganizationsInp
 		return out, nil
 	}
 
+	from, err := decodeCursor(in.Cursor)
+	if err != nil {
+		return nil, zip.ErrBadRequest("cursor is not one this service issued")
+	}
+
 	// Reaching past your own memberships is the privileged act, so it is recorded
 	// whether or not anything comes back — what was searched for is as much of the
 	// record as what was found. Filed under the operator's own organization,
 	// because enumerating the registry is scoped to no single tenant.
-	store.Record(ctx, h.DB, &schema.AuditLog{
-		Owner:      p.Org,
-		User:       p.Org + "/" + p.User,
-		ClientIp:   in.Forwarded,
-		Action:     schema.ActionListOrgs,
-		Object:     in.Query,
-		Method:     "GET",
-		RequestUri: orgBase + "/search",
-		StatusCode: 200,
-	})
-
-	from, err := decodeCursor(in.Cursor)
-	if err != nil {
-		return nil, zip.ErrBadRequest("cursor is not one this service issued")
+	//
+	// Once per enumeration, not once per page: a scroll through one answer is one
+	// act, and a row for every page would bury the acts an auditor is looking for
+	// under the paging of the one already recorded. A new query starts a new walk
+	// and is recorded as one.
+	if in.Cursor == "" {
+		store.Record(ctx, h.DB, &schema.AuditLog{
+			Owner:      p.Org,
+			User:       p.Org + "/" + p.User,
+			ClientIp:   in.Forwarded,
+			Action:     schema.ActionListOrgs,
+			Object:     in.Query,
+			Method:     "GET",
+			RequestUri: orgBase + "/search",
+			StatusCode: 200,
+		})
 	}
 	rest, next, err := h.page(ctx, p, q, from, limit-len(out.Organizations))
 	if err != nil {
@@ -139,12 +148,16 @@ func (h *OrganizationAPI) Search(ctx context.Context, in *SearchOrganizationsInp
 // own resolves the organizations the principal belongs to — its home org and
 // every membership, which is the same set the token's `orgs` claim carries.
 func (h *OrganizationAPI) own(ctx context.Context, p *authz.Principal, q string) ([]*schema.Organization, error) {
+	// The platform's own organizations are not tenants and cannot be stepped
+	// into, so listing one here would offer a destination that assume refuses.
+	// An operator anchored in a brand org holds the reserved org as a MEMBERSHIP,
+	// which is why both halves of the set are filtered and not just the home one.
 	names := make([]string, 0, len(p.Orgs)+1)
-	if p.Org != "" && p.Org != store.AdminOrg {
+	if p.Org != "" && !store.IsReservedOrg(p.Org) {
 		names = append(names, p.Org)
 	}
 	for org := range p.Orgs {
-		if org != p.Org {
+		if org != p.Org && !store.IsReservedOrg(org) {
 			names = append(names, org)
 		}
 	}
@@ -161,37 +174,45 @@ func (h *OrganizationAPI) own(ctx context.Context, p *authz.Principal, q string)
 	return out, nil
 }
 
-// page reads the registry newest-first from `from`, keeping what matches q and
-// what the caller does not already hold, until it has n or the scan bound stops
-// it. The returned cursor resumes exactly where this read stopped.
-func (h *OrganizationAPI) page(ctx context.Context, p *authz.Principal, q, from string, n int) ([]*schema.Organization, string, error) {
+// page reads the registry newest-first from `at` — how many rows of it a walk
+// has already passed — keeping what matches q and what the caller does not
+// already hold, until it has n or the scan bound stops it. The returned cursor
+// resumes exactly where this read stopped.
+//
+// The position is a COUNT, not the last row's timestamp, because CreatedTime is
+// second-resolution and orgs created in the same second share one: a keyset that
+// asks for rows strictly older than the last one served would step over its
+// twin, and dropping an organization from an operator's list is a defect nobody
+// would see. `Filter` compares one field against one value, so the (time, name)
+// pair a tie-free keyset needs cannot be expressed here at all.
+func (h *OrganizationAPI) page(ctx context.Context, p *authz.Principal, q string, at, n int) ([]*schema.Organization, string, error) {
 	if n <= 0 {
-		return nil, encodeCursor(from), nil
+		// The caller's own organizations filled the page. There is still a registry
+		// behind them, so the walk continues from its start rather than ending here.
+		return nil, encodeCursor(at), nil
 	}
-	rows := orm.TypedQuery[schema.Organization](h.DB).Filter("Owner=", store.AdminOrg)
-	if from != "" {
-		rows = rows.Filter("CreatedTime<", from)
-	}
-	found, err := rows.Order("-CreatedTime").Limit(scanLimit).GetAll(ctx)
+	found, err := orm.TypedQuery[schema.Organization](h.DB).
+		Filter("Owner=", store.AdminOrg).
+		Order("-CreatedTime").Offset(at).Limit(scanLimit).GetAll(ctx)
 	if err != nil {
 		return nil, "", zip.ErrInternal(err.Error())
 	}
 	out := make([]*schema.Organization, 0, n)
-	for _, org := range found {
+	for read, org := range found {
+		if len(out) == n {
+			// One more matched than fits, so there is provably a next page, and it
+			// begins at the row this one stopped on.
+			return out, encodeCursor(at + read), nil
+		}
 		if held(p, org.Name) || !matches(org, q) {
 			continue
-		}
-		if len(out) == n {
-			// One more matched than fits, so there is provably a next page and its
-			// cursor is the last row served.
-			return out, encodeCursor(out[len(out)-1].CreatedTime), nil
 		}
 		out = append(out, org.Mask())
 	}
 	if len(found) < scanLimit {
 		return out, "", nil // the registry is exhausted, not the page
 	}
-	return out, encodeCursor(found[len(found)-1].CreatedTime), nil
+	return out, encodeCursor(at + len(found)), nil
 }
 
 // held reports whether the caller already received this org among their own.
@@ -214,24 +235,30 @@ func matches(org *schema.Organization, q string) bool {
 		strings.Contains(strings.ToLower(org.DisplayName), q)
 }
 
-// A cursor is a position, and it is encoded so it reads as one value rather than
-// as a timestamp a caller might compose. Decoding refuses anything this service
-// did not issue, so a hand-written cursor is an error and never a silent reset to
-// the first page.
-func encodeCursor(createdTime string) string {
-	if createdTime == "" {
-		return ""
-	}
-	return base64.RawURLEncoding.EncodeToString([]byte(createdTime))
+// A cursor is a position in the walk, encoded so it reads as one opaque value
+// rather than as a number a caller might do arithmetic on. Decoding refuses
+// anything this service did not issue, so a hand-written cursor is an error and
+// never a silent reset to the first page — a walk that quietly begins again
+// never ends.
+//
+// An absent cursor and a position of zero are different answers and must stay
+// distinguishable: absent means "start, and serve the caller's own first", zero
+// means "their own are already served, here is the registry from its start".
+func encodeCursor(at int) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(at)))
 }
 
-func decodeCursor(cursor string) (string, error) {
+func decodeCursor(cursor string) (int, error) {
 	if cursor == "" {
-		return "", nil
+		return 0, nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
-	return string(raw), nil
+	at, err := strconv.Atoi(string(raw))
+	if err != nil || at < 0 {
+		return 0, fmt.Errorf("cursor does not name a position")
+	}
+	return at, nil
 }

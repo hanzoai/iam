@@ -122,7 +122,7 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 		return httpx.Bad(500, "server_error", ""), nil
 	}
 	if !super {
-		record(ctx, db, schema.ActionAssumeOrg, actor, org, in.Forwarded, 403)
+		record(ctx, db, actionFor(org), actor, org, in.Forwarded, 403)
 		return httpx.Bad(403, "only a platform operator may step into an organization", ""), nil
 	}
 
@@ -182,11 +182,7 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 		return httpx.Bad(500, "server_error", ""), nil
 	}
 
-	action := schema.ActionAssumeOrg
-	if org == "" {
-		action = schema.ActionReleaseOrg
-	}
-	record(ctx, db, action, actor, org, in.Forwarded, 200)
+	record(ctx, db, actionFor(org), actor, org, in.Forwarded, 200)
 
 	return httpx.Good(assumed{
 		AccessToken: access,
@@ -219,6 +215,16 @@ func audienceOf(claims *Claims, app *schema.Application) string {
 //
 // A failed write never fails the act — the act already happened, and this is a
 // record, not a gate.
+// actionFor names the act by what it does: naming an organization is stepping
+// in, naming none is stepping out. Both arms read it, so a refusal is recorded
+// as the act that was refused rather than as the other one.
+func actionFor(org string) string {
+	if org == "" {
+		return schema.ActionReleaseOrg
+	}
+	return schema.ActionAssumeOrg
+}
+
 func record(ctx context.Context, db orm.DB, action, actor, org, forwarded string, status int) {
 	owner := org
 	if owner == "" {
