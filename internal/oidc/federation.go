@@ -572,7 +572,6 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 	u := schema.User{
 		Owner:             org,
 		Name:              name,
-		Type:              "normal-user",
 		DisplayName:       firstNonEmpty(id.displayName, name),
 		Email:             id.email,
 		EmailVerified:     id.emailVerified,
@@ -582,7 +581,8 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 		RegisterSource:    org + "/" + prov.Name,
 	}
 	*binding.ref(&u) = id.subject
-	created, err := users.New(db).Create(ctx, &users.CreateInput{User: u})
+	// A federated sign-in makes a PERSON, stated by this code (see CreateInput.Type).
+	created, err := users.New(db).Create(ctx, &users.CreateInput{User: u, Type: "normal-user"})
 	if err != nil || app.OrgChoiceMode != orgChoiceCreate {
 		return created, err
 	}
