@@ -319,7 +319,9 @@ func createUser(db orm.DB) zip.Handler {
 		password := applyToUser(&in, &u, authz.IsSuper(ctx))
 		u.Owner, u.Name = owner, in.UserName
 
-		created, err := users.New(db).Create(ctx, &users.CreateInput{User: u, Password: password})
+		// applyToUser set IsAdmin only when the caller is a SuperAdmin; state it
+		// through the in-process field, since the user body no longer carries it.
+		created, err := users.New(db).Create(ctx, &users.CreateInput{User: u, Password: password, Admin: u.IsAdmin})
 		if err != nil {
 			return mapErr(c, err)
 		}
@@ -358,7 +360,7 @@ func replaceUser(db orm.DB) zip.Handler {
 		password := applyToUser(&in, cur, authz.IsSuper(ctx)) // overlay onto the FULL row
 		cur.Owner, cur.Name = owner, name
 
-		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password})
+		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password, Admin: &cur.IsAdmin})
 		if err != nil {
 			return mapErr(c, err)
 		}
@@ -431,7 +433,7 @@ func patchUser(db orm.DB) zip.Handler {
 			password = pw
 		}
 		cur.Owner, cur.Name = owner, name
-		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password})
+		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password, Admin: &cur.IsAdmin})
 		if err != nil {
 			return mapErr(c, err)
 		}
