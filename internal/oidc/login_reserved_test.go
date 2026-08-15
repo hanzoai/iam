@@ -58,22 +58,10 @@ func TestLogin_reservedOrg_refusedThroughOrgChoiceApp(t *testing.T) {
 	}
 }
 
-// The dedicated admin console does not take a password either.
-//
-// This asserted the opposite until the reserved org became passkey-only: it was
-// the proof that confinement refused the reserved org through OTHER applications
-// while leaving its OWN console working. Confinement is still exactly that
-// precise — it is [store.PasskeyOwed] that now closes the console too, and it
-// closes it for the credential rather than for the application. What used to make
-// this pair legal (a reserved-org principal at the app that serves the reserved
-// org) is still legal; what is refused is the password.
-//
-// The precision the old assertion protected has not been lost, it has moved:
-// TestAnOrdinaryAccountStillSignsInWithItsPassword is now the proof that this is a
-// rule about operators and not a broken login. This becomes true again, in its
-// original form, when a passkey can be asserted — the sign-in will carry one and
-// the console will mint.
-func TestLogin_reservedOrg_adminConsoleTakesNoPassword(t *testing.T) {
+// The DEDICATED admin-console app (Organization == "admin") MUST still sign the
+// SuperAdmin in — proof the gate is precise (a reserved-org refuse, not an admin
+// lockout that would break the console).
+func TestLogin_reservedOrg_adminConsoleAllowed(t *testing.T) {
 	app, db := newServer(t)
 	seedAppFull(t, db, fullApp{clientID: "admin-console", secret: "s3cret", org: "admin", redirects: []string{testRedirect}})
 	seedOrg(t, db, "admin")
@@ -85,10 +73,10 @@ func TestLogin_reservedOrg_adminConsoleTakesNoPassword(t *testing.T) {
 	}
 	_, body := do(t, app, jsonReq("POST", PathLogin, f))
 	m := decode(t, body)
-	if m["status"] != "error" || m["msg"] != PasskeyOnly {
-		t.Fatalf("the admin console must refuse a password and say which credential is owed; got %v", m)
+	if m["status"] != "ok" {
+		t.Fatalf("the dedicated admin-console app must sign the SuperAdmin in; got %v", m)
 	}
-	if code, _ := m["data"].(string); code != "" {
-		t.Fatalf("the admin console minted a code for a password: %q", code)
+	if code, _ := m["data"].(string); code == "" {
+		t.Fatal("admin-console login should mint a code for the SuperAdmin")
 	}
 }
