@@ -46,6 +46,17 @@ type Organization struct {
 	Logo                   string     `json:"logo" orm:"varchar(200)"`
 	LogoDark               string     `json:"logoDark" orm:"varchar(200)"`
 	Favicon                string     `json:"favicon" orm:"varchar(200)"`
+
+	// How the organization appears across Hanzo — the square mark beside its
+	// name — as an image or as one emoji, never both. It is the pair a person
+	// carries (User.Avatar) under the same names, resolved the same way, so a
+	// screen draws a subject without asking which kind of subject it has. Both
+	// halves live on the row: a mark that appears everywhere cannot be kept on
+	// one device. Written through schema.MarkOf; Logo and LogoDark above are a
+	// different thing, the wordmark a login screen draws.
+	Avatar string `json:"avatar" orm:"varchar(255)"`
+	Emoji  string `json:"emoji" orm:"varchar(64)"`
+
 	HasPrivilegeConsent    bool       `json:"hasPrivilegeConsent" orm:"bool"`
 	PasswordType           string     `json:"passwordType" orm:"varchar(100)"`
 	PasswordSalt           string     `json:"passwordSalt" orm:"varchar(100)"`

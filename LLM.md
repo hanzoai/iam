@@ -144,6 +144,53 @@ registered "ALICE" alongside "Alice" is never resolved as the other. `users.look
 goes through it rather than repeating the query — restating it is how Create's
 uniqueness check stayed case-SENSITIVE while the rule it guards is not.
 
+## A mark is how a SUBJECT appears, and a subject is a person OR an org
+
+`schema.Mark` is the pair every subject carries — `avatar`, an image, and
+`emoji`, one glyph — with `schema.MarkOf` the one writer. A person already had
+`User.Avatar` (published as the OIDC `picture` claim and the SCIM `photos`
+value); `Organization` now carries the same two fields under the same names, so
+a screen draws a subject without asking which kind of subject it holds.
+
+**Two fields, one answer.** They are two fields because they are two TYPES:
+`picture` and `photos` are URL-typed by their specs, so an emoji in `avatar` is
+not a smaller answer, it is an invalid one. At most one is ever stored — an image
+wins at the WRITE and the emoji does not reach the row — so no reader ranks them
+and nothing downstream can rank them differently. Both empty means the subject is
+drawn as its initial, which is the only part that is the client's.
+
+**Both halves live on the ROW.** A mark appears everywhere the org does, so it
+cannot be kept per device. `Logo`/`LogoDark` are a different thing: the wordmark
+a login screen draws. `DefaultAvatar` is a third — the avatar new MEMBERS start
+with, not the org's own.
+
+**An image is a REFERENCE.** `https://…`, or the bytes inline as
+`data:image/{png,jpeg,gif,webp};base64,…` — which is what a crop performed in a
+browser produces, and what `User.Avatar` already holds. IAM stores no blobs and
+needs no bucket for this. `schema.AvatarRef` refuses everything else: `http` is a
+downgrade on a page served over TLS, and SVG renders in an `<img>` while being a
+document that executes. `AvatarLimit` (96 KiB) lives here because the row lives
+here — a bound enforced only by the client that writes it binds that client alone.
+
+**`POST /v1/iam/organizations/avatar`** (`setOrganizationAvatar`), body
+`{owner, name, avatar, emoji}`, answering the masked org row. Reads need no route:
+the pair rides on `organizations`/`organizations/get` like any other column, so a
+picker listing orgs gets every mark in the response it already makes.
+
+It is its own op rather than a field on `update` because `update` REPLACES the
+record and every read is masked — a client that read an org, changed one field and
+posted it back would persist `"***"` over `masterPassword`, `passwordSalt`,
+`passwordObfuscatorKey` and `kerberosKeytab`. This one applies two fields to the
+row as it stands, so nothing else can be carried in or out on the request.
+
+**Authorization is the one that already existed.** The path's first segment is
+`organizations`, so `authorize` reaches the reserved-owner clause and a write
+resolves to `p.adminOf(name)` — an org admin manages the org they administer, by
+their own `IsAdmin` or an owner/admin membership. Self-service, NOT SuperAdmin:
+nothing here consults the reserved `admin` org, and a plain member and a foreign
+org's admin are both refused. Pinned by `TestSetAvatar_*`, which drive the real
+router with a real bearer.
+
 ## Org scope — HONOURED or REFUSED, never silently reinterpreted
 
 **The rule.** A request that NAMES an organization gets that organization's data
