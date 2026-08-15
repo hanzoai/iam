@@ -42,19 +42,6 @@ const (
 	NextMfa = "NextMfa"
 )
 
-// PasskeyOnly is the answer an operator's sign-in earns. It is a plain refusal
-// rather than a challenge because there is nothing yet to challenge: the passkey
-// rows in internal/webauthn are registered and never asserted, so no ceremony can
-// turn possession of the device into proof of it.
-//
-// It is said AFTER the first credential is verified, at every door, and never
-// before. Refusing on the identifier alone would answer "who is an operator?" to
-// anyone who can type a username, and the set of operators is the first thing an
-// attacker wants — this endpoint already spends care making a wrong password
-// indistinguishable from an account that does not exist, and this must not undo
-// it. A caller who reaches this sentence already held the credential.
-const PasskeyOnly = "this account signs in with a passkey"
-
 // Gate is the second-factor decision — the ONE place a sign-in is held. It answers
 // the request itself and reports true when it did; a false means this principal has
 // proven everything it owes and the caller may mint.
@@ -71,16 +58,6 @@ const PasskeyOnly = "this account signs in with a passkey"
 func Gate(c *zip.Ctx, db orm.DB, user *schema.User, org *schema.Organization, verificationType string) (bool, error) {
 	ctx := c.Context()
 	now := nowFunc()
-
-	// An operator signs in with a passkey and with nothing else. This stands ahead
-	// of every branch below — before enrollment, before the remembered-device
-	// window, before any factor is offered — because each of those is a way for the
-	// sign-in to CONTINUE, and none of them may be reached by a password that
-	// belongs to the reserved org. Held here rather than at the password verify so
-	// the refusal costs a correct credential and tells a stranger nothing.
-	if store.PasskeyOwed(ctx, db, user.Owner, user.Name) {
-		return true, httpx.Err(c, PasskeyOnly)
-	}
 
 	// The organization REQUIRES a factor this user has not enrolled: the answer is
 	// enrollment, not a challenge it could never answer.
