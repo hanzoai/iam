@@ -307,8 +307,19 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 	}{
 		{"same org approves", "hanzo", false, true},
 		{"foreign org refused", "lux", false, false},
-		{"superadmin crosses tenants", "admin", false, true},
-		{"brand-anchored operator crosses tenants", "lux", true, true},
+		// Both operator rows expected an approval and now expect a refusal, and the
+		// reason has moved: they are not refused by the tenant boundary — which still
+		// blesses them — but at the credential, because approving a device is a
+		// sign-in and an operator's sign-in wants a passkey ([store.PasskeyOwed],
+		// through Gate, which loginGrant reaches before approveDevice).
+		//
+		// So the cross-tenant approval this table was written to prove is no longer
+		// exercised for an operator, by any test, until a passkey can be asserted. The
+		// rule is untouched in device.go; nothing reaches it. The refusal branch below
+		// is still worth asserting — a refused approval binds nobody and leaves the
+		// device pending — but it is no longer evidence about tenancy.
+		{"superadmin crosses tenants", "admin", false, false},
+		{"brand-anchored operator crosses tenants", "lux", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, db := newServer(t)
