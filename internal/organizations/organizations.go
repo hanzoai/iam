@@ -53,6 +53,8 @@ func (h *OrganizationAPI) route(app *zip.App) {
 		zip.WithOperationID("getOrganization"), zip.WithTags("organizations"))
 	zip.Post[UpdateOrganizationInput, schema.Organization](app, orgBase+"/update", h.Update,
 		zip.WithOperationID("updateOrganization"), zip.WithTags("organizations"))
+	zip.Post[SetAvatarInput, schema.Organization](app, orgBase+"/avatar", h.SetAvatar,
+		zip.WithOperationID("setOrganizationAvatar"), zip.WithTags("organizations"))
 	zip.Post[DeleteOrganizationInput, DeleteOrganizationOutput](app, orgBase+"/delete", h.Delete,
 		zip.WithOperationID("deleteOrganization"), zip.WithTags("organizations"))
 }
@@ -72,6 +74,15 @@ type UpdateOrganizationInput struct {
 type GetOrganizationInput struct {
 	Owner string `json:"owner"`
 	Name  string `json:"name"`
+}
+
+// SetAvatarInput selects an organization by natural key and carries how it is to
+// appear. Sending both halves empty clears the mark.
+type SetAvatarInput struct {
+	Owner  string `json:"owner"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar"`
+	Emoji  string `json:"emoji"`
 }
 
 // DeleteOrganizationInput selects the organization to remove by natural key.
@@ -194,6 +205,42 @@ func (h *OrganizationAPI) Update(ctx context.Context, in *UpdateOrganizationInpu
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return existing.Mask(), nil
+}
+
+// SetAvatar changes how an organization appears across Hanzo: the square mark
+// beside its name, as an uploaded image or as a single emoji. Sending an image
+// clears the emoji and sending an emoji clears the image — an organization has
+// one mark, not a preference order — and sending neither clears both, which is
+// how it goes back to being drawn as its initial.
+//
+// An image is an https link or the bytes inline as a data URL, up to 96 KiB.
+// Anyone who administers the organization may set this; it is not reserved to
+// the platform.
+//
+// It writes the two fields onto the stored row and touches nothing else, which
+// update cannot do: update replaces the whole record, and a record read back
+// first arrives masked, so a read-modify-write through it would persist the mask
+// over the organization's own credential settings.
+func (h *OrganizationAPI) SetAvatar(ctx context.Context, in *SetAvatarInput) (*schema.Organization, error) {
+	if in.Owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	mark, err := schema.MarkOf(in.Avatar, in.Emoji)
+	if err != nil {
+		return nil, zip.ErrBadRequest(err.Error())
+	}
+	org, err := h.find(in.Owner, in.Name)
+	if errors.Is(err, orm.ErrNotFound) {
+		return nil, zip.ErrNotFound("organization not found")
+	}
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	org.Avatar, org.Emoji = mark.Avatar, mark.Emoji
+	if err := org.UpdateCtx(ctx); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return org.Mask(), nil
 }
 
 // Delete removes an organization and everything named inside it. There is no
