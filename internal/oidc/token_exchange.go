@@ -5,6 +5,9 @@ package oidc
 
 import (
 	"crypto/subtle"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -121,7 +124,15 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
+	// A caller may ask for LESS life than the application declares and never more.
+	// A credential handed to a process that ends — a leased sandbox, one job — should
+	// die no later than the process does, and the client is the only party that knows
+	// when that is. The clamp runs one way, so the request can shorten the token and
+	// nothing about it can lengthen the application's own lifetime.
 	ttl := appTTL(clientApp)
+	if want := seconds(param(c, "lifetime")); want > 0 && want < ttl {
+		ttl = want
+	}
 	scope := param(c, "scope")
 	id := identityOf(ctx, db, user) // the ONE user→claims resolution
 	access, err := signer.SignUserToken(id, owner, aud, clientApp.ClientId, scope, ttl, now)
@@ -153,4 +164,16 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 		"expires_in":        int(ttl.Seconds()),
 		"scope":             scope,
 	})
+}
+
+// seconds reads a requested duration in whole seconds. Absent, unparseable or
+// non-positive all mean the caller asked for nothing, which leaves the
+// application's own lifetime standing rather than failing the exchange over a
+// field that only ever narrows what it already grants.
+func seconds(s string) time.Duration {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Second
 }

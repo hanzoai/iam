@@ -245,3 +245,58 @@ func TestTokenExchange_emitsAudit(t *testing.T) {
 		t.Fatalf("token-exchange audit = %+v, want one row {user:hanzo/alice, minter:hanzo-console}", logs)
 	}
 }
+
+// A client that knows how long it needs the token may ask for less than the
+// application grants, and the token really is shorter — this is what lets a
+// credential handed to a leased process die with the lease.
+func TestTokenExchange_lifetimeShortensTheToken(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
+	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "hanzo", "alice@hanzo.ai", "correct horse")
+
+	status, tok := exchange(t, app, "hanzo-console", "top-secret", url.Values{
+		"subject_token": {subject},
+		"lifetime":      {"900"},
+	})
+	if status != 200 {
+		t.Fatalf("status = %d; body=%v", status, tok)
+	}
+	if got, _ := tok["expires_in"].(float64); int(got) != 900 {
+		t.Errorf("expires_in = %v, want 900", tok["expires_in"])
+	}
+	access, _ := tok["access_token"].(string)
+	claims, err := verifyToken(context.Background(), db, access)
+	if err != nil {
+		t.Fatalf("exchanged token does not verify: %v", err)
+	}
+	if life := claims.ExpiresAt.Sub(nowFunc()); life > 15*time.Minute {
+		t.Errorf("token lives %v, want no more than the 900s asked for", life)
+	}
+}
+
+// The clamp runs ONE WAY. A request for more life than the application declares
+// leaves the application's own lifetime standing, so no caller can lengthen a
+// credential by asking.
+func TestTokenExchange_lifetimeCannotOutrunTheApplication(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
+	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "hanzo", "alice@hanzo.ai", "correct horse")
+
+	for _, asked := range []string{"86400", "0", "-1", "forever", ""} {
+		status, tok := exchange(t, app, "hanzo-console", "top-secret", url.Values{
+			"subject_token": {subject},
+			"lifetime":      {asked},
+		})
+		if status != 200 {
+			t.Fatalf("lifetime=%q: status = %d; body=%v", asked, status, tok)
+		}
+		want := int(appTTL(&schema.Application{}).Seconds())
+		if got, _ := tok["expires_in"].(float64); int(got) != want {
+			t.Errorf("lifetime=%q: expires_in = %v, want the application's own %d", asked, tok["expires_in"], want)
+		}
+	}
+}
