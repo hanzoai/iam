@@ -51,6 +51,8 @@ func (h *OrganizationAPI) route(app *zip.App) {
 		zip.WithOperationID("listOrganizations"), zip.WithTags("organizations"))
 	zip.Get[GetOrganizationInput, schema.Organization](app, orgBase+"/get", h.Get,
 		zip.WithOperationID("getOrganization"), zip.WithTags("organizations"))
+	zip.Get[SearchOrganizationsInput, SearchOrganizationsOutput](app, orgBase+"/search", h.Search,
+		zip.WithOperationID("searchOrganizations"), zip.WithTags("organizations"))
 	zip.Post[UpdateOrganizationInput, schema.Organization](app, orgBase+"/update", h.Update,
 		zip.WithOperationID("updateOrganization"), zip.WithTags("organizations"))
 	zip.Post[SetAvatarInput, schema.Organization](app, orgBase+"/avatar", h.SetAvatar,
