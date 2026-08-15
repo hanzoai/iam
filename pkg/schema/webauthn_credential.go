@@ -3,7 +3,11 @@
 
 package schema
 
-import "github.com/hanzoai/orm"
+import (
+	"encoding/base64"
+
+	"github.com/hanzoai/orm"
+)
 
 // WebauthnCredential is a registered WebAuthn/FIDO2 passkey (v1 the legacy surface kind
 // "webauthn_credential", v2 kind "webauthn_credentials"). In v1 there is no
@@ -40,6 +44,13 @@ type WebauthnCredential struct {
 	PublicKey       []byte `json:"publicKey"`
 	AttestationType string `json:"attestationType"`
 
+	// AttestationFormat is the statement format the authenticator attested in
+	// ("packed", "apple", "none", …), which is a DIFFERENT value from the
+	// attestation type above. The library reads it back when resolving the FIDO
+	// AppID extension, so a row that dropped it would round-trip a credential the
+	// verifier no longer recognises as the one it stored.
+	AttestationFormat string `json:"attestationFormat,omitempty"`
+
 	Transport  []string `json:"transport" orm:"serialize" datastore:"-"`
 	Transport_ string   `json:"-"`
 
@@ -53,3 +64,13 @@ type WebauthnCredential struct {
 	CloneWarning bool   `json:"cloneWarning"`
 	Attachment   string `json:"attachment"`
 }
+
+// CredentialName is the row Name for a raw credential id: its standard-base64
+// encoding, the same value v1 filed a credential under.
+//
+// It lives on the type because two packages must agree on it and neither owns the
+// other: the ceremony that WRITES a passkey row (internal/oidc) and the CRUD
+// surface that lists and revokes one (internal/webauthn). Were they to spell it
+// differently, enrollment would file a passkey under a name the revoke path could
+// never address — a credential nobody can take away.
+func CredentialName(id []byte) string { return base64.StdEncoding.EncodeToString(id) }
