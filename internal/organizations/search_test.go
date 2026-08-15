@@ -217,6 +217,56 @@ func TestSearch_pagesWithoutRepeatingOrDropping(t *testing.T) {
 	}
 }
 
+// An operator is usually anchored in a BRAND org and holds the reserved org as a
+// membership, because they also do ordinary work. Two things must hold for them:
+// the reserved org is not offered as somewhere to switch to — assume refuses it,
+// so listing it would be a destination that cannot be reached — and their own
+// organizations filling the page must not END the walk, or every tenant behind
+// them is unreachable.
+func TestSearch_anOperatorAnchoredInABrandOrg(t *testing.T) {
+	h := newHarness(t)
+	seedMany(t, h.db, 4)
+	// The reserved org has a row of its own, as it does in production — without
+	// one, filtering it would look correct because it was never resolvable.
+	seedOrg(t, h.db, store.AdminOrg)
+	seedMembership(t, h.db, "hanzo/boss", store.AdminOrg, store.RoleAdmin)
+
+	status, p, body := h.search(t, "hanzo/boss", "?limit=1")
+	if status != 200 {
+		t.Fatalf("status=%d body=%s, want 200", status, body)
+	}
+	if got := names(p); contains(got, store.AdminOrg) {
+		t.Fatalf("orgs=%v offers the platform organization as a tenant", got)
+	}
+	if got := names(p); len(got) != 1 || got[0] != "hanzo" {
+		t.Fatalf("first page = %v, want just their own org", got)
+	}
+	if p.Cursor == "" {
+		t.Fatal("their own filled the page and the walk ended — every tenant behind it is unreachable")
+	}
+
+	seen := map[string]bool{}
+	cursor := p.Cursor
+	for range 20 {
+		_, next, _ := h.search(t, "hanzo/boss", "?limit=1&cursor="+url.QueryEscape(cursor))
+		for _, n := range names(next) {
+			seen[n] = true
+		}
+		cursor = next.Cursor
+		if cursor == "" {
+			break
+		}
+	}
+	for _, want := range []string{"tenant00", "tenant03", "orgb"} {
+		if !seen[want] {
+			t.Fatalf("the walk never reached %s: %v", want, seen)
+		}
+	}
+	if seen[store.AdminOrg] {
+		t.Fatal("the walk offered the platform organization")
+	}
+}
+
 // A cursor is this service's own value. One that is not gets an error, never a
 // silent restart at the first page — a walk that quietly begins again never ends.
 func TestSearch_refusesACursorItDidNotIssue(t *testing.T) {
@@ -309,5 +359,17 @@ func TestSearch_answersAreMasked(t *testing.T) {
 	}
 	if strings.Contains(body, "hunter2") {
 		t.Fatalf("the tenant list leaked a master password: %s", body)
+	}
+}
+
+func seedMembership(t *testing.T, db orm.DB, user, org, role string) {
+	t.Helper()
+	m := orm.New[schema.Membership](db)
+	m.Owner, m.Name = store.AdminOrg, user+"|"+org
+	m.User, m.Org, m.Role = user, org, role
+	m.CreatedTime = time.Now().UTC().Format(time.RFC3339)
+	m.SetId(m.Owner + "/" + m.Name)
+	if err := m.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed membership: %v", err)
 	}
 }
