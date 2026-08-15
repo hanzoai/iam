@@ -205,7 +205,7 @@ func compareCmd() *cobra.Command {
 // mechanism that applies it, for every brand. Re-running is a no-op: the upsert
 // keys on <org>-<app> and preserves each existing client secret.
 func provisionCmd() *cobra.Command {
-	var config, url, token string
+	var config, url, token, credentials string
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "provision",
@@ -240,6 +240,9 @@ func provisionCmd() *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			r := &provision.Reconciler{BaseURL: url, Token: token, DryRun: dryRun}
+			if credentials != "" {
+				r.Credentials = provision.DirCredentials(credentials)
+			}
 			var failed int
 			for _, res := range r.Apply(cmd.Context(), clients) {
 				if res.Err != nil {
@@ -250,9 +253,29 @@ func provisionCmd() *cobra.Command {
 				fmt.Fprintf(out, "  %-8s %-28s %s\n", res.Action, res.Client.Name,
 					strings.Join(res.Client.RedirectUris, " "))
 			}
-			fmt.Fprintf(out, "%d app(s), %d failed\n", len(clients), failed)
+			// Accounts converge in the SAME run as the clients, because they are one
+			// document and a half-applied document is the state nobody can reason
+			// about. The run report is the audit record (the Job keeps the pod so
+			// `kubectl logs` can read it), so it says what each account is and
+			// whether a credential was actually delivered — "converged" and "usable"
+			// are different facts. It never prints the credential itself.
+			accounts := provision.Accounts(doc)
+			for _, res := range r.ApplyAccounts(cmd.Context(), accounts) {
+				name := res.Account.Org + "/" + res.Account.Account.Name
+				if res.Err != nil {
+					failed++
+					fmt.Fprintf(out, "  FAIL     %-28s %v\n", name, res.Err)
+					continue
+				}
+				cred := "credential preserved"
+				if res.Credential {
+					cred = "credential set"
+				}
+				fmt.Fprintf(out, "  %-8s %-28s %s account, %s\n", res.Action, name, res.Account.Account.Type, cred)
+			}
+			fmt.Fprintf(out, "%d app(s), %d account(s), %d failed\n", len(clients), len(accounts), failed)
 			if failed > 0 {
-				return fmt.Errorf("%d app(s) did not converge", failed)
+				return fmt.Errorf("%d item(s) did not converge", failed)
 			}
 			return nil
 		},
@@ -261,6 +284,12 @@ func provisionCmd() *cobra.Command {
 	f.StringVar(&config, "config", "", "path to the provision document (orgs[].apps[])")
 	f.StringVar(&url, "url", "https://hanzo.id", "IAM base URL to converge")
 	f.StringVar(&token, "token", "", "IAM service token (default $IAM_SERVICE_TOKEN)")
+	// The credential material a `kms://<path>` passwordRef resolves against —
+	// `<dir>/<path>`. It is the KMS→KMSSecret→Secret mount, not a KMS client:
+	// this command fetches no secrets of its own. Unset means no credential is
+	// sent and every account's existing one is PRESERVED, so a converge that only
+	// means to fix shape needs no access to secrets at all.
+	f.StringVar(&credentials, "credentials", "", "directory holding the credential material kms:// refs resolve against")
 	f.BoolVar(&dryRun, "dry-run", false, "print the derived plan without writing")
 	return cmd
 }
