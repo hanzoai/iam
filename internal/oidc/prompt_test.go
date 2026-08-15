@@ -471,36 +471,26 @@ func TestSilent_ReservedOrgConfinedOnTheSilentPath(t *testing.T) {
 	}
 	seedUserInOrg(t, db, "admin", "root", "root@hanzo.ai", "pw")
 
-	// Sign the admin in at their own console.
+	// The session this test used to spend can no longer be opened: a password does
+	// not sign an operator in ([store.PasskeyOwed]). The protection is now upstream
+	// of the one asserted below — there is no reserved-org session to confine —
+	// so what is checked here is that no cookie is handed out at all.
+	//
+	// The silent-path confinement in MintFor is untouched and still correct; this
+	// test no longer reaches it, and no other test does either while the reserved
+	// org has no door. When a passkey can be asserted, the sign-in here carries one
+	// and the rest of this test — spending that session on a SHARED app and being
+	// refused — is restored exactly as it was written.
 	form := url.Values{
 		"organization": {"admin"}, "application": {"console"},
 		"username": {"root"}, "password": {"pw"}, "type": {"login"},
 	}
 	resp, body := do(t, app, formReq("POST", PathLogin, form))
-	if resp.StatusCode != 200 || decode(t, body)["status"] != "ok" {
-		t.Fatalf("admin sign-in failed: status=%d body=%s", resp.StatusCode, body)
+	if decode(t, body)["status"] != "error" {
+		t.Fatalf("an operator's password opened a session: status=%d body=%s", resp.StatusCode, body)
 	}
-	cookie := cookieKV(resp.Header.Get("Set-Cookie"))
-
-	// Now try to spend that session on the SHARED app, silently.
-	verifier := "verifier-reserved-shared-01234567890123456789012345"
-	q := url.Values{
-		"response_type":         {"code"},
-		"client_id":             {"shared"},
-		"redirect_uri":          {secondRedirect},
-		"scope":                 {"openid"},
-		"state":                 {"st-adm"},
-		"prompt":                {"none"},
-		"code_challenge":        {pkce.Challenge(verifier)},
-		"code_challenge_method": {"S256"},
-	}
-	loc := requireRedirect(t, authorizeWith(t, app, q, cookie, nil), secondRedirect)
-	u, _ := url.Parse(loc)
-	if u.Query().Get("code") != "" {
-		t.Fatalf("a reserved-org session was silently granted through a shared app: %q", loc)
-	}
-	if got := u.Query().Get("error"); got != errAccessDenied {
-		t.Fatalf("error = %q, want %q", got, errAccessDenied)
+	if cookie := cookieKV(resp.Header.Get("Set-Cookie")); cookie != "" {
+		t.Fatalf("a refused sign-in still set a session cookie: %q", cookie)
 	}
 }
 

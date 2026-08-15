@@ -139,5 +139,12 @@ func (s *ormStore) VerifyPassword(ctx context.Context, owner, name, plaintext st
 		pwType = org.PasswordType
 	}
 	ok, _ := users.Authenticate(ctx, s.db, u, plaintext, pwType, time.Now())
+	// An operator signs in with a passkey, which no LDAP bind can carry. Asked
+	// AFTER the verify, not before: the bind answers one bit, so an early return
+	// would say the same false while taking none of the argon2id time, and the
+	// clock would separate operators from everyone else.
+	if ok && store.PasskeyOwed(ctx, s.db, owner, name) {
+		return false, nil
+	}
 	return ok, nil
 }
