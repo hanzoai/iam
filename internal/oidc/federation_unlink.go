@@ -64,8 +64,8 @@ func unlink(db orm.DB) zip.Handler {
 			return httpx.Err(c, "Please login first")
 		}
 		self := caller == f.User.Owner && name == f.User.Name
-		super := store.IsSuperAdmin(ctx, db, caller, name)
-		if !self && !super {
+		super, err := store.IsSuperAdmin(ctx, db, caller, name)
+		if err != nil || (!self && !super) {
 			return httpx.Err(c, "you are not permitted to unlink another user's account")
 		}
 

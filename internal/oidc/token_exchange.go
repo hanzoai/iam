@@ -88,9 +88,17 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	owner := user.Owner
 	natural := user.Owner + "/" + user.Name
 
-	// 3) A reserved-org (admin/built-in) subject is a cross-tenant / SuperAdmin
-	//    identity — gate it behind the separate admin-exchange capability.
-	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp) {
+	// 3) A SuperAdmin subject is a cross-tenant identity — gate it behind the
+	//    separate admin-exchange capability. The question is who the subject IS,
+	//    not what the request called them: an operator is usually anchored in a
+	//    brand org because they also do ordinary work there, so reading the owner
+	//    half admits the same authority under its other name. A subject we cannot
+	//    classify is not exchangeable.
+	super, err := store.IsSuperAdmin(ctx, db, owner, user.Name)
+	if err != nil {
+		return tokenError(c, 500, "server_error", "cannot determine the subject")
+	}
+	if (store.IsSigningCertOwner(owner) || super) && !adminMintAllowed(clientApp) {
 		return tokenError(c, 403, "access_denied", "not permitted to act for a reserved-org subject")
 	}
 
