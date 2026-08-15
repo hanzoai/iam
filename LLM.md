@@ -144,6 +144,63 @@ registered "ALICE" alongside "Alice" is never resolved as the other. `users.look
 goes through it rather than repeating the query — restating it is how Create's
 uniqueness check stayed case-SENSITIVE while the rule it guards is not.
 
+## Stepping into a tenant — the actor is never lost
+
+A platform operator supports every tenant and therefore has to see what a tenant
+sees. Three ops, and none of them is a new way to authenticate:
+
+| op | path | who |
+|---|---|---|
+| `searchOrganizations` | `GET /v1/iam/organizations/search?q=&limit=&cursor=` | anyone (scope is the caller's) |
+| `assume` | `POST /v1/iam/assume` `{"org":"acme"}` | SuperAdmin |
+| `release` | `POST /v1/iam/release` | SuperAdmin |
+
+**Nobody is impersonated.** `assume` RE-SCOPES the credential the caller
+presents: `sub`, `owner` and `name` on the token that comes back are the
+operator's own, and the tenant is named beside them in a new `assumed` claim. So
+every act downstream is attributed to the person who performed it and metering
+bills the account that did the work. `release` is the same mint with nothing
+assumed. The application, audience and signing cert are the presented token's, so
+the answer is a replacement for that token and not a token for somewhere else.
+
+**The tenant is reached through the switch that already exists.** The assumed org
+joins `orgs`, which is the set a resource server already reads to admit
+`X-Org-Id`. No consumer learns a second mechanism.
+
+**It is a LABEL, not a sandbox — say so.** An operator keeps the authority they
+already held. `authz.Principal.Super` is resolved from the membership ROWS, never
+from a token claim, so a claim cannot withdraw it here; making the token claim
+otherwise would be two answers to one question, and the weaker one would be a
+control we do not actually enforce.
+
+**ONE predicate.** `store.IsSuperAdmin` — belonging to the reserved `admin` org —
+which is the same question `authz.Principal.Super` answers above the seam. A
+per-org `IsAdmin` is a different, org-scoped fact; reading it would let the admin
+of one tenant step into every other, and that is the whole escalation these
+endpoints would otherwise be. Pinned: removing the predicate turns
+`TestAssume_orgAdminRefused` and `TestAssume_regularUserRefused` red.
+
+**Search answers one question with one shape** — "which organizations may I act
+in" — so a client never branches on who it is talking to: a person gets their
+memberships, an operator gets every org. Own organizations first (the common case
+needs no typing), then the rest newest-first, `q` matched server-side against name
+and display name, an opaque keyset cursor for the rest. The full tenant list never
+reaches a browser. A query only NARROWS what is already the caller's: it can never
+widen scope. `/v1/iam/organizations/search` is in `authz.handlerAuthorizedExact`
+because it names no target — an empty target fails the tenant rule, which would
+deny every non-SuperAdmin the list of their own orgs — so the handler scopes
+itself. Exact, not a prefix, so it cannot reach the entity list beside it.
+
+**Every privileged act is recorded, refusals included** — a refused attempt to
+step into a tenant is the row an auditor most wants. `schema.AuditLog` carries the
+real actor (`user`), the org (`organization`), the time (`createdTime`) and the
+address (`clientIp`, from `X-Forwarded-For`); the row is filed under the org
+stepped INTO so that tenant sees who was in it. `ActionAssumeOrg` /
+`ActionReleaseOrg` are `schema.PlatformWritten`, so the generic audit-log CRUD
+refuses to create, alter or delete one. Query it at
+`GET /v1/iam/audit-logs?owner=<org>` (indexed on organization, user, action,
+createdTime).
+
 ## A mark is how a SUBJECT appears, and a subject is a person OR an org
 
 `schema.Mark` is the pair every subject carries — `avatar`, an image, and
