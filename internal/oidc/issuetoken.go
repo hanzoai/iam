@@ -253,10 +253,14 @@ func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Ap
 	// Confinement asks who the TARGET is, not what the request called them. A
 	// SuperAdmin is an identity — owner "admin" OR a membership in it — and most
 	// operators are anchored in a brand org because they also do ordinary work, so
-	// reading the owner half of the id sees a tenant user and mints. This endpoint
-	// takes no user credential at all, which is why the question has to be asked of
-	// the target rather than of anything the caller proved.
-	if (store.IsSigningCertOwner(owner) || store.IsSuperAdmin(ctx, db, owner, name)) && !adminMintAllowed(clientApp) {
+	// reading the owner half of the id sees a tenant user and mints. A target we
+	// cannot classify is not mintable: the refusal is what the answer is spent on,
+	// so an unreadable membership set has to stop the mint rather than pass it.
+	super, err := store.IsSuperAdmin(ctx, db, owner, name)
+	if err != nil {
+		return nil, 500, "server_error"
+	}
+	if (store.IsSigningCertOwner(owner) || super) && !adminMintAllowed(clientApp) {
 		return nil, 403, "client is not permitted to act for a reserved-org user"
 	}
 	user, err := store.GetUserByName(ctx, db, owner, name)

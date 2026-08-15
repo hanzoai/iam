@@ -4,6 +4,7 @@
 package oidc
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -96,5 +97,48 @@ func TestMintConfinesAReservedOrgPrincipalToItsOwnApplication(t *testing.T) {
 	}
 	if _, err := MintFor(tctx(), db, console, "admin/root", Mint{Type: "code", RedirectUri: testRedirect}); err != nil {
 		t.Fatalf("the reserved org's own console must mint for it: %v", err)
+	}
+}
+
+// The exchange is the path tokens/issue is retired into, so it has to ask the same
+// question. An operator's id reads "hanzo/z" and names the same authority as
+// "admin/z"; only one of them looks reserved.
+func TestExchangeCannotReachAnOperatorInABrandOrg(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-chat") // a general client, no admin capability
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-chat", secret: "top-secret"})
+	seedOperator(t, db, "hanzo", "z", "correct-horse")
+
+	subject := subjectTokenFor(t, app, "hanzo-chat", "top-secret", "hanzo", "z", "correct-horse")
+	status, body := exchange(t, app, "hanzo-chat", "top-secret", url.Values{
+		"subject_token":      {subject},
+		"subject_token_type": {"urn:ietf:params:oauth:token-type:access_token"},
+	})
+	if status != 403 {
+		t.Fatalf("the exchange re-scoped an operator token (status=%d); body=%v", status, body)
+	}
+	if tok, _ := body["access_token"].(string); tok != "" {
+		t.Fatalf("a token was minted for an operator: %v", body)
+	}
+}
+
+// The paired control: an ordinary subject still exchanges, so the refusal above is
+// about the identity and not about the grant being shut.
+func TestExchangeStillWorksForAnOrdinarySubject(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-chat")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-chat", secret: "top-secret"})
+	seedUser(t, db, "dana", "dana@hanzo.example", "correct-horse")
+
+	subject := subjectTokenFor(t, app, "hanzo-chat", "top-secret", "hanzo", "dana", "correct-horse")
+	status, body := exchange(t, app, "hanzo-chat", "top-secret", url.Values{
+		"subject_token":      {subject},
+		"subject_token_type": {"urn:ietf:params:oauth:token-type:access_token"},
+	})
+	if status != 200 {
+		t.Fatalf("an ordinary subject was refused (status=%d); body=%v", status, body)
+	}
+	if tok, _ := body["access_token"].(string); tok == "" {
+		t.Fatalf("no token minted for an ordinary subject: %v", body)
 	}
 }
