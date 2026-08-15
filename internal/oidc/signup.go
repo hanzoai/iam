@@ -250,10 +250,12 @@ func signupHandler(db orm.DB) zip.Handler {
 		// stored or returned). PasswordType is stamped "argon2id" — exactly what
 		// internal/cred verifies for a new iam row.
 		created, err := users.New(db).Create(ctx, &users.CreateInput{
+			// The class is stated here, beside the create, rather than inside the user
+			// body — a signup makes a PERSON, and only this code may say so.
+			Type: "normal-user",
 			User: schema.User{
 				Owner:             f.Organization,
 				Name:              f.Username,
-				Type:              "normal-user",
 				DisplayName:       displayName(f),
 				FirstName:         f.FirstName,
 				LastName:          f.LastName,
