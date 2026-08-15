@@ -336,7 +336,7 @@ func deviceCodeGrant(c *zip.Ctx, db orm.DB) error {
 	}
 	resp, err := issueTokens(ctx, db, c, app, row, newFamilyID(row), now)
 	if err != nil {
-		return tokenError(c, 500, "server_error", "")
+		return mintError(c, err)
 	}
 	if err := store.SaveToken(ctx, db, row); err != nil {
 		return tokenError(c, 500, "server_error", "")
