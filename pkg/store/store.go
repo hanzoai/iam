@@ -526,25 +526,29 @@ const AdminOrg = "admin"
 // reserved org (memberships.mayGrant refuses that row to anyone else), and most
 // are anchored in a brand org because they also do ordinary work.
 //
-// Fails CLOSED: an unreadable membership set is not a grant. A per-org isAdmin
-// flag is a different, org-scoped question and never answers this one.
-func IsSuperAdmin(ctx context.Context, db orm.DB, owner, name string) bool {
+// It reports the read error rather than folding it into the answer. Which way an
+// unreadable membership set is unsafe depends on the caller: one that GRANTS on a
+// true wants false, one that REFUSES on a true wants true, and a single hardcoded
+// direction is fail-open for half of them. Callers decide, and none of them may
+// spend the answer without looking. A per-org isAdmin flag is a different,
+// org-scoped question and never answers this one.
+func IsSuperAdmin(ctx context.Context, db orm.DB, owner, name string) (bool, error) {
 	if owner == AdminOrg {
-		return true
+		return true, nil
 	}
 	if owner == "" || name == "" {
-		return false
+		return false, nil
 	}
 	rows, err := MembershipsByUser(ctx, db, owner+"/"+name)
 	if err != nil {
-		return false
+		return false, err
 	}
 	for _, m := range rows {
 		if m != nil && m.Org == AdminOrg {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // reservedServiceOrg is the system organization that owns service/app principals —
