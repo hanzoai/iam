@@ -277,3 +277,40 @@ func TestPasswordGrantStillWorksForAnOrdinaryAccount(t *testing.T) {
 		t.Fatalf("an ordinary password grant minted no token: %v", m)
 	}
 }
+
+// Reserved-org confinement, asked of MintFor directly.
+//
+// It is covered here rather than through the login door because the door now
+// refuses an operator at the credential ([store.PasskeyOwed]) and returns before
+// the mint is reached. Every test that used to reach confinement through a
+// password therefore stopped exercising it: deleting the rule from mint.go left
+// the whole package green. Confinement is not dead code — it is the rule that
+// binds a reserved-org principal to the application that serves the reserved org,
+// and it becomes load-bearing again the moment a sign-in can carry a passkey, so
+// it needs a test that does not depend on the door being open.
+func TestMintConfinesAReservedOrgPrincipalToItsOwnApplication(t *testing.T) {
+	_, db := newServer(t)
+	shared := seedApp(t, db, appOpts{clientID: "shared", secret: "s3cret", redirectURIs: []string{testRedirect}, shared: true})
+
+	// A shared application accepts every org by its tenant rule, and must still not
+	// mint for the reserved org.
+	if _, err := MintFor(tctx(), db, shared, "admin/root", Mint{Type: "code", RedirectUri: testRedirect}); err == nil {
+		t.Fatal("a shared application minted for a reserved-org principal")
+	}
+	// A bare sign-in carries no application at all — the same refusal, which is why
+	// confinement sits ahead of the type split.
+	if _, err := MintFor(tctx(), db, nil, "admin/root", Mint{Type: "login"}); err == nil {
+		t.Fatal("a bare sign-in minted for a reserved-org principal with no application")
+	}
+
+	// The application that SERVES the reserved org is the one pair confinement
+	// admits — so this is a rule about which application, not a blanket refusal.
+	console := seedApp(t, db, appOpts{clientID: "console", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	console.Organization = "admin"
+	if err := console.UpdateCtx(tctx()); err != nil {
+		t.Fatalf("point the app at the reserved org: %v", err)
+	}
+	if _, err := MintFor(tctx(), db, console, "admin/root", Mint{Type: "code", RedirectUri: testRedirect}); err != nil {
+		t.Fatalf("the reserved org's own console must mint for it: %v", err)
+	}
+}
