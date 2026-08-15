@@ -84,6 +84,23 @@ type CreateInput struct {
 	// answers for themselves. A request cannot reach it, which is the point: no
 	// caller can assert a consent on somebody else's behalf.
 	Consent *schema.Consent `json:"-"`
+	// Type and Admin are the identity CLASS — what KIND of principal this is, and
+	// whether it administers its org. They are off the wire for the same reason
+	// Consent is: a request must not be able to assert them, and here that is a
+	// MONEY rule, not a profile one. store.BillingAccount answers "org:<slug>" for
+	// a row that is either machine-typed or an admin of its home org, IAM signs
+	// that as the `billing_account` claim, and account.Payer honours a signed claim
+	// above everything else. In the shared signup org that claim names the
+	// platform's own balance — so a body that could state Type or IsAdmin could
+	// write itself a credential that spends it.
+	//
+	// The class therefore comes from the CALLER'S CODE, never the caller's JSON:
+	// signup states "normal-user", federation states the same, the service-account
+	// surface mints its own row with its own authorization, and SCIM states an
+	// admin bit only when the principal is a SuperAdmin. A body that carries them
+	// is ignored exactly as a body-supplied Id is.
+	Type  string `json:"-"`
+	Admin bool   `json:"-"`
 }
 
 // UpdateInput carries the desired user state plus an optional new plaintext
@@ -91,6 +108,17 @@ type CreateInput struct {
 type UpdateInput struct {
 	User     schema.User `json:"user"`
 	Password string      `json:"password,omitempty"`
+	// Admin raises or lowers the org-admin bit. Nil means "leave it as stored",
+	// which is what every profile edit means. It is off the wire (see CreateInput):
+	// the bit is one of the two things store.BillingAccount reads to name an org's
+	// pool as the payer, so stating it is a grant of spending authority and belongs
+	// to a caller that has checked for it — SCIM checks authz.IsSuper.
+	//
+	// There is no Type here at all. Nothing legitimately RE-CLASSES an existing
+	// principal: a person does not become a machine by being edited, and the one
+	// surface that makes machines creates its own row. So Type is always carried
+	// from the stored record, like Id and CreatedTime.
+	Admin *bool `json:"-"`
 }
 
 // AuthzTarget reports the (owner, name) this create binds — the user entity is
@@ -181,6 +209,12 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// impersonation). A migrated user's legacy UUID enters through the migrator's
 	// direct write, never this create path.
 	u.Id = uuid.NewString()
+	// The identity class is stated by the calling CODE or it is not stated at all;
+	// whatever the body carried is discarded here, exactly like the Id above and
+	// for a closely related reason. Both are fields a caller with user-admin scope
+	// could otherwise point at something it was never granted — Id at a victim's
+	// subject, Type/IsAdmin at the org pool's `billing_account` claim.
+	u.Type, u.IsAdmin = in.Type, in.Admin
 	// The JSON-document store hangs no per-field DB UNIQUE constraint (the same reason
 	// clientId uniqueness is enforced at the write, not by an index), so reject the
 	// astronomically-unlikely UUID clash HERE rather than admit a second row under one
@@ -341,6 +375,21 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	// unlock a user mid-attack (F-6).
 	u.SigninWrongTimes = existing.SigninWrongTimes
 	u.LastSigninWrongTime = existing.LastSigninWrongTime
+	// The identity CLASS is server-owned too, and for a money reason rather than a
+	// bookkeeping one. Type and IsAdmin are the two facts store.BillingAccount reads
+	// to answer "this principal spends the ORG POOL", which IAM then signs as the
+	// `billing_account` claim and account.Payer honours above every other signal —
+	// so in the shared signup org either field is a claim on the platform's own
+	// balance. This is a full-row write reached by the typed CRUD update AND the
+	// legacy update-user verb, both of which bind a whole user from the body, so
+	// without this an org admin could re-class any member of its org — quietly, and
+	// with isAdmin left false, since machine-typing alone is enough. Type is never
+	// restated; IsAdmin only by a caller that has checked it may (SCIM, SuperAdmin).
+	u.Type = existing.Type
+	u.IsAdmin = existing.IsAdmin
+	if in.Admin != nil {
+		u.IsAdmin = *in.Admin
+	}
 	// Every secret is carried from the stored row and any body value is IGNORED —
 	// the password digest, the key secret, the bearer material, the authenticator
 	// seed and its recovery codes. CarrySecretsFrom is the inverse of Mask, so the

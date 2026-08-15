@@ -118,9 +118,20 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		PublicGrant: tok.PublicGrant,
 	}
 	nu.Name = "rt-" + nameSeed[:24]
+	// issueTokens re-resolves nu.User against the user table, so THIS is where a
+	// rotation revalidates the subject it inherited. It matters here more than at
+	// any other grant: the User key above is copied from the predecessor, frozen at
+	// the establishment that minted the family, and a user can be deleted, banned,
+	// or re-keyed underneath it afterwards. Without the re-read, a family outlives
+	// the identity it was granted to and every rotation renews that.
+	//
+	// A dead subject needs no revocation of its own: the presented token was
+	// already consumed above and the successor is only persisted below, so the
+	// family ends here — and a replay of the consumed one still trips the reuse
+	// detector.
 	resp, err := issueTokens(ctx, db, c, app, nu, tok.RefreshFamily, now)
 	if err != nil {
-		return tokenError(c, 500, "server_error", "")
+		return mintError(c, err)
 	}
 	if err := store.PersistToken(ctx, db, nu); err != nil {
 		return tokenError(c, 500, "server_error", "")
