@@ -213,8 +213,8 @@ func TestSignup_luxCloud_createsPlainNonAdminUser(t *testing.T) {
 	}
 	// Now a stronger claim than it used to be: not anchored in the reserved org,
 	// AND holding no membership there — a signup can mint neither.
-	if store.IsSuperAdmin(context.Background(), db, u.Owner, u.Name) {
-		t.Error("lux.cloud signup produced a SuperAdmin — must be a PLAIN user")
+	if super, err := store.IsSuperAdmin(context.Background(), db, u.Owner, u.Name); err != nil || super {
+		t.Errorf("lux.cloud signup produced a SuperAdmin — must be a PLAIN user (super=%v err=%v)", super, err)
 	}
 	if u.Type != "normal-user" {
 		t.Errorf("type = %q, want normal-user", u.Type)
