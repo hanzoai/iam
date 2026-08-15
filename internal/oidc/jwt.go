@@ -99,6 +99,21 @@ type Claims struct {
 	// token, which has no membership, never carries it), so one struct still serves
 	// both an app token and a user token without emitting an empty claim.
 	Orgs []schema.OrgRef `json:"orgs,omitempty"`
+	// Assumed names the organization a platform operator has stepped into
+	// (/v1/iam/assume). Absent on every ordinary token.
+	//
+	// It does not replace anybody. Subject, owner and name remain the operator's
+	// own, so the act is attributed to the person who performed it and metering
+	// bills the account that did the work; this claim says WHERE they were
+	// working. `orgs` carries the tenant beside it, which is how the assumed
+	// organization is reached — through the org switch a resource server already
+	// implements, rather than a second one taught to every consumer.
+	//
+	// It is a LABEL, not a sandbox. An operator keeps the authority they already
+	// held: IAM resolves SuperAdmin from the membership rows, never from a token
+	// claim, so a claim could not withdraw it here and pretending otherwise
+	// downstream would mean two answers to one question.
+	Assumed string `json:"assumed,omitempty"`
 	// Groups is the same membership set as flat names, under the name OIDC
 	// consumers already read. `orgs` carries a role per org, which is what our own
 	// resource servers need and what a generic consumer cannot parse: a relying
@@ -136,6 +151,7 @@ type Identity struct {
 	Billing string
 	Type    string // the identity CLASS; empty for a person (schema.Program)
 	Orgs    []schema.OrgRef
+	Assumed string // the organization a platform operator has stepped into
 }
 
 // Signer signs tokens with one key under one algorithm. Immutable after
@@ -234,6 +250,7 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		TokenType:         kind,
 		Orgs:              id.Orgs,
 		Groups:            groupsOf(id.Orgs),
+		Assumed:           id.Assumed,
 	}, nil
 }
 

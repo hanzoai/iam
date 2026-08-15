@@ -27,6 +27,16 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
+	zip.Describe("GET /v1/iam/organizations/search", zip.Doc{
+		Description: "Returns the organizations you can act in, the ones you belong to first\nand the rest after, newest first, narrowed by an optional query against the\nname or the display name.\n\nPlatform operators see every organization; everyone else sees their own. Pass\nthe cursor from the previous page to continue; an empty cursor in the answer\nmeans there is nothing more.",
+		Fields: map[string]string{
+			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
+			"Organization.avatar":            "How the organization appears across Hanzo — the square mark beside its\nname — as an image or as one emoji, never both. It is the pair a person\ncarries (User.Avatar) under the same names, resolved the same way, so a\nscreen draws a subject without asking which kind of subject it has. Both\nhalves live on the row: a mark that appears everywhere cannot be kept on\none device. Written through schema.MarkOf; Logo and LogoDark above are a\ndifferent thing, the wordmark a login screen draws.",
+			"Organization.failedSigninLimit": "Per-organization signin throttle. Zero means \"inherit the application\ndefault\"; a non-zero value overrides it. Safe bounds are clamped by the\nresource service before persistence.",
+			"Organization.founder":           "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
+			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
+		},
+	})
 	zip.Describe("POST /v1/iam/organizations", zip.Doc{
 		Description: "Makes a new organization — the account your users, applications, roles,\nprojects and workspaces are all named inside. It is the first write in a new\ntenant, and a name already in use is refused rather than taken over.",
 		Fields: map[string]string{
