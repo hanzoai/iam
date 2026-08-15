@@ -72,6 +72,12 @@ func init() {
 	zip.Describe("GET /v1/iam/oauth/userinfo", zip.Doc{
 		Description: "Returns the profile claims for whoever the access token\nbelongs to — the standard OpenID Connect way to find out who is calling you\nwithout your application storing anything itself.\n\nThe token must still be live: revoke it and this stops answering.",
 	})
+	zip.Describe("GET /v1/iam/webauthn/signin/begin", zip.Doc{
+		Description: "Starts a passkey sign-in: it returns the challenge the person's\nauthenticator signs.\n\nThe account is named in the query, and the challenge is bound to it, so what may\nanswer is decided here — by the server, from the row — and the finish checks the\nanswer against that decision rather than recomputing it.",
+	})
+	zip.Describe("GET /v1/iam/webauthn/signup/begin", zip.Doc{
+		Description: "Starts enrolling a passkey for the signed-in person: it returns the\noptions their browser hands to the authenticator.\n\nPasskeys already on the account are EXCLUDED, so a second enrollment on a device\nthat already holds one is refused by the authenticator itself rather than\nsilently producing a duplicate the person cannot tell apart.",
+	})
 	zip.Describe("GET /v1/iam/whoami", zip.Doc{
 		Description: "Tells you who the current caller is — the lightweight check a\npage makes on load to decide whether to render signed-in or signed-out.\n\nIt answers for a session cookie or a bearer token alike, and says plainly when\nnobody is signed in rather than failing.",
 	})
@@ -152,6 +158,12 @@ func init() {
 	})
 	zip.Describe("POST /v1/iam/verification-codes", zip.Doc{
 		Description: "Validates the request and asks otp to get a code to the\nperson. The request fields are read via fiber's FormValue — the escape hatch zip\nexposes for form bodies (multipart or urlencoded) — since the typed JSON Bind does\nnot apply here. v1 also accepts countryCode/method/checkUser/captchaType; iam\nignores them (the captcha/forget/MFA flows those drive are not ported), and\nCAPTCHA verification is likewise not enforced — iam models no captcha provider —\nso the code is issued once the destination and application validate.",
+	})
+	zip.Describe("POST /v1/iam/webauthn/signin/finish", zip.Doc{
+		Description: "Verifies the signed challenge and signs the person in.\n\nIt answers exactly as a password sign-in does — the same envelope, through the\nsame grant — so nothing downstream branches on how somebody arrived.",
+	})
+	zip.Describe("POST /v1/iam/webauthn/signup/finish", zip.Doc{
+		Description: "Verifies the newly created passkey and stores it, so the person\ncan sign in with their device from then on.",
 	})
 	zip.Describe("PUT /v1/iam/consent", zip.Doc{
 		Description: "Records the calling person's privacy and communication\nchoices. Only their own — there is no way to set consent for somebody else.\n\nSend only the answers you are changing. A question you leave out keeps the\nanswer it already had, so a screen that saves one switch never revokes the\nother, and two screens saving at once do not undo each other.\n\nAn answer this version does not recognize is refused here rather than stored,\nso nothing is ever persisted for a later reader to have to interpret.",
