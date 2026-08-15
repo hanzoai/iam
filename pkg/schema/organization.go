@@ -41,11 +41,11 @@ type Organization struct {
 	Name        string `json:"name" orm:"varchar(100) notnull pk"`
 	CreatedTime string `json:"createdTime" orm:"varchar(100)"`
 
-	DisplayName            string     `json:"displayName" orm:"varchar(100)"`
-	WebsiteUrl             string     `json:"websiteUrl" orm:"varchar(100)"`
-	Logo                   string     `json:"logo" orm:"varchar(200)"`
-	LogoDark               string     `json:"logoDark" orm:"varchar(200)"`
-	Favicon                string     `json:"favicon" orm:"varchar(200)"`
+	DisplayName string `json:"displayName" orm:"varchar(100)"`
+	WebsiteUrl  string `json:"websiteUrl" orm:"varchar(100)"`
+	Logo        string `json:"logo" orm:"varchar(200)"`
+	LogoDark    string `json:"logoDark" orm:"varchar(200)"`
+	Favicon     string `json:"favicon" orm:"varchar(200)"`
 
 	// How the organization appears across Hanzo — the square mark beside its
 	// name — as an image or as one emoji, never both. It is the pair a person

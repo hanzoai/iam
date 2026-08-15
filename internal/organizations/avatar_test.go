@@ -65,10 +65,10 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(func() { _ = db.Close() })
 
 	seedCert(t, db, "admin", signingKid, pemOf(t, key))
-	seedUser(t, db, "admin", "root", true)   // SuperAdmin (org == admin)
-	seedUser(t, db, "hanzo", "boss", true)   // administers hanzo
+	seedUser(t, db, "admin", "root", true)    // SuperAdmin (org == admin)
+	seedUser(t, db, "hanzo", "boss", true)    // administers hanzo
 	seedUser(t, db, "hanzo", "nobody", false) // belongs to hanzo, administers nothing
-	seedUser(t, db, "orgb", "bob", true)     // administers a different tenant
+	seedUser(t, db, "orgb", "bob", true)      // administers a different tenant
 
 	// Every organization row is filed under the admin owner; the org's NAME is
 	// the tenant. MasterPassword is seeded because it is what proves this write
