@@ -269,14 +269,6 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return fedErrorRedirect(c, st, "server_error", "")
 		}
-		// An operator signs in with a passkey, and a federated login is a password
-		// somewhere else: whoever holds the Google or GitHub account holds this door.
-		// Stated here because this callback decides the second factor inline instead
-		// of through Gate, so the rule has to be true in both places or it is true in
-		// neither.
-		if store.PasskeyOwed(ctx, db, user.Owner, user.Name) {
-			return fedErrorRedirect(c, st, "access_denied", PasskeyOnly)
-		}
 		if factor.Prompt(org, user) {
 			// The organization requires a factor this federated user has not enrolled;
 			// a federated login cannot enroll one inline, so it fails closed.

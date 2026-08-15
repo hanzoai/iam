@@ -311,14 +311,6 @@ func (h *handler) userByPassword(ctx context.Context, id, secret string) *schema
 			continue
 		}
 		if ok, _ := users.Authenticate(ctx, h.db, u, secret, orgPasswordType(ctx, h.db, org), time.Now()); ok {
-			// An operator signs in with a passkey, which a docker client cannot
-			// present. Skipping the reserved ORGS above does not cover this: the
-			// operator resolved here is anchored in a brand org and holds a membership
-			// in the reserved one. Their machine push identity is the API key and the
-			// service account beside this — neither is a password, and neither changes.
-			if store.PasskeyOwed(ctx, h.db, u.Owner, u.Name) {
-				return nil
-			}
 			return u
 		}
 	}

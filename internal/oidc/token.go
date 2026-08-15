@@ -404,14 +404,6 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	if user.IsForbidden || user.IsDeleted {
 		return tokenError(c, 400, "invalid_grant", "the user is forbidden")
 	}
-	// An operator signs in with a passkey, and this grant carries a password. The
-	// reserved-org check above cannot stand in for this one: it reads the org NAME
-	// off the request, so it refuses organization=admin and admits the operator who
-	// is anchored in a brand org and holds a membership in the reserved one — which
-	// is most of them. This asks about the identity the password just proved.
-	if store.PasskeyOwed(ctx, db, user.Owner, user.Name) {
-		return tokenError(c, 400, "invalid_grant", PasskeyOnly)
-	}
 
 	// Build a fresh grant row (owner/name upfront so newFamilyID has a stable id),
 	// then mint through the ONE shared token path (access + id_token on openid +

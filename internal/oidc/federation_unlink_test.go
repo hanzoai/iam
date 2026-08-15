@@ -260,24 +260,21 @@ func TestUnlink_BrandAnchoredOperatorMayRemoveTheOnlyCredential(t *testing.T) {
 	linkGitHub(t, db, "alice", "gh-alice", true)
 	clearPassword(t, db, "alice")
 
-	// The operator cannot obtain the bearer this test spends: a password does not
-	// sign them in ([store.PasskeyOwed]). The force-unlink authority itself is
-	// unchanged in federation_unlink.go and still keyed on the reserved-org
-	// membership — it simply has no caller while the reserved org has no door, and
-	// this is the only test that exercised it.
-	//
-	// Asserting the refusal here rather than deleting the test keeps the seam
-	// named: when a passkey can be asserted, this sign-in carries one and the
-	// unlink assertion below the fold is restored as written.
-	code, _, body := loginForCode(t, app, map[string]string{
+	code, _, _ := loginForCode(t, app, map[string]string{
 		"organization": "hanzo", "username": "op", "password": "pw",
 		"clientId": "conf", "redirectUri": testRedirect, "scope": "openid",
 	})
-	if code != "" {
-		t.Fatalf("an operator's password minted a code: %q", code)
+	_, tok := exchangeCode(t, app, url.Values{
+		"code": {code}, "client_id": {"conf"}, "client_secret": {"s3cret"}, "redirect_uri": {testRedirect},
+	})
+	operator, _ := tok["access_token"].(string)
+	if operator == "" {
+		t.Fatalf("the operator must be able to sign in: %v", tok)
 	}
-	if m := decode(t, body); m["msg"] != PasskeyOnly {
-		t.Fatalf("the operator's sign-in must name the credential it wants; got %v", m)
+
+	if _, m := doUnlink(t, app, operator, "GitHub", "hanzo", "alice"); m["status"] != "ok" {
+		t.Fatalf("an operator holding the reserved-org membership must be able to force "+
+			"the unlink, got %v", m["msg"])
 	}
 }
 
