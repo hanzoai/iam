@@ -79,6 +79,13 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	// reset is followed by an ordinary sign-in.
 	zip.Put[passwordBody, httpx.Answer](r, PathPassword, putPasswordHandler(db),
 		zip.WithStatus(200, 400), zip.WithTags("auth"))
+	// A platform operator stepping into an organization, and back out. Both
+	// re-scope the credential the caller presents and neither reads one, so they
+	// self-authenticate on that token exactly as the minters above do.
+	zip.Post[assumeBody, httpx.Answer](r, PathAssume, assumeHandler(db),
+		zip.WithStatus(200, 400, 401, 403, 404), zip.WithTags("auth"))
+	zip.Post[assumeBody, httpx.Answer](r, PathRelease, releaseHandler(db),
+		zip.WithStatus(200, 400, 401), zip.WithTags("auth"))
 	// Account-canonical data-sharing consent (insights + opt-in training) — the ONE
 	// source of truth the hanzo.id signup, the browser extension, and hanzo.ai share.
 	r.Get(PathConsent, getConsentHandler(db))

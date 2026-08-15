@@ -84,6 +84,12 @@ func init() {
 	zip.Describe("POST /v1/iam/admin/provision", zip.Doc{
 		Description: "Sets up an account on someone's behalf — the same\nonboarding a person gets themselves, driven by one of your own services\ninstead of by them.\n\nIt authenticates as your service rather than as a person, which is why the\nperson to provision is named in the request. The setup it performs is\nidentical to self-service onboarding; there is one provisioning path, not\ntwo that can drift.",
 	})
+	zip.Describe("POST /v1/iam/assume", zip.Doc{
+		Description: "Steps a platform operator into an organization: it returns their\nown access token re-scoped to that tenant, so they see what the tenant sees.\n\nThe token still names the operator — stepping in is not becoming somebody\nelse — and records the organization it was scoped to, so everything done with\nit is attributed to the person who did it. Only a platform operator may, and\nthe attempt is recorded whether or not it succeeds.",
+		Fields: map[string]string{
+			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+		},
+	})
 	zip.Describe("POST /v1/iam/issue-user-token", zip.Doc{
 		Description: "Mints an access token for the `?id=<owner>/<name>` target\nuser (optional `?aud=` resource, RFC 8707), issued by the authenticated +\nallow-listed confidential client. The token's subject + owner are the TARGET\nUSER's, so a resource server scopes on the validated owner claim to the user's\ntenant — indistinguishable from a token the user obtained directly. Response is\nthe camelCase `{accessToken, expiresIn}` body identity.ts consumes. Equivalent to\nthe RFC 8693 token-exchange grant, minus the subject_token proof (the console has\nthe user's id, not a token) — the reason this compat shim exists.",
 	})
@@ -134,6 +140,12 @@ func init() {
 	})
 	zip.Describe("POST /v1/iam/preferences", zip.Doc{
 		Description: "Saves the calling person's own settings and returns\nthe full set afterwards. Send only the settings you are changing — the rest\nare kept, so two screens can save at once without one undoing the other.",
+	})
+	zip.Describe("POST /v1/iam/release", zip.Doc{
+		Description: "Steps a platform operator back out: it returns their own access\ntoken with no organization assumed, which is the credential they had before\nthey stepped in. Recorded like the step in.",
+		Fields: map[string]string{
+			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+		},
 	})
 	zip.Describe("POST /v1/iam/revoke-user-keys", zip.Doc{
 		Description: "Clears the target user's key of the requested TYPE (immediate\nrevoke). Scoped by the same `?type` field mint takes, so revoking the browser key\nleaves the server key working. A secret key's stored value is the sk- in its\nschema.Key row.",

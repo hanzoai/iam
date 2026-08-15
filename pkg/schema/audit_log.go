@@ -43,6 +43,14 @@ const (
 	ActionMintUserKeys    = "mint-user-keys"
 	ActionRevokeUserKeys  = "revoke-user-keys"
 	ActionTokenExchange   = "token-exchange"
+
+	// A platform operator stepping into an organization and back out, and reaching
+	// past their own memberships to enumerate the registry. All three are
+	// privileged cross-tenant acts, so all three are recorded — and so is a
+	// refusal, which is the row an auditor most wants to find.
+	ActionAssumeOrg  = "assume-organization"
+	ActionReleaseOrg = "release-organization"
+	ActionListOrgs   = "list-organizations"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -53,7 +61,8 @@ const (
 func PlatformWritten(action string) bool {
 	switch action {
 	case ActionConsentTraining, ActionIssueUserToken, ActionMintUserKeys,
-		ActionRevokeUserKeys, ActionTokenExchange:
+		ActionRevokeUserKeys, ActionTokenExchange,
+		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs:
 		return true
 	}
 	return false
