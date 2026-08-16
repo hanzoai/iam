@@ -23,19 +23,12 @@ name: Sync from GitHub
 # done by the runner's own workflow token against the instance URL that
 # actions/checkout already uses. Nothing needs a forge-write key in GitHub.
 #
-# That token is read-only unless the workflow asks for more, and main is a
-# protected branch, which admits a write and refuses a read. Hence the
-# permissions below: without them the fetch succeeds and the push is rejected,
-# which reads as a sync that runs and never lands.
-#
 # Fast-forward only: a divergence fails LOUDLY rather than force-pushing either
 # side.
 on:
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch: {}
-permissions:
-  contents: write
 concurrency:
   group: sync-from-github
   cancel-in-progress: false
