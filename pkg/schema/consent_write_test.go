@@ -23,7 +23,7 @@ func TestEncodeRefusesAnAnswerItWouldHaveToNormalize(t *testing.T) {
 			if err := u.SetConsent(&Consent{Training: Answer(bad)}); err == nil {
 				t.Fatalf("SetConsent accepted training=%q", bad)
 			}
-			if _, recorded := u.consentMember(); recorded {
+			if _, recorded := u.pref(ConsentKey); recorded {
 				t.Fatalf("a refused answer still reached the record: %v", u.Properties)
 			}
 		})
@@ -50,7 +50,7 @@ func TestSetConsentNilStripsOnlyTheConsent(t *testing.T) {
 	if u.Consent().MayTrain() {
 		t.Fatal("a caller-supplied grant survived the create path — consent is forgeable")
 	}
-	if _, recorded := u.consentMember(); recorded {
+	if _, recorded := u.pref(ConsentKey); recorded {
 		t.Fatalf("the consent member is still present: %s", u.Properties[PreferencesKey])
 	}
 	blob := u.Properties[PreferencesKey]
@@ -135,7 +135,7 @@ func TestCarryConsentFromBeatsTheBody(t *testing.T) {
 		if body.Consent().MayTrain() {
 			t.Fatal("a forged grant survived against a user who never answered")
 		}
-		if _, recorded := body.consentMember(); recorded {
+		if _, recorded := body.pref(ConsentKey); recorded {
 			t.Fatalf("a user who never answered acquired a record: %s", body.Properties[PreferencesKey])
 		}
 	})
