@@ -478,3 +478,13 @@ func pemOf(t *testing.T, k *rsa.PrivateKey) string {
 		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k),
 	}))
 }
+
+// readBasic drives a GET authenticating as a confidential client, the way a
+// brand console reaches this surface.
+func (h *harness) readBasic(t *testing.T, path, clientID, secret string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest("GET", path, nil)
+	req.Host = "hanzo.id"
+	req.SetBasicAuth(clientID, secret)
+	return h.raw(t, req)
+}

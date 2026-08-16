@@ -118,12 +118,11 @@ func list(db orm.DB) zip.TypedHandler[lookup, httpx.Answer] {
 			}
 			return listed(store.MembershipsByOrg(ctx, db, in.Org))
 		}
-		// A user id is "<homeOrg>/<name>": its home org is the tenant bound here.
-		home, _, found := strings.Cut(in.User, "/")
-		if !found || home == "" {
+		owner, name, found := strings.Cut(in.User, "/")
+		if !found || owner == "" || name == "" {
 			return httpx.Bad(400, "user must be <owner>/<name>", ""), nil
 		}
-		if !scoped(ctx, home) {
+		if !mayReadTenancy(ctx, owner, name) {
 			return httpx.Bad(400, unauthorized, ""), nil
 		}
 		return listed(store.MembershipsByUser(ctx, db, in.User))
@@ -220,6 +219,33 @@ func mayGrant(ctx context.Context, org string) bool {
 func scoped(ctx context.Context, org string) bool {
 	got, err := authz.Scope(ctx, org)
 	return err == nil && got == org
+}
+
+// mayReadTenancy reports whether the caller may read WHICH ORGANIZATIONS a person
+// acts in. It is a different question from the roster above, and it was answered
+// as if it were the same one.
+//
+// The answer names that person's OTHER tenants. Binding it to the home org of the
+// NAMED user — rather than to what the caller may know about them — made every
+// colleague an authority on it: anyone in hanzo could ask about hanzo/dave and be
+// told he also works in acme, an organization the asker has nothing to do with.
+// The roster question does not have this shape, because an org's own membership
+// list discloses only that org.
+//
+// So a person must ADMINISTER the account, which is the authority that already
+// governs reading that person's record — one question, one predicate, and a
+// tenancy list can never show more than the user surface beside it.
+//
+// An application is bound to the tenant it SERVES, exactly as it is for every
+// other read of that tenant's data. It is not a colleague: it is the tenant's own
+// backend, and narrowing it here would change which clients can render an org
+// switcher without closing anything — a machine credential is already confined to
+// one tenant, and the leak this closes is between PEOPLE.
+func mayReadTenancy(ctx context.Context, owner, name string) bool {
+	if p, ok := authz.From(ctx); ok && p.App != "" {
+		return scoped(ctx, owner)
+	}
+	return authz.Can(ctx, "GET", "users", owner, name)
 }
 
 // listed answers a membership listing, or the error envelope on failure. It takes
