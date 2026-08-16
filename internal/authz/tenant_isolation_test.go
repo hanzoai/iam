@@ -59,10 +59,13 @@ func seedToken(t *testing.T, db orm.DB, owner, name string) {
 	}
 }
 
-func seedWebauthn(t *testing.T, db orm.DB, owner, name string) {
+// A passkey belongs to a PERSON, so the seed names one. The list is scoped to
+// the person it is about, not to their organization — an org-wide passkey
+// listing was every member's credential rows in one answer.
+func seedWebauthn(t *testing.T, db orm.DB, owner, name, user string) {
 	t.Helper()
 	w := orm.New[schema.WebauthnCredential](db)
-	w.Owner, w.Name = owner, name
+	w.Owner, w.Name, w.User = owner, name, user
 	w.SetId(owner + "/" + name)
 	if err := w.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed webauthn %s/%s: %v", owner, name, err)
@@ -97,8 +100,8 @@ func TestListRoutesNeverLeakAnotherTenant(t *testing.T) {
 	seedCert(t, h.db, "orgb", "cert-secret-orgb", "")
 	seedToken(t, h.db, "hanzo", "token-mine-hanzo")
 	seedToken(t, h.db, "orgb", "token-secret-orgb")
-	seedWebauthn(t, h.db, "hanzo", "wa-mine-hanzo")
-	seedWebauthn(t, h.db, "orgb", "wa-secret-orgb")
+	seedWebauthn(t, h.db, "hanzo", "wa-mine-hanzo", "hanzo/boss")
+	seedWebauthn(t, h.db, "orgb", "wa-secret-orgb", "orgb/bob")
 
 	boss := h.token(t, "hanzo/boss") // org admin of hanzo, and of nothing else
 
@@ -111,7 +114,7 @@ func TestListRoutesNeverLeakAnotherTenant(t *testing.T) {
 		{"/v1/iam/invitations?owner=hanzo", "invite-mine-hanzo", "invite-secret-orgb"},
 		{"/v1/iam/audit-logs?owner=hanzo", "audit-mine-hanzo", "audit-secret-orgb"},
 		{"/v1/iam/tokens?owner=hanzo", "token-mine-hanzo", "token-secret-orgb"},
-		{"/v1/iam/webauthn-credentials?owner=hanzo", "wa-mine-hanzo", "wa-secret-orgb"},
+		{"/v1/iam/webauthn-credentials", "wa-mine-hanzo", "wa-secret-orgb"},
 		// organizations is the tenant registry — authz treats it as the ONE
 		// exception to the reserved-owner gate, and the route is SuperAdmin-only,
 		// so this case should refuse rather than list. Included so a future change
