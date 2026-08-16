@@ -29,13 +29,8 @@ import (
 //	                   bool, silence and refusal share a value and the system
 //	                   cannot prove an answer was ever given.
 
-// PreferencesKey is the User.Properties entry holding the cross-product
-// preferences JSON blob (the console-side twin is PREFS_PROPERTY; keep in
-// lockstep). Consent nests inside it under ConsentKey, so there is ONE store and
-// ONE merge — no parallel table to drift.
-const PreferencesKey = "hanzo.preferences"
-
-// ConsentKey nests the consent object inside the preferences blob. It is
+// ConsentKey nests the consent object inside the preferences blob — PreferencesKey,
+// which also holds the merge every nested record writes through. It is
 // exported because the preferences surface — which may write every OTHER key in
 // that blob — has to name the one key it must refuse, and naming it by its own
 // string literal there would be a second spelling to drift.
@@ -141,69 +136,13 @@ func (c Consent) member() (json.RawMessage, error) {
 // answer REMOVES the record.
 func setConsent(prefs string, answer *Consent) (string, error) {
 	if answer == nil {
-		return setConsentMember(prefs, nil)
+		return setPref(prefs, ConsentKey, nil)
 	}
 	raw, err := answer.member()
 	if err != nil {
 		return "", err
 	}
-	return setConsentMember(prefs, raw)
-}
-
-// setConsentMember is the ONE mutation of the consent member of a preferences
-// blob: `raw` replaces it, a nil `raw` removes it, and every other top-level key
-// survives either way. Everything that writes a consent record goes through here,
-// so there is one merge and no second implementation to disagree with it.
-func setConsentMember(prefs string, raw json.RawMessage) (string, error) {
-	merged := map[string]json.RawMessage{}
-	if prefs != "" {
-		_ = json.Unmarshal([]byte(prefs), &merged)
-	}
-	if raw == nil {
-		delete(merged, ConsentKey)
-	} else {
-		merged[ConsentKey] = raw
-	}
-	out, err := json.Marshal(merged)
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
-}
-
-// consentMember returns the raw consent record in u's preferences, and whether
-// there is one at all. The distinction matters to [User.CarryConsentFrom]: a user
-// who has never answered must stay unanswered, not acquire a default-valued
-// record that looks like one.
-func (u *User) consentMember() (json.RawMessage, bool) {
-	blob := u.Properties[PreferencesKey]
-	if blob == "" {
-		return nil, false
-	}
-	var m map[string]json.RawMessage
-	if json.Unmarshal([]byte(blob), &m) != nil {
-		return nil, false
-	}
-	raw, ok := m[ConsentKey]
-	return raw, ok
-}
-
-// putConsentMember stores raw as u's consent record, doing the map bookkeeping
-// once for every writer.
-func (u *User) putConsentMember(raw json.RawMessage) error {
-	prior := u.Properties[PreferencesKey]
-	if prior == "" && raw == nil {
-		return nil // nothing recorded, so nothing to strip
-	}
-	blob, err := setConsentMember(prior, raw)
-	if err != nil {
-		return err
-	}
-	if u.Properties == nil {
-		u.Properties = map[string]string{}
-	}
-	u.Properties[PreferencesKey] = blob
-	return nil
+	return setPref(prefs, ConsentKey, raw)
 }
 
 // SetConsent records `answer` as this user's consent, or REMOVES any record when
@@ -220,13 +159,13 @@ func (u *User) putConsentMember(raw json.RawMessage) error {
 // from the person it is about, not from whoever created their account.
 func (u *User) SetConsent(answer *Consent) error {
 	if answer == nil {
-		return u.putConsentMember(nil)
+		return u.putPref(ConsentKey, nil)
 	}
 	raw, err := answer.member()
 	if err != nil {
 		return err
 	}
-	return u.putConsentMember(raw)
+	return u.putPref(ConsentKey, raw)
 }
 
 // CarryConsentFrom makes u's consent record exactly the one STORED on prior,
@@ -244,6 +183,6 @@ func (u *User) SetConsent(answer *Consent) error {
 // The raw record is carried rather than a decoded one, so a user who never
 // answered stays unanswered instead of acquiring a default-valued record.
 func (u *User) CarryConsentFrom(prior *User) error {
-	raw, _ := prior.consentMember()
-	return u.putConsentMember(raw)
+	raw, _ := prior.pref(ConsentKey)
+	return u.putPref(ConsentKey, raw)
 }
