@@ -54,6 +54,11 @@ func Set(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application s
 // A browser that already carries a live session keeps it, so a silent hop across
 // apps does not mint a second sid for every app the person opens.
 func Open(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application string) error {
+	// When they last proved themselves is recorded here for the same reason the
+	// session is: this is the one place a human has just done it, whatever they did
+	// it with. Before the live-session check, because the fact being recorded is
+	// the PROOF that just happened, not whether a cookie had to be minted for it.
+	store.RecordSignin(ctx, db, owner, name)
 	if _, _, live := Resolve(ctx, c, db); live {
 		return nil
 	}

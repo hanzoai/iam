@@ -144,6 +144,67 @@ registered "ALICE" alongside "Alice" is never resolved as the other. `users.look
 goes through it rather than repeating the query — restating it is how Create's
 uniqueness check stayed case-SENSITIVE while the rule it guards is not.
 
+## A read is scoped where it is PRODUCED, never where it is rendered
+
+Two lists answered with an ORGANIZATION's rows a question about a PERSON. Both
+were reached by a real request in a test before anything was changed, because the
+reported shape and the measured shape differed:
+
+| list | measured before | now |
+|---|---|---|
+| `GET /v1/iam/webauthn-credentials` | plain member **403** — even for their own; org admin `?owner=hanzo` → **every member's passkey rows**; SuperAdmin → **every tenant's** | the CALLER's; `?user=` needs authority over that account |
+| `GET /v1/iam/memberships?user=` | any colleague sharing the home org learned that person's OTHER tenants | must administer the account (an app keeps its served tenant) |
+
+**The webauthn list had both faults at once**: it could not serve the one caller
+it is for, and it over-served the one it is not. `?owner` scoped to a tenant, so
+an unnamed target failed the Guard's tenant rule (403 for a member) while a named
+one handed an admin the whole org (hanzo.id filtered the other people out IN THE
+BROWSER — a page declining to render is not authorization). One scope fixes both
+halves: the answer is a PERSON's, the caller is that person unless they say
+otherwise and may. `/v1/iam/webauthn-credentials` is in `handlerAuthorizedExact`
+(exact, so it cannot reach `/get`, `/update`, `/delete` beside it).
+
+**`?user=` on memberships discloses a person's other employers.** The roster
+question (`?org=`) does not have that shape — an org's own list discloses only
+that org — so only the second one moved. `mayReadTenancy`: a person must
+administer the account (`authz.Can(GET, users, …)`, the authority that already
+governs reading their record); an APP keeps its served-tenant bound, because it is
+not a colleague but the tenant's own backend, and narrowing it would break an org
+switcher without closing anything — the leak is between PEOPLE.
+
+## `PUT /v1/iam/account` — a fixed set, and the set is the gate
+
+The one self-service write on a user row: `displayName`, `avatar`, `bio`,
+`homepage`, each a POINTER so an omitted field PRESERVES and an explicit empty one
+CLEARS. The subject is ALWAYS the caller (`callerFrom`, cookie or bearer) — the
+body names no target, so no shape of it writes another account.
+
+It exists because every other writer of a user row is admin-scoped: `authz` gates
+the self clause to GET precisely so a regular user cannot carry `isAdmin` on a
+full-row write, and widening that clause is the escalation it exists to prevent.
+Self-service lives here instead, with the fields named one by one.
+
+Absent on purpose: `owner`/`name` (renaming moves a real identity), `isAdmin` and
+`permissions`, `passwordHash`/`accessKey`, **`email`/`phone`** — login identifiers
+AND second-factor destinations, so changing where a code is delivered is a
+credential act that is only safe once the NEW address has proved it can receive
+one — and **`properties`**, because the consent record nests inside it
+(`PreferencesKey`), so a profile write reaching it would let anyone answer the
+data-sharing questions on their own behalf. `avatar` is `schema.AvatarRef`: one
+rule for how a subject appears, person or organization.
+
+## `lastSigninTime` had no writer, which is worse than having no column
+
+Every row in the estate read empty, and a periodic access review reads this to
+find accounts nobody uses — so a dormant-account sweep would have retired the
+whole directory. `store.RecordSignin` is the one writer and `sessions.Open` the
+one caller: that is where a human has just proved themselves, whatever they proved
+it with (password, delivered code, passkey, wallet signature, a return from
+another IdP all arrive there), so no method has to remember and none can disagree.
+Stamped BEFORE the live-session check — the fact is the proof that just happened,
+not whether a cookie had to be minted. Best effort: a bookkeeping field never
+fails a login. A refused attempt records nothing.
+
 ## Stepping into a tenant — the actor is never lost
 
 A platform operator supports every tenant and therefore has to see what a tenant
