@@ -56,6 +56,10 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	// The account read is anonymous-safe (returns {status:"error"} unauthenticated)
 	// and a security contract — the gateway admin-guard reads its `owner`.
 	zip.Alias(r.Get, PathAccount, LegacyPathAccount, getAccount(db))
+	// The write half of the same noun: a person's own profile, a fixed set of
+	// display fields, self-scoped like the password and consent writes beside it.
+	zip.Put[accountBody, httpx.Answer](r, PathAccount, putAccountHandler(db),
+		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	// Account creation + email/phone OTP send. signup is JSON; the OTP send is
 	// multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
 	r.Post(PathSignup, signupHandler(db))
