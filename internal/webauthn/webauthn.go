@@ -16,6 +16,8 @@ package webauthn
 import (
 	"context"
 	"errors"
+	"strings"
+
 	"github.com/hanzoai/iam/internal/authz"
 
 	"github.com/hanzoai/orm"
@@ -34,10 +36,17 @@ type webauthnCredentialKey struct {
 	Name  string `json:"name"  validate:"required"`
 }
 
-// listWebauthnCredentialsIn scopes a list to one owner. An empty owner lists
-// every credential (superuser view); a set owner filters to that tenant.
+// listWebauthnCredentialsIn names WHOSE passkeys to list, as the `<owner>/<name>`
+// id of a person. Empty means the caller's own, which is the only thing most
+// callers ever want.
+//
+// It replaces an `owner` field that scoped to an ORGANIZATION. A passkey list is
+// a list of somebody's credentials, and there is no screen that renders every
+// person in a tenant's: the one that asked for this list filtered it down to the
+// caller in the browser, which is not authorization — it is a wider answer the
+// page chose to look away from.
 type listWebauthnCredentialsIn struct {
-	Owner string `json:"owner"`
+	User string `json:"user"`
 }
 
 type listWebauthnCredentialsOut struct {
@@ -80,23 +89,43 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithTags("webauthn_credentials"))
 }
 
-// listWebauthnCredentials returns the passkeys and security keys registered in
-// your organization, newest first — which device each belongs to and when it was
-// last used.
+// listWebauthnCredentials returns the passkeys and security keys registered to
+// one person, newest first — which device each lives on and when it was
+// registered.
+//
+// Yours by default. Name somebody else and you get them only if you already
+// administer their account, which is the same authority that governs reading
+// their user record — so this list can never show more people than the surface
+// beside it already does.
+//
+// There is no organization-wide list. It used to scope to the ORG, which handed
+// an org admin every member's credential rows in one answer, and a SuperAdmin
+// every tenant's; a plain member meanwhile could not read even their own,
+// because an unnamed target fails the Guard's tenant rule. One scope fixes both
+// halves: the answer is a person's, and the caller is the person unless they say
+// otherwise and may.
 func listWebauthnCredentials(db orm.DB) zip.TypedHandler[listWebauthnCredentialsIn, listWebauthnCredentialsOut] {
 	return func(ctx context.Context, in *listWebauthnCredentialsIn) (*listWebauthnCredentialsOut, error) {
-		// The owner comes from the authenticated principal, never the input: a typed
-		// GET binds nothing from the request, so filtering on in.Owner meant the
-		// "empty owner lists everything" branch ran on every REST call.
-		owner, err := authz.Scope(ctx, in.Owner)
-		if err != nil {
-			return nil, err
+		p, ok := authz.From(ctx)
+		if !ok {
+			return nil, zip.ErrForbidden("forbidden")
 		}
-		q := orm.TypedQuery[schema.WebauthnCredential](db)
-		if owner != "" {
-			q = q.Filter("Owner=", owner)
+		user := strings.TrimSpace(in.User)
+		if user == "" {
+			user = p.Org + "/" + p.User
 		}
-		rows, err := q.Order("-CreatedTime").GetAll(ctx)
+		owner, name, found := strings.Cut(user, "/")
+		if !found || owner == "" || name == "" {
+			return nil, zip.ErrBadRequest("user is <organization>/<username>")
+		}
+		// The ONE question: may this caller read that person's account? A passkey is
+		// part of the account, so it is not a second policy — asking a different one
+		// here is how the two come to disagree.
+		if !authz.Can(ctx, "GET", "users", owner, name) {
+			return nil, zip.ErrForbidden("forbidden")
+		}
+		rows, err := orm.TypedQuery[schema.WebauthnCredential](db).
+			Filter("User=", user).Order("-CreatedTime").GetAll(ctx)
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}

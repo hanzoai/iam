@@ -459,6 +459,7 @@ var handlerAuthorizedExact = map[string]bool{
 	"/v1/iam/get-user":             true,
 	"/v1/iam/resolve-key":          true,
 	"/v1/iam/organizations/search": true,
+	"/v1/iam/webauthn-credentials": true,
 }
 
 // pathAuthorized reports whether path is handler-authorized: an exact single-route
