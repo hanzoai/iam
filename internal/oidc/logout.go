@@ -57,7 +57,20 @@ func logoutHandler(db orm.DB) zip.Handler {
 		// The hint is verified — a forged or unsigned one yields nil — and is the
 		// only thing that can name an application here, for BOTH the revocation and
 		// the redirect. Resolved once.
+		// id_token_hint first, then client_id. RP-Initiated Logout defines both, and
+		// says client_id is there for exactly the case where the hint is not
+		// available -- which is every SPA that did not keep the id_token. Without it
+		// the lookup returns nil, step (3) refuses the redirect, and the person
+		// lands on our signed-out page instead of back in the app they pressed
+		// sign-out in. Nothing came back, which reads as sign-out being broken.
+		//
+		// It gives away nothing: the redirect must still be one the identified
+		// application REGISTERED, so naming a client_id can only return a browser
+		// to an address that client already owns.
 		app := appFromIDTokenHint(ctx, db, param(c, "id_token_hint"))
+		if app == nil {
+			app = appFromClientId(ctx, db, param(c, "client_id"))
+		}
 
 		// (2) Retire the grant this relying party holds for this user. Scoped to
 		// (user, app) deliberately: signing out of one application must not silently
@@ -161,6 +174,20 @@ func revokeGrant(ctx context.Context, db orm.DB, user, application string) {
 // only names who the client believes is signed in. The signature stays
 // mandatory, the application still comes from the token's own audience, and the
 // redirect still has to be one that application registered.
+// appFromClientId resolves the relying party from a bare client_id. It proves
+// nothing about the caller -- the registered-redirect check in step (3) is the
+// boundary, not this lookup.
+func appFromClientId(ctx context.Context, db orm.DB, clientId string) *schema.Application {
+	if clientId == "" {
+		return nil
+	}
+	app, err := store.GetApplicationByClientId(ctx, db, clientId)
+	if err != nil {
+		return nil
+	}
+	return app
+}
+
 func appFromIDTokenHint(ctx context.Context, db orm.DB, hint string) *schema.Application {
 	if hint == "" {
 		return nil
