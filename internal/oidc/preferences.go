@@ -103,6 +103,17 @@ func mergePreferences(existing string, patch []byte) (string, map[string]json.Ra
 		return "", nil, fmt.Errorf("consent is not a preference; use PUT %s to answer", PathConsent)
 	}
 
+	// Appearance IS a preference, so it is written here — but as the record it is,
+	// not as opaque JSON. A density no product can render or a type scale that
+	// leaves the page unusable is refused where the caller can be told why, rather
+	// than stored for every reader to drop afterwards, which shows a person a saved
+	// setting that nothing obeys.
+	if raw, ok := patchMap[schema.AppearanceKey]; ok {
+		if _, err := schema.ParseAppearance(raw); err != nil {
+			return "", nil, err
+		}
+	}
+
 	merged := map[string]json.RawMessage{}
 	if existing != "" {
 		_ = json.Unmarshal([]byte(existing), &merged) // corrupt stored blob → treated as empty
