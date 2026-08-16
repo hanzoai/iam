@@ -177,6 +177,12 @@ func init() {
 	zip.Describe("POST /v1/iam/webauthn/signup/finish", zip.Doc{
 		Description: "Verifies the newly created passkey and stores it, so the person\ncan sign in with their device from then on.",
 	})
+	zip.Describe("PUT /v1/iam/account", zip.Doc{
+		Description: "Saves the calling person's own profile — the name they are\nshown by, their picture, a line about themselves and a link.\n\nOnly their own: the request names nobody, so it cannot reach another account.\nSend only what you are changing; a field you leave out keeps the value it had,\nand a field you send empty is cleared.\n\nA picture is an https link or an inline image up to 96 KiB, the same value an\norganization's mark is (schema.AvatarRef) — one rule for how a subject appears,\nwhether the subject is a person or an organization.",
+		Fields: map[string]string{
+			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+		},
+	})
 	zip.Describe("PUT /v1/iam/consent", zip.Doc{
 		Description: "Records the calling person's privacy and communication\nchoices. Only their own — there is no way to set consent for somebody else.\n\nSend only the answers you are changing. A question you leave out keeps the\nanswer it already had, so a screen that saves one switch never revokes the\nother, and two screens saving at once do not undo each other.\n\nAn answer this version does not recognize is refused here rather than stored,\nso nothing is ever persisted for a later reader to have to interpret.",
 	})
