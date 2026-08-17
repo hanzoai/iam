@@ -52,14 +52,17 @@ func userinfoHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return c.JSON(500, map[string]string{"error": "server_error"})
 		}
-		return c.JSON(200, buildUserinfo(user, claims, row, tokenIssuer(c)))
+		// The membership set is read from the store, not echoed from the token, for
+		// the reason isAdmin is: a grant revoked a minute ago must stop counting now
+		// rather than when the token lapses.
+		return c.JSON(200, buildUserinfo(user, claims, row, tokenIssuer(c), store.MemberOrgRefs(ctx, db, user)))
 	}
 }
 
 // buildUserinfo assembles the scope-gated claim set. The identifiers (sub, iss,
 // aud, owner, organization) are always present; every profile/email/address/
 // phone claim appears only when its scope was granted and the field is set.
-func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string) map[string]any {
+func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string, orgs []schema.OrgRef) map[string]any {
 	aud := ""
 	if len(claims.Audience) > 0 {
 		aud = claims.Audience[0]
@@ -84,6 +87,19 @@ func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string
 	// security contract. Emitted regardless of scope (it is identity, not profile),
 	// as `isAdmin` — the exact key the admin-guard + @hanzo/iam SDK read.
 	info["isAdmin"] = u.IsAdmin
+	// The membership set, home org first — the same value and the same shape the
+	// access token carries, so a client that reads one and a client that reads the
+	// other cannot reach two different answers about the same person.
+	//
+	// It is here because `owner` alone cannot express platform authority. Owner is
+	// where an identity is ANCHORED — its billing, its default scope. Being an
+	// operator is MEMBERSHIP of the reserved org, held alongside an ordinary home
+	// org, so a relying party reading owner denies every operator who also does
+	// ordinary work. authz.Claims.PlatformSudo is the predicate over this field;
+	// emitted regardless of scope, because it is identity rather than profile.
+	if len(orgs) > 0 {
+		info["orgs"] = orgs
+	}
 	// type distinguishes a real account from an auto-created anonymous session (the
 	// console's `type === "anonymous-user"` check); always present.
 	if u.Type != "" {
