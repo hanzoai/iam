@@ -219,3 +219,51 @@ func requireRedirect(t *testing.T, resp *http.Response, wantPrefix string) strin
 	}
 	return loc
 }
+
+// "Get started" and "Sign in" are the same OAuth request, differing only in
+// which screen the person should land on. The hosted login is what draws that
+// screen, and this endpoint rebuilds the query from named parameters, so the
+// flag reaches the page only if it is one of them — otherwise an application
+// sending someone to create an account gets the credential form instead, and
+// the request that carried the intent looks identical to one that never had it.
+func TestAuthorize_CarriesSignupToTheHostedLogin(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}})
+
+	base := url.Values{
+		"response_type":  {"code"},
+		"client_id":      {"pub"},
+		"redirect_uri":   {testRedirect},
+		"code_challenge": {pkce.Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")},
+	}
+	forwarded := func(signup string) url.Values {
+		q := url.Values{}
+		for k, v := range base {
+			q[k] = v
+		}
+		if signup != "" {
+			q.Set("signup", signup)
+		}
+		resp, _ := do(t, app, formReqNoBody("GET", authorizeURL(q)))
+		if resp.StatusCode != 302 {
+			t.Fatalf("signup=%q: status = %d, want 302", signup, resp.StatusCode)
+		}
+		loc, err := url.Parse(resp.Header.Get("Location"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return loc.Query()
+	}
+
+	if got := forwarded("true").Get("signup"); got != "true" {
+		t.Fatalf("signup=true forwarded as %q, want \"true\"", got)
+	}
+	// Sign-in is the default, and only the literal reaches the page: the flag is
+	// re-encoded from the parsed value, never echoed.
+	if got := forwarded("").Get("signup"); got != "" {
+		t.Fatalf("no signup forwarded as %q, want empty", got)
+	}
+	if got := forwarded("yes"); got.Get("signup") != "" {
+		t.Fatalf("signup=yes forwarded as %q, want empty", got.Get("signup"))
+	}
+}
