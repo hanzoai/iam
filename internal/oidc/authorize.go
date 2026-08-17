@@ -53,6 +53,7 @@ type authorizeRequest struct {
 	responseMode        string
 	provider            string
 	prompt              string
+	signup              bool
 }
 
 // authorizeHandler starts a sign-in — the address you send a browser to, and the
@@ -182,6 +183,7 @@ func authorizeParams(c *zip.Ctx) authorizeRequest {
 		responseMode:        param(c, "response_mode"),
 		provider:            param(c, "provider"),
 		prompt:              param(c, "prompt"),
+		signup:              param(c, "signup") == "true",
 	}
 }
 
@@ -217,6 +219,15 @@ func authorizeForwardQuery(q authorizeRequest, method string) string {
 	// never reaches here — it is answered above, without a page, which is what it
 	// asked for.
 	setIfPresent(v, "prompt", q.prompt)
+	// Which of the two screens to open. Like `prompt`, the page is what acts on
+	// it: an application sending someone to create an account wants the
+	// registration form, not the credential form with a link to it. Re-encoded
+	// from the parsed flag rather than echoed, so only the literal "true" ever
+	// reaches the page. An application that does not ask gets sign-in, and a
+	// deployment with registration closed gets sign-in either way.
+	if q.signup {
+		v.Set("signup", "true")
+	}
 	return v.Encode()
 }
 
