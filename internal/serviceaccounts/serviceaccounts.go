@@ -28,6 +28,7 @@ package serviceaccounts
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -236,11 +237,27 @@ func revoke(db orm.DB) zip.Handler {
 	}
 }
 
-// load resolves the :name service account within the ?organization= org and
-// authorizes the caller for MUTATION — the shared preamble of rotate and delete,
-// so neither can reach a row the admin gate did not clear.
+// load resolves the :name service account within its organization and authorizes
+// the caller for MUTATION — the shared preamble of rotate and delete, so neither
+// can reach a row the admin gate did not clear.
+//
+// The organization arrives as ?organization=, or in the body under the same
+// name. Both spellings carry the same value, and the body is read only when the
+// query is absent, so nothing that works today changes.
+//
+// The body form is what makes these two callable at all from a generated
+// client. Every one of them is built from this service's own OpenAPI, and a
+// query parameter reaches that document only from a TYPED handler's input
+// struct — `list` declares one and gets `--organization`; rotate and revoke read
+// the query straight off the context, so the document says their only parameter
+// is the path, the generated flag never exists, and the call comes back
+// "organization and name are required" with no way to supply it. `create`
+// already takes the org in its body and has always worked for that reason.
 func load(c *zip.Ctx, db orm.DB) (*schema.User, error) {
 	org, name := c.Query("organization"), c.Param("name")
+	if org == "" {
+		org = orgFromBody(c.Body())
+	}
 	if org == "" || name == "" {
 		return nil, zip.ErrBadRequest("organization and name are required")
 	}
@@ -256,6 +273,23 @@ func load(c *zip.Ctx, db orm.DB) (*schema.User, error) {
 		return nil, zip.ErrNotFound("the service account " + name + " does not exist in organization " + org)
 	}
 	return sa, nil
+}
+
+// orgFromBody reads the organization out of a JSON request body, and answers ""
+// for anything it cannot — no body, not an object, no such field. A malformed
+// body is not an error here: the caller is then simply one that supplied no
+// organization, which load already has an answer for.
+func orgFromBody(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var in struct {
+		Organization string `json:"organization"`
+	}
+	if err := json.Unmarshal(body, &in); err != nil {
+		return ""
+	}
+	return in.Organization
 }
 
 // admin is the gate for every credential MUTATION — create, rotate, revoke
