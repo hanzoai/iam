@@ -237,3 +237,97 @@ func pemOf(t *testing.T, k *rsa.PrivateKey) string {
 		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k),
 	}))
 }
+
+// send drives one write with a body and returns the status and the body VERBATIM.
+func (h *harness) send(t *testing.T, method, url, body, bearer string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest(method, url, strings.NewReader(body))
+	req.Host = "hanzo.id"
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := testhttp.Do(h.app, req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	return resp.StatusCode, string(b)
+}
+
+// Rotate and revoke take the organization from the BODY as well as the query.
+//
+// This is what makes them callable from a generated client at all. Both are raw
+// handlers, so the organization they read never reaches this service's OpenAPI —
+// only a TYPED handler's input struct becomes a documented parameter — and a
+// client built from that document has no flag to send it with. The call then
+// fails "organization and name are required" with no way for the caller to
+// answer. `create` takes the org in its body and has always worked for exactly
+// that reason; these two now agree with it.
+func TestRotate_organizationFromBody(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss")
+
+	status, body := h.send(t, "POST", path+"/hanzo-alpha/keys", `{"organization":"hanzo"}`, boss)
+	if status != 200 {
+		t.Fatalf("rotate with org in body: status %d, body %s", status, body)
+	}
+	// The secret is minted and returned exactly once, so its presence is the
+	// proof the handler ran rather than refused.
+	if !strings.Contains(body, "accessSecret") {
+		t.Fatalf("rotate answered without a secret: %s", body)
+	}
+}
+
+// The query form still works, unchanged. The body is read ONLY when the query is
+// absent, so nothing that called this before can start behaving differently.
+func TestRotate_queryStillWins(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss")
+
+	status, body := h.send(t, "POST", path+"/hanzo-beta/keys?organization=hanzo", "", boss)
+	if status != 200 {
+		t.Fatalf("rotate with org in query: status %d, body %s", status, body)
+	}
+	if !strings.Contains(body, "accessSecret") {
+		t.Fatalf("rotate answered without a secret: %s", body)
+	}
+}
+
+// Neither form supplied is still a refusal, and it still says which two things
+// it wanted.
+func TestRotate_noOrganizationAnywhere(t *testing.T) {
+	h := newHarness(t)
+	status, body := h.send(t, "POST", path+"/hanzo-alpha/keys", `{}`, h.token(t, "hanzo/boss"))
+	if status == 200 {
+		t.Fatalf("rotate succeeded with no organization: %s", body)
+	}
+	if !strings.Contains(body, "organization and name are required") {
+		t.Fatalf("unexpected refusal: %d %s", status, body)
+	}
+}
+
+// A body that is not JSON is not an error of its own: the caller is simply one
+// that supplied no organization, and gets the same refusal.
+func TestRotate_malformedBodyIsJustNoOrganization(t *testing.T) {
+	h := newHarness(t)
+	status, body := h.send(t, "POST", path+"/hanzo-alpha/keys", `not json`, h.token(t, "hanzo/boss"))
+	if status == 200 {
+		t.Fatalf("rotate succeeded on a malformed body: %s", body)
+	}
+	if !strings.Contains(body, "organization and name are required") {
+		t.Fatalf("unexpected refusal: %d %s", status, body)
+	}
+}
+
+// The org in the body is a TARGET, not an authority: a tenant admin naming
+// another tenant is still refused. The body must not become a way around the
+// admin gate that the query form is held to.
+func TestRotate_bodyOrganizationIsNotAnAuthority(t *testing.T) {
+	h := newHarness(t)
+	status, body := h.send(t, "POST", path+"/hanzo-alpha/keys", `{"organization":"hanzo"}`, h.token(t, "orgb/bob"))
+	if status == 200 {
+		t.Fatalf("cross-tenant rotate succeeded: %s", body)
+	}
+}
