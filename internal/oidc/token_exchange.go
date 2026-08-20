@@ -8,8 +8,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // RFC 8693 OAuth 2.0 Token Exchange — the standard delegation / act-on-behalf-of
@@ -52,7 +52,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(clientApp.ClientSecret)) != 1 {
 		return tokenErrorClient(c, "client authentication failed")
 	}
-	if !mintAllowed(clientApp) {
+	if !mintAllowed(clientApp.ClientId) {
 		return tokenError(c, 403, "unauthorized_client", "client is not permitted for token exchange")
 	}
 
@@ -70,26 +70,21 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 400, "invalid_grant", "subject_token is invalid or expired")
 	}
-	if claims.Subject == "" {
+	owner, name := splitSub(claims.Subject)
+	if owner == "" || name == "" {
 		return tokenError(c, 400, "invalid_grant", "subject_token carries no subject")
 	}
-	// Resolve the acted-for user from the subject_token's `sub` — which is now the
-	// stable UUID for a v2-minted token (store.GetUserBySubject decodes Id-or-name).
-	user, err := store.GetUserBySubject(ctx, db, claims.Subject)
+	user, err := store.GetUserByName(ctx, db, owner, name)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
 	if user == nil || user.IsForbidden || user.IsDeleted {
 		return tokenError(c, 400, "invalid_grant", "the subject is unknown or forbidden")
 	}
-	// Every authority claim is the TARGET USER's, read from the resolved row —
-	// never split from the (now-opaque) subject.
-	owner := user.Owner
-	natural := user.Owner + "/" + user.Name
 
 	// 3) A reserved-org (admin/built-in) subject is a cross-tenant / SuperAdmin
 	//    identity — gate it behind the separate admin-exchange capability.
-	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp) {
+	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp.ClientId) {
 		return tokenError(c, 403, "access_denied", "not permitted to act for a reserved-org subject")
 	}
 
@@ -114,12 +109,12 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	}
 	ttl := appTTL(clientApp)
 	scope := param(c, "scope")
-	subject := subjectOf(user) // the stable `sub` (UUID, or owner/name pre-cutover)
+	subject := owner + "/" + name
 	display := user.DisplayName
 	if display == "" {
 		display = user.Name
 	}
-	access, err := signer.SignUserToken(subject, owner, aud, clientApp.ClientId, user.Email, display, user.Name, scope, store.MemberOrgRefs(ctx, db, user), ttl, now)
+	access, err := signer.SignUserToken(subject, owner, aud, clientApp.ClientId, user.Email, display, scope, ttl, now)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
@@ -128,7 +123,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 		Owner:           owner,
 		Application:     clientApp.Name,
 		Organization:    owner,
-		User:            natural, // the row's User stays the (owner/name) key
+		User:            subject,
 		Scope:           scope,
 		TokenType:       "Bearer",
 		ExpiresIn:       int(ttl.Seconds()),
@@ -138,7 +133,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err := store.PersistToken(ctx, db, row); err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	auditMint(ctx, db, c, "token-exchange", clientApp.ClientId, natural)
+	auditMint(ctx, db, c, "token-exchange", clientApp.ClientId, subject)
 
 	// 6) RFC 8693 §2.2 response.
 	return c.JSON(200, map[string]any{

@@ -10,10 +10,10 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/mfa/factor"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/mfa/factor"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // The login-time second-factor gate. A verified password proves ONE factor;
@@ -22,8 +22,8 @@ import (
 // internal/mfa — enrollment decides what factors a user HAS, this decides when the
 // sign-in must present one.
 //
-// The two answers are v1's protocol STRINGS (object/factor.go:50-54): the client
-// string-compares `data` against them, so they are serialized format, not internal
+// The two answers are v1's wire STRINGS (object/factor.go:50-54): the client
+// string-compares `data` against them, so they are wire format, not internal
 // names. Any other shape and the client reads the answer as an authorization code
 // and the factor is skipped.
 const (
@@ -135,22 +135,6 @@ func finishMfa(c *zip.Ctx, db orm.DB, id string, f loginForm) error {
 		return httpx.Err(c, ErrChallenge.Error())
 	}
 
-	// SECOND-FACTOR THROTTLE (F-D1 INFO): the passcode/recovery verify below has no
-	// DEDICATED per-account counter, and — correcting an earlier note — the PASSWORD
-	// lockout does NOT stand in for one. The MFA threat model assumes the password is
-	// already KNOWN (that is the whole reason a second factor exists), and a CORRECT
-	// password RESETS the lockout counter rather than tripping it (users.Authenticate),
-	// so an attacker who holds the password can mint FRESH single-use challenges without
-	// ever locking the door. What actually makes online iteration of the 10^6 TOTP space
-	// infeasible is independent of the lockout: (1) each fresh challenge costs one
-	// deliberately-slow argon2id password verify, and (2) the 30-second TOTP step makes
-	// the current code a MOVING target — the ~1-3 codes valid in any window cannot be
-	// enumerated within that window at argon2id-throttled rates. The challenge itself is
-	// single-use and burned ATOMICALLY (TakeChallenge holds the row lock, GetForUpdate),
-	// so one captured passcode cannot be double-spent by racing finishMfa calls. A
-	// dedicated second-factor counter (its own window + atomic increment, mirroring
-	// internal/users/lockout.go) remains an available defense-in-depth addition; it is
-	// not required to close an online-guessing oracle under the model above.
 	switch {
 	case f.Passcode != "":
 		// The challenge's payload is the factor already used to get here. Answering

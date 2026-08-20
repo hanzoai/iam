@@ -3,7 +3,7 @@
 // Package bootstrap serves the operator-driven service-account provisioning
 // endpoints — `POST /v1/iam/admin/{applications,users}/upsert`. The Hanzo K8s
 // operator (operator-core) reconciles an IAM CR's spec.applications[]/users[] here,
-// binding the service-account OAuth apps that KMS/signers authenticate with, with NO
+// wiring the service-account OAuth apps that KMS/signers authenticate with, with NO
 // human admin in the loop. It is idempotent (create OR update by the natural key)
 // so a ~30s reconcile is a no-op once converged.
 //
@@ -17,20 +17,21 @@ package bootstrap
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/hanzoai/iam/internal/cred"
-	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam2/internal/cred"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // Route registers the bootstrap upsert endpoints on the PUBLIC group r (they
@@ -38,6 +39,32 @@ import (
 func Route(r zip.Router, db orm.DB) {
 	r.Post("/v1/iam/admin/applications/upsert", upsertApplication(db))
 	r.Post("/v1/iam/admin/users/upsert", upsertUser(db))
+}
+
+// serviceToken returns the configured unified service token, or "" (fail closed).
+func serviceToken() string {
+	for _, key := range []string{"HANZO_API_KEY", "KMS_SERVICE_TOKEN", "IAM_SERVICE_TOKEN"} {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// authService validates the Bearer service token (constant-time). An unset expected
+// token, or a mismatch, is unauthorized.
+func authService(c *zip.Ctx) bool {
+	expected := serviceToken()
+	if expected == "" {
+		return false
+	}
+	const p = "Bearer "
+	h := c.Header("Authorization")
+	if len(h) <= len(p) || !strings.EqualFold(h[:len(p)], p) {
+		return false
+	}
+	got := strings.TrimSpace(h[len(p):])
+	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
 }
 
 func unauthorized(c *zip.Ctx) error {
@@ -54,27 +81,6 @@ type appUpsertReq struct {
 	RedirectUris []string `json:"redirectUris"`
 	DisplayName  string   `json:"displayName"`
 	Cert         string   `json:"cert"`
-	// Public declares a client that CANNOT hold a credential — a browser SPA,
-	// a CLI, a desktop app. It proves itself with PKCE instead, and the token
-	// endpoint treats "no stored secret" as exactly that (token.go: a secret is
-	// verified only when one is stored). Without this flag every upsert minted
-	// a secret, so a public client could never be registered at all and its
-	// browser code->token exchange 401'd `invalid_client` forever.
-	Public bool `json:"public"`
-	// IsShared declares that this application serves EVERY organization, not only
-	// the one named in Organization. It is the honest description of a brand app —
-	// hanzo-id, hanzo-chat, a brand console — whose customers each live in their own
-	// tenant: self-service onboarding moves a founder OUT of the brand org, so
-	// `user.Owner != app.Organization` is the steady state and the app really does
-	// serve every org. Application.ServesOrg reads it as one of the three ways to
-	// say yes.
-	//
-	// A POINTER because omission must PRESERVE. This upsert is the operator's
-	// steady-state reconcile and most callers say nothing about sharing; a plain
-	// bool would read as false on every one of them and silently un-share an app —
-	// the same shape of accident that de-secreted apps through update-application.
-	// Nil means "not stated, leave it"; only an explicit true or false moves it.
-	IsShared *bool `json:"isShared"`
 }
 
 // upsertApplication idempotently creates or updates a service-account application,
@@ -84,7 +90,7 @@ type appUpsertReq struct {
 // the existing one (no rotation on a steady-state reconcile) or is generated.
 func upsertApplication(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
-		if !httpx.ServiceTokenAuth(c) {
+		if !authService(c) {
 			return unauthorized(c)
 		}
 		ctx := c.Context()
@@ -101,11 +107,13 @@ func upsertApplication(db orm.DB) zip.Handler {
 		if err != nil {
 			return c.JSON(500, errResp("server_error"))
 		}
-		var existingSecret string
-		if existing != nil {
-			existingSecret = existing.ClientSecret
+		if req.ClientSecret == "" {
+			if existing != nil && existing.ClientSecret != "" {
+				req.ClientSecret = existing.ClientSecret
+			} else {
+				req.ClientSecret = randomSecret()
+			}
 		}
-		req.ClientSecret = resolveSecret(req.Public, req.ClientSecret, existing != nil, existingSecret)
 		if req.ClientId == "" {
 			req.ClientId = req.Name // <org>-<app> convention: clientId == name
 		}
@@ -128,9 +136,6 @@ func upsertApplication(db orm.DB) zip.Handler {
 			if req.Cert != "" {
 				existing.Cert = req.Cert
 			}
-			if req.IsShared != nil {
-				existing.IsShared = *req.IsShared
-			}
 			existing.EnablePassword = true
 			if err := existing.UpdateCtx(ctx); err != nil {
 				return c.JSON(500, errResp("server_error"))
@@ -143,8 +148,6 @@ func upsertApplication(db orm.DB) zip.Handler {
 			a.Organization, a.DisplayName = req.Organization, pick(req.DisplayName, req.Name)
 			a.GrantTypes, a.RedirectUris, a.Cert = req.GrantTypes, req.RedirectUris, req.Cert
 			a.EnablePassword, a.ExpireInHours = true, 1
-			// A new app is single-tenant unless it says otherwise — fail closed.
-			a.IsShared = req.IsShared != nil && *req.IsShared
 			a.Model = model
 			a.SetId("admin/" + req.Name)
 			if err := a.CreateCtx(ctx); err != nil {
@@ -178,7 +181,7 @@ type userUpsertReq struct {
 // the existing credential. Returns {status:"ok", action, data:{owner, name}}.
 func upsertUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
-		if !httpx.ServiceTokenAuth(c) {
+		if !authService(c) {
 			return unauthorized(c)
 		}
 		ctx := c.Context()
@@ -241,31 +244,6 @@ func upsertUser(db orm.DB) zip.Handler {
 }
 
 // ---- helpers ----
-
-// resolveSecret decides the credential an upsert stores. It is the ONE place
-// public-vs-confidential is settled, split out so the rule is testable without
-// a store:
-//
-//   - public       -> NO secret. That absence is exactly what the token endpoint
-//     reads as "PKCE, do not demand client auth", so it must also
-//     CLEAR one left by an earlier confidential registration.
-//   - explicit     -> honour it; rotation is deliberate.
-//   - existing app -> preserve what it has, INCLUDING an empty secret. Minting
-//     one because "the stored secret is empty" would silently
-//     turn a public client confidential on the next reconcile.
-//   - brand new    -> mint one.
-func resolveSecret(public bool, requested string, hasExisting bool, existing string) string {
-	switch {
-	case public:
-		return ""
-	case requested != "":
-		return requested
-	case hasExisting:
-		return existing
-	default:
-		return randomSecret()
-	}
-}
 
 // decode reads the raw JSON body (content-type independent) into v.
 func decode(c *zip.Ctx, v any) error {

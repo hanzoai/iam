@@ -33,7 +33,7 @@ own framework — we own it, and it collapses to one way of doing each thing.
 
 ## §2.1 RFC/IETF-standard surface — no Casdoor verbs (HIP-0111)
 
-The HTTP contract is RFC/OpenID-standard only; there are no Casdoor verb aliases
+The wire contract is RFC/OpenID-standard only; there are no Casdoor verb aliases
 (`get-users`, `add-user`, `get-account`, `issue-user-token`, …) and no `access_token`
 duplicate of the token endpoint. Each capability is served by its standard, all
 shipped (iam2 tags):
@@ -88,7 +88,7 @@ gateway admin-guard, portal) off the Casdoor verbs onto these standards via
 | 2 | In-tree OIDC/OAuth2: discovery, JWKS, authorize, token (PKCE S256 + JWT), refresh, userinfo, logout; front-door login/get-app-login/auth-methods. | ✅ Core flow (login→code→token→JWT) tested; front-door residual in progress (below). |
 | 3 | Authz via `hanzoai/authz` gate over the entity CRUD. | ✅ In `internal/authz`. |
 | — | ~~Drift gate~~ **DROPPED.** Parity is proven by tests + golden vectors (a real v1 argon2id digest verifies) + a route-level parity audit + a shadow deployment — not a row-count diff. The read-only `compare` CLI remains as a diagnostic, not a gate. | — |
-| 4 | **Bootstrap + embed.** Seed the real config (orgs/apps/providers/certs) from the same `init_data.json` v1 uses (`internal/seed` — 79 apps / 9 orgs). Embed in `hanzoai/cloud` via `server.Route`, SHADOW-FIRST (own prefix, alongside live Casdoor, non-destructive). | Shadow serves real `get-app-login`/login against seeded config. |
+| 4 | **Bootstrap + embed.** Seed the real config (orgs/apps/providers/certs) from the same `init_data.json` v1 uses (`internal/seed` — 79 apps / 9 orgs). Embed in `hanzoai/cloud` via `server.Mount`, SHADOW-FIRST (own prefix, alongside live Casdoor, non-destructive). | Shadow serves real `get-app-login`/login against seeded config. |
 | 5 | **Cutover.** Import the user rows (password hashes verify as-is — see §5), flip iam2 onto the canonical `/v1/iam/*`, archive the fork. | Green in prod; rollback proven. |
 
 ## §4 Front-door residual (gates cutover)
@@ -101,7 +101,7 @@ client apps use — is now complete: `get-app-login`, `login`, `auth/methods`,
 portal's account page, email verification, and signup with it, so cutover was
 gated on them. Serve under `/v1/iam/*` (no `/api/`, no new prefix).
 
-The **durable session** is bound (`internal/sessions`): a bare `login`
+The **durable session** is wired (`internal/sessions`): a bare `login`
 (type=login) issues a signed, revocable session cookie (`hanzo_session`, HMAC
 keyed off the platform signing cert — no new secret), and `get-account` resolves
 the caller by cookie first (the portal + admin-guard path) then bearer (the API
@@ -114,7 +114,7 @@ each a missing iam2 dependency, not a shortcut: (1) signup lands the user in the
 app's **existing** org — v1's founder-org mint (`TenantOrgForSignup`) needs an
 org-create helper + the `Org.Parent` tenant model iam2 has not modeled yet;
 (2) `send-verification-code` persists a verifiable OTP (the `verifications`
-entity) but the email/SMS **delivery** is owned by `hanzoai/notify`, not bound
+entity) but the email/SMS **delivery** is owned by `hanzoai/notify`, not wired
 into iam2 — the endpoint reports `ok` honestly and never fakes a "sent" claim.
 
 Three facts the port must honour, each verified against live v1:

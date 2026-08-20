@@ -9,7 +9,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // Authorization-code lifecycle over the Token entity. A code is a short-lived,

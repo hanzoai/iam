@@ -159,15 +159,6 @@ type Application struct {
 	IsShared                     bool            `json:"isShared"`
 	IpRestriction                string          `json:"ipRestriction"`
 
-	// ClientId is the OAuth2/OIDC client identifier and the GLOBAL key every
-	// confidential-client resolver authenticates against (store.GetApplicationByClientId,
-	// the mint gates, Basic auth). It MUST be globally unique across ALL owners — a
-	// collision would let one app shadow another at that key. This store persists each
-	// entity as a JSON document in a shared table, so there is no per-field column to
-	// carry a DB UNIQUE index; uniqueness is enforced at the write in
-	// applications.Create/Update (ensureClientIdUnique), exactly as the (owner,name)
-	// natural key is, and store.GetApplicationByClientId resolves admin-preferring as
-	// defense-in-depth.
 	ClientId             string     `json:"clientId"`
 	ClientSecret         string     `json:"clientSecret"`
 	ClientCert           string     `json:"clientCert"`

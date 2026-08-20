@@ -12,10 +12,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/keys"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // The confidential-client on-behalf-of primitives. A trusted, allow-listed backend
@@ -81,13 +80,12 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 			return mintErr(c, 500, "server_error")
 		}
 		ttl := appTTL(clientApp)
-		natural := user.Owner + "/" + user.Name
-		subject := subjectOf(user) // the stable `sub` (UUID, or owner/name pre-cutover)
+		subject := user.Owner + "/" + user.Name
 		display := user.DisplayName
 		if display == "" {
 			display = user.Name
 		}
-		access, err := signer.SignUserToken(subject, user.Owner, aud, clientApp.ClientId, user.Email, display, user.Name, "", store.MemberOrgRefs(ctx, db, user), ttl, now)
+		access, err := signer.SignUserToken(subject, user.Owner, aud, clientApp.ClientId, user.Email, display, "", ttl, now)
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
@@ -96,7 +94,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 			Owner:           user.Owner,
 			Application:     clientApp.Name,
 			Organization:    user.Owner,
-			User:            natural, // the row's User stays the (owner/name) key
+			User:            subject,
 			TokenType:       "Bearer",
 			ExpiresIn:       int(ttl.Seconds()),
 			AccessTokenHash: hashToken(access),
@@ -105,7 +103,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		if err := store.PersistToken(ctx, db, row); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
-		auditMint(ctx, db, c, "issue-user-token", clientApp.ClientId, natural)
+		auditMint(ctx, db, c, "issue-user-token", clientApp.ClientId, subject)
 		return httpx.Ok(c, map[string]any{
 			"accessToken": access,
 			"expiresIn":   int(ttl.Seconds()),
@@ -113,13 +111,9 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// mintUserKeysHandler (re)generates the target user's Cloud API key and returns it
-// once, over the shared authorizeMinter + mintTarget seam.
-//
-// It writes the schema.Key row that UserByAccessKey's sk- branch actually reads. It
-// used to stamp the secret on schema.User.AccessKey, which nothing resolves — so the
-// minted key authenticated nobody AND overwrote any working legacy hk- in the same
-// field, locking the holder out with no recovery through the UI.
+// mintUserKeysHandler (re)generates the target user's durable `hk-` Cloud API key
+// (schema.User.AccessKey) and returns it once, over the shared authorizeMinter +
+// mintTarget seam.
 func mintUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -131,8 +125,13 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
-		key, err := keys.MintUserKey(ctx, db, user.Owner, user.Name)
+		key, err := newAccessKey()
 		if err != nil {
+			return mintErr(c, 500, "server_error")
+		}
+		user.AccessKey = key
+		user.UpdatedTime = nowFunc().UTC().Format(time.RFC3339)
+		if err := saveUser(ctx, db, user); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
 		auditMint(ctx, db, c, "mint-user-keys", clientApp.ClientId, user.Owner+"/"+user.Name)
@@ -140,9 +139,7 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// revokeUserKeysHandler clears the target user's Cloud API key (immediate revoke).
-// The stored value is sk- for anything minted since the key seam was unified, and
-// hk- only for the legacy population that has not been re-keyed.
+// revokeUserKeysHandler clears the target user's `hk-` key (immediate revoke).
 func revokeUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -154,21 +151,11 @@ func revokeUserKeysHandler(db orm.DB) zip.Handler {
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
-		// Revoke BOTH homes: the key row this mints today, and the legacy credential
-		// stamped on the User row. A holder still carrying an hk- must be fully
-		// revoked by one call, or "revoked" would be a lie for exactly the population
-		// that has not migrated yet.
-		if err := keys.RevokeUserKey(ctx, db, user.Owner); err != nil {
-			return mintErr(c, 500, "server_error")
-		}
-		now := nowFunc().UTC().Format(time.RFC3339)
-		if _, err := updateUser(ctx, db, user.Owner, user.Name, func(u *schema.User) error {
-			u.AccessKey = ""
-			u.AccessSecret = ""
-			u.AccessSecretHash = ""
-			u.UpdatedTime = now
-			return nil
-		}); err != nil {
+		user.AccessKey = ""
+		user.AccessSecret = ""
+		user.AccessSecretHash = ""
+		user.UpdatedTime = nowFunc().UTC().Format(time.RFC3339)
+		if err := saveUser(ctx, db, user); err != nil {
 			return mintErr(c, 500, "server_error")
 		}
 		auditMint(ctx, db, c, "revoke-user-keys", clientApp.ClientId, user.Owner+"/"+user.Name)
@@ -194,12 +181,11 @@ func authorizeMinter(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.Applic
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 		return nil, 401, "client authentication failed"
 	}
-	// The capability gate: only an ALLOW-LISTED, admin-owned app may act on a user's
-	// behalf. Fail closed — an unset allow-list permits NOTHING (these hand out /
-	// rotate a user's credential; a missing config must never mean "anyone"). Keyed on
-	// the resolved app's globally-unique clientId AND pinned to its signing owner (see
-	// mintAllowed), so a colliding-clientId tenant app is refused here.
-	if !mintAllowed(app) {
+	// The capability gate: only an ALLOW-LISTED app may act on a user's behalf.
+	// Fail closed — an unset allow-list permits NOTHING (these hand out / rotate a
+	// user's credential; a missing config must never mean "anyone"). Matched by the
+	// globally-unique clientId only (see mintAllowed).
+	if !mintAllowed(clientID) {
 		return nil, 403, "client is not on the user-key mint allow-list"
 	}
 	return app, 0, ""
@@ -217,7 +203,7 @@ func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Ap
 	if owner == "" || name == "" {
 		return nil, 200, "id (owner/name) is required"
 	}
-	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp) {
+	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp.ClientId) {
 		return nil, 403, "client is not permitted to act for a reserved-org user"
 	}
 	user, err := store.GetUserByName(ctx, db, owner, name)
@@ -267,28 +253,23 @@ func mintErr(c *zip.Ctx, status int, msg string) error {
 	return c.JSON(status, httpx.Response{Status: "error", Msg: msg})
 }
 
-// mintAllowed reports whether app may act on a user's behalf. TWO conditions, both
-// required: its OWNING org must be a reserved platform signing owner (admin/built-in),
-// AND its clientId must be on IAM_KEY_MINT_ALLOWED_APPS. The owner-pin is the decisive
-// gate — clientId and secret are body-supplied at registration, so a tenant could
-// register an app whose clientId collides with a mint-listed one and, on a backend
-// whose duplicate-row order is unspecified, have its row resolve and its known secret
-// authenticate; but its owner is its OWN tenant, never a signing owner, so it mints
-// nothing. (Resolution is additionally admin-preferring and clientId is unique on
-// create, so the collision cannot arise nor win — this is the third, innermost gate.)
-// Every legit minter is admin-owned, so no legitimate grant regresses. Empty/unset
-// list allows nothing — fail closed.
-func mintAllowed(app *schema.Application) bool {
-	return store.IsSigningCertOwner(app.Owner) && appInList("IAM_KEY_MINT_ALLOWED_APPS", app.ClientId)
+// mintAllowed reports whether a client is on the IAM_KEY_MINT_ALLOWED_APPS
+// allow-list. It matches the client's GLOBALLY-unique clientId ONLY — never the
+// per-owner-unique app Name: a Name match let a tenant org-admin register an app
+// named like the console in their OWN org and pass the gate, minting an admin-org
+// (SuperAdmin) token (red-team finding, closed here). An empty/unset list allows
+// nothing — fail closed.
+func mintAllowed(clientID string) bool {
+	return appInList("IAM_KEY_MINT_ALLOWED_APPS", clientID)
 }
 
-// adminMintAllowed reports whether app may act on behalf of a RESERVED-org
-// (admin/built-in) user — a strictly narrower, separately-granted capability than the
-// general mint list, so a leaked general-minter secret can never reach a SuperAdmin
-// identity. Same owner-pin as mintAllowed: the app must be admin/built-in owned. The
-// console, which legitimately drives admin.hanzo.ai, is on both lists. Fail closed.
-func adminMintAllowed(app *schema.Application) bool {
-	return store.IsSigningCertOwner(app.Owner) && appInList("IAM_ADMIN_MINT_ALLOWED_APPS", app.ClientId)
+// adminMintAllowed reports whether a client may act on behalf of a RESERVED-org
+// (admin/built-in) user — a strictly narrower, separately-granted capability than
+// the general mint list, so a leaked general-minter secret can never reach a
+// SuperAdmin identity. The console, which legitimately drives admin.hanzo.ai, is
+// on both lists. Fail closed.
+func adminMintAllowed(clientID string) bool {
+	return appInList("IAM_ADMIN_MINT_ALLOWED_APPS", clientID)
 }
 
 // appInList matches clientID against a comma/space-separated env allow-list, by
@@ -323,20 +304,25 @@ func defaultUserAudience(ctx context.Context, db orm.DB, user *schema.User, clie
 	return clientApp.ClientId
 }
 
-// newAccessKey mints the user's durable Cloud API key through the ONE key minter,
-// keys.Mint — the same one schema.Key's halves come from.
-//
-// It is `sk-`, not a third prefix. A durable full-access bearer credential IS the
-// confidential half; naming it `hk-` invented a parallel credential family that
-// meant the same thing, so every consumer had to know all three prefixes
-// (`hk-/pk-/sk-` appears verbatim in the gateway filter, the audit redactor, the
-// registry resolver, and this package's own gate comment). One concept, one
-// spelling: `pk-` is publishable, `sk-` is secret, and there is no third thing.
-//
-// Forward-only and non-breaking: resolution is an exact-value lookup
-// (store.UserByAccessKey), never a prefix match, so keys already issued keep
-// working while every NEW key is minted as `sk-`. The prefix carries no authority
-// — it is a human-readable label on an opaque random token.
-func newAccessKey() string {
-	return keys.Mint("sk", "")
+// newAccessKey mints an `hk-`-prefixed Cloud API key (the durable credential the
+// gateway recognizes), a cryptographically-random opaque token behind the prefix.
+func newAccessKey() (string, error) {
+	tok, err := newOpaqueToken()
+	if err != nil {
+		return "", err
+	}
+	return "hk-" + tok, nil
+}
+
+// saveUser read-modify-writes the mutated user row by its (owner, name) key,
+// preserving every other field (orm persists the whole record).
+func saveUser(ctx context.Context, db orm.DB, user *schema.User) error {
+	existing, err := orm.Get[schema.User](db, user.Owner+"/"+user.Name)
+	if err != nil {
+		return err
+	}
+	model := existing.Model
+	*existing = *user
+	existing.Model = model
+	return existing.UpdateCtx(ctx)
 }
