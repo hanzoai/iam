@@ -6,15 +6,9 @@ FROM golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e
 WORKDIR /src
 
 # Cache the module graph before copying the source. Every module iam requires,
-# hanzoai/orm and hanzoai/sqlite included, is served by the public proxy and
-# recorded in the public checksum log, so this needs no credential and gets
-# verification it did not have before.
-#
-# GOPRIVATE said the opposite and that is why a credential was here at all: it
-# means "bypass the proxy AND the checksum database", and bypassing the proxy
-# routes the fetch to github.com, which then has to be authenticated. The token
-# also did not stay in the mount — `git config --global` wrote it to
-# /root/.gitconfig inside this layer, where anyone with the image can read it.
+# hanzoai/orm and hanzoai/sqlite included, is public: the module proxy serves it
+# and the checksum database records it, measured across the whole graph. So this
+# needs no credential, and go.sum stays authoritative for every dependency.
 COPY go.mod go.sum ./
 RUN go mod download
 
