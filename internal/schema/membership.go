@@ -30,39 +30,3 @@ type Membership struct {
 	Org  string `json:"org" orm:"index"`  // the org slug the user may act in
 	Role string `json:"role"`             // coarse org role: owner | admin | member
 }
-
-// OrgRef is the lightweight (org, role) projection of a Membership that a token
-// carries in its `orgs` claim — the tenancy set a resource server reads to
-// authorize an org-switch (X-Org-Id ∈ orgs) with no round-trip. It is the bind
-// value ONLY (no storage identity, no orm.Model): Membership is how the relation
-// is stored, OrgRef is how it travels in a JWT and how a consumer (cloud's
-// SanitizeIdentity) decodes it. The JSON tags (`org`, `role,omitempty`) are the
-// fixed claim contract — a token minted here and read by a consumer round-trips
-// byte-for-byte. It is exported to consumers as model.OrgRef (pkg/model), the ONE
-// place external services import it from; there is no second copy.
-type OrgRef struct {
-	Org  string `json:"org"`
-	Role string `json:"role,omitempty"`
-}
-
-// AsOrgRef projects a Membership onto its claim-side (org, role) reference — the
-// ONE way to turn a stored membership into the value a token emits.
-func (m *Membership) AsOrgRef() OrgRef {
-	return OrgRef{Org: m.Org, Role: m.Role}
-}
-
-// OrgRefsFromMemberships projects a membership set onto the `orgs` claim slice a
-// token carries. A nil/empty set yields a nil slice so the claim is omitted, not
-// emitted empty.
-func OrgRefsFromMemberships(ms []*Membership) []OrgRef {
-	if len(ms) == 0 {
-		return nil
-	}
-	out := make([]OrgRef, 0, len(ms))
-	for _, m := range ms {
-		if m != nil {
-			out = append(out, m.AsOrgRef())
-		}
-	}
-	return out
-}

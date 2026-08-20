@@ -13,24 +13,24 @@ import (
 	"github.com/pquerna/otp/totp"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/mfa/factor"
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/mfa/factor"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
-// The MFA gate at login, driven through the REAL registered router. The contract is
+// The MFA gate at login, driven through the REAL mounted router. The contract is
 // not a status code: every one of these answers is a 200, because the envelope
 // carries the outcome. What matters is WHICH answer, and — the point of the whole
 // gate — whether a token row exists afterwards. A test that checked only the
 // status would pass while every 2FA user signed in with a password alone.
 
-// newApp registers the OIDC surface on an EXISTING store, so a test can seed the
+// newApp mounts the OIDC surface on an EXISTING store, so a test can seed the
 // same db the router serves (newServer opens its own).
 func newApp(t *testing.T, db orm.DB) *zip.App {
 	t.Helper()
 	app := zip.New(zip.Config{AppName: "iam2-test", DisableStartupMessage: true})
 	// The OIDC surface is the pre-auth PUBLIC group; login + the challenge finish
-	// both live here, so a root (empty-prefix) router registers them at their absolute
-	// paths (main renamed Route→Route on the zip-group model).
+	// both live here, so a root (empty-prefix) router mounts them at their absolute
+	// paths (main renamed Mount→Route on the zip-group model).
 	Route(app.Group(""), db)
 	return app
 }

@@ -25,21 +25,19 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
+	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
 
 	"github.com/hanzoai/orm"
+	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/compare"
-	"github.com/hanzoai/iam/internal/oidc"
-	"github.com/hanzoai/iam/internal/provision"
-	"github.com/hanzoai/iam/internal/routes"
-	_ "github.com/hanzoai/iam/internal/schema" // registers the v2 entity kinds
-	"github.com/hanzoai/iam/internal/seed"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/compare"
+	"github.com/hanzoai/iam2/internal/routes"
+	_ "github.com/hanzoai/iam2/internal/schema" // registers the v2 entity kinds
+	"github.com/hanzoai/iam2/internal/seed"
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".
@@ -57,7 +55,7 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), compareCmd(), provisionCmd(), versionCmd())
+	root.AddCommand(serveCmd(), compareCmd(), versionCmd())
 
 	if err := root.ExecuteContext(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "iam2: %v\n", err)
@@ -89,14 +87,6 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initDat
 		return err
 	}
 	defer db.Close()
-
-	// Pin the per-brand OIDC issuer map from config (IAM_ISSUER + IAM_ISSUER_MAP)
-	// before the listener opens. A malformed or fail-open map fails the boot LOUD
-	// rather than silently minting tokens under the wrong `iss`; an unset map keeps
-	// the single-issuer (IAM_ISSUER) behavior unchanged.
-	if err := oidc.InitIssuerResolver(); err != nil {
-		return fmt.Errorf("serve: %w", err)
-	}
 
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
 	// same file the Casdoor iam uses — so a fresh store comes up with the real
@@ -158,71 +148,6 @@ func compareCmd() *cobra.Command {
 	return cmd
 }
 
-// provisionCmd converges a live IAM onto an org's declarative app graph. The
-// document is DATA owned by that org's universe repo; this command is the ONE
-// mechanism that applies it, for every brand. Re-running is a no-op: the upsert
-// keys on <org>-<app> and preserves each existing client secret.
-func provisionCmd() *cobra.Command {
-	var config, url, token string
-	var dryRun bool
-	cmd := &cobra.Command{
-		Use:   "provision",
-		Short: "Converge orgs + OAuth apps from a declarative provision document",
-		Long: "Reads a provision document (orgs[].apps[]) and idempotently upserts every " +
-			"OAuth client via /v1/iam/admin/applications/upsert. clientId is always " +
-			"<org>-<app> and redirect URIs are derived per app type, so a document line " +
-			"cannot drift from the app that actually calls it. Requires the IAM service " +
-			"token (--token or IAM_SERVICE_TOKEN).",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if config == "" {
-				return fmt.Errorf("--config <provision.yaml> is required")
-			}
-			raw, err := os.ReadFile(config)
-			if err != nil {
-				return err
-			}
-			doc, err := provision.Parse(raw)
-			if err != nil {
-				return err
-			}
-			clients, err := provision.Derive(doc)
-			if err != nil {
-				return err
-			}
-			if token == "" {
-				token = os.Getenv("IAM_SERVICE_TOKEN")
-			}
-			if token == "" && !dryRun {
-				return fmt.Errorf("no service token: pass --token or set IAM_SERVICE_TOKEN")
-			}
-
-			out := cmd.OutOrStdout()
-			r := &provision.Reconciler{BaseURL: url, Token: token, DryRun: dryRun}
-			var failed int
-			for _, res := range r.Apply(cmd.Context(), clients) {
-				if res.Err != nil {
-					failed++
-					fmt.Fprintf(out, "  FAIL     %-28s %v\n", res.Client.Name, res.Err)
-					continue
-				}
-				fmt.Fprintf(out, "  %-8s %-28s %s\n", res.Action, res.Client.Name,
-					strings.Join(res.Client.RedirectUris, " "))
-			}
-			fmt.Fprintf(out, "%d app(s), %d failed\n", len(clients), failed)
-			if failed > 0 {
-				return fmt.Errorf("%d app(s) did not converge", failed)
-			}
-			return nil
-		},
-	}
-	f := cmd.Flags()
-	f.StringVar(&config, "config", "", "path to the provision document (orgs[].apps[])")
-	f.StringVar(&url, "url", "https://hanzo.id", "IAM base URL to converge")
-	f.StringVar(&token, "token", "", "IAM service token (default $IAM_SERVICE_TOKEN)")
-	f.BoolVar(&dryRun, "dry-run", false, "print the derived plan without writing")
-	return cmd
-}
-
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
@@ -233,9 +158,38 @@ func versionCmd() *cobra.Command {
 	}
 }
 
-// openStore opens the v2 entity store on the chosen backend via the shared
-// store.Open — the ONE store-open path, reused by the migrate-v1 tool so a
-// migrated store and a served store share identical open config.
+// openStore opens the v2 entity store on the chosen backend. The returned
+// orm.DB is identical across backends, so nothing downstream knows or cares
+// which one is live:
+//
+//	sqlite    — embedded hanzoai/sqlite (default; the no-Postgres local path)
+//	sql       — hanzoai/sql (Postgres fork) over ZAP :9651
+//	datastore — hanzoai/datastore (ClickHouse fork) over ZAP :9655
+//
+// The ZAP backends currently surface orm's "ZAP backend disabled" error until
+// the zap-proto/go Node port lands in orm; the seam is here so iam2 gains them
+// with no code change.
 func openStore(backend, path string) (orm.DB, error) {
-	return store.Open(backend, path)
+	switch backend {
+	case "", "sqlite":
+		if dir := filepath.Dir(path); dir != "" && dir != "." {
+			if err := os.MkdirAll(dir, 0o750); err != nil {
+				return nil, fmt.Errorf("create db dir %q: %w", dir, err)
+			}
+		}
+		db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
+			Path:   path,
+			Config: ormdb.SQLiteConfig{BusyTimeout: 5000, JournalMode: "WAL"},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("open sqlite %q: %w", path, err)
+		}
+		return db, nil
+	case "sql":
+		return orm.OpenZap(&ormdb.ZapConfig{})
+	case "datastore":
+		return orm.OpenDatastore(&ormdb.ZapConfig{})
+	default:
+		return nil, fmt.Errorf("unknown --store %q (want sqlite, sql, or datastore)", backend)
+	}
 }

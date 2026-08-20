@@ -32,11 +32,11 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/cred"
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/keys"
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/authz"
+	"github.com/hanzoai/iam2/internal/cred"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/keys"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // Paths — the verb face the live consumers call (team's bot member sync reads
@@ -114,14 +114,6 @@ func create(db orm.DB) zip.Handler {
 		sa := orm.New[schema.User](db)
 		sa.Owner, sa.Name = in.Organization, name
 		sa.Type, sa.DisplayName, sa.Tag = serviceAccount, name, in.AgentRef
-		// Subject is the (owner,name) natural key, NOT a minted UUID — a service account
-		// is a machine identity whose sub is its stable owner/name (the M2M principal),
-		// so this bypasses the canonical users.Create path and diverges from the "sub is
-		// always a UUID" invariant (F-A1). It is NOT an impersonation vector: owner is the
-		// caller's authorized org and name is canonicalized server-side with no client Id,
-		// and store.GetUserById fails closed on an empty/duplicate Id. Minting a UUID here
-		// would change the M2M subject shape, so it is deferred to a deliberate migration
-		// rather than folded into this security rework.
 		sa.SetId(in.Organization + "/" + name)
 		key, secret, err := mint(sa)
 		if err != nil {
@@ -255,15 +247,12 @@ func read(p *authz.Principal, org string) bool {
 	return p.Super || (p.Admin && p.Org == org)
 }
 
-// mint (re)generates the identity's credential: a fresh pk- access key (the
-// plaintext lookup handle) and a fresh sk- secret whose argon2id DIGEST — never the
+// mint (re)generates the identity's credential: a fresh access key (the
+// plaintext lookup handle) and a fresh secret whose argon2id DIGEST — never the
 // secret — is stored. Any prior key stops authenticating the moment this
 // persists. The raw secret is returned to the caller and never written.
-//
-// pk- for the handle, sk- for the secret: the prefix is what tells a reader which
-// half they are holding. Minting both as `hk-` erased that distinction.
 func mint(sa *schema.User) (key, secret string, err error) {
-	key, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
+	key, secret = keys.Mint("hk", ""), keys.Mint("hk", "")
 	hash, err := cred.Hash(secret)
 	if err != nil {
 		return "", "", zip.ErrInternal("hash service account secret: " + err.Error())

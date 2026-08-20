@@ -11,7 +11,7 @@
 // no redaction is reimplemented here.
 //
 // Authorization is NOT reimplemented either. These paths are not in authz's
-// public allowlist, so the Guard (app.Use, registered first) authenticates every
+// public allowlist, so the Guard (app.Use, mounted first) authenticates every
 // request AND authorizes the read against the exact (owner, name) it addresses —
 // resolved by the same authz.ReadTarget the handlers use, so a handler can never
 // reach a row the Guard did not authorize. Each handler then re-scopes the query
@@ -23,20 +23,14 @@ package compat
 import (
 	"errors"
 	"strconv"
-	"strings"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/authz"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
 )
-
-// unauthorized is v1's refusal message, verbatim — the envelope a denied caller
-// receives from a handler-authorized read (the Guard's own refusals are raw 403s).
-const unauthorized = "auth:Unauthorized operation"
 
 // Route registers the Casdoor read-verb aliases. The mask argument is the
 // entity's schema.Mask method (the ONE redaction contract) for entities that
@@ -57,19 +51,12 @@ func Route(app *zip.App, db orm.DB) {
 
 	// Single reads — `?id=<owner>/<name>` (or `?owner=&name=`).
 	app.Get("/v1/iam/get-organization", getHandler(db, (*schema.Organization).Mask))
-	app.Get("/v1/iam/get-user", userGetHandler(db))
+	app.Get("/v1/iam/get-user", getHandler(db, (*schema.User).Mask))
 	app.Get("/v1/iam/get-application", getHandler(db, (*schema.Application).Mask))
 	app.Get("/v1/iam/get-provider", getHandler(db, (*schema.Provider).Mask))
 	app.Get("/v1/iam/get-cert", getHandler(db, (*schema.Cert).Mask))
 	app.Get("/v1/iam/get-role", getHandler[schema.Role](db, nil))
 	app.Get("/v1/iam/get-permission", getHandler[schema.Permission](db, nil))
-
-	// resolve-key — the WRITE-ONLY ingest door and the dual of get-user?accessKey. It
-	// turns a publishable pk- into just the ORG that holds it (never a principal), for
-	// cloud's ingest boundary. Its target rides in ?accessKey= (no owner/name for the
-	// Guard to authorize), so it is handler-authorized (authz.handlerAuthorizedExact)
-	// and the handler authorizes itself behind CapPublishableResolve.
-	app.Get("/v1/iam/resolve-key", resolveKeyHandler(db))
 
 	// get-organization-projects — the console ScopeSwitcher's project list, keyed by
 	// ?organization= (not ?owner=). Its target rides in ?organization, which the Guard
@@ -80,14 +67,6 @@ func Route(app *zip.App, db orm.DB) {
 	// shown to every user, not only admins, so this read is intentionally not
 	// admin-gated the way the generic listers are).
 	app.Get("/v1/iam/get-organization-projects", orgProjectsHandler(db))
-
-	// get-organization-workspaces — the console ScopeSwitcher's workspace list, the
-	// tier above projects in the Organization → Workspace → Project hierarchy. Keyed
-	// by ?organization= exactly like get-organization-projects, so it is
-	// handler-authorized (authz's handlerAuthorizedPrefixes) the same way: the Guard
-	// authenticates, and this handler scopes the requested org through authz.Scope so
-	// a request parameter can never widen the read past the caller's tenant.
-	app.Get("/v1/iam/get-organization-workspaces", orgWorkspacesHandler(db))
 
 	// The Casdoor WRITE verbs (companion file), over the same store + authz seam.
 	routeWrites(app, db)
@@ -110,34 +89,6 @@ func orgProjectsHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, err.Error())
 		}
 		q := orm.TypedQuery[schema.Project](db)
-		if owner != "" {
-			q = q.Filter("Owner=", owner)
-		}
-		rows, err := q.Order("Name").GetAll(ctx)
-		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		return httpx.Ok(c, rows)
-	}
-}
-
-// orgWorkspacesHandler serves get-organization-workspaces: the org's workspace
-// list for the console ScopeSwitcher. The requested org rides in ?organization=
-// (or ?owner= as a fallback); authz.Scope pins a non-super to its own org, so a
-// request parameter can never widen the read past the caller's tenant. Workspaces
-// carry no secrets, so no Mask is applied.
-func orgWorkspacesHandler(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		ctx := c.Context()
-		requested := c.Query("organization")
-		if requested == "" {
-			requested = c.Query("owner")
-		}
-		owner, err := authz.Scope(ctx, requested)
-		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		q := orm.TypedQuery[schema.Workspace](db)
 		if owner != "" {
 			q = q.Filter("Owner=", owner)
 		}
@@ -213,7 +164,7 @@ func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 		if name == "" {
 			return httpx.Err(c, "id (owner/name) or name is required")
 		}
-		scoped, err := authz.ScopeFor(ctx, c.Path(), owner, name)
+		scoped, err := authz.Scope(ctx, owner)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -229,71 +180,6 @@ func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 		}
 		return httpx.Ok(c, row)
 	}
-}
-
-// userGetHandler serves get-user, which has TWO variants. When `?accessKey=` is
-// present it resolves an opaque SECRET API key (hk-/sk-) to its owning user — the path
-// cloud's identity boundary calls to authenticate a keyed request — behind the
-// CapKeyResolve service capability. A public pk- is write-only and resolves to nobody
-// here (store.UserByAccessKey refuses it); its org-only door is /v1/iam/resolve-key.
-// Otherwise it is the ordinary owner/name/id read.
-//
-// get-user is handler-authorized (authz.handlerAuthorizedExact) because the key
-// variant carries no owner/name for the Guard to authorize; so the owner/name
-// variant reinstates the SAME read authorization the Guard applies, through the ONE
-// policy function (authz.Can) — identical behavior, a cross-tenant or non-self read
-// still refused 403 — then reuses the generic getHandler verbatim for resolution and
-// redaction. No authz and no CRUD is reimplemented.
-func userGetHandler(db orm.DB) zip.Handler {
-	byOwnerName := getHandler(db, (*schema.User).Mask)
-	return func(c *zip.Ctx) error {
-		if key := strings.TrimSpace(c.Query("accessKey")); key != "" {
-			return resolveUserByAccessKey(c, db, key)
-		}
-		owner, name := authz.ReadTarget(c)
-		if !authz.Can(c.Context(), "GET", "users", owner, name) {
-			return zip.ErrForbidden("forbidden")
-		}
-		return byOwnerName(c)
-	}
-}
-
-// keyUser is the minimal principal projection get-user?accessKey returns — EXACTLY
-// the four fields cloud's key resolver consumes (auth_apikey.go) and no more. It is
-// a TIGHTER redaction than schema.User.Mask, deliberately: Mask blanks the secret
-// digests and bearer tokens but leaves AccessKey populated, and an sk- resolution
-// must never disclose the resolved user's OTHER credential (its hk- AccessKey) to a
-// caller that only presented a secret key. A projection carrying no secret field is
-// leak-proof by construction.
-type keyUser struct {
-	Owner   string `json:"owner"`
-	Name    string `json:"name"`
-	Email   string `json:"email"`
-	IsAdmin bool   `json:"isAdmin"`
-}
-
-// resolveUserByAccessKey authenticates the SERVICE caller and resolves an API key to
-// its owning principal. The gate is service-only and fail-secure: the caller must be
-// a confidential app (p.App != "") holding CapKeyResolve — a human, even a
-// SuperAdmin, is refused, because a capability is held vacuously by non-apps and key
-// resolution is a machine-identity boundary, never an interactive admin action. An
-// unknown/unresolvable key answers the same not-exist envelope every other get- verb
-// uses, so a prober cannot distinguish a missing key from a denied one beyond the
-// auth refusal.
-func resolveUserByAccessKey(c *zip.Ctx, db orm.DB, key string) error {
-	ctx := c.Context()
-	p, ok := authz.From(ctx)
-	if !ok || p.App == "" || !authz.Allowed(p, authz.CapKeyResolve) {
-		return httpx.Err(c, unauthorized)
-	}
-	u, err := store.UserByAccessKey(ctx, db, key)
-	if errors.Is(err, orm.ErrNotFound) {
-		return httpx.Err(c, "the entity does not exist")
-	}
-	if err != nil {
-		return httpx.Err(c, err.Error())
-	}
-	return httpx.Ok(c, keyUser{Owner: u.Owner, Name: u.Name, Email: u.Email, IsAdmin: u.IsAdmin})
 }
 
 // maskAll redacts every row through the entity's Mask (a no-op when the entity

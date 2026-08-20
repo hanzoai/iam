@@ -11,7 +11,7 @@ import (
 	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // The login-challenge lifecycle: the ONE primitive for a sign-in that has proven
@@ -33,10 +33,7 @@ const challengeTTL = 5 * time.Minute
 
 // The challenge kinds. Each names the proof still outstanding, and a taker demands
 // its own kind: a challenge minted for one purpose must never satisfy another.
-const (
-	KindMfa        = "mfa"
-	KindFederation = "federation"
-)
+const KindMfa = "mfa"
 
 // ErrChallenge is the ONE opaque failure for every way a challenge can be refused
 // — unknown, expired, spent, or the wrong kind. They collapse to one answer so a
@@ -72,43 +69,29 @@ func MintChallenge(ctx context.Context, db orm.DB, kind, subject, payload string
 	return id, nil
 }
 
-// TakeChallenge resolves and atomically SPENDS a challenge of the given kind,
-// returning it. The find-and-burn runs inside a GetForUpdate transaction — the row
-// lock is held from the read through the Used=true write — so two concurrent
-// finishMfa calls on ONE captured passcode cannot both observe Used=false and both
-// win: the loser blocks until the winner commits, then reads it spent. A plain
-// Get→set→Update would leave a window in which both pass the used check (the F-D1
-// lost-update/TOCTOU class); this is the same guard as the wallet challenge burn
-// (internal/wallet/store.go). The caller gets the subject from the returned row and
-// nowhere else — never from a request parameter, so a body naming another user
-// cannot redirect the ceremony.
+// TakeChallenge resolves and SPENDS a challenge of the given kind, returning it.
+// Taking is the only read: a challenge that is found is immediately marked used,
+// so a replay of the same id loses whether it races or follows. The caller gets
+// the subject from the returned row and nowhere else — never from a request
+// parameter, so a body naming another user cannot redirect the ceremony.
 //
-// Every refusal — unknown, expired, spent, wrong kind, or a transient store fault —
-// collapses to ErrChallenge, so a prober cannot tell them apart.
+// Every refusal is ErrChallenge.
 func TakeChallenge(ctx context.Context, db orm.DB, id, kind string, now time.Time) (*schema.LoginChallenge, error) {
 	if id == "" {
 		return nil, ErrChallenge
 	}
-	var out *schema.LoginChallenge
-	err := db.RunInTransaction(ctx, func(tx orm.DB) error {
-		c, err := orm.GetForUpdate[schema.LoginChallenge](tx, challengeOwner+"/"+id)
-		if err != nil {
-			return ErrChallenge // unknown id (ErrNotFound) or a transient read fault
-		}
-		if c.Used || c.Kind != kind || now.Unix() > c.ExpireIn {
-			return ErrChallenge // spent, wrong kind, or expired
-		}
-		c.Used = true
-		if err := c.UpdateCtx(ctx); err != nil {
-			return ErrChallenge
-		}
-		out = c
-		return nil
-	})
-	if err != nil {
+	c, err := orm.Get[schema.LoginChallenge](db, challengeOwner+"/"+id)
+	if err != nil || c == nil {
 		return nil, ErrChallenge
 	}
-	return out, nil
+	if c.Used || c.Kind != kind || now.Unix() > c.ExpireIn {
+		return nil, ErrChallenge
+	}
+	c.Used = true
+	if err := c.UpdateCtx(ctx); err != nil {
+		return nil, ErrChallenge
+	}
+	return c, nil
 }
 
 // challengeCookie carries the challenge id to the client exactly the way v1 carries

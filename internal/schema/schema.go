@@ -30,9 +30,8 @@ func Kinds() []string {
 		"users", "organizations", "applications", "providers",
 		"roles", "permissions", "certs", "keys",
 		"webauthn_credentials", "sessions", "tokens", "audit_logs",
-		"invitations", "verifications", "projects", "workspaces",
-		"federation_states", "challenges", "wallets", "login_challenges",
-		"memberships",
+		"invitations", "verifications", "projects", "federation_states",
+		"challenges", "wallets", "login_challenges", "memberships",
 	}
 }
 
@@ -52,7 +51,6 @@ func init() {
 	orm.Register[Invitation]("invitations")
 	orm.Register[VerificationRecord]("verifications")
 	orm.Register[Project]("projects")
-	orm.Register[Workspace]("workspaces")
 	orm.Register[FederationState]("federation_states")
 	orm.Register[Challenge]("challenges")
 	orm.Register[Wallet]("wallets")

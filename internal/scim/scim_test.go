@@ -2,8 +2,8 @@
 
 package scim_test
 
-// SCIM 2.0 tests driven through the REAL registered router (routes.Route installs
-// the authz Guard, then scim.Route). Every case is a HTTP request an IdP / SCIM
+// SCIM 2.0 tests driven through the REAL mounted router (routes.Route installs
+// the authz Guard, then scim.Route). Every case is a wire request an IdP / SCIM
 // client sends. The assertions pin the three contracts a provisioning surface
 // depends on: the RFC-standard envelopes (ListResponse / a bare resource / Error),
 // owner-scoping that no path can widen, and — the security one — that NO secret
@@ -29,9 +29,9 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/routes"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 const (
