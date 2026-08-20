@@ -723,3 +723,27 @@ func sessionCookieForNamed(t *testing.T, app *zip.App, name string) string {
 	}
 	return cookieKV(resp.Header.Get("Set-Cookie"))
 }
+
+// Signup never asks for a username, so the identifier a customer HAS is their
+// email. A name-only lookup answers "no passkey is registered" for an account
+// that has one — and that is the same refusal a real missing passkey gives, so
+// the door reports nothing an operator could act on. This door resolves the way
+// every other one does.
+func TestPasskeySigninResolvesTheIdentifierACustomerHas(t *testing.T) {
+	app, _, cookie := passkeyServer(t)
+	a := newAuthenticator(t)
+	if env := enroll(t, app, cookie, a, attested); env["status"] != "ok" {
+		t.Fatalf("enrollment refused: %v", env["msg"])
+	}
+
+	for _, id := range []string{"alice", "alice@hanzo.ai"} {
+		req, _ := http.NewRequest("GET", PathWebauthnLoginBegin+"?owner=hanzo&name="+id, nil)
+		resp, body := do(t, app, req)
+		if resp.StatusCode != 200 {
+			t.Fatalf("%q did not reach the enrolled passkey (status=%d); body=%s", id, resp.StatusCode, body)
+		}
+		if strings.Contains(string(body), errNoPasskey) {
+			t.Fatalf("%q was told no passkey is registered, but one is: %s", id, body)
+		}
+	}
+}
