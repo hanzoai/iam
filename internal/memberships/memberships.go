@@ -8,8 +8,20 @@
 //
 // A user's HOME org (User.Owner) is always an implicit membership — the token
 // consumer treats it as one — so an explicit row is only ever needed for a TEAM
-// org the identity was invited into. The boot backfill seeds the home row anyway,
-// so an org's roster is complete from one query.
+// org the identity was invited into.
+//
+// That implicitness is not symmetric, and the asymmetry is the whole reason
+// `remove` refuses some pairs. A home-org row is a ROSTER entry: it makes the
+// org's membership list complete for one query, and it is what the invite path
+// writes. It is NOT the grant. MemberOrgRefs resolves the home org from the user
+// row, so adding the row grants nothing that was not already granted and deleting
+// it takes nothing away. Only a TEAM-org row is load-bearing, and only that row
+// can be revoked here.
+//
+// store.BackfillMemberships can seed the home rows for a whole estate, but nothing
+// calls it today, so the roster is complete exactly where something wrote it —
+// the invite path — and sparse elsewhere. An access review must read it as a
+// roster and not as the set of grants.
 //
 // This is the transport face. The relation's operations are store's
 // (EnsureMembership, MembershipsByUser/ByOrg), because the token mint needs them
@@ -184,6 +196,19 @@ func remove(db orm.DB) zip.Handler {
 		if !mayGrant(ctx, in.Org) {
 			return httpx.Err(c, unauthorized)
 		}
+		// A home-org pair names tenancy this relation does not grant, so it cannot
+		// revoke it either: MemberOrgRefs emits the home org from the user row
+		// itself, and the row here is a roster entry beside it. Deleting the row
+		// used to answer `removed: true` and change nothing — the person kept the
+		// org in every token minted afterwards, fresh logins included, while the
+		// roster an access review reads showed them gone. Refusing is what makes
+		// the two agree.
+		//
+		// AFTER the authorization gate: only a caller already entitled to revoke
+		// here learns which org an account belongs to.
+		if store.IsHomeOrg(in.User, in.Org) {
+			return httpx.Err(c, homeOrgIsNotRevocable)
+		}
 		removed, err := store.DeleteMembership(ctx, db, in.User, in.Org)
 		if err != nil {
 			return httpx.Err(c, err.Error())
@@ -191,6 +216,11 @@ func remove(db orm.DB) zip.Handler {
 		return httpx.Ok(c, removed)
 	}
 }
+
+// homeOrgIsNotRevocable answers a revoke whose (user, org) pair names the org the
+// account itself lives in. It names the operation that DOES end the access, so the
+// refusal is a direction rather than a wall.
+const homeOrgIsNotRevocable = "this account belongs to that organization, so its access comes from the account and not from a membership row — disable or delete the user to end it"
 
 // mayGrant reports whether the ctx principal may grant OR revoke a membership into
 // org — the ONE write gate ensure and remove share. Two clauses, both required:
