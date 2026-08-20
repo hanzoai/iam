@@ -384,6 +384,19 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 	if status != 0 {
 		return mintErr(c, status, msg)
 	}
+	// An ADMIN of the key's own org never becomes an as() subject either. A token
+	// minted for an admin is indistinguishable from that admin at her keyboard —
+	// the principal is built from the user row and nothing downstream reads the act
+	// claim — so it mints durable keys, answers the holds a person was supposed to
+	// answer, and rewrites the tenant's own policy. The actor predicate cannot help:
+	// it narrows below a mint that has already handed out the owner.
+	//
+	// This costs the honest case nothing. An unattended agent should be its own
+	// ordinary subject, filed under the tenant like any other member; acting AS the
+	// person who governs the tenant is the one thing it must never do.
+	if user.IsAdmin {
+		return mintErr(c, 403, "the target may not be acted for")
+	}
 	// A SuperAdmin never becomes an as() subject, even one anchored in the key's own
 	// brand org. Reading the membership set is the question; an unreadable one refuses.
 	super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
