@@ -236,6 +236,33 @@ func GetUserById(ctx context.Context, db orm.DB, id string) (*schema.User, error
 	}
 }
 
+// GetUserByExternalId resolves a user by the externalId its tenant filed it
+// under, CONFINED to owner — the id an operator keys a member by in its own
+// directory, and the value as() accepts beside the stable subject. externalId is
+// unique only within a tenant, so owner is half the question; a cross-tenant
+// match cannot arise. Returns (nil, nil) when empty or unmatched, and FAILS CLOSED
+// on multiplicity: two rows sharing one externalId in an org name neither in
+// particular, so answering with the storage engine's arbitrary first row would let
+// whoever registered the second be resolved as the first — the same refusal
+// GetUserById makes for a duplicated subject.
+func GetUserByExternalId(ctx context.Context, db orm.DB, owner, externalId string) (*schema.User, error) {
+	if owner == "" || externalId == "" {
+		return nil, nil
+	}
+	us, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).Filter("ExternalId=", externalId).GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch len(us) {
+	case 0:
+		return nil, nil
+	case 1:
+		return us[0], nil
+	default:
+		return nil, fmt.Errorf("store: %d users in organization %q share externalId %q — ambiguous", len(us), owner, externalId)
+	}
+}
+
 // GetUserBySubject resolves the user a token's `sub` names — the ONE place the
 // subject→user mapping lives, shared by userinfo, get-account, token exchange,
 // and the authz principal, so `sub` is decoded the same way everywhere. The
