@@ -153,6 +153,30 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 			sum.Created["providers"], sum.Created["certs"])
 	}
 
+	// Record the HOME-org membership every user already HOLDS. An org's roster is
+	// built from membership rows while access comes from the user row's home org,
+	// so a user nobody wrote a row for holds the org and is absent from its
+	// roster — invisible to the access review that reads it. This writes the row
+	// that says out loud what the token already grants.
+	//
+	// Invisible to every token by construction: MemberOrgRefs emits the home ref
+	// from the user row and dedupes by org, so the row this adds is skipped and
+	// the claim keeps its length, its order and its role — which is what makes it
+	// safe to run against a live estate (pkg/store: TestRoster_BackfillChangesNoClaim).
+	// Idempotent and never a downgrade, so every boot is the same boot.
+	//
+	// NOT fatal, and the count is the point: nothing yet DEPENDS on the rows —
+	// the home org is still granted implicitly — so an incomplete backfill costs
+	// visibility, not access. Refusing to serve identity over it would trade a
+	// reporting gap for an outage. It is also the prerequisite for ever resolving
+	// tenancy from rows alone; that step needs this to have reached every user,
+	// which is why the number is printed rather than assumed.
+	if n, err := store.BackfillMemberships(ctx, db); err != nil {
+		fmt.Fprintf(os.Stderr, "iam: membership backfill incomplete — org rosters may omit members that hold access: %v\n", err)
+	} else if n > 0 {
+		fmt.Fprintf(os.Stderr, "iam: recorded %d home-org membership(s) that were held but unwritten\n", n)
+	}
+
 	// MCP projects every typed CRUD handler onto one generic /mcp tool-call
 	// endpoint. The authz Guard gates it like any other route (fail-closed), but
 	// an identity service has no need to expose its admin CRUD as an agent tool
