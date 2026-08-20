@@ -15,9 +15,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/authz"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // authorizeOrganization gates the Organization an application will SERVE (the
@@ -39,32 +38,6 @@ func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	}
 	if !authz.CanSetOrg(p, in.Organization) {
 		return zip.ErrForbidden("not authorized to set the application organization to " + in.Organization)
-	}
-	return nil
-}
-
-// ensureClientIdUnique rejects a create/update whose clientId is already held by a
-// DIFFERENT application (any owner). clientId is the GLOBAL key the mint and Basic-auth
-// resolvers authenticate against, so it must be unique across every owner, not merely
-// within one — otherwise a tenant could register a row whose clientId collides with a
-// platform console's and (on a backend whose duplicate-row order is unspecified) shadow
-// it. A JSON-document store has no per-field column to carry a DB UNIQUE index, so the
-// invariant is enforced here at the write, exactly as the (owner,name) natural key is.
-// An empty clientId cannot collide (a public app authenticates no confidential grant);
-// the self-row (same owner,name) is skipped so an update that keeps its own clientId is
-// never a self-collision.
-func ensureClientIdUnique(ctx context.Context, db orm.DB, clientId, owner, name string) error {
-	if clientId == "" {
-		return nil
-	}
-	existing, err := store.ListApplicationsByClientId(ctx, db, clientId)
-	if err != nil {
-		return zip.ErrInternal(err.Error())
-	}
-	for _, a := range existing {
-		if a.Owner != owner || a.Name != name {
-			return zip.ErrConflict("clientId already in use: " + clientId)
-		}
 	}
 	return nil
 }
@@ -173,13 +146,7 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, zip.ErrInternal(err.Error())
 		}
 
-		// Global uniqueness: clientId is the mint/Basic-auth resolution key, so it must
-		// be free across ALL owners — the invariant the confidential-client gates rely on.
-		if err := ensureClientIdUnique(ctx, db, in.ClientId, in.Owner, in.Name); err != nil {
-			return nil, err
-		}
-
-		// Bind the decoded entity to db under its natural key and persist.
+		// Wire the decoded entity to db under its natural key and persist.
 		in.Init(db)
 		in.SetId(id)
 		if err := in.Create(); err != nil {
@@ -209,37 +176,6 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		}
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
-		}
-
-		// Global clientId uniqueness (see Create): an update may keep its own clientId
-		// but must never steal another app's.
-		if err := ensureClientIdUnique(ctx, db, in.ClientId, in.Owner, in.Name); err != nil {
-			return nil, err
-		}
-
-		// A write that says NOTHING about the credential must not destroy it.
-		//
-		// This verb is a full REPLACE, and every read of an application MASKS its
-		// client secret (Mask, and get-app-login before it) — so the natural admin
-		// round-trip, read the record, change one field, write it back, silently
-		// posted ClientSecret:"" and de-secreted the app. Measured on live IAM: the
-		// SuperAdmin read of hanzo-console, hanzo-app, hanzo-id and hanzo-cloud all
-		// return "" while a token-endpoint probe proves all four DO hold a secret.
-		// Any console "save" on an application page was one request away from turning
-		// a confidential client public — which the token endpoint then reads as "PKCE,
-		// demand no client auth", weakening every flow that app serves.
-		//
-		// So an OMITTED secret preserves what is stored. This is the same rule the
-		// operator upsert already settled in resolveSecret ("existing app -> preserve
-		// what it has"), stated once more here because this is the other door onto the
-		// same row; rotation stays possible, it just has to be DELIBERATE — send the
-		// new secret to change it.
-		//
-		// Clearing a secret on purpose (confidential -> public) is therefore no longer
-		// expressible as an accident. It goes through the operator upsert's explicit
-		// `public: true`, which is the one place that decision is named.
-		if in.ClientSecret == "" {
-			in.ClientSecret = existing.ClientSecret
 		}
 
 		in.Init(db)

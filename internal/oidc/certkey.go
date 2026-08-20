@@ -15,7 +15,7 @@ import (
 
 	"github.com/luxfi/crypto/pq/mldsa/mldsa65"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // certkey resolves the PUBLIC half of a signing Cert and encodes it as a JWK.

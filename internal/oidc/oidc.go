@@ -40,7 +40,7 @@ const (
 
 // Route registers the entire OIDC/OAuth2 surface on r, backed by db. This is the
 // one entry point the route table calls — discovery, JWKS, the protocol
-// endpoints, and the front door are all bound here so the surface lives in one
+// endpoints, and the front door are all wired here so the surface lives in one
 // place. r is the PUBLIC group (registered before the router's authentication
 // Guard): the whole OIDC/OAuth + front-door surface is pre-authentication by
 // construction, so membership in this group IS what makes it reachable without a
@@ -80,8 +80,6 @@ func Route(r zip.Router, db orm.DB) {
 	// authorize endpoint kicks a federation off when the request names a
 	// `provider`; this registers the fixed return endpoint the IdP redirects to.
 	routeFederation(r, db)
-	routeFederationMfa(r, db)
-	routeUnlink(r, db)
 
 	// RFC 7662 introspection + RFC 7009 revocation — the standard token-management
 	// endpoints a resource server / confidential client uses (client-authenticated).

@@ -29,11 +29,11 @@ import (
 
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
-	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/oidc"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/authz"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/oidc"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // The canonical wallet sign-in endpoints.
@@ -75,13 +75,9 @@ func nonce(db orm.DB) zip.Handler {
 		if !supported(chain) {
 			return httpx.Err(c, "web3: unsupported chain: "+string(chain))
 		}
-		// The domain is the brand login host the request arrived on, read through
-		// the header-immune c.Host() (zip has no trusted-proxy knob, so a client
-		// X-Forwarded-Host is ignored) — NEVER client-supplied. The whole
-		// anti-phishing binding the wallet signs (the EIP-4361/CAIP-122 `domain`)
-		// rides on this, so it MUST be the true routed brand host, never a
-		// spoofable header. It is the SAME accessor the OIDC issuer resolver uses.
-		domain := trim(c.Host())
+		// The domain is the brand login host the request arrived on — NEVER
+		// client-supplied. The whole phishing defense is this binding.
+		domain := trim(httpx.EffectiveHost(c))
 		if domain == "" {
 			return httpx.Err(c, "web3: empty domain")
 		}
@@ -187,11 +183,7 @@ func check(db orm.DB) zip.Handler {
 		}
 
 		user, err := verify(ctx, db, login{
-			// Same header-immune c.Host() as the mint: verify re-derives the domain
-			// from the true routed brand host and re-checks it against the burned
-			// challenge, so a spoofed X-Forwarded-Host can neither steer the binding
-			// nor slip a cross-host redemption past the domain check.
-			Domain: trim(c.Host()),
+			Domain: trim(httpx.EffectiveHost(c)),
 			Proof: wc.Proof{
 				Chain:     chain,
 				Scheme:    wc.SignatureScheme(f.Scheme),
@@ -214,7 +206,7 @@ func check(db orm.DB) zip.Handler {
 		// identity, before any session or code is minted. v1 runs checkMfaEnable
 		// at exactly this point with an empty verificationType (wallet login has
 		// no SMS/email pre-step). iam2 has no MFA gate yet; this is the ONE call
-		// site it binds into, so wallet login never becomes a silent MFA bypass.
+		// site it wires into, so wallet login never becomes a silent MFA bypass.
 		if factor(user, org) {
 			return httpx.Err(c, "web3: multi-factor authentication is required")
 		}
@@ -273,11 +265,6 @@ func session(c *zip.Ctx, db orm.DB) *schema.User {
 // neither, and refusing those would break wallet linking from them for no
 // security gain. A malformed Origin/Referer, or one naming another host, is
 // cross-site. Hosts compare case-insensitively (DNS is).
-//
-// The comparison target is the header-immune c.Host(), NOT a client header: an
-// attacker who could also spoof X-Forwarded-Host to equal their forged Origin
-// would otherwise pass this check cross-site. c.Host() is the true routed brand
-// host, so a forged Origin can never match it.
 func same(c *zip.Ctx) bool {
 	src := c.Header("Origin")
 	if src == "" {
@@ -287,7 +274,7 @@ func same(c *zip.Ctx) bool {
 		return true
 	}
 	if u, err := url.Parse(src); err == nil && u.Host != "" {
-		return strings.EqualFold(u.Host, trim(c.Host()))
+		return strings.EqualFold(u.Host, trim(httpx.EffectiveHost(c)))
 	}
 	return false // malformed → fail closed (treat as cross-site)
 }

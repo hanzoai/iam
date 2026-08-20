@@ -14,7 +14,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // Handlers holds the storage handle shared by every permission handler.
@@ -23,7 +23,7 @@ type Handlers struct {
 }
 
 // Route registers the permission routes on app, backed by db. It is called
-// from routes.Route once the store is open.
+// from routes.Mount once the store is open.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handlers{db: db}
 	zip.Get(app, "/v1/iam/permissions", h.List,

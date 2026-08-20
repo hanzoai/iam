@@ -14,8 +14,8 @@ import (
 	"github.com/hanzoai/orm"
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // The chain-agnostic wallet-login core, decomplected from HTTP: the handler
@@ -48,9 +48,8 @@ var (
 // The proof itself IS the SDK's own value — the seven attacker-controlled fields
 // are never re-declared here, so Go and TypeScript verify the identical value.
 type login struct {
-	// Domain is the brand host from the header-immune c.Host(), re-checked against
-	// the burned challenge. Never client-supplied (X-Forwarded-Host is ignored):
-	// the anti-phishing binding rides on it.
+	// Domain is the request-derived brand host, re-checked against the burned
+	// challenge. Never client-supplied: phishing protection rides on it.
 	Domain string
 	Proof  wc.Proof
 	Method string // "signup" (default) | "login"
@@ -222,14 +221,6 @@ func provision(ctx context.Context, db orm.DB, in login, address string, now tim
 	u.SignupApplication = in.App.Name
 	u.CreatedTime = stamp(now)
 	u.UpdatedTime = u.CreatedTime
-	// Subject is the (owner,name) natural key, NOT a minted UUID — this bypasses the
-	// canonical users.Create path, so it diverges from the "sub is always a UUID"
-	// invariant (F-A1). It is NOT an impersonation vector: owner is the app's own org
-	// and name is the deterministic wallet digest (see name()), both server-set with no
-	// client input, and store.GetUserById fails closed on an empty/duplicate Id — an
-	// Id="" row is resolved ONLY by its owner/name, never captured by a UUID subject.
-	// Minting a UUID here would change the token sub for wallet re-login, so it is
-	// deferred to a deliberate migration rather than folded into this security rework.
 	u.SetId(u.Owner + "/" + u.Name)
 	if err := u.CreateCtx(ctx); err != nil {
 		return nil, err

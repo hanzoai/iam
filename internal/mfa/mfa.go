@@ -4,7 +4,7 @@
 // security page's initiate → verify → enable flow (RFC 6238 TOTP), plus
 // delete-mfa and set-preferred-mfa. Enrollment is SELF-SERVICE: every handler
 // acts on the AUTHENTICATED caller's own user record (authz.From), so the routes
-// register AFTER the Guard — they need the Principal. Touching a DIFFERENT user's
+// mount AFTER the Guard — they need the Principal. Touching a DIFFERENT user's
 // MFA requires admin authority over that org, authorized through the SAME seam a
 // SCIM write uses (authz.Can); the general user-write policy correctly refuses a
 // non-admin writing a user row, so self-enrollment is authorized by
@@ -31,15 +31,16 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/mfa/factor"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/authz"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
-// The TOTP factor type ("app") and the domain helpers are factor.App et al (internal/mfa/factor).
+// mfaTypeTOTP is the casibase MFA type for an authenticator app (RFC 6238 TOTP) —
+// the value PreferredMfaType carries once TOTP is enrolled.
+const mfaTypeTOTP = "app"
 
 // Route registers the MFA endpoints on app. They are RAW handlers (not typed
-// ops), so — like SCIM — each authorizes itself; callers register app AFTER the
+// ops), so — like SCIM — each authorizes itself; callers mount app AFTER the
 // Guard so a verified Principal rides the request context.
 func Route(app *zip.App, db orm.DB) {
 	app.Post("/v1/iam/mfa/setup/initiate", initiate(db))
@@ -156,16 +157,12 @@ func enable(db orm.DB) zip.Handler {
 			return c.JSON(404, errResp("user not found"))
 		}
 		u.TotpSecret = req.Secret
-		hashed, herr := factor.HashRecoveryCodes(req.RecoveryCodes)
-		if herr != nil {
-			return c.JSON(500, errResp("server_error"))
-		}
-		u.RecoveryCodes = hashed
-		u.PreferredMfaType = factor.App
+		u.RecoveryCodes = req.RecoveryCodes
+		u.PreferredMfaType = mfaTypeTOTP
 		if err := u.UpdateCtx(c.Context()); err != nil {
 			return c.JSON(500, errResp("server_error"))
 		}
-		return c.JSON(200, okData(map[string]any{"preferredMfaType": factor.App}))
+		return c.JSON(200, okData(map[string]any{"preferredMfaType": mfaTypeTOTP}))
 	}
 }
 

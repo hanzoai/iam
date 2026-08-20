@@ -10,15 +10,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
-	"github.com/hanzoai/iam/internal/users"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam2/internal/users"
 )
 
 // The token endpoint: POST /v1/iam/oauth/token. It dispatches the three grant
@@ -138,24 +140,9 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	// Client authentication. A client that PRESENTS a secret must present the right
-	// one (constant-time). A BROWSER client presents none — it cannot hold one — and
-	// the code's PKCE binding is what authenticates it: RedeemCode below verifies the
-	// verifier against the challenge, the code is single-use, and it was delivered to
-	// a registered redirect_uri.
-	//
-	// CASDOOR PARITY — same bounded relaxation this file already documents for
-	// passwordGrant. Registration is not per-flow here: `hanzo-chat` and `hanzo-cloud`
-	// keep a secret for their BACKEND paths (chat's passport OpenID, cloud's
-	// client_credentials machine auth) while their SPA is a public PKCE client. The
-	// clean-room rewrite required the secret unconditionally, so every @hanzo/iam
-	// login — hanzo.chat, cloud.hanzo.ai — signed in at hanzo.id, returned to
-	// /auth/callback and died on `401 invalid_client`. Deleting those secrets is NOT
-	// the fix (it breaks client_credentials, which requires a registered secret).
-	//
-	// A code with NO PKCE challenge still requires the secret, so this is not a
-	// downgrade path: an attacker cannot skip client auth by omitting PKCE.
-	if app.ClientSecret != "" && (clientSecret != "" || tok.CodeChallenge == "") {
+	// Confidential client: verify the secret (constant-time). A public client
+	// (PKCE, no stored secret) may present none.
+	if app.ClientSecret != "" {
 		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 			return tokenErrorClient(c, "client authentication failed")
 		}
@@ -209,7 +196,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 		return tokenErrorClient(c, "client authentication failed")
 	}
-	if publicTokenEndpointForbidden(app) {
+	if isInternalApp(app) {
 		return tokenErrorClient(c, "client is not permitted on this endpoint")
 	}
 
@@ -220,9 +207,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 500, "server_error", "")
 	}
 	sub := app.GetId() // <appOwner>/<appName>, per v1
-	// A machine token has no user and therefore no membership set — nil orgs omits
-	// the claim, so an app token can never carry a tenancy it did not earn.
-	access, err := signer.Sign(app, sub, "", app.Name, "", scope, nil, ttl, now)
+	access, err := signer.Sign(app, sub, "", app.Name, scope, ttl, now)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
@@ -250,26 +235,12 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 
 // passwordGrant issues tokens for a Resource Owner Password Credentials request
 // (RFC 6749 §4.3) — the durable first-party console session (session.ts posts
-// grant_type=password with username/password).
-//
-// CASDOOR PARITY — INTENTIONAL SECURITY-POSTURE DECISION (flagged for Red review).
-// Casdoor ALLOWS a PUBLIC client (the console/chat apps: no client_secret, no PKCE)
-// to complete this grant. During the casdoor→clean-room cutover iam2 defaults to
-// the SAME behavior so console/chat logins do not 401 `invalid_client`. The exact,
-// bounded relaxation vs the prior confidential-only rule:
-//
-//   - A PUBLIC client (no registered ClientSecret) MAY now complete the password
-//     grant with NO client_secret and NO PKCE. This is the ONLY thing newly allowed.
-//   - A CONFIDENTIAL client (one that registered a secret) is UNCHANGED: it MUST
-//     still present that secret, verified constant-time — a supplied-but-wrong
-//     secret is still 401.
-//
-// Every OTHER control is untouched: publicTokenEndpointForbidden still bars internal
-// (<org>-iam) and reserved-org (admin/built-in/app) apps from this endpoint; the app
-// must have password login enabled; the password is verified through the SAME
-// algorithm-aware, per-row path the login form uses (argon2id for every live v1 row,
-// bcrypt for new rows); unknown-user and bad-password return one generic failure (no
-// enumeration oracle); a forbidden/deleted user is denied.
+// grant_type=password with the confidential client + username/password). It is a
+// TRUSTED flow: confidential clients only (a public client + password grant is a
+// phishing footgun), the app must have password login enabled, and the password
+// is verified through the SAME algorithm-aware, per-row path the login form uses
+// (argon2id for every live v1 row, bcrypt for new rows). One generic failure for
+// unknown-user and bad-password — no user-enumeration oracle.
 func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	ctx := c.Context()
 	now := nowFunc()
@@ -282,17 +253,11 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	if app == nil {
-		return tokenErrorClient(c, "client authentication failed")
-	}
-	// A confidential client (one that registered a secret) must present it; a public
-	// client (no registered secret) authenticates by its clientId alone — casdoor ROPC
-	// parity. See the doc comment for the exact new surface.
-	if app.ClientSecret != "" &&
+	if app == nil || app.ClientSecret == "" ||
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 		return tokenErrorClient(c, "client authentication failed")
 	}
-	if publicTokenEndpointForbidden(app) {
+	if isInternalApp(app) {
 		return tokenErrorClient(c, "client is not permitted on this endpoint")
 	}
 	if !app.IsPasswordEnabled() {
@@ -309,33 +274,13 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	if org == "" {
 		org = app.Organization
 	}
-	// Cross-tenant gate — the SAME guard mint.go, login.go, signup.go and
-	// federation.go enforce, which passwordGrant alone was missing (F-D2): the login
-	// org must be one this client may serve (its own org, a shared app, or an app
-	// that lets users pick), and NEVER a reserved system org (admin/built-in/app).
-	// Without it a public zoo-console posting organization=admin resolved
-	// admin/<super> and minted a real SuperAdmin token on the correct password.
-	// Checked BEFORE the user lookup, with the SAME opaque failure as a bad
-	// credential, so it is no org/user existence oracle.
-	if store.IsReservedOrg(org) ||
-		(org != app.Organization && !app.IsShared && app.OrgChoiceMode == "") {
-		return tokenError(c, 400, "invalid_grant", "the username or password is incorrect")
-	}
 
 	user, err := resolveLoginUser(ctx, db, org, username)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
 	orgPasswordType := loginOrgPasswordType(ctx, db, org)
-	// Credential verify through the ONE lockout-enforcing choke point (F-D1) —
-	// users.Authenticate: a run of wrong passwords locks the account, so the public ROPC
-	// endpoint is not an online brute-force oracle. The lockout refusal is distinct from
-	// a bad credential but still reveals nothing about correctness.
-	ok, locked := users.Authenticate(ctx, db, user, password, orgPasswordType, now)
-	if locked {
-		return tokenError(c, 400, "invalid_grant", "too many failed attempts; the account is temporarily locked")
-	}
-	if !ok {
+	if user == nil || !users.VerifyPassword(user, password, orgPasswordType) {
 		return tokenError(c, 400, "invalid_grant", "the username or password is incorrect")
 	}
 	if user.IsForbidden || user.IsDeleted {
@@ -379,9 +324,9 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	if err != nil {
 		return tokenResponse{}, err
 	}
-	sub, email, name, username, orgs := userClaims(ctx, db, row.User)
+	email, name := userProfile(ctx, db, row.User)
 
-	access, err := signer.Sign(app, sub, email, name, username, row.Scope, orgs, ttl, now)
+	access, err := signer.Sign(app, row.User, email, name, row.Scope, ttl, now)
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -411,7 +356,7 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 		Scope:        row.Scope,
 	}
 	if hasScope(row.Scope, "openid") {
-		idt, err := signer.SignID(app, sub, email, name, username, row.Scope, row.Nonce, orgs, ttl, now)
+		idt, err := signer.SignID(app, row.User, email, name, row.Scope, row.Nonce, ttl, now)
 		if err != nil {
 			return tokenResponse{}, err
 		}
@@ -506,60 +451,42 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 	if err != nil {
 		return "", err
 	}
-	sub, _, _, _, orgs := userClaims(ctx, db, tok.User)
-	return signer.Sign(app, sub, "", "", "", tok.Scope, orgs, ttl, now)
+	return signer.Sign(app, tok.User, "", "", tok.Scope, ttl, now)
 }
 
 // tokenIssuer is the canonical OIDC issuer for this request — the value discovery
-// advertises and every token carries as `iss`. It routes through the ONE per-host
-// issuer resolver (issuer.go), keyed on the TRUSTED request host (c.Host(), which
-// ignores X-Forwarded-Host), so the value is always a pinned CONFIG issuer for the
-// brand the ingress routed this request to — never a string interpolated from a
-// request header. See resolveIssuer for the fail-closed resolution order.
+// advertises and every token carries as `iss`. A deployment PINS it with the
+// IAM_ISSUER env (e.g. `https://hanzo.id`): the embedded KMS + every resource
+// server validate `iss` against a fixed expected value, so a hanzo deployment
+// serving both `hanzo.id` and `iam.hanzo.ai` must emit ONE stable issuer, not a
+// host-derived one. Pinning also closes the header-influenced-iss vector (a
+// request's X-Forwarded-Host can no longer steer `iss`). Unset → host-relative
+// (dev / multi-tenant), so discovery stays split-origin-safe when no pin applies.
 func tokenIssuer(c *zip.Ctx) string {
-	return resolveIssuer(c.Host())
+	if iss := strings.TrimSpace(os.Getenv("IAM_ISSUER")); iss != "" {
+		return strings.TrimRight(iss, "/")
+	}
+	if h := httpx.EffectiveHost(c); h != "" {
+		return "https://" + h
+	}
+	return "https://hanzo.id"
 }
 
-// subjectOf is the OIDC `sub` for a user: its stable opaque Id (the cutover-
-// continuity UUID casdoor emits and the migrator preserves), falling back to the
-// (owner/name) natural key ONLY for a pre-cutover row that carries no Id. It is
-// the single place the subject is derived, so the token's `sub`, userinfo's `sub`,
-// and the introspection `sub` can never disagree, and store.GetUserBySubject
-// decodes exactly what this encodes (no "/" ⇒ resolve by Id).
-func subjectOf(u *schema.User) string {
-	if u == nil {
-		return ""
-	}
-	if u.Id != "" {
-		return u.Id
-	}
-	return u.Owner + "/" + u.Name
-}
-
-// userClaims loads a user's token-facing claims in ONE lookup: its subject (the
-// stable `sub`), email, display name, and membership set (store.MemberOrgRefs —
-// home org first, deduped). It is the single resolution both the
-// code/refresh/password mint (issueTokens) and the direct-sign path share, so the
-// `sub`, `orgs` claim, and profile can never be sourced two different ways. userID
-// is the token row's (owner/name) User key. A subject with no user row (a machine
-// token, or a since-deleted user) yields the passed-in id as sub, empty profile,
-// and nil orgs — the claim is omitted, not forged.
-func userClaims(ctx context.Context, db orm.DB, userID string) (sub, email, name, username string, orgs []schema.OrgRef) {
+// userProfile loads a user's email and display name for the token claims.
+func userProfile(ctx context.Context, db orm.DB, userID string) (email, name string) {
 	owner, uname := splitSub(userID)
 	if owner == "" || uname == "" {
-		return userID, "", "", "", nil
+		return "", ""
 	}
 	u, err := store.GetUserByName(ctx, db, owner, uname)
 	if err != nil || u == nil {
-		return userID, "", "", "", nil
+		return "", ""
 	}
 	name = u.DisplayName
 	if name == "" {
 		name = u.Name
 	}
-	// u.Name is the IAM username — the `<name>` half of `<owner>/<name>` and the
-	// only value downstream can address a wallet with. DisplayName is for humans.
-	return subjectOf(u), u.Email, name, u.Name, store.MemberOrgRefs(ctx, db, u)
+	return u.Email, name
 }
 
 // splitSub splits a subject "owner/name" into its two parts.
@@ -596,23 +523,6 @@ func newFamilyID(tok *schema.Token) string {
 // (<org>-iam), which may never obtain a token on the public token endpoint.
 func isInternalApp(app *schema.Application) bool {
 	return strings.HasSuffix(app.Name, "-iam")
-}
-
-// publicTokenEndpointForbidden reports whether an application must NEVER obtain a
-// token on the PUBLIC token endpoint (the client_credentials and password grants).
-// It is the ONE gate both grants apply — two disjoint reasons, one predicate:
-//
-//   - an internal service identity (<org>-iam), which authenticates through the
-//     operator's private provisioning path, never the public endpoint; and
-//   - an app that SERVES a reserved system org (admin/built-in/app — store.IsReservedOrg):
-//     a platform-internal client whose tokens have no business being minted by a
-//     public request. Even though such a token already resolves to NO authority (its
-//     subject "admin/<app>" has no user row, so authz grants it nothing — token.go /
-//     authz.principal), refusing it at the door makes the invariant STRUCTURAL: an
-//     admin-org app cannot mint on the public endpoint, period, independent of how the
-//     principal resolver later evolves. Fail-secure defense in depth.
-func publicTokenEndpointForbidden(app *schema.Application) bool {
-	return isInternalApp(app) || store.IsReservedOrg(app.Organization)
 }
 
 // redeemErrToResponse maps a RedeemCode error to the RFC 6749 error body.

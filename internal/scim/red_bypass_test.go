@@ -20,7 +20,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // C1 — a REGULAR (non-admin) org member creates users, and mints a NEW ORG-ADMIN

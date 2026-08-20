@@ -17,7 +17,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // Handler binds the projects operations to one orm store.
@@ -47,7 +47,7 @@ type Ref struct {
 }
 
 // Input is the writable projection of a project (the v1 add/update-project body).
-// It keeps the HTTP contract clean of the orm.Model bookkeeping fields.
+// It keeps the wire contract clean of the orm.Model bookkeeping fields.
 type Input struct {
 	Owner        string   `json:"owner"`
 	Name         string   `json:"name"`
@@ -55,7 +55,6 @@ type Input struct {
 	DisplayName  string   `json:"displayName"`
 	Description  string   `json:"description"`
 	Organization string   `json:"organization"`
-	Workspace    string   `json:"workspace"`
 	Tags         []string `json:"tags"`
 	Metadata     string   `json:"metadata"`
 	IsDefault    bool     `json:"isDefault"`
@@ -86,7 +85,6 @@ func apply(dst *schema.Project, in *Input) {
 	dst.DisplayName = in.DisplayName
 	dst.Description = in.Description
 	dst.Organization = pick(in.Organization, in.Owner)
-	dst.Workspace = in.Workspace
 	dst.Tags = in.Tags
 	dst.Metadata = in.Metadata
 	dst.IsDefault = in.IsDefault

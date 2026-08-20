@@ -7,21 +7,21 @@ import (
 
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/feature"
-	"github.com/hanzoai/iam/pkg/model"
+	"github.com/hanzoai/iam2/feature"
+	"github.com/hanzoai/iam2/pkg/model"
 )
 
-// A registered feature is routed by RouteAll and reaches the app + store; a
-// module that fails to register surfaces the error (fail-fast).
+// A registered feature is mounted by MountAll and reaches the app + store; a
+// module that fails to mount surfaces the error (fail-fast).
 type fakeFeature struct {
-	name       string
-	registered bool
-	err        error
+	name    string
+	mounted bool
+	err     error
 }
 
 func (f *fakeFeature) Name() string { return f.name }
-func (f *fakeFeature) Route(app *zip.App, store feature.Store) error {
-	f.registered = true
+func (f *fakeFeature) Mount(app *zip.App, store feature.Store) error {
+	f.mounted = true
 	return f.err
 }
 
@@ -50,15 +50,15 @@ func (nopStore) VerifyPassword(context.Context, string, string, string) (bool, e
 	return true, nil
 }
 
-func TestRouteAll_RegistersEveryFeature(t *testing.T) {
+func TestMountAll_MountsRegistered(t *testing.T) {
 	f := &fakeFeature{name: "fake"}
 	feature.Register(f)
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	if err := feature.RouteAll(app, nopStore{}); err != nil {
-		t.Fatalf("RouteAll: %v", err)
+	if err := feature.MountAll(app, nopStore{}); err != nil {
+		t.Fatalf("MountAll: %v", err)
 	}
-	if !f.registered {
-		t.Fatal("registered feature never had Route called")
+	if !f.mounted {
+		t.Fatal("registered feature was not mounted")
 	}
 	found := false
 	for _, r := range feature.Registered() {

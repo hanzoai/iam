@@ -37,7 +37,7 @@ type Permission struct {
 	// Authorization model, targets, and decision. AuthzModel carries the v1
 	// `model` column (the named authz model); it is not the Go identifier
 	// `Model` because that name is taken by the embedded orm.Model[Permission]
-	// mixin. The HTTP contract is unchanged — json:"model".
+	// mixin. The wire contract is unchanged — json:"model".
 	AuthzModel   string   `json:"model" orm:"varchar(100)"`
 	Adapter      string   `json:"adapter" orm:"varchar(100)"`
 	ResourceType string   `json:"resourceType" orm:"varchar(100)"`

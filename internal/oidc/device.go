@@ -12,9 +12,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // The RFC 8628 device authorization grant: how a machine with no browser and no
@@ -154,7 +154,7 @@ func deviceHandler(db orm.DB) zip.Handler {
 
 		// Both URIs point at the SPA approval page a human opens, never at this
 		// JSON API. The complete form is a PATH segment because that is the route
-		// the page is registered on (/login/oauth/device/:userCode).
+		// the page is mounted on (/login/oauth/device/:userCode).
 		verify := tokenIssuer(c) + PathDeviceVerify
 		return c.JSON(200, deviceResponse{
 			DeviceCode:              deviceCode,
