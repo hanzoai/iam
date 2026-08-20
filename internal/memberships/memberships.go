@@ -22,44 +22,22 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/authz"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
-// Path is the REST verb face: GET lists by ?user= or ?org=, POST ensures one.
-//
-// PathGet/PathAdd/PathDelete are the Casdoor VERB spellings the cloud team-invite
-// path (clients/team/invite.go) hard-codes — get-memberships / add-membership /
-// delete-membership. They are aliases, not a second implementation: get/add reuse
-// the very handlers the REST face registers, and delete is the one handler REST
-// does not expose. So a backend swap serves the cloud verbs with the SAME store and
-// the SAME authz gates as the native REST surface.
-const (
-	Path       = "/v1/iam/memberships"
-	PathGet    = "/v1/iam/get-memberships"
-	PathAdd    = "/v1/iam/add-membership"
-	PathDelete = "/v1/iam/delete-membership"
-)
+// Path is the verb face: GET lists by ?user= or ?org=, POST ensures one.
+const Path = "/v1/iam/memberships"
 
 // unauthorized is v1's refusal message, verbatim.
 const unauthorized = "auth:Unauthorized operation"
 
-// Route registers the membership surface on app, backed by db: the native REST
-// pair plus the Casdoor verb aliases. get/add share the REST handlers (one authz
-// gate, one store call, no duplication); delete adds the revoke the REST face does
-// not carry. get-memberships is a GET whose target rides in ?user=/?org=, so it is
-// handler-authorized (authz.handlerAuthorizedPrefixes) exactly like /v1/iam/
-// memberships — the list handler's own scoped() check is the tenant gate; the two
-// write verbs are POSTs the Guard never pre-authorizes, so each self-authorizes.
+// Route registers the membership surface on app, backed by db.
 func Route(app *zip.App, db orm.DB) {
 	app.Get(Path, list(db))
 	app.Post(Path, ensure(db))
-
-	app.Get(PathGet, list(db))
-	app.Post(PathAdd, ensure(db))
-	app.Post(PathDelete, remove(db))
 }
 
 // request is the ensure body.
@@ -126,7 +104,7 @@ func ensure(db orm.DB) zip.Handler {
 		default:
 			return httpx.Err(c, "role must be owner, admin, or member")
 		}
-		if !mayGrant(ctx, in.Org) {
+		if !authz.Can(ctx, "POST", "organizations", store.MembershipOwner, in.Org) {
 			return httpx.Err(c, unauthorized)
 		}
 		added, err := store.EnsureMembership(ctx, db, in.User, in.Org, in.Role)
@@ -135,53 +113,6 @@ func ensure(db orm.DB) zip.Handler {
 		}
 		return httpx.Ok(c, added)
 	}
-}
-
-// remove serves POST /v1/iam/delete-membership {user, org} — revoke an identity's
-// right to act in an org. It is the mirror of ensure and takes the SAME gate:
-// revoking membership is the org's authority to give or take, so a SuperAdmin, an
-// admin of the org itself, or an org-admin-capable confidential client. Idempotent
-// through the store — deleting an absent membership reports removed=false, never an
-// error — so a retried revoke is safe.
-func remove(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		ctx := c.Context()
-		var in request
-		if err := c.Bind(&in); err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		if in.User == "" || in.Org == "" {
-			return httpx.Err(c, "user and org are required")
-		}
-		if !mayGrant(ctx, in.Org) {
-			return httpx.Err(c, unauthorized)
-		}
-		removed, err := store.DeleteMembership(ctx, db, in.User, in.Org)
-		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		return httpx.Ok(c, removed)
-	}
-}
-
-// mayGrant reports whether the ctx principal may grant OR revoke a membership into
-// org — the ONE write gate ensure and remove share. Two clauses, both required:
-//
-//   - the org's admin authority: a SuperAdmin, an admin of the org itself, or an
-//     org-admin-capable confidential client — the same authz.Can(POST, organizations)
-//     gate a write to that org's own registry row takes; AND
-//   - the reserved-org escalation guard (RED F2): a membership INTO a reserved system
-//     org (admin/built-in/app) flows into the target user's `orgs` claim, which the
-//     edge honors as X-Org-Id ∈ orgs — i.e. it seeds admin-org (SuperAdmin) tenancy.
-//     A CapOrgAdmin client passes authz.Can for the membership row (always owned by
-//     the reserved "admin" org, so the check is NOT bound to in.Org), so without this
-//     a brand console could grant anyone tenancy in the admin org. Only a real
-//     SuperAdmin may target a reserved org.
-func mayGrant(ctx context.Context, org string) bool {
-	if store.IsReservedOrg(org) && !authz.IsSuper(ctx) {
-		return false
-	}
-	return authz.Can(ctx, "POST", "organizations", store.MembershipOwner, org)
 }
 
 // scoped reports whether the caller may read the membership rows of org — i.e.

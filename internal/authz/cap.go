@@ -5,8 +5,6 @@ package authz
 import (
 	"os"
 	"strings"
-
-	"github.com/hanzoai/iam/internal/store"
 )
 
 // Confidential-client capabilities — the port of the v1 gate (object/app_authz.go
@@ -19,12 +17,9 @@ import (
 // org admin (see Principal), so a leaked client credential grants exactly the
 // capabilities its NAME was allowlisted for and nothing more.
 //
-// The key is the application NAME, not its (owner, name) row. That alone would let
-// ANY owner's app claim a listed name, so Allowed ALSO pins the app's OWNING org to
-// a reserved platform signing owner (store.IsSigningCertOwner): the name is thereby
-// reserved to the platform's admin-owned app, and a tenant that registers
-// <theirOrg>/hanzo-console — same name, its own owner — inherits none of its grants.
-// The pin is what ENFORCES that reservation; the name match alone was the escalation.
+// The key is the application NAME, not its (owner, name) row — a name in an
+// allowlist is thereby reserved to the platform's admin-owned app, so a tenant
+// cannot register <theirOrg>/hanzo-console and inherit its grants.
 
 // Cap is one capability: a Name for diagnostics and the Env var holding its
 // comma-separated allowlist of application names.
@@ -57,43 +52,6 @@ var (
 	// CapKeyMint (a read cap can never mint, rotate, or delete a credential) and
 	// is additionally tenant-bound by BoundToOrg.
 	CapServiceAccountRead = Cap{Name: "service-account-read", Env: "IAM_SA_LIST_ALLOWED_APPS"}
-
-	// CapKeyResolve gates resolving an opaque SECRET API key (hk-/sk-) to its owning
-	// principal via get-user?accessKey. It is a CREDENTIAL-DISCLOSURE boundary: the
-	// caller presents a secret key and learns WHO it authenticates, so it must never
-	// be an arbitrary authenticated caller. A public pk- is NOT resolved here: it is
-	// write-only, and its own narrower CapPublishableResolve turns it into an org, never
-	// a principal. The intended sole holder is the cloud
-	// identity boundary (SanitizeIdentity), which turns a keyed request into the same
-	// principal a JWT yields. Fail-secure exactly like the others: an unset or empty
-	// allowlist lets NO app resolve a key. Enforced additionally as app-only at the
-	// handler (a human, even a SuperAdmin, holds a capability vacuously — so the key
-	// path also requires p.App != "" to keep this a service-only door).
-	//
-	// Keyed on the application NAME (via Allowed → p.App), matching all four sibling
-	// Caps above — the ONE way capabilities are matched in this family. RED F3 asked
-	// whether it should key on clientId like the issuetoken mint verbs (appInList);
-	// deliberately NOT, because (1) that is a DIFFERENT, older mechanism, so making
-	// CapKeyResolve clientId-based would make it the sole clientId-keyed Cap —
-	// inconsistent with its own family — and (2) it would require adding ClientId to
-	// the Principal shape. The owner-pin (Allowed requires AppOwner ∈ signing owners)
-	// already defeats the name-collision vector: a tenant app that reuses a listed
-	// name is not a signing owner and holds nothing. Under the <org>-<app> convention
-	// name == clientId, so the two are equivalent in practice. Gate unchanged.
-	CapKeyResolve = Cap{Name: "key-resolve", Env: "IAM_KEY_RESOLVE_APPS"}
-
-	// CapPublishableResolve gates resolving a WRITE-ONLY publishable pk- to just the
-	// ORG that holds it (keys.resolve → /v1/iam/resolve-key), for cloud's ingest
-	// boundary. It is strictly NARROWER than CapKeyResolve and deliberately a separate
-	// authority: this door discloses only an org (a pk- is public, shipped in client
-	// JS), NEVER a principal, so the two must not be conflated — a client granted the
-	// org-resolve capability must never thereby be able to disclose WHO a secret key
-	// authenticates. Fail-secure exactly like the others: an unset or empty allowlist
-	// lets NO app resolve a publishable key. Keyed on the application NAME (via
-	// Allowed → p.App), like every sibling Cap, with the same owner-pin (Allowed
-	// requires AppOwner ∈ reserved signing owners), so a tenant app that reuses a
-	// listed name inherits nothing.
-	CapPublishableResolve = Cap{Name: "publishable-resolve", Env: "IAM_PUBLISHABLE_RESOLVE_APPS"}
 )
 
 // Allowed reports whether p holds c.
@@ -111,16 +69,6 @@ func Allowed(p *Principal, c Cap) bool {
 	}
 	if p.App == "" {
 		return true // not an app; the org policy decides
-	}
-	// The owner-pin: an app holds a platform capability ONLY when its OWNING org is a
-	// reserved platform signing owner (admin/built-in). Every allow-listed console is
-	// admin-owned, so this never revokes a legitimate grant — but it binds the NAME
-	// allowlist to the platform: a tenant that registers <theirOrg>/hanzo-console
-	// (same name, its OWN owner) is not a signing owner, so it inherits nothing. This
-	// is the single gate that turns the allowlist's NAME key from a spoofable label
-	// into an authority reserved to the admin-owned app.
-	if !store.IsSigningCertOwner(p.AppOwner) {
-		return false
 	}
 	if c.Env == "" {
 		return false

@@ -19,12 +19,12 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
-// HTTP-level test harness: register the whole OIDC surface on a fresh store and
+// HTTP-level test harness: mount the whole OIDC surface on a fresh store and
 // drive it through the real router (app.Fiber().Test), so every test exercises
-// the HTTP contract a client sees — status codes, headers, redirects, bodies.
+// the wire contract a client sees — status codes, headers, redirects, bodies.
 
 // sharedKey is one RSA key reused across tests (keygen is the slow part; the
 // crypto under test is identical regardless of which key it is).
@@ -53,14 +53,13 @@ type appOpts struct {
 	refreshHours float64
 	shared       bool     // IsShared → accepts users from any org
 	signup       bool     // EnableSignUp → the app allows new-account creation
-	orgChoice    string   // OrgChoiceMode → "" none, "create" = self-serve org creation
 	grants       []string // declared OAuth grants; a grant absent here is refused
 }
 
 // tctx is the background context used by the test seed helpers.
 func tctx() context.Context { return context.Background() }
 
-// newServer registers the full OIDC surface on a fresh SQLite store.
+// newServer mounts the full OIDC surface on a fresh SQLite store.
 func newServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	db := openTestDB(t)
@@ -103,7 +102,6 @@ func seedApp(t *testing.T, db orm.DB, o appOpts) *schema.Application {
 	a.RefreshExpireInHours = o.refreshHours
 	a.RedirectUris = o.redirectURIs
 	a.IsShared = o.shared
-	a.OrgChoiceMode = o.orgChoice
 	a.GrantTypes = o.grants
 	a.SetId("admin/" + o.clientID)
 	if err := a.CreateCtx(context.Background()); err != nil {

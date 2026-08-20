@@ -8,9 +8,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // Front-door JSON endpoints the @hanzo/iam SDK + hanzo.id portal call: the login
@@ -45,15 +45,7 @@ func routeFrontDoor(r zip.Router, db orm.DB) {
 	r.Post(PathSignin, signinHandler(db))
 	r.Get(PathWhoami, whoamiHandler(db))
 	r.Post(PathOnboard, onboardHandler(db))
-	// Service-token admin provision: the ONE atomic op the cloud onboarding
-	// orchestrator calls (on behalf of a named user) instead of a create-org +
-	// move-user pair. Self-authenticates via the unified service token.
-	r.Post(PathProvision, provisionServiceHandler(db))
 	r.Post(PathUpdatePreferences, updatePreferencesHandler(db))
-	// Account-canonical data-sharing consent (insights + opt-in training) — the ONE
-	// source of truth the hanzo.id signup, the browser extension, and hanzo.ai share.
-	r.Get(PathConsent, getConsentHandler(db))
-	r.Put(PathConsent, putConsentHandler(db))
 	r.Get(PathLinkedAccounts, linkedAccountsHandler(db))
 }
 

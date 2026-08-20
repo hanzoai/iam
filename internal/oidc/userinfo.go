@@ -6,9 +6,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // The userinfo endpoint: GET/POST /v1/iam/oauth/userinfo. A bearer must satisfy
@@ -40,10 +40,8 @@ func userinfoHandler(db orm.DB) zip.Handler {
 			return userinfoUnauthorized(c, "the access token is invalid")
 		}
 
-		// Resolve the token's principal from its `sub` (a stable UUID for a v2 token,
-		// or owner/name pre-cutover). The response `sub` is the signed claims.Subject
-		// itself, so userinfo reports the SAME subject the token carries.
-		user, err := store.GetUserBySubject(ctx, db, claims.Subject)
+		owner, name := splitSub(claims.Subject)
+		user, err := store.GetUserByName(ctx, db, owner, name)
 		if err != nil {
 			return c.JSON(500, map[string]string{"error": "server_error"})
 		}

@@ -12,10 +12,10 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
-	"github.com/hanzoai/iam/internal/users"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam2/internal/users"
 )
 
 // The native front-door signup: POST /v1/iam/signup. The @hanzo/iam SDK + the
@@ -80,19 +80,6 @@ func signupHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the application does not allow password sign-up")
 		}
 
-		// A self-service signup may NEVER resolve to a reserved system org
-		// (admin/built-in/app). A user created under "admin" is a SuperAdmin — authz
-		// derives Super from owner == "admin" — so this is THE privilege escalation to
-		// refuse, and it must hold INDEPENDENT of the app: an admin-org app, a shared
-		// app, or an org-choice app would each otherwise admit `organization=admin`
-		// through the tenant gate below and mint a SuperAdmin. This is the same
-		// store.IsReservedOrg refusal onboarding and federated provisioning apply — the
-		// ONE reserved-org predicate, so signup can never drift from them. The message
-		// is byte-identical to the tenant refuse below, so a prober cannot distinguish
-		// "reserved org" from "wrong tenant" (no existence/authority oracle).
-		if store.IsReservedOrg(f.Organization) {
-			return httpx.Err(c, "the user is not permitted to sign up to this application")
-		}
 		// Tenant isolation: the requested org must be the app's own org, a shared
 		// app, or an app that lets users choose their org — the same gate login
 		// enforces, so a signup cannot land a user in an arbitrary tenant.
@@ -105,29 +92,11 @@ func signupHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, err.Error())
 		}
 		if org == nil {
-			// Self-serve org creation — the founder signs up and their org is minted
-			// with them. It is OPT-IN per application (orgChoiceMode == orgChoiceCreate)
-			// so an app that names one tenant can never mint another: the tenant gate
-			// above already refuses a foreign org unless the app is shared or lets users
-			// choose, and this narrows "choose" to the apps that mean "create".
-			//
-			// Safe by construction, given the two checks that already ran:
-			//   - IsReservedOrg refused admin/built-in/app, so this can never mint a
-			//     reserved org — and the USER below is created under f.Organization, so
-			//     owner != "admin" and the row carries no SuperAdmin authority.
-			//   - the name is validated here rather than trusted, so a signup cannot
-			//     invent an org id containing a separator or path characters.
-			if app.OrgChoiceMode != orgChoiceCreate {
-				return httpx.Err(c, "the organization: "+f.Organization+" does not exist")
-			}
-			if msg := orgNamePolicyError(f.Organization); msg != "" {
-				return httpx.Err(c, msg)
-			}
-			created, err := store.CreateOrganization(ctx, db, f.Organization)
-			if err != nil {
-				return httpx.Err(c, err.Error())
-			}
-			org = created
+			// v1 auto-mints the founder's own org (TenantOrgForSignup /
+			// CreatePersonalOrganization) only for a platform tenant org; that path
+			// needs an org-create helper + the Org.Parent tenant-parent model, neither
+			// of which iam2 has yet, so signup requires the org to exist. See report.
+			return httpx.Err(c, "the organization: "+f.Organization+" does not exist")
 		}
 
 		// Username policy (v1 object/check.go CheckUserSignup).
@@ -156,10 +125,10 @@ func signupHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, msg)
 		}
 
-		// Create through the ONE canonical user path (users.Create): argon2id-hash the
-		// password once, persist, return the REDACTED row (no plaintext, no digest ever
-		// stored or returned). PasswordType is stamped "argon2id" — exactly what
-		// internal/cred verifies for a new iam2 row.
+		// Create through the ONE canonical user path: bcrypt-hash the password once,
+		// persist, return the REDACTED row (no plaintext, no digest ever stored or
+		// returned). PasswordType is stamped "bcrypt" — exactly what internal/cred
+		// verifies for a new iam2 row.
 		created, err := users.New(db).Create(ctx, &users.CreateInput{
 			User: schema.User{
 				Owner:             f.Organization,
@@ -221,40 +190,6 @@ func displayName(f signupForm) string {
 
 // usernamePolicyError returns the first username rule a candidate violates, or
 // "" when it passes — the v1 CheckUserSignup rules for the Username item.
-// orgChoiceCreate is the application's opt-in to SELF-SERVE org creation: a signup
-// naming an org that does not exist mints it, with the signing-up user as its first
-// member. Any other orgChoiceMode still only lets a user CHOOSE among existing orgs,
-// so turning on self-serve is a deliberate per-app decision rather than a side effect
-// of allowing org choice at all.
-const orgChoiceCreate = "create"
-
-// orgNamePolicyError validates a self-service org name. The org name is the OWNER
-// half of every (owner, name) natural key in the store, so a permissive name here
-// would be a key-injection surface, not a cosmetic issue — hence the same "/" and
-// whitespace refusals usernamePolicyError applies, plus a length bound.
-//
-// It deliberately does NOT reject a name merely because it is taken: the caller
-// reaches this only when the lookup already returned no org, and a "taken" message
-// would turn signup into an org-existence oracle.
-func orgNamePolicyError(org string) string {
-	if len(org) <= 1 {
-		return "organization name must have at least 2 characters"
-	}
-	if len(org) > 100 {
-		return "organization name is too long"
-	}
-	if unicode.IsDigit(rune(org[0])) {
-		return "organization name cannot start with a digit"
-	}
-	if strings.IndexFunc(org, unicode.IsSpace) >= 0 {
-		return "organization name cannot contain white spaces"
-	}
-	if strings.Contains(org, "/") {
-		return "organization name cannot contain '/'"
-	}
-	return ""
-}
-
 func usernamePolicyError(username string) string {
 	if len(username) <= 1 {
 		return "username must have at least 2 characters"
@@ -267,13 +202,6 @@ func usernamePolicyError(username string) string {
 	}
 	if strings.IndexFunc(username, unicode.IsSpace) >= 0 {
 		return "username cannot contain white spaces"
-	}
-	// "/" is the (owner/name) natural-key AND the owner/name-subject separator, so a
-	// name carrying one could introduce a spurious separator into the sub. Forbid it
-	// at the door so the subject discriminator (store.GetUserBySubject) can never be
-	// confused by a self-service-registered name.
-	if strings.Contains(username, "/") {
-		return "username cannot contain '/'"
 	}
 	return ""
 }

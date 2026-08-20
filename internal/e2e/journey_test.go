@@ -1,6 +1,6 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package e2e_test drives the WHOLE iam2 surface through the real registered router
+// Package e2e_test drives the WHOLE iam2 surface through the real mounted router
 // (routes.Route) as one integrated journey — the behavioral parity proof that the
 // old Casdoor IAM's clients work against iam2. Unlike the per-package unit tests,
 // this chains the real flows a live client runs in sequence: OIDC discovery →
@@ -33,9 +33,9 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/oidc"
-	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/oidc"
+	"github.com/hanzoai/iam2/internal/routes"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 const (

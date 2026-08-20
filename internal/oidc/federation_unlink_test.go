@@ -9,11 +9,11 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // Unlink self-authenticates (session cookie / bearer) on the public OIDC surface,
-// so the harness only needs the one registered group — the same one the confidential
+// so the harness only needs the one mounted group — the same one the confidential
 // flow mints the bearer from.
 func newUnlinkServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()

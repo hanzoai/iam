@@ -8,7 +8,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // The membership relation's named operations. They live here, with the other
@@ -72,25 +72,6 @@ func GetMembership(_ context.Context, db orm.DB, user, org string) (*schema.Memb
 	return m, err
 }
 
-// DeleteMembership revokes a user's right to act in an org — the inverse of
-// EnsureMembership, keyed by the SAME (user, org) natural key, so a grant and its
-// revoke address exactly one row. Idempotent: revoking an absent membership reports
-// (false, nil), never an error, so a retried or racing revoke is safe. Reports
-// whether a row was removed.
-func DeleteMembership(ctx context.Context, db orm.DB, user, org string) (bool, error) {
-	if user == "" || org == "" {
-		return false, nil
-	}
-	m, err := GetMembership(ctx, db, user, org)
-	if err != nil || m == nil {
-		return false, err
-	}
-	if err := m.DeleteCtx(ctx); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 // MembershipsByUser returns every org a user may explicitly act in. A caller
 // unions the user's HOME org itself (the token resolver does), so the set is
 // complete even before any team is joined.
@@ -133,39 +114,6 @@ func BackfillMemberships(ctx context.Context, db orm.DB) (int, error) {
 		}
 	}
 	return created, nil
-}
-
-// MemberOrgRefs resolves the token `orgs` claim for a user — the ONE way a user's
-// tenancy set is built for a mint. It is the HOME org first
-// (OrgRef{Org: user.Owner, Role: HomeRole(user)}), then every explicit
-// MembershipsByUser row, deduped by org: the home org is always present even when
-// no explicit row exists, and it is never emitted twice — the HOME entry wins, so
-// an explicit membership carrying the home org (a redundant backfill row) can
-// neither duplicate it nor override its role. Semantics mirror the beego
-// token_jwt.go MemberOrgRefs (home ∪ explicit).
-//
-// Nil-safe at the boundary: a nil/unresolved user (a mint whose subject has no user
-// row — a machine token) carries no membership, so the claim is omitted. A read
-// error on the explicit rows degrades to the home org alone rather than dropping
-// the whole claim — the home tenancy is authoritative from the user row itself.
-func MemberOrgRefs(ctx context.Context, db orm.DB, user *schema.User) []schema.OrgRef {
-	if user == nil || user.Owner == "" {
-		return nil
-	}
-	refs := []schema.OrgRef{{Org: user.Owner, Role: HomeRole(user)}}
-	seen := map[string]bool{user.Owner: true}
-	rows, err := MembershipsByUser(ctx, db, user.Owner+"/"+user.Name)
-	if err != nil {
-		return refs
-	}
-	for _, m := range rows {
-		if m == nil || m.Org == "" || seen[m.Org] {
-			continue
-		}
-		seen[m.Org] = true
-		refs = append(refs, m.AsOrgRef())
-	}
-	return refs
 }
 
 // HomeRole is a user's coarse role in its OWN home org: an org admin administers

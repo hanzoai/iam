@@ -9,11 +9,11 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/sessions"
-	"github.com/hanzoai/iam/internal/store"
-	"github.com/hanzoai/iam/internal/users"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/sessions"
+	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam2/internal/users"
 )
 
 // The credential login front door: POST /v1/iam/login. The @hanzo/iam SDK +
@@ -72,7 +72,6 @@ func loginHandler(db orm.DB) zip.Handler {
 		if err := c.Bind(&f); err != nil {
 			return httpx.Err(c, "invalid request body")
 		}
-		adoptQuery(c, &f)
 		ctx := c.Context()
 
 		// A post carrying no fresh credential but naming an outstanding challenge is
@@ -81,42 +80,6 @@ func loginHandler(db orm.DB) zip.Handler {
 		if f.Username == "" && f.Password == "" {
 			if id := ReadChallenge(c, f.Challenge); id != "" {
 				return finishMfa(c, db, id, f)
-			}
-			// SINGLE SIGN-ON. A code request carrying no credential but a LIVE session
-			// THIS IdP issued is a user who is already signed in asking for a grant to
-			// the next app. Re-typing the password would prove nothing new: the session
-			// cookie is tamper-evident (HMAC over the platform signing key), carries its
-			// own expiry, and its sid is checked against the Session row on every
-			// resolve, so it is revocable — and it only ever exists downstream of the
-			// full gate, second factor included, because loginGrant is what sets it.
-			//
-			// Without this every app bounced a signed-in person to a credential form:
-			// the portal's own launcher tiles landed on a login wall, which reads as
-			// "the link is dead" because the browser ends up back on the IdP.
-			//
-			// It grants NOTHING extra. The mint runs through loginGrant — the ONE
-			// minting tail — so the reserved-org gate, the app-org tenant gate, the
-			// exact redirect_uri match and the public-client PKCE requirement are the
-			// same checks, in the same order, as a password post; only the proof of
-			// identity differs. Restricted to type=code (a bare session has nothing to
-			// re-establish, and a device approval must stay a deliberate act), and the
-			// row is re-read so an account forbidden or deleted since sign-in is
-			// refused rather than riding its old session.
-			//
-			// Not a CSRF mint: /v1/iam/login is not a CORS browser path and the IdP
-			// never allows credentialed cross-origin reads (internal/cors), so only a
-			// first-party page can both send the cookie and read the code.
-			if f.Type == "code" {
-				if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
-					user, err := store.GetUserByName(ctx, db, owner, name)
-					if err != nil {
-						return httpx.Err(c, err.Error())
-					}
-					if user == nil || user.IsForbidden || user.IsDeleted {
-						return httpx.Err(c, "please sign in first")
-					}
-					return loginGrant(c, db, user, f)
-				}
 			}
 		}
 
@@ -133,16 +96,9 @@ func loginHandler(db orm.DB) zip.Handler {
 		// object/check.go contract). Every live v1 row is argon2id — a bcrypt-only
 		// verify would fail every real login at cutover.
 		orgPasswordType := loginOrgPasswordType(ctx, db, f.Organization)
-		// Verify through the ONE lockout-enforcing choke point (F-D1) — users.Authenticate,
-		// shared with the ROPC grant, the registry token endpoint, and the LDAP-bind seam.
-		// One opaque failure for "no such user" and "wrong password" — no oracle that
-		// reveals whether the account exists — and a distinct lockout refusal after a run
-		// of wrong passwords.
-		ok, locked := users.Authenticate(ctx, db, user, f.Password, orgPasswordType, nowFunc())
-		if locked {
-			return httpx.Err(c, "too many failed attempts; the account is temporarily locked")
-		}
-		if !ok {
+		// One opaque failure for "no such user" and "wrong password" — no oracle
+		// that reveals whether the account exists.
+		if user == nil || !users.VerifyPassword(user, f.Password, orgPasswordType) {
 			return httpx.Err(c, "the username or password is incorrect")
 		}
 
@@ -175,34 +131,9 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	ctx := c.Context()
 
 	// type=device: approve a pending RFC 8628 device authorization against the
-	// identity now fully proven (device.go). Device approval has its OWN tenant model —
-	// a SuperAdmin may deliberately approve a device across tenants (device.go), a
-	// blessed capability — so the reserved-org grant gate below (which binds a
-	// SuperAdmin to its own-org app) does NOT apply to it; it precedes that gate.
+	// identity now fully proven (device.go).
 	if f.Type == "device" {
 		return approveDevice(c, db, user, f.UserCode)
-	}
-
-	// Reserved-org grant gate — the SAME store.IsReservedOrg refuse signup.go and the
-	// ROPC grant enforce, which login.go alone was missing (F-D2 tail / F-D1). A
-	// RESERVED-org principal (a SuperAdmin under "admin", a built-in/service identity)
-	// may be granted a bare SESSION or an authorization CODE ONLY through an application
-	// that itself SERVES that reserved org — the dedicated console. A shared,
-	// org-choice, or cross-tenant app must NEVER authenticate one: otherwise any shared
-	// app (whose per-type tenant gate below accepts every org) would mint a real
-	// SuperAdmin grant on the correct admin password. Enforced here, ahead of BOTH the
-	// bare-session and the type=code branches, so every credential grant shape (incl.
-	// the second-factor finish, which reaches this same tail) is bound identically. A
-	// normal-tenant login never triggers this (IsReservedOrg is false), so the shared/
-	// org-choice apps keep serving them unchanged.
-	if store.IsReservedOrg(user.Owner) {
-		app, err := resolveLoginApp(ctx, db, f)
-		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		if app == nil || user.Owner != app.Organization {
-			return httpx.Err(c, "the user is not permitted to sign in to this application")
-		}
 	}
 
 	userID := user.Owner + "/" + user.Name
@@ -256,23 +187,18 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	return httpx.Ok(c, code.Code)
 }
 
-// resolveLoginUser looks a user up by the login identifier, scoped to the org,
-// resolving NAME FIRST and email second — casdoor's own precedence
-// (object.GetUserByFields tries the user NAME before the email/phone). This is
-// load-bearing at cutover when two rows collide on an email: e.g. org hanzo holds
-// both `hanzo/z` (name z, email z@hanzo.ai) and `hanzo/z@hanzo.ai` (name
-// z@hanzo.ai, same email). The ROPC/login username "z@hanzo.ai" must resolve to
-// the NAME match (hanzo/z@hanzo.ai) exactly as casdoor did — an email-first lookup
-// would silently authenticate the OTHER identity. The `@` gate stays only to skip
-// a pointless email lookup for a plain username.
+// resolveLoginUser looks a user up by email (contains "@") or username, scoped
+// to the org.
 func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {
-	if u, err := store.GetUserByName(ctx, db, org, identifier); err != nil || u != nil {
-		return u, err
-	}
 	if strings.Contains(identifier, "@") {
-		return store.GetUserByEmail(ctx, db, org, identifier)
+		u, err := store.GetUserByEmail(ctx, db, org, identifier)
+		if err != nil || u != nil {
+			return u, err
+		}
+		// Fall through: some accounts set name = email (email is not indexed as
+		// a separate login) — try name too.
 	}
-	return nil, nil
+	return store.GetUserByName(ctx, db, org, identifier)
 }
 
 // resolveLoginApp resolves the OAuth app for a type=code login: by clientId when
@@ -297,47 +223,4 @@ func loginOrgPasswordType(ctx context.Context, db orm.DB, org string) string {
 		return ""
 	}
 	return o.PasswordType
-}
-
-// adoptQuery takes the authorize request from the QUERY STRING when the body
-// did not carry it.
-//
-// The login form is posted to the URL the authorize step handed the page, and
-// that URL already carries the OAuth request. The BODY is the credential:
-//
-//	POST /v1/iam/login?clientId=…&redirectUri=…&scope=openid+profile+email&nonce=…&code_challenge=…
-//	{"type":"code","username":…,"password":…,"application":…,"organization":…}
-//
-// Both spellings are read because the query has two authors: this server's own
-// authorize endpoint writes RFC snake_case (authorizeForwardQuery), the
-// @hanzo/iam SDK writes camelCase. The body binds camelCase only. Body wins
-// when both are present; the query is a fallback, never an override — a value
-// adopted here still runs every check the body path runs, so an unregistered
-// redirect_uri is refused exactly as before.
-//
-// Reading only the body threw away a request the client HAD sent in full, and
-// the damage surfaced two hops away at the relying party: no scope means no
-// `openid`, so /token answered 200 with NO id_token (a KeyError in every strict
-// OIDC client) and userinfo withheld `email`; no nonce failed the id_token
-// claim check; no redirect_uri skipped the RFC 6749 §4.1.3 binding at
-// redemption. One lookup site, so no parameter can be forgotten alone again.
-func adoptQuery(c *zip.Ctx, f *loginForm) {
-	adopt := func(dst *string, keys ...string) {
-		if *dst == "" {
-			for _, k := range keys {
-				if v := c.Query(k); v != "" {
-					*dst = v
-					return
-				}
-			}
-		}
-	}
-	adopt(&f.ClientId, "client_id", "clientId")
-	adopt(&f.RedirectUri, "redirect_uri", "redirectUri")
-	adopt(&f.Scope, "scope")
-	adopt(&f.State, "state")
-	adopt(&f.Nonce, "nonce")
-	adopt(&f.Resource, "resource")
-	adopt(&f.CodeChallenge, "code_challenge", "codeChallenge")
-	adopt(&f.CodeChallengeMethod, "code_challenge_method", "codeChallengeMethod")
 }

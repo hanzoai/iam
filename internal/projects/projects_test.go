@@ -2,8 +2,8 @@
 
 package projects_test
 
-// Project tests driven through the REAL registered router (routes.Route installs the
-// Guard, the typed CRUD, and the Casdoor verb aliases). Every case is a bind
+// Project tests driven through the REAL mounted router (routes.Route installs the
+// Guard, the typed CRUD, and the Casdoor verb aliases). Every case is a wire
 // request the console ScopeSwitcher / Projects page sends via the /org/iam proxy.
 // The assertions pin the parity contract (add-project → get-organization-projects
 // → delete-project) and the security ones: any org member may LIST its org's
@@ -30,8 +30,8 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/routes"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 const signingKid = "cert-hanzo"

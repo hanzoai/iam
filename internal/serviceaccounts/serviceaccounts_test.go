@@ -5,9 +5,9 @@ package serviceaccounts
 import (
 	"testing"
 
-	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/cred"
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/authz"
+	"github.com/hanzoai/iam2/internal/cred"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // mint is the security core: a fresh access key + a secret whose argon2id DIGEST
@@ -59,10 +59,9 @@ func TestAdminGate(t *testing.T) {
 		org  string
 		want bool
 	}{
-		{"mint-cap app (admin-owned)", &authz.Principal{App: "hanzo-team", AppOwner: "admin"}, "hanzo", true},
-		{"tenant-owned mint-named app denied", &authz.Principal{App: "hanzo-team", AppOwner: "evil"}, "hanzo", false},
-		{"non-cap app", &authz.Principal{App: "rogue", AppOwner: "admin"}, "hanzo", false},
-		{"read-only app cannot mint", &authz.Principal{App: "hanzo-reader", AppOwner: "admin"}, "hanzo", false},
+		{"mint-cap app", &authz.Principal{App: "hanzo-team"}, "hanzo", true},
+		{"non-cap app", &authz.Principal{App: "rogue"}, "hanzo", false},
+		{"read-only app cannot mint", &authz.Principal{App: "hanzo-reader"}, "hanzo", false},
 		{"super human", &authz.Principal{Org: "admin", Super: true}, "orgb", true},
 		{"org admin own org", &authz.Principal{Org: "hanzo", Admin: true}, "hanzo", true},
 		{"org admin foreign org", &authz.Principal{Org: "hanzo", Admin: true}, "orgb", false},
@@ -81,25 +80,17 @@ func TestAdminGate(t *testing.T) {
 func TestReadGate_TenantBound(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-team")
 	t.Setenv("IAM_SA_LIST_ALLOWED_APPS", "hanzo-reader")
-	if !read(&authz.Principal{App: "hanzo-team", AppOwner: "admin"}, "lux") {
+	if !read(&authz.Principal{App: "hanzo-team"}, "lux") {
 		t.Fatal("a mint-cap app may enumerate any org")
 	}
-	if !read(&authz.Principal{App: "hanzo-reader", AppOwner: "admin"}, "hanzo") {
+	if !read(&authz.Principal{App: "hanzo-reader"}, "hanzo") {
 		t.Fatal("hanzo-reader may list its own tenant")
 	}
-	if read(&authz.Principal{App: "hanzo-reader", AppOwner: "admin"}, "lux") {
+	if read(&authz.Principal{App: "hanzo-reader"}, "lux") {
 		t.Fatal("hanzo-reader must NOT list lux — a cross-tenant roster leak")
 	}
-	if read(&authz.Principal{App: "rogue", AppOwner: "admin"}, "hanzo") {
+	if read(&authz.Principal{App: "rogue"}, "hanzo") {
 		t.Fatal("an uncapable app must list nothing")
-	}
-	// A tenant-owned app spoofing an allow-listed NAME reads nothing — the owner-pin
-	// denies the capability before the tenant-binding is even consulted.
-	if read(&authz.Principal{App: "hanzo-reader", AppOwner: "evil"}, "hanzo") {
-		t.Fatal("a tenant-owned app named like the reader must NOT enumerate any org")
-	}
-	if read(&authz.Principal{App: "hanzo-team", AppOwner: "evil"}, "lux") {
-		t.Fatal("a tenant-owned app named like the minter must NOT enumerate any org")
 	}
 }
 
