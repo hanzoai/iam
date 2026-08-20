@@ -464,6 +464,23 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if existing == nil {
 		return nil, zip.ErrNotFound("user " + in.Owner + "/" + in.Name + " not found")
 	}
+	// Take the account off every roster BEFORE removing it. The membership rows
+	// are what an org's member list is built from, so an account deleted while
+	// they remain is a person who no longer exists still listed as able to act —
+	// in every org they were ever added to, not only this one.
+	//
+	// Rows first, because the two orders fail differently. This way a failure
+	// stops the delete and answers it: nothing is gone, and a retry is clean. The
+	// other way the account is already gone when the cleanup fails, and there is
+	// no honest answer left to give — the delete succeeded and the roster is
+	// wrong, with no caller able to tell.
+	//
+	// A crash between the two leaves a live account holding its home org and
+	// missing its team rows: strictly LESS access than before, which is the
+	// direction to fail in, and the retry finishes the job.
+	if _, err := store.ForgetUser(ctx, a.db, in.Owner+"/"+in.Name); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
 	if err := existing.Delete(); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
