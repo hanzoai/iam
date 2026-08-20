@@ -4,48 +4,97 @@
 package serviceaccounts
 
 import (
+	"context"
+	"path/filepath"
 	"testing"
 
+	"github.com/hanzoai/orm"
+	ormdb "github.com/hanzoai/orm/db"
+
 	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
-// mint is the security core: a fresh access key + a secret whose argon2id DIGEST
-// is stored, never the plaintext, and a rotation retires the prior secret.
-func TestMint_HashesSecretOnceNeverPlaintext(t *testing.T) {
-	sa := &schema.User{Owner: "hanzo", Name: "hanzo-bot"}
-	key, secret, err := mint(sa)
+// mint is the security core, and its whole job is that the credential it hands
+// out can actually be USED. It writes a schema.Key row — the one place the
+// resolver looks — holding the secret's DIGEST and never the secret.
+//
+// It used to write AccessKey/AccessSecretHash onto the User row instead, and
+// nothing reads either: store.UserByAccessKey resolves an sk- through
+// schema.Key, and cred.Verify is never called against AccessSecretHash. So every
+// service-account key ever minted answered "not recognized" — which reads as
+// revoked and was in fact unresolvable from the moment it was issued. This test
+// exists to keep that from being true again, so it asserts the RESOLUTION and
+// not merely the storage.
+func TestMint_IssuesAResolvableCredentialAndStoresNoPlaintext(t *testing.T) {
+	ctx, db := context.Background(), memDB(t)
+	sa := orm.New[schema.User](db)
+	sa.Owner, sa.Name, sa.Type = "hanzo", "hanzo-bot", "service-account"
+	sa.SetId("hanzo/hanzo-bot")
+	if err := sa.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed account: %v", err)
+	}
+
+	key, secret, err := mint(ctx, db, sa)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if key == "" || secret == "" {
 		t.Fatal("mint returned an empty credential")
 	}
-	if sa.AccessSecret != "" {
-		t.Fatal("the plaintext secret must NEVER be persisted")
+
+	// THE POINT: the secret resolves to its own service account.
+	u, err := store.UserByAccessKey(ctx, db, secret)
+	if err != nil {
+		t.Fatalf("the minted secret does not resolve: %v", err)
 	}
-	if sa.AccessKey != key {
-		t.Fatalf("stored key %q != returned %q", sa.AccessKey, key)
-	}
-	if sa.AccessSecretHash == "" || sa.AccessSecretHash == secret {
-		t.Fatal("the secret must be stored as a digest, never verbatim")
-	}
-	if !cred.Verify(cred.TypeArgon2id, secret, sa.AccessSecretHash) {
-		t.Fatal("the stored argon2id digest must verify the returned secret")
+	if u.Owner != "hanzo" || u.Name != "hanzo-bot" {
+		t.Fatalf("resolved %s/%s, want hanzo/hanzo-bot", u.Owner, u.Name)
 	}
 
-	// Rotate: a fresh mint invalidates the prior secret.
-	_, secret2, err := mint(sa)
+	// The row holds a digest and no plaintext; the User row holds nothing at all.
+	k, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(secret)).First()
+	if err != nil || k == nil {
+		t.Fatalf("no key row answers the secret's digest: %v", err)
+	}
+	if k.AccessSecret != "" {
+		t.Fatalf("the key row stored the plaintext secret: %q", k.AccessSecret)
+	}
+	if sa.AccessSecret != "" || sa.AccessSecretHash != "" || sa.AccessKey != "" {
+		t.Fatal("the User row must carry no credential material — nothing resolves it")
+	}
+
+	// Rotation replaces: the prior secret stops resolving, the new one starts.
+	_, secret2, err := mint(ctx, db, sa)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if secret2 == secret {
 		t.Fatal("rotation must mint a fresh secret")
 	}
-	if cred.Verify(cred.TypeArgon2id, secret, sa.AccessSecretHash) {
-		t.Fatal("the prior secret must stop verifying after rotation")
+	if _, err := store.UserByAccessKey(ctx, db, secret); err == nil {
+		t.Fatal("the superseded secret still resolves — a rotated key would stay live")
 	}
+	if _, err := store.UserByAccessKey(ctx, db, secret2); err != nil {
+		t.Fatalf("the rotated secret does not resolve: %v", err)
+	}
+}
+
+// memDB is a real SQLite the ORM can index, because this test asserts on an
+// indexed lookup and a fake would prove nothing about it.
+func memDB(t *testing.T) orm.DB {
+	t.Helper()
+	_ = schema.Kinds()
+	db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
+		Path:   filepath.Join(t.TempDir(), "sa.db"),
+		Config: ormdb.SQLiteConfig{BusyTimeout: 5000, JournalMode: "WAL"},
+	})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
 }
 
 // admin gates every credential MUTATION: a mint-capable app, a SuperAdmin, or an

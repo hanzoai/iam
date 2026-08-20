@@ -29,13 +29,14 @@ package serviceaccounts
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -162,7 +163,7 @@ func create(db orm.DB) zip.Handler {
 		// would change the M2M subject shape, so it is deferred to a deliberate migration
 		// rather than folded into this security rework.
 		sa.SetId(in.Organization + "/" + name)
-		key, secret, err := mint(sa)
+		key, secret, err := mint(ctx, db, sa)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -212,7 +213,7 @@ func rotate(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
-		key, secret, err := mint(sa)
+		key, secret, err := mint(c.Context(), db, sa)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -335,17 +336,56 @@ func read(p *authz.Principal, org string) bool {
 //
 // pk- for the handle, sk- for the secret: the prefix is what tells a reader which
 // half they are holding. Minting both under one prefix erases that distinction.
-func mint(sa *schema.User) (key, secret string, err error) {
+// mint issues this service account's credential and writes it where credentials
+// are RESOLVED — a schema.Key row keyed to the account, the same row every other
+// key in the estate lives in.
+//
+// It used to write AccessKey/AccessSecretHash onto the User row instead. Nothing
+// reads those: store.UserByAccessKey resolves an sk- through schema.Key and
+// nothing anywhere calls cred.Verify against AccessSecretHash. So a service
+// account got a credential that could never authenticate — every call answered
+// "API key is not recognized", which reads as revoked and was never resolvable.
+// That is why they are cleared here rather than set: a second credential home
+// that no resolver reads is not a safety measure, it is a dead end that looks
+// like one.
+//
+// The secret is stored as its digest (schema.DigestSecret) and returned once, so
+// the row holds nothing replayable.
+func mint(ctx context.Context, db orm.DB, sa *schema.User) (key, secret string, err error) {
 	key, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
-	hash, err := cred.Hash(secret)
-	if err != nil {
-		return "", "", zip.ErrInternal("hash service account secret: " + err.Error())
+	// A rotate REPLACES: the deterministic name means the new credential lands on
+	// the same row, so the previous secret stops resolving the moment this one is
+	// written. Two live secrets for one identity is how a revoked key keeps working.
+	name, now := sa.Name+"-key", time.Now().UTC().Format(time.RFC3339)
+	id := sa.Owner + "/" + name
+	existing, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id).First()
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return "", "", zip.ErrInternal(err.Error())
 	}
-	// The access key is a public lookup handle, not a secret, so it is stored
-	// verbatim; only its secret sibling is digested.
-	sa.AccessKey = key
-	sa.AccessSecretHash = hash
-	sa.AccessSecret = "" // never persist the plaintext, and clear any legacy one
+	if existing != nil {
+		existing.AccessKey, existing.AccessSecret = key, ""
+		existing.AccessSecretDigest = schema.DigestSecret(secret)
+		existing.UpdatedTime = now
+		if err := existing.UpdateCtx(ctx); err != nil {
+			return "", "", zip.ErrInternal(err.Error())
+		}
+		sa.AccessKey, sa.AccessSecret, sa.AccessSecretHash = "", "", ""
+		return key, secret, nil
+	}
+	k := orm.New[schema.Key](db)
+	k.SetId(id)
+	k.Owner, k.Name = sa.Owner, name
+	k.DisplayName = "Service account key"
+	k.Type, k.User = "User", sa.Owner+"/"+sa.Name
+	k.State = "Active"
+	k.AccessKey = key
+	k.AccessSecretDigest = schema.DigestSecret(secret)
+	k.CreatedTime, k.UpdatedTime = now, now
+	if err := k.CreateCtx(ctx); err != nil {
+		return "", "", zip.ErrInternal("store service account key: " + err.Error())
+	}
+	// The User row holds no credential material at all. See the note above.
+	sa.AccessKey, sa.AccessSecret, sa.AccessSecretHash = "", "", ""
 	return key, secret, nil
 }
 

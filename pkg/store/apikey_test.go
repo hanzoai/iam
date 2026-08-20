@@ -392,3 +392,54 @@ func seedScopedKey(t *testing.T, db orm.DB, owner, name, user, pk, sk, scope str
 		t.Fatalf("seed scoped key: %v", err)
 	}
 }
+
+// A key minted before the digest existed still authenticates, and stops being
+// plaintext the first time it does.
+//
+// This is the whole migration. The estate cannot re-mint every deployed
+// credential at once, so the resolver falls back to the legacy column — and a hit
+// there DRAINS the row rather than leaving it to be found the same way forever.
+// Without the drain the fallback is not a migration, it is a second permanent
+// lookup path, and the plaintext never goes away.
+func TestUserByAccessKey_LegacyPlaintextResolvesAndIsDrained(t *testing.T) {
+	ctx, db := context.Background(), memDB(t)
+	const secret = "sk-live-legacyplaintextsecret000"
+
+	u := orm.New[schema.User](db)
+	u.Owner, u.Name = "acme", "ada"
+	u.SetId("acme/ada")
+	if err := u.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	// A row exactly as the old minter left it: the secret verbatim, no digest.
+	k := orm.New[schema.Key](db)
+	k.Owner, k.Name, k.Type, k.User = "acme", "cloud-api", "User", "ada"
+	k.AccessKey, k.AccessSecret = "pk-live-legacy", secret
+	k.SetId("acme/cloud-api")
+	if err := k.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed legacy key: %v", err)
+	}
+
+	got, err := UserByAccessKey(ctx, db, secret)
+	if err != nil {
+		t.Fatalf("a legacy key must still authenticate: %v", err)
+	}
+	if got.Owner != "acme" || got.Name != "ada" {
+		t.Fatalf("resolved %s/%s, want acme/ada", got.Owner, got.Name)
+	}
+
+	after, err := orm.Get[schema.Key](db, "acme/cloud-api")
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if after.AccessSecret != "" {
+		t.Fatalf("the plaintext survived the drain: %q", after.AccessSecret)
+	}
+	if after.AccessSecretDigest != schema.DigestSecret(secret) {
+		t.Fatal("the drain did not write the digest, so this row would take the legacy path forever")
+	}
+	// And it still resolves — now through the digest, with nothing plaintext left.
+	if _, err := UserByAccessKey(ctx, db, secret); err != nil {
+		t.Fatalf("the drained key stopped authenticating: %v", err)
+	}
+}
