@@ -83,6 +83,16 @@ type Key struct {
 	// to ship in client JS. A missing value on an existing row reads as the default,
 	// so every pre-Scope key is a secret key unchanged.
 	Scope string `json:"scope,omitempty"`
+
+	// Act is the durable, opt-in grant that lets this key act FOR a user in its
+	// own org — the credential behind as(): presenting it authorizes minting a
+	// short-lived, user-bound token for a member of the key's tenant. Default
+	// false, so a server key mints nothing on anyone's behalf until the grant is
+	// set deliberately — the capability is never inherited by every key. It is
+	// confined at mint time to the key's OWN Owner, and a reserved-org or
+	// SuperAdmin target is refused, so the grant reaches only ordinary members of
+	// the one tenant that holds the key.
+	Act bool `json:"act,omitempty"`
 }
 
 // KeyScopePublish is the Scope value marking a WRITE-ONLY publishable key: a pk-

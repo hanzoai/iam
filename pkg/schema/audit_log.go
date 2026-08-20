@@ -44,6 +44,12 @@ const (
 	ActionRevokeUserKeys  = "revoke-user-keys"
 	ActionTokenExchange   = "token-exchange"
 
+	// A server key acting FOR a user in its own org — the credential behind as().
+	// It is a privileged mint (one principal obtains a token bound to another), so
+	// every one is recorded: who acted (the org key), for whom (the target
+	// subject), in which org, and when.
+	ActionAs = "as"
+
 	// A platform operator stepping into an organization and back out, and reaching
 	// past their own memberships to enumerate the registry. All three are
 	// privileged cross-tenant acts, so all three are recorded — and so is a
@@ -61,7 +67,7 @@ const (
 func PlatformWritten(action string) bool {
 	switch action {
 	case ActionConsentTraining, ActionIssueUserToken, ActionMintUserKeys,
-		ActionRevokeUserKeys, ActionTokenExchange,
+		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs:
 		return true
 	}
