@@ -174,6 +174,14 @@ func TestApplyAccounts(t *testing.T) {
 	if len(seen) != 2 {
 		t.Fatalf("want 2 requests, got %d", len(seen))
 	}
+	// The report's authority bit is the one that was SENT, not a second derivation
+	// beside it — a run report that can disagree with the wire reviews nothing.
+	for i, x := range res {
+		if x.Admin != seen[i].body.IsAdmin {
+			t.Errorf("%s: report says isAdmin=%t, the wire carried %t",
+				x.Account.Account.Name, x.Admin, seen[i].body.IsAdmin)
+		}
+	}
 	for _, s := range seen {
 		if s.path != "/v1/iam/admin/users/upsert" {
 			t.Errorf("path = %q, want /v1/iam/admin/users/upsert", s.path)
@@ -285,6 +293,19 @@ func TestAccountValidation(t *testing.T) {
 		{
 			"a traversing ref is refused",
 			"      - {name: bot, type: service, passwordRef: 'kms://../../etc/passwd'}",
+			"not a clean relative KMS path",
+		},
+		{
+			// path.Clean keeps a leading "..", and a bare one carries no separator
+			// for a "../" test to match — so this is the climb both checks miss.
+			"a bare climb is refused",
+			"      - {name: bot, type: service, passwordRef: 'kms://..'}",
+			"not a clean relative KMS path",
+		},
+		{
+			// A ref that names the credential directory rather than a file in it.
+			"the directory itself is refused",
+			"      - {name: bot, type: service, passwordRef: 'kms://.'}",
 			"not a clean relative KMS path",
 		},
 		{

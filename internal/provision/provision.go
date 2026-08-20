@@ -103,8 +103,16 @@ type Account struct {
 }
 
 // Account types. `owner` is the org's ONE human superuser — there is no built-in
-// admin, the seeded owner IS the admin. `service` is a non-interactive machine
-// identity for privileged automation.
+// admin, the seeded owner IS the admin. `service` is a non-interactive account for
+// privileged automation, which proves itself with the credential this document
+// locates.
+//
+// That credential is what separates it from the AGENT identities the IAM console
+// hands out (internal/serviceaccounts): those are minted whole — canonical
+// <org>-<agent> name, bound agent, an issued key — by the surface that knows how a
+// machine authenticates, and this vocabulary cannot describe one. The upsert draws
+// the same line and answers an agent row by name rather than converging onto it,
+// so the two never write each other's accounts.
 const (
 	AccountOwner   = "owner"
 	AccountService = "service"
@@ -185,8 +193,14 @@ func credentialPath(ref, where string) (string, error) {
 			"%s: passwordRef must be a kms:// locator, got %q — a password literal must never live in this document",
 			where, ref)
 	}
+	// path.Clean leaves a LEADING "..", so cleanliness alone admits ".." and
+	// "../x" — and the bare ".." also slips a "../" prefix test, which has no
+	// separator to match. The three spellings that leave the credential directory
+	// are therefore named: "..", anything under it, and "." — a ref that names the
+	// directory rather than a file in it.
 	p := strings.TrimPrefix(ref, "kms://")
-	if p == "" || p != path.Clean(p) || strings.HasPrefix(p, "/") || strings.HasPrefix(p, "../") {
+	if p == "" || p != path.Clean(p) || strings.HasPrefix(p, "/") ||
+		p == "." || p == ".." || strings.HasPrefix(p, "../") {
 		return "", fmt.Errorf("%s: passwordRef %q is not a clean relative KMS path", where, ref)
 	}
 	return p, nil
@@ -599,7 +613,13 @@ type AccountResult struct {
 	// the report because "converged" and "usable" are different facts and the
 	// operator must be able to tell them apart.
 	Credential bool
-	Err        error
+	// Admin is the org-admin bit this converge asked for — the AUTHORITY half of
+	// the same report, derived from the account's type and carried here because the
+	// derivation is this package's. A grant that appears in no line of the run is a
+	// grant nobody reviews, and it is the one thing on an account worth reading
+	// twice.
+	Admin bool
+	Err   error
 }
 
 // Reconciler converges a live IAM onto derived clients over the admin upsert
@@ -666,7 +686,7 @@ func (r *Reconciler) ApplyAccounts(ctx context.Context, accts []OrgAccount) []Ac
 			out = append(out, AccountResult{Account: a, Err: err})
 			continue
 		}
-		res := AccountResult{Account: a, Credential: u.Password != ""}
+		res := AccountResult{Account: a, Credential: u.Password != "", Admin: u.IsAdmin}
 		if r.DryRun {
 			res.Action = "would-upsert"
 			out = append(out, res)
