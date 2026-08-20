@@ -143,8 +143,9 @@ func TestMintUserKey_ResolvesBackToItsUser(t *testing.T) {
 		t.Fatalf("minted secret = %q, want an sk- confidential half", secret[:3])
 	}
 
-	// The row the resolver reads must exist, name its user, and hold the secret.
-	k, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First()
+	// The row the resolver reads must exist, name its user, and answer to the
+	// secret's DIGEST — the row itself never holds the secret.
+	k, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(secret)).First()
 	if err != nil || k == nil {
 		t.Fatalf("no schema.Key row resolves the minted secret (err=%v) — this is the bug", err)
 	}
@@ -176,11 +177,17 @@ func TestMintUserKey_RemintReplacesRatherThanAccumulates(t *testing.T) {
 	if first == second {
 		t.Fatal("re-mint returned the same secret; it must rotate")
 	}
-	if old, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", first).First(); old != nil {
+	if old, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(first)).First(); old != nil {
 		t.Fatal("the superseded secret still resolves — a revoked key would stay live")
 	}
-	if cur, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", second).First(); err != nil || cur == nil {
+	cur, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(second)).First()
+	if err != nil || cur == nil {
 		t.Fatalf("the current secret does not resolve: %v", err)
+	}
+	// The row holds the digest and NOT the secret: a leak of this table reveals
+	// nothing anyone can present.
+	if cur.AccessSecret != "" {
+		t.Fatalf("the minted row stored the secret in plaintext: %q", cur.AccessSecret)
 	}
 }
 
@@ -197,7 +204,7 @@ func TestRevokeUserKey_EndStateAndIdempotent(t *testing.T) {
 	if err := RevokeUserKey(ctx, db, "acme", "ada", ""); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
-	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First(); k != nil {
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(secret)).First(); k != nil {
 		t.Fatal("secret still resolves after revoke")
 	}
 	if err := RevokeUserKey(ctx, db, "acme", "ada", ""); err != nil {
@@ -264,8 +271,11 @@ func TestKeys_UpdateCannotReScopeOrRotate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	if stored.AccessSecret != secret || stored.AccessKey != access {
+	if stored.AccessSecretDigest != schema.DigestSecret(secret) || stored.AccessKey != access {
 		t.Fatal("update rotated the credential to caller-supplied values")
+	}
+	if stored.AccessSecret != "" {
+		t.Fatalf("the stored row holds a plaintext secret: %q", stored.AccessSecret)
 	}
 	if got.AccessSecret != "" {
 		t.Fatalf("update echoed the confidential secret %q — the secret is revealed once, by create", got.AccessSecret)
@@ -324,7 +334,7 @@ func TestMintUserKey_ScopesAreIndependentCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint publishable: %v", err)
 	}
-	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First(); k == nil {
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(secret)).First(); k == nil {
 		t.Fatal("minting the publishable key destroyed the secret key")
 	}
 
@@ -336,7 +346,7 @@ func TestMintUserKey_ScopesAreIndependentCredentials(t *testing.T) {
 	if pub2 == pub {
 		t.Fatal("re-minting the publishable key did not rotate it")
 	}
-	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First(); k == nil {
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(secret)).First(); k == nil {
 		t.Fatal("rotating the publishable key revoked the secret key")
 	}
 	// …and revoking it likewise.
@@ -346,7 +356,7 @@ func TestMintUserKey_ScopesAreIndependentCredentials(t *testing.T) {
 	if _, err := orm.Get[schema.Key](db, "acme/"+PublishKeyName); err == nil {
 		t.Fatal("publishable key survived its own revoke")
 	}
-	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First(); k == nil {
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(secret)).First(); k == nil {
 		t.Fatal("revoking the publishable key revoked the secret key — the whole reason they are separate rows")
 	}
 }
@@ -388,7 +398,7 @@ func TestKeys_ReadsMaskTheSecretAndKeepThePublishableHalf(t *testing.T) {
 	}
 	// And the STORED secret is untouched — the mask is a projection, not a deletion.
 	stored, err := orm.Get[schema.Key](db, "acme/svc")
-	if err != nil || stored.AccessSecret != made.AccessSecret {
+	if err != nil || stored.AccessSecretDigest != made.AccessSecretDigest {
 		t.Fatal("masking a read mutated the stored credential")
 	}
 }
@@ -414,7 +424,7 @@ func TestMintUserKey_oneMemberDoesNotRevokeAnother(t *testing.T) {
 		t.Fatal("two members were handed the same secret")
 	}
 	for who, secret := range map[string]string{"ada": ada, "bob": bob} {
-		k, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First()
+		k, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(secret)).First()
 		if err != nil || k == nil {
 			t.Fatalf("%s's secret stopped resolving once the other member minted", who)
 		}
@@ -427,7 +437,7 @@ func TestMintUserKey_oneMemberDoesNotRevokeAnother(t *testing.T) {
 	if err := RevokeUserKey(ctx, db, "acme", "ada", ""); err != nil {
 		t.Fatalf("revoke ada: %v", err)
 	}
-	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", bob).First(); k == nil {
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(bob)).First(); k == nil {
 		t.Fatal("revoking ada's key revoked bob's")
 	}
 }
@@ -453,7 +463,7 @@ func TestMintUserKey_retiresTheSharedRow(t *testing.T) {
 	if _, err := MintUserKey(ctx, db, "acme", "bob", ""); err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", stale).First(); k != nil {
+	if k, _ := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", schema.DigestSecret(stale)).First(); k != nil {
 		t.Fatal("the org-wide secret still resolves after a mint")
 	}
 }

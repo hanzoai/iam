@@ -141,7 +141,7 @@ func UserAndScopeByAccessKey(ctx context.Context, db orm.DB, key string) (*schem
 	key = strings.TrimSpace(key)
 	switch {
 	case strings.HasPrefix(key, "sk-"):
-		return userAndScopeOwningKey(ctx, db, "AccessSecret", key)
+		return userAndScopeOwningKey(ctx, db, key)
 	case strings.HasPrefix(key, "pk-"):
 		// WRITE-ONLY and never a principal (see the package note above). Fail closed,
 		// and say so as the wrong door: this holder has a working key, just not here.
@@ -170,11 +170,8 @@ func UserAndScopeByAccessKey(ctx context.Context, db orm.DB, key string) (*schem
 // only ever speak for a user in the org that owns the key, and a non-super can never
 // own a key under a reserved org (authorize gates keys writes), so no sk- key can
 // resolve to a SuperAdmin or cross-tenant identity.
-func userAndScopeOwningKey(ctx context.Context, db orm.DB, field, val string) (*schema.User, string, error) {
-	k, err := orm.TypedQuery[schema.Key](db).Filter(field+"=", val).First()
-	if err == orm.ErrNotFound {
-		return nil, "", notFound(KeyUnknown)
-	}
+func userAndScopeOwningKey(ctx context.Context, db orm.DB, secret string) (*schema.User, string, error) {
+	k, err := keyBySecret(ctx, db, secret)
 	if err != nil {
 		return nil, "", err
 	}
@@ -194,6 +191,46 @@ func userAndScopeOwningKey(ctx context.Context, db orm.DB, field, val string) (*
 		return nil, "", notFound(KeyDanglingUser)
 	}
 	return u, k.Scope, nil
+}
+
+// keyBySecret finds the key a presented secret belongs to WITHOUT the row ever
+// having to hold that secret: the digest of what was presented is the lookup
+// value, and one indexed read answers it.
+//
+// The fallback is a migration, not a second way of doing this. Rows minted
+// before the digest existed carry the secret in plaintext, and the estate cannot
+// re-mint every deployed credential at once — so a digest miss tries the legacy
+// column, and a hit there DRAINS it: the digest is written, the plaintext is
+// cleared, and that row never takes this path again. The fallback therefore
+// shrinks to nothing on its own and can be deleted when the plaintext count
+// reaches zero, which is a query anyone can run.
+//
+// A drain that fails is not an authentication failure. The caller presented a
+// real credential; the write is housekeeping, and refusing them because
+// housekeeping failed would turn a storage problem into an outage.
+func keyBySecret(ctx context.Context, db orm.DB, secret string) (*schema.Key, error) {
+	digest := schema.DigestSecret(secret)
+	if digest == "" {
+		return nil, notFound(KeyUnknown)
+	}
+	k, err := orm.TypedQuery[schema.Key](db).Filter("AccessSecretDigest=", digest).First()
+	if err == nil {
+		return k, nil
+	}
+	if err != orm.ErrNotFound {
+		return nil, err
+	}
+	k, err = orm.TypedQuery[schema.Key](db).Filter("AccessSecret=", secret).First()
+	if err == orm.ErrNotFound {
+		return nil, notFound(KeyUnknown)
+	}
+	if err != nil {
+		return nil, err
+	}
+	k.AccessSecretDigest = digest
+	k.AccessSecret = ""
+	_ = k.UpdateCtx(ctx)
+	return k, nil
 }
 
 // keyUserRef extracts the (owner, name) of the user a schema.Key belongs to. The

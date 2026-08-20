@@ -156,9 +156,18 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		now := time.Now().UTC().Format(time.RFC3339)
 		k.CreatedTime, k.UpdatedTime = now, now
 
+		// The row keeps the DIGEST and never the secret. The plaintext goes back
+		// on the struct afterwards because minting reveals it exactly once — this
+		// response is the only time its holder can ever read it — but what is
+		// written down is a value that cannot be replayed if the table leaks.
+		secret := k.AccessSecret
+		k.AccessSecretDigest = schema.DigestSecret(secret)
+		k.AccessSecret = ""
+
 		if err := k.CreateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		k.AccessSecret = secret
 		return k, nil
 	}
 }
@@ -378,7 +387,8 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 		return "", err
 	}
 	if existing != nil {
-		existing.AccessKey, existing.AccessSecret = access, secret
+		existing.AccessKey, existing.AccessSecret = access, ""
+		existing.AccessSecretDigest = schema.DigestSecret(secret)
 		existing.User, existing.Type, existing.Scope = user, "User", scope
 		existing.UpdatedTime = now
 		if err := existing.UpdateCtx(ctx); err != nil {
@@ -396,7 +406,10 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 	}
 	k.Type, k.User = "User", user
 	k.AccessKey = access
-	k.AccessSecret = secret
+	// The digest is what is written; the secret leaves in `presented` and is
+	// never stored, so a leak of this table reveals nothing that can be replayed.
+	k.AccessSecret = ""
+	k.AccessSecretDigest = schema.DigestSecret(secret)
 	k.Scope = scope
 	k.State = "Active"
 	k.CreatedTime, k.UpdatedTime = now, now
