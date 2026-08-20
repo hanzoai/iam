@@ -375,7 +375,11 @@ func assertBegin(db orm.DB) zip.Handler {
 		if owner == "" || name == "" {
 			return httpx.Err(c, errNoPasskey)
 		}
-		user, err := store.GetUserByName(ctx, db, owner, name)
+		// The same resolver every other door uses: name first, then email. Signup
+		// never asks for a username, so the identifier a customer actually has is
+		// their email — a name-only lookup answers "no passkey" for an account
+		// that has one, and the refusal is indistinguishable from the real thing.
+		user, err := resolveInOrg(ctx, db, owner, name)
 		if err != nil || user == nil {
 			return httpx.Err(c, errNoPasskey)
 		}
