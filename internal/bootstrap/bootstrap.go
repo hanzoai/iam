@@ -341,8 +341,17 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 // person is the user an operator declares, plus the service credential it
 // presents.
 type person struct {
-	Owner        string `json:"owner"`
-	Name         string `json:"name"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+	// Type is the identity CLASS the declaration gives this row — what KIND of
+	// principal it is: schema.Owner for the org's one human superuser,
+	// schema.ServiceAccount for a machine. It is the fact that scopes a converge to
+	// its OWN accounts: the create path stamps it, the update path requires the
+	// stored row to carry the same one, and no other surface writes either word (a
+	// person who signs up is stamped "normal-user" by the create path they reach).
+	// So a declaration converges the rows it made and refuses every other, and an
+	// existing row's class is never re-written into a different kind of principal.
+	Type         string `json:"type"`
 	DisplayName  string `json:"displayName"`
 	Email        string `json:"email"`
 	Phone        string `json:"phone"`
@@ -368,8 +377,15 @@ func (p *person) UnmarshalJSON(b []byte) error {
 // upsertUser creates a person or updates them in place, so a deployment can
 // declare the accounts it needs and re-run that declaration safely.
 //
+// It converges the accounts it created and no others: `type` is the class the
+// declaration gives a row, stamped on create and required to match on update, so
+// an account that entered this store some other way is answered rather than
+// adopted. Their organization must exist — a person's org is their tenancy, and a
+// row under one that does not is a principal no tenant contains.
+//
 // Passwords are hashed before they are stored. Leave the password out and their
-// current one is kept, so a redeploy never locks somebody out.
+// current one is kept, so a redeploy never locks somebody out; send the same one
+// again and it is kept too, so a steady-state re-run is not a rotation.
 func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 	return func(ctx context.Context, in *person) (*reply, error) {
 		if !httpx.ServiceAuth(in.Auth) {
@@ -378,18 +394,30 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 		if bad := in.check(); bad != nil {
 			return bad, nil
 		}
-		in.Owner, in.Name = strings.TrimSpace(in.Owner), strings.TrimSpace(in.Name)
+		in.Owner, in.Name, in.Type = strings.TrimSpace(in.Owner), strings.TrimSpace(in.Name), strings.TrimSpace(in.Type)
 		if in.Owner == "" || in.Name == "" {
 			return refuse(400, "owner and name are required"), nil
 		}
-
-		var hash string
-		if in.Password != "" {
-			h, err := cred.Hash(in.Password)
-			if err != nil {
+		if !declarable(in.Type) {
+			return refuse(400, fmt.Sprintf(
+				"account %s/%s must state a type of %q or %q — the class of the row this declaration owns",
+				in.Owner, in.Name, schema.Owner, schema.ServiceAccount)), nil
+		}
+		// The org is checked against the store, unlike an application's cert name,
+		// because nothing resolves it later: a cert is looked up when a token is
+		// signed, and a name that is not there yet still works the moment it is,
+		// while an org is simply the tenancy this row is filed under. A typo is a
+		// principal no console lists and no login reaches, so it is answered here.
+		// The reserved platform orgs are namespaces rather than tenants — every org
+		// row is itself owned by `admin` — so they carry no row to find.
+		if !store.IsReservedOrg(in.Owner) {
+			switch org, err := store.GetOrganizationByName(ctx, db, in.Owner); {
+			case err != nil:
 				return refuse(500, "server_error"), nil
+			case org == nil:
+				return refuse(400, fmt.Sprintf(
+					"account %s/%s names an organization that does not exist", in.Owner, in.Name)), nil
 			}
-			hash = h
 		}
 
 		existing, err := store.GetUserByName(ctx, db, in.Owner, in.Name)
@@ -399,18 +427,54 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 		action := "created"
 		if existing != nil {
 			action = "updated"
-			existing.DisplayName = pick(in.DisplayName, existing.DisplayName)
-			existing.Email = store.NormalizeEmail(pick(in.Email, existing.Email))
-			existing.Phone = store.NormalizePhone(pick(in.Phone, existing.Phone))
-			existing.IsAdmin = in.IsAdmin
-			if hash != "" {
-				existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, cred.TypeArgon2id, ""
+			// A declaration owns the rows it created, and says so by their class. A
+			// row carrying any other one — a person who signed up, an account seeded
+			// by hand — is somebody else's, and converging it would let whoever
+			// reached the name first inherit whatever the document grants it.
+			if existing.Type != in.Type {
+				return refuse(400, fmt.Sprintf(
+					"account %s/%s carries %s and this declaration describes %s: "+
+						"a converge writes only the accounts it created",
+					in.Owner, in.Name, class(existing.Type), class(in.Type))), nil
 			}
-			existing.UpdatedTime = now()
-			if err := existing.UpdateCtx(ctx); err != nil {
-				return refuse(500, "server_error"), nil
+			name, email := pick(in.DisplayName, existing.DisplayName), store.NormalizeEmail(pick(in.Email, existing.Email))
+			phone := store.NormalizePhone(pick(in.Phone, existing.Phone))
+			// A declaration presents the same credential on every run, so an unchanged
+			// one is recognised by VERIFYING the material against the stored digest
+			// rather than by its absence. A digest carries a fresh random salt, so
+			// re-hashing what is already there yields a different string and turns
+			// every steady-state reconcile into a rotation of a credential the running
+			// services still hold. Material that does not verify is new, and rotates.
+			hash, kind := existing.PasswordHash, existing.PasswordType
+			if in.Password != "" && !cred.Verify(kind, in.Password, hash) {
+				h, err := cred.Hash(in.Password)
+				if err != nil {
+					return refuse(500, "server_error"), nil
+				}
+				hash, kind = h, cred.TypeArgon2id
+			}
+			// Nothing moved, so nothing is written: a converge that rewrites an
+			// unchanged row makes `updatedTime` say when the reconciler last ran
+			// rather than when the account last changed.
+			if name != existing.DisplayName || email != existing.Email || phone != existing.Phone ||
+				in.IsAdmin != existing.IsAdmin || hash != existing.PasswordHash {
+				existing.DisplayName, existing.Email, existing.Phone = name, email, phone
+				existing.IsAdmin = in.IsAdmin
+				existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, kind, ""
+				existing.UpdatedTime = now()
+				if err := existing.UpdateCtx(ctx); err != nil {
+					return refuse(500, "server_error"), nil
+				}
 			}
 		} else {
+			var hash string
+			if in.Password != "" {
+				h, err := cred.Hash(in.Password)
+				if err != nil {
+					return refuse(500, "server_error"), nil
+				}
+				hash = h
+			}
 			// A new row obeys THE username rule; an existing one is found above and
 			// merely updated, so a legacy name is never rewritten by an upsert that
 			// happened to touch it. This path writes through orm directly rather than
@@ -423,7 +487,7 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			in.Name = name // the id and the response report what was STORED
 			u := orm.New[schema.User](db)
 			model := u.Model
-			u.Owner, u.Name = in.Owner, name
+			u.Owner, u.Name, u.Type = in.Owner, name, in.Type
 			u.DisplayName, u.Email, u.Phone, u.IsAdmin = in.DisplayName, store.NormalizeEmail(in.Email), store.NormalizePhone(in.Phone), in.IsAdmin
 			if hash != "" {
 				u.PasswordHash, u.PasswordType = hash, cred.TypeArgon2id
@@ -440,6 +504,24 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 }
 
 // ---- helpers ----
+
+// declarable reports whether a class is one a declaration may own. The set is
+// closed on purpose: it holds the two kinds of principal an operator declares and
+// nothing a person can become by themselves, so no caller of this endpoint can
+// name the class of a self-service row and converge onto it.
+func declarable(kind string) bool {
+	return kind == schema.Owner || kind == schema.ServiceAccount
+}
+
+// class names a row's kind for a refusal an operator reads. An empty one is a row
+// no declaration created — hand-seeded, or migrated in — and saying that is the
+// difference between a message that explains itself and one that reads as a bug.
+func class(kind string) string {
+	if kind == "" {
+		return "no declared class"
+	}
+	return fmt.Sprintf("%q", kind)
+}
 
 // resolveSecret decides the credential an upsert stores. It is the ONE place
 // public-vs-confidential is settled, split out so the rule is testable without

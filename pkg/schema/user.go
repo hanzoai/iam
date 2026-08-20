@@ -356,6 +356,16 @@ type ConsentRecord struct {
 // shape other Hanzo services stamp for the same idea, and Machine accepts both.
 const ServiceAccount = "service-account"
 
+// Owner is the User.Type IAM writes for the org's ONE human superuser — the
+// person an operator DECLARES in that org's provision document, as against one
+// who signed up for themselves ("normal-user") or a machine (ServiceAccount).
+//
+// It repeats the document's own word for the account deliberately: the class a row
+// carries and the `type` its declaration states are one fact, and a synonym here
+// would be a second name for it that nothing maps back. User.Owner names the ORG
+// this row lives in — a neighbouring field, a different question.
+const Owner = "owner"
+
 // Program is the other word, and it is the one a TOKEN carries: the class of a
 // machine with no user row, where the registration itself IS the principal.
 //

@@ -96,7 +96,8 @@ func TestUpsertApplication_createThenIdempotentUpdate(t *testing.T) {
 
 func TestUpsertUser_createHashesPassword(t *testing.T) {
 	app, db := boot(t)
-	body := `{"owner":"hanzo","name":"svc-signer","password":"s3cret","isAdmin":false}`
+	org(t, db, "hanzo")
+	body := `{"owner":"hanzo","name":"svc-signer","type":"service-account","password":"s3cret","isAdmin":false}`
 	st, m := post(t, app, "/v1/iam/admin/users/upsert", svcToken, body)
 	if st != 200 || m["action"] != "created" {
 		t.Fatalf("create user: status=%d body=%v", st, m)

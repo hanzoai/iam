@@ -86,6 +86,12 @@ type Org struct {
 // only an argon2id hash. A converge that resolves no secret PRESERVES the
 // existing credential rather than clearing it, so re-running never locks an
 // account out of a live tenant.
+//
+// A run that DOES resolve one sends it every time, and that is still a no-op: a
+// digest carries a fresh random salt, so the endpoint recognises an unchanged
+// credential by verifying the material against what it already stores rather than
+// by its absence, and leaves the digest — and the row's updatedTime — alone. Only
+// material that fails that check is new, and only new material rotates.
 type Account struct {
 	// Name is the IAM username — the `name` half of <owner>/<name>. It is stated,
 	// never derived from the email, because a service account has no email to
@@ -122,6 +128,22 @@ const (
 var isAdminByAccountType = map[string]bool{
 	AccountOwner:   true,
 	AccountService: false,
+}
+
+// classByAccountType is the identity CLASS IAM stamps on the row each type
+// declares — the row's own answer to "what KIND of principal is this".
+//
+// It is also what makes a converge idempotent on THIS document's accounts without
+// reaching anybody else's. The upsert stamps the class when it creates the row and
+// requires the stored row to carry the same one before it updates: a person who
+// signed up for themselves carries the class that path states ("normal-user"), a
+// hand-seeded row carries none, and neither is a class this vocabulary can
+// produce, so a declared account converges onto the row it created and onto no
+// other. The account's `type` and the row's class are ONE fact, so the document's
+// two words are the two classes rather than a private encoding of them.
+var classByAccountType = map[string]string{
+	AccountOwner:   schema.Owner,
+	AccountService: schema.ServiceAccount,
 }
 
 // Validate rejects an account that is unusable or unsafe to apply. It runs at
@@ -185,11 +207,39 @@ func credentialPath(ref, where string) (string, error) {
 			"%s: passwordRef must be a kms:// locator, got %q — a password literal must never live in this document",
 			where, ref)
 	}
+	// path.Clean leaves a LEADING "..", so a cleanliness check alone admits ".."
+	// and "../x" — and the bare ".." passes a "../" prefix test too. The three
+	// spellings that can climb are therefore named: "..", anything under it, and
+	// "." (a ref that names the directory rather than a file in it).
 	p := strings.TrimPrefix(ref, "kms://")
-	if p == "" || p != path.Clean(p) || strings.HasPrefix(p, "/") || strings.HasPrefix(p, "../") {
+	if p == "" || p != path.Clean(p) || strings.HasPrefix(p, "/") ||
+		p == "." || p == ".." || strings.HasPrefix(p, "../") {
 		return "", fmt.Errorf("%s: passwordRef %q is not a clean relative KMS path", where, ref)
 	}
 	return p, nil
+}
+
+// orgName validates the tenant half of every id this document derives — the
+// client's `organization`, the `<org>-<app>` clientId, an account's owner — and
+// returns the value to STORE.
+//
+// The server trims what arrives and stores that, so a padded name lands under a
+// DIFFERENT string than the one the document states, the --dry-run plan prints and
+// a grep for the org finds. Most of all when the trimmed form is the reserved
+// `admin` org, which is then reached by a document that never spells it.
+//
+// Rejected rather than normalized, exactly as a username is (Account.Validate):
+// quietly rewriting a name into some other tenant is the failure being avoided,
+// not a convenience.
+func orgName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	switch {
+	case name == "":
+		return "", errors.New("provision: an org has no name")
+	case name != raw:
+		return "", fmt.Errorf("provision: org %q is not the name it would be stored under (%q)", raw, name)
+	}
+	return name, nil
 }
 
 // App is one OAuth client, declared by name + type + the hosts it is served on.
@@ -338,6 +388,9 @@ func Parse(b []byte) (*Doc, error) {
 	// Validate accounts at PARSE time, not apply time: a malformed account should
 	// fail the plan a reviewer reads, not halfway through mutating a live tenant.
 	for _, org := range d.Orgs {
+		if _, err := orgName(org.Name); err != nil {
+			return nil, err
+		}
 		owners, seen := 0, map[string]bool{}
 		for i := range org.Accounts {
 			a := &org.Accounts[i]
@@ -391,8 +444,12 @@ type OrgAccount struct {
 // userUpsertReq). Password is omitted when the reconciler resolved none, which
 // the endpoint reads as "keep the credential this account already has".
 type User struct {
-	Owner       string `json:"owner"`
-	Name        string `json:"name"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+	// Type is the row's identity class — see classByAccountType. Always sent, never
+	// omitempty: the endpoint reads it to decide whether this declaration owns the
+	// row it found, and a field that can vanish is a decision made on silence.
+	Type        string `json:"type"`
 	DisplayName string `json:"displayName,omitempty"`
 	Email       string `json:"email,omitempty"`
 	Password    string `json:"password,omitempty"`
@@ -405,8 +462,8 @@ type User struct {
 func Derive(d *Doc) ([]Client, error) {
 	var out []Client
 	for _, org := range d.Orgs {
-		if strings.TrimSpace(org.Name) == "" {
-			return nil, errors.New("provision: an org has no name")
+		if _, err := orgName(org.Name); err != nil {
+			return nil, err
 		}
 		for _, a := range org.Apps {
 			c, err := deriveApp(org, a)
@@ -593,13 +650,21 @@ type Result struct {
 type AccountResult struct {
 	Account OrgAccount
 	Action  string // "created" | "updated" | "would-upsert" (dry run)
-	// Credential says whether a secret was resolved and SENT. False means the
-	// endpoint preserved whatever the account already had — which for a brand-new
-	// account is NO credential at all, and therefore no way to log in. It is in
-	// the report because "converged" and "usable" are different facts and the
-	// operator must be able to tell them apart.
+	// Credential says whether a secret was resolved and SENT — after which the
+	// account's credential IS that material, whether the endpoint had to store it
+	// or already held it. False means the endpoint preserved whatever the account
+	// already had — which for a brand-new account is NO credential at all, and
+	// therefore no way to log in. It is in the report because "converged" and
+	// "usable" are different facts and the operator must be able to tell them
+	// apart.
 	Credential bool
-	Err        error
+	// Admin is the org-admin bit this converge set — the AUTHORITY half of the
+	// same report, derived from the account's type and carried here because the
+	// derivation is this package's. A grant that appears in no line of the run is
+	// a grant nobody reviews, and it is the one thing on an account worth reading
+	// twice.
+	Admin bool
+	Err   error
 }
 
 // Reconciler converges a live IAM onto derived clients over the admin upsert
@@ -666,7 +731,7 @@ func (r *Reconciler) ApplyAccounts(ctx context.Context, accts []OrgAccount) []Ac
 			out = append(out, AccountResult{Account: a, Err: err})
 			continue
 		}
-		res := AccountResult{Account: a, Credential: u.Password != ""}
+		res := AccountResult{Account: a, Credential: u.Password != "", Admin: u.IsAdmin}
 		if r.DryRun {
 			res.Action = "would-upsert"
 			out = append(out, res)
@@ -681,7 +746,7 @@ func (r *Reconciler) ApplyAccounts(ctx context.Context, accts []OrgAccount) []Ac
 // user builds the wire body for one account, resolving its credential.
 func (r *Reconciler) user(a OrgAccount) (User, error) {
 	u := User{
-		Owner: a.Org, Name: a.Account.Name,
+		Owner: a.Org, Name: a.Account.Name, Type: classByAccountType[a.Account.Type],
 		DisplayName: a.Account.DisplayName, Email: a.Account.Email,
 		IsAdmin: isAdminByAccountType[a.Account.Type],
 	}
