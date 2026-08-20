@@ -44,6 +44,10 @@ func wire(t *testing.T) *zip.App {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	// The tenant the declared accounts below live in. A person's org is their
+	// tenancy and the upsert checks it, so a store with no orgs can only answer
+	// refusals — which would prove nothing about the bytes a successful one emits.
+	org(t, db, "hanzo")
 	app := zip.New(zip.Config{AppName: "bootstrap-wire", DisableStartupMessage: true})
 	bootstrap.Route(app, db)
 	if err := app.Build(); err != nil {
@@ -74,6 +78,10 @@ func TestWire(t *testing.T) {
 		apps  = "/v1/iam/admin/applications/upsert"
 		users = "/v1/iam/admin/users/upsert"
 		nope  = `{"msg":"a valid service token is required","status":"error"}`
+
+		unclassed = `{"msg":"account hanzo/z must state a type of \"owner\" or \"service-account\" ` +
+			`— the class of the row this declaration owns","status":"error"}`
+		orgless = `{"msg":"account hanzoo/z names an organization that does not exist","status":"error"}`
 	)
 	bearer := "Bearer " + svcToken
 	app := wire(t)
@@ -118,9 +126,13 @@ func TestWire(t *testing.T) {
 			`{"msg":"owner and name are required","status":"error"}`},
 		{"user: no name", users, bearer, `{"owner":"hanzo"}`, 400,
 			`{"msg":"owner and name are required","status":"error"}`},
-		{"user: unusable name", users, bearer, `{"owner":"hanzo","name":"Not A Name"}`, 400,
+		{"user: unusable name", users, bearer, `{"owner":"hanzo","name":"Not A Name","type":"owner"}`, 400,
 			`{"msg":"username \"Not A Name\" is not usable: use 1-63 characters of a-z, 0-9, dot, ` +
 				`underscore or hyphen, starting with a letter or digit","status":"error"}`},
+		// The two facts a declared account must carry beyond its name: the class of
+		// the row it owns, and a tenancy that exists.
+		{"user: no type", users, bearer, `{"owner":"hanzo","name":"z"}`, 400, unclassed},
+		{"user: unknown org", users, bearer, `{"owner":"hanzoo","name":"z","type":"owner"}`, 400, orgless},
 
 		// What each upsert answers when it works. The secret is stated, so the
 		// whole body is deterministic.
@@ -132,9 +144,9 @@ func TestWire(t *testing.T) {
 			`{"organization":"hanzo","name":"hanzo-kms","clientId":"hanzo-kms","clientSecret":"s3cret"}`, 200,
 			`{"action":"updated","data":{"clientId":"hanzo-kms","clientSecret":"s3cret",` +
 				`"name":"hanzo-kms","organization":"hanzo"},"status":"ok"}`},
-		{"user: created", users, bearer, `{"owner":"hanzo","name":"svc-signer"}`, 200,
+		{"user: created", users, bearer, `{"owner":"hanzo","name":"svc-signer","type":"service-account"}`, 200,
 			`{"action":"created","data":{"name":"svc-signer","owner":"hanzo"},"status":"ok"}`},
-		{"user: updated", users, bearer, `{"owner":"hanzo","name":"svc-signer"}`, 200,
+		{"user: updated", users, bearer, `{"owner":"hanzo","name":"svc-signer","type":"service-account"}`, 200,
 			`{"action":"updated","data":{"name":"svc-signer","owner":"hanzo"},"status":"ok"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

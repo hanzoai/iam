@@ -245,12 +245,16 @@ func TestApplyAccountsCredentialFailures(t *testing.T) {
 }
 
 // TestDirCredentialsContainment — a credential locator must never become an
-// arbitrary file read. Parse rejects a traversing ref, and the resolver refuses
-// one anyway; both are asserted because either alone is one refactor from gone.
+// arbitrary file read. Parse rejects every ref that can climb (see
+// TestAccountValidation), and the resolver refuses one anyway; both are asserted
+// because either alone is one refactor from gone, and because the resolver is an
+// exported seam another one can be plugged into.
 func TestDirCredentialsContainment(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := DirCredentials(dir)("../../etc/passwd"); err == nil {
-		t.Fatal("DirCredentials followed a traversing path")
+	for _, p := range []string{"../../etc/passwd", ".."} {
+		if _, err := DirCredentials(dir)(p); err == nil {
+			t.Fatalf("DirCredentials followed %q", p)
+		}
 	}
 	// Absence is os.ErrNotExist — the PRESERVE signal, not a failure.
 	if _, err := DirCredentials(dir)("hanzo/iam/owner"); !os.IsNotExist(err) {
@@ -285,6 +289,20 @@ func TestAccountValidation(t *testing.T) {
 		{
 			"a traversing ref is refused",
 			"      - {name: bot, type: service, passwordRef: 'kms://../../etc/passwd'}",
+			"not a clean relative KMS path",
+		},
+		{
+			// The bare climb, which path.Clean leaves untouched and a "../" prefix
+			// test does not see.
+			"a ref that is only a climb is refused",
+			"      - {name: bot, type: service, passwordRef: 'kms://..'}",
+			"not a clean relative KMS path",
+		},
+		{
+			// A ref that names the directory rather than a file in it. It resolves to
+			// the credential root, so nothing about it is a credential.
+			"a ref that names no file is refused",
+			"      - {name: bot, type: service, passwordRef: 'kms://.'}",
 			"not a clean relative KMS path",
 		},
 		{

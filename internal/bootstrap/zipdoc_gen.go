@@ -17,6 +17,9 @@ func init() {
 		},
 	})
 	zip.Describe("POST /v1/iam/admin/users/upsert", zip.Doc{
-		Description: "Creates a person or updates them in place, so a deployment can\ndeclare the accounts it needs and re-run that declaration safely.\n\nPasswords are hashed before they are stored. Leave the password out and their\ncurrent one is kept, so a redeploy never locks somebody out.",
+		Description: "Creates a person or updates them in place, so a deployment can\ndeclare the accounts it needs and re-run that declaration safely.\n\nIt converges the accounts it created and no others: `type` is the class the\ndeclaration gives a row, stamped on create and required to match on update, so\nan account that entered this store some other way is answered rather than\nadopted. Their organization must exist — a person's org is their tenancy, and a\nrow under one that does not is a principal no tenant contains.\n\nPasswords are hashed before they are stored. Leave the password out and their\ncurrent one is kept, so a redeploy never locks somebody out; send the same one\nagain and it is kept too, so a steady-state re-run is not a rotation.",
+		Fields: map[string]string{
+			"person.type": "Type is the identity CLASS the declaration gives this row — what KIND of\nprincipal it is: schema.Owner for the org's one human superuser,\nschema.ServiceAccount for a machine. It is the fact that scopes a converge to\nits OWN accounts: the create path stamps it, the update path requires the\nstored row to carry the same one, and no other surface writes either word (a\nperson who signs up is stamped \"normal-user\" by the create path they reach).\nSo a declaration converges the rows it made and refuses every other, and an\nexisting row's class is never re-written into a different kind of principal.",
+		},
 	})
 }
