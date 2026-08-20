@@ -93,6 +93,42 @@ func DeleteMembership(ctx context.Context, db orm.DB, user, org string) (bool, e
 	return true, nil
 }
 
+// ForgetUser removes every membership a user holds — the companion to deleting
+// the account itself. An account that is gone must appear on no roster: the rows
+// are what MembershipsByOrg answers with, so leaving them behind puts deleted
+// people in the membership list an access review reads, in every org they were
+// ever added to. Reports how many rows it removed.
+//
+// It is keyed on the same "<owner>/<name>" natural key as the rest of the
+// relation, and it is idempotent: forgetting a user who holds nothing removes
+// nothing and is not an error, so a retried or racing delete is safe.
+//
+// This is deletion, NOT revocation, and the difference is why it is a separate
+// verb from DeleteMembership. Revoking one membership is a decision about one
+// tenancy and the home org refuses it (IsHomeOrg); dropping every row because
+// the account no longer exists is bookkeeping, and the home row goes with the
+// rest — there is no account left for it to describe.
+func ForgetUser(ctx context.Context, db orm.DB, user string) (int, error) {
+	if user == "" {
+		return 0, nil
+	}
+	rows, err := MembershipsByUser(ctx, db, user)
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, m := range rows {
+		if m == nil {
+			continue
+		}
+		if err := m.DeleteCtx(ctx); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
+}
+
 // MembershipsByUser returns every org a user may explicitly act in. A caller
 // unions the user's HOME org itself (the token resolver does), so the set is
 // complete even before any team is joined.
