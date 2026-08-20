@@ -170,9 +170,23 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			return authorizeUserError(c, "internal error")
 		}
 		// Until the state resolves there is NO trusted redirect target, so an
-		// invalid/expired/replayed state is answered in place, never redirected.
-		if st == nil || st.Used || (st.ExpireIn != 0 && now.Unix() > st.ExpireIn) {
-			return authorizeUserError(c, "the federation session is invalid or expired")
+		// unknown/spent/expired state is answered in place, never redirected.
+		//
+		// The three causes are told apart because they ask different things of the
+		// person: a spent link means the sign-in already happened here, an expired
+		// one means they were too slow, and an unknown one means the link never
+		// belonged to this estate. Collapsing them into one sentence leaves both
+		// the reader and the operator guessing, and this handler logs nothing.
+		// Telling them apart discloses nothing a caller cannot already observe: a
+		// live state falls through to the bind-cookie check and answers
+		// differently from a spent one either way.
+		switch {
+		case st == nil:
+			return authorizeUserError(c, "this sign-in link is not one we issued — start again")
+		case st.Used:
+			return authorizeUserError(c, "this sign-in link was already used — start again")
+		case st.ExpireIn != 0 && now.Unix() > st.ExpireIn:
+			return authorizeUserError(c, "this sign-in link expired — start again")
 		}
 		// Browser binding: the callback must present the same anti-forgery cookie
 		// the begin leg set in THIS browser (constant-time) — the login-CSRF /
@@ -189,7 +203,10 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		// so a CSRF-failed replay never reaches the burn.
 		if _, err := store.BurnFederationState(ctx, db, state, now); err != nil {
 			if errors.Is(err, store.ErrFederationConsumed) {
-				return authorizeUserError(c, "the federation session is invalid or expired")
+				// The race the row lock settles: a concurrent callback on the same
+				// state won the burn, so this one is the loser and says the same
+				// thing the sequential spent case says.
+				return authorizeUserError(c, "this sign-in link was already used — start again")
 			}
 			return authorizeUserError(c, "internal error")
 		}

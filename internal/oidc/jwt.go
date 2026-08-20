@@ -103,6 +103,13 @@ type Claims struct {
 	// token, which has no membership, never carries it), so one struct still serves
 	// both an app token and a user token without emitting an empty claim.
 	Orgs []schema.OrgRef `json:"orgs,omitempty"`
+	// Act names the ACTOR a delegated token was minted BY — the org key behind
+	// as(). RFC 8693 §4.1: a nested {sub} a resource server reads to see WHO acted
+	// for the subject, kept distinct from the subject the token authorizes. Absent
+	// on every ordinary token, and on token exchange — an exchange proves the
+	// subject's own token and needs no separate actor. omitempty ⇒ a token that
+	// names no actor omits it entirely.
+	Act *Actor `json:"act,omitempty"`
 	// Assumed names the organization a platform operator has stepped into
 	// (/v1/iam/assume). Absent on every ordinary token.
 	//
@@ -156,6 +163,14 @@ type Identity struct {
 	Type    string // the identity CLASS; empty for a person (schema.Program)
 	Orgs    []schema.OrgRef
 	Assumed string // the organization a platform operator has stepped into
+}
+
+// Actor is the RFC 8693 `act` claim value: the identity that requested a
+// delegated token. One field — the actor's own subject — because that is all a
+// resource server needs to attribute the act to whoever stood behind it; a longer
+// delegation chain nests another Actor here the same way, if one is ever needed.
+type Actor struct {
+	Sub string `json:"sub,omitempty"`
 }
 
 // Signer signs tokens with one key under one algorithm. Immutable after
@@ -310,6 +325,26 @@ func (s *Signer) SignUserToken(id Identity, owner, aud, azp, scope string, ttl t
 	if err != nil {
 		return "", err
 	}
+	return s.signClaims(claims)
+}
+
+// SignAct mints a user-bound access token that ALSO records the actor that
+// requested it — the credential behind as(). It is SignUserToken plus the RFC 8693
+// `act` claim: every authority claim is the TARGET USER's (subject, owner), so a
+// resource server scopes to the user's tenant exactly as for a token the user
+// obtained directly, while `act` names, separately, the org key that acted for
+// them. `azp` records the party the token is authorized to; scope is empty (an
+// as() token carries the user's full authority, narrowed only by its short life).
+// SignUserToken stays act-less, so token exchange is unchanged.
+func (s *Signer) SignAct(id Identity, owner, aud, azp string, act Actor, ttl time.Duration, now time.Time) (string, error) {
+	if s == nil {
+		return "", errors.New("jwt: nil signer")
+	}
+	claims, err := s.claims(id, owner, jwt.ClaimStrings{aud}, azp, "", "access-token", ttl, now)
+	if err != nil {
+		return "", err
+	}
+	claims.Act = &act
 	return s.signClaims(claims)
 }
 
