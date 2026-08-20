@@ -22,6 +22,22 @@ import (
 
 // seedActUser seeds an ordinary member of owner, filed under externalId and signed
 // up through "hanzo-app" (so its own application's cert signs an as() token).
+// seedActAdmin seeds a user who administers their own org — the target the as()
+// arm must refuse.
+func seedActAdmin(t *testing.T, db orm.DB, owner, name, externalId string) {
+	t.Helper()
+	u := orm.New[schema.User](db)
+	u.Owner, u.Name = owner, name
+	u.Email = name + "@" + owner + ".test"
+	u.ExternalId = externalId
+	u.SignupApplication = "hanzo-app"
+	u.IsAdmin = true
+	u.SetId(owner + "/" + name)
+	if err := u.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed act admin %s/%s: %v", owner, name, err)
+	}
+}
+
 func seedActUser(t *testing.T, db orm.DB, owner, name, externalId string) {
 	t.Helper()
 	u := orm.New[schema.User](db)
@@ -250,6 +266,33 @@ func TestAs_superAdminTarget_refused(t *testing.T) {
 	resp, _ = do(t, app, asReq("sk-live-optoken", "?id=admin/z"))
 	if resp.StatusCode != 403 {
 		t.Fatalf("reserved-org target status = %d, want 403", resp.StatusCode)
+	}
+}
+
+// An ADMIN of the key's own org may not be acted for. A token minted for an admin
+// is indistinguishable from that admin — the principal is built from the user row,
+// and nothing downstream reads the act claim — so it would mint durable keys,
+// answer the holds a person was meant to answer, and rewrite the tenant's policy.
+// This is the escalation the three-level tenancy exists to prevent, and it lives
+// entirely inside one org, so no cross-org confinement catches it.
+func TestAs_adminTarget_refused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "app-secret"})
+	seedActAdmin(t, db, "acme", "owner", "ext-owner")
+	seedActKey(t, db, "acme", "appserver", "sk-live-acmetoken", "hanzo-app", true)
+
+	resp, body := do(t, app, asReq("sk-live-acmetoken", "?id=acme/owner"))
+	if resp.StatusCode != 403 {
+		t.Fatalf("admin target status = %d, want 403 — an act key minted for the org's own admin; body=%s",
+			resp.StatusCode, body)
+	}
+
+	// The ordinary member in the same org still mints, so the refusal costs the
+	// honest case nothing: an unattended agent is its own non-admin subject.
+	seedActUser(t, db, "acme", "worker", "ext-worker")
+	resp, body = do(t, app, asReq("sk-live-acmetoken", "?id=acme/worker"))
+	if resp.StatusCode != 200 {
+		t.Fatalf("ordinary member status = %d, want 200; body=%s", resp.StatusCode, body)
 	}
 }
 
