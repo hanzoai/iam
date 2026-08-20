@@ -250,17 +250,10 @@ func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Ap
 	if owner == "" || name == "" {
 		return nil, 200, "id (owner/name) is required"
 	}
-	// Confinement asks who the TARGET is, not what the request called them. A
-	// SuperAdmin is an identity — owner "admin" OR a membership in it — and most
-	// operators are anchored in a brand org because they also do ordinary work, so
-	// reading the owner half of the id sees a tenant user and mints. A target we
-	// cannot classify is not mintable: the refusal is what the answer is spent on,
-	// so an unreadable membership set has to stop the mint rather than pass it.
-	super, err := store.IsSuperAdmin(ctx, db, owner, name)
-	if err != nil {
-		return nil, 500, "server_error"
-	}
-	if (store.IsSigningCertOwner(owner) || super) && !adminMintAllowed(clientApp) {
+	// The reserved org is answerable from the id alone, so it is asked first and
+	// needs no read: a reserved name is refused whether or not anyone holds it,
+	// which is what keeps this from reporting who exists there.
+	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp) {
 		return nil, 403, "client is not permitted to act for a reserved-org user"
 	}
 	user, err := store.GetUserByName(ctx, db, owner, name)
@@ -269,6 +262,19 @@ func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Ap
 	}
 	if user == nil {
 		return nil, 200, "the user does not exist"
+	}
+	// Membership is asked of the RESOLVED identity, which is the same key the
+	// token's own claims are built from. The lookup that resolves a user folds
+	// case and the one that reads memberships does not, so asking this of the id
+	// as written admits "hanzo/Z": the membership read misses, the gate sees an
+	// ordinary user, and the claims — built after resolution — carry the admin
+	// org anyway. One identity, asked once, is what closes that.
+	super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
+	if err != nil {
+		return nil, 500, "server_error"
+	}
+	if super && !adminMintAllowed(clientApp) {
+		return nil, 403, "client is not permitted to act for a reserved-org user"
 	}
 	if user.IsForbidden || user.IsDeleted {
 		return nil, 403, "the user is forbidden"

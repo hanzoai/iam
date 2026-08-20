@@ -142,3 +142,28 @@ func TestExchangeStillWorksForAnOrdinarySubject(t *testing.T) {
 		t.Fatalf("no token minted for an ordinary subject: %v", body)
 	}
 }
+
+// A one-character case change used to walk through the gate. The lookup that
+// RESOLVES a user folds case; the one that reads MEMBERSHIPS does not. So
+// "hanzo/Z" missed the membership read, the gate saw an ordinary user, and the
+// claims — built from the resolved row — carried the admin org regardless.
+//
+// Both spellings name one operator, so both must be refused the same way.
+func TestACaseVariantIsTheSameOperator(t *testing.T) {
+	for _, id := range []string{"hanzo/z", "hanzo/Z", "HANZO/z", "Hanzo/Z"} {
+		t.Run(id, func(t *testing.T) {
+			t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-sandbox") // general minter, no admin capability
+			app, db := newServer(t)
+			seedApp(t, db, appOpts{clientID: "hanzo-sandbox", secret: "top-secret"})
+			seedOperator(t, db, "hanzo", "z", "correct-horse")
+
+			_, body := do(t, app, keyReq(PathTokensIssue, "hanzo-sandbox", "top-secret", "?id="+id))
+			// The property is that no token comes back, however the id is spelled.
+			// A spelling that resolves nobody is refused for that reason instead,
+			// which is equally fine — what must never happen is a token.
+			if tok := mintedToken(t, body); tok != "" {
+				t.Fatalf("%s minted a token for an operator: %s", id, body)
+			}
+		})
+	}
+}
