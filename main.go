@@ -280,9 +280,13 @@ func provisionCmd() *cobra.Command {
 			// Accounts converge in the SAME run as the clients, because they are one
 			// document and a half-applied document is the state nobody can reason
 			// about. The run report is the audit record (the Job keeps the pod so
-			// `kubectl logs` can read it), so it says what each account is and
-			// whether a credential was actually delivered — "converged" and "usable"
-			// are different facts. It never prints the credential itself.
+			// `kubectl logs` can read it), so it says what each account is, WHAT
+			// AUTHORITY it asks for, and whether a credential was actually delivered —
+			// "converged", "privileged" and "usable" are three different facts and a
+			// line that shows only the first hides the other two. The admin bit is
+			// printed for every account, including the false ones: a grant is
+			// reviewable only beside the accounts that do not have it. It never prints
+			// the credential itself.
 			accounts := provision.Accounts(doc)
 			for _, res := range r.ApplyAccounts(cmd.Context(), accounts) {
 				name := res.Account.Org + "/" + res.Account.Account.Name
@@ -295,7 +299,8 @@ func provisionCmd() *cobra.Command {
 				if res.Credential {
 					cred = "credential set"
 				}
-				fmt.Fprintf(out, "  %-8s %-28s %s account, %s\n", res.Action, name, res.Account.Account.Type, cred)
+				fmt.Fprintf(out, "  %-8s %-28s %s account, isAdmin=%t, %s\n",
+					res.Action, name, res.Account.Account.Type, res.Admin, cred)
 			}
 			fmt.Fprintf(out, "%d app(s), %d account(s), %d failed\n", len(clients), len(accounts), failed)
 			if failed > 0 {

@@ -17,6 +17,6 @@ func init() {
 		},
 	})
 	zip.Describe("POST /v1/iam/admin/users/upsert", zip.Doc{
-		Description: "Creates a person or updates them in place, so a deployment can\ndeclare the accounts it needs and re-run that declaration safely.\n\nPasswords are hashed before they are stored. Leave the password out and their\ncurrent one is kept, so a redeploy never locks somebody out.",
+		Description: "Creates a person or updates them in place, so a deployment can\ndeclare the accounts it needs and re-run that declaration safely.\n\nIt DESCRIBES an account it meets and GRANTS only to one it creates: org-admin is\nnever raised on a row that already exists, and a machine identity is answered by\nname rather than adopted. Both are properties of the update itself, so a\nsteady-state reconcile — which changes neither — is unaffected.\n\nPasswords are hashed before they are stored. Leave the password out and their\ncurrent one is kept, so a redeploy never locks somebody out; send the same one\nagain and it is kept too, so a steady-state re-run is not a rotation.",
 	})
 }
