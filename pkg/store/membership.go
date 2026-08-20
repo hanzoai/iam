@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -149,6 +150,27 @@ func BackfillMemberships(ctx context.Context, db orm.DB) (int, error) {
 // row — a machine token) carries no membership, so the claim is omitted. A read
 // error on the explicit rows degrades to the home org alone rather than dropping
 // the whole claim — the home tenancy is authoritative from the user row itself.
+//
+// BEFORE MAKING THIS ROW-ONLY, READ THIS. Dropping the implicit home ref is the
+// obvious way to make a home-org revoke bite, and it is an estate-wide lockout,
+// because the rows it would rely on are not there: BackfillMemberships would seed
+// them but NOTHING CALLS IT, so a home row exists only where the invite path or
+// the founder provision wrote one. For everyone else this returns the empty set,
+// and empty is not "no orgs" downstream — it is an ANSWER:
+//
+//   - a consumer reads len(orgs)==0 as a MACHINE, so a person becomes a program;
+//   - the edge mints no org header from an empty set, so every tenant gate refuses
+//     and the ledger resolves to nothing — a funded account that cannot spend;
+//   - Orgs[0] is read as the account's own org, so even REORDERING moves the payer.
+//
+// The role is derived here too (HomeRole reads the live user row), so a seeded row
+// would also freeze a role that currently tracks IsAdmin — an admin demoted after
+// the seed would keep spending the org pool. Seeding is therefore not sufficient
+// on its own; the role would have to stay derived.
+//
+// So the sequence is: seed every home row, prove coverage is total in production,
+// keep the role derived, move machine-ness off len(orgs)==0 — THEN this may read
+// rows alone. IsHomeOrg and the `remove` refusal below hold the line until then.
 func MemberOrgRefs(ctx context.Context, db orm.DB, user *schema.User) []schema.OrgRef {
 	if user == nil || user.Owner == "" {
 		return nil
@@ -167,6 +189,30 @@ func MemberOrgRefs(ctx context.Context, db orm.DB, user *schema.User) []schema.O
 		refs = append(refs, m.AsOrgRef())
 	}
 	return refs
+}
+
+// IsHomeOrg reports whether org is the home org of the user named by the
+// "<owner>/<name>" natural key — the owner segment IS the home org, because that
+// is the key MemberOrgRefs resolves the implicit ref from.
+//
+// It exists so the one fact above can be ASKED rather than re-derived. A
+// membership row for a user's own home org is redundant with the implicit ref:
+// MemberOrgRefs emits the home org from the user row whether or not the row is
+// there, so deleting the row subtracts nothing from the `orgs` claim. A revoke
+// keyed on such a pair therefore cannot be honoured, and the caller has to be told
+// that instead of being handed a success. Stated beside the prepend it mirrors, so
+// the two cannot drift into disagreeing about which tenancy the account implies.
+//
+// The account is the grant here. Ending that access means ending the account
+// (IsForbidden / IsDeleted), which every mint already refuses to renew — not
+// deleting a row the resolver does not read. That remedy is the one the refusal
+// names, and it reaches a credential the holder ALREADY has: userClaims refuses
+// the subject, so the rotation every live session performs fails instead of
+// renewing (oidc.TestRefresh_BannedSubjectCannotRenew, _DeletedSubjectCannotRenew,
+// with _LiveSubjectStillRotates as the control).
+func IsHomeOrg(user, org string) bool {
+	owner, _, found := strings.Cut(user, "/")
+	return found && owner != "" && owner == org
 }
 
 // HomeRole is a user's coarse role in its OWN home org: an org admin administers
