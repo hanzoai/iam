@@ -3,18 +3,6 @@
 /iam-v2
 iam2
 iam-v2
-/iam
-/iamd
-
-# signing key material — keys live in KMS, never in the tree
-object/token_jwt_key.key
-object/token_jwt_key.pem
-*.pem
-*.key
-
-# frontend deps + build output
-node_modules/
-web/build/
 
 # base / sqlite data
 /data
@@ -22,14 +10,9 @@ web/build/
 *.db
 *.db-shm
 *.db-wal
-# committed test fixtures (encrypted-source migrator canvas vector)
-!cmd/migrate-v1/testdata/*.db
 
 # env / local
 .env
 .env.*
 *.local
 .DS_Store
-
-# agent scratch — never committed
-.claude/

@@ -9,7 +9,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // RFC 7662 Token Introspection + RFC 7009 Token Revocation — the two standard

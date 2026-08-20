@@ -15,7 +15,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // Handler binds the invitations operations to one orm store.
@@ -40,7 +40,7 @@ type Ref struct {
 }
 
 // Input is the writable projection of an invitation (the v1 add/update-invitation
-// body). It keeps the HTTP contract clean of the orm.Model bookkeeping fields.
+// body). It keeps the wire contract clean of the orm.Model bookkeeping fields.
 type Input struct {
 	Owner       string `json:"owner"`
 	Name        string `json:"name"`

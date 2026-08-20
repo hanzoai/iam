@@ -13,8 +13,8 @@ import (
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // Package factor is the pure multi-factor DOMAIN — what a factor IS, whether a
@@ -32,7 +32,7 @@ import (
 // is an unusable challenge.
 
 // The factor types, verbatim from v1 (object/mfa.go:42-48). "app" is TOTP — the
-// name is v1's and it is in the serialized payload, so it does not get "improved".
+// name is v1's and it is on the wire, so it does not get "improved".
 const (
 	App   = "app"
 	SMS   = "sms"

@@ -2,8 +2,8 @@
 
 package mfa_test
 
-// TOTP MFA tests driven through the REAL registered router (routes.Route installs
-// the Guard, then mfa.Route after it). Every case is a HTTP request the account
+// TOTP MFA tests driven through the REAL mounted router (routes.Route installs
+// the Guard, then mfa.Route after it). Every case is a wire request the account
 // security page sends. The assertions pin the enrollment contract (initiate mints
 // a secret the client can turn into a valid passcode; enable persists it) and the
 // security one: enrollment is self-service on your OWN record, and a regular user
@@ -30,9 +30,9 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/routes"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 const signingKid = "cert-hanzo"

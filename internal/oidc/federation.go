@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -17,10 +18,10 @@ import (
 	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/mfa/factor"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
-	"github.com/hanzoai/iam/internal/users"
+	"github.com/hanzoai/iam2/internal/mfa/factor"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
+	"github.com/hanzoai/iam2/internal/users"
 )
 
 // Identity federation — iam2 as an OIDC/OAuth2 Relying Party to external IdPs.
@@ -180,18 +181,12 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		if raw == "" || subtle.ConstantTimeCompare([]byte(hashToken(raw)), []byte(st.BindHash)) != 1 {
 			return authorizeUserError(c, "the federation session could not be verified")
 		}
-		// Burn the transaction now (single-use), ATOMICALLY: the find-and-burn runs under
-		// a row lock (GetForUpdate), so two concurrent callbacks on one state cannot both
-		// win — the loser is refused (mirrors the wallet challenge burn / TakeChallenge).
-		// A replay finds it spent. The bind-cookie check above already gated this request,
-		// so a CSRF-failed replay never reaches the burn.
-		if _, err := store.BurnFederationState(ctx, db, state, now); err != nil {
-			if errors.Is(err, store.ErrFederationConsumed) {
-				return authorizeUserError(c, "the federation session is invalid or expired")
-			}
+		// Burn the transaction now (single-use). A concurrent replay reads Used and
+		// loses; a later replay finds nothing.
+		st.Used = true
+		if err := store.SaveFederationState(ctx, db, st); err != nil {
 			return authorizeUserError(c, "internal error")
 		}
-		st.Used = true
 		clearBindCookie(c)
 
 		// Resolve the relying-party app (the trusted redirect target) and re-check
@@ -382,15 +377,12 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 		if u, err := store.GetUserByEmail(ctx, db, org, id.email); err != nil {
 			return nil, err
 		} else if u != nil {
-			linked, err := updateUser(ctx, db, u.Owner, u.Name, func(fresh *schema.User) error {
-				*binding.ref(fresh) = id.subject
-				fresh.EmailVerified = true
-				return nil
-			})
-			if err != nil {
+			*binding.ref(u) = id.subject
+			u.EmailVerified = true
+			if err := saveUser(ctx, db, u); err != nil {
 				return nil, err
 			}
-			return linked, nil
+			return u, nil
 		}
 	}
 
@@ -469,13 +461,19 @@ func federationCallbackURL(c *zip.Ctx) string {
 }
 
 // federationBaseURL is the pinned public origin the IdP callback is registered
-// under — the SAME per-brand issuer the tokens carry, resolved through the ONE
-// issuer resolver (issuer.go) keyed on the TRUSTED request host (c.Host(), which
-// ignores X-Forwarded-Host). So a brand's federation callback is registered at
-// that brand's pinned origin, header-immune and never steered to an attacker
-// origin. See resolveIssuer for the fail-closed resolution order.
+// under. In production it is the IAM_ISSUER pin (required — HIP-0112) so the
+// value is fixed and header-immune. Where IAM_ISSUER is unset (dev), it falls
+// back to the DIRECT Host header — NEVER httpx.EffectiveHost, which honors the
+// attacker-suppliable X-Forwarded-Host — so even the dev path cannot be steered
+// to an attacker origin.
 func federationBaseURL(c *zip.Ctx) string {
-	return resolveIssuer(c.Host())
+	if iss := strings.TrimSpace(os.Getenv("IAM_ISSUER")); iss != "" {
+		return strings.TrimRight(iss, "/")
+	}
+	if h := strings.TrimSpace(c.Header("Host")); h != "" {
+		return "https://" + h
+	}
+	return "https://hanzo.id"
 }
 
 // federationOrgAllowed reports whether a federated (external) identity may be
@@ -498,7 +496,7 @@ func federationBaseURL(c *zip.Ctx) string {
 // one was bypassed and still refuses the escalation.
 func federationOrgAllowed(app *schema.Application) bool {
 	org := strings.TrimSpace(app.Organization)
-	if org == "" || store.IsReservedOrg(org) {
+	if org == "" || reservedOrgs[org] {
 		return false
 	}
 	if store.IsSigningCertOwner(app.Owner) {

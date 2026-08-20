@@ -8,7 +8,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // Red-team helpers + the field-preservation guard for the on-behalf-of primitives.
@@ -40,9 +40,9 @@ func seedAttackerApp(t *testing.T, db orm.DB, owner, name, clientID, secret, pla
 }
 
 // TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin proves the mint/revoke
-// read-modify-write (updateUser) does not blank PasswordHash nor flip privilege
-// bits. updateUser reads the FULL row fresh under a row lock and mutates only
-// AccessKey/UpdatedTime, so every field the handler didn't touch is preserved.
+// read-modify-write (saveUser) does not blank PasswordHash nor flip privilege
+// bits. GetUserByName returns the FULL row (no mask), so *existing = *user
+// preserves every field the handler didn't touch.
 func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
@@ -75,7 +75,7 @@ func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
 	if !got.IsAdmin {
 		t.Errorf("IsAdmin flipped false by mint")
 	}
-	// The credential no longer lives on the user row — it is a schema.Key the
-	// resolver reads. What this red-team test guards is that mint does not mutate
-	// the user's OTHER fields, which is asserted above.
+	if got.AccessKey == "" {
+		t.Errorf("mint did not set AccessKey")
+	}
 }

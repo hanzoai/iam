@@ -1,6 +1,6 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package users registers the Phase-1 typed CRUD surface for the IAM v2 user
+// Package users mounts the Phase-1 typed CRUD surface for the IAM v2 user
 // entity on a zip App, backed by hanzoai/orm. Every operation is owner-scoped
 // by the (owner, name) natural key.
 //
@@ -18,16 +18,14 @@ import (
 	"time"
 
 
-	"github.com/google/uuid"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/cred"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/cred"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
-// API binds the user handlers to an orm store. Construct once at boot and register.
+// API binds the user handlers to an orm store. Construct once at boot and mount.
 type API struct{ db orm.DB }
 
 // New returns a user API over db — the constructor front-door handlers (e.g. the
@@ -120,32 +118,9 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 
 	u := &in.User
 	u.Owner, u.Name = owner, name
-	// The stable opaque identity (the OIDC `sub`) is ALWAYS minted server-side; a
-	// client-supplied Id is DISCARDED. Id keys the token `sub` AND the authz
-	// principal, so a caller allowed to PIN it could set it to a victim's UUID and,
-	// once two rows shared it, be resolved AS the victim (tenant-admin → SuperAdmin
-	// impersonation). A migrated user's casdoor UUID enters through the migrator's
-	// direct write, never this create path.
-	u.Id = uuid.NewString()
-	// The JSON-document store hangs no per-field DB UNIQUE constraint (the same reason
-	// clientId uniqueness is enforced at the write, not by an index), so reject the
-	// astronomically-unlikely UUID clash HERE rather than admit a second row under one
-	// subject. store.GetUserById also fails closed on a duplicate, so any slip is
-	// caught again at read.
-	if existing, err := store.GetUserById(ctx, a.db, u.Id); err != nil {
-		return nil, zip.ErrInternal(err.Error())
-	} else if existing != nil {
-		return nil, zip.ErrConflict("user id collision; retry")
-	}
 	// Never trust a client-supplied digest; the hash is derived here or nowhere.
 	u.PasswordHash, u.PasswordSalt = "", ""
 	u.PasswordType = ""
-	// Nor a client-supplied CREDENTIAL. These fields authenticate: hk- resolves a user
-	// by exact match on AccessKey (store.UserByAccessKey), so a body that carries one
-	// plants a credential the sender already knows onto the new row and can then
-	// present as that user. Minting is the ONLY writer — /v1/iam/mint-user-keys — so
-	// these are cleared here the same way the password digest is.
-	u.AccessKey, u.AccessSecret, u.AccessSecretHash = "", "", ""
 	if in.Password != "" {
 		hash, err := hashPassword(in.Password)
 		if err != nil {
@@ -222,29 +197,9 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 
 	u := &in.User
 	u.Owner, u.Name = owner, name
-	// Preserve immutable identity and creation provenance. Id is the stable OIDC
-	// `sub` (and the authz principal key): like CreatedTime it is carried from the
-	// stored row and a body-supplied value is IGNORED — mutating it would move the
-	// user's subject (breaking every session/reference) or, worse, point it at a
-	// victim's UUID for impersonation on the money path.
-	u.Id = existing.Id
+	// Preserve immutable identity and creation provenance.
 	u.CreatedTime = existing.CreatedTime
 	u.UpdatedTime = nowRFC3339()
-	// Lockout state is SERVER-OWNED, exactly like Id/CreatedTime: recordAttempt is its
-	// only writer. Carry it from the stored row and IGNORE any body value — this is a
-	// full-row write, so an omitted (or 0) signinWrongTimes would otherwise overwrite a
-	// LOCKED account's counter to 0, and a routine admin profile edit would silently
-	// unlock a user mid-attack (F-6).
-	u.SigninWrongTimes = existing.SigninWrongTimes
-	u.LastSigninWrongTime = existing.LastSigninWrongTime
-	// Credentials are carried from the stored row and any body value is IGNORED. This
-	// is a full-row write, so without this a caller with user-admin scope could plant
-	// a known hk- on any user in reach and then authenticate AS them, and could
-	// re-introduce a retired prefix at will — which is also what makes a census of
-	// the legacy population meaningless. Rotation goes through mint/revoke only.
-	u.AccessKey = existing.AccessKey
-	u.AccessSecret = existing.AccessSecret
-	u.AccessSecretHash = existing.AccessSecretHash
 	// Preserve the existing digest unless a new plaintext password is supplied.
 	u.PasswordHash = existing.PasswordHash
 	u.PasswordType = existing.PasswordType

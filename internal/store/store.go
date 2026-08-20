@@ -11,77 +11,24 @@ package store
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"strings"
-	"time"
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
-// GetApplicationByClientId resolves an OAuth2/OIDC client by its clientId,
-// DETERMINISTICALLY: among any rows carrying clientId it returns the platform-
-// preferred one — a reserved signing owner (admin/built-in) outranks a tenant, and
-// within a tier the lexically-least (owner,name) wins. clientId is globally unique
-// by the applications create/update guard, so this normally has exactly one
-// candidate; the ordering is defense-in-depth that makes a stray duplicate resolve
-// to the PLATFORM row rather than whichever row the storage engine's heap happened
-// to return first. A First() with no ORDER BY was the collidable-mint vector (safe
-// on dev sqlite by rowid, UNSPECIFIED on Postgres): a tenant that registered a row
-// with a mint-allow-listed clientId could have its row win resolution and
-// authenticate a mint. This can no longer happen — the platform row always wins,
-// and the owner-pin on the mint/capability gates denies a non-signing owner even if
-// it did. Returns (nil, nil) when no application matches.
-func GetApplicationByClientId(ctx context.Context, db orm.DB, clientId string) (*schema.Application, error) {
-	apps, err := ListApplicationsByClientId(ctx, db, clientId)
-	if err != nil {
-		return nil, err
-	}
-	return preferredApp(apps), nil
-}
-
-// ListApplicationsByClientId returns EVERY application row carrying clientId — the
-// ONE place "which applications share this clientId" is answered. It backs both the
-// deterministic single resolve above and the global-uniqueness guard the
-// applications create/update path enforces: a JSON-document store has no per-field
-// column to hang a DB UNIQUE index on, so clientId uniqueness is enforced at the
-// write, exactly as the (owner,name) natural key already is. Returns nil when
-// clientId is empty or unmatched.
-func ListApplicationsByClientId(ctx context.Context, db orm.DB, clientId string) ([]*schema.Application, error) {
+// GetApplicationByClientId resolves an OAuth2/OIDC client by its clientId.
+// Returns (nil, nil) when no application matches (a not-found is not an error
+// at this layer — the handler decides the response).
+func GetApplicationByClientId(_ context.Context, db orm.DB, clientId string) (*schema.Application, error) {
 	if clientId == "" {
 		return nil, nil
 	}
-	return orm.TypedQuery[schema.Application](db).Filter("ClientId=", clientId).GetAll(ctx)
-}
-
-// preferredApp deterministically selects the platform-preferred application among
-// rows sharing a clientId (see morePreferredApp for the total order). Returns nil
-// for an empty set, preserving GetApplicationByClientId's (nil, nil) not-found
-// contract.
-func preferredApp(apps []*schema.Application) *schema.Application {
-	var best *schema.Application
-	for _, a := range apps {
-		if a == nil {
-			continue
-		}
-		if best == nil || morePreferredApp(a, best) {
-			best = a
-		}
+	app, err := orm.TypedQuery[schema.Application](db).Filter("ClientId=", clientId).First()
+	if err == orm.ErrNotFound {
+		return nil, nil
 	}
-	return best
-}
-
-// morePreferredApp reports whether a outranks b for clientId resolution: a reserved
-// signing owner (admin/built-in) outranks a non-reserved one; within the same tier
-// the lexically-least (owner,name) wins. The order is total and independent of
-// storage/heap order, so resolution is deterministic on every backend.
-func morePreferredApp(a, b *schema.Application) bool {
-	if sa, sb := IsSigningCertOwner(a.Owner), IsSigningCertOwner(b.Owner); sa != sb {
-		return sa
-	}
-	return a.Owner+"/"+a.Name < b.Owner+"/"+b.Name
+	return app, err
 }
 
 // GetApplicationByName resolves an application by (owner, name).
@@ -102,57 +49,6 @@ func GetUserByName(_ context.Context, db orm.DB, owner, name string) (*schema.Us
 		return nil, nil
 	}
 	return u, err
-}
-
-// GetUserById resolves a user by its stable opaque Id — the UUID the OIDC `sub`
-// carries (schema.User.Id). Filters on the persisted "id" field, which the
-// domain Id dominates over the embedded orm storage id, so the value matched is
-// the UUID, never the (owner,name) key. Returns (nil, nil) when id is empty or
-// unmatched (a pre-cutover user with no Id has "" here and is never matched by a
-// non-empty subject).
-//
-// It FAILS CLOSED on multiplicity: the store has no DB UNIQUE index on Id, so if two
-// rows ever shared one UUID (a broken invariant — Id is the OIDC `sub` and the authz
-// principal key), returning the storage engine's arbitrary First() would let an
-// attacker who planted a colliding row be resolved AS a victim. More than one match
-// is therefore an error, never a silently-chosen row.
-func GetUserById(ctx context.Context, db orm.DB, id string) (*schema.User, error) {
-	if id == "" {
-		return nil, nil
-	}
-	us, err := orm.TypedQuery[schema.User](db).Filter("Id=", id).GetAll(ctx)
-	if err != nil {
-		return nil, err
-	}
-	switch len(us) {
-	case 0:
-		return nil, nil
-	case 1:
-		return us[0], nil
-	default:
-		return nil, fmt.Errorf("store: %d users share id %q — ambiguous subject", len(us), id)
-	}
-}
-
-// GetUserBySubject resolves the user a token's `sub` names — the ONE place the
-// subject→user mapping lives, shared by userinfo, get-account, token exchange,
-// and the authz principal, so `sub` is decoded the same way everywhere. The
-// discriminator is deterministic and matches how a `sub` is MINTED (subjectOf):
-// a stable opaque UUID carries no "/" and resolves by Id; an "owner/name" subject
-// (a pre-cutover user with no Id, or a machine token's app identity) resolves by
-// its natural key. Returns (nil, nil) when no user matches — a machine token's
-// app-id subject, or a since-deleted user — the callers fail closed on nil.
-func GetUserBySubject(ctx context.Context, db orm.DB, sub string) (*schema.User, error) {
-	if sub == "" {
-		return nil, nil
-	}
-	if owner, name, hasSlash := strings.Cut(sub, "/"); hasSlash {
-		if owner == "" || name == "" {
-			return nil, nil
-		}
-		return GetUserByName(ctx, db, owner, name)
-	}
-	return GetUserById(ctx, db, sub)
 }
 
 // GetUserByEmail resolves a user by (owner, email) — the email-login identifier.
@@ -224,29 +120,6 @@ func GetTokenByUserCode(_ context.Context, db orm.DB, userCode string) (*schema.
 // flag is a different, org-scoped question and never answers this one.
 func IsSuperAdmin(owner string) bool { return owner == "admin" }
 
-// reservedServiceOrg is the system organization that owns service/app principals —
-// reserved alongside the signing-cert owners, but not itself a signing owner.
-const reservedServiceOrg = "app"
-
-// IsReservedOrg reports whether owner is a SYSTEM organization a self-service,
-// federated, or otherwise customer-driven flow may NEVER land a principal in. It is
-// the ONE predicate that boundary shares (signup, onboarding, and federated
-// provisioning all consult it), so the reserved set is defined in exactly one place
-// and can never drift between those surfaces.
-//
-// The set is the SuperAdmin/signing trust boundary — admin and built-in, i.e.
-// IsSigningCertOwner, composed so a newly-reserved signing owner is covered here for
-// free — plus the service-principal org "app". A user created under any of these is a
-// platform identity, not a customer: a user under "admin" is a SuperAdmin (authz
-// derives Super from owner == "admin"), and a signing/built-in or service org is
-// platform trust material. These orgs are seeded, onboarded by a SuperAdmin, or
-// provisioned by the operator's service token — never reached by a public signup or
-// an external login. Fail-closed by construction: an unknown org is NOT reserved, so
-// legitimate tenants are unaffected while every reserved org is refused.
-func IsReservedOrg(owner string) bool {
-	return IsSigningCertOwner(owner) || owner == reservedServiceOrg
-}
-
 // GetSigningCert resolves a TRUSTED signing certificate by name (the JWKS
 // `kid`), searching only the reserved platform owners in order. A cert owned by
 // any other org is never returned, so an attacker-created cert with a colliding
@@ -268,7 +141,7 @@ func GetSigningCert(ctx context.Context, db orm.DB, name string) (*schema.Cert, 
 	return nil, nil
 }
 
-// PersistToken binds a domain Token onto the store and creates it. Used to
+// PersistToken wires a domain Token onto the store and creates it. Used to
 // persist an authorization code minted by oidc.MintCode. The id is (owner, name);
 // callers set Name to a unique value (e.g. the code) before persisting.
 func PersistToken(ctx context.Context, db orm.DB, tok *schema.Token) error {
@@ -424,37 +297,10 @@ func GetOrganizationByName(_ context.Context, db orm.DB, name string) (*schema.O
 	return o, err
 }
 
-// CreateOrganization mints a tenant organization under the "admin" owner (the v1
-// convention every other org follows), and returns it. Idempotent by construction:
-// GetOrCreate returns the existing row when two founders race the same name, so a
-// concurrent signup joins the org rather than erroring or clobbering it.
-//
-// The org owner is "admin" because that is where orgs live; this grants the org NO
-// authority. Authority is a property of the USER row — authz derives Super from
-// user.Owner == "admin" — and a self-service signup creates its user under the new
-// org, never under "admin". Callers must have refused a reserved name first
-// (IsReservedOrg), which is what keeps this from being a path to minting "admin".
-func CreateOrganization(_ context.Context, db orm.DB, name string) (*schema.Organization, error) {
-	if name == "" {
-		return nil, fmt.Errorf("organization name is required")
-	}
-	org, _, err := orm.GetOrCreate[schema.Organization](db, MembershipOwner+"/"+name, func(o *schema.Organization) {
-		o.Owner = MembershipOwner
-		o.Name = name
-		o.DisplayName = name
-		// No PasswordOptions: an empty policy means "no extra complexity rules", the
-		// same default a hand-seeded org carries.
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create organization %s: %w", name, err)
-	}
-	return org, nil
-}
-
 // AddVerificationRecord persists a freshly minted verification code. The id is
 // (owner, name); the caller sets Name to a unique value before persisting.
 // Mirrors PersistToken: the orm.Model is preserved while the caller's fields are
-// copied onto the fresh, db-bound entity.
+// copied onto the fresh, db-wired entity.
 func AddVerificationRecord(ctx context.Context, db orm.DB, rec *schema.VerificationRecord) error {
 	r := orm.New[schema.VerificationRecord](db)
 	model := r.Model
@@ -482,7 +328,7 @@ func GetLatestVerificationRecord(_ context.Context, db orm.DB, receiver string) 
 // PersistFederationState creates a fresh in-flight federation transaction. The
 // id is (owner, name); the caller sets Name to the opaque `state` token before
 // persisting. Mirrors PersistToken — the orm.Model is preserved while the
-// caller's fields are copied onto the db-bound entity.
+// caller's fields are copied onto the db-wired entity.
 func PersistFederationState(ctx context.Context, db orm.DB, st *schema.FederationState) error {
 	s := orm.New[schema.FederationState](db)
 	model := s.Model
@@ -507,61 +353,18 @@ func GetFederationState(_ context.Context, db orm.DB, state string) (*schema.Fed
 	return s, err
 }
 
-// ErrFederationConsumed is the ONE opaque refusal for a federation state that is
-// gone, already burned, expired, or that lost a concurrent burn — the single-use
-// guard's "no". Callers collapse it to the same "invalid or expired" answer so a
-// prober cannot tell a replay from a race from a forged state.
-var ErrFederationConsumed = errors.New("federation state is invalid, used, or expired")
-
-// BurnFederationState atomically consumes an in-flight federation transaction — the
-// single-use guard for the OAuth callback. The find-and-burn runs inside a
-// GetForUpdate transaction (mirroring the wallet challenge burn and TakeChallenge),
-// so two concurrent callbacks on ONE state cannot both flip Used=false→true: the
-// loser blocks until the winner commits, then reads it spent. It resolves the row's
-// real storage key via the (owner,name) query path (Name is the opaque `state`
-// token), locks by that key, refuses a used/expired row with ErrFederationConsumed
-// (no write), else sets Used and returns the burned row. A store fault returns the
-// raw error so the caller can distinguish it from the opaque refusal.
-//
-// The caller performs the browser bind-cookie (CSRF) check on a prior read BEFORE
-// calling this, so a request that fails the cookie check never reaches — and never
-// burns — a victim's pending state.
-func BurnFederationState(ctx context.Context, db orm.DB, state string, now time.Time) (*schema.FederationState, error) {
-	if state == "" {
-		return nil, ErrFederationConsumed
-	}
-	keyed, err := GetFederationState(ctx, db, state)
+// SaveFederationState read-modify-writes an existing federation transaction (the
+// callback burns it: Used=true), looking the row up by (owner, name) and
+// updating in place. Mirrors SaveToken.
+func SaveFederationState(ctx context.Context, db orm.DB, st *schema.FederationState) error {
+	existing, err := orm.Get[schema.FederationState](db, st.Owner+"/"+st.Name)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if keyed == nil {
-		return nil, ErrFederationConsumed
-	}
-	storageID := keyed.Key().Encode()
-
-	var out *schema.FederationState
-	txErr := db.RunInTransaction(ctx, func(tx orm.DB) error {
-		fresh, err := orm.GetForUpdate[schema.FederationState](tx, storageID)
-		if err != nil {
-			if errors.Is(err, orm.ErrNotFound) {
-				return ErrFederationConsumed
-			}
-			return err
-		}
-		if fresh.Used || (fresh.ExpireIn != 0 && now.Unix() > fresh.ExpireIn) {
-			return ErrFederationConsumed
-		}
-		fresh.Used = true
-		if err := fresh.UpdateCtx(ctx); err != nil {
-			return err
-		}
-		out = fresh
-		return nil
-	})
-	if txErr != nil {
-		return nil, txErr
-	}
-	return out, nil
+	model := existing.Model
+	*existing = *st
+	existing.Model = model
+	return existing.UpdateCtx(ctx)
 }
 
 // GetUserByConnector resolves the user in an organization whose federated

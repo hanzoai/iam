@@ -2,10 +2,10 @@
 
 package compat_test
 
-// End-to-end tests for the Casdoor verb aliases, driven through the REAL registered
-// router (routes.Route installs the authz Guard between the public group and the
+// End-to-end tests for the Casdoor verb aliases, driven through the REAL mounted
+// router (routes.Mount installs the authz Guard between the public group and the
 // authed routes; compat is registered after it, so gated). Every
-// case is a HTTP request a live console/gateway client sends. The assertions are
+// case is a wire request a live console/gateway client sends. The assertions are
 // the three contracts a backend swap depends on: the v1 {status,data,data2}
 // envelope shape, owner-scoping that no request parameter can widen, and — the
 // security one — that NO secret material ever appears in a response body.
@@ -30,8 +30,8 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/routes"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 const signingKid = "cert-hanzo"

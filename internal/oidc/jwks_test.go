@@ -12,7 +12,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // seedMLDSACert creates an ML-DSA-65 signing cert (raw base64 private key).

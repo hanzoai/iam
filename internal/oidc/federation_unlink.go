@@ -8,9 +8,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/schema"
-	"github.com/hanzoai/iam/internal/store"
+	"github.com/hanzoai/iam2/internal/httpx"
+	"github.com/hanzoai/iam2/internal/schema"
+	"github.com/hanzoai/iam2/internal/store"
 )
 
 // PathUnlink removes a federated link from an account: POST /v1/iam/unlink. It is
@@ -87,10 +87,8 @@ func unlink(db orm.DB) zip.Handler {
 			return httpx.Err(c, "this provider can't be unlinked")
 		}
 
-		if _, err := updateUser(ctx, db, f.User.Owner, f.User.Name, func(fresh *schema.User) error {
-			*b.ref(fresh) = ""
-			return nil
-		}); err != nil {
+		*b.ref(u) = ""
+		if err := saveUser(ctx, db, u); err != nil {
 			return httpx.Err(c, err.Error())
 		}
 		return httpx.Ok(c, nil)

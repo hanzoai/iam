@@ -8,9 +8,7 @@
 package httpx
 
 import (
-	"crypto/subtle"
 	"encoding/base64"
-	"os"
 	"strings"
 
 	"github.com/zap-proto/zip"
@@ -27,31 +25,6 @@ type Response struct {
 	Data   any    `json:"data"`
 	Data2  any    `json:"data2,omitempty"`
 	Data3  any    `json:"data3,omitempty"`
-}
-
-// ServiceToken returns the configured unified service token — the first non-empty
-// of HANZO_API_KEY / KMS_SERVICE_TOKEN / IAM_SERVICE_TOKEN — or "" (fail closed).
-// This is the ONE system credential the service-token surfaces (operator bootstrap
-// and admin provisioning) authenticate against.
-func ServiceToken() string {
-	for _, key := range []string{"HANZO_API_KEY", "KMS_SERVICE_TOKEN", "IAM_SERVICE_TOKEN"} {
-		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-// ServiceTokenAuth reports whether the request carries the unified service token as
-// a Bearer credential, compared in constant time. An unset expected token, or any
-// mismatch, is false — fail closed: no token configured means no service surface.
-func ServiceTokenAuth(c *zip.Ctx) bool {
-	expected := ServiceToken()
-	if expected == "" {
-		return false
-	}
-	got := Bearer(c)
-	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
 }
 
 // Ok writes 200 { status:"ok", data }.
@@ -101,8 +74,12 @@ func Basic(c *zip.Ctx) (id, secret string, ok bool) {
 	return id, secret, true
 }
 
-// The request host is read through the ONE header-immune accessor, zip.Ctx.Host()
-// — the same seam the OIDC issuer resolver uses. It ignores X-Forwarded-Host (zip
-// has no trusted-proxy knob), so the brand host a client authenticates to cannot
-// be spoofed by a request header. There is deliberately no EffectiveHost helper
-// here: a second accessor that honored X-Forwarded-Host would reopen that spoof.
+// EffectiveHost is the request host used to build a host-relative issuer, so
+// discovery/JWKS never split-origin (HIP-0111). Honors X-Forwarded-Host when
+// the request came through the ingress/gateway.
+func EffectiveHost(c *zip.Ctx) string {
+	if h := c.Header("X-Forwarded-Host"); h != "" {
+		return h
+	}
+	return c.Header("Host")
+}

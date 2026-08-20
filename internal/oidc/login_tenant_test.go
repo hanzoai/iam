@@ -10,7 +10,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // seedUserInOrg creates a bcrypt-credentialed user in an arbitrary org.
