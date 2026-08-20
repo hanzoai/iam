@@ -232,6 +232,14 @@ func revoke(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		// Off every roster first, then gone — the same order and the same reason
+		// as a person's delete (internal/users): a revoked service account that
+		// keeps its membership rows stays in the org's member list as a principal
+		// that may act, and once the row is deleted no caller can be told the
+		// cleanup failed.
+		if _, err := store.ForgetUser(c.Context(), db, sa.Owner+"/"+sa.Name); err != nil {
+			return httpx.Err(c, err.Error())
+		}
 		if err := sa.DeleteCtx(c.Context()); err != nil {
 			return httpx.Err(c, err.Error())
 		}
