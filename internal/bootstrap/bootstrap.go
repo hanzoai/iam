@@ -244,9 +244,18 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 		if bad := in.check(); bad != nil {
 			return bad, nil
 		}
-		in.Name = strings.TrimSpace(in.Name)
-		if in.Name == "" {
+		if strings.TrimSpace(in.Name) == "" {
 			return refuse(400, "name is required"), nil
+		}
+		// Both names are stored as they arrive — see verbatim. The organization is
+		// not decoration on a registration: resolveCert derives this app's signing
+		// identity from it, so a spelling that is only a reserved org once it has
+		// been stored signs with that org's cert.
+		if bad := verbatim("name", in.Name); bad != nil {
+			return bad, nil
+		}
+		if bad := verbatim("organization", in.Organization); bad != nil {
+			return bad, nil
 		}
 
 		existing, err := store.GetApplicationByName(ctx, db, "admin", in.Name)
@@ -368,8 +377,14 @@ func (p *person) UnmarshalJSON(b []byte) error {
 // upsertUser creates a person or updates them in place, so a deployment can
 // declare the accounts it needs and re-run that declaration safely.
 //
+// It DESCRIBES an account it meets and GRANTS only to one it creates: org-admin is
+// never raised on a row that already exists, and a machine identity is answered by
+// name rather than adopted. Both are properties of the update itself, so a
+// steady-state reconcile — which changes neither — is unaffected.
+//
 // Passwords are hashed before they are stored. Leave the password out and their
-// current one is kept, so a redeploy never locks somebody out.
+// current one is kept, so a redeploy never locks somebody out; send the same one
+// again and it is kept too, so a steady-state re-run is not a rotation.
 func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 	return func(ctx context.Context, in *person) (*reply, error) {
 		if !httpx.ServiceAuth(in.Auth) {
@@ -378,18 +393,18 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 		if bad := in.check(); bad != nil {
 			return bad, nil
 		}
-		in.Owner, in.Name = strings.TrimSpace(in.Owner), strings.TrimSpace(in.Name)
-		if in.Owner == "" || in.Name == "" {
+		if strings.TrimSpace(in.Owner) == "" || strings.TrimSpace(in.Name) == "" {
 			return refuse(400, "owner and name are required"), nil
 		}
-
-		var hash string
-		if in.Password != "" {
-			h, err := cred.Hash(in.Password)
-			if err != nil {
-				return refuse(500, "server_error"), nil
-			}
-			hash = h
+		// The row is filed under both names, so both are stored as they arrive —
+		// see verbatim. The owner is the account's TENANCY, and belonging to the
+		// reserved org is SuperAdmin (store.IsSuperAdmin), so the tenant a name
+		// resolves to is the whole of what this account is.
+		if bad := verbatim("owner", in.Owner); bad != nil {
+			return bad, nil
+		}
+		if bad := verbatim("name", in.Name); bad != nil {
+			return bad, nil
 		}
 
 		existing, err := store.GetUserByName(ctx, db, in.Owner, in.Name)
@@ -399,18 +414,73 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 		action := "created"
 		if existing != nil {
 			action = "updated"
-			existing.DisplayName = pick(in.DisplayName, existing.DisplayName)
-			existing.Email = store.NormalizeEmail(pick(in.Email, existing.Email))
-			existing.Phone = store.NormalizePhone(pick(in.Phone, existing.Phone))
-			existing.IsAdmin = in.IsAdmin
-			if hash != "" {
-				existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, cred.TypeArgon2id, ""
+			// A machine identity is not declarable. internal/serviceaccounts mints
+			// one whole: it derives the canonical <org>-<agent> name, binds the agent
+			// and issues the KEY the machine authenticates with — and refuses a
+			// collision with any principal, so nothing this endpoint created can be
+			// taken over from that side either. A declaration carries a password,
+			// which is how a PERSON proves themselves; writing one onto a machine row
+			// gives it a second kind of credential nobody minted. So a machine row is
+			// answered by name, and this endpoint stamps no machine class on a row it
+			// creates — the two surfaces make different things and neither writes the
+			// other's.
+			if existing.Machine() {
+				return refuse(400, fmt.Sprintf(
+					"account %s/%s is a machine identity, which is minted with its key by the "+
+						"service-account surface: a password declaration does not describe one",
+					in.Owner, in.Name)), nil
 			}
-			existing.UpdatedTime = now()
-			if err := existing.UpdateCtx(ctx); err != nil {
-				return refuse(500, "server_error"), nil
+			// A declaration GRANTS org-admin only to an account it creates. Raising
+			// the bit is the one thing an update does that hands a principal authority
+			// it did not have, and this endpoint has no fact that says which rows are
+			// its own: every account it has ever created carries no class at all, so
+			// "did I make this?" is unanswerable. The TRANSITION is answerable, and it
+			// is the half that matters — leaving the bit where it was found grants
+			// nothing, which is exactly what every steady-state reconcile does.
+			// Lowering it stays open: a revocation is safe from any caller.
+			if in.IsAdmin && !existing.IsAdmin {
+				return refuse(400, fmt.Sprintf(
+					"account %s/%s already exists without org-admin, and a declaration grants "+
+						"it only to an account it creates", in.Owner, in.Name)), nil
+			}
+			display, email := pick(in.DisplayName, existing.DisplayName), store.NormalizeEmail(pick(in.Email, existing.Email))
+			phone := store.NormalizePhone(pick(in.Phone, existing.Phone))
+			// A declaration presents the same credential on every run, so an unchanged
+			// one is recognised by VERIFYING the material against the stored digest
+			// rather than by its absence. A digest carries a fresh random salt, so
+			// re-hashing what is already there yields a different string and turns
+			// every steady-state reconcile into a rotation of a credential the running
+			// services still hold. Material that does not verify is new, and rotates.
+			hash, kind := existing.PasswordHash, existing.PasswordType
+			if in.Password != "" && !cred.Verify(kind, in.Password, hash) {
+				h, err := cred.Hash(in.Password)
+				if err != nil {
+					return refuse(500, "server_error"), nil
+				}
+				hash, kind = h, cred.TypeArgon2id
+			}
+			// Nothing moved, so nothing is written: a converge that rewrites an
+			// unchanged row makes `updatedTime` say when the reconciler last ran
+			// rather than when the account last changed.
+			if display != existing.DisplayName || email != existing.Email || phone != existing.Phone ||
+				in.IsAdmin != existing.IsAdmin || hash != existing.PasswordHash {
+				existing.DisplayName, existing.Email, existing.Phone = display, email, phone
+				existing.IsAdmin = in.IsAdmin
+				existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, kind, ""
+				existing.UpdatedTime = now()
+				if err := existing.UpdateCtx(ctx); err != nil {
+					return refuse(500, "server_error"), nil
+				}
 			}
 		} else {
+			var hash string
+			if in.Password != "" {
+				h, err := cred.Hash(in.Password)
+				if err != nil {
+					return refuse(500, "server_error"), nil
+				}
+				hash = h
+			}
 			// A new row obeys THE username rule; an existing one is found above and
 			// merely updated, so a legacy name is never rewritten by an upsert that
 			// happened to touch it. This path writes through orm directly rather than
@@ -440,6 +510,31 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 }
 
 // ---- helpers ----
+
+// verbatim refuses a name that is not the name it would be STORED under: what the
+// caller sent, what a reviewer reads in the plan, and what the row is filed as are
+// one string or the request is answered.
+//
+// A trim is not a courtesy here, it is a second spelling. The predicates that
+// decide what an identity IS ask by name — store.IsReservedOrg("admin ") is false
+// and store.IsSuperAdmin("admin") is true — so a padded name passes the boundary
+// as one tenant and lands in another, and the declaration that reached the
+// reserved org never spells it. Refused rather than normalized: silently
+// rewriting a name into a tenant nobody wrote down is the outcome being avoided,
+// not a convenience, and there is nothing here to be tolerant about — every
+// caller composes these names from its own configuration.
+//
+// It is stated at the ENDPOINT because that is the boundary both callers cross.
+// The CLI parses a document; the K8s operator reconciles an IAM CR's spec.users[]
+// straight to this route and crosses no parser at all, so a rule kept in the
+// document's own validator answers for only one of the two.
+func verbatim(field, raw string) *reply {
+	if name := strings.TrimSpace(raw); name != raw {
+		return refuse(400, fmt.Sprintf(
+			"%s %q is not the name it would be stored under (%q)", field, raw, name))
+	}
+	return nil
+}
 
 // resolveSecret decides the credential an upsert stores. It is the ONE place
 // public-vs-confidential is settled, split out so the rule is testable without
