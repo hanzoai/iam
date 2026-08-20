@@ -5,18 +5,18 @@
 FROM golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647 AS build
 WORKDIR /src
 
-# Cache the module graph before copying the source. iam imports private hanzoai
-# modules (hanzoai/orm, hanzoai/sqlite), so mark them private (direct fetch, no
-# sumdb) and — when a GIT_AUTH_TOKEN is mounted — rewrite github.com to an
-# authenticated fetch so `go mod download` can read them. Same pattern as
-# hanzoai/cloud; without the token it is a no-op (a public-only build still works).
-ENV GOPRIVATE=github.com/hanzoai/*
+# Cache the module graph before copying the source. Every module iam requires,
+# hanzoai/orm and hanzoai/sqlite included, is served by the public proxy and
+# recorded in the public checksum log, so this needs no credential and gets
+# verification it did not have before.
+#
+# GOPRIVATE said the opposite and that is why a credential was here at all: it
+# means "bypass the proxy AND the checksum database", and bypassing the proxy
+# routes the fetch to github.com, which then has to be authenticated. The token
+# also did not stay in the mount — `git config --global` wrote it to
+# /root/.gitconfig inside this layer, where anyone with the image can read it.
 COPY go.mod go.sum ./
-RUN --mount=type=secret,id=GIT_AUTH_TOKEN \
-    if [ -s /run/secrets/GIT_AUTH_TOKEN ]; then \
-      git config --global url."https://x-access-token:$(cat /run/secrets/GIT_AUTH_TOKEN)@github.com/".insteadOf "https://github.com/"; \
-    fi && \
-    go mod download
+RUN go mod download
 
 COPY . .
 
