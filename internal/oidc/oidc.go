@@ -167,7 +167,7 @@ func Discovery(c *zip.Ctx) error {
 		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
 		"code_challenge_methods_supported":      []string{"S256"},
 		"claims_supported": []string{
-			"iss", "sub", "aud", "iat", "exp", "nbf", "jti", "nonce", "azp",
+			"iss", "sub", "aud", "iat", "exp", "nbf", "jti", "nonce", "azp", "act",
 			"owner", "organization", "scope", "tokenType",
 			// `name` and `preferred_username` are both the USERNAME here; the human's
 			// name is `displayName`. Advertising a claim nothing emits is what left

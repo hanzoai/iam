@@ -27,12 +27,16 @@ func seedKeyUser(t *testing.T, db orm.DB, owner, name, email, hk string) *schema
 }
 
 // seedKey creates a schema.Key credential (pk-/sk- halves) owned by a tenant and
-// referencing user.
+// referencing user — in the shape the minter WRITES: the digest of the secret and
+// no plaintext. A fixture that keeps the plaintext tests a row this estate stopped
+// minting, and every resolver bug that only the digest path has would pass under it.
+// The one legacy row left is the drain test's, which is what that test is about.
 func seedKey(t *testing.T, db orm.DB, owner, name, user, pk, sk string) {
 	t.Helper()
 	k := orm.New[schema.Key](db)
 	k.Owner, k.Name, k.User = owner, name, user
-	k.AccessKey, k.AccessSecret = pk, sk
+	k.AccessKey, k.AccessSecretDigest = pk, schema.DigestSecret(sk)
+	k.State = "Active"
 	k.SetId(owner + "/" + name)
 	if err := k.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed key: %v", err)
@@ -385,8 +389,9 @@ func TestUserAndScopeByAccessKey_CarriesTheKeysOwnLimit(t *testing.T) {
 func seedScopedKey(t *testing.T, db orm.DB, owner, name, user, pk, sk, scope string) {
 	t.Helper()
 	k := orm.New[schema.Key](db)
-	k.Owner, k.Name, k.User = owner, name, user
-	k.AccessKey, k.AccessSecret, k.Scope = pk, sk, scope
+	k.Owner, k.Name, k.User, k.Scope = owner, name, user, scope
+	k.AccessKey, k.AccessSecretDigest = pk, schema.DigestSecret(sk)
+	k.State = "Active"
 	k.SetId(owner + "/" + name)
 	if err := k.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed scoped key: %v", err)
@@ -441,5 +446,145 @@ func TestUserByAccessKey_LegacyPlaintextResolvesAndIsDrained(t *testing.T) {
 	// And it still resolves — now through the digest, with nothing plaintext left.
 	if _, err := UserByAccessKey(ctx, db, secret); err != nil {
 		t.Fatalf("the drained key stopped authenticating: %v", err)
+	}
+}
+
+// seedOrgKey seeds a server key owned by an org and carrying no user — the shape
+// behind the act grant — with an explicit lifecycle flag and expiry.
+func seedOrgKey(t *testing.T, db orm.DB, owner, name, sk, state, expire string) {
+	t.Helper()
+	k := orm.New[schema.Key](db)
+	k.Owner, k.Name, k.Type = owner, name, "Organization"
+	k.AccessSecretDigest = schema.DigestSecret(sk)
+	k.State, k.ExpireTime = state, expire
+	k.SetId(owner + "/" + name)
+	if err := k.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed org key: %v", err)
+	}
+}
+
+// THE SECRET DOOR ANSWERS FOR LIVE KEYS AND ONLY LIVE KEYS.
+//
+// Three facts one table holds together, because they are the same fact seen from
+// three angles: a key in the shape the minter WRITES (a digest, no plaintext) is
+// found; a key whose lifetime ran out is not; a key someone switched off is not.
+// The first is what a private plaintext query here got wrong — every key minted
+// since digests existed was invisible to it, so the grant behind acting for a user
+// authenticated nothing but pre-digest rows. The other two are what a lookup with
+// no liveness question got wrong: a real secret went on working after the row
+// stopped being honored.
+func TestKeyBySecret_AnswersOnlyForALiveKey(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	const (
+		live     = "sk-live-ORGLIVE00000000000000000"
+		expired  = "sk-live-ORGEXPIRED0000000000000"
+		disabled = "sk-live-ORGDISABLED000000000000"
+		legacy   = "sk-live-ORGLEGACY00000000000000"
+		undated  = "sk-live-ORGUNDATED0000000000000"
+	)
+	seedOrgKey(t, db, "hanzo", "live", live, "Active", "2099-01-01T00:00:00Z")
+	seedOrgKey(t, db, "hanzo", "expired", expired, "Active", "2020-01-01T00:00:00Z")
+	seedOrgKey(t, db, "hanzo", "disabled", disabled, "Disabled", "")
+	// A row minted before either flag existed: no State, no expiry, plaintext secret.
+	// It must keep working, or the fix strands every credential already deployed.
+	k := orm.New[schema.Key](db)
+	k.Owner, k.Name, k.Type = "hanzo", "legacy", "Organization"
+	k.AccessSecret = legacy
+	k.SetId("hanzo/legacy")
+	if err := k.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed legacy org key: %v", err)
+	}
+	seedOrgKey(t, db, "hanzo", "undated", undated, "Active", "")
+
+	for _, tc := range []struct {
+		name   string
+		secret string
+		want   string // key name that must answer, "" for nobody
+	}{
+		{"the shape the minter writes: a digest and no plaintext", live, "live"},
+		{"no expiry means never expires", undated, "undated"},
+		{"a pre-digest row still answers, and is drained", legacy, "legacy"},
+		{"a key whose lifetime ran out answers for nobody", expired, ""},
+		{"a key that was switched off answers for nobody", disabled, ""},
+		{"an unknown secret", "sk-live-NOSUCH", ""},
+		{"a publishable half is not a secret", "pk-live-ORGLIVE", ""},
+		{"empty", "", ""},
+	} {
+		got, err := KeyBySecret(ctx, db, tc.secret)
+		if err != nil {
+			t.Fatalf("%s: err = %v, want none — this door reports no key, not which refusal", tc.name, err)
+		}
+		switch {
+		case tc.want == "":
+			if got != nil {
+				t.Errorf("%s: resolved %s/%s, want nobody", tc.name, got.Owner, got.Name)
+			}
+		case got == nil:
+			t.Errorf("%s: resolved nobody, want hanzo/%s", tc.name, tc.want)
+		case got.Name != tc.want:
+			t.Errorf("%s: resolved %s, want %s", tc.name, got.Name, tc.want)
+		}
+	}
+
+	// The legacy row was drained on the way through, exactly as the get-user door
+	// drains it: one resolver, one migration, not two.
+	after, err := orm.Get[schema.Key](db, "hanzo/legacy")
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if after.AccessSecret != "" || after.AccessSecretDigest != schema.DigestSecret(legacy) {
+		t.Fatalf("the drain did not run on this door: secret=%q digest=%q", after.AccessSecret, after.AccessSecretDigest)
+	}
+}
+
+// BOTH DOORS REFUSE THE SAME ROWS, AND SAY WHY. The get-user door reads a key
+// through the same resolver, so a key that stopped being honored authenticates
+// nobody there either — and the holder is told which of the two terminations it
+// was, because re-minting and switching a key back on are different acts.
+func TestUserByAccessKey_ExpiredAndDisabledResolveToNobody(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "")
+	for _, s := range []struct{ name, secret, state, expire string }{
+		{"live", "sk-live-USERLIVE000000000000000", "Active", ""},
+		{"expired", "sk-live-USEREXPIRED0000000000", "Active", "2020-01-01T00:00:00Z"},
+		{"disabled", "sk-live-USERDISABLED000000000", "Disabled", ""},
+	} {
+		k := orm.New[schema.Key](db)
+		k.Owner, k.Name, k.User = "hanzo", s.name, "hanzo/alice"
+		k.AccessSecretDigest = schema.DigestSecret(s.secret)
+		k.State, k.ExpireTime = s.state, s.expire
+		k.SetId("hanzo/" + s.name)
+		if err := k.CreateCtx(ctx); err != nil {
+			t.Fatalf("seed %s: %v", s.name, err)
+		}
+	}
+
+	u, err := UserByAccessKey(ctx, db, "sk-live-USERLIVE000000000000000")
+	if err != nil || u == nil || u.Name != "alice" {
+		t.Fatalf("a live key resolved %+v err=%v, want hanzo/alice", u, err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		secret string
+		want   KeyFailure
+	}{
+		{"ran out", "sk-live-USEREXPIRED0000000000", KeyExpired},
+		{"switched off", "sk-live-USERDISABLED000000000", KeyDisabled},
+	} {
+		got, err := UserByAccessKey(ctx, db, tc.secret)
+		if got != nil {
+			t.Fatalf("%s: authenticated %s/%s — a key that is not honored must resolve to nobody", tc.name, got.Owner, got.Name)
+		}
+		if !errors.Is(err, orm.ErrNotFound) {
+			t.Fatalf("%s: err = %v, want errors.Is(_, orm.ErrNotFound)", tc.name, err)
+		}
+		if r := Reason(err); r != tc.want {
+			t.Errorf("%s: reason = %q, want %q", tc.name, r, tc.want)
+		}
 	}
 }

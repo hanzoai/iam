@@ -58,12 +58,19 @@ func routeIssueToken(r zip.Router, db orm.DB) {
 func issueUserTokenHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		now := nowFunc()
 
-		clientApp, status, msg := authorizeMinter(ctx, db, c)
+		m, status, msg := authorizeMinter(ctx, db, c)
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
+		// The org-key arm is the as() credential: a distinct target resolution
+		// (own tenant only, by subject or externalId), signer, and audit action.
+		if m.key != nil {
+			return mintAsToken(ctx, db, c, m.key)
+		}
+
+		now := nowFunc()
+		clientApp := m.app
 		user, status, msg := mintTarget(ctx, db, c, clientApp)
 		if status != 0 {
 			return mintErr(c, status, msg)
@@ -144,7 +151,11 @@ const (
 func mintUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		clientApp, status, msg := authorizeMinter(ctx, db, c)
+		m, status, msg := authorizeMinter(ctx, db, c)
+		if status != 0 {
+			return mintErr(c, status, msg)
+		}
+		clientApp, status, msg := confidentialMinter(m)
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
@@ -172,7 +183,11 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 func revokeUserKeysHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		clientApp, status, msg := authorizeMinter(ctx, db, c)
+		m, status, msg := authorizeMinter(ctx, db, c)
+		if status != 0 {
+			return mintErr(c, status, msg)
+		}
+		clientApp, status, msg := confidentialMinter(m)
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
@@ -210,33 +225,78 @@ func revokeUserKeysHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// authorizeMinter is the ONE authentication seam for the confidential-client
-// primitives: it authenticates the client (client_secret_basic or _post,
-// constant-time) and enforces the mint allow-list. status==0 means authorized and
-// returns the client app; otherwise (status, msg) is the response to render. It
-// never reveals WHICH check failed beyond auth-vs-permission (401 vs 403).
-func authorizeMinter(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.Application, int, string) {
-	clientID, clientSecret := clientAuth(c)
-	if clientID == "" {
-		return nil, 401, "client authentication required"
+// minter is the authorized principal behind an on-behalf-of mint. Exactly one arm
+// authenticates it: a confidential CLIENT (client_secret — the console's compat
+// path and the RFC 8693 exchange), or an ORG KEY carrying the durable 'act' grant
+// (the credential behind as()). The two authenticate differently and may act on
+// different targets — an allow-listed client reaches any tenant it is granted, an
+// org key ONLY its own — so a handler reads which arm admitted the request rather
+// than an undifferentiated app.
+type minter struct {
+	app *schema.Application // the confidential client, when the client arm admitted it
+	key *schema.Key         // the org key, when the 'act'-grant arm admitted it
+}
+
+// authorizeMinter is the ONE authentication seam for the on-behalf-of primitives.
+// It admits a request by exactly one of two arms and returns the principal behind
+// it; status==0 means authorized, otherwise (status, msg) is the response to
+// render. It never reveals WHICH check failed beyond auth-vs-permission (401 vs
+// 403).
+//
+//   - Client arm: a confidential client (client_secret_basic or _post,
+//     constant-time), enforced against the mint allow-list. Fail closed — an unset
+//     allow-list permits NOTHING. Keyed on the resolved app's globally-unique
+//     clientId AND pinned to its signing owner (see mintAllowed), so a
+//     colliding-clientId tenant app is refused here.
+//   - Org-key arm: a server key (sk-) presented as a Bearer, carrying the durable,
+//     opt-in 'act' grant. A key WITHOUT the grant is REFUSED — the capability is
+//     never inherited by every server key. This arm never touches the admin
+//     allow-list and can only act within the key's OWN tenant (mintAsToken).
+func authorizeMinter(ctx context.Context, db orm.DB, c *zip.Ctx) (*minter, int, string) {
+	// Client arm takes precedence when client credentials are present, so the
+	// console and the exchange are unchanged.
+	if clientID, clientSecret := clientAuth(c); clientID != "" {
+		app, err := store.GetApplicationByClientId(ctx, db, clientID)
+		if err != nil {
+			return nil, 500, "server_error"
+		}
+		if app == nil || app.ClientSecret == "" ||
+			subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+			return nil, 401, "client authentication failed"
+		}
+		if !mintAllowed(app) {
+			return nil, 403, "client is not on the user-key mint allow-list"
+		}
+		return &minter{app: app}, 0, ""
 	}
-	app, err := store.GetApplicationByClientId(ctx, db, clientID)
-	if err != nil {
-		return nil, 500, "server_error"
+	// Org-key arm: the sk- server key behind as(). The 'act' grant is opt-in and
+	// fails closed — a real key without it authenticates but is not permitted to act.
+	if secret := bearerToken(c); secret != "" {
+		key, err := store.KeyBySecret(ctx, db, secret)
+		if err != nil {
+			return nil, 500, "server_error"
+		}
+		if key == nil {
+			return nil, 401, "client authentication failed"
+		}
+		if !key.Act {
+			return nil, 403, "the key is not granted act"
+		}
+		return &minter{key: key}, 0, ""
 	}
-	if app == nil || app.ClientSecret == "" ||
-		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
-		return nil, 401, "client authentication failed"
+	return nil, 401, "client authentication required"
+}
+
+// bearerToken extracts an `Authorization: Bearer <token>` credential, or "" when
+// the header is absent or not a Bearer. It is how the org key presents itself: a
+// single opaque secret, not the id+secret pair Basic client auth carries.
+func bearerToken(c *zip.Ctx) string {
+	const p = "Bearer "
+	h := c.Header("Authorization")
+	if len(h) > len(p) && strings.EqualFold(h[:len(p)], p) {
+		return strings.TrimSpace(h[len(p):])
 	}
-	// The capability gate: only an ALLOW-LISTED, admin-owned app may act on a user's
-	// behalf. Fail closed — an unset allow-list permits NOTHING (these hand out /
-	// rotate a user's credential; a missing config must never mean "anyone"). Keyed on
-	// the resolved app's globally-unique clientId AND pinned to its signing owner (see
-	// mintAllowed), so a colliding-clientId tenant app is refused here.
-	if !mintAllowed(app) {
-		return nil, 403, "client is not on the user-key mint allow-list"
-	}
-	return app, 0, ""
+	return ""
 }
 
 // mintTarget resolves and validates the `?id=<owner>/<name>` target user for the
@@ -276,6 +336,161 @@ func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Ap
 	}
 	if super && !adminMintAllowed(clientApp) {
 		return nil, 403, "client is not permitted to act for a reserved-org user"
+	}
+	if user.IsForbidden || user.IsDeleted {
+		return nil, 403, "the user is forbidden"
+	}
+	return user, 0, ""
+}
+
+// confidentialMinter narrows an authorized minter to the CLIENT arm, for the
+// primitives only a confidential client may drive: minting and revoking a user's
+// DURABLE key. An org key's 'act' grant authorizes short-lived, user-bound TOKENS
+// and nothing more — handing it the power to mint a member's durable credential
+// would be a broader authority than it was granted, so the key arm is refused
+// here. status==0 returns the client app.
+func confidentialMinter(m *minter) (*schema.Application, int, string) {
+	if m.app == nil {
+		return nil, 403, "an org key may not mint durable keys"
+	}
+	return m.app, 0, ""
+}
+
+// asMaxTTL is the hard ceiling on an as() token's life. An actor-minted,
+// user-bound credential is short-lived by construction: no per-application
+// lifetime lifts it past an hour, and ?lifetime narrows it further, one way.
+const asMaxTTL = time.Hour
+
+// mintAsToken mints the short-lived, user-bound token behind as(): an org key that
+// has ALREADY authenticated and proven its 'act' grant acts for a target user in
+// its OWN tenant. Every authority claim is the TARGET's — subject and owner — so a
+// resource server scopes to the user's tenant exactly as for a token the user
+// obtained directly; the org key is recorded as the actor in `act` and NEVER
+// stored or forwarded.
+//
+// Confinement is absolute and lives here, not on the admin allow-list this arm
+// never touches: the target must share the key's org, and a reserved-org key or a
+// SuperAdmin target is refused before any token is signed, so the as() credential
+// can never reach the cross-tenant identities the admin capability gates.
+func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) error {
+	now := nowFunc()
+
+	// A reserved-org key is not an operator key; it gets no reach through this arm.
+	if store.IsSigningCertOwner(key.Owner) || store.IsReservedOrg(key.Owner) {
+		return mintErr(c, 403, "the key may not act")
+	}
+
+	user, status, msg := asTarget(ctx, db, c, key.Owner)
+	if status != 0 {
+		return mintErr(c, status, msg)
+	}
+	// A SuperAdmin never becomes an as() subject, even one anchored in the key's own
+	// brand org. Reading the membership set is the question; an unreadable one refuses.
+	super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
+	if err != nil {
+		return mintErr(c, 500, "server_error")
+	}
+	if super {
+		return mintErr(c, 403, "the target may not be acted for")
+	}
+
+	// Sign under the target user's OWN application — the same app a token the user
+	// obtained directly carries, so the minted token is indistinguishable from it.
+	userApp, err := store.GetApplicationNamed(ctx, db, user.SignupApplication)
+	if err != nil {
+		return mintErr(c, 500, "server_error")
+	}
+	if userApp == nil {
+		return mintErr(c, 500, "server_error")
+	}
+	signer, err := signerFor(ctx, db, userApp, tokenIssuer(c))
+	if err != nil {
+		return mintErr(c, 500, "server_error")
+	}
+
+	aud := strings.TrimSpace(c.Query("aud"))
+	if aud == "" {
+		aud = userApp.ClientId
+	}
+	// The actor recorded in `act` is the org key's own identity; `azp` names the
+	// calling app — the app the org key belongs to, or the target's own app when the
+	// key names none, so the claim is never empty.
+	actor := Actor{Sub: key.Owner + "/" + key.Name}
+	azp := key.Application
+	if azp == "" {
+		azp = userApp.ClientId
+	}
+
+	// TTL = min(appTTL, 1h ceiling), one-way narrowable by ?lifetime — a caller may
+	// ask for LESS life and never more.
+	ttl := appTTL(userApp)
+	if ttl > asMaxTTL {
+		ttl = asMaxTTL
+	}
+	if want := seconds(param(c, "lifetime")); want > 0 && want < ttl {
+		ttl = want
+	}
+
+	natural := user.Owner + "/" + user.Name
+	id := identityOf(ctx, db, user) // the ONE user→claims resolution
+	access, err := signer.SignAct(id, user.Owner, aud, azp, actor, ttl, now)
+	if err != nil {
+		return mintErr(c, 500, "server_error")
+	}
+
+	row := &schema.Token{
+		Owner:           user.Owner,
+		Application:     userApp.Name,
+		Organization:    user.Owner,
+		User:            natural,
+		TokenType:       "Bearer",
+		ExpiresIn:       int(ttl.Seconds()),
+		AccessTokenHash: hashToken(access),
+	}
+	// The 'as-' Name prefix makes the row recognisable, revocable and introspectable
+	// as an as() token, beside the 'iut-'/'tx-' families the other mint paths write.
+	row.Name = "as-" + hashToken(access)[:32]
+	if err := store.PersistToken(ctx, db, row); err != nil {
+		return mintErr(c, 500, "server_error")
+	}
+	auditMint(ctx, db, c, schema.ActionAs, actor.Sub, natural)
+	return httpx.Ok(c, map[string]any{
+		"accessToken": access,
+		"expiresIn":   int(ttl.Seconds()),
+	})
+}
+
+// asTarget resolves the as() target user, CONFINED to org (the org key's tenant).
+// The `?id=` reference is the stable subject — a UUID, or an "owner/name" — or the
+// tenant's own externalId, the id the operator filed the member under. A missing id
+// or absent user is a v1 business error (200 + status:error); a target OUTSIDE the
+// org is a 403 (the org key's reach ends at its tenant), and a revoked user is a
+// 403 — no token is minted for either. Any store read that fails refuses (500)
+// rather than passing an unclassified target.
+func asTarget(ctx context.Context, db orm.DB, c *zip.Ctx, org string) (*schema.User, int, string) {
+	ref := strings.TrimSpace(c.Query("id"))
+	if ref == "" {
+		return nil, 200, "id is required"
+	}
+	user, err := store.GetUserBySubject(ctx, db, ref)
+	if err != nil {
+		return nil, 500, "server_error"
+	}
+	if user == nil {
+		// Not a subject this estate minted — try the tenant's own externalId, within
+		// the org so the id cannot name a member of another tenant.
+		user, err = store.GetUserByExternalId(ctx, db, org, ref)
+		if err != nil {
+			return nil, 500, "server_error"
+		}
+	}
+	if user == nil {
+		return nil, 200, "the user does not exist"
+	}
+	// Confinement: the target must live in the org key's own tenant. A subject that
+	// resolved to another org is refused here, never acted for.
+	if user.Owner != org {
+		return nil, 403, "the target is not in this organization"
 	}
 	if user.IsForbidden || user.IsDeleted {
 		return nil, 403, "the user is forbidden"
