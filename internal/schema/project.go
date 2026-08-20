@@ -12,11 +12,6 @@ import "github.com/hanzoai/orm"
 // "owner/name". Name is slug-safe: it doubles as the deploy site slug and the
 // cross-surface `?project=` key. Projects carry no secrets, so there is no Mask.
 //
-// Workspace names the parent workspace in the Organization → Workspace → Project
-// hierarchy (schema.Workspace, keyed by (Owner, Workspace)). It is empty for an
-// org-level project — a legacy project predating workspaces, or one attached
-// directly to its org — which keeps every existing project valid unchanged.
-//
 // Tags carries orm:"serialize" so the column backends persist it through its
 // string sibling; the default SQLite store round-trips the array inside the
 // entity JSON blob and leaves the sibling empty.
@@ -29,7 +24,6 @@ type Project struct {
 	DisplayName  string `json:"displayName"`
 	Description  string `json:"description"`
 	Organization string `json:"organization"`
-	Workspace    string `json:"workspace"`
 
 	Tags  []string `json:"tags" orm:"serialize" datastore:"-"`
 	Tags_ string   `json:"-"`

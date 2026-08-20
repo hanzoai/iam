@@ -19,7 +19,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam2/internal/schema"
 )
 
 // tokenId renders the (owner, name) pair as the orm row id so Get, Update, and
@@ -122,8 +122,8 @@ func addToken(db orm.DB) zip.TypedHandler[schema.Token, tokenResult] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
-		// orm.New binds the store and applies defaults; copy the decoded domain
-		// fields over it, then restore the bound Model so its db handle and key
+		// orm.New wires the store and applies defaults; copy the decoded domain
+		// fields over it, then restore the wired Model so its db handle and key
 		// survive the assignment.
 		t := orm.New[schema.Token](db)
 		model := t.Model
