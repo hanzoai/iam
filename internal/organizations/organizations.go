@@ -15,6 +15,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -159,7 +160,29 @@ func (h *OrganizationAPI) Get(ctx context.Context, in *GetOrganizationInput) (*s
 
 // List returns the organizations you can see, newest first. Narrow it to one
 // parent account, and set a limit and offset to page through the rest.
+//
+// READING THE REGISTRY IS AN OPERATOR ACT, and the handler now says so itself.
+//
+// It never did: the scope lived only in the Guard, which refuses a non-operator
+// GET with 403 before the handler runs. That was true and sufficient for as long
+// as HTTP was the only way in. It stopped being sufficient when the same typed op
+// became reachable over the agent door, where a request arrives at the handler
+// with no middleware in front of it — and this handler, reading no principal and
+// treating an absent Owner selector as no filter, answered with the whole table.
+// Measured on production: 670 organizations, 898KB, to a caller holding no
+// credential at all.
+//
+// So the fact moves to where every door reaches it. The Guard keeps its own
+// refusal — two checks of one rule is not two rules, and the outer one still
+// spends nothing to refuse — but the rule no longer depends on which door was
+// used. A caller who wants the organizations they can ACT in asks Search, which
+// answers everyone from their own memberships.
 func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) (*ListOrganizationsOutput, error) {
+	p, ok := authz.From(ctx)
+	if !ok || !p.Super {
+		return nil, zip.ErrForbidden("forbidden")
+	}
+
 	q := orm.TypedQuery[schema.Organization](h.DB)
 	if in.Owner != "" {
 		q = q.Filter("Owner=", in.Owner)
