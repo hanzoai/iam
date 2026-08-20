@@ -125,6 +125,47 @@ func TestAdminGate(t *testing.T) {
 	}
 }
 
+// A RESERVED SYSTEM ORG IS NOT A TENANT, and no app may provision into one.
+//
+// create takes the target org from the request body verbatim, and a row's HOME org
+// IS its platform authority — authz sets Principal.Super from memberOf(adminOrg),
+// and memberOf answers home-or-membership. So an app holding only the mint
+// capability could post {"organization":"admin"} and mint a live principal, with
+// pk-/sk- keys, that authenticates as a SuperAdmin: "may provision identities"
+// became platform sudo, cross-tenant, in one call.
+//
+// The same call in the signup org mints a machine-typed row, and a machine-typed
+// row in that org names the platform's own balance as its payer — so the identical
+// unbound gate reached the money too. The org boundary is what both need.
+//
+// A human SuperAdmin keeps the ability: that authority IS what the reserved org
+// denotes, so refusing it there would deny the only principal allowed to hold it.
+func TestAdminGate_ReservedOrgIsNotATenant(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-team")
+	minter := &authz.Principal{App: "hanzo-team", AppOwner: "admin"}
+	for _, org := range []string{"admin", "built-in", "app"} {
+		if admin(minter, org) {
+			t.Errorf("a mint-cap app must NOT provision into the reserved org %q", org)
+		}
+		// …and the same refusal holds for a human org admin, whose authority is
+		// its OWN tenant and never a system org.
+		if admin(&authz.Principal{Org: org, Admin: true}, org) {
+			t.Errorf("a non-super org admin must NOT provision into the reserved org %q", org)
+		}
+		if !admin(&authz.Principal{Org: "admin", Super: true}, org) {
+			t.Errorf("a SuperAdmin must still provision into %q", org)
+		}
+	}
+	// A TENANT IS UNAFFECTED — including the signup org, which is not reserved
+	// (making it reserved would refuse every self-serve signup). The refusal above
+	// must narrow the reserved set and nothing else.
+	for _, org := range []string{"hanzo", "lux", "zoo", "acme"} {
+		if !admin(minter, org) {
+			t.Errorf("a mint-cap app must still provision into the tenant org %q", org)
+		}
+	}
+}
+
 // read gates the LIST surface: the mint cap is a superset (any org); the read-only
 // cap suffices but ONLY within the org the app's <org>-<app> name binds it to, so
 // a leaked reader credential enumerates one tenant and never another.

@@ -40,6 +40,7 @@ import (
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // Paths — the verb face the live consumers call (team's bot member sync reads
@@ -298,8 +299,32 @@ func orgFromBody(body []byte) string {
 // confidential client must hold the mint capability; a human must be a
 // SuperAdmin or an admin of the target org itself, so a tenant admin can never
 // provision an identity in another tenant.
+//
+// A RESERVED SYSTEM ORG IS NOT A TENANT, and the mint capability does not reach
+// one. store.IsReservedOrg is the same predicate signup, onboarding, federated
+// provisioning and membership grants already consult, composed the same way
+// memberships.mayGrant composes it — reserved unless the caller is a SuperAdmin —
+// so the set of orgs a customer-driven flow may never land a principal in is
+// stated once and this surface stops being the exception.
+//
+// It was the exception, and the escalation was total: create takes the target org
+// from the request body verbatim, and a row's HOME org is its platform authority
+// (authz builds Principal.Super from memberOf(adminOrg), and memberOf answers
+// home-or-membership). So `{"organization":"admin"}` minted a live principal in
+// the reserved org, holding pk-/sk- keys, that authenticates as a SuperAdmin —
+// turning "may provision identities" into platform sudo, cross-tenant, in one
+// call. The app principal itself is never Admin and never Super by construction;
+// nothing stopped it CREATING one that is.
+//
+// The capability is unbound by org for a reason (an orchestrator provisions for
+// every tenant), so the binding that matters is not which tenant but whether the
+// target is a tenant at all. A human SuperAdmin keeps the ability, because that
+// is already the authority the reserved org denotes.
 func admin(p *authz.Principal, org string) bool {
 	if p == nil || org == "" {
+		return false
+	}
+	if store.IsReservedOrg(org) && !p.Super {
 		return false
 	}
 	if p.App != "" {
