@@ -80,11 +80,19 @@ const jwksTTL = 60 * time.Second
 // not information that expires with a database connection, and 500ing here does not
 // degrade one endpoint: it stops every service that verifies a token offline.
 type keySet struct {
-	mu   sync.Mutex
-	body []byte
-	etag string
-	at   time.Time
+	mu     sync.Mutex
+	body   []byte
+	etag   string
+	at     time.Time // when the held set was read
+	failed time.Time // when a read last failed; zero once one succeeds
 }
+
+// jwksRetry is how often a store that is failing is asked again while a good set is
+// still held. The read happens under the lock — deliberately, so a hundred callers
+// arriving at once cause ONE read rather than a hundred — and the same lock is what
+// makes a failing store expensive: without a floor here every request would queue
+// behind its own attempt, which is slower than the per-request read this replaced.
+const jwksRetry = 5 * time.Second
 
 // current returns the held set, calling read only when nothing is held or the TTL has
 // passed. It knows nothing about certificates or a database — it holds bytes.
@@ -94,14 +102,18 @@ func (k *keySet) current(read func() ([]byte, string, error)) ([]byte, string, e
 	if k.body != nil && time.Since(k.at) < jwksTTL {
 		return k.body, k.etag, nil
 	}
+	if k.body != nil && !k.failed.IsZero() && time.Since(k.failed) < jwksRetry {
+		return k.body, k.etag, nil // asked recently and it did not answer; the held set still verifies
+	}
 	body, etag, err := read()
 	if err != nil {
 		if k.body != nil {
+			k.failed = time.Now()
 			return k.body, k.etag, nil // the keys we already published still verify
 		}
 		return nil, "", err
 	}
-	k.body, k.etag, k.at = body, etag, time.Now()
+	k.body, k.etag, k.at, k.failed = body, etag, time.Now(), time.Time{}
 	return body, etag, nil
 }
 

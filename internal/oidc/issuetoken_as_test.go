@@ -347,6 +347,27 @@ func TestAs_reservedOrgKey_refused(t *testing.T) {
 	}
 }
 
+// The KEY's own org is the thing under test here, not the target's.
+//
+// TestAs_reservedOrgKey_refused above asks for `admin/z`, and a reserved TARGET
+// is refused earlier in asTarget — so that test passes with the key gate deleted
+// and proves nothing about it. Removing the guard was measured: every test in
+// this package still passed. This one names a target the target-gate admits, so
+// the only thing left that can refuse is the key's own reserved owner.
+func TestAs_reservedOrgKey_ordinaryTarget_refused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "app-secret"})
+	// A tenant user: asTarget has no quarrel with this one.
+	seedActUser(t, db, "hanzo", "alice", "ext-alice")
+	// The key, though, is owned by a reserved org and granted act.
+	seedActKey(t, db, "admin", "op", "sk-live-adminop2", "hanzo-app", true)
+
+	resp, body := do(t, app, asReq("sk-live-adminop2", "?id=hanzo/alice"))
+	if resp.StatusCode != 403 {
+		t.Fatalf("reserved-org key, ordinary target = %d, want 403; body=%s", resp.StatusCode, body)
+	}
+}
+
 // The 'act' grant authorizes short-lived TOKENS only — never a member's DURABLE
 // key. An org key presented to keys/mint is refused; that primitive stays a
 // confidential-client capability.
