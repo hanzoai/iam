@@ -72,7 +72,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("listWebauthnCredentials"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials/get", getWebauthnCredential(db),
+	zip.Get[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials/get", getWebauthnCredential(db),
 		zip.WithOperationID("getWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 

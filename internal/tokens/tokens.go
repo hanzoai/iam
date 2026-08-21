@@ -65,7 +65,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("listTokens"),
 		zip.WithTags("tokens"))
 
-	zip.Post[tokenKey, tokenResult](app, "/v1/iam/tokens/get", getToken(db),
+	zip.Get[tokenKey, tokenResult](app, "/v1/iam/tokens/get", getToken(db),
 		zip.WithOperationID("getToken"),
 		zip.WithTags("tokens"))
 

@@ -98,10 +98,10 @@ func TestEntityOf(t *testing.T) {
 		// "applications" and matched the app self-read clause, while this native
 		// route stayed singular, matched nothing, and 403'd the same caller.
 		"/v1/iam/applications": "applications",
-		"/v1/iam/audit-logs":  "audit-logs",
-		"/mcp":                "",
-		"/healthz":            "",
-		"/v1/iam/":            "",
+		"/v1/iam/audit-logs":   "audit-logs",
+		"/mcp":                 "",
+		"/healthz":             "",
+		"/v1/iam/":             "",
 	}
 	for path, want := range cases {
 		if got := entityOf(path); got != want {
