@@ -20,6 +20,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/pkg/schema"
 
 	"github.com/hanzoai/iam/internal/testhttp"
@@ -82,7 +83,7 @@ func seedRSACert(t *testing.T, db orm.DB, name string) {
 	c.Owner = "admin"
 	c.Name = name
 	c.CryptoAlgorithm = "RS256"
-	c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
+	keyring.Set(name, rsaKeyToPEM(t, sharedKey(t))) // deployment-supplied; the row never carries it
 	c.SetId("admin/" + name)
 	if err := c.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed cert: %v", err)

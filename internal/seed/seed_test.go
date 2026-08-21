@@ -5,8 +5,6 @@ package seed
 
 import (
 	"context"
-	"crypto/x509"
-	"encoding/pem"
 	"os"
 	"path/filepath"
 	"testing"
@@ -77,9 +75,14 @@ func TestFromInitData_SeedsAndSubstitutesEnv(t *testing.T) {
 	if prov.ClientId != "Iv23-real-github-id" {
 		t.Fatalf("env not substituted: clientId=%q", prov.ClientId)
 	}
+	// The cert is seeded as metadata, and the key material the fixture carries is
+	// NOT stored: init_data.json rides a ConfigMap, and a signing key must not.
 	cert, _ := orm.Get[schema.Cert](db, "admin/cert-hanzo")
-	if cert == nil || cert.PrivateKey != "PEMDATA" {
-		t.Fatalf("cert key not substituted: %+v", cert)
+	if cert == nil {
+		t.Fatal("cert not seeded")
+	}
+	if cert.PrivateKey != "" {
+		t.Fatalf("init_data key material reached the store: %q", cert.PrivateKey)
 	}
 }
 
@@ -112,69 +115,36 @@ func TestSubstituteEnv_UnsetBecomesEmpty(t *testing.T) {
 	}
 }
 
-// TestSeed_GeneratesSigningKeyForKeylessReservedCert proves the fix for the empty
-// JWKS: a reserved-org signing cert arrives from init_data WITHOUT key material
-// (secrets can't ride a ConfigMap), and the seed mints a parseable keypair so the
-// JWKS endpoint publishes a key and iam can sign — while an SSL cert and a
-// tenant-owned cert are deliberately left keyless.
-func TestSeed_GeneratesSigningKeyForKeylessReservedCert(t *testing.T) {
+// Seeding a cert stores its IDENTITY and none of its key material — owner, name,
+// algorithm, expiry, all of which the JWKS publishes anyway. The key comes from
+// what the deployment mounts (internal/keyring), so there is nothing here to
+// write, and a fixture that states one states it in vain.
+func TestSeed_StoresCertMetadataAndNoKeyMaterial(t *testing.T) {
 	db := openDB(t)
 	ctx := context.Background()
 	data := &initData{Certs: []*schema.Cert{
-		{Owner: "admin", Name: "cert-hanzo", Type: "x509", CryptoAlgorithm: "RS256"}, // reserved, keyless → keyed
-		{Owner: "admin", Name: "cert-es", Type: "x509", CryptoAlgorithm: "ES256"},    // reserved ECDSA → keyed
-		{Owner: "admin", Name: "cert-ssl", Type: "SSL", CryptoAlgorithm: "RS256"},    // SSL → left keyless
-		{Owner: "hanzo", Name: "cert-tenant", CryptoAlgorithm: "RS256"},              // tenant → left keyless
-	}}
-	if _, err := Apply(ctx, db, data); err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-
-	rsaCert, err := orm.Get[schema.Cert](db, "admin/cert-hanzo")
-	if err != nil {
-		t.Fatalf("get cert-hanzo: %v", err)
-	}
-	if rsaCert.PrivateKey == "" {
-		t.Fatal("keyless reserved RS256 cert got no signing key → JWKS would be empty")
-	}
-	block, _ := pem.Decode([]byte(rsaCert.PrivateKey))
-	if block == nil {
-		t.Fatal("generated RSA key is not valid PEM")
-	}
-	if _, err := x509.ParsePKCS1PrivateKey(block.Bytes); err != nil {
-		t.Fatalf("generated RSA key not parseable PKCS1: %v", err)
-	}
-
-	esCert, _ := orm.Get[schema.Cert](db, "admin/cert-es")
-	if esCert == nil || esCert.PrivateKey == "" {
-		t.Fatal("keyless reserved ES256 cert got no signing key")
-	}
-	if b, _ := pem.Decode([]byte(esCert.PrivateKey)); b == nil {
-		t.Fatal("generated EC key is not valid PEM")
-	}
-
-	if ssl, _ := orm.Get[schema.Cert](db, "admin/cert-ssl"); ssl == nil || ssl.PrivateKey != "" {
-		t.Error("SSL cert must not be given a signing key")
-	}
-	if ten, _ := orm.Get[schema.Cert](db, "hanzo/cert-tenant"); ten == nil || ten.PrivateKey != "" {
-		t.Error("non-reserved tenant cert must not be given a signing key")
-	}
-}
-
-// TestSeed_PreservesExplicitCertKey: a cert that already carries key material is
-// left untouched (no rotation on re-seed → stable kid+key).
-func TestSeed_PreservesExplicitCertKey(t *testing.T) {
-	db := openDB(t)
-	ctx := context.Background()
-	data := &initData{Certs: []*schema.Cert{
+		{Owner: "admin", Name: "cert-hanzo", Type: "x509", CryptoAlgorithm: "RS256"},
+		{Owner: "admin", Name: "cert-es", Type: "x509", CryptoAlgorithm: "ES256"},
+		// A fixture that states key material anyway: it is identity that is stored,
+		// so the declared key reaches no row.
 		{Owner: "admin", Name: "cert-explicit", Type: "x509", CryptoAlgorithm: "RS256", PrivateKey: "EXISTING-PEM"},
+		{Owner: "hanzo", Name: "cert-tenant", CryptoAlgorithm: "RS256"},
 	}}
 	if _, err := Apply(ctx, db, data); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	c, _ := orm.Get[schema.Cert](db, "admin/cert-explicit")
-	if c == nil || c.PrivateKey != "EXISTING-PEM" {
-		t.Fatalf("explicit cert key was overwritten: %q", c.PrivateKey)
+
+	for _, id := range []string{"admin/cert-hanzo", "admin/cert-es", "admin/cert-explicit", "hanzo/cert-tenant"} {
+		c, err := orm.Get[schema.Cert](db, id)
+		if err != nil || c == nil {
+			t.Fatalf("%s not seeded: %v", id, err)
+		}
+		if c.PrivateKey != "" {
+			t.Errorf("%s: key material reached the store: %q", id, c.PrivateKey)
+		}
+		if c.CryptoAlgorithm == "" {
+			t.Errorf("%s: metadata not seeded", id)
+		}
 	}
 }
 

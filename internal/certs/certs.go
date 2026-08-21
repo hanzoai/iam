@@ -105,8 +105,15 @@ func (h *Handler) Get(_ context.Context, in *Ref) (*schema.Cert, error) {
 }
 
 // Create adds a signing certificate your applications can verify tokens against
-// — the call you make to bring your own key, or to stage the next one before a
-// rotation. A name already used in your organization is refused.
+// — the call you make to stage the next one before a rotation. A name already
+// used in your organization is refused.
+//
+// It registers the certificate's IDENTITY: its name (which is the JWKS `kid`),
+// its algorithm, its expiry. Key material does not travel this way and cannot:
+// the private key is not part of the Cert's JSON, so it is neither served here
+// nor accepted here. It is supplied to the process by the deployment, under the
+// name registered here (internal/keyring). Staging a rotation is therefore two
+// halves — this call names the key, and the deployment provides it.
 func (h *Handler) Create(ctx context.Context, in *schema.Cert) (*schema.Cert, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")

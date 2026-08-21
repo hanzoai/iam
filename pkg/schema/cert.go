@@ -20,7 +20,8 @@ import "github.com/hanzoai/orm"
 // CreatedTime is the RFC3339 creation stamp carried verbatim from v1, distinct
 // from the orm-managed CreatedAt / UpdatedAt on the embedded Model. Certificate
 // and PrivateKey hold PEM text for x509 certs and raw base64 key material for
-// ML-DSA certs.
+// ML-DSA certs — but only Certificate is stored: the private half is not a
+// column and is filled on load from internal/keyring (see the field).
 type Cert struct {
 	orm.Model[Cert]
 
@@ -43,12 +44,32 @@ type Cert struct {
 	AccessSecret     string `json:"accessSecret"`
 
 	Certificate string `json:"certificate"`
-	PrivateKey  string `json:"privateKey"`
+
+	// PrivateKey is IN MEMORY ONLY, and `json:"-"` is what makes that true rather
+	// than merely intended. Every orm backend persists an entity as
+	// json.Marshal(entity) — sqlite and zap alike — so the json tag IS the
+	// storage contract, and a field it excludes reaches no row from any write
+	// path: the seed, the admin CRUD, or one nobody has written yet. (An
+	// `xorm:"-"` here would read as the same promise and keep none of it: the
+	// column mapper is not what writes this entity.) pkg/store/certkey_test.go
+	// holds the store to it.
+	//
+	// This key signs every token this IAM issues, for every org, so the set of
+	// places it can be read from is worth keeping to one: a live process that the
+	// deployment handed it to.
+	//
+	// The value is filled on load by internal/keyring, from the material the
+	// deployment mounts. Everything downstream — the signer, the verifier, the
+	// JWKS, the session-cookie key — reads this field exactly as it always did.
+	// Excluding it from JSON also takes key material off the API in BOTH
+	// directions: it is neither served nor accepted.
+	PrivateKey string `json:"-"`
 }
 
 // Mask returns a copy of the cert with its secret material removed — the one
 // place a Cert is prepared to cross the API. The private key signs every token
-// this IAM issues: it lives in the store, signs in process, and is never served.
+// this IAM issues: it is mounted by the deployment, held in memory, signs in
+// process, and is never stored and never served.
 // Relying parties read the PUBLIC half from the JWKS (RFC 7517), which is
 // derived from Certificate. AccessSecret is the ACME/DNS provider credential and
 // is secret for the same reason. Returns nil for a nil cert.
