@@ -276,11 +276,11 @@ func groupsOf(orgs []schema.OrgRef) []string {
 // nil for a machine token, which omits the claim — the Signer stays decoupled from
 // schema.User, so the caller resolves the tenancy (store.MemberOrgRefs) and passes
 // it.
-func (s *Signer) Sign(app *schema.Application, id Identity, scope string, ttl time.Duration, now time.Time) (string, error) {
+func (s *Signer) Sign(app *schema.Application, id Identity, scope, resource string, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
 	}
-	claims, err := s.claims(id, app.Organization, audienceFor(app, ""), app.ClientId, scope, "access-token", ttl, now)
+	claims, err := s.claims(id, app.Organization, audienceFor(app, resource), app.ClientId, scope, "access-token", ttl, now)
 	if err != nil {
 		return "", err
 	}

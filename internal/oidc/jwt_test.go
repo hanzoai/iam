@@ -33,7 +33,7 @@ func TestSign_RoundTripAndClaims(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	app := testApp()
 
-	tokenStr, err := s.Sign(app, Identity{Id: "hanzo/alice", Email: "alice@hanzo.ai", Name: "alice"}, "openid profile", time.Hour, now)
+	tokenStr, err := s.Sign(app, Identity{Id: "hanzo/alice", Email: "alice@hanzo.ai", Name: "alice"}, "openid profile", "", time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestSign_ExpiredTokenRejected(t *testing.T) {
 	key := testKey(t)
 	s := NewRSASigner(key, "cert-hanzo", "https://iam.hanzo.ai")
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, err := s.Sign(testApp(), Identity{Id: "u"}, "openid", time.Minute, now)
+	tokenStr, err := s.Sign(testApp(), Identity{Id: "u"}, "openid", "", time.Minute, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestSign_WrongKeyRejected(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
 	other := testKey(t)
 	now := time.Unix(1_800_000_000, 0)
-	tokenStr, _ := s.Sign(testApp(), Identity{Id: "u"}, "openid", time.Hour, now)
+	tokenStr, _ := s.Sign(testApp(), Identity{Id: "u"}, "openid", "", time.Hour, now)
 	var claims Claims
 	_, err := jwt.ParseWithClaims(tokenStr, &claims, func(*jwt.Token) (any, error) { return &other.PublicKey, nil },
 		jwt.WithValidMethods([]string{"RS256"}))
@@ -122,7 +122,7 @@ func TestNewRSASignerFromCert_PEMRoundTrip(t *testing.T) {
 	}
 	// Sign+verify to prove the parsed key works.
 	now := time.Unix(1_800_000_000, 0)
-	str, err := s.Sign(testApp(), Identity{Id: "u"}, "openid", time.Hour, now)
+	str, err := s.Sign(testApp(), Identity{Id: "u"}, "openid", "", time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestSignNamesTheUsernameNeverTheDisplayName(t *testing.T) {
 
 	// Both token shapes, from the one claim builder — an id_token that disagreed
 	// with its access token would be the same defect wearing a different name.
-	access, err := s.Sign(testApp(), z, "openid profile", time.Hour, now)
+	access, err := s.Sign(testApp(), z, "openid profile", "", time.Hour, now)
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestSignNamesTheUsernameNeverTheDisplayName(t *testing.T) {
 	// A principal with no profile (a machine token, or a since-deleted user) omits
 	// every profile claim rather than emitting it empty — omitempty is what keeps
 	// one struct serving both token shapes.
-	bare, err := s.Sign(testApp(), Identity{Id: "hanzo/app"}, "openid", time.Hour, now)
+	bare, err := s.Sign(testApp(), Identity{Id: "hanzo/app"}, "openid", "", time.Hour, now)
 	if err != nil {
 		t.Fatalf("Sign bare: %v", err)
 	}
@@ -254,7 +254,7 @@ func TestSign_GroupsCarriesMembershipNotTheHomeOrg(t *testing.T) {
 		{Org: "admin", Role: store.RoleAdmin}, // the operator grant
 		{Org: "lux", Role: store.RoleAdmin},
 	}}
-	tokenStr, err := s.Sign(testApp(), id, "openid profile", time.Hour, now)
+	tokenStr, err := s.Sign(testApp(), id, "openid profile", "", time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestSign_GroupsCarriesMembershipNotTheHomeOrg(t *testing.T) {
 // "was never asked", and omitempty is what keeps those distinguishable.
 func TestSign_MachineTokenOmitsGroups(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
-	tokenStr, err := s.Sign(testApp(), Identity{Id: "app/machine"}, "openid", time.Hour, time.Unix(1_800_000_000, 0))
+	tokenStr, err := s.Sign(testApp(), Identity{Id: "app/machine"}, "openid", "", time.Hour, time.Unix(1_800_000_000, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
