@@ -5,16 +5,23 @@ package certs
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"path/filepath"
 	"testing"
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
-// handler opens a fresh in-memory-ish store and binds the certs handler to it.
+// handler opens a fresh store and binds the certs handler to it.
 func handler(t *testing.T) *Handler {
 	t.Helper()
 	_ = schema.Kinds()
@@ -29,7 +36,7 @@ func handler(t *testing.T) *Handler {
 	return &Handler{db: db}
 }
 
-// raw reads the persisted row directly, bypassing Mask, so a test can see what
+// raw reads the persisted row directly, bypassing Mask, so a test sees what
 // actually reached the store rather than what the API is willing to show.
 func raw(t *testing.T, h *Handler, owner, name string) *schema.Cert {
 	t.Helper()
@@ -40,41 +47,72 @@ func raw(t *testing.T, h *Handler, owner, name string) *schema.Cert {
 	return c
 }
 
-// A METADATA PUT DOES NOT DROP THE CERT FROM THE JWKS. The published certificate
-// and the ACME/DNS secret are masked out of every read, so a client editing a
-// display name sends them back empty — and overlaying that blank onto the row
-// would erase the public half, taking the `kid` out of the JWKS and making every
-// token signed under it unverifiable. An empty half in the input keeps the row's.
-func TestUpdate_MetadataPUTKeepsSecretMaterial(t *testing.T) {
+// selfSignedPEM returns a real self-signed x509 certificate PEM — one the JWKS
+// can actually parse, so oidc.Publishes is a true test of "the JWKS serves this
+// cert" rather than a check that a string field is non-empty.
+func selfSignedPEM(t *testing.T) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.CreateCertificate(rand.Reader,
+		&x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "cert-hanzo"}},
+		&x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "cert-hanzo"}},
+		&key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+// A METADATA PUT KEEPS THE CERT IN THE JWKS. The property under test is
+// oidc.Publishes ACROSS the write, not the equality of one field: the old
+// full-struct overlay blanked CryptoAlgorithm (and Provider, Account, expiry)
+// from a request that only renamed the cert, and a blank algorithm turns
+// Publishes false — dropping the `kid` and making every token under it
+// unverifiable.
+func TestUpdate_MetadataPUTKeepsTheCertPublishable(t *testing.T) {
 	h := handler(t)
 	ctx := context.Background()
 
-	const published = "-----BEGIN CERTIFICATE-----\nPUBLISHED-A\n-----END CERTIFICATE-----"
 	const secret = "acme-dns-token"
-	if _, err := h.Create(ctx, &schema.Cert{
+	created, err := h.Create(ctx, &schema.Cert{
 		Owner: "admin", Name: "cert-hanzo", CryptoAlgorithm: "RS256",
-		DisplayName: "Hanzo signing", Certificate: published, AccessSecret: secret,
-	}); err != nil {
+		DisplayName: "Hanzo signing", Certificate: selfSignedPEM(t), AccessSecret: secret,
+		Provider: "letsencrypt", Account: "ops@hanzo.ai", ExpireTime: "2030-01-01T00:00:00Z",
+	})
+	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
+	if !oidc.Publishes(created) {
+		t.Fatal("precondition: the seeded cert must be publishable")
+	}
 
-	// The shape a client round-trips: it read a MASKED cert (no Certificate, no
-	// AccessSecret) and PUTs back a changed display name.
+	// The shape a client round-trips: it read a cert (AccessSecret masked away)
+	// and PUTs back only a changed display name.
 	if _, err := h.Update(ctx, &schema.Cert{
-		Owner: "admin", Name: "cert-hanzo", DisplayName: "Hanzo signing (rotated label)",
+		Owner: "admin", Name: "cert-hanzo", DisplayName: "Hanzo signing (renamed)",
 	}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 
 	got := raw(t, h, "admin", "cert-hanzo")
-	if got.DisplayName != "Hanzo signing (rotated label)" {
-		t.Errorf("metadata edit did not take: displayName=%q", got.DisplayName)
+	if !oidc.Publishes(got) {
+		t.Fatal("a metadata PUT dropped the cert from the JWKS — every token under its kid is now unverifiable")
 	}
-	if got.Certificate != published {
-		t.Fatalf("the published certificate was dropped by a metadata PUT: %q", got.Certificate)
+	if got.DisplayName != "Hanzo signing (renamed)" {
+		t.Errorf("the metadata edit did not take: displayName=%q", got.DisplayName)
+	}
+	// Every field the PUT omitted survived.
+	if got.CryptoAlgorithm != "RS256" {
+		t.Errorf("CryptoAlgorithm blanked: %q", got.CryptoAlgorithm)
 	}
 	if got.AccessSecret != secret {
-		t.Errorf("the provider secret was dropped by a metadata PUT: %q", got.AccessSecret)
+		t.Errorf("the ACME/DNS secret was dropped: %q", got.AccessSecret)
+	}
+	if got.Provider != "letsencrypt" || got.Account != "ops@hanzo.ai" || got.ExpireTime != "2030-01-01T00:00:00Z" {
+		t.Errorf("ACME/expiry fields dropped: provider=%q account=%q expire=%q", got.Provider, got.Account, got.ExpireTime)
 	}
 }
 
@@ -83,29 +121,26 @@ func TestUpdate_MetadataPUTKeepsSecretMaterial(t *testing.T) {
 func TestUpdate_ExplicitCertificateReplaces(t *testing.T) {
 	h := handler(t)
 	ctx := context.Background()
-
 	if _, err := h.Create(ctx, &schema.Cert{
 		Owner: "admin", Name: "cert-hanzo", CryptoAlgorithm: "RS256",
 		Certificate: "-----BEGIN CERTIFICATE-----\nOLD\n-----END CERTIFICATE-----",
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	const next = "-----BEGIN CERTIFICATE-----\nNEW\n-----END CERTIFICATE-----"
+	next := selfSignedPEM(t)
 	if _, err := h.Update(ctx, &schema.Cert{Owner: "admin", Name: "cert-hanzo", Certificate: next}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if got := raw(t, h, "admin", "cert-hanzo"); got.Certificate != next {
-		t.Fatalf("an explicit certificate did not replace the old one: %q", got.Certificate)
+		t.Fatalf("an explicit certificate did not replace the old one")
 	}
 }
 
 // The private key is not a column and does not travel this API. Create names the
-// identity; a struct that carries key material still writes none, so the row a
-// backup captures holds no key.
+// identity; a struct carrying key material still writes none.
 func TestCreate_StoresIdentityNotKeyMaterial(t *testing.T) {
 	h := handler(t)
 	ctx := context.Background()
-
 	if _, err := h.Create(ctx, &schema.Cert{
 		Owner: "admin", Name: "cert-hanzo", CryptoAlgorithm: "RS256",
 		PrivateKey: "-----BEGIN RSA PRIVATE KEY-----\nSHOULD-NOT-PERSIST\n-----END RSA PRIVATE KEY-----",
@@ -117,14 +152,13 @@ func TestCreate_StoresIdentityNotKeyMaterial(t *testing.T) {
 	}
 }
 
-// A read never discloses secret material, in or out of the store.
+// A read never discloses secret material.
 func TestGet_Masks(t *testing.T) {
 	h := handler(t)
 	ctx := context.Background()
 	if _, err := h.Create(ctx, &schema.Cert{
 		Owner: "admin", Name: "cert-hanzo", CryptoAlgorithm: "RS256",
-		Certificate:  "-----BEGIN CERTIFICATE-----\nP\n-----END CERTIFICATE-----",
-		AccessSecret: "acme-dns-token",
+		Certificate: selfSignedPEM(t), AccessSecret: "acme-dns-token",
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
