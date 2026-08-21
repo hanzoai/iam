@@ -38,10 +38,10 @@ func TestPasskeyIsNotOfferedWithoutACeremony(t *testing.T) {
 			"server cannot challenge one", methods["webauthn"])
 	}
 
-	_, body = do(t, app, formReqNoBody("GET", LegacyPathAuthApplication+"?clientId=conf&responseType=code"))
+	_, body = do(t, app, formReqNoBody("GET", PathAuthApplication+"?clientId=conf&responseType=code"))
 	view, _ := decode(t, body)["data"].(map[string]any)
 	if view["enableWebAuthn"] != false {
-		t.Errorf("get-app-login enableWebAuthn = %v, want false: the two descriptors must "+
+		t.Errorf("auth/application enableWebAuthn = %v, want false: the two descriptors must "+
 			"agree, or the browser reads whichever one still lies", view["enableWebAuthn"])
 	}
 

@@ -6,8 +6,10 @@ package oidc
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/luxfi/crypto/pq/mldsa/mldsa65"
 
@@ -220,4 +222,66 @@ func hasKid(t *testing.T, body []byte, kid string) bool {
 		}
 	}
 	return false
+}
+
+// Verifying a token needs these keys, so a relying party fetches them — and reading the
+// store on every fetch puts the store's latency in front of every authenticated request
+// in the estate. The set is held for its TTL, which is the same number the response
+// already tells callers to hold it for.
+func TestTheKeySetIsReadOncePerTTL(t *testing.T) {
+	var set keySet
+	reads := 0
+	read := func() ([]byte, string, error) {
+		reads++
+		return []byte(`{"keys":[]}`), `"abc"`, nil
+	}
+
+	for i := 0; i < 50; i++ {
+		if _, _, err := set.current(read); err != nil {
+			t.Fatalf("current: %v", err)
+		}
+	}
+	if reads != 1 {
+		t.Errorf("read the store %d times for 50 verifications, want 1", reads)
+	}
+
+	// Past the TTL it reads again — a rotated key must arrive.
+	set.at = time.Now().Add(-jwksTTL - time.Second)
+	if _, _, err := set.current(read); err != nil {
+		t.Fatalf("current after TTL: %v", err)
+	}
+	if reads != 2 {
+		t.Errorf("reads = %d after the TTL passed, want 2", reads)
+	}
+}
+
+// A key set changes when a certificate is rotated, not when a database connection has a
+// bad moment. Failing the read must not withdraw keys that are still correct: every
+// service that verifies a token offline depends on this document being answerable.
+func TestAFailedReadStillPublishesTheKeysWeHave(t *testing.T) {
+	var set keySet
+	good := func() ([]byte, string, error) { return []byte(`{"keys":[1]}`), `"good"`, nil }
+	bad := func() ([]byte, string, error) { return nil, "", errors.New("store busy") }
+
+	if _, _, err := set.current(good); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+	set.at = time.Now().Add(-jwksTTL - time.Second) // force a refresh attempt
+
+	body, etag, err := set.current(bad)
+	if err != nil {
+		t.Fatalf("a failed refresh withdrew the key set: %v", err)
+	}
+	if string(body) != `{"keys":[1]}` || etag != `"good"` {
+		t.Errorf("served %s / %s, want the last good set", body, etag)
+	}
+}
+
+// With nothing ever published, a failed read is the honest answer: there are no keys to
+// serve and pretending otherwise would publish an empty set that fails every token.
+func TestWithNothingPublishedAFailedReadIsAnError(t *testing.T) {
+	var set keySet
+	if _, _, err := set.current(func() ([]byte, string, error) { return nil, "", errors.New("cold") }); err == nil {
+		t.Error("a cold cache with a failing read reported success")
+	}
 }
