@@ -142,8 +142,13 @@ func Successors() map[string][]string {
 // methods here would leave a caller that sent the wrong one with a 405 and no
 // successor.
 func Route(r zip.Router) {
+	// Undeclared: these addresses SERVE and are not part of the contract. A
+	// document that lists them lists dead endpoints, and because each answers
+	// every method, publishing them would be one operation per method per
+	// address — most of them calls that never existed.
+	u := zip.Undeclared(r)
 	for path, to := range successor {
-		r.All(path, answer(to))
+		u.All(path, answer(to))
 	}
 }
 
