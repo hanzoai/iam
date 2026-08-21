@@ -40,6 +40,7 @@ import (
 	"github.com/hanzoai/iam/internal/seed"
 	_ "github.com/hanzoai/iam/pkg/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/server"
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".
@@ -175,6 +176,14 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 		fmt.Fprintf(os.Stderr, "iam: membership backfill incomplete — org rosters may omit members that hold access: %v\n", err)
 	} else if n > 0 {
 		fmt.Fprintf(os.Stderr, "iam: recorded %d home-org membership(s) that were held but unwritten\n", n)
+	}
+
+	// A process that cannot sign cannot issue, so it does not open a listener.
+	// Asserted AFTER the seed, because the seed is what creates the certificates,
+	// and BEFORE the listener, because a keyless replica passes every probe and
+	// then fails every mint — which a rollout reads as success.
+	if err := server.RequireSigning(ctx, db); err != nil {
+		return fmt.Errorf("serve: %w", err)
 	}
 
 	// MCP projects every typed CRUD handler onto one generic /mcp tool-call
