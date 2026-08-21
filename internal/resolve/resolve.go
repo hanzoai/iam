@@ -35,6 +35,8 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // unauthorized is v1's refusal message, verbatim — the envelope a denied caller
 // receives from a handler-authorized read.
 const unauthorized = "auth:Unauthorized operation"
