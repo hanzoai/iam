@@ -174,29 +174,26 @@ func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
 
 // TestJourney_AdminConsole_LegacySurface proves the old admin console's calls work:
 // get-account (the security contract), get-organizations (OrgSwitcher), get-users.
-func TestJourney_AdminConsole_LegacySurface(t *testing.T) {
+func TestJourney_AdminConsole(t *testing.T) {
 	e := boot(t)
 	root := e.mint(t, "admin/root") // a SuperAdmin bearer
 
 	// get-account — {status:ok, data:<masked user>} with owner + isAdmin.
-	acct := e.getJSON(t, "/v1/iam/get-account", root)
+	acct := e.getJSON(t, "/v1/iam/account", root)
 	if acct["status"] != "ok" {
-		t.Fatalf("get-account status: %v", acct)
+		t.Fatalf("account status: %v", acct)
 	}
 
-	// get-organizations — the OrgSwitcher workhorse; SuperAdmin sees all.
-	orgs := e.getJSON(t, "/v1/iam/get-organizations", root)
-	if orgs["status"] != "ok" {
-		t.Fatalf("get-organizations status: %v", orgs)
-	}
-	if data, _ := orgs["data"].([]any); len(data) < 2 {
-		t.Fatalf("get-organizations returned %d orgs, want >=2 (admin+hanzo)", len(data))
+	// the organization list — the OrgSwitcher workhorse; SuperAdmin sees all.
+	orgs := e.getJSON(t, "/v1/iam/organizations", root)
+	if rows, _ := orgs["organizations"].([]any); len(rows) < 2 {
+		t.Fatalf("the organization list returned %d orgs, want >=2 (admin+hanzo): %v", len(rows), orgs)
 	}
 
-	// get-users scoped to an org — no secret leaks.
-	usersBody := e.getRaw(t, "/v1/iam/get-users?owner=hanzo", root)
+	// the user list, scoped to an org — no secret leaks.
+	usersBody := e.getRaw(t, "/v1/iam/users?owner=hanzo", root)
 	if strings.Contains(usersBody, "passwordHash") || strings.Contains(usersBody, "\"password\"") {
-		t.Fatalf("get-users leaked a secret: %s", usersBody)
+		t.Fatalf("the user list leaked a secret: %s", usersBody)
 	}
 }
 

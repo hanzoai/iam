@@ -426,28 +426,24 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 // authz.Scope. SCIM (RFC 7644, /v1/iam/scim/v2/Users/{id}) is path-targeted, so it
 // belongs here. This is the read analogue of a write deferring to the op-invoke
 // seam — the target is authorized where it is bound, not guessed from the query.
-// get-organization-projects (and its workspace tier, get-organization-workspaces)
-// is the the legacy surface read verb whose target rides in ?organization= (the
-// ScopeSwitcher's project/workspace list), not ?owner=/?id=/the path, so the Guard
-// cannot pre-authorize it generically; the handler scopes it through authz.Scope
-// instead (the read analogue of SCIM's path-targeted authorization).
-// get-memberships is the the legacy surface alias of /v1/iam/memberships whose target rides in
-// ?user=/?org=, so it belongs here for the same reason its REST twin does — the
-// membership list handler's own scoped() check is the tenant gate.
-var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects", "/v1/iam/get-organization-workspaces", "/v1/iam/service-accounts", "/v1/iam/memberships", "/v1/iam/get-memberships"}
+// /v1/iam/memberships is here for the same reason: its target rides in
+// ?user=/?org= rather than the path, so the Guard cannot pre-authorize it
+// generically. All three methods self-authorize — the list through its own
+// scoped() check, and both writes through mayGrant, which carries the
+// reserved-org escalation guard. A method added here that does neither is
+// unauthorized, not merely undocumented.
+var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accounts", "/v1/iam/memberships"}
 
 // handlerAuthorizedExact are SINGLE routes (not subtrees) the handler authorizes
-// itself. get-user is here — not a prefix — because "/v1/iam/get-user" IS a prefix
-// of "/v1/iam/get-users" (the generic, Guard-authorized list): a prefix entry would
-// silently strip the Guard's read gate from get-users and let a request parameter
-// narrow rather than deny a cross-tenant list. get-user carries a `?accessKey=`
-// variant whose target is a secret key (no owner/name for the Guard to authorize),
-// so the get-user handler authorizes BOTH its variants — the owner/name read through
-// the SAME authz.Can the Guard would have applied, the key read behind CapKeyResolve.
+// itself. The key resolve qualifies because its target is a publishable pk- riding
+// in ?accessKey= — there is no owner/name for the Guard to authorize — so the
+// handler authorizes itself behind CapPublishableResolve and returns ONLY the org,
+// never a principal.
 //
-// resolve-key is here for the same reason: its target is a publishable pk- riding in
-// ?accessKey= (no owner/name for the Guard to authorize), and its handler authorizes
-// itself behind CapPublishableResolve, returning ONLY the org — never a principal.
+// The key doors are here because their target is a key riding in ?accessKey= —
+// no owner/name for the Guard to authorize — and each handler authorizes itself
+// behind its own capability: keys/org returns ONLY the org, keys/principal the
+// principal.
 //
 // organizations/search is here because it NAMES no target: it asks which
 // organizations the CALLER may act in, so the answer is derived from the
@@ -455,9 +451,17 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organizat
 // empty target fails the tenant rule, which would deny every non-SuperAdmin the
 // list of their own organizations. It is exact rather than a prefix so it cannot
 // reach /v1/iam/organizations, the Guard-authorized entity list beside it.
+//
+// EXACT, never a prefix, and that is the whole reason this map is separate from
+// the one above: a prefix covering the key doors would be spelled "/v1/iam/keys",
+// which strips the Guard's read gate off the key list and hands every reader the
+// org's keys. TestKeySurfaceHasNoPrefixRule holds it.
+//
+// get-user used to sit here too, for a sibling reason — "/v1/iam/get-user" is a
+// prefix of "/v1/iam/get-users" — and it went with the legacy verb surface.
 var handlerAuthorizedExact = map[string]bool{
-	"/v1/iam/get-user":             true,
-	"/v1/iam/resolve-key":          true,
+	"/v1/iam/keys/org":             true,
+	"/v1/iam/keys/principal":       true,
 	"/v1/iam/organizations/search": true,
 	"/v1/iam/webauthn-credentials": true,
 }
@@ -785,6 +789,29 @@ func authorize(p *Principal, method, entity, owner, name string) bool {
 	// else — never Super, never Admin; an unmapped entity or unset allowlist denies.
 	if p.App != "" {
 		return Allowed(p, capFor(entity))
+	}
+	// A person may READ the projects and workspaces of an org they BELONG to, not
+	// merely one they administer. That is the scope switcher, which every member
+	// sees, and it is the only place a plain member reads something other than
+	// their own row.
+	//
+	// The check below refuses an org you are a member of but do not own, because
+	// it compares against the home org alone. These two listers reached members
+	// anyway, by a different road: their legacy addresses were handler-authorized,
+	// so the Guard's entity check never ran and Scope decided. Retiring those
+	// addresses moved them under this check and took the switcher away from every
+	// non-admin.
+	//
+	// Scope is still what decides, and it is the reason this is safe rather than a
+	// widening: both handlers resolve their owner through it, so a foreign org is
+	// refused there, an unstated one becomes your own, and a reserved one is
+	// SuperAdmin's alone. What this clause restores is the Guard DEFERRING to that,
+	// which is exactly what the handler-authorized address did. An unstated owner
+	// passes for the same reason — memberOf("") is false, and Scope reads it as
+	// "my own org", so refusing here would answer a question Scope never got asked.
+	if isRead(method) && (entity == "projects" || entity == "workspaces") &&
+		(owner == "" || p.memberOf(owner)) {
+		return true
 	}
 	if owner == "" || owner != p.Org {
 		return false

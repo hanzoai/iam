@@ -14,28 +14,16 @@ package oidc
 // name and on every docs page — so they are a customer-facing surface, not an
 // internal detail.
 //
-// Every constant below is the address the published document declares. The old
-// spelling stays REACHABLE — same handler, registered twice by alias() — so no
-// consumer pinned to it breaks; it is simply not what anything teaches. When the
-// last pinned consumer moves, the Legacy* half of a pair is deleted and nothing
-// else changes.
+// Every constant below is the address the published document declares, and now
+// the only one served. The verb-noun spellings were kept reachable while
+// consumers moved; they are gone, so there is one address per thing and no
+// second spelling for a reader to find, an SDK to generate or a CLI to teach.
 const (
-	PathAccount           = "/v1/iam/account"            // legacy: get-account
-	PathAuthApplication   = "/v1/iam/auth/application"   // legacy: get-app-login
-	PathPreferences       = "/v1/iam/preferences"        // legacy: update-preferences
-	PathVerificationCodes = "/v1/iam/verification-codes" // legacy: send-verification-code
-	PathTokensIssue       = "/v1/iam/tokens/issue"       // legacy: issue-user-token
-	PathKeysMint          = "/v1/iam/keys/mint"          // legacy: mint-user-keys
-	PathKeysRevoke        = "/v1/iam/keys/revoke"        // legacy: revoke-user-keys
-)
-
-// The verb-noun spellings these replaced. Kept reachable, taught nowhere.
-const (
-	LegacyPathAccount           = "/v1/iam/get-account"
-	LegacyPathAuthApplication   = "/v1/iam/get-app-login"
-	LegacyPathPreferences       = "/v1/iam/update-preferences"
-	LegacyPathVerificationCodes = "/v1/iam/send-verification-code"
-	LegacyPathTokensIssue       = "/v1/iam/issue-user-token"
-	LegacyPathKeysMint          = "/v1/iam/mint-user-keys"
-	LegacyPathKeysRevoke        = "/v1/iam/revoke-user-keys"
+	PathAccount           = "/v1/iam/account"
+	PathAuthApplication   = "/v1/iam/auth/application"
+	PathPreferences       = "/v1/iam/preferences"
+	PathVerificationCodes = "/v1/iam/verification-codes"
+	PathTokensIssue       = "/v1/iam/tokens/issue"
+	PathKeysMint          = "/v1/iam/keys/mint"
+	PathKeysRevoke        = "/v1/iam/keys/revoke"
 )
