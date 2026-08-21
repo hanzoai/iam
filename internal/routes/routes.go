@@ -49,7 +49,6 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/bootstrap"
 	"github.com/hanzoai/iam/internal/certs"
-	"github.com/hanzoai/iam/internal/compat"
 	"github.com/hanzoai/iam/internal/cors"
 	"github.com/hanzoai/iam/internal/invitations"
 	"github.com/hanzoai/iam/internal/keys"
@@ -173,9 +172,9 @@ func Route(app *zip.App, db orm.DB) {
 	//     have left every TYPED sibling op broken while the raw ones recovered.
 	authed.Authorize(authz.Authorize)
 
-	// The key resolvers: authenticated by the Guard, authorized by their own
-	// handlers, because the key they read rides in a query parameter and there is
-	// no owner/name for the Guard to check.
+	// The publishable-key resolver: authenticated by the Guard, authorized by its
+	// own handler, because the pk- it reads rides in a query parameter and there
+	// is no owner/name for the Guard to check.
 	resolve.Route(authed, db)
 
 	// The same authentication, mounted a second time for the ONE surface a
@@ -206,13 +205,6 @@ func Route(app *zip.App, db orm.DB) {
 	tokens.Route(authed, db)
 	auditlogs.Route(authed, db)
 	invitations.Route(authed, db)
-
-	// legacy verb-alias layer: the get-users / get-organizations / add-organization
-	// / … spellings (in the v1 {status,data,data2} envelope) every live console/
-	// gateway/portal client hard-codes, served over the SAME store, redaction, and
-	// authz as the REST surface above — the transparent backend swap. On the
-	// guarded group, so it shares the one Guard/Authorize seam.
-	compat.Route(authed, db)
 
 	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface that
 	// replaces the the legacy surface entity verbs (HIP-0111). On the guarded group, so
