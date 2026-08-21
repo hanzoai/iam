@@ -43,10 +43,7 @@ const Path = "/v1/iam/resolve-key"
 // does NOT get is the Guard's own entity check, which is why authz lists this
 // path exactly in handlerAuthorizedExact.
 func Route(app *zip.App, db orm.DB) {
-	// Only the secret door is registered here for now. The publishable one is
-	// still served by the surface being retired, and zip refuses to compose an app
-	// that declares one path twice — so registering both would not be a subtle
-	// conflict, it would be a boot failure. It moves here when that surface goes.
+	app.Get(Path, handler(db))
 	app.Get(PrincipalPath, user(db))
 }
 
@@ -90,8 +87,3 @@ func handler(db orm.DB) zip.Handler {
 		return httpx.Ok(c, resolved{Org: k.Owner, Scope: k.Scope})
 	}
 }
-
-// handler serves the publishable door, which the retiring surface still
-// registers. It is referenced here so this file carries the whole package while
-// the two surfaces overlap.
-var _ = handler
