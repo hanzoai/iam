@@ -29,41 +29,32 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// Path is the REST verb face: GET lists by ?user= or ?org=, POST ensures one.
+// Path is the whole surface: GET lists by ?user= or ?org=, POST ensures a
+// membership, DELETE revokes one. One address, and the method says which.
 //
-// PathGet/PathAdd/PathDelete are the legacy VERB spellings the cloud team-invite
-// path (clients/team/invite.go) hard-codes — get-memberships / add-membership /
-// delete-membership. They are aliases, not a second implementation: get/add reuse
-// the very handlers the REST face registers, and delete is the one handler REST
-// does not expose. So a backend swap serves the cloud verbs with the SAME store and
-// the SAME authz gates as the native REST surface.
-const (
-	Path       = "/v1/iam/memberships"
-	PathGet    = "/v1/iam/get-memberships"
-	PathAdd    = "/v1/iam/add-membership"
-	PathDelete = "/v1/iam/delete-membership"
-)
+// DELETE is the newest of the three and closed the gap that kept the verb
+// spellings alive: revoke was the one operation this address did not carry, so
+// `delete-membership` was not a second name for something — it was the only name
+// for it, and retiring the other two while it stood would have left one verb
+// behind for a reason nobody could read off the code.
+const Path = "/v1/iam/memberships"
 
 // unauthorized is v1's refusal message, verbatim.
 const unauthorized = "auth:Unauthorized operation"
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
-// Route registers the membership surface on app, backed by db: the native REST
-// pair plus the legacy verb aliases. get/add share the REST handlers (one authz
-// gate, one store call, no duplication); delete adds the revoke the REST face does
-// not carry. get-memberships is a GET whose target rides in ?user=/?org=, so it is
-// handler-authorized (authz.handlerAuthorizedPrefixes) exactly like /v1/iam/
-// memberships — the list handler's own scoped() check is the tenant gate; the two
-// write verbs are POSTs the Guard never pre-authorizes, so each self-authorizes.
+// Route registers the membership surface on app, backed by db: one address, three
+// methods. The read is a GET whose target rides in ?user=/?org=, so it is
+// handler-authorized (authz.handlerAuthorizedPrefixes) — the list handler's own
+// scoped() check is the tenant gate; the two writes are methods the Guard never
+// pre-authorizes, so each self-authorizes.
 //
-// The two READS are typed ops, so both addresses are in the OpenAPI document, the
-// SDKs, the CLI and the MCP tool list. NEITHER names an operationId: what
-// distinguishes them IS the address, so the address names them (zip's path-derived
-// default), and a hand-picked id would collide — one operationId, one operation.
-// The writes stay raw: typing them would newly route them through the op-invoke
-// authorizer on a decoded (Owner, Name) their bodies do not carry, changing who
-// may grant. That is a decision, not a projection.
+// The READ is a typed op, so the address is in the OpenAPI document, the SDKs, the
+// CLI and the MCP tool list. It names no operationId: the address names it (zip's
+// path-derived default). The writes stay raw: typing them would newly route them
+// through the op-invoke authorizer on a decoded (Owner, Name) their bodies do not
+// carry, changing who may grant. That is a decision, not a projection.
 //
 // A typed read still reaches that authorizer, and is admitted by construction: it
 // admits a GET whose decoded input names no owner, and `lookup` declares no Owner
@@ -76,11 +67,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithTags("memberships"))
 	app.Post(Path, ensure(db))
 
-	zip.Get[lookup, httpx.Answer](app, PathGet, list(db),
-		zip.WithStatus(200, 400),
-		zip.WithTags("memberships"))
-	app.Post(PathAdd, ensure(db))
-	app.Post(PathDelete, remove(db))
+	app.Delete(Path, remove(db))
 }
 
 // lookup is the list request: exactly one of the identity whose organizations are

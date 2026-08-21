@@ -84,7 +84,7 @@ var (
 	CapKeyResolve = Cap{Name: "key-resolve", Env: "IAM_KEY_RESOLVE_APPS"}
 
 	// CapPublishableResolve gates resolving a WRITE-ONLY publishable pk- to just the
-	// ORG that holds it (keys.resolve → /v1/iam/resolve-key), for cloud's ingest
+	// ORG that holds it (/v1/iam/keys/org), for cloud's ingest
 	// boundary. It is strictly NARROWER than CapKeyResolve and deliberately a separate
 	// authority: this door discloses only an org (a pk- is public, shipped in client
 	// JS), NEVER a principal, so the two must not be conflated — a client granted the

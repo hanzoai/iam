@@ -30,13 +30,16 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// Path is where a publishable key is resolved. It is addressed as an operation
-// rather than under `keys`, because a request here names no key that the Guard
-// could authorize — the pk- rides in ?accessKey= and the handler is what decides.
-// Serving it at "/v1/iam/keys/resolve" would also put it under a prefix that, if
-// anyone ever wrote a prefix rule for the key surface, would take the Guard's
-// read gate off the key list itself.
-const Path = "/v1/iam/resolve-key"
+// Path is where a publishable key is resolved. It sits beside PrincipalPath and
+// is named the same way: the address says what comes BACK, because that is the
+// only thing separating the two doors. A pk- yields an org, an sk- yields a
+// principal, and which one you may ask is a capability apiece.
+//
+// Neither is under a prefix rule — both are listed exactly in
+// authz.handlerAuthorizedExact — so being under `keys` costs the key surface
+// none of the Guard's read gate. TestKeySurfaceHasNoPrefixRule holds that,
+// because it is the one thing that would make this address the wrong one.
+const Path = "/v1/iam/keys/org"
 
 // Route registers the resolver. It belongs on the GUARDED group: the handler
 // reads a verified principal, so the Guard must have run to attach one. What it

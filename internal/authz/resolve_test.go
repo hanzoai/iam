@@ -36,7 +36,7 @@ import (
 // boundary, never an interactive admin action.
 
 const (
-	publishablePath = "/v1/iam/resolve-key"
+	publishablePath = "/v1/iam/keys/org"
 	principalPath   = "/v1/iam/keys/principal"
 )
 
