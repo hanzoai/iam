@@ -42,24 +42,25 @@ func NewOrganizationAPI(db orm.DB) *OrganizationAPI {
 	return &OrganizationAPI{DB: db}
 }
 
-// route registers the five organization routes on app. Writes are POST with a
-// JSON body; reads are GET whose (owner, name, paging) selector binds from the
-// request. Every handler validates its key and fails 400 if it is absent, so a
-// missing selector is loud, never a silent full-table action.
+// route registers the organization routes on app. The collection is orgBase and
+// one organization is orgBase/{owner}/{name} — the natural key IS the address,
+// so the method carries the verb and the URL says which row. Every handler
+// validates its key and fails 400 if it is absent, so a missing selector is
+// loud, never a silent full-table action.
 func (h *OrganizationAPI) route(app *zip.App) {
 	zip.Post[CreateOrganizationInput, schema.Organization](app, orgBase, h.Create,
 		zip.WithOperationID("createOrganization"), zip.WithTags("organizations"))
 	zip.Get[ListOrganizationsInput, ListOrganizationsOutput](app, orgBase, h.List,
 		zip.WithOperationID("listOrganizations"), zip.WithTags("organizations"))
-	zip.Get[GetOrganizationInput, schema.Organization](app, orgBase+"/get", h.Get,
-		zip.WithOperationID("getOrganization"), zip.WithTags("organizations"))
 	zip.Get[SearchOrganizationsInput, SearchOrganizationsOutput](app, orgBase+"/search", h.Search,
 		zip.WithOperationID("searchOrganizations"), zip.WithTags("organizations"))
-	zip.Post[UpdateOrganizationInput, schema.Organization](app, orgBase+"/update", h.Update,
-		zip.WithOperationID("updateOrganization"), zip.WithTags("organizations"))
 	zip.Post[SetAvatarInput, schema.Organization](app, orgBase+"/avatar", h.SetAvatar,
 		zip.WithOperationID("setOrganizationAvatar"), zip.WithTags("organizations"))
-	zip.Post[DeleteOrganizationInput, DeleteOrganizationOutput](app, orgBase+"/delete", h.Delete,
+	zip.Get[GetOrganizationInput, schema.Organization](app, orgBase+"/:owner/:name", h.Get,
+		zip.WithOperationID("getOrganization"), zip.WithTags("organizations"))
+	zip.Put[UpdateOrganizationInput, schema.Organization](app, orgBase+"/:owner/:name", h.Update,
+		zip.WithOperationID("updateOrganization"), zip.WithTags("organizations"))
+	zip.Delete[DeleteOrganizationInput, DeleteOrganizationOutput](app, orgBase+"/:owner/:name", h.Delete,
 		zip.WithOperationID("deleteOrganization"), zip.WithTags("organizations"))
 }
 

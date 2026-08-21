@@ -10,6 +10,9 @@ func init() {
 	zip.Describe("DELETE /v1/iam/application", zip.Doc{
 		Description: "Removes an application. Anyone mid-sign-in through it is\nturned away and its client credentials stop working, so retire the integration\nbefore deleting it.",
 	})
+	zip.Describe("DELETE /v1/iam/applications/:owner/:name", zip.Doc{
+		Description: "Removes an application. Anyone mid-sign-in through it is\nturned away and its client credentials stop working, so retire the integration\nbefore deleting it.",
+	})
 	zip.Describe("GET /v1/iam/application", zip.Doc{
 		Description: "Returns one application: its sign-in methods, its allowed\nredirect URIs and the client credentials your integration authenticates with.",
 		Fields: map[string]string{
@@ -38,7 +41,7 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("GET /v1/iam/applications/get", zip.Doc{
+	zip.Describe("GET /v1/iam/applications/:owner/:name", zip.Doc{
 		Description: "Returns one application: its sign-in methods, its allowed\nredirect URIs and the client credentials your integration authenticates with.",
 		Fields: map[string]string{
 			"Application.clientId": "ClientId is the OAuth2/OIDC client identifier and the GLOBAL key every\nconfidential-client resolver authenticates against (store.GetApplicationByClientId,\nthe mint gates, Basic auth). It MUST be globally unique across ALL owners — a\ncollision would let one app shadow another at that key. This store persists each\nentity as a JSON document in a shared table, so there is no per-field column to\ncarry a DB UNIQUE index; uniqueness is enforced at the write in\napplications.Create/Update (ensureClientIdUnique), exactly as the (owner,name)\nnatural key is, and store.GetApplicationByClientId resolves admin-preferring as\ndefense-in-depth.",
@@ -80,10 +83,7 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("POST /v1/iam/applications/delete", zip.Doc{
-		Description: "Removes an application. Anyone mid-sign-in through it is\nturned away and its client credentials stop working, so retire the integration\nbefore deleting it.",
-	})
-	zip.Describe("POST /v1/iam/applications/update", zip.Doc{
+	zip.Describe("PUT /v1/iam/application", zip.Doc{
 		Description: "Changes an application's display, its sign-in methods and the redirect\nURIs it may return to — the call that makes login work from a new host. Which\norganization it belongs to and what it is named are fixed when it is created\nand are not editable here.\n\nExported so the legacy update-application alias reuses this exact path — one\nupdate, two spellings.",
 		Fields: map[string]string{
 			"Application.clientId": "ClientId is the OAuth2/OIDC client identifier and the GLOBAL key every\nconfidential-client resolver authenticates against (store.GetApplicationByClientId,\nthe mint gates, Basic auth). It MUST be globally unique across ALL owners — a\ncollision would let one app shadow another at that key. This store persists each\nentity as a JSON document in a shared table, so there is no per-field column to\ncarry a DB UNIQUE index; uniqueness is enforced at the write in\napplications.Create/Update (ensureClientIdUnique), exactly as the (owner,name)\nnatural key is, and store.GetApplicationByClientId resolves admin-preferring as\ndefense-in-depth.",
@@ -97,7 +97,7 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("PUT /v1/iam/application", zip.Doc{
+	zip.Describe("PUT /v1/iam/applications/:owner/:name", zip.Doc{
 		Description: "Changes an application's display, its sign-in methods and the redirect\nURIs it may return to — the call that makes login work from a new host. Which\norganization it belongs to and what it is named are fixed when it is created\nand are not editable here.\n\nExported so the legacy update-application alias reuses this exact path — one\nupdate, two spellings.",
 		Fields: map[string]string{
 			"Application.clientId": "ClientId is the OAuth2/OIDC client identifier and the GLOBAL key every\nconfidential-client resolver authenticates against (store.GetApplicationByClientId,\nthe mint gates, Basic auth). It MUST be globally unique across ALL owners — a\ncollision would let one app shadow another at that key. This store persists each\nentity as a JSON document in a shared table, so there is no per-field column to\ncarry a DB UNIQUE index; uniqueness is enforced at the write in\napplications.Create/Update (ensureClientIdUnique), exactly as the (owner,name)\nnatural key is, and store.GetApplicationByClientId resolves admin-preferring as\ndefense-in-depth.",

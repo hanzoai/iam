@@ -169,6 +169,44 @@ func TestProjects_lifecycle(t *testing.T) {
 	}
 }
 
+// TestProjects_pathAddressed: the URL is the address. One project is created,
+// read and removed at /v1/iam/projects/{owner}/{name}, and no request body names
+// which one.
+func TestProjects_pathAddressed(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss")
+
+	if st, m := h.do(t, "POST", "/v1/iam/projects", boss,
+		`{"owner":"hanzo","name":"gamma","organization":"hanzo","displayName":"Gamma"}`); st != 200 {
+		t.Fatalf("POST /v1/iam/projects: status=%d body=%v", st, m)
+	}
+
+	st, m := h.do(t, "GET", "/v1/iam/projects/hanzo/gamma", boss, "")
+	if st != 200 {
+		t.Fatalf("GET /v1/iam/projects/hanzo/gamma: status=%d body=%v", st, m)
+	}
+	if got, _ := m["displayName"].(string); got != "Gamma" {
+		t.Fatalf("read the wrong project: %v", m)
+	}
+
+	// The body carries no owner and no name: the path alone says which project.
+	if st, m := h.do(t, "PUT", "/v1/iam/projects/hanzo/gamma", boss,
+		`{"organization":"hanzo","displayName":"Gamma II"}`); st != 200 {
+		t.Fatalf("PUT /v1/iam/projects/hanzo/gamma: status=%d body=%v", st, m)
+	}
+	_, m = h.do(t, "GET", "/v1/iam/projects/hanzo/gamma", boss, "")
+	if got, _ := m["displayName"].(string); got != "Gamma II" {
+		t.Fatalf("update did not bind the path target: %v", m)
+	}
+
+	if st, m := h.do(t, "DELETE", "/v1/iam/projects/hanzo/gamma", boss, ""); st != 200 {
+		t.Fatalf("DELETE /v1/iam/projects/hanzo/gamma: status=%d body=%v", st, m)
+	}
+	if st, _ := h.do(t, "GET", "/v1/iam/projects/hanzo/gamma", boss, ""); st != 404 {
+		t.Fatalf("read after delete: status=%d, want 404", st)
+	}
+}
+
 // TestProjects_writeNeedsAdmin: a regular member can LIST but not create/delete.
 func TestProjects_writeNeedsAdmin(t *testing.T) {
 	h := newHarness(t)

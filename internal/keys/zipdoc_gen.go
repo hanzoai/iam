@@ -7,6 +7,9 @@ import (
 )
 
 func init() {
+	zip.Describe("DELETE /v1/iam/keys/:owner/:name", zip.Doc{
+		Description: "Revokes an API key. Anything still presenting it stops being authorized at\nonce, so roll the replacement out before you revoke.",
+	})
 	zip.Describe("GET /v1/iam/keys", zip.Doc{
 		Description: "Returns your organization's API keys, newest first — what each is called,\nwhat it may reach, and its publishable half. Secret halves are never listed.",
 		Fields: map[string]string{
@@ -22,7 +25,7 @@ func init() {
 			"Model[github.com/hanzoai/iam/pkg/schema.Key].id": "Persisted fields",
 		},
 	})
-	zip.Describe("GET /v1/iam/keys/get", zip.Doc{
+	zip.Describe("GET /v1/iam/keys/:owner/:name", zip.Doc{
 		Description: "Returns one API key: what it is called, what it may reach, and when it was\nissued.",
 		Fields: map[string]string{
 			"Key.accessKey":          "AccessKey (pk-*) is the publishable identifier and lookup index;\nAccessSecret (sk-*) is the confidential secret.\nAccessSecret IS NOT PERSISTED for a key minted at or after the digest\nchange: it carries the secret out to its holder once, in the mint response,\nand the row keeps only AccessSecretDigest. It stays on the struct because\nthat one-time reveal is the whole point of minting, and it stays in the\nschema because rows written before the change still hold a plaintext secret\nthat the resolver drains on first use.",
@@ -52,10 +55,7 @@ func init() {
 			"Model[github.com/hanzoai/iam/pkg/schema.Key].id": "Persisted fields",
 		},
 	})
-	zip.Describe("POST /v1/iam/keys/delete", zip.Doc{
-		Description: "Revokes an API key. Anything still presenting it stops being authorized at\nonce, so roll the replacement out before you revoke.",
-	})
-	zip.Describe("POST /v1/iam/keys/update", zip.Doc{
+	zip.Describe("PUT /v1/iam/keys/:owner/:name", zip.Doc{
 		Description: "Changes what a key is called or what it may reach. The credential\nitself is not reissued — the key in your deployment keeps working.",
 		Fields: map[string]string{
 			"Key.accessKey":          "AccessKey (pk-*) is the publishable identifier and lookup index;\nAccessSecret (sk-*) is the confidential secret.\nAccessSecret IS NOT PERSISTED for a key minted at or after the digest\nchange: it carries the secret out to its holder once, in the mint response,\nand the row keeps only AccessSecretDigest. It stays on the struct because\nthat one-time reveal is the whole point of minting, and it stays in the\nschema because rows written before the change still hold a plaintext secret\nthat the resolver drains on first use.",

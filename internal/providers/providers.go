@@ -4,12 +4,13 @@
 // Package providers is the Phase-1 typed CRUD surface for the `providers`
 // entity, owner-scoped by the (owner, name) natural key.
 //
-// The five operations are typed zip handlers over orm: reads are zip.Get,
-// writes are zip.Post. zip decodes the request body into the In struct for
-// every non-GET method (and, over the MCP projection, for GET too); the REST
-// GET projection carries no body, so any op that needs the (owner, name) key
-// from the caller is a POST. Each op is also an MCP tool and an OpenAPI 3.1
-// operation from this one registration.
+// The five operations are typed zip handlers over orm, addressed by method:
+// GET lists the collection and reads one row, POST creates, PUT updates,
+// DELETE removes. The (owner, name) key rides in the path, and zip binds the
+// three input sources in increasing authority — body, then query, then path —
+// so the URL is what addresses the row: PUT /v1/iam/providers/acme/github
+// updates acme/github whatever the body claims. Each op is also an MCP tool
+// and an OpenAPI 3.1 operation from this one registration.
 package providers
 
 import (
@@ -62,7 +63,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("listProviders"),
 		zip.WithTags("providers"))
 
-	zip.Post[providerKey, providerResult](app, "/v1/iam/providers/get", getProvider(db),
+	zip.Get[providerKey, providerResult](app, "/v1/iam/providers/:owner/:name", getProvider(db),
 		zip.WithOperationID("getProvider"),
 		zip.WithTags("providers"))
 
@@ -70,11 +71,11 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("addProvider"),
 		zip.WithTags("providers"))
 
-	zip.Post[schema.Provider, mutationResult](app, "/v1/iam/providers/update", updateProvider(db),
+	zip.Put[schema.Provider, mutationResult](app, "/v1/iam/providers/:owner/:name", updateProvider(db),
 		zip.WithOperationID("updateProvider"),
 		zip.WithTags("providers"))
 
-	zip.Post[providerKey, mutationResult](app, "/v1/iam/providers/delete", deleteProvider(db),
+	zip.Delete[providerKey, mutationResult](app, "/v1/iam/providers/:owner/:name", deleteProvider(db),
 		zip.WithOperationID("deleteProvider"),
 		zip.WithTags("providers"))
 }

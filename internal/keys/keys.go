@@ -5,10 +5,10 @@
 // (v1 the legacy surface `key`) as typed zip handlers over hanzoai/orm.
 //
 // Identity is the (owner, name) pair; it maps onto the orm storage id as
-// "owner/name", exactly as the v1 record addressed itself. Reads are
-// zip.Get[In,Out], writes are zip.Post[In,Out]; every handler closes over the
-// one orm.DB entity store so the typed signatures carry no transport or
-// storage plumbing.
+// "owner/name", exactly as the v1 record addressed itself, and onto the URL as
+// /v1/iam/keys/:owner/:name — the method carries the verb, the path carries the
+// key. Every handler closes over the one orm.DB entity store so the typed
+// signatures carry no transport or storage plumbing.
 package keys
 
 import (
@@ -32,8 +32,8 @@ import (
 // Called from routes.Route once it is threaded the entity store.
 //
 // ONE noun, plural, for every op — the same shape users.Route uses
-// (/v1/iam/users, /v1/iam/users/get, …). It used to be two nouns, `keys` for the
-// list and `key` for everything else, and that was not merely inconsistent:
+// (/v1/iam/users, /v1/iam/users/:owner/:name). It used to be two nouns, `keys` for
+// the list and `key` for everything else, and that was not merely inconsistent:
 // authz.entityOf reads the FIRST path segment as the entity, so the list
 // authorized on "keys" and every write on "key". Two entity strings for one
 // entity means every capability keyed on it is dead on one of the two surfaces —
@@ -41,9 +41,9 @@ import (
 func Route(app *zip.App, db orm.DB) {
 	zip.Get(app, "/v1/iam/keys", list(db), zip.WithTags("keys"))
 	zip.Post(app, "/v1/iam/keys", create(db), zip.WithTags("keys"))
-	zip.Get(app, "/v1/iam/keys/get", get(db), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/keys/update", update(db), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/keys/delete", del(db), zip.WithTags("keys"))
+	zip.Get(app, "/v1/iam/keys/:owner/:name", get(db), zip.WithTags("keys"))
+	zip.Put(app, "/v1/iam/keys/:owner/:name", update(db), zip.WithTags("keys"))
+	zip.Delete(app, "/v1/iam/keys/:owner/:name", del(db), zip.WithTags("keys"))
 }
 
 // ListRequest scopes a listing to one owner.
