@@ -11,6 +11,7 @@ package certs
 import (
 	"context"
 	"errors"
+	"reflect"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -144,6 +145,26 @@ func (h *Handler) Create(ctx context.Context, in *schema.Cert) (*schema.Cert, er
 
 // Update changes a signing certificate's settings. What it is called does not
 // change, and neither does when it was added.
+//
+// A PUT here is a METADATA edit — display name, expiry, provider. It overlays
+// only the fields the request actually SET onto the loaded row: a field the JSON
+// omits (or leaves at its zero value) keeps what the row holds, rather than
+// blanking it. That is load-bearing, not a nicety. A read serves the public
+// Certificate (Mask hides only PrivateKey and AccessSecret), so a client that
+// reads a cert, changes one field, and writes it back sends the masked halves
+// empty and every other field it did not touch at its zero value — and the old
+// full-struct overlay wrote all of those blanks back. Blanking CryptoAlgorithm
+// alone drops the cert from the JWKS (oidc.Publishes turns false), so every
+// token under its `kid` stops verifying; blanking Provider/Account/ExpireTime
+// breaks ACME renewal and expiry — all from a request that only meant to rename
+// it. Absent-or-zero means "unchanged", so the deployment (key) and a rotation
+// (cert) remain the only way key or published material changes; the metadata API
+// cannot clear it.
+//
+// The overlay is generic — it copies every set field, so a field nobody has added
+// yet is carried without a line here — and leaves three things the request may
+// not move: the bound Model (id, createdAt, key, snapshot), the natural key
+// (owner/name address the row, they do not mutate it), and the creation stamp.
 func (h *Handler) Update(ctx context.Context, in *schema.Cert) (*schema.Cert, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -152,39 +173,20 @@ func (h *Handler) Update(ctx context.Context, in *schema.Cert) (*schema.Cert, er
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	// Overlay the decoded domain fields onto the loaded row, then restore what the
-	// input cannot legitimately carry: the bound Model (id, createdAt, key,
-	// snapshot), the original creation stamp, and the SECRET material.
-	//
-	// A PUT here is a METADATA edit — display name, expiry, provider. Key and
-	// secret material do not travel this API in either direction (see Create), so a
-	// request never carries them: PrivateKey is `json:"-"`, and Certificate and
-	// AccessSecret are masked out of every read, so a client round-tripping a cert
-	// sends them back empty. Overlaying those blanks would ERASE the published
-	// certificate — dropping the cert from the JWKS, so every token under its `kid`
-	// stops verifying — from a request that only meant to rename it. So an empty
-	// half in the input KEEPS what the row holds; the metadata API cannot clear
-	// signing or secret material, only the deployment (key) and a rotation (cert)
-	// manage it.
-	model := cert.Model
-	created := cert.CreatedTime
-	certificate := cert.Certificate
-	accessSecret := cert.AccessSecret
-	privateKey := cert.PrivateKey
-	*cert = *in
-	cert.Model = model
-	cert.Owner, cert.Name = in.Owner, in.Name
-	if created != "" {
-		cert.CreatedTime = created
-	}
-	if in.Certificate == "" {
-		cert.Certificate = certificate
-	}
-	if in.AccessSecret == "" {
-		cert.AccessSecret = accessSecret
-	}
-	if in.PrivateKey == "" {
-		cert.PrivateKey = privateKey
+	dst := reflect.ValueOf(cert).Elem()
+	src := reflect.ValueOf(in).Elem()
+	fields := src.Type()
+	for i := 0; i < fields.NumField(); i++ {
+		f := fields.Field(i)
+		// The embedded Model and the creation stamp are the row's identity, not its
+		// settings; the addressing key is set explicitly below. Everything else is
+		// overlaid only when the request set it.
+		if f.Anonymous || f.Name == "CreatedTime" || f.Name == "Owner" || f.Name == "Name" {
+			continue
+		}
+		if v := src.Field(i); !v.IsZero() && dst.Field(i).CanSet() {
+			dst.Field(i).Set(v)
+		}
 	}
 	if err := cert.UpdateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())

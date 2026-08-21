@@ -619,26 +619,57 @@ func ListCerts(ctx context.Context, db orm.DB) ([]*schema.Cert, error) {
 	return certs, nil
 }
 
-// PlatformSigningCert returns a deterministic trusted signing cert — the first by
-// (owner, name) order among the reserved platform owners that carries a private
-// key. It keys deployment-stable secret derivations (the session-cookie MAC), so
-// there is no new secret to provision; a tenant cert can never be chosen. Returns
-// (nil, nil) when none is seeded.
+// PlatformSigningCert returns a deterministic trusted signing cert — the
+// lexically-least by (owner, name) among the reserved platform owners that both
+// carries a private key AND is NAMED by a reserved-owner application. It keys
+// deployment-stable secret derivations (the session-cookie MAC), so there is no
+// new secret to provision; a tenant cert can never be chosen. Returns (nil, nil)
+// when none is available.
+//
+// The choice is from the REFERENCED set, not from whatever is mounted, because
+// the session-cookie MAC must be the SAME cert on every replica or a browser's
+// session flaps as the load balancer moves it between them. server.RequireSigning
+// requires every cert a reserved-owner application names to be mounted on any
+// replica that serves, so the referenced-and-mounted set is identical on every
+// booting replica and this choice is therefore identical too. An unreferenced
+// cert someone happened to mount — the mounted-but-not-yet-repointed half of a
+// staged rotation — is deliberately not a candidate: it would otherwise sort
+// ahead of the incumbent on one replica and split the MAC across the fleet.
+//
+// Falls back to the plain mounted set ONLY when no reserved-owner application
+// names any cert — a bare install with no sessions to flap — so a first boot
+// still resolves a key.
 func PlatformSigningCert(ctx context.Context, db orm.DB) (*schema.Cert, error) {
 	certs, err := ListCerts(ctx, db)
 	if err != nil {
 		return nil, err
 	}
-	var best *schema.Cert
-	for _, c := range certs {
-		if c == nil || c.PrivateKey == "" || !policy.IsSigningOwner(c.Owner) {
-			continue
-		}
-		if best == nil || c.Owner+"/"+c.Name < best.Owner+"/"+best.Name {
-			best = c
+	apps, err := ListApplicationsByOwner(ctx, db, policy.AdminOrg)
+	if err != nil {
+		return nil, err
+	}
+	referenced := make(map[string]bool, len(apps))
+	for _, a := range apps {
+		if a != nil && a.Cert != "" {
+			referenced[a.Cert] = true
 		}
 	}
-	return best, nil
+	pick := func(eligible func(*schema.Cert) bool) *schema.Cert {
+		var best *schema.Cert
+		for _, c := range certs {
+			if c == nil || c.PrivateKey == "" || !policy.IsSigningOwner(c.Owner) || !eligible(c) {
+				continue
+			}
+			if best == nil || c.Owner+"/"+c.Name < best.Owner+"/"+best.Name {
+				best = c
+			}
+		}
+		return best
+	}
+	if best := pick(func(c *schema.Cert) bool { return referenced[c.Name] }); best != nil {
+		return best, nil
+	}
+	return pick(func(*schema.Cert) bool { return true }), nil
 }
 
 // GetTokenByAccessTokenHash resolves a live token row by the SHA-256 hash of a
