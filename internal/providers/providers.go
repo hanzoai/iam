@@ -62,7 +62,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("listProviders"),
 		zip.WithTags("providers"))
 
-	zip.Post[providerKey, providerResult](app, "/v1/iam/providers/get", getProvider(db),
+	zip.Get[providerKey, providerResult](app, "/v1/iam/providers/get", getProvider(db),
 		zip.WithOperationID("getProvider"),
 		zip.WithTags("providers"))
 

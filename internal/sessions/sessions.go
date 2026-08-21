@@ -39,7 +39,7 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Sessions{db: db}
 	zip.Post(app, "/v1/iam/sessions/list", h.List,
 		zip.WithTags("sessions"), zip.WithOperationID("listSessions"))
-	zip.Post(app, "/v1/iam/sessions/get", h.Get,
+	zip.Get(app, "/v1/iam/sessions/get", h.Get,
 		zip.WithTags("sessions"), zip.WithOperationID("getSession"))
 	zip.Post(app, "/v1/iam/sessions/create", h.Create,
 		zip.WithTags("sessions"), zip.WithOperationID("createSession"))
