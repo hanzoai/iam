@@ -255,12 +255,13 @@ func resolveIssuer(host string) string {
 //     per-brand callback means every brand sends a redirect_uri the provider has
 //     never seen, and the provider answers `redirect_uri_mismatch`.
 //
-// Measured on the live fleet before this split: Google accepted exactly ONE URI
-// for the Hanzo client, while iam sent `https://<brand-host>/v1/iam/oauth/callback`
-// — hanzo.id, lux.id, zoolabs.id and pars.id each sending their own, none of them
-// registered. Every social login failed, and it failed AT THE PROVIDER, which is
-// why it read for days as a credentials or KMS problem. It never was: the
-// client_id reached Google intact every time.
+// This is why the callback is per-org-constant: a provider holds one OAuth client
+// per org with a FIXED redirect-URI list, so a per-brand callback sends a
+// redirect_uri the provider never registered and the provider answers
+// `redirect_uri_mismatch`. Every social login then fails AT THE PROVIDER, where it
+// reads as a credentials or KMS fault rather than a callback-shape one, even
+// though the client_id reaches the provider intact. The fixed callback is the one
+// the provider has on file.
 //
 // Registering every brand host with every provider is the other way out, and it
 // is the wrong one — it makes each social provider carry a list of our apps and

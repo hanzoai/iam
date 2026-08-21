@@ -120,11 +120,9 @@ type deviceInfo struct {
 // deviceInfoHandler answers "what am I approving?" for a pending device code.
 //
 // The approval page exists to tell a human WHICH application they are authorizing;
-// a page that names the wrong one defeats the control it implements. It used to
-// render the portal's own app name — a constant, `hanzo-console` for every code —
-// so a device code minted by `hanzo-cli` was approved under a screen naming a
-// different application entirely. The client is a property of the CODE, so it is
-// read from the code's row here and nowhere else.
+// a page that names any other one defeats the control it implements. The client is
+// a property of the CODE, not of the page or of whatever app the browser happens
+// to be signed in to, so it is read from the code's row here and nowhere else.
 //
 // Requires a signed-in session, and answers with the same ONE opaque refusal
 // approveDevice uses. That is deliberate: the user_code is only 40 bits and is the

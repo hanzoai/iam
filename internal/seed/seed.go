@@ -147,9 +147,9 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 // be stomped by a bootstrap file) but wrong for application POLICY: init_data.json is
 // how the platform declares whether an app allows sign-up, which org it belongs to,
 // and how it lets users choose one. Because upsert skipped existing rows, flipping
-// `enableSignUp` in init_data.json changed nothing on a seeded deployment — the flag
-// read false in production while the declared state said otherwise, and the only way
-// to move it was an out-of-band admin call. Declared policy now converges on boot.
+// `enableSignUp` in init_data.json changed nothing on a seeded deployment, so the
+// declared state and the live flag could disagree with no way to reconcile them
+// short of an admin call. Declared policy now converges on boot.
 //
 // It merges the RAW declared object onto the loaded row, which is the whole point:
 // json.Unmarshal sets only the keys PRESENT in the JSON, so a field init_data.json
@@ -165,10 +165,9 @@ func reconcileApp(db orm.DB, id string, declared map[string]json.RawMessage, s *
 	}
 	// Narrow the declared object to the POLICY keys before applying it. Merging the
 	// WHOLE object would make init_data.json authoritative over the entire
-	// registration, and it is not: measured against production, live applications
-	// legitimately carry redirect URIs and grants this file does not list
-	// (hanzo-console alone had 4 extra redirects and 2 extra grants). A full merge
-	// would silently DELETE those and break the very logins it was meant to fix.
+	// registration, and it is not: live applications legitimately carry redirect
+	// URIs and grants this file does not list, so a full merge would silently
+	// DELETE them and break the very logins it was meant to fix.
 	//
 	// Registration — redirects, grants, hosts — is owned by the provision document.
 	// This file owns identity POLICY. Keeping the two apart is why a bootstrap file
@@ -212,15 +211,11 @@ var appPolicyKeys = []string{
 	"enableSignUp",
 	"enablePassword",
 	"enableCodeSignin",
-	// Passkeys. Omitting this was the exact defect this whole function exists to
-	// fix, one field over: init_data.json declares enableWebAuthn TRUE on 37 of 83
-	// applications — hanzo-app, hanzo-chat, hanzo-cloud, hanzo-console, hanzo-id,
-	// hanzo-world among them — and production answered `webauthn:false` on every
-	// single one, because upsert is new-only and the reconcile did not govern the
-	// key. The declared state said passkeys were on for two thirds of the estate
-	// and no login screen ever offered one, with nothing logged and nothing to
-	// read: the only way to see the disagreement was to diff the ConfigMap against
-	// /v1/iam/auth/methods.
+	// Passkeys. Omitting this is the exact class this function exists to fix, one
+	// field over: a new-only upsert never carries a declared policy flag to a
+	// seeded row, so init_data.json can declare enableWebAuthn TRUE while the live
+	// auth-methods endpoint answers `webauthn:false`, with nothing logged and no
+	// way to reconcile short of diffing the ConfigMap against the endpoint.
 	//
 	// It belongs here by this list's own test — the declared value should always
 	// win. Whether an app offers passkeys is identity POLICY, not registration
@@ -235,8 +230,8 @@ var appPolicyKeys = []string{
 	// enableWebAuthn: it decides who may sign in, names only provider RECORDS
 	// (no redirect, no secret), and has no legitimate live drift. Without it,
 	// an app registered by the provision document (which cannot say providers)
-	// could never gain a social button from declared state — hanzo-cli sat
-	// password-only while init_data.json said otherwise.
+	// could never gain a social button from declared state, even where
+	// init_data.json declares one.
 	"providers",
 }
 
