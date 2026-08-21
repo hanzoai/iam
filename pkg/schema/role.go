@@ -5,7 +5,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// Role is a named grant bundle (v1 the legacy surface `role`, v2 kind "roles"). It gathers
+// Role is a named grant bundle (v1 `role`, v2 kind "roles"). It gathers
 // principals — direct users, member groups, and nested sub-roles — under an
 // owner-scoped name, optionally partitioned by domain, and is dereferenced by
 // permissions to resolve a principal's effective grants. Identity is the

@@ -6,7 +6,7 @@ package schema
 import "github.com/hanzoai/orm"
 
 // Cert is a signing / TLS certificate together with its key material (v1
-// the legacy surface `cert`, v2 kind "certs"). IAM signs the OIDC tokens it issues with a
+// the legacy `cert`, v2 kind "certs"). IAM signs the OIDC tokens it issues with a
 // Cert's private key and publishes the certificate so relying parties can
 // verify them; an SSL-type Cert instead fronts an ACME-issued domain
 // certificate and tracks its renewal. CryptoAlgorithm, BitSize, and

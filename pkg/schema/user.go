@@ -10,7 +10,7 @@ import (
 	"github.com/hanzoai/orm"
 )
 
-// User is an identity principal — the v2 form of the v1 the legacy surface `user` row,
+// User is an identity principal — the v2 form of the v1 `user` row,
 // re-expressed on hanzoai/orm. It is the authentication entity: the only
 // credential material it persists is PasswordHash (a one-way bcrypt digest,
 // json:"-" so it never leaves the process) and the legacy hash metadata used
@@ -25,7 +25,7 @@ type User struct {
 	orm.Model[User]
 
 	// Id is the user's STABLE OPAQUE identifier — the value the OIDC `sub` claim
-	// carries. It is the v1 the legacy surface per-row UUID (e.g.
+	// carries. It is the v1 per-row UUID (e.g.
 	// "e7d7fda0-4c53-4508-9d35-7ec892b7e5d7"), migrated verbatim so a user's `sub`
 	// is byte-identical across the cutover: every live session, external reference,
 	// and the downstream money-path principal keyed on `sub` survive unchanged. A

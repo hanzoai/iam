@@ -5,7 +5,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// AuditLog is an append-only action record (v1 the legacy surface `record`, v2 kind
+// AuditLog is an append-only action record (v1 `record`, v2 kind
 // "audit_logs"). One row captures a single request against the IAM surface:
 // who acted (Organization, User, ClientIp), what they invoked (Method,
 // RequestUri, Action), the request payload and the server's answer (Object,
