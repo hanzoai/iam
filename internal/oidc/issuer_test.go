@@ -465,3 +465,53 @@ func TestFederationOriginBadConfigFailsBoot(t *testing.T) {
 		t.Error("InitFederationResolver accepted a non-https origin; want a hard boot error")
 	}
 }
+
+// A machine credential is spent AGAINST something, and RFC 8707 is how the caller
+// says what. Without it every client_credentials token could only ever name its own
+// minter, so a resource server had the choice of accepting tokens minted for someone
+// else or being handed a second credential of its own — which is how an estate ends
+// up with one identity provider and a drawer full of service tokens beside it.
+func TestClientCredentials_AudienceNamesTheRequestedResource(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}})
+
+	mint := func(form url.Values) []string {
+		t.Helper()
+		form.Set("grant_type", "client_credentials")
+		form.Set("client_id", "svc")
+		form.Set("client_secret", "svc-secret")
+		req := formReq("POST", PathToken, form)
+		req.Host = "hanzo.id"
+		resp, body := do(t, app, req)
+		if resp.StatusCode != 200 {
+			t.Fatalf("mint: status=%d body=%s", resp.StatusCode, body)
+		}
+		access, _ := decode(t, body)["access_token"].(string)
+		claims, err := verifyToken(context.Background(), db, access)
+		if err != nil {
+			t.Fatalf("verify: %v", err)
+		}
+		return claims.Audience
+	}
+
+	// The resource indicator names the audience.
+	if got := mint(url.Values{"resource": {"hanzo-git"}}); len(got) != 1 || got[0] != "hanzo-git" {
+		t.Errorf("resource=hanzo-git → aud %v, want [hanzo-git]", got)
+	}
+
+	// `audience` is the same request said the other way.
+	if got := mint(url.Values{"audience": {"hanzo-git"}}); len(got) != 1 || got[0] != "hanzo-git" {
+		t.Errorf("audience=hanzo-git → aud %v, want [hanzo-git]", got)
+	}
+
+	// resource wins when both are given, matching the token exchange grant beside it.
+	if got := mint(url.Values{"resource": {"hanzo-git"}, "audience": {"other"}}); len(got) != 1 || got[0] != "hanzo-git" {
+		t.Errorf("resource and audience → aud %v, want [hanzo-git]", got)
+	}
+
+	// Asking for nothing still mints for the client itself, which is what every
+	// existing caller receives and must keep receiving.
+	if got := mint(url.Values{}); len(got) != 1 || got[0] != "svc" {
+		t.Errorf("no resource → aud %v, want [svc]", got)
+	}
+}
