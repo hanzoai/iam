@@ -45,14 +45,13 @@ type Cert struct {
 
 	Certificate string `json:"certificate"`
 
-	// PrivateKey is IN MEMORY ONLY, and `json:"-"` is what makes that true rather
-	// than merely intended. Every orm backend persists an entity as
-	// json.Marshal(entity) — sqlite and zap alike — so the json tag IS the
-	// storage contract, and a field it excludes reaches no row from any write
-	// path: the seed, the admin CRUD, or one nobody has written yet. (An
-	// `xorm:"-"` here would read as the same promise and keep none of it: the
-	// column mapper is not what writes this entity.) pkg/store/certkey_test.go
-	// holds the store to it.
+	// PrivateKey is IN MEMORY ONLY. `json:"-"` is what makes that true for this
+	// store: every orm backend persists an entity as json.Marshal(entity) — sqlite
+	// and zap alike — so the json tag IS the storage contract, and a field it
+	// excludes reaches no row from any write path: the seed, the admin CRUD, or one
+	// nobody has written yet. `xorm:"-"` and `db:"-"` say the same to the two column
+	// mappers this orm does not consult today, so the promise survives a backend
+	// that DID read them. pkg/store/certkey_test.go holds the store to it.
 	//
 	// This key signs every token this IAM issues, for every org, so the set of
 	// places it can be read from is worth keeping to one: a live process that the
@@ -63,7 +62,7 @@ type Cert struct {
 	// JWKS, the session-cookie key — reads this field exactly as it always did.
 	// Excluding it from JSON also takes key material off the API in BOTH
 	// directions: it is neither served nor accepted.
-	PrivateKey string `json:"-"`
+	PrivateKey string `json:"-" xorm:"-" db:"-"`
 }
 
 // Mask returns a copy of the cert with its secret material removed — the one

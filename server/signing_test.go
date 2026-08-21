@@ -45,27 +45,19 @@ func cert(t *testing.T, db orm.DB, owner, name string) {
 
 // published files a certificate row carrying a real x509 public half and no key —
 // the shape a deployment leaves behind when it mounts a subset: the JWKS serves a
-// `kid` for it and nothing can sign under that `kid`.
-func published(t *testing.T, db orm.DB, owner, name string) {
+// `kid` for it and nothing can sign under that `kid`. It returns the PEM of the
+// key that MATCHES the published half, so a test can mount the consistent key.
+func published(t *testing.T, db orm.DB, owner, name string) (keyPEM string) {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	der, err := x509.CreateCertificate(rand.Reader,
-		&x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: name}},
-		&x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: name}},
-		&key.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	certPEM, keyPEM := keypair(t, name)
 	c := orm.New[schema.Cert](db)
 	c.Owner, c.Name, c.CryptoAlgorithm = owner, name, "RS256"
-	c.Certificate = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	c.Certificate = certPEM
 	c.SetId(owner + "/" + name)
 	if err := c.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("create cert %s/%s: %v", owner, name, err)
 	}
+	return keyPEM
 }
 
 // app files an application row naming a signing cert, owned by org.
@@ -214,7 +206,7 @@ func TestRequireSigningCoversEveryPublishedCert(t *testing.T) {
 	}
 
 	// A second brand's cert arrives, published, with no key mounted for it.
-	published(t, db, "admin", "cert-zoo")
+	zooKey := published(t, db, "admin", "cert-zoo")
 	err := iamserver.RequireSigning(ctx, db)
 	if err == nil {
 		t.Fatal("a subset mount was allowed to serve")
@@ -226,8 +218,8 @@ func TestRequireSigningCoversEveryPublishedCert(t *testing.T) {
 		t.Errorf("the refusal does not name the mount: %v", err)
 	}
 
-	// Mounting it is the whole fix.
-	keyring.Set("cert-zoo", material)
+	// Mounting the MATCHING key is the whole fix.
+	keyring.Set("cert-zoo", zooKey)
 	t.Cleanup(func() { keyring.Forget("cert-zoo") })
 	if err := iamserver.RequireSigning(ctx, db); err != nil {
 		t.Fatalf("a mounted key did not satisfy the requirement: %v", err)
@@ -286,5 +278,179 @@ func TestRequireSigningAdmitsAStagedRotation(t *testing.T) {
 
 	if err := iamserver.RequireSigning(ctx, db); err != nil {
 		t.Fatalf("a staged rotation or a broken row decided whether this process serves: %v", err)
+	}
+}
+
+// keypair returns a self-signed certificate PEM and the PEM of the very key that
+// signed it — a matching published/private pair. Composing two calls yields a
+// MISMATCH: one call's certificate against another call's key.
+func keypair(t *testing.T, cn string) (certPEM, keyPEM string) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.CreateCertificate(rand.Reader,
+		&x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: cn}},
+		&x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: cn}},
+		&key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	keyPEM = string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+	return certPEM, keyPEM
+}
+
+// A RESERVED CERT AN ADMIN APP DEPENDS ON MUST BE SIGNABLE. A token is minted
+// with the cert its application names, so a mount that omits a cert a reserved
+// application points at is a token endpoint that 500s for that application while
+// the pod reports ready. The residual the published-cert check alone missed: an
+// identity-only cert row publishes nothing, so nothing required it — until an
+// admin app names it.
+func TestRequireSigningJoinsReservedApplications(t *testing.T) {
+	ctx := context.Background()
+	db := store(t)
+	t.Setenv(keyring.EnvDir, "")
+
+	cert(t, db, "admin", "cert-hanzo") // platform cert, keyed so the session MAC resolves
+	keyring.Set("cert-hanzo", material)
+	t.Cleanup(func() { keyring.Forget("cert-hanzo") })
+
+	// A reserved application names a second cert whose row exists but whose key the
+	// deployment did not mount.
+	cert(t, db, "admin", "cert-zoo")
+	app(t, db, "admin", "zoo-console", "cert-zoo")
+
+	err := iamserver.RequireSigning(ctx, db)
+	if err == nil {
+		t.Fatal("a reserved application naming an unmounted cert was allowed to serve")
+	}
+	if !strings.Contains(err.Error(), "cert-zoo") {
+		t.Errorf("the refusal does not name the cert the application depends on: %v", err)
+	}
+
+	keyring.Set("cert-zoo", material)
+	t.Cleanup(func() { keyring.Forget("cert-zoo") })
+	if err := iamserver.RequireSigning(ctx, db); err != nil {
+		t.Fatalf("mounting the referenced cert did not satisfy the requirement: %v", err)
+	}
+}
+
+// TWO PARTIAL MOUNTS THAT WOULD PICK DIFFERENT PLATFORM CERTS BOTH FAIL. The
+// session-cookie MAC is keyed by the lexically-least reserved cert WITH material,
+// so a fleet where replica A mounts cert-alpha and replica B mounts cert-beta
+// would key cookies with different certs and flap every session. Because both
+// certs are named by reserved applications, the join makes EACH replica refuse
+// the cert it is missing — the fleet fails closed instead of diverging.
+func TestRequireSigningPartialMountsFailRatherThanDiverge(t *testing.T) {
+	ctx := context.Background()
+	db := store(t)
+	t.Setenv(keyring.EnvDir, "")
+
+	cert(t, db, "admin", "cert-alpha")
+	cert(t, db, "admin", "cert-beta")
+	app(t, db, "admin", "alpha-console", "cert-alpha")
+	app(t, db, "admin", "beta-console", "cert-beta")
+	t.Cleanup(func() { keyring.Forget("cert-alpha"); keyring.Forget("cert-beta") })
+
+	// Replica A: only cert-alpha mounted. It would key the MAC with cert-alpha.
+	keyring.Forget("cert-beta")
+	keyring.Set("cert-alpha", material)
+	a, _ := iamstore.PlatformSigningCert(ctx, db)
+	if err := iamserver.RequireSigning(ctx, db); err == nil {
+		t.Fatal("replica A booted on a partial mount")
+	}
+
+	// Replica B: only cert-beta mounted. It would key the MAC with cert-beta — a
+	// DIFFERENT cert, which is the divergence the boot check exists to prevent.
+	keyring.Forget("cert-alpha")
+	keyring.Set("cert-beta", material)
+	b, _ := iamstore.PlatformSigningCert(ctx, db)
+	if err := iamserver.RequireSigning(ctx, db); err == nil {
+		t.Fatal("replica B booted on a partial mount")
+	}
+
+	if a != nil && b != nil && a.Name == b.Name {
+		t.Fatalf("test does not exercise divergence: both replicas selected %q", a.Name)
+	}
+}
+
+// A PUBLISHED HALF AND A SIGNING HALF THAT DISAGREE FAIL CLOSED. When a cert row
+// carries a published certificate for key A and the deployment mounts key B, the
+// JWKS advertises A while the signer signs with B, so every token verifies
+// against a key that did not sign it — with health checks green. Latent until a
+// rotation populates a certificate; armed the moment one does.
+func TestRequireSigningRefusesAMismatchedPair(t *testing.T) {
+	ctx := context.Background()
+	db := store(t)
+	t.Setenv(keyring.EnvDir, "")
+
+	certA, keyA := keypair(t, "A")
+	_, keyB := keypair(t, "B")
+
+	c := orm.New[schema.Cert](db)
+	c.Owner, c.Name, c.CryptoAlgorithm = "admin", "cert-hanzo", "RS256"
+	c.Certificate = certA // the JWKS will publish A's public half
+	c.SetId("admin/cert-hanzo")
+	if err := c.CreateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	keyring.Set("cert-hanzo", keyB) // the deployment mounts B
+	t.Cleanup(func() { keyring.Forget("cert-hanzo") })
+
+	err := iamserver.RequireSigning(ctx, db)
+	if err == nil {
+		t.Fatal("a cert whose published half and mounted key disagree was allowed to serve")
+	}
+	if !strings.Contains(err.Error(), "cert-hanzo") {
+		t.Errorf("the refusal does not name the mismatched cert: %v", err)
+	}
+
+	// The matching key clears it.
+	keyring.Set("cert-hanzo", keyA)
+	if err := iamserver.RequireSigning(ctx, db); err != nil {
+		t.Fatalf("the matching key was still refused: %v", err)
+	}
+}
+
+// AN EMBEDDED HOST FAILS BOOT THROUGH ITS ONLY SEEDING ENTRY. internal/seed is
+// unimportable, so a host reaches the config only through server.Seed; folding
+// the signing assertion there is what gives an embedded host the same fail-closed
+// guarantee main() has. A cloud-shaped app that seeds a reserved application
+// naming a cert it did not mount must not boot.
+func TestSeedFailsWhenAnEmbeddedHostCannotSignWhatItPublishes(t *testing.T) {
+	ctx := context.Background()
+	db := store(t)
+	t.Setenv(keyring.EnvDir, "")
+
+	keyring.Set("cert-hanzo", material) // the platform cert is mounted
+	t.Cleanup(func() { keyring.Forget("cert-hanzo"); keyring.Forget("cert-zoo") })
+
+	dir := t.TempDir()
+	initData := filepath.Join(dir, "init_data.json")
+	const doc = `{
+	  "applications": [
+	    {"owner":"admin","name":"hanzo-console","cert":"cert-hanzo"},
+	    {"owner":"admin","name":"zoo-console","cert":"cert-zoo"}
+	  ],
+	  "certs": [
+	    {"owner":"admin","name":"cert-hanzo","cryptoAlgorithm":"RS256"},
+	    {"owner":"admin","name":"cert-zoo","cryptoAlgorithm":"RS256"}
+	  ]
+	}`
+	if err := os.WriteFile(initData, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := iamserver.Seed(ctx, db, initData); err == nil {
+		t.Fatal("an embedded host seeded a config it cannot sign and was allowed to serve")
+	} else if !strings.Contains(err.Error(), "cert-zoo") {
+		t.Errorf("the boot failure does not name the unmounted cert: %v", err)
+	}
+
+	keyring.Set("cert-zoo", material)
+	if _, err := iamserver.Seed(ctx, db, initData); err != nil {
+		t.Fatalf("a fully-mounted embedded host was refused: %v", err)
 	}
 }
