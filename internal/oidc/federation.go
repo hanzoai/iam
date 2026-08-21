@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
@@ -667,10 +668,10 @@ func federationBaseURL(c *zip.Ctx) string {
 // one was bypassed and still refuses the escalation.
 func federationOrgAllowed(app *schema.Application) bool {
 	org := strings.TrimSpace(app.Organization)
-	if org == "" || store.IsReservedOrg(org) {
+	if org == "" || policy.IsReservedOrg(org) {
 		return false
 	}
-	if store.IsSigningCertOwner(app.Owner) {
+	if policy.IsSigningOwner(app.Owner) {
 		return true // platform app — SuperAdmin-configured, may serve any tenant
 	}
 	if app.ServesAnyOrg() {

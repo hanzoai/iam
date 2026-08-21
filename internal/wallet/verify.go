@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
@@ -185,9 +186,9 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 				user = in.Session
 			case in.Method == "login":
 				return errNoAccount
-			case !in.App.EnableSignUp || store.IsReservedOrg(in.App.Organization):
+			case !in.App.EnableSignUp || policy.IsReservedOrg(in.App.Organization):
 				// The SAME reserved-org predicate signup, onboarding, federated
-				// provisioning, and token exchange enforce (store.IsReservedOrg) —
+				// provisioning, and token exchange enforce (policy.IsReservedOrg) —
 				// wallet login was the ONE public account-creation front door that
 				// did not consult it. An application row owned by a reserved org
 				// (admin/built-in/service) with EnableSignUp set would otherwise let

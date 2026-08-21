@@ -6,6 +6,7 @@ package compat
 import (
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -46,7 +47,7 @@ func resolveKeyHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
 		p, ok := authz.From(ctx)
-		if !ok || p.App == "" || !authz.Allowed(p, authz.CapPublishableResolve) {
+		if !ok || p.App == nil || !p.Holds(policy.CapPublishableResolve, authz.Env) {
 			return httpx.Err(c, unauthorized)
 		}
 		k, err := store.PublishableKeyByAccessKey(ctx, db, c.Query("accessKey"), time.Now())

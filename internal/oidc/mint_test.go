@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"testing"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/store"
@@ -24,7 +25,7 @@ import (
 func seedOperator(t *testing.T, db orm.DB, org, name, password string) {
 	t.Helper()
 	seedUserInOrg(t, db, org, name, name+"@"+org+".example", password)
-	if _, err := store.EnsureMembership(tctx(), db, org+"/"+name, store.AdminOrg, store.RoleAdmin); err != nil {
+	if _, err := store.EnsureMembership(tctx(), db, org+"/"+name, policy.AdminOrg, store.RoleAdmin); err != nil {
 		t.Fatalf("grant the reserved-org membership: %v", err)
 	}
 }

@@ -6,12 +6,12 @@ package oidc
 import (
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/sessions"
-	"github.com/hanzoai/iam/pkg/store"
 )
 
 // POST /v1/iam/onboard — first-run org onboarding. A signed-in user with no org of
@@ -54,7 +54,7 @@ const (
 
 // The IAM SYSTEM owners a customer org may never become — creating one would collide
 // with a signing-cert owner (admin/built-in) or a system principal (app) — are the
-// ONE store.IsReservedOrg set, shared with signup and federated provisioning so the
+// ONE policy.IsReservedOrg set, shared with signup and federated provisioning so the
 // reserved set never drifts between surfaces. admin is here for a second reason: it is
 // the reserved SuperAdmin org, and a self-service signup must never provision into it
 // (provision, do not promote). Brand/staff orgs (hanzo/lux/zoo/pars in the console
@@ -90,7 +90,7 @@ func onboardHandler(db orm.DB) zip.Handler {
 		} else {
 			slug = slugifyOrg(f.Name)
 		}
-		// provisionAndRespond validates the slug (length + store.IsReservedOrg) and
+		// provisionAndRespond validates the slug (length + policy.IsReservedOrg) and
 		// drives the ONE atomic provision — org + admin move + hashed metered
 		// credential — replacing the old non-atomic create-then-move (no orphan on a
 		// mid-flight fault, resumable via the Founder stamp).
@@ -157,7 +157,7 @@ func provisionAndRespond(c *zip.Ctx, db orm.DB, owner, name, slug, display strin
 	if len(slug) < minOrgSlug {
 		return onboardErr(c, 400, "use at least 2 letters or numbers")
 	}
-	if store.IsReservedOrg(slug) {
+	if policy.IsReservedOrg(slug) {
 		return onboardErr(c, 400, "\""+slug+"\" is reserved. choose a different name")
 	}
 	if display == "" {

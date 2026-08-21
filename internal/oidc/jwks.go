@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -157,7 +158,7 @@ func isSigningCert(cert *schema.Cert) bool {
 	if cert == nil || cert.Name == "" {
 		return false
 	}
-	if !store.IsSigningCertOwner(cert.Owner) {
+	if !policy.IsSigningOwner(cert.Owner) {
 		return false
 	}
 	if cert.PrivateKey == "" && cert.Certificate == "" {

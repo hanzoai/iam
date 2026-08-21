@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -309,20 +310,17 @@ func orgFromBody(body []byte) string {
 // provision an identity in another tenant.
 //
 // A RESERVED SYSTEM ORG IS NOT A TENANT, and the mint capability does not reach
-// one. store.IsReservedOrg is the same predicate signup, onboarding, federated
+// one. policy.IsReservedOrg is the same predicate signup, onboarding, federated
 // provisioning and membership grants already consult, composed the same way
 // memberships.mayGrant composes it — reserved unless the caller is a SuperAdmin —
 // so the set of orgs a customer-driven flow may never land a principal in is
-// stated once and this surface stops being the exception.
+// stated once, and this surface states it with them.
 //
-// It was the exception, and the escalation was total: create takes the target org
-// from the request body verbatim, and a row's HOME org is its platform authority
-// (authz builds Principal.Super from memberOf(adminOrg), and memberOf answers
-// home-or-membership). So `{"organization":"admin"}` minted a live principal in
-// the reserved org, holding pk-/sk- keys, that authenticates as a SuperAdmin —
-// turning "may provision identities" into platform sudo, cross-tenant, in one
-// call. The app principal itself is never Admin and never Super by construction;
-// nothing stopped it CREATING one that is.
+// The clause is load-bearing here specifically: create takes the target org from
+// the request BODY, and a principal's home org is part of its platform authority
+// (authz resolves Principal.Sudo from memberOf(policy.AdminOrg), which answers
+// home-or-membership). A minted row is therefore an identity with whatever the
+// named org confers, so the org a mint may name has to be a tenant.
 //
 // The capability is unbound by org for a reason (an orchestrator provisions for
 // every tenant), so the binding that matters is not which tenant but whether the
@@ -332,13 +330,13 @@ func admin(p *authz.Principal, org string) bool {
 	if p == nil || org == "" {
 		return false
 	}
-	if store.IsReservedOrg(org) && !p.Super {
+	if policy.IsReservedOrg(org) && !p.Sudo {
 		return false
 	}
-	if p.App != "" {
-		return authz.Allowed(p, authz.CapKeyMint)
+	if p.App != nil {
+		return p.Holds(policy.CapKeyMint, authz.Env)
 	}
-	return p.Super || (p.Admin && p.Org == org)
+	return p.Sudo || (p.Admin && p.Org == org)
 }
 
 // read is the gate for the LIST surface, which returns names and metadata only
@@ -355,11 +353,11 @@ func read(p *authz.Principal, org string) bool {
 	if p == nil || org == "" {
 		return false
 	}
-	if p.App != "" {
-		return authz.Allowed(p, authz.CapKeyMint) ||
-			(authz.Allowed(p, authz.CapServiceAccountRead) && authz.BoundToOrg(p, org))
+	if p.App != nil {
+		return p.Holds(policy.CapKeyMint, authz.Env) ||
+			(p.Holds(policy.CapServiceAccountRead, authz.Env) && p.BoundTo(org))
 	}
-	return p.Super || (p.Admin && p.Org == org)
+	return p.Sudo || (p.Admin && p.Org == org)
 }
 
 // mint (re)generates the identity's credential: a fresh pk- access key (the
