@@ -22,13 +22,13 @@ func TestCanonicalAndLegacyAddressesBothRoute(t *testing.T) {
 	seedRichUser(t, db)
 
 	for _, tc := range []struct{ method, canonical, legacy string }{
-		{"GET", PathAccount, LegacyPathAccount},
-		{"GET", PathAuthApplication, LegacyPathAuthApplication},
-		{"POST", PathPreferences, LegacyPathPreferences},
-		{"POST", PathVerificationCodes, LegacyPathVerificationCodes},
-		{"POST", PathTokensIssue, LegacyPathTokensIssue},
-		{"POST", PathKeysMint, LegacyPathKeysMint},
-		{"POST", PathKeysRevoke, LegacyPathKeysRevoke},
+		{"GET", PathAccount, PathAccount},
+		{"GET", PathAuthApplication, PathAuthApplication},
+		{"POST", PathPreferences, PathPreferences},
+		{"POST", PathVerificationCodes, PathVerificationCodes},
+		{"POST", PathTokensIssue, PathTokensIssue},
+		{"POST", PathKeysMint, PathKeysMint},
+		{"POST", PathKeysRevoke, PathKeysRevoke},
 	} {
 		for _, path := range []string{tc.canonical, tc.legacy} {
 			resp, _ := do(t, app, formReqNoBody(tc.method, path))

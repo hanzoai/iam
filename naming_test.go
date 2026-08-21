@@ -29,9 +29,9 @@ func TestNoNewVerbNounAddresses(t *testing.T) {
 	frozen := map[string]bool{}
 	for _, p := range []string{
 		// Front door — canonical twins in internal/oidc/canonical.go.
-		oidc.LegacyPathAccount, oidc.LegacyPathAuthApplication, oidc.LegacyPathPreferences,
-		oidc.LegacyPathVerificationCodes, oidc.LegacyPathTokensIssue,
-		oidc.LegacyPathKeysMint, oidc.LegacyPathKeysRevoke,
+		oidc.PathAccount, oidc.PathAuthApplication, oidc.PathPreferences,
+		oidc.PathVerificationCodes, oidc.PathTokensIssue,
+		oidc.PathKeysMint, oidc.PathKeysRevoke,
 		// Entity CRUD — canonical twins are the REST quintets internal/compat
 		// aliases onto (`POST /v1/iam/users` for add-user, and so on).
 		"/v1/iam/get-organizations", "/v1/iam/get-users", "/v1/iam/get-global-users",
@@ -59,8 +59,8 @@ func TestNoNewVerbNounAddresses(t *testing.T) {
 		"resolve": true, "exit": true, "impersonate": true,
 	}
 
-	frozen[mfa.LegacyPathDisable] = true
-	frozen[mfa.LegacyPathPreferred] = true
+	frozen[mfa.PathDisable] = true
+	frozen[mfa.PathPreferred] = true
 
 	db, err := server.OpenSQLite(":memory:")
 	if err != nil {

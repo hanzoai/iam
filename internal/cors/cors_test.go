@@ -136,7 +136,7 @@ func TestBrowserPaths_CoverTheConsoleOrgSurface(t *testing.T) {
 		"/v1/iam/get-organizations",
 		"/v1/iam/get-organization",
 		"/v1/iam/get-users",
-		"/v1/iam/get-account",
+		"/v1/iam/account",
 	} {
 		if browserPaths[p] != bearer {
 			t.Errorf("%s must be reachable cross-origin with a Bearer: a console reads it to "+
