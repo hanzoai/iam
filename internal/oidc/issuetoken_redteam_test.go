@@ -59,7 +59,7 @@ func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	if resp, body := do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=hanzo/carol")); resp.StatusCode != 200 {
+	if resp, body := do(t, app, keyReq("POST", userKeys("hanzo/carol"), "hanzo-console", "top-secret", "")); resp.StatusCode != 200 {
 		t.Fatalf("mint status=%d body=%s", resp.StatusCode, body)
 	}
 

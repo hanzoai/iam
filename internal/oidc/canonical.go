@@ -15,18 +15,24 @@ package oidc
 // internal detail.
 //
 // Every constant below is the address the published document declares. The old
-// spelling stays REACHABLE — same handler, registered twice by alias() — so no
-// consumer pinned to it breaks; it is simply not what anything teaches. When the
-// last pinned consumer moves, the Legacy* half of a pair is deleted and nothing
-// else changes.
+// spelling stays REACHABLE — one handler value at both addresses — so no consumer
+// pinned to it breaks; it is simply not what anything teaches. When the last
+// pinned consumer moves, the Legacy* half of a pair is deleted and nothing else
+// changes.
 const (
 	PathAccount           = "/v1/iam/account"            // legacy: get-account
 	PathAuthApplication   = "/v1/iam/auth/application"   // legacy: get-app-login
 	PathPreferences       = "/v1/iam/preferences"        // legacy: update-preferences
 	PathVerificationCodes = "/v1/iam/verification-codes" // legacy: send-verification-code
 	PathTokensIssue       = "/v1/iam/tokens/issue"       // legacy: issue-user-token
-	PathKeysMint          = "/v1/iam/keys/mint"          // legacy: mint-user-keys
-	PathKeysRevoke        = "/v1/iam/keys/revoke"        // legacy: revoke-user-keys
+	// PathUserKeys is the key a user holds. POST mints one and DELETE takes it
+	// away — the same shape a service account's key already has
+	// (/v1/iam/service-accounts/{name}/keys), so one identity kind is not
+	// addressed differently from the other. The target is IN the address, not a
+	// ?id= the address has to be told about, and WHICH class of key stays a
+	// ?type= field, because the two classes differ in what they may do and not in
+	// what you call to get one.
+	PathUserKeys = "/v1/iam/users/:owner/:name/keys" // legacy: mint-user-keys, revoke-user-keys
 )
 
 // The verb-noun spellings these replaced. Kept reachable, taught nowhere.
