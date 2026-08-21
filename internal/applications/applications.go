@@ -110,21 +110,16 @@ type DeleteResult struct {
 // answered and which spelling a reader wanted depended on the operation.
 // Fourteen kinds against one is not a matter of taste; the odd one moved.
 //
-// The singular address stays reachable on the SAME typed handlers, tagged
-// `compat` — which is what keeps it out of the published document and therefore
-// out of every SDK, docs page and CLI command. It is deleted when the last
-// pinned consumer moves.
+// The singular address is gone. It was kept reachable on these same handlers
+// while consumers were still pinned to it; measured across cloud, ai, console,
+// id, base, commerce and visor, none remained, so the second spelling went with
+// them rather than waiting to be forgotten.
 func Route(app *zip.App, db orm.DB) {
 	zip.Get(app, "/v1/iam/applications", listApplications(db), zip.WithTags("applications"))
 	zip.Post(app, "/v1/iam/applications", Create(db), zip.WithTags("applications"))
 	zip.Get(app, "/v1/iam/applications/get", getApplication(db), zip.WithTags("applications"))
 	zip.Post(app, "/v1/iam/applications/update", Update(db), zip.WithTags("applications"))
 	zip.Post(app, "/v1/iam/applications/delete", deleteApplication(db), zip.WithTags("applications"))
-
-	zip.Get(app, "/v1/iam/application", getApplication(db), zip.WithTags("compat"))
-	zip.Post(app, "/v1/iam/application", Create(db), zip.WithTags("compat"))
-	zip.Put(app, "/v1/iam/application", Update(db), zip.WithTags("compat"))
-	zip.Delete(app, "/v1/iam/application", deleteApplication(db), zip.WithTags("compat"))
 }
 
 // listApplications returns the applications in one organization, newest first —

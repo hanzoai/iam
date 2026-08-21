@@ -204,7 +204,7 @@ func TestMFA_enrollLifecycle(t *testing.T) {
 	}
 
 	// disable — every factor is cleared, and the recovery codes go with the last one.
-	if st, m := h.do(t, mfa.LegacyPathDisable, alice, `{}`); st != 200 || m["status"] != "ok" {
+	if st, m := h.do(t, mfa.PathDisable, alice, `{}`); st != 200 || m["status"] != "ok" {
 		t.Fatalf("disable: status=%d body=%v", st, m)
 	}
 	u, _ = store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
@@ -396,7 +396,7 @@ func TestMFA_crossUserRequiresAdmin(t *testing.T) {
 	if st, _ := h.do(t, mfa.PathInitiate, alice, body); st != 403 {
 		t.Fatalf("regular user initiating another user's MFA: status=%d, want 403", st)
 	}
-	if st, _ := h.do(t, mfa.LegacyPathDisable, alice, body); st != 403 {
+	if st, _ := h.do(t, mfa.PathDisable, alice, body); st != 403 {
 		t.Fatalf("regular user disabling another user's MFA: status=%d, want 403", st)
 	}
 
@@ -422,7 +422,7 @@ func TestMFA_setPreferred(t *testing.T) {
 	alice := h.token(t, "hanzo/alice")
 
 	for _, mfaType := range []string{factor.SMS, factor.Email, "carrier-pigeon"} {
-		st, m := h.do(t, mfa.LegacyPathPreferred, alice, `{"mfaType":"`+mfaType+`"}`)
+		st, m := h.do(t, mfa.PathPreferred, alice, `{"mfaType":"`+mfaType+`"}`)
 		if st != 200 || m["status"] != "error" {
 			t.Fatalf("preferred %q: status=%d body=%v, want a refusal", mfaType, st, m)
 		}
@@ -438,7 +438,7 @@ func TestMFA_setPreferred(t *testing.T) {
 	if _, m := h.do(t, mfa.PathEnable, alice, `{"secret":"`+secret+`","passcode":"`+totpNow(t, secret)+`"}`); m["status"] != "ok" {
 		t.Fatalf("enable: %v", m)
 	}
-	if st, m := h.do(t, mfa.LegacyPathPreferred, alice, `{"mfaType":"app"}`); st != 200 || m["status"] != "ok" {
+	if st, m := h.do(t, mfa.PathPreferred, alice, `{"mfaType":"app"}`); st != 200 || m["status"] != "ok" {
 		t.Fatalf("preferred app: status=%d body=%v", st, m)
 	}
 	u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
