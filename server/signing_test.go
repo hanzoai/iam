@@ -454,3 +454,44 @@ func TestSeedFailsWhenAnEmbeddedHostCannotSignWhatItPublishes(t *testing.T) {
 		t.Fatalf("a fully-mounted embedded host was refused: %v", err)
 	}
 }
+
+// THE SESSION-COOKIE MAC MUST NOT SPLIT ACROSS A FLEET. PlatformSigningCert keys
+// that MAC (sessions/resolve.go), and it picks from the certs a reserved-owner
+// application NAMES — not from whatever happens to be mounted. The estate's own
+// rotation mounts a new key before repointing apps at it, so between those steps
+// the new cert is mounted-but-unreferenced; if it sorts before the incumbent, a
+// mounted-set rule would make one replica key cookies with it and its siblings
+// with the incumbent. Selecting from the referenced set makes every replica agree.
+func TestPlatformSigningCertSelectsFromReferencedSet(t *testing.T) {
+	ctx := context.Background()
+	db := store(t)
+	t.Setenv(keyring.EnvDir, "")
+
+	// The incumbent: referenced by an admin app, mounted everywhere.
+	cert(t, db, "admin", "cert-hanzo")
+	app(t, db, "admin", "hanzo-console", "cert-hanzo")
+	keyring.Set("cert-hanzo", material)
+	t.Cleanup(func() { keyring.Forget("cert-hanzo"); keyring.Forget("cert-aaa-next") })
+
+	// The staged orphan: unreferenced, and its name sorts BEFORE the incumbent.
+	cert(t, db, "admin", "cert-aaa-next")
+
+	// Replica 1 has the orphan mounted; replica 2 does not.
+	keyring.Set("cert-aaa-next", material)
+	r1, err := iamstore.PlatformSigningCert(ctx, db)
+	if err != nil || r1 == nil {
+		t.Fatalf("replica 1: %v (nil=%v)", err, r1 == nil)
+	}
+	keyring.Forget("cert-aaa-next")
+	r2, err := iamstore.PlatformSigningCert(ctx, db)
+	if err != nil || r2 == nil {
+		t.Fatalf("replica 2: %v (nil=%v)", err, r2 == nil)
+	}
+
+	if r1.Name != r2.Name {
+		t.Fatalf("the session-cookie MAC would split: replica1=%q replica2=%q", r1.Name, r2.Name)
+	}
+	if r1.Name != "cert-hanzo" {
+		t.Fatalf("selection did not follow the referenced incumbent: got %q, want cert-hanzo", r1.Name)
+	}
+}
