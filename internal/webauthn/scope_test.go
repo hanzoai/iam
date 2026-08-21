@@ -28,6 +28,7 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -233,12 +234,23 @@ func TestList_unauthenticated(t *testing.T) {
 
 // ---- seeds ---------------------------------------------------------------
 
+// seedCert files a certificate row and stages its key the way a deployment
+// supplies one: the row is identity only, so the process signs with this key
+// only because the ring holds it under the cert's name.
+//
+// Staged only for a reserved signing owner, which is the case under test rather
+// than test bookkeeping: material is addressed by name because the name is the
+// `kid`, so staging a tenant cert's key would hand it to the platform cert of the
+// same name.
 func seedCert(t *testing.T, db orm.DB, owner, name, privPEM string) {
 	t.Helper()
+	if store.IsSigningCertOwner(owner) {
+		keyring.Set(name, privPEM)
+		t.Cleanup(func() { keyring.Forget(name) })
+	}
 	c := orm.New[schema.Cert](db)
 	c.Owner, c.Name = owner, name
 	c.CryptoAlgorithm = "RS256"
-	c.PrivateKey = privPEM
 	c.SetId(owner + "/" + name)
 	if err := c.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed cert: %v", err)

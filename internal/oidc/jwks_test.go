@@ -15,6 +15,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -29,7 +30,7 @@ func seedMLDSACert(t *testing.T, db orm.DB, name string) {
 	c.Owner = "admin"
 	c.Name = name
 	c.CryptoAlgorithm = "MLDSA65"
-	c.PrivateKey = base64.StdEncoding.EncodeToString(sk.Bytes())
+	keyring.Set(name, base64.StdEncoding.EncodeToString(sk.Bytes()))
 	c.SetId("admin/" + name)
 	if err := c.CreateCtx(tctx()); err != nil {
 		t.Fatalf("seed mldsa cert: %v", err)
@@ -127,7 +128,7 @@ func TestJWKS_ExcludesTLSCert(t *testing.T) {
 	c.Name = "cert-tls"
 	c.Type = "SSL"
 	c.CryptoAlgorithm = "RS256"
-	c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
+	keyring.Set(c.Name, rsaKeyToPEM(t, sharedKey(t)))
 	c.SetId("admin/cert-tls")
 	if err := c.CreateCtx(tctx()); err != nil {
 		t.Fatal(err)
@@ -151,7 +152,7 @@ func TestJWKS_ExcludesNonPlatformCert(t *testing.T) {
 	c.Owner = "attacker-org"
 	c.Name = "cert-evil"
 	c.CryptoAlgorithm = "RS256"
-	c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
+	keyring.Set(c.Name, rsaKeyToPEM(t, sharedKey(t)))
 	c.SetId("attacker-org/cert-evil")
 	if err := c.CreateCtx(tctx()); err != nil {
 		t.Fatal(err)
@@ -176,7 +177,7 @@ func TestJWKS_DedupesByKid(t *testing.T) {
 		c.Owner = owner
 		c.Name = "cert-shared"
 		c.CryptoAlgorithm = "RS256"
-		c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
+		keyring.Set(c.Name, rsaKeyToPEM(t, sharedKey(t)))
 		c.SetId(owner + "/cert-shared")
 		if err := c.CreateCtx(tctx()); err != nil {
 			t.Fatal(err)
