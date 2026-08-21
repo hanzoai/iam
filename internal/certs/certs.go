@@ -17,8 +17,11 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	policy "github.com/hanzoai/authz"
+
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // Handler binds the certs operations to one orm store.
@@ -97,15 +100,48 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 
 // Get returns one signing certificate — its algorithm, its validity window and
 // its public half. The private key is masked.
-func (h *Handler) Get(_ context.Context, in *Ref) (*schema.Cert, error) {
+func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Cert, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
 	cert, err := orm.Get[schema.Cert](h.db, key(in.Owner, in.Name))
-	if err != nil {
+	if err == nil {
+		return cert.Mask(), nil
+	}
+	if !errors.Is(err, orm.ErrNotFound) {
 		return nil, mapErr(err)
 	}
-	return cert.Mask(), nil
+
+	// A PLATFORM SIGNING CERT IS ADDRESSED BY NAME, and that is one rule rather
+	// than two. The JWKS publishes a cert, and issueTokens signs with it, through
+	// store.GetSigningCert — which searches the reserved owners in order and does
+	// not care which of them holds the row. Only this read insisted on an exact
+	// owner, so the two could disagree about a cert that plainly exists, and they
+	// did: cert-hanzo was live in the JWKS while GET certs/get?owner=admin
+	// answered 404, because the surviving row sat under the other reserved owner.
+	//
+	// ai bootstraps by reading its application and then that application's cert
+	// (object/auth_config.go), so the miss left the process unable to establish
+	// the key every bearer is validated against — api.hanzo.ai answered 503 to
+	// every authenticated request while the key it needed was being served, one
+	// route away, to anyone who asked.
+	//
+	// Scoped, not widened: this only fires for a RESERVED owner, so a tenant
+	// asking for its own org's cert still gets that org's row or nothing, and a
+	// tenant can no more reach a platform key than before. Masked like the exact
+	// hit — Mask blanks PrivateKey — so what crosses is the public half the JWKS
+	// already publishes.
+	if !policy.IsSigningOwner(in.Owner) {
+		return nil, mapErr(err)
+	}
+	signing, serr := store.GetSigningCert(ctx, h.db, in.Name)
+	if serr != nil {
+		return nil, mapErr(serr)
+	}
+	if signing == nil {
+		return nil, mapErr(err)
+	}
+	return signing.Mask(), nil
 }
 
 // Create adds a signing certificate your applications can verify tokens against
