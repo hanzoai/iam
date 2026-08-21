@@ -213,3 +213,35 @@ func TestGuard_StillGatesIamsOwnPaths(t *testing.T) {
 		}
 	}
 }
+
+// A PUBLIC route that lives UNDER a guarded entity's path is still public, and the
+// refusal proves which seam answered.
+//
+// The key a user holds is addressed as /v1/iam/users/{owner}/{name}/keys — one
+// segment below /v1/iam/users/{owner}/{name}, which the Guard covers. Its caller is
+// a confidential CLIENT presenting a client_secret and holding no user bearer at
+// all, so if group middleware reached by PREFIX rather than by the routes it holds,
+// every mint would 401 in production while a suite that mounts only the OIDC group
+// stayed green.
+//
+// The two refusals are told apart by their BODY, not their status: both are 401.
+// The Guard answers zip's shape, "error"; the minter answers the v1 envelope,
+// "msg". Reading the code alone cannot distinguish them.
+func TestPublicRouteUnderAGuardedPathAnswersForItself(t *testing.T) {
+	app, _ := embedded(t)
+
+	req := httptest.NewRequest("POST", "/v1/iam/users/hanzo/alice/keys", nil)
+	req.Host = "hanzo.id"
+	resp, err := testhttp.Do(app, req)
+	if err != nil {
+		t.Fatalf("POST the user's keys: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	if !strings.Contains(string(body), `"msg":"client authentication required"`) {
+		t.Fatalf("the mint did not answer for itself: %d %s\n"+
+			"a Guard that reached this address would refuse a client_secret caller "+
+			"that never presents a bearer", resp.StatusCode, body)
+	}
+}

@@ -29,14 +29,21 @@ import (
 // (orgBase + "/get") and a typed registration (zip.Get[In, Out]) each answer no
 // grep, and a character class that forgets the hyphen misses audit-logs and
 // webauthn-credentials — all three of which were live here.
+// The OAuth/OIDC subtree is exempt, and that is not a hole in the rule. token,
+// authorize, introspect, revoke, logout, userinfo, device and callback are
+// ENDPOINT NAMES fixed by RFC 6749, 7662, 7009, 8628 and OIDC Discovery. They read
+// as verbs and they ARE the standard: every client and every conformance suite
+// spells them that way, so renaming one would not tidy this surface, it would make
+// the server non-compliant.
 func TestNoPathCarriesAVerb(t *testing.T) {
 	for path := range served(t) {
-		if !strings.HasPrefix(path, "/v1/iam/") {
+		if !strings.HasPrefix(path, "/v1/iam/") || strings.HasPrefix(path, "/v1/iam/oauth/") {
 			continue
 		}
 		for _, seg := range strings.Split(path, "/") {
 			switch seg {
-			case "get", "add", "update", "delete", "list", "create", "remove":
+			case "get", "add", "update", "delete", "list", "create", "remove",
+				"search", "mint", "revoke", "disable":
 				t.Errorf("%s carries the verb %q as a path segment — the METHOD says "+
 					"what to do; the path says what to do it to", path, seg)
 			}

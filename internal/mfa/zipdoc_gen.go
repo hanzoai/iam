@@ -7,10 +7,10 @@ import (
 )
 
 func init() {
-	zip.Describe("POST /v1/iam/delete-mfa", zip.Doc{
+	zip.Describe("DELETE /v1/iam/mfa", zip.Doc{
 		Description: "Turns a factor off, so sign-in stops asking for it. Naming no factor turns\noff ALL of them — the reset path. People may do this for themselves; doing it for\nsomebody else takes an administrator, which is what makes it the way back in when a\nphone is lost.\n\nThe recovery codes go with the last factor: they are the way past a challenge, so\nkeeping them alive for an account with nothing to challenge would leave a standing\ncredential behind.",
 	})
-	zip.Describe("POST /v1/iam/mfa/disable", zip.Doc{
+	zip.Describe("POST /v1/iam/delete-mfa", zip.Doc{
 		Description: "Turns a factor off, so sign-in stops asking for it. Naming no factor turns\noff ALL of them — the reset path. People may do this for themselves; doing it for\nsomebody else takes an administrator, which is what makes it the way back in when a\nphone is lost.\n\nThe recovery codes go with the last factor: they are the way past a challenge, so\nkeeping them alive for an account with nothing to challenge would leave a standing\ncredential behind.",
 	})
 	zip.Describe("POST /v1/iam/mfa/preferred", zip.Doc{
