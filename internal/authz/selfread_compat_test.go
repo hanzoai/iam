@@ -21,7 +21,7 @@ import (
 //
 // The first cut of the self-read grant was unit-tested against authorize() with
 // entity "applications" and passed — while production still 403'd, because the
-// live caller uses the the legacy surface alias /v1/iam/get-application and entityOf resolved
+// live caller uses the the legacy surface alias /v1/iam/applications/get and entityOf resolved
 // that to the literal "get-application", which matched no clause. A test written
 // against the noun surface proves nothing about the verb surface, exactly like the
 // login tests that post authorize params in the body no real client uses.
@@ -86,16 +86,16 @@ func TestSelfRead_OverTheCompatVerbCloudActuallyCalls(t *testing.T) {
 		want       int
 	}{
 		// The exact request, both spellings of the id the caller may send.
-		{"own application, owner-qualified", "/v1/iam/get-application?id=admin%2Fhanzo-cloud", 200},
+		{"own application, owner-qualified", "/v1/iam/applications/get?id=admin%2Fhanzo-cloud", 200},
 		// 200 is not enough: Scope used to rewrite the owner to the app's SERVED org,
 		// so the read was authorized and then answered "the entity does not exist" —
 		// a 200 that is functionally the 403 it replaced. The body is asserted below.
-		{"own cert, owner-qualified", "/v1/iam/get-cert?id=admin%2F" + signingKid, 200},
-		{"own cert, bare name", "/v1/iam/get-cert?id=" + signingKid, 200},
+		{"own cert, owner-qualified", "/v1/iam/certs/get?id=admin%2F" + signingKid, 200},
+		{"own cert, bare name", "/v1/iam/certs/get?id=" + signingKid, 200},
 		// THE SHAPE THE BINARY SENDS. ai/internal/iam/cert.go:35 builds
 		// "<IAM_ORG>/<name>", so hanzo/cert-hanzo is the only spelling that matters in
 		// production; the bare form is the one I verified last time and it was not it.
-		{"own cert, org-qualified (what ai sends)", "/v1/iam/get-cert?id=hanzo%2F" + signingKid, 200},
+		{"own cert, org-qualified (what ai sends)", "/v1/iam/certs/get?id=hanzo%2F" + signingKid, 200},
 		// The native noun surface must agree — one policy, two spellings. The LIST
 		// route is not the self-read: ApplicationQuery carries only Owner, so
 		// ?name= is ignored and this asks to enumerate EVERY application under the
@@ -138,13 +138,13 @@ func TestSelfRead_StillRefusesEverythingElse(t *testing.T) {
 	}
 
 	for _, tc := range []struct{ name, path string }{
-		{"a sibling application", "/v1/iam/get-application?id=admin%2Fhanzo-console"},
-		{"same name, tenant owner", "/v1/iam/get-application?id=hanzo%2Fhanzo-cloud"},
-		{"a cert it does not reference", "/v1/iam/get-cert?id=admin%2Fcert-lux"},
-		{"a cert it does not reference, bare", "/v1/iam/get-cert?id=cert-lux"},
-		{"the whole application list", "/v1/iam/get-applications?owner=admin"},
-		{"the whole cert list", "/v1/iam/get-certs?owner=admin"},
-		{"a user row", "/v1/iam/get-users?owner=admin"},
+		{"a sibling application", "/v1/iam/applications/get?id=admin%2Fhanzo-console"},
+		{"same name, tenant owner", "/v1/iam/applications/get?id=hanzo%2Fhanzo-cloud"},
+		{"a cert it does not reference", "/v1/iam/certs/get?id=admin%2Fcert-lux"},
+		{"a cert it does not reference, bare", "/v1/iam/certs/get?id=cert-lux"},
+		{"the whole application list", "/v1/iam/applications?owner=admin"},
+		{"the whole cert list", "/v1/iam/certs?owner=admin"},
+		{"a user row", "/v1/iam/users?owner=admin"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := h.basicGet(t, tc.path, "hanzo-cloud", "s3cret"); got == 200 {
@@ -158,7 +158,7 @@ func TestSelfRead_StillRefusesEverythingElse(t *testing.T) {
 func TestSelfRead_WrongSecretIsNotAPrincipal(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
-	if got := h.basicGet(t, "/v1/iam/get-application?id=admin%2Fhanzo-cloud", "hanzo-cloud", "wrong"); got == 200 {
+	if got := h.basicGet(t, "/v1/iam/applications/get?id=admin%2Fhanzo-cloud", "hanzo-cloud", "wrong"); got == 200 {
 		t.Errorf("a wrong client secret read the application row")
 	}
 }
@@ -169,7 +169,7 @@ func TestSelfRead_ReturnsTheRowNotAnEmptyOk(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
 
-	req := httptest.NewRequest("GET", "/v1/iam/get-application?id=admin%2Fhanzo-cloud", nil)
+	req := httptest.NewRequest("GET", "/v1/iam/applications/get?id=admin%2Fhanzo-cloud", nil)
 	req.Host = "hanzo.id"
 	req.Header.Set("Authorization", "Basic "+
 		base64.StdEncoding.EncodeToString([]byte("hanzo-cloud:s3cret")))
