@@ -391,7 +391,7 @@ func TestScope_GetUsersAndGetOrganizationAgreeForAnUngrantedPrincipal(t *testing
 			if real.status == 200 || fake.status == 200 {
 				t.Errorf("%s admitted a foreign org: real=%d fake=%d", verb.name, real.status, fake.status)
 			}
-			if real.status != fake.status || told(real.body) != told(fake.body) {
+			if real.status != fake.status || real.body != fake.body {
 				t.Errorf("%s distinguishes a real tenant from a fabricated one — that pair IS "+
 					"the org-existence oracle\n  real: %d %s\n  fake: %d %s",
 					verb.name, real.status, real.body, fake.status, fake.body)
@@ -568,19 +568,4 @@ func TestSuper_OrdinaryMembershipIsNotSudo(t *testing.T) {
 	if owners := got.owners(t); len(owners) > 0 {
 		t.Errorf("the refusal shipped rows owned by %v", owners)
 	}
-}
-
-// told is everything a refusal says EXCEPT the request path it echoes back.
-// RFC 9457 gives a problem document an `instance` member naming the occurrence,
-// which zip fills with the path that was asked for. When the org is a path
-// segment the two probes necessarily differ there — and that difference carries
-// nothing, because the caller wrote it. Compare what the SERVER chose to say.
-func told(body string) string {
-	var m map[string]any
-	if json.Unmarshal([]byte(body), &m) != nil {
-		return body
-	}
-	delete(m, "instance")
-	b, _ := json.Marshal(m)
-	return string(b)
 }
