@@ -22,7 +22,7 @@ func TestUnauthenticatedWriteIs401(t *testing.T) {
 	}{
 		{"create user", "POST", "/v1/iam/users", user("hanzo", "x")},
 		{"write cert", "POST", "/v1/iam/certs", cert("admin", signingKid)},
-		{"register app", "POST", "/v1/iam/application", map[string]any{"owner": "admin", "name": "x"}},
+		{"register app", "POST", "/v1/iam/applications", map[string]any{"owner": "admin", "name": "x"}},
 		{"delete user", "POST", "/v1/iam/users/delete", map[string]any{"owner": "hanzo", "name": "alice"}},
 		{"update cert", "POST", "/v1/iam/certs/update", cert("admin", signingKid)},
 		{"create org", "POST", "/v1/iam/organizations", map[string]any{"owner": "admin", "name": "x"}},
@@ -110,7 +110,7 @@ func TestSuperAdminWritesAdminCertAndCrossOrg(t *testing.T) {
 		{"rotate the live admin signing cert", "POST", "/v1/iam/certs/update", rotate},
 		{"create a user in any org", "POST", "/v1/iam/users", user("hanzo", "hire-by-root")},
 		{"create a user in another org", "POST", "/v1/iam/users", user("orgb", "hire-by-root")},
-		{"register an admin-owned app", "POST", "/v1/iam/application", map[string]any{"owner": "admin", "name": "root-app", "clientId": "root-app"}},
+		{"register an admin-owned app", "POST", "/v1/iam/applications", map[string]any{"owner": "admin", "name": "root-app", "clientId": "root-app"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestOrgAdminManagesOwnOrgOnly(t *testing.T) {
 	}{
 		{"create user in own org", "POST", "/v1/iam/users", user("hanzo", "newhire")},
 		{"update self org's user", "POST", "/v1/iam/users/update", user("hanzo", "alice")},
-		{"register app in own org", "POST", "/v1/iam/application", map[string]any{"owner": "hanzo", "name": "hanzo-app", "clientId": "hanzo-app"}},
+		{"register app in own org", "POST", "/v1/iam/applications", map[string]any{"owner": "hanzo", "name": "hanzo-app", "clientId": "hanzo-app"}},
 	}
 	for _, c := range allow {
 		t.Run("allow/"+c.name, func(t *testing.T) {
@@ -150,8 +150,8 @@ func TestOrgAdminManagesOwnOrgOnly(t *testing.T) {
 		body               any
 	}{
 		{"create user in another org", "POST", "/v1/iam/users", user("orgb", "mole")},
-		{"register app in another org", "POST", "/v1/iam/application", map[string]any{"owner": "orgb", "name": "x", "clientId": "x"}},
-		{"write a platform (admin) app", "POST", "/v1/iam/application", map[string]any{"owner": "admin", "name": "x", "clientId": "x"}},
+		{"register app in another org", "POST", "/v1/iam/applications", map[string]any{"owner": "orgb", "name": "x", "clientId": "x"}},
+		{"write a platform (admin) app", "POST", "/v1/iam/applications", map[string]any{"owner": "admin", "name": "x", "clientId": "x"}},
 	}
 	for _, c := range deny {
 		t.Run("deny/"+c.name, func(t *testing.T) {

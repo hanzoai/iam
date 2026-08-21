@@ -34,7 +34,13 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/certs", h.List, zip.WithTags("certs"))
 	zip.Post(app, "/v1/iam/certs", h.Create, zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/get", h.Get, zip.WithTags("certs"))
+	// A single-entity read is a GET, as it is on applications, organizations,
+	// users, keys and permissions. It is not cosmetic: authorize() decides whether
+	// a request is a read from its METHOD, so a read shaped as a POST is weighed as
+	// a write and every read-scoped grant is inert on it. That is what refused a
+	// relying party the one signing cert its own application row names — the read
+	// it cannot bootstrap without.
+	zip.Get(app, "/v1/iam/certs/get", h.Get, zip.WithTags("certs"))
 	zip.Post(app, "/v1/iam/certs/update", h.Update, zip.WithTags("certs"))
 	zip.Post(app, "/v1/iam/certs/delete", h.Delete, zip.WithTags("certs"))
 }
