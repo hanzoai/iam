@@ -56,6 +56,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -75,6 +76,33 @@ const (
 	PathToken = "/v1/iam/registry/token"
 	PathJWKS  = "/v1/iam/registry/jwks"
 )
+
+// envService names the registry these tokens are for. It is the `aud` every
+// minted token carries, and the realm every challenge quotes.
+const envService = "REGISTRY_AUTH_TOKEN_SERVICE"
+
+// defaultService is the one registry this realm serves. There is exactly one;
+// the env exists so a second deployment can name its own rather than so this
+// one can be reconfigured.
+const defaultService = "oci.hanzo.ai"
+
+// audience answers which registry a token may be minted for, and it is the ONLY
+// source of that string — never the request.
+//
+// A caller asking for a different service is asking us to sign a token an
+// unrelated verifier would accept, and every verifier trusting our JWKS reads
+// `aud` to decide whether a token is addressed to it. So a mismatch is refused
+// rather than honoured: the requested value is compared, never copied. An absent
+// `service` is not a mismatch — some clients omit it, and there is only one
+// answer it could have meant.
+func audience(requested string) (string, bool) {
+	ours := strings.TrimSpace(os.Getenv(envService))
+	if ours == "" {
+		ours = defaultService
+	}
+	requested = strings.TrimSpace(requested)
+	return ours, requested == "" || requested == ours
+}
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
@@ -149,7 +177,10 @@ func (h *handler) token(c *zip.Ctx) error {
 		return c.JSON(503, map[string]string{"error": "registry signing key unavailable"})
 	}
 	req := c.Fiber().Request()
-	service := formOrQuery(req, "service")
+	service, addressed := audience(formOrQuery(req, "service"))
+	if !addressed {
+		return challenge(c, service, "unknown service")
+	}
 
 	id, secret := credentials(c, req)
 	if id == "" {
@@ -193,6 +224,10 @@ func (h *handler) jwks(c *zip.Ctx) error {
 
 // challenge writes the 401 a docker client expects: a WWW-Authenticate Basic
 // challenge naming the service realm, and NO token.
+//
+// The realm is always OUR service name, resolved by audience — a challenge is
+// the one place a rejected request could otherwise see its own input quoted back
+// inside a header.
 func challenge(c *zip.Ctx, service, msg string) error {
 	c.SetHeader("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, service))
 	return c.JSON(401, map[string]string{"error": msg})
