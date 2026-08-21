@@ -358,7 +358,7 @@ func bearer(t *testing.T, db orm.DB, a *schema.Application, org, name string) (*
 		// The identity travels as one named value, so "openid" can only be the SCOPE.
 		// It once sat in the username slot — six adjacent strings, and a scope became
 		// a username silently. That is the whole reason Identity exists.
-		Sign(a, oidc.Identity{Id: org + "/" + name, Name: name}, "openid", time.Hour, time.Now())
+		Sign(a, oidc.Identity{Id: org + "/" + name, Name: name}, "openid", "", time.Hour, time.Now())
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
 	}
