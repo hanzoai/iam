@@ -204,7 +204,7 @@ func (h *harness) do(t *testing.T, method, path, bearer string, body any) int {
 }
 
 // mcpEnvelope builds a JSON-RPC 2.0 tools/call for the framework tool `tool`
-// (its real op id, e.g. "post_v1_iam_certs") with `args` as the tool arguments —
+// (its real op id, e.g. "post_iam_certs") with `args` as the tool arguments —
 // the same body an MCP agent would POST to /mcp.
 func mcpEnvelope(tool string, args any) map[string]any {
 	return map[string]any{
@@ -232,12 +232,27 @@ func (h *harness) mcpToolCall(t *testing.T, bearer, tool string, args any) (stat
 		t.Fatalf("mcp tools/call %s: %v", tool, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	// A JSON-RPC ERROR and a tool that RAN AND REFUSED are different answers, and
+	// reading only result.isError cannot tell them apart: an unknown tool name
+	// comes back as {"error":{code:-32602}} with no result at all, which decodes
+	// to isError=false — indistinguishable from a call that succeeded. Every
+	// "must be refused" assertion in this file is satisfiable by a typo, so the
+	// protocol error is fatal here rather than a value the caller might ignore.
 	var out struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
 		Result struct {
 			IsError bool `json:"isError"`
 		} `json:"result"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.Error != nil {
+		t.Fatalf("mcp tools/call %s: JSON-RPC error %d %q — the tool does not exist, "+
+			"so this proves nothing about whether it would be refused",
+			tool, out.Error.Code, out.Error.Message)
+	}
 	return resp.StatusCode, out.Result.IsError
 }
 
