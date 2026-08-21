@@ -21,7 +21,7 @@ import (
 //
 // The first cut of the self-read grant was unit-tested against authorize() with
 // entity "applications" and passed — while production still 403'd, because the
-// live caller uses the the legacy surface alias /v1/iam/applications/get and entityOf resolved
+// live caller uses the legacy alias /v1/iam/applications/get and entityOf resolved
 // that to the literal "get-application", which matched no clause. A test written
 // against the noun surface proves nothing about the verb surface, exactly like the
 // login tests that post authorize params in the body no real client uses.

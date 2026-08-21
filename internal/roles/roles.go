@@ -74,8 +74,8 @@ type DeleteOutput struct {
 }
 
 // key builds the orm string key from the (owner, name) natural key.
-// New exposes a role Handler so the the legacy surface add-/update-/delete-role verb aliases
-// (internal/compat) reuse the ONE role CRUD path, wrapped in the compat envelope.
+// New exposes a role Handler so the legacy add-/update-/delete-role verb aliases
+// reuse the ONE role CRUD path, wrapped in the compat envelope.
 func New(db orm.DB) *Handler { return &Handler{db: db} }
 
 func key(owner, name string) string { return owner + "/" + name }

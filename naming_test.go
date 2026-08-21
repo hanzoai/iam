@@ -32,7 +32,7 @@ func TestNoNewVerbNounAddresses(t *testing.T) {
 		oidc.PathAccount, oidc.PathAuthApplication, oidc.PathPreferences,
 		oidc.PathVerificationCodes, oidc.PathTokensIssue,
 		oidc.PathKeysMint, oidc.PathKeysRevoke,
-		// Entity CRUD — canonical twins are the REST quintets internal/compat
+		// Entity CRUD — canonical twins are the REST quintets the retired verb surface
 		// aliases onto (`POST /v1/iam/users` for add-user, and so on).
 		"/v1/iam/get-organizations", "/v1/iam/get-users", "/v1/iam/get-global-users",
 		"/v1/iam/get-applications", "/v1/iam/get-providers", "/v1/iam/get-certs",
