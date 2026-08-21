@@ -97,8 +97,8 @@ func ServiceTokenAuth(c *zip.Ctx) bool { return ServiceAuth(c.Header("Authorizat
 // It is a distinct type rather than a method on Response because zip reads
 // [zip.StatusCoder] off the value an op returns and refuses any status the op did
 // not declare with zip.WithStatus. Response is already returned by typed ops that
-// declare none (internal/compat), so teaching Response to state a status would
-// make every one of them answer a status zip then refuses.
+// declare none, so teaching Response to state a status would make every one of
+// them answer a status zip then refuses.
 type Answer struct {
 	Response
 	code int

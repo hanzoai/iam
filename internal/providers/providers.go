@@ -80,19 +80,6 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithTags("providers"))
 }
 
-// Add / Update / Delete expose the write handlers so the the legacy surface add-/update-/
-// delete-provider verb aliases (internal/compat) reuse the ONE provider CRUD path,
-// wrapped in the compat envelope. Delete decodes the posted provider body and keys
-// the delete by its (owner, name) — the legacy verb posts the object, not a ?id=.
-func Add(db orm.DB) zip.TypedHandler[schema.Provider, providerResult]    { return addProvider(db) }
-func Update(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult] { return updateProvider(db) }
-func Delete(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult] {
-	del := deleteProvider(db)
-	return func(ctx context.Context, in *schema.Provider) (*mutationResult, error) {
-		return del(ctx, &providerKey{Owner: in.Owner, Name: in.Name})
-	}
-}
-
 // listProviders returns your organization's providers, newest first — the
 // identity providers your people sign in with, and the senders and connectors
 // your applications go through.

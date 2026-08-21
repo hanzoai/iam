@@ -41,7 +41,7 @@ import (
 // ── why a key did not resolve ────────────────────────────────────────────────
 //
 // FAILING CLOSED AND FAILING SILENTLY ARE DIFFERENT THINGS, and this file used to do
-// both. Every non-resolution collapsed into a bare orm.ErrNotFound, which the compat
+// both. Every non-resolution collapsed into a bare orm.ErrNotFound, which the key-door
 // handler rendered as "the entity does not exist" — one sentence for causes that call
 // for opposite actions from the holder. A user whose key was REVOKED went looking for
 // a deleted organization instead of minting a new key, and a tenant admin's forgery
@@ -311,7 +311,7 @@ func KeyBySecret(ctx context.Context, db orm.DB, secret string) (*schema.Key, er
 
 // PublishableKeyByAccessKey resolves a WRITE-ONLY publishable pk- to the schema.Key it
 // belongs to, or orm.ErrNotFound — the ORG-ONLY dual of UserByAccessKey, for the ingest
-// resolver (compat resolve-key → /v1/iam/resolve-key). It NEVER touches or returns a
+// resolver (/v1/iam/keys/org). It NEVER touches or returns a
 // user: a publishable key speaks for just its org, never a principal, which is why the
 // pk- path lives here and not in UserByAccessKey.
 //

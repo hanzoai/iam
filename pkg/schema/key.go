@@ -98,7 +98,7 @@ type Key struct {
 // KeyScopePublish is the Scope value marking a WRITE-ONLY publishable key: a pk-
 // publishable half only, no confidential secret, resolvable to just an org (never a
 // principal). It is the ONE value the key model, the mint branch (keys.create), the
-// resolver (store.PublishableKeyByAccessKey), and the ingest door (compat resolve-key)
+// resolver (store.PublishableKeyByAccessKey), and the ingest door (/v1/iam/keys/org)
 // agree on. The empty Scope is the default full/secret key.
 const KeyScopePublish = "publish"
 
