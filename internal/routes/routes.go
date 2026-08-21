@@ -50,7 +50,7 @@ import (
 	"github.com/hanzoai/iam/internal/bootstrap"
 	"github.com/hanzoai/iam/internal/certs"
 	"github.com/hanzoai/iam/internal/cors"
-	"github.com/hanzoai/iam/internal/gone"
+	"github.com/hanzoai/iam/pkg/gone"
 	"github.com/hanzoai/iam/internal/invitations"
 	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/internal/memberships"

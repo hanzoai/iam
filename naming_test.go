@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/iam/internal/gone"
+	"github.com/hanzoai/iam/pkg/gone"
 	"github.com/hanzoai/iam/internal/memberships"
 	"github.com/hanzoai/iam/internal/mfa"
 	"github.com/hanzoai/iam/internal/oidc"

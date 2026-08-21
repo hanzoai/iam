@@ -118,6 +118,22 @@ var successor = map[string][]string{
 // Retired reports whether path is one of the addresses this package answers for.
 func Retired(path string) bool { _, ok := successor[path]; return ok }
 
+// Successors is every retired address and what replaced it.
+//
+// A host that publishes a document needs this: these addresses are SERVED, so
+// they reach the document, and an operation that says nothing about itself is
+// one a reader has to guess at. The host writes the sentence because the prose
+// belongs to whoever publishes, but the FACTS belong here, beside the routes
+// they describe — asked rather than copied, so a retirement cannot be added in
+// one place and go undescribed in the other.
+func Successors() map[string][]string {
+	out := make(map[string][]string, len(successor))
+	for path, to := range successor {
+		out[path] = append([]string(nil), to...)
+	}
+	return out
+}
+
 // Route answers every retired address on r. It takes no store because it reads
 // none.
 //

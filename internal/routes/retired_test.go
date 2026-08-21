@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/iam/internal/gone"
+	"github.com/hanzoai/iam/pkg/gone"
 	"github.com/hanzoai/iam/internal/testhttp"
 )
 
