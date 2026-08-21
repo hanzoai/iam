@@ -4,7 +4,7 @@
 package schema
 
 // Redaction is a property of the value, not of any handler: an entity knows its
-// own secrets. Every read path — the entity CRUD, the the legacy surface compat aliases,
+// own secrets. Every read path — the entity CRUD, the key doors,
 // get-account — returns `x.Mask()`, never `x`, so no digest, client secret, or
 // bearer material ever leaves the service. Masking is the ONE way secrets are
 // stripped; there is no second copy of this logic in any handler package.

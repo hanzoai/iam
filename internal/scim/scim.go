@@ -3,7 +3,7 @@
 
 // Package scim serves the SCIM 2.0 protocol (RFC 7644) over iam's identity store
 // — the STANDARD identity-provisioning surface that replaces the the legacy surface entity
-// verbs (get-users/add-user/update-user/delete-user, …) per HIP-0111. There are
+// verbs (the retired get-users/add-user/update-user/delete-user, …) per HIP-0111. There are
 // no "verbs": creating an identity is POST /Users, reading is GET, updating is
 // PUT/PATCH (RFC 7644 §3.5.2), removing is DELETE — plain HTTP on a resource.
 //

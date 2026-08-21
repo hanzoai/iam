@@ -6,7 +6,7 @@
 // old the legacy surface IAM's clients work against iam. Unlike the per-package unit tests,
 // this chains the real flows a live client runs in sequence: OIDC discovery →
 // PKCE login → code→token → userinfo → introspect → revoke; the admin console's
-// get-account → get-organizations → get-users (the legacy compat surface); SCIM
+// get-account → the org registry → the user collection; SCIM
 // 2.0 provisioning; and RFC 8693 token exchange. Every step asserts the response
 // CONTRACT the client depends on.
 package e2e_test
@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"net/url"
@@ -173,9 +174,9 @@ func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
 	}
 }
 
-// TestJourney_AdminConsole_LegacySurface proves the old admin console's calls work:
-// get-account (the security contract), get-organizations (OrgSwitcher), get-users.
-func TestJourney_AdminConsole_LegacySurface(t *testing.T) {
+// TestJourney_AdminConsole proves the console's own calls work: get-account (the
+// security contract), the org registry (its switcher), and the user collection.
+func TestJourney_AdminConsole(t *testing.T) {
 	e := boot(t)
 	root := e.mint(t, "admin/root") // a SuperAdmin bearer
 
@@ -185,19 +186,38 @@ func TestJourney_AdminConsole_LegacySurface(t *testing.T) {
 		t.Fatalf("get-account status: %v", acct)
 	}
 
-	// get-organizations — the OrgSwitcher workhorse; SuperAdmin sees all.
-	orgs := e.getJSON(t, "/v1/iam/get-organizations", root)
-	if orgs["status"] != "ok" {
-		t.Fatalf("get-organizations status: %v", orgs)
+	// The org registry — the switcher's workhorse. A SuperAdmin sees every
+	// TENANT. The reserved org is not one and cannot be stepped into, so the
+	// switcher must not offer it as a destination.
+	orgs := e.getJSON(t, "/v1/iam/organizations", root)
+	data, _ := orgs["organizations"].([]any)
+	if len(data) == 0 {
+		t.Fatalf("the org registry returned nothing: %v", orgs)
 	}
-	if data, _ := orgs["data"].([]any); len(data) < 2 {
-		t.Fatalf("get-organizations returned %d orgs, want >=2 (admin+hanzo)", len(data))
+	var named []string
+	for _, row := range data {
+		m, ok := row.(map[string]any)
+		if !ok {
+			t.Fatalf("the org registry returned a row that is not an object: %v", row)
+		}
+		named = append(named, fmt.Sprint(m["name"]))
+	}
+	var sawTenant, sawReserved bool
+	for _, n := range named {
+		sawTenant = sawTenant || n == "hanzo"
+		sawReserved = sawReserved || n == "admin"
+	}
+	if !sawTenant {
+		t.Fatalf("the org registry did not name the tenant: %v", named)
+	}
+	if sawReserved {
+		t.Fatalf("the org registry offered the reserved org as a destination: %v", named)
 	}
 
-	// get-users scoped to an org — no secret leaks.
-	usersBody := e.getRaw(t, "/v1/iam/get-users?owner=hanzo", root)
+	// The user collection scoped to an org — no secret leaks.
+	usersBody := e.getRaw(t, "/v1/iam/users?owner=hanzo", root)
 	if strings.Contains(usersBody, "passwordHash") || strings.Contains(usersBody, "\"password\"") {
-		t.Fatalf("get-users leaked a secret: %s", usersBody)
+		t.Fatalf("the user collection leaked a secret: %s", usersBody)
 	}
 }
 
@@ -304,7 +324,7 @@ func (e *env) getRaw(t *testing.T, path, bearer string) string {
 }
 
 // mint signs an RS256 bearer for sub under the seeded cert — a valid principal the
-// Guard admits (used for the compat/SCIM admin calls, which need a verified bearer
+// Guard admits (used for the SCIM admin calls, which need a verified bearer
 // but not a persisted grant row).
 func (e *env) mint(t *testing.T, sub string) string {
 	t.Helper()
