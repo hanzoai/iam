@@ -62,13 +62,20 @@ import (
 // Route registers the MFA endpoints on app. They are RAW handlers (not typed ops),
 // so — like SCIM — each authorizes itself; callers register app AFTER the Guard so a
 // verified Principal rides the request context.
-// The MFA surface hangs off the /v1/iam/mfa noun. The two verb-noun spellings it
-// arrived with stay reachable for pinned consumers and are taught nowhere; see
-// zip.Alias.
+//
+// The surface hangs off the /v1/iam/mfa noun, and Path IS that noun: the factors an
+// account holds. Dropping one is DELETE on them, because the method is what says
+// what is being done — an address that changes with the operation gives a client one
+// URL per verb. Which factor to drop is a FIELD (`mfaType`, absent meaning all), the
+// same way the key type is a field of a mint: the moment a class becomes its own
+// endpoint the classes drift.
+//
+// The two verb-noun spellings this surface arrived with stay reachable for pinned
+// consumers and are taught nowhere; see zip.Alias.
 const (
+	Path                = "/v1/iam/mfa"
 	PathInitiate        = "/v1/iam/mfa/setup/initiate"
 	PathEnable          = "/v1/iam/mfa/setup/enable"
-	PathDisable         = "/v1/iam/mfa/disable"
 	PathPreferred       = "/v1/iam/mfa/preferred"
 	LegacyPathDisable   = "/v1/iam/delete-mfa"
 	LegacyPathPreferred = "/v1/iam/set-preferred-mfa"
@@ -79,7 +86,8 @@ const (
 func Route(app *zip.App, db orm.DB) {
 	app.Post(PathInitiate, initiate(db))
 	app.Post(PathEnable, enable(db))
-	zip.Alias(app.Post, PathDisable, LegacyPathDisable, disable(db))
+	app.Delete(Path, disable(db))
+	app.Post(LegacyPathDisable, disable(db))
 	zip.Alias(app.Post, PathPreferred, LegacyPathPreferred, setPreferred(db))
 }
 

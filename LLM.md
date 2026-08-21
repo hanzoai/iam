@@ -212,7 +212,7 @@ sees. Three ops, and none of them is a new way to authenticate:
 
 | op | path | who |
 |---|---|---|
-| `searchOrganizations` | `GET /v1/iam/organizations/search?q=&limit=&cursor=` | anyone (scope is the caller's) |
+| `listOrganizations` | `GET /v1/iam/organizations?q=&limit=&cursor=` | anyone (scope is the caller's) |
 | `assume` | `POST /v1/iam/assume` `{"org":"acme"}` | SuperAdmin |
 | `release` | `POST /v1/iam/release` | SuperAdmin |
 
@@ -241,16 +241,20 @@ of one tenant step into every other, and that is the whole escalation these
 endpoints would otherwise be. Pinned: removing the predicate turns
 `TestAssume_orgAdminRefused` and `TestAssume_regularUserRefused` red.
 
-**Search answers one question with one shape** — "which organizations may I act
-in" — so a client never branches on who it is talking to: a person gets their
-memberships, an operator gets every org. Own organizations first (the common case
+**The collection answers one question with one shape** — "which organizations may
+I act in" — so a client never branches on who it is talking to: a person gets
+their memberships, an operator gets every org. Own organizations first (the common case
 needs no typing), then the rest newest-first, `q` matched server-side against name
 and display name, an opaque keyset cursor for the rest. The full tenant list never
 reaches a browser. A query only NARROWS what is already the caller's: it can never
-widen scope. `/v1/iam/organizations/search` is in `authz.handlerAuthorizedExact`
-because it names no target — an empty target fails the tenant rule, which would
-deny every non-SuperAdmin the list of their own orgs — so the handler scopes
-itself. Exact, not a prefix, so it cannot reach the entity list beside it.
+widen scope. A narrowing `q` is a filter on the collection, not a second address:
+same rows, same order, same scope, so an address per filter would be one URL per
+question about one collection. `/v1/iam/organizations` is in
+`authz.handlerAuthorizedExact` because it names no target — an empty target fails
+the tenant rule, which would deny every non-SuperAdmin the list of their own orgs
+— so the handler scopes itself, which is also what makes the answer the same one
+over the agent door. Exact, not a prefix, so it reaches the collection and never
+an item under it.
 
 **Every privileged act is recorded, refusals included** — a refused attempt to
 step into a tenant is the row an auditor most wants. `schema.AuditLog` carries the
@@ -397,8 +401,10 @@ blank a secret and open the ingest door):
 **The publishable key had no producer until 2026-07-28.** The model, the resolver
 (`store.PublishableKeyByAccessKey`) and the ingest door all existed and nothing
 minted one. It is now a FIELD on the one mint:
-`POST /v1/iam/mint-user-keys?id=<owner>/<name>&type=publishable|secret` (default
-secret; unknown type → 400), same for `revoke-user-keys`. `keys.NameFor(scope)` maps
+`POST /v1/iam/users/{owner}/{name}/keys?type=publishable|secret` (default secret;
+unknown type → 400), and `DELETE` on the same address takes the key away — the
+shape a service account's key already has
+(`POST /v1/iam/service-accounts/{name}/keys`). `keys.NameFor(scope)` maps
 scope → row name (`cloud-api` / `publishable`), so the two are separate rows and
 rotating a browser key does not revoke the API key.
 

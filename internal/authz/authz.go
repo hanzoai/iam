@@ -409,18 +409,19 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organizat
 // ?accessKey= (no owner/name for the Guard to authorize), and its handler authorizes
 // itself behind CapPublishableResolve, returning ONLY the org — never a principal.
 //
-// organizations/search is here because it NAMES no target: it asks which
+// The organization collection is here because it NAMES no target: it asks which
 // organizations the CALLER may act in, so the answer is derived from the
 // principal and there is nothing in the query for the Guard to authorize. An
 // empty target fails the tenant rule, which would deny every non-SuperAdmin the
-// list of their own organizations. It is exact rather than a prefix so it cannot
-// reach /v1/iam/organizations, the Guard-authorized entity list beside it.
+// list of their own organizations. It is exact rather than a prefix so it reaches
+// the collection alone and never an item under it, which is addressed by
+// (owner, name) and authorized here like every other item read.
 var handlerAuthorizedExact = map[string]bool{
 	"/v1/iam/get-user":             true,
 	"/v1/iam/resolve-key":          true,
 	"/v1/iam/keys/org":             true,
 	"/v1/iam/keys/principal":       true,
-	"/v1/iam/organizations/search": true,
+	"/v1/iam/organizations":        true,
 	"/v1/iam/webauthn-credentials": true,
 }
 

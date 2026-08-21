@@ -22,9 +22,9 @@ import (
 
 // The confidential-client on-behalf-of primitives. A trusted, allow-listed backend
 // (the console BFF as `hanzo-console`) authenticates as the confidential CLIENT —
-// not an end-user bearer — and acts on a `?id=<owner>/<name>` target user: mint a
-// short-lived user-bound access token (`tokens/issue`), or (re)generate/revoke the
-// user's durable Cloud API key (`keys/mint`, `keys/revoke`).
+// not an end-user bearer — and acts on a target user: mint a short-lived
+// user-bound access token (`tokens/issue`), or (re)generate/revoke the user's
+// durable Cloud API key (POST and DELETE on that user's `keys`).
 //
 // `tokens/issue` is the CANONICAL FORWARD path's transitional twin: the RFC 8693
 // Token Exchange grant on the token endpoint is the standard (HIP-0111), and this
@@ -39,12 +39,19 @@ import (
 // does its own tighter authentication through the ONE authorizeMinter seam.
 
 // routeIssueToken registers the confidential-client primitives on the PUBLIC group
-// r. POST-only: they mint/rotate a credential — never over a cacheable GET (a
-// client_secret in a query string would reach logs/proxies).
+// r. Never a GET: they mint or rotate a credential, and a client_secret in a query
+// string reaches logs and proxies.
+//
+// The user's key is one resource at one address, and the method is what says
+// whether it is being made or taken away. The two legacy spellings are the same
+// handler at the addresses pinned consumers hold; each is reachable and taught
+// nowhere.
 func routeIssueToken(r zip.Router, db orm.DB) {
 	zip.Alias(r.Post, PathTokensIssue, LegacyPathTokensIssue, issueUserTokenHandler(db))
-	zip.Alias(r.Post, PathKeysMint, LegacyPathKeysMint, mintUserKeysHandler(db))
-	zip.Alias(r.Post, PathKeysRevoke, LegacyPathKeysRevoke, revokeUserKeysHandler(db))
+	r.Post(PathUserKeys, mintUserKeysHandler(db))
+	r.Delete(PathUserKeys, revokeUserKeysHandler(db))
+	r.Post(LegacyPathKeysMint, mintUserKeysHandler(db))
+	r.Post(LegacyPathKeysRevoke, revokeUserKeysHandler(db))
 }
 
 // issueUserTokenHandler mints an access token for the `?id=<owner>/<name>` target
@@ -321,15 +328,23 @@ func bearerToken(c *zip.Ctx) string {
 	return ""
 }
 
-// mintTarget resolves and validates the `?id=<owner>/<name>` target user for the
-// authenticated clientApp. A missing id or absent user is a v1 business error
-// (200 + status:error); a revoked (forbidden/deleted) user is a 403 — no
-// credential is ever minted for it. A RESERVED-org (admin/built-in) target — a
-// cross-tenant / SuperAdmin identity — additionally requires the separate
-// admin-mint capability, so even a valid general minter cannot reach an admin-org
-// user unless explicitly granted (defense-in-depth behind the mint allow-list).
+// mintTarget resolves and validates the target user for the authenticated
+// clientApp. A missing target or absent user is a v1 business error (200 +
+// status:error); a revoked (forbidden/deleted) user is a 403 — no credential is
+// ever minted for it. A RESERVED-org (admin/built-in) target — a cross-tenant /
+// SuperAdmin identity — additionally requires the separate admin-mint capability,
+// so even a valid general minter cannot reach an admin-org user unless explicitly
+// granted (defense-in-depth behind the mint allow-list).
+//
+// The ADDRESS names the target, and `?id=<owner>/<name>` answers for the
+// addresses that do not carry one. Reading the path first is what keeps one
+// resolution over both: an owner and a name that arrived as two path segments
+// cannot be split anywhere but between them, while `?id=a/b/c` had to pick.
 func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Application) (*schema.User, int, string) {
-	owner, name := splitSub(c.Query("id"))
+	owner, name := c.Param("owner"), c.Param("name")
+	if owner == "" || name == "" {
+		owner, name = splitSub(c.Query("id"))
+	}
 	if owner == "" || name == "" {
 		return nil, 200, "id (owner/name) is required"
 	}
