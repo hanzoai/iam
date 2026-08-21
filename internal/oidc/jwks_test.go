@@ -286,3 +286,70 @@ func TestWithNothingPublishedAFailedReadIsAnError(t *testing.T) {
 		t.Error("a cold cache with a failing read reported success")
 	}
 }
+
+// A STORE THAT IS FAILING IS ASKED ONCE, NOT ONCE PER REQUEST. The read happens under the
+// lock — deliberately, so a hundred callers arriving together cause one read rather than a
+// hundred — and that same lock is what makes a failing store expensive. Without a floor,
+// every caller queues behind its own attempt, which is slower than the per-request read
+// this cache replaced: the fix would have become the fault.
+func TestAFailingStoreIsNotAskedOncePerRequest(t *testing.T) {
+	var set keySet
+	good := func() ([]byte, string, error) { return []byte(`{"keys":[1]}`), `"g"`, nil }
+
+	if _, _, err := set.current(good); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+	set.at = time.Now().Add(-jwksTTL - time.Second) // the held set is now stale
+
+	reads := 0
+	bad := func() ([]byte, string, error) { reads++; return nil, "", errors.New("store busy") }
+
+	for i := 0; i < 50; i++ {
+		body, _, err := set.current(bad)
+		if err != nil {
+			t.Fatalf("a failing refresh withdrew the key set: %v", err)
+		}
+		if string(body) != `{"keys":[1]}` {
+			t.Fatalf("served %s, want the last good set", body)
+		}
+	}
+	if reads != 1 {
+		t.Errorf("asked the failing store %d times across 50 verifications, want 1", reads)
+	}
+
+	// Past the retry window it tries again — a store that recovers must be noticed.
+	set.failed = time.Now().Add(-jwksRetry - time.Second)
+	if _, _, err := set.current(bad); err != nil {
+		t.Fatalf("current after the retry window: %v", err)
+	}
+	if reads != 2 {
+		t.Errorf("reads = %d after the retry window passed, want 2", reads)
+	}
+}
+
+// A store that comes back is trusted again immediately: the backoff is not sticky.
+func TestARecoveredStoreIsTrustedAgain(t *testing.T) {
+	var set keySet
+	if _, _, err := set.current(func() ([]byte, string, error) { return []byte(`{"keys":[1]}`), `"g"`, nil }); err != nil {
+		t.Fatal(err)
+	}
+	set.at = time.Now().Add(-jwksTTL - time.Second)
+	if _, _, err := set.current(func() ([]byte, string, error) { return nil, "", errors.New("busy") }); err != nil {
+		t.Fatal(err)
+	}
+	if set.failed.IsZero() {
+		t.Fatal("a failed read did not record that it failed")
+	}
+
+	set.failed = time.Now().Add(-jwksRetry - time.Second)
+	body, _, err := set.current(func() ([]byte, string, error) { return []byte(`{"keys":[2]}`), `"n"`, nil })
+	if err != nil {
+		t.Fatalf("recovered read: %v", err)
+	}
+	if string(body) != `{"keys":[2]}` {
+		t.Errorf("served %s, want the newly read set", body)
+	}
+	if !set.failed.IsZero() {
+		t.Error("a successful read left the failure mark standing, so the next refresh would back off")
+	}
+}
