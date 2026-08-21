@@ -142,7 +142,7 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 	fmt.Fprintln(os.Stderr, "iam: this binary binds no delivery transport — email/SMS codes and their second factors stay off (a grafting host supplies one)")
 
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
-	// same file the the legacy surface iam uses — so a fresh store comes up with the real
+	// same file the legacy iam uses — so a fresh store comes up with the real
 	// application/provider/cert set instead of empty. New-only + idempotent.
 	if initData != "" {
 		sum, err := seed.FromInitData(ctx, db, initData)
@@ -211,7 +211,7 @@ func compareCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "compare",
 		Short: "Read-only drift report: row counts per entity, v1  vs v2",
-		Long: "Counts rows per entity in the v1 the legacy surface database and the v2 store " +
+		Long: "Counts rows per entity in the v1 database and the v2 store " +
 			"and prints the absolute drift. Cutover is gated on drift 0. Requires a " +
 			"`-tags migration` build to link the v1 Postgres/MySQL driver.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -229,7 +229,7 @@ func compareCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&store, "store", "sqlite", "v2 storage backend: sqlite | sql | datastore")
 	f.StringVar(&dbPath, "db", "data/iam.db", "v2 SQLite database path (store=sqlite)")
-	f.StringVar(&legacy, "legacy", "", "v1 the legacy surface DSN (postgres:// or mysql://)")
+	f.StringVar(&legacy, "legacy", "", "v1 DSN (postgres:// or mysql://)")
 	return cmd
 }
 
