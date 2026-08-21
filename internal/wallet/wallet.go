@@ -267,7 +267,7 @@ func session(c *zip.Ctx, db orm.DB) *schema.User {
 	if !same(c) {
 		return nil
 	}
-	p := authz.Optional(c, db)
+	p := authz.Optional(c, db, oidc.Subject)
 	if p == nil || p.User == "" {
 		return nil // anonymous, unverifiable, or a machine token with no identity
 	}

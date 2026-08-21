@@ -25,13 +25,22 @@ import (
 // verification path that trusts attacker-controlled material.
 var acceptedAlgs = []string{"RS256", "RS512", "ES256", "ES384", "ES512", algMLDSA65}
 
-// VerifyToken is the exported bearer-verification primitive the authz layer
-// reuses to gate the CRUD surface: it is verifyToken, so a bearer presented to a
+// Subject reduces a presented bearer to the ONE fact authentication needs from
+// it: the subject it proves. It is verifyToken, so a bearer presented to a
 // protected route is trusted under the exact same closed algorithm allowlist,
-// trusted signing-cert kid resolution, and time validation as every OIDC route.
+// trusted signing-cert kid resolution and time validation as every OIDC route.
 // One verification path, one trust model — no second, weaker check.
-func VerifyToken(ctx context.Context, db orm.DB, tokenStr string) (*Claims, error) {
-	return verifyToken(ctx, db, tokenStr)
+//
+// It answers with a string rather than the claim set because the claim set is
+// this package's to read. A gate that only ever needed the subject — and reading
+// anything else off a token is how an application's `owner` claim came to be
+// mistaken for the person's org — cannot reach the rest of it from here.
+func Subject(ctx context.Context, db orm.DB, bearer string) (string, error) {
+	claims, err := verifyToken(ctx, db, bearer)
+	if err != nil {
+		return "", err
+	}
+	return claims.Subject, nil
 }
 
 // verifyToken parses tokenStr, verifies its signature against the Cert named by

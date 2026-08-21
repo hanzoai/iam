@@ -50,10 +50,11 @@
 // principal's own owner/name — never from the token's `owner`/`organization`
 // claims. Those name the APPLICATION's org and diverge from the user's org for a
 // shared app, so trusting them would let a tenant user sign in through a shared
-// admin-org app and read as SuperAdmin. Authenticity, expiry, algorithm, and
-// signing-key trust are delegated to the same oidc.VerifyToken every protected
-// route already uses; the org-admin flag comes from the loaded user record, the
-// authoritative source (it is not a token claim).
+// admin-org app and read as SuperAdmin. Authenticity, expiry, algorithm and
+// signing-key trust are not decided here at all: the Guard takes a [Subject] and
+// IAM wires in the same verification every protected OIDC route already runs.
+// The org-admin flag comes from the loaded user record, the authoritative source
+// (it is not a token claim).
 package authz
 
 import (
@@ -68,7 +69,6 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -79,6 +79,25 @@ import (
 // the poisoning gate protects lives in ONE place, store.IsSigningCertOwner,
 // shared with the token verifier and the JWKS.
 const adminOrg = store.AdminOrg
+
+// Subject reduces a presented bearer to the subject it proves, or fails. It is
+// the whole of what this package takes from a token, and it arrives as a
+// PARAMETER because verifying a JWT is the OIDC layer's work, not the gate's:
+// the gate asks who the caller is, the verifier answers, and the answer is a
+// string rather than a claim set.
+//
+// The narrowing is deliberate. A gate holding the claim set sits one field away
+// from the org-confusion escalation this package's whole policy is built to
+// refuse — a token minted through a SHARED admin-org application carries
+// `owner: admin` while its subject names a tenant user. Not reading that claim
+// used to be a rule; now there is nothing to read.
+//
+// Taking the verifier as a value is also what makes this package importable from
+// the entities it authorizes. Calling oidc directly pulled oidc's dependencies —
+// users, keys, sessions — in behind the gate, so an entity package could not
+// resolve its own scope through the very policy that governs it. routes.Route
+// names the verifier, and it is the only place that does.
+type Subject func(ctx context.Context, db orm.DB, bearer string) (string, error)
 
 // Principal is the identity a gated request acts as, resolved from a verified
 // bearer. Org is the tenant (the authenticated principal's own org, from the
@@ -360,8 +379,8 @@ func CanSetOrg(p *Principal, org string) bool {
 // error, and must never widen authority on the strength of this alone: it proves
 // only WHO the caller is, not that the caller INTENDED this request (the wallet
 // link branch pairs it with a same-site check for exactly that reason).
-func Optional(c *zip.Ctx, db orm.DB) *Principal {
-	p, err := principal(c, db)
+func Optional(c *zip.Ctx, db orm.DB, subject Subject) *Principal {
+	p, err := principal(c, db, subject)
 	if err != nil {
 		return nil
 	}
@@ -540,7 +559,7 @@ func legacyVerb(path string) bool {
 // the op-invoke seam (Authorize) on that exact decoded value — this middleware
 // never re-parses a write body, which is what let the old target extraction
 // diverge from execution.
-func Guard(db orm.DB) zip.Handler {
+func Guard(db orm.DB, subject Subject) zip.Handler {
 	return func(c *zip.Ctx) error {
 		// A CORS preflight carries no credentials BY DEFINITION — the browser
 		// strips them — so authenticating one is a category error: it can only
@@ -555,7 +574,7 @@ func Guard(db orm.DB) zip.Handler {
 		if c.Method() == http.MethodOptions {
 			return c.Continue()
 		}
-		p, err := principal(c, db)
+		p, err := principal(c, db, subject)
 		if err != nil {
 			return refuse(c, 401, "authentication required")
 		}
@@ -602,8 +621,8 @@ const mcpPath = "/mcp"
 // replaces: it is a depth-0 handler, so it is consulted on every request, but it
 // ACTS only on the three addresses the framework itself owns and hands every
 // other path straight on. A sibling subsystem's route is not one of them.
-func Control(db orm.DB) zip.Handler {
-	guard := Guard(db) // one authentication decision, mounted twice, never copied
+func Control(db orm.DB, subject Subject) zip.Handler {
+	guard := Guard(db, subject) // one authentication decision, mounted twice, never copied
 	return func(c *zip.Ctx) error {
 		switch c.Path() {
 		case mcpPath, zip.SpecPath, zip.DocsPath:
@@ -860,7 +879,7 @@ func stringField(v reflect.Value, name string) string {
 }
 
 // principal resolves the verified bearer into a Principal, failing closed on a
-// missing/malformed/expired/wrong-key token (oidc.VerifyToken enforces the
+// missing/malformed/expired/wrong-key token (the [Subject] verifier enforces the
 // algorithm allowlist and trusted signing-cert resolution), a subject with no
 // org, a store error, or a forbidden/deleted user. Org, Admin, and Super are
 // read from the LOADED user record — authoritative — never from the token
@@ -871,7 +890,7 @@ func stringField(v reflect.Value, name string) string {
 // the raw CRUD authorizes to nothing until a later phase grants machine
 // identities explicit scope. This closes the phantom-admin subject: a token for
 // "admin/<nobody>" resolves to no authority, not SuperAdmin.
-func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
+func principal(c *zip.Ctx, db orm.DB, subject Subject) (*Principal, error) {
 	if p, ok := app(c, db); ok {
 		return p, nil
 	}
@@ -880,7 +899,7 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 		return nil, errNoBearer
 	}
 	ctx := c.Context()
-	claims, err := oidc.VerifyToken(ctx, db, bearer)
+	sub, err := subject(ctx, db, bearer)
 	if err != nil {
 		return nil, err
 	}
@@ -890,7 +909,7 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 	// Super from the LOADED record — never from the `owner` claim (the app's org), so
 	// a token whose owner claim names admin but whose subject is a tenant user gets
 	// the tenant's authority, not the claim's (the org-confusion defense).
-	u, err := store.GetUserBySubject(ctx, db, claims.Subject)
+	u, err := store.GetUserBySubject(ctx, db, sub)
 	if err != nil {
 		return nil, err // fail closed: cannot establish the principal
 	}
@@ -932,7 +951,7 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 	// This grants nothing new: the Principal is built by the same helper, from the
 	// same row, and is still never Admin and never Super — its whole authority
 	// remains capFor()/Allowed(), pinned to a reserved signing owner.
-	owner, name, hasSlash := strings.Cut(claims.Subject, "/")
+	owner, name, hasSlash := strings.Cut(sub, "/")
 	if !hasSlash || owner == "" {
 		return nil, errNoSubject
 	}
