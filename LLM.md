@@ -144,6 +144,44 @@ registered "ALICE" alongside "Alice" is never resolved as the other. `users.look
 goes through it rather than repeating the query — restating it is how Create's
 uniqueness check stayed case-SENSITIVE while the rule it guards is not.
 
+## The gate takes its verifier — `authz` does not import `oidc`
+
+`authz.Guard(db, subject)`, `authz.Control(db, subject)` and
+`authz.Optional(c, db, subject)` take an `authz.Subject` —
+`func(ctx, orm.DB, bearer) (string, error)`, the reduction of a presented bearer
+to the subject it proves. `routes.Route` passes `oidc.Subject` and is the only
+place that names a verifier. `authz.Authorize` is unaffected: it reads the
+principal the Guard attached to the context, so it stays the plain value
+`app.Authorize` takes.
+
+Two things fall out, and the second is why it was worth doing.
+
+**The gate cannot read a second claim.** It never receives the claim set. Not
+reading `owner`/`organization` off a token used to be a rule the package doc had
+to state — those claims name the APPLICATION's org, so a tenant user signing in
+through a shared admin-org app would read as SuperAdmin. Now there is nothing to
+read.
+
+**`authz` became importable from the entities it authorizes.** It imported
+`internal/oidc` for exactly one call and one field (`claims.Subject`), and
+`oidc` imports `users`/`keys`/`sessions` — so `internal/authz` was 12 internal
+packages deep and `users → authz` was a cycle. It is 4 now
+(`httpx`, `store`, `schema`, `model`), so an entity package can resolve its own
+scope through the very policy that governs it — which `users.List`, alone among
+the listers, still does not (see *Org scope*, below). The cycle
+`webauthn → authz → oidc → webauthn` went with it.
+
+This commit changes no behaviour. Every signature that moved is internal, every
+call site moved with it, and the verification a bearer undergoes is the same
+function it always was.
+
+The alternative was moving `oidc.VerifyToken` into a leaf. It does not work as
+stated: `verify.go` is 97 lines but reaches four package-locals — `Claims` (the
+MINT claim set, 33 non-test references across 5 files), `nowFunc` (53), plus
+`certPublicKey` and `algMLDSA65` — so the "leaf" is the whole token layer, and
+`authz` would still depend on a concrete verifier, just at a new address. A
+relocation is not a separation.
+
 ## Org scope — HONOURED or REFUSED, never silently reinterpreted
 
 **The rule.** A request that NAMES an organization gets that organization's data
@@ -365,9 +403,10 @@ never edited; only what a screen is told.
 
 `PasskeySignin()` is a leaf constant today because internal/webauthn registers
 passkeys and holds nothing that CHALLENGES one; it lives in `pkg/schema` for the
-reason `WalletChains` does — internal/webauthn cannot be imported from
-internal/oidc (webauthn → authz → oidc). It stops being a constant the day the
-ceremony lands, with no second switch to remember.
+reason `WalletChains` does. The import cycle that USED to also force it —
+webauthn → authz → oidc → webauthn — is gone (see *The gate takes its verifier*),
+so the day the ceremony lands, internal/oidc may simply import internal/webauthn
+and this stops being a constant, with no second switch to remember.
 
 ## A verification code has ONE receiver key
 

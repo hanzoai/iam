@@ -148,7 +148,12 @@ func Route(app *zip.App, db orm.DB) {
 	// take *zip.App because zipdoc must resolve each op's path prefix statically,
 	// and the group needs its OWN Authorize hook.
 	authed := app.Group("").(*zip.App)
-	authed.Use(authz.Guard(db))
+	// oidc.Subject is the bearer verifier, named HERE and nowhere else. The gate
+	// takes the bearer→subject reduction as a VALUE rather than calling oidc
+	// itself, so the policy does not drag the OIDC layer — and users, keys and
+	// sessions behind it — in with it. That is what lets the entity packages below
+	// resolve their own scope through the very policy that governs them.
+	authed.Use(authz.Guard(db, oidc.Subject))
 
 	// AUTHORIZATION of writes, on the SAME group, for the same reason. The
 	// op-invoke hook authorizes every typed op on the DECODED input the handler
@@ -184,7 +189,7 @@ func Route(app *zip.App, db orm.DB) {
 	// depth-0 for that reason and acts on those three addresses only — see
 	// authz.Control. Without it the MCP door would dispatch tools/call into this
 	// same admin CRUD unauthenticated.
-	app.Use(authz.Control(db))
+	app.Use(authz.Control(db, oidc.Subject))
 
 	// ─────────────────────────── AUTHED ───────────────────────────
 	// Typed entity CRUD. Each registers its typed ops on `authed` — a *zip.App,
