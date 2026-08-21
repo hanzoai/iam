@@ -133,9 +133,9 @@ func TestLoadDerivesTheAllowlistFromRedirectUris(t *testing.T) {
 // and whose PRINCIPAL is decided by the Guard.
 func TestBrowserPaths_CoverTheConsoleOrgSurface(t *testing.T) {
 	for _, p := range []string{
-		"/v1/iam/get-organizations",
-		"/v1/iam/get-organization",
-		"/v1/iam/get-users",
+		"/v1/iam/organizations",
+		"/v1/iam/organizations/get",
+		"/v1/iam/users",
 		"/v1/iam/account",
 	} {
 		if browserPaths[p] != bearer {
@@ -147,9 +147,15 @@ func TestBrowserPaths_CoverTheConsoleOrgSurface(t *testing.T) {
 
 // Opening a path to an origin is not the same as opening the data. Anything a
 // browser never calls stays closed, so this list can only grow deliberately.
+//
+// /v1/iam/users is NOT here, and used to be: the roster read was open under the
+// verb spelling (get-users) and closed under the noun, so one resource carried
+// two browser policies decided by which name the caller used. A console renders
+// its own org's members, so the address is open and the Guard decides whose
+// members they are — the same split as every other entry, origin here, principal
+// there.
 func TestBrowserPaths_StayClosedByDefault(t *testing.T) {
 	for _, p := range []string{
-		"/v1/iam/users",          // typed CRUD — server-to-server
 		"/v1/iam/get-certs",      // signing material
 		"/v1/iam/get-providers",  // provider secrets
 		"/v1/iam/delete-user",    // a write
