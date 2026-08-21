@@ -344,7 +344,7 @@ func TestFrameworkSideDoorsAreGated(t *testing.T) {
 
 	// No bearer reaches /mcp at all: the guard authenticates the envelope before
 	// any dispatch, so it is 401 — never an unauthorized invocation, never a 404.
-	if got := h.do(t, "POST", "/mcp", "", mcpEnvelope("post_v1_iam_certs", forge)); got != http.StatusUnauthorized {
+	if got := h.do(t, "POST", "/mcp", "", mcpEnvelope("post_iam_certs", forge)); got != http.StatusUnauthorized {
 		t.Fatalf("POST /mcp no bearer = %d, want 401 (guard fail-closed)", got)
 	}
 	// The OpenAPI doc — now a real installed route — is gated too.
@@ -355,8 +355,8 @@ func TestFrameworkSideDoorsAreGated(t *testing.T) {
 	// A non-SuperAdmin driving the REAL cert tool is refused at the op-invoke seam
 	// (isError), and — the assertion that matters — NOTHING is written.
 	boss := h.token(t, "hanzo/boss")
-	if status, isErr := h.mcpToolCall(t, boss, "post_v1_iam_certs", forge); status != http.StatusOK || !isErr {
-		t.Fatalf("MCP post_v1_iam_certs (non-super) = status %d isError %v, want 200/true (refused at op seam)", status, isErr)
+	if status, isErr := h.mcpToolCall(t, boss, "post_iam_certs", forge); status != http.StatusOK || !isErr {
+		t.Fatalf("MCP post_iam_certs (non-super) = status %d isError %v, want 200/true (refused at op seam)", status, isErr)
 	}
 	if h.certExists(t, "admin", "cert-forge") {
 		t.Fatal("MCP cert-forge PERSISTED an admin-owned cert — the /mcp side door is OPEN")
@@ -430,7 +430,7 @@ func TestMCPArgumentsMaskIsRefused(t *testing.T) {
 		"owner": "admin", "name": "cert-forge",
 		"cryptoAlgorithm": "RS256", "privateKey": attackerPEM,
 	}
-	if status, isErr := h.mcpToolCall(t, boss, "post_v1_iam_certs", forge); status != http.StatusOK || !isErr {
+	if status, isErr := h.mcpToolCall(t, boss, "post_iam_certs", forge); status != http.StatusOK || !isErr {
 		t.Fatalf("MCP cert-forge (non-super) = status %d isError %v, want 200/true (refused)", status, isErr)
 	}
 	if h.certExists(t, "admin", "cert-forge") {
@@ -443,7 +443,7 @@ func TestMCPArgumentsMaskIsRefused(t *testing.T) {
 		"user":     map[string]any{"owner": "admin", "name": "red-super", "isAdmin": true},
 		"password": "x",
 	}
-	if status, isErr := h.mcpToolCall(t, boss, "post_v1_iam_users", userMask); status != http.StatusOK || !isErr {
+	if status, isErr := h.mcpToolCall(t, boss, "post_iam_users", userMask); status != http.StatusOK || !isErr {
 		t.Fatalf("MCP users owner-mask (non-super) = status %d isError %v, want 200/true (refused)", status, isErr)
 	}
 	if h.userExists(t, "admin", "red-super") {
@@ -457,7 +457,7 @@ func TestMCPArgumentsMaskIsRefused(t *testing.T) {
 		"owner": "admin", "name": "cert-legit",
 		"cryptoAlgorithm": "RS256", "privateKey": rsaKeyToPEM(t, h.key),
 	}
-	if status, isErr := h.mcpToolCall(t, root, "post_v1_iam_certs", legit); status != http.StatusOK || isErr {
+	if status, isErr := h.mcpToolCall(t, root, "post_iam_certs", legit); status != http.StatusOK || isErr {
 		t.Fatalf("MCP cert create by SuperAdmin = status %d isError %v, want 200/false (allowed)", status, isErr)
 	}
 	if !h.certExists(t, "admin", "cert-legit") {
