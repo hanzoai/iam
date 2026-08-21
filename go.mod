@@ -19,7 +19,7 @@ retract [v1.0.0, v1.31.37] // Casdoor lineage; moved to github.com/hanzoai/iam-v
 require (
 	github.com/hanzoai/orm v0.6.16
 	github.com/spf13/cobra v1.10.2
-	github.com/zap-proto/zip v1.24.2
+	github.com/zap-proto/zip v1.31.4
 	golang.org/x/crypto v0.54.0
 )
 
@@ -44,6 +44,8 @@ require (
 	github.com/valyala/fasthttp v1.72.0
 	github.com/zap-proto/fiber/v3 v3.2.1
 )
+
+require github.com/zap-proto/mcp v1.0.5 // indirect
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -86,9 +88,9 @@ require (
 	github.com/luxfi/math v1.5.1 // indirect
 	github.com/luxfi/math/big v0.1.0 // indirect
 	github.com/luxfi/mdns v0.1.1 // indirect
-	github.com/luxfi/metric v1.8.1 // indirect
+	github.com/luxfi/metric v1.10.0 // indirect
 	github.com/luxfi/mock v0.1.1 // indirect
-	github.com/luxfi/zap v1.2.6 // indirect
+	github.com/luxfi/zap v1.2.7 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
@@ -103,7 +105,7 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zap-proto/go v1.3.0 // indirect
-	github.com/zap-proto/http v0.3.1 // indirect
+	github.com/zap-proto/http v0.3.5 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
