@@ -9,9 +9,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	policy "github.com/hanzoai/authz"
+
 	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // listOrganizations answers the same question Search does — "which organizations
@@ -99,7 +100,7 @@ func TestList_theSelectorIsNotAWayIn(t *testing.T) {
 	h := newHarness(t)
 	seedMany(t, h.db, 5)
 
-	status, p, body := h.list(t, "hanzo/boss", "?owner="+store.AdminOrg)
+	status, p, body := h.list(t, "hanzo/boss", "?owner="+policy.AdminOrg)
 	if status == 200 {
 		t.Fatalf("naming an owner listed %d organizations: %s", len(p.Organizations), body)
 	}

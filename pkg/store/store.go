@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/keyring"
@@ -80,7 +81,7 @@ func preferredApp(apps []*schema.Application) *schema.Application {
 // the lexically-least (owner,name) wins. The order is total and independent of
 // storage/heap order, so resolution is deterministic on every backend.
 func morePreferredApp(a, b *schema.Application) bool {
-	if sa, sb := IsSigningCertOwner(a.Owner), IsSigningCertOwner(b.Owner); sa != sb {
+	if sa, sb := policy.IsSigningOwner(a.Owner), policy.IsSigningOwner(b.Owner); sa != sb {
 		return sa
 	}
 	return a.Owner+"/"+a.Name < b.Owner+"/"+b.Name
@@ -339,7 +340,7 @@ func GetSignupByEmail(ctx context.Context, db orm.DB, application, email string)
 		// row of the admin org under an application's signup, and if something does,
 		// this must not be the door that authenticates it — the reserved orgs hold
 		// the SuperAdmin and the signing certs.
-		if IsReservedOrg(us[0].Owner) {
+		if policy.IsReservedOrg(us[0].Owner) {
 			return nil, nil
 		}
 		return us[0], nil
@@ -473,9 +474,9 @@ func GetTokenByCode(_ context.Context, db orm.DB, code string) (*schema.Token, e
 // filled in from the keyring.
 //
 // The row carries the key's identity; the key itself is never a column. Filling
-// it HERE is what lets that stay invisible to everything downstream: the signer,
-// the verifier, the JWKS and the session-cookie key each still read
-// cert.PrivateKey off the value the store handed them, and none of them has to
+// it HERE is what let that change stay invisible to everything downstream: the
+// signer, the verifier, the JWKS and the session-cookie key each still read
+// cert.PrivateKey off the value the store handed them, and none of them had to
 // learn where key material comes from.
 func GetCert(_ context.Context, db orm.DB, owner, name string) (*schema.Cert, error) {
 	c, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", owner).Filter("Name=", name).First()
@@ -484,23 +485,6 @@ func GetCert(_ context.Context, db orm.DB, owner, name string) (*schema.Cert, er
 	}
 	keyring.Fill(c)
 	return c, err
-}
-
-// signingCertOwners are the reserved platform organizations that own
-// token-signing certificates. A signing cert is trusted ONLY under these
-// owners, so a tenant can never shadow a platform signing key by creating a cert
-// with the same name (the JWKS `kid`) under its own org and forging tokens.
-var signingCertOwners = []string{"admin", "built-in"}
-
-// IsSigningCertOwner reports whether owner is a reserved platform signing-cert
-// owner — the trust boundary the JWKS and token verification enforce.
-func IsSigningCertOwner(owner string) bool {
-	for _, o := range signingCertOwners {
-		if o == owner {
-			return true
-		}
-	}
-	return false
 }
 
 // GetTokenByUserCode resolves a pending device authorization by the user_code a
@@ -517,23 +501,19 @@ func GetTokenByUserCode(_ context.Context, db orm.DB, userCode string) (*schema.
 	return t, err
 }
 
-// AdminOrg is the reserved organization, and the one spelling of it. Belonging
-// to it is SuperAdmin — the only cross-tenant scope there is.
-const AdminOrg = "admin"
-
 // IsSuperAdmin reports whether the identity owner/name BELONGS to the reserved
 // organization: anchored there, or holding a membership there. THE SuperAdmin
 // predicate, for a subsystem BELOW the authz seam (device approval, federation
 // unlink) that cannot import authz — authz imports oidc, so the dependency only
-// runs one way. It asks what authz.Principal.Super asks and what the published
-// authz.Claims.PlatformSudo asks of a signed token, so one identity is an
-// operator everywhere or nowhere.
+// runs one way. It asks what authz.Principal.Sudo carries and what the published
+// authz.Claims.Sudo asks of a signed token, so one identity is an operator
+// everywhere or nowhere.
 //
 // It takes an IDENTITY, not an org name, because that is the shape of the
-// question. Asking only the home org made this unanswerable for the operators
-// who actually exist: an operator is someone an existing SuperAdmin put IN the
-// reserved org (memberships.mayGrant refuses that row to anyone else), and most
-// are anchored in a brand org because they also do ordinary work.
+// question. An operator is someone an existing SuperAdmin put IN the reserved
+// org (memberships.mayGrant refuses that row to anyone else), and most are
+// anchored in a brand org because they also do ordinary work there, so the home
+// org alone cannot answer it.
 //
 // It reports the read error rather than folding it into the answer. Which way an
 // unreadable membership set is unsafe depends on the caller: one that GRANTS on a
@@ -542,7 +522,7 @@ const AdminOrg = "admin"
 // spend the answer without looking. A per-org isAdmin flag is a different,
 // org-scoped question and never answers this one.
 func IsSuperAdmin(ctx context.Context, db orm.DB, owner, name string) (bool, error) {
-	if owner == AdminOrg {
+	if owner == policy.AdminOrg {
 		return true, nil
 	}
 	if owner == "" || name == "" {
@@ -553,34 +533,11 @@ func IsSuperAdmin(ctx context.Context, db orm.DB, owner, name string) (bool, err
 		return false, err
 	}
 	for _, m := range rows {
-		if m != nil && m.Org == AdminOrg {
+		if m != nil && m.Org == policy.AdminOrg {
 			return true, nil
 		}
 	}
 	return false, nil
-}
-
-// reservedServiceOrg is the system organization that owns service/app principals —
-// reserved alongside the signing-cert owners, but not itself a signing owner.
-const reservedServiceOrg = "app"
-
-// IsReservedOrg reports whether owner is a SYSTEM organization a self-service,
-// federated, or otherwise customer-driven flow may NEVER land a principal in. It is
-// the ONE predicate that boundary shares (signup, onboarding, and federated
-// provisioning all consult it), so the reserved set is defined in exactly one place
-// and can never drift between those surfaces.
-//
-// The set is the SuperAdmin/signing trust boundary — admin and built-in, i.e.
-// IsSigningCertOwner, composed so a newly-reserved signing owner is covered here for
-// free — plus the service-principal org "app". A user created under any of these is a
-// platform identity, not a customer: a user under AdminOrg belongs to the reserved
-// org and is therefore a SuperAdmin, and a signing/built-in or service org is
-// platform trust material. These orgs are seeded, onboarded by a SuperAdmin, or
-// provisioned by the operator's service token — never reached by a public signup or
-// an external login. Fail-closed by construction: an unknown org is NOT reserved, so
-// legitimate tenants are unaffected while every reserved org is refused.
-func IsReservedOrg(owner string) bool {
-	return IsSigningCertOwner(owner) || owner == reservedServiceOrg
 }
 
 // GetSigningCert resolves a TRUSTED signing certificate by name (the JWKS
@@ -592,7 +549,7 @@ func GetSigningCert(ctx context.Context, db orm.DB, name string) (*schema.Cert, 
 	if name == "" {
 		return nil, nil
 	}
-	for _, owner := range signingCertOwners {
+	for _, owner := range policy.SigningOwners() {
 		c, err := GetCert(ctx, db, owner, name)
 		if err != nil {
 			return nil, err
@@ -661,7 +618,7 @@ func PlatformSigningCert(ctx context.Context, db orm.DB) (*schema.Cert, error) {
 	}
 	var best *schema.Cert
 	for _, c := range certs {
-		if c == nil || c.PrivateKey == "" || !IsSigningCertOwner(c.Owner) {
+		if c == nil || c.PrivateKey == "" || !policy.IsSigningOwner(c.Owner) {
 			continue
 		}
 		if best == nil || c.Owner+"/"+c.Name < best.Owner+"/"+best.Name {
@@ -790,7 +747,7 @@ func GetOrganizationByName(_ context.Context, db orm.DB, name string) (*schema.O
 // authority. Authority is a property of the USER row — authz derives Super from
 // user.Owner == "admin" — and a self-service signup creates its user under the new
 // org, never under "admin". Callers must have refused a reserved name first
-// (IsReservedOrg), which is what keeps this from being a path to minting "admin".
+// (policy.IsReservedOrg), which is what keeps this from being a path to minting "admin".
 func CreateOrganization(_ context.Context, db orm.DB, name string) (*schema.Organization, error) {
 	if name == "" {
 		return nil, fmt.Errorf("organization name is required")
@@ -972,7 +929,7 @@ func GetSignupByConnector(_ context.Context, db orm.DB, application, field, subj
 	if err != nil || u == nil {
 		return nil, err
 	}
-	if IsReservedOrg(u.Owner) {
+	if policy.IsReservedOrg(u.Owner) {
 		return nil, nil
 	}
 	return u, nil

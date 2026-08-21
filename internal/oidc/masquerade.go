@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -38,7 +39,7 @@ import (
 // estate already has rather than a second one taught to every consumer.
 //
 // ONLY a SuperAdmin may, and the predicate is store.IsSuperAdmin — belonging to
-// the reserved admin org — which is the same question authz.Principal.Super
+// the reserved admin org — which is the same question authz.Principal.Sudo
 // answers above this seam. A per-org isAdmin is a different, org-scoped fact:
 // reading it here would let the admin of one tenant step into every other, and
 // that is the entire escalation this endpoint would otherwise be.
@@ -129,7 +130,7 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	if org != "" {
 		// The platform's own organizations are where an operator already is, so
 		// stepping into one is not a scope at all.
-		if store.IsReservedOrg(org) {
+		if policy.IsReservedOrg(org) {
 			return httpx.Bad(400, "that is a platform organization, not a tenant", ""), nil
 		}
 		target, err := store.GetOrganizationByName(ctx, db, org)

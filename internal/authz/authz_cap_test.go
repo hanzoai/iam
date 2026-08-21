@@ -3,12 +3,16 @@
 
 package authz
 
-import "testing"
+import (
+	"testing"
+
+	policy "github.com/hanzoai/authz"
+)
 
 // The confidential-client authorization policy: an app principal's ENTIRE
 // authority is its capability allowlist — never Super, never Admin, never a
 // tenant. This is the v1 "every client credential is a global admin" hole, held
-// closed. authorize() IS the decision; this table is its truth for app principals.
+// closed. This table is the decision's truth for app principals.
 func TestAuthorizeAppCapabilities(t *testing.T) {
 	// The allowlists reserve each capability to a named admin-owned app.
 	t.Setenv("IAM_USER_ADMIN_APPS", "hanzo-console")
@@ -16,12 +20,12 @@ func TestAuthorizeAppCapabilities(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-team")
 	t.Setenv("IAM_SA_LIST_ALLOWED_APPS", "hanzo-reader")
 
-	console := &Principal{App: "hanzo-console", AppOwner: "admin", Org: "admin"} // admin-owned: user+org admin caps
-	nobody := &Principal{App: "rogue-app", AppOwner: "hanzo", Org: "hanzo"}      // in no allowlist
+	console := &Principal{App: &policy.App{Name: "hanzo-console", Owner: "admin"}, Org: "admin"} // admin-owned: user+org admin caps
+	nobody := &Principal{App: &policy.App{Name: "rogue-app", Owner: "hanzo"}, Org: "hanzo"}      // in no allowlist
 	// attacker: a tenant that registered <its-org>/hanzo-console — the SAME allow-listed
 	// NAME, but owned by a NON-signing org. The owner-pin (cap.go) denies every capability,
 	// so the public signup→onboard→register-app→Basic-auth escalation is inert.
-	attacker := &Principal{App: "hanzo-console", AppOwner: "evil", Org: "evil"}
+	attacker := &Principal{App: &policy.App{Name: "hanzo-console", Owner: "evil"}, Org: "evil"}
 
 	cases := []struct {
 		name   string
@@ -78,14 +82,14 @@ func TestAuthorizeAppCapabilities(t *testing.T) {
 
 	// An app principal is structurally never Super/Admin, so it can never take the
 	// human privileged paths even if a future bug set the flags.
-	if console.Super || console.Admin {
+	if console.Sudo || console.Admin {
 		t.Fatal("an app principal must never carry Super/Admin")
 	}
 
 	// RED's four assertions, VERBATIM — the exact PoC principal &Principal{App:"hanzo-console"}
 	// (no owning signing org). Every one fired == true before the owner-pin; every one must
 	// be false now. A bare app principal is inert regardless of the NAME it presents.
-	red := &Principal{App: "hanzo-console"}
+	red := &Principal{App: &policy.App{Name: "hanzo-console"}}
 	for _, a := range []struct{ method, entity, owner, name string }{
 		{"POST", "users", "victim", "x"},
 		{"POST", "organizations", "admin", "victim"},
@@ -97,63 +101,4 @@ func TestAuthorizeAppCapabilities(t *testing.T) {
 				a.method, a.entity, a.owner, a.name)
 		}
 	}
-}
-
-// The capability primitives, fail-secure to the letter.
-func TestCapabilityPrimitives(t *testing.T) {
-	t.Setenv("IAM_ORG_ADMIN_APPS", "hanzo-console, brand-console")
-
-	t.Run("Allowed named", func(t *testing.T) {
-		if !Allowed(&Principal{App: "hanzo-console", AppOwner: "admin"}, CapOrgAdmin) {
-			t.Fatal("a named, admin-owned app must hold its capability")
-		}
-	})
-	t.Run("Allowed unnamed denied", func(t *testing.T) {
-		if Allowed(&Principal{App: "other", AppOwner: "admin"}, CapOrgAdmin) {
-			t.Fatal("an unnamed app must hold nothing") // admin-owned, so the NAME check alone denies
-		}
-	})
-	t.Run("Allowed unset env denied", func(t *testing.T) {
-		if Allowed(&Principal{App: "hanzo-console", AppOwner: "admin"}, CapKeyMint) { // IAM_KEY_MINT_ALLOWED_APPS unset here
-			t.Fatal("an unset allowlist must deny every app")
-		}
-	})
-	t.Run("Allowed owner-pin denies a non-signing owner", func(t *testing.T) {
-		// hanzo-console IS on IAM_ORG_ADMIN_APPS, but these rows are NOT admin/built-in owned.
-		if Allowed(&Principal{App: "hanzo-console", AppOwner: "hanzo"}, CapOrgAdmin) {
-			t.Fatal("a tenant-owned app must hold nothing even with an allow-listed name")
-		}
-		if Allowed(&Principal{App: "hanzo-console"}, CapOrgAdmin) { // AppOwner "" — no owning signing org at all
-			t.Fatal("an app with no owning signing org must hold nothing")
-		}
-		// built-in is the other reserved signing owner — a built-in-owned allow-listed app is legit.
-		if !Allowed(&Principal{App: "hanzo-console", AppOwner: "built-in"}, CapOrgAdmin) {
-			t.Fatal("a built-in-owned allow-listed app must hold its capability")
-		}
-	})
-	t.Run("Allowed non-app is vacuous", func(t *testing.T) {
-		if !Allowed(&Principal{Org: "hanzo"}, CapOrgAdmin) {
-			t.Fatal("a human holds capabilities vacuously; the org policy decides")
-		}
-	})
-	t.Run("BoundToOrg prefix", func(t *testing.T) {
-		p := &Principal{App: "hanzo-team"}
-		if !BoundToOrg(p, "hanzo") {
-			t.Fatal("hanzo-team must be bound to hanzo")
-		}
-		if BoundToOrg(p, "lux") {
-			t.Fatal("hanzo-team must NOT be bound to lux")
-		}
-		if BoundToOrg(&Principal{App: "hanzo"}, "hanzo") {
-			t.Fatal("an exact-name app (no agent segment) is bound to nothing")
-		}
-	})
-	t.Run("capFor mapping", func(t *testing.T) {
-		if capFor("organizations") != CapOrgAdmin || capFor("users") != CapUserAdmin {
-			t.Fatal("org/user entities must map to their capability")
-		}
-		if capFor("certs") != (Cap{}) || capFor("providers") != (Cap{}) {
-			t.Fatal("an unmapped entity must map to the empty (deny-all) capability")
-		}
-	})
 }

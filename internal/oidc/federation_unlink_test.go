@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"testing"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -254,7 +255,7 @@ func TestUnlink_BrandAnchoredOperatorMayRemoveTheOnlyCredential(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 	seedUser(t, db, "op", "op@hanzo.ai", "pw") // home org hanzo, NOT the reserved org
-	if _, err := store.EnsureMembership(tctx(), db, "hanzo/op", store.AdminOrg, store.RoleAdmin); err != nil {
+	if _, err := store.EnsureMembership(tctx(), db, "hanzo/op", policy.AdminOrg, store.RoleAdmin); err != nil {
 		t.Fatalf("grant the reserved-org membership: %v", err)
 	}
 	linkGitHub(t, db, "alice", "gh-alice", true)

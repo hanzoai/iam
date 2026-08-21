@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -199,7 +200,7 @@ func TestSignup_DerivedSlugNeverReservedOrg(t *testing.T) {
 		t.Fatalf("signup failed: %v", env)
 	}
 	data, _ := env["data"].(map[string]any)
-	if store.IsReservedOrg(data["owner"].(string)) {
+	if policy.IsReservedOrg(data["owner"].(string)) {
 		t.Fatalf("owner = %v, a reserved system org", data["owner"])
 	}
 	if u, _ := store.GetUserByName(tctx(), db, "admin", "admin"); u != nil {

@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 package authz
 
-import "testing"
+import (
+	"testing"
+
+	policy "github.com/hanzoai/authz"
+)
 
 // entityNoun is the fold that makes both surfaces name the same entity. Pin it
 // directly: this is the mapping the whole compat authorization surface rides on.
@@ -45,24 +49,31 @@ func TestEntityOf_EveryKeyRouteNamesOneEntity(t *testing.T) {
 	}
 }
 
-// The read that makes a user's own key list truthful: the confidential client already
-// trusted to MINT, ROTATE and REVOKE a user's credential may also READ the key set it
-// manages. Strictly less disclosure than the mint it already holds, and safe on its
-// own because every key read is masked (schema.Key.Mask blanks the sk- half).
-func TestCapFor_KeysMapsToTheMintCapability(t *testing.T) {
-	if capFor("keys") != CapKeyMint {
-		t.Fatalf("capFor(\"keys\") = %+v, want CapKeyMint — without it the ONE key list is SuperAdmin-only and a user cannot see their own keys", capFor("keys"))
+// The read that makes a user's own key list truthful: the confidential client
+// already trusted to MINT, ROTATE and REVOKE a user's credential may also READ the
+// key set it manages. Strictly less disclosure than the mint it already holds, and
+// safe on its own because every key read is masked (schema.Key.Mask blanks the sk-
+// half).
+//
+// Asserted through the SEAM rather than against the capability table, because the
+// two halves have to meet: the key routes must all name one entity (above), and
+// that entity must be the one the minter's capability reaches.
+func TestKeysAreReachableByTheCredentialMinter(t *testing.T) {
+	t.Setenv(policy.CapKeyMint.Env, "hanzo-console")
+	keys := entityOf("/v1/iam/keys")
+
+	minter := &Principal{App: &policy.App{Name: "hanzo-console", Owner: "admin"}, Org: "hanzo"}
+	if !authorize(minter, "GET", keys, "acme", "k") {
+		t.Fatal("an allow-listed, admin-owned minter cannot read the keys it manages — the ONE key list is then SuperAdmin-only and a user cannot see their own")
 	}
-	// Still fail-secure: holding it requires being ON the allow-list, under a reserved
-	// signing owner. The capability is a grant to a named platform app, not to apps.
-	t.Setenv(CapKeyMint.Env, "hanzo-console")
-	if !Allowed(&Principal{App: "hanzo-console", AppOwner: "admin"}, capFor("keys")) {
-		t.Fatal("an allow-listed, admin-owned minter must be able to read the keys it manages")
+	// Fail-secure either side of it: the owner-pin denies a tenant app reusing the
+	// allow-listed name, and an unlisted app holds nothing.
+	spoof := &Principal{App: &policy.App{Name: "hanzo-console", Owner: "acme"}, Org: "acme"}
+	if authorize(spoof, "GET", keys, "acme", "k") {
+		t.Fatal("a tenant app reusing an allow-listed name read the key set")
 	}
-	if Allowed(&Principal{App: "hanzo-console", AppOwner: "acme"}, capFor("keys")) {
-		t.Fatal("the owner-pin must deny a tenant app that reuses an allow-listed name")
-	}
-	if Allowed(&Principal{App: "other-app", AppOwner: "admin"}, capFor("keys")) {
-		t.Fatal("an app that is not on the allow-list must hold nothing")
+	other := &Principal{App: &policy.App{Name: "other-app", Owner: "admin"}, Org: "hanzo"}
+	if authorize(other, "GET", keys, "acme", "k") {
+		t.Fatal("an app that is not on the allow-list read the key set")
 	}
 }

@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 package authz
 
-import "testing"
+import (
+	"testing"
+
+	policy "github.com/hanzoai/authz"
+)
 
 // SELF-READ. An app may read the row it authenticated as — the ordinary bootstrap
 // of an OIDC relying party — and nothing else. The owner-pin that closed the
@@ -12,7 +16,7 @@ import "testing"
 // The grant is keyed on BOTH halves of (AppOwner, App), which is what keeps it a
 // self-read rather than "apps may read applications".
 func TestAuthorize_AppReadsOnlyItsOwnRecord(t *testing.T) {
-	cloud := &Principal{App: "hanzo-cloud", AppOwner: "admin", Org: "hanzo"}
+	cloud := &Principal{App: &policy.App{Name: "hanzo-cloud", Owner: "admin"}, Org: "hanzo"}
 
 	for _, tc := range []struct {
 		name                  string
@@ -45,7 +49,7 @@ func TestAuthorize_AppReadsOnlyItsOwnRecord(t *testing.T) {
 			"the entity is users here, not applications"},
 
 		// An app with no owner pin holds nothing (the fail-closed default).
-		{"unpinned app", &Principal{App: "hanzo-cloud"}, "GET", "admin", "hanzo-cloud", false,
+		{"unpinned app", &Principal{App: &policy.App{Name: "hanzo-cloud"}}, "GET", "admin", "hanzo-cloud", false,
 			"an app whose AppOwner is empty matches no row"},
 		{"empty owner target", cloud, "GET", "", "hanzo-cloud", false,
 			"an empty owner must never match"},

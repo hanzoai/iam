@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 
@@ -109,11 +110,11 @@ func TestAdminGate(t *testing.T) {
 		org  string
 		want bool
 	}{
-		{"mint-cap app (admin-owned)", &authz.Principal{App: "hanzo-team", AppOwner: "admin"}, "hanzo", true},
-		{"tenant-owned mint-named app denied", &authz.Principal{App: "hanzo-team", AppOwner: "evil"}, "hanzo", false},
-		{"non-cap app", &authz.Principal{App: "rogue", AppOwner: "admin"}, "hanzo", false},
-		{"read-only app cannot mint", &authz.Principal{App: "hanzo-reader", AppOwner: "admin"}, "hanzo", false},
-		{"super human", &authz.Principal{Org: "admin", Super: true}, "orgb", true},
+		{"mint-cap app (admin-owned)", &authz.Principal{App: &policy.App{Name: "hanzo-team", Owner: "admin"}}, "hanzo", true},
+		{"tenant-owned mint-named app denied", &authz.Principal{App: &policy.App{Name: "hanzo-team", Owner: "evil"}}, "hanzo", false},
+		{"non-cap app", &authz.Principal{App: &policy.App{Name: "rogue", Owner: "admin"}}, "hanzo", false},
+		{"read-only app cannot mint", &authz.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "admin"}}, "hanzo", false},
+		{"super human", &authz.Principal{Org: "admin", Sudo: true}, "orgb", true},
 		{"org admin own org", &authz.Principal{Org: "hanzo", Admin: true}, "hanzo", true},
 		{"org admin foreign org", &authz.Principal{Org: "hanzo", Admin: true}, "orgb", false},
 		{"regular human", &authz.Principal{Org: "hanzo"}, "hanzo", false},
@@ -127,22 +128,21 @@ func TestAdminGate(t *testing.T) {
 
 // A RESERVED SYSTEM ORG IS NOT A TENANT, and no app may provision into one.
 //
-// create takes the target org from the request body verbatim, and a row's HOME org
-// IS its platform authority — authz sets Principal.Super from memberOf(adminOrg),
-// and memberOf answers home-or-membership. So an app holding only the mint
-// capability could post {"organization":"admin"} and mint a live principal, with
-// pk-/sk- keys, that authenticates as a SuperAdmin: "may provision identities"
-// became platform sudo, cross-tenant, in one call.
+// create takes the target org from the request BODY, and a principal's home org is
+// part of its platform authority — authz resolves Principal.Sudo from
+// memberOf(policy.AdminOrg), which answers home-or-membership. A minted row is
+// therefore an identity with whatever the named org confers, carrying pk-/sk- keys
+// of its own, so the org a mint may name has to be a tenant.
 //
-// The same call in the signup org mints a machine-typed row, and a machine-typed
-// row in that org names the platform's own balance as its payer — so the identical
-// unbound gate reached the money too. The org boundary is what both need.
+// The signup org carries the same weight for a different reason: a machine-typed
+// row there names the platform's own balance as its payer. One org boundary
+// answers both.
 //
 // A human SuperAdmin keeps the ability: that authority IS what the reserved org
 // denotes, so refusing it there would deny the only principal allowed to hold it.
 func TestAdminGate_ReservedOrgIsNotATenant(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-team")
-	minter := &authz.Principal{App: "hanzo-team", AppOwner: "admin"}
+	minter := &authz.Principal{App: &policy.App{Name: "hanzo-team", Owner: "admin"}}
 	for _, org := range []string{"admin", "built-in", "app"} {
 		if admin(minter, org) {
 			t.Errorf("a mint-cap app must NOT provision into the reserved org %q", org)
@@ -152,7 +152,7 @@ func TestAdminGate_ReservedOrgIsNotATenant(t *testing.T) {
 		if admin(&authz.Principal{Org: org, Admin: true}, org) {
 			t.Errorf("a non-super org admin must NOT provision into the reserved org %q", org)
 		}
-		if !admin(&authz.Principal{Org: "admin", Super: true}, org) {
+		if !admin(&authz.Principal{Org: "admin", Sudo: true}, org) {
 			t.Errorf("a SuperAdmin must still provision into %q", org)
 		}
 	}
@@ -172,24 +172,24 @@ func TestAdminGate_ReservedOrgIsNotATenant(t *testing.T) {
 func TestReadGate_TenantBound(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-team")
 	t.Setenv("IAM_SA_LIST_ALLOWED_APPS", "hanzo-reader")
-	if !read(&authz.Principal{App: "hanzo-team", AppOwner: "admin"}, "lux") {
+	if !read(&authz.Principal{App: &policy.App{Name: "hanzo-team", Owner: "admin"}}, "lux") {
 		t.Fatal("a mint-cap app may enumerate any org")
 	}
-	if !read(&authz.Principal{App: "hanzo-reader", AppOwner: "admin"}, "hanzo") {
+	if !read(&authz.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "admin"}}, "hanzo") {
 		t.Fatal("hanzo-reader may list its own tenant")
 	}
-	if read(&authz.Principal{App: "hanzo-reader", AppOwner: "admin"}, "lux") {
+	if read(&authz.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "admin"}}, "lux") {
 		t.Fatal("hanzo-reader must NOT list lux — a cross-tenant roster leak")
 	}
-	if read(&authz.Principal{App: "rogue", AppOwner: "admin"}, "hanzo") {
+	if read(&authz.Principal{App: &policy.App{Name: "rogue", Owner: "admin"}}, "hanzo") {
 		t.Fatal("an uncapable app must list nothing")
 	}
 	// A tenant-owned app spoofing an allow-listed NAME reads nothing — the owner-pin
 	// denies the capability before the tenant-binding is even consulted.
-	if read(&authz.Principal{App: "hanzo-reader", AppOwner: "evil"}, "hanzo") {
+	if read(&authz.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "evil"}}, "hanzo") {
 		t.Fatal("a tenant-owned app named like the reader must NOT enumerate any org")
 	}
-	if read(&authz.Principal{App: "hanzo-team", AppOwner: "evil"}, "lux") {
+	if read(&authz.Principal{App: &policy.App{Name: "hanzo-team", Owner: "evil"}}, "lux") {
 		t.Fatal("a tenant-owned app named like the minter must NOT enumerate any org")
 	}
 }

@@ -742,7 +742,7 @@ func keys(m map[string]any) []string {
 // sign-up, even when its application row has sign-up enabled.
 //
 // Wallet login was the ONE public account-creation front door that did not
-// consult store.IsReservedOrg — signup (signup.go), onboarding, federated
+// consult policy.IsReservedOrg — signup (signup.go), onboarding, federated
 // provisioning (federation.go) and token exchange all did. The org here is not
 // caller-chosen (provision takes in.App.Organization), so this is not a
 // cross-TENANT hole; it is an ESCALATION one: authz derives Super from

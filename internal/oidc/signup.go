@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -113,11 +114,11 @@ func signupHandler(db orm.DB) zip.Handler {
 		// refuse, and it must hold INDEPENDENT of the app: an admin-org app, a shared
 		// app, or an org-choice app would each otherwise admit `organization=admin`
 		// through the tenant gate below and mint a SuperAdmin. This is the same
-		// store.IsReservedOrg refusal onboarding and federated provisioning apply — the
+		// policy.IsReservedOrg refusal onboarding and federated provisioning apply — the
 		// ONE reserved-org predicate, so signup can never drift from them. The message
 		// is byte-identical to the tenant refuse below, so a prober cannot distinguish
 		// "reserved org" from "wrong tenant" (no existence/authority oracle).
-		if store.IsReservedOrg(f.Organization) {
+		if policy.IsReservedOrg(f.Organization) {
 			return httpx.Err(c, "the user is not permitted to sign up to this application")
 		}
 		// Tenant isolation: the requested org must be the app's own org, a shared
@@ -367,7 +368,7 @@ const orgChoiceCreate = "create"
 // derivation that walked only past TAKEN names would hand provision a name it
 // refuses, and the person's signup would fail on a rule they never saw.
 func orgSlugFree(ctx context.Context, db orm.DB, slug string) (bool, error) {
-	if len(slug) < minOrgSlug || len(slug) > maxOrgSlug || store.IsReservedOrg(slug) {
+	if len(slug) < minOrgSlug || len(slug) > maxOrgSlug || policy.IsReservedOrg(slug) {
 		return false, nil
 	}
 	org, err := store.GetOrganizationByName(ctx, db, slug)

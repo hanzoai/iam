@@ -25,6 +25,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
@@ -33,7 +34,6 @@ import (
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
 )
 
 const (
@@ -65,11 +65,11 @@ func newRig(t *testing.T) *rig {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	seedCert(t, db, store.AdminOrg, kid, pemOf(t, key))
-	seedApp(t, db, store.AdminOrg, "console", clientID, kid)
-	seedUser(t, db, store.AdminOrg, "z", false) // the operator: reserved org IS SuperAdmin
-	seedUser(t, db, "hanzo", "boss", true)      // administers hanzo, and nothing else
-	seedUser(t, db, "hanzo", "nobody", false)   // administers nothing
+	seedCert(t, db, policy.AdminOrg, kid, pemOf(t, key))
+	seedApp(t, db, policy.AdminOrg, "console", clientID, kid)
+	seedUser(t, db, policy.AdminOrg, "z", false) // the operator: reserved org IS SuperAdmin
+	seedUser(t, db, "hanzo", "boss", true)       // administers hanzo, and nothing else
+	seedUser(t, db, "hanzo", "nobody", false)    // administers nothing
 	seedOrg(t, db, "hanzo")
 	seedOrg(t, db, "acme")
 
@@ -182,7 +182,7 @@ func TestAssume_operatorKeepsTheirOwnIdentity(t *testing.T) {
 	if claims["assumed"] != "acme" {
 		t.Fatalf("token assumed=%v, want acme", claims["assumed"])
 	}
-	if claims["name"] != "z" || claims["owner"] != store.AdminOrg {
+	if claims["name"] != "z" || claims["owner"] != policy.AdminOrg {
 		t.Fatalf("token names %v/%v, want admin/z — the operator is never replaced",
 			claims["owner"], claims["name"])
 	}
@@ -350,7 +350,7 @@ func TestAssume_trailIsReserved(t *testing.T) {
 // same name.
 func seedCert(t *testing.T, db orm.DB, owner, name, privPEM string) {
 	t.Helper()
-	if store.IsSigningCertOwner(owner) {
+	if policy.IsSigningOwner(owner) {
 		keyring.Set(name, privPEM)
 		t.Cleanup(func() { keyring.Forget(name) })
 	}
@@ -390,10 +390,10 @@ func seedUser(t *testing.T, db orm.DB, owner, name string, admin bool) {
 func seedOrg(t *testing.T, db orm.DB, name string) {
 	t.Helper()
 	o := orm.New[schema.Organization](db)
-	o.Owner, o.Name = store.AdminOrg, name
+	o.Owner, o.Name = policy.AdminOrg, name
 	o.DisplayName = strings.ToUpper(name[:1]) + name[1:]
 	o.CreatedTime = time.Now().UTC().Format(time.RFC3339)
-	o.SetId(store.AdminOrg + "/" + name)
+	o.SetId(policy.AdminOrg + "/" + name)
 	if err := o.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed org: %v", err)
 	}

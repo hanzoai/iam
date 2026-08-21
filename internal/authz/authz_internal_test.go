@@ -3,12 +3,23 @@
 
 package authz
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
-// The pure policy, tested exhaustively and independent of HTTP. authorize IS the
-// security decision; this table is its full truth.
+// authorize asks the seam's own decision the way the seam asks it: IAM resolves the
+// principal and folds the path onto an entity noun, policy.Principal.CanEntity
+// decides. Going through Can rather than around it is what makes these tables a
+// test of the live path and not of a paraphrase of it.
+func authorize(p *Principal, method, entity, owner, name string) bool {
+	return Can(context.WithValue(context.Background(), ctxKey{}, p), method, entity, owner, name)
+}
+
+// The pure policy, tested exhaustively and independent of HTTP. This table is the
+// full truth of the decision the seam applies.
 func TestAuthorizePolicy(t *testing.T) {
-	super := &Principal{Org: "admin", User: "root", Super: true}
+	super := &Principal{Org: "admin", User: "root", Sudo: true}
 	orgAdmin := &Principal{Org: "hanzo", User: "boss", Admin: true}
 	regular := &Principal{Org: "hanzo", User: "alice"}
 	builtin := &Principal{Org: "built-in", User: "svc", Admin: true} // NOT super
@@ -59,7 +70,7 @@ func TestAuthorizePolicy(t *testing.T) {
 // SuperAdmin is exactly org=="admin"; built-in is NOT super — the built-in gap
 // the poisoning gate must close depends on this.
 func TestSuperIsAdminOrgOnly(t *testing.T) {
-	if (&Principal{Org: "built-in", Super: false}).Super {
+	if (&Principal{Org: "built-in", Sudo: false}).Sudo {
 		t.Fatal("built-in must not be SuperAdmin")
 	}
 	// A built-in-org principal fails the reserved-owner write even for its own org.

@@ -161,7 +161,7 @@ func (a *Account) Validate(org string) error {
 		// federated-identity link (oidc/federation.go step 2) — so an address on a
 		// platform-sudo account is a second, mailbox-shaped way to become it.
 		// Reserved orgs already refuse federation (federationOrgAllowed →
-		// store.IsReservedOrg), which is why this is defence in depth and not the
+		// policy.IsReservedOrg), which is why this is defence in depth and not the
 		// only control; a service account simply has nothing to gain by carrying
 		// one, and the cheapest time to say so is here.
 		if a.Email != "" {

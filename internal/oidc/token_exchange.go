@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -101,7 +102,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "cannot determine the subject")
 	}
-	if (store.IsSigningCertOwner(owner) || super) && !adminMintAllowed(clientApp) {
+	if (policy.IsSigningOwner(owner) || super) && !adminMintAllowed(clientApp) {
 		return tokenError(c, 403, "access_denied", "not permitted to act for a reserved-org subject")
 	}
 
