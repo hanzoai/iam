@@ -13,6 +13,7 @@ func init() {
 	zip.Describe("GET /v1/iam/users", zip.Doc{
 		Description: "Returns a page of the people in your organization, with the total so you\ncan page through the rest. Passwords, API secrets and MFA material are stripped\nfrom every entry.",
 		Fields: map[string]string{
+			"ListInput.email": "Email narrows the page to the accounts carrying one address. Looking a\nperson up by their address is a QUERY over the collection, not an item\nread: an address is not the natural key, two rows in one org can carry\none, and a caller that gets a page SEES both — where a single-item read\nwould have to choose, and choosing is how somebody joins a team under a\ncolleague's identity.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
 			"Model[github.com/hanzoai/iam/pkg/schema.Role].id":       "Persisted fields",
 			"Model[github.com/hanzoai/iam/pkg/schema.User].id":       "Persisted fields",
@@ -85,7 +86,7 @@ func init() {
 			"User.webauthnCredentials":                               "Multi-factor authentication. TotpSecret and RecoveryCodes are secret\nverify-only material — the handler strips them from every response.\nWebauthnCredentials is carried as raw JSON here for lossless migration;\nthe typed passkey model is the sibling WebauthnCredential entity.",
 		},
 	})
-	zip.Describe("POST /v1/iam/users/update", zip.Doc{
+	zip.Describe("PUT /v1/iam/users/:owner/:name", zip.Doc{
 		Description: "Changes a person's profile, their roles, or the credentials they sign\nin with. Send a password to reset it; leave it out and their current one keeps\nworking.\n\nWho they are does not change: their organization, username and the identifier\ntheir existing sessions are keyed on all survive the write, so an update never\nsigns anyone out.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
