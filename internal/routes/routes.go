@@ -61,6 +61,7 @@ import (
 	"github.com/hanzoai/iam/internal/projects"
 	"github.com/hanzoai/iam/internal/providers"
 	"github.com/hanzoai/iam/internal/registry"
+	"github.com/hanzoai/iam/internal/resolve"
 	"github.com/hanzoai/iam/internal/roles"
 	"github.com/hanzoai/iam/internal/scim"
 	"github.com/hanzoai/iam/internal/serviceaccounts"
@@ -171,6 +172,11 @@ func Route(app *zip.App, db orm.DB) {
 	//     overreach, same cause, one seam over — and scoping only the Guard would
 	//     have left every TYPED sibling op broken while the raw ones recovered.
 	authed.Authorize(authz.Authorize)
+
+	// The key resolvers: authenticated by the Guard, authorized by their own
+	// handlers, because the key they read rides in a query parameter and there is
+	// no owner/name for the Guard to check.
+	resolve.Route(authed, db)
 
 	// The same authentication, mounted a second time for the ONE surface a
 	// scoped seam cannot reach: the framework's own /mcp door and OpenAPI
