@@ -19,6 +19,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -468,12 +469,20 @@ func GetTokenByCode(_ context.Context, db orm.DB, code string) (*schema.Token, e
 	return t, err
 }
 
-// GetCert resolves a signing certificate by (owner, name).
+// GetCert resolves a signing certificate by (owner, name), with its private key
+// filled in from the keyring.
+//
+// The row carries the key's identity; the key itself is never a column. Filling
+// it HERE is what lets that stay invisible to everything downstream: the signer,
+// the verifier, the JWKS and the session-cookie key each still read
+// cert.PrivateKey off the value the store handed them, and none of them has to
+// learn where key material comes from.
 func GetCert(_ context.Context, db orm.DB, owner, name string) (*schema.Cert, error) {
 	c, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", owner).Filter("Name=", name).First()
 	if err == orm.ErrNotFound {
 		return nil, nil
 	}
+	keyring.Fill(c)
 	return c, err
 }
 
@@ -626,10 +635,18 @@ func SaveToken(ctx context.Context, db orm.DB, tok *schema.Token) error {
 	return existing.UpdateCtx(ctx)
 }
 
-// ListCerts returns every certificate ordered by name. The JWKS endpoint calls
-// this and filters to the token-signing certs it publishes.
+// ListCerts returns every certificate ordered by name, each with its private key
+// filled in from the keyring (see GetCert). The JWKS endpoint calls this and
+// filters to the token-signing certs it publishes.
 func ListCerts(ctx context.Context, db orm.DB) ([]*schema.Cert, error) {
-	return orm.TypedQuery[schema.Cert](db).Order("Name").GetAll(ctx)
+	certs, err := orm.TypedQuery[schema.Cert](db).Order("Name").GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range certs {
+		keyring.Fill(c)
+	}
+	return certs, nil
 }
 
 // PlatformSigningCert returns a deterministic trusted signing cert — the first by

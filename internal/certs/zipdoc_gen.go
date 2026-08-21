@@ -14,7 +14,7 @@ func init() {
 		},
 	})
 	zip.Describe("POST /v1/iam/certs", zip.Doc{
-		Description: "Adds a signing certificate your applications can verify tokens against\n— the call you make to bring your own key, or to stage the next one before a\nrotation. A name already used in your organization is refused.",
+		Description: "Adds a signing certificate your applications can verify tokens against\n— the call you make to stage the next one before a rotation. A name already\nused in your organization is refused.\n\nIt registers the certificate's IDENTITY: its name (which is the JWKS `kid`),\nits algorithm, its expiry. Key material does not travel this way and cannot:\nthe private key is not part of the Cert's JSON, so it is neither served here\nnor accepted here. It is supplied to the process by the deployment, under the\nname registered here (internal/keyring). Staging a rotation is therefore two\nhalves — this call names the key, and the deployment provides it.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id": "Persisted fields",
 		},
