@@ -21,7 +21,11 @@ generate: ## Lift every typed handler's doc comment into its zipdoc_gen.go.
 	go generate -run zipdoc ./...
 
 test: ## Run the full suite — the gate. Everything must be green to ship.
-	@set -e; for d in $$(grep -rl '^//go:generate go run github.com/zap-proto/zip/cmd/zipdoc' --include='*.go' . | xargs -n1 dirname | sort -u); do 	  (cd $$d && go run github.com/zap-proto/zip/cmd/zipdoc -check) || { echo "$$d/zipdoc_gen.go is stale — run: make generate"; exit 1; }; 	done
+	# zipdoc takes package patterns, so ask it once. The loop that stood here ran it
+	# per directory — the generator relinked twenty-four times — and stopped at the
+	# first stale file, so N stale files cost N red runs to discover one at a time.
+	# One invocation is faster and names all of them.
+	@go run github.com/zap-proto/zip/cmd/zipdoc -check ./... || { echo "run: make generate"; exit 1; }
 	go test ./... -race -count=1
 
 build: ## Build every package.
