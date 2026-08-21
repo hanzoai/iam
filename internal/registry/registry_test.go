@@ -79,6 +79,13 @@ const goldenKID = "4OXX:MSLV:WPTU:C3KW:NTVU:RRAB:BXZS:L3WB:NUPJ:UI7X:WVFG:EHRL"
 
 const testHost = "iam.hanzo.ai"
 
+// testService is the registry the tokens are minted FOR. It lands verbatim in
+// `aud`, and registry:2 refuses a token whose `aud` is not its own configured
+// REGISTRY_AUTH_TOKEN_SERVICE — so this string is the live registry's, not a
+// placeholder. Nothing in the token endpoint validates it (the caller names its
+// own audience), which is exactly why a wrong value here would never fail.
+const testService = "oci.hanzo.ai"
+
 func openTestDB(t *testing.T) orm.DB {
 	t.Helper()
 	_ = schema.Kinds() // force the schema init() (kind registration)
@@ -328,7 +335,7 @@ func TestToken_ServiceAccount_PullPush(t *testing.T) {
 	seedApp(t, db, "hanzo-registry", "s3cr3t-pushpull")
 
 	status, body, _ := tokenGET(t, app, "hanzo-registry", "s3cr3t-pushpull",
-		"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+		testService, "repository:hanzo/app:pull,push")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
 	}
@@ -347,7 +354,7 @@ func TestToken_ServiceAccount_PullPush(t *testing.T) {
 	if claims["iss"] != issuer {
 		t.Fatalf("iss = %v, want %q", claims["iss"], issuer)
 	}
-	if claims["aud"] != "registry.hanzo.ai" {
+	if claims["aud"] != testService {
 		t.Fatalf("aud = %v, want the service (a bare string)", claims["aud"])
 	}
 	if claims["sub"] != "hanzo-registry" {
@@ -384,7 +391,7 @@ func TestToken_User_PullOnly(t *testing.T) {
 	seedUser(t, db, "hanzo", "alice", "correct horse", false)
 
 	status, body, _ := tokenGET(t, app, "alice", "correct horse",
-		"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+		testService, "repository:hanzo/app:pull,push")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
 	}
@@ -406,7 +413,7 @@ func TestToken_User_PushOnly_Denied(t *testing.T) {
 	seedUser(t, db, "hanzo", "bob", "hunter2 hunter2", false)
 
 	status, body, _ := tokenGET(t, app, "bob", "hunter2 hunter2",
-		"registry.hanzo.ai", "repository:hanzo/secret:push")
+		testService, "repository:hanzo/secret:push")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
 	}
@@ -427,7 +434,7 @@ func TestToken_HanzoOrgAdmin_CanPush(t *testing.T) {
 	seedUser(t, db, "hanzo", "carol", "s0verysecret!!", true) // IsAdmin in org hanzo
 
 	status, body, _ := tokenGET(t, app, "carol", "s0verysecret!!",
-		"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+		testService, "repository:hanzo/app:pull,push")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
 	}
@@ -449,7 +456,7 @@ func TestToken_SuperAdminKey_CanPush(t *testing.T) {
 	seedKeyRow(t, db, "admin", "z", true, "pk-SUPERADMINkey0001", "sk-SUPERADMINkey0001")
 
 	status, body, _ := tokenGET(t, app, "z", "sk-SUPERADMINkey0001",
-		"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+		testService, "repository:hanzo/app:pull,push")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
 	}
@@ -478,10 +485,10 @@ func TestToken_SuperAdminPassword_Denied(t *testing.T) {
 		var body map[string]any
 		if flow == "GET" {
 			status, body, _ = tokenGET(t, app, "z", "${SEED_SUPERUSER_PASSWORD}",
-				"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+				testService, "repository:hanzo/app:pull,push")
 		} else {
 			status, body, _ = tokenPOST(t, app, "z", "${SEED_SUPERUSER_PASSWORD}",
-				"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+				testService, "repository:hanzo/app:pull,push")
 		}
 		if status != 401 || body["token"] != nil {
 			t.Fatalf("%s: SuperAdmin password ACCEPTED on the registry: status=%d body=%v — reserved-org password must not be a registry credential", flow, status, body)
@@ -497,7 +504,7 @@ func TestToken_ApiKey_Password(t *testing.T) {
 	seedKeyRow(t, db, "hanzo", "dave", false, "pk-DEADBEEFdeadbeef00", "sk-DEADBEEFdeadbeef00")
 
 	status, body, _ := tokenGET(t, app, "dave", "sk-DEADBEEFdeadbeef00",
-		"registry.hanzo.ai", "repository:hanzo/app:pull")
+		testService, "repository:hanzo/app:pull")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
 	}
@@ -519,7 +526,7 @@ func TestToken_ApiKey_Username(t *testing.T) {
 	seedKeyRow(t, db, "hanzo", "erin", false, "pk-CAFEBABEcafebabe11", "sk-CAFEBABEcafebabe11")
 
 	status, body, _ := tokenGET(t, app, "sk-CAFEBABEcafebabe11", "x",
-		"registry.hanzo.ai", "repository:hanzo/app:pull")
+		testService, "repository:hanzo/app:pull")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
 	}
@@ -546,7 +553,7 @@ func TestToken_ForeignTenantKey_Denied(t *testing.T) {
 	for _, key := range []string{"sk-live-EVIL", "pk-live-EVIL"} {
 		for _, scope := range []string{"repository:hanzo/iam:pull,push", "repository:hanzo/iam:pull"} {
 			// key as password
-			status, body, hdr := tokenGET(t, app, "mallory", key, "registry.hanzo.ai", scope)
+			status, body, hdr := tokenGET(t, app, "mallory", key, testService, scope)
 			if status != 401 || body["token"] != nil {
 				t.Fatalf("foreign key %s (password) scope %q: status=%d body=%v — must be 401/no token", key, scope, status, body)
 			}
@@ -554,7 +561,7 @@ func TestToken_ForeignTenantKey_Denied(t *testing.T) {
 				t.Fatalf("foreign key %s: missing WWW-Authenticate on 401", key)
 			}
 			// key as username
-			status, body, _ = tokenGET(t, app, key, "x", "registry.hanzo.ai", scope)
+			status, body, _ = tokenGET(t, app, key, "x", testService, scope)
 			if status != 401 || body["token"] != nil {
 				t.Fatalf("foreign key %s (username) scope %q: status=%d body=%v — must be 401/no token", key, scope, status, body)
 			}
@@ -577,7 +584,7 @@ func TestToken_ForeignTenantApp_Denied(t *testing.T) {
 
 	for _, scope := range []string{"repository:hanzo/iam:pull,push", "repository:hanzo/iam:pull"} {
 		// Basic-auth (docker GET flow) with the CORRECT secret — denial is the gate.
-		status, body, hdr := tokenGET(t, app, "evilci-xyz", "evil-secret-matches", "registry.hanzo.ai", scope)
+		status, body, hdr := tokenGET(t, app, "evilci-xyz", "evil-secret-matches", testService, scope)
 		if status != 401 || body["token"] != nil {
 			t.Fatalf("foreign app (GET) scope %q: status=%d body=%v — must be 401/no token", scope, status, body)
 		}
@@ -585,7 +592,7 @@ func TestToken_ForeignTenantApp_Denied(t *testing.T) {
 			t.Fatal("foreign app: missing WWW-Authenticate on 401")
 		}
 		// OAuth2 POST flow — same denial.
-		status, body, _ = tokenPOST(t, app, "evilci-xyz", "evil-secret-matches", "registry.hanzo.ai", scope)
+		status, body, _ = tokenPOST(t, app, "evilci-xyz", "evil-secret-matches", testService, scope)
 		if status != 401 || body["token"] != nil {
 			t.Fatalf("foreign app (POST) scope %q: status=%d body=%v — must be 401/no token", scope, status, body)
 		}
@@ -602,7 +609,7 @@ func TestToken_HanzoKey_PullToken(t *testing.T) {
 	seedKeyRow(t, db, "hanzo", "grace", false, "pk-live-HANZO", "sk-live-HANZO")
 
 	// The SECRET sk- half authenticates and gets a pull token.
-	status, body, _ := tokenGET(t, app, "x", "sk-live-HANZO", "registry.hanzo.ai", "repository:hanzo/app:pull")
+	status, body, _ := tokenGET(t, app, "x", "sk-live-HANZO", testService, "repository:hanzo/app:pull")
 	if status != 200 {
 		t.Fatalf("hanzo sk-: status=%d body=%v — must authenticate", status, body)
 	}
@@ -619,7 +626,7 @@ func TestToken_HanzoKey_PullToken(t *testing.T) {
 	// The PUBLIC pk- half is write-only — it authenticates nothing, so no token, even in
 	// the platform org. Probe both credential positions (username and password).
 	for _, pos := range []struct{ user, pass string }{{"x", "pk-live-HANZO"}, {"pk-live-HANZO", "x"}} {
-		st, b, _ := tokenGET(t, app, pos.user, pos.pass, "registry.hanzo.ai", "repository:hanzo/app:pull")
+		st, b, _ := tokenGET(t, app, pos.user, pos.pass, testService, "repository:hanzo/app:pull")
 		if st != 401 || b["token"] != nil {
 			t.Fatalf("hanzo pk- (%s/%s): status=%d body=%v — a public key must authenticate nothing", pos.user, pos.pass, st, b)
 		}
@@ -633,7 +640,7 @@ func TestToken_BadPassword_401(t *testing.T) {
 	seedUser(t, db, "hanzo", "frank", "the real password", false)
 
 	status, body, hdr := tokenGET(t, app, "frank", "WRONG",
-		"registry.hanzo.ai", "repository:hanzo/app:pull")
+		testService, "repository:hanzo/app:pull")
 	if status != 401 {
 		t.Fatalf("status = %d, want 401", status)
 	}
@@ -668,7 +675,7 @@ func TestToken_AdminPassword_NotDosableOnPublicRegistry(t *testing.T) {
 	// Flood well past the threshold with wrong passwords — each a fresh HTTP request.
 	for i := 0; i < users.LockThreshold*3; i++ {
 		status, body, _ := tokenGET(t, app, "root", "WRONG",
-			"registry.hanzo.ai", "repository:hanzo/app:pull")
+			testService, "repository:hanzo/app:pull")
 		if status != 401 || body["token"] != nil {
 			t.Fatalf("wrong attempt %d: status=%d body=%v, want 401 no-token", i, status, body)
 		}
@@ -710,7 +717,7 @@ func TestToken_RegistryPassword_NoCrossOrgCoupling(t *testing.T) {
 
 	// One wrong attempt: exactly ONE row (the non-reserved hanzo/z) is bumped; admin/z
 	// is untouched.
-	status, body, _ := tokenGET(t, app, "z", "WRONG", "registry.hanzo.ai", "repository:hanzo/app:pull")
+	status, body, _ := tokenGET(t, app, "z", "WRONG", testService, "repository:hanzo/app:pull")
 	if status != 401 || body["token"] != nil {
 		t.Fatalf("wrong attempt: status=%d body=%v, want 401 no-token", status, body)
 	}
@@ -725,7 +732,7 @@ func TestToken_RegistryPassword_NoCrossOrgCoupling(t *testing.T) {
 
 	// The correct hanzo password authenticates as hanzo/z (resets its own counter) and
 	// never touches admin/z.
-	status, body, _ = tokenGET(t, app, "z", "hanzo-only-secret", "registry.hanzo.ai", "repository:hanzo/app:pull")
+	status, body, _ = tokenGET(t, app, "z", "hanzo-only-secret", testService, "repository:hanzo/app:pull")
 	if status != 200 {
 		t.Fatalf("correct hanzo password: status=%d body=%v, want 200", status, body)
 	}
@@ -742,7 +749,7 @@ func TestToken_RegistryPassword_NoCrossOrgCoupling(t *testing.T) {
 // TestToken_EmptyCreds_401 proves no credential ⇒ 401, no token.
 func TestToken_EmptyCreds_401(t *testing.T) {
 	app, _, _ := newServer(t)
-	status, body, hdr := tokenGET(t, app, "", "", "registry.hanzo.ai",
+	status, body, hdr := tokenGET(t, app, "", "", testService,
 		"repository:hanzo/app:pull")
 	if status != 401 {
 		t.Fatalf("status = %d, want 401", status)
@@ -760,7 +767,7 @@ func TestToken_EmptyCreds_401(t *testing.T) {
 func TestToken_UnknownUser_401(t *testing.T) {
 	app, _, _ := newServer(t)
 	status, body, _ := tokenGET(t, app, "ghost", "whatever",
-		"registry.hanzo.ai", "repository:hanzo/app:pull")
+		testService, "repository:hanzo/app:pull")
 	if status != 401 {
 		t.Fatalf("status = %d, want 401", status)
 	}
@@ -775,7 +782,7 @@ func TestToken_WrongServiceSecret_401(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedApp(t, db, "hanzo-registry", "the-right-secret")
 	status, _, _ := tokenGET(t, app, "hanzo-registry", "the-WRONG-secret",
-		"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+		testService, "repository:hanzo/app:pull,push")
 	if status != 401 {
 		t.Fatalf("status = %d, want 401", status)
 	}
@@ -788,7 +795,7 @@ func TestToken_POSTForm(t *testing.T) {
 	seedApp(t, db, "hanzo-buildkit", "buildkit-secret")
 
 	status, body, _ := tokenPOST(t, app, "hanzo-buildkit", "buildkit-secret",
-		"registry.hanzo.ai", "repository:hanzo/app:pull,push")
+		testService, "repository:hanzo/app:pull,push")
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
 	}
@@ -809,7 +816,7 @@ func TestToken_MultiScope(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedApp(t, db, "hanzo-registry", "multi-secret")
 
-	_, body, _ := tokenGET(t, app, "hanzo-registry", "multi-secret", "registry.hanzo.ai",
+	_, body, _ := tokenGET(t, app, "hanzo-registry", "multi-secret", testService,
 		"repository:hanzo/a:pull,push", "repository:hanzo/b:pull")
 	claims := verifyClaims(t, app, body["token"].(string))
 	acc := accessOf(t, claims)
@@ -828,7 +835,7 @@ func TestToken_NoScope_LoginOnly(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedApp(t, db, "hanzo-registry", "login-secret")
 
-	status, body, _ := tokenGET(t, app, "hanzo-registry", "login-secret", "registry.hanzo.ai")
+	status, body, _ := tokenGET(t, app, "hanzo-registry", "login-secret", testService)
 	if status != 200 {
 		t.Fatalf("status = %d, body %v", status, body)
 	}
