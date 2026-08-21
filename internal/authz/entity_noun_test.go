@@ -39,9 +39,9 @@ func TestEntityNoun_FoldsVerbSpellingOntoTheEntity(t *testing.T) {
 func TestEntityOf_EveryKeyRouteNamesOneEntity(t *testing.T) {
 	for _, path := range []string{
 		"/v1/iam/keys",
-		"/v1/iam/keys/get",
-		"/v1/iam/keys/update",
-		"/v1/iam/keys/delete",
+		"/v1/iam/keys/lux/browser",
+		"/v1/iam/keys/org",
+		"/v1/iam/keys/principal",
 	} {
 		if got := entityOf(path); got != "keys" {
 			t.Errorf("entityOf(%q) = %q, want \"keys\" — a capability keyed on keys is dead on this path", path, got)

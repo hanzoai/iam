@@ -34,9 +34,9 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/projects", h.List, zip.WithTags("projects"))
 	zip.Post(app, "/v1/iam/projects", h.Create, zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects/get", h.Get, zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects/update", h.Update, zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects/delete", h.Delete, zip.WithTags("projects"))
+	zip.Get(app, "/v1/iam/projects/:owner/:name", h.Get, zip.WithTags("projects"))
+	zip.Put(app, "/v1/iam/projects/:owner/:name", h.Update, zip.WithTags("projects"))
+	zip.Delete(app, "/v1/iam/projects/:owner/:name", h.Delete, zip.WithTags("projects"))
 }
 
 // New exposes a project Handler so the the legacy surface add-/delete-project verb aliases

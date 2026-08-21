@@ -4,8 +4,9 @@
 // Package auditlogs serves the IAM v2 CRUD surface for the `audit_logs` entity:
 // an append-only action record owner-scoped by (owner, name). Every operation
 // is a typed zip handler over hanzoai/orm; the orm string key is "owner/name".
-// Reads scope to one owner (organization); writes address one log by its
-// (owner, name) key. Rows are written once at request time — the update path
+// Listing scopes to one owner (organization); one log is addressed by its
+// (owner, name) key in the path, /v1/iam/audit-logs/:owner/:name, where the
+// method carries the verb. Rows are written once at request time — the update path
 // exists only for administrative correction, never for normal operation.
 package auditlogs
 
@@ -33,9 +34,9 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/audit-logs", h.List, zip.WithTags("audit-logs"))
 	zip.Post(app, "/v1/iam/audit-logs", h.Create, zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/get", h.Get, zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/update", h.Update, zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/delete", h.Delete, zip.WithTags("audit-logs"))
+	zip.Get(app, "/v1/iam/audit-logs/:owner/:name", h.Get, zip.WithTags("audit-logs"))
+	zip.Put(app, "/v1/iam/audit-logs/:owner/:name", h.Update, zip.WithTags("audit-logs"))
+	zip.Delete(app, "/v1/iam/audit-logs/:owner/:name", h.Delete, zip.WithTags("audit-logs"))
 }
 
 // Ref addresses one audit log by its owner-scoped natural key.
