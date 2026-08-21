@@ -148,7 +148,7 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 			// A publishable key is WRITE-ONLY: a pk- publishable half and NEVER a
 			// confidential sk- secret — even if the caller supplied one — so it can
 			// carry no full-access material. Its authority is resolved org-only at the
-			// ingest door (compat resolve-key → /v1/iam/resolve-key), never as a principal.
+			// ingest door (/v1/iam/keys/org), never as a principal.
 			k.AccessSecret = ""
 		} else if k.AccessSecret == "" {
 			k.AccessSecret = Mint("sk", k.State)

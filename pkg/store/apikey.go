@@ -32,7 +32,7 @@ import (
 // identity is the browser-key catastrophe. It is refused on EVERY caller of this
 // function (get-user?accessKey AND the registry token path), so a public key
 // authenticates no read anywhere. Its ONLY resolution is org-only, at the ingest door
-// (keys.resolve → /v1/iam/resolve-key), and only for a publishable key.
+// (/v1/iam/keys/org), and only for a publishable key.
 //
 // Any other string is not a key. It carries no shape this estate mints, so it cannot
 // be told apart from a value that was never issued at all, and it resolves to nobody.
@@ -251,7 +251,7 @@ func keyUserRef(k *schema.Key) (owner, name string) {
 
 // PublishableKeyByAccessKey resolves a WRITE-ONLY publishable pk- to the schema.Key it
 // belongs to, or orm.ErrNotFound — the ORG-ONLY dual of UserByAccessKey, for the ingest
-// resolver (compat resolve-key → /v1/iam/resolve-key). It NEVER touches or returns a
+// resolver (/v1/iam/keys/org). It NEVER touches or returns a
 // user: a publishable key speaks for just its org, never a principal, which is why the
 // pk- path lives here and not in UserByAccessKey.
 //

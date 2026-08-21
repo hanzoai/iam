@@ -35,27 +35,13 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	// schema, the MCP tool list, the CLI and every generated SDK. Registered on the
 	// PUBLIC group, which carries no op-invoke authorizer, so typing them changes
 	// what they PUBLISH and nothing about who may call them.
-	//
-	// The older spelling of the first is the SAME op at its legacy address, so one
-	// function decides both answers and they cannot drift.
-	//
-	// It carries the same tag as its canonical twin rather than "compat", and that
-	// is a deliberate limit on the blast radius of a TYPING change. The compat tag
-	// is how an address is kept OUT of the published document, and this address is
-	// in it today — as an untyped route, which has no way to say compat. Tagging it
-	// now would delete a published path, and a published path that disappears is
-	// what cloud's per-product floor exists to refuse. Retiring the spelling is a
-	// surface decision that lowers that floor in the same commit; this is not that
-	// commit.
 	zip.Get[screen, httpx.Answer](r, PathAuthApplication, getAppLogin(db),
-		zip.WithStatus(200, 400), zip.WithTags("auth"))
-	zip.Get[screen, httpx.Answer](r, LegacyPathAuthApplication, getAppLogin(db),
 		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	zip.Get[offer, httpx.Answer](r, PathAuthMethods, authMethods(db),
 		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	// The account read is anonymous-safe (returns {status:"error"} unauthenticated)
 	// and a security contract — the gateway admin-guard reads its `owner`.
-	zip.Alias(r.Get, PathAccount, LegacyPathAccount, getAccount(db))
+	r.Get(PathAccount, getAccount(db))
 	// The write half of the same noun: a person's own profile, a fixed set of
 	// display fields, self-scoped like the password and consent writes beside it.
 	zip.Put[accountBody, httpx.Answer](r, PathAccount, putAccountHandler(db),
@@ -63,8 +49,7 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	// Account creation + email/phone OTP send. signup is JSON; the OTP send is
 	// multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
 	r.Post(PathSignup, signupHandler(db))
-	zip.Alias(r.Post, PathVerificationCodes, LegacyPathVerificationCodes, sendVerificationCode(db))
-
+	r.Post(PathVerificationCodes, sendVerificationCode(db))
 	// The session/identity front door the console drives once a user is signed in:
 	// signin (the code→session exchange), whoami (lightweight identity), onboard
 	// (first-run org creation + move), preferences (self, shallow-merge), and
@@ -76,7 +61,7 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	// orchestrator calls (on behalf of a named user) instead of a create-org +
 	// move-user pair. Self-authenticates via the unified service token.
 	r.Post(PathProvision, provisionServiceHandler(db))
-	zip.Alias(r.Post, PathPreferences, LegacyPathPreferences, updatePreferencesHandler(db))
+	r.Post(PathPreferences, updatePreferencesHandler(db))
 	// The ONE place a person's own password is written — a rotation proved by the
 	// password being replaced, and a recovery proved by a code delivered to the
 	// account's own address. Self-scoped like consent below it; it mints nothing, so a

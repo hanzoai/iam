@@ -80,7 +80,6 @@ func Route(r *zip.App, db orm.DB) {
 	// and at the host root, because a relying party configured with either must
 	// find it.
 	zip.Alias(r.Get, PathJWKS, PathJWKSRoot, jwksHandler(db))
-
 	// OAuth2 / OIDC protocol endpoints.
 	r.Get(PathAuthorize, authorizeHandler(db))
 	r.Post(PathAuthorize, authorizeHandler(db))
