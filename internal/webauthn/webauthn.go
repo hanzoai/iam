@@ -5,12 +5,12 @@
 // `webauthn_credentials` entity (a registered passkey), owner-scoped by the
 // (owner, name) natural key.
 //
-// The five operations are typed zip handlers over orm: reads are zip.Get,
-// writes are zip.Post. zip decodes the request body into the In struct for
-// every non-GET method (and, over the MCP projection, for GET too); the REST
-// GET projection carries no body, so any op that needs the (owner, name) key
-// from the caller is a POST. Each op is also an MCP tool and an OpenAPI 3.1
-// operation from this one registration.
+// The five operations are typed zip handlers over orm, addressed by method: the
+// collection is /v1/iam/webauthn-credentials (GET lists, POST registers) and one
+// credential is /v1/iam/webauthn-credentials/:owner/:name (GET, PUT, DELETE).
+// zip binds the path above the body, so the pair the URL names is the pair the
+// handler acts on whatever a body claims. Each op is also an MCP tool and an
+// OpenAPI 3.1 operation from this one registration.
 package webauthn
 
 import (
@@ -72,7 +72,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("listWebauthnCredentials"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials/get", getWebauthnCredential(db),
+	zip.Get[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials/:owner/:name", getWebauthnCredential(db),
 		zip.WithOperationID("getWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 
@@ -80,11 +80,11 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("addWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[schema.WebauthnCredential, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/update", updateWebauthnCredential(db),
+	zip.Put[schema.WebauthnCredential, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/:owner/:name", updateWebauthnCredential(db),
 		zip.WithOperationID("updateWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[webauthnCredentialKey, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/delete", deleteWebauthnCredential(db),
+	zip.Delete[webauthnCredentialKey, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/:owner/:name", deleteWebauthnCredential(db),
 		zip.WithOperationID("deleteWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 }

@@ -5,12 +5,13 @@
 // (an issued OAuth2/OIDC token record), owner-scoped by the (owner, name)
 // natural key.
 //
-// The five operations are typed zip handlers over orm: reads are zip.Get,
-// writes are zip.Post. zip decodes the request body into the In struct for
-// every non-GET method (and, over the MCP projection, for GET too); the REST
-// GET projection carries no body, so any op that needs the (owner, name) key
-// from the caller is a POST. Each op is also an MCP tool and an OpenAPI 3.1
-// operation from this one registration.
+// The five operations are typed zip handlers over orm, addressed by method:
+// GET lists the collection and reads one row, POST creates, PUT updates,
+// DELETE removes. The (owner, name) key rides in the path, and zip binds the
+// three input sources in increasing authority — body, then query, then path —
+// so the URL is what addresses the row: PUT /v1/iam/tokens/acme/nightly
+// updates acme/nightly whatever the body claims. Each op is also an MCP tool
+// and an OpenAPI 3.1 operation from this one registration.
 package tokens
 
 import (
@@ -65,7 +66,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("listTokens"),
 		zip.WithTags("tokens"))
 
-	zip.Post[tokenKey, tokenResult](app, "/v1/iam/tokens/get", getToken(db),
+	zip.Get[tokenKey, tokenResult](app, "/v1/iam/tokens/:owner/:name", getToken(db),
 		zip.WithOperationID("getToken"),
 		zip.WithTags("tokens"))
 
@@ -73,11 +74,11 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("addToken"),
 		zip.WithTags("tokens"))
 
-	zip.Post[schema.Token, tokenMutation](app, "/v1/iam/tokens/update", updateToken(db),
+	zip.Put[schema.Token, tokenMutation](app, "/v1/iam/tokens/:owner/:name", updateToken(db),
 		zip.WithOperationID("updateToken"),
 		zip.WithTags("tokens"))
 
-	zip.Post[tokenKey, tokenMutation](app, "/v1/iam/tokens/delete", deleteToken(db),
+	zip.Delete[tokenKey, tokenMutation](app, "/v1/iam/tokens/:owner/:name", deleteToken(db),
 		zip.WithOperationID("deleteToken"),
 		zip.WithTags("tokens"))
 }

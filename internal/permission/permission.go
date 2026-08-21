@@ -3,8 +3,10 @@
 
 // Package permission serves the IAM v2 permission CRUD surface as typed zip
 // handlers over hanzoai/orm. Every permission is owner-scoped: its identity is
-// the (owner, name) pair, stored under the orm key "owner/name". Reads are
-// GET, writes are POST; the DB is captured on the handler receiver so each
+// the (owner, name) pair, stored under the orm key "owner/name" and addressed
+// as the path /v1/iam/permissions/:owner/:name — the method carries the verb,
+// so one permission is GET, PUT and DELETE on that one address, and POST on
+// the collection adds. The DB is captured on the handler receiver so each
 // handler keeps the plain TypedHandler shape func(ctx, *In) (*Out, error).
 package permission
 
@@ -31,9 +33,9 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handlers{db: db}
 	zip.Get(app, "/v1/iam/permissions", h.List, zip.WithTags("permissions"))
 	zip.Post(app, "/v1/iam/permissions", h.Add, zip.WithTags("permissions"))
-	zip.Get(app, "/v1/iam/permissions/get", h.Get, zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/permissions/update", h.Update, zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/permissions/delete", h.Delete, zip.WithTags("permissions"))
+	zip.Get(app, "/v1/iam/permissions/:owner/:name", h.Get, zip.WithTags("permissions"))
+	zip.Put(app, "/v1/iam/permissions/:owner/:name", h.Update, zip.WithTags("permissions"))
+	zip.Delete(app, "/v1/iam/permissions/:owner/:name", h.Delete, zip.WithTags("permissions"))
 }
 
 // permissionID is the owner-scoped orm key: "owner/name".
