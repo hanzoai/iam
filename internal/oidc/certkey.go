@@ -4,6 +4,7 @@
 package oidc
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
@@ -163,4 +164,58 @@ func leftPad(b []byte, size int) []byte {
 	out := make([]byte, size)
 	copy(out[size-len(b):], b)
 	return out
+}
+
+// SigningHalvesAgree reports whether a Cert's PUBLISHED half and its SIGNING half
+// describe the same key.
+//
+// The JWKS publishes the public key derived from Certificate; the signer signs
+// with PrivateKey (filled from the mount). Those are two independent pieces of
+// material, and a rotation that swaps one without the other — a new certificate
+// row against a still-mounted old key, or the reverse — leaves the JWKS
+// advertising key A while every token is signed with key B, so every token
+// verifies against a key that did not sign it and health checks stay green.
+//
+// When either half is absent there is nothing to disagree, so it reports true:
+// an unmounted cert is caught by the signable check, not this one. When both are
+// present it parses each INDEPENDENTLY — never deriving one from the other — and
+// compares the public keys. A half that will not parse cannot be shown to agree,
+// so it reports (false, err): the caller fails closed rather than serve a pair it
+// could not check.
+func SigningHalvesAgree(cert *schema.Cert) (bool, error) {
+	if cert == nil || cert.Certificate == "" || cert.PrivateKey == "" {
+		return true, nil
+	}
+	if isMLDSACert(cert) {
+		published, err := parseMLDSA65PublicKey(cert.Certificate)
+		if err != nil {
+			return false, err
+		}
+		sk, err := parseMLDSA65PrivateKey(cert.PrivateKey)
+		if err != nil {
+			return false, err
+		}
+		signing, ok := sk.Public().(*mldsa65.PublicKey)
+		if !ok {
+			return false, errors.New("mldsa: signing key yields no public half")
+		}
+		return bytes.Equal(published.Bytes(), signing.Bytes()), nil
+	}
+	block, _ := pem.Decode([]byte(cert.Certificate))
+	if block == nil {
+		return false, errors.New("certkey: published certificate is not valid PEM")
+	}
+	x509Cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false, err
+	}
+	signer, err := parsePrivateKeyPEM(cert.PrivateKey)
+	if err != nil {
+		return false, err
+	}
+	published, ok := x509Cert.PublicKey.(interface{ Equal(crypto.PublicKey) bool })
+	if !ok {
+		return false, errors.New("certkey: published public key is not comparable")
+	}
+	return published.Equal(signer.Public()), nil
 }

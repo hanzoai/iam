@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
@@ -147,12 +148,27 @@ func OpenSQLite(path string) (orm.DB, error) {
 // Seed bootstraps the config (orgs/apps/providers/certs) from an init_data.json
 // path — the same file the legacy surface uses. New-only + idempotent; ${VAR} from env.
 // Returns the created/skipped counts. Call once at host startup after opening db.
+//
+// It then asserts the process can SIGN what it just configured (RequireSigning),
+// because this is the one boot step an embedded host cannot skip — internal/seed
+// is unimportable, so a host reaches the seed only through here. Without the
+// assertion an embedded host boots green over a config it cannot serve: an empty
+// JWKS answered 200 and every mint 401s. A host that seeds its store out of band
+// calls RequireSigning itself.
 func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, error) {
-	return seed.FromInitData(ctx, db, initDataPath)
+	sum, err := seed.FromInitData(ctx, db, initDataPath)
+	if err != nil {
+		return sum, err
+	}
+	if err := RequireSigning(ctx, db); err != nil {
+		return sum, err
+	}
+	return sum, nil
 }
 
-// RequireSigning reports whether this process holds the keys it signs with, and
-// is the precondition a composition root asserts before it opens a listener.
+// RequireSigning reports whether this process holds the keys it must sign with,
+// and is the precondition a boot asserts before it serves — main() before its
+// listener, and [Seed] for an embedded host.
 //
 // Everything IAM emits is signed: every access token, every id token, the
 // session-cookie MAC. The material arrives from the DEPLOYMENT — internal/keyring
@@ -165,28 +181,31 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 // a rollout reads it as healthy and keeps going. Refusing here makes the pod never
 // reach ready, which is the one signal a rollout already stops on.
 //
-// TWO questions, because one key is not the whole job:
+// THREE questions, because one key is not the whole job:
 //
 //   - PlatformSigningCert must resolve. It keys the session-cookie MAC
 //     (internal/sessions), so without it no browser session can be issued or read.
-//   - EVERY cert this process would PUBLISH must also be able to sign. A token is
-//     minted with the cert its application names (oidc.signerFor), and the JWKS
-//     advertises a `kid` for each published cert — so a subset of the mount lets
-//     the pod report ready and then fail every mint for the applications naming a
-//     cert it did not get, while relying parties cache a `kid` nothing signs.
+//     It selects the lexically-least reserved cert WITH material, so two replicas
+//     holding different partial mounts would key cookies with DIFFERENT certs and
+//     flap every session behind the load balancer — the signable check below is
+//     what stops them both booting to diverge.
+//   - Every cert this process must sign under must be signable. Two sources: the
+//     certs the JWKS PUBLISHES (a `kid` a relying party will trust), and the certs
+//     a reserved-owner application NAMES (the cert it mints tokens with). A cert an
+//     application depends on but the mount omits is a token endpoint that 500s for
+//     that application while the pod reports ready.
+//   - Where a cert carries BOTH a published certificate and a mounted key, the two
+//     must describe the same key, or the JWKS publishes one and the signer signs
+//     with another and every token is rejected.
 //
-// The second question is asked of the CERT ROWS, through the same predicate that
-// decided to publish them, and never of the applications that name them. An
-// application row is tenant-writable — an org admin registers applications in
-// their own org and states a `cert` on them — so an assertion driven from
-// applications would let any tenant decide whether the identity plane of the whole
-// estate boots. A cert under a reserved owner can only be created by an operator,
-// which is what makes it a safe thing to require.
-//
-// A cert row carrying NEITHER key nor published certificate is not published and
-// is not required: that is a rotation staged ahead of its material, which is how a
-// rotation is meant to look (internal/certs Create names the key, the deployment
-// then provides it).
+// The application half is read ONLY for the reserved owner. An application row is
+// tenant-writable — an org admin registers applications in their own org and
+// names a `cert` on them — so consulting a tenant's applications would let any org
+// wedge the boot of the whole estate's identity plane by naming a cert that cannot
+// resolve. A reserved-owner application is created by an operator, which is what
+// makes its dependencies safe to require. A cert row carrying neither key nor
+// published certificate, named by nothing, is a rotation staged ahead of its
+// material and is required by neither source.
 func RequireSigning(ctx context.Context, db orm.DB) error {
 	cert, err := store.PlatformSigningCert(ctx, db)
 	if err != nil {
@@ -196,34 +215,108 @@ func RequireSigning(ctx context.Context, db orm.DB) error {
 		return fmt.Errorf("signing key: no certificate under a reserved owner carries key material — "+
 			"mount one PEM per certificate name in the directory $%s names", keyring.EnvDir)
 	}
-	names, err := silent(ctx, db)
+	unsignable, err := unsignable(ctx, db)
 	if err != nil {
 		return fmt.Errorf("signing key: %w", err)
 	}
-	if len(names) > 0 {
-		return fmt.Errorf("signing key: the JWKS publishes %s with no key to sign under — "+
+	if len(unsignable) > 0 {
+		return fmt.Errorf("signing key: this process must sign under %s and holds no key for %s — "+
 			"mount one PEM per certificate name in the directory $%s names",
-			strings.Join(names, ", "), keyring.EnvDir)
+			strings.Join(unsignable, ", "), pluralThem(len(unsignable)), keyring.EnvDir)
+	}
+	mismatched, err := mismatched(ctx, db)
+	if err != nil {
+		return fmt.Errorf("signing key: %w", err)
+	}
+	if len(mismatched) > 0 {
+		return fmt.Errorf("signing key: the published certificate and the mounted key disagree for %s — "+
+			"the JWKS would publish a key that did not sign the tokens; mount the key that matches the "+
+			"published certificate for %s", strings.Join(mismatched, ", "), pluralThem(len(mismatched)))
 	}
 	return nil
 }
 
-// silent names the published signing certs this process cannot sign with, sorted.
-// A published cert is one the JWKS advertises a `kid` for, so every name here is a
-// `kid` a relying party will trust and nothing can produce.
-func silent(ctx context.Context, db orm.DB) ([]string, error) {
+// unsignable names every signing cert this process must be able to sign under but
+// cannot, deduped and sorted. Two sources, unioned:
+//
+//   - a cert the JWKS PUBLISHES (oidc.Publishes) whose private half is absent — a
+//     `kid` relying parties trust that nothing can produce a token for.
+//   - a cert a reserved-owner application NAMES that resolves to no signable
+//     material — a token endpoint that 500s for that application.
+//
+// GetSigningCert and ListCerts both fill from the mount (keyring), so "no private
+// half" here means the deployment did not supply it, not that the row lacks a
+// column.
+func unsignable(ctx context.Context, db orm.DB) ([]string, error) {
+	need := map[string]bool{}
+	certs, err := store.ListCerts(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range certs {
+		if oidc.Publishes(c) && c.PrivateKey == "" {
+			need[c.Name] = true
+		}
+	}
+	apps, err := store.ListApplicationsByOwner(ctx, db, policy.AdminOrg)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range apps {
+		if a.Cert == "" {
+			continue
+		}
+		c, err := store.GetSigningCert(ctx, db, a.Cert)
+		if err != nil {
+			return nil, err
+		}
+		if c == nil || c.PrivateKey == "" {
+			need[a.Cert] = true
+		}
+	}
+	return sortedKeys(need), nil
+}
+
+// mismatched names the certs whose published half and mounted key describe
+// different keys — latent until a rotation populates a published Certificate,
+// then a silent source of universally-rejected tokens. A half that will not parse
+// counts as a mismatch: an unverifiable pair is not a servable one.
+func mismatched(ctx context.Context, db orm.DB) ([]string, error) {
 	certs, err := store.ListCerts(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 	var out []string
 	for _, c := range certs {
-		if oidc.Publishes(c) && c.PrivateKey == "" {
+		if c.Certificate == "" || c.PrivateKey == "" {
+			continue
+		}
+		agree, err := oidc.SigningHalvesAgree(c)
+		if err != nil || !agree {
 			out = append(out, c.Name)
 		}
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// sortedKeys returns a set's members in sorted order.
+func sortedKeys(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// pluralThem picks the pronoun a count calls for, so a refusal reads as a
+// sentence whether it names one certificate or six.
+func pluralThem(n int) string {
+	if n == 1 {
+		return "it"
+	}
+	return "them"
 }
 
 // Message is one verification code, worded and addressed. Re-exported with Sender
