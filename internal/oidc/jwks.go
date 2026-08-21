@@ -114,7 +114,7 @@ func publish(ctx context.Context, db orm.DB) ([]byte, string, error) {
 	keys := make([]any, 0, len(certs))
 	seen := make(map[string]bool, len(certs))
 	for _, cert := range certs {
-		if seen[cert.Name] || !Publishes(cert) {
+		if !Publishes(cert) || seen[cert.Name] {
 			continue
 		}
 		jwk, err := certToJWK(cert)

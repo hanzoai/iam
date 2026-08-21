@@ -59,6 +59,19 @@ func ListApplicationsByClientId(ctx context.Context, db orm.DB, clientId string)
 	return orm.TypedQuery[schema.Application](db).Filter("ClientId=", clientId).GetAll(ctx)
 }
 
+// ListApplicationsByOwner returns every application row a given organization owns.
+// The boot-time signing check reads it for the reserved owner: the certs those
+// applications name are the ones this process must be able to sign with, so a
+// mount that omits one is a partial deployment the pod must refuse rather than
+// serve. Scoped by owner because a tenant's applications name a tenant's own
+// certs and must never enter that decision.
+func ListApplicationsByOwner(ctx context.Context, db orm.DB, owner string) ([]*schema.Application, error) {
+	if owner == "" {
+		return nil, nil
+	}
+	return orm.TypedQuery[schema.Application](db).Filter("Owner=", owner).GetAll(ctx)
+}
+
 // preferredApp deterministically selects the platform-preferred application among
 // rows sharing a clientId (see morePreferredApp for the total order). Returns nil
 // for an empty set, preserving GetApplicationByClientId's (nil, nil) not-found
