@@ -97,7 +97,7 @@ func TestEntityOf(t *testing.T) {
 		// "application" until that split the policy: the legacy verb folded to
 		// "applications" and matched the app self-read clause, while this native
 		// route stayed singular, matched nothing, and 403'd the same caller.
-		"/v1/iam/application": "applications",
+		"/v1/iam/applications": "applications",
 		"/v1/iam/audit-logs":  "audit-logs",
 		"/mcp":                "",
 		"/healthz":            "",

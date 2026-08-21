@@ -382,7 +382,7 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 // get-memberships is the the legacy surface alias of /v1/iam/memberships whose target rides in
 // ?user=/?org=, so it belongs here for the same reason its REST twin does — the
 // membership list handler's own scoped() check is the tenant gate.
-var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects", "/v1/iam/get-organization-workspaces", "/v1/iam/service-accounts", "/v1/iam/memberships", "/v1/iam/get-memberships"}
+var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accounts", "/v1/iam/memberships"}
 
 // handlerAuthorizedExact are SINGLE routes (not subtrees) the handler authorizes
 // itself. get-user is here — not a prefix — because "/v1/iam/get-user" IS a prefix
@@ -404,8 +404,6 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organizat
 // list of their own organizations. It is exact rather than a prefix so it cannot
 // reach /v1/iam/organizations, the Guard-authorized entity list beside it.
 var handlerAuthorizedExact = map[string]bool{
-	"/v1/iam/get-user":             true,
-	"/v1/iam/resolve-key":          true,
 	"/v1/iam/keys/org":             true,
 	"/v1/iam/keys/principal":       true,
 	"/v1/iam/organizations/search": true,
