@@ -28,16 +28,19 @@ type Handler struct {
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
-// Route registers the certs CRUD routes on app against db. Reads are zip.Get,
-// writes are zip.Post; the create/update body is the schema.Cert row itself, so
-// the HTTP contract and the stored entity never drift.
+// Route registers the certs CRUD routes on app against db. The method carries
+// the verb and the path carries the row's (owner, name) key, so the URL is what
+// addresses a cert. zip binds path segments above the body, and the create/update
+// body is the schema.Cert row itself — so the HTTP contract and the stored entity
+// never drift, and a body naming a different cert cannot move the write off the
+// one the URL named.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/certs", h.List, zip.WithTags("certs"))
 	zip.Post(app, "/v1/iam/certs", h.Create, zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/get", h.Get, zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/update", h.Update, zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/delete", h.Delete, zip.WithTags("certs"))
+	zip.Get(app, "/v1/iam/certs/:owner/:name", h.Get, zip.WithTags("certs"))
+	zip.Put(app, "/v1/iam/certs/:owner/:name", h.Update, zip.WithTags("certs"))
+	zip.Delete(app, "/v1/iam/certs/:owner/:name", h.Delete, zip.WithTags("certs"))
 }
 
 // Ref addresses one cert by its owner-scoped natural key.

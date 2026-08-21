@@ -7,6 +7,9 @@ import (
 )
 
 func init() {
+	zip.Describe("DELETE /v1/iam/users/:owner/:name", zip.Doc{
+		Description: "Removes a person from your organization. Their sessions stop working\nimmediately and the account is gone rather than suspended — to keep the record\nand only stop sign-in, update the user instead.",
+	})
 	zip.Describe("GET /v1/iam/users", zip.Doc{
 		Description: "Returns a page of the people in your organization, with the total so you\ncan page through the rest. Passwords, API secrets and MFA material are stripped\nfrom every entry.",
 		Fields: map[string]string{
@@ -32,7 +35,7 @@ func init() {
 			"User.webauthnCredentials":                               "Multi-factor authentication. TotpSecret and RecoveryCodes are secret\nverify-only material — the handler strips them from every response.\nWebauthnCredentials is carried as raw JSON here for lossless migration;\nthe typed passkey model is the sibling WebauthnCredential entity.",
 		},
 	})
-	zip.Describe("GET /v1/iam/users/get", zip.Doc{
+	zip.Describe("GET /v1/iam/users/:owner/:name", zip.Doc{
 		Description: "Returns one person in your organization, addressed by their username or by\ntheir email address. Passwords, API secrets and MFA material are stripped from\nthe response.\n\nAn address that names two accounts names none: the read refuses rather than\npicking one, and says so instead of reporting \"no such user\". Handing back an\narbitrary one of two rows is how somebody gets added to a team under a\ncolleague's identity.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
@@ -81,9 +84,6 @@ func init() {
 			"User.roles":                                             "Authorization attachments. Roles and Permissions are computed on read\nfrom the authz store and carried here for API parity with v1.",
 			"User.webauthnCredentials":                               "Multi-factor authentication. TotpSecret and RecoveryCodes are secret\nverify-only material — the handler strips them from every response.\nWebauthnCredentials is carried as raw JSON here for lossless migration;\nthe typed passkey model is the sibling WebauthnCredential entity.",
 		},
-	})
-	zip.Describe("POST /v1/iam/users/delete", zip.Doc{
-		Description: "Removes a person from your organization. Their sessions stop working\nimmediately and the account is gone rather than suspended — to keep the record\nand only stop sign-in, update the user instead.",
 	})
 	zip.Describe("POST /v1/iam/users/update", zip.Doc{
 		Description: "Changes a person's profile, their roles, or the credentials they sign\nin with. Send a password to reset it; leave it out and their current one keeps\nworking.\n\nWho they are does not change: their organization, username and the identifier\ntheir existing sessions are keyed on all survive the write, so an update never\nsigns anyone out.",
