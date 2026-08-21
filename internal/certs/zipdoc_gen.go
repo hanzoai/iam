@@ -13,6 +13,12 @@ func init() {
 			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id": "Persisted fields",
 		},
 	})
+	zip.Describe("GET /v1/iam/certs/get", zip.Doc{
+		Description: "Returns one signing certificate — its algorithm, its validity window and\nits public half. The private key is masked.",
+		Fields: map[string]string{
+			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id": "Persisted fields",
+		},
+	})
 	zip.Describe("POST /v1/iam/certs", zip.Doc{
 		Description: "Adds a signing certificate your applications can verify tokens against\n— the call you make to bring your own key, or to stage the next one before a\nrotation. A name already used in your organization is refused.",
 		Fields: map[string]string{
@@ -21,12 +27,6 @@ func init() {
 	})
 	zip.Describe("POST /v1/iam/certs/delete", zip.Doc{
 		Description: "Removes a signing certificate. Tokens signed with it can no longer be\nverified, so retire it only once nothing is still presenting them.",
-	})
-	zip.Describe("POST /v1/iam/certs/get", zip.Doc{
-		Description: "Returns one signing certificate — its algorithm, its validity window and\nits public half. The private key is masked.",
-		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id": "Persisted fields",
-		},
 	})
 	zip.Describe("POST /v1/iam/certs/update", zip.Doc{
 		Description: "Changes a signing certificate's settings. What it is called does not\nchange, and neither does when it was added.",

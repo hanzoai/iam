@@ -4,11 +4,13 @@
 // Package providers is the Phase-1 typed CRUD surface for the `providers`
 // entity, owner-scoped by the (owner, name) natural key.
 //
-// The five operations are typed zip handlers over orm: reads are zip.Get,
-// writes are zip.Post. zip decodes the request body into the In struct for
-// every non-GET method (and, over the MCP projection, for GET too); the REST
-// GET projection carries no body, so any op that needs the (owner, name) key
-// from the caller is a POST. Each op is also an MCP tool and an OpenAPI 3.1
+// The five operations are typed zip handlers over orm: the read is a zip.Get,
+// the writes are zip.Post. That split is policy, not transport — authz.authorize
+// decides what a READ is from the method, so a read spelled as a POST is weighed
+// as a write and every read-scoped clause is inert on it. A typed GET takes the
+// (owner, name) key from the query string: zip binds the URL onto the In for
+// every method, and the URL outranks the body, so the key travels the same way
+// whichever method carries it. Each op is also an MCP tool and an OpenAPI 3.1
 // operation from this one registration.
 package providers
 
@@ -62,7 +64,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("listProviders"),
 		zip.WithTags("providers"))
 
-	zip.Post[providerKey, providerResult](app, "/v1/iam/providers/get", getProvider(db),
+	zip.Get[providerKey, providerResult](app, "/v1/iam/providers/get", getProvider(db),
 		zip.WithOperationID("getProvider"),
 		zip.WithTags("providers"))
 

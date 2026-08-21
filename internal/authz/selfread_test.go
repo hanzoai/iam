@@ -63,10 +63,10 @@ func (h *harness) basicGet(t *testing.T, path, clientID, secret string) int {
 	return h.basic(t, "GET", path, "", clientID, secret)
 }
 
-// basic issues a request with client_secret_basic. The method is a parameter
-// because IAM is not uniform about it: a single-entity read is a GET on
-// applications and organizations and a POST on certs, and a POST carries its
-// target in the BODY rather than the query.
+// basic issues a request with client_secret_basic. The method is a parameter so
+// a case can state the verb it means rather than inherit one — every
+// single-entity read is now a GET, and a case that wants to prove a non-read is
+// refused has to be able to spell it.
 func (h *harness) basic(t *testing.T, method, path, body, clientID, secret string) int {
 	t.Helper()
 	var payload io.Reader

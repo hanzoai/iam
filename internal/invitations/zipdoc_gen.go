@@ -13,6 +13,12 @@ func init() {
 			"Model[github.com/hanzoai/iam/pkg/schema.Invitation].id": "Persisted fields",
 		},
 	})
+	zip.Describe("GET /v1/iam/invitations/get", zip.Doc{
+		Description: "Returns one invitation: who it is for, what it grants on acceptance, and\nwhen it expires.",
+		Fields: map[string]string{
+			"Model[github.com/hanzoai/iam/pkg/schema.Invitation].id": "Persisted fields",
+		},
+	})
 	zip.Describe("POST /v1/iam/invitations", zip.Doc{
 		Description: "Issues an invitation to join your organization — the code or link a new\nmember redeems, with the role they arrive holding and the date it stops\nworking. A name already used in the organization is refused.",
 		Fields: map[string]string{
@@ -21,12 +27,6 @@ func init() {
 	})
 	zip.Describe("POST /v1/iam/invitations/delete", zip.Doc{
 		Description: "Withdraws an invitation. It stops being redeemable at once; anyone who\nalready joined through it keeps their account.",
-	})
-	zip.Describe("POST /v1/iam/invitations/get", zip.Doc{
-		Description: "Returns one invitation: who it is for, what it grants on acceptance, and\nwhen it expires.",
-		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/pkg/schema.Invitation].id": "Persisted fields",
-		},
 	})
 	zip.Describe("POST /v1/iam/invitations/update", zip.Doc{
 		Description: "Changes an invitation's terms — the role it grants, how many may redeem\nit, or when it expires. What it is called does not change.",

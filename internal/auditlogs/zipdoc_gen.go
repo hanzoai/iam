@@ -13,6 +13,12 @@ func init() {
 			"Model[github.com/hanzoai/iam/pkg/schema.AuditLog].id": "Persisted fields",
 		},
 	})
+	zip.Describe("GET /v1/iam/audit-logs/get", zip.Doc{
+		Description: "Returns one audit entry in full: the action, the person or key behind it,\nand the request it came in on.",
+		Fields: map[string]string{
+			"Model[github.com/hanzoai/iam/pkg/schema.AuditLog].id": "Persisted fields",
+		},
+	})
 	zip.Describe("POST /v1/iam/audit-logs", zip.Doc{
 		Description: "Records an audit entry, so activity from your own systems lands in the\nsame trail as everything the Hanzo Cloud records for you.",
 		Fields: map[string]string{
@@ -21,12 +27,6 @@ func init() {
 	})
 	zip.Describe("POST /v1/iam/audit-logs/delete", zip.Doc{
 		Description: "Removes an audit entry. Retention policy is normally what should expire\na trail; deleting by hand leaves a gap a reviewer will notice.",
-	})
-	zip.Describe("POST /v1/iam/audit-logs/get", zip.Doc{
-		Description: "Returns one audit entry in full: the action, the person or key behind it,\nand the request it came in on.",
-		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/pkg/schema.AuditLog].id": "Persisted fields",
-		},
 	})
 	zip.Describe("POST /v1/iam/audit-logs/update", zip.Doc{
 		Description: "Corrects an audit entry. The trail is append-only in normal operation\nand nothing in the Hanzo Cloud rewrites it — this exists for an administrator\nto correct an entry their own systems recorded wrongly.",
