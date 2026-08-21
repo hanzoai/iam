@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package registry serves the Docker Registry v2 token endpoint the self-hosted
-// OCI registry (registry:2 at registry.hanzo.ai) authenticates docker push/pull
+// OCI registry (registry:2 at oci.hanzo.ai) authenticates docker push/pull
 // against. registry:2 is configured with
 //
-//	REGISTRY_AUTH_TOKEN_REALM = https://iam.hanzo.ai/v1/iam/registry/token
+//	REGISTRY_AUTH_TOKEN_REALM = https://hanzo.id/v1/iam/registry/token
+//	REGISTRY_AUTH_TOKEN_SERVICE = oci.hanzo.ai  (the `aud` a token must carry)
 //	REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE = <the registry signing key's public half>
 //
 // and verifies every token against the JWKS this package publishes at
@@ -381,7 +382,7 @@ func userPrivileged(u *schema.User) bool {
 
 // candidateOrgs are the platform organizations a docker credential is resolved
 // within: the reserved admin org (home of the SuperAdmin) and the hanzo org (home
-// of platform users). registry.hanzo.ai is Hanzo infrastructure, so these are the
+// of platform users). oci.hanzo.ai is Hanzo infrastructure, so these are the
 // two tenants its push/pull identities live in — matching the beego source's
 // {AdminOrg, "hanzo"} resolution. This is the trust boundary EVERY user credential
 // shape (password AND API key) is bound to.
