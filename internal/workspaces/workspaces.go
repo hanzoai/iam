@@ -6,10 +6,7 @@
 // projects (Organization → Workspace → Project), owner-scoped by (owner, name),
 // where Owner is the owning organization. Every operation is a typed zip handler
 // over hanzoai/orm; the orm string key is "owner/name". Reads scope to one owner
-// (organization); writes address one workspace by its (owner, name) key. This is
-// the ONE workspace CRUD path — the the legacy surface get-organization-workspaces /
-// add-workspace / delete-workspace verb aliases (internal/compat) reuse it via
-// New.
+// (organization); writes address one workspace by its (owner, name) key.
 package workspaces
 
 import (
@@ -40,11 +37,6 @@ func Route(app *zip.App, db orm.DB) {
 	zip.Put(app, "/v1/iam/workspaces/:owner/:name", h.Update, zip.WithTags("workspaces"))
 	zip.Delete(app, "/v1/iam/workspaces/:owner/:name", h.Delete, zip.WithTags("workspaces"))
 }
-
-// New exposes a workspace Handler so the the legacy surface add-/delete-workspace verb
-// aliases (internal/compat) reuse the ONE workspace CRUD path, wrapped in the
-// compat envelope.
-func New(db orm.DB) *Handler { return &Handler{db: db} }
 
 // Ref addresses one workspace by its owner-scoped natural key.
 type Ref struct {
@@ -104,14 +96,17 @@ func apply(dst *schema.Workspace, in *Input) {
 // You see your own organization's workspaces and no one else's; which organization that
 // is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by authz.Scope from the authenticated principal,
-	// never taken from the input: a tenant reads only its own org, a SuperAdmin
-	// reads the owner it asks for. Filtering on in.Owner instead was a confused
-	// deputy — the Guard authorizes on the query string, then a typed GET binds
-	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
-	// arrived empty on every REST call and the "empty owner lists everything"
-	// branch returned every tenant.
-	owner, err := authz.Scope(ctx, in.Owner)
+	// The owner is resolved from the authenticated principal, never taken from the
+	// input: filtering on in.Owner was a confused deputy — a typed GET binds
+	// NOTHING from the query (zip typed.go reads a body only for non-GET), so
+	// in.Owner arrived empty on every REST call and the "empty owner lists
+	// everything" branch returned every tenant.
+	//
+	// ScopeRead, not Scope, because BELONGING opens a workspace list: an operator's
+	// account lives in one org while the orgs they work in are a set, and a
+	// switcher that lists them has to be able to read them. A stranger is refused
+	// exactly as Scope would refuse.
+	owner, err := authz.ScopeRead(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}

@@ -110,23 +110,14 @@ type DeleteResult struct {
 // with PUT, removed with DELETE. This was the only singular, so
 // `/v1/iam/application` and `/v1/iam/applications` both answered and which
 // spelling a reader wanted depended on the operation. Fourteen kinds against
-// one is not a matter of taste; the odd one moved.
-//
-// The singular address stays reachable on the SAME typed handlers, tagged
-// `compat` — which is what keeps it out of the published document and therefore
-// out of every SDK, docs page and CLI command. It is deleted when the last
-// pinned consumer moves.
+// one is not a matter of taste; the odd one moved, and the singular is now a
+// retirement notice (internal/gone).
 func Route(app *zip.App, db orm.DB) {
 	zip.Get(app, "/v1/iam/applications", listApplications(db), zip.WithTags("applications"))
 	zip.Post(app, "/v1/iam/applications", Create(db), zip.WithTags("applications"))
 	zip.Get(app, "/v1/iam/applications/:owner/:name", getApplication(db), zip.WithTags("applications"))
 	zip.Put(app, "/v1/iam/applications/:owner/:name", Update(db), zip.WithTags("applications"))
 	zip.Delete(app, "/v1/iam/applications/:owner/:name", deleteApplication(db), zip.WithTags("applications"))
-
-	zip.Get(app, "/v1/iam/application", getApplication(db), zip.WithTags("compat"))
-	zip.Post(app, "/v1/iam/application", Create(db), zip.WithTags("compat"))
-	zip.Put(app, "/v1/iam/application", Update(db), zip.WithTags("compat"))
-	zip.Delete(app, "/v1/iam/application", deleteApplication(db), zip.WithTags("compat"))
 }
 
 // listApplications returns the applications in one organization, newest first —
@@ -274,10 +265,6 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		return in.Mask(), nil
 	}
 }
-
-// Delete exposes the same handler to the legacy delete-application alias — one
-// delete path, wrapped in that surface's envelope.
-func Delete(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult] { return deleteApplication(db) }
 
 // deleteApplication removes an application. Anyone mid-sign-in through it is
 // turned away and its client credentials stop working, so retire the integration
