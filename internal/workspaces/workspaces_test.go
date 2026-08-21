@@ -218,9 +218,10 @@ func TestWorkspaces_bucketAndDefaultRoundTrip(t *testing.T) {
 	}
 
 	// update the workspace: re-bind the bucket (native typed CRUD, admin-authorized).
-	if st, m := h.do(t, "POST", "/v1/iam/workspaces/update", boss,
-		`{"owner":"hanzo","name":"prod","organization":"hanzo","bucket":"hanzo-prod-v2","isDefault":true}`); st != 200 {
-		t.Fatalf("workspaces/update: status=%d body=%v", st, m)
+	// The URL addresses hanzo/prod; the body carries only what changes.
+	if st, m := h.do(t, "PUT", "/v1/iam/workspaces/hanzo/prod", boss,
+		`{"organization":"hanzo","bucket":"hanzo-prod-v2","isDefault":true}`); st != 200 {
+		t.Fatalf("PUT /v1/iam/workspaces/hanzo/prod: status=%d body=%v", st, m)
 	}
 	_, m = h.do(t, "GET", "/v1/iam/get-organization-workspaces?organization=hanzo", boss, "")
 	w = find(m, "prod")
@@ -265,6 +266,34 @@ func TestWorkspaces_projectFKRoundTrip(t *testing.T) {
 	}
 	if got, _ := orglevel["workspace"].(string); got != "" {
 		t.Fatalf("org-level project should have empty Workspace FK: got %q", got)
+	}
+}
+
+// TestWorkspaces_pathAddressed: the URL is the address. One workspace is created,
+// read and removed at /v1/iam/workspaces/{owner}/{name}, and no request body names
+// which one.
+func TestWorkspaces_pathAddressed(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss")
+
+	if st, m := h.do(t, "POST", "/v1/iam/workspaces", boss,
+		`{"owner":"hanzo","name":"gamma","organization":"hanzo","displayName":"Gamma"}`); st != 200 {
+		t.Fatalf("POST /v1/iam/workspaces: status=%d body=%v", st, m)
+	}
+
+	st, m := h.do(t, "GET", "/v1/iam/workspaces/hanzo/gamma", boss, "")
+	if st != 200 {
+		t.Fatalf("GET /v1/iam/workspaces/hanzo/gamma: status=%d body=%v", st, m)
+	}
+	if got, _ := m["displayName"].(string); got != "Gamma" {
+		t.Fatalf("read the wrong workspace: %v", m)
+	}
+
+	if st, m := h.do(t, "DELETE", "/v1/iam/workspaces/hanzo/gamma", boss, ""); st != 200 {
+		t.Fatalf("DELETE /v1/iam/workspaces/hanzo/gamma: status=%d body=%v", st, m)
+	}
+	if st, _ := h.do(t, "GET", "/v1/iam/workspaces/hanzo/gamma", boss, ""); st != 404 {
+		t.Fatalf("read after delete: status=%d, want 404", st)
 	}
 }
 

@@ -36,9 +36,9 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/workspaces", h.List, zip.WithTags("workspaces"))
 	zip.Post(app, "/v1/iam/workspaces", h.Create, zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces/get", h.Get, zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces/update", h.Update, zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces/delete", h.Delete, zip.WithTags("workspaces"))
+	zip.Get(app, "/v1/iam/workspaces/:owner/:name", h.Get, zip.WithTags("workspaces"))
+	zip.Put(app, "/v1/iam/workspaces/:owner/:name", h.Update, zip.WithTags("workspaces"))
+	zip.Delete(app, "/v1/iam/workspaces/:owner/:name", h.Delete, zip.WithTags("workspaces"))
 }
 
 // New exposes a workspace Handler so the the legacy surface add-/delete-workspace verb

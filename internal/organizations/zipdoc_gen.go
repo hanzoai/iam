@@ -7,6 +7,9 @@ import (
 )
 
 func init() {
+	zip.Describe("DELETE /v1/iam/organizations/:owner/:name", zip.Doc{
+		Description: "Removes an organization and everything named inside it. There is no\nundo, and every session issued under it stops working.\n\nThe built-in admin organization cannot be deleted — losing it would leave the\naccount with no way back in.",
+	})
 	zip.Describe("GET /v1/iam/organizations", zip.Doc{
 		Description: "Returns the organizations you can see, newest first. Narrow it to one\nparent account, and set a limit and offset to page through the rest.\n\nREADING THE REGISTRY IS AN OPERATOR ACT, and the handler now says so itself.\n\nIt never did: the scope lived only in the Guard, which refuses a non-operator\nGET with 403 before the handler runs. That was true and sufficient for as long\nas HTTP was the only way in. It stopped being sufficient when the same typed op\nbecame reachable over the agent door, where a request arrives at the handler\nwith no middleware in front of it. A handler that reads no principal and treats\nan absent Owner selector as no filter would answer such a caller with the whole\nregistry, so the scope has to be the handler's own, not the door's.\n\nSo the fact moves to where every door reaches it. The Guard keeps its own\nrefusal — two checks of one rule is not two rules, and the outer one still\nspends nothing to refuse — but the rule no longer depends on which door was\nused. A caller who wants the organizations they can ACT in asks Search, which\nanswers everyone from their own memberships.",
 		Fields: map[string]string{
@@ -17,7 +20,7 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("GET /v1/iam/organizations/get", zip.Doc{
+	zip.Describe("GET /v1/iam/organizations/:owner/:name", zip.Doc{
 		Description: "Returns one organization: its display, its defaults and the sign-in rules\neveryone in it inherits.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
@@ -57,10 +60,7 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("POST /v1/iam/organizations/delete", zip.Doc{
-		Description: "Removes an organization and everything named inside it. There is no\nundo, and every session issued under it stops working.\n\nThe built-in admin organization cannot be deleted — losing it would leave the\naccount with no way back in.",
-	})
-	zip.Describe("POST /v1/iam/organizations/update", zip.Doc{
+	zip.Describe("PUT /v1/iam/organizations/:owner/:name", zip.Doc{
 		Description: "Changes an organization's display, its defaults and the sign-in rules\neveryone in it inherits. Which organization it is does not change, and neither\ndoes when it was created.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",

@@ -31,9 +31,9 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/roles", h.List, zip.WithTags("roles"))
 	zip.Post(app, "/v1/iam/roles", h.Create, zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/get", h.Get, zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/update", h.Update, zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/delete", h.Delete, zip.WithTags("roles"))
+	zip.Get(app, "/v1/iam/roles/:owner/:name", h.Get, zip.WithTags("roles"))
+	zip.Put(app, "/v1/iam/roles/:owner/:name", h.Update, zip.WithTags("roles"))
+	zip.Delete(app, "/v1/iam/roles/:owner/:name", h.Delete, zip.WithTags("roles"))
 }
 
 // Ref addresses one role by its owner-scoped natural key.
