@@ -4,10 +4,14 @@
 package oidc
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -40,32 +44,13 @@ var signingAlgs = map[string]bool{
 // rotation never leaves a live token unverifiable. Nothing private is ever
 // published.
 func jwksHandler(db orm.DB) zip.Handler {
+	var set keySet
 	return func(c *zip.Ctx) error {
-		certs, err := store.ListCerts(c.Context(), db)
+		body, etag, err := set.current(func() ([]byte, string, error) { return publish(c.Context(), db) })
 		if err != nil {
 			return c.JSON(500, map[string]string{"error": "server_error"})
 		}
-		keys := make([]any, 0, len(certs))
-		seen := make(map[string]bool, len(certs))
-		for _, cert := range certs {
-			if !isSigningCert(cert) || seen[cert.Name] {
-				continue
-			}
-			jwk, err := certToJWK(cert)
-			if err != nil {
-				continue // a cert we cannot encode never fails the whole set
-			}
-			seen[cert.Name] = true
-			keys = append(keys, jwk)
-		}
-
-		body, err := json.Marshal(map[string]any{"keys": keys})
-		if err != nil {
-			return c.JSON(500, map[string]string{"error": "server_error"})
-		}
-		sum := sha256.Sum256(body)
-		etag := `"` + hex.EncodeToString(sum[:16]) + `"`
-		c.SetHeader("Cache-Control", "public, max-age=60")
+		c.SetHeader("Cache-Control", "public, max-age="+strconv.Itoa(int(jwksTTL/time.Second)))
 		c.SetHeader("ETag", etag)
 		if c.Header("If-None-Match") == etag {
 			return c.NoContent(304)
@@ -73,6 +58,78 @@ func jwksHandler(db orm.DB) zip.Handler {
 		c.SetHeader("Content-Type", "application/json")
 		return c.Bytes(200, body)
 	}
+}
+
+// jwksTTL is how long a published key set stands before it is read again. It is the
+// same number the response advertises, so the server keeps what it asks callers to
+// keep rather than telling them to cache and re-deriving on every request itself.
+//
+// Staleness is already the contract: keys appear here before they sign and stay after
+// they stop, so a key that arrives up to a TTL late is a key nothing has signed with.
+const jwksTTL = 60 * time.Second
+
+// keySet is the published key set, held between reads.
+//
+// Verifying a token requires these keys, so a relying party fetches them, and reading
+// the store on every fetch puts the store's latency in front of EVERY authenticated
+// request in the estate — one slow store makes the whole fleet's auth slow, for a
+// document of nine public keys that changes when a certificate is rotated.
+//
+// The last good set also outlives a failed read. A key set that changes on rotation is
+// not information that expires with a database connection, and 500ing here does not
+// degrade one endpoint: it stops every service that verifies a token offline.
+type keySet struct {
+	mu   sync.Mutex
+	body []byte
+	etag string
+	at   time.Time
+}
+
+// current returns the held set, calling read only when nothing is held or the TTL has
+// passed. It knows nothing about certificates or a database — it holds bytes.
+func (k *keySet) current(read func() ([]byte, string, error)) ([]byte, string, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.body != nil && time.Since(k.at) < jwksTTL {
+		return k.body, k.etag, nil
+	}
+	body, etag, err := read()
+	if err != nil {
+		if k.body != nil {
+			return k.body, k.etag, nil // the keys we already published still verify
+		}
+		return nil, "", err
+	}
+	k.body, k.etag, k.at = body, etag, time.Now()
+	return body, etag, nil
+}
+
+// publish reads the signing certs and encodes them as a JWKS document with its ETag.
+func publish(ctx context.Context, db orm.DB) ([]byte, string, error) {
+	certs, err := store.ListCerts(ctx, db)
+	if err != nil {
+		return nil, "", err
+	}
+	keys := make([]any, 0, len(certs))
+	seen := make(map[string]bool, len(certs))
+	for _, cert := range certs {
+		if !isSigningCert(cert) || seen[cert.Name] {
+			continue
+		}
+		jwk, err := certToJWK(cert)
+		if err != nil {
+			continue // a cert we cannot encode never fails the whole set
+		}
+		seen[cert.Name] = true
+		keys = append(keys, jwk)
+	}
+
+	body, err := json.Marshal(map[string]any{"keys": keys})
+	if err != nil {
+		return nil, "", err
+	}
+	sum := sha256.Sum256(body)
+	return body, `"` + hex.EncodeToString(sum[:16]) + `"`, nil
 }
 
 // isSigningCert reports whether a Cert is a token-signing key that belongs in the
