@@ -133,9 +133,7 @@ func TestLoadDerivesTheAllowlistFromRedirectUris(t *testing.T) {
 // and whose PRINCIPAL is decided by the Guard.
 func TestBrowserPaths_CoverTheConsoleOrgSurface(t *testing.T) {
 	for _, p := range []string{
-		"/v1/iam/get-organizations",
-		"/v1/iam/get-organization",
-		"/v1/iam/get-users",
+		"/v1/iam/organizations",
 		"/v1/iam/get-account",
 	} {
 		if browserPaths[p] != bearer {
@@ -150,7 +148,7 @@ func TestBrowserPaths_CoverTheConsoleOrgSurface(t *testing.T) {
 func TestBrowserPaths_StayClosedByDefault(t *testing.T) {
 	for _, p := range []string{
 		"/v1/iam/users",          // typed CRUD — server-to-server
-		"/v1/iam/get-certs",      // signing material
+		"/v1/iam/certs",          // signing material
 		"/v1/iam/get-providers",  // provider secrets
 		"/v1/iam/delete-user",    // a write
 		"/v1/iam/registry/token", // docker client, not a browser

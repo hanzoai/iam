@@ -196,8 +196,8 @@ func TestGuard_StillGatesIamsOwnPaths(t *testing.T) {
 	app, _ := embedded(t)
 
 	for _, path := range []string{
-		"/v1/iam/get-users?owner=admin",
-		"/v1/iam/get-certs?owner=admin",
+		"/v1/iam/users?owner=admin",
+		"/v1/iam/certs?owner=admin",
 		"/v1/iam/users?owner=admin",
 	} {
 		req := httptest.NewRequest("GET", path, nil)
