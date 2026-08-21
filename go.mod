@@ -65,7 +65,7 @@ require (
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/grandcat/zeroconf v1.0.0 // indirect
-	github.com/hanzoai/authz v1.10.32
+	github.com/hanzoai/authz v1.10.35
 	github.com/hanzoai/builder v0.3.13 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/dbx v1.17.2 // indirect
