@@ -136,33 +136,27 @@ var browserPaths = map[string]credential{
 	"/v1/iam/oauth/token":                            bearer,
 	"/v1/iam/oauth/userinfo":                         bearer,
 
-	// The org surface an authenticated SPA reads about ITSELF. A console shows
-	// "which org am I acting as" and lets the user switch; that answer lives
-	// here, so without these a registered app either cannot render its own org
-	// switcher or has to route the read through its own backend — a second copy
-	// of an identity read, which is how backends end up re-implementing IAM.
+	// The account object an authenticated SPA reads about ITSELF. It ALSO answers
+	// from the SSO cookie, and it stays [bearer] deliberately: it is exactly what
+	// the live proxy defect disclosed, and no console asks for it with
+	// credentials. A console reads it with the Bearer it already holds.
 	//
 	// Opening a path here does NOT open the data: the Guard still requires a
 	// verified bearer and authorizes the exact (owner, name) addressed, so a
 	// caller sees only what its principal could already see. CORS decides which
 	// ORIGIN may read the answer; authz decides WHO. Same shape as userinfo
 	// above, which is already open and already Bearer-protected.
-	//
-	// get-account is the one that ALSO answers from the SSO cookie, and it stays
-	// [bearer] deliberately: it is the account object, it is exactly what the
-	// live proxy defect disclosed, and no console asks for it with credentials.
-	// A console reads it with the Bearer it already holds.
-	"/v1/iam/get-organizations": bearer,
-	"/v1/iam/get-organization":  bearer,
-	"/v1/iam/get-users":         bearer,
-	"/v1/iam/get-account":       bearer,
+	"/v1/iam/get-account": bearer,
 
-	// The two writes a first-party console performs on the user's OWN behalf:
-	// create an org, invite someone to it. Both are Guard-authorized against the
-	// caller's principal, so the browser can only do what that user could
-	// already do. Listed as the NATIVE REST paths, not the legacy verbs — those
-	// are a compatibility surface for existing backends, not something a new
-	// browser client should learn.
+	// What a first-party console does on the user's OWN behalf: read the orgs it
+	// may act in to render a switcher, create one, invite someone to it. Both
+	// writes are Guard-authorized against the caller's principal, so the browser
+	// can only do what that user could already do.
+	//
+	// This list is keyed by PATH and advertises GET and POST together, so an
+	// entry opens the whole address. That is why the user collection is NOT here:
+	// a console reads people through its own backend, and listing /v1/iam/users
+	// to open a read would open creating one in the same line.
 	"/v1/iam/organizations": bearer,
 	"/v1/iam/invitations":   bearer,
 

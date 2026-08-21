@@ -394,8 +394,8 @@ func TestACRLFInTheOriginIsNeverEchoedBack(t *testing.T) {
 func TestListedConsoleStillCannotReadTheAccountWithTheCookie(t *testing.T) {
 	do := harness(t, consoles{ours: true})
 	for _, path := range []string{
-		readPath, "/v1/iam/oauth/userinfo", "/v1/iam/get-users",
-		"/v1/iam/get-organizations", "/v1/iam/oauth/token",
+		readPath, "/v1/iam/oauth/userinfo", "/v1/iam/organizations",
+		"/v1/iam/oauth/token",
 	} {
 		got := do(http.MethodGet, path, ours)
 		if got.credentials != "" {
@@ -561,9 +561,8 @@ func TestCookieSurfaceIsExactlyTheShippedSDKsCredentialedSites(t *testing.T) {
 		t.Errorf("%s admits the cookie but no shipped client sends credentials to it", p)
 	}
 	for _, p := range []string{
-		"/v1/iam/get-account", "/v1/iam/oauth/userinfo", "/v1/iam/get-users",
-		"/v1/iam/get-organizations", "/v1/iam/oauth/token", "/v1/iam/organizations",
-		"/v1/iam/invitations", "/v1/iam/get-organization",
+		"/v1/iam/get-account", "/v1/iam/oauth/userinfo", "/v1/iam/oauth/token",
+		"/v1/iam/organizations", "/v1/iam/invitations",
 	} {
 		if browserPaths[p] == cookie {
 			t.Errorf("%s must NOT admit the cookie: it answers a READ, which is the disclosure this closes", p)

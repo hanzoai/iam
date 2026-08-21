@@ -9,7 +9,7 @@
 // the plaintext password rides in on the create/update request, is hashed with argon2id exactly once, and is discarded. Only the one-way digest reaches the
 // store, and no response ever carries the digest or any other secret material —
 // every user returned here passes through schema.User.Mask() (internal/schema/
-// mask.go), the single redaction contract shared with the compat aliases.
+// mask.go), the single redaction contract every read path shares.
 package users
 
 import (
