@@ -18,8 +18,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/luxfi/crypto/pq/mldsa/mldsa65"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -247,8 +249,20 @@ func mldsaCert(t *testing.T, name string) *schema.Cert {
 	return c
 }
 
+// persistCert stores a cert's identity and stages its key the way a deployment
+// supplies one: the row keeps no key material, so a read-back gets the same key
+// only because the ring holds it.
+//
+// The key is staged only for a cert a deployment would actually mount one for —
+// a reserved signing owner. That is not test bookkeeping, it is the case under
+// test: material is addressed by name because the name is the `kid`, so staging
+// a tenant cert's key would hand the attacker's key to the platform cert of the
+// same name, which is precisely the shadowing these tests refuse.
 func persistCert(t *testing.T, db orm.DB, cert *schema.Cert) {
 	t.Helper()
+	if policy.IsSigningOwner(cert.Owner) {
+		keyring.Set(cert.Name, cert.PrivateKey)
+	}
 	c := orm.New[schema.Cert](db)
 	model := c.Model
 	*c = *cert
