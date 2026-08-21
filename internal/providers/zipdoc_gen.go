@@ -13,6 +13,12 @@ func init() {
 			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
 		},
 	})
+	zip.Describe("GET /v1/iam/providers/get", zip.Doc{
+		Description: "Returns one provider: what it connects to and how it is\nconfigured. Its credentials come back masked.",
+		Fields: map[string]string{
+			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
+		},
+	})
 	zip.Describe("POST /v1/iam/providers", zip.Doc{
 		Description: "Adds an identity provider your people can sign in with, or a\nservice your applications send through — a social or enterprise login, an email\nor SMS sender, a storage or payment connector.\n\nA provider is configured once and then switched on per application, so several\napplications can share one set of credentials.",
 		Fields: map[string]string{
@@ -21,12 +27,6 @@ func init() {
 	})
 	zip.Describe("POST /v1/iam/providers/delete", zip.Doc{
 		Description: "Removes a provider. Sign-in through it stops for every\napplication that used it, so give those applications another method first.\n\nA provider that is already gone answers \"nothing changed\" rather than an\nerror, so the call is safe to repeat.",
-		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
-		},
-	})
-	zip.Describe("POST /v1/iam/providers/get", zip.Doc{
-		Description: "Returns one provider: what it connects to and how it is\nconfigured. Its credentials come back masked.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Provider].id": "Persisted fields",
 		},

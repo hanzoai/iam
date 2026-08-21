@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package sessions serves the IAM v2 session resource as typed zip operations
-// over hanzoai/orm. Every operation is a zip.Post[In, Out] typed handler, so a
-// single registration projects three ways at once — a REST route, an OpenAPI
-// 3.1 operation, and an MCP tool.
+// over hanzoai/orm, so a single registration projects three ways at once — a
+// REST route, an OpenAPI 3.1 operation, and an MCP tool.
 //
-// zip's typed handlers source their input from the request body (REST) or the
-// tool-call arguments (MCP); the GET projection carries no body, so every
-// operation that needs the (owner, name, application) key travels as a POST
-// with that key on the typed In. Owner-scoping is therefore a property of the
-// payload, never of a path parameter.
+// The read is a GET and the writes are POSTs, which is a policy statement, not a
+// transport one: authz.authorize decides what a READ is from the method, so a
+// read spelled as a POST is weighed as a write and every read-scoped clause is
+// inert on it. A typed GET sources the (owner, name, application) key from the
+// query string — zip binds the URL onto the input for every method, and the URL
+// outranks the body — so the key travels the same way it always did, and
+// owner-scoping remains a property of the input rather than of a path parameter.
 package sessions
 
 import (
@@ -39,7 +40,7 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Sessions{db: db}
 	zip.Post(app, "/v1/iam/sessions/list", h.List,
 		zip.WithTags("sessions"), zip.WithOperationID("listSessions"))
-	zip.Post(app, "/v1/iam/sessions/get", h.Get,
+	zip.Get(app, "/v1/iam/sessions/get", h.Get,
 		zip.WithTags("sessions"), zip.WithOperationID("getSession"))
 	zip.Post(app, "/v1/iam/sessions/create", h.Create,
 		zip.WithTags("sessions"), zip.WithOperationID("createSession"))

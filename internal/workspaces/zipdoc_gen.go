@@ -13,6 +13,12 @@ func init() {
 			"Model[github.com/hanzoai/iam/pkg/schema.Workspace].id": "Persisted fields",
 		},
 	})
+	zip.Describe("GET /v1/iam/workspaces/get", zip.Doc{
+		Description: "Returns one workspace: what it is called and how it is set up.",
+		Fields: map[string]string{
+			"Model[github.com/hanzoai/iam/pkg/schema.Workspace].id": "Persisted fields",
+		},
+	})
 	zip.Describe("POST /v1/iam/workspaces", zip.Doc{
 		Description: "Makes a workspace inside your organization — the scope a team works in,\nalongside projects rather than instead of them. A name already used in the\norganization is refused.",
 		Fields: map[string]string{
@@ -21,12 +27,6 @@ func init() {
 	})
 	zip.Describe("POST /v1/iam/workspaces/delete", zip.Doc{
 		Description: "Removes a workspace. The people and roles in your organization are\nunchanged; what goes is the scope itself.",
-	})
-	zip.Describe("POST /v1/iam/workspaces/get", zip.Doc{
-		Description: "Returns one workspace: what it is called and how it is set up.",
-		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/pkg/schema.Workspace].id": "Persisted fields",
-		},
 	})
 	zip.Describe("POST /v1/iam/workspaces/update", zip.Doc{
 		Description: "Changes a workspace's settings. What it is called does not change, and\nneither does when it was created.",

@@ -18,6 +18,17 @@ func init() {
 			"Token.resource":      "RFC 8707 resource indicator",
 		},
 	})
+	zip.Describe("GET /v1/iam/tokens/get", zip.Doc{
+		Description: "Returns one access token: who and what it was issued to, and when it\nexpires.",
+		Fields: map[string]string{
+			"Model[github.com/hanzoai/iam/pkg/schema.Token].id": "Persisted fields",
+			"Token.nonce":         "Nonce is the OIDC authorize nonce, stored on the code and echoed into the\nid_token minted at the exchange (OIDC Core §3.1.3.6) so a relying party\nbinds the id_token to its own request and detects replay.",
+			"Token.publicGrant":   "PublicGrant records that this grant was established WITHOUT client\nauthentication — a PKCE code exchange from a client that presented no\nsecret. Whether a client is confidential is a property of the GRANT, not\nonly of the registration: `hanzo-cli` and every @hanzo/iam SPA keep a\nregistered secret for a BACKEND path while the surface that actually signs\nin is a public PKCE client that cannot hold one. authorizationCodeGrant\nalready makes exactly that bounded relaxation; this is the same fact,\nrecorded so refreshTokenGrant can honour it instead of demanding a secret\nthe client never had (which 401s invalid_client and kills the session at\nthe access token's expiry). Carried across rotation, so the second refresh\nbehaves like the first.",
+			"Token.redirectUri":   "RedirectUri binds the authorization code to the exact redirect URI of the\nauthorize request (RFC 6749 §4.1.3): the token endpoint refuses a code\nredeemed with a different redirect_uri, closing code-injection across a\nclient's registered URIs.",
+			"Token.refreshFamily": "Refresh-token rotation state (v2). Each refresh belongs to a family (the\ngrant); rotation mints a new row in the same family and marks the prior\none consumed. Presenting a consumed refresh is reuse — the whole family is\nrevoked (RFC 9700 §4.14.2). RefreshExpireIn is the refresh token's own\nabsolute expiry (unix), independent of the access token's shorter life.",
+			"Token.resource":      "RFC 8707 resource indicator",
+		},
+	})
 	zip.Describe("POST /v1/iam/tokens", zip.Doc{
 		Description: "Records an access token — the credential an application or integration\npresents on a caller's behalf.",
 		Fields: map[string]string{
@@ -31,17 +42,6 @@ func init() {
 	})
 	zip.Describe("POST /v1/iam/tokens/delete", zip.Doc{
 		Description: "Revokes an access token. Whatever was using it stops being\nauthorized at once.\n\nA token that is already gone answers \"nothing changed\" rather than an error, so\nthe call is safe to repeat.",
-		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/pkg/schema.Token].id": "Persisted fields",
-			"Token.nonce":         "Nonce is the OIDC authorize nonce, stored on the code and echoed into the\nid_token minted at the exchange (OIDC Core §3.1.3.6) so a relying party\nbinds the id_token to its own request and detects replay.",
-			"Token.publicGrant":   "PublicGrant records that this grant was established WITHOUT client\nauthentication — a PKCE code exchange from a client that presented no\nsecret. Whether a client is confidential is a property of the GRANT, not\nonly of the registration: `hanzo-cli` and every @hanzo/iam SPA keep a\nregistered secret for a BACKEND path while the surface that actually signs\nin is a public PKCE client that cannot hold one. authorizationCodeGrant\nalready makes exactly that bounded relaxation; this is the same fact,\nrecorded so refreshTokenGrant can honour it instead of demanding a secret\nthe client never had (which 401s invalid_client and kills the session at\nthe access token's expiry). Carried across rotation, so the second refresh\nbehaves like the first.",
-			"Token.redirectUri":   "RedirectUri binds the authorization code to the exact redirect URI of the\nauthorize request (RFC 6749 §4.1.3): the token endpoint refuses a code\nredeemed with a different redirect_uri, closing code-injection across a\nclient's registered URIs.",
-			"Token.refreshFamily": "Refresh-token rotation state (v2). Each refresh belongs to a family (the\ngrant); rotation mints a new row in the same family and marks the prior\none consumed. Presenting a consumed refresh is reuse — the whole family is\nrevoked (RFC 9700 §4.14.2). RefreshExpireIn is the refresh token's own\nabsolute expiry (unix), independent of the access token's shorter life.",
-			"Token.resource":      "RFC 8707 resource indicator",
-		},
-	})
-	zip.Describe("POST /v1/iam/tokens/get", zip.Doc{
-		Description: "Returns one access token: who and what it was issued to, and when it\nexpires.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Token].id": "Persisted fields",
 			"Token.nonce":         "Nonce is the OIDC authorize nonce, stored on the code and echoed into the\nid_token minted at the exchange (OIDC Core §3.1.3.6) so a relying party\nbinds the id_token to its own request and detects replay.",

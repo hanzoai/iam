@@ -33,7 +33,7 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/invitations", h.List, zip.WithTags("invitations"))
 	zip.Post(app, "/v1/iam/invitations", h.Create, zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations/get", h.Get, zip.WithTags("invitations"))
+	zip.Get(app, "/v1/iam/invitations/get", h.Get, zip.WithTags("invitations"))
 	zip.Post(app, "/v1/iam/invitations/update", h.Update, zip.WithTags("invitations"))
 	zip.Post(app, "/v1/iam/invitations/delete", h.Delete, zip.WithTags("invitations"))
 }
