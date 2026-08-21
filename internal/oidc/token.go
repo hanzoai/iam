@@ -250,12 +250,25 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	// against a client secret with no person present. Said in the token, a consumer
 	// reads a fact; left unsaid, it guesses — and the guess available to it reports
 	// every shared app's machine as a person.
+	// The resource server this token is FOR (RFC 8707), read exactly as the token
+	// exchange grant reads it — resource wins, then audience, else the client's own
+	// id. A machine credential is spent against something, and a token that can only
+	// ever name its minter forces every resource server to accept tokens minted for
+	// somebody else or to be handed a second credential of its own.
+	//
+	// The boundary is the client secret, as it is on the exchange grant beside it: a
+	// caller that authenticated as this client may say what the token is for, and the
+	// resource server still decides what to honour. `azp` records the minter either way.
+	resource := param(c, "resource")
+	if resource == "" {
+		resource = param(c, "audience")
+	}
 	access, err := signer.Sign(app, Identity{
 		Id:      sub,
 		Name:    app.Name,
 		Billing: machineBillingAccount(app.Organization),
 		Type:    schema.Program,
-	}, scope, ttl, now)
+	}, scope, resource, ttl, now)
 	if err != nil {
 		return mintError(c, err)
 	}
@@ -447,7 +460,7 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 		return tokenResponse{}, err
 	}
 
-	access, err := signer.Sign(app, id, row.Scope, ttl, now)
+	access, err := signer.Sign(app, id, row.Scope, "", ttl, now)
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -609,7 +622,7 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 	if err != nil {
 		return "", err
 	}
-	return signer.Sign(app, Identity{Id: id.Id, Orgs: id.Orgs}, tok.Scope, ttl, now)
+	return signer.Sign(app, Identity{Id: id.Id, Orgs: id.Orgs}, tok.Scope, "", ttl, now)
 }
 
 // tokenIssuer is the canonical OIDC issuer for this request — the value discovery
