@@ -41,6 +41,9 @@ func TestRetiredSpellingsAreGone(t *testing.T) {
 		"get-account", "get-app-login", "update-preferences", "send-verification-code",
 		"issue-user-token", "mint-user-keys", "revoke-user-keys",
 		"delete-mfa", "set-preferred-mfa",
+		// the last three, retired once DELETE /v1/iam/memberships existed to
+		// carry the revoke, and `resolve-key`, now `keys/org` beside its twin.
+		"get-memberships", "add-membership", "delete-membership", "resolve-key",
 	}
 	gone := make(map[string]bool, len(retired))
 	for _, v := range retired {

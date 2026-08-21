@@ -426,15 +426,13 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 // authz.Scope. SCIM (RFC 7644, /v1/iam/scim/v2/Users/{id}) is path-targeted, so it
 // belongs here. This is the read analogue of a write deferring to the op-invoke
 // seam — the target is authorized where it is bound, not guessed from the query.
-// get-organization-projects (and its workspace tier, get-organization-workspaces)
-// is the the legacy surface read verb whose target rides in ?organization= (the
-// ScopeSwitcher's project/workspace list), not ?owner=/?id=/the path, so the Guard
-// cannot pre-authorize it generically; the handler scopes it through authz.Scope
-// instead (the read analogue of SCIM's path-targeted authorization).
-// get-memberships is the the legacy surface alias of /v1/iam/memberships whose target rides in
-// ?user=/?org=, so it belongs here for the same reason its REST twin does — the
-// membership list handler's own scoped() check is the tenant gate.
-var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accounts", "/v1/iam/memberships", "/v1/iam/get-memberships"}
+// /v1/iam/memberships is here for the same reason: its target rides in
+// ?user=/?org= rather than the path, so the Guard cannot pre-authorize it
+// generically. All three methods self-authorize — the list through its own
+// scoped() check, and both writes through mayGrant, which carries the
+// reserved-org escalation guard. A method added here that does neither is
+// unauthorized, not merely undocumented.
+var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accounts", "/v1/iam/memberships"}
 
 // handlerAuthorizedExact are SINGLE routes (not subtrees) the handler authorizes
 // itself. The key resolve qualifies because its target is a publishable pk- riding
@@ -450,7 +448,7 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accou
 // get-user used to sit here too, for a sibling reason — "/v1/iam/get-user" is a
 // prefix of "/v1/iam/get-users" — and it went with the legacy verb surface.
 var handlerAuthorizedExact = map[string]bool{
-	"/v1/iam/resolve-key":    true,
+	"/v1/iam/keys/org":       true,
 	"/v1/iam/keys/principal": true,
 }
 

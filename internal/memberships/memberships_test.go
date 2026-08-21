@@ -99,10 +99,12 @@ func (h *harness) get(t *testing.T, path, bearer string) (int, env) {
 	return status, envOf(body)
 }
 
-func (h *harness) post(t *testing.T, path string, body any, bearer string) (int, env) {
+// send is the ONE writer: the surface is one address and the METHOD says which
+// operation, so the helper takes the method rather than the helpers multiplying.
+func (h *harness) send(t *testing.T, method, path string, body any, bearer string) (int, env) {
 	t.Helper()
 	b, _ := json.Marshal(body)
-	req := httptest.NewRequest("POST", path, bytes.NewReader(b))
+	req := httptest.NewRequest(method, path, bytes.NewReader(b))
 	req.Host = "hanzo.id"
 	req.Header.Set("Content-Type", "application/json")
 	if bearer != "" {
@@ -111,12 +113,34 @@ func (h *harness) post(t *testing.T, path string, body any, bearer string) (int,
 	return h.do(t, req)
 }
 
+func (h *harness) post(t *testing.T, path string, body any, bearer string) (int, env) {
+	t.Helper()
+	return h.send(t, "POST", path, body, bearer)
+}
+
+// del revokes. It is a separate helper only so a call site READS as a revoke;
+// the operation it reaches is chosen by the method, not by the address.
+func (h *harness) del(t *testing.T, path string, body any, bearer string) (int, env) {
+	t.Helper()
+	return h.send(t, "DELETE", path, body, bearer)
+}
+
 // postBasic drives an add/delete verb authenticating as a confidential client
 // (client_secret_basic) — how a brand console / cloud service calls these verbs.
 func (h *harness) postBasic(t *testing.T, path string, body any, clientID, secret string) (int, env) {
 	t.Helper()
+	return h.basic(t, "POST", path, body, clientID, secret)
+}
+
+func (h *harness) delBasic(t *testing.T, path string, body any, clientID, secret string) (int, env) {
+	t.Helper()
+	return h.basic(t, "DELETE", path, body, clientID, secret)
+}
+
+func (h *harness) basic(t *testing.T, method, path string, body any, clientID, secret string) (int, env) {
+	t.Helper()
 	b, _ := json.Marshal(body)
-	req := httptest.NewRequest("POST", path, bytes.NewReader(b))
+	req := httptest.NewRequest(method, path, bytes.NewReader(b))
 	req.Host = "hanzo.id"
 	req.Header.Set("Content-Type", "application/json")
 	req.SetBasicAuth(clientID, secret)
@@ -180,7 +204,7 @@ func TestGetMemberships_byUser(t *testing.T) {
 	seedMembership(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
 	seedMembership(t, h.db, "hanzo/alice", "team-x", store.RoleAdmin)
 
-	status, e := h.get(t, "/v1/iam/get-memberships?user=hanzo/alice", h.token(t, "admin/root"))
+	status, e := h.get(t, "/v1/iam/memberships?user=hanzo/alice", h.token(t, "admin/root"))
 	if status != 200 || e.Status != "ok" {
 		t.Fatalf("get-memberships?user status=%d env=%+v, want 200 ok", status, e)
 	}
@@ -197,7 +221,7 @@ func TestGetMemberships_byOrg(t *testing.T) {
 	seedMembership(t, h.db, "hanzo/boss", "hanzo", store.RoleAdmin)
 
 	// hanzo's own admin may read its own org's roster (handler-authorized scoped()).
-	status, e := h.get(t, "/v1/iam/get-memberships?org=hanzo", h.token(t, "hanzo/boss"))
+	status, e := h.get(t, "/v1/iam/memberships?org=hanzo", h.token(t, "hanzo/boss"))
 	if status != 200 || e.Status != "ok" {
 		t.Fatalf("get-memberships?org status=%d env=%+v, want 200 ok", status, e)
 	}
@@ -212,7 +236,7 @@ func TestAddMembership_thenGetShowsIt(t *testing.T) {
 	h := newHarness(t)
 	super := h.token(t, "admin/root")
 
-	status, e := h.post(t, "/v1/iam/add-membership",
+	status, e := h.post(t, "/v1/iam/memberships",
 		map[string]string{"user": "hanzo/alice", "org": "team-x", "role": "admin"}, super)
 	if status != 200 || e.Status != "ok" {
 		t.Fatalf("add-membership status=%d env=%+v, want 200 ok", status, e)
@@ -221,7 +245,7 @@ func TestAddMembership_thenGetShowsIt(t *testing.T) {
 		t.Fatal("add-membership reported no row created")
 	}
 
-	_, g := h.get(t, "/v1/iam/get-memberships?user=hanzo/alice", super)
+	_, g := h.get(t, "/v1/iam/memberships?user=hanzo/alice", super)
 	rows := parseMemberships(t, g)
 	if len(rows) != 1 || rows[0].Org != "team-x" || rows[0].Role != store.RoleAdmin {
 		t.Fatalf("after add, memberships = %+v, want one {team-x, admin}", rows)
@@ -235,7 +259,7 @@ func TestDeleteMembership_removesAndIdempotent(t *testing.T) {
 	super := h.token(t, "admin/root")
 	seedMembership(t, h.db, "hanzo/alice", "team-x", store.RoleAdmin)
 
-	status, e := h.post(t, "/v1/iam/delete-membership",
+	status, e := h.del(t, "/v1/iam/memberships",
 		map[string]string{"user": "hanzo/alice", "org": "team-x"}, super)
 	if status != 200 || e.Status != "ok" || !parseBool(t, e) {
 		t.Fatalf("first delete status=%d env=%+v, want 200 ok removed=true", status, e)
@@ -245,7 +269,7 @@ func TestDeleteMembership_removesAndIdempotent(t *testing.T) {
 		t.Fatal("membership survived delete")
 	}
 	// Idempotent second delete: still ok, but removed=false.
-	_, e2 := h.post(t, "/v1/iam/delete-membership",
+	_, e2 := h.del(t, "/v1/iam/memberships",
 		map[string]string{"user": "hanzo/alice", "org": "team-x"}, super)
 	if e2.Status != "ok" || parseBool(t, e2) {
 		t.Fatalf("second delete env=%+v, want ok removed=false (idempotent)", e2)
@@ -259,19 +283,19 @@ func TestMembership_crossTenantDenied(t *testing.T) {
 	boss := h.token(t, "hanzo/boss") // admin of hanzo, NOT of orgb
 
 	// Write into orgb: refused.
-	_, add := h.post(t, "/v1/iam/add-membership",
+	_, add := h.post(t, "/v1/iam/memberships",
 		map[string]string{"user": "orgb/bob", "org": "orgb", "role": "member"}, boss)
 	if add.Status != "error" || add.Msg != "auth:Unauthorized operation" {
 		t.Fatalf("cross-tenant add-membership env=%+v, want error auth:Unauthorized operation", add)
 	}
 	// Delete from orgb: refused the same way.
-	_, del := h.post(t, "/v1/iam/delete-membership",
+	_, del := h.del(t, "/v1/iam/memberships",
 		map[string]string{"user": "orgb/bob", "org": "orgb"}, boss)
 	if del.Status != "error" || del.Msg != "auth:Unauthorized operation" {
 		t.Fatalf("cross-tenant delete-membership env=%+v, want error auth:Unauthorized operation", del)
 	}
 	// Read orgb's roster: refused the same way.
-	_, roster := h.get(t, "/v1/iam/get-memberships?org=orgb", boss)
+	_, roster := h.get(t, "/v1/iam/memberships?org=orgb", boss)
 	if roster.Status != "error" || roster.Msg != "auth:Unauthorized operation" {
 		t.Fatalf("cross-tenant get-memberships?org=orgb env=%+v, want error auth:Unauthorized operation", roster)
 	}
@@ -288,7 +312,7 @@ func TestEnsureMembership_reservedOrgRequiresSuper(t *testing.T) {
 
 	// Into the reserved admin/built-in orgs: refused, verbatim.
 	for _, org := range []string{"admin", "built-in"} {
-		_, e := h.postBasic(t, "/v1/iam/add-membership",
+		_, e := h.postBasic(t, "/v1/iam/memberships",
 			map[string]string{"user": "hanzo/alice", "org": org, "role": "admin"}, "hanzo-console", "console-secret")
 		if e.Status != "error" || e.Msg != "auth:Unauthorized operation" {
 			t.Fatalf("CapOrgAdmin ensure into %q env=%+v, want error auth:Unauthorized operation", org, e)
@@ -298,21 +322,21 @@ func TestEnsureMembership_reservedOrgRequiresSuper(t *testing.T) {
 		}
 	}
 	// Revoke into a reserved org is gated the same way.
-	_, del := h.postBasic(t, "/v1/iam/delete-membership",
+	_, del := h.delBasic(t, "/v1/iam/memberships",
 		map[string]string{"user": "hanzo/alice", "org": "admin"}, "hanzo-console", "console-secret")
 	if del.Status != "error" || del.Msg != "auth:Unauthorized operation" {
 		t.Fatalf("CapOrgAdmin revoke into admin env=%+v, want error auth:Unauthorized operation", del)
 	}
 
 	// Legit power preserved: the SAME client CAN ensure into a normal customer org.
-	_, ok := h.postBasic(t, "/v1/iam/add-membership",
+	_, ok := h.postBasic(t, "/v1/iam/memberships",
 		map[string]string{"user": "hanzo/alice", "org": "hanzo", "role": "member"}, "hanzo-console", "console-secret")
 	if ok.Status != "ok" {
 		t.Fatalf("CapOrgAdmin ensure into a normal org env=%+v, want ok (legit power broken)", ok)
 	}
 
 	// And a real SuperAdmin MAY grant a reserved-org membership (the escape hatch).
-	_, sup := h.post(t, "/v1/iam/add-membership",
+	_, sup := h.post(t, "/v1/iam/memberships",
 		map[string]string{"user": "hanzo/alice", "org": "admin", "role": "admin"}, h.token(t, "admin/root"))
 	if sup.Status != "ok" {
 		t.Fatalf("SuperAdmin ensure into admin env=%+v, want ok", sup)
@@ -336,7 +360,7 @@ func TestList_wire(t *testing.T) {
 	boss := h.token(t, "hanzo/boss")
 
 	// Both addresses, one handler, one answer.
-	for _, path := range []string{"/v1/iam/memberships", "/v1/iam/get-memberships"} {
+	for _, path := range []string{"/v1/iam/memberships", "/v1/iam/memberships"} {
 		t.Run(path, func(t *testing.T) {
 			status, body := h.read(t, path+"?org=hanzo", boss)
 			if status != 200 {
@@ -372,7 +396,7 @@ func TestList_refusals(t *testing.T) {
 		{"cross-tenant org", "?org=orgb", denied},
 		{"cross-tenant user", "?user=orgb/bob", denied},
 	} {
-		for _, path := range []string{"/v1/iam/memberships", "/v1/iam/get-memberships"} {
+		for _, path := range []string{"/v1/iam/memberships", "/v1/iam/memberships"} {
 			t.Run(c.name+" "+path, func(t *testing.T) {
 				status, body := h.read(t, path+c.query, boss)
 				if status != 400 || body != c.want {
@@ -391,7 +415,7 @@ func TestList_refusals(t *testing.T) {
 func TestList_ownerQueryIsNotATarget(t *testing.T) {
 	h := newHarness(t)
 	seedMembership(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
-	for _, path := range []string{"/v1/iam/memberships", "/v1/iam/get-memberships"} {
+	for _, path := range []string{"/v1/iam/memberships", "/v1/iam/memberships"} {
 		status, body := h.read(t, path+"?org=hanzo&owner=orgb&name=whatever", h.token(t, "hanzo/boss"))
 		if status != 200 {
 			t.Fatalf("%s status=%d body=%s, want 200 — the read is authorized by scoped(), not by ?owner=", path, status, body)
@@ -402,7 +426,7 @@ func TestList_ownerQueryIsNotATarget(t *testing.T) {
 // The verbs are gated: no bearer → the Guard fails closed (401).
 func TestMembershipVerbs_requireAuth(t *testing.T) {
 	h := newHarness(t)
-	if status, _ := h.get(t, "/v1/iam/get-memberships?org=hanzo", ""); status != 401 {
+	if status, _ := h.get(t, "/v1/iam/memberships?org=hanzo", ""); status != 401 {
 		t.Fatalf("unauthenticated get-memberships status=%d, want 401", status)
 	}
 }

@@ -17,9 +17,8 @@ import (
 // PrincipalPath answers which principal a SECRET key belongs to. The segments
 // name things — a key, its principal — and the method says the verb, which is
 // the rule TestNoNewVerbNounAddresses holds the whole router to. Its sibling
-// `resolve-key` reads as a verb-noun and is exempt only because it is a frozen
-// address live consumers hard-code; that list shrinks and never grows, so a new
-// door spells itself properly.
+// answers with an org and is spelled the same way, `keys/org`, so the pair reads
+// as what it is: one surface, two projections, the address naming which.
 //
 // It is a second route rather than a branch of the publishable one, because the
 // two differ in every way that matters: a different capability admits them
