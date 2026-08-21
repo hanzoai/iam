@@ -8,7 +8,7 @@ import (
 
 func init() {
 	zip.Describe("GET /v1/iam/users", zip.Doc{
-		Description: "Returns a page of the people in your organization, with the total so you\ncan page through the rest. Passwords, API secrets and MFA material are stripped\nfrom every entry.",
+		Description: "Returns a page of the people in your organization, with the total so you\ncan page through the rest. Passwords, API secrets and MFA material are stripped\nfrom every entry.\n\nYou see your own organization's people and no one else's; which organization\nthat is comes from your credentials, not from the request.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
 			"Model[github.com/hanzoai/iam/pkg/schema.Role].id":       "Persisted fields",

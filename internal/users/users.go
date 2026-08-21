@@ -21,6 +21,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -146,9 +147,17 @@ func (in *UpdateInput) AuthzTarget() (owner, name string) {
 	return strings.TrimSpace(in.User.Owner), strings.TrimSpace(in.User.Name)
 }
 
-// ListInput is an owner-scoped, paged listing request.
+// ListInput is an owner-scoped, paged listing request. Owner is OPTIONAL and it
+// is not the filter: ScopeRead resolves the org this listing is bound to from the
+// verified credential, and naming none means your own.
+//
+// It carried `validate:"required"`, and that made the "unstated owner means your
+// own org" rule unreachable here — zip validates BEFORE it authorizes, so an
+// omitted owner was refused 400 at the door and the resolution that would have
+// supplied it never ran. Loud rather than silent, but a rule the policy states
+// and this entity could not honour.
 type ListInput struct {
-	Owner  string `json:"owner" validate:"required"`
+	Owner  string `json:"owner"`
 	Limit  int    `json:"limit,omitempty"`
 	Offset int    `json:"offset,omitempty"`
 }
@@ -310,16 +319,40 @@ func firstOf(a, b string) string {
 // List returns a page of the people in your organization, with the total so you
 // can page through the rest. Passwords, API secrets and MFA material are stripped
 // from every entry.
+//
+// You see your own organization's people and no one else's; which organization
+// that is comes from your credentials, not from the request.
 func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	if strings.TrimSpace(in.Owner) == "" {
-		return nil, zip.ErrBadRequest("owner is required")
+	// The owner is resolved by authz.ScopeRead from the authenticated principal,
+	// never taken from the input — the same resolution eleven sibling Scope call
+	// sites and the projects/workspaces ScopeRead pair already run. Reading
+	// in.Owner made the request parameter the filter, so the policy that governs
+	// a user row was decided everywhere except on users.
+	//
+	// ScopeRead rather than Scope because this is a listing: a human's account
+	// lives in ONE tenant while the orgs they work in are a set, so keying it on
+	// the home org alone refuses an org's own admin the roster they administer.
+	// An empty result is a SuperAdmin's unfiltered listing and nobody else's —
+	// ScopeRead returns "" only for a principal with cross-tenant scope.
+	owner, err := authz.ScopeRead(ctx, in.Owner)
+	if err != nil {
+		return nil, err
 	}
-	total, err := orm.TypedQuery[schema.User](a.db).Filter("Owner=", in.Owner).Count(ctx)
+	// Built fresh per use: ModelQuery accumulates in place and returns itself, so
+	// the count and the page must not share one.
+	scoped := func() *orm.ModelQuery[schema.User] {
+		q := orm.TypedQuery[schema.User](a.db)
+		if owner != "" {
+			q = q.Filter("Owner=", owner)
+		}
+		return q
+	}
+	total, err := scoped().Count(ctx)
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 
-	q := orm.TypedQuery[schema.User](a.db).Filter("Owner=", in.Owner).Order("Name")
+	q := scoped().Order("Name")
 	if in.Limit > 0 {
 		q = q.Limit(in.Limit)
 	}
