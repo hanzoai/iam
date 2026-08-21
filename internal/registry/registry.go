@@ -75,6 +75,8 @@ const (
 	PathJWKS  = "/v1/iam/registry/jwks"
 )
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 // Route registers the registry token + JWKS endpoints on r (the PUBLIC group),
 // backed by db and the process signing keyring. Called once from routes.Route.
 // The keyring is passed as a lazy resolver (processKeyring): registering never forces
