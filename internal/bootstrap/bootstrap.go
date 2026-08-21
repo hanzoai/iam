@@ -569,8 +569,8 @@ func resolveSecret(public bool, requested string, hasExisting bool, existing str
 // app.Cert to sign, so an application created without one authenticates the user,
 // mints an authorization code, redeems it — and only then discovers it has
 // nothing to sign with, answering the token exchange `500 server_error`. From the
-// browser that is indistinguishable from an outage, and it is exactly the state
-// `hanzo-tabs` shipped in.
+// browser that is indistinguishable from an outage, which is why a new application
+// is created able to sign rather than left to fail at the exchange.
 //
 //   - requested -> honour it.
 //   - otherwise -> the organization's own cert. Every application here already

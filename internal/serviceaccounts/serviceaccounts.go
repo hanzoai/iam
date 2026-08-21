@@ -371,14 +371,13 @@ func read(p *authz.Principal, org string) bool {
 // are RESOLVED — a schema.Key row keyed to the account, the same row every other
 // key in the estate lives in.
 //
-// It used to write AccessKey/AccessSecretHash onto the User row instead. Nothing
-// reads those: store.UserByAccessKey resolves an sk- through schema.Key and
-// nothing anywhere calls cred.Verify against AccessSecretHash. So a service
-// account got a credential that could never authenticate — every call answered
-// "API key is not recognized", which reads as revoked and was never resolvable.
-// That is why they are cleared here rather than set: a second credential home
-// that no resolver reads is not a safety measure, it is a dead end that looks
-// like one.
+// The credential lives ONLY in the schema.Key row, never on the User row.
+// store.UserByAccessKey resolves an sk- through schema.Key, and nothing calls
+// cred.Verify against a User's AccessSecretHash — so a credential written there
+// could never authenticate, answering "API key is not recognized" on every call.
+// Any such field on the User row is cleared here rather than set: a second
+// credential home no resolver reads is a dead end that looks like a safety
+// measure.
 //
 // The secret is stored as its digest (schema.DigestSecret) and returned once, so
 // the row holds nothing replayable.

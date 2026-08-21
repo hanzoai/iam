@@ -5,24 +5,15 @@ package authz_test
 
 // AN ORG-SCOPED REQUEST IS HONOURED OR REFUSED, NEVER SILENTLY REINTERPRETED.
 //
-// The defect these tests pin down, reproduced twice against production on
-// 2026-07-28 with the hanzo-console client credential (home org `hanzo`):
-//
-//	GET /v1/iam/get-users?owner=hanzo             -> 200 ok, 262 records, owner=hanzo
-//	GET /v1/iam/get-users?owner=lux               -> 200 ok, 262 records, owner=hanzo
-//	GET /v1/iam/get-users?owner=nonexistent-xyz   -> 200 ok, 262 records, owner=hanzo
-//
-// Nothing in the status code, the `status` field, the message or the count says
-// the filter was dropped, so a FABRICATED org is indistinguishable from a real
-// one AND from the caller's own. That is not a confidentiality breach — no
-// tenant's rows escape — it is MISATTRIBUTION, which is worse in one specific
-// way: the caller believes it holds tenant B while holding tenant A. It nearly
-// caused a production purge of the wrong tenant: an operator asked for
-// owner=lux, received 262 hanzo accounts, and every surface signal read success.
+// A listing that quietly drops the ?owner= filter answers 200 with the caller's
+// own rows whatever org was asked for, so a fabricated org is indistinguishable
+// from a real one AND from the caller's own. Nothing in the status code, the
+// `status` field, the message or the count carries the difference — the caller
+// holds tenant A believing it holds tenant B, and then filters and writes.
 //
 // A status code is therefore NOT the contract here. Every case asserts on the
 // RECORDS that crossed the wire, because "200 with somebody else's rows" is the
-// exact failure being closed.
+// exact answer these tests exist to make impossible.
 
 import (
 	"bytes"

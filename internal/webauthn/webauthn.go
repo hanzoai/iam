@@ -98,12 +98,12 @@ func Route(app *zip.App, db orm.DB) {
 // their user record — so this list can never show more people than the surface
 // beside it already does.
 //
-// There is no organization-wide list. It used to scope to the ORG, which handed
-// an org admin every member's credential rows in one answer, and a SuperAdmin
-// every tenant's; a plain member meanwhile could not read even their own,
-// because an unnamed target fails the Guard's tenant rule. One scope fixes both
-// halves: the answer is a person's, and the caller is the person unless they say
-// otherwise and may.
+// There is no organization-wide list, by design. Scoping to the ORG would hand an
+// org admin every member's credential rows in one answer and a SuperAdmin every
+// tenant's, while a plain member could not read even their own (an unnamed target
+// fails the Guard's tenant rule). One scope answers both halves cleanly: the
+// answer is a person's, and the caller is that person unless they say otherwise
+// and may.
 func listWebauthnCredentials(db orm.DB) zip.TypedHandler[listWebauthnCredentialsIn, listWebauthnCredentialsOut] {
 	return func(ctx context.Context, in *listWebauthnCredentialsIn) (*listWebauthnCredentialsOut, error) {
 		p, ok := authz.From(ctx)

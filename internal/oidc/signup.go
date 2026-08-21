@@ -134,9 +134,8 @@ func signupHandler(db orm.DB) zip.Handler {
 		}
 		if org == nil {
 			// Signup does not mint organizations. It used to, opt-in per app, and that
-			// made an UNAUTHENTICATED request able to add a row to the tenant registry:
-			// 26 of the 51 org-holding orgs on the live instance hold exactly one user,
-			// among them orgs left behind by probes.
+			// made an UNAUTHENTICATED request able to add a row to the tenant registry
+			// — a probe could leave an org behind simply by posting a signup.
 			//
 			// Nothing asked for it either. The screen posts the app's own org and asks
 			// for the organization in ONBOARDING, and POST /v1/iam/onboard is a better
@@ -153,10 +152,9 @@ func signupHandler(db orm.DB) zip.Handler {
 			// land in the app's own tenant, never the right to walk into a tenant that
 			// is already standing. Without this arm the gate above is satisfied by a
 			// non-empty OrgChoiceMode and this branch does nothing, so an unauthenticated
-			// POST naming any existing org is made a member of it: hanzo-console, a hanzo
-			// app, minted a user with owner "lux" on the live instance. Every brand and
-			// every customer tenant in the one multi-brand registry was reachable that
-			// way, which is precisely the isolation the tenant gate exists to provide.
+			// POST naming any existing org would be made a member of it — every brand and
+			// every customer tenant in a shared registry reachable that way, which is
+			// precisely the isolation the tenant gate exists to provide.
 			//
 			// The refusal is byte-identical to the tenant refuse above and to the
 			// reserved-org refuse, so a prober cannot distinguish "someone else's org"

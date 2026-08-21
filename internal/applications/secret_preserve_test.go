@@ -15,12 +15,10 @@ import (
 //
 // update-application is a full REPLACE and every read MASKS the client secret, so
 // "read the record, change one field, write it back" — the only shape an admin UI
-// or an operator has — posted ClientSecret:"" and silently turned a confidential
-// client public. Measured on live IAM: the SuperAdmin read of hanzo-console,
-// hanzo-app, hanzo-id and hanzo-cloud all return "" while a token-endpoint probe
-// proves all four hold a secret. The token endpoint reads a stored empty secret as
-// "public client, demand no client auth", so the blast radius is every flow those
-// apps serve.
+// or an operator has — posts ClientSecret:"" for an app that holds one, so the
+// write would blank it and silently turn a confidential client public. The token
+// endpoint reads a stored empty secret as "public client, demand no client auth",
+// so the blast radius is every flow that app serves.
 
 func seedConfidential(t *testing.T, db orm.DB, name, secret string) *schema.Application {
 	t.Helper()

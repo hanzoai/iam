@@ -146,12 +146,9 @@ func introspectHandler(db orm.DB) zip.Handler {
 // nothing — so the endpoint cannot be used to discover which tokens are real.
 //
 // PUBLIC clients revoke too, and must: sign-out is the only control a long-lived
-// refresh token has. hanzo-cli is a public PKCE client holding a 30-day rotating
-// refresh token, so a confidential-only revocation endpoint made `hanzo auth
-// logout` a LOCAL DELETE — the credential it dropped stayed spendable at
-// hanzo.id for the rest of the month, with nothing able to kill it. Measured
-// 2026-08-01: revoke answered 401 invalid_client and the refresh token went on
-// minting access tokens.
+// refresh token has. A native app or CLI is a public PKCE client and holds no
+// secret, so requiring one here would leave signing out as a local delete —
+// forgetting a credential that stays spendable for the rest of its lifetime.
 //
 // Widening authentication does not widen authority. The caller must still POSSESS
 // the token — and possession already permits USE, of which revocation is the
