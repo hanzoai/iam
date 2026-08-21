@@ -109,7 +109,7 @@ func Route(app *zip.App, db orm.DB) {
 	// Docker Registry v2 token auth: GET;POST /v1/iam/registry/token +
 	// GET /v1/iam/registry/jwks. Public by construction — a docker client holds
 	// no IAM bearer; it presents a Basic credential the token endpoint verifies.
-	// registry:2 at registry.hanzo.ai points REGISTRY_AUTH_TOKEN_REALM here and
+	// registry:2 at oci.hanzo.ai points REGISTRY_AUTH_TOKEN_REALM here and
 	// trusts these tokens via the served JWKS (its ROOTCERTBUNDLE).
 	registry.Route(public, db)
 

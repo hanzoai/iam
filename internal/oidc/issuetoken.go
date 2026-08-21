@@ -69,48 +69,70 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 			return mintAsToken(ctx, db, c, m.key)
 		}
 
-		now := nowFunc()
 		clientApp := m.app
 		user, status, msg := mintTarget(ctx, db, c, clientApp)
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
 
-		aud := strings.TrimSpace(c.Query("aud"))
-		if aud == "" {
-			aud = defaultUserAudience(ctx, db, user, clientApp)
-		}
-		signer, err := signerFor(ctx, db, clientApp, tokenIssuer(c))
+		access, ttl, err := MintUserToken(ctx, db, clientApp, user,
+			strings.TrimSpace(c.Query("aud")), tokenIssuer(c), c.Path())
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
-		ttl := appTTL(clientApp)
-		natural := user.Owner + "/" + user.Name
-		id := identityOf(ctx, db, user) // the ONE user→claims resolution
-		access, err := signer.SignUserToken(id, user.Owner, aud, clientApp.ClientId, "", ttl, now)
-		if err != nil {
-			return mintErr(c, 500, "server_error")
-		}
-
-		row := &schema.Token{
-			Owner:           user.Owner,
-			Application:     clientApp.Name,
-			Organization:    user.Owner,
-			User:            natural, // the row's User stays the (owner/name) key
-			TokenType:       "Bearer",
-			ExpiresIn:       int(ttl.Seconds()),
-			AccessTokenHash: hashToken(access),
-		}
-		row.Name = "iut-" + hashToken(access)[:32]
-		if err := store.PersistToken(ctx, db, row); err != nil {
-			return mintErr(c, 500, "server_error")
-		}
-		auditMint(ctx, db, c, schema.ActionIssueUserToken, clientApp.ClientId, natural)
 		return httpx.Ok(c, map[string]any{
 			"accessToken": access,
 			"expiresIn":   int(ttl.Seconds()),
 		})
 	}
+}
+
+// MintUserToken signs a user-bound access token, records it, and audits it.
+//
+// It is THE mint. The shim above is one caller and pkg/mint is the other, so a
+// token issued over HTTP and a token issued in-process are the same token — same
+// claims, same two tables. A second implementation would be a second answer to
+// "what is this user's token", which is what this exists to prevent.
+//
+// AUTHORIZATION IS THE CALLER'S. This proves nothing about who asked; it signs
+// for the user it is handed. Over HTTP that proof is authorizeMinter's. In
+// process it is the embedding host's, which has already validated a principal
+// before it gets here. The signing key never leaves this package either way.
+//
+// aud empty takes the application's default for this user (RFC 8707). path is
+// the audit row's RequestUri, so a mint traces back to the surface that asked.
+func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, issuer, path string) (string, time.Duration, error) {
+	now := nowFunc()
+	if aud == "" {
+		aud = defaultUserAudience(ctx, db, user, clientApp)
+	}
+	signer, err := signerFor(ctx, db, clientApp, issuer)
+	if err != nil {
+		return "", 0, err
+	}
+	ttl := appTTL(clientApp)
+	natural := user.Owner + "/" + user.Name
+	id := identityOf(ctx, db, user) // the ONE user→claims resolution
+	access, err := signer.SignUserToken(id, user.Owner, aud, clientApp.ClientId, "", ttl, now)
+	if err != nil {
+		return "", 0, err
+	}
+
+	row := &schema.Token{
+		Owner:           user.Owner,
+		Application:     clientApp.Name,
+		Organization:    user.Owner,
+		User:            natural, // the row's User stays the (owner/name) key
+		TokenType:       "Bearer",
+		ExpiresIn:       int(ttl.Seconds()),
+		AccessTokenHash: hashToken(access),
+	}
+	row.Name = "iut-" + hashToken(access)[:32]
+	if err := store.PersistToken(ctx, db, row); err != nil {
+		return "", 0, err
+	}
+	recordMint(ctx, db, schema.ActionIssueUserToken, clientApp.ClientId, natural, path)
+	return access, ttl, nil
 }
 
 // keyScope reads the requested key TYPE off the request and returns the
@@ -524,6 +546,12 @@ func asTarget(ctx context.Context, db orm.DB, c *zip.Ctx, org string) (*schema.U
 // fails the operation (the credential was already issued); it is a record, not a
 // gate.
 func auditMint(ctx context.Context, db orm.DB, c *zip.Ctx, action, minterClientID, targetSub string) {
+	recordMint(ctx, db, action, minterClientID, targetSub, c.Path())
+}
+
+// recordMint is the same audit row without a request to read it from: the
+// in-process caller has no *zip.Ctx, and the row does not depend on one.
+func recordMint(ctx context.Context, db orm.DB, action, minterClientID, targetSub, path string) {
 	name, err := newOpaqueToken()
 	if err != nil {
 		return
@@ -538,7 +566,7 @@ func auditMint(ctx context.Context, db orm.DB, c *zip.Ctx, action, minterClientI
 	log.Action = action
 	log.Object = minterClientID
 	log.Method = "POST"
-	log.RequestUri = c.Path()
+	log.RequestUri = path
 	log.StatusCode = 200
 	log.IsTriggered = true
 	log.SetId(owner + "/" + name)
