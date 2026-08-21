@@ -434,23 +434,24 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 // get-memberships is the the legacy surface alias of /v1/iam/memberships whose target rides in
 // ?user=/?org=, so it belongs here for the same reason its REST twin does — the
 // membership list handler's own scoped() check is the tenant gate.
-var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects", "/v1/iam/get-organization-workspaces", "/v1/iam/service-accounts", "/v1/iam/memberships", "/v1/iam/get-memberships"}
+var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accounts", "/v1/iam/memberships", "/v1/iam/get-memberships"}
 
 // handlerAuthorizedExact are SINGLE routes (not subtrees) the handler authorizes
-// itself. get-user is here — not a prefix — because "/v1/iam/get-user" IS a prefix
-// of "/v1/iam/get-users" (the generic, Guard-authorized list): a prefix entry would
-// silently strip the Guard's read gate from get-users and let a request parameter
-// narrow rather than deny a cross-tenant list. get-user carries a `?accessKey=`
-// variant whose target is a secret key (no owner/name for the Guard to authorize),
-// so the get-user handler authorizes BOTH its variants — the owner/name read through
-// the SAME authz.Can the Guard would have applied, the key read behind CapKeyResolve.
+// itself. The key resolve qualifies because its target is a publishable pk- riding
+// in ?accessKey= — there is no owner/name for the Guard to authorize — so the
+// handler authorizes itself behind CapPublishableResolve and returns ONLY the org,
+// never a principal.
 //
-// resolve-key is here for the same reason: its target is a publishable pk- riding in
-// ?accessKey= (no owner/name for the Guard to authorize), and its handler authorizes
-// itself behind CapPublishableResolve, returning ONLY the org — never a principal.
+// It is listed EXACTLY rather than as a prefix, and that is the whole reason this
+// map is separate from the one above: "/v1/iam/keys/resolve" under a prefix rule
+// would be spelled "/v1/iam/keys", which strips the Guard's read gate off the key
+// list and hands every reader the org's keys.
+//
+// get-user used to sit here too, for a sibling reason — "/v1/iam/get-user" is a
+// prefix of "/v1/iam/get-users" — and it went with the legacy verb surface.
 var handlerAuthorizedExact = map[string]bool{
-	"/v1/iam/get-user":    true,
-	"/v1/iam/resolve-key": true,
+	"/v1/iam/resolve-key":    true,
+	"/v1/iam/keys/principal": true,
 }
 
 // pathAuthorized reports whether path is handler-authorized: an exact single-route
