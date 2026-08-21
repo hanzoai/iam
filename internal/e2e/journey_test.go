@@ -34,6 +34,7 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -324,7 +325,7 @@ func seedCert(t *testing.T, db orm.DB, key *rsa.PrivateKey) {
 	t.Helper()
 	c := orm.New[schema.Cert](db)
 	c.Owner, c.Name, c.CryptoAlgorithm = "admin", kid, "RS256"
-	c.PrivateKey = string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+	keyring.Set(c.Name, string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})))
 	c.SetId("admin/" + kid)
 	if err := c.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed cert: %v", err)

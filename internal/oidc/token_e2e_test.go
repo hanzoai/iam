@@ -16,6 +16,7 @@ import (
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -42,12 +43,12 @@ func seedAppWithCert(t *testing.T, db orm.DB, key *rsa.PrivateKey) *schema.Appli
 	t.Helper()
 	ctx := context.Background()
 
-	// Cert row with a PEM RSA private key.
+	// Cert row: identity only. The PEM is deployment-supplied, held in memory.
 	c := orm.New[schema.Cert](db)
 	c.Owner = "admin"
 	c.Name = "cert-hanzo"
 	c.CryptoAlgorithm = "RS256"
-	c.PrivateKey = rsaKeyToPEM(t, key)
+	keyring.Set(c.Name, rsaKeyToPEM(t, key))
 	c.SetId("admin/cert-hanzo")
 	if err := c.CreateCtx(ctx); err != nil {
 		t.Fatalf("seed cert: %v", err)

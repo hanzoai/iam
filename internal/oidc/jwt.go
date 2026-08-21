@@ -24,8 +24,12 @@ import (
 // ML-DSA-65 cert signs MLDSA65 (mldsa.go, behind the same jwt.SigningMethod
 // seam). The classical path is the load-bearing interop path — every existing
 // verifier reads the RS256 keys published in the JWKS; ML-DSA is additive and
-// inert until an ML-DSA Cert is configured. Keys come from the Cert entity
-// (KMS-backed); tests inject an ephemeral in-memory key through the same path.
+// inert until an ML-DSA Cert is configured.
+//
+// A Signer's key arrives on the Cert the store hands it. The Cert ROW carries
+// only the key's identity — the `kid`, the algorithm; the private half is not
+// stored and is filled in on load, in memory, from the material the deployment
+// mounts (internal/keyring).
 
 // Claims is the iam token claim set: the standard registered claims plus the
 // Hanzo first-class claims the SDK and downstream validators read. owner and
@@ -211,8 +215,8 @@ func NewRSASignerFromCert(cert *schema.Cert, issuer string) (*Signer, error) {
 	return &Signer{method: jwt.SigningMethodRS256, key: key, kid: cert.Name, alg: "RS256", issuer: issuer}, nil
 }
 
-// NewRSASigner builds an RS256 Signer directly from an RSA key (tests and, in
-// dev, an ephemeral key when no Cert is configured).
+// NewRSASigner builds an RS256 Signer directly from an RSA key, for a test that
+// wants to sign with a key it holds rather than one a Cert names.
 func NewRSASigner(key *rsa.PrivateKey, kid, issuer string) *Signer {
 	return &Signer{method: jwt.SigningMethodRS256, key: key, kid: kid, alg: "RS256", issuer: issuer}
 }

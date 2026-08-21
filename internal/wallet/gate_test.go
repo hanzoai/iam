@@ -18,6 +18,7 @@ import (
 	"github.com/hanzoai/orm"
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/internal/testhttp"
@@ -38,9 +39,9 @@ func signingCert(t *testing.T, db orm.DB) {
 	}
 	c := orm.New[schema.Cert](db)
 	c.Owner, c.Name, c.CryptoAlgorithm = "admin", "cert-session", "RS256"
-	c.PrivateKey = string(pem.EncodeToMemory(&pem.Block{
+	keyring.Set(c.Name, string(pem.EncodeToMemory(&pem.Block{
 		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k),
-	}))
+	})))
 	c.SetId("admin/cert-session")
 	if err := c.CreateCtx(tctx()); err != nil {
 		t.Fatalf("seed cert: %v", err)

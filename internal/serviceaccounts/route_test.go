@@ -33,6 +33,7 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -212,7 +213,7 @@ func seedCert(t *testing.T, db orm.DB, owner, name, privPEM string) {
 	c := orm.New[schema.Cert](db)
 	c.Owner, c.Name = owner, name
 	c.CryptoAlgorithm = "RS256"
-	c.PrivateKey = privPEM
+	keyring.Set(name, privPEM) // the deployment supplies key material; the row never carries it
 	c.SetId(owner + "/" + name)
 	if err := c.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed cert: %v", err)

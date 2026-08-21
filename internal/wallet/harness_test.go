@@ -26,6 +26,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/pkg/schema"
 
@@ -339,7 +340,7 @@ func bearer(t *testing.T, db orm.DB, a *schema.Application, org, name string) (*
 	c.Owner = "admin" // a reserved signing-cert owner — the trust boundary
 	c.Name = "cert-wallet"
 	c.CryptoAlgorithm = "RS256"
-	c.PrivateKey = string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der}))
+	keyring.Set(c.Name, string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})))
 	c.SetId("admin/cert-wallet")
 	if err := c.CreateCtx(tctx()); err != nil {
 		t.Fatalf("seed cert: %v", err)
