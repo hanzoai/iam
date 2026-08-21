@@ -5,7 +5,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// Token is an issued OAuth2/OIDC token record (v1 the legacy surface `token`, v2 kind
+// Token is an issued OAuth2/OIDC token record (v1 `token`, v2 kind
 // "tokens"). One row is the authorization-server's persistent memory of a
 // single grant: the short-lived authorization code and its PKCE challenge, the
 // minted access and refresh tokens (stored verbatim for reissue plus as salted
