@@ -44,17 +44,13 @@ import (
 
 // Path is the REST verb face: GET lists by ?user= or ?org=, POST ensures one.
 //
-// PathGet/PathAdd/PathDelete are the legacy VERB spellings the cloud team-invite
-// path (clients/team/invite.go) hard-codes — get-memberships / add-membership /
-// delete-membership. They are aliases, not a second implementation: get/add reuse
-// the very handlers the REST face registers, and delete is the one handler REST
-// does not expose. So a backend swap serves the cloud verbs with the SAME store and
-// the SAME authz gates as the native REST surface.
+// DELETE is the newest of the three and closed the gap that kept the verb
+// spellings alive: revoke was the one operation this address did not carry, so
+// `delete-membership` was not a second name for something — it was the only
+// name for it, and retiring the other two while it stood would have left one
+// verb behind for a reason nobody could read off the code.
 const (
-	Path       = "/v1/iam/memberships"
-	PathGet    = "/v1/iam/get-memberships"
-	PathAdd    = "/v1/iam/add-membership"
-	PathDelete = "/v1/iam/delete-membership"
+	Path = "/v1/iam/memberships"
 )
 
 // unauthorized is v1's refusal message, verbatim.
@@ -89,11 +85,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithTags("memberships"))
 	app.Post(Path, ensure(db))
 
-	zip.Get[lookup, httpx.Answer](app, PathGet, list(db),
-		zip.WithStatus(200, 400),
-		zip.WithTags("memberships"))
-	app.Post(PathAdd, ensure(db))
-	app.Post(PathDelete, remove(db))
+	app.Delete(Path, remove(db))
 }
 
 // lookup is the list request: exactly one of the identity whose organizations are

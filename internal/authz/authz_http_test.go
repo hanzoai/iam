@@ -348,9 +348,9 @@ func user(owner, name string) map[string]any {
 func TestGuard_NeverAuthenticatesAPreflight(t *testing.T) {
 	h := newHarness(t)
 	for _, path := range []string{
-		"/v1/iam/get-organizations",
-		"/v1/iam/get-organization",
-		"/v1/iam/get-users",
+		"/v1/iam/organizations",
+		"/v1/iam/organizations/get",
+		"/v1/iam/users",
 	} {
 		if got := h.do(t, "OPTIONS", path, "", nil); got == 401 {
 			t.Errorf("OPTIONS %s answered 401: a preflight has no credentials to "+
