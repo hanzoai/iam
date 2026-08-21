@@ -7,8 +7,22 @@ import (
 )
 
 func init() {
+	zip.Describe("DELETE /v1/iam/webauthn-credentials/:owner/:name", zip.Doc{
+		Description: "Removes a passkey or security key — what you call when\na device is lost. Make sure the person has another way to sign in first.\n\nA credential that is already gone answers \"nothing changed\" rather than an\nerror, so the call is safe to repeat.",
+		Fields: map[string]string{
+			"Model[github.com/hanzoai/iam/pkg/schema.WebauthnCredential].id": "Persisted fields",
+			"WebauthnCredential.attestationFormat":                           "AttestationFormat is the statement format the authenticator attested in\n(\"packed\", \"apple\", \"none\", …), which is a DIFFERENT value from the\nattestation type above. The library reads it back when resolving the FIDO\nAppID extension, so a row that dropped it would round-trip a credential the\nverifier no longer recognises as the one it stored.",
+		},
+	})
 	zip.Describe("GET /v1/iam/webauthn-credentials", zip.Doc{
 		Description: "Returns the passkeys and security keys registered to\none person, newest first — which device each lives on and when it was\nregistered.\n\nYours by default. Name somebody else and you get them only if you already\nadminister their account, which is the same authority that governs reading\ntheir user record — so this list can never show more people than the surface\nbeside it already does.\n\nThere is no organization-wide list, by design. Scoping to the ORG would hand an\norg admin every member's credential rows in one answer and a SuperAdmin every\ntenant's, while a plain member could not read even their own (an unnamed target\nfails the Guard's tenant rule). One scope answers both halves cleanly: the\nanswer is a person's, and the caller is that person unless they say otherwise\nand may.",
+		Fields: map[string]string{
+			"Model[github.com/hanzoai/iam/pkg/schema.WebauthnCredential].id": "Persisted fields",
+			"WebauthnCredential.attestationFormat":                           "AttestationFormat is the statement format the authenticator attested in\n(\"packed\", \"apple\", \"none\", …), which is a DIFFERENT value from the\nattestation type above. The library reads it back when resolving the FIDO\nAppID extension, so a row that dropped it would round-trip a credential the\nverifier no longer recognises as the one it stored.",
+		},
+	})
+	zip.Describe("GET /v1/iam/webauthn-credentials/:owner/:name", zip.Doc{
+		Description: "Returns one passkey or security key: whose it is, what\ndevice it lives on, and when it was registered.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.WebauthnCredential].id": "Persisted fields",
 			"WebauthnCredential.attestationFormat":                           "AttestationFormat is the statement format the authenticator attested in\n(\"packed\", \"apple\", \"none\", …), which is a DIFFERENT value from the\nattestation type above. The library reads it back when resolving the FIDO\nAppID extension, so a row that dropped it would round-trip a credential the\nverifier no longer recognises as the one it stored.",
@@ -21,21 +35,7 @@ func init() {
 			"WebauthnCredential.attestationFormat":                           "AttestationFormat is the statement format the authenticator attested in\n(\"packed\", \"apple\", \"none\", …), which is a DIFFERENT value from the\nattestation type above. The library reads it back when resolving the FIDO\nAppID extension, so a row that dropped it would round-trip a credential the\nverifier no longer recognises as the one it stored.",
 		},
 	})
-	zip.Describe("POST /v1/iam/webauthn-credentials/delete", zip.Doc{
-		Description: "Removes a passkey or security key — what you call when\na device is lost. Make sure the person has another way to sign in first.\n\nA credential that is already gone answers \"nothing changed\" rather than an\nerror, so the call is safe to repeat.",
-		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/pkg/schema.WebauthnCredential].id": "Persisted fields",
-			"WebauthnCredential.attestationFormat":                           "AttestationFormat is the statement format the authenticator attested in\n(\"packed\", \"apple\", \"none\", …), which is a DIFFERENT value from the\nattestation type above. The library reads it back when resolving the FIDO\nAppID extension, so a row that dropped it would round-trip a credential the\nverifier no longer recognises as the one it stored.",
-		},
-	})
-	zip.Describe("POST /v1/iam/webauthn-credentials/get", zip.Doc{
-		Description: "Returns one passkey or security key: whose it is, what\ndevice it lives on, and when it was registered.",
-		Fields: map[string]string{
-			"Model[github.com/hanzoai/iam/pkg/schema.WebauthnCredential].id": "Persisted fields",
-			"WebauthnCredential.attestationFormat":                           "AttestationFormat is the statement format the authenticator attested in\n(\"packed\", \"apple\", \"none\", …), which is a DIFFERENT value from the\nattestation type above. The library reads it back when resolving the FIDO\nAppID extension, so a row that dropped it would round-trip a credential the\nverifier no longer recognises as the one it stored.",
-		},
-	})
-	zip.Describe("POST /v1/iam/webauthn-credentials/update", zip.Doc{
+	zip.Describe("PUT /v1/iam/webauthn-credentials/:owner/:name", zip.Doc{
 		Description: "Renames a registered passkey or security key, so a\nperson can tell their devices apart.\n\nA credential that is not there answers \"nothing changed\" rather than an error,\nso the call is safe to repeat.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.WebauthnCredential].id": "Persisted fields",

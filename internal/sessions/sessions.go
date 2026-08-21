@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package sessions serves the IAM v2 session resource as typed zip operations
-// over hanzoai/orm. Every operation is a zip.Post[In, Out] typed handler, so a
-// single registration projects three ways at once — a REST route, an OpenAPI
-// 3.1 operation, and an MCP tool.
+// over hanzoai/orm. Each operation is one typed handler, so a single
+// registration projects three ways at once — a REST route, an OpenAPI 3.1
+// operation, and an MCP tool.
 //
-// zip's typed handlers source their input from the request body (REST) or the
-// tool-call arguments (MCP); the GET projection carries no body, so every
-// operation that needs the (owner, name, application) key travels as a POST
-// with that key on the typed In. Owner-scoping is therefore a property of the
-// payload, never of a path parameter.
+// A session's natural key is the triple (owner, name, application), the same one
+// the orm id joins into "owner/name/application", and the URL carries it whole:
+// an item lives at /v1/iam/sessions/:owner/:name/:application and the method
+// says what to do with it. zip binds the path above the body, so the URL is the
+// addressing authority — a payload cannot name a session other than the one the
+// router matched.
 package sessions
 
 import (
@@ -37,15 +38,15 @@ type Sessions struct{ db orm.DB }
 // Route registers the session operations on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Sessions{db: db}
-	zip.Post(app, "/v1/iam/sessions/list", h.List,
+	zip.Get(app, "/v1/iam/sessions", h.List,
 		zip.WithTags("sessions"), zip.WithOperationID("listSessions"))
-	zip.Post(app, "/v1/iam/sessions/get", h.Get,
-		zip.WithTags("sessions"), zip.WithOperationID("getSession"))
-	zip.Post(app, "/v1/iam/sessions/create", h.Create,
+	zip.Post(app, "/v1/iam/sessions", h.Create,
 		zip.WithTags("sessions"), zip.WithOperationID("createSession"))
-	zip.Post(app, "/v1/iam/sessions/update", h.Update,
+	zip.Get(app, "/v1/iam/sessions/:owner/:name/:application", h.Get,
+		zip.WithTags("sessions"), zip.WithOperationID("getSession"))
+	zip.Put(app, "/v1/iam/sessions/:owner/:name/:application", h.Update,
 		zip.WithTags("sessions"), zip.WithOperationID("updateSession"))
-	zip.Post(app, "/v1/iam/sessions/delete", h.Delete,
+	zip.Delete(app, "/v1/iam/sessions/:owner/:name/:application", h.Delete,
 		zip.WithTags("sessions"), zip.WithOperationID("deleteSession"))
 }
 

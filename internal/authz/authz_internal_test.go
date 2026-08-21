@@ -89,10 +89,9 @@ func TestSuperIsAdminOrgOnly(t *testing.T) {
 
 func TestEntityOf(t *testing.T) {
 	cases := map[string]string{
-		"/v1/iam/users":        "users",
-		"/v1/iam/users/get":    "users",
-		"/v1/iam/users/update": "users",
-		"/v1/iam/certs/delete": "certs",
+		"/v1/iam/users":                  "users",
+		"/v1/iam/users/hanzo/alice":      "users",
+		"/v1/iam/certs/admin/cert-hanzo": "certs",
 		// Singular natives fold to the plural the policy is written in. It read
 		// "application" until that split the policy: the legacy verb folded to
 		// "applications" and matched the app self-read clause, while this native

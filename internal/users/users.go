@@ -37,17 +37,25 @@ func New(db orm.DB) *API { return &API{db: db} }
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
-// Route registers the typed user CRUD handlers on app. Reads use zip.Get and
-// writes use zip.Post; both project the same transport-agnostic handler to REST
-// and MCP, so the (owner, name) identity in each typed request is honored on
-// every transport.
+// Route registers the typed user CRUD handlers on app. The method carries the
+// verb and the path carries the (owner, name) key, so a URL segment addresses one
+// user: zip binds path above body, and Get and Delete take that key directly. The
+// same transport-agnostic handlers project to REST and MCP alike, so that identity
+// is honored on every transport.
+//
+// Update is the exception, structurally: UpdateInput nests the record under
+// `user`, and zip binds a URL segment onto a TOP-LEVEL field only — it reaches
+// through embedding, not through a named struct field. A ":owner/:name" here
+// would bind nothing and leave the body the sole target, which is the one thing
+// the path form exists to prevent. The key travels in the body until UpdateInput
+// carries it at top level.
 func Route(app *zip.App, db orm.DB) {
 	a := &API{db: db}
 	zip.Post(app, "/v1/iam/users", a.Create, zip.WithTags("users"))
 	zip.Get(app, "/v1/iam/users", a.List, zip.WithTags("users"))
-	zip.Get(app, "/v1/iam/users/get", a.Get, zip.WithTags("users"))
-	zip.Post(app, "/v1/iam/users/update", a.Update, zip.WithTags("users"))
-	zip.Post(app, "/v1/iam/users/delete", a.Delete, zip.WithTags("users"))
+	zip.Get(app, "/v1/iam/users/:owner/:name", a.Get, zip.WithTags("users"))
+	zip.Put(app, "/v1/iam/users/:owner/:name", a.Update, zip.WithTags("users"))
+	zip.Delete(app, "/v1/iam/users/:owner/:name", a.Delete, zip.WithTags("users"))
 }
 
 // Ref identifies one user by its natural key.
@@ -106,6 +114,14 @@ type CreateInput struct {
 // UpdateInput carries the desired user state plus an optional new plaintext
 // password. An empty Password leaves the stored digest untouched.
 type UpdateInput struct {
+	// The target rides in the URL: PUT /v1/iam/users/acme/bob updates acme/bob
+	// whatever the body claims, which is what keeps the authorizer honest — it
+	// runs on this same decoded value, so the target authorized is the target the
+	// URL named and a body cannot smuggle a different one past it. json:"-" keeps
+	// them out of the request body, so the shape a caller sends is unchanged.
+	Owner string `json:"-" url:"owner"`
+	Name  string `json:"-" url:"name"`
+
 	User     schema.User `json:"user"`
 	Password string      `json:"password,omitempty"`
 	// Admin raises or lowers the org-admin bit. Nil means "leave it as stored",
@@ -143,14 +159,32 @@ func (in *CreateInput) AuthzTarget() (owner, name string) {
 // AuthzTarget reports the (owner, name) this update binds, from the nested record
 // — the same values Update writes, so authorization and execution never diverge.
 func (in *UpdateInput) AuthzTarget() (owner, name string) {
-	return strings.TrimSpace(in.User.Owner), strings.TrimSpace(in.User.Name)
+	// The URL wins. The body's copy is descriptive — it is what the caller says
+	// the record IS, not which record is being written — so it is only consulted
+	// where the address supplied nothing.
+	owner, name = strings.TrimSpace(in.Owner), strings.TrimSpace(in.Name)
+	if owner == "" {
+		owner = strings.TrimSpace(in.User.Owner)
+	}
+	if name == "" {
+		name = strings.TrimSpace(in.User.Name)
+	}
+	return owner, name
 }
 
 // ListInput is an owner-scoped, paged listing request.
 type ListInput struct {
-	Owner  string `json:"owner" validate:"required"`
-	Limit  int    `json:"limit,omitempty"`
-	Offset int    `json:"offset,omitempty"`
+	Owner string `json:"owner" validate:"required"`
+	// Email narrows the page to the accounts carrying one address. Looking a
+	// person up by their address is a QUERY over the collection, not an item
+	// read: an address is not the natural key, two rows in one org can carry
+	// one, and a caller that gets a page SEES both — where a single-item read
+	// would have to choose, and choosing is how somebody joins a team under a
+	// colleague's identity.
+	Email string `json:"email,omitempty"`
+
+	Limit  int `json:"limit,omitempty"`
+	Offset int `json:"offset,omitempty"`
 }
 
 // ListOutput is a page of redacted users plus the owner-scoped total.
@@ -314,12 +348,21 @@ func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 	if strings.TrimSpace(in.Owner) == "" {
 		return nil, zip.ErrBadRequest("owner is required")
 	}
-	total, err := orm.TypedQuery[schema.User](a.db).Filter("Owner=", in.Owner).Count(ctx)
+	// Both the count and the page go through the SAME narrowing, or a filtered
+	// read answers "1 of 40" and a caller pages forever through rows it filtered out.
+	narrow := func() *orm.ModelQuery[schema.User] {
+		q := orm.TypedQuery[schema.User](a.db).Filter("Owner=", in.Owner)
+		if email := strings.TrimSpace(in.Email); email != "" {
+			q = q.Filter("Email=", email)
+		}
+		return q
+	}
+	total, err := narrow().Count(ctx)
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 
-	q := orm.TypedQuery[schema.User](a.db).Filter("Owner=", in.Owner).Order("Name")
+	q := narrow().Order("Name")
 	if in.Limit > 0 {
 		q = q.Limit(in.Limit)
 	}

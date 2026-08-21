@@ -82,7 +82,7 @@ func TestPasswordGrant_reservedOrgRequested_refused(t *testing.T) {
 			resp, tok := postToken(t, app, url.Values{
 				"grant_type":    {"password"},
 				"client_id":     {"zoo-console"},
-				"client_secret": {"top-secret"},  // correct: the refusal is the org gate
+				"client_secret": {"top-secret"}, // correct: the refusal is the org gate
 				"organization":  {org},
 				"username":      {"z"},
 				"password":      {"correct horse"}, // correct: likewise

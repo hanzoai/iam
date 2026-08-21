@@ -345,6 +345,18 @@ var (
 // SAME function the Guard authorizes with: one extraction, so a handler can
 // never address a row the Guard did not authorize.
 func ReadTarget(c *zip.Ctx) (owner, name string) {
+	// THE PATH FIRST, because the path is the addressing authority. An item lives
+	// at /v1/iam/<entity>/{owner}/{name}, so that is where its identity is; the
+	// Guard has to read the target the same way the handler binds it, or it
+	// authorizes one row while the handler writes another.
+	//
+	// This is the half a rename forgets. When the address moved from a query
+	// (?owner=&name=) into the path, everything downstream kept working and the
+	// Guard alone went blind: it read two empty strings, built an entity with no
+	// owner, and fail-closed refused a caller reading its own record.
+	if o, n := c.Param("owner"), c.Param("name"); o != "" {
+		return o, n
+	}
 	owner, name = c.Query("owner"), c.Query("name")
 	if owner == "" {
 		if id := c.Query("id"); id != "" {
