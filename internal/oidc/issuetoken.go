@@ -376,7 +376,10 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 	now := nowFunc()
 
 	// A reserved-org key is not an operator key; it gets no reach through this arm.
-	if store.IsSigningCertOwner(key.Owner) || store.IsReservedOrg(key.Owner) {
+	// ONE predicate: authz.IsReservedOrg composes IsSigningOwner, so the signing
+	// owner this used to name separately is covered by it — and a newly-reserved
+	// signing owner is covered for free rather than needing a second edit here.
+	if policy.IsReservedOrg(key.Owner) {
 		return mintErr(c, 403, "the key may not act")
 	}
 
