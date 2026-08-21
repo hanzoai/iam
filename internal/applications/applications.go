@@ -121,10 +121,6 @@ func Route(app *zip.App, db orm.DB) {
 	zip.Post(app, "/v1/iam/applications/update", Update(db), zip.WithTags("applications"))
 	zip.Post(app, "/v1/iam/applications/delete", deleteApplication(db), zip.WithTags("applications"))
 
-	zip.Get(app, "/v1/iam/application", getApplication(db), zip.WithTags("compat"))
-	zip.Post(app, "/v1/iam/application", Create(db), zip.WithTags("compat"))
-	zip.Put(app, "/v1/iam/application", Update(db), zip.WithTags("compat"))
-	zip.Delete(app, "/v1/iam/application", deleteApplication(db), zip.WithTags("compat"))
 }
 
 // listApplications returns the applications in one organization, newest first —

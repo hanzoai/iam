@@ -173,7 +173,7 @@ func TestScope_ForeignOrgIsRefusedNotSilentlyReinterpreted(t *testing.T) {
 
 	// Own org: unchanged, and it is what makes the foreign case meaningful —
 	// there ARE hanzo rows to be misattributed.
-	own := h.send(t, "GET", "/v1/iam/get-users?owner=hanzo", auth, nil)
+	own := h.send(t, "GET", "/v1/iam/users?owner=hanzo", auth, nil)
 	if own.status != 200 {
 		t.Fatalf("own-org listing = %d, want 200 (unchanged): %s", own.status, own.body)
 	}
@@ -183,7 +183,7 @@ func TestScope_ForeignOrgIsRefusedNotSilentlyReinterpreted(t *testing.T) {
 
 	for _, org := range []string{foreignRealOrg, fabricatedOrg} {
 		t.Run(org, func(t *testing.T) {
-			got := h.send(t, "GET", "/v1/iam/get-users?owner="+org, auth, nil)
+			got := h.send(t, "GET", "/v1/iam/users?owner="+org, auth, nil)
 
 			// (1) The refusal must be EXPLICIT.
 			if got.status != 403 {
@@ -215,9 +215,9 @@ func TestScope_ForeignAndFabricatedOrgsAreIndistinguishable(t *testing.T) {
 	auth := asApp("hanzo-console", "s3cret")
 
 	for _, path := range []string{
-		"/v1/iam/get-users?owner=",
-		"/v1/iam/get-organizations?owner=",
-		"/v1/iam/get-organization-projects?organization=",
+		"/v1/iam/users?owner=",
+		"/v1/iam/organizations?owner=",
+		"/v1/iam/projects?organization=",
 		"/v1/iam/scim/v2/Users?owner=",
 	} {
 		t.Run(path, func(t *testing.T) {
@@ -243,7 +243,7 @@ func TestScope_SuperAdminCrossOrgReadIsUnchanged(t *testing.T) {
 	seedScopeFixture(t, h)
 	root := asUser(h.token(t, "admin/root"))
 
-	got := h.send(t, "GET", "/v1/iam/get-users?owner="+foreignRealOrg, root, nil)
+	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg, root, nil)
 	if got.status != 200 {
 		t.Fatalf("SuperAdmin cross-org listing = %d, want 200: %s", got.status, got.body)
 	}
@@ -266,7 +266,7 @@ func TestScope_OwnOrgReadIsUnchangedForAHuman(t *testing.T) {
 	seedScopeFixture(t, h)
 	boss := asUser(h.token(t, "hanzo/boss"))
 
-	got := h.send(t, "GET", "/v1/iam/get-organization-projects?organization=hanzo", boss, nil)
+	got := h.send(t, "GET", "/v1/iam/projects?organization=hanzo", boss, nil)
 	if got.status != 200 {
 		t.Fatalf("own-org project list = %d, want 200 (unchanged): %s", got.status, got.body)
 	}
@@ -292,8 +292,8 @@ func TestScope_HandlerAuthorizedReadsAreNotSilentlyRewritten(t *testing.T) {
 	boss := asUser(h.token(t, "hanzo/boss"))
 
 	for _, path := range []string{
-		"/v1/iam/get-organization-projects?organization=" + foreignRealOrg,
-		"/v1/iam/get-organization-workspaces?organization=" + foreignRealOrg,
+		"/v1/iam/projects?organization=" + foreignRealOrg,
+		"/v1/iam/workspaces?organization=" + foreignRealOrg,
 	} {
 		t.Run(path, func(t *testing.T) {
 			got := h.send(t, "GET", path, boss, nil)
@@ -373,8 +373,8 @@ func TestScope_GetUsersAndGetOrganizationAgreeForAnUngrantedPrincipal(t *testing
 	boss := asUser(h.token(t, "hanzo/boss")) // org-admin of hanzo, no capability, not super
 
 	for _, verb := range []struct{ name, pattern string }{
-		{"get-users", "/v1/iam/get-users?owner=%s"},
-		{"get-organization", "/v1/iam/get-organization?id=admin%%2F%s"},
+		{"get-users", "/v1/iam/users?owner=%s"},
+		{"get-organization", "/v1/iam/organizations/get?id=admin%%2F%s"},
 	} {
 		t.Run(verb.name, func(t *testing.T) {
 			real := h.send(t, "GET", fmt.Sprintf(verb.pattern, foreignRealOrg), boss, nil)
@@ -401,7 +401,7 @@ func TestScope_AGrantHonoursTheOrgItNamesAndNeverSubstitutes(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
 
-	got := h.send(t, "GET", "/v1/iam/get-organization?id=admin%2F"+foreignRealOrg,
+	got := h.send(t, "GET", "/v1/iam/organizations/get?id=admin%2F"+foreignRealOrg,
 		asApp("hanzo-console", "s3cret"), nil)
 	if got.status != 200 {
 		t.Fatalf("CapOrgAdmin registry read = %d, want 200 — onboarding reads Founder "+
@@ -429,7 +429,7 @@ func TestScope_UnstatedOwnerStillMeansOwnOrg(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
 
-	got := h.send(t, "GET", "/v1/iam/get-users", asApp("hanzo-console", "s3cret"), nil)
+	got := h.send(t, "GET", "/v1/iam/users", asApp("hanzo-console", "s3cret"), nil)
 	if got.status != 200 {
 		t.Fatalf("get-users with no owner = %d, want 200 (unchanged): %s", got.status, got.body)
 	}
@@ -467,8 +467,8 @@ func TestScopeRead_AnOrgYouBelongToOpens(t *testing.T) {
 	crossorg := asUser(h.token(t, "hanzo/crossorg"))
 
 	for _, path := range []string{
-		"/v1/iam/get-organization-projects?organization=" + foreignRealOrg,
-		"/v1/iam/get-organization-workspaces?organization=" + foreignRealOrg,
+		"/v1/iam/projects?organization=" + foreignRealOrg,
+		"/v1/iam/workspaces?organization=" + foreignRealOrg,
 	} {
 		t.Run(path, func(t *testing.T) {
 			got := h.send(t, "GET", path, crossorg, nil)
@@ -498,7 +498,7 @@ func TestScopeRead_AStrangerIsStillRefused(t *testing.T) {
 	seedScopeFixture(t, h)
 	boss := asUser(h.token(t, "hanzo/boss")) // no membership anywhere but hanzo
 
-	got := h.send(t, "GET", "/v1/iam/get-organization-projects?organization="+foreignRealOrg, boss, nil)
+	got := h.send(t, "GET", "/v1/iam/projects?organization="+foreignRealOrg, boss, nil)
 	if got.status != 403 {
 		t.Fatalf("a non-member read of %s = %d, want 403: %s", foreignRealOrg, got.status, got.body)
 	}
@@ -521,7 +521,7 @@ func TestSuper_ReservedMembershipReachesEveryTenant(t *testing.T) {
 	seedMembership(t, h.db, "hanzo/operator", reservedOrg, "admin")
 	operator := asUser(h.token(t, "hanzo/operator"))
 
-	got := h.send(t, "GET", "/v1/iam/get-users?owner="+foreignRealOrg, operator, nil)
+	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg, operator, nil)
 	if got.status != 200 {
 		t.Fatalf("GET get-users?owner=%s as a member of %q = %d, want 200 — the reserved "+
 			"org is the one cross-tenant scope and its membership IS the grant: %s",
@@ -552,7 +552,7 @@ func TestSuper_OrdinaryMembershipIsNotSudo(t *testing.T) {
 	seedMembership(t, h.db, "hanzo/member", foreignRealOrg, "admin")
 	member := asUser(h.token(t, "hanzo/member"))
 
-	got := h.send(t, "GET", "/v1/iam/get-users?owner="+foreignRealOrg, member, nil)
+	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg, member, nil)
 	if got.status != 403 {
 		t.Fatalf("GET get-users?owner=%s as an ADMIN of %s = %d, want 403 — administering a "+
 			"tenant is not platform sudo, and users is the strict clause: %s",
