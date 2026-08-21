@@ -228,41 +228,6 @@ func errForeignOrg(p *Principal) error {
 // which is how a refusal gets logged as a success.
 func Deny(c *zip.Ctx, err error) error { return refuse(c, http.StatusForbidden, err.Error()) }
 
-// ScopeFor resolves the owner a compat READ should query — the same decision as
-// Scope, except that a self-read addresses its own owner verbatim.
-//
-// Scope pins a non-SuperAdmin to p.Org, which for an app principal is the tenant it
-// SERVES (hanzo), not the org that OWNS its row (admin). So a confidential client
-// authorized by the Guard to read admin/hanzo-cloud then had the query rewritten to
-// hanzo/hanzo-cloud and got "the entity does not exist" — authorized and still
-// unable to read itself, a 200 that is functionally the 403 it replaced.
-//
-// Rather than loosen Scope (whose binding IS the tenant gate on the handler-authorized
-// paths — SCIM, service-accounts, memberships), the ONE self-read clause is asked
-// again here, through the same authorize() it is defined in. There is no second copy
-// of the rule: if authorize would admit this exact read, the owner it admitted is the
-// owner we query; otherwise Scope decides, and Scope now REFUSES a foreign owner
-// rather than rewriting it. That is the honour-or-refuse rule reaching this path
-// too: a grant honours the org it names and answers with THAT org's row, correctly
-// attributed; everything else is refused. Neither branch can hand back a row the
-// request did not ask for.
-//
-// The grant is honoured WHOLE. An earlier shape re-narrowed the honoured set to
-// supers and app self-reads after authorize() had already admitted the read —
-// a second copy of the policy, and a stale one: it predated the organizations
-// exception (a tenant's own org row lives under the reserved admin owner), so a
-// member's GET of admin/<their org> was admitted by the policy and then refused
-// by this re-narrowing. The native REST twin, authorized by the Guard alone,
-// answered 200 for the same principal and row — one policy, two answers. If
-// authorize() says yes to this exact (owner, name) read, that IS the decision.
-func ScopeFor(ctx context.Context, path, owner, name string) (string, error) {
-	if p, ok := From(ctx); ok && owner != "" &&
-		p.CanEntity(policy.Read, policy.Entity{Kind: entityOf(path), Owner: owner, Name: name}, Env) {
-		return owner, nil
-	}
-	return Scope(ctx, owner)
-}
-
 // Can reports whether the ctx principal may perform `method` on the entity's
 // (owner, name) — the SAME policy the op-invoke seam (Authorize) applies, exposed
 // for a RAW handler that does not pass through app.Authorize (e.g. SCIM, whose
@@ -330,21 +295,17 @@ var (
 	errRevoked   = errors.New("authz: principal is forbidden or deleted")
 )
 
-// ReadTarget extracts the (owner, name) a GET addresses, from the query string.
-// A native typed read files them as `?owner=&name=`; the the legacy surface compat verbs
-// (get-user, get-organization, …) file them as `?id=<owner>/<name>`. Explicit
+// readTarget extracts the (owner, name) a GET addresses. It reads the path
+// first, then `?owner=&name=`, then splits `?id=<owner>/<name>`. Explicit
 // owner/name win; the id split is a fallback only when owner is absent, so this
 // can only make an id-based read's authorization MORE precise than the empty
-// target it resolves to today (which fail-closed denies every non-super). It
-// never widens: the tenant rule still pins owner to the principal's org, and the
-// handler independently re-scopes the query owner through Scope, so a request
-// that spells one owner in `?owner` and another in `?id` cannot read across
-// tenants — the authorized owner and the queried owner are both pinned.
-//
-// It is exported so the compat read aliases resolve their target through the
-// SAME function the Guard authorizes with: one extraction, so a handler can
-// never address a row the Guard did not authorize.
-func ReadTarget(c *zip.Ctx) (owner, name string) {
+// target it would otherwise resolve to (which fail-closed denies every
+// non-super). It never widens: the tenant rule still pins owner to the
+// principal's org, and the handler independently re-scopes the query owner
+// through Scope, so a request that spells one owner in `?owner` and another in
+// `?id` cannot read across tenants — the authorized owner and the queried owner
+// are both pinned.
+func readTarget(c *zip.Ctx) (owner, name string) {
 	// THE PATH FIRST, because the path is the addressing authority. An item lives
 	// at /v1/iam/<entity>/{owner}/{name}, so that is where its identity is; the
 	// Guard has to read the target the same way the handler binds it, or it
@@ -386,28 +347,20 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 // authz.Scope. SCIM (RFC 7644, /v1/iam/scim/v2/Users/{id}) is path-targeted, so it
 // belongs here. This is the read analogue of a write deferring to the op-invoke
 // seam — the target is authorized where it is bound, not guessed from the query.
-// get-organization-projects (and its workspace tier, get-organization-workspaces)
-// is the the legacy surface read verb whose target rides in ?organization= (the
-// ScopeSwitcher's project/workspace list), not ?owner=/?id=/the path, so the Guard
-// cannot pre-authorize it generically; the handler scopes it through authz.Scope
-// instead (the read analogue of SCIM's path-targeted authorization).
-// get-memberships is the the legacy surface alias of /v1/iam/memberships whose target rides in
-// ?user=/?org=, so it belongs here for the same reason its REST twin does — the
-// membership list handler's own scoped() check is the tenant gate.
-var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organization-projects", "/v1/iam/get-organization-workspaces", "/v1/iam/service-accounts", "/v1/iam/memberships", "/v1/iam/get-memberships"}
+// memberships is here because its target rides in ?user=/?org= rather than
+// ?owner=/?id=/the path, so the Guard cannot pre-authorize it generically — the
+// list handler's own scoped() check is the tenant gate.
+var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accounts", "/v1/iam/memberships"}
 
 // handlerAuthorizedExact are SINGLE routes (not subtrees) the handler authorizes
-// itself. get-user is here — not a prefix — because "/v1/iam/get-user" IS a prefix
-// of "/v1/iam/get-users" (the generic, Guard-authorized list): a prefix entry would
-// silently strip the Guard's read gate from get-users and let a request parameter
-// narrow rather than deny a cross-tenant list. get-user carries a `?accessKey=`
-// variant whose target is a secret key (no owner/name for the Guard to authorize),
-// so the get-user handler authorizes BOTH its variants — the owner/name read through
-// the SAME authz.Can the Guard would have applied, the key read behind CapKeyResolve.
+// itself.
 //
-// resolve-key is here for the same reason: its target is a publishable pk- riding in
-// ?accessKey= (no owner/name for the Guard to authorize), and its handler authorizes
-// itself behind CapPublishableResolve, returning ONLY the org — never a principal.
+// The two key doors are here because their target is an opaque key riding in
+// ?accessKey=, with no owner/name for the Guard to authorize. Each authorizes
+// itself behind its own capability: keys/principal behind CapKeyResolve, and
+// keys/org behind CapPublishableResolve, which returns ONLY the org and never a
+// principal. They are exact rather than a prefix so neither can reach
+// /v1/iam/keys, the Guard-authorized key collection beside them.
 //
 // The organization collection is here because it NAMES no target: it asks which
 // organizations the CALLER may act in, so the answer is derived from the
@@ -416,13 +369,21 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organizat
 // list of their own organizations. It is exact rather than a prefix so it reaches
 // the collection alone and never an item under it, which is addressed by
 // (owner, name) and authorized here like every other item read.
+//
+// The project and workspace COLLECTIONS are here because BELONGING opens them
+// (ScopeRead), which is a wider clause than the tenant rule the Guard applies —
+// a person's account lives in one org while the orgs they work in are a set, and
+// a switcher that lists them must be able to read them. Each list handler asks
+// ScopeRead itself, which honours an org the caller belongs to and refuses a
+// stranger. Exact, never a prefix: the ITEM beneath (/v1/iam/projects/{owner}/
+// {name}) authorizes nowhere but the Guard, so a prefix would take its gate away.
 var handlerAuthorizedExact = map[string]bool{
-	"/v1/iam/get-user":             true,
-	"/v1/iam/resolve-key":          true,
 	"/v1/iam/keys/org":             true,
 	"/v1/iam/keys/principal":       true,
 	"/v1/iam/organizations":        true,
 	"/v1/iam/webauthn-credentials": true,
+	"/v1/iam/projects":             true,
+	"/v1/iam/workspaces":           true,
 }
 
 // pathAuthorized reports whether path is handler-authorized: an exact single-route
@@ -442,7 +403,7 @@ func pathAuthorized(path string) bool {
 // refuse writes the Guard's rejection in the envelope the CALLER can actually
 // parse, so one surface answers in one shape.
 //
-// The the legacy surface-compatible verbs (/v1/iam/get-user, add-organization, …) are a
+// The verb-shaped addresses (/v1/iam/get-account, delete-membership, …) are a
 // contract: every client of them branches on a STRING `status` of "ok"/"error" and
 // reads `msg`. The handlers honour that — get-account answers
 // {"status":"error","msg":"please sign in first"} — but the Guard short-circuits
@@ -454,7 +415,7 @@ func pathAuthorized(path string) bool {
 // recognizable error. The fix belongs here, at the source, not in every client
 // learning to tolerate both.
 //
-// Only the compat surface is reshaped. The native REST/OIDC routes keep zip's
+// Only the verb surface is reshaped. The resource routes keep zip's
 // numeric-status error, which is THEIR contract — this is one envelope per
 // surface, not one envelope everywhere. The HTTP status code is unchanged in both
 // cases (401/403), so anything reading the code rather than the body is unaffected.
@@ -468,21 +429,21 @@ func refuse(c *zip.Ctx, status int, msg string) error {
 	return zip.ErrForbidden(msg)
 }
 
-// legacyVerbs are the request-shaped prefixes of the compat surface — the
-// verb-per-path the legacy surface spelling (get-/add-/update-/delete-) that the console BFF,
-// the @hanzo/iam SDK and the cloud clients hard-code. The native surface is
-// noun-shaped (/v1/iam/users, /v1/iam/organizations), so the verb prefix is what
-// distinguishes the two contracts without a second list to keep in sync.
-var legacyVerbs = []string{"get-", "add-", "update-", "delete-"}
+// verbs are the prefixes of the addresses that still carry the verb in the path
+// (get-account, delete-membership) and answer in the {status,msg} envelope. The
+// resource surface is noun-shaped (/v1/iam/users, /v1/iam/organizations), so the
+// prefix is what distinguishes the two contracts without a second list to keep
+// in sync.
+var verbs = []string{"get-", "add-", "update-", "delete-"}
 
-// legacyVerb reports whether path is one of the compat verbs.
+// legacyVerb reports whether path carries the verb in its first segment.
 func legacyVerb(path string) bool {
 	const p = "/v1/iam/"
 	if !strings.HasPrefix(path, p) {
 		return false
 	}
 	rest := path[len(p):]
-	for _, v := range legacyVerbs {
+	for _, v := range verbs {
 		if strings.HasPrefix(rest, v) {
 			return true
 		}
@@ -537,7 +498,7 @@ func Guard(db orm.DB) zip.Handler {
 		// empty query target for these (which would fail-closed deny every non-super
 		// before the handler could scope). Every other read is authorized here.
 		if v := policy.VerbOf(c.Method()); v == policy.Read && !pathAuthorized(c.Path()) {
-			owner, name := ReadTarget(c)
+			owner, name := readTarget(c)
 			if !p.CanEntity(v, policy.Entity{Kind: entityOf(c.Path()), Owner: owner, Name: name}, Env) {
 				return refuse(c, 403, "forbidden")
 			}
@@ -610,8 +571,16 @@ func Control(db orm.DB) zip.Handler {
 func Authorize(ctx context.Context, op zip.Op, in any) error {
 	owner, name := decodedTarget(in)
 	v := policy.VerbOf(op.Method)
-	if owner == "" && v == policy.Read {
-		return nil // REST read: target rode in the query, authorized by the Guard
+	// A READ is authorized once, and pathAuthorized says where. Off the list, the
+	// Guard did it on the way in and an input naming no owner has nothing left to
+	// check. ON the list, the HANDLER does it — and it has to, because those are
+	// the reads whose rule is wider than the tenant rule: belonging opens a
+	// project or workspace list (ScopeRead), which this seam would refuse.
+	//
+	// The same predicate the Guard consults, so the two cannot answer differently
+	// about which reads they are each responsible for.
+	if v == policy.Read && (owner == "" || pathAuthorized(op.Path)) {
+		return nil
 	}
 	p, present := From(ctx)
 	if !present {
@@ -843,26 +812,21 @@ func entityOf(path string) string {
 	return entityNoun(rest)
 }
 
-// entityNoun folds the legacy VERB spelling of a path segment onto the entity
-// noun the policy is written in: get-application -> applications, add-organization
-// -> organizations. Both surfaces address the SAME rows, so they must resolve to
-// the same entity — and they did not.
+// entityNoun folds a verb-carrying path segment onto the entity noun the policy
+// is written in: delete-membership -> memberships, get-account -> accounts. An
+// address that still spells the verb addresses the SAME rows as its resource
+// twin, so the two must resolve to the same entity.
 //
-// Without the fold a capability keyed on an entity is inert on the compat surface:
-// the native route /v1/iam/applications resolves to "applications" and matches,
-// while the alias /v1/iam/get-application resolves to the literal "get-application",
-// matches no clause, falls through to the reserved-owner gate and 403s. A client
-// that calls the alias never sees the grant fire.
-//
-// It is the wider point too, not just one grant: EVERY capability keyed on an
-// entity would be inert on the compat surface, because capFor("add-organization")
-// is not capFor("organizations"). The allowlists that exist precisely so the brand
-// consoles can manage orgs during onboarding would be consulted with a key that
-// could never match. Folding here — the ONE place a path becomes an entity — gives
-// both surfaces the documented policy at once rather than teaching each clause two
-// spellings.
+// Without the fold a capability keyed on an entity is inert wherever the verb
+// survives: /v1/iam/memberships resolves to "memberships" and matches, while
+// /v1/iam/delete-membership resolves to the literal "delete-membership", matches
+// no clause, falls through to the reserved-owner gate and 403s. A client on the
+// verb never sees the grant fire, and capFor("delete-membership") is not
+// capFor("memberships"). Folding here — the ONE place a path becomes an entity —
+// gives every address the documented policy at once rather than teaching each
+// clause two spellings.
 func entityNoun(seg string) string {
-	for _, v := range legacyVerbs {
+	for _, v := range verbs {
 		if strings.HasPrefix(seg, v) {
 			seg = seg[len(v):]
 			break
