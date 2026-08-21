@@ -204,14 +204,6 @@ func seedProjectRow(t *testing.T, db orm.DB, owner, name string) {
 // own must be REFUSED — not answered with its own org's rows under the foreign
 // org's name.
 func TestScope_ForeignOrgIsRefusedNotSilentlyReinterpreted(t *testing.T) {
-	t.Skip("OWNER DECISION — authz.go:778. A confidential app's read is authorized as " +
-		"Allowed(p, capFor(entity)) and the requested owner is never compared to p.Org, " +
-		"unlike the human path below it. The verb route hid this by calling authz.Scope in " +
-		"the handler, which refused a foreign org; the noun route does not, so hanzo-console " +
-		"asking for ?owner=lux now gets 200 and lux's rows. Tightening it is not obviously " +
-		"right: cloud's IAM edge deliberately forwards EVERY tenant under one confidential " +
-		"client, so scoping apps to their own org re-introduces the misattribution that " +
-		"pattern exists to avoid. Decide the edge's identity model, then this.")
 	h := newHarness(t)
 	seedScopeFixture(t, h)
 	auth := asApp("hanzo-console", "s3cret")
@@ -255,10 +247,6 @@ func TestScope_ForeignOrgIsRefusedNotSilentlyReinterpreted(t *testing.T) {
 // verified principal alone and never touches the store, so there is no lookup
 // whose outcome could differ. This test is what keeps it that way.
 func TestScope_ForeignAndFabricatedOrgsAreIndistinguishable(t *testing.T) {
-	t.Skip("OWNER DECISION — same cause as TestScope_ForeignOrgIsRefused…: an app read is " +
-		"not org-scoped, so a real foreign org answers with its rows while a fabricated one " +
-		"answers empty, and the BODY tells them apart. The existence-independence this " +
-		"asserts held only while authz.Scope ran in the handler.")
 	h := newHarness(t)
 	seedScopeFixture(t, h)
 	auth := asApp("hanzo-console", "s3cret")
@@ -470,11 +458,6 @@ func TestScope_AGrantHonoursTheOrgItNamesAndNeverSubstitutes(t *testing.T) {
 // meant "my own org" and still does — the rule is about a request that NAMES an
 // org it may not have, not about one that names none.
 func TestScope_UnstatedOwnerStillMeansOwnOrg(t *testing.T) {
-	t.Skip("OWNER DECISION — the noun listing requires an explicit owner " +
-		"(users.ListInput.Owner is validate:\"required\", refused before the authorizer " +
-		"runs), so authz.Scope's documented \"unstated means your own org\" is unreachable " +
-		"on it. Loud (400), not silent, but it is a stated policy that no longer holds. " +
-		"Either drop the required tag and route the owner through Scope, or amend the rule.")
 	h := newHarness(t)
 	seedScopeFixture(t, h)
 

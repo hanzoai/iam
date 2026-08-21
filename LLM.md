@@ -167,8 +167,8 @@ read.
 `oidc` imports `users`/`keys`/`sessions` — so `internal/authz` was 12 internal
 packages deep and `users → authz` was a cycle. It is 4 now
 (`httpx`, `store`, `schema`, `model`), so an entity package can resolve its own
-scope through the very policy that governs it — which `users.List`, alone among
-the listers, still does not (see *Org scope*, below). The cycle
+scope through the very policy that governs it, which is what `users.List` then
+did (see *Org scope*, below). The cycle
 `webauthn → authz → oidc → webauthn` went with it.
 
 This commit changes no behaviour. Every signature that moved is internal, every
@@ -186,7 +186,16 @@ relocation is not a separation.
 
 **The rule.** A request that NAMES an organization gets that organization's data
 or an error. It never gets a different organization's data. `authz.Scope` is the
-one place it lives; all 17 org-scoped call sites resolve their owner there.
+one place it lives — `Scope`, or `ScopeRead` for a listing, which additionally
+reaches an org you are a MEMBER of. Measured on this tree: **11 `Scope` call
+sites** (memberships, auditlogs, providers, certs, tokens, webauthn, roles,
+invitations, scim ×3) and **3 `ScopeRead`** (projects, workspaces, users).
+
+**Three listers still do not ask**, and they are routed on the authed surface:
+`organizations.List` (the divergence below), `permission.List` (filters
+`in.Owner`, refuses empty 400 — the exact shape `users.List` had) and
+`sessions.List` (filters `in.Owner`, no check at all). Do not read "the rule
+lives in Scope" as "everything goes through Scope"; these three are the arrears.
 
 | principal | `?owner=` | result |
 |---|---|---|
@@ -241,6 +250,32 @@ a lookup of `hanzo/bob`, absent. Seed a `hanzo/bob` — a name every tenant has 
 and the same request returns **200 carrying hanzo's bob under orgb's URL**, and
 `PATCH active:false` then deactivates a hanzo employee. Pinned by
 `TestRed_scimGet_foreignIdNeverResolvesToASameNamedLocalUser`.
+
+**`users.List` closed the same divergence, and it moved a live behaviour.** It read
+`in.Owner` and refused an empty one with `400 owner is required` — the one
+org-scoped lister that never asked `authz`. Two things followed. The `required`
+tag ran BEFORE the authorizer (zip validates, then authorizes), so the documented
+"unstated owner means your own org" was unreachable on the users entity; and an
+app credential holding `CapUserAdmin` listed whatever org it named — real orgs
+answered with their rows, invented ones answered empty, and the pair told a caller
+which tenants exist. Both close by resolving through `ScopeRead` like its
+siblings. The two halves cannot be separated from each other: dropping `required`
+without `ScopeRead` would filter on an empty owner, which lists every tenant.
+
+**A consumer holding ONE credential for MANY tenants must move first.** This pins a
+confidential client's LISTING to the tenant its application row SERVES (`p.Org` =
+`Application.Organization`). A service that presents a single shared client and
+performs the tenant check itself — passing the caller's org as `?owner=` — is
+refused by this lister for every tenant but one, and must hold a per-org
+credential before this ships. Its cross-tenant MUTATION is untouched, and so is a
+targeted `users/get`: both go through `authorize()` rather than `Scope`. Only the
+unbounded roster listing is pinned.
+
+That asymmetry is the wider decision, still unmade. `authorize()` never compares
+an app's requested owner to `p.Org` at all (authz.go, the `p.App != ""` clause),
+so create/update/delete and key-mint remain cross-tenant for an allowlisted
+client. The listing half and the mutation half want to ship together, consumer
+first — do not close the mutation half by widening the lister back.
 
 **Divergence still open (needs a decision, do not "fix" by widening).** The legacy
 verb lister goes through `Scope`; the native noun lister (`organizations.List`)
