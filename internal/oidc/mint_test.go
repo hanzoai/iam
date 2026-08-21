@@ -45,7 +45,7 @@ func TestOnBehalfOfMintCannotReachAnOperatorInABrandOrg(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedOperator(t, db, "hanzo", "z", "correct-horse")
 
-	resp, body := do(t, app, keyReq(PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/z"))
+	resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/z"))
 	if resp.StatusCode != 403 {
 		t.Fatalf("a general minter reached an operator target hanzo/z (status=%d); body=%s", resp.StatusCode, body)
 	}
@@ -62,7 +62,7 @@ func TestOnBehalfOfMintStillReachesAnOrdinaryTarget(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "dana", "dana@hanzo.example", "correct-horse")
 
-	resp, body := do(t, app, keyReq(PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/dana"))
+	resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/dana"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("an ordinary target was refused (status=%d); body=%s", resp.StatusCode, body)
 	}
@@ -158,7 +158,7 @@ func TestACaseVariantIsTheSameOperator(t *testing.T) {
 			seedApp(t, db, appOpts{clientID: "hanzo-sandbox", secret: "top-secret"})
 			seedOperator(t, db, "hanzo", "z", "correct-horse")
 
-			_, body := do(t, app, keyReq(PathTokensIssue, "hanzo-sandbox", "top-secret", "?id="+id))
+			_, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-sandbox", "top-secret", "?id="+id))
 			// The property is that no token comes back, however the id is spelled.
 			// A spelling that resolves nobody is refused for that reason instead,
 			// which is equally fine — what must never happen is a token.
