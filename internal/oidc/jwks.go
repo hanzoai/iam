@@ -113,7 +113,7 @@ func publish(ctx context.Context, db orm.DB) ([]byte, string, error) {
 	keys := make([]any, 0, len(certs))
 	seen := make(map[string]bool, len(certs))
 	for _, cert := range certs {
-		if !isSigningCert(cert) || seen[cert.Name] {
+		if seen[cert.Name] || !Publishes(cert) {
 			continue
 		}
 		jwk, err := certToJWK(cert)
@@ -130,6 +130,23 @@ func publish(ctx context.Context, db orm.DB) ([]byte, string, error) {
 	}
 	sum := sha256.Sum256(body)
 	return body, `"` + hex.EncodeToString(sum[:16]) + `"`, nil
+}
+
+// Publishes reports whether the JWKS serves a key for this Cert: the reserved-
+// owner, algorithm and material checks, AND the encode actually succeeding.
+//
+// It is the ONE decision, asked here by the document and by the boot check
+// (server.RequireSigning), so the set of `kid`s a process advertises is exactly
+// the set it is required to be able to sign under. A row whose material cannot be
+// encoded — a certificate field that is not a certificate — publishes nothing and
+// is therefore required for nothing, which keeps a broken row from deciding
+// whether the service starts.
+func Publishes(cert *schema.Cert) bool {
+	if !isSigningCert(cert) {
+		return false
+	}
+	_, err := certToJWK(cert)
+	return err == nil
 }
 
 // isSigningCert reports whether a Cert is a token-signing key that belongs in the
