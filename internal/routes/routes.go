@@ -207,7 +207,7 @@ func Route(app *zip.App, db orm.DB) {
 	invitations.Route(authed, db)
 
 	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface that
-	// replaces the the legacy surface entity verbs (HIP-0111). On the guarded group, so
+	// replaces the legacy entity verbs (HIP-0111). On the guarded group, so
 	// it is authenticated; each handler owner-scopes via authz.Scope on the path target.
 	scim.Route(authed, db)
 

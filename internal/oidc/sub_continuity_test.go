@@ -15,7 +15,7 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
-// SUB CONTINUITY (cutover parity). A migrated user carries the v1 the legacy surface UUID in
+// SUB CONTINUITY (cutover parity). A migrated user carries the v1 UUID in
 // schema.User.Id; every token, id_token, and userinfo response must report that
 // UUID as `sub` — byte-identical across the cutover — so sessions, external refs,
 // and the money-path principal keyed on `sub` survive. A pre-cutover user with no

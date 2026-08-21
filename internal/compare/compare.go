@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package compare implements the Phase-0 drift gate: it counts rows per
-// entity in the v1 the legacy surface database and the v2 orm store and prints the
+// entity in the v1 database and the v2 orm store and prints the
 // absolute drift. Cutover (MIGRATION.md §5) is blocked until drift is 0.
 //
 // Read-only by construction: the v1 side issues only SELECT COUNT(*); the v2
@@ -23,7 +23,7 @@ import (
 	"github.com/hanzoai/orm"
 )
 
-// pair maps a v1 the legacy surface table to the v2 orm kind that mirrors it.
+// pair maps a v1 table to the v2 orm kind that mirrors it.
 type pair struct {
 	v1Table string
 	v2Kind  string
@@ -59,7 +59,7 @@ func Run(ctx context.Context, v2 orm.DB, legacyDSN string, w io.Writer) error {
 		if scheme == "" {
 			return errors.New("compare: --legacy DSN must start with postgres:// or mysql://")
 		}
-		return fmt.Errorf("compare: no %q driver in this build — rebuild with `-tags migration` to read the v1 the legacy surface database", scheme)
+		return fmt.Errorf("compare: no %q driver in this build — rebuild with `-tags migration` to read the v1 database", scheme)
 	}
 
 	legacy, err := sql.Open(driver, legacyArg(scheme, legacyDSN))

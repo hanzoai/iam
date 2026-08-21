@@ -11,7 +11,7 @@ import (
 	"github.com/hanzoai/orm"
 )
 
-// Key is an API access credential (v1 the legacy surface `key`, v2 kind "keys").
+// Key is an API access credential (v1 `key`, v2 kind "keys").
 //
 // A Key is owner-scoped: Owner names the tenant it belongs to and Name is
 // unique within that Owner, so the (Owner, Name) pair is its natural key — the

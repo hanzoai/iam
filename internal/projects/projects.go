@@ -6,8 +6,8 @@
 // is the owning organization. Every operation is a typed zip handler over
 // hanzoai/orm; the orm string key is "owner/name". Reads scope to one owner
 // (organization); writes address one project by its (owner, name) key. This is
-// the ONE project CRUD path — the the legacy surface get-organization-projects / add-project
-// / delete-project verb aliases (internal/compat) reuse it via New.
+// the ONE project CRUD path — the legacy get-organization-projects / add-project
+// / delete-project verb aliases reuse it via New.
 package projects
 
 import (
@@ -39,8 +39,8 @@ func Route(app *zip.App, db orm.DB) {
 	zip.Post(app, "/v1/iam/projects/delete", h.Delete, zip.WithTags("projects"))
 }
 
-// New exposes a project Handler so the the legacy surface add-/delete-project verb aliases
-// (internal/compat) reuse the ONE project CRUD path, wrapped in the compat
+// New exposes a project Handler so the legacy add-/delete-project verb aliases
+// reuse the ONE project CRUD path, wrapped in the compat
 // envelope.
 func New(db orm.DB) *Handler { return &Handler{db: db} }
 

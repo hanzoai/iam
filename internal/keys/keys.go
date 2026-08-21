@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package keys serves the owner-scoped CRUD surface for the `keys` entity
-// (v1 the legacy surface `key`) as typed zip handlers over hanzoai/orm.
+// (v1 `key`) as typed zip handlers over hanzoai/orm.
 //
 // Identity is the (owner, name) pair; it maps onto the orm storage id as
 // "owner/name", exactly as the v1 record addressed itself. Reads are

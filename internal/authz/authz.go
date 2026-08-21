@@ -331,7 +331,7 @@ var (
 )
 
 // ReadTarget extracts the (owner, name) a GET addresses, from the query string.
-// A native typed read files them as `?owner=&name=`; the the legacy surface compat verbs
+// A native typed read files them as `?owner=&name=`; the legacy compat verbs
 // (get-user, get-organization, …) file them as `?id=<owner>/<name>`. Explicit
 // owner/name win; the id split is a fallback only when owner is absent, so this
 // can only make an id-based read's authorization MORE precise than the empty
@@ -375,11 +375,11 @@ func ReadTarget(c *zip.Ctx) (owner, name string) {
 // belongs here. This is the read analogue of a write deferring to the op-invoke
 // seam — the target is authorized where it is bound, not guessed from the query.
 // get-organization-projects (and its workspace tier, get-organization-workspaces)
-// is the the legacy surface read verb whose target rides in ?organization= (the
+// is the legacy read verb whose target rides in ?organization= (the
 // ScopeSwitcher's project/workspace list), not ?owner=/?id=/the path, so the Guard
 // cannot pre-authorize it generically; the handler scopes it through authz.Scope
 // instead (the read analogue of SCIM's path-targeted authorization).
-// get-memberships is the the legacy surface alias of /v1/iam/memberships whose target rides in
+// get-memberships is the legacy alias of /v1/iam/memberships whose target rides in
 // ?user=/?org=, so it belongs here for the same reason its REST twin does — the
 // membership list handler's own scoped() check is the tenant gate.
 var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accounts", "/v1/iam/memberships"}
