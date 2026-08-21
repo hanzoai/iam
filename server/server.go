@@ -13,7 +13,10 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
@@ -21,10 +24,13 @@ import (
 
 	"github.com/hanzoai/iam/feature"
 	"github.com/hanzoai/iam/internal/featurestore"
+	"github.com/hanzoai/iam/internal/keyring"
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/seed"
 	_ "github.com/hanzoai/iam/pkg/schema" // registers the entity kinds
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // Route registers the entire IAM surface (OIDC discovery/JWKS, get-app-login,
@@ -143,6 +149,81 @@ func OpenSQLite(path string) (orm.DB, error) {
 // Returns the created/skipped counts. Call once at host startup after opening db.
 func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, error) {
 	return seed.FromInitData(ctx, db, initDataPath)
+}
+
+// RequireSigning reports whether this process holds the keys it signs with, and
+// is the precondition a composition root asserts before it opens a listener.
+//
+// Everything IAM emits is signed: every access token, every id token, the
+// session-cookie MAC. The material arrives from the DEPLOYMENT — internal/keyring
+// reads one PEM per cert name from the directory $IAM_SIGNING_KEYS names — so
+// whether a process can do its job is a property of the pod it landed in, not of
+// the binary and not of the store. Two replicas of one image can disagree.
+//
+// Asked ONCE, at boot, because that is the only moment the answer is actionable. A
+// keyless replica answers a liveness probe perfectly and then fails every mint, so
+// a rollout reads it as healthy and keeps going. Refusing here makes the pod never
+// reach ready, which is the one signal a rollout already stops on.
+//
+// TWO questions, because one key is not the whole job:
+//
+//   - PlatformSigningCert must resolve. It keys the session-cookie MAC
+//     (internal/sessions), so without it no browser session can be issued or read.
+//   - EVERY cert this process would PUBLISH must also be able to sign. A token is
+//     minted with the cert its application names (oidc.signerFor), and the JWKS
+//     advertises a `kid` for each published cert — so a subset of the mount lets
+//     the pod report ready and then fail every mint for the applications naming a
+//     cert it did not get, while relying parties cache a `kid` nothing signs.
+//
+// The second question is asked of the CERT ROWS, through the same predicate that
+// decided to publish them, and never of the applications that name them. An
+// application row is tenant-writable — an org admin registers applications in
+// their own org and states a `cert` on them — so an assertion driven from
+// applications would let any tenant decide whether the identity plane of the whole
+// estate boots. A cert under a reserved owner can only be created by an operator,
+// which is what makes it a safe thing to require.
+//
+// A cert row carrying NEITHER key nor published certificate is not published and
+// is not required: that is a rotation staged ahead of its material, which is how a
+// rotation is meant to look (internal/certs Create names the key, the deployment
+// then provides it).
+func RequireSigning(ctx context.Context, db orm.DB) error {
+	cert, err := store.PlatformSigningCert(ctx, db)
+	if err != nil {
+		return fmt.Errorf("signing key: %w", err)
+	}
+	if cert == nil {
+		return fmt.Errorf("signing key: no certificate under a reserved owner carries key material — "+
+			"mount one PEM per certificate name in the directory $%s names", keyring.EnvDir)
+	}
+	names, err := silent(ctx, db)
+	if err != nil {
+		return fmt.Errorf("signing key: %w", err)
+	}
+	if len(names) > 0 {
+		return fmt.Errorf("signing key: the JWKS publishes %s with no key to sign under — "+
+			"mount one PEM per certificate name in the directory $%s names",
+			strings.Join(names, ", "), keyring.EnvDir)
+	}
+	return nil
+}
+
+// silent names the published signing certs this process cannot sign with, sorted.
+// A published cert is one the JWKS advertises a `kid` for, so every name here is a
+// `kid` a relying party will trust and nothing can produce.
+func silent(ctx context.Context, db orm.DB) ([]string, error) {
+	certs, err := store.ListCerts(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, c := range certs {
+		if oidc.Publishes(c) && c.PrivateKey == "" {
+			out = append(out, c.Name)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // Message is one verification code, worded and addressed. Re-exported with Sender
