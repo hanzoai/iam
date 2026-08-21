@@ -103,14 +103,18 @@ func apply(dst *schema.Project, in *Input) {
 // You see your own organization's projects and no one else's; which organization that
 // is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by authz.Scope from the authenticated principal,
-	// never taken from the input: a tenant reads only its own org, a SuperAdmin
-	// reads the owner it asks for. Filtering on in.Owner instead was a confused
+	// The owner is resolved by authz.ScopeRead from the authenticated principal,
+	// never taken from the input: a person reads any org they BELONG to, a
+	// SuperAdmin reads the owner it asks for. ScopeRead rather than Scope because
+	// this is a listing and a human's account lives in ONE tenant while the orgs
+	// they work in are a set — keying it on p.Org alone refused an org's own admin
+	// the org they administer, which is the switcher that lists an org and then
+	// will not open it. Filtering on in.Owner instead was a confused
 	// deputy — the Guard authorizes on the query string, then a typed GET binds
 	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
 	// arrived empty on every REST call and the "empty owner lists everything"
 	// branch returned every tenant.
-	owner, err := authz.Scope(ctx, in.Owner)
+	owner, err := authz.ScopeRead(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}

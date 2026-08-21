@@ -449,8 +449,9 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organizat
 // ?accessKey= (no owner/name for the Guard to authorize), and its handler authorizes
 // itself behind CapPublishableResolve, returning ONLY the org — never a principal.
 var handlerAuthorizedExact = map[string]bool{
-	"/v1/iam/get-user":    true,
-	"/v1/iam/resolve-key": true,
+	"/v1/iam/get-user":       true,
+	"/v1/iam/resolve-key":    true,
+	"/v1/iam/keys/principal": true,
 }
 
 // pathAuthorized reports whether path is handler-authorized: an exact single-route
@@ -776,6 +777,15 @@ func authorize(p *Principal, method, entity, owner, name string) bool {
 	// else — never Super, never Admin; an unmapped entity or unset allowlist denies.
 	if p.App != "" {
 		return Allowed(p, capFor(entity))
+	}
+	// A person may READ the projects and workspaces of an org they BELONG to, not
+	// merely one they administer. That is the scope switcher, which every member
+	// sees. The check below compares against the home org alone, so an org you are
+	// a member of but do not own is refused there; ScopeRead in the handler is what
+	// decides, and this defers to it exactly as the handler-authorized address does.
+	if isRead(method) && (entity == "projects" || entity == "workspaces") &&
+		(owner == "" || p.memberOf(owner)) {
+		return true
 	}
 	if owner == "" || owner != p.Org {
 		return false
