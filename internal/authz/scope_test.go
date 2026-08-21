@@ -52,17 +52,30 @@ type reply struct {
 	body   string
 }
 
-// records decodes the v1 envelope's `data` array into (owner, name) pairs — the
-// rows that actually crossed the wire.
-func (r reply) records(t *testing.T) []schema.User {
+// row is the only part of a listed record these assertions read: which tenant it
+// belongs to.
+type row struct {
+	Owner string `json:"owner"`
+}
+
+// records returns the rows that actually crossed the wire. A collection names its
+// own array — users, projects, organizations — so the key is READ from the body
+// instead of assumed, and one decoder serves every listing. A refusal carries no
+// array at all, which is the point.
+func (r reply) records(t *testing.T) []row {
 	t.Helper()
-	var env struct {
-		Data []schema.User `json:"data"`
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(r.body), &body); err != nil {
+		return nil
 	}
-	if err := json.Unmarshal([]byte(r.body), &env); err != nil {
-		return nil // an error envelope carries no array; zero records is the point
+	var out []row
+	for _, raw := range body {
+		var rows []row
+		if json.Unmarshal(raw, &rows) == nil {
+			out = append(out, rows...)
+		}
 	}
-	return env.Data
+	return out
 }
 
 // owners returns the DISTINCT owners present in a listing — the misattribution
@@ -71,7 +84,9 @@ func (r reply) owners(t *testing.T) map[string]int {
 	t.Helper()
 	got := map[string]int{}
 	for _, u := range r.records(t) {
-		got[u.Owner]++
+		if u.Owner != "" {
+			got[u.Owner]++
+		}
 	}
 	return got
 }
@@ -173,7 +188,7 @@ func TestScope_ForeignOrgIsRefusedNotSilentlyReinterpreted(t *testing.T) {
 
 	// Own org: unchanged, and it is what makes the foreign case meaningful —
 	// there ARE hanzo rows to be misattributed.
-	own := h.send(t, "GET", "/v1/iam/get-users?owner=hanzo", auth, nil)
+	own := h.send(t, "GET", "/v1/iam/projects?owner=hanzo", auth, nil)
 	if own.status != 200 {
 		t.Fatalf("own-org listing = %d, want 200 (unchanged): %s", own.status, own.body)
 	}
@@ -183,11 +198,11 @@ func TestScope_ForeignOrgIsRefusedNotSilentlyReinterpreted(t *testing.T) {
 
 	for _, org := range []string{foreignRealOrg, fabricatedOrg} {
 		t.Run(org, func(t *testing.T) {
-			got := h.send(t, "GET", "/v1/iam/get-users?owner="+org, auth, nil)
+			got := h.send(t, "GET", "/v1/iam/projects?owner="+org, auth, nil)
 
 			// (1) The refusal must be EXPLICIT.
 			if got.status != 403 {
-				t.Errorf("GET get-users?owner=%s = %d, want 403 — an org-scoped request "+
+				t.Errorf("GET projects?owner=%s = %d, want 403 — an org-scoped request "+
 					"is honoured or refused, never silently reinterpreted: %s",
 					org, got.status, got.body)
 			}
@@ -195,7 +210,7 @@ func TestScope_ForeignOrgIsRefusedNotSilentlyReinterpreted(t *testing.T) {
 			//     200 carrying the caller's own rows under another org's name, is
 			//     the misattribution this closes.
 			if owners := got.owners(t); len(owners) > 0 {
-				t.Errorf("GET get-users?owner=%s returned rows owned by %v — the caller "+
+				t.Errorf("GET projects?owner=%s returned rows owned by %v — the caller "+
 					"asked for %s and was handed somebody else's tenant", org, owners, org)
 			}
 		})
@@ -215,9 +230,9 @@ func TestScope_ForeignAndFabricatedOrgsAreIndistinguishable(t *testing.T) {
 	auth := asApp("hanzo-console", "s3cret")
 
 	for _, path := range []string{
-		"/v1/iam/get-users?owner=",
-		"/v1/iam/get-organizations?owner=",
-		"/v1/iam/get-organization-projects?organization=",
+		"/v1/iam/organizations?owner=",
+		"/v1/iam/projects?owner=",
+		"/v1/iam/workspaces?owner=",
 		"/v1/iam/scim/v2/Users?owner=",
 	} {
 		t.Run(path, func(t *testing.T) {
@@ -243,7 +258,7 @@ func TestScope_SuperAdminCrossOrgReadIsUnchanged(t *testing.T) {
 	seedScopeFixture(t, h)
 	root := asUser(h.token(t, "admin/root"))
 
-	got := h.send(t, "GET", "/v1/iam/get-users?owner="+foreignRealOrg, root, nil)
+	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg, root, nil)
 	if got.status != 200 {
 		t.Fatalf("SuperAdmin cross-org listing = %d, want 200: %s", got.status, got.body)
 	}
@@ -266,17 +281,11 @@ func TestScope_OwnOrgReadIsUnchangedForAHuman(t *testing.T) {
 	seedScopeFixture(t, h)
 	boss := asUser(h.token(t, "hanzo/boss"))
 
-	got := h.send(t, "GET", "/v1/iam/get-organization-projects?organization=hanzo", boss, nil)
+	got := h.send(t, "GET", "/v1/iam/projects?owner=hanzo", boss, nil)
 	if got.status != 200 {
 		t.Fatalf("own-org project list = %d, want 200 (unchanged): %s", got.status, got.body)
 	}
-	var env struct {
-		Data []schema.Project `json:"data"`
-	}
-	if err := json.Unmarshal([]byte(got.body), &env); err != nil {
-		t.Fatalf("decode %s: %v", got.body, err)
-	}
-	if len(env.Data) == 0 {
+	if len(got.records(t)) == 0 {
 		t.Errorf("own-org project list came back empty: %s", got.body)
 	}
 }
@@ -292,8 +301,8 @@ func TestScope_HandlerAuthorizedReadsAreNotSilentlyRewritten(t *testing.T) {
 	boss := asUser(h.token(t, "hanzo/boss"))
 
 	for _, path := range []string{
-		"/v1/iam/get-organization-projects?organization=" + foreignRealOrg,
-		"/v1/iam/get-organization-workspaces?organization=" + foreignRealOrg,
+		"/v1/iam/projects?owner=" + foreignRealOrg,
+		"/v1/iam/workspaces?owner=" + foreignRealOrg,
 	} {
 		t.Run(path, func(t *testing.T) {
 			got := h.send(t, "GET", path, boss, nil)
@@ -373,8 +382,8 @@ func TestScope_GetUsersAndGetOrganizationAgreeForAnUngrantedPrincipal(t *testing
 	boss := asUser(h.token(t, "hanzo/boss")) // org-admin of hanzo, no capability, not super
 
 	for _, verb := range []struct{ name, pattern string }{
-		{"get-users", "/v1/iam/get-users?owner=%s"},
-		{"get-organization", "/v1/iam/get-organization?id=admin%%2F%s"},
+		{"get-users", "/v1/iam/users?owner=%s"},
+		{"get-organization", "/v1/iam/organizations/admin/%s"},
 	} {
 		t.Run(verb.name, func(t *testing.T) {
 			real := h.send(t, "GET", fmt.Sprintf(verb.pattern, foreignRealOrg), boss, nil)
@@ -382,7 +391,7 @@ func TestScope_GetUsersAndGetOrganizationAgreeForAnUngrantedPrincipal(t *testing
 			if real.status == 200 || fake.status == 200 {
 				t.Errorf("%s admitted a foreign org: real=%d fake=%d", verb.name, real.status, fake.status)
 			}
-			if real.status != fake.status || real.body != fake.body {
+			if real.status != fake.status || told(real.body) != told(fake.body) {
 				t.Errorf("%s distinguishes a real tenant from a fabricated one — that pair IS "+
 					"the org-existence oracle\n  real: %d %s\n  fake: %d %s",
 					verb.name, real.status, real.body, fake.status, fake.body)
@@ -401,24 +410,22 @@ func TestScope_AGrantHonoursTheOrgItNamesAndNeverSubstitutes(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
 
-	got := h.send(t, "GET", "/v1/iam/get-organization?id=admin%2F"+foreignRealOrg,
+	got := h.send(t, "GET", "/v1/iam/organizations/admin/"+foreignRealOrg,
 		asApp("hanzo-console", "s3cret"), nil)
 	if got.status != 200 {
 		t.Fatalf("CapOrgAdmin registry read = %d, want 200 — onboarding reads Founder "+
 			"through this: %s", got.status, got.body)
 	}
-	var env struct {
-		Data struct {
-			Owner string `json:"owner"`
-			Name  string `json:"name"`
-		} `json:"data"`
+	var org struct {
+		Owner string `json:"owner"`
+		Name  string `json:"name"`
 	}
-	if err := json.Unmarshal([]byte(got.body), &env); err != nil {
+	if err := json.Unmarshal([]byte(got.body), &org); err != nil {
 		t.Fatalf("decode %s: %v", got.body, err)
 	}
-	if env.Data.Name != foreignRealOrg {
+	if org.Name != foreignRealOrg {
 		t.Errorf("asked for org %q, got %q — a grant must return the org it was asked for, "+
-			"never another", foreignRealOrg, env.Data.Name)
+			"never another", foreignRealOrg, org.Name)
 	}
 }
 
@@ -429,13 +436,13 @@ func TestScope_UnstatedOwnerStillMeansOwnOrg(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
 
-	got := h.send(t, "GET", "/v1/iam/get-users", asApp("hanzo-console", "s3cret"), nil)
+	got := h.send(t, "GET", "/v1/iam/projects", asApp("hanzo-console", "s3cret"), nil)
 	if got.status != 200 {
-		t.Fatalf("get-users with no owner = %d, want 200 (unchanged): %s", got.status, got.body)
+		t.Fatalf("project list with no owner = %d, want 200 (unchanged): %s", got.status, got.body)
 	}
 	owners := got.owners(t)
 	if owners["hanzo"] == 0 || len(owners) != 1 {
-		t.Errorf("get-users with no owner returned %v, want hanzo only", owners)
+		t.Errorf("project list with no owner returned %v, want hanzo only", owners)
 	}
 }
 
@@ -467,8 +474,8 @@ func TestScopeRead_AnOrgYouBelongToOpens(t *testing.T) {
 	crossorg := asUser(h.token(t, "hanzo/crossorg"))
 
 	for _, path := range []string{
-		"/v1/iam/get-organization-projects?organization=" + foreignRealOrg,
-		"/v1/iam/get-organization-workspaces?organization=" + foreignRealOrg,
+		"/v1/iam/projects?owner=" + foreignRealOrg,
+		"/v1/iam/workspaces?owner=" + foreignRealOrg,
 	} {
 		t.Run(path, func(t *testing.T) {
 			got := h.send(t, "GET", path, crossorg, nil)
@@ -498,7 +505,7 @@ func TestScopeRead_AStrangerIsStillRefused(t *testing.T) {
 	seedScopeFixture(t, h)
 	boss := asUser(h.token(t, "hanzo/boss")) // no membership anywhere but hanzo
 
-	got := h.send(t, "GET", "/v1/iam/get-organization-projects?organization="+foreignRealOrg, boss, nil)
+	got := h.send(t, "GET", "/v1/iam/projects?owner="+foreignRealOrg, boss, nil)
 	if got.status != 403 {
 		t.Fatalf("a non-member read of %s = %d, want 403: %s", foreignRealOrg, got.status, got.body)
 	}
@@ -521,7 +528,7 @@ func TestSuper_ReservedMembershipReachesEveryTenant(t *testing.T) {
 	seedMembership(t, h.db, "hanzo/operator", reservedOrg, "admin")
 	operator := asUser(h.token(t, "hanzo/operator"))
 
-	got := h.send(t, "GET", "/v1/iam/get-users?owner="+foreignRealOrg, operator, nil)
+	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg, operator, nil)
 	if got.status != 200 {
 		t.Fatalf("GET get-users?owner=%s as a member of %q = %d, want 200 — the reserved "+
 			"org is the one cross-tenant scope and its membership IS the grant: %s",
@@ -552,7 +559,7 @@ func TestSuper_OrdinaryMembershipIsNotSudo(t *testing.T) {
 	seedMembership(t, h.db, "hanzo/member", foreignRealOrg, "admin")
 	member := asUser(h.token(t, "hanzo/member"))
 
-	got := h.send(t, "GET", "/v1/iam/get-users?owner="+foreignRealOrg, member, nil)
+	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg, member, nil)
 	if got.status != 403 {
 		t.Fatalf("GET get-users?owner=%s as an ADMIN of %s = %d, want 403 — administering a "+
 			"tenant is not platform sudo, and users is the strict clause: %s",
@@ -561,4 +568,19 @@ func TestSuper_OrdinaryMembershipIsNotSudo(t *testing.T) {
 	if owners := got.owners(t); len(owners) > 0 {
 		t.Errorf("the refusal shipped rows owned by %v", owners)
 	}
+}
+
+// told is everything a refusal says EXCEPT the request path it echoes back.
+// RFC 9457 gives a problem document an `instance` member naming the occurrence,
+// which zip fills with the path that was asked for. When the org is a path
+// segment the two probes necessarily differ there — and that difference carries
+// nothing, because the caller wrote it. Compare what the SERVER chose to say.
+func told(body string) string {
+	var m map[string]any
+	if json.Unmarshal([]byte(body), &m) != nil {
+		return body
+	}
+	delete(m, "instance")
+	b, _ := json.Marshal(m)
+	return string(b)
 }

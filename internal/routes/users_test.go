@@ -1,47 +1,25 @@
 // Copyright 2026 Hanzo AI, Inc.
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-package compat_test
+package routes_test
+
+// How a person is addressed, through the REAL router: the address arrives in the
+// query string, the Guard authorizes it there, and the typed op decodes it.
+// Exercising it end to end is the point — the defect this pins was never in the
+// resolution, it was that the request shape the caller sends had no field to land
+// in, so it died at validation before any handler ran.
 
 import (
-	"context"
 	"strings"
 	"testing"
-
-	"github.com/hanzoai/orm"
-
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
 )
 
-// seedUserEmail is seedUser plus the address, stored the way every write path
-// stores one — normalized — so the read is matching what a real row holds.
-func seedUserEmail(t *testing.T, h *harness, owner, name, email string) {
-	t.Helper()
-	u := orm.New[schema.User](h.db)
-	u.Owner, u.Name = owner, name
-	u.Email = store.NormalizeEmail(email)
-	u.PasswordHash = secretUserHash
-	u.PasswordType = "argon2id"
-	u.SetId(owner + "/" + name)
-	if err := u.CreateCtx(context.Background()); err != nil {
-		t.Fatalf("seed %s/%s: %v", owner, name, err)
-	}
-}
-
-// The hop that adds somebody to a team, through the REAL router: the address
-// arrives in the query string, the Guard authorizes it there, and the typed op
-// decodes it. Exercising it end to end is the point — the defect this pins was
-// never in the resolution, it was that the request shape the caller sends had no
-// field to land in, so it died at validation before any handler ran.
-//
 // cloud's team invite (apps/team/invite.go, iamGetUserByEmail) resolves a person
 // by their ADDRESS, which is a QUERY over the collection rather than an item
 // read: GET /v1/iam/users?owner=<org>&email=<addr>. An email is not the natural
 // key — two rows in one org can carry one — so the answer is a page and the
 // caller sees both, where an item read would have to pick one.
-
-func TestUsersGet_ByEmail_IsTheInviteHop(t *testing.T) {
+func TestUsers_ByEmail_IsTheInviteHop(t *testing.T) {
 	h := newHarness(t)
 	seedUserEmail(t, h, "hanzo", "dana", "Dana@Hanzo.Ai")
 
@@ -61,7 +39,7 @@ func TestUsersGet_ByEmail_IsTheInviteHop(t *testing.T) {
 // The tenant bound is the org the caller states, and an org-admin may not state
 // somebody else's. Refused BEFORE the store is touched, so it is the same answer
 // whether or not that address exists over there.
-func TestUsersGet_ByEmail_RefusesAForeignOrg(t *testing.T) {
+func TestUsers_ByEmail_RefusesAForeignOrg(t *testing.T) {
 	h := newHarness(t)
 	seedUserEmail(t, h, "orgb", "bob2", "bob2@orgb.test")
 
