@@ -146,38 +146,74 @@ jobs:
           echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "push=$push" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
-          driver-opts: network=host
+      # `buildx create` and `docker login`, the commands these actions wrap. Every
+      # action is fetched from github.com at run time, and that hop is what took
+      # six chat builds down in a row: four on `dial tcp …:443: i/o timeout`
+      # cloning an action, then one on ghcr.io timing out. The runner has both
+      # commands already.
+      - name: Set up Docker Buildx
+        run: |
+          set -uo pipefail
+          docker buildx create --name hanzo --driver docker-container \
+            --driver-opt network=host --use 2>/dev/null || docker buildx use hanzo
+          docker buildx inspect --bootstrap >/dev/null
 
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ secrets.GHCR_USER }}
-          password: ${{ secrets.GHCR_TOKEN }}
+      # Retried, because the action this replaces retries and the runner's egress
+      # is not reliable. Names the attempt, so a flake reads as a flake rather
+      # than as a wrong credential.
+      - name: Log in to ghcr.io
+        run: |
+          set -uo pipefail
+          for i in 1 2 3 4 5; do
+            if printf '%s' "${{ secrets.GHCR_TOKEN }}" \
+                 | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin; then
+              exit 0
+            fi
+            echo "registry sign-in attempt $i failed; retrying"
+            sleep $((i * 5))
+          done
+          echo "::error::could not sign in to ghcr.io after 5 attempts"
+          exit 1
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64
-          push: ${{ steps.meta.outputs.push }}
-          provenance: false
-          tags: ${{ steps.meta.outputs.image }}
-          # The Dockerfile already carries `-X main.version=${VERSION}`, but its
-          # `ARG VERSION=dev` default was never overridden here — so every image
-          # this builder shipped reported `iam dev` from `/iam version` and could
-          # not name its own lineage. Measured on the live pod, 2026-07-27. Pass
-          # the release the tag names, so `/iam version` and the image tag are
-          # the same string with no second identifier to drift.
-          build-args: |
-            VERSION=${{ steps.meta.outputs.version }}
-          # The Dockerfile mounts this to rewrite github.com to an authenticated
-          # fetch for the private hanzoai modules. Without it `go mod download`
-          # fails on hanzoai/orm.
-          secrets: |
-            GIT_AUTH_TOKEN=${{ secrets.GH_PAT }}
+      # `buildx build`, retried for the same reason the sign-in is: the push
+      # crosses the same link, and the action this replaces rides out a blip that
+      # a bare command fails on. On the chat lane both steps failed once and
+      # recovered on the first run after the retry landed.
+      #
+      # VERSION is passed because the Dockerfile carries
+      # `-X main.version=${VERSION}` over an `ARG VERSION=dev` default that was
+      # never overridden — every image this builder shipped reported `iam dev`
+      # from `/iam version` and could not name its own lineage. The tag and the
+      # binary say the same string, with no second identifier to drift.
+      #
+      # GIT_AUTH_TOKEN is NOT carried over. The comment it lived in described a
+      # secret mount for private module fetches; this Dockerfile has no
+      # `RUN --mount=type=secret` and no `go mod download` step, so the value was
+      # passed to BuildKit and discarded. Sending a PAT nothing reads is a
+      # credential in one more place for no build that needs it.
+      #
+      # `--push` is conditional here: this lane also builds without pushing.
+      - name: Build and push the image
+        run: |
+          set -uo pipefail
+          # A plain if: `[ … ] && x=y` exits non-zero when the test is false,
+          # which is a trap waiting for the day someone adds `set -e` above.
+          push=""
+          if [ "${{ steps.meta.outputs.push }}" = "true" ]; then push="--push"; fi
+          build() { docker buildx build . \
+            --file ./Dockerfile \
+            --platform linux/amd64 \
+            --provenance=false \
+            --build-arg VERSION="${{ steps.meta.outputs.version }}" \
+            --tag "${{ steps.meta.outputs.image }}" \
+            $push; }
+          for i in 1 2 3; do
+            build && exit 0
+            echo "build attempt $i failed; retrying"
+            sleep $((i * 10))
+          done
+          echo "::error::build failed after 3 attempts"
+          exit 1
 
       # build-push-action can exit 0 before the manifest is resolvable at the
       # registry. Prove the image actually pulls, so a green run always means a
