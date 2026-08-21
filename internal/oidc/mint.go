@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -67,7 +68,7 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	// It lived in login.go, which meant it held for a typed password and for
 	// nothing else. Here it holds for every front door, including the ones not
 	// written yet.
-	if store.IsReservedOrg(org) && (app == nil || org != app.Organization) {
+	if policy.IsReservedOrg(org) && (app == nil || org != app.Organization) {
 		return "", errors.New("the user is not permitted to sign in to this application")
 	}
 

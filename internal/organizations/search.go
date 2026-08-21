@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -25,7 +26,7 @@ import (
 //	anyone      the organizations they belong to
 //	SuperAdmin  every organization
 //
-// The scope is decided from the principal the Guard already resolved. `p.Super`
+// The scope is decided from the principal the Guard already resolved. `p.Sudo`
 // is membership of the reserved admin org and nothing else; a per-org `IsAdmin`
 // is a different, org-scoped fact and never widens this. That is the same
 // predicate store.IsSuperAdmin answers below the authz seam, so one identity is
@@ -105,7 +106,7 @@ func (h *OrganizationAPI) Search(ctx context.Context, in *SearchOrganizationsInp
 		}
 		out.Organizations = mine
 	}
-	if !p.Super {
+	if !p.Sudo {
 		// Everyone else has already been served everything they may act in.
 		return out, nil
 	}
@@ -153,17 +154,17 @@ func (h *OrganizationAPI) own(ctx context.Context, p *authz.Principal, q string)
 	// An operator anchored in a brand org holds the reserved org as a MEMBERSHIP,
 	// which is why both halves of the set are filtered and not just the home one.
 	names := make([]string, 0, len(p.Orgs)+1)
-	if p.Org != "" && !store.IsReservedOrg(p.Org) {
+	if p.Org != "" && !policy.IsReservedOrg(p.Org) {
 		names = append(names, p.Org)
 	}
 	for org := range p.Orgs {
-		if org != p.Org && !store.IsReservedOrg(org) {
+		if org != p.Org && !policy.IsReservedOrg(org) {
 			names = append(names, org)
 		}
 	}
 	out := make([]*schema.Organization, 0, len(names))
 	for _, name := range names {
-		org, err := h.find(store.AdminOrg, name)
+		org, err := h.find(policy.AdminOrg, name)
 		if err != nil {
 			continue // a membership naming no row is not this endpoint's to report
 		}
@@ -192,7 +193,7 @@ func (h *OrganizationAPI) page(ctx context.Context, p *authz.Principal, q string
 		return nil, encodeCursor(at), nil
 	}
 	found, err := orm.TypedQuery[schema.Organization](h.DB).
-		Filter("Owner=", store.AdminOrg).
+		Filter("Owner=", policy.AdminOrg).
 		Order("-CreatedTime").Offset(at).Limit(scanLimit).GetAll(ctx)
 	if err != nil {
 		return nil, "", zip.ErrInternal(err.Error())

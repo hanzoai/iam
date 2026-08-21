@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/testhttp"
@@ -78,10 +79,10 @@ func seedMany(t *testing.T, db orm.DB, n int) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range n {
 		o := orm.New[schema.Organization](db)
-		o.Owner, o.Name = store.AdminOrg, fmt.Sprintf("tenant%02d", i)
+		o.Owner, o.Name = policy.AdminOrg, fmt.Sprintf("tenant%02d", i)
 		o.DisplayName = fmt.Sprintf("Tenant %02d", i)
 		o.CreatedTime = base.Add(time.Duration(i) * time.Minute).Format(time.RFC3339)
-		o.SetId(store.AdminOrg + "/" + o.Name)
+		o.SetId(policy.AdminOrg + "/" + o.Name)
 		if err := o.CreateCtx(context.Background()); err != nil {
 			t.Fatalf("seed org: %v", err)
 		}
@@ -228,14 +229,14 @@ func TestSearch_anOperatorAnchoredInABrandOrg(t *testing.T) {
 	seedMany(t, h.db, 4)
 	// The reserved org has a row of its own, as it does in production — without
 	// one, filtering it would look correct because it was never resolvable.
-	seedOrg(t, h.db, store.AdminOrg)
-	seedMembership(t, h.db, "hanzo/boss", store.AdminOrg, store.RoleAdmin)
+	seedOrg(t, h.db, policy.AdminOrg)
+	seedMembership(t, h.db, "hanzo/boss", policy.AdminOrg, store.RoleAdmin)
 
 	status, p, body := h.search(t, "hanzo/boss", "?limit=1")
 	if status != 200 {
 		t.Fatalf("status=%d body=%s, want 200", status, body)
 	}
-	if got := names(p); contains(got, store.AdminOrg) {
+	if got := names(p); contains(got, policy.AdminOrg) {
 		t.Fatalf("orgs=%v offers the platform organization as a tenant", got)
 	}
 	if got := names(p); len(got) != 1 || got[0] != "hanzo" {
@@ -262,7 +263,7 @@ func TestSearch_anOperatorAnchoredInABrandOrg(t *testing.T) {
 			t.Fatalf("the walk never reached %s: %v", want, seen)
 		}
 	}
-	if seen[store.AdminOrg] {
+	if seen[policy.AdminOrg] {
 		t.Fatal("the walk offered the platform organization")
 	}
 }
@@ -365,7 +366,7 @@ func TestSearch_answersAreMasked(t *testing.T) {
 func seedMembership(t *testing.T, db orm.DB, user, org, role string) {
 	t.Helper()
 	m := orm.New[schema.Membership](db)
-	m.Owner, m.Name = store.AdminOrg, user+"|"+org
+	m.Owner, m.Name = policy.AdminOrg, user+"|"+org
 	m.User, m.Org, m.Role = user, org, role
 	m.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	m.SetId(m.Owner + "/" + m.Name)

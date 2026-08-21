@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -315,7 +316,7 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 			seedApp(t, db, appOpts{clientID: "hanzo-app", grants: deviceGrants}) // org "hanzo"
 			seedUserInOrg(t, db, tc.org, "eve", "eve@"+tc.org+".example", "pw")
 			if tc.operator {
-				if _, err := store.EnsureMembership(tctx(), db, tc.org+"/eve", store.AdminOrg, store.RoleAdmin); err != nil {
+				if _, err := store.EnsureMembership(tctx(), db, tc.org+"/eve", policy.AdminOrg, store.RoleAdmin); err != nil {
 					t.Fatalf("grant the reserved-org membership: %v", err)
 				}
 			}
