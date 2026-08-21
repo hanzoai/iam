@@ -152,15 +152,39 @@ func (h *Handler) Update(ctx context.Context, in *schema.Cert) (*schema.Cert, er
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	// Keep the loaded Model (id, createdAt, key, snapshot) and the original
-	// creation stamp; overlay the decoded domain fields onto them.
+	// Overlay the decoded domain fields onto the loaded row, then restore what the
+	// input cannot legitimately carry: the bound Model (id, createdAt, key,
+	// snapshot), the original creation stamp, and the SECRET material.
+	//
+	// A PUT here is a METADATA edit — display name, expiry, provider. Key and
+	// secret material do not travel this API in either direction (see Create), so a
+	// request never carries them: PrivateKey is `json:"-"`, and Certificate and
+	// AccessSecret are masked out of every read, so a client round-tripping a cert
+	// sends them back empty. Overlaying those blanks would ERASE the published
+	// certificate — dropping the cert from the JWKS, so every token under its `kid`
+	// stops verifying — from a request that only meant to rename it. So an empty
+	// half in the input KEEPS what the row holds; the metadata API cannot clear
+	// signing or secret material, only the deployment (key) and a rotation (cert)
+	// manage it.
 	model := cert.Model
 	created := cert.CreatedTime
+	certificate := cert.Certificate
+	accessSecret := cert.AccessSecret
+	privateKey := cert.PrivateKey
 	*cert = *in
 	cert.Model = model
 	cert.Owner, cert.Name = in.Owner, in.Name
 	if created != "" {
 		cert.CreatedTime = created
+	}
+	if in.Certificate == "" {
+		cert.Certificate = certificate
+	}
+	if in.AccessSecret == "" {
+		cert.AccessSecret = accessSecret
+	}
+	if in.PrivateKey == "" {
+		cert.PrivateKey = privateKey
 	}
 	if err := cert.UpdateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
