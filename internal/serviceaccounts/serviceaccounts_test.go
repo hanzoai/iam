@@ -21,13 +21,12 @@ import (
 // out can actually be USED. It writes a schema.Key row — the one place the
 // resolver looks — holding the secret's DIGEST and never the secret.
 //
-// It used to write AccessKey/AccessSecretHash onto the User row instead, and
-// nothing reads either: store.UserByAccessKey resolves an sk- through
-// schema.Key, and cred.Verify is never called against AccessSecretHash. So every
-// service-account key ever minted answered "not recognized" — which reads as
-// revoked and was in fact unresolvable from the moment it was issued. This test
-// exists to keep that from being true again, so it asserts the RESOLUTION and
-// not merely the storage.
+// The credential must live where the resolver looks. store.UserByAccessKey
+// resolves an sk- through schema.Key, and cred.Verify is never called against a
+// User's AccessSecretHash — so a key written onto the User row instead would
+// answer "not recognized" on every call, unresolvable from the moment it was
+// issued. This test asserts the RESOLUTION, not merely the storage, so a
+// credential home no resolver reads cannot pass.
 func TestMint_IssuesAResolvableCredentialAndStoresNoPlaintext(t *testing.T) {
 	ctx, db := context.Background(), memDB(t)
 	sa := orm.New[schema.User](db)

@@ -168,10 +168,9 @@ func (h *OrganizationAPI) Get(ctx context.Context, in *GetOrganizationInput) (*s
 // GET with 403 before the handler runs. That was true and sufficient for as long
 // as HTTP was the only way in. It stopped being sufficient when the same typed op
 // became reachable over the agent door, where a request arrives at the handler
-// with no middleware in front of it — and this handler, reading no principal and
-// treating an absent Owner selector as no filter, answered with the whole table.
-// Measured on production: 670 organizations, 898KB, to a caller holding no
-// credential at all.
+// with no middleware in front of it. A handler that reads no principal and treats
+// an absent Owner selector as no filter would answer such a caller with the whole
+// registry, so the scope has to be the handler's own, not the door's.
 //
 // So the fact moves to where every door reaches it. The Guard keeps its own
 // refusal — two checks of one rule is not two rules, and the outer one still

@@ -230,11 +230,10 @@ func TestSeed_ReconcileKeepsUndeclaredFields(t *testing.T) {
 	}
 }
 
-// Measured against production: live applications legitimately carry redirect URIs
-// and grants init_data.json does not list (hanzo-console alone had 4 extra
-// redirects and 2 extra grants). Reconciling the WHOLE declared object would have
-// deleted them and broken the very logins the flag change was meant to fix, so the
-// reconcile is narrowed to policy keys. This is the guard on that.
+// Live applications legitimately carry redirect URIs and grants init_data.json
+// does not list, so reconciling the WHOLE declared object would delete them and
+// break the very logins the flag change was meant to fix. The reconcile is
+// narrowed to policy keys; this is the guard on that.
 func TestSeed_ReconcileNeverStripsRegistration(t *testing.T) {
 	db := openDB(t)
 	ctx := context.Background()
@@ -280,14 +279,12 @@ func TestSeed_ReconcileNeverStripsRegistration(t *testing.T) {
 
 // Passkeys must converge like every other declared policy flag.
 //
-// Regression, measured against production: init_data.json declared
-// enableWebAuthn TRUE on 37 of 83 applications — hanzo-app, hanzo-chat,
-// hanzo-cloud, hanzo-console, hanzo-id and hanzo-world among them — while
-// /v1/iam/auth/methods answered `webauthn:false` for every one. upsert is
-// new-only and enableWebAuthn was absent from appPolicyKeys, so the declared
-// value never reached a seeded row. Two thirds of the estate was supposed to
-// offer passkeys and no login screen ever did, with nothing logged: the only way
-// to see it was to diff the ConfigMap against the live endpoint.
+// A policy key absent from appPolicyKeys never converges: a new-only upsert does
+// not carry its declared value to a seeded row, so init_data.json can declare
+// enableWebAuthn TRUE while /v1/iam/auth/methods answers `webauthn:false`, and the
+// two never reconcile. enableWebAuthn belongs on the reconcile for the same reason
+// enableSignUp does — it is declared policy, not registration drift — and this
+// pins that it converges.
 func TestSeed_ReconcileConvergesWebAuthn(t *testing.T) {
 	db := openDB(t)
 	ctx := context.Background()

@@ -143,12 +143,11 @@ func TestRevoke_unknownToken_is200_noOracle(t *testing.T) {
 
 // The other half of a public client's session: it can END one.
 //
-// hanzo-cli is a public PKCE client whose refresh token now lives 30 days
-// (provision refreshExpireInHours 720). Revocation is the ONLY thing that can cut
-// a session short before then, and the endpoint refused the client outright —
-// `hanzo auth logout` deleted the local copy while the credential stayed
-// spendable at hanzo.id for the rest of the month. Reverting authTokenClient to
-// require a stored secret reproduces the live 401 verbatim.
+// A public PKCE client can hold a long-lived refresh token, and revocation is the
+// ONLY thing that cuts its session short before expiry. If the endpoint required a
+// stored secret, such a client could not revoke: its logout would drop the local
+// copy while the credential stayed spendable until it expired. This test requires
+// a secret and asserts the public client is refused, pinning that it is not.
 func TestRevoke_publicClient_revokesItsOwnRefreshFamily(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{

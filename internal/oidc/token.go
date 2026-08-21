@@ -572,8 +572,8 @@ func refreshTTL(app *schema.Application) time.Duration {
 // the caller's own registration, reveals nothing about any credential, code or
 // user, and is otherwise undiagnosable from outside: the user authenticates, the
 // code is minted and redeemed, and only then does the exchange die on a 500 that
-// looks exactly like an outage. `hanzo-tabs` shipped in that state, and the only
-// evidence anywhere was `{"error":"server_error"}` in a browser console.
+// looks exactly like an outage, with nothing but `{"error":"server_error"}` for
+// the client to act on — which is why this one failure names itself.
 //
 // bootstrap.resolveCert now prevents an application from being CREATED this way;
 // this is the answer for one that already was.

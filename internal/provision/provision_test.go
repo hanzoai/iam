@@ -424,9 +424,9 @@ orgs:
 }
 
 // A refresh token that does not outlive its access token is a grant that can
-// never be exchanged — the exact state hanzo-cli shipped in. The document is
-// refused rather than converged, and the rule is total: an UNDECLARED access
-// lifetime is the server's default, not zero.
+// never be exchanged — an interactive client would re-authenticate every
+// access-token lifetime. The document is refused rather than converged, and the
+// rule is total: an UNDECLARED access lifetime is the server's default, not zero.
 func TestDerive_RejectsARefreshThatDiesWithItsAccessToken(t *testing.T) {
 	for name, src := range map[string]string{
 		"equal to the default": `orgs: [{name: hanzo, apps: [{app: cli, type: cli, refreshExpireInHours: 1}]}]`,
