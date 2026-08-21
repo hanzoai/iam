@@ -256,9 +256,10 @@ type App struct {
 	// the token endpoint clamps the refresh lifetime to the ACCESS lifetime, so
 	// the refresh_token grant every interactive type derives expires at the same
 	// instant as the token it exists to renew. That is not a short session, it is
-	// a dead grant — `hanzo-cli` sat in it, and every command an hour after login
-	// reopened a browser. Undeclared (0) is OMITTED from the upsert so a converge
-	// preserves whatever the app already has.
+	// a dead grant: an interactive client would re-authenticate every access-token
+	// lifetime, because the refresh_token exists to renew that token and expires
+	// with it. Undeclared (0) is OMITTED from the upsert so a converge preserves
+	// whatever the app already has.
 	ExpireInHours        float64 `yaml:"expireInHours"`
 	RefreshExpireInHours float64 `yaml:"refreshExpireInHours"`
 }
@@ -498,9 +499,10 @@ func deriveApp(org Org, a App) (Client, error) {
 // is a loud parse error instead of a converged registration whose advertised
 // refresh_token grant is dead on arrival. A refresh token that expires no later
 // than the access token it renews is not a short session — it is a grant that
-// can never be exercised once, which is exactly the state `hanzo-cli` shipped
-// in. Measured against the effective access lifetime, so the rule is total: an
-// undeclared access lifetime is the server's default, not zero.
+// can never be exercised once — an interactive client would re-authenticate every
+// access-token lifetime. The check is against the effective access lifetime, so
+// the rule is total: an undeclared access lifetime is the server's default, not
+// zero.
 func checkLifetimes(org Org, name string, a App) error {
 	if a.ExpireInHours < 0 || a.RefreshExpireInHours < 0 {
 		return fmt.Errorf("provision: app %s/%s declares a negative token lifetime", org.Name, name)

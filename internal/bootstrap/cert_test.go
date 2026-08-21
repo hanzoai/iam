@@ -9,8 +9,9 @@ import "testing"
 // and only then answers `500 server_error` — a login that fails after the user has
 // already done everything right, and looks from the browser like an outage.
 //
-// `hanzo-tabs` shipped in exactly that state: registered by an upsert that never
-// mentioned a cert, and every sign-in died at the token exchange.
+// An application registered by an upsert that never mentioned a cert lands in
+// exactly that state, and every sign-in dies at the token exchange — which is what
+// this refuses.
 func TestResolveCert_ANewApplicationCanAlwaysSign(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

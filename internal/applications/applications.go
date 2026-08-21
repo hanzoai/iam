@@ -243,13 +243,11 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		//
 		// This verb is a full REPLACE, and every read of an application MASKS its
 		// client secret (Mask, and get-app-login before it) — so the natural admin
-		// round-trip, read the record, change one field, write it back, silently
-		// posted ClientSecret:"" and de-secreted the app. Measured on live IAM: the
-		// SuperAdmin read of hanzo-console, hanzo-app, hanzo-id and hanzo-cloud all
-		// return "" while a token-endpoint probe proves all four DO hold a secret.
-		// Any console "save" on an application page was one request away from turning
-		// a confidential client public — which the token endpoint then reads as "PKCE,
-		// demand no client auth", weakening every flow that app serves.
+		// round-trip — read the record, change one field, write it back — posts
+		// ClientSecret:"" for an app that holds one, so the write would blank it. Any
+		// console "save" on an application page is then one request from turning a
+		// confidential client public, which the token endpoint reads as "PKCE, demand
+		// no client auth", weakening every flow that app serves.
 		//
 		// So an OMITTED secret preserves what is stored. This is the same rule the
 		// operator upsert already settled in resolveSecret ("existing app -> preserve

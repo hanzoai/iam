@@ -41,9 +41,9 @@ func TestServesAnyOrg(t *testing.T) {
 	}
 }
 
-// The regression, stated as the thing that was actually true in production:
-// zoo-console is owned by "zoo" and carried "None", and a session owned by
-// "hanzo" minted a code against it. Read as the callers read it.
+// An application offering no org choice ("None") must stay confined to its OWN
+// org: a session belonging to another org must not mint a code against it.
+// ServesAnyOrg is what the callers read, so it is tested the way they read it.
 func TestNoneConfinesToItsOwnOrg(t *testing.T) {
 	zooConsole := &Application{Organization: "zoo", OrgChoiceMode: "None"}
 

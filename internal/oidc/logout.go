@@ -25,12 +25,10 @@ const PathSignedOut = "/login?signed_out=1"
 // logoutHandler ends a sign-in and sends the browser somewhere sensible. Accepts
 // GET or POST, so it works as a plain link.
 //
-// It ACTUALLY signs you out, which is worth stating because the endpoint spent a
-// release not doing it: the whole body computed a redirect and answered
-// {"status":"ok"} unconditionally — no session ended, no token revoked. A logout
-// that reports success while leaving the session live is worse than no logout at
-// all, because the person on the shared machine believes it worked. Three things
-// happen here now, in this order:
+// It ACTUALLY signs you out — worth stating, because a logout that computes a
+// redirect and answers {"status":"ok"} while ending no session and revoking no
+// token is worse than none: the person on the shared machine believes it worked.
+// Three things happen here, in this order:
 //
 //  1. The browser session dies — sid revoked server-side AND the cookie expired
 //     (sessions.Clear). Server-side revocation is the load-bearing half: a copy

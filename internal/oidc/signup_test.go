@@ -307,12 +307,11 @@ func TestSignup_PasswordFloorAllowsStrongPassword(t *testing.T) {
 	}
 }
 
-// THE tenant breach. Org choice lets a founder NAME THEIR OWN org; it must never
-// admit them to a tenant that is already standing. Reproduced against production:
-// an unauthenticated POST to hanzo.id/v1/iam/signup naming application
-// "hanzo-console" (a hanzo app, orgChoiceMode=create) and organization "lux" was
-// answered {"status":"ok"} and created a user with owner "lux". Every brand and
-// every customer tenant in the one multi-brand registry was reachable that way.
+// Org choice lets a founder NAME THEIR OWN org; it must never admit them to a
+// tenant that is already standing. In a shared registry an unauthenticated signup
+// that names an app with orgChoiceMode=create and an EXISTING foreign org would
+// otherwise land a user in that tenant — every brand and every customer reachable
+// through one signup. It must be refused.
 func TestSignup_CannotJoinAnExistingForeignTenant(t *testing.T) {
 	app, db := newServer(t)
 	// The app belongs to org "hanzo" (seedApp) and opts in to self-serve creation.

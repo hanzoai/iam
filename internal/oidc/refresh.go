@@ -54,13 +54,12 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 	//
 	// Confidential is a property of the GRANT, not only of the registration —
 	// tok.PublicGrant, set at establishment by the SAME bounded relaxation
-	// authorizationCodeGrant documents: `hanzo-cli` and every @hanzo/iam SPA keep
-	// a registered secret for a backend path while the surface that signs in is a
-	// public PKCE client that holds none. Demanding the secret here contradicts
-	// the exchange that just succeeded without it: the client cannot acquire one
-	// an hour later, so every refresh 401s invalid_client and the session dies at
-	// the access token's expiry — an hourly browser re-login for exactly the
-	// clients refresh_token exists for. Measured on hanzo-cli, 2026-07-31.
+	// authorizationCodeGrant documents. One registration can serve both shapes: a
+	// backend path that holds the secret, and a CLI or SPA surface that signs in
+	// as a public PKCE client and holds none. Demanding the secret here would
+	// contradict the exchange that just succeeded without it — the client cannot
+	// acquire one an hour later — and the session would die at the access token's
+	// expiry, for exactly the clients refresh_token exists for.
 	//
 	// It never widens: a grant that WAS client-authenticated still must
 	// authenticate, and a presented secret is always verified.

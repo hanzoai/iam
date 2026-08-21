@@ -157,9 +157,8 @@ func TestSendVerificationCode_Errors(t *testing.T) {
 //
 // It used to mint the code, persist it, and return {status:"ok"} — defensible as
 // "the code exists", and not what the caller hears: the login screen asked to SEND
-// one, so ok means sent, and the person waits for a message nobody sent. Measured
-// against production, a send to probe@example.invalid — an address that cannot
-// exist — answered ok.
+// one, so ok means sent, and the person waits for a message nobody sent. An
+// address that cannot receive one must not be answered ok.
 func TestSendVerificationCode_RefusesWhenNothingCanDeliver(t *testing.T) {
 	bindSender(t, nil)
 	app, db := newServer(t)

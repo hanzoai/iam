@@ -186,16 +186,15 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 			case in.Method == "login":
 				return errNoAccount
 			case !in.App.EnableSignUp || store.IsReservedOrg(in.App.Organization):
-				// The SAME reserved-org predicate signup, onboarding, federated
-				// provisioning, and token exchange enforce (store.IsReservedOrg) —
-				// wallet login was the ONE public account-creation front door that
-				// did not consult it. An application row owned by a reserved org
-				// (admin/built-in/service) with EnableSignUp set would otherwise let
-				// an unauthenticated, wallet-signed POST mint a user under a platform
-				// org — and a user under "admin" IS a SuperAdmin (authz derives Super
-				// from owner == adminOrg). Folded into the EXISTING case, not a new
-				// one, so the refusal stays byte-identical to "signup is off here"
-				// and a prober cannot distinguish the two (no authority oracle).
+				// Wallet login is a public account-creation front door, and every one
+				// consults the SAME reserved-org predicate (store.IsReservedOrg) —
+				// signup, onboarding, federated provisioning and token exchange alike.
+				// An application row owned by a reserved org (admin/built-in/service)
+				// with EnableSignUp set would otherwise let an unauthenticated,
+				// wallet-signed POST mint a user under a platform org, and a principal's
+				// home org is part of its platform authority. Folded into the EXISTING
+				// case, not a new one, so the refusal stays byte-identical to "signup is
+				// off here" and a prober cannot distinguish the two (no authority oracle).
 				return errNoSignup
 			default:
 				if user, err = provision(ctx, tx, in, address, now); err != nil {

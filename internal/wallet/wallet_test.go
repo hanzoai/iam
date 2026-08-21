@@ -741,13 +741,13 @@ func keys(m map[string]any) []string {
 // A RESERVED platform org is never reachable by an unauthenticated wallet
 // sign-up, even when its application row has sign-up enabled.
 //
-// Wallet login was the ONE public account-creation front door that did not
-// consult store.IsReservedOrg — signup (signup.go), onboarding, federated
-// provisioning (federation.go) and token exchange all did. The org here is not
-// caller-chosen (provision takes in.App.Organization), so this is not a
-// cross-TENANT hole; it is an ESCALATION one: authz derives Super from
-// owner == "admin", so a wallet-signed POST against an admin-owned app with
-// EnableSignUp set would have minted a SuperAdmin with no credential at all.
+// Wallet login is a public account-creation front door, and every one of them
+// consults the SAME store.IsReservedOrg — signup (signup.go), onboarding,
+// federated provisioning (federation.go) and token exchange alike. The org here
+// is not caller-chosen (provision takes in.App.Organization), so what this closes
+// is not a cross-TENANT reach but an ESCALATION: a principal's home org is part
+// of its platform authority, so the orgs a public front door may land one in have
+// to be tenants.
 //
 // All three reserved orgs are exercised, and the refusal must be byte-identical
 // to the sign-up-disabled refusal so a prober cannot learn which condition fired.
