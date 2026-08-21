@@ -20,35 +20,35 @@ import (
 // key — so it lives on the same tokens/issue seam through the org-key arm of
 // authorizeMinter, never the token-exchange grant.
 
-// seedActUser seeds an ordinary member of owner, filed under externalId and signed
-// up through "hanzo-app" (so its own application's cert signs an as() token).
-// seedActAdmin seeds a user who administers their own org — the target the as()
-// arm must refuse.
-func seedActAdmin(t *testing.T, db orm.DB, owner, name, externalId string) {
+// seedAct seeds one member of owner, filed under externalId and signed up through
+// "hanzo-app" (so its own application's cert signs an as() token). id is the row's
+// STABLE SUBJECT (schema.User.Id); "" leaves it unset, which is every case but the
+// collision one. admin makes the row an administrator of its own org.
+func seedAct(t *testing.T, db orm.DB, owner, name, externalId, id string, admin bool) {
 	t.Helper()
 	u := orm.New[schema.User](db)
 	u.Owner, u.Name = owner, name
 	u.Email = name + "@" + owner + ".test"
 	u.ExternalId = externalId
+	u.Id = id
 	u.SignupApplication = "hanzo-app"
-	u.IsAdmin = true
-	u.SetId(owner + "/" + name)
-	if err := u.CreateCtx(context.Background()); err != nil {
-		t.Fatalf("seed act admin %s/%s: %v", owner, name, err)
-	}
-}
-
-func seedActUser(t *testing.T, db orm.DB, owner, name, externalId string) {
-	t.Helper()
-	u := orm.New[schema.User](db)
-	u.Owner, u.Name = owner, name
-	u.Email = name + "@" + owner + ".test"
-	u.ExternalId = externalId
-	u.SignupApplication = "hanzo-app"
+	u.IsAdmin = admin
 	u.SetId(owner + "/" + name)
 	if err := u.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed act user %s/%s: %v", owner, name, err)
 	}
+}
+
+// seedActAdmin seeds a user who administers their own org — the target the as()
+// arm must refuse. seedActUser seeds an ordinary member.
+func seedActAdmin(t *testing.T, db orm.DB, owner, name, externalId string) {
+	t.Helper()
+	seedAct(t, db, owner, name, externalId, "", true)
+}
+
+func seedActUser(t *testing.T, db orm.DB, owner, name, externalId string) {
+	t.Helper()
+	seedAct(t, db, owner, name, externalId, "", false)
 }
 
 // seedActKey seeds a server key owned by owner. act toggles the durable grant that
@@ -231,17 +231,52 @@ func TestAs_keyNoLongerHonored_401(t *testing.T) {
 	}
 }
 
-// (c) A target in ANOTHER org is refused: the org key's reach ends at its own
-// tenant, so even a valid subject in a different org yields no token.
-func TestAs_crossOrgTarget_refused(t *testing.T) {
+// (c) A target in ANOTHER org yields no token — and is answered EXACTLY as an id
+// nobody holds anywhere. The org key's reach ends at its own tenant, and the reply
+// must not say which of the two it hit: an answer that differs is an oracle for
+// who exists in someone else's tenant, readable by anyone holding one org key.
+func TestAs_foreignSubject_indistinguishableFromAbsent(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "app-secret"})
 	seedActUser(t, db, "acme", "bob", "ext-bob") // a real user, different tenant
 	seedActKey(t, db, "hanzo", "op", "sk-live-optoken", "hanzo-app", true)
 
-	resp, body := do(t, app, asReq("sk-live-optoken", "?id=acme/bob"))
-	if resp.StatusCode != 403 {
-		t.Fatalf("cross-org status = %d, want 403; body=%s", resp.StatusCode, body)
+	foreign, fbody := do(t, app, asReq("sk-live-optoken", "?id=acme/bob"))
+	absent, abody := do(t, app, asReq("sk-live-optoken", "?id=acme/nobody"))
+	if foreign.StatusCode != absent.StatusCode || string(fbody) != string(abody) {
+		t.Fatalf("foreign subject answered %d %s; an id nobody holds answered %d %s — the two must be identical",
+			foreign.StatusCode, fbody, absent.StatusCode, abody)
+	}
+	if foreign.StatusCode != 200 || decode(t, fbody)["status"] != "error" {
+		t.Fatalf("answer = %d %s, want the 200 + status:error absence envelope", foreign.StatusCode, fbody)
+	}
+	if rows := auditRows(t, db, schema.ActionAs); len(rows) != 0 {
+		t.Fatalf("a foreign target wrote %d audit rows, want 0", len(rows))
+	}
+}
+
+// A tenant's own externalId that happens to spell ANOTHER tenant's subject still
+// names ITS OWN member. The org-scoped question is asked first, so a collision
+// cannot steer the answer out of the tenant — and the member remains addressable
+// by the id its operator filed it under.
+func TestAs_externalIdCollidingWithForeignSubject_resolvesOwnMember(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "app-secret"})
+	const collide = "e7d7fda0-4c53-4508-9d35-7ec892b7e5d7"
+	seedAct(t, db, "acme", "bob", "ext-bob", collide, false) // foreign row, that subject
+	seedActUser(t, db, "hanzo", "alice", collide)            // own member, filed under the same id
+	seedActKey(t, db, "hanzo", "op", "sk-live-optoken", "hanzo-app", true)
+
+	resp, body := do(t, app, asReq("sk-live-optoken", "?id="+collide))
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", resp.StatusCode, body)
+	}
+	claims, err := verifyToken(context.Background(), db, dataMap(t, body)["accessToken"].(string))
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if claims.Subject != "hanzo/alice" {
+		t.Fatalf("colliding id resolved to subject %q, want hanzo/alice — the foreign row won", claims.Subject)
 	}
 }
 
@@ -261,11 +296,13 @@ func TestAs_superAdminTarget_refused(t *testing.T) {
 	if resp.StatusCode != 403 {
 		t.Fatalf("SuperAdmin target status = %d, want 403; body=%s", resp.StatusCode, body)
 	}
-	// And a reserved-org target (owner == admin) is refused by confinement too: it
-	// is in a different org than the hanzo key, so it never reaches the mint.
-	resp, _ = do(t, app, asReq("sk-live-optoken", "?id=admin/z"))
-	if resp.StatusCode != 403 {
-		t.Fatalf("reserved-org target status = %d, want 403", resp.StatusCode)
+	// And a reserved-org target (owner == admin) never reaches the mint either: it
+	// lives in a different org than the hanzo key, so confinement answers it as an
+	// id nobody holds — which is also what keeps the arm from reporting who is in
+	// the admin org.
+	resp, body = do(t, app, asReq("sk-live-optoken", "?id=admin/z"))
+	if resp.StatusCode != 200 || decode(t, body)["status"] != "error" {
+		t.Fatalf("reserved-org target = %d %s, want the 200 + status:error absence envelope", resp.StatusCode, body)
 	}
 }
 
