@@ -14,10 +14,10 @@ import "testing"
 // subject-only principal with App empty and Org set to the app row's OWNER half.
 //
 // The result was a client that could not exercise the capability it is
-// allowlisted for. Measured against production: hanzo-console — listed in
-// IAM_ORG_ADMIN_APPS precisely so a brand console can manage orgs during
-// onboarding — answered 403 to its own org read and to a membership grant when
-// it sent its bearer, and 200 to the same read over Basic.
+// allowlisted for: an org-admin app answered 403 to its own org read and to a
+// membership grant when it presented its BEARER, and 200 to the same read over
+// Basic — the same identity, two answers. This pins that both resolve to one
+// principal.
 func TestMachineBearerIsTheSamePrincipalAsBasic(t *testing.T) {
 	t.Setenv("IAM_ORG_ADMIN_APPS", "hanzo-console")
 

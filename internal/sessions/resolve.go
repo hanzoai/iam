@@ -48,8 +48,8 @@ func Set(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application s
 // provider — because what is being recorded is that a human authenticated HERE,
 // and that is true however they did it. The grant shape the relying party asked
 // for is a separate question and has no business deciding whether the IdP
-// remembers the human; braiding those two together is what cost the fleet its
-// single sign-on once already (see loginGrant).
+// remembers the human; braiding those two together is what would cost single
+// sign-on (see loginGrant).
 //
 // A browser that already carries a live session keeps it, so a silent hop across
 // apps does not mint a second sid for every app the person opens.

@@ -133,32 +133,24 @@ func From(ctx context.Context) (*Principal, bool) {
 // is refused, because the one thing this function must never do is answer a
 // request about org B with org A's rows.
 //
-// It used to return p.Org for ANY owner, silently discarding the parameter.
-// Measured against production 2026-07-28 with the hanzo-console credential (home
-// org hanzo): ?owner=lux, ?owner=zoo and ?owner=nonexistent-org-xyz each answered
-// 200/ok with 262 `hanzo` accounts. No tenant's rows escaped IAM — the pin held —
-// so it was not a confidentiality breach here; it was MISATTRIBUTION, which is
-// worse in one specific way. Nothing in the status code, the `status` field, the
-// message or the count said the filter had been dropped, so the caller believed
-// it held tenant B while holding tenant A. An operator asked for lux, was handed
-// 262 hanzo accounts, and was one filter-and-delete from purging the wrong
-// tenant. Downstream it WAS a leak: cloud's IAM edge (cloud/iam_edge.go) checks
-// ?owner= against the calling tenant and then forwards it under ONE confidential
-// client, so every tenant's team page asked for its own org and was served the
-// edge credential's org instead. A pin that lies composes into a breach; a
-// refusal cannot.
+// REFUSING beats reinterpreting, and the difference is not stylistic. Answering
+// a request about org B with org A's rows says nothing in the status code, the
+// `status` field, the message or the count, so a caller holds tenant A believing
+// it holds tenant B — and the next thing it does with those rows is filter and
+// write. It also composes: a service in front of this one may check ?owner=
+// against its calling tenant and then forward it under a single confidential
+// client, which is safe exactly as long as the pin here is honest and is a
+// cross-tenant read the moment it is not. A refusal cannot compose that way.
 //
 // The refusal is NOT an org-existence oracle, and by construction rather than by
 // care: the decision is taken from the verified principal alone and never touches
-// the store, so `lux` (a real tenant), `built-in` (reserved) and
-// `nonexistent-org-xyz` (a fabrication) are the same comparison and the same
-// bytes out. Its text names the CREDENTIAL's org, never the requested one. That
-// is the same collapse cloud's per-org KMS store makes for this class of leak —
-// every spelling the caller may not have routes to ONE existence-independent
-// answer. It differs only in WHICH answer: KMS has no org parameter to refuse (it
-// reads the org from the token), so absence is its only observable and it answers
-// 404; here the org is a stated request parameter, so there IS an authorization
-// decision to report, and reporting it is the entire point.
+// the store, so a real tenant, a reserved org and a fabricated name are the same
+// comparison and the same bytes out. Its text names the CREDENTIAL's org, never
+// the requested one. Every spelling the caller may not have routes to ONE
+// existence-independent answer — the same collapse a per-org store makes by
+// having no org parameter to refuse. It differs only in WHICH answer: where the
+// org is a stated request parameter there IS an authorization decision to report,
+// and reporting it is the entire point.
 //
 // An empty p.Org is refused too. A non-super with no org has no org scope, and
 // returning "" would resolve to "no filter" — every tenant's rows, which is the
@@ -184,11 +176,9 @@ func Scope(ctx context.Context, owner string) (string, error) {
 // for the org registry: "a person reads any org they BELONG to, and edits the ones
 // they help run." A human's account lives in one IAM tenant while the orgs they
 // work in are a set, so keying a read on p.Org alone refuses an org's own admin
-// the org they administer. Measured in production: get-organization-projects
-// ?organization=lux answered 403 for a caller holding an admin membership in lux,
-// the console's switcher swallowed it, and an org the picker said you ran would
-// not open. The membership set is read from the store when the principal is built
-// (membershipRoles) — it is never a claim the caller supplies.
+// the org they administer — a second org the caller belongs to would not open in
+// the switcher. The membership set is read from the store when the principal is
+// built (membershipRoles) — it is never a claim the caller supplies.
 //
 // WRITES DO NOT COME THROUGH HERE, and that is the whole reason this is a second
 // entry point rather than a widened Scope. Scope keeps its stricter clause, so a
@@ -845,18 +835,18 @@ func entityOf(path string) string {
 // -> organizations. Both surfaces address the SAME rows, so they must resolve to
 // the same entity — and they did not.
 //
-// This is what made the app self-read grant look inert in production. The native
-// route /v1/iam/applications resolved to "applications" and matched; the compat
-// alias /v1/iam/get-application resolved to the literal string "get-application",
-// matched no clause, fell through to the reserved-owner gate and 403'd. Cloud calls
-// the alias, so the grant never fired on the only path anyone uses.
+// Without the fold a capability keyed on an entity is inert on the compat surface:
+// the native route /v1/iam/applications resolves to "applications" and matches,
+// while the alias /v1/iam/get-application resolves to the literal "get-application",
+// matches no clause, falls through to the reserved-owner gate and 403s. A client
+// that calls the alias never sees the grant fire.
 //
-// It is the wider bug too, not just this grant's: EVERY capability keyed on an
-// entity was dead on the compat surface, because capFor("add-organization") is not
-// capFor("organizations"). The allowlists that exist precisely so the brand consoles
-// can manage orgs during onboarding were being consulted with a key that could never
-// match. Folding here — the ONE place a path becomes an entity — restores the
-// documented policy on both surfaces at once rather than teaching each clause two
+// It is the wider point too, not just one grant: EVERY capability keyed on an
+// entity would be inert on the compat surface, because capFor("add-organization")
+// is not capFor("organizations"). The allowlists that exist precisely so the brand
+// consoles can manage orgs during onboarding would be consulted with a key that
+// could never match. Folding here — the ONE place a path becomes an entity — gives
+// both surfaces the documented policy at once rather than teaching each clause two
 // spellings.
 func entityNoun(seg string) string {
 	for _, v := range legacyVerbs {

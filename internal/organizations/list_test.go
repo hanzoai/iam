@@ -19,14 +19,11 @@ import (
 // may I see" — so it is held to the same three facts, and it is held here because
 // it was not.
 //
-// It read no principal and treated an absent Owner selector as no filter, so a
-// request with no credential was answered with the registry. It was reachable
-// that way in production through the agent door, which carries a typed op to its
-// handler without the edge in front of it: 670 organizations to an anonymous
-// caller.
-//
-// The tests below are the ones whose absence let that ship. Search has each of
-// them already; the endpoint beside it had none.
+// A handler that reads no principal and treats an absent Owner selector as no
+// filter answers a request with no credential with the whole registry — and the
+// agent door carries a typed op to its handler without the edge in front of it,
+// so the scope has to be the handler's own. The tests below hold this endpoint to
+// the same facts Search already has.
 
 const listPath = "/v1/iam/organizations"
 

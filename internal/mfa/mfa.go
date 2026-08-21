@@ -74,6 +74,8 @@ const (
 	LegacyPathPreferred = "/v1/iam/set-preferred-mfa"
 )
 
+//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
+
 func Route(app *zip.App, db orm.DB) {
 	app.Post(PathInitiate, initiate(db))
 	app.Post(PathEnable, enable(db))
@@ -177,11 +179,11 @@ func initiate(db orm.DB) zip.Handler {
 // It requires the proof initiate handed out — a passcode from the authenticator, or the
 // code that was sent — and verifies it BEFORE writing anything.
 //
-// It used to write on the strength of a `secret` field alone. A client that skipped
-// the verify step, scanned the QR into the wrong app, or was simply buggy switched on
-// a factor no code would ever satisfy, and the account was then locked out with no
+// Verifying BEFORE writing is what keeps a client that never completed the proof —
+// a skipped verify step, a QR scanned into the wrong app, a bug — from switching on
+// a factor no code can satisfy. That would lock the account out with no
 // self-service way back: the gate holds the sign-in before minting, so the person
-// cannot obtain the bearer that disable requires.
+// could not obtain the bearer that disable requires.
 //
 // The recovery codes are minted here and returned ONCE, on the first factor the
 // account adds. Answering with them is the way back in when no factor can be

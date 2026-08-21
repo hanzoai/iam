@@ -143,13 +143,12 @@ func grantWithSecret(t *testing.T, app *zip.App, clientID, secret, scope string)
 	return tok
 }
 
-// THE hourly-re-login bug. A registration that HOLDS a client secret still
-// serves a PUBLIC surface — `hanzo-cli`, and every @hanzo/iam SPA whose secret
-// exists only for a backend path. Those clients exchange a PKCE code without
-// presenting the secret, which authorizationCodeGrant deliberately allows; then
-// refresh demanded the secret they never had, answered 401 invalid_client, and
-// the session died at the access token's expiry. Measured on hanzo-cli
-// 2026-07-31: `hanzo` reopened a browser login every hour.
+// A registration that HOLDS a client secret still serves a PUBLIC surface: a CLI,
+// or an SPA whose secret exists only for a backend path. Such a client exchanges
+// a PKCE code without presenting the secret, which authorizationCodeGrant
+// deliberately allows — so refresh must accept the same client on the same terms,
+// or the session it just established dies at the access token's expiry and the
+// human signs in again every hour.
 func TestRefresh_PKCEGrantNeedsNoSecretOnASecretHoldingClient(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "cli", secret: "s3cret", redirectURIs: []string{testRedirect}, refreshHours: 720})

@@ -362,11 +362,11 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// authorization code. The grant shape the RELYING PARTY asked for is a separate
 	// question and has no business deciding whether the IdP remembers the human.
 	//
-	// Braiding those two together is what cost the fleet its single sign-on. This
-	// ran under `if f.Type != "code"`, so the ONE path humans actually walk — every
-	// app sends them through the code flow — minted a code and left no session. The
-	// silent-SSO branch above was fully built, tested and correct, and simply had
-	// nothing to read: hanzo.id asked for the password again on every app.
+	// Braiding those two together is what would cost single sign-on: gated under
+	// `if f.Type != "code"`, the one path humans actually walk — every app sends
+	// them through the code flow — would mint a code and leave no session, so the
+	// IdP re-prompts for the password on every app while the silent-SSO branch has
+	// nothing to read.
 	//
 	// sessions.Open is that rule, and it is where the wallet front door and the
 	// return from another identity provider read it from too. Best-effort — a
@@ -377,7 +377,7 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// sign-in and the authorization code for the code flow, so the SDK reads `data`
 	// the same way either way. The old `if f.Type != "code"` early return restated
 	// that distinction a second time and is gone — it is the same braiding of grant
-	// shape into an unrelated decision that cost the fleet its single sign-on above.
+	// shape into an unrelated decision, described above.
 	return httpx.Ok(c, out)
 }
 

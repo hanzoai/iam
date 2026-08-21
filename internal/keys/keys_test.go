@@ -403,11 +403,11 @@ func TestKeys_ReadsMaskTheSecretAndKeepThePublishableHalf(t *testing.T) {
 	}
 }
 
-// Two members of one org hold two secret keys. The row used to be named by scope
-// alone, so (owner, scope) identified a session-equivalent credential and an org
-// had exactly ONE secret key row: the second member to mint overwrote the first
-// member's key in place. Measured against production before the fix — user B's key
-// authenticated, user A minted, and B's next call came back "not recognized".
+// Two members of one org hold two secret keys. When the row was named by scope
+// alone, (owner, scope) identified a session-equivalent credential and an org had
+// exactly ONE secret key row, so the second member to mint overwrote the first in
+// place — B authenticates, A mints, and B's next call is not recognized. This pins
+// that each member's key stands on its own.
 func TestMintUserKey_oneMemberDoesNotRevokeAnother(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
