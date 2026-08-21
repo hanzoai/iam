@@ -46,7 +46,7 @@ func TestImpersonation_generalMinter_cannotReachAdminOrgTarget(t *testing.T) {
 
 	// issue-user-token: the read-only mint (no row mutation) that exercises the same
 	// authorizeMinter → mintTarget seam as mint-user-keys.
-	resp, body := do(t, app, keyReq(PathTokensIssue, "hanzo-console", "top-secret", "?id=admin/z"))
+	resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=admin/z"))
 	if resp.StatusCode != 403 {
 		t.Fatalf("SUPER SPOOF: general minter reached admin-org target admin/z (status=%d) — an app impersonated a SuperAdmin; body=%s",
 			resp.StatusCode, body)
@@ -58,7 +58,7 @@ func TestImpersonation_generalMinter_cannotReachAdminOrgTarget(t *testing.T) {
 	// mint-user-keys hits the SAME gate and additionally mutates the row — prove it is
 	// refused too, so a leaked general-minter secret can neither mint a super token nor
 	// rotate a super's durable API key.
-	resp, body = do(t, app, keyReq(PathKeysMint, "hanzo-console", "top-secret", "?id=admin/z"))
+	resp, body = do(t, app, keyReq("POST", userKeys("admin/z"), "hanzo-console", "top-secret", ""))
 	if resp.StatusCode != 403 {
 		t.Fatalf("SUPER SPOOF: general minter rotated the SuperAdmin admin/z's key (status=%d); body=%s",
 			resp.StatusCode, body)
@@ -78,7 +78,7 @@ func TestImpersonation_adminMinter_boundaryIsTheAdminMintCapability(t *testing.T
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUserInOrg(t, db, "admin", "z", "z@hanzo.ai", "pw")
 
-	resp, body := do(t, app, keyReq(PathTokensIssue, "hanzo-console", "top-secret", "?id=admin/z"))
+	resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=admin/z"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("admin-mint-capable console must reach admin/z (status=%d); body=%s", resp.StatusCode, body)
 	}
