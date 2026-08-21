@@ -72,44 +72,34 @@ func (h *harness) basicGet(t *testing.T, path, clientID, secret string) int {
 }
 
 // A relying party bootstraps: read its own application, then the cert that
-// application names. Both must succeed over the COMPAT VERB, or cloud panics one
-// line after the read it was granted.
-func TestSelfRead_OverTheCompatVerbCloudActuallyCalls(t *testing.T) {
+// application names. Both must succeed, or cloud panics one line after the read
+// it was granted.
+//
+// THE REQUEST THE CALLER ACTUALLY MAKES. hanzoai/ai builds both as a GET naming
+// the partition through one constant (internal/iam/{application,cert}.go,
+// PlatformOwner = "admin"), and the METHOD is load-bearing rather than
+// incidental: IAM decides read-from-write by it, so the same call shaped as a
+// POST is weighed as a write and the self-read grant does not fire — a 403 that
+// reads like a permissions regression when the only thing wrong is the verb.
+func TestSelfRead_AsTheRelyingPartySendsIt(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
 	// Production carries the SAME cert under two owners (seed drift, same keypair);
-	// mirror that so the org-qualified spelling the binary sends is exercised.
+	// mirror that so a read naming either partition is exercised.
 	seedCertRow(t, h.db, "hanzo", signingKid)
 
 	for _, tc := range []struct {
 		name, path string
 		want       int
 	}{
-		// The exact request, both spellings of the id the caller may send.
-		{"own application, owner-qualified", "/v1/iam/applications/get?id=admin%2Fhanzo-cloud", 200},
-		// 200 is not enough: Scope used to rewrite the owner to the app's SERVED org,
-		// so the read was authorized and then answered "the entity does not exist" —
-		// a 200 that is functionally the 403 it replaced. The body is asserted below.
-		{"own cert, owner-qualified", "/v1/iam/certs/get?id=admin%2F" + signingKid, 200},
-		{"own cert, bare name", "/v1/iam/certs/get?id=" + signingKid, 200},
-		// THE SHAPE THE BINARY SENDS. ai/internal/iam/cert.go:35 builds
-		// "<IAM_ORG>/<name>", so hanzo/cert-hanzo is the only spelling that matters in
-		// production; the bare form is the one I verified last time and it was not it.
-		{"own cert, org-qualified (what ai sends)", "/v1/iam/certs/get?id=hanzo%2F" + signingKid, 200},
-		// The native noun surface must agree — one policy, two spellings. The LIST
-		// route is not the self-read: ApplicationQuery carries only Owner, so
-		// ?name= is ignored and this asks to enumerate EVERY application under the
-		// reserved admin org — which a tenant app may not do. 403 is the right
-		// answer and the policy agreeing with itself.
-		//
-		// It read 400 until zip v1.17.1 taught a typed op to read the whole URL. The
-		// query never bound, so validate fired on an empty Owner and the shape
-		// complaint landed BEFORE authz could refuse — a 400 standing in for a 403,
-		// which this case then asserted as "reaches the handler = authorized".
-		{"noun surface LIST of a reserved org is refused", "/v1/iam/applications?owner=admin&name=hanzo-cloud", 403},
-		// The actual self-read on the noun surface: ONE application by its natural
-		// key, which is what the compat verb above expresses.
-		{"own application, noun surface (single)", "/v1/iam/application?owner=admin&name=hanzo-cloud", 200},
+		// The two reads the bootstrap makes, both owner-qualified, both GET.
+		{"own application", "/v1/iam/applications/get?owner=admin&name=hanzo-cloud", 200},
+		{"the cert that application names", "/v1/iam/certs/get?owner=admin&name=" + signingKid, 200},
+		// The LIST is not the self-read: it asks to enumerate EVERY application
+		// under the reserved admin org, which a tenant app may not do. 403 is the
+		// policy agreeing with itself rather than a second rule.
+		{"the LIST of a reserved org is still refused",
+			"/v1/iam/applications?owner=admin&name=hanzo-cloud", 403},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := h.basicGet(t, tc.path, "hanzo-cloud", "s3cret"); got != tc.want {
@@ -158,7 +148,7 @@ func TestSelfRead_StillRefusesEverythingElse(t *testing.T) {
 func TestSelfRead_WrongSecretIsNotAPrincipal(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
-	if got := h.basicGet(t, "/v1/iam/applications/get?id=admin%2Fhanzo-cloud", "hanzo-cloud", "wrong"); got == 200 {
+	if got := h.basicGet(t, "/v1/iam/applications/get?owner=admin&name=hanzo-cloud", "hanzo-cloud", "wrong"); got == 200 {
 		t.Errorf("a wrong client secret read the application row")
 	}
 }
@@ -169,7 +159,7 @@ func TestSelfRead_ReturnsTheRowNotAnEmptyOk(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
 
-	req := httptest.NewRequest("GET", "/v1/iam/applications/get?id=admin%2Fhanzo-cloud", nil)
+	req := httptest.NewRequest("GET", "/v1/iam/applications/get?owner=admin&name=hanzo-cloud", nil)
 	req.Host = "hanzo.id"
 	req.Header.Set("Authorization", "Basic "+
 		base64.StdEncoding.EncodeToString([]byte("hanzo-cloud:s3cret")))
@@ -180,25 +170,21 @@ func TestSelfRead_ReturnsTheRowNotAnEmptyOk(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 
+	// The read answers the Application itself; the retired surface wrapped every
+	// answer in {status, msg, data}, so a decoder still shaped for that finds a
+	// zero value and reads exactly like a successful read of an empty record.
 	var env struct {
-		Status string `json:"status"`
-		Msg    string `json:"msg"`
-		Data   struct {
-			Name  string `json:"name"`
-			Owner string `json:"owner"`
-			Cert  string `json:"cert"`
-		} `json:"data"`
+		Name  string `json:"name"`
+		Owner string `json:"owner"`
+		Cert  string `json:"cert"`
 	}
 	if err := json.Unmarshal(body, &env); err != nil {
 		t.Fatalf("decode %s: %v", body, err)
 	}
-	if env.Status != "ok" {
-		t.Fatalf("self-read answered status=%q msg=%q — authorized but unable to read itself", env.Status, env.Msg)
+	if env.Owner != "admin" || env.Name != "hanzo-cloud" {
+		t.Errorf("got %s/%s, want admin/hanzo-cloud", env.Owner, env.Name)
 	}
-	if env.Data.Owner != "admin" || env.Data.Name != "hanzo-cloud" {
-		t.Errorf("got %s/%s, want admin/hanzo-cloud", env.Data.Owner, env.Data.Name)
-	}
-	if env.Data.Cert != signingKid {
-		t.Errorf("cert = %q, want %q — cloud reads this next", env.Data.Cert, signingKid)
+	if env.Cert != signingKid {
+		t.Errorf("cert = %q, want %q — cloud reads this next", env.Cert, signingKid)
 	}
 }

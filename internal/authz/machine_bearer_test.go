@@ -27,13 +27,13 @@ func TestMachineBearerIsTheSamePrincipalAsBasic(t *testing.T) {
 	// The subject a client_credentials token carries: "<appOwner>/<appName>".
 	bearer := h.token(t, "admin/hanzo-console")
 
-	const own = "/v1/iam/applications/get?id=admin%2Fhanzo-console"
+	const own = "/v1/iam/applications/get?owner=admin&name=hanzo-console"
 	if got := h.do(t, "GET", own, bearer, nil); got != 200 {
 		t.Errorf("self-read over the machine bearer = %d, want 200 (Basic already answers 200)", got)
 	}
 
 	// The capability itself: an org read the allowlist exists to permit.
-	const org = "/v1/iam/organizations/get?id=admin%2Fhanzo"
+	const org = "/v1/iam/organizations/get?owner=admin&name=hanzo"
 	if got := h.do(t, "GET", org, bearer, nil); got == 403 {
 		t.Errorf("CapOrgAdmin read over the machine bearer = 403; the allowlisted capability must apply on both transports")
 	}
