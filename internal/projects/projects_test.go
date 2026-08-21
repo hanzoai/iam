@@ -113,9 +113,10 @@ func (h *harness) do(t *testing.T, method, path, bearer, body string) (int, map[
 	return resp.StatusCode, m
 }
 
-// names reads the project names out of a get-organization-projects envelope's data.
+// names reads the project names out of a listing, which is named for its
+// resource — the retired envelope called every page `data`.
 func names(m map[string]any) []string {
-	rows, _ := m["data"].([]any)
+	rows, _ := m["projects"].([]any)
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
 		if o, ok := r.(map[string]any); ok {
@@ -145,13 +146,13 @@ func TestProjects_lifecycle(t *testing.T) {
 
 	// add-project (org-admin).
 	body := `{"owner":"hanzo","name":"alpha","displayName":"Alpha","organization":"hanzo","description":"first"}`
-	if st, m := h.do(t, "POST", "/v1/iam/add-project", boss, body); st != 200 || m["status"] != "ok" {
+	if st, m := h.do(t, "POST", "/v1/iam/projects", boss, body); st != 200 {
 		t.Fatalf("add-project: status=%d body=%v", st, m)
 	}
 
 	// get-organization-projects — a REGULAR member sees it (the switcher is for all).
-	st, m := h.do(t, "GET", "/v1/iam/get-organization-projects?organization=hanzo", alice, "")
-	if st != 200 || m["status"] != "ok" {
+	st, m := h.do(t, "GET", "/v1/iam/projects?owner=hanzo", alice, "")
+	if st != 200 {
 		t.Fatalf("list: status=%d body=%v", st, m)
 	}
 	if !has(names(m), "alpha") {
@@ -159,11 +160,11 @@ func TestProjects_lifecycle(t *testing.T) {
 	}
 
 	// delete-project (org-admin), keyed by owner/name.
-	if st, m := h.do(t, "POST", "/v1/iam/delete-project", boss,
-		`{"owner":"hanzo","name":"alpha","organization":"hanzo"}`); st != 200 || m["status"] != "ok" {
+	if st, m := h.do(t, "POST", "/v1/iam/projects/delete", boss,
+		`{"owner":"hanzo","name":"alpha","organization":"hanzo"}`); st != 200 {
 		t.Fatalf("delete-project: status=%d body=%v", st, m)
 	}
-	_, m = h.do(t, "GET", "/v1/iam/get-organization-projects?organization=hanzo", alice, "")
+	_, m = h.do(t, "GET", "/v1/iam/projects?owner=hanzo", alice, "")
 	if has(names(m), "alpha") {
 		t.Fatalf("'alpha' still listed after delete: %v", names(m))
 	}
@@ -175,14 +176,14 @@ func TestProjects_writeNeedsAdmin(t *testing.T) {
 	alice := h.token(t, "hanzo/alice") // regular
 
 	body := `{"owner":"hanzo","name":"beta","organization":"hanzo"}`
-	if st, _ := h.do(t, "POST", "/v1/iam/add-project", alice, body); st != 403 {
+	if st, _ := h.do(t, "POST", "/v1/iam/projects", alice, body); st != 403 {
 		t.Fatalf("regular user add-project: status=%d, want 403", st)
 	}
-	if st, _ := h.do(t, "POST", "/v1/iam/delete-project", alice, body); st != 403 {
+	if st, _ := h.do(t, "POST", "/v1/iam/projects/delete", alice, body); st != 403 {
 		t.Fatalf("regular user delete-project: status=%d, want 403", st)
 	}
 	// But listing is allowed (200) — the switcher is shown to every user.
-	if st, m := h.do(t, "GET", "/v1/iam/get-organization-projects?organization=hanzo", alice, ""); st != 200 || m["status"] != "ok" {
+	if st, m := h.do(t, "GET", "/v1/iam/projects?owner=hanzo", alice, ""); st != 200 {
 		t.Fatalf("regular user list: status=%d body=%v", st, m)
 	}
 }
@@ -196,13 +197,13 @@ func TestProjects_crossTenantScoping(t *testing.T) {
 	alice := h.token(t, "hanzo/alice")
 
 	// super seeds a project under a DIFFERENT tenant, orgb.
-	if st, m := h.do(t, "POST", "/v1/iam/add-project", super,
-		`{"owner":"orgb","name":"secret","organization":"orgb"}`); st != 200 || m["status"] != "ok" {
+	if st, m := h.do(t, "POST", "/v1/iam/projects", super,
+		`{"owner":"orgb","name":"secret","organization":"orgb"}`); st != 200 {
 		t.Fatalf("super add orgb project: status=%d body=%v", st, m)
 	}
 
 	// alice (hanzo) asks for orgb's projects → gets HER org's scope, never orgb's.
-	_, m := h.do(t, "GET", "/v1/iam/get-organization-projects?organization=orgb", alice, "")
+	_, m := h.do(t, "GET", "/v1/iam/projects?owner=orgb", alice, "")
 	if has(names(m), "secret") {
 		t.Fatalf("VULN: hanzo user listed orgb's project 'secret': %v", names(m))
 	}
