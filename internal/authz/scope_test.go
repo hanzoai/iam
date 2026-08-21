@@ -52,17 +52,20 @@ type reply struct {
 	body   string
 }
 
-// records decodes the v1 envelope's `data` array into (owner, name) pairs — the
-// rows that actually crossed the wire.
+// records decodes a user listing into the rows that actually crossed the wire.
+// The noun surface names its page after the resource (`users`); the retired verb
+// surface wrapped everything in a compat `data` array, and a decoder still reading
+// that key returns an empty page for a healthy 200 — which passes every "no
+// foreign rows" loop without executing it once.
 func (r reply) records(t *testing.T) []schema.User {
 	t.Helper()
 	var env struct {
-		Data []schema.User `json:"data"`
+		Users []schema.User `json:"users"`
 	}
 	if err := json.Unmarshal([]byte(r.body), &env); err != nil {
 		return nil // an error envelope carries no array; zero records is the point
 	}
-	return env.Data
+	return env.Users
 }
 
 // owners returns the DISTINCT owners present in a listing — the misattribution
@@ -147,6 +150,19 @@ func seedOrgRow(t *testing.T, db orm.DB, name string) {
 	o.SetId("admin/" + name)
 	if err := o.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed org %s: %v", name, err)
+	}
+}
+
+// seedWorkspaceRow adds one workspace under a tenant. Projects and workspaces are
+// the two kinds a member may read across the orgs they belong to, so a test of
+// that read has to seed both or half of it asserts over an empty page.
+func seedWorkspaceRow(t *testing.T, db orm.DB, owner, name string) {
+	t.Helper()
+	w := orm.New[schema.Workspace](db)
+	w.Owner, w.Name = owner, name
+	w.SetId(owner + "/" + name)
+	if err := w.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed workspace %s/%s: %v", owner, name, err)
 	}
 }
 
@@ -464,27 +480,43 @@ func TestScopeRead_AnOrgYouBelongToOpens(t *testing.T) {
 	// A hanzo account that ADMINISTERS the other tenant, the way a real operator does.
 	seedUser(t, h.db, "hanzo", "crossorg", false, false, false)
 	seedMembership(t, h.db, "hanzo/crossorg", foreignRealOrg, "admin")
+	seedWorkspaceRow(t, h.db, foreignRealOrg, "lux-secret-workspace")
 	crossorg := asUser(h.token(t, "hanzo/crossorg"))
 
-	for _, path := range []string{
-		"/v1/iam/projects?organization=" + foreignRealOrg,
-		"/v1/iam/workspaces?organization=" + foreignRealOrg,
+	// The org is named with ?owner=, the one spelling every noun on this surface
+	// scopes by. The retired verb spelled it ?organization=, and a rename that
+	// carried the address without the query would answer for the home org at 200.
+	for _, tc := range []struct{ path, key string }{
+		{"/v1/iam/projects?owner=" + foreignRealOrg, "projects"},
+		{"/v1/iam/workspaces?owner=" + foreignRealOrg, "workspaces"},
 	} {
-		t.Run(path, func(t *testing.T) {
-			got := h.send(t, "GET", path, crossorg, nil)
+		t.Run(tc.path, func(t *testing.T) {
+			got := h.send(t, "GET", tc.path, crossorg, nil)
 			if got.status != 200 {
 				t.Fatalf("GET %s = %d, want 200 — a member of %s cannot read it: %s",
-					path, got.status, foreignRealOrg, got.body)
+					tc.path, got.status, foreignRealOrg, got.body)
+			}
+			// Through RawMessage because the envelope carries a `total` beside the
+			// page, and a map of slices cannot hold a number.
+			var env map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(got.body), &env); err != nil {
+				t.Fatalf("decode %s: %v", got.body, err)
+			}
+			var rows []map[string]any
+			if err := json.Unmarshal(env[tc.key], &rows); err != nil {
+				t.Fatalf("decode %s of %s: %v", tc.key, got.body, err)
+			}
+			// An empty page would pass the ownership loop below without executing it
+			// once, so the seeded org must actually come back.
+			if len(rows) == 0 {
+				t.Fatalf("GET %s answered 200 with no %s — an empty page proves nothing "+
+					"about who the rows belong to: %s", tc.path, tc.key, got.body)
 			}
 			// It must answer for the org ASKED FOR, never quietly for the home org.
-			var env struct {
-				Data []map[string]any `json:"data"`
-			}
-			_ = json.Unmarshal([]byte(got.body), &env)
-			for _, row := range env.Data {
+			for _, row := range rows {
 				if row["owner"] != foreignRealOrg {
 					t.Errorf("GET %s returned a row owned by %v — answering for the home org "+
-						"is the misattribution the strict clause existed to prevent", path, row["owner"])
+						"is the misattribution the strict clause existed to prevent", tc.path, row["owner"])
 				}
 			}
 		})

@@ -104,14 +104,17 @@ func apply(dst *schema.Workspace, in *Input) {
 // You see your own organization's workspaces and no one else's; which organization that
 // is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by authz.Scope from the authenticated principal,
-	// never taken from the input: a tenant reads only its own org, a SuperAdmin
-	// reads the owner it asks for. Filtering on in.Owner instead was a confused
-	// deputy — the Guard authorizes on the query string, then a typed GET binds
-	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
-	// arrived empty on every REST call and the "empty owner lists everything"
-	// branch returned every tenant.
-	owner, err := authz.Scope(ctx, in.Owner)
+	// ScopeRead, not Scope: belonging to an org is what entitles you to see what
+	// it contains, and the orgs a person works in are a SET while their account
+	// lives in one of them. It is the same question authz.Principal.CanEntity
+	// answers at the Guard one layer up, so the two cannot give different answers
+	// about one request — Scope here would refuse what the Guard just admitted.
+	//
+	// The owner comes from in.Owner because zip BINDS the query onto the input
+	// (typed.go bindURL(&in, query)); the older reading, that a typed GET binds
+	// nothing and so in.Owner is always empty, was true of an earlier pin and is
+	// what made this surface answer only for the caller's home org.
+	owner, err := authz.ScopeRead(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}
