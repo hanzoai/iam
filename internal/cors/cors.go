@@ -148,12 +148,12 @@ var browserPaths = map[string]credential{
 	// ORIGIN may read the answer; authz decides WHO. Same shape as userinfo
 	// above, which is already open and already Bearer-protected.
 	//
-	"/v1/iam/get-account": bearer,
+	"/v1/iam/account": bearer,
 
-	// get-account is the one that ALSO answers from the SSO cookie, and it stays
-	// [bearer] deliberately: it is the account object, it is exactly what the
-	// live proxy defect disclosed, and no console asks for it with credentials.
-	// A console reads it with the Bearer it already holds.
+	// The account read is the one that ALSO answers from the SSO cookie, and it
+	// stays [bearer] deliberately: it is the account object, it is exactly what
+	// the live proxy defect disclosed, and no console asks for it with
+	// credentials. A console reads it with the Bearer it already holds.
 
 	// The two writes a first-party console performs on the user's OWN behalf:
 	// create an org, invite someone to it. Both are Guard-authorized against the

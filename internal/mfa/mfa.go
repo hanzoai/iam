@@ -66,19 +66,17 @@ import (
 // arrived with stay reachable for pinned consumers and are taught nowhere; see
 // zip.Alias.
 const (
-	PathInitiate        = "/v1/iam/mfa/setup/initiate"
-	PathEnable          = "/v1/iam/mfa/setup/enable"
-	PathDisable         = "/v1/iam/mfa/disable"
-	PathPreferred       = "/v1/iam/mfa/preferred"
-	LegacyPathDisable   = "/v1/iam/delete-mfa"
-	LegacyPathPreferred = "/v1/iam/set-preferred-mfa"
+	PathInitiate  = "/v1/iam/mfa/setup/initiate"
+	PathEnable    = "/v1/iam/mfa/setup/enable"
+	PathDisable   = "/v1/iam/mfa/disable"
+	PathPreferred = "/v1/iam/mfa/preferred"
 )
 
 func Route(app *zip.App, db orm.DB) {
 	app.Post(PathInitiate, initiate(db))
 	app.Post(PathEnable, enable(db))
-	zip.Alias(app.Post, PathDisable, LegacyPathDisable, disable(db))
-	zip.Alias(app.Post, PathPreferred, LegacyPathPreferred, setPreferred(db))
+	app.Post(PathDisable, disable(db))
+	app.Post(PathPreferred, setPreferred(db))
 }
 
 // recoveryCount is how many recovery codes an enrolment mints. Eight, not one: a

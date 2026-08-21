@@ -36,6 +36,11 @@ func TestRetiredSpellingsAreGone(t *testing.T) {
 		"add-project",
 		// the one singular kind, retired with them
 		"application",
+		// the front-door verb-nouns, each replaced by the noun its own canonical
+		// constant names (internal/oidc/canonical.go, internal/mfa).
+		"get-account", "get-app-login", "update-preferences", "send-verification-code",
+		"issue-user-token", "mint-user-keys", "revoke-user-keys",
+		"delete-mfa", "set-preferred-mfa",
 	}
 	gone := make(map[string]bool, len(retired))
 	for _, v := range retired {
