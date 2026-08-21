@@ -180,7 +180,7 @@ func TestJourney_AdminConsole_LegacySurface(t *testing.T) {
 	root := e.mint(t, "admin/root") // a SuperAdmin bearer
 
 	// get-account — {status:ok, data:<masked user>} with owner + isAdmin.
-	acct := e.getJSON(t, "/v1/iam/get-account", root)
+	acct := e.getJSON(t, "/v1/iam/account", root)
 	if acct["status"] != "ok" {
 		t.Fatalf("get-account status: %v", acct)
 	}

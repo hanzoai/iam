@@ -212,7 +212,7 @@ func TestPublicRoutesNeedNoBearer(t *testing.T) {
 		{"POST", "/v1/iam/login"},
 		{"GET", "/v1/iam/oauth/authorize"},
 		{"POST", "/v1/iam/oauth/token"},
-		{"GET", "/v1/iam/get-app-login"},
+		{"GET", "/v1/iam/auth/application"},
 		{"GET", "/v1/iam/auth/methods"},
 		{"POST", "/v1/iam/oauth/logout"},
 		// The front-door session/identity surface — each self-resolves the caller
@@ -220,13 +220,13 @@ func TestPublicRoutesNeedNoBearer(t *testing.T) {
 		// or a handler 400), never the Guard's 401. These are the routes the old
 		// publicPaths list had to be patched to include; now they are public purely
 		// because oidc.Route registers them on the pre-Guard group.
-		{"GET", "/v1/iam/get-account"},
+		{"GET", "/v1/iam/account"},
 		{"POST", "/v1/iam/signin"},
 		{"GET", "/v1/iam/whoami"},
 		{"GET", "/v1/iam/linked-accounts"},
 		{"POST", "/v1/iam/signup"},
-		{"POST", "/v1/iam/send-verification-code"},
-		{"POST", "/v1/iam/update-preferences"},
+		{"POST", "/v1/iam/verification-codes"},
+		{"POST", "/v1/iam/preferences"},
 	}
 	for _, c := range public {
 		t.Run(c.method+" "+c.path, func(t *testing.T) {
