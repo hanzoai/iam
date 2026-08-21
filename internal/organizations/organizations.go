@@ -12,6 +12,7 @@ import (
 	"errors"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -179,7 +180,7 @@ func (h *OrganizationAPI) Get(ctx context.Context, in *GetOrganizationInput) (*s
 // answers everyone from their own memberships.
 func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) (*ListOrganizationsOutput, error) {
 	p, ok := authz.From(ctx)
-	if !ok || !p.Super {
+	if !ok || !p.Sudo {
 		return nil, zip.ErrForbidden("forbidden")
 	}
 
@@ -277,7 +278,7 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
-	if in.Name == "admin" {
+	if in.Name == policy.AdminOrg {
 		return nil, zip.ErrForbidden("the built-in admin organization cannot be deleted")
 	}
 	existing, err := h.find(in.Owner, in.Name)

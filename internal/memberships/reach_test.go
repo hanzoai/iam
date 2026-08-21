@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -30,7 +31,7 @@ import (
 func seedMember(t *testing.T, db orm.DB, user, org, role string) {
 	t.Helper()
 	m := orm.New[schema.Membership](db)
-	m.Owner, m.Name = store.AdminOrg, user+"|"+org
+	m.Owner, m.Name = policy.AdminOrg, user+"|"+org
 	m.User, m.Org, m.Role = user, org, role
 	m.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	m.SetId(m.Owner + "/" + m.Name)

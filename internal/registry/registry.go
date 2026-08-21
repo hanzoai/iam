@@ -58,6 +58,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/valyala/fasthttp"
 	"github.com/zap-proto/zip"
@@ -303,7 +304,7 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 // SuperAdmin's real machine push identity is unchanged.
 func (h *handler) userByPassword(ctx context.Context, id, secret string) *schema.User {
 	for _, org := range candidateOrgs() {
-		if store.IsReservedOrg(org) {
+		if policy.IsReservedOrg(org) {
 			continue
 		}
 		u := resolveUser(ctx, h.db, org, id)
@@ -373,7 +374,7 @@ func userPrincipal(u *schema.User) *principal {
 // made, do it as an explicit, tested policy change (alongside the pull org-scoping
 // decision documented at the top of this file), never as an incidental edit.
 func userPrivileged(u *schema.User) bool {
-	return inCandidateOrg(u.Owner) && (u.IsAdmin || u.Owner == store.AdminOrg)
+	return inCandidateOrg(u.Owner) && (u.IsAdmin || u.Owner == policy.AdminOrg)
 }
 
 // candidateOrgs are the platform organizations a docker credential is resolved

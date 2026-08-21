@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -205,7 +206,7 @@ func TestSignup_luxCloud_createsPlainNonAdminUser(t *testing.T) {
 	if u.Owner != "lux" {
 		t.Errorf("owner = %q, want lux (a signup must land in the served tenant, never admin)", u.Owner)
 	}
-	if store.IsReservedOrg(u.Owner) {
+	if policy.IsReservedOrg(u.Owner) {
 		t.Errorf("lux.cloud user landed in a RESERVED org %q", u.Owner)
 	}
 	if u.IsAdmin {

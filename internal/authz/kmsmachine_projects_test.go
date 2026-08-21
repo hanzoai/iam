@@ -1,13 +1,17 @@
 package authz
 
-import "testing"
+import (
+	"testing"
+
+	policy "github.com/hanzoai/authz"
+)
 
 // The "<org>-platform-kms" machine identity may READ its own org's projects —
 // the grant that lets cloud's platform resolve a tenant's projects from THIS
 // store instead of a second embedded database. Each wall of the grant gets its
 // own negative: wrong method, wrong entity, wrong org, wrong identity.
 func TestAuthorize_KMSMachineReadsOwnProjects(t *testing.T) {
-	acme := &Principal{Org: "acme", App: "acme-platform-kms", AppOwner: "admin"}
+	acme := &Principal{Org: "acme", App: &policy.App{Name: "acme-platform-kms", Owner: "admin"}}
 
 	if !authorize(acme, "GET", "projects", "acme", "web") {
 		t.Fatal("the org's own platform-kms identity must read the org's projects")
@@ -35,7 +39,7 @@ func TestAuthorize_KMSMachineReadsOwnProjects(t *testing.T) {
 	// Wrong IDENTITY: only the contract-named app. A sibling app in the same
 	// org, and another org's platform-kms name, both stay refused.
 	for _, app := range []string{"acme-console", "rival-platform-kms", "platform-kms"} {
-		p := &Principal{Org: "acme", App: app, AppOwner: "admin"}
+		p := &Principal{Org: "acme", App: &policy.App{Name: app, Owner: "admin"}}
 		if authorize(p, "GET", "projects", "acme", "web") {
 			t.Fatalf("app %q must not inherit the platform-kms grant", app)
 		}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/account"
+	policy "github.com/hanzoai/authz"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -393,7 +394,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	// admin/<super> and minted a real SuperAdmin token on the correct password.
 	// Checked BEFORE the user lookup, with the SAME opaque failure as a bad
 	// credential, so it is no org/user existence oracle.
-	if store.IsReservedOrg(org) ||
+	if policy.IsReservedOrg(org) ||
 		(org != app.Organization && !app.ServesAnyOrg()) {
 		return tokenError(c, 400, "invalid_grant", "the username or password is incorrect")
 	}
@@ -801,7 +802,7 @@ func isInternalApp(app *schema.Application) bool {
 //
 //   - an internal service identity (<org>-iam), which authenticates through the
 //     operator's private provisioning path, never the public endpoint; and
-//   - an app that SERVES a reserved system org (admin/built-in/app — store.IsReservedOrg):
+//   - an app that SERVES a reserved system org (admin/built-in/app — policy.IsReservedOrg):
 //     a platform-internal client whose tokens have no business being minted by a
 //     public request. Even though such a token already resolves to NO authority (its
 //     subject "admin/<app>" has no user row, so authz grants it nothing — token.go /
@@ -809,7 +810,7 @@ func isInternalApp(app *schema.Application) bool {
 //     admin-org app cannot mint on the public endpoint, period, independent of how the
 //     principal resolver later evolves. Fail-secure defense in depth.
 func publicTokenEndpointForbidden(app *schema.Application) bool {
-	return isInternalApp(app) || store.IsReservedOrg(app.Organization)
+	return isInternalApp(app) || policy.IsReservedOrg(app.Organization)
 }
 
 // redeemErrToResponse maps a RedeemCode error to the RFC 6749 error body.

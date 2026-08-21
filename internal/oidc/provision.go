@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/cred"
@@ -122,7 +123,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 	if len(cl.slug) < minOrgSlug {
 		return provisioned{}, &fault{400, "org name too short"}
 	}
-	if store.IsReservedOrg(cl.slug) {
+	if policy.IsReservedOrg(cl.slug) {
 		return provisioned{}, &fault{400, "\"" + cl.slug + "\" is reserved"}
 	}
 

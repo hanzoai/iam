@@ -24,6 +24,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
@@ -32,7 +33,6 @@ import (
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
 )
 
 const (
@@ -62,12 +62,12 @@ func newRig(t *testing.T) *rig {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	seedCert(t, db, store.AdminOrg, kid, pemOf(t, key))
+	seedCert(t, db, policy.AdminOrg, kid, pemOf(t, key))
 	seedUser(t, db, "hanzo", "boss", true)   // administers hanzo
 	seedUser(t, db, "hanzo", "alice", false) // a plain member
 	seedUser(t, db, "hanzo", "bob", false)   // another plain member
 	seedUser(t, db, "orgb", "carol", true)   // a different tenant
-	seedUser(t, db, store.AdminOrg, "z", false)
+	seedUser(t, db, policy.AdminOrg, "z", false)
 
 	seedKey(t, db, "hanzo", "alice-laptop", "hanzo/alice")
 	seedKey(t, db, "hanzo", "alice-phone", "hanzo/alice")
@@ -244,7 +244,7 @@ func TestList_unauthenticated(t *testing.T) {
 // same name.
 func seedCert(t *testing.T, db orm.DB, owner, name, privPEM string) {
 	t.Helper()
-	if store.IsSigningCertOwner(owner) {
+	if policy.IsSigningOwner(owner) {
 		keyring.Set(name, privPEM)
 		t.Cleanup(func() { keyring.Forget(name) })
 	}

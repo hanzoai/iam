@@ -23,7 +23,7 @@ import (
 // That is the iam analogue of iam-v1's ?userId, and the escalation-blocking guard is
 // mintTarget's reserved-org gate (issuetoken.go):
 //
-//	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp) { return 403 }
+//	if policy.IsSigningOwner(owner) && !adminMintAllowed(clientApp) { return 403 }
 //
 // i.e. reaching a reserved-org (admin/built-in => SuperAdmin) target requires the
 // SEPARATELY-granted admin-mint capability, never the general mint list. These
