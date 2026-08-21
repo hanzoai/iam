@@ -508,13 +508,6 @@ func seedMembership(t *testing.T, db orm.DB, user, org, role string) {
 // membership set, which IAM itself mints into the token's `orgs` claim to
 // authorize exactly this switch, was ignored on IAM's own surface.
 func TestScopeRead_AnOrgYouBelongToOpens(t *testing.T) {
-	t.Skip("OWNER DECISION, and the one REGRESSION in this set. The Guard's read check is " +
-		"owner == p.Org, while authz.Scope honours p.memberOf(owner) — two rules for \"may " +
-		"I read org X\" that disagree. The verb routes were handler-authorized, so the " +
-		"handler's Scope call honoured membership; the noun routes are Guard-authorized and " +
-		"refuse it, so a member of lux can no longer read lux's projects or workspaces. " +
-		"Principal.Orgs exists precisely to answer this, so the Guard not consulting it is " +
-		"arguably the defect — but widening the Guard is a security change and not mine.")
 	h := newHarness(t)
 	seedScopeFixture(t, h)
 	// A hanzo account that ADMINISTERS the other tenant, the way a real operator does.

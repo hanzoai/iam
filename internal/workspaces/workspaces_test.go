@@ -288,10 +288,11 @@ func TestWorkspaces_writeNeedsAdmin(t *testing.T) {
 		t.Fatalf("regular user delete-workspace: status=%d, want 403", st)
 	}
 	// But listing is allowed (200) — the switcher is shown to every user.
-	// Whether a REGULAR member can list its own org's workspaces is the same open
-	// policy question recorded on TestProjects_aMemberCanListItsOwnOrg: the Guard
-	// grants a non-admin only its own user row, so this is 403 on the noun surface
-	// where the retired verb surface answered 200.
+	// A REGULAR member lists its own org's workspaces — the switcher is shown to
+	// every user, not only to admins.
+	if st, m := h.do(t, "GET", "/v1/iam/workspaces?owner=hanzo", alice, ""); st != 200 {
+		t.Fatalf("regular user list: status=%d body=%v", st, m)
+	}
 }
 
 // TestWorkspaces_crossTenantScoping: a non-super cannot list another tenant's

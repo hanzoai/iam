@@ -208,10 +208,6 @@ func TestProjects_writeNeedsAdmin(t *testing.T) {
 // would agree with authz.Scope and with the documented org-scope rule, but it is
 // a security change with a real blast radius. It needs a decision, not a patch.
 func TestProjects_aMemberCanListItsOwnOrg(t *testing.T) {
-	t.Skip("OWNER DECISION: the Guard grants a non-admin only its own user row, so a " +
-		"member listing its own org's projects is 403 on the noun surface where the " +
-		"retired verb surface answered 200. See the comment above.")
-
 	h := newHarness(t)
 	alice := h.token(t, "hanzo/alice")
 	if st, m := h.do(t, "GET", "/v1/iam/projects?owner=hanzo", alice, ""); st != 200 {

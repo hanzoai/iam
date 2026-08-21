@@ -778,6 +778,29 @@ func authorize(p *Principal, method, entity, owner, name string) bool {
 	if p.App != "" {
 		return Allowed(p, capFor(entity))
 	}
+	// A person may READ the projects and workspaces of an org they BELONG to, not
+	// merely one they administer. That is the scope switcher, which every member
+	// sees, and it is the only place a plain member reads something other than
+	// their own row.
+	//
+	// The check below refuses an org you are a member of but do not own, because
+	// it compares against the home org alone. These two listers reached members
+	// anyway, by a different road: their legacy addresses were handler-authorized,
+	// so the Guard's entity check never ran and Scope decided. Retiring those
+	// addresses moved them under this check and took the switcher away from every
+	// non-admin.
+	//
+	// Scope is still what decides, and it is the reason this is safe rather than a
+	// widening: both handlers resolve their owner through it, so a foreign org is
+	// refused there, an unstated one becomes your own, and a reserved one is
+	// SuperAdmin's alone. What this clause restores is the Guard DEFERRING to that,
+	// which is exactly what the handler-authorized address did. An unstated owner
+	// passes for the same reason — memberOf("") is false, and Scope reads it as
+	// "my own org", so refusing here would answer a question Scope never got asked.
+	if isRead(method) && (entity == "projects" || entity == "workspaces") &&
+		(owner == "" || p.memberOf(owner)) {
+		return true
+	}
 	if owner == "" || owner != p.Org {
 		return false
 	}
