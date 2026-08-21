@@ -173,31 +173,32 @@ func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
 	}
 }
 
-// TestJourney_AdminConsole_LegacySurface proves the old admin console's calls work:
-// get-account (the security contract), get-organizations (OrgSwitcher), get-users.
-func TestJourney_AdminConsole_LegacySurface(t *testing.T) {
+// TestJourney_AdminConsole proves the admin console's three reads: the account
+// behind the security contract, the org list its switcher is built on, and one
+// org's roster.
+func TestJourney_AdminConsole(t *testing.T) {
 	e := boot(t)
 	root := e.mint(t, "admin/root") // a SuperAdmin bearer
 
-	// get-account — {status:ok, data:<masked user>} with owner + isAdmin.
+	// The account is still an envelope — {status:ok, data:<masked user>} — because
+	// it answers about the CALLER rather than listing a resource.
 	acct := e.getJSON(t, "/v1/iam/account", root)
 	if acct["status"] != "ok" {
-		t.Fatalf("get-account status: %v", acct)
+		t.Fatalf("account status: %v", acct)
 	}
 
-	// get-organizations — the OrgSwitcher workhorse; SuperAdmin sees all.
-	orgs := e.getJSON(t, "/v1/iam/get-organizations", root)
-	if orgs["status"] != "ok" {
-		t.Fatalf("get-organizations status: %v", orgs)
-	}
-	if data, _ := orgs["data"].([]any); len(data) < 2 {
-		t.Fatalf("get-organizations returned %d orgs, want >=2 (admin+hanzo)", len(data))
+	// The org list is the switcher's workhorse; a SuperAdmin sees every tenant. A
+	// listing is named for its resource, so the page is under `organizations` and
+	// there is no `status` beside it to check — the HTTP status is the status.
+	orgs := e.getJSON(t, "/v1/iam/organizations", root)
+	if rows, _ := orgs["organizations"].([]any); len(rows) < 2 {
+		t.Fatalf("organizations returned %d, want >=2 (admin+hanzo): %v", len(rows), orgs)
 	}
 
-	// get-users scoped to an org — no secret leaks.
-	usersBody := e.getRaw(t, "/v1/iam/get-users?owner=hanzo", root)
+	// One org's roster, read whole: no secret may appear in it.
+	usersBody := e.getRaw(t, "/v1/iam/users?owner=hanzo", root)
 	if strings.Contains(usersBody, "passwordHash") || strings.Contains(usersBody, "\"password\"") {
-		t.Fatalf("get-users leaked a secret: %s", usersBody)
+		t.Fatalf("the roster leaked a secret: %s", usersBody)
 	}
 }
 
