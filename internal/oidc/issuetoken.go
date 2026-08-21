@@ -474,36 +474,40 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 }
 
 // asTarget resolves the as() target user, CONFINED to org (the org key's tenant).
-// The `?id=` reference is the stable subject — a UUID, or an "owner/name" — or the
-// tenant's own externalId, the id the operator filed the member under. A missing id
-// or absent user is a v1 business error (200 + status:error); a target OUTSIDE the
-// org is a 403 (the org key's reach ends at its tenant), and a revoked user is a
-// 403 — no token is minted for either. Any store read that fails refuses (500)
-// rather than passing an unclassified target.
+// The `?id=` reference is the tenant's own externalId — the id the operator filed
+// the member under — or the stable subject (a UUID, or an "owner/name"). A missing
+// id is a v1 business error (200 + status:error), and so is any id that names
+// nobody IN THIS TENANT; a revoked member is a 403. Any store read that fails
+// refuses (500) rather than passing an unclassified target.
+//
+// ORDER IS THE POINT. The externalId is asked FIRST because it is the only
+// question confined to the caller's own tenant, and the subject question is
+// estate-wide. Asked the other way round, an externalId that happens to spell a
+// live subject somewhere else resolved to that FOREIGN row — so a tenant whose own
+// id collided with another tenant's subject could not address its own member at
+// all, and, worse, the two arms answered differently: a foreign hit refused while
+// an id nobody holds reported absence, which tells an operator holding one org key
+// whether an id exists in some other tenant.
+//
+// So the foreign answer collapses into the SAME absence: a subject living in
+// another tenant is, to this key, an id nobody holds. One statement, over both
+// arms, and no reply that distinguishes them.
 func asTarget(ctx context.Context, db orm.DB, c *zip.Ctx, org string) (*schema.User, int, string) {
 	ref := strings.TrimSpace(c.Query("id"))
 	if ref == "" {
 		return nil, 200, "id is required"
 	}
-	user, err := store.GetUserBySubject(ctx, db, ref)
+	user, err := store.GetUserByExternalId(ctx, db, org, ref)
 	if err != nil {
 		return nil, 500, "server_error"
 	}
 	if user == nil {
-		// Not a subject this estate minted — try the tenant's own externalId, within
-		// the org so the id cannot name a member of another tenant.
-		user, err = store.GetUserByExternalId(ctx, db, org, ref)
-		if err != nil {
+		if user, err = store.GetUserBySubject(ctx, db, ref); err != nil {
 			return nil, 500, "server_error"
 		}
 	}
-	if user == nil {
+	if user == nil || user.Owner != org {
 		return nil, 200, "the user does not exist"
-	}
-	// Confinement: the target must live in the org key's own tenant. A subject that
-	// resolved to another org is refused here, never acted for.
-	if user.Owner != org {
-		return nil, 403, "the target is not in this organization"
 	}
 	if user.IsForbidden || user.IsDeleted {
 		return nil, 403, "the user is forbidden"
