@@ -195,10 +195,14 @@ func TestGuard_StillGatesTheControlPlane(t *testing.T) {
 func TestGuard_StillGatesIamsOwnPaths(t *testing.T) {
 	app, _ := embedded(t)
 
+	// One per entity family, so a gap in the Guard's coverage of any of them
+	// shows up here rather than only on whichever one someone probed. A 404
+	// would mean the ADDRESS is gone, not that the Guard let it through, so
+	// these must be addresses the router actually serves.
 	for _, path := range []string{
-		"/v1/iam/get-users?owner=admin",
-		"/v1/iam/get-certs?owner=admin",
 		"/v1/iam/users?owner=admin",
+		"/v1/iam/certs?owner=admin",
+		"/v1/iam/applications?owner=admin",
 	} {
 		req := httptest.NewRequest("GET", path, nil)
 		req.Host = "hanzo.id"
