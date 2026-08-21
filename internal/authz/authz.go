@@ -458,6 +458,8 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/get-organizat
 var handlerAuthorizedExact = map[string]bool{
 	"/v1/iam/get-user":             true,
 	"/v1/iam/resolve-key":          true,
+	"/v1/iam/keys/org":             true,
+	"/v1/iam/keys/principal":       true,
 	"/v1/iam/organizations/search": true,
 	"/v1/iam/webauthn-credentials": true,
 }

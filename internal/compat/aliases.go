@@ -74,6 +74,27 @@ func Route(app *zip.App, db orm.DB) {
 	// and the handler authorizes itself behind CapPublishableResolve.
 	app.Get("/v1/iam/resolve-key", resolveKeyHandler(db))
 
+	// THE SAME TWO DOORS AT THE ADDRESSES THAT REPLACE THEM.
+	//
+	// A key resolver is on the request-authentication path of cloud, ai and base,
+	// so its address cannot move in one release: the callers are separate
+	// deployments and cannot cut over in the same instant this does. Serving both
+	// spellings is what turns a flag day into an ordinary migration — the new
+	// address answers now, callers move at their own pace, and the verb is deleted
+	// afterwards, when nothing is asking for it.
+	//
+	// Same handlers, so there is no second implementation to keep in agreement,
+	// and no behaviour to re-verify: the capability, the projection and the
+	// envelope are whatever the verb already answered with.
+	//
+	// keys/principal is the accessKey resolution ALONE. get-user also reads a user
+	// by ?id=, and carrying that here would make this a second address for the
+	// user read — the exact thing being retired.
+	app.Get("/v1/iam/keys/org", resolveKeyHandler(db))
+	app.Get("/v1/iam/keys/principal", func(c *zip.Ctx) error {
+		return resolveUserByAccessKey(c, db, strings.TrimSpace(c.Query("accessKey")))
+	})
+
 	// get-organization-projects — the console ScopeSwitcher's project list, keyed by
 	// ?organization= (not ?owner=). Its target rides in ?organization, which the Guard
 	// does not inspect generically, so this path is handler-authorized (authz's
