@@ -5,6 +5,8 @@ package authz
 import (
 	"testing"
 
+	policy "github.com/hanzoai/authz"
+
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -20,7 +22,7 @@ func TestOrgReadFollowsMembershipNotTheAccountOwner(t *testing.T) {
 	// A person whose account lives in `hanzo`, who also belongs to `maxpower`.
 	dave := &Principal{
 		Org: "hanzo", User: "davelorenzini",
-		Orgs: map[string]string{"maxpower": store.RoleAdmin},
+		Orgs: map[string]policy.Role{"maxpower": store.RoleAdmin},
 	}
 	// A person in `hanzo` with no other membership.
 	stranger := &Principal{Org: "hanzo", User: "nobody"}
@@ -53,7 +55,7 @@ func TestOrgReadFollowsMembershipNotTheAccountOwner(t *testing.T) {
 func TestPlainMemberReadsButCannotWrite(t *testing.T) {
 	guest := &Principal{
 		Org: "hanzo", User: "guest",
-		Orgs: map[string]string{"maxpower": store.RoleMember},
+		Orgs: map[string]policy.Role{"maxpower": store.RoleMember},
 	}
 	if !authorize(guest, "GET", "organizations", "admin", "maxpower") {
 		t.Error("a member must be able to read the org they belong to")
@@ -69,7 +71,7 @@ func TestPlainMemberReadsButCannotWrite(t *testing.T) {
 func TestMembershipDoesNotLeakIntoOtherEntities(t *testing.T) {
 	dave := &Principal{
 		Org: "hanzo", User: "davelorenzini",
-		Orgs: map[string]string{"maxpower": store.RoleAdmin},
+		Orgs: map[string]policy.Role{"maxpower": store.RoleAdmin},
 	}
 	for _, entity := range []string{"users", "certs", "applications", "providers"} {
 		if authorize(dave, "GET", entity, "maxpower", "anything") {

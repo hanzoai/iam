@@ -9,6 +9,8 @@ import (
 
 	"github.com/hanzoai/orm"
 
+	policy "github.com/hanzoai/authz"
+
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -117,7 +119,7 @@ func TestUpsertUser_refusesAnOwnerThatIsNotTheNameStored(t *testing.T) {
 		t.Errorf("status = %d, want 400 — %q is not the name it would be stored under", st, "  admin  ")
 	}
 	if landed != nil {
-		t.Errorf("a declaration that never spells %q landed a principal in it", store.AdminOrg)
+		t.Errorf("a declaration that never spells %q landed a principal in it", policy.AdminOrg)
 	}
 }
 

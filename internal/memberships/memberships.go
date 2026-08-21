@@ -32,6 +32,7 @@ import (
 	"context"
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -236,7 +237,7 @@ const homeOrgIsNotRevocable = "this account belongs to that organization, so its
 //     a brand console could grant anyone tenancy in the admin org. Only a real
 //     SuperAdmin may target a reserved org.
 func mayGrant(ctx context.Context, org string) bool {
-	if store.IsReservedOrg(org) && !authz.IsSuper(ctx) {
+	if policy.IsReservedOrg(org) && !authz.IsSuper(ctx) {
 		return false
 	}
 	return authz.Can(ctx, "POST", "organizations", store.MembershipOwner, org)
@@ -272,7 +273,7 @@ func scoped(ctx context.Context, org string) bool {
 // switcher without closing anything — a machine credential is already confined to
 // one tenant, and the leak this closes is between PEOPLE.
 func mayReadTenancy(ctx context.Context, owner, name string) bool {
-	if p, ok := authz.From(ctx); ok && p.App != "" {
+	if p, ok := authz.From(ctx); ok && p.App != nil {
 		return scoped(ctx, owner)
 	}
 	return authz.Can(ctx, "GET", "users", owner, name)

@@ -41,7 +41,7 @@
 // reserved "admin" org — its home org is "admin", or it holds a membership there.
 // Membership is how an operator is actually made (an existing SuperAdmin grants
 // it; memberships.mayGrant refuses a reserved target to anyone else), and it is
-// the same question the published authz.Claims.PlatformSudo asks of the signed
+// the same question the published authz.Claims.Sudo asks of the signed
 // `orgs` set, so one token reads identically here and at every consumer. Asking
 // only the home org denied every operator anchored in a brand org — which is
 // every operator who also does ordinary work.
@@ -61,9 +61,11 @@ import (
 	"crypto/subtle"
 	"errors"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -73,57 +75,35 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// adminOrg is the reserved organization whose membership IS SuperAdmin — the one
-// cross-tenant scope, the one predicate. It is store's value, not a copy of it,
-// so the word is spelled once. The broader reserved-owner set {admin, built-in}
-// the poisoning gate protects lives in ONE place, store.IsSigningCertOwner,
-// shared with the token verifier and the JWKS.
-const adminOrg = store.AdminOrg
+// Env is the capability allowlist as THIS process sees it. The decision takes the
+// lookup as an INPUT so it stays free of config; IAM is the process that HAS an
+// environment, so it binds one here, once. Every capability question in the
+// service therefore reads the same allowlists, and a test supplies its own by
+// assigning a map lookup.
+var Env policy.Env = os.Getenv
 
-// Principal is the identity a gated request acts as, resolved from a verified
-// bearer. Org is the tenant (the authenticated principal's own org, from the
-// subject); User is its name within that org (empty for a machine token); Admin
-// is the org-admin flag; Super is the SuperAdmin predicate (memberOf adminOrg).
-type Principal struct {
-	Org  string
-	User string
-	// App is the application NAME when the request authenticated as a confidential
-	// client (client_secret_basic), and "" for every human. An app principal is
-	// never Admin and never Super — its whole authority is its capability allowlist
-	// (cap.go), so a leaked client credential can neither read another tenant nor
-	// touch signing material.
-	App string
-	// AppOwner is the OWNING organization of that application row — "admin"/"built-in"
-	// for a platform app, the tenant's own org for a customer app. It is NOT App's
-	// served Organization. A capability (cap.go Allowed) is granted ONLY when this is
-	// a reserved platform signing owner, so a tenant that registers an app whose NAME
-	// (or clientId) collides with a platform console inherits none of its authority:
-	// the allowlist keys on the name, and the owner-pin binds that name to the
-	// platform. Empty for every human.
-	AppOwner string
-	// AppCert is the NAME of the signing cert that application row references
-	// (schema.Application.Cert). It is carried on the principal so the self-read
-	// clause can permit an app exactly one cert — its own — without the pure
-	// authorize() decision having to reach into the store. Empty for every human.
-	AppCert string
-	Admin   bool
-	Super   bool
-	// Orgs is the set of organizations this person may act in — their HOME org
-	// plus every org they hold a membership in, which is the SAME set the token's
-	// `orgs` claim carries. It exists because "the org you belong to" and "the org
-	// that owns your account" are different questions, and the policy used to
-	// answer the first with the second: an org's own member could not read that
-	// org's row unless it happened to be their account's owner. One person, many
-	// orgs is the product; this is where the policy learns it. Empty for an app
-	// principal (a machine's scope is its served tenant, never a membership).
-	Orgs map[string]string // org -> role (owner|admin|member)
-}
+// Principal is the identity a gated request acts as. It is the DECISION's own
+// input type, not a second one: RESOLVING it needs a store — a verified bearer, the
+// live user record, the membership rows, the application row behind a client
+// credential — and that resolution is what belongs here; what the resolved identity
+// may then do is policy.Principal.CanEntity, which the whole estate shares.
+//
+// Org is the tenant (the authenticated principal's own org, from the subject); User
+// is its name within that org (empty for a machine); Admin is the org-admin flag;
+// Sudo is platform authority — MEMBERSHIP of the reserved org, resolved from the
+// LOADED record and its membership rows, which is what policy.Claims.Sudo asks of a
+// signed token. App is non-nil only for a confidential client, and such a principal
+// is never Admin and never Sudo — its whole authority is its capability allowlist,
+// so a leaked client credential can neither read another tenant nor touch signing
+// material.
+type Principal = policy.Principal
 
-// memberOf reports whether p may act in org through its HOME org or a
-// membership. It is the ONE membership question the policy asks, so a clause
-// never re-derives the set.
-func (p *Principal) memberOf(org string) bool {
-	if org == "" {
+// memberOf reports whether p may act in org through its HOME org or a membership.
+// It is the ONE membership question this package asks, so no caller re-derives the
+// set. Presence is the test, not the role: belonging is what a read needs, and it
+// is the same set policy.Claims.Sudo reads for the reserved org.
+func memberOf(p *Principal, org string) bool {
+	if p == nil || org == "" {
 		return false
 	}
 	if org == p.Org {
@@ -131,23 +111,6 @@ func (p *Principal) memberOf(org string) bool {
 	}
 	_, ok := p.Orgs[org]
 	return ok
-}
-
-// adminOf reports whether p may CHANGE org — its own org as an org admin, or an
-// org it holds an owner/admin membership in. A plain member never qualifies:
-// belonging to an org is permission to see it, not to edit it.
-func (p *Principal) adminOf(org string) bool {
-	if org == "" {
-		return false
-	}
-	if org == p.Org && p.Admin {
-		return true
-	}
-	switch p.Orgs[org] {
-	case store.RoleOwner, store.RoleAdmin:
-		return true
-	}
-	return false
 }
 
 type ctxKey struct{}
@@ -206,7 +169,7 @@ func Scope(ctx context.Context, owner string) (string, error) {
 	if !ok {
 		return "", zip.ErrForbidden("no principal")
 	}
-	if p.Super {
+	if p.Sudo {
 		return owner, nil
 	}
 	if p.Org == "" || (owner != "" && owner != p.Org) {
@@ -238,7 +201,7 @@ func ScopeRead(ctx context.Context, owner string) (string, error) {
 	if !ok {
 		return "", zip.ErrForbidden("no principal")
 	}
-	if p.Super {
+	if p.Sudo {
 		return owner, nil
 	}
 	// No org named: the caller's own, exactly as Scope resolves it. An empty p.Org
@@ -249,7 +212,7 @@ func ScopeRead(ctx context.Context, owner string) (string, error) {
 		}
 		return p.Org, nil
 	}
-	if !p.memberOf(owner) {
+	if !memberOf(p, owner) {
 		return "", errForeignOrg(p)
 	}
 	return owner, nil
@@ -303,7 +266,8 @@ func Deny(c *zip.Ctx, err error) error { return refuse(c, http.StatusForbidden, 
 // answered 200 for the same principal and row — one policy, two answers. If
 // authorize() says yes to this exact (owner, name) read, that IS the decision.
 func ScopeFor(ctx context.Context, path, owner, name string) (string, error) {
-	if p, ok := From(ctx); ok && owner != "" && authorize(p, "GET", entityOf(path), owner, name) {
+	if p, ok := From(ctx); ok && owner != "" &&
+		p.CanEntity(policy.Read, policy.Entity{Kind: entityOf(path), Owner: owner, Name: name}, Env) {
 		return owner, nil
 	}
 	return Scope(ctx, owner)
@@ -320,7 +284,7 @@ func Can(ctx context.Context, method, entity, owner, name string) bool {
 	if !ok {
 		return false
 	}
-	return authorize(p, method, entity, owner, name)
+	return p.CanEntity(policy.VerbOf(method), policy.Entity{Kind: entity, Owner: owner, Name: name}, Env)
 }
 
 // IsSuper reports whether the ctx principal is a SuperAdmin — used by a raw
@@ -328,7 +292,7 @@ func Can(ctx context.Context, method, entity, owner, name string) bool {
 // may set isAdmin). Fails closed when no principal is present.
 func IsSuper(ctx context.Context) bool {
 	p, ok := From(ctx)
-	return ok && p.Super
+	return ok && p.Sudo
 }
 
 // CanSetOrg reports whether principal p may point a resource at organization
@@ -344,7 +308,7 @@ func CanSetOrg(p *Principal, org string) bool {
 	if p == nil {
 		return false
 	}
-	return authorize(p, "POST", "applications", org, "")
+	return p.CanEntity(policy.Write, policy.Entity{Kind: "applications", Owner: org}, Env)
 }
 
 // Optional resolves the Principal a PUBLIC route's caller happens to carry, or
@@ -375,12 +339,6 @@ var (
 	errNoSubject = errors.New("authz: token subject carries no org")
 	errRevoked   = errors.New("authz: principal is forbidden or deleted")
 )
-
-// isRead reports whether a method addresses its target through the query string
-// rather than a body: a GET (or HEAD) has no body for the op-invoke seam to
-// decode, so its target is authorized in the Guard. Every other method carries a
-// body decoded once by the op and is authorized at that seam.
-func isRead(method string) bool { return method == "GET" || method == "HEAD" }
 
 // ReadTarget extracts the (owner, name) a GET addresses, from the query string.
 // A native typed read files them as `?owner=&name=`; the the legacy surface compat verbs
@@ -575,9 +533,9 @@ func Guard(db orm.DB) zip.Handler {
 		// authorizes via authz.Scope on the path id. The Guard never authorizes an
 		// empty query target for these (which would fail-closed deny every non-super
 		// before the handler could scope). Every other read is authorized here.
-		if !pathAuthorized(c.Path()) {
-			rOwner, rName := ReadTarget(c)
-			if isRead(c.Method()) && !authorize(p, c.Method(), entityOf(c.Path()), rOwner, rName) {
+		if v := policy.VerbOf(c.Method()); v == policy.Read && !pathAuthorized(c.Path()) {
+			owner, name := ReadTarget(c)
+			if !p.CanEntity(v, policy.Entity{Kind: entityOf(c.Path()), Owner: owner, Name: name}, Env) {
 				return refuse(c, 403, "forbidden")
 			}
 		}
@@ -648,153 +606,18 @@ func Control(db orm.DB) zip.Handler {
 // principal, no decoded target, and an admission.
 func Authorize(ctx context.Context, op zip.Op, in any) error {
 	owner, name := decodedTarget(in)
-	if owner == "" && isRead(op.Method) {
+	v := policy.VerbOf(op.Method)
+	if owner == "" && v == policy.Read {
 		return nil // REST read: target rode in the query, authorized by the Guard
 	}
 	p, present := From(ctx)
 	if !present {
 		return zip.ErrForbidden("forbidden") // gated op with no principal: fail closed
 	}
-	if !authorize(p, op.Method, entityOf(op.Path), owner, name) {
+	if !p.CanEntity(v, policy.Entity{Kind: entityOf(op.Path), Owner: owner, Name: name}, Env) {
 		return zip.ErrForbidden("forbidden")
 	}
 	return nil
-}
-
-// authorize is the pure authorization decision: may p act on a resource owned by
-// `owner` (named `name`) on the given entity? The order IS the policy:
-//
-//  1. SuperAdmin may do anything — the only cross-tenant scope.
-//  2. A platform-owned resource — one under a RESERVED system org (store.IsReservedOrg:
-//     admin/built-in, the signing owners, PLUS "app", the service-principal org) — is
-//     writable only by a SuperAdmin. This single rule is the signing-cert poisoning
-//     gate, the admin-scoped app/provider registration gate, the built-in-org gap, AND
-//     the service-org ("app") consistency the self-service surfaces already enforce, all
-//     at once: a built-in-org principal is not SuperAdmin (that is admin only), so it
-//     cannot write a built-in-owned signing cert; and no capability app nor "app"-org
-//     admin can land a user under owner="app" (a platform identity) — the raw CRUD now
-//     consults the SAME predicate signup/onboarding do, so the reserved set never
-//     drifts between surfaces.
-//  3. Tenant isolation: a normal principal may act only within its OWN org. An
-//     empty or foreign owner is refused — the target org is bound to the
-//     principal, never trusted from the request.
-//  4. Inside its own org, an org admin manages everything; a regular user may
-//     only READ its own user record (self-service). The users entity serves
-//     reads as GET and writes as POST, so gating the self clause to GET keeps a
-//     regular user from writing its own record — a raw entity write would
-//     otherwise let it carry isAdmin and self-promote. Privileged self-mutation
-//     is the Phase-5 provision-don't-promote concern; here it is closed by
-//     denial.
-func authorize(p *Principal, method, entity, owner, name string) bool {
-	if p.Super {
-		return true
-	}
-	// An app may READ THE ROW IT AUTHENTICATED AS, and no other. Reading its own
-	// registration is the ordinary bootstrap of an OIDC relying party — it is how a
-	// client discovers its own cert, redirect URIs and enabled methods — and it
-	// reveals nothing the holder of that client's credential does not already have.
-	//
-	// The owner-pin that closed the "every client credential is a global admin"
-	// escalation is not wrong; it was missing this case, and applications are not in
-	// capFor(), so a confidential client could not read even itself and every cloud
-	// deploy 403'd on its own bootstrap.
-	//
-	// Narrow by construction, in four ways at once: only an app principal (a human's
-	// authority is decided below), only a READ (never a write to its own row — that
-	// would let a client widen its own redirect URIs or grants), only the
-	// applications entity, and only the exact (AppOwner, App) pair the request
-	// authenticated as. Both halves of the key must match, so this is self-read and
-	// not "apps may read applications": a sibling in the same org differs in `name`
-	// and stays refused, and admin/<app> vs <tenant>/<app> — the same NAME under a
-	// different owner — differs in `owner`, so neither direction of that collision
-	// is admitted. That pairing is the same one Allowed() pins capabilities to.
-	if p.App != "" && isRead(method) {
-		// its own application row — both halves of the key must match
-		if entity == "applications" && owner != "" && owner == p.AppOwner && name == p.App {
-			return true
-		}
-		// ...and the ONE signing cert that row references. A relying party cannot
-		// bootstrap without it: InitAuthConfig reads its application, then reads
-		// application.Cert, then InitConfig(cert.Certificate) — so granting only the
-		// application fixes one line and panics identically on the next.
-		//
-		// Scoped to the cert its OWN application names, never "apps may read certs":
-		// name must equal the cert on the authenticated row, so an app cannot walk to
-		// another brand's signing cert. Read-only, and the read is masked anyway
-		// (Cert.Mask blanks PrivateKey and AccessSecret), so what crosses the wire is
-		// the PUBLIC certificate this client already has to trust to verify our
-		// tokens. A bare `?id=cert-hanzo` carries no owner half, so an empty owner is
-		// admitted ONLY here, where the cert NAME is already pinned to this principal.
-		// The owner half varies by CALLER, so all three shapes are admitted — what
-		// pins this read is the NAME, not the owner. ai/internal/iam/cert.go sends
-		// "<IAM_ORG>/<name>" (hanzo/cert-hanzo), GetApplication hardcodes admin/, and
-		// a bare id carries no owner at all. Measured: admin/cert-hanzo and
-		// hanzo/cert-hanzo are two rows seeded 3ms apart carrying the IDENTICAL 4096-bit
-		// modulus, both matching the single JWKS kid=cert-hanzo — so the owner half
-		// selects between duplicates of one keypair, not between different keys.
-		//
-		// name == p.AppCert is the whole gate and it is unchanged: an app reaches the
-		// one cert its own application row names and no other, whichever owner it
-		// spells. Read-only, and Cert.Mask blanks PrivateKey, so this discloses the
-		// PUBLIC key already published at /v1/iam/.well-known/jwks.
-		if entity == "certs" && p.AppCert != "" && name == p.AppCert &&
-			(owner == "" || owner == p.AppOwner || owner == p.Org) {
-			return true
-		}
-		// An org's OWN PaaS machine identity may READ that org's projects, and
-		// nothing else. This is how cloud's platform resolves a tenant's
-		// projects from the canonical store here instead of a second embedded
-		// database — the split-brain where a project created at /v1/iam was
-		// invisible to the PaaS and vice versa.
-		//
-		// Narrow by construction, four ways at once, mirroring the self-read
-		// blocks above: only a READ; only the projects entity; only the
-		// caller's OWN org (owner == p.Org, so one tenant's identity can never
-		// walk another's list); and only the identity the "<org>-platform-kms"
-		// contract names — the same string cloud's SanitizeIdentity recognises
-		// in order to DENY that principal SuperAdmin. The contract is the
-		// grant, stated once; no env allowlist to drift.
-		if entity == "projects" && owner != "" && owner == p.Org &&
-			p.App == p.Org+"-platform-kms" {
-			return true
-		}
-	}
-	if store.IsReservedOrg(owner) {
-		// The ONE exception to the reserved-owner gate is the tenant registry: every
-		// organization row is filed under the admin owner, but an org row is the
-		// TENANT'S own record, not platform trust material — a tenant reads its own
-		// org, its admin edits it, and an org-admin-capable confidential client
-		// manages orgs during onboarding (v1 requireAppCapability(CapOrgAdmin)).
-		// Certs, applications, providers, and users under a reserved owner
-		// (admin/built-in/app) stay SuperAdmin-only.
-		if entity != "organizations" {
-			return false
-		}
-		if p.App != "" {
-			return Allowed(p, CapOrgAdmin)
-		}
-		// A person reads any org they BELONG to, and edits the ones they help run.
-		// Membership is the authority, not the account's owner half: a human's
-		// account lives in one IAM tenant while the orgs they work in are a set, so
-		// keying this on p.Org alone refused an org's own admin the org they
-		// administer — which is what made a second org invisible in every console.
-		if isRead(method) {
-			return p.memberOf(name)
-		}
-		return p.adminOf(name)
-	}
-	// A confidential client's authority is its capability allowlist and nothing
-	// else — never Super, never Admin; an unmapped entity or unset allowlist denies.
-	if p.App != "" {
-		return Allowed(p, capFor(entity))
-	}
-	if owner == "" || owner != p.Org {
-		return false
-	}
-	if p.Admin {
-		return true
-	}
-	return method == "GET" && entity == "users" && name != "" && name == p.User
 }
 
 // owned is implemented by a typed input whose authorization target is NOT its
@@ -849,7 +672,7 @@ func stringField(v reflect.Value, name string) string {
 // principal resolves the verified bearer into a Principal, failing closed on a
 // missing/malformed/expired/wrong-key token (oidc.VerifyToken enforces the
 // algorithm allowlist and trusted signing-cert resolution), a subject with no
-// org, a store error, or a forbidden/deleted user. Org, Admin, and Super are
+// org, a store error, or a forbidden/deleted user. Org, Admin, and Sudo are
 // read from the LOADED user record — authoritative — never from the token
 // claims: SuperAdmin is a real, live member of the admin org, not a subject that
 // merely names one. A subject with no user row (a client_credentials machine
@@ -885,22 +708,21 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 		if u.IsForbidden || u.IsDeleted {
 			return nil, errRevoked
 		}
-		// Super is MEMBERSHIP of the reserved org, never the home org. Home is where
-		// an identity is ANCHORED — its billing, its default scope. Platform authority
-		// is a different question, and its answer is that an existing SuperAdmin put
-		// this identity IN the reserved org: a deliberate, signed, revocable grant that
-		// only a SuperAdmin can make (memberships.mayGrant refuses a reserved target to
-		// anyone else). Asking the home org instead conflated the two and denied every
-		// operator anchored in a brand org — which is every operator who also does
-		// ordinary work — so the reserved org was unreachable in practice while the
-		// code looked right. memberOf answers home-or-membership in one place, which is
-		// what the published authz.Claims.PlatformSudo asks of the signed set, so one
-		// token now reads the same here and at every consumer.
+		// Sudo is MEMBERSHIP of the reserved org, never the home org. Home is where an
+		// identity is ANCHORED — its billing, its default scope. Platform authority is
+		// a different question, and its answer is that an existing SuperAdmin put this
+		// identity IN the reserved org: a deliberate, signed, revocable grant that only
+		// a SuperAdmin can make (memberships.mayGrant refuses a reserved target to
+		// anyone else). Most operators are anchored in a brand org because they also do
+		// ordinary work there, so the home org alone cannot answer it. memberOf answers
+		// home-or-membership in one place, off the set this principal already carries,
+		// which is what policy.Claims.Sudo asks of the signed set — so one token reads
+		// the same here and at every consumer.
 		p := &Principal{
 			Org: u.Owner, User: u.Name, Admin: u.IsAdmin,
 			Orgs: membershipRoles(ctx, db, u.Owner+"/"+u.Name),
 		}
-		p.Super = p.memberOf(adminOrg)
+		p.Sudo = memberOf(p, policy.AdminOrg)
 		return p, nil
 	}
 	// No user row. A machine token's subject is "<appOwner>/<appName>", which names
@@ -918,7 +740,7 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 	//
 	// This grants nothing new: the Principal is built by the same helper, from the
 	// same row, and is still never Admin and never Super — its whole authority
-	// remains capFor()/Allowed(), pinned to a reserved signing owner.
+	// remains its capability allowlist, pinned to a reserved signing owner.
 	owner, name, hasSlash := strings.Cut(claims.Subject, "/")
 	if !hasSlash || owner == "" {
 		return nil, errNoSubject
@@ -940,15 +762,15 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 // not fatal: it yields an EMPTY set, which is the same authority the policy gave
 // before memberships existed (home org only), so a store blip narrows a decision
 // and never widens one. The read is one indexed query on the user key.
-func membershipRoles(ctx context.Context, db orm.DB, user string) map[string]string {
+func membershipRoles(ctx context.Context, db orm.DB, user string) map[string]policy.Role {
 	rows, err := store.MembershipsByUser(ctx, db, user)
 	if err != nil || len(rows) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(rows))
+	out := make(map[string]policy.Role, len(rows))
 	for _, m := range rows {
 		if m != nil && m.Org != "" {
-			out[m.Org] = m.Role
+			out[m.Org] = policy.Role(m.Role)
 		}
 	}
 	return out
@@ -962,10 +784,12 @@ func membershipRoles(ctx context.Context, db orm.DB, user string) map[string]str
 //
 // It is deliberately NOT an authority: the returned Principal is never Admin and
 // never Super, so the ONLY thing it can do is what its name is allowlisted for
-// (authorize → Allowed). This is what keeps the v1 "every confidential client is a
+// (CanEntity → Holds). This is what keeps the v1 "every confidential client is a
 // global admin" hole closed as the transport is re-added.
 //
-// Fail-closed: an unparseable header, an unknown clientId, an application with no
+// Fail-closed: an unparseable header, an unknown clientId, a row carrying no NAME
+// (the name is what every capability keys on, so a nameless one authorizes
+// nothing and is refused here rather than downstream), an application with no
 // registered secret, an empty presented secret (a public client must never
 // authenticate as an app), or a mismatch all report false — the caller then finds
 // no bearer either and answers 401. The comparison is constant-time.
@@ -975,7 +799,7 @@ func app(c *zip.Ctx, db orm.DB) (*Principal, bool) {
 		return nil, false
 	}
 	a, err := store.GetApplicationByClientId(c.Context(), db, id)
-	if err != nil || a == nil || a.ClientSecret == "" {
+	if err != nil || a == nil || a.Name == "" || a.ClientSecret == "" {
 		return nil, false
 	}
 	if subtle.ConstantTimeCompare([]byte(a.ClientSecret), []byte(secret)) != 1 {
@@ -989,12 +813,15 @@ func app(c *zip.Ctx, db orm.DB) (*Principal, bool) {
 // or the bearer it minted with those same credentials — cannot resolve to
 // different principals.
 //
-// AppOwner is the app row's OWNING org (a.Owner: "admin"/"built-in" for a
-// platform app), NOT a.Organization (the tenant it SERVES). cap.go pins every
-// capability to this being a reserved signing owner, so a tenant-owned app
+// App.Owner is the app row's OWNING org (a.Owner: "admin"/"built-in" for a
+// platform app), NOT a.Organization (the tenant it SERVES). Principal.Holds pins
+// every capability to this being a reserved signing owner, so a tenant-owned app
 // named/clientId'd like a console holds nothing. Org carries the served tenant.
 func appPrincipal(a *schema.Application) *Principal {
-	return &Principal{App: a.Name, AppOwner: a.Owner, AppCert: a.Cert, Org: a.Organization}
+	return &Principal{
+		App: &policy.App{Name: a.Name, Owner: a.Owner, Cert: a.Cert},
+		Org: a.Organization,
+	}
 }
 
 // entityOf returns the resource segment of an /v1/iam/<entity>[/verb] path, or

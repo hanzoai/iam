@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -319,7 +320,7 @@ type keyUser struct {
 
 // resolveUserByAccessKey authenticates the SERVICE caller and resolves an API key to
 // its owning principal. The gate is service-only and fail-secure: the caller must be
-// a confidential app (p.App != "") holding CapKeyResolve — a human, even a
+// a confidential app (p.App != nil) holding CapKeyResolve — a human, even a
 // SuperAdmin, is refused, because a capability is held vacuously by non-apps and key
 // resolution is a machine-identity boundary, never an interactive admin action.
 //
@@ -336,7 +337,7 @@ type keyUser struct {
 func resolveUserByAccessKey(c *zip.Ctx, db orm.DB, key string) error {
 	ctx := c.Context()
 	p, ok := authz.From(ctx)
-	if !ok || p.App == "" || !authz.Allowed(p, authz.CapKeyResolve) {
+	if !ok || p.App == nil || !p.Holds(policy.CapKeyResolve, authz.Env) {
 		return httpx.Err(c, unauthorized)
 	}
 	u, scope, err := store.UserAndScopeByAccessKey(ctx, db, key)

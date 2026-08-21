@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -253,7 +254,7 @@ func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Ap
 	// The reserved org is answerable from the id alone, so it is asked first and
 	// needs no read: a reserved name is refused whether or not anyone holds it,
 	// which is what keeps this from reporting who exists there.
-	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp) {
+	if policy.IsSigningOwner(owner) && !adminMintAllowed(clientApp) {
 		return nil, 403, "client is not permitted to act for a reserved-org user"
 	}
 	user, err := store.GetUserByName(ctx, db, owner, name)
@@ -328,7 +329,7 @@ func mintErr(c *zip.Ctx, status int, msg string) error {
 // Every legit minter is admin-owned, so no legitimate grant regresses. Empty/unset
 // list allows nothing — fail closed.
 func mintAllowed(app *schema.Application) bool {
-	return store.IsSigningCertOwner(app.Owner) && appInList("IAM_KEY_MINT_ALLOWED_APPS", app.ClientId)
+	return policy.IsSigningOwner(app.Owner) && appInList("IAM_KEY_MINT_ALLOWED_APPS", app.ClientId)
 }
 
 // adminMintAllowed reports whether app may act on behalf of a RESERVED-org
@@ -337,7 +338,7 @@ func mintAllowed(app *schema.Application) bool {
 // identity. Same owner-pin as mintAllowed: the app must be admin/built-in owned. The
 // console, which legitimately drives admin.hanzo.ai, is on both lists. Fail closed.
 func adminMintAllowed(app *schema.Application) bool {
-	return store.IsSigningCertOwner(app.Owner) && appInList("IAM_ADMIN_MINT_ALLOWED_APPS", app.ClientId)
+	return policy.IsSigningOwner(app.Owner) && appInList("IAM_ADMIN_MINT_ALLOWED_APPS", app.ClientId)
 }
 
 // appInList matches clientID against a comma/space-separated env allow-list, by

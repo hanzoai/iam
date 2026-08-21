@@ -516,7 +516,7 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 // one string or the request is answered.
 //
 // A trim is not a courtesy here, it is a second spelling. The predicates that
-// decide what an identity IS ask by name — store.IsReservedOrg("admin ") is false
+// decide what an identity IS ask by name — policy.IsReservedOrg("admin ") is false
 // and store.IsSuperAdmin("admin") is true — so a padded name passes the boundary
 // as one tenant and lands in another, and the declaration that reached the
 // reserved org never spells it. Refused rather than normalized: silently
