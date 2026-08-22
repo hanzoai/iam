@@ -28,7 +28,7 @@ import (
 // FAILS before the fix (seed and codes empty), PASSES after.
 func TestUpdate_keepsAuthenticatorSeed(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "mfa-update.db"))
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "mfa-update.db"), "")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestUpdate_keepsAuthenticatorSeed(t *testing.T) {
 // the same kind of thing and were not carried.
 func TestUpdate_keepsEverySecretMaskHides(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "secrets-update.db"))
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "secrets-update.db"), "")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
