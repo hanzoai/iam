@@ -83,7 +83,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		}
 
 		access, ttl, err := MintUserToken(ctx, db, clientApp, user,
-			strings.TrimSpace(c.Query("aud")), tokenIssuer(c), c.Path())
+			strings.TrimSpace(c.Query("aud")), c.Host(), c.Path())
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
@@ -106,14 +106,17 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 // process it is the embedding host's, which has already validated a principal
 // before it gets here. The signing key never leaves this package either way.
 //
-// aud empty takes the application's default for this user (RFC 8707). path is
-// the audit row's RequestUri, so a mint traces back to the surface that asked.
-func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, issuer, path string) (string, time.Duration, error) {
+// aud empty takes the application's default for this user (RFC 8707). host is
+// the host the caller was asked on, and the ISSUER is resolved from it here —
+// never taken from a caller, because `iss` is pinned config and a token
+// claiming the wrong one is a token some other party is trusted to sign. path
+// is the audit row's RequestUri, so a mint traces back to the surface that asked.
+func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, host, path string) (string, time.Duration, error) {
 	now := nowFunc()
 	if aud == "" {
 		aud = defaultUserAudience(ctx, db, user, clientApp)
 	}
-	signer, err := signerFor(ctx, db, clientApp, issuer)
+	signer, err := signerFor(ctx, db, clientApp, resolveIssuer(host))
 	if err != nil {
 		return "", 0, err
 	}

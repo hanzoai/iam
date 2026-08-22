@@ -42,9 +42,11 @@ import (
 // name lookup would answer with whichever the storage engine returned first.
 //
 // audience names the resource the token is for (RFC 8707); empty takes the
-// application's default for this user. issuer is the `iss` claim — the host the
-// caller was asked on. path is recorded on the audit row.
-func For(ctx context.Context, db orm.DB, subject, app, audience, issuer, path string) (string, time.Duration, error) {
+// application's default for this user. host is the host the caller was asked on;
+// the `iss` claim is resolved FROM it inside iam and is not something a caller
+// can name, because a token claiming the wrong issuer is a token some other
+// party is trusted to sign. path is recorded on the audit row.
+func For(ctx context.Context, db orm.DB, subject, app, audience, host, path string) (string, time.Duration, error) {
 	if subject == "" || app == "" {
 		return "", 0, errors.New("mint: a subject and an application are both required")
 	}
@@ -62,5 +64,5 @@ func For(ctx context.Context, db orm.DB, subject, app, audience, issuer, path st
 	if clientApp == nil {
 		return "", 0, errors.New("mint: no such application")
 	}
-	return oidc.MintUserToken(ctx, db, clientApp, user, audience, issuer, path)
+	return oidc.MintUserToken(ctx, db, clientApp, user, audience, host, path)
 }
