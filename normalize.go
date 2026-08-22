@@ -4,6 +4,7 @@
 package main
 
 import (
+	"os"
 	"context"
 	"fmt"
 
@@ -37,13 +38,13 @@ import (
 // that rewrites rows in a live user table, and the count it prints is what tells
 // you whether the change about to be made is the size you expected.
 func normalizeCmd() *cobra.Command {
-	var storeBackend, dbPath string
+	var storeBackend, dbPath, sqlAddr string
 	var apply bool
 	cmd := &cobra.Command{
 		Use:   "normalize",
 		Short: "Convert stored phone numbers and email addresses to the canonical sign-in form",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			db, err := openStore(storeBackend, dbPath)
+			db, err := openStore(storeBackend, dbPath, sqlAddr)
 			if err != nil {
 				return err
 			}
@@ -54,6 +55,7 @@ func normalizeCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&storeBackend, "store", "sqlite", "storage backend: sqlite | sql | datastore")
 	f.StringVar(&dbPath, "db", "data/iam.db", "SQLite database path (store=sqlite)")
+	f.StringVar(&sqlAddr, "sql-addr", os.Getenv("IAM_SQL_ADDR"), "hanzoai/sql ZAP address for --store sql|datastore (default $IAM_SQL_ADDR)")
 	// Opt IN to writing. A backfill that wrote by default would be one typo away
 	// from rewriting a production user table nobody meant to touch.
 	f.BoolVar(&apply, "apply", false, "write the changes (default: report only)")
