@@ -28,42 +28,57 @@ func mintDB(t *testing.T) orm.DB {
 	return db
 }
 
-func seedUser(t *testing.T, db orm.DB, owner, name string) {
+// seedUser files a user under a subject — the stable opaque Id an OIDC `sub`
+// carries, which is a different field from the row key.
+func seedUser(t *testing.T, db orm.DB, owner, name, subject string) {
 	t.Helper()
 	u := orm.New[schema.User](db)
-	u.Owner, u.Name = owner, name
+	u.Owner, u.Name, u.Id = owner, name, subject
 	u.SetId(owner + "/" + name)
 	if err := u.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 }
 
-// This package signs for the user it is NAMED, so every name it cannot resolve
-// has to be a refusal. A mint that fell back to "whoever the store returned
-// first" would hand one tenant a token for another's user, and the caller — which
-// has already authorized a DIFFERENT principal — would have no way to notice.
+// This package signs for the user a SUBJECT names, so every subject it cannot
+// resolve has to be a refusal. A mint that fell back to a name, or to whichever
+// row the storage engine returned first, would hand a caller a token addressing
+// a principal it never authorized.
 //
 // The signing path itself is pinned in internal/oidc, where the mint lives and
 // where the cert harness is; what is proved here is the resolution in front of it.
-func TestForRefusesEveryNameItCannotResolve(t *testing.T) {
+func TestForRefusesEverySubjectItCannotResolve(t *testing.T) {
 	db := mintDB(t)
-	seedUser(t, db, "acme", "ada")
+	seedUser(t, db, "acme", "ada", "sub-ada")
 
-	for _, tc := range []struct{ what, owner, user, app string }{
-		{"no owner", "", "ada", "console"},
-		{"no user", "acme", "", "console"},
-		{"no application", "acme", "ada", ""},
-		{"unknown user", "acme", "nobody", "console"},
-		{"unknown application", "acme", "ada", "nosuchapp"},
-		// ada is acme's. Asking for globex's ada must not reach acme's row.
-		{"another org's user", "globex", "ada", "console"},
+	for _, tc := range []struct{ what, subject, app string }{
+		{"no subject", "", "console"},
+		{"no application", "sub-ada", ""},
+		{"unknown subject", "sub-nobody", "console"},
+		{"unknown application", "sub-ada", "nosuchapp"},
+		// The username is an attribution key, not an identity key. Handing it
+		// here must not resolve the row that carries it.
+		{"a username in the subject's place", "ada", "console"},
+		{"a row key in the subject's place", "acme/ada", "console"},
 	} {
-		access, _, err := For(context.Background(), db, tc.owner, tc.user, tc.app, "", "https://hanzo.id", "/v1/sessions")
+		access, _, err := For(context.Background(), db, tc.subject, tc.app, "", "https://hanzo.id", "/v1/session")
 		if err == nil {
 			t.Errorf("%s: minted a token", tc.what)
 		}
 		if access != "" {
 			t.Errorf("%s: refused and still returned a token", tc.what)
 		}
+	}
+}
+
+// Two rows sharing one subject name neither in particular. Answering with the
+// first would let whoever registered the second be minted as the first.
+func TestForFailsClosedOnADuplicatedSubject(t *testing.T) {
+	db := mintDB(t)
+	seedUser(t, db, "acme", "ada", "sub-shared")
+	seedUser(t, db, "globex", "bob", "sub-shared")
+
+	if _, _, err := For(context.Background(), db, "sub-shared", "console", "", "https://hanzo.id", "/v1/session"); err == nil {
+		t.Error("an ambiguous subject minted a token")
 	}
 }
