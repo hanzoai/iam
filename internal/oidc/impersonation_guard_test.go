@@ -65,6 +65,40 @@ func TestImpersonation_generalMinter_cannotReachAdminOrgTarget(t *testing.T) {
 	}
 }
 
+// The id-shaped gate is what keeps this endpoint from reporting who exists in a
+// reserved org, and it is the half the test above cannot see.
+//
+// Two gates carry the same refusal twenty lines apart: one asks the id AS WRITTEN
+// before any read, the other asks the RESOLVED identity after it. For a target
+// that exists they agree, so deleting the first leaves every test in this package
+// passing — measured. What only the first can answer is a name that is NOT there:
+// with it, admin/ghost is refused 403 like any reserved target; without it, the
+// read runs and answers `200 the user does not exist`, and an unprivileged client
+// can tell a real SuperAdmin from an invented one by the shape of the refusal.
+func TestImpersonation_reservedTarget_isNoExistenceOracle(t *testing.T) {
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUserInOrg(t, db, "admin", "z", "z@hanzo.ai", "pw") // exists
+	// admin/ghost is deliberately never seeded.
+
+	ask := func(id string) (int, string) {
+		resp, body := do(t, app, keyReq(PathTokensIssue, "hanzo-console", "top-secret", "?id="+id))
+		return resp.StatusCode, string(body)
+	}
+	existsStatus, existsBody := ask("admin/z")
+	ghostStatus, ghostBody := ask("admin/ghost")
+
+	if existsStatus != 403 || ghostStatus != 403 {
+		t.Fatalf("reserved targets must both be 403: admin/z=%d admin/ghost=%d", existsStatus, ghostStatus)
+	}
+	// Same answer, or the difference IS the oracle.
+	if existsBody != ghostBody {
+		t.Fatalf("a reserved target that exists answers differently from one that does not:\n exists: %s\n ghost:  %s",
+			existsBody, ghostBody)
+	}
+}
+
 // TestImpersonation_adminMinter_boundaryIsTheAdminMintCapability is the paired
 // positive: the SAME target (admin/z) IS reachable once the app holds the separately
 // granted admin-mint capability. This proves the reserved-org refusal above is a
