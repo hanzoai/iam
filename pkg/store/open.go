@@ -17,14 +17,14 @@ import (
 // which one is live:
 //
 //	sqlite    — embedded hanzoai/sqlite (default; the no-Postgres local path)
-//	sql       — hanzoai/sql (Postgres fork) over ZAP; IAM_SQL_ADDR names it (default localhost:9651)
+//	sql       — hanzoai/sql (Postgres fork) over ZAP; addr names it (default localhost:9651)
 //	datastore — hanzoai/datastore (ClickHouse fork) over ZAP :9655
 //
 // This is the ONE store-open path: the serving binary (main.go) and the
 // migrate-v1 tool both call it, so a migrated store and a served store share
 // byte-for-byte identical open config (WAL, busy timeout) — a drift here would
 // be a drift between what the migrator writes and what the server reads.
-func Open(backend, path string) (orm.DB, error) {
+func Open(backend, path, addr string) (orm.DB, error) {
 	switch backend {
 	case "", "sqlite":
 		if dir := filepath.Dir(path); dir != "" && dir != "." {
@@ -41,11 +41,11 @@ func Open(backend, path string) (orm.DB, error) {
 		}
 		return db, nil
 	case "sql":
-		// IAM_SQL_ADDR names the hanzoai/sql backend (e.g. sql-0.sql.hanzo.svc:9651);
-		// empty falls back to localhost:9651 for a co-located dev backend.
-		return orm.OpenZap(&ormdb.ZapConfig{Addr: os.Getenv("IAM_SQL_ADDR"), Backend: ormdb.ZapSQL})
+		// addr names the hanzoai/sql backend (e.g. sql-0.sql.hanzo.svc:9651); the
+		// caller resolves it, empty falls back to the orm localhost:9651 default.
+		return orm.OpenZap(&ormdb.ZapConfig{Addr: addr, Backend: ormdb.ZapSQL})
 	case "datastore":
-		return orm.OpenDatastore(&ormdb.ZapConfig{})
+		return orm.OpenDatastore(&ormdb.ZapConfig{Addr: addr, Backend: ormdb.ZapDatastore})
 	default:
 		return nil, fmt.Errorf("unknown store backend %q (want sqlite, sql, or datastore)", backend)
 	}
