@@ -83,7 +83,7 @@ func TestImpersonation_reservedTarget_isNoExistenceOracle(t *testing.T) {
 	// admin/ghost is deliberately never seeded.
 
 	ask := func(id string) (int, string) {
-		resp, body := do(t, app, keyReq(PathTokensIssue, "hanzo-console", "top-secret", "?id="+id))
+		resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id="+id))
 		return resp.StatusCode, string(body)
 	}
 	existsStatus, existsBody := ask("admin/z")
