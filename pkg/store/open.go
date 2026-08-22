@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
@@ -41,12 +42,38 @@ func Open(backend, path, addr string) (orm.DB, error) {
 		}
 		return db, nil
 	case "sql":
-		// addr names the hanzoai/sql backend (e.g. sql-0.sql.hanzo.svc:9651); the
-		// caller resolves it, empty falls back to the orm localhost:9651 default.
-		return orm.OpenZap(&ormdb.ZapConfig{Addr: addr, Backend: ormdb.ZapSQL})
+		// addr names the hanzoai/sql backend (e.g. sql://sql-0.sql.hanzo.svc:9651);
+		// the caller resolves it, empty falls back to the orm localhost:9651 default.
+		host, err := hostPort("sql", addr)
+		if err != nil {
+			return nil, err
+		}
+		return orm.OpenZap(&ormdb.ZapConfig{Addr: host, Backend: ormdb.ZapSQL})
 	case "datastore":
-		return orm.OpenDatastore(&ormdb.ZapConfig{Addr: addr, Backend: ormdb.ZapDatastore})
+		host, err := hostPort("datastore", addr)
+		if err != nil {
+			return nil, err
+		}
+		return orm.OpenDatastore(&ormdb.ZapConfig{Addr: host, Backend: ormdb.ZapDatastore})
 	default:
 		return nil, fmt.Errorf("unknown store backend %q (want sqlite, sql, or datastore)", backend)
 	}
+}
+
+// hostPort resolves a Hanzo SQL / datastore address to the host:port the ZAP
+// transport dials. It accepts the scheme-qualified form (sql://host, datastore://host)
+// or a bare host:port, and rejects a wire scheme it forked from — Hanzo SQL is
+// addressed as sql://, never postgres://. Empty stays empty (orm localhost default).
+func hostPort(scheme, addr string) (string, error) {
+	if addr == "" {
+		return "", nil
+	}
+	i := strings.Index(addr, "://")
+	if i < 0 {
+		return addr, nil
+	}
+	if got := addr[:i]; got != scheme {
+		return "", fmt.Errorf("store: %s backend is addressed as %s://, not %s://", scheme, scheme, got)
+	}
+	return addr[i+3:], nil
 }
