@@ -61,7 +61,7 @@ func TestForRefusesEverySubjectItCannotResolve(t *testing.T) {
 		{"a username in the subject's place", "ada", "console"},
 		{"a row key in the subject's place", "acme/ada", "console"},
 	} {
-		access, _, err := For(context.Background(), db, tc.subject, tc.app, "", "https://hanzo.id", "/v1/session")
+		access, _, err := For(context.Background(), db, tc.subject, tc.app, "", "hanzo.id", "/v1/session")
 		if err == nil {
 			t.Errorf("%s: minted a token", tc.what)
 		}
@@ -78,7 +78,7 @@ func TestForFailsClosedOnADuplicatedSubject(t *testing.T) {
 	seedUser(t, db, "acme", "ada", "sub-shared")
 	seedUser(t, db, "globex", "bob", "sub-shared")
 
-	if _, _, err := For(context.Background(), db, "sub-shared", "console", "", "https://hanzo.id", "/v1/session"); err == nil {
+	if _, _, err := For(context.Background(), db, "sub-shared", "console", "", "hanzo.id", "/v1/session"); err == nil {
 		t.Error("an ambiguous subject minted a token")
 	}
 }
