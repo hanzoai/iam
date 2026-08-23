@@ -30,13 +30,6 @@ import (
 func TestNoNewVerbNounAddresses(t *testing.T) {
 	frozen := map[string]bool{}
 	for _, p := range []string{
-<<<<<<< HEAD
-=======
-		// Native endpoints — canonical twins in internal/oidc/canonical.go.
-		oidc.LegacyPathAccount, oidc.LegacyPathAuthApplication, oidc.LegacyPathPreferences,
-		oidc.LegacyPathVerificationCodes, oidc.LegacyPathTokensIssue,
-		oidc.LegacyPathKeysMint, oidc.LegacyPathKeysRevoke,
->>>>>>> 7ce0b6058 (docs: name the endpoint instead of calling it a door)
 		// Revoking a membership. The collection has no spelling for it — a DELETE
 		// there would carry the (user, org) pair in a body — so this one has no
 		// successor to be retired towards, and is the last verb-noun address the
