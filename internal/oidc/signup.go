@@ -22,7 +22,7 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// The native front-door signup: POST /v1/iam/signup. The @hanzo/iam SDK + the
+// The native signup endpoint: POST /v1/iam/signup. The @hanzo/iam SDK + the
 // hanzo.id portal post the sign-up form here to create a new account. It mirrors
 // the v1 Signup contract (controllers/account.go): the casibase
 // {status,msg,data} envelope, resolve-app → enforce-policy → create-user, with
@@ -33,7 +33,7 @@ import (
 // the email/phone-OTP-gated sign-up variant plugs its verification check
 // (otp.Check) in ahead of the create at cutover.
 
-// PathSignup is the canonical front-door signup endpoint.
+// PathSignup is the canonical native signup endpoint.
 const PathSignup = "/v1/iam/signup"
 
 // signupForm is the sign-up request the SDK/portal posts — the signup-relevant
@@ -227,7 +227,7 @@ func signupHandler(db orm.DB) zip.Handler {
 			}
 			f.Username = name
 		} else {
-			// THE username rule (schema.Username), applied at the door so the caller gets
+			// THE username rule (schema.Username), applied at the endpoint so the caller gets
 			// the reason rather than a bare conflict — and so the uniqueness check runs
 			// against the value that will actually be stored. Probing uniqueness with the
 			// raw spelling while storing the normalized one is how "Alice" gets admitted

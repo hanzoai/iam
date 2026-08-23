@@ -6,7 +6,7 @@
 // Authentication is STRUCTURAL, decided by which group a route is registered on,
 // never by a hand-maintained path list. Route binds the surface as two groups:
 //
-//   - the PUBLIC group (oidc.Route and the other pre-auth doors) holds no Guard,
+//   - the PUBLIC group (oidc.Route and the other pre-auth endpoints) holds no Guard,
 //     so membership in it IS "public".
 //   - the AUTHED group holds authz.Guard. Every route registered on it — the
 //     typed entity CRUD, the legacy verb aliases, the SCIM surface — requires a
@@ -80,7 +80,7 @@ func Route(app *zip.App, db orm.DB) {
 	// The pre-authentication surface: OIDC discovery/JWKS + RFC 8414 AS metadata,
 	// the oauth/* protocol endpoints (authorize, token, userinfo, logout,
 	// introspect, revoke), credential login, the confidential-client key minters,
-	// and the front door (get-app-login, auth/methods, get-account, signup, signin,
+	// and the native endpoints (get-app-login, auth/methods, get-account, signup, signin,
 	// whoami, onboard, …). Registered on a root (empty-prefix) group that holds no
 	// Guard, at their absolute paths. There is no allow-list to keep in sync, and
 	// no ordering to preserve: a route is public because it is registered here.
@@ -173,11 +173,11 @@ func Route(app *zip.App, db orm.DB) {
 	authed.Authorize(authz.Authorize)
 
 	// The same authentication, mounted a second time for the ONE surface a
-	// scoped seam cannot reach: the framework's own /mcp door and OpenAPI
+	// scoped seam cannot reach: the framework's own /mcp endpoint and OpenAPI
 	// document, which Build installs directly on the served app's router with no
 	// middleware, having never been registered through any group. Control is
 	// depth-0 for that reason and acts on those three addresses only — see
-	// authz.Control. Without it the MCP door would dispatch tools/call into this
+	// authz.Control. Without it the MCP server would dispatch tools/call into this
 	// same admin CRUD unauthenticated.
 	app.Use(authz.Control(db))
 
@@ -196,7 +196,7 @@ func Route(app *zip.App, db orm.DB) {
 	certs.Route(authed, db)
 	keys.Route(authed, db)
 
-	// The two key doors: a publishable pk- resolves to its ORG, a secret sk- to
+	// The two key endpoints: a publishable pk- resolves to its ORG, a secret sk- to
 	// its PRINCIPAL. Both are handler-authorized by exact name — a request here
 	// names no entity the Guard could authorize, only a key in ?accessKey=.
 	resolve.Route(authed, db)
