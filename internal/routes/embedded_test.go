@@ -186,7 +186,7 @@ func TestGuard_StillGatesTheControlPlane(t *testing.T) {
 		_ = resp.Body.Close()
 		if resp.StatusCode != 401 {
 			t.Errorf("GET %s unauthenticated = %d, want 401 — the framework's own "+
-				"door into IAM's typed ops must not open without a bearer", path, resp.StatusCode)
+				"path into IAM's typed ops must not answer without a bearer", path, resp.StatusCode)
 		}
 	}
 }

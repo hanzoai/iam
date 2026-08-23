@@ -14,7 +14,7 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// The authorization endpoint: GET/POST /v1/iam/oauth/authorize — the front door
+// The authorization endpoint: GET/POST /v1/iam/oauth/authorize — the entry point
 // of the authorization-code flow. iam validates the request BEFORE it trusts
 // any redirect: an unknown client_id or an unregistered redirect_uri is answered
 // in place and NEVER redirected to (RFC 6749 §4.1.2.1), closing the open-redirect

@@ -741,7 +741,7 @@ func keys(m map[string]any) []string {
 // A RESERVED platform org is never reachable by an unauthenticated wallet
 // sign-up, even when its application row has sign-up enabled.
 //
-// Wallet login was the ONE public account-creation front door that did not
+// Wallet login was the ONE public account-creation endpoint that did not
 // consult policy.IsReservedOrg — signup (signup.go), onboarding, federated
 // provisioning (federation.go) and token exchange all did. The org here is not
 // caller-chosen (provision takes in.App.Organization), so this is not a

@@ -148,7 +148,7 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 			// A publishable key is WRITE-ONLY: a pk- publishable half and NEVER a
 			// confidential sk- secret — even if the caller supplied one — so it can
 			// carry no full-access material. Its authority is resolved org-only at the
-			// ingest door (/v1/iam/keys/org), never as a principal.
+			// ingest endpoint (/v1/iam/keys/org), never as a principal.
 			k.AccessSecret = ""
 		} else if k.AccessSecret == "" {
 			k.AccessSecret = Mint("sk", k.State)
@@ -256,7 +256,8 @@ func sameTenantUser(k *schema.Key) error {
 //
 // Scope is not copied either: it is the key's ACCESS CLASS, fixed at create. Letting
 // an update flip a secret key to publish scope would blank its AccessSecret and make
-// its pk- half org-resolvable at the ingest door — a privilege change disguised as an
+// its pk- half org-resolvable at the ingest endpoint — a privilege change disguised as
+// an
 // edit. Rotation and re-scoping are mint operations, not field writes.
 func apply(dst, src *schema.Key) {
 	dst.DisplayName = src.DisplayName

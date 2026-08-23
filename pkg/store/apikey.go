@@ -32,8 +32,8 @@ import (
 // a principal. A pk- is public — it ships in client JS — so turning it into a read
 // identity is the browser-key catastrophe. It is refused on EVERY caller of this
 // function (get-user?accessKey AND the registry token path), so a public key
-// authenticates no read anywhere. Its ONLY resolution is org-only, at the ingest door
-// (keys.resolve → /v1/iam/resolve-key), and only for a publishable key.
+// authenticates no read anywhere. Its ONLY resolution is org-only, at the ingest
+// endpoint (keys.resolve → /v1/iam/resolve-key), and only for a publishable key.
 //
 // Any other string is not a key. It carries no shape this estate mints, so it cannot
 // be told apart from a value that was never issued at all, and it resolves to nobody.
@@ -41,8 +41,8 @@ import (
 // ── why a key did not resolve ────────────────────────────────────────────────
 //
 // FAILING CLOSED AND FAILING SILENTLY ARE DIFFERENT THINGS, and this file used to do
-// both. Every non-resolution collapsed into a bare orm.ErrNotFound, which the key-door
-// handler rendered as "the entity does not exist" — one sentence for causes that call
+// both. Every non-resolution collapsed into a bare orm.ErrNotFound, which the key
+// endpoint rendered as "the entity does not exist" — one sentence for causes that call
 // for opposite actions from the holder. A user whose key was REVOKED went looking for
 // a deleted organization instead of minting a new key, and a tenant admin's forgery
 // attempt (the same-tenant pin below) was indistinguishable from a typo.
@@ -53,10 +53,11 @@ import (
 type KeyFailure string
 
 const (
-	// KeyWrongDoor: a REAL credential presented at the door that does not answer for
-	// it — a pk- at the SECRET door, or a non-pk- at the publishable one. The holder
-	// has a working key; they used the wrong half. Reserved for exactly that, so the
-	// advice it carries ("use your secret sk- key") is always true when it is given.
+	// KeyWrongDoor: a REAL credential presented at the endpoint that does not answer
+	// for it — a pk- at the SECRET endpoint, or a non-pk- at the publishable one. The
+	// holder has a working key; they used the wrong half. Reserved for exactly that,
+	// so the advice it carries ("use your secret sk- key") is always true when it is
+	// given.
 	KeyWrongDoor KeyFailure = "key_wrong_door"
 	// KeyUnknown: no live credential answers to this value. Never minted, already
 	// revoked, or carrying a prefix this estate does not issue — the holder cannot
@@ -72,10 +73,10 @@ const (
 	// not exist. A data-integrity fault in the key table, not the holder's doing.
 	KeyDanglingUser KeyFailure = "key_dangling_user"
 	// KeyNotPublishable: a real key addressed by its pk- half whose scope is not
-	// publish. The browser door refuses it precisely because it is a secret.
+	// publish. The publishable endpoint refuses it precisely because it is a secret.
 	KeyNotPublishable KeyFailure = "key_not_publishable"
 	// KeyExpired: the row exists and is the right scope, but its lifetime has run
-	// out. Both doors report it, because both ask the same question (see dead).
+	// out. Both resolvers report it, because both ask the same question (see dead).
 	KeyExpired KeyFailure = "key_expired"
 	// KeyDisabled: the row exists and has not run out, but its lifecycle flag says
 	// it is turned off. Told apart from KeyExpired because the cures differ — an
@@ -117,7 +118,7 @@ func notFound(r KeyFailure) error { return &KeyError{Reason: r} }
 // than guessing one; and a public pk- resolves to nobody at all.
 //
 // The two shapes are refused for DIFFERENT reasons, and the difference is the whole
-// value of the answer. A pk- is a real credential at the wrong door (KeyWrongDoor —
+// value of the answer. A pk- is a real credential at the wrong endpoint (KeyWrongDoor —
 // "use your secret key"). Anything else answers to no live credential at all
 // (KeyUnknown — "mint a new one"), whether it was revoked, never issued, or carries
 // some prefix this estate does not mint. There is no third case, because there is no
@@ -127,7 +128,7 @@ func notFound(r KeyFailure) error { return &KeyError{Reason: r} }
 // Revocation is deletion, so a gone key reads as KeyUnknown. Termination is not the
 // only way a real row stops answering, though: an sk- that has run out (KeyExpired) or
 // been switched off (KeyDisabled) resolves to nobody just the same, because the one
-// place a secret becomes a key asks that question for every door (see keyBySecret).
+// place a secret becomes a key asks that question for every resolver (see keyBySecret).
 func UserByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, error) {
 	u, _, err := UserAndScopeByAccessKey(ctx, db, key)
 	return u, err
@@ -151,7 +152,7 @@ func UserAndScopeByAccessKey(ctx context.Context, db orm.DB, key string) (*schem
 		return userAndScopeOwningKey(ctx, db, key)
 	case strings.HasPrefix(key, "pk-"):
 		// WRITE-ONLY and never a principal (see the package note above). Fail closed,
-		// and say so as the wrong door: this holder has a working key, just not here.
+		// and say so as the wrong endpoint: this holder has a working key, just not here.
 		return nil, "", notFound(KeyWrongDoor)
 	default:
 		// Not a shape this estate issues, so no live credential can answer to it.
@@ -218,8 +219,8 @@ func userAndScopeOwningKey(ctx context.Context, db orm.DB, secret string) (*sche
 //
 // FOUND IS NOT HONORED. A row that has run out or been switched off still answers
 // to its secret, and it must still resolve to nobody — so the liveness question is
-// asked HERE, at the one place a presented secret becomes a key, and no door can
-// forget to ask it.
+// asked HERE, at the one place a presented secret becomes a key, and no resolver
+// can forget to ask it.
 func keyBySecret(ctx context.Context, db orm.DB, secret string) (*schema.Key, error) {
 	digest := schema.DigestSecret(secret)
 	if digest == "" {
@@ -288,14 +289,14 @@ func keyUserRef(k *schema.Key) (owner, name string) {
 // pin to a User field.
 //
 // It carries NO lookup of its own: keyBySecret is how a presented secret becomes a
-// key everywhere, so this door and the get-user door cannot disagree about which
-// rows answer. That is not tidiness — a private query here matched the plaintext
-// column the minter stopped writing, so this door saw only the rows minted before
+// key everywhere, so this resolver and the get-user resolver cannot disagree about
+// which rows answer. That is not tidiness — a private query here matched the plaintext
+// column the minter stopped writing, so this resolver saw only the rows minted before
 // digests and none of the ones minted since.
 //
 // Fail closed on every non-resolution — an empty value, a non-sk- shape, or a
 // secret that answers to no honored row resolves to (nil, nil). WHICH refusal it
-// was is keyBySecret's word and is dropped here: this door asks whether a key
+// was is keyBySecret's word and is dropped here: this resolver asks whether a key
 // speaks, not what to tell a holder, and its caller has nobody to explain to.
 func KeyBySecret(ctx context.Context, db orm.DB, secret string) (*schema.Key, error) {
 	secret = strings.TrimSpace(secret)
@@ -315,7 +316,8 @@ func KeyBySecret(ctx context.Context, db orm.DB, secret string) (*schema.Key, er
 // user: a publishable key speaks for just its org, never a principal, which is why the
 // pk- path lives here and not in UserByAccessKey.
 //
-// Fail-closed on every non-resolution, so this door can only ever speak for a live key
+// Fail-closed on every non-resolution, so this resolver can only ever speak for a live
+// key
 // that was explicitly minted as a browser key: a value that is not a pk-, an unknown
 // key, a non-publishable (secret) key even when addressed by its OWN pk- half
 // (Scope != KeyScopePublish), or an expired key all yield orm.ErrNotFound. Revocation
@@ -334,7 +336,7 @@ func PublishableKeyByAccessKey(ctx context.Context, db orm.DB, key string, now t
 		return nil, err
 	}
 	// Two different refusals, told apart. "Not publishable" means the holder used a
-	// secret key's public half at the ingest door and should present its pk-;
+	// secret key's public half at the ingest endpoint and should present its pk-;
 	// "expired" means the right key simply ran out and must be re-minted. Collapsing
 	// them sent the second holder hunting for a configuration error they did not have.
 	// The CLASS, not the whole scope: a limited publishable key carries its reach
@@ -351,7 +353,7 @@ func PublishableKeyByAccessKey(ctx context.Context, db orm.DB, key string, now t
 }
 
 // dead says WHY a key is no longer honored, or "" while it still is. Two ways a
-// present row stops answering, one predicate, so every door refuses the same rows
+// present row stops answering, one predicate, so every resolver refuses the same rows
 // for the same stated reason:
 //
 //   - State is the lifecycle flag the minter writes ("Active", or "test" for a

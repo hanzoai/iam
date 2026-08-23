@@ -115,7 +115,7 @@ func TestUpdateRefusesAPlatformRow(t *testing.T) {
 	}
 }
 
-// And the way in through the side door: write an ordinary row you are allowed to
+// And the indirect way in: write an ordinary row you are allowed to
 // write, then RELABEL it with the platform's action.
 func TestUpdateRefusesRelabellingIntoTheReservedNamespace(t *testing.T) {
 	db := auditTestDB(t)

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package authz is the IAM v2 authorization seam in front of the Phase-1 entity
-// CRUD, which is otherwise unauthenticated — the door an attacker would walk
-// through to overwrite an admin-owned signing cert and forge tokens. It is two
+// CRUD, which is otherwise unauthenticated — the entry point an attacker would
+// use to overwrite an admin-owned signing cert and forge tokens. It is two
 // orthogonal decisions, never braided:
 //
 //   - AUTHENTICATION — the Guard middleware, registered ONCE via app.Use, AFTER the
@@ -355,7 +355,7 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accou
 // handlerAuthorizedExact are SINGLE routes (not subtrees) the handler authorizes
 // itself.
 //
-// The two key doors are here because their target is an opaque key riding in
+// The two key endpoints are here because their target is an opaque key riding in
 // ?accessKey=, with no owner/name for the Guard to authorize. Each authorizes
 // itself behind its own capability: keys/principal behind CapKeyResolve, and
 // keys/org behind CapPublishableResolve, which returns ONLY the org and never a
@@ -508,12 +508,12 @@ func Guard(db orm.DB) zip.Handler {
 	}
 }
 
-// mcpPath is where zip mounts the MCP door. zip exports SpecPath and DocsPath
+// mcpPath is where zip mounts the MCP server. zip exports SpecPath and DocsPath
 // but keeps this one unexported (zip/mcp.go defaultMCPPath), and IAM never moves
 // it — MCPConfig.Path is left at its default wherever IAM builds an app.
 const mcpPath = "/mcp"
 
-// Control gates the framework's OWN projections: the MCP door, the OpenAPI
+// Control gates the framework's OWN projections: the MCP server, the OpenAPI
 // document and the docs UI. It is the SECOND mounting of the one Guard, and it
 // exists because those three addresses are not routes anybody registered.
 //
@@ -524,7 +524,7 @@ const mcpPath = "/mcp"
 // and these are in no group — so the only seam that can is a depth-0 one.
 //
 // That is the whole reason authentication is mounted twice. Gating them matters
-// because the MCP door dispatches tools/call straight into the typed ops: it is
+// because the MCP server dispatches tools/call straight into the typed ops: it is
 // the same admin CRUD the REST surface exposes, reached by a different
 // transport, and the op-invoke hook alone does not close it (Authorize admits a
 // read whose decoded target is empty, on the REST-shaped assumption that the
@@ -566,7 +566,7 @@ func Control(db orm.DB) zip.Handler {
 // the /mcp route authz.Control gates). That second clause is why Control is not
 // optional. The owner == "" read admitted just below trusts the Guard to have
 // authorized the query-string target, and over MCP the arguments decode into In
-// rather than the query — so an ungated door would reach this line with no
+// rather than the query — so an ungated /mcp route would reach this line with no
 // principal, no decoded target, and an admission.
 func Authorize(ctx context.Context, op zip.Op, in any) error {
 	owner, name := decodedTarget(in)

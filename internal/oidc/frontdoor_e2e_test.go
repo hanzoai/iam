@@ -17,7 +17,7 @@ import (
 
 // sessionCookieFor drives a bare (type=login) portal sign-in for hanzo/alice and
 // returns the "name=value" of the session cookie it set — the credential the
-// front-door session routes resolve the caller from.
+// native session routes resolve the caller from.
 func sessionCookieFor(t *testing.T, app *zip.App) string {
 	t.Helper()
 	form := url.Values{

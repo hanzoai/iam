@@ -13,7 +13,7 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// PathAccount (canonical.go) is the native front-door account endpoint — what
+// PathAccount (canonical.go) is the native account endpoint — what
 // the hanzo.id portal's account page and the gateway admin-guard call.
 //
 // SECURITY CONTRACT. The gateway admin-guard derives the global-admin

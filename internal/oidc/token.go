@@ -693,7 +693,7 @@ func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 // that is deleted, or RE-KEYED underneath that key (which founding a personal org
 // does), leaves a token family whose every future rotation mints one of these. It
 // renews itself, which is why refusing at the mint is the fix and not a check at
-// one door.
+// one endpoint.
 //
 // The two failures are DIFFERENT and must not be flattened. A store error is a
 // fault — the row may well exist — so the request fails and the caller retries.
@@ -704,7 +704,7 @@ func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 // fresh credential. The password grant already refused the latter two before
 // minting; the code, device and refresh grants did not, so a ban took effect
 // everywhere except on the paths that renew access. Stated once, at the single
-// place every grant resolves its subject, rather than three times at three doors.
+// place every grant resolves its subject, rather than three times across three grants.
 //
 // This never touches a machine: client_credentials signs its own Identity from the
 // app (see clientCredentialsGrant) and never calls this. Every path that does is a
@@ -806,7 +806,7 @@ func isInternalApp(app *schema.Application) bool {
 //     a platform-internal client whose tokens have no business being minted by a
 //     public request. Even though such a token already resolves to NO authority (its
 //     subject "admin/<app>" has no user row, so authz grants it nothing — token.go /
-//     authz.principal), refusing it at the door makes the invariant STRUCTURAL: an
+//     authz.principal), refusing it at the endpoint makes the invariant STRUCTURAL: an
 //     admin-org app cannot mint on the public endpoint, period, independent of how the
 //     principal resolver later evolves. Fail-secure defense in depth.
 func publicTokenEndpointForbidden(app *schema.Application) bool {
