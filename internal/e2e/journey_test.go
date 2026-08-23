@@ -180,10 +180,10 @@ func TestJourney_AdminConsole(t *testing.T) {
 	e := boot(t)
 	root := e.mint(t, "admin/root") // a SuperAdmin bearer
 
-	// get-account — {status:ok, data:<masked user>} with owner + isAdmin.
-	acct := e.getJSON(t, "/v1/iam/get-account", root)
+	// The account read — {status:ok, data:<masked user>} with owner + isAdmin.
+	acct := e.getJSON(t, "/v1/iam/account", root)
 	if acct["status"] != "ok" {
-		t.Fatalf("get-account status: %v", acct)
+		t.Fatalf("account status: %v", acct)
 	}
 
 	// The org registry — the switcher's workhorse. A SuperAdmin sees every

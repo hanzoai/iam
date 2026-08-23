@@ -34,14 +34,3 @@ const (
 	// what you call to get one.
 	PathUserKeys = "/v1/iam/users/:owner/:name/keys" // legacy: mint-user-keys, revoke-user-keys
 )
-
-// The verb-noun spellings these replaced. Kept reachable, taught nowhere.
-const (
-	LegacyPathAccount           = "/v1/iam/get-account"
-	LegacyPathAuthApplication   = "/v1/iam/get-app-login"
-	LegacyPathPreferences       = "/v1/iam/update-preferences"
-	LegacyPathVerificationCodes = "/v1/iam/send-verification-code"
-	LegacyPathTokensIssue       = "/v1/iam/issue-user-token"
-	LegacyPathKeysMint          = "/v1/iam/mint-user-keys"
-	LegacyPathKeysRevoke        = "/v1/iam/revoke-user-keys"
-)
