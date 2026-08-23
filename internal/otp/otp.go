@@ -7,7 +7,7 @@
 // — that secret never travels and lives in internal/mfa/factor).
 //
 // It is a LEAF: store + schema + cred, no authz, no oidc, no mfa. That is what
-// lets every caller share ONE code surface — the front-door send endpoint, sign-in
+// lets every caller share ONE code surface — the native send endpoint, sign-in
 // by emailed or texted code, enrolling a delivered second factor, and the
 // second-factor challenge itself. They all file and find a code by the same key,
 // by construction rather than by each one remembering the rule.
@@ -202,7 +202,7 @@ func Receiver(dest string) string {
 }
 
 // Issue mints a code for dest, files it under [Receiver] and delivers it. It is the
-// whole act of getting a code to a person and it is the ONLY one — the front-door
+// whole act of getting a code to a person and it is the ONLY one — the native
 // send endpoint and the second-factor challenge both call it, which is what makes
 // the row a code is filed under and the row that verifies it the same row.
 //

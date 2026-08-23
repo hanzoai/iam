@@ -247,7 +247,7 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		//
 		// So an OMITTED secret preserves what is stored. This is the same rule the
 		// operator upsert already settled in resolveSecret ("existing app -> preserve
-		// what it has"), stated once more here because this is the other door onto the
+		// what it has"), stated once more here because this is the other path onto the
 		// same row; rotation stays possible, it just has to be DELIBERATE — send the
 		// new secret to change it.
 		//

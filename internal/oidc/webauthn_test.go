@@ -727,8 +727,8 @@ func sessionCookieForNamed(t *testing.T, app *zip.App, name string) string {
 // Signup never asks for a username, so the identifier a customer HAS is their
 // email. A name-only lookup answers "no passkey is registered" for an account
 // that has one — and that is the same refusal a real missing passkey gives, so
-// the door reports nothing an operator could act on. This door resolves the way
-// every other one does.
+// the endpoint reports nothing an operator could act on. This endpoint resolves the
+// way every other one does.
 func TestPasskeySigninResolvesTheIdentifierACustomerHas(t *testing.T) {
 	app, _, cookie := passkeyServer(t)
 	a := newAuthenticator(t)

@@ -654,12 +654,12 @@ func TestToken_BadPassword_401(t *testing.T) {
 
 // TestToken_AdminPassword_NotDosableOnPublicRegistry is the FINDING 2 DoS proof: an
 // unauthenticated attacker MUST NOT be able to lock the platform SuperAdmin out of
-// its password doors by hammering the PUBLIC registry endpoint. It mints a SuperAdmin
+// its password endpoints by hammering the PUBLIC registry endpoint. It mints a SuperAdmin
 // (org "admin") through the REAL users.Create path, then floods far past the lock
 // threshold with wrong passwords on the public token endpoint. Every attempt is a
 // no-match 401 (reserved-org password is not a registry credential), and — crucially
 // — the admin row's shared lockout counter is NEVER advanced, so the super stays
-// signable on every OTHER door. The registry password path never touches a reserved
+// signable on every OTHER endpoint. The registry password path never touches a reserved
 // account.
 func TestToken_AdminPassword_NotDosableOnPublicRegistry(t *testing.T) {
 	app, db, _ := newServer(t)

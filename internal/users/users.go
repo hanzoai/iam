@@ -30,7 +30,7 @@ import (
 // API binds the user handlers to an orm store. Construct once at boot and register.
 type API struct{ db orm.DB }
 
-// New returns a user API over db — the constructor front-door handlers (e.g. the
+// New returns a user API over db — the constructor the native handlers (e.g. the
 // signup endpoint) use to reach the ONE canonical create path (Create hashes the password with argon2id exactly once and returns the redacted row), so a user
 // minted at signup is byte-identical to one minted through the CRUD surface.
 func New(db orm.DB) *API { return &API{db: db} }
@@ -180,7 +180,7 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	}
 	// THE username rule, at the ONE write every create path reaches: password
 	// signup, social federation, SCIM, the legacy add-user verb, the typed CRUD
-	// create and the embedder seam all land here. Stating it at the door of each of
+	// create and the embedder seam all land here. Stating it at the start of each of
 	// those instead left six of them stating nothing, and whatever bytes arrived
 	// became a principal.
 	name, err := schema.Username(in.User.Name)

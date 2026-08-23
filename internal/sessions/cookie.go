@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// CookieName is the portal session cookie the native front-door sets on a bare
+// CookieName is the portal session cookie the native endpoints set on a bare
 // (type=login) sign-in, that get-account resolves the caller from, and that the
 // authorize endpoint reads to answer "is anyone signed in here?" without showing
 // a login screen. One name, platform-wide.

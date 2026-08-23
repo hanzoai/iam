@@ -284,7 +284,7 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 // two holes the earlier multi-org walk opened on a PUBLIC unauthenticated endpoint:
 //   - unauth account-lock DoS: verifying the reserved row drove its shared lockout
 //     counter, so five wrong `docker login`s locked the platform SuperAdmin out of
-//     every password door (login/ROPC/registry share the one row counter). A public
+//     every password endpoint (login/ROPC/registry share the one row counter). A public
 //     endpoint must never let an anonymous caller trip a hard lock on the super.
 //   - a low-throttle brute-force oracle for the SuperAdmin's password on a public
 //     realm.
@@ -296,7 +296,7 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 // collided across admin and hanzo). A reserved-org principal pushes to the registry
 // with its HIGH-ENTROPY machine credential — an API key (userByKey) or a service
 // account (serviceAccount) — which are unaffected here and are the documented CI/
-// SuperAdmin push identity; neither is a guessable web password on a public door.
+// SuperAdmin push identity; neither is a guessable web password on a public endpoint.
 //
 // PARITY NOTE: legacy's registry token path resolved {admin, hanzo} passwords with
 // NO lockout at all, so this per-account lock on the registry endpoint is NEW surface
@@ -400,7 +400,7 @@ func inCandidateOrg(owner string) bool {
 }
 
 // resolveUser looks a user up by email (identifier contains "@") or by name,
-// scoped to org — the same email-or-name resolution the login front door uses.
+// scoped to org — the same email-or-name resolution the login endpoint uses.
 func resolveUser(ctx context.Context, db orm.DB, org, identifier string) *schema.User {
 	if strings.Contains(identifier, "@") {
 		if u, err := store.GetUserByEmail(ctx, db, org, identifier); err == nil && u != nil {

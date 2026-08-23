@@ -143,7 +143,7 @@ func canUnlink(ctx context.Context, db orm.DB, app *schema.Application, provider
 // onlyCredential reports whether the connector column field is the ONLY thing this
 // account can be signed in as — so clearing it locks the person out for good.
 //
-// The list is every front door this binary actually serves, asked of the ACCOUNT
+// The list is every login endpoint this binary actually serves, asked of the ACCOUNT
 // rather than of a policy flag: another linked provider (the one reflection over
 // the connector columns that linked-accounts already answers with), a password
 // digest, a passkey, a bound wallet, or a delivered one-time code. The code arm

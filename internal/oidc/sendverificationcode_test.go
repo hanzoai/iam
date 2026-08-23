@@ -262,7 +262,7 @@ func seedPhoneUser(t *testing.T, db orm.DB, name, phone string) {
 }
 
 // An address that identifies two accounts must be answered EXACTLY as an address
-// that identifies none — no oracle on an unauthenticated door.
+// that identifies none — no oracle on an unauthenticated endpoint.
 //
 // The resolver now refuses to pick between duplicate rows (store.ErrEmailAmbiguous)
 // and that refusal is right. Echoing it here was not: this endpoint takes an

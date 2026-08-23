@@ -216,7 +216,7 @@ func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 
 // The pk- fix, end to end on the ONE mint: `?type=publishable` yields a PUBLISHABLE
 // key. Before this there was no endpoint anywhere that minted one — IAM owned the
-// model, the resolver and the ingest door, and nothing produced the credential they
+// model, the resolver and the ingest endpoint, and nothing produced the credential they
 // were written for, so every surface configured its own thing and error reporting
 // stayed a separate DSN.
 //
@@ -237,10 +237,10 @@ func TestMintUserKeys_publishableType_mintsAPkAndNeverAPrincipal(t *testing.T) {
 		t.Fatalf("accessKey = %q, want a pk- publishable key", key)
 	}
 
-	// It resolves to an ORG at the ingest door…
+	// It resolves to an ORG at the ingest endpoint…
 	k, err := store.PublishableKeyByAccessKey(context.Background(), db, key, time.Now())
 	if err != nil || k == nil {
-		t.Fatalf("the minted publishable key does not resolve at the ingest door: %v", err)
+		t.Fatalf("the minted publishable key does not resolve at the ingest endpoint: %v", err)
 	}
 	if k.Owner != "hanzo" {
 		t.Fatalf("publishable key resolved to org %q, want hanzo", k.Owner)
