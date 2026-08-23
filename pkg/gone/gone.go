@@ -114,7 +114,7 @@ var successor = map[string][]string{
 	// key endpoint, not the key collection.
 	"/v1/iam/resolve-key": {"/v1/iam/keys/org"},
 
-	// The front door and the token minters. These were reachable at both
+	// The native endpoints and the token minters. These were reachable at both
 	// spellings — one handler value at two addresses — while the canonical noun
 	// was the only one taught. Nothing in the estate still calls them, which is
 	// the condition that ends an alias.
