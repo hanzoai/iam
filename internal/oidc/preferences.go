@@ -15,7 +15,7 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// POST /v1/iam/update-preferences — the ONE account-backed store for cross-product,
+// POST /v1/iam/preferences — the ONE account-backed store for cross-product,
 // cross-device user customizations (onboarding-completed flag, theme, pinned
 // favorites, …). The console's PreferencesProvider reads these from the account's
 // Properties["hanzo.preferences"] JSON blob and write-through-persists partial updates
