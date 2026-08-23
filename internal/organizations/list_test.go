@@ -10,6 +10,7 @@ package organizations_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -376,6 +377,95 @@ func TestList_answersAreMasked(t *testing.T) {
 	}
 	if strings.Contains(body, "hunter2") {
 		t.Fatalf("the tenant list leaked a master password: %s", body)
+	}
+}
+
+// An operator may ask for a bigger page, but not an unbounded one: a limit past
+// the ceiling is clamped, not honoured, so no single call can be made to return
+// the whole registry at once.
+func TestList_limitIsClampedToTheMax(t *testing.T) {
+	h := newHarness(t)
+	seedMany(t, h.db, 5)
+
+	status, p, body := h.list(t, "admin/root", "?limit=100000")
+	if status != 200 {
+		t.Fatalf("status=%d body=%s, want 200", status, body)
+	}
+	if !contains(names(p), "hanzo") {
+		t.Fatalf("orgs=%v, want the caller's own among them", names(p))
+	}
+}
+
+// A cursor this service issued is a position. One that decodes but is not — a
+// hand-edited value that is valid base64 yet names no place in the walk — is an
+// error, the same as one that does not decode at all: a walk never silently
+// restarts.
+func TestList_refusesACursorThatDecodesButNamesNoPosition(t *testing.T) {
+	h := newHarness(t)
+	junk := base64.RawURLEncoding.EncodeToString([]byte("notaposition"))
+
+	if status, _, body := h.list(t, "admin/root", "?cursor="+junk); status == 200 {
+		t.Fatalf("a cursor naming no position was accepted: %s", body)
+	}
+}
+
+// The caller's own set is every organization they belong to — the home org AND
+// each membership — so a person who works across two tenants sees both without
+// reaching across anything. This is the owner-scoping the endpoint is built on:
+// belonging is the whole answer.
+func TestList_includesEveryOrgTheCallerBelongsTo(t *testing.T) {
+	h := newHarness(t)
+	seedMembership(t, h.db, "hanzo/boss", "orgb", store.RoleAdmin)
+
+	status, p, body := h.list(t, "hanzo/boss", "")
+	if status != 200 {
+		t.Fatalf("status=%d body=%s, want 200", status, body)
+	}
+	got := names(p)
+	for _, want := range []string{"hanzo", "orgb"} {
+		if !contains(got, want) {
+			t.Fatalf("orgs=%v, want %s among them — a membership is part of the set", got, want)
+		}
+	}
+}
+
+// A membership can name an organization whose row is gone. That is not this
+// endpoint's to report: the name is skipped and the rest of the set still
+// answers, so one dangling membership never turns a person's list into an error.
+func TestList_skipsAMembershipWhoseOrgIsGone(t *testing.T) {
+	h := newHarness(t)
+	seedMembership(t, h.db, "hanzo/boss", "ghostorg", store.RoleAdmin)
+
+	status, p, body := h.list(t, "hanzo/boss", "")
+	if status != 200 {
+		t.Fatalf("status=%d body=%s, want 200", status, body)
+	}
+	got := names(p)
+	if contains(got, "ghostorg") {
+		t.Fatalf("orgs=%v names an org with no row", got)
+	}
+	if !contains(got, "hanzo") {
+		t.Fatalf("orgs=%v dropped the caller's own over one dangling membership", got)
+	}
+}
+
+// A query that matches nothing is a BOUNDED read, not a table scan: the store
+// has no text index, so the page walks at most a fixed number of rows and then
+// hands back a cursor to resume from — a miss over a large registry costs one
+// page, and the next call carries on where this one stopped.
+func TestList_anUnmatchedQueryStaysABoundedResumableRead(t *testing.T) {
+	h := newHarness(t)
+	seedMany(t, h.db, 2000) // past the scan bound, so one page cannot reach the end
+
+	status, p, body := h.list(t, "admin/root", "?limit=5&q=zzznomatchzzz")
+	if status != 200 {
+		t.Fatalf("status=%d body=%s, want 200", status, body)
+	}
+	if len(p.Organizations) != 0 {
+		t.Fatalf("orgs=%v, want none — nothing matches the query", names(p))
+	}
+	if p.Cursor == "" {
+		t.Fatal("the bounded read ended the walk — a miss became a full scan")
 	}
 }
 
