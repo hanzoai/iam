@@ -260,7 +260,7 @@ func TestCreate_success(t *testing.T) {
 }
 
 // List reads the caller's scope off the principal the Guard resolved. Reached
-// with none — the way the agent door hands a typed op straight to a handler — it
+// with none — the way the MCP server hands a typed op straight to a handler — it
 // answers no one with nothing rather than the whole registry.
 func TestList_withoutAPrincipalIsForbidden(t *testing.T) {
 	db := freshDB(t)

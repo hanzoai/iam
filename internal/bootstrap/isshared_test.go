@@ -11,7 +11,7 @@ import (
 )
 
 // isShared is the honest declaration that an application serves EVERY organization,
-// and the upsert is the ONE door that can set it without collateral damage:
+// and the upsert is the ONE endpoint that can set it without collateral damage:
 // update-application is a full REPLACE over a read that MASKS the client secret, so
 // the natural read-modify-write de-secrets the app. This endpoint merges field by
 // field and preserves the credential, which is why the brand-app flags are set here.
@@ -65,7 +65,7 @@ func TestUpsertApplication_isSharedOmittedPreserves(t *testing.T) {
 	}
 }
 
-// The reason this door was chosen over update-application: it does not touch the
+// The reason this endpoint was chosen over update-application: it does not touch the
 // credential. Pinned together with the flag so a future refactor cannot reintroduce
 // the de-secret trap on the one path the fleet is configured through.
 func TestUpsertApplication_isSharedDoesNotDisturbTheSecret(t *testing.T) {

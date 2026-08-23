@@ -380,15 +380,15 @@ func resolveFederationOrigin(host string) string {
 	return resolveIssuer(host)
 }
 
-// issuerRelocation reports whether a front-door request arrived on a host other
-// than its brand's pinned issuer, and if so, the absolute URL of the SAME
+// issuerRelocation reports whether a request to a native endpoint arrived on a host
+// other than its brand's pinned issuer, and if so, the absolute URL of the SAME
 // request at that issuer.
 //
 // This is the redirect hop the boot check (federationOriginIsReachable) names as
 // missing. A browser flow leaves host-only cookies behind at every step — the
 // hanzo_fed browser binding on the federation begin, the session on a password
 // login — while the IdP callback and the tokens' `iss` live at the PINNED
-// issuer. Serving the front door on an alias host therefore strands those
+// issuer. Serving the native endpoints on an alias host therefore strands those
 // cookies where nothing returns: measured live, an authorize on iam.hanzo.ai
 // set hanzo_fed on iam.hanzo.ai and registered the Google callback at hanzo.id,
 // so every social sign-in begun there failed closed with "the federation

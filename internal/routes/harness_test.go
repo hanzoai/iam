@@ -9,7 +9,7 @@ package routes_test
 // so they pass the same verification a live request does — nothing here is
 // mocked.
 //
-// It lives at this level because the subjects do. A key door reads the Principal
+// It lives at this level because the subjects do. A key endpoint reads the Principal
 // the Guard attached, so it has no behaviour at all outside a mounted router; a
 // retired address is only public because of WHERE it is registered. Testing
 // either one against a bare handler would prove nothing about the service.
@@ -115,7 +115,7 @@ func (h *harness) get(t *testing.T, path, bearer string) (int, string) {
 }
 
 // getBasic issues a GET as a confidential client (client_secret_basic) — how a
-// service authenticates to the key doors.
+// service authenticates to the key endpoints.
 func (h *harness) getBasic(t *testing.T, path, clientID, secret string) (int, string) {
 	t.Helper()
 	req := httptest.NewRequest("GET", path, nil)

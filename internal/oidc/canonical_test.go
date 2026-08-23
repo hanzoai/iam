@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Every front-door endpoint that used to be spelled as a verb-noun answers at its
+// Every native endpoint that used to be spelled as a verb-noun answers at its
 // canonical address AND at the legacy spelling, from ONE handler.
 //
 // The canonical address is what the published document, the SDKs and the CLI

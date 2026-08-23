@@ -3,7 +3,7 @@
 
 package routes_test
 
-// The two key doors, driven through the mounted router.
+// The two key endpoints, driven through the mounted router.
 //
 // /v1/iam/keys/principal is cloud's identity boundary: a caller presents an
 // opaque SECRET key and learns who holds it. That makes it security-critical in
@@ -13,7 +13,7 @@ package routes_test
 //
 // /v1/iam/keys/org is its dual and cloud's ingest boundary: a PUBLISHABLE pk- is
 // write-only, so it resolves to the ORG that holds it and to no principal at all.
-// A pk- presented at the principal door is refused, which is the property that
+// A pk- presented at the principal endpoint is refused, which is the property that
 // lets a pk- ship in browser JavaScript.
 
 import (
@@ -57,7 +57,7 @@ const (
 	secretKeySK = "sk-live-SERVERHALF" // the sk- half of that same secret key
 )
 
-// keyEnv decodes the principal door's envelope.
+// keyEnv decodes the principal endpoint's envelope.
 type keyEnv struct {
 	Status string `json:"status"`
 	Msg    string `json:"msg"`
@@ -70,8 +70,8 @@ type keyEnv struct {
 	} `json:"data"`
 }
 
-// resolveEnv decodes the org door's envelope. Org/Scope are the org-only
-// projection; Owner/Name/Email/IsAdmin are SENTINELS — if the door ever discloses
+// resolveEnv decodes the org endpoint's envelope. Org/Scope are the org-only
+// projection; Owner/Name/Email/IsAdmin are SENTINELS — if the endpoint ever discloses
 // a principal, they surface.
 type resolveEnv struct {
 	Status string `json:"status"`
@@ -136,7 +136,7 @@ func pubKeyFixtures(t *testing.T, h *harness) {
 	}
 
 	// A SECRET (default, Scope="") key: pk- + sk-, referencing hanzo/boss (a real user
-	// the harness seeds). Its pk- half must NEVER resolve at the org door.
+	// the harness seeds). Its pk- half must NEVER resolve at the org endpoint.
 	sk := orm.New[schema.Key](h.db)
 	sk.Owner, sk.Name, sk.User = "hanzo", "server", "hanzo/boss"
 	sk.AccessKey, sk.AccessSecret = secretKeyPK, secretKeySK
@@ -148,7 +148,7 @@ func pubKeyFixtures(t *testing.T, h *harness) {
 	t.Setenv("IAM_PUBLISHABLE_RESOLVE_APPS", pubResolverApp)
 }
 
-// ---- the principal door ----------------------------------------------------
+// ---- the principal endpoint ------------------------------------------------
 
 // A cap-holding service caller resolves the SECRET key shape to the right user, with
 // the exact {owner,name,email,isAdmin} cloud consumes — and NO secret ever appears —
@@ -181,14 +181,14 @@ func TestPrincipalDoor_ResolvesSecretsRefusesPublishable(t *testing.T) {
 		}
 	}
 
-	// The PUBLIC pk- publishable half is WRITE-ONLY: the principal door REFUSES it,
+	// The PUBLIC pk- publishable half is WRITE-ONLY: the principal endpoint REFUSES it,
 	// even to the cap-holding service caller, so a public key never becomes a read
 	// principal.
 	status, body = h.getBasic(t, principalDoor+projPK, resolverApp, svcSecret)
 	var pub keyEnv
 	_ = json.Unmarshal([]byte(body), &pub)
 	if pub.Status != "error" || pub.Msg != "the entity does not exist" {
-		t.Fatalf("publishable pk- at the principal door: status=%d env=%+v — a pk- must never resolve to a principal", status, pub)
+		t.Fatalf("publishable pk- at the principal endpoint: status=%d env=%+v — a pk- must never resolve to a principal", status, pub)
 	}
 	if strings.Contains(body, "keyuser") {
 		t.Fatalf("publishable pk- leaked the principal identity: %s", body)
@@ -300,7 +300,7 @@ func TestPrincipalDoor_RefusalCarriesItsReason(t *testing.T) {
 	for _, tc := range []struct{ name, key, wantCode string }{
 		{"revoked / never minted", "sk-live-NOSUCHKEY2", "key_unknown"},
 		{"unknown secret half", "sk-live-NOSUCHKEY", "key_unknown"},
-		{"a publishable key at the SECRET door", projPK, "key_wrong_door"},
+		{"a publishable key at the SECRET endpoint", projPK, "key_wrong_door"},
 		{"an unrecognized shape", "fw_deadbeef", "key_unknown"},
 		{"a retired prefix", "hk-live-NOSUCHKEY", "key_unknown"},
 	} {
@@ -337,7 +337,7 @@ func TestPrincipalDoor_NonCapCallerLearnsNoReason(t *testing.T) {
 
 // A MACHINE key resolves to the ORG POOL, and the wire says so.
 //
-// This is the money defect on the key door. account.Payer falls back to a shape
+// This is the money defect on the key endpoint. account.Payer falls back to a shape
 // rule when nothing names a payer, and that rule hands anyone in the signup org a
 // PERSONAL wallet. A service account has no person, so "hanzo/<name>" is a wallet
 // no funding path can name — an admin grant credits the pool, a deposit names a
@@ -372,9 +372,9 @@ func TestPrincipalDoor_MachineNamesTheOrgPool(t *testing.T) {
 	}
 }
 
-// The principal door resolves a KEY and nothing else. A ?id= would make it a
+// The principal endpoint resolves a KEY and nothing else. A ?id= would make it a
 // second address for the user read, which is the thing being retired; without
-// this the door would look migrated and quietly widen what it answers.
+// this the endpoint would look migrated and quietly widen what it answers.
 func TestPrincipalDoor_ReadsKeysOnly(t *testing.T) {
 	h := newHarness(t)
 	keyFixtures(t, h)
@@ -383,12 +383,12 @@ func TestPrincipalDoor_ReadsKeysOnly(t *testing.T) {
 	if status == 200 && len(body) > 0 && body[0] == '{' {
 		var e keyEnv
 		if err := json.Unmarshal([]byte(body), &e); err == nil && e.Status == "ok" && e.Data.Owner != "" {
-			t.Errorf("?id= resolved a user at the key door: %s", body)
+			t.Errorf("?id= resolved a user at the key endpoint: %s", body)
 		}
 	}
 }
 
-// ---- the org door ----------------------------------------------------------
+// ---- the org endpoint ------------------------------------------------------
 
 // A publishable pk- resolves to just the ORG that holds it — org and scope, and NO
 // principal field of any kind.
@@ -410,17 +410,18 @@ func TestOrgDoor_ResolvesOrgOnly(t *testing.T) {
 	// NOT A PRINCIPAL. The projection carries no user field at all, so no pk- can
 	// ever become a way to learn who anyone is.
 	if e.Data.Owner != "" || e.Data.Name != "" || e.Data.Email != "" || e.Data.IsAdmin {
-		t.Fatalf("the org door disclosed a principal: %+v", e.Data)
+		t.Fatalf("the org endpoint disclosed a principal: %+v", e.Data)
 	}
 	for _, principalKey := range []string{`"email"`, `"isAdmin"`, `"name"`, `"owner"`} {
 		if strings.Contains(body, principalKey) {
-			t.Fatalf("the org door body carries a principal field %s: %s", principalKey, body)
+			t.Fatalf("the org endpoint body carries a principal field %s: %s", principalKey, body)
 		}
 	}
 }
 
 // A SECRET key's pk- half (Scope != publish) and its sk- half are BOTH refused: the
-// door serves only keys explicitly minted as browser keys, and an sk- never matches the
+// endpoint serves only keys explicitly minted as browser keys, and an sk- never matches
+// the
 // pk- prefix.
 func TestOrgDoor_RefusesNonPublishable(t *testing.T) {
 	h := newHarness(t)
@@ -502,8 +503,8 @@ func TestOrgDoor_HumanDenied(t *testing.T) {
 	}
 }
 
-// THE INVARIANT, end to end: the SAME publishable pk- the org door turns into an
-// org can NEVER become a principal — not at the principal door (even for a caller
+// THE INVARIANT, end to end: the SAME publishable pk- the org endpoint turns into an
+// org can NEVER become a principal — not at the principal endpoint (even for a caller
 // that holds CapKeyResolve and CAN resolve secret keys), and not as a bearer to a
 // gated route. A public key authenticates no read, anywhere.
 func TestPublishableNeverBecomesPrincipal(t *testing.T) {
@@ -513,25 +514,25 @@ func TestPublishableNeverBecomesPrincipal(t *testing.T) {
 	// (CapKeyResolve), yet the publishable pk- is still refused there.
 	t.Setenv("IAM_KEY_RESOLVE_APPS", pubResolverApp)
 
-	// Control: the org door DOES turn the publishable pk- into an org.
+	// Control: the org endpoint DOES turn the publishable pk- into an org.
 	if _, body := h.getBasic(t, orgDoor+sitePK, pubResolverApp, pubSecret); !strings.Contains(body, `"org":"hanzo"`) {
-		t.Fatalf("control: the org door should resolve the publishable pk- to an org: %s", body)
+		t.Fatalf("control: the org endpoint should resolve the publishable pk- to an org: %s", body)
 	}
-	// Control: the principal door DOES resolve a SECRET sk- to its principal.
+	// Control: the principal endpoint DOES resolve a SECRET sk- to its principal.
 	if _, body := h.getBasic(t, principalDoor+secretKeySK, pubResolverApp, pubSecret); !strings.Contains(body, "boss") {
-		t.Fatalf("control: the principal door should resolve the secret sk- to its user: %s", body)
+		t.Fatalf("control: the principal endpoint should resolve the secret sk- to its user: %s", body)
 	}
 
-	// The publishable pk- at the principal door → NO principal (write-only), even for
+	// The publishable pk- at the principal endpoint → NO principal (write-only), even for
 	// a CapKeyResolve holder.
 	_, body := h.getBasic(t, principalDoor+sitePK, pubResolverApp, pubSecret)
 	var ke keyEnv
 	_ = json.Unmarshal([]byte(body), &ke)
 	if ke.Status != "error" || ke.Msg != "the entity does not exist" {
-		t.Fatalf("publishable pk- at the principal door resolved a principal: env=%+v body=%s", ke, body)
+		t.Fatalf("publishable pk- at the principal endpoint resolved a principal: env=%+v body=%s", ke, body)
 	}
 	if strings.Contains(body, "hanzo/") || strings.Contains(body, `"isAdmin"`) {
-		t.Fatalf("publishable pk- leaked identity at the principal door: %s", body)
+		t.Fatalf("publishable pk- leaked identity at the principal endpoint: %s", body)
 	}
 
 	// The publishable pk- presented as a BEARER to a gated route → 401 (never a

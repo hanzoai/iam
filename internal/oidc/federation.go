@@ -402,7 +402,7 @@ var (
 	// that account already has.
 	errAddressHeld = errors.New("federation: the address already names an account")
 	// errNoFederatedSignup: this application is not open for registration, and the
-	// identity is new. The same refusal the password and wallet doors give.
+	// identity is new. The same refusal the password and wallet endpoints give.
 	errNoFederatedSignup = errors.New("federation: the account does not exist and sign up is disabled")
 	// errNoFederatedEmail: the provider shared no address, so there is nothing to
 	// name the account after and no way to reach the person again.
@@ -552,9 +552,9 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 	// register, and only for someone who can be named and reached.
 	//
 	// EnableSignUp is the tenant's own registration switch, enforced at the password
-	// door (signup.go) and the wallet door (wallet/verify.go) and not here, so an app
-	// with it OFF still got brand-new accounts from any enabled social provider: the
-	// one door a tenant could not close was the externally-driven one.
+	// endpoint (signup.go) and the wallet endpoint (wallet/verify.go) and not here, so
+	// an app with it OFF still got brand-new accounts from any enabled social provider:
+	// the one endpoint a tenant could not close was the externally-driven one.
 	if !app.EnableSignUp {
 		return nil, errNoFederatedSignup
 	}
@@ -605,9 +605,9 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 		return created, err
 	}
 	// A founding application registers the account in its own org and the account
-	// WORKS in an org of its own — the same statement the password door makes, and
-	// the same converge, so a person arrives in the same place whichever door they
-	// came through.
+	// WORKS in an org of its own — the same statement the password endpoint makes,
+	// and the same converge, so a person arrives in the same place whichever endpoint
+	// they came through.
 	slug, err := charter(ctx, db, created)
 	if err != nil {
 		return nil, fmt.Errorf("federation: %w", err)
