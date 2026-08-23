@@ -15,7 +15,7 @@ import (
 
 // The shared tail of every interactive authentication: given a user who has
 // ALREADY proven who they are — by password, by wallet signature, by any future
-// factor — decide what the SDK reads back. One place, so a new front door
+// factor — decide what the SDK reads back. One place, so a new entry point
 // inherits the redirect/PKCE/tenant rules instead of restating them.
 
 // Mint is the authorize passthrough an interactive login carries. Type selects
@@ -38,7 +38,7 @@ type Mint struct {
 // verified identity, never a client-supplied value.
 //
 // This is the ONE mint path. Every rule below is a security invariant, so it
-// lives here rather than in each front door:
+// lives here rather than in each entry point:
 //   - Tenant isolation: the user's org must be permitted for this application —
 //     its own org, a shared app, or an app that lets users choose their org.
 //     Without it a user in one tenant could obtain a token naming another.
@@ -85,7 +85,7 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	return code.Code, nil
 }
 
-// ResolveApp resolves the OAuth application a front door names: by clientId when
+// ResolveApp resolves the OAuth application an entry point names: by clientId when
 // present, else by name under the "admin" registry owner. Returns (nil, nil)
 // when the request names no application. Shared by every interactive login so
 // they all resolve the same app from the same fields.

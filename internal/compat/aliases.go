@@ -64,7 +64,7 @@ func Route(app *zip.App, db orm.DB) {
 	app.Get("/v1/iam/get-role", getHandler[schema.Role](db, nil))
 	app.Get("/v1/iam/get-permission", getHandler[schema.Permission](db, nil))
 
-	// resolve-key — the WRITE-ONLY ingest door and the dual of get-user?accessKey. It
+	// resolve-key — the WRITE-ONLY ingest endpoint and the dual of get-user?accessKey. It
 	// turns a publishable pk- into just the ORG that holds it (never a principal), for
 	// cloud's ingest boundary. Its target rides in ?accessKey= (no owner/name for the
 	// Guard to authorize), so it is handler-authorized (authz.handlerAuthorizedExact)
@@ -235,7 +235,7 @@ func getHandler[T any](db orm.DB, mask func(*T) *T) zip.Handler {
 // present it resolves an opaque SECRET API key (hk-/sk-) to its owning user — the path
 // cloud's identity boundary calls to authenticate a keyed request — behind the
 // CapKeyResolve service capability. A public pk- is write-only and resolves to nobody
-// here (store.UserByAccessKey refuses it); its org-only door is /v1/iam/resolve-key.
+// here (store.UserByAccessKey refuses it); its org-only endpoint is /v1/iam/resolve-key.
 // Otherwise it is the ordinary owner/name/id read.
 //
 // get-user is handler-authorized (authz.handlerAuthorizedExact) because the key

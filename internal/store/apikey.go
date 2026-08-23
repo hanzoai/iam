@@ -34,7 +34,7 @@ import (
 // ships in client JS — so turning it into a read identity is the browser-key
 // catastrophe. It falls through to orm.ErrNotFound, on EVERY caller of this function
 // (get-user?accessKey AND the registry token path), so a public key authenticates no
-// read anywhere. Its ONLY resolution is org-only, at the ingest door
+// read anywhere. Its ONLY resolution is org-only, at the ingest endpoint
 // (keys.resolve → /v1/iam/resolve-key), and only for a publishable key.
 
 // UserByAccessKey resolves an opaque API key to the user it authenticates, or
@@ -129,7 +129,7 @@ func keyUserRef(k *schema.Key) (owner, name string) {
 // user: a publishable key speaks for just its org, never a principal, which is why the
 // pk- path lives here and not in UserByAccessKey.
 //
-// Fail-closed on every non-resolution, so this door can only ever speak for a live key
+// Fail-closed on every non-resolution, so this resolver can only ever speak for a live key
 // that was explicitly minted as a browser key: a value that is not a pk-, an unknown
 // key, a non-publishable (secret) key even when addressed by its OWN pk- half
 // (Scope != KeyScopePublish), or an expired key all yield orm.ErrNotFound. Revocation

@@ -120,7 +120,7 @@ func TestSelfRead_OverTheCompatVerbCloudActuallyCalls(t *testing.T) {
 
 // The grant stays a SELF-read. Everything an app is not is still refused, over the
 // same verb surface that now resolves correctly — normalizing entityOf must not
-// have turned the compat aliases into an open door.
+// have opened the compat aliases to anything else.
 func TestSelfRead_StillRefusesEverythingElse(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)

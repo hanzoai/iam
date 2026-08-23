@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// CookieName is the portal session cookie the native front-door sets on a bare
+// CookieName is the portal session cookie the native entry point sets on a bare
 // (type=login) sign-in and that get-account resolves the caller from. One name,
 // platform-wide.
 const CookieName = "hanzo_session"

@@ -58,7 +58,7 @@ import (
 //     accounts, memberships and MFA all live here.
 //   - /login/oauth the interactive authorize surface.
 //   - /mcp and /.well-known/openapi.json the framework's own projections of the typed ops registered
-//     below. They are IAM's side doors onto the same rows, so they must stay
+//     below. They are IAM's other routes onto the same rows, so they must stay
 //     gated; when IAM is EMBEDDED the host binary owns these paths and should
 //     mount its own guard, which is why they are named here rather than assumed.
 var guardedPrefixes = []string{"/v1/iam", "/login/oauth", "/mcp", "/.well-known/openapi.json"}
@@ -78,7 +78,7 @@ func Route(app *zip.App, db orm.DB) {
 	// The pre-authentication surface: OIDC discovery/JWKS + RFC 8414 AS metadata,
 	// the oauth/* protocol endpoints (authorize, token, userinfo, logout,
 	// introspect, revoke), credential login, the confidential-client key minters,
-	// and the front door (get-app-login, auth/methods, get-account, signup, signin,
+	// and the entry points (get-app-login, auth/methods, get-account, signup, signin,
 	// whoami, onboard, …). Registered on a root (empty-prefix) group BEFORE the
 	// Guard, at their absolute paths, so a matched public route terminates the
 	// middleware walk and the Guard never runs on it. There is no allow-list to

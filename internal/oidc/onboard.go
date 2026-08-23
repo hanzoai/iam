@@ -61,7 +61,7 @@ type onboardForm struct {
 	Personal bool   `json:"personal"`
 }
 
-// onboardHandler is the SELF-SERVICE front door: it resolves the caller from its
+// onboardHandler is the SELF-SERVICE entry point: it resolves the caller from its
 // own session/bearer (never the body), so onboarding only ever moves the caller.
 func onboardHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
@@ -91,7 +91,7 @@ func onboardHandler(db orm.DB) zip.Handler {
 // atomic op the cloud onboarding orchestrator (api.hanzo.ai) calls, on behalf of a
 // named user, instead of a separate create-org + move-user pair — so the production
 // signup path converges to one org + admin + credential exactly like the
-// self-service front door, with no partial-failure orphan between two calls.
+// self-service entry point, with no partial-failure orphan between two calls.
 const PathProvision = "/v1/iam/admin/provision"
 
 // provisionForm is the service-token provision body: the target identity to
@@ -110,7 +110,7 @@ type provisionForm struct {
 // by the unified service token (Bearer), like the operator bootstrap endpoints — it
 // acts on behalf of the named user, so the caller comes from the body, not a
 // session. The converge itself is the SAME provision() primitive the self-service
-// front door drives; there is one and only one provisioning path.
+// entry point drives; there is one and only one provisioning path.
 func provisionServiceHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		if !httpx.ServiceTokenAuth(c) {

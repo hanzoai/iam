@@ -29,7 +29,7 @@ import (
 // API binds the user handlers to an orm store. Construct once at boot and register.
 type API struct{ db orm.DB }
 
-// New returns a user API over db — the constructor front-door handlers (e.g. the
+// New returns a user API over db — the constructor entry-point handlers (e.g. the
 // signup endpoint) use to reach the ONE canonical create path (Create hashes the password with argon2id exactly once and returns the redacted row), so a user
 // minted at signup is byte-identical to one minted through the CRUD surface.
 func New(db orm.DB) *API { return &API{db: db} }

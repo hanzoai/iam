@@ -2,13 +2,13 @@
 
 package compat_test
 
-// End-to-end tests for the the legacy surface WRITE verbs + the structurally-public front
-// door, driven through the REAL registered router (routes.Route installs the authz
-// Guard + Authorize seam; the front door is registered on the pre-Guard public
+// End-to-end tests for the the legacy surface WRITE verbs + the structurally-public entry
+// point, driven through the REAL registered router (routes.Route installs the authz
+// Guard + Authorize seam; the entry point is registered on the pre-Guard public
 // group). They assert the three write contracts a backend swap depends on:
 // the {status,ok} envelope every client parses, authorization identical to the REST
 // twin (super for platform-owned org/app; org-admin for its own users; cross-tenant
-// refused), and that no secret ever surfaces. Plus: the front-door session routes are
+// refused), and that no secret ever surfaces. Plus: the entry-point session routes are
 // reachable WITHOUT a bearer (the portal/admin-guard call them with a cookie).
 
 import (
@@ -142,7 +142,7 @@ func TestWriteAliases_requireAuth(t *testing.T) {
 	}
 }
 
-// The FRONT-DOOR session routes are structurally PUBLIC — registered on the
+// The ENTRY-POINT session routes are structurally PUBLIC — registered on the
 // pre-Guard group, so reachable WITHOUT a bearer (the portal + gateway admin-guard
 // call them with a session cookie). An anonymous caller gets the casibase
 // {status:"error"} (200), never a 401 and never a leak.

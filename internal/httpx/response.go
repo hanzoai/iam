@@ -2,7 +2,7 @@
 
 // Package httpx is the shared HTTP layer for the IAM v2 handlers: the
 // the legacy surface-compatible Response envelope that the @hanzo/iam SDK and the hanzo.id
-// portal consume, plus small helpers over zip.Ctx. Every front-door JSON
+// portal consume, plus small helpers over zip.Ctx. Every entry-point JSON
 // endpoint (get-app-login, login, signup) returns this shape; the OIDC
 // endpoints (token/authorize/userinfo) use their own RFC 6749 shapes.
 package httpx

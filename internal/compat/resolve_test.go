@@ -2,11 +2,11 @@
 
 package compat_test
 
-// resolve-key: the WRITE-ONLY ingest door and dual of get-user?accessKey. These tests
+// resolve-key: the WRITE-ONLY ingest endpoint and dual of get-user?accessKey. These tests
 // drive the REAL mounted router (routes.Route: the authz Guard authenticates the
 // confidential client, resolve-key is handler-authorized and cap-gated) and prove the
 // load-bearing property — a PUBLIC publishable pk- resolves to just an ORG, never a
-// principal, on EVERY door:
+// principal, on EVERY endpoint:
 //   - resolve-key turns it into {org, scope} and nothing else (the org-only projection);
 //   - a SECRET key's pk- half, an sk-, an expired/unknown key, a non-cap app, and a
 //     human are all refused;
@@ -111,7 +111,7 @@ func TestResolveKey_ResolvesOrgOnly(t *testing.T) {
 }
 
 // A SECRET key's pk- half (Scope != publish) and its sk- half are BOTH refused: the
-// door serves only keys explicitly minted as browser keys, and an sk- never matches the
+// endpoint serves only keys explicitly minted as browser keys, and an sk- never matches the
 // pk- prefix.
 func TestResolveKey_RefusesNonPublishable(t *testing.T) {
 	h := newHarness(t)

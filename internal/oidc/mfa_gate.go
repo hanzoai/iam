@@ -141,7 +141,7 @@ func finishMfa(c *zip.Ctx, db orm.DB, id string, f loginForm) error {
 	// already KNOWN (that is the whole reason a second factor exists), and a CORRECT
 	// password RESETS the lockout counter rather than tripping it (users.Authenticate),
 	// so an attacker who holds the password can mint FRESH single-use challenges without
-	// ever locking the door. What actually makes online iteration of the 10^6 TOTP space
+	// ever tripping the lockout. What actually makes online iteration of the 10^6 TOTP space
 	// infeasible is independent of the lockout: (1) each fresh challenge costs one
 	// deliberately-slow argon2id password verify, and (2) the 30-second TOTP step makes
 	// the current code a MOVING target — the ~1-3 codes valid in any window cannot be

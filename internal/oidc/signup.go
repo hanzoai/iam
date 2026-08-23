@@ -19,7 +19,7 @@ import (
 	"github.com/hanzoai/iam/internal/users"
 )
 
-// The native front-door signup: POST /v1/iam/signup. The @hanzo/iam SDK + the
+// The native signup entry point: POST /v1/iam/signup. The @hanzo/iam SDK + the
 // hanzo.id portal post the sign-up form here to create a new account. It mirrors
 // the v1 the legacy surface Signup contract (controllers/account.go): the casibase
 // {status,msg,data} envelope, resolve-app → enforce-policy → create-user, with
@@ -30,7 +30,7 @@ import (
 // the email/phone-OTP-gated sign-up variant plugs its verification check
 // (CheckVerificationCode) in ahead of the create at cutover.
 
-// PathSignup is the canonical front-door signup endpoint.
+// PathSignup is the canonical signup entry point.
 const PathSignup = "/v1/iam/signup"
 
 // signupForm is the sign-up request the SDK/portal posts — the signup-relevant
@@ -50,7 +50,7 @@ type signupForm struct {
 	Affiliation  string `json:"affiliation"`
 }
 
-// signupHandler validates the front-door signup policy and creates the account.
+// signupHandler validates the signup policy and creates the account.
 func signupHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var f signupForm
@@ -309,7 +309,7 @@ func usernamePolicyError(username string) string {
 	}
 	// "/" is the (owner/name) natural-key AND the owner/name-subject separator, so a
 	// name carrying one could introduce a spurious separator into the sub. Forbid it
-	// at the door so the subject discriminator (store.GetUserBySubject) can never be
+	// at the endpoint so the subject discriminator (store.GetUserBySubject) can never be
 	// confused by a self-service-registered name.
 	if strings.Contains(username, "/") {
 		return "username cannot contain '/'"

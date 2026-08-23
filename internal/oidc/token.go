@@ -646,7 +646,7 @@ func isInternalApp(app *schema.Application) bool {
 //     a platform-internal client whose tokens have no business being minted by a
 //     public request. Even though such a token already resolves to NO authority (its
 //     subject "admin/<app>" has no user row, so authz grants it nothing — token.go /
-//     authz.principal), refusing it at the door makes the invariant STRUCTURAL: an
+//     authz.principal), refusing it on entry makes the invariant STRUCTURAL: an
 //     admin-org app cannot mint on the public endpoint, period, independent of how the
 //     principal resolver later evolves. Fail-secure defense in depth.
 func publicTokenEndpointForbidden(app *schema.Application) bool {

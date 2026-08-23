@@ -7,7 +7,7 @@
 //
 // The surface is the canonical hanzo.id contract, unchanged across the v1→v2
 // backend swap: discovery + JWKS under .well-known, the oauth/{authorize,token,
-// userinfo,logout} endpoints, and the front-door {get-app-login, auth/methods,
+// userinfo,logout} endpoints, and the entry points {get-app-login, auth/methods,
 // login} the hosted UI calls. Tokens are signed JWTs (RS256 interop, ES/ML-DSA
 // behind the same JWKS); every value is verified, never trusted.
 package oidc
@@ -40,9 +40,9 @@ const (
 
 // Route registers the entire OIDC/OAuth2 surface on r, backed by db. This is the
 // one entry point the route table calls — discovery, JWKS, the protocol
-// endpoints, and the front door are all bound here so the surface lives in one
+// endpoints, and the entry points are all bound here so the surface lives in one
 // place. r is the PUBLIC group (registered before the router's authentication
-// Guard): the whole OIDC/OAuth + front-door surface is pre-authentication by
+// Guard): the whole OIDC/OAuth + entry-point surface is pre-authentication by
 // construction, so membership in this group IS what makes it reachable without a
 // bearer — there is no separate allow-list to keep in sync.
 func Route(r zip.Router, db orm.DB) {
@@ -71,7 +71,7 @@ func Route(r zip.Router, db orm.DB) {
 	r.Post(PathLogout, logoutHandler(db))
 
 	// The token endpoint, the credential login that mints codes, and the
-	// read-only front door the hosted <Login> self-configures from.
+	// read-only entry points the hosted <Login> self-configures from.
 	routeToken(r, db)
 	routeLogin(r, db)
 	routeFrontDoor(r, db)

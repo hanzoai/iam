@@ -16,7 +16,7 @@ import (
 	"github.com/hanzoai/iam/internal/users"
 )
 
-// The credential login front door: POST /v1/iam/login. The @hanzo/iam SDK +
+// The credential login entry point: POST /v1/iam/login. The @hanzo/iam SDK +
 // hanzo.id portal post here with the app/org + username/password (+ the PKCE
 // authorize params when type=code). On success with type=code we mint a
 // PKCE-bound authorization code and return it in the Response envelope; the SDK

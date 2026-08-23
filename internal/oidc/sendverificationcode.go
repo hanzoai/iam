@@ -19,7 +19,7 @@ import (
 	"github.com/hanzoai/iam/internal/store"
 )
 
-// The native front-door OTP send: POST /v1/iam/send-verification-code. It mirrors
+// The native OTP-send entry point: POST /v1/iam/send-verification-code. It mirrors
 // the v1 the legacy surface SendVerificationCode contract (controllers/verification.go): the
 // request is multipart/form-data (NOT JSON — a HIP-0111 §4 invariant), and the
 // response is the casibase {status,msg,data} envelope with an empty data on
@@ -32,7 +32,7 @@ import (
 // code and returns {status:"ok"} honestly — it does NOT fabricate a "sent" claim.
 // Delivery plugs in at the marked seam below with no shape change.
 
-// PathSendVerificationCode is the canonical front-door OTP-send endpoint.
+// PathSendVerificationCode is the canonical OTP-send entry point.
 const PathSendVerificationCode = "/v1/iam/send-verification-code"
 
 // verificationCodeLength is the OTP digit count (v1 getRandomCode(6)).

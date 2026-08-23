@@ -1,8 +1,8 @@
 // Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package authz is the IAM v2 authorization seam in front of the Phase-1 entity
-// CRUD, which is otherwise unauthenticated — the door an attacker would walk
-// through to overwrite an admin-owned signing cert and forge tokens. It is two
+// CRUD, which is otherwise unauthenticated — the entry point an attacker would
+// use to overwrite an admin-owned signing cert and forge tokens. It is two
 // orthogonal decisions, never braided:
 //
 //   - AUTHENTICATION — the Guard middleware, registered ONCE via app.Use, AFTER the

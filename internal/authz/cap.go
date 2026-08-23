@@ -68,7 +68,7 @@ var (
 	// principal a JWT yields. Fail-secure exactly like the others: an unset or empty
 	// allowlist lets NO app resolve a key. Enforced additionally as app-only at the
 	// handler (a human, even a SuperAdmin, holds a capability vacuously — so the key
-	// path also requires p.App != "" to keep this a service-only door).
+	// path also requires p.App != "" to keep this a service-only endpoint).
 	//
 	// Keyed on the application NAME (via Allowed → p.App), matching all four sibling
 	// Caps above — the ONE way capabilities are matched in this family. RED F3 asked
@@ -85,7 +85,7 @@ var (
 	// CapPublishableResolve gates resolving a WRITE-ONLY publishable pk- to just the
 	// ORG that holds it (keys.resolve → /v1/iam/resolve-key), for cloud's ingest
 	// boundary. It is strictly NARROWER than CapKeyResolve and deliberately a separate
-	// authority: this door discloses only an org (a pk- is public, shipped in client
+	// authority: this endpoint discloses only an org (a pk- is public, shipped in client
 	// JS), NEVER a principal, so the two must not be conflated — a client granted the
 	// org-resolve capability must never thereby be able to disclose WHO a secret key
 	// authenticates. Fail-secure exactly like the others: an unset or empty allowlist

@@ -183,7 +183,7 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 			case !in.App.EnableSignUp || store.IsReservedOrg(in.App.Organization):
 				// The SAME reserved-org predicate signup, onboarding, federated
 				// provisioning, and token exchange enforce (store.IsReservedOrg) —
-				// wallet login was the ONE public account-creation front door that
+				// wallet login was the ONE public account-creation entry point that
 				// did not consult it. An application row owned by a reserved org
 				// (admin/built-in/service) with EnableSignUp set would otherwise let
 				// an unauthenticated, wallet-signed POST mint a user under a platform

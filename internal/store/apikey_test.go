@@ -168,7 +168,7 @@ func seedPublishKey(t *testing.T, db orm.DB, owner, name, pk, expire string) {
 // PublishableKeyByAccessKey resolves ONLY a live, publish-scoped pk- to its Key — never
 // a user — and fails closed on everything else: a non-pk- value, an unknown key, a
 // SECRET key's own pk- half (Scope != publish), or an expired key. This is the
-// org-only door's fail-closed contract, the write-only invariant's other half (the
+// org-only resolver's fail-closed contract, the write-only invariant's other half (the
 // principal path is closed by TestUserByAccessKey_ResolvesSecretsRefusesPublishable).
 func TestPublishableKeyByAccessKey(t *testing.T) {
 	db := memDB(t)

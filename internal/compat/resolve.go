@@ -13,7 +13,7 @@ import (
 	"github.com/hanzoai/iam/internal/store"
 )
 
-// resolve-key is the WRITE-ONLY ingest door and the exact DUAL of get-user?accessKey:
+// resolve-key is the WRITE-ONLY ingest endpoint and the exact DUAL of get-user?accessKey:
 // where that verb turns a SECRET key into a principal (for cloud's identity boundary),
 // this one turns a PUBLIC publishable pk- into just the ORG that holds it (for cloud's
 // ingest boundary). The two live side by side because they are the same shape — a
