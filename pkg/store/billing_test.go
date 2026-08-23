@@ -13,7 +13,7 @@ import (
 
 // A MACHINE spends its org's POOL, and it has to SAY so.
 //
-// This is the whole of the bug these tests pin, on the API-KEY door. account.Payer
+// This is the whole of the bug these tests pin, on the API-KEY path. account.Payer
 // falls back to a shape rule when nothing names a payer, and that rule makes the
 // signup org special: anyone in it gets a PERSONAL wallet. A machine has no
 // person, so "hanzo/guest" is a wallet no funding path can name — an admin grant

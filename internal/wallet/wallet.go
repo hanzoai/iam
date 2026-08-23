@@ -246,7 +246,7 @@ func check(db orm.DB) zip.Handler {
 			return httpx.Err(c, err.Error())
 		}
 		// The wallet holder is now signed in to the IDENTITY PROVIDER, so the IdP
-		// remembers them — the same tail every interactive front door has. Without
+		// remembers them — the same tail every interactive sign-in has. Without
 		// it a bare wallet sign-in returned a user id and no session, and the portal
 		// sent the person to a page whose bootstrap found nobody signed in and
 		// bounced them back to the credential form.

@@ -16,7 +16,7 @@ import (
 
 // An application with registration switched off does not get new accounts created
 // by a social provider either. The switch is the tenant's, and it used to mean one
-// thing at the password and wallet doors and nothing at all at this one.
+// thing at the password and wallet endpoints and nothing at all at this one.
 func TestFederation_ProvisioningHonoursTheSignupSwitch(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}}) // signup OFF

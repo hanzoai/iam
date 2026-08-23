@@ -3,7 +3,7 @@
 
 package oidc
 
-// Canonical noun addresses for the front-door endpoints that were spelled as
+// Canonical noun addresses for the native endpoints that were spelled as
 // verb-nouns.
 //
 // A path segment names a THING, and the HTTP method says what is being done to

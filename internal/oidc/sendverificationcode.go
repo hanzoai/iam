@@ -16,19 +16,19 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// The native front-door OTP send: POST /v1/iam/send-verification-code. It mirrors
+// The native OTP send: POST /v1/iam/send-verification-code. It mirrors
 // the v1 SendVerificationCode contract (controllers/verification.go): the
 // request is multipart/form-data (NOT JSON — a HIP-0111 §4 invariant), and the
 // response is the casibase {status,msg,data} envelope with an empty data on
 // success.
 //
-// This is a DOOR, not the code itself: validating who may ask, and for which
+// This is an ENDPOINT, not the code itself: validating who may ask, and for which
 // application, is all it does. Minting, wording, filing, delivering and spending a
 // code live in internal/otp, which the second-factor challenge calls too — so a code
 // sent from here and a code sent by a challenge are the same artifact, filed under
 // the same key, and either one verifies wherever the other would.
 
-// PathVerificationCodes (canonical.go) is the front-door OTP-send endpoint.
+// PathVerificationCodes (canonical.go) is the native OTP-send endpoint.
 
 // sendVerificationCode validates the request and asks otp to get a code to the
 // person. The request fields are read via fiber's FormValue — the escape hatch zip
@@ -85,7 +85,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			if !isEmailValid(dest) {
 				return httpx.Err(c, "email is invalid")
 			}
-			// An ambiguous address is treated as NO USER, not reported. This door
+			// An ambiguous address is treated as NO USER, not reported. This endpoint
 			// is unauthenticated too, so echoing the resolver would tell a stranger
 			// which addresses exist — and the endpoint below already handles a nil
 			// user without saying whether one was found.
@@ -97,7 +97,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			}
 			// An account this application founded an org for is not in the
 			// application's own org. Its own application still knows it, and this
-			// door and the sign-in that authenticates the same address must not
+			// endpoint and the sign-in that authenticates the same address must not
 			// disagree about who it names — otherwise a code is minted for nobody
 			// and the person is told nothing.
 			if user == nil {

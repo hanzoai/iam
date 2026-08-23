@@ -3,7 +3,7 @@
 
 // Package resolve turns an opaque key into what it authorizes.
 //
-// Two doors, because there are two kinds of key and they differ in the one
+// Two endpoints, because there are two kinds of key and they differ in the one
 // property that makes a publishable key safe to ship in client JavaScript: a
 // pk- yields an ORG and nothing else, never a user, so it can never become a
 // read grant, while an sk- yields the principal itself. Same shape — a
@@ -11,7 +11,7 @@
 // different disclosure, so they stay two routes rather than one that branches
 // on a prefix.
 //
-// The package is separate from `keys` even though one door is addressed under
+// The package is separate from `keys` even though one endpoint is addressed under
 // it, because `keys` is on the wrong side of one import edge: authz reaches oidc
 // for VerifyToken, oidc reaches keys to mint one, so a keys handler that asks
 // authz for a capability closes the loop. Nothing imports this package, which is
@@ -33,7 +33,7 @@ import (
 
 // Path is where a publishable key is resolved. It sits beside PrincipalPath and
 // is named the same way: the address says what comes BACK, because that is the
-// only thing separating the two doors. A pk- yields an org, an sk- yields a
+// only thing separating the two endpoints. A pk- yields an org, an sk- yields a
 // principal, and which one you may ask is a capability apiece.
 //
 // Neither is under a prefix rule — both are listed exactly in
