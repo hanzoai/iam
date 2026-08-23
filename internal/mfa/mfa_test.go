@@ -214,13 +214,17 @@ func TestMFA_enrollLifecycle(t *testing.T) {
 	}
 }
 
-// The legacy spelling answers too, from the same handler. A rename that quietly
-// drops the old address is an outage in whatever is still pinned to it.
-func TestMFA_theLegacySpellingStillRoutes(t *testing.T) {
+// The spelling this surface arrived with is RETIRED rather than merely absent:
+// delete-mfa answers 410 and names the address that replaced it. A 404 would send
+// whatever is still pinned to it looking for a typo it will not find.
+func TestMFA_theReplacedSpellingIsRetired(t *testing.T) {
 	h := newHarness(t)
 	alice := h.token(t, "hanzo/alice")
-	if st, m := h.do(t, "POST", mfa.LegacyPathDisable, alice, `{}`); st != 200 || m["status"] != "ok" {
-		t.Fatalf("%s: status=%d body=%v", mfa.LegacyPathDisable, st, m)
+	if st, _ := h.do(t, "POST", "/v1/iam/delete-mfa", alice, `{}`); st != 410 {
+		t.Errorf("POST /v1/iam/delete-mfa -> %d, want 410", st)
+	}
+	if st, _ := h.do(t, "POST", "/v1/iam/set-preferred-mfa", alice, `{}`); st != 410 {
+		t.Errorf("POST /v1/iam/set-preferred-mfa -> %d, want 410", st)
 	}
 }
 
@@ -433,7 +437,7 @@ func TestMFA_setPreferred(t *testing.T) {
 	alice := h.token(t, "hanzo/alice")
 
 	for _, mfaType := range []string{factor.SMS, factor.Email, "carrier-pigeon"} {
-		st, m := h.do(t, "POST", mfa.LegacyPathPreferred, alice, `{"mfaType":"`+mfaType+`"}`)
+		st, m := h.do(t, "POST", mfa.PathPreferred, alice, `{"mfaType":"`+mfaType+`"}`)
 		if st != 200 || m["status"] != "error" {
 			t.Fatalf("preferred %q: status=%d body=%v, want a refusal", mfaType, st, m)
 		}
@@ -449,7 +453,7 @@ func TestMFA_setPreferred(t *testing.T) {
 	if _, m := h.do(t, "POST", mfa.PathEnable, alice, `{"secret":"`+secret+`","passcode":"`+totpNow(t, secret)+`"}`); m["status"] != "ok" {
 		t.Fatalf("enable: %v", m)
 	}
-	if st, m := h.do(t, "POST", mfa.LegacyPathPreferred, alice, `{"mfaType":"app"}`); st != 200 || m["status"] != "ok" {
+	if st, m := h.do(t, "POST", mfa.PathPreferred, alice, `{"mfaType":"app"}`); st != 200 || m["status"] != "ok" {
 		t.Fatalf("preferred app: status=%d body=%v", st, m)
 	}
 	u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
