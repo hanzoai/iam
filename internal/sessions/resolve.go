@@ -42,8 +42,8 @@ func Set(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application s
 	return set(ctx, c, db, Cookie{Owner: owner, Name: name, Application: application})
 }
 
-// Open is what an interactive FRONT DOOR calls once it has proven who someone is:
-// the IdP now remembers this human in this browser. Every front door calls it —
+// Open is what an interactive SIGN-IN calls once it has proven who someone is:
+// the IdP now remembers this human in this browser. Every sign-in calls it —
 // the credential post, the wallet signature, the return from another identity
 // provider — because what is being recorded is that a human authenticated HERE,
 // and that is true however they did it. The grant shape the relying party asked

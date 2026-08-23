@@ -3,7 +3,7 @@
 
 // Package resolve answers whose an API key is.
 //
-// Two doors, split by the one property that makes a publishable key safe to ship
+// Two endpoints, split by the one property that makes a publishable key safe to ship
 // in client JavaScript. A SECRET sk- asks WHO, and /v1/iam/keys/principal answers
 // with the person or machine it belongs to — how a service of yours turns a
 // credential on an incoming request into an identity. A PUBLISHABLE pk- asks
@@ -41,7 +41,7 @@ import (
 // receives from a handler-authorized read.
 const unauthorized = "auth:Unauthorized operation"
 
-// Route registers the two key doors on app. Both carry their target in
+// Route registers the two key endpoints on app. Both carry their target in
 // `?accessKey=` rather than an (owner, name) the Guard could authorize, so both
 // are handler-authorized (authz.handlerAuthorizedExact) and each authorizes
 // itself behind its own capability.
@@ -89,7 +89,7 @@ func org(db orm.DB) zip.Handler {
 	}
 }
 
-// holder is the minimal principal projection the secret door returns — EXACTLY
+// holder is the minimal principal projection the secret endpoint returns — EXACTLY
 // the fields cloud's key resolver consumes (auth_apikey.go) and no more. It is a
 // TIGHTER redaction than schema.User.Mask, deliberately: Mask blanks the secret
 // digests and bearer tokens but leaves AccessKey populated, and an sk- resolution
@@ -117,7 +117,7 @@ type holder struct {
 	// and means unrestricted.
 	//
 	// A resource server cannot enforce a per-key limit it is never told, and this
-	// is the only door that knows both halves at once.
+	// is the only endpoint that knows both halves at once.
 	Scope string `json:"scope,omitempty"`
 }
 

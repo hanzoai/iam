@@ -175,7 +175,7 @@ func TestSignup_Errors(t *testing.T) {
 	})
 
 	// F-I2: a "/" in a username would inject a spurious owner/name separator into the
-	// subject discriminator — forbidden at the door.
+	// subject discriminator — forbidden at the endpoint.
 	t.Run("username with slash refused", func(t *testing.T) {
 		app, db := newServer(t)
 		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", signup: true})

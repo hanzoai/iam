@@ -378,7 +378,7 @@ func GetSignupByEmail(ctx context.Context, db orm.DB, application, email string)
 	case 1:
 		// A reserved owner is never reachable this way. Nothing should ever file a
 		// row of the admin org under an application's signup, and if something does,
-		// this must not be the door that authenticates it — the reserved orgs hold
+		// this must not be the lookup that authenticates it — the reserved orgs hold
 		// the SuperAdmin and the signing certs.
 		if policy.IsReservedOrg(us[0].Owner) {
 			return nil, nil
@@ -468,7 +468,7 @@ func NormalizePhone(s string) string {
 //
 // One ambiguity policy for every identifier is the point. This one was argued
 // here first and the address was left picking arbitrarily for a while, which is
-// how a rule stated in one place drifts from the rule next door.
+// how a rule stated in one place drifts from the rule stated beside it.
 //
 // phone is normalized here so every caller compares the same way; a blank or
 // punctuation-only argument returns (nil, nil) rather than matching the many rows

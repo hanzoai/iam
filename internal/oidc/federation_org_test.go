@@ -40,7 +40,7 @@ func federatedApp(t *testing.T) (orm.DB, *schema.Application, *schema.Provider, 
 	return db, app, prov, binding
 }
 
-// Signing in with a social identity founds an org too. It is the same door as the
+// Signing in with a social identity founds an org too. It is the same path as the
 // password signup — an account arrives from an identity provider rather than a
 // form — so it must not leave people in the application's own org.
 func TestFederation_FoundsItsOwnOrg(t *testing.T) {

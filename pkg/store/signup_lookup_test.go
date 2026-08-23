@@ -139,7 +139,7 @@ func TestGetSignupByConnectorNeverReachesAReservedOrg(t *testing.T) {
 
 // A reserved owner is never reachable here. The admin org holds the SuperAdmin,
 // and nothing should file one of its rows under an application's signup — if
-// something does, this must not be the door that authenticates it.
+// something does, this must not be the lookup that authenticates it.
 func TestGetSignupByEmailNeverReachesAReservedOrg(t *testing.T) {
 	db := userDB(t)
 	addUser(t, db, &model.User{Owner: "admin", Name: "super", Email: "super@example.com", SignupApplication: "hanzo-cloud"})

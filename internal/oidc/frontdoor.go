@@ -16,14 +16,14 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// Front-door JSON endpoints the @hanzo/iam SDK + hanzo.id portal call: the login
+// Native JSON endpoints the @hanzo/iam SDK + hanzo.id portal call: the login
 // UI descriptors (auth/application, auth/methods), the account read (account),
 // account creation (signup), and OTP send (verification-codes). Login itself is
 // routeLogin; the OIDC/OAuth surface is Route. The verb-noun spellings four of
 // these once had are in canonical.go, still reachable and taught nowhere.
 const PathAuthMethods = "/v1/iam/auth/methods"
 
-// routeFrontDoor registers the front-door endpoints the hosted hanzo.id portal
+// routeFrontDoor registers the native endpoints the hosted hanzo.id portal
 // and the @hanzo/iam SDK call, on the PUBLIC group r. Each handler RESOLVES the
 // caller itself (callerOf: session cookie first, then bearer) and SELF-SCOPES to
 // that caller, so — like the rest of this group — they are reachable without a
@@ -54,7 +54,7 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	r.Post(PathSignup, signupHandler(db))
 	r.Post(PathVerificationCodes, sendVerificationCode(db))
 
-	// The session/identity front door the console drives once a user is signed in:
+	// The session/identity endpoints the console drives once a user is signed in:
 	// signin (the code→session exchange), whoami (lightweight identity), onboard
 	// (first-run org creation + move), preferences (self, shallow-merge), and
 	// linked-accounts (the caller's linked identities).
