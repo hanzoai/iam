@@ -134,7 +134,7 @@ func TestLoadDerivesTheAllowlistFromRedirectUris(t *testing.T) {
 func TestBrowserPaths_CoverTheConsoleOrgSurface(t *testing.T) {
 	for _, p := range []string{
 		"/v1/iam/organizations",
-		"/v1/iam/get-account",
+		"/v1/iam/account",
 	} {
 		if browserPaths[p] != bearer {
 			t.Errorf("%s must be reachable cross-origin with a Bearer: a console reads it to "+
