@@ -85,8 +85,8 @@ type ListOrganizationsOutput struct {
 // the cursor from the previous page to continue; an empty cursor in the answer
 // means there is nothing more.
 //
-// THE SCOPE IS THE HANDLER'S OWN, so it holds at every door. The Guard refuses a
-// bearerless request before this runs, but the agent door carries a typed op to
+// THE SCOPE IS THE HANDLER'S OWN, so it holds at every endpoint. The Guard refuses
+// a bearerless request before this runs, but the MCP server carries a typed op to
 // its handler with no middleware in front of it — a handler that read no
 // principal would answer such a caller with the whole registry. Reading the
 // principal here is what makes the answer the same one over both.

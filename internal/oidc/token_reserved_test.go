@@ -12,7 +12,7 @@ import (
 // (admin/built-in/app) must never obtain a token on the PUBLIC token endpoint, on
 // either machine grant. Even though such a token already resolves to no authority
 // (its subject "admin/<app>" has no user row, so authz grants it nothing), the
-// public endpoint refuses it at the door so the property is STRUCTURAL, not a
+// public endpoint refuses it before minting so the property is STRUCTURAL, not a
 // consequence of the principal resolver. Credentials are otherwise VALID here — the
 // refusal is the reserved-Organization gate, not an auth failure.
 func TestClientCredentials_reservedOrgApp_refused(t *testing.T) {

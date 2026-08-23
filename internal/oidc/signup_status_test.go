@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-// TestSignup_FailureIsNotSuccess drives every distinct way the front door refuses
+// TestSignup_FailureIsNotSuccess drives every distinct way the endpoint refuses
 // a signup and holds ONE line: none of them may answer 2xx.
 func TestSignup_FailureIsNotSuccess(t *testing.T) {
 	newbieBody := func() map[string]string {

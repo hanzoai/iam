@@ -207,7 +207,7 @@ func TestAs_unknownKey_401(t *testing.T) {
 
 // A key that stopped being honored mints nothing, and the grant does not save it:
 // both keys below carry act, and both are refused. The secret is still real and
-// still matches a row — which is exactly why the door must ask whether the row is
+// still matches a row — which is exactly why the endpoint must ask whether the row is
 // live rather than only whether it exists.
 func TestAs_keyNoLongerHonored_401(t *testing.T) {
 	for _, tc := range []struct{ name, secret, state, expire string }{
