@@ -198,7 +198,7 @@ func TestRegularUserSelfServiceOnly(t *testing.T) {
 }
 
 // 7. Public routes are reachable with NO bearer — the pre-auth OIDC/OAuth and
-// front-door surface a browser must reach before it holds a token. "Reachable"
+// native surface a browser must reach before it holds a token. "Reachable"
 // means NOT the guard's 401: the endpoint's own handler answers (which may be a
 // 400 for a missing param — that is the handler, past the guard).
 func TestPublicRoutesNeedNoBearer(t *testing.T) {
@@ -215,7 +215,7 @@ func TestPublicRoutesNeedNoBearer(t *testing.T) {
 		{"GET", "/v1/iam/auth/application"},
 		{"GET", "/v1/iam/auth/methods"},
 		{"POST", "/v1/iam/oauth/logout"},
-		// The front-door session/identity surface — each self-resolves the caller
+		// The native session/identity surface — each self-resolves the caller
 		// (session cookie, else bearer) and answers anonymously (200 {status:error}
 		// or a handler 400), never the Guard's 401. These are the routes the old
 		// publicPaths list had to be patched to include; now they are public purely
@@ -328,7 +328,7 @@ func TestPhantomSubjectHasNoAuthority(t *testing.T) {
 	}
 }
 
-// The framework's generic side doors (MCP tool-call, OpenAPI doc) are gated by
+// The framework's generic control routes (MCP tool-call, OpenAPI doc) are gated by
 // the same fail-closed default — proven on a REAL, installed route and a REAL
 // tool INVOCATION, not just the envelope path. newHarness calls app.Prepare(), so
 // /mcp and /openapi are actually registered (the old test hit a route that was
@@ -356,7 +356,7 @@ func TestFrameworkSideDoorsAreGated(t *testing.T) {
 		t.Fatalf("MCP post_iam_certs (non-super) = status %d isError %v, want 200/true (refused at op seam)", status, isErr)
 	}
 	if h.certExists(t, "admin", "cert-forge") {
-		t.Fatal("MCP cert-forge PERSISTED an admin-owned cert — the /mcp side door is OPEN")
+		t.Fatal("MCP cert-forge PERSISTED an admin-owned cert — the /mcp path is UNGATED")
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Every front-door endpoint that used to be spelled as a verb-noun answers at
+// Every native endpoint that used to be spelled as a verb-noun answers at
 // BOTH its canonical noun address and the legacy spelling, from ONE handler.
 //
 // This is the whole contract of alias(): the canonical address is what the

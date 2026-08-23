@@ -191,7 +191,7 @@ func seedPublishKey(t *testing.T, db orm.DB, owner, name, pk, expire string) {
 // PublishableKeyByAccessKey resolves ONLY a live, publish-scoped pk- to its Key — never
 // a user — and fails closed on everything else: a non-pk- value, an unknown key, a
 // SECRET key's own pk- half (Scope != publish), or an expired key. This is the
-// org-only door's fail-closed contract, the write-only invariant's other half (the
+// org-only resolver's fail-closed contract, the write-only invariant's other half (the
 // principal path is closed by TestUserByAccessKey_ResolvesSecretsRefusesPublishable).
 func TestPublishableKeyByAccessKey(t *testing.T) {
 	db := memDB(t)
@@ -231,7 +231,8 @@ func TestPublishableKeyByAccessKey(t *testing.T) {
 
 // Every refusal still fails closed AND now says which refusal it was. "the entity
 // does not exist" was one sentence for causes that call for opposite actions: a
-// revoked key needs re-minting, a pk- at the secret door needs the other door, and a
+// revoked key needs re-minting, a pk- at the secret endpoint needs the other one, and
+// a
 // cross-tenant key row is an ATTACK — none of which the holder or an operator could
 // tell apart. The reason is additive: errors.Is(err, orm.ErrNotFound) still holds for
 // every case, so no existing caller changes behavior.
@@ -252,7 +253,7 @@ func TestUserByAccessKey_ReasonsAreDistinguishable(t *testing.T) {
 		want KeyFailure
 	}{
 		{"unknown sk", "sk-live-NOSUCH", KeyUnknown},
-		{"a pk- at the SECRET door", "pk-live-ORGONLY", KeyWrongDoor},
+		{"a pk- at the SECRET endpoint", "pk-live-ORGONLY", KeyWrongDoor},
 		// Not a shape this estate issues → KeyUnknown, never KeyWrongDoor. WrongDoor
 		// advises "use your secret key", which is a lie to someone holding no key at
 		// all; KeyUnknown is what renders the actionable "mint a new one" in cloud.
@@ -276,7 +277,7 @@ func TestUserByAccessKey_ReasonsAreDistinguishable(t *testing.T) {
 	}
 }
 
-// The publishable door tells its three refusals apart. This is the trio the cloud
+// The publishable resolver tells its three refusals apart. This is the trio the cloud
 // fork's own test annotated as "unknown / not publishable / expired" while having no
 // way to distinguish them — the annotation is now executable.
 func TestPublishableKeyByAccessKey_ReasonsAreDistinguishable(t *testing.T) {
@@ -382,7 +383,7 @@ func TestUserAndScopeByAccessKey_CarriesTheKeysOwnLimit(t *testing.T) {
 	// never disagree about who a key speaks for.
 	plain, err := UserByAccessKey(ctx, db, "sk-live-L")
 	if err != nil || plain == nil || plain.Name != u.Name {
-		t.Fatalf("the narrow door must answer the same user: %+v %v", plain, err)
+		t.Fatalf("the narrow lookup must answer the same user: %+v %v", plain, err)
 	}
 }
 
@@ -463,7 +464,7 @@ func seedOrgKey(t *testing.T, db orm.DB, owner, name, sk, state, expire string) 
 	}
 }
 
-// THE SECRET DOOR ANSWERS FOR LIVE KEYS AND ONLY LIVE KEYS.
+// THE SECRET RESOLVER ANSWERS FOR LIVE KEYS AND ONLY LIVE KEYS.
 //
 // Three facts one table holds together, because they are the same fact seen from
 // three angles: a key in the shape the minter WRITES (a digest, no plaintext) is
@@ -514,7 +515,7 @@ func TestKeyBySecret_AnswersOnlyForALiveKey(t *testing.T) {
 	} {
 		got, err := KeyBySecret(ctx, db, tc.secret)
 		if err != nil {
-			t.Fatalf("%s: err = %v, want none — this door reports no key, not which refusal", tc.name, err)
+			t.Fatalf("%s: err = %v, want none — this resolver reports no key, not which refusal", tc.name, err)
 		}
 		switch {
 		case tc.want == "":
@@ -528,18 +529,18 @@ func TestKeyBySecret_AnswersOnlyForALiveKey(t *testing.T) {
 		}
 	}
 
-	// The legacy row was drained on the way through, exactly as the get-user door
+	// The legacy row was drained on the way through, exactly as the get-user path
 	// drains it: one resolver, one migration, not two.
 	after, err := orm.Get[schema.Key](db, "hanzo/legacy")
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
 	if after.AccessSecret != "" || after.AccessSecretDigest != schema.DigestSecret(legacy) {
-		t.Fatalf("the drain did not run on this door: secret=%q digest=%q", after.AccessSecret, after.AccessSecretDigest)
+		t.Fatalf("the drain did not run on this resolver: secret=%q digest=%q", after.AccessSecret, after.AccessSecretDigest)
 	}
 }
 
-// BOTH DOORS REFUSE THE SAME ROWS, AND SAY WHY. The get-user door reads a key
+// BOTH RESOLVERS REFUSE THE SAME ROWS, AND SAY WHY. The get-user path reads a key
 // through the same resolver, so a key that stopped being honored authenticates
 // nobody there either — and the holder is told which of the two terminations it
 // was, because re-minting and switching a key back on are different acts.

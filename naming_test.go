@@ -28,7 +28,7 @@ import (
 func TestNoNewVerbNounAddresses(t *testing.T) {
 	frozen := map[string]bool{}
 	for _, p := range []string{
-		// Front door — canonical twins in internal/oidc/canonical.go.
+		// Native endpoints — canonical twins in internal/oidc/canonical.go.
 		oidc.PathAccount, oidc.PathAuthApplication, oidc.PathPreferences,
 		oidc.PathVerificationCodes, oidc.PathTokensIssue,
 		oidc.PathKeysMint, oidc.PathKeysRevoke,
