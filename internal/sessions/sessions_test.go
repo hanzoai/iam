@@ -189,7 +189,7 @@ func TestUpdate_ReplacesAndMissing(t *testing.T) {
 }
 
 // Update caps the cookie list to maxSessionIds — the same bound the merge path
-// keeps, so neither door lets a row grow without limit.
+// keeps, so neither path lets a row grow without limit.
 func TestUpdate_CapsSessionIds(t *testing.T) {
 	db := newDB(t)
 	h := &Sessions{db: db}

@@ -6,10 +6,10 @@
 // Authentication is STRUCTURAL, decided by which group a route is registered on,
 // never by a hand-maintained path list. Route binds the surface as two groups:
 //
-//   - the PUBLIC group (oidc.Route and the other pre-auth doors) holds no Guard,
+//   - the PUBLIC group (oidc.Route and the other pre-auth endpoints) holds no Guard,
 //     so membership in it IS "public".
 //   - the AUTHED group holds authz.Guard. Every route registered on it — the
-//     typed entity CRUD, the key doors, the SCIM surface — requires a verified
+//     typed entity CRUD, the key endpoints, the SCIM surface — requires a verified
 //     bearer.
 //
 // A public route therefore can never be accidentally gated, and an authed route
@@ -81,7 +81,7 @@ func Route(app *zip.App, db orm.DB) {
 	// The pre-authentication surface: OIDC discovery/JWKS + RFC 8414 AS metadata,
 	// the oauth/* protocol endpoints (authorize, token, userinfo, logout,
 	// introspect, revoke), credential login, the confidential-client key minters,
-	// and the front door (get-app-login, auth/methods, get-account, signup, signin,
+	// and the native endpoints (get-app-login, auth/methods, get-account, signup, signin,
 	// whoami, onboard, …). Registered on a root (empty-prefix) group that holds no
 	// Guard, at their absolute paths. There is no allow-list to keep in sync, and
 	// no ordering to preserve: a route is public because it is registered here.
@@ -124,7 +124,7 @@ func Route(app *zip.App, db orm.DB) {
 	// ─────────────────────────── GUARD ────────────────────────────
 	// The ONE authentication seam, on a group that HOLDS the routes it guards.
 	// Every route registered on `authed` requires a verified bearer — the typed
-	// entity CRUD below, the key doors, the SCIM surface. The resolved
+	// entity CRUD below, the key endpoints, the SCIM surface. The resolved
 	// Principal rides the request context for the write-authz hook above; reads
 	// are authorized here (their target rides the query string, or the handler
 	// scopes a path target itself). Fails closed (401).
@@ -181,11 +181,11 @@ func Route(app *zip.App, db orm.DB) {
 	authed.Authorize(authz.Authorize)
 
 	// The same authentication, mounted a second time for the ONE surface a
-	// scoped seam cannot reach: the framework's own /mcp door and OpenAPI
+	// scoped seam cannot reach: the framework's own /mcp endpoint and OpenAPI
 	// document, which Build installs directly on the served app's router with no
 	// middleware, having never been registered through any group. Control is
 	// depth-0 for that reason and acts on those three addresses only — see
-	// authz.Control. Without it the MCP door would dispatch tools/call into this
+	// authz.Control. Without it the MCP server would dispatch tools/call into this
 	// same admin CRUD unauthenticated.
 	app.Use(authz.Control(db))
 
@@ -209,7 +209,7 @@ func Route(app *zip.App, db orm.DB) {
 	auditlogs.Route(authed, db)
 	invitations.Route(authed, db)
 
-	// The two key doors: an sk- resolves to its holder, a pk- to the org and no
+	// The two key endpoints: an sk- resolves to its holder, a pk- to the org and no
 	// further. Both carry their target in ?accessKey= rather than an (owner, name)
 	// the Guard can authorize, so each authorizes itself behind its own
 	// capability — on the guarded group, so it still shares the one Guard seam.

@@ -241,7 +241,7 @@ func TestKeys_CallerCannotChooseTheCredential(t *testing.T) {
 
 // Scope is the ACCESS CLASS and is fixed at mint. An update that could flip a secret
 // key to publish scope would blank its secret and make its pk- half org-resolvable at
-// the ingest door — a privilege change wearing the clothes of a profile edit.
+// the ingest endpoint — a privilege change wearing the clothes of a profile edit.
 func TestKeys_UpdateCannotReScopeOrRotate(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
@@ -263,7 +263,7 @@ func TestKeys_UpdateCannotReScopeOrRotate(t *testing.T) {
 		t.Fatalf("update: %v", err)
 	}
 	if got.Scope == schema.KeyScopePublish {
-		t.Fatal("update re-scoped a secret key to publish — that blanks the secret and opens the ingest door")
+		t.Fatal("update re-scoped a secret key to publish — that blanks the secret and makes the pk- half org-resolvable at the ingest endpoint")
 	}
 	// Assert on the STORED row, not the response: the response is masked (an edit is
 	// not a mint), so reading the secret back out of it would only ever prove the mask.
@@ -287,7 +287,7 @@ func TestKeys_UpdateCannotReScopeOrRotate(t *testing.T) {
 
 // The gap that made a publishable key unmintable: there was NO path anywhere that
 // produced one for a user. IAM owned the model (schema.KeyScopePublish), the resolver
-// (store.PublishableKeyByAccessKey) and the ingest door (compat resolve-key), and
+// (store.PublishableKeyByAccessKey) and the ingest endpoint (compat resolve-key), and
 // nothing minted the credential they were written for — so every surface configured
 // its own thing. Type is a field on the ONE mint, and this is the proof it works.
 func TestMintUserKey_PublishableTypeMintsAPublicKeyAndNoSecret(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 
 // When somebody last signed in is recorded by SIGNING IN, not by a unit calling
 // the writer. A periodic access review reads this column to find the accounts
-// nobody uses any more, so it has to be true of the real door.
+// nobody uses any more, so it has to be true of the real endpoint.
 func TestLogin_recordsWhenTheySignedIn(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})

@@ -74,7 +74,7 @@ func Route(app *zip.App, db orm.DB) {
 // replaced zip's old Prepare, whose silence meant a program that did not
 // compose was only discovered by starting a server. A host does not adopt
 // those projections — a zip Declaration excludes the control plane, so the host
-// keeps its own /docs, MCP door and op plane and the composed document is the
+// keeps its own /docs, MCP server and op plane and the composed document is the
 // HOST's.
 //
 // A failed Build is a wiring error in this package, not a runtime condition the

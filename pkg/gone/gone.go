@@ -53,7 +53,7 @@ var successor = map[string][]string{
 	// Users. get-global-users was the same list without an owner filter, which the
 	// collection already does for a caller whose scope reaches every tenant.
 	// get-user also resolved a SECRET key to its holder, and that half went to the
-	// key door rather than the collection.
+	// key endpoint rather than the collection.
 	"/v1/iam/get-users":        {"/v1/iam/users"},
 	"/v1/iam/get-global-users": {"/v1/iam/users"},
 	"/v1/iam/get-user":         {"/v1/iam/users", "/v1/iam/keys/principal"},
@@ -111,7 +111,7 @@ var successor = map[string][]string{
 	"/v1/iam/add-membership":  {"/v1/iam/memberships"},
 
 	// resolve-key turned a publishable key into the org holding it. That is the
-	// key door, not the key collection.
+	// key endpoint, not the key collection.
 	"/v1/iam/resolve-key": {"/v1/iam/keys/org"},
 
 	// The front door and the token minters. These were reachable at both

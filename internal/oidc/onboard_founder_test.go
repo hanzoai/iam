@@ -25,7 +25,7 @@ import (
 // its own session (or bearer) and may only found an org for ITSELF, so widening
 // IAM_ORG_ADMIN_APPS — which would let one app administer EVERY tenant's orgs —
 // is never the mechanism. These pin the three properties that makes the org
-// first-class and the door safe:
+// first-class and the endpoint safe:
 //
 //  1. the founder succeeds, and the org is real: Founder stamped, roster row
 //     (user × org × owner), `orgs` claim, and the session survives the re-key;
@@ -216,7 +216,7 @@ func TestOnboard_ForeignIdentityCannotTakeOrJoinTheOrg(t *testing.T) {
 	}
 }
 
-// An anonymous caller is still refused — the door authorizes a FOUNDER, and an
+// An anonymous caller is still refused — the endpoint authorizes a FOUNDER, and an
 // unauthenticated request has no founder to be.
 func TestOnboard_AnonymousIsRefused(t *testing.T) {
 	app, db := newServer(t)
