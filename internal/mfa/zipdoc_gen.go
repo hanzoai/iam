@@ -10,9 +10,6 @@ func init() {
 	zip.Describe("DELETE /v1/iam/mfa", zip.Doc{
 		Description: "Turns a factor off, so sign-in stops asking for it. Naming no factor turns\noff ALL of them — the reset path. People may do this for themselves; doing it for\nsomebody else takes an administrator, which is what makes it the way back in when a\nphone is lost.\n\nThe recovery codes go with the last factor: they are the way past a challenge, so\nkeeping them alive for an account with nothing to challenge would leave a standing\ncredential behind.",
 	})
-	zip.Describe("POST /v1/iam/delete-mfa", zip.Doc{
-		Description: "Turns a factor off, so sign-in stops asking for it. Naming no factor turns\noff ALL of them — the reset path. People may do this for themselves; doing it for\nsomebody else takes an administrator, which is what makes it the way back in when a\nphone is lost.\n\nThe recovery codes go with the last factor: they are the way past a challenge, so\nkeeping them alive for an account with nothing to challenge would leave a standing\ncredential behind.",
-	})
 	zip.Describe("POST /v1/iam/mfa/preferred", zip.Doc{
 		Description: "Picks which second factor an account is asked for first when it has\nmore than one. Only a factor the account actually holds: storing an unheld one told\nthe login gate \"MFA is on\" — factor.Enabled reads that column — while leaving it\nnothing to ask for, so the sign-in required the password alone.",
 	})
@@ -21,8 +18,5 @@ func init() {
 	})
 	zip.Describe("POST /v1/iam/mfa/setup/initiate", zip.Doc{
 		Description: "Starts enrolling a factor and hands over whatever the person needs to prove\nthey hold it:\n\n\tapp   a fresh secret and the otpauth:// URL to render as a QR code\n\tsms   a code texted to the number on the account\n\temail a code mailed to the address on the account\n\nNothing is switched on yet, so abandoning this step leaves the account exactly as\nit was. Response: {status:\"ok\", data:{mfaType, secret, url}} — secret and url only\nfor the authenticator.",
-	})
-	zip.Describe("POST /v1/iam/set-preferred-mfa", zip.Doc{
-		Description: "Picks which second factor an account is asked for first when it has\nmore than one. Only a factor the account actually holds: storing an unheld one told\nthe login gate \"MFA is on\" — factor.Enabled reads that column — while leaving it\nnothing to ask for, so the sign-in required the password alone.",
 	})
 }

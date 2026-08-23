@@ -47,11 +47,9 @@ import (
 // handler at the addresses pinned consumers hold; each is reachable and taught
 // nowhere.
 func routeIssueToken(r zip.Router, db orm.DB) {
-	zip.Alias(r.Post, PathTokensIssue, LegacyPathTokensIssue, issueUserTokenHandler(db))
+	r.Post(PathTokensIssue, issueUserTokenHandler(db))
 	r.Post(PathUserKeys, mintUserKeysHandler(db))
 	r.Delete(PathUserKeys, revokeUserKeysHandler(db))
-	r.Post(LegacyPathKeysMint, mintUserKeysHandler(db))
-	r.Post(LegacyPathKeysRevoke, revokeUserKeysHandler(db))
 }
 
 // issueUserTokenHandler mints an access token for the `?id=<owner>/<name>` target

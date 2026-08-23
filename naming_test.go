@@ -7,10 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/iam/pkg/gone"
 	"github.com/hanzoai/iam/internal/memberships"
-	"github.com/hanzoai/iam/internal/mfa"
-	"github.com/hanzoai/iam/internal/oidc"
+	"github.com/hanzoai/iam/pkg/gone"
 	"github.com/hanzoai/iam/server"
 )
 
@@ -32,13 +30,10 @@ import (
 func TestNoNewVerbNounAddresses(t *testing.T) {
 	frozen := map[string]bool{}
 	for _, p := range []string{
-		// Front door — canonical twins in internal/oidc/canonical.go.
-		oidc.LegacyPathAccount, oidc.LegacyPathAuthApplication, oidc.LegacyPathPreferences,
-		oidc.LegacyPathVerificationCodes, oidc.LegacyPathTokensIssue,
-		oidc.LegacyPathKeysMint, oidc.LegacyPathKeysRevoke,
 		// Revoking a membership. The collection has no spelling for it — a DELETE
 		// there would carry the (user, org) pair in a body — so this one has no
-		// successor to be retired towards.
+		// successor to be retired towards, and is the last verb-noun address the
+		// service still serves.
 		memberships.PathDelete,
 	} {
 		frozen[p] = true
@@ -51,9 +46,6 @@ func TestNoNewVerbNounAddresses(t *testing.T) {
 		"is": true, "place": true, "pay": true, "commit": true, "query": true, "upload": true,
 		"resolve": true, "exit": true, "impersonate": true,
 	}
-
-	frozen[mfa.LegacyPathDisable] = true
-	frozen[mfa.LegacyPathPreferred] = true
 
 	db, err := server.OpenSQLite(":memory:")
 	if err != nil {
