@@ -113,6 +113,29 @@ var successor = map[string][]string{
 	// resolve-key turned a publishable key into the org holding it. That is the
 	// key door, not the key collection.
 	"/v1/iam/resolve-key": {"/v1/iam/keys/org"},
+
+	// The front door and the token minters. These were reachable at both
+	// spellings — one handler value at two addresses — while the canonical noun
+	// was the only one taught. Nothing in the estate still calls them, which is
+	// the condition that ends an alias.
+	//
+	// mint-user-keys and revoke-user-keys were POST and POST: one minted a key and
+	// the other took it away, at two addresses that differed by a verb. Both go to
+	// the keys collection, which a caller can dereference — the user's own keys
+	// live at /v1/iam/users/{owner}/{name}/keys, and naming that here would put a
+	// router pattern in a Link header rather than a URI.
+	"/v1/iam/get-account":            {"/v1/iam/account"},
+	"/v1/iam/get-app-login":          {"/v1/iam/auth/application"},
+	"/v1/iam/update-preferences":     {"/v1/iam/preferences"},
+	"/v1/iam/send-verification-code": {"/v1/iam/verification-codes"},
+	"/v1/iam/issue-user-token":       {"/v1/iam/tokens/issue"},
+	"/v1/iam/mint-user-keys":         {"/v1/iam/keys"},
+	"/v1/iam/revoke-user-keys":       {"/v1/iam/keys"},
+
+	// MFA. delete-mfa said with a hyphen what DELETE says, and set-preferred-mfa
+	// named the field it writes.
+	"/v1/iam/delete-mfa":        {"/v1/iam/mfa"},
+	"/v1/iam/set-preferred-mfa": {"/v1/iam/mfa/preferred"},
 }
 
 // Retired reports whether path is one of the addresses this package answers for.
