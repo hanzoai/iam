@@ -17,8 +17,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/iam/pkg/gone"
 	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/pkg/gone"
 )
 
 // A retired address answers 410 with NO credential at all.
@@ -119,4 +119,45 @@ func successorsOf(headers []string) []string {
 		}
 	}
 	return out
+}
+
+// TestFrontDoorSpellingsAreRetired covers the nine addresses that were reachable
+// at two spellings at once — one handler value registered at both — while only
+// the canonical noun was taught. Nothing in the estate still called the old half,
+// which is the condition that ends an alias, so each is a retirement now and says
+// where it went.
+func TestFrontDoorSpellingsAreRetired(t *testing.T) {
+	h := newHarness(t)
+
+	for _, tc := range []struct{ method, path, successor string }{
+		{"GET", "/v1/iam/get-account", "/v1/iam/account"},
+		{"GET", "/v1/iam/get-app-login", "/v1/iam/auth/application"},
+		{"POST", "/v1/iam/update-preferences", "/v1/iam/preferences"},
+		{"POST", "/v1/iam/send-verification-code", "/v1/iam/verification-codes"},
+		{"POST", "/v1/iam/issue-user-token", "/v1/iam/tokens/issue"},
+		{"POST", "/v1/iam/mint-user-keys", "/v1/iam/keys"},
+		{"POST", "/v1/iam/revoke-user-keys", "/v1/iam/keys"},
+		{"POST", "/v1/iam/delete-mfa", "/v1/iam/mfa"},
+		{"POST", "/v1/iam/set-preferred-mfa", "/v1/iam/mfa/preferred"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.Host = "hanzo.id"
+		status, body := h.do(t, req)
+		if status != http.StatusGone {
+			t.Errorf("%s %s = %d (%s), want 410", tc.method, tc.path, status, body)
+		}
+	}
+}
+
+// The successor a retired address names has to be one a caller can dereference.
+// A router pattern is neither a URL nor an RFC 6570 template, so it cannot go in
+// a Link header — the successor of an item is the collection it belongs to.
+func TestEverySuccessorIsDereferenceable(t *testing.T) {
+	for path, successors := range gone.Successors() {
+		for _, to := range successors {
+			if strings.ContainsAny(to, ":{*") {
+				t.Errorf("%s names successor %q, which is a router pattern rather than a URI", path, to)
+			}
+		}
+	}
 }

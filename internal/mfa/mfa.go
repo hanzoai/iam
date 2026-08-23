@@ -69,16 +69,11 @@ import (
 // URL per verb. Which factor to drop is a FIELD (`mfaType`, absent meaning all), the
 // same way the key type is a field of a mint: the moment a class becomes its own
 // endpoint the classes drift.
-//
-// The two verb-noun spellings this surface arrived with stay reachable for pinned
-// consumers and are taught nowhere; see zip.Alias.
 const (
-	Path                = "/v1/iam/mfa"
-	PathInitiate        = "/v1/iam/mfa/setup/initiate"
-	PathEnable          = "/v1/iam/mfa/setup/enable"
-	PathPreferred       = "/v1/iam/mfa/preferred"
-	LegacyPathDisable   = "/v1/iam/delete-mfa"
-	LegacyPathPreferred = "/v1/iam/set-preferred-mfa"
+	Path          = "/v1/iam/mfa"
+	PathInitiate  = "/v1/iam/mfa/setup/initiate"
+	PathEnable    = "/v1/iam/mfa/setup/enable"
+	PathPreferred = "/v1/iam/mfa/preferred"
 )
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
@@ -87,8 +82,7 @@ func Route(app *zip.App, db orm.DB) {
 	app.Post(PathInitiate, initiate(db))
 	app.Post(PathEnable, enable(db))
 	app.Delete(Path, disable(db))
-	app.Post(LegacyPathDisable, disable(db))
-	zip.Alias(app.Post, PathPreferred, LegacyPathPreferred, setPreferred(db))
+	app.Post(PathPreferred, setPreferred(db))
 }
 
 // recoveryCount is how many recovery codes an enrolment mints. Eight, not one: a
