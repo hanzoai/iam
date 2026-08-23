@@ -136,3 +136,72 @@ func TestSuccessorsAreAddresses(t *testing.T) {
 		}
 	}
 }
+
+// Retired IS THE TABLE'S MEMBERSHIP, NOTHING MORE. The router asks it of an
+// address before it does anything else, so every address in the table must read
+// true and a served one — a successor, say — must read false, or a live resource
+// would be answered as gone.
+func TestRetiredKnowsTheWholeTable(t *testing.T) {
+	for path, to := range successor {
+		if !Retired(path) {
+			t.Errorf("Retired(%q) = false, want true — it is in the table", path)
+		}
+		for _, s := range to {
+			if Retired(s) {
+				t.Errorf("Retired(%q) = true, but it is a served successor", s)
+			}
+		}
+	}
+}
+
+// An address the table never named reads false: a live resource, an unknown one,
+// and the empty path all fall through to the collection rather than to a notice.
+func TestRetiredIsFalseForLiveAddresses(t *testing.T) {
+	for _, p := range []string{
+		"/v1/iam/organizations",
+		"/v1/iam/never-existed",
+		"/v1/iam/get-users/extra",
+		"",
+	} {
+		if Retired(p) {
+			t.Errorf("Retired(%q) = true, want false", p)
+		}
+	}
+}
+
+// Successors HANDS OUT THE FACTS AND KEEPS THE TABLE. The host writes the prose
+// but asks here for what replaced what, so the returned map must carry every row
+// exactly.
+func TestSuccessorsCopiesEveryRow(t *testing.T) {
+	got := Successors()
+	if len(got) != len(successor) {
+		t.Fatalf("Successors() has %d rows, table has %d", len(got), len(successor))
+	}
+	for path, to := range successor {
+		if strings.Join(got[path], " ") != strings.Join(to, " ") {
+			t.Errorf("Successors()[%q] = %v, want %v", path, got[path], to)
+		}
+	}
+}
+
+// AND IT KEEPS THE TABLE. A host that sorts or trims the map it was handed must
+// not be able to reach back and edit the one the router answers from, so the
+// slices are copied too, not shared.
+func TestSuccessorsIsACopy(t *testing.T) {
+	const probe = "/v1/iam/get-users"
+	want := append([]string(nil), successor[probe]...)
+
+	got := Successors()
+	got[probe][0] = "/v1/iam/mutated"       // edit a value's slice
+	got["/v1/iam/injected"] = []string{"x"} // add a key
+
+	if strings.Join(successor[probe], " ") != strings.Join(want, " ") {
+		t.Errorf("editing the returned slice changed the table: %v", successor[probe])
+	}
+	if _, ok := successor["/v1/iam/injected"]; ok {
+		t.Error("adding to the returned map changed the table")
+	}
+	if fresh := Successors(); strings.Join(fresh[probe], " ") != strings.Join(want, " ") {
+		t.Errorf("a later call reflects the mutation: %v", fresh[probe])
+	}
+}

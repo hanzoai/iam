@@ -17,6 +17,13 @@ import (
 )
 
 func boot(t *testing.T) *zip.App {
+	app, _ := bootDB(t)
+	return app
+}
+
+// bootDB is boot with the store handed back, so a test can close it and drive the
+// handlers' store-error arms.
+func bootDB(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	_ = schema.Kinds()
 	db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
@@ -32,7 +39,7 @@ func boot(t *testing.T) *zip.App {
 	if err := app.Build(); err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	return app
+	return app, db
 }
 
 func call(t *testing.T, app *zip.App, method, path, body string) (int, map[string]any) {
