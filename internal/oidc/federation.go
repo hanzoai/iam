@@ -697,15 +697,6 @@ func federationOrgAllowed(app *schema.Application) bool {
 	return org == app.Owner
 }
 
-// fedSuccessRedirect returns the browser to the relying party's redirect_uri with
-// the iam authorization code and the original app state (RFC 6749 §4.1.2).
-func fedSuccessRedirect(c *zip.Ctx, st *schema.FederationState, code string) error {
-	v := url.Values{}
-	v.Set("code", code)
-	setIfPresent(v, "state", st.AppState)
-	return c.Redirect(302, joinQuery(st.RedirectUri, v))
-}
-
 // fedErrorRedirect returns an OAuth error to the relying party's redirect_uri
 // (already allow-list-validated) with the original app state.
 func fedErrorRedirect(c *zip.Ctx, st *schema.FederationState, code, desc string) error {
