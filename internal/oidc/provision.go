@@ -46,7 +46,7 @@ func mintCredential(sa *schema.User) (accessKey, secret string, err error) {
 
 // provision idempotently converges a self-service signup to ONE tenant: an
 // organization, its founding user as that org's own admin, and ONE org-scoped API
-// key. It is the single provisioning primitive the onboarding front door drives —
+// key. It is the single provisioning primitive the onboarding endpoint drives —
 // every step is an ENSURE (converge), never a bare CREATE (conflict):
 //
 //   - org:  query by name, create when absent, stamping the caller as Founder.
@@ -98,7 +98,7 @@ type provisioned struct {
 	// movedFrom is the org the caller belonged to BEFORE the converge. When it
 	// differs from org the caller's identity was re-keyed ("<owner>/<name>"), which
 	// invalidates every credential that names the old pair — the session cookie
-	// above all. The onboard front door reads it to re-issue that cookie so a human
+	// above all. The onboard endpoint reads it to re-issue that cookie so a human
 	// stays signed in across their own signup.
 	movedFrom string
 }

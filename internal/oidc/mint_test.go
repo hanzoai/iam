@@ -72,8 +72,8 @@ func TestOnBehalfOfMintStillReachesAnOrdinaryTarget(t *testing.T) {
 }
 
 // Confinement binds a reserved-org principal to the application that serves the
-// reserved org. The package's other tests reach it only through a password door,
-// so it gets one that does not depend on that door being open.
+// reserved org. The package's other tests reach it only through a password endpoint,
+// so it gets one that does not depend on that endpoint working.
 func TestMintConfinesAReservedOrgPrincipalToItsOwnApplication(t *testing.T) {
 	_, db := newServer(t)
 	shared := seedApp(t, db, appOpts{clientID: "shared", secret: "s3cret", redirectURIs: []string{testRedirect}, shared: true})

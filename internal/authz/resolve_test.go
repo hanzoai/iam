@@ -17,9 +17,9 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
-// THE TWO KEY DOORS.
+// THE TWO KEY ENDPOINTS.
 //
-// An opaque key is resolved to what it authorizes, and there are two doors
+// An opaque key is resolved to what it authorizes, and there are two endpoints
 // because there are two kinds of key: a publishable pk- names only the ORG that
 // holds it, a secret sk- names the principal. That difference is the whole reason
 // a pk- is safe to ship in client JavaScript, so it is the property worth pinning
@@ -41,7 +41,7 @@ const (
 )
 
 // basicBody issues a request with client_secret_basic and decodes the answer.
-// These two doors kept the envelope their handlers always wrote, so the verdict
+// These two endpoints kept the envelope their handlers always wrote, so the verdict
 // is in the body's `status`, not only in the HTTP code.
 func (h *harness) basicBody(t *testing.T, method, path, clientID, secret string) map[string]any {
 	t.Helper()
@@ -76,7 +76,7 @@ func seedKey(t *testing.T, db orm.DB, owner, name, access, secret, scope, user s
 	}
 }
 
-// keyholder registers the app both doors are opened for and returns its Basic
+// keyholder registers the app both endpoints admit and returns its Basic
 // credential.
 func keyholder(t *testing.T, h *harness) (id, secret string) {
 	t.Helper()
@@ -126,7 +126,7 @@ func TestResolve_secretNamesThePrincipal(t *testing.T) {
 	if data["owner"] != "lux" || data["name"] != "alice" {
 		t.Errorf("got %v/%v, want lux/alice", data["owner"], data["name"])
 	}
-	// A secret must never come back from a door that only takes one.
+	// A secret must never come back from an endpoint that only takes one.
 	for _, field := range []string{"accessSecret", "password", "passwordHash", "accessKey"} {
 		if _, present := data[field]; present {
 			t.Errorf("the principal projection carries %q: %v", field, data)
@@ -134,9 +134,9 @@ func TestResolve_secretNamesThePrincipal(t *testing.T) {
 	}
 }
 
-// Each door refuses the OTHER kind of key. They are not interchangeable, and the
-// asymmetry is the point: presenting a pk- to the secret door must not yield a
-// principal, and presenting an sk- to the publishable door must not yield an org.
+// Each endpoint refuses the OTHER kind of key. They are not interchangeable, and the
+// asymmetry is the point: presenting a pk- to the secret endpoint must not yield a
+// principal, and presenting an sk- to the publishable endpoint must not yield an org.
 func TestResolve_eachDoorRefusesTheOtherKind(t *testing.T) {
 	h := newHarness(t)
 	id, secret := keyholder(t, h)
@@ -145,8 +145,8 @@ func TestResolve_eachDoorRefusesTheOtherKind(t *testing.T) {
 	seedKey(t, h.db, "lux", "alice-cli", "pk-live-def", "sk-live-def", "", "lux/alice")
 
 	for _, tc := range []struct{ name, path, key string }{
-		{"a secret key at the publishable door", publishablePath, "sk-live-def"},
-		{"a publishable key at the secret door", principalPath, "pk-live-abc"},
+		{"a secret key at the publishable endpoint", publishablePath, "sk-live-def"},
+		{"a publishable key at the secret endpoint", principalPath, "pk-live-abc"},
 		{"a value that is no key at all", principalPath, "nonsense"},
 		{"an unknown key", publishablePath, "pk-live-nope"},
 	} {
@@ -180,14 +180,14 @@ func TestResolve_anExpiredKeyIsRefused(t *testing.T) {
 	}
 }
 
-// THE GATE. Neither door opens for a caller that does not hold its capability,
+// THE GATE. Neither endpoint admits a caller that does not hold its capability,
 // and holding one is not holding the other — they disclose different amounts.
 func TestResolve_theGateIsPerCapability(t *testing.T) {
 	for _, tc := range []struct {
 		name, env, path string
 	}{
-		{"the secret door needs CapKeyResolve", "IAM_PUBLISHABLE_RESOLVE_APPS", principalPath},
-		{"the publishable door needs CapPublishableResolve", "IAM_KEY_RESOLVE_APPS", publishablePath},
+		{"the secret endpoint needs CapKeyResolve", "IAM_PUBLISHABLE_RESOLVE_APPS", principalPath},
+		{"the publishable endpoint needs CapPublishableResolve", "IAM_KEY_RESOLVE_APPS", publishablePath},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -210,7 +210,7 @@ func TestResolve_theGateIsPerCapability(t *testing.T) {
 }
 
 // A HUMAN is refused, whatever authority they hold. A capability is held
-// vacuously by a non-app, so a bearer token must not reach either door — that is
+// vacuously by a non-app, so a bearer token must not reach either endpoint — that is
 // what keeps key resolution a machine boundary rather than an admin action.
 func TestResolve_aHumanIsRefusedEvenAsSuperAdmin(t *testing.T) {
 	h := newHarness(t)
@@ -220,12 +220,12 @@ func TestResolve_aHumanIsRefusedEvenAsSuperAdmin(t *testing.T) {
 	root := h.token(t, "admin/root")
 	for _, path := range []string{publishablePath, principalPath} {
 		if got := h.do(t, "GET", path+"?accessKey=pk-live-abc", root, nil); got == 200 {
-			t.Errorf("GET %s as a SuperAdmin human answered 200; both doors are service-only", path)
+			t.Errorf("GET %s as a SuperAdmin human answered 200; both endpoints are service-only", path)
 		}
 	}
 }
 
-// An unauthenticated caller reaches neither. The doors are handler-authorized,
+// An unauthenticated caller reaches neither. The endpoints are handler-authorized,
 // which exempts them from the Guard's ENTITY check and from nothing else.
 func TestResolve_unauthenticatedReachesNeither(t *testing.T) {
 	h := newHarness(t)

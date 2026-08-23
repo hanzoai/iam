@@ -21,7 +21,7 @@ import (
 //
 // A handler that reads no principal and treats an absent Owner selector as no
 // filter answers a request with no credential with the whole registry — and the
-// agent door carries a typed op to its handler without the edge in front of it,
+// MCP server carries a typed op to its handler without the edge in front of it,
 // so the scope has to be the handler's own. The tests below hold this endpoint to
 // the same facts Search already has.
 
@@ -67,7 +67,7 @@ func TestList_unauthenticated(t *testing.T) {
 	}
 }
 
-// A person who is not a platform operator is refused, whichever door they came
+// A person who is not a platform operator is refused, whichever transport they came
 // through. Search is where "the organizations I can act in" is answered.
 func TestList_aPersonIsRefused(t *testing.T) {
 	h := newHarness(t)
