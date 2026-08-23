@@ -264,7 +264,7 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	u.PasswordType = ""
 	// Nor a client-supplied CREDENTIAL. These fields are credential material, so a
 	// body that carries one plants a value the sender already knows onto the new row.
-	// Minting is the ONLY writer — /v1/iam/mint-user-keys — so these are cleared here
+	// Minting is the ONLY writer — /v1/iam/users/{owner}/{name}/keys — so these are cleared here
 	// the same way the password digest is.
 	u.AccessKey, u.AccessSecret, u.AccessSecretHash = "", "", ""
 	// Nor a client-supplied CONSENT. A create body carries whatever properties the

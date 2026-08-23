@@ -146,7 +146,7 @@ var browserPaths = map[string]credential{
 	// caller sees only what its principal could already see. CORS decides which
 	// ORIGIN may read the answer; authz decides WHO. Same shape as userinfo
 	// above, which is already open and already Bearer-protected.
-	"/v1/iam/get-account": bearer,
+	"/v1/iam/account": bearer,
 
 	// What a first-party console does on the user's OWN behalf: read the orgs it
 	// may act in to render a switcher, create one, invite someone to it. Both

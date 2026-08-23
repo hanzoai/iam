@@ -36,7 +36,7 @@ const (
 	ours     = "https://console.hanzo.ai" // IAM_SESSION_ORIGINS — may use the cookie
 	theirs   = "https://theirs.example"   // a registered redirect_uri — may read only
 	hostile  = "https://evil.example.com"
-	readPath = "/v1/iam/get-account" // reads the account: cookie NEVER admitted
+	readPath = "/v1/iam/account" // reads the account: cookie NEVER admitted
 )
 
 // signIn and signOut are the five sites hanzoai/js-iam src/browser.ts sends
@@ -561,7 +561,7 @@ func TestCookieSurfaceIsExactlyTheShippedSDKsCredentialedSites(t *testing.T) {
 		t.Errorf("%s admits the cookie but no shipped client sends credentials to it", p)
 	}
 	for _, p := range []string{
-		"/v1/iam/get-account", "/v1/iam/oauth/userinfo", "/v1/iam/oauth/token",
+		"/v1/iam/account", "/v1/iam/oauth/userinfo", "/v1/iam/oauth/token",
 		"/v1/iam/organizations", "/v1/iam/invitations",
 	} {
 		if browserPaths[p] == cookie {
