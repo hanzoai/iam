@@ -31,11 +31,11 @@ import (
 // where the half-finished state lives, and what a completed sign-in yields.
 //
 // It sits in this package rather than beside the credential rows because it is a
-// LOGIN FRONT DOOR, and every rule a front door must not forget is here and
+// LOGIN ENDPOINT, and every rule a login endpoint must not forget is here and
 // unexported: callerOf (cookie-or-bearer), Gate (the second factor), loginGrant
 // (the one mint path and the session it opens). A ceremony written elsewhere would
-// have to be handed all three, and a front door that can be handed a rule is a
-// front door that can be built without one. The passkey ROWS stay where they are —
+// have to be handed all three, and an endpoint that can be handed a rule is an
+// endpoint that can be built without one. The passkey ROWS stay where they are —
 // internal/webauthn lists, renames and revokes exactly what this writes, over the
 // same schema.WebauthnCredential table, keyed by the same schema.CredentialName.
 
@@ -70,8 +70,8 @@ const errNoPasskey = "no passkey is registered for this account"
 // A passkey is bound to ONE relying party id for life, and a browser releases it
 // only to an origin that id is a suffix of. So the id is not a free choice: it must
 // be the host a person actually signs in at. That host is already decided — the
-// issuer resolver pins it per brand from trusted config, and the front door
-// relocates a request that arrives anywhere else onto it — so the id is READ from
+// issuer resolver pins it per brand from trusted config, and the native endpoints
+// relocate a request that arrives anywhere else onto it — so the id is READ from
 // there rather than configured a second time. One value, one place: a passkey works
 // at exactly the origin that brand's tokens are issued from, and a spoofed
 // X-Forwarded-Host can at most select an already-configured brand (c.Host() is
@@ -375,7 +375,7 @@ func assertBegin(db orm.DB) zip.Handler {
 		if owner == "" || name == "" {
 			return httpx.Err(c, errNoPasskey)
 		}
-		// The same resolver every other door uses: name first, then email. Signup
+		// The same resolver every other endpoint uses: name first, then email. Signup
 		// never asks for a username, so the identifier a customer actually has is
 		// their email — a name-only lookup answers "no passkey" for an account
 		// that has one, and the refusal is indistinguishable from the real thing.
@@ -438,10 +438,10 @@ func assertFinish(db orm.DB) zip.Handler {
 		// The second-factor gate belongs HERE — after the passkey proves the identity,
 		// before any code or session exists. It is this package's ONE gate, called
 		// rather than restated: an organization that demands a second factor must not
-		// find that demand skippable by arriving through a different front door. A
+		// find that demand skippable by arriving at a different endpoint. A
 		// signature proves none of the offerable factors, so the gate is told "" and
 		// may ask for any of them; it answers the request itself and the person
-		// finishes at the login endpoint, exactly as every other front door does.
+		// finishes at the login endpoint, exactly as every other endpoint does.
 		org, err := store.GetOrganizationByName(ctx, db, user.Owner)
 		if err != nil {
 			return httpx.Err(c, err.Error())

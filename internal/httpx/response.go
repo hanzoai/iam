@@ -3,7 +3,7 @@
 
 // Package httpx is the shared HTTP layer for the IAM v2 handlers: the
 // the legacy surface-compatible Response envelope that the @hanzo/iam SDK and the hanzo.id
-// portal consume, plus small helpers over zip.Ctx. Every front-door JSON
+// portal consume, plus small helpers over zip.Ctx. Every native JSON
 // endpoint (get-app-login, login, signup) returns this shape; the OIDC
 // endpoints (token/authorize/userinfo) use their own RFC 6749 shapes.
 package httpx
@@ -151,7 +151,8 @@ func write(c *zip.Ctx, a *Answer) error {
 
 // Err writes a refusal the CALLER can act on: bad input, a credential we would
 // not take, a name already spoken for. 400 is the honest default for this
-// surface — these are front-door validation and authentication failures, and the
+// surface — these are validation and authentication failures on the native
+// endpoints, and the
 // caller is the one holding the thing that was wrong. A handler that knows better
 // says so by calling Fail with the status it means.
 func Err(c *zip.Ctx, msg string) error {

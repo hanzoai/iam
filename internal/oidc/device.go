@@ -149,7 +149,7 @@ func deviceInfoHandler(db orm.DB) zip.Handler {
 		}
 
 		// JSON body from the approval page, form/query for anything else — the same
-		// bind-then-fall-back the login front door uses, so one endpoint serves both
+		// bind-then-fall-back login uses, so one endpoint serves both
 		// without a second spelling of the request.
 		var f struct {
 			UserCode string `json:"userCode"`

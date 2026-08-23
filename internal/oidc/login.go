@@ -20,7 +20,7 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// The credential login front door: POST /v1/iam/login. The @hanzo/iam SDK +
+// The credential login endpoint: POST /v1/iam/login. The @hanzo/iam SDK +
 // hanzo.id portal post here with the app/org + username/password (+ the PKCE
 // authorize params when type=code). On success with type=code we mint a
 // PKCE-bound authorization code and return it in the Response envelope; the SDK
@@ -196,7 +196,7 @@ func loginHandler(db orm.DB) zip.Handler {
 
 		user, err := resolveLoginUser(ctx, db, app, f.Organization, f.Username)
 		if err != nil {
-			// NEVER the resolver's own words. This is an UNAUTHENTICATED door and
+			// NEVER the resolver's own words. This is an UNAUTHENTICATED endpoint and
 			// nothing has been proven about the caller yet, so anything specific
 			// here is an account-existence oracle: "matches more than one account"
 			// tells a stranger that the address they typed is real, and which
@@ -211,7 +211,7 @@ func loginHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "sign-in is unavailable")
 		}
 
-		// A code in place of a password: the SAME door, one arm further in. Sign-in
+		// A code in place of a password: the SAME endpoint, one arm further in. Sign-in
 		// by email or SMS proves possession of an address the account already
 		// holds, which is one factor exactly as a password is, so it joins here
 		// rather than at a second endpoint — the MFA gate, the device approval and
@@ -347,9 +347,9 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// confinement, the tenant rule, the exact redirect_uri match, S256-only PKCE
 	// and the public-client challenge requirement — is MintFor's, not this
 	// handler's. It was restated here once and drifted: the reserved-org gate
-	// existed in this copy and nowhere else, so the wallet front door and (now)
+	// existed in this copy and nowhere else, so the wallet endpoint and (now)
 	// silent SSO would each have had to remember it. One mint path, one set of
-	// rules, no front door that can forget one.
+	// rules, no endpoint that can forget one.
 	out, err := MintFor(ctx, db, app, user.Owner+"/"+user.Name, f.mint())
 	if err != nil {
 		return httpx.Err(c, err.Error())
@@ -368,7 +368,7 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// IdP re-prompts for the password on every app while the silent-SSO branch has
 	// nothing to read.
 	//
-	// sessions.Open is that rule, and it is where the wallet front door and the
+	// sessions.Open is that rule, and it is where the wallet endpoint and the
 	// return from another identity provider read it from too. Best-effort — a
 	// session failure never blocks a valid login.
 	_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
