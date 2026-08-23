@@ -387,15 +387,15 @@ strings for one entity — and any capability keyed on it was dead on whichever 
 you did not name. Same defect `entityNoun` fixes for the legacy verb spellings.
 
 `Scope` is the ACCESS CLASS, fixed at create (an update that could flip it would
-blank a secret and open the ingest door):
+blank a secret and make its `pk-` half resolve at the ingest endpoint):
 
-| scope | halves | resolves to | door |
+| scope | halves | resolves to | endpoint |
 |---|---|---|---|
 | `""` (secret) | `pk-` + `sk-` | the USER | `get-user?accessKey=` (`CapKeyResolve`) |
 | `publish` | `pk-` only, NO secret | just the ORG | `resolve-key` (`CapPublishableResolve`) |
 
 **The publishable key had no producer until 2026-07-28.** The model, the resolver
-(`store.PublishableKeyByAccessKey`) and the ingest door all existed and nothing
+(`store.PublishableKeyByAccessKey`) and the ingest endpoint all existed and nothing
 minted one. It is now a FIELD on the one mint:
 `POST /v1/iam/mint-user-keys?id=<owner>/<name>&type=publishable|secret` (default
 secret; unknown type → 400), same for `revoke-user-keys`. `keys.NameFor(scope)` maps
@@ -415,7 +415,7 @@ that field, and it is not a credential.
 
 **Two key shapes, estate-wide.** `pk-` is publishable and `sk-` is secret; there is no
 third. `store.UserByAccessKey` resolves a live `sk-` (pinned to the key row's own
-tenant), refuses a `pk-` as `key_wrong_door` — a real credential at the wrong door —
+tenant), refuses a `pk-` as `key_wrong_door` — a real credential at the wrong endpoint —
 and answers `key_unknown` for everything else, which is what renders the actionable
 "mint a new one at cloud.hanzo.ai/keys". A value carrying any other prefix is not a
 key, so it takes that same unknown path rather than a branch of its own.
@@ -543,8 +543,8 @@ in with one. Four addresses, already called by the hosted login and account page
     GET  /v1/iam/webauthn/signup/begin    POST /v1/iam/webauthn/signup/finish
     GET  /v1/iam/webauthn/signin/begin    POST /v1/iam/webauthn/signin/finish
 
-It lives in `internal/oidc` because it is a LOGIN FRONT DOOR, and the three rules a
-front door must not forget are unexported here: `callerOf` (cookie-or-bearer, which
+It lives in `internal/oidc` because it is a LOGIN ENDPOINT, and the three rules a
+login endpoint must not forget are unexported here: `callerOf` (cookie-or-bearer, which
 is how the portal enrolls with no bearer), `Gate` (the org's second factor), and
 `loginGrant` (the one mint path and the session it opens). The passkey ROWS stay in
 `internal/webauthn` — one table, written by the ceremony, listed and revoked there,
@@ -557,8 +557,8 @@ atomically. So a replayed assertion loses, and a finish learns whose ceremony it
 from the burned row rather than from the request.
 
 **RP ID is the issuer's host** — `resolveIssuer(host)` parsed, nothing new to
-configure. A passkey is bound to ONE relying party for life and the front door
-already relocates every request onto its brand's pinned issuer, so the passkey works
+configure. A passkey is bound to ONE relying party for life and the native endpoints
+already relocate every request onto its brand's pinned issuer, so the passkey works
 at exactly the origin that brand's tokens are issued from. `hanzo.id` and
 `hanzo.ai` are separate registrable domains, so ONE passkey cannot serve both:
 `admin.hanzo.ai` never runs a ceremony, it federates to `hanzo.id` and the passkey
@@ -683,7 +683,7 @@ ledger is per-account so no money crosses.
 The asymmetry is the whole bug, and this repo already states the rule that
 closes it — `provision` (onboard.go) refuses an existing org the caller did not
 found ("an existing one is refused by the create-conflict check"), while
-`signup` happily joins one. Two doors to the same end state, one locked.
+`signup` happily joins one. Two paths to the same end state, one refused.
 
 NOT fixed unilaterally: every candidate fix trades off badly without an owner
 decision. Turning `enableSignUp` off on those apps closes it instantly but stops
@@ -740,7 +740,7 @@ belong to, or create a new one" above a form that only creates one
 (`id` `pkgs/onboarding` OrgStep states this deliberately: "Joining an existing org
 happens by invitation, handled outside this flow" — there is no outside).
 
-**3. Founding an org locks the founder out of the front door.** The move re-keys
+**3. Founding an org locks the founder out of the login endpoint.** The move re-keys
 the identity, and sign-in resolves the account inside the org the FORM states —
 `resolveLoginUser(ctx, db, f.Organization, identifier)`. The portal always states
 the APP's org (`id` `pkgs/auth/src/ui/LoginForm.tsx`: `app?.organization`), which

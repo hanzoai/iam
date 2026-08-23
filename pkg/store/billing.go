@@ -32,8 +32,8 @@ import (
 // spends, and one tenant's credential must never name another's ledger.
 //
 // It is stated in ONE place because the two credentials a principal can present —
-// a token and an API key — reach the money path through different doors, and a
-// rule copied into each door is a rule that drifts.
+// a token and an API key — reach the money path by different paths, and a rule
+// copied into each path is a rule that drifts.
 func BillingAccount(u *schema.User, refs []schema.OrgRef) string {
 	if u == nil || u.Owner == "" {
 		return ""

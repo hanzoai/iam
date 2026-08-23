@@ -6,7 +6,7 @@ import "testing"
 
 // THE KEY LIST KEEPS THE GUARD'S READ GATE.
 //
-// Two key doors are handler-authorized by NAME — `keys/org` resolves a
+// Two key endpoints are handler-authorized by NAME — `keys/org` resolves a
 // publishable key to its org, `keys/principal` resolves a secret one to its
 // principal — because the key they are asked about rides in ?accessKey= and the
 // handler is what decides. Both live under `keys`, which is the whole point: one
@@ -16,7 +16,7 @@ import "testing"
 // the key LIST, whose rows are credentials, and a prefix entry would take the
 // Guard's entity check off it — turning a capability-gated read of an org's keys
 // into a read any authenticated caller reaches. Exactness is what keeps the two
-// doors open without opening what they sit next to.
+// endpoints handler-authorized without exempting what they sit next to.
 //
 // This is the reason `keys/org` may be spelled that way at all, so it is checked
 // rather than asserted in a comment: the earlier address avoided `keys` on

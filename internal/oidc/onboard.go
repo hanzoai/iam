@@ -102,7 +102,7 @@ func onboardHandler(db orm.DB) zip.Handler {
 // atomic op the cloud onboarding orchestrator (api.hanzo.ai) calls, on behalf of a
 // named user, instead of a separate create-org + move-user pair — so the production
 // signup path converges to one org + admin + credential exactly like the
-// self-service front door, with no partial-failure orphan between two calls.
+// self-service endpoint, with no partial-failure orphan between two calls.
 const PathProvision = "/v1/iam/admin/provision"
 
 // provisionForm is the service-token provision body: the target identity to

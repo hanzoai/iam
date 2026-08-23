@@ -111,7 +111,7 @@ func (h *harness) userIsAdmin(t *testing.T, owner, name string) bool {
 // newHarness opens a fresh SQLite store, seeds the trust anchor (an admin-owned
 // RS256 signing cert) plus a cast of principals across three orgs, and registers
 // the full router — guard and all. MCP is left ENABLED here (unlike prod) so the
-// tests prove the guard, not a disabled feature, closes the /mcp side door.
+// tests prove the guard, not a disabled feature, closes the /mcp path.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	_ = schema.Kinds() // force kind registration
@@ -142,7 +142,7 @@ func newHarness(t *testing.T) *harness {
 	app := zip.New(zip.Config{AppName: "authz-test", DisableStartupMessage: true})
 	routes.Route(app, db)
 	// Install the deferred framework projections (/mcp, /openapi) for real, so the
-	// side-door tests drive the ACTUAL routes — the same surface a served app
+	// control-route tests drive the ACTUAL routes — the same surface a served app
 	// exposes — not a route that never got registered. MCP is left ENABLED here
 	// (unlike prod) so the tests prove the guard, not a disabled feature, closes it.
 	if err := app.Build(); err != nil {

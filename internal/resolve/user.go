@@ -24,7 +24,7 @@ import (
 // It is a second route rather than a branch of the publishable one, because the
 // two differ in every way that matters: a different capability admits them
 // (CapKeyResolve vs CapPublishableResolve) and a different amount comes back.
-// One door dispatching on a key's prefix would put a browser-safe disclosure and
+// One route dispatching on a key's prefix would put a browser-safe disclosure and
 // a full principal behind one authorization decision, which is the braid these
 // two exist apart to avoid.
 //
@@ -60,7 +60,7 @@ type principalOf struct {
 	// and means unrestricted.
 	//
 	// A resource server cannot enforce a per-key limit it is never told, and this
-	// is the only door that knows both halves at once.
+	// is the only endpoint that knows both halves at once.
 	Scope string `json:"scope,omitempty"`
 }
 
