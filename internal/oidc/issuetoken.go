@@ -656,19 +656,3 @@ func defaultUserAudience(ctx context.Context, db orm.DB, user *schema.User, clie
 	}
 	return clientApp.ClientId
 }
-
-// newAccessKey mints the user's durable Cloud API key through the ONE key minter,
-// keys.Mint — the same one schema.Key's halves come from.
-//
-// It is `sk-` because a durable full-access bearer credential IS the confidential
-// half. There are exactly two shapes estate-wide — `pk-` is publishable, `sk-` is
-// secret — so a consumer (the gateway filter, the audit redactor, the registry
-// resolver) has two spellings to know and no third family meaning the same thing as
-// one of them.
-//
-// The prefix carries no authority: it is a human-readable label on an opaque random
-// token, and resolution is an exact-value lookup (store.UserByAccessKey), never a
-// prefix match.
-func newAccessKey() string {
-	return keys.Mint("sk", "")
-}
