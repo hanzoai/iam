@@ -180,9 +180,16 @@ func readTarget(c *zip.Ctx) (owner, name string) {
 	if o, n := c.Param("owner"), c.Param("name"); o != "" {
 		return o, n
 	}
-	owner, name = c.Query("owner"), c.Query("name")
+	// THE MAP THE BINDER READS, not c.Query. A query key may repeat, and the two
+	// readers disagree on which value it has: fasthttp's Peek — what c.Query calls —
+	// answers the FIRST, while the map c.Queries builds answers the LAST, each pair
+	// overwriting the one before. zip decodes the op's input from that map, so
+	// reading through c.Query here would authorize `?owner=own` while the handler
+	// ran on `?owner=victim`. One request, one target.
+	q := c.Fiber().Queries()
+	owner, name = q["owner"], q["name"]
 	if owner == "" {
-		if id := c.Query("id"); id != "" {
+		if id := q["id"]; id != "" {
 			if o, n, ok := strings.Cut(id, "/"); ok && o != "" {
 				return o, n
 			}
