@@ -64,7 +64,7 @@ type passwordBody struct {
 	// the CODE arm only — a signed-in caller is resolved from its own session or
 	// token, never from these.
 	Organization string `json:"organization"`
-	Username     string `json:"username"` // email, username OR phone
+	Username     string `json:"username" url:"-"` // email, username OR phone
 	// The three fields that decide the write, each `url:"-"` so the BODY is the
 	// only place it can be stated. A scalar without that tag binds from the query
 	// on every method and binds AFTER the body, so it does not merely offer a
