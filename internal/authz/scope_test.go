@@ -132,7 +132,7 @@ func asUser(tok string) string { return "Bearer " + tok }
 // with its own users and projects alongside hanzo's, plus the admin-owned
 // hanzo-console application whose capability allowlist admits it to the users
 // entity. That capability is what carries the request PAST the Guard and into
-// authz.Scope — without it the Guard refuses first and the silent discard is
+// principal.Scope — without it the Guard refuses first and the silent discard is
 // never reached, which is why a unit test on authorize() alone proves nothing
 // here.
 func seedScopeFixture(t *testing.T, h *harness) {
@@ -274,7 +274,7 @@ func TestScope_SuperAdminCrossOrgReadIsUnchanged(t *testing.T) {
 }
 
 // Own-org access is untouched for a HUMAN too, on the endpoints the Guard does
-// not pre-authorize (their target rides in ?organization=, so authz.Scope is the
+// not pre-authorize (their target rides in ?organization=, so principal.Scope is the
 // only gate they have).
 func TestScope_OwnOrgReadIsUnchangedForAHuman(t *testing.T) {
 	h := newHarness(t)
@@ -293,7 +293,7 @@ func TestScope_OwnOrgReadIsUnchangedForAHuman(t *testing.T) {
 // The SAME silent discard, reachable by an ORDINARY HUMAN — no client credential
 // needed. get-organization-projects and get-organization-workspaces are
 // handler-authorized (their target rides in ?organization=, which the Guard does
-// not inspect), so authz.Scope is the whole gate, and it rewrote the parameter.
+// not inspect), so principal.Scope is the whole gate, and it rewrote the parameter.
 // An org admin asking for lux's projects got HANZO's, labelled lux.
 func TestScope_HandlerAuthorizedReadsAreNotSilentlyRewritten(t *testing.T) {
 	h := newHarness(t)
@@ -567,5 +567,186 @@ func TestSuper_OrdinaryMembershipIsNotSudo(t *testing.T) {
 	}
 	if owners := got.owners(t); len(owners) > 0 {
 		t.Errorf("the refusal shipped rows owned by %v", owners)
+	}
+}
+
+// seedEmail seeds a user carrying an address, which seedUser leaves empty. The
+// global page narrows by address across the WHOLE table, so proving that needs
+// one address present in more than one tenant.
+func seedEmail(t *testing.T, db orm.DB, owner, name, email string) {
+	t.Helper()
+	u := orm.New[schema.User](db)
+	u.Owner, u.Name, u.Email = owner, name, email
+	u.SetId(owner + "/" + name)
+	if err := u.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed user %s/%s: %v", owner, name, err)
+	}
+}
+
+// A caller whose scope spans tenants and names none gets the page its scope
+// allows: every tenant. This is the read the gone table's get-global-users points
+// at, and the reason the owner cannot be a required field — required refuses this
+// caller before the handler resolves anything.
+func TestScope_SuperAdminGlobalUserPageSpansTenants(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+
+	got := h.send(t, "GET", "/v1/iam/users", asUser(h.token(t, "admin/root")), nil)
+	if got.status != 200 {
+		t.Fatalf("SuperAdmin global user page = %d, want 200: %s", got.status, got.body)
+	}
+	owners := got.owners(t)
+	if len(owners) < 2 {
+		t.Errorf("SuperAdmin named no owner and got rows from %v — a scope that spans "+
+			"tenants must answer across them, not fall back to one", owners)
+	}
+	if owners[foreignRealOrg] == 0 {
+		t.Errorf("the global page carries no %s rows (owners=%v)", foreignRealOrg, owners)
+	}
+}
+
+// THE LEAK GUARD. Naming no owner means "the tenant my credential is scoped to",
+// and for a credential scoped to ONE tenant that is one tenant — never the table.
+//
+// hanzo-console is the shape that makes this reachable and the shape that made it
+// dangerous: an admin-owned confidential client holding the users capability. That
+// capability carries a request with NO owner named PAST the Guard and PAST the op
+// seam, because both read an unnamed target as "nothing named to refuse" and hand
+// it on. The handler is the only place left that holds the credential and the
+// query at once, so the tenant is decided there or it is not decided at all.
+func TestScope_GlobalUserPageNeverLeaksAnotherTenant(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+
+	// The human is the second half: an org admin is refused outright here, before
+	// the handler, so the two together say an unstated owner never widens for a
+	// non-super whether it carries a capability or not.
+	for _, c := range []struct {
+		who  string
+		auth string
+	}{
+		{"hanzo-console", asApp("hanzo-console", "s3cret")},
+		{"hanzo/boss", asUser(h.token(t, "hanzo/boss"))},
+	} {
+		t.Run(c.who, func(t *testing.T) {
+			got := h.send(t, "GET", "/v1/iam/users", c.auth, nil)
+			owners := got.owners(t)
+			for owner := range owners {
+				if owner != "hanzo" {
+					t.Errorf("LEAK: %s listed users naming no owner and received %q's rows "+
+						"(owners=%v, status=%d).\nA credential scoped to hanzo reads hanzo or is "+
+						"refused; every other tenant's roster is a customer list.\nbody: %s",
+						c.who, owner, owners, got.status, got.body)
+				}
+			}
+			if got.status == 200 && owners["hanzo"] == 0 {
+				t.Errorf("%s got a 200 carrying no hanzo rows (owners=%v) — the assertion above "+
+					"cannot fail against an empty page: %s", c.who, owners, got.body)
+			}
+		})
+	}
+
+	// hanzo-console's own page still answers, so the guard cannot be satisfied by
+	// an endpoint that simply stopped working.
+	own := h.send(t, "GET", "/v1/iam/users", asApp("hanzo-console", "s3cret"), nil)
+	if own.status != 200 || own.owners(t)["hanzo"] == 0 {
+		t.Errorf("hanzo-console's own user page = %d owners=%v, want 200 carrying hanzo: %s",
+			own.status, own.owners(t), own.body)
+	}
+}
+
+// The address narrowing applies to the tenant-spanning page too, and the count is
+// narrowed with it — a page of 2 reported as "2 of 40" is a caller paging forever
+// through rows it filtered out.
+func TestScope_GlobalUserPageNarrowsByEmail(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+	seedEmail(t, h.db, "hanzo", "pat", "pat@example.com")
+	seedEmail(t, h.db, foreignRealOrg, "pat", "pat@example.com")
+	seedEmail(t, h.db, "hanzo", "sam", "sam@example.com")
+
+	got := h.send(t, "GET", "/v1/iam/users?email=pat@example.com",
+		asUser(h.token(t, "admin/root")), nil)
+	if got.status != 200 {
+		t.Fatalf("global page narrowed by address = %d, want 200: %s", got.status, got.body)
+	}
+	var page struct {
+		Users []struct{ Owner, Name, Email string } `json:"users"`
+		Total int                                   `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(got.body), &page); err != nil {
+		t.Fatalf("decode %s: %v", got.body, err)
+	}
+	if len(page.Users) != 2 || page.Total != 2 {
+		t.Fatalf("address narrowing returned %d rows and a total of %d, want 2 and 2 — "+
+			"the page and the count must go through the same narrowing: %s",
+			len(page.Users), page.Total, got.body)
+	}
+	for _, u := range page.Users {
+		if u.Email != "pat@example.com" {
+			t.Errorf("a row for %s survived the address narrowing: %+v", u.Email, u)
+		}
+	}
+	if page.Users[0].Owner == page.Users[1].Owner {
+		t.Errorf("both rows came from %s — the narrowing collapsed to one tenant instead of "+
+			"applying across the page the scope allows", page.Users[0].Owner)
+	}
+}
+
+// seedKey adds one API key under a tenant. A key row carries the publishable
+// half and the scope it may reach, so which tenant a page comes from is the
+// whole question.
+func seedKey(t *testing.T, db orm.DB, owner, name string) {
+	t.Helper()
+	k := orm.New[schema.Key](db)
+	k.Owner, k.Name = owner, name
+	k.AccessKey, k.State = "pk-"+owner+"-"+name, "Active"
+	k.SetId(owner + "/" + name)
+	if err := k.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed key %s/%s: %v", owner, name, err)
+	}
+}
+
+// A capability admits a confidential client to a COLLECTION; it never names the
+// tenant, and it is not read as one. hanzo-console holds the users and keys
+// capabilities and serves hanzo, so on both collections it reads hanzo — whether
+// it names another tenant, or names none.
+//
+// The two capabilities differ in what a page discloses and agree in what decides
+// it: the roster is the tenant's people, the key set is its integrations, and
+// both are pinned in the handler because that is the only place holding the
+// credential and the query at once.
+func TestScope_ACapabilityNamesACollectionNotATenant(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	seedKey(t, h.db, foreignRealOrg, "lux-secret-key")
+	seedKey(t, h.db, "hanzo", "hanzo-key")
+
+	auth := asApp("hanzo-console", "s3cret")
+	for _, collection := range []string{"users", "keys"} {
+		t.Run(collection, func(t *testing.T) {
+			named := h.send(t, "GET", "/v1/iam/"+collection+"?owner="+foreignRealOrg, auth, nil)
+			if named.status != 403 {
+				t.Errorf("GET %s?owner=%s = %d, want 403 — the capability admits the "+
+					"collection, not the tenant: %s", collection, foreignRealOrg, named.status, named.body)
+			}
+			if owners := named.owners(t); len(owners) > 0 {
+				t.Errorf("LEAK: naming %s returned rows owned by %v", foreignRealOrg, owners)
+			}
+
+			unnamed := h.send(t, "GET", "/v1/iam/"+collection, auth, nil)
+			owners := unnamed.owners(t)
+			for owner := range owners {
+				if owner != "hanzo" {
+					t.Errorf("LEAK: naming no owner returned %q's rows (owners=%v): %s",
+						owner, owners, unnamed.body)
+				}
+			}
+			if unnamed.status != 200 || owners["hanzo"] == 0 {
+				t.Errorf("hanzo-console's own %s page = %d owners=%v, want 200 carrying hanzo: %s",
+					collection, unnamed.status, owners, unnamed.body)
+			}
+		})
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -34,7 +35,7 @@ func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	if in.Organization == "" {
 		return nil // an org-less app mints no cross-tenant/SuperAdmin identity
 	}
-	p, ok := authz.From(ctx)
+	p, ok := principal.From(ctx)
 	if !ok {
 		return nil // server-internal (no principal) — trusted caller
 	}

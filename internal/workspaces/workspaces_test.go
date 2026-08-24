@@ -321,7 +321,7 @@ func TestWorkspaces_writeNeedsAdmin(t *testing.T) {
 }
 
 // TestWorkspaces_crossTenantScoping: a non-super cannot list another tenant's
-// workspaces — authz.Scope pins the read to the caller's own org regardless of the
+// workspaces — principal.Scope pins the read to the caller's own org regardless of the
 // ?organization= it asks for.
 func TestWorkspaces_crossTenantScoping(t *testing.T) {
 	h := newHarness(t)

@@ -71,6 +71,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/oidc"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -82,146 +83,7 @@ import (
 // assigning a map lookup.
 var Env policy.Env = os.Getenv
 
-// Principal is the identity a gated request acts as. It is the DECISION's own
-// input type, not a second one: RESOLVING it needs a store — a verified bearer, the
-// live user record, the membership rows, the application row behind a client
-// credential — and that resolution is what belongs here; what the resolved identity
-// may then do is policy.Principal.CanEntity, which the whole estate shares.
-//
-// Org is the tenant (the authenticated principal's own org, from the subject); User
-// is its name within that org (empty for a machine); Admin is the org-admin flag;
-// Sudo is platform authority — MEMBERSHIP of the reserved org, resolved from the
-// LOADED record and its membership rows, which is what policy.Claims.Sudo asks of a
-// signed token. App is non-nil only for a confidential client, and such a principal
-// is never Admin and never Sudo — its whole authority is its capability allowlist,
-// so a leaked client credential can neither read another tenant nor touch signing
-// material.
-type Principal = policy.Principal
-
-// memberOf reports whether p may act in org through its HOME org or a membership.
-// It is the ONE membership question this package asks, so no caller re-derives the
-// set. Presence is the test, not the role: belonging is what a read needs, and it
-// is the same set policy.Claims.Sudo reads for the reserved org.
-func memberOf(p *Principal, org string) bool {
-	if p == nil || org == "" {
-		return false
-	}
-	if org == p.Org {
-		return true
-	}
-	_, ok := p.Orgs[org]
-	return ok
-}
-
-type ctxKey struct{}
-
-// From returns the Principal the Guard attached to ctx for a gated request, and
-// whether one is present (public routes carry none).
-func From(ctx context.Context) (*Principal, bool) {
-	p, ok := ctx.Value(ctxKey{}).(*Principal)
-	return p, ok
-}
-
-// Scope resolves the owner an org-scoped request is bound to. It is the ONE
-// place the rule lives, and the rule is:
-//
-//	AN ORG-SCOPED REQUEST IS HONOURED OR REFUSED, NEVER SILENTLY REINTERPRETED.
-//
-// A SuperAdmin — the only cross-tenant scope — is bound to the owner it names
-// (empty = every tenant). Everyone else is bound to its OWN org and may say so:
-// naming its own org, or naming none, both resolve to it. Naming a DIFFERENT org
-// is refused, because the one thing this function must never do is answer a
-// request about org B with org A's rows.
-//
-// REFUSING beats reinterpreting, and the difference is not stylistic. Answering
-// a request about org B with org A's rows says nothing in the status code, the
-// `status` field, the message or the count, so a caller holds tenant A believing
-// it holds tenant B — and the next thing it does with those rows is filter and
-// write. It also composes: a service in front of this one may check ?owner=
-// against its calling tenant and then forward it under a single confidential
-// client, which is safe exactly as long as the pin here is honest and is a
-// cross-tenant read the moment it is not. A refusal cannot compose that way.
-//
-// The refusal is NOT an org-existence oracle, and by construction rather than by
-// care: the decision is taken from the verified principal alone and never touches
-// the store, so a real tenant, a reserved org and a fabricated name are the same
-// comparison and the same bytes out. Its text names the CREDENTIAL's org, never
-// the requested one. Every spelling the caller may not have routes to ONE
-// existence-independent answer — the same collapse a per-org store makes by
-// having no org parameter to refuse. It differs only in WHICH answer: where the
-// org is a stated request parameter there IS an authorization decision to report,
-// and reporting it is the entire point.
-//
-// An empty p.Org is refused too. A non-super with no org has no org scope, and
-// returning "" would resolve to "no filter" — every tenant's rows, which is the
-// exact branch TestListRoutesNeverLeakAnotherTenant exists to keep shut. Fail
-// closed.
-func Scope(ctx context.Context, owner string) (string, error) {
-	p, ok := From(ctx)
-	if !ok {
-		return "", zip.ErrForbidden("no principal")
-	}
-	if p.Sudo {
-		return owner, nil
-	}
-	if p.Org == "" || (owner != "" && owner != p.Org) {
-		return "", errForeignOrg(p)
-	}
-	return p.Org, nil
-}
-
-// ScopeRead is [Scope] for a READ: the org a listing is filtered by.
-//
-// It differs in ONE clause, and that clause is not new — [Can] already states it
-// for the org registry: "a person reads any org they BELONG to, and edits the ones
-// they help run." A human's account lives in one IAM tenant while the orgs they
-// work in are a set, so keying a read on p.Org alone refuses an org's own admin
-// the org they administer — a second org the caller belongs to would not open in
-// the switcher. The membership set is read from the store when the principal is
-// built (membershipRoles) — it is never a claim the caller supplies.
-//
-// WRITES DO NOT COME THROUGH HERE, and that is the whole reason this is a second
-// entry point rather than a widened Scope. Scope keeps its stricter clause, so a
-// plain member still cannot mint a token or a cert in an org they merely belong
-// to, and the handler-authorized write surfaces (SCIM, service-accounts,
-// memberships) are untouched. Only a read whose target rides in the QUERY — the
-// switcher's project and workspace lists — asks this question.
-func ScopeRead(ctx context.Context, owner string) (string, error) {
-	p, ok := From(ctx)
-	if !ok {
-		return "", zip.ErrForbidden("no principal")
-	}
-	if p.Sudo {
-		return owner, nil
-	}
-	// No org named: the caller's own, exactly as Scope resolves it. An empty p.Org
-	// has no scope to fall back to and returning "" would mean "no filter".
-	if owner == "" {
-		if p.Org == "" {
-			return "", errForeignOrg(p)
-		}
-		return p.Org, nil
-	}
-	if !memberOf(p, owner) {
-		return "", errForeignOrg(p)
-	}
-	return owner, nil
-}
-
-// errForeignOrg is the refusal a foreign owner earns. It is built from the
-// PRINCIPAL's own org and never from the requested one, so every org the caller
-// may not have — real, reserved, or invented — produces the byte-identical
-// answer. Naming the caller's own org discloses nothing (its rows already carry
-// it) and is what turns a bare "forbidden" into a diagnosis: you are pinned here,
-// you asked for somewhere else.
-func errForeignOrg(p *Principal) error {
-	if p.Org == "" {
-		return zip.ErrForbidden("forbidden: this credential carries no organization scope")
-	}
-	return zip.ErrForbidden("forbidden: this credential is scoped to organization " + p.Org)
-}
-
-// Deny renders a Scope/ScopeFor refusal in the envelope the caller's surface
+// Deny renders a principal.Scope refusal in the envelope the caller's surface
 // speaks — the SAME shaping the Guard's own refusal uses, so one refusal looks
 // the same whether it was raised before the handler or inside it. A handler that
 // answered it with httpx.Err would send HTTP 200 carrying {"status":"error"},
@@ -235,7 +97,7 @@ func Deny(c *zip.Ctx, err error) error { return refuse(c, http.StatusForbidden, 
 // for a write: it enforces tenant isolation but not the admin/self clause, so a
 // raw handler MUST call this. Fails closed when no principal is present.
 func Can(ctx context.Context, method, entity, owner, name string) bool {
-	p, ok := From(ctx)
+	p, ok := principal.From(ctx)
 	if !ok {
 		return false
 	}
@@ -246,7 +108,7 @@ func Can(ctx context.Context, method, entity, owner, name string) bool {
 // handler to gate a privileged field (e.g. provision-don't-promote: only a super
 // may set isAdmin). Fails closed when no principal is present.
 func IsSuper(ctx context.Context) bool {
-	p, ok := From(ctx)
+	p, ok := principal.From(ctx)
 	return ok && p.Sudo
 }
 
@@ -259,7 +121,7 @@ func IsSuper(ctx context.Context) bool {
 // path applies to the Organization FIELD — closing the hole where authorizing only
 // the top-level Owner let a tenant admin register an app whose Organization named
 // the admin org (SuperAdmin) or a victim tenant. Fails closed on a nil principal.
-func CanSetOrg(p *Principal, org string) bool {
+func CanSetOrg(p *principal.Principal, org string) bool {
 	if p == nil {
 		return false
 	}
@@ -279,8 +141,8 @@ func CanSetOrg(p *Principal, org string) bool {
 // error, and must never widen authority on the strength of this alone: it proves
 // only WHO the caller is, not that the caller INTENDED this request (the wallet
 // link branch pairs it with a same-site check for exactly that reason).
-func Optional(c *zip.Ctx, db orm.DB) *Principal {
-	p, err := principal(c, db)
+func Optional(c *zip.Ctx, db orm.DB) *principal.Principal {
+	p, err := resolve(c, db)
 	if err != nil {
 		return nil
 	}
@@ -344,7 +206,7 @@ func readTarget(c *zip.Ctx) (owner, name string) {
 // handlerAuthorizedPrefixes are path subtrees whose target rides in the PATH, not
 // the query — the Guard authenticates them (a bearer is still required) but does
 // NOT pre-authorize the read; the handler authorizes on the path id via
-// authz.Scope. SCIM (RFC 7644, /v1/iam/scim/v2/Users/{id}) is path-targeted, so it
+// principal.Scope. SCIM (RFC 7644, /v1/iam/scim/v2/Users/{id}) is path-targeted, so it
 // belongs here. This is the read analogue of a write deferring to the op-invoke
 // seam — the target is authorized where it is bound, not guessed from the query.
 // memberships is here because its target rides in ?user=/?org= rather than
@@ -487,14 +349,14 @@ func Guard(db orm.DB) zip.Handler {
 		if c.Method() == http.MethodOptions {
 			return c.Continue()
 		}
-		p, err := principal(c, db)
+		p, err := resolve(c, db)
 		if err != nil {
 			return refuse(c, 401, "authentication required")
 		}
 		// A path-targeted resource (SCIM: /Users/{id}) carries its target in the
 		// PATH, not the query — so, like a write whose target rides in the body, the
 		// Guard authenticates (bearer required, principal attached) and the handler
-		// authorizes via authz.Scope on the path id. The Guard never authorizes an
+		// authorizes via principal.Scope on the path id. The Guard never authorizes an
 		// empty query target for these (which would fail-closed deny every non-super
 		// before the handler could scope). Every other read is authorized here.
 		if v := policy.VerbOf(c.Method()); v == policy.Read && !pathAuthorized(c.Path()) {
@@ -503,7 +365,7 @@ func Guard(db orm.DB) zip.Handler {
 				return refuse(c, 403, "forbidden")
 			}
 		}
-		c.SetContext(context.WithValue(c.Context(), ctxKey{}, p))
+		c.SetContext(principal.Bind(c.Context(), p))
 		return c.Continue()
 	}
 }
@@ -582,7 +444,7 @@ func Authorize(ctx context.Context, op zip.Op, in any) error {
 	if v == policy.Read && pathAuthorized(op.Path) {
 		return nil
 	}
-	p, present := From(ctx)
+	p, present := principal.From(ctx)
 	if !present {
 		return zip.ErrForbidden("forbidden") // gated op with no principal: fail closed
 	}
@@ -641,7 +503,7 @@ func stringField(v reflect.Value, name string) string {
 	return ""
 }
 
-// principal resolves the verified bearer into a Principal, failing closed on a
+// resolve turns the verified bearer into a Principal, failing closed on a
 // missing/malformed/expired/wrong-key token (oidc.VerifyToken enforces the
 // algorithm allowlist and trusted signing-cert resolution), a subject with no
 // org, a store error, or a forbidden/deleted user. Org, Admin, and Sudo are
@@ -653,7 +515,7 @@ func stringField(v reflect.Value, name string) string {
 // the raw CRUD authorizes to nothing until a later phase grants machine
 // identities explicit scope. This closes the phantom-admin subject: a token for
 // "admin/<nobody>" resolves to no authority, not SuperAdmin.
-func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
+func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, error) {
 	if p, ok := app(c, db); ok {
 		return p, nil
 	}
@@ -690,11 +552,11 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 		// home-or-membership in one place, off the set this principal already carries,
 		// which is what policy.Claims.Sudo asks of the signed set — so one token reads
 		// the same here and at every consumer.
-		p := &Principal{
+		p := &principal.Principal{
 			Org: u.Owner, User: u.Name, Admin: u.IsAdmin,
 			Orgs: membershipRoles(ctx, db, u.Owner+"/"+u.Name),
 		}
-		p.Sudo = memberOf(p, policy.AdminOrg)
+		p.Sudo = principal.MemberOf(p, policy.AdminOrg)
 		return p, nil
 	}
 	// No user row. A machine token's subject is "<appOwner>/<appName>", which names
@@ -727,7 +589,7 @@ func principal(c *zip.Ctx, db orm.DB) (*Principal, error) {
 	// already blocks) — is org-scoped only, carrying no admin, super, or app
 	// authority. Fail closed by construction: on the raw CRUD this authorizes to
 	// nothing.
-	return &Principal{Org: owner}, nil
+	return &principal.Principal{Org: owner}, nil
 }
 
 // membershipRoles reads the org->role set a person may act in. A store error is
@@ -765,7 +627,7 @@ func membershipRoles(ctx context.Context, db orm.DB, user string) map[string]pol
 // registered secret, an empty presented secret (a public client must never
 // authenticate as an app), or a mismatch all report false — the caller then finds
 // no bearer either and answers 401. The comparison is constant-time.
-func app(c *zip.Ctx, db orm.DB) (*Principal, bool) {
+func app(c *zip.Ctx, db orm.DB) (*principal.Principal, bool) {
 	id, secret, ok := httpx.Basic(c)
 	if !ok || id == "" || secret == "" {
 		return nil, false
@@ -789,8 +651,8 @@ func app(c *zip.Ctx, db orm.DB) (*Principal, bool) {
 // platform app), NOT a.Organization (the tenant it SERVES). Principal.Holds pins
 // every capability to this being a reserved signing owner, so a tenant-owned app
 // named/clientId'd like a console holds nothing. Org carries the served tenant.
-func appPrincipal(a *schema.Application) *Principal {
-	return &Principal{
+func appPrincipal(a *schema.Application) *principal.Principal {
+	return &principal.Principal{
 		App: &policy.App{Name: a.Name, Owner: a.Owner, Cert: a.Cert},
 		Org: a.Organization,
 	}

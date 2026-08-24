@@ -71,7 +71,7 @@ func TestUpdateAndDeleteMissingRowAreNoOps(t *testing.T) {
 }
 
 // listProviders scopes to the caller's org, so with no principal on the context
-// authz.Scope fails closed — the one op the unauthenticated router refuses.
+// principal.Scope fails closed — the one op the unauthenticated router refuses.
 func TestListWithoutPrincipalIsForbidden(t *testing.T) {
 	app := boot(t)
 	if code, _ := call(t, app, "GET", "/v1/iam/providers", ""); code != http.StatusForbidden {
@@ -104,7 +104,7 @@ func TestStoreErrorsAre500(t *testing.T) {
 }
 
 // A SuperAdmin bearer is the credential that carries the list past the Guard and
-// lets authz.Scope resolve a real owner, so the collection read, its owner filter
+// lets principal.Scope resolve a real owner, so the collection read, its owner filter
 // and the credential masking all run. The token is a genuine RS256 JWT the
 // Guard's own oidc.VerifyToken accepts: signed by an admin-owned signing cert,
 // subject a user in the reserved "admin" org, which membership IS SuperAdmin.

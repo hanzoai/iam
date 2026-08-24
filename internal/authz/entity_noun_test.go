@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	policy "github.com/hanzoai/authz"
+
+	"github.com/hanzoai/iam/internal/principal"
 )
 
 // entityNoun is the fold that makes both surfaces name the same entity. Pin it
@@ -62,17 +64,17 @@ func TestKeysAreReachableByTheCredentialMinter(t *testing.T) {
 	t.Setenv(policy.CapKeyMint.Env, "hanzo-console")
 	keys := entityOf("/v1/iam/keys")
 
-	minter := &Principal{App: &policy.App{Name: "hanzo-console", Owner: "admin"}, Org: "hanzo"}
+	minter := &principal.Principal{App: &policy.App{Name: "hanzo-console", Owner: "admin"}, Org: "hanzo"}
 	if !authorize(minter, "GET", keys, "acme", "k") {
 		t.Fatal("an allow-listed, admin-owned minter cannot read the keys it manages — the ONE key list is then SuperAdmin-only and a user cannot see their own")
 	}
 	// Fail-secure either side of it: the owner-pin denies a tenant app reusing the
 	// allow-listed name, and an unlisted app holds nothing.
-	spoof := &Principal{App: &policy.App{Name: "hanzo-console", Owner: "acme"}, Org: "acme"}
+	spoof := &principal.Principal{App: &policy.App{Name: "hanzo-console", Owner: "acme"}, Org: "acme"}
 	if authorize(spoof, "GET", keys, "acme", "k") {
 		t.Fatal("a tenant app reusing an allow-listed name read the key set")
 	}
-	other := &Principal{App: &policy.App{Name: "other-app", Owner: "admin"}, Org: "hanzo"}
+	other := &principal.Principal{App: &policy.App{Name: "other-app", Owner: "admin"}, Org: "hanzo"}
 	if authorize(other, "GET", keys, "acme", "k") {
 		t.Fatal("an app that is not on the allow-list read the key set")
 	}

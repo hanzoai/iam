@@ -6,7 +6,7 @@ package invitations_test
 // List authorizes on the query rather than a decoded body, so it runs behind the
 // Guard and is exercised through the registered router (routes.Route installs the
 // Guard). A REST GET binds NOTHING into the handler input, so the owner a listing is
-// pinned to is the one authz.Scope resolves from the credential — the caller's own
+// pinned to is the one principal.Scope resolves from the credential — the caller's own
 // org for a tenant, the whole estate for a SuperAdmin — never a request parameter.
 // This pins that scoping and List's store-fault arm: a read that fails under an
 // admitted caller is a 500, never a 200 carrying an empty page that would read as
@@ -171,7 +171,7 @@ func has(ss []string, want string) bool {
 }
 
 // TestList_scopedToOwnOrg: a tenant admin's listing is filtered to its own org —
-// the invitations it owns, and no other tenant's. authz.Scope pins the read to the
+// the invitations it owns, and no other tenant's. principal.Scope pins the read to the
 // credential's org, so the orgb row never appears in hanzo's page.
 func TestList_scopedToOwnOrg(t *testing.T) {
 	h := newHarness(t)

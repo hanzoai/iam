@@ -11,12 +11,12 @@ package projects
 import (
 	"context"
 	"errors"
-	"github.com/hanzoai/iam/internal/authz"
 	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -106,7 +106,7 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	// account lives in one org while the orgs they work in are a set, and a
 	// switcher that lists them has to be able to read them. A stranger is refused
 	// exactly as Scope would refuse.
-	owner, err := authz.ScopeRead(ctx, in.Owner)
+	owner, err := principal.ScopeRead(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}

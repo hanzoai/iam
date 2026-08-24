@@ -225,7 +225,7 @@ func TestProjects_writeNeedsAdmin(t *testing.T) {
 }
 
 // TestProjects_crossTenantScoping: a non-super cannot list another tenant's
-// projects — authz.Scope pins the read to the caller's own org regardless of the
+// projects — principal.Scope pins the read to the caller's own org regardless of the
 // ?organization= it asks for.
 func TestProjects_crossTenantScoping(t *testing.T) {
 	h := newHarness(t)

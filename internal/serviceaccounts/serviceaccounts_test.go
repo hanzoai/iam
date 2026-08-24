@@ -13,7 +13,7 @@ import (
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 
-	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -106,18 +106,18 @@ func TestAdminGate(t *testing.T) {
 	t.Setenv("IAM_SA_LIST_ALLOWED_APPS", "hanzo-reader")
 	for _, c := range []struct {
 		name string
-		p    *authz.Principal
+		p    *principal.Principal
 		org  string
 		want bool
 	}{
-		{"mint-cap app (admin-owned)", &authz.Principal{App: &policy.App{Name: "hanzo-team", Owner: "admin"}}, "hanzo", true},
-		{"tenant-owned mint-named app denied", &authz.Principal{App: &policy.App{Name: "hanzo-team", Owner: "evil"}}, "hanzo", false},
-		{"non-cap app", &authz.Principal{App: &policy.App{Name: "rogue", Owner: "admin"}}, "hanzo", false},
-		{"read-only app cannot mint", &authz.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "admin"}}, "hanzo", false},
-		{"super human", &authz.Principal{Org: "admin", Sudo: true}, "orgb", true},
-		{"org admin own org", &authz.Principal{Org: "hanzo", Admin: true}, "hanzo", true},
-		{"org admin foreign org", &authz.Principal{Org: "hanzo", Admin: true}, "orgb", false},
-		{"regular human", &authz.Principal{Org: "hanzo"}, "hanzo", false},
+		{"mint-cap app (admin-owned)", &principal.Principal{App: &policy.App{Name: "hanzo-team", Owner: "admin"}}, "hanzo", true},
+		{"tenant-owned mint-named app denied", &principal.Principal{App: &policy.App{Name: "hanzo-team", Owner: "evil"}}, "hanzo", false},
+		{"non-cap app", &principal.Principal{App: &policy.App{Name: "rogue", Owner: "admin"}}, "hanzo", false},
+		{"read-only app cannot mint", &principal.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "admin"}}, "hanzo", false},
+		{"super human", &principal.Principal{Org: "admin", Sudo: true}, "orgb", true},
+		{"org admin own org", &principal.Principal{Org: "hanzo", Admin: true}, "hanzo", true},
+		{"org admin foreign org", &principal.Principal{Org: "hanzo", Admin: true}, "orgb", false},
+		{"regular human", &principal.Principal{Org: "hanzo"}, "hanzo", false},
 		{"nil principal", nil, "hanzo", false},
 	} {
 		if got := admin(c.p, c.org); got != c.want {
@@ -142,17 +142,17 @@ func TestAdminGate(t *testing.T) {
 // denotes, so refusing it there would deny the only principal allowed to hold it.
 func TestAdminGate_ReservedOrgIsNotATenant(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-team")
-	minter := &authz.Principal{App: &policy.App{Name: "hanzo-team", Owner: "admin"}}
+	minter := &principal.Principal{App: &policy.App{Name: "hanzo-team", Owner: "admin"}}
 	for _, org := range []string{"admin", "built-in", "app"} {
 		if admin(minter, org) {
 			t.Errorf("a mint-cap app must NOT provision into the reserved org %q", org)
 		}
 		// …and the same refusal holds for a human org admin, whose authority is
 		// its OWN tenant and never a system org.
-		if admin(&authz.Principal{Org: org, Admin: true}, org) {
+		if admin(&principal.Principal{Org: org, Admin: true}, org) {
 			t.Errorf("a non-super org admin must NOT provision into the reserved org %q", org)
 		}
-		if !admin(&authz.Principal{Org: "admin", Sudo: true}, org) {
+		if !admin(&principal.Principal{Org: "admin", Sudo: true}, org) {
 			t.Errorf("a SuperAdmin must still provision into %q", org)
 		}
 	}
@@ -172,24 +172,24 @@ func TestAdminGate_ReservedOrgIsNotATenant(t *testing.T) {
 func TestReadGate_TenantBound(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-team")
 	t.Setenv("IAM_SA_LIST_ALLOWED_APPS", "hanzo-reader")
-	if !read(&authz.Principal{App: &policy.App{Name: "hanzo-team", Owner: "admin"}}, "lux") {
+	if !read(&principal.Principal{App: &policy.App{Name: "hanzo-team", Owner: "admin"}}, "lux") {
 		t.Fatal("a mint-cap app may enumerate any org")
 	}
-	if !read(&authz.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "admin"}}, "hanzo") {
+	if !read(&principal.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "admin"}}, "hanzo") {
 		t.Fatal("hanzo-reader may list its own tenant")
 	}
-	if read(&authz.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "admin"}}, "lux") {
+	if read(&principal.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "admin"}}, "lux") {
 		t.Fatal("hanzo-reader must NOT list lux — a cross-tenant roster leak")
 	}
-	if read(&authz.Principal{App: &policy.App{Name: "rogue", Owner: "admin"}}, "hanzo") {
+	if read(&principal.Principal{App: &policy.App{Name: "rogue", Owner: "admin"}}, "hanzo") {
 		t.Fatal("an uncapable app must list nothing")
 	}
 	// A tenant-owned app spoofing an allow-listed NAME reads nothing — the owner-pin
 	// denies the capability before the tenant-binding is even consulted.
-	if read(&authz.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "evil"}}, "hanzo") {
+	if read(&principal.Principal{App: &policy.App{Name: "hanzo-reader", Owner: "evil"}}, "hanzo") {
 		t.Fatal("a tenant-owned app named like the reader must NOT enumerate any org")
 	}
-	if read(&authz.Principal{App: &policy.App{Name: "hanzo-team", Owner: "evil"}}, "lux") {
+	if read(&principal.Principal{App: &policy.App{Name: "hanzo-team", Owner: "evil"}}, "lux") {
 		t.Fatal("a tenant-owned app named like the minter must NOT enumerate any org")
 	}
 }
@@ -341,7 +341,7 @@ func TestReadGate_NilAndEmpty(t *testing.T) {
 	if read(nil, "hanzo") {
 		t.Fatal("a nil principal may read nothing")
 	}
-	if read(&authz.Principal{Sudo: true}, "") {
+	if read(&principal.Principal{Sudo: true}, "") {
 		t.Fatal("an empty org names no tenant to read")
 	}
 }
