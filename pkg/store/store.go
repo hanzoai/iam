@@ -786,14 +786,26 @@ func EnrichProviders(ctx context.Context, db orm.DB, app *schema.Application) {
 		if item == nil || item.Name == "" {
 			continue
 		}
-		owner := item.Owner
-		if owner == "" {
-			owner = "admin" // providers are seeded under the admin org
-		}
-		if p, err := GetProvider(ctx, db, owner, item.Name); err == nil && p != nil {
+		if p, err := GetProvider(ctx, db, ProviderOwner(item), item.Name); err == nil && p != nil {
 			item.Provider = p
 		}
 	}
+}
+
+// ProviderOwner is the organization a link's provider record is read from: the one
+// the link names, or the platform's where it names none, since that is where the
+// shared connectors are seeded.
+//
+// It is ONE function because two callers must agree: the resolution above, and the
+// authorization in front of the write that stores the link. A link is a reference
+// to credentials — the identity provider's client id and secret run the sign-in leg
+// — so a gate that resolved the owner differently from this would authorize one
+// record and use another.
+func ProviderOwner(item *schema.ProviderItem) string {
+	if item == nil || item.Owner == "" {
+		return policy.AdminOrg
+	}
+	return item.Owner
 }
 
 // GetOrganizationByName resolves an organization by its name. Orgs are stored
