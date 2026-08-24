@@ -149,7 +149,10 @@ func TestEnsureClientIdUnique_EmptyIsExempt(t *testing.T) {
 }
 
 // The list is owner-scoped and every row is masked — a list response never
-// carries a clientSecret, and never leaks another owner's apps.
+// carries a clientSecret, and never leaks another owner's apps. The scope is the
+// CALLER's: the listing runs as a hanzo tenant, and the owner it filters on is
+// the one principal.Scope returns for that caller, not the one the input asked
+// for.
 func TestList_ScopedAndMasked(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
@@ -164,7 +167,7 @@ func TestList_ScopedAndMasked(t *testing.T) {
 		}
 	}
 
-	out, err := listApplications(db)(ctx, &ApplicationQuery{Owner: "hanzo"})
+	out, err := listApplications(db)(asTenant("hanzo"), &ApplicationQuery{Owner: "hanzo"})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
