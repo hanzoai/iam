@@ -74,9 +74,12 @@ type ListSessionsOut struct {
 	Sessions []*schema.Session `json:"sessions"`
 }
 
-// CreateSessionIn is the create/merge payload: the key plus the initial cookie
-// list. When ExclusiveSignin is set, an existing session's cookie list is
-// collapsed to the single incoming cookie rather than appended (v1 AddSession).
+// CreateSessionIn addresses the session to sign in to. When ExclusiveSignin is
+// set, the row is collapsed to the id this sign-in mints rather than adding to it
+// (v1 AddSession).
+//
+// SessionId is READ-ONLY on this input: the cookie id comes from the sign-in, so
+// the field is where the minted one is reported back and never a value to send.
 type CreateSessionIn struct {
 	Owner           string   `json:"owner"           validate:"required"`
 	Name            string   `json:"name"            validate:"required"`
@@ -85,8 +88,9 @@ type CreateSessionIn struct {
 	ExclusiveSignin bool     `json:"exclusiveSignin" url:"-"`
 }
 
-// UpdateSessionIn replaces the cookie list of an existing session addressed by
-// its key.
+// UpdateSessionIn names the browsers an existing session KEEPS — the ones left off
+// are signed out. It can only narrow the row: an id it names that the row does not
+// hold names a browser that never signed in.
 type UpdateSessionIn struct {
 	Owner       string   `json:"owner"       validate:"required"`
 	Name        string   `json:"name"        validate:"required"`
@@ -143,9 +147,9 @@ func (h *Sessions) Get(_ context.Context, in *SessionRef) (*schema.Session, erro
 	return s, nil
 }
 
-// Create records a sign-in. Signing in again from another browser adds to the
-// session rather than replacing it, so one person can be signed in from a laptop
-// and a phone at once.
+// Create records a sign-in and answers with the cookie id it minted. Signing in
+// again from another browser adds to the session rather than replacing it, so one
+// person can be signed in from a laptop and a phone at once.
 //
 // Ask for an exclusive sign-in and the opposite holds: the new sign-in is the only
 // one left and every other browser is signed out. That is the setting to use when
@@ -186,9 +190,9 @@ func (h *Sessions) Create(_ context.Context, in *CreateSessionIn) (*schema.Sessi
 	return s, nil
 }
 
-// Update replaces the set of browsers a session covers — signing out the ones you
-// leave off while the session itself stays live. A session that does not exist is
-// reported as missing rather than created.
+// Update names the browsers a session keeps — signing out the ones you leave off
+// while the session itself stays live. A session that does not exist is reported
+// as missing rather than created.
 func (h *Sessions) Update(_ context.Context, in *UpdateSessionIn) (*schema.Session, error) {
 	s, err := orm.Get[schema.Session](h.db, sessionID(in.Owner, in.Name, in.Application))
 	if err != nil {
