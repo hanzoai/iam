@@ -375,9 +375,10 @@ func Guard(db orm.DB) zip.Handler {
 // it — MCPConfig.Path is left at its default wherever IAM builds an app.
 const mcpPath = "/mcp"
 
-// Control gates the framework's OWN projections: the MCP server, the OpenAPI
-// document and the docs UI. It is the SECOND mounting of the one Guard, and it
-// exists because those three addresses are not routes anybody registered.
+// Control gates the framework's OWN projections of the typed-op registry: the MCP
+// server, the OpenAPI document, the docs UI, the GraphQL endpoint, the plugin
+// declaration, and the by-name op-call plane. It is the SECOND mounting of the one
+// Guard, and it exists because those addresses are not routes anybody registered.
 //
 // zip installs them at Build, directly onto the served app's router, with no
 // middleware and after every entry in the program (zip/build.go materialise:
@@ -386,21 +387,26 @@ const mcpPath = "/mcp"
 // and these are in no group — so the only seam that can is a depth-0 one.
 //
 // That is the whole reason authentication is mounted twice. Gating them matters
-// because the MCP server dispatches tools/call straight into the typed ops: it is
-// the same admin CRUD the REST surface exposes, reached by a different
-// transport, and the op-invoke hook alone does not close it (Authorize admits a
-// read whose decoded target is empty, on the REST-shaped assumption that the
-// Guard already ran). Unauthenticated, that combination lists users.
+// because each dispatches into the same typed ops the REST surface exposes, reached
+// by a different transport: MCP tools/call and the op-call plane invoke an op
+// directly, and GraphQL resolves through the registry. Every door must attach a
+// principal, or the op-invoke hook decides on nobody — the empty-target read it
+// admits on the REST-shaped assumption that the Guard already ran then runs
+// unauthenticated. Whichever door is left open lists users.
 //
 // Narrow by construction, and that is what keeps it from being the bug it
-// replaces: it is a depth-0 handler, so it is consulted on every request, but it
-// ACTS only on the three addresses the framework itself owns and hands every
-// other path straight on. A sibling subsystem's route is not one of them.
+// replaces: it is a depth-0 handler, consulted on every request, but it ACTS only
+// on the addresses the framework itself owns and hands every other path straight
+// on. A sibling subsystem's route is not one of them. The op-call plane addresses
+// one op per path (CallPath + the op name), so it is matched by PREFIX; every other
+// door is a fixed address.
 func Control(db orm.DB) zip.Handler {
 	guard := Guard(db) // one authentication decision, mounted twice, never copied
 	return func(c *zip.Ctx) error {
-		switch c.Path() {
-		case mcpPath, zip.SpecPath, zip.DocsPath:
+		switch p := c.Path(); {
+		case p == mcpPath, p == zip.SpecPath, p == zip.DocsPath,
+			p == zip.GraphPath, p == zip.PluginPath,
+			strings.HasPrefix(p, zip.CallPath):
 			return guard(c)
 		}
 		return c.Continue()
@@ -424,15 +430,27 @@ func Control(db orm.DB) zip.Handler {
 // Every typed op is authed by construction — the public surface is raw handlers
 // on the unguarded group, none of which is a typed op — so this hook needs no
 // public bypass: whenever it runs, the Guard has already run and attached a
-// principal (over REST, on the guarded group the op registered on; over MCP, on
-// the /mcp route authz.Control gates). That second clause is why Control is not
-// optional. The owner == "" read admitted just below trusts the Guard to have
-// authorized the query-string target, and over MCP the arguments decode into In
-// rather than the query — so an ungated /mcp route would reach this line with no
-// principal, no decoded target, and an admission.
+// principal (over REST, on the guarded group the op registered on; over MCP, the
+// graph and the call plane, on the door authz.Control gates). That second clause
+// is why Control gates every door and this hook requires a principal FIRST — even
+// for the handler-authorized reads that skip the target check. The owner == ""
+// read admitted below trusts the Guard to have authorized the query-string target;
+// over the other transports the arguments decode into In rather than the query, so
+// requiring the principal here is what keeps a door left open from reaching an
+// admission with nobody attached.
 func Authorize(ctx context.Context, op zip.Op, in any) error {
 	owner, name := decodedTarget(in)
 	v := policy.VerbOf(op.Method)
+	// A PRINCIPAL is required before any admission — including the handler-authorized
+	// early return below. That clause skips the TARGET check, not the caller: the
+	// handler authorizes WHICH row, but only for a caller there is one to authorize
+	// FOR. Reaching it with no principal means a door let an unauthenticated request
+	// through, and a handler that then forgets to self-check (a discovery read that
+	// discards ctx) runs for nobody. Fail closed first, decide the target second.
+	p, present := principal.From(ctx)
+	if !present {
+		return zip.ErrForbidden("forbidden") // gated op with no principal: fail closed
+	}
 	// A READ is authorized once, and pathAuthorized says where. Off the list, the
 	// Guard did it on the way in and an input naming no owner has nothing left to
 	// check. ON the list, the HANDLER does it — and it has to, because those are
@@ -443,10 +461,6 @@ func Authorize(ctx context.Context, op zip.Op, in any) error {
 	// about which reads they are each responsible for.
 	if v == policy.Read && pathAuthorized(op.Path) {
 		return nil
-	}
-	p, present := principal.From(ctx)
-	if !present {
-		return zip.ErrForbidden("forbidden") // gated op with no principal: fail closed
 	}
 	if !p.CanEntity(v, policy.Entity{Kind: entityOf(op.Path), Owner: owner, Name: name}, Env) {
 		return zip.ErrForbidden("forbidden")
