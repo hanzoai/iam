@@ -156,6 +156,13 @@ func addWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredential
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
+		// A passkey authenticates its User, so registering one FOR a person is acting
+		// for that account — the same authority the list asks to read it. Without this,
+		// a caller could file a credential of its own under User=admin/root, which the
+		// public signin ceremony then offers for that account.
+		if err := authz.AuthorizeUser(ctx, "POST", in.User); err != nil {
+			return nil, err
+		}
 		// orm.New binds the store and applies defaults; copy the decoded domain
 		// fields over it, then restore the bound Model so its db handle and key
 		// survive the assignment.
@@ -180,6 +187,9 @@ func updateWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredent
 	return func(ctx context.Context, in *schema.WebauthnCredential) (*webauthnCredentialMutationResult, error) {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
+		}
+		if err := authz.AuthorizeUser(ctx, "PUT", in.User); err != nil {
+			return nil, err
 		}
 		c, err := orm.Get[schema.WebauthnCredential](db, webauthnCredentialId(in.Owner, in.Name))
 		if errors.Is(err, orm.ErrNotFound) {

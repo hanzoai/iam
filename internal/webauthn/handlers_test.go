@@ -22,8 +22,16 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
+
+// actingForAlice binds an org-admin of hanzo to ctx — the caller these store-
+// contract cases run as, since registering or renaming a passkey for hanzo/alice
+// now authorizes the subject, and an org's admin may act for its own member.
+func actingForAlice(base context.Context) context.Context {
+	return principal.Bind(base, &principal.Principal{Org: "hanzo", User: "boss", Admin: true})
+}
 
 func newDB(t *testing.T) orm.DB {
 	t.Helper()
@@ -129,9 +137,9 @@ func TestAddWebauthnCredential(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db := newDB(t)
-			ctx := context.Background()
+			ctx := actingForAlice(context.Background())
 			if tt.cancelCtx {
-				ctx = cancelled()
+				ctx = actingForAlice(cancelled())
 			}
 			out, err := addWebauthnCredential(db)(ctx, &schema.WebauthnCredential{Owner: tt.owner, Name: tt.key, User: "hanzo/alice"})
 			if tt.wantStatus == 0 {
@@ -189,9 +197,9 @@ func TestUpdateWebauthnCredential(t *testing.T) {
 			if tt.closeDB {
 				_ = db.Close()
 			}
-			ctx := context.Background()
+			ctx := actingForAlice(context.Background())
 			if tt.cancelCtx {
-				ctx = cancelled()
+				ctx = actingForAlice(cancelled())
 			}
 			in := &schema.WebauthnCredential{Owner: tt.owner, Name: tt.key, User: "hanzo/alice", AttestationType: "renamed"}
 			out, err := updateWebauthnCredential(db)(ctx, in)

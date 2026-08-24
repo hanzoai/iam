@@ -144,6 +144,33 @@ func CanSetCert(p *principal.Principal, owner, name string) bool {
 	return p.CanEntity(policy.Write, policy.Entity{Kind: "certs", Owner: owner, Name: name}, Env)
 }
 
+// AuthorizeUser gates the subject a write NAMES in its User field — the
+// "<owner>/<name>" principal a token is issued to, or a passkey authenticates. A
+// caller may write such a row only if it may ACT FOR that subject: the same
+// authz.Can the list surfaces ask (a person's own org's users; a reserved-owner
+// user only for a SuperAdmin). It is one function, so the token write and the
+// passkey write ask it identically and can never drift.
+//
+// An empty User names no subject, so there is nothing to authorize and the row's
+// own (Owner, Name) authorization at the op-invoke seam governs it — a resolver
+// that later reads a row by subject (userinfo, refresh, signin-begin) never
+// matches an empty one, so it carries no authority to escalate to. A malformed
+// User is a bad request. Fails closed (403) when the named subject is one the
+// caller may not write.
+func AuthorizeUser(ctx context.Context, method, user string) error {
+	if user == "" {
+		return nil
+	}
+	owner, name, ok := strings.Cut(user, "/")
+	if !ok || owner == "" || name == "" {
+		return zip.ErrBadRequest("user is <organization>/<username>")
+	}
+	if !Can(ctx, method, "users", owner, name) {
+		return zip.ErrForbidden("not authorized to write a row for user " + user)
+	}
+	return nil
+}
+
 // Optional resolves the Principal a PUBLIC route's caller happens to carry, or
 // nil when the request is anonymous or its bearer does not verify. The Guard
 // admits a public path WITHOUT resolving a principal (a browser must reach the

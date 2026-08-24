@@ -21,6 +21,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
@@ -132,6 +133,12 @@ func addToken(db orm.DB) zip.TypedHandler[schema.Token, tokenResult] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
+		// The row's subject is an authority the (Owner, Name) key does not carry: a
+		// caller may record a token only for a user it may act for, never one whose
+		// subject is admin/root.
+		if err := authz.AuthorizeUser(ctx, "POST", in.User); err != nil {
+			return nil, err
+		}
 		// orm.New binds the store and applies defaults; copy the decoded domain
 		// fields over it, then restore the bound Model so its db handle and key
 		// survive the assignment.
@@ -139,6 +146,11 @@ func addToken(db orm.DB) zip.TypedHandler[schema.Token, tokenResult] {
 		model := t.Model
 		*t = *in
 		t.Model = model
+		// The bearer/refresh hashes are the lookup keys a presented credential is
+		// resolved by (GetTokenByRefreshHash). They are derived from a token this
+		// server minted, never a value a caller supplies — a chosen hash is a chosen
+		// credential — so a create never carries one.
+		t.AccessTokenHash, t.RefreshTokenHash = "", ""
 		t.SetId(tokenId(in.Owner, in.Name))
 		if err := t.CreateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
@@ -156,6 +168,9 @@ func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
+		if err := authz.AuthorizeUser(ctx, "PUT", in.User); err != nil {
+			return nil, err
+		}
 		t, err := orm.Get[schema.Token](db, tokenId(in.Owner, in.Name))
 		if errors.Is(err, orm.ErrNotFound) {
 			return &tokenMutation{Affected: false}, nil
@@ -165,10 +180,14 @@ func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
 		}
 		// Overlay the decoded domain fields onto the loaded row, keeping the
 		// loaded Model (id, createdAt, key, snapshot) so the write targets the
-		// existing key and preserves creation metadata.
+		// existing key and preserves creation metadata. The credential-seed hashes
+		// are the server's, not the caller's: carry the stored values so an update
+		// can never set the key a presented credential is resolved by.
+		storedAccessHash, storedRefreshHash := t.AccessTokenHash, t.RefreshTokenHash
 		model := t.Model
 		*t = *in
 		t.Model = model
+		t.AccessTokenHash, t.RefreshTokenHash = storedAccessHash, storedRefreshHash
 		if err := t.UpdateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
