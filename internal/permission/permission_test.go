@@ -223,14 +223,13 @@ func TestDeleteRemoves(t *testing.T) {
 // stamped — a grant in another organization never appears.
 func TestListScopesToOwnerNewestFirst(t *testing.T) {
 	h, _ := newHandlers(t)
-	ctx := context.Background()
 
 	mustAdd(t, h, &schema.Permission{Owner: "hanzo", Name: "a", CreatedTime: "2026-01-01T00:00:00Z"})
 	mustAdd(t, h, &schema.Permission{Owner: "hanzo", Name: "b", CreatedTime: "2026-03-01T00:00:00Z"})
 	mustAdd(t, h, &schema.Permission{Owner: "hanzo", Name: "c", CreatedTime: "2026-02-01T00:00:00Z"})
 	mustAdd(t, h, &schema.Permission{Owner: "zoo", Name: "z", CreatedTime: "2026-09-01T00:00:00Z"})
 
-	out, err := h.List(ctx, &ListRequest{Owner: "hanzo"})
+	out, err := h.List(asTenant("hanzo"), &ListRequest{Owner: "hanzo"})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -254,7 +253,7 @@ func TestListScopesToOwnerNewestFirst(t *testing.T) {
 
 func TestListEmptyOwnerHasNoRows(t *testing.T) {
 	h, _ := newHandlers(t)
-	out, err := h.List(context.Background(), &ListRequest{Owner: "nobody"})
+	out, err := h.List(asTenant("nobody"), &ListRequest{Owner: "nobody"})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -267,7 +266,10 @@ func TestListEmptyOwnerHasNoRows(t *testing.T) {
 // not as a nil result or a swallowed error.
 func TestStoreFaultIsInternal(t *testing.T) {
 	h, db := newHandlers(t)
-	ctx := context.Background()
+	// A principal, because List scopes by the caller before it reaches the store —
+	// without one the refusal would be the scope's 403 and the store fault this
+	// case exists to observe would never be reached.
+	ctx := asTenant("hanzo")
 	mustAdd(t, h, &schema.Permission{Owner: "hanzo", Name: "editor"})
 	if err := db.Close(); err != nil {
 		t.Fatalf("close: %v", err)
