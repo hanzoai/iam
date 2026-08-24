@@ -23,9 +23,9 @@
 // Splitting the two removes the defect a single body-reparsing middleware had:
 // authorizing a target extracted from the raw bytes divergently from where the
 // handler binds it. A write's target now comes from the one decode the handler
-// itself runs on. A read's target rides in the query string (a GET has no body
-// for the op seam to decode), so the Guard authorizes reads there; a read invoked
-// over MCP DOES decode a target into its input, and the op seam authorizes that.
+// itself runs on. A read's target rides in the query string, which the Guard
+// authorizes and which zip also binds into the op's input — so a read that names a
+// target meets the op seam too, over REST and MCP alike.
 //
 // Three scopes, never conflated (conflation is privilege escalation):
 //
@@ -440,10 +440,12 @@ func Control(db orm.DB) zip.Handler {
 // handler will bind, read from the same struct the handler runs on, so the value
 // authorized cannot diverge from the value written.
 //
-// A REST read carries its target in the query string, not the body, so its
-// decoded In is empty and the Guard already authorized it there — such a call is
-// admitted here (owner == ""). Every write, and any read invoked over MCP (whose
-// arguments DO decode a target into In), is authorized against authorize().
+// An In carrying NO target is admitted here (owner == "") and left to the handler,
+// which resolves its own scope from the principal. An In that NAMES one is
+// authorized against authorize() whatever the transport: zip binds a typed op's
+// scalar fields from the query string on every method, so a REST read's ?owner=
+// decodes into In exactly as an MCP call's arguments do, and a write's target
+// arrives from the same single decode the handler runs on.
 //
 // Every typed op is authed by construction — the public surface is raw handlers
 // on the unguarded group, none of which is a typed op — so this hook needs no

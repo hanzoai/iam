@@ -88,9 +88,9 @@ func Route(app *zip.App, db orm.DB) {
 // authorized before revoking anything.
 func listTokens(db orm.DB) zip.TypedHandler[listTokensIn, listTokensOut] {
 	return func(ctx context.Context, in *listTokensIn) (*listTokensOut, error) {
-		// The owner comes from the authenticated principal, never the input: a typed
-		// GET binds nothing from the request, so filtering on in.Owner meant the
-		// "empty owner lists everything" branch ran on every REST call.
+		// The owner comes from the authenticated principal, never the input: in.Owner
+		// is whatever the caller wrote in the URL, since zip binds a typed op's scalar
+		// fields from the query string on every method.
 		owner, err := principal.Scope(ctx, in.Owner)
 		if err != nil {
 			return nil, err

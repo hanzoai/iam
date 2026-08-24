@@ -8,9 +8,8 @@ package authz_test
 // The bug this pins was a confused deputy, and it was invisible from either half
 // alone. The Guard authorizes on the query string — asking for a foreign org is
 // correctly refused — and then the handler filtered on `in.Owner` instead of on
-// the principal. A zip typed GET binds NOTHING from the request (a body is read
-// only for non-GET), so `in.Owner` arrived EMPTY on every REST call, took the
-// "empty owner lists everything" branch, and returned every tenant's rows.
+// the principal, took the "empty owner lists everything" branch, and returned
+// every tenant's rows.
 //
 // So the shape was: name someone else's org and get 403; name YOUR OWN org and
 // get the whole table. A status-code assertion passes throughout — only the body
