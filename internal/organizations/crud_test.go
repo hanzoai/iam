@@ -116,9 +116,15 @@ func TestHandlers_absentRowIs404(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"get", func() error { _, e := api.Get(ctx, &organizations.GetOrganizationInput{Owner: policy.AdminOrg, Name: gone}); return e }},
+		{"get", func() error {
+			_, e := api.Get(ctx, &organizations.GetOrganizationInput{Owner: policy.AdminOrg, Name: gone})
+			return e
+		}},
 		{"update", func() error { _, e := api.Update(ctx, updateIn(policy.AdminOrg, gone)); return e }},
-		{"delete", func() error { _, e := api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: gone}); return e }},
+		{"delete", func() error {
+			_, e := api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: gone})
+			return e
+		}},
 		{"setAvatar", func() error {
 			_, e := api.SetAvatar(ctx, &organizations.SetAvatarInput{Owner: policy.AdminOrg, Name: gone, Emoji: "🦁"})
 			return e
@@ -173,9 +179,15 @@ func TestHandlers_storeReadErrorIs500(t *testing.T) {
 		call func() error
 	}{
 		{"create", func() error { _, e := api.Create(ctx, createIn(policy.AdminOrg, "acme")); return e }},
-		{"get", func() error { _, e := api.Get(ctx, &organizations.GetOrganizationInput{Owner: policy.AdminOrg, Name: "acme"}); return e }},
+		{"get", func() error {
+			_, e := api.Get(ctx, &organizations.GetOrganizationInput{Owner: policy.AdminOrg, Name: "acme"})
+			return e
+		}},
 		{"update", func() error { _, e := api.Update(ctx, updateIn(policy.AdminOrg, "acme")); return e }},
-		{"delete", func() error { _, e := api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: "acme"}); return e }},
+		{"delete", func() error {
+			_, e := api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: "acme"})
+			return e
+		}},
 		{"setAvatar", func() error {
 			_, e := api.SetAvatar(ctx, &organizations.SetAvatarInput{Owner: policy.AdminOrg, Name: "acme", Emoji: "🦁"})
 			return e
@@ -206,7 +218,10 @@ func TestHandlers_storeWriteErrorIs500(t *testing.T) {
 	}{
 		{"create", func() error { _, e := api.Create(ctx, createIn(policy.AdminOrg, "fresh")); return e }},
 		{"update", func() error { _, e := api.Update(ctx, updateIn(policy.AdminOrg, "acme")); return e }},
-		{"delete", func() error { _, e := api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: "acme"}); return e }},
+		{"delete", func() error {
+			_, e := api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: "acme"})
+			return e
+		}},
 		{"setAvatar", func() error {
 			_, e := api.SetAvatar(ctx, &organizations.SetAvatarInput{Owner: policy.AdminOrg, Name: "acme", Emoji: "🦁"})
 			return e

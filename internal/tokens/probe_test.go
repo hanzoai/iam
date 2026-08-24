@@ -118,7 +118,10 @@ func TestReadFailsClosed(t *testing.T) {
 		err  func() error
 	}{
 		{"get", func() error { _, err := getToken(db)(ctx, &tokenKey{Owner: "acme", Name: "nightly"}); return err }},
-		{"update", func() error { _, err := updateToken(db)(ctx, &schema.Token{Owner: "acme", Name: "nightly"}); return err }},
+		{"update", func() error {
+			_, err := updateToken(db)(ctx, &schema.Token{Owner: "acme", Name: "nightly"})
+			return err
+		}},
 		{"delete", func() error { _, err := deleteToken(db)(ctx, &tokenKey{Owner: "acme", Name: "nightly"}); return err }},
 	}
 	for _, c := range cases {

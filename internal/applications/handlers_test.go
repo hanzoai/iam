@@ -74,9 +74,15 @@ func TestHandlers_NotFound(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"get", func() error { _, e := getApplication(db)(ctx, &ApplicationRef{Owner: "hanzo", Name: "ghost"}); return e }},
+		{"get", func() error {
+			_, e := getApplication(db)(ctx, &ApplicationRef{Owner: "hanzo", Name: "ghost"})
+			return e
+		}},
 		{"update", func() error { _, e := Update(db)(ctx, &schema.Application{Owner: "hanzo", Name: "ghost"}); return e }},
-		{"delete", func() error { _, e := deleteApplication(db)(ctx, &ApplicationRef{Owner: "hanzo", Name: "ghost"}); return e }},
+		{"delete", func() error {
+			_, e := deleteApplication(db)(ctx, &ApplicationRef{Owner: "hanzo", Name: "ghost"})
+			return e
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,10 +102,19 @@ func TestHandlers_StoreFailureIsAnError(t *testing.T) {
 		call func(orm.DB) error
 	}{
 		{"list", func(db orm.DB) error { _, e := listApplications(db)(ctx, &ApplicationQuery{Owner: "o"}); return e }},
-		{"get", func(db orm.DB) error { _, e := getApplication(db)(ctx, &ApplicationRef{Owner: "o", Name: "n"}); return e }},
-		{"create", func(db orm.DB) error { _, e := Create(db)(ctx, &schema.Application{Owner: "o", Name: "n", ClientId: "c"}); return e }},
+		{"get", func(db orm.DB) error {
+			_, e := getApplication(db)(ctx, &ApplicationRef{Owner: "o", Name: "n"})
+			return e
+		}},
+		{"create", func(db orm.DB) error {
+			_, e := Create(db)(ctx, &schema.Application{Owner: "o", Name: "n", ClientId: "c"})
+			return e
+		}},
 		{"update", func(db orm.DB) error { _, e := Update(db)(ctx, &schema.Application{Owner: "o", Name: "n"}); return e }},
-		{"delete", func(db orm.DB) error { _, e := deleteApplication(db)(ctx, &ApplicationRef{Owner: "o", Name: "n"}); return e }},
+		{"delete", func(db orm.DB) error {
+			_, e := deleteApplication(db)(ctx, &ApplicationRef{Owner: "o", Name: "n"})
+			return e
+		}},
 		{"ensureClientIdUnique", func(db orm.DB) error { return ensureClientIdUnique(ctx, db, "c", "o", "n") }},
 	}
 	for _, tc := range cases {
