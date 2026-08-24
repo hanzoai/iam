@@ -97,10 +97,9 @@ func apply(dst *schema.Workspace, in *Input) {
 // is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 	// The owner is resolved from the authenticated principal, never taken from the
-	// input: filtering on in.Owner was a confused deputy — a typed GET binds
-	// NOTHING from the query (zip typed.go reads a body only for non-GET), so
-	// in.Owner arrived empty on every REST call and the "empty owner lists
-	// everything" branch returned every tenant.
+	// input: in.Owner is whatever the CALLER wrote in the URL, since zip binds a
+	// typed op's scalar fields from the query string on every method. Filtering on
+	// it would let a request name the tenant it reads.
 	//
 	// ScopeRead, not Scope, because BELONGING opens a workspace list: an operator's
 	// account lives in one org while the orgs they work in are a set, and a

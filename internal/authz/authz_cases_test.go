@@ -172,9 +172,9 @@ func TestRegularUserSelfServiceOnly(t *testing.T) {
 	h := newHarness(t)
 	alice := h.token(t, "hanzo/alice")
 
-	// Reading own record: the guard admits it (not 401/403). The Phase-1 GET
-	// handler binds no query, so the status is the handler's, never the guard's
-	// forbid — the point here is that the guard did NOT block self-read.
+	// Reading own record: the guard admits it (not 401/403). The status that comes
+	// back is the handler's, never the guard's forbid — the point here is that the
+	// guard did NOT block self-read.
 	if got := h.do(t, "GET", "/v1/iam/users/hanzo/alice", alice, nil); got == http.StatusForbidden || got == http.StatusUnauthorized {
 		t.Fatalf("regular self-read = %d, want the guard to admit it (not 401/403)", got)
 	}

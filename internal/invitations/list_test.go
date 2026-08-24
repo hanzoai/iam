@@ -5,9 +5,9 @@ package invitations_test
 
 // List authorizes on the query rather than a decoded body, so it runs behind the
 // Guard and is exercised through the registered router (routes.Route installs the
-// Guard). A REST GET binds NOTHING into the handler input, so the owner a listing is
-// pinned to is the one principal.Scope resolves from the credential — the caller's own
-// org for a tenant, the whole estate for a SuperAdmin — never a request parameter.
+// Guard). The owner a listing is pinned to is the one principal.Scope resolves from
+// the credential — the caller's own org for a tenant, the whole estate for a
+// SuperAdmin — never the request parameter, which the caller writes.
 // This pins that scoping and List's store-fault arm: a read that fails under an
 // admitted caller is a 500, never a 200 carrying an empty page that would read as
 // "your org has no invitations" and hide the outage.
