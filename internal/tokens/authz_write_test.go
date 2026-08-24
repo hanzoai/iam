@@ -118,3 +118,51 @@ func TestAdd_allowsATokenForAnOwnMember(t *testing.T) {
 		t.Fatalf("recording a token for an own member: %v", err)
 	}
 }
+
+// Code and UserCode are the keys the other two redemptions resolve by: an
+// authorization-code exchange finds its row by Code (GetTokenByCode) and a device
+// approval finds its row by UserCode, each an unscoped lookup on that one value. A
+// chosen code is a chosen grant, so a create carries neither.
+func TestAdd_ignoresCallerSuppliedCodes(t *testing.T) {
+	db := openDB(t)
+	out, err := addToken(db)(hanzoAdmin(), &schema.Token{
+		Owner: "hanzo", Name: "grant", User: "hanzo/alice",
+		Code: "chosen-code", UserCode: "CHOSEN", Scope: "openid",
+	})
+	if err != nil {
+		t.Fatalf("recording an own-tenant token: %v", err)
+	}
+	if out.Token.Code != "" || out.Token.UserCode != "" {
+		t.Fatalf("caller codes survived: code=%q userCode=%q", out.Token.Code, out.Token.UserCode)
+	}
+	stored, err := orm.Get[schema.Token](db, "hanzo/grant")
+	if err != nil {
+		t.Fatalf("load stored: %v", err)
+	}
+	if stored.Code != "" || stored.UserCode != "" {
+		t.Fatalf("stored row carries a caller code: code=%q userCode=%q", stored.Code, stored.UserCode)
+	}
+}
+
+// Nor can an update overwrite the stored code with a chosen one — planting a code
+// on an EXISTING row is the same lever.
+func TestUpdate_cannotSetTheCode(t *testing.T) {
+	db := openDB(t)
+	tok := orm.New[schema.Token](db)
+	tok.Owner, tok.Name, tok.User = "hanzo", "sess", "hanzo/alice"
+	tok.Code, tok.UserCode = "realcode", "REALUC"
+	tok.SetId(tokenId("hanzo", "sess"))
+	if err := tok.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	out, err := updateToken(db)(hanzoAdmin(), &schema.Token{
+		Owner: "hanzo", Name: "sess", User: "hanzo/alice",
+		Code: "chosen-code", UserCode: "CHOSEN", Scope: "openid",
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if out.Token.Code != "realcode" || out.Token.UserCode != "REALUC" {
+		t.Fatalf("update changed the codes to %q/%q, want the stored values", out.Token.Code, out.Token.UserCode)
+	}
+}
