@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/zap-proto/zip"
@@ -31,16 +32,37 @@ func TestControlDoors_RequireABearer(t *testing.T) {
 
 	// The call plane gates on the path PREFIX, before it resolves the op name, so any
 	// suffix proves the door: a request never reaches dispatch to a read op.
+	//
+	// EVERY SPELLING OF A DOOR IS THE DOOR. The router resolves a path
+	// case-insensitively and tolerates a trailing slash, so a gate that compares the
+	// raw path decides about a different string than the router routed on. Each
+	// address is therefore driven in the spelling it is written in AND in the ones
+	// that reach the same handler — an uppercase one and a slash-suffixed one — since
+	// those were the shapes that walked past.
 	doors := []struct {
 		method, path string
 	}{
 		{"POST", "/mcp"},
+		{"POST", "/MCP"},
+		{"POST", "/mcp/"},
+		{"POST", "/Mcp"},
 		{"GET", zip.SpecPath},
+		{"GET", strings.ToUpper(zip.SpecPath)},
+		{"GET", zip.SpecPath + "/"},
 		{"GET", zip.DocsPath},
+		{"GET", strings.ToUpper(zip.DocsPath)},
+		{"GET", zip.DocsPath + "/"},
 		{"GET", zip.GraphPath},
+		{"GET", strings.ToUpper(zip.GraphPath)},
+		{"GET", zip.GraphPath + "/"},
 		{"POST", zip.GraphPath},
 		{"GET", zip.PluginPath},
+		{"GET", "/.well-known/ZIP/plugin.json"},
 		{"POST", zip.CallPath + "iam_users"},
+		{"POST", strings.ToUpper(zip.CallPath) + "iam_users"},
+		{"POST", "/.well-known/zip/OP/iam_users"},
+		{"POST", zip.CallPath},
+		{"POST", zip.CallPath + "iam_users/"},
 	}
 
 	for _, d := range doors {
