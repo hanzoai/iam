@@ -71,7 +71,7 @@ type passwordBody struct {
 	// second source — it overrides the first. A URL is also the part of a request
 	// that gets written down: access and proxy logs, browser history, the Referer
 	// of whatever the answer links to. A credential belongs in none of those.
-	//
+
 	// Code is the one-time code delivered to the account's own address.
 	Code string `json:"code" url:"-"`
 	// OldPassword is the credential being replaced, the proof a signed-in caller
