@@ -74,8 +74,14 @@ func TestHandlers_RequireIdentity(t *testing.T) {
 	}{
 		{"list", func(db orm.DB, ctx context.Context) error { _, e := list(db)(ctx, &ListRequest{}); return e }},
 		{"get", func(db orm.DB, ctx context.Context) error { _, e := get(db)(ctx, &Ref{Name: "svc"}); return e }},
-		{"create", func(db orm.DB, ctx context.Context) error { _, e := create(db)(ctx, &schema.Key{Name: "svc"}); return e }},
-		{"update", func(db orm.DB, ctx context.Context) error { _, e := update(db)(ctx, &schema.Key{Name: "svc"}); return e }},
+		{"create", func(db orm.DB, ctx context.Context) error {
+			_, e := create(db)(ctx, &schema.Key{Name: "svc"})
+			return e
+		}},
+		{"update", func(db orm.DB, ctx context.Context) error {
+			_, e := update(db)(ctx, &schema.Key{Name: "svc"})
+			return e
+		}},
 		{"del", func(db orm.DB, ctx context.Context) error { _, e := del(db)(ctx, &Ref{Name: "svc"}); return e }},
 	}
 	for _, tc := range cases {
@@ -95,9 +101,18 @@ func TestHandlers_AbsentKeyIs404(t *testing.T) {
 		name string
 		call func(db orm.DB, ctx context.Context) error
 	}{
-		{"get", func(db orm.DB, ctx context.Context) error { _, e := get(db)(ctx, &Ref{Owner: "acme", Name: "ghost"}); return e }},
-		{"update", func(db orm.DB, ctx context.Context) error { _, e := update(db)(ctx, &schema.Key{Owner: "acme", Name: "ghost"}); return e }},
-		{"del", func(db orm.DB, ctx context.Context) error { _, e := del(db)(ctx, &Ref{Owner: "acme", Name: "ghost"}); return e }},
+		{"get", func(db orm.DB, ctx context.Context) error {
+			_, e := get(db)(ctx, &Ref{Owner: "acme", Name: "ghost"})
+			return e
+		}},
+		{"update", func(db orm.DB, ctx context.Context) error {
+			_, e := update(db)(ctx, &schema.Key{Owner: "acme", Name: "ghost"})
+			return e
+		}},
+		{"del", func(db orm.DB, ctx context.Context) error {
+			_, e := del(db)(ctx, &Ref{Owner: "acme", Name: "ghost"})
+			return e
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -130,11 +145,26 @@ func TestHandlers_StoreFaultIs500(t *testing.T) {
 		name string
 		call func(db orm.DB, ctx context.Context) error
 	}{
-		{"list", func(db orm.DB, ctx context.Context) error { _, e := list(db)(ctx, &ListRequest{Owner: "acme"}); return e }},
-		{"get", func(db orm.DB, ctx context.Context) error { _, e := get(db)(ctx, &Ref{Owner: "acme", Name: "svc"}); return e }},
-		{"create", func(db orm.DB, ctx context.Context) error { _, e := create(db)(ctx, &schema.Key{Owner: "acme", Name: "svc"}); return e }},
-		{"update", func(db orm.DB, ctx context.Context) error { _, e := update(db)(ctx, &schema.Key{Owner: "acme", Name: "svc"}); return e }},
-		{"del", func(db orm.DB, ctx context.Context) error { _, e := del(db)(ctx, &Ref{Owner: "acme", Name: "svc"}); return e }},
+		{"list", func(db orm.DB, ctx context.Context) error {
+			_, e := list(db)(ctx, &ListRequest{Owner: "acme"})
+			return e
+		}},
+		{"get", func(db orm.DB, ctx context.Context) error {
+			_, e := get(db)(ctx, &Ref{Owner: "acme", Name: "svc"})
+			return e
+		}},
+		{"create", func(db orm.DB, ctx context.Context) error {
+			_, e := create(db)(ctx, &schema.Key{Owner: "acme", Name: "svc"})
+			return e
+		}},
+		{"update", func(db orm.DB, ctx context.Context) error {
+			_, e := update(db)(ctx, &schema.Key{Owner: "acme", Name: "svc"})
+			return e
+		}},
+		{"del", func(db orm.DB, ctx context.Context) error {
+			_, e := del(db)(ctx, &Ref{Owner: "acme", Name: "svc"})
+			return e
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

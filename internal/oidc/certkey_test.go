@@ -6,8 +6,8 @@ package oidc
 import (
 	"crypto"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -319,10 +319,10 @@ func TestSigningHalvesAgree(t *testing.T) {
 		PrivateKey:  base64.StdEncoding.EncodeToString(pqSk.Bytes())}
 
 	cases := []struct {
-		name     string
-		cert     *schema.Cert
-		want     bool
-		wantErr  bool
+		name    string
+		cert    *schema.Cert
+		want    bool
+		wantErr bool
 	}{
 		{"nil cert", nil, true, false},
 		{"empty certificate", &schema.Cert{PrivateKey: rsaKeyToPEM(t, rsaA)}, true, false},
