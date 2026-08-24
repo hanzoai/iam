@@ -32,6 +32,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -47,7 +48,7 @@ const unauthorized = "auth:Unauthorized operation"
 // itself behind its own capability.
 func Route(app *zip.App, db orm.DB) {
 	app.Get("/v1/iam/keys/org", org(db))
-	app.Get("/v1/iam/keys/principal", principal(db))
+	app.Get("/v1/iam/keys/principal", who(db))
 }
 
 // orgOnly is the ORG-ONLY projection: the tenant a publishable key belongs to and
@@ -72,7 +73,7 @@ type orgOnly struct {
 func org(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		p, ok := authz.From(ctx)
+		p, ok := principal.From(ctx)
 		if !ok || p.App == nil || !p.Holds(policy.CapPublishableResolve, authz.Env) {
 			return httpx.Err(c, unauthorized)
 		}
@@ -121,7 +122,7 @@ type holder struct {
 	Scope string `json:"scope,omitempty"`
 }
 
-// principal answers who a SECRET key belongs to — what a gateway of yours calls
+// who answers which account a SECRET key belongs to — what a gateway of yours calls
 // to attribute and bill a request that arrived carrying an sk-.
 //
 // A publishable key resolves to nobody here, deliberately: it is safe to ship in
@@ -137,10 +138,10 @@ type holder struct {
 // already obtain, and withholding it is what made a revoked key
 // indistinguishable from a deleted org for every human downstream. There is no
 // anonymous reader of this envelope to oracle.
-func principal(db orm.DB) zip.Handler {
+func who(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		p, ok := authz.From(ctx)
+		p, ok := principal.From(ctx)
 		if !ok || p.App == nil || !p.Holds(policy.CapKeyResolve, authz.Env) {
 			return httpx.Err(c, unauthorized)
 		}

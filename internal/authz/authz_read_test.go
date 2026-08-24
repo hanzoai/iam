@@ -54,7 +54,7 @@ func leaks(body string) bool {
 // anchor's private key. Two independent defects composed into it — the listing
 // ignored its owner (a GET binds no query, so in.Owner was always "", and an
 // empty owner listed EVERY tenant), and the response serialized privateKey. Both
-// are closed: the owner is resolved from the verified bearer (authz.Scope), and
+// are closed: the owner is resolved from the verified bearer (principal.Scope), and
 // a Cert is masked on the way out (schema.Cert.Mask), so the key material that
 // signs every token cannot cross the API at all — a relying party reads the
 // PUBLIC half from the JWKS (RFC 7517).

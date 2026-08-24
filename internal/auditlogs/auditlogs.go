@@ -13,12 +13,12 @@ package auditlogs
 import (
 	"context"
 	"errors"
-	"github.com/hanzoai/iam/internal/authz"
 	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -108,14 +108,14 @@ func apply(dst *schema.AuditLog, in *Input) {
 // You see your own organization's audit trail and no one else's; which organization that
 // is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by authz.Scope from the authenticated principal,
+	// The owner is resolved by principal.Scope from the authenticated principal,
 	// never taken from the input: a tenant reads only its own org, a SuperAdmin
 	// reads the owner it asks for. Filtering on in.Owner instead was a confused
 	// deputy — the Guard authorizes on the query string, then a typed GET binds
 	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
 	// arrived empty on every REST call and the "empty owner lists everything"
 	// branch returned every tenant.
-	owner, err := authz.Scope(ctx, in.Owner)
+	owner, err := principal.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}

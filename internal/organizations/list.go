@@ -14,7 +14,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -91,7 +91,7 @@ type ListOrganizationsOutput struct {
 // principal would answer such a caller with the whole registry. Reading the
 // principal here is what makes the answer the same one over both.
 func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) (*ListOrganizationsOutput, error) {
-	p, ok := authz.From(ctx)
+	p, ok := principal.From(ctx)
 	if !ok {
 		return nil, zip.ErrForbidden("forbidden")
 	}
@@ -158,7 +158,7 @@ func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) 
 
 // own resolves the organizations the principal belongs to — its home org and
 // every membership, which is the same set the token's `orgs` claim carries.
-func (h *OrganizationAPI) own(ctx context.Context, p *authz.Principal, q string) ([]*schema.Organization, error) {
+func (h *OrganizationAPI) own(ctx context.Context, p *principal.Principal, q string) ([]*schema.Organization, error) {
 	// The platform's own organizations are not tenants and cannot be stepped
 	// into, so listing one here would offer a destination that assume refuses.
 	// An operator anchored in a brand org holds the reserved org as a MEMBERSHIP,
@@ -196,7 +196,7 @@ func (h *OrganizationAPI) own(ctx context.Context, p *authz.Principal, q string)
 // twin, and dropping an organization from an operator's list is a defect nobody
 // would see. `Filter` compares one field against one value, so the (time, name)
 // pair a tie-free keyset needs cannot be expressed here at all.
-func (h *OrganizationAPI) page(ctx context.Context, p *authz.Principal, q string, at, n int) ([]*schema.Organization, string, error) {
+func (h *OrganizationAPI) page(ctx context.Context, p *principal.Principal, q string, at, n int) ([]*schema.Organization, string, error) {
 	if n <= 0 {
 		// The caller's own organizations filled the page. There is still a registry
 		// behind them, so the walk continues from its start rather than ending here.
@@ -227,7 +227,7 @@ func (h *OrganizationAPI) page(ctx context.Context, p *authz.Principal, q string
 }
 
 // held reports whether the caller already received this org among their own.
-func held(p *authz.Principal, name string) bool {
+func held(p *principal.Principal, name string) bool {
 	if name == p.Org {
 		return true
 	}

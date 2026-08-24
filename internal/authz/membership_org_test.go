@@ -7,6 +7,7 @@ import (
 
 	policy "github.com/hanzoai/authz"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -20,16 +21,16 @@ import (
 // to the signed-in person, and the org mark showed a personal monogram.
 func TestOrgReadFollowsMembershipNotTheAccountOwner(t *testing.T) {
 	// A person whose account lives in `hanzo`, who also belongs to `maxpower`.
-	dave := &Principal{
+	dave := &principal.Principal{
 		Org: "hanzo", User: "davelorenzini",
 		Orgs: map[string]policy.Role{"maxpower": store.RoleAdmin},
 	}
 	// A person in `hanzo` with no other membership.
-	stranger := &Principal{Org: "hanzo", User: "nobody"}
+	stranger := &principal.Principal{Org: "hanzo", User: "nobody"}
 
 	for _, tc := range []struct {
 		name   string
-		p      *Principal
+		p      *principal.Principal
 		method string
 		org    string
 		want   bool
@@ -53,7 +54,7 @@ func TestOrgReadFollowsMembershipNotTheAccountOwner(t *testing.T) {
 // read it and nothing more — otherwise inviting someone to a workspace would
 // hand them its settings.
 func TestPlainMemberReadsButCannotWrite(t *testing.T) {
-	guest := &Principal{
+	guest := &principal.Principal{
 		Org: "hanzo", User: "guest",
 		Orgs: map[string]policy.Role{"maxpower": store.RoleMember},
 	}
@@ -69,7 +70,7 @@ func TestPlainMemberReadsButCannotWrite(t *testing.T) {
 // orgs you act in, not that you may reach another tenant's users or signing
 // material.
 func TestMembershipDoesNotLeakIntoOtherEntities(t *testing.T) {
-	dave := &Principal{
+	dave := &principal.Principal{
 		Org: "hanzo", User: "davelorenzini",
 		Orgs: map[string]policy.Role{"maxpower": store.RoleAdmin},
 	}

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam/internal/principal"
 )
 
 // listInput is the shape every list op decodes to when the caller names nothing —
@@ -29,8 +31,8 @@ type listInput struct {
 // One policy must not answer differently per transport, so an empty target is
 // now decided rather than admitted.
 func TestSeamDecidesAnEmptyTargetRatherThanAdmittingIt(t *testing.T) {
-	regular := &Principal{Org: "hanzo", User: "alice"}
-	ctx := context.WithValue(context.Background(), ctxKey{}, regular)
+	regular := &principal.Principal{Org: "hanzo", User: "alice"}
+	ctx := principal.Bind(context.Background(), regular)
 
 	// The op an MCP `get_v1_iam_roles {}` invokes. `roles` is not on the
 	// handler-authorized list, so the seam owns the decision.
@@ -45,8 +47,8 @@ func TestSeamDecidesAnEmptyTargetRatherThanAdmittingIt(t *testing.T) {
 // The same read, named, is still refused — so the fix did not merely move the
 // hole to "name the owner and you are through".
 func TestSeamRefusesANamedForeignTargetToo(t *testing.T) {
-	regular := &Principal{Org: "hanzo", User: "alice"}
-	ctx := context.WithValue(context.Background(), ctxKey{}, regular)
+	regular := &principal.Principal{Org: "hanzo", User: "alice"}
+	ctx := principal.Bind(context.Background(), regular)
 	op := zip.Op{Method: "GET", Path: "/v1/iam/roles"}
 
 	if err := Authorize(ctx, op, &listInput{Owner: "orgb"}); err == nil {
@@ -61,8 +63,8 @@ func TestSeamRefusesANamedForeignTargetToo(t *testing.T) {
 // project or workspace list), and the handler authorizes them. Guard skips them
 // by the same predicate, so both sides agree about who is responsible.
 func TestSeamStillDefersToTheHandlerAuthorizedReads(t *testing.T) {
-	regular := &Principal{Org: "hanzo", User: "alice"}
-	ctx := context.WithValue(context.Background(), ctxKey{}, regular)
+	regular := &principal.Principal{Org: "hanzo", User: "alice"}
+	ctx := principal.Bind(context.Background(), regular)
 
 	for _, path := range handlerAuthorizedPaths(t) {
 		op := zip.Op{Method: "GET", Path: path}

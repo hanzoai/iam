@@ -12,6 +12,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -64,15 +65,15 @@ func seedSharedRow(t *testing.T, db orm.DB, owner string) {
 	}
 }
 
-// Every handler names its key by (owner, name); with neither supplied there is
-// nothing to act on, and the refusal is a 400 — the request was malformed, not
-// the store.
+// Every ITEM handler names its key by (owner, name); with neither supplied there
+// is nothing to act on, and the refusal is a 400 — the request was malformed, not
+// the store. list is not among them: a listing's tenant comes from the credential,
+// so an absent owner is a question about the caller, never a malformed request.
 func TestHandlers_RequireIdentity(t *testing.T) {
 	cases := []struct {
 		name string
 		call func(db orm.DB, ctx context.Context) error
 	}{
-		{"list", func(db orm.DB, ctx context.Context) error { _, e := list(db)(ctx, &ListRequest{}); return e }},
 		{"get", func(db orm.DB, ctx context.Context) error { _, e := get(db)(ctx, &Ref{Name: "svc"}); return e }},
 		{"create", func(db orm.DB, ctx context.Context) error {
 			_, e := create(db)(ctx, &schema.Key{Name: "svc"})
@@ -146,7 +147,7 @@ func TestHandlers_StoreFaultIs500(t *testing.T) {
 		call func(db orm.DB, ctx context.Context) error
 	}{
 		{"list", func(db orm.DB, ctx context.Context) error {
-			_, e := list(db)(ctx, &ListRequest{Owner: "acme"})
+			_, e := list(db)(as("acme"), &ListRequest{Owner: "acme"})
 			return e
 		}},
 		{"get", func(db orm.DB, ctx context.Context) error {
@@ -321,5 +322,53 @@ func TestMintUserKey_StoreFaults(t *testing.T) {
 func TestRevokeUserKey_BrokenReadIsAbsent(t *testing.T) {
 	if err := RevokeUserKey(context.Background(), closedDB(t), "acme", "ada", ""); err != nil {
 		t.Fatalf("revoke over a broken read = %v, want nil (the nil-row guard subsumes it)", err)
+	}
+}
+
+// as returns a context carrying an ordinary member of org — the caller a listing
+// is scoped to. A handler that resolves its tenant from the credential needs one
+// to answer at all.
+func as(org string) context.Context {
+	return principal.Bind(context.Background(), &principal.Principal{Org: org})
+}
+
+// A listing with NOBODY behind it is refused, not answered. principal.Scope has
+// no credential to resolve a tenant from, and "no tenant" would mean no filter —
+// every organization's keys in one page.
+func TestList_WithoutACallerIsRefused(t *testing.T) {
+	if got := status(t, func() error { _, e := list(memDB(t))(context.Background(), &ListRequest{}); return e }()); got != 403 {
+		t.Fatalf("list with no principal = %d, want 403", got)
+	}
+}
+
+// And a member of one organization never receives another's, however the request
+// spells it. A key row carries the publishable half and the scope it may reach,
+// so a foreign page is a map of somebody else's integrations.
+func TestList_NeverAnswersWithAnotherOrgsKeys(t *testing.T) {
+	db := memDB(t)
+	for _, o := range []string{"acme", "other"} {
+		k := orm.New[schema.Key](db)
+		k.Owner, k.Name = o, "svc"
+		k.AccessKey, k.AccessSecret = Mint("pk", ""), Mint("sk", "")
+		k.SetId(id(o, "svc"))
+		if err := k.CreateCtx(context.Background()); err != nil {
+			t.Fatalf("seed %s: %v", o, err)
+		}
+	}
+	if _, err := list(db)(as("acme"), &ListRequest{Owner: "other"}); err == nil {
+		t.Fatal("a member of acme named other and was not refused")
+	}
+	out, err := list(db)(as("acme"), &ListRequest{})
+	if err != nil {
+		t.Fatalf("acme listing its own keys: %v", err)
+	}
+	for _, k := range out.Keys {
+		if k.Owner != "acme" {
+			t.Fatalf("LEAK: acme named no owner and received %q's key %q", k.Owner, k.Name)
+		}
+	}
+	if len(out.Keys) != 1 {
+		t.Fatalf("acme's own page returned %d keys, want 1 — the assertion above cannot "+
+			"fail against an empty page", len(out.Keys))
 	}
 }

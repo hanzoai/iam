@@ -378,7 +378,7 @@ func TestKeys_ReadsMaskTheSecretAndKeepThePublishableHalf(t *testing.T) {
 		t.Fatal("create must reveal the secret ONCE, or a minted key is unusable")
 	}
 
-	listed, err := list(db)(ctx, &ListRequest{Owner: "acme"})
+	listed, err := list(db)(as("acme"), &ListRequest{Owner: "acme"})
 	if err != nil || len(listed.Keys) != 1 {
 		t.Fatalf("list: %v (%d keys)", err, len(listed.Keys))
 	}

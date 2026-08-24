@@ -12,7 +12,7 @@
 // implementation is Casdoor-derived stays in a hanzoiam/* module carrying its own
 // Apache-2.0 attribution — SAML's IdP protocol code and LDAP's directory server
 // both are. A capability written fresh belongs IN the core, where the Guard,
-// authz.Scope and authz.Can cover it without a module having to reimplement them:
+// principal.Scope and authz.Can cover it without a module having to reimplement them:
 // SCIM is served there (internal/scim, at /v1/iam/scim/v2), never through this seam.
 //
 // A module gets NO authorization for free. IAM's Guard is anchored in IAM's own

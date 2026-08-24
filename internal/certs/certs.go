@@ -19,7 +19,7 @@ import (
 
 	policy "github.com/hanzoai/authz"
 
-	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -79,7 +79,7 @@ func key(owner, name string) string { return owner + "/" + name }
 // organization that is comes from your credentials, not from the request, so a
 // query parameter can never widen the listing.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	owner, err := authz.Scope(ctx, in.Owner)
+	owner, err := principal.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}

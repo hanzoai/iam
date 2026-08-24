@@ -15,7 +15,7 @@ package scim_test
 //
 // And the security pin: the STANDARD enterprise extension's free-text
 // `organization` must never choose the tenant. There is ONE way to name a tenant
-// on this surface — the Hanzo extension's `owner`, re-scoped through authz.Scope.
+// on this surface — the Hanzo extension's `owner`, re-scoped through principal.Scope.
 
 import (
 	"context"
@@ -206,7 +206,7 @@ func TestSCIM_discovery_schemasAndResourceTypes(t *testing.T) {
 // The standard enterprise extension's `organization` is FREE TEXT describing where
 // a person works (RFC 7643 §4.3) — it is not a tenant key, and an IdP controls it.
 // Honouring it would hand any client that can provision into its own org a way to
-// write into another one. The tenant comes from authz.Scope and nowhere else.
+// write into another one. The tenant comes from principal.Scope and nowhere else.
 func TestRed_enterpriseExtension_cannotNameTheTenant(t *testing.T) {
 	h := newHarness(t)
 	boss := h.token(t, "hanzo/boss") // org-admin of hanzo, NOT super

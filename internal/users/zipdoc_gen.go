@@ -11,7 +11,7 @@ func init() {
 		Description: "Removes a person from your organization. Their sessions stop working\nimmediately and the account is gone rather than suspended — to keep the record\nand only stop sign-in, update the user instead.",
 	})
 	zip.Describe("GET /v1/iam/users", zip.Doc{
-		Description: "Returns a page of the people in your organization, with the total so you\ncan page through the rest. Passwords, API secrets and MFA material are stripped\nfrom every entry.",
+		Description: "Returns a page of the people in an organization, with the total so you\ncan page through the rest. Passwords, API secrets and MFA material are stripped\nfrom every entry.\n\nWhich organization comes from your credentials, not from the request: you read\nyour own and no one else's, and a credential whose scope spans tenants reads\nthe tenant it names — or, naming none, every one of them.",
 		Fields: map[string]string{
 			"ListInput.email": "Email narrows the page to the accounts carrying one address. Looking a\nperson up by their address is a QUERY over the collection, not an item\nread: an address is not the natural key, two rows in one org can carry\none, and a caller that gets a page SEES both — where a single-item read\nwould have to choose, and choosing is how somebody joins a team under a\ncolleague's identity.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",

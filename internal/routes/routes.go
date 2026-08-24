@@ -217,17 +217,17 @@ func Route(app *zip.App, db orm.DB) {
 
 	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface
 	// (HIP-0111). On the guarded group, so
-	// it is authenticated; each handler owner-scopes via authz.Scope on the path target.
+	// it is authenticated; each handler owner-scopes via principal.Scope on the path target.
 	scim.Route(authed, db)
 
 	// Agent/bot identities (service accounts) + the (User x Org x Role) membership
 	// relation. On the guarded group: each self-authorizes writes via the Principal +
-	// capabilities the Guard attached, and org-scopes reads via authz.Scope.
+	// capabilities the Guard attached, and org-scopes reads via principal.Scope.
 	serviceaccounts.Route(authed, db)
 	memberships.Route(authed, db)
 
 	// TOTP multi-factor enrollment (RFC 6238) — the account security page's
 	// initiate/verify/enable/disable flow. On the guarded group: self-service on the
-	// caller's own user (authz.From); a cross-user reset needs admin (authz.Can).
+	// caller's own user (principal.From); a cross-user reset needs admin (authz.Can).
 	mfa.Route(authed, db)
 }
