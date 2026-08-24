@@ -142,14 +142,33 @@ func TestGetReadsBackWhatCreateWrote(t *testing.T) {
 
 // TestCreateDefaultsOrganizationToOwner: an add that names no organization is filed
 // under its owner — the org a project belongs to defaults to the org that owns it.
-func TestCreateDefaultsOrganizationToOwner(t *testing.T) {
+func TestCreateTakesOrganizationFromOwner(t *testing.T) {
 	h, _ := newHandler(t)
 	out, err := h.Create(context.Background(), &Input{Owner: "hanzo", Name: "beta"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if out.Organization != "hanzo" {
-		t.Fatalf("organization = %q, want %q (defaulted to owner)", out.Organization, "hanzo")
+		t.Fatalf("organization = %q, want the owner %q", out.Organization, "hanzo")
+	}
+
+	// And a request that names a different one does not get it: a project naming an
+	// organization it does not belong to is a stored answer contradicting its row.
+	out, err = h.Create(context.Background(), &Input{Owner: "hanzo", Name: "gamma", Organization: "victim"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if out.Organization != "hanzo" {
+		t.Fatalf("organization = %q, want the owner %q", out.Organization, "hanzo")
+	}
+
+	// Nor through an update.
+	out, err = h.Update(context.Background(), &Input{Owner: "hanzo", Name: "gamma", Organization: "victim"})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if out.Organization != "hanzo" {
+		t.Fatalf("organization after update = %q, want the owner %q", out.Organization, "hanzo")
 	}
 }
 
