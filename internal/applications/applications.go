@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -41,6 +42,40 @@ func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	}
 	if !authz.CanSetOrg(p, in.Organization) {
 		return zip.ErrForbidden("not authorized to set the application organization to " + in.Organization)
+	}
+	return nil
+}
+
+// authorizeProviders gates the identity providers an application LINKS. A link is a
+// reference to credentials: the sign-in leg runs on the provider record's own client
+// id and secret (store.EnrichProviders resolves it, federationProvider uses it), and
+// the application never holds those — it names them. The row's own (Owner, Name)
+// does not cover the reference, so the seam that authorizes the row left the link
+// open.
+//
+// The rule is the one the seeding makes true: the PLATFORM's connectors are shared,
+// so any application may name one — that is what "sign in with Google" is, and a
+// link naming no owner resolves there. What no application may name is ANOTHER
+// TENANT's provider, whose client id and secret are that tenant's own. A SuperAdmin
+// may name any.
+//
+// The owner is resolved through store.ProviderOwner, the same function the
+// resolution uses, so the record authorized here is the record the sign-in reaches.
+// Only a foreign-tenant link is decided, and authz.Can answers no for a request
+// there is no principal for, so an application linking nothing — or linking only
+// what everyone may — passes without a decision to make.
+func authorizeProviders(ctx context.Context, in *schema.Application) error {
+	for _, item := range in.Providers {
+		if item == nil || item.Name == "" {
+			continue
+		}
+		owner := store.ProviderOwner(item)
+		if policy.IsReservedOrg(owner) || owner == in.Owner || owner == in.Organization {
+			continue
+		}
+		if !authz.Can(ctx, "POST", "providers", owner, item.Name) {
+			return zip.ErrForbidden("not authorized to link the identity provider " + owner + "/" + item.Name)
+		}
 	}
 	return nil
 }
@@ -191,6 +226,9 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authz.AuthorizeCert(ctx, db, in.Cert, ""); err != nil {
 			return nil, err
 		}
+		if err := authorizeProviders(ctx, in); err != nil {
+			return nil, err
+		}
 		id := appID(in.Owner, in.Name)
 
 		// Owner-scoped uniqueness: (owner, name) must be free.
@@ -241,6 +279,9 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, zip.ErrInternal(err.Error())
 		}
 		if err := authz.AuthorizeCert(ctx, db, in.Cert, existing.Cert); err != nil {
+			return nil, err
+		}
+		if err := authorizeProviders(ctx, in); err != nil {
 			return nil, err
 		}
 
