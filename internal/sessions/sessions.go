@@ -158,8 +158,14 @@ func (h *Sessions) Create(_ context.Context, in *CreateSessionIn) (*schema.Sessi
 		return nil, err
 	}
 
+	// The sign-in mints its own cookie id. The list on a session row is what a
+	// presented cookie is checked against, so an id in it is a browser that stays
+	// authenticated — the one thing signing in produces and never something a
+	// request names. NewSID is the same 256 bits of randomness every other sign-in
+	// here draws, so the CRUD and the sign-in ceremony mint one identically.
+	sid := NewSID()
 	if existing != nil {
-		existing.SessionId = mergeSessionIds(existing.SessionId, in.SessionId, in.ExclusiveSignin)
+		existing.SessionId = mergeSessionIds(existing.SessionId, []string{sid}, in.ExclusiveSignin)
 		existing.CreatedTime = now()
 		if err := existing.Update(); err != nil {
 			return nil, err
@@ -172,7 +178,7 @@ func (h *Sessions) Create(_ context.Context, in *CreateSessionIn) (*schema.Sessi
 	s.Owner = in.Owner
 	s.Name = in.Name
 	s.Application = in.Application
-	s.SessionId = mergeSessionIds(nil, in.SessionId, in.ExclusiveSignin)
+	s.SessionId = []string{sid}
 	s.CreatedTime = now()
 	if err := s.Create(); err != nil {
 		return nil, err
@@ -191,7 +197,11 @@ func (h *Sessions) Update(_ context.Context, in *UpdateSessionIn) (*schema.Sessi
 		}
 		return nil, err
 	}
-	s.SessionId = capSessionIds(in.SessionId)
+	// Keeping is the whole operation: the result is the browsers already on the row
+	// that the request kept, so leaving one off signs it out and naming one that is
+	// not there adds nothing. A row's ids come from signing in, so an update can
+	// only ever take them away.
+	s.SessionId = keepSessionIds(s.SessionId, in.SessionId)
 	if err := s.Update(); err != nil {
 		return nil, err
 	}
@@ -249,6 +259,25 @@ func mergeSessionIds(existing, incoming []string, exclusive bool) []string {
 }
 
 // capSessionIds keeps only the newest maxSessionIds cookie ids.
+// keepSessionIds intersects the stored ids with the ones a request keeps, in the
+// stored order. It is the read of "replace the set of browsers this session
+// covers" that can only narrow it: a cookie is live because a sign-in minted its
+// id onto the row, so a request that names an id the row does not hold is naming a
+// browser that was never signed in.
+func keepSessionIds(stored, keep []string) []string {
+	wanted := make(map[string]bool, len(keep))
+	for _, id := range keep {
+		wanted[id] = true
+	}
+	out := make([]string, 0, len(stored))
+	for _, id := range stored {
+		if wanted[id] {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 func capSessionIds(ids []string) []string {
 	if len(ids) > maxSessionIds {
 		return ids[len(ids)-maxSessionIds:]
