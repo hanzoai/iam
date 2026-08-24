@@ -52,8 +52,8 @@ func leaks(body string) bool {
 // TestCertPrivateKeyNeverLeaks is the PoC that proved a full token-forgery
 // compromise: a hanzo org admin listed certs and received the admin trust
 // anchor's private key. Two independent defects composed into it — the listing
-// ignored its owner (a GET binds no query, so in.Owner was always "", and an
-// empty owner listed EVERY tenant), and the response serialized privateKey. Both
+// ignored its owner, so an empty owner listed EVERY tenant, and the response
+// serialized privateKey. Both
 // are closed: the owner is resolved from the verified bearer (principal.Scope), and
 // a Cert is masked on the way out (schema.Cert.Mask), so the key material that
 // signs every token cannot cross the API at all — a relying party reads the

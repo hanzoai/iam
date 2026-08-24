@@ -110,11 +110,9 @@ func apply(dst *schema.AuditLog, in *Input) {
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 	// The owner is resolved by principal.Scope from the authenticated principal,
 	// never taken from the input: a tenant reads only its own org, a SuperAdmin
-	// reads the owner it asks for. Filtering on in.Owner instead was a confused
-	// deputy — the Guard authorizes on the query string, then a typed GET binds
-	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
-	// arrived empty on every REST call and the "empty owner lists everything"
-	// branch returned every tenant.
+	// reads the owner it asks for. in.Owner is whatever the CALLER wrote in the URL,
+	// since zip binds a typed op's scalar fields from the query string on every
+	// method, so filtering on it would let a request name the tenant it reads.
 	owner, err := principal.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
