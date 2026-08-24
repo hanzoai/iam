@@ -182,29 +182,75 @@ func AuthorizeCert(ctx context.Context, db orm.DB, newCert, oldCert string) erro
 	return nil
 }
 
-// AuthorizeUser gates the subject a write NAMES in its User field — the
-// "<owner>/<name>" principal a token is issued to, or a passkey authenticates. A
-// caller may write such a row only if it may ACT FOR that subject: the same
-// authz.Can the list surfaces ask (a person's own org's users; a reserved-owner
-// user only for a SuperAdmin). It is one function, so the token write and the
-// passkey write ask it identically and can never drift.
+// AuthorizeRef gates a row a write NAMES in one of its fields — the reference a
+// stored value points AT, which the writing row's own (Owner, Name) never covers,
+// so the seam that authorizes the row does not authorize what the row points to. A
+// caller may name such a row only if it may WRITE it: its own org's, a
+// reserved-owner one only for a SuperAdmin. It asks the same authz.Can the
+// referenced row's own surface asks, so a field that names a row and the row itself
+// can never be authorized differently.
 //
-// An empty User names no subject, so there is nothing to authorize and the row's
-// own (Owner, Name) authorization at the op-invoke seam governs it — a resolver
-// that later reads a row by subject (userinfo, refresh, signin-begin) never
-// matches an empty one, so it carries no authority to escalate to. A malformed
-// User is a bad request. Fails closed (403) when the named subject is one the
+// `home` is the writing row's own owner, and it is what an UNQUALIFIED reference
+// resolves within — that is the resolution contract this gate states, so a reader
+// of such a field resolves a bare name in the row's org and never globally. A
+// reference carrying its own "<organization>/" prefix names that organization
+// instead, and is authorized against it. Passing an empty home therefore makes
+// qualification MANDATORY, which is what a field whose whole meaning is which
+// organization an account lives in requires.
+//
+// An empty reference names nothing, so the writing row's own key governs it — a
+// resolver that later reads a row by reference never matches an empty one, so it
+// carries no authority to escalate to. A reference that resolves to no complete
+// (organization, name) pair is a bad request. Fails closed (403) on a row the
 // caller may not write.
-func AuthorizeUser(ctx context.Context, method, user string) error {
-	if user == "" {
+func AuthorizeRef(ctx context.Context, method, kind, home, ref string) error {
+	if ref == "" {
 		return nil
 	}
-	owner, name, ok := strings.Cut(user, "/")
-	if !ok || owner == "" || name == "" {
-		return zip.ErrBadRequest("user is <organization>/<username>")
+	owner, name := home, ref
+	if o, n, qualified := strings.Cut(ref, "/"); qualified {
+		owner, name = o, n
 	}
-	if !Can(ctx, method, "users", owner, name) {
-		return zip.ErrForbidden("not authorized to write a row for user " + user)
+	if owner == "" || name == "" {
+		return zip.ErrBadRequest("a " + kind + " reference is <organization>/<name>")
+	}
+	if !Can(ctx, method, kind, owner, name) {
+		return zip.ErrForbidden("not authorized to name " + kind + " " + owner + "/" + name)
+	}
+	return nil
+}
+
+// AuthorizeUser gates the subject a write NAMES in its User field — the
+// "<owner>/<name>" principal a token is issued to, or a passkey authenticates. It
+// is AuthorizeRef on the users kind with NO home org, because a subject's whole
+// meaning is which organization the account lives in: a bare username addresses no
+// account and is a bad request rather than a name read in the writer's own org. It
+// is one function, so the token write and the passkey write ask it identically and
+// can never drift.
+func AuthorizeUser(ctx context.Context, method, user string) error {
+	return AuthorizeRef(ctx, method, "users", "", user)
+}
+
+// AuthorizeGrant gates the rows a grant NAMES in its subject lists — the users,
+// groups and roles a role bundles, or a permission is evaluated for. None of them
+// is the grant's own (Owner, Name), so a grant filed in one organization could
+// otherwise name another organization's people, or the platform's, as its subjects.
+// A caller may name a subject only in an organization it may write, and an
+// unqualified name is read in the grant's own.
+//
+// One function, so a permission and a role — which carry the same three lists —
+// ask it identically and can never drift. The remaining list, Domains, holds DNS
+// names rather than rows, so it addresses nothing to authorize.
+func AuthorizeGrant(ctx context.Context, method, home string, users, groups, roles []string) error {
+	for _, list := range []struct {
+		kind string
+		refs []string
+	}{{"users", users}, {"groups", groups}, {"roles", roles}} {
+		for _, ref := range list.refs {
+			if err := AuthorizeRef(ctx, method, list.kind, home, ref); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

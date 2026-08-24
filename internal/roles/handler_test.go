@@ -94,7 +94,7 @@ func TestOwnerAndNameAreRequired(t *testing.T) {
 // carries every mutable field through apply onto the stored role.
 func TestCreateStampsAndAppliesFields(t *testing.T) {
 	h := &Handler{db: store(t)}
-	ctx := context.Background()
+	ctx := asAdmin("hanzo")
 
 	got, err := h.Create(ctx, &Input{Owner: "hanzo", Name: "engineers"})
 	if err != nil {
