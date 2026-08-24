@@ -106,6 +106,20 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	if org.Owner == "" || org.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	// An organization is filed under the admin owner. The NAME is the tenant
+	// identity; the owner half is the registry the row lives in, which is why the
+	// signup converge writes it, the list here reads it, store.GetOrganizationByName
+	// resolves a name within it, and authz decides an organization write on its
+	// reserved-owner branch. Filed anywhere else, a row would carry a name the rest
+	// of the system already answers with another row — so the owner is a value with
+	// one legal setting rather than a choice.
+	//
+	// It is REFUSED rather than quietly corrected: the authorizer decides on this
+	// same decoded value, so the row written has to be the row authorized. Pinning
+	// it after that decision would authorize one owner and write another.
+	if org.Owner != policy.AdminOrg {
+		return nil, zip.ErrBadRequest("an organization is filed under the " + policy.AdminOrg + " owner")
+	}
 	switch _, err := h.find(org.Owner, org.Name); {
 	case err == nil:
 		return nil, zip.ErrConflict("organization already exists")
@@ -122,6 +136,10 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	if entity.CreatedTime == "" {
 		entity.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	}
+	// The natural key IS the key, the way every sibling writer states it. The store
+	// keys a row by this string, so one (owner, name) is one row by construction
+	// rather than by a check that has to be run first.
+	entity.SetId(org.Owner + "/" + org.Name)
 	if err := entity.CreateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
