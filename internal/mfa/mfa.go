@@ -342,31 +342,39 @@ func setPreferred(db orm.DB) zip.Handler {
 var nowFunc = time.Now
 
 // decode reads the request: the JSON body when there is one, then the QUERY STRING
-// for anything the body did not carry.
+// for the half of a request a URL is allowed to carry.
 //
-// That is the SAME precedence zip's typed binder applies to every typed op (body,
-// then the URL overlays it) and the same one the login handler applies to the
-// authorize parameters, and it is the whole reason this surface was unusable: the
-// portal posts every field on the query with an empty body, three of the five
-// handlers read only the body, and so `enable` and `preferred` answered 400 "invalid
-// body" to the exact requests the shipped client sends. Nobody could add a second
-// factor, and an organization that required one was locked out.
+// WHAT IT ADDRESSES falls back to the query. owner and name say which account,
+// mfaType says which factor, and a URL naming what it acts on is what a URL is
+// for. It is also the precedence zip's typed binder applies to every typed op, and
+// it is the whole reason this surface was usable at all: the portal posts those
+// fields on the query with an empty body, three of the five handlers read only the
+// body, and so `enable` and `preferred` answered 400 "invalid body" to the exact
+// requests the shipped client sends. Nobody could add a second factor, and an
+// organization that required one was locked out.
+//
+// WHAT IT PROVES does not. `secret` is the TOTP seed: not a token but the factor
+// itself, enough to derive every passcode the account will ever accept, for as long
+// as the enrolment lasts. `passcode` is a live one. A URL is the part of a request
+// that gets written down — the ingress access log, every proxy in front of it, the
+// browser's history — so a seed that reaches the query is a second factor that
+// belongs to whoever reads logs. Both are read from the BODY alone, which is the
+// same line every typed op's credential field draws with `url:"-"`. One rule about
+// what a URL carries, whether the binder is zip's or this one.
 func decode(c *zip.Ctx, req *setupReq) error {
 	if body := c.Body(); len(body) > 0 {
 		if err := json.Unmarshal(body, req); err != nil {
 			return err
 		}
 	}
-	q := func(dst *string, key string) {
+	addr := func(dst *string, key string) {
 		if *dst == "" {
 			*dst = c.Query(key)
 		}
 	}
-	q(&req.Owner, "owner")
-	q(&req.Name, "name")
-	q(&req.MfaType, "mfaType")
-	q(&req.Secret, "secret")
-	q(&req.Passcode, "passcode")
+	addr(&req.Owner, "owner")
+	addr(&req.Name, "name")
+	addr(&req.MfaType, "mfaType")
 	return nil
 }
 
