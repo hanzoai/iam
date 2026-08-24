@@ -409,11 +409,22 @@ const mcpPath = "/mcp"
 // door is a fixed address.
 func Control(db orm.DB) zip.Handler {
 	guard := Guard(db) // one authentication decision, mounted twice, never copied
+	// The call plane is a SUBTREE — its constant ends in "/" — so its door is the
+	// collection itself and everything beneath it.
+	callPath := strings.TrimSuffix(zip.CallPath, "/")
 	return func(c *zip.Ctx) error {
-		switch p := c.Path(); {
+		// THE SPELLING THE ROUTER MATCHED, not the one the caller typed. The router
+		// resolves a path case-insensitively and tolerates a trailing slash, so /MCP,
+		// /mcp/ and /Mcp all reach the handler mounted at /mcp. A gate comparing the
+		// raw path therefore decides about a different string than the router routed,
+		// and every door stands open under any other spelling of its own name.
+		// Normalize once, here, so the gate and the router agree on what was asked
+		// for.
+		p := strings.TrimSuffix(strings.ToLower(c.Path()), "/")
+		switch {
 		case p == mcpPath, p == zip.SpecPath, p == zip.DocsPath,
 			p == zip.GraphPath, p == zip.PluginPath,
-			strings.HasPrefix(p, zip.CallPath):
+			p == callPath, strings.HasPrefix(p, callPath+"/"):
 			return guard(c)
 		}
 		return c.Continue()
