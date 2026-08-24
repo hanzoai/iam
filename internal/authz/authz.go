@@ -579,7 +579,7 @@ func Authorize(ctx context.Context, op zip.Op, in any) error {
 	//
 	// The same predicate the Guard consults, so the two cannot answer differently
 	// about which reads they are each responsible for.
-	if v == policy.Read && (owner == "" || pathAuthorized(op.Path)) {
+	if v == policy.Read && pathAuthorized(op.Path) {
 		return nil
 	}
 	p, present := From(ctx)
