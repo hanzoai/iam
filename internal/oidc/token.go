@@ -393,7 +393,12 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "unauthorized_client", "password grant is not enabled for this client")
 	}
 
-	username, password := param(c, "username"), param(c, "password")
+	// The username and the password are CREDENTIALS, read from the POST body alone —
+	// never the query, where a URL carries them into the access log, every proxy, and
+	// the browser's history. RFC 6749 §4.3.2 posts both in the form body. The org is
+	// an addressing parameter and keeps its query fallback, like the MFA proof's
+	// addressing half.
+	username, password := formOnly(c, "username"), formOnly(c, "password")
 	if username == "" || password == "" {
 		return tokenError(c, 400, "invalid_request", "username and password are required")
 	}
