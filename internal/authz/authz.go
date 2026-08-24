@@ -159,15 +159,21 @@ func CanSetCert(p *principal.Principal, owner, name string) bool {
 //
 // It gates the CHANGE, not the unchanged round-trip: an editor that reads a row and
 // saves it back re-sends the cert it read, and the stored value was authorized when
-// it was set. Only a cert set to a NEW value is authorized here. A server-internal
-// call carries no principal and is trusted by the boundary around it.
+// it was set. Only a cert set to a NEW value is authorized here.
+//
+// A context with no principal is refused rather than trusted. These handlers are
+// reached from the router and nowhere else — the boot paths write their rows
+// through the store — so a call arriving without one is a door that let an
+// unauthenticated request through, and admitting it would make this gate vanish
+// exactly when it is needed. Refusing is also the failure worth having: it is
+// immediate and it says so, where the alternative is a hole nobody sees.
 func AuthorizeCert(ctx context.Context, db orm.DB, newCert, oldCert string) error {
 	if newCert == oldCert || newCert == "" {
 		return nil
 	}
 	p, ok := principal.From(ctx)
 	if !ok {
-		return nil // server-internal (bootstrap/seed) — trusted caller
+		return zip.ErrForbidden("not authorized to name the signing cert " + newCert)
 	}
 	cert, err := store.GetSigningCert(ctx, db, newCert)
 	if err != nil {

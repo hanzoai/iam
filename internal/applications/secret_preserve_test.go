@@ -6,10 +6,19 @@ import (
 	"context"
 	"testing"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
+
+// asSuper is who actually makes these writes: the rows are owned by the reserved
+// admin org, which no other scope may write, and the handler is reached from the
+// router, which always carries a principal.
+func asSuper() context.Context {
+	return principal.Bind(context.Background(), &policy.Principal{Org: "admin", User: "root", Sudo: true})
+}
 
 // THE ADMIN ROUND-TRIP MUST NOT DE-SECRET AN APP.
 //
@@ -36,7 +45,7 @@ func seedConfidential(t *testing.T, db orm.DB, name, secret string) *schema.Appl
 // The regression: a write echoing a MASKED read preserves the credential.
 func TestUpdate_MaskedRoundTripPreservesTheSecret(t *testing.T) {
 	db := memDB(t)
-	ctx := context.Background()
+	ctx := asSuper()
 	seedConfidential(t, db, "hanzo-console", "s3cret-do-not-lose-me")
 
 	// Exactly what an admin round-trip carries: the record as READ (secret masked
@@ -66,7 +75,7 @@ func TestUpdate_MaskedRoundTripPreservesTheSecret(t *testing.T) {
 // Rotation stays possible — it just has to be deliberate.
 func TestUpdate_ExplicitSecretStillRotates(t *testing.T) {
 	db := memDB(t)
-	ctx := context.Background()
+	ctx := asSuper()
 	seedConfidential(t, db, "rotate-me", "old-secret")
 
 	in := &schema.Application{
@@ -86,7 +95,7 @@ func TestUpdate_ExplicitSecretStillRotates(t *testing.T) {
 // same as minting one.
 func TestUpdate_PublicClientStaysPublic(t *testing.T) {
 	db := memDB(t)
-	ctx := context.Background()
+	ctx := asSuper()
 	seedConfidential(t, db, "public-spa", "")
 
 	in := &schema.Application{

@@ -28,16 +28,16 @@ import (
 // separate field that a tenant admin could otherwise set to the reserved admin
 // org (a SuperAdmin-minting app) or to a victim tenant. On a gated HTTP request
 // the Guard attached a Principal; a non-super may point an app only at its OWN
-// org. A server-internal call (bootstrap/seed) carries no Principal and is
-// trusted, so an unauthenticated context is left to the surrounding trust
-// boundary rather than blocked here.
+// org. A context carrying no principal is refused for the reason AuthorizeCert
+// states: this handler is reached from the router and nowhere else, so arriving
+// without one is a door left open rather than a caller to trust.
 func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	if in.Organization == "" {
 		return nil // an org-less app mints no cross-tenant/SuperAdmin identity
 	}
 	p, ok := principal.From(ctx)
 	if !ok {
-		return nil // server-internal (no principal) — trusted caller
+		return zip.ErrForbidden("not authorized to set the application organization to " + in.Organization)
 	}
 	if !authz.CanSetOrg(p, in.Organization) {
 		return zip.ErrForbidden("not authorized to set the application organization to " + in.Organization)
