@@ -414,13 +414,14 @@ func Control(db orm.DB) zip.Handler {
 	callPath := strings.TrimSuffix(zip.CallPath, "/")
 	return func(c *zip.Ctx) error {
 		// THE SPELLING THE ROUTER MATCHED, not the one the caller typed. The router
-		// resolves a path case-insensitively and tolerates a trailing slash, so /MCP,
-		// /mcp/ and /Mcp all reach the handler mounted at /mcp. A gate comparing the
-		// raw path therefore decides about a different string than the router routed,
-		// and every door stands open under any other spelling of its own name.
-		// Normalize once, here, so the gate and the router agree on what was asked
-		// for.
-		p := strings.TrimSuffix(strings.ToLower(c.Path()), "/")
+		// lowercases the path and strips EVERY trailing slash before it matches
+		// (fiber configurePath: ToLower then TrimRight '/'), so /MCP, /mcp/, /mcp//
+		// and /Mcp all reach the handler mounted at /mcp. A gate comparing the raw
+		// path — or one stripping a single slash — therefore decides about a different
+		// string than the router routed, and every door stands open under the
+		// spellings its normalization missed. Normalize the SAME WAY the router does,
+		// once, here, so the gate and the router agree on what was asked for.
+		p := strings.TrimRight(strings.ToLower(c.Path()), "/")
 		switch {
 		case p == mcpPath, p == zip.SpecPath, p == zip.DocsPath,
 			p == zip.GraphPath, p == zip.PluginPath,
