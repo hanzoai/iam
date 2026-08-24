@@ -134,15 +134,21 @@ func TestGet_FoundAndMissing(t *testing.T) {
 	}
 }
 
-func TestCreate_FreshMergeAndExclusive(t *testing.T) {
+// A cookie id on a session row is what a presented cookie is checked against, so
+// an id in the list is a browser that stays authenticated. Signing in mints one;
+// a request never names one. These pin both halves: the row grows only by minting,
+// and what a request sends is not in it.
+func TestCreate_MintsItsOwnId(t *testing.T) {
 	db := newDB(t)
 	h := &Sessions{db: db}
 	ctx := context.Background()
 	ref := func(sids []string, exclusive bool) *CreateSessionIn {
 		return &CreateSessionIn{Owner: "hanzo", Name: "alice", Application: "cloud", SessionId: sids, ExclusiveSignin: exclusive}
 	}
+	chosen := map[string]bool{"a": true, "b": true, "c": true, "z": true}
 
-	// Fresh sign-in.
+	// A fresh sign-in holds exactly one id, and it is the one the server minted —
+	// never the one the request asked for.
 	s, err := h.Create(ctx, ref([]string{"a", "b"}, false))
 	if err != nil {
 		t.Fatal(err)
@@ -150,44 +156,65 @@ func TestCreate_FreshMergeAndExclusive(t *testing.T) {
 	if s.Id() != "hanzo/alice/cloud" {
 		t.Fatalf("id = %q, want the composed triple", s.Id())
 	}
-	if got := s.SessionId; len(got) != 2 || got[0] != "a" || got[1] != "b" {
-		t.Fatalf("fresh SessionId = %v, want [a b]", got)
+	if len(s.SessionId) != 1 {
+		t.Fatalf("fresh SessionId = %v, want one minted id", s.SessionId)
+	}
+	first := s.SessionId[0]
+	if chosen[first] {
+		t.Fatalf("the request chose the cookie id %q", first)
 	}
 
-	// A second browser adds to the session rather than replacing it, and a
-	// duplicate cookie is not carried twice.
+	// A second browser adds a second minted id beside the first, and still none the
+	// request named.
 	s, err = h.Create(ctx, ref([]string{"b", "c"}, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := s.SessionId; len(got) != 3 || got[0] != "a" || got[1] != "b" || got[2] != "c" {
-		t.Fatalf("merged SessionId = %v, want [a b c] (union, deduped, in order)", got)
+	if len(s.SessionId) != 2 || s.SessionId[0] != first {
+		t.Fatalf("merged SessionId = %v, want the first id and one more", s.SessionId)
+	}
+	for _, id := range s.SessionId {
+		if chosen[id] {
+			t.Fatalf("a request-chosen cookie id reached the row: %v", s.SessionId)
+		}
 	}
 
-	// An exclusive sign-in collapses the list to the single incoming cookie —
-	// every other browser is signed out.
+	// An exclusive sign-in collapses to the single id it just minted — every other
+	// browser is signed out.
 	s, err = h.Create(ctx, ref([]string{"z"}, true))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := s.SessionId; len(got) != 1 || got[0] != "z" {
-		t.Fatalf("exclusive SessionId = %v, want [z]", got)
+	if len(s.SessionId) != 1 || chosen[s.SessionId[0]] || s.SessionId[0] == first {
+		t.Fatalf("exclusive SessionId = %v, want one freshly minted id", s.SessionId)
 	}
 }
 
-func TestUpdate_ReplacesAndMissing(t *testing.T) {
+// Update keeps: the result is the browsers already on the row that the request
+// kept. Leaving one off signs it out; naming one that is not there adds nothing,
+// so a revoked cookie cannot be put back.
+func TestUpdate_KeepsOnlyWhatIsAlreadyThere(t *testing.T) {
 	db := newDB(t)
 	h := &Sessions{db: db}
 	ctx := context.Background()
 
 	putSession(t, db, "hanzo", "alice", "cloud", now(), "a", "b", "c")
 
-	s, err := h.Update(ctx, &UpdateSessionIn{Owner: "hanzo", Name: "alice", Application: "cloud", SessionId: []string{"x", "y"}})
+	s, err := h.Update(ctx, &UpdateSessionIn{Owner: "hanzo", Name: "alice", Application: "cloud", SessionId: []string{"a", "c"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := s.SessionId; len(got) != 2 || got[0] != "x" || got[1] != "y" {
-		t.Fatalf("Update SessionId = %v, want [x y] (the whole set replaced)", got)
+	if got := s.SessionId; len(got) != 2 || got[0] != "a" || got[1] != "c" {
+		t.Fatalf("Update SessionId = %v, want [a c] — the kept browsers, b signed out", got)
+	}
+
+	// An id the row does not hold names a browser that never signed in.
+	s, err = h.Update(ctx, &UpdateSessionIn{Owner: "hanzo", Name: "alice", Application: "cloud", SessionId: []string{"a", "x", "y"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.SessionId; len(got) != 1 || got[0] != "a" {
+		t.Fatalf("Update SessionId = %v, want [a] — x and y were never signed in", got)
 	}
 
 	_, err = h.Update(ctx, &UpdateSessionIn{Owner: "hanzo", Name: "ghost", Application: "cloud", SessionId: []string{"x"}})
@@ -196,9 +223,9 @@ func TestUpdate_ReplacesAndMissing(t *testing.T) {
 	}
 }
 
-// Update caps the cookie list to maxSessionIds — the same bound the merge path
-// keeps, so neither path lets a row grow without limit.
-func TestUpdate_CapsSessionIds(t *testing.T) {
+// An update can only ever narrow the row, so no request can grow it — the bound
+// the merge path keeps by counting, this path keeps by construction.
+func TestUpdate_CannotGrowTheRow(t *testing.T) {
 	db := newDB(t)
 	h := &Sessions{db: db}
 
@@ -208,16 +235,13 @@ func TestUpdate_CapsSessionIds(t *testing.T) {
 	for i := range overflow {
 		overflow[i] = string(rune('A'+i%26)) + itoa(i)
 	}
+	overflow = append(overflow, "seed")
 	s, err := h.Update(context.Background(), &UpdateSessionIn{Owner: "hanzo", Name: "alice", Application: "cloud", SessionId: overflow})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.SessionId) != maxSessionIds {
-		t.Fatalf("capped length = %d, want %d", len(s.SessionId), maxSessionIds)
-	}
-	// The NEWEST are kept: the tail survives, the head is dropped.
-	if s.SessionId[len(s.SessionId)-1] != overflow[len(overflow)-1] {
-		t.Fatal("cap dropped the newest cookie; it must keep the tail")
+	if got := s.SessionId; len(got) != 1 || got[0] != "seed" {
+		t.Fatalf("SessionId = %v, want [seed] — the row holds only what signing in put there", got)
 	}
 }
 
