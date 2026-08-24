@@ -26,55 +26,55 @@ type Provider struct {
 
 	Owner       string `json:"owner" orm:"index"`
 	Name        string `json:"name" orm:"index"`
-	CreatedTime string `json:"createdTime" orm:"index"`
+	CreatedTime string `json:"createdTime" orm:"index" url:"-"`
 
-	DisplayName       string `json:"displayName"`
-	Category          string `json:"category"`
-	Type              string `json:"type"`
-	SubType           string `json:"subType"`
-	Method            string `json:"method"`
+	DisplayName       string `json:"displayName" url:"-"`
+	Category          string `json:"category" url:"-"`
+	Type              string `json:"type" url:"-"`
+	SubType           string `json:"subType" url:"-"`
+	Method            string `json:"method" url:"-"`
 	ClientId          string `json:"clientId"`
 	ClientSecret      string `json:"clientSecret" url:"-"`
-	ClientId2         string `json:"clientId2"`
+	ClientId2         string `json:"clientId2" url:"-"`
 	ClientSecret2     string `json:"clientSecret2" url:"-"`
-	Cert              string `json:"cert"`
-	CustomAuthUrl     string `json:"customAuthUrl"`
-	CustomTokenUrl    string `json:"customTokenUrl"`
-	CustomUserInfoUrl string `json:"customUserInfoUrl"`
-	CustomLogo        string `json:"customLogo"`
-	Scopes            string `json:"scopes"`
+	Cert              string `json:"cert" url:"-"`
+	CustomAuthUrl     string `json:"customAuthUrl" url:"-"`
+	CustomTokenUrl    string `json:"customTokenUrl" url:"-"`
+	CustomUserInfoUrl string `json:"customUserInfoUrl" url:"-"`
+	CustomLogo        string `json:"customLogo" url:"-"`
+	Scopes            string `json:"scopes" url:"-"`
 
 	UserMapping  map[string]string `json:"userMapping" orm:"serialize" datastore:"-"`
 	UserMapping_ string            `json:"-"`
 	HttpHeaders  map[string]string `json:"httpHeaders" orm:"serialize" datastore:"-"`
 	HttpHeaders_ string            `json:"-"`
 
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	DisableSsl bool   `json:"disableSsl"`
-	SslMode    string `json:"sslMode"`
-	Title      string `json:"title"`
-	Content    string `json:"content"`
-	Receiver   string `json:"receiver"`
+	Host       string `json:"host" url:"-"`
+	Port       int    `json:"port" url:"-"`
+	DisableSsl bool   `json:"disableSsl" url:"-"`
+	SslMode    string `json:"sslMode" url:"-"`
+	Title      string `json:"title" url:"-"`
+	Content    string `json:"content" url:"-"`
+	Receiver   string `json:"receiver" url:"-"`
 
-	RegionId     string `json:"regionId"`
-	SignName     string `json:"signName"`
-	TemplateCode string `json:"templateCode"`
-	AppId        string `json:"appId"`
+	RegionId     string `json:"regionId" url:"-"`
+	SignName     string `json:"signName" url:"-"`
+	TemplateCode string `json:"templateCode" url:"-"`
+	AppId        string `json:"appId" url:"-"`
 
-	Endpoint         string `json:"endpoint"`
-	IntranetEndpoint string `json:"intranetEndpoint"`
-	Domain           string `json:"domain"`
-	Bucket           string `json:"bucket"`
-	PathPrefix       string `json:"pathPrefix"`
+	Endpoint         string `json:"endpoint" url:"-"`
+	IntranetEndpoint string `json:"intranetEndpoint" url:"-"`
+	Domain           string `json:"domain" url:"-"`
+	Bucket           string `json:"bucket" url:"-"`
+	PathPrefix       string `json:"pathPrefix" url:"-"`
 
-	Metadata               string `json:"metadata"`
-	IdP                    string `json:"idP"`
-	IssuerUrl              string `json:"issuerUrl"`
-	EnableSignAuthnRequest bool   `json:"enableSignAuthnRequest"`
-	EmailRegex             string `json:"emailRegex"`
+	Metadata               string `json:"metadata" url:"-"`
+	IdP                    string `json:"idP" url:"-"`
+	IssuerUrl              string `json:"issuerUrl" url:"-"`
+	EnableSignAuthnRequest bool   `json:"enableSignAuthnRequest" url:"-"`
+	EmailRegex             string `json:"emailRegex" url:"-"`
 
-	ProviderUrl string `json:"providerUrl"`
-	EnableProxy bool   `json:"enableProxy"`
-	EnablePkce  bool   `json:"enablePkce"`
+	ProviderUrl string `json:"providerUrl" url:"-"`
+	EnableProxy bool   `json:"enableProxy" url:"-"`
+	EnablePkce  bool   `json:"enablePkce" url:"-"`
 }
