@@ -105,7 +105,7 @@ func TestCreateStampsAndAppliesFields(t *testing.T) {
 		t.Fatal("an omitted CreatedTime must be stamped")
 	}
 	if got.Organization != "hanzo" {
-		t.Fatalf("an omitted Organization must default to the owner: got %q", got.Organization)
+		t.Fatalf("Organization must be the owner: got %q", got.Organization)
 	}
 
 	in := &Input{
@@ -127,10 +127,15 @@ func TestCreateStampsAndAppliesFields(t *testing.T) {
 	if w.CreatedTime != in.CreatedTime {
 		t.Fatalf("CreatedTime = %q, want the supplied %q", w.CreatedTime, in.CreatedTime)
 	}
+	// Organization is the owner, whatever the request asked for: a workspace naming
+	// an organization it does not belong to is a stored answer that contradicts the
+	// row it is stored on.
+	if w.Organization != in.Owner {
+		t.Fatalf("Organization = %q, want the owner %q", w.Organization, in.Owner)
+	}
 	switch {
 	case w.DisplayName != in.DisplayName,
 		w.Description != in.Description,
-		w.Organization != in.Organization,
 		w.Bucket != in.Bucket,
 		len(w.Tags) != 1 || w.Tags[0] != "prod",
 		w.Metadata != in.Metadata,
