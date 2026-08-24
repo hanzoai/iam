@@ -110,6 +110,21 @@ type CreateInput struct {
 	// is ignored exactly as a body-supplied Id is.
 	Type  string `json:"-"`
 	Admin bool   `json:"-"`
+	// EmailVerified records that an identity provider PROVED this address. It is
+	// off the wire for the same reason Type and Admin are, and it states here the
+	// rule Update already keeps: an address is proven by the flow that verifies it
+	// and by nothing else. The federation broker asks this bit before it links a
+	// social identity onto an existing local account — it adopts a row only when
+	// that row's own address was proven, or when the row carries no password
+	// anybody could already sign in with. A body that could state the bit would
+	// answer that question for the broker, and a row carrying a chosen password AND
+	// a stated proof passes a check that exists to say no.
+	//
+	// So the proof comes from the CALLING CODE, never the caller's JSON: the
+	// federation broker states what its provider vouched for, and every other
+	// create path — password signup, SCIM, the legacy add-user verb, the embedder
+	// seam — records an address nobody has proven yet.
+	EmailVerified bool `json:"-"`
 }
 
 // UpdateInput carries the desired user state plus an optional new plaintext
@@ -254,6 +269,13 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// could otherwise point at something it was never granted — Id at a victim's
 	// subject, Type/IsAdmin at the org pool's `billing_account` claim.
 	u.Type, u.IsAdmin = in.Type, in.Admin
+	// The address proof is the calling code's to state as well, and whatever the
+	// body carried is discarded, for the reason CreateInput.EmailVerified gives:
+	// this bit is what the federation broker reads to decide whether a social
+	// identity may be linked onto an existing account, so a body that states it
+	// answers the broker's question on the sender's behalf. Update carries the
+	// stored value for the same reason.
+	u.EmailVerified = in.EmailVerified
 	// The JSON-document store hangs no per-field DB UNIQUE constraint (the same reason
 	// clientId uniqueness is enforced at the write, not by an index), so reject the
 	// astronomically-unlikely UUID clash HERE rather than admit a second row under one

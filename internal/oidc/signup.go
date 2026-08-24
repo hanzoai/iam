@@ -259,7 +259,6 @@ func signupHandler(db orm.DB) zip.Handler {
 				FirstName:         f.FirstName,
 				LastName:          f.LastName,
 				Email:             email,
-				EmailVerified:     false,
 				Phone:             store.NormalizePhone(f.Phone),
 				CountryCode:       f.CountryCode,
 				Affiliation:       f.Affiliation,
