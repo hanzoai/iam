@@ -128,6 +128,22 @@ func CanSetOrg(p *principal.Principal, org string) bool {
 	return p.CanEntity(policy.Write, policy.Entity{Kind: "applications", Owner: org}, Env)
 }
 
+// CanSetCert reports whether principal p may point an application at the signing
+// cert (owner, name) — authorized EXACTLY as a write to that cert row through the
+// one policy: a SuperAdmin may name any; anyone else only one their OWN org owns,
+// never a reserved platform owner (admin/built-in). A signing cert is trusted only
+// under those reserved owners (store.GetSigningCert), so this is the gate that
+// keeps a tenant admin from pointing an application at the platform signing key and
+// having every token it mints signed by the key admin/root's own bearer carries.
+// It is the cert companion of CanSetOrg, applied to the application's Cert FIELD.
+// Fails closed on a nil principal.
+func CanSetCert(p *principal.Principal, owner, name string) bool {
+	if p == nil {
+		return false
+	}
+	return p.CanEntity(policy.Write, policy.Entity{Kind: "certs", Owner: owner, Name: name}, Env)
+}
+
 // Optional resolves the Principal a PUBLIC route's caller happens to carry, or
 // nil when the request is anonymous or its bearer does not verify. The Guard
 // admits a public path WITHOUT resolving a principal (a browser must reach the
