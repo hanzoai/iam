@@ -17,6 +17,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
@@ -113,6 +114,12 @@ func (h *Handlers) Add(ctx context.Context, in *schema.Permission) (*schema.Perm
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	// The subjects a grant is evaluated for are an authority its own (Owner, Name)
+	// does not carry: a permission filed in one organization could otherwise name
+	// another organization's people, or the platform's, as the people it grants to.
+	if err := authz.AuthorizeGrant(ctx, "POST", in.Owner, in.Users, in.Groups, in.Roles); err != nil {
+		return nil, err
+	}
 	id := permissionID(in.Owner, in.Name)
 	if _, err := orm.Get[schema.Permission](h.db, id); err == nil {
 		return nil, zip.ErrConflict("permission already exists")
@@ -133,6 +140,11 @@ func (h *Handlers) Add(ctx context.Context, in *schema.Permission) (*schema.Perm
 func (h *Handlers) Update(ctx context.Context, in *schema.Permission) (*schema.Permission, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	// Widening a grant is the same authority as making one, so an update names its
+	// subjects under the same gate.
+	if err := authz.AuthorizeGrant(ctx, "PUT", in.Owner, in.Users, in.Groups, in.Roles); err != nil {
+		return nil, err
 	}
 	existing, err := orm.Get[schema.Permission](h.db, permissionID(in.Owner, in.Name))
 	if err != nil {

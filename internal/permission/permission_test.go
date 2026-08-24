@@ -34,10 +34,12 @@ func newHandlers(t *testing.T) (*Handlers, orm.DB) {
 	return &Handlers{db: db}, db
 }
 
-// mustAdd seeds one permission through the real Add path and returns it.
+// mustAdd seeds one permission through the real Add path, as an admin of the org
+// the grant is filed in — the only caller shape the guarded route admits, and the
+// one whose subjects the write authorizes.
 func mustAdd(t *testing.T, h *Handlers, p *schema.Permission) *schema.Permission {
 	t.Helper()
-	out, err := h.Add(context.Background(), p)
+	out, err := h.Add(asAdmin(p.Owner), p)
 	if err != nil {
 		t.Fatalf("seed %s/%s: %v", p.Owner, p.Name, err)
 	}
