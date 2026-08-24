@@ -199,8 +199,14 @@ func list(db orm.DB) zip.TypedHandler[query, httpx.Answer] {
 		if err != nil {
 			return httpx.Bad(400, err.Error(), ""), nil
 		}
-		for _, sa := range all {
-			redact(sa)
+		// schema.Mask, not a list of columns kept here: an entity says which of its
+		// own fields are secret, and this listing reaches ACROSS tenants — a
+		// mint-capable app lists the accounts of the org it administers — so every
+		// field it emits is one tenant's row handed to another. A second copy of that
+		// list drifts in the direction that leaks, because a secret added to Mask is
+		// one the copy has never heard of.
+		for i, sa := range all {
+			all[i] = sa.Mask()
 		}
 		// data2 is the TOTAL, not the page length — v1's contract, so a caller
 		// paging through knows how far it has to go.
@@ -486,17 +492,6 @@ func find(ctx context.Context, db orm.DB, owner, name string) (*schema.User, err
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return u, nil
-}
-
-// redact strips every credential field before an identity is listed. The secret
-// exists only as a digest, and even that never leaves: a list is names and
-// metadata (v1 masks the same three columns).
-func redact(sa *schema.User) {
-	sa.AccessKey = ""
-	sa.AccessSecret = ""
-	sa.AccessSecretHash = ""
-	sa.PasswordHash = ""
-	sa.PasswordSalt = ""
 }
 
 // paginate returns the 1-indexed page of size n, clamped to the slice. Absent
