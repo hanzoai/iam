@@ -65,14 +65,21 @@ type passwordBody struct {
 	// token, never from these.
 	Organization string `json:"organization"`
 	Username     string `json:"username"` // email, username OR phone
+	// The three fields that decide the write, each `url:"-"` so the BODY is the
+	// only place it can be stated. A scalar without that tag binds from the query
+	// on every method and binds AFTER the body, so it does not merely offer a
+	// second source — it overrides the first. A URL is also the part of a request
+	// that gets written down: access and proxy logs, browser history, the Referer
+	// of whatever the answer links to. A credential belongs in none of those.
+	//
 	// Code is the one-time code delivered to the account's own address.
-	Code string `json:"code"`
+	Code string `json:"code" url:"-"`
 	// OldPassword is the credential being replaced, the proof a signed-in caller
 	// gives instead of a code.
-	OldPassword string `json:"oldPassword"`
+	OldPassword string `json:"oldPassword" url:"-"`
 	// Password is the new credential. It must satisfy the platform floor and the
 	// organization's own complexity options.
-	Password string `json:"password"`
+	Password string `json:"password" url:"-"`
 
 	// The two credentials a signed-in caller can present, bound from the request
 	// headers so this stays a typed op. `json:"-"` keeps them off the body and out
