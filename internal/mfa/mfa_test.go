@@ -228,11 +228,17 @@ func TestMFA_theReplacedSpellingIsRetired(t *testing.T) {
 	}
 }
 
-// TestMFA_theShippedClientShape is the defect that made enrolment impossible. The
-// portal posts every parameter on the QUERY STRING with an EMPTY body; three of the
-// five handlers read only the body, so `enable` answered 400 {"msg":"invalid body"}
-// to the exact request the live bundle sends. Nobody could add a second factor, and
-// an organization that required one was locked out of every account.
+// THE URL ADDRESSES, THE BODY PROVES.
+//
+// The portal posts owner/name/mfaType on the QUERY STRING with no JSON body, and
+// that keeps working — three of the five handlers once read the body alone, so
+// `enable` answered 400 {"msg":"invalid body"} to the exact request the live
+// bundle sends, and an organization that required a second factor was locked out
+// of every account.
+//
+// The PROOF is the other half and is read from the body, because a TOTP seed in a
+// query string is written into every access log in front of this service, and the
+// seed is not a token — it derives every passcode the account will ever accept.
 func TestMFA_theShippedClientShape(t *testing.T) {
 	h := newHarness(t)
 	alice := h.token(t, "hanzo/alice")
@@ -242,14 +248,41 @@ func TestMFA_theShippedClientShape(t *testing.T) {
 	if secret == "" {
 		t.Fatalf("initiate (query, empty body) returned no secret: %v", m)
 	}
-	q := "?owner=hanzo&name=alice&mfaType=app&secret=" + secret + "&passcode=" + totpNow(t, secret)
-	st, m := h.do(t, "POST", mfa.PathEnable+q, alice, "")
+	proof := `{"secret":"` + secret + `","passcode":"` + totpNow(t, secret) + `"}`
+	st, m := h.do(t, "POST", mfa.PathEnable+"?owner=hanzo&name=alice&mfaType=app", alice, proof)
 	if st != 200 || m["status"] != "ok" {
-		t.Fatalf("enable (query, empty body): status=%d body=%v — the shipped client cannot enrol", st, m)
+		t.Fatalf("enable (query addressing, body proof): status=%d body=%v — the client cannot enrol", st, m)
 	}
 	u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
 	if u.TotpSecret != secret || !factor.Has(u, factor.App) {
 		t.Fatalf("the factor did not land: %+v", u)
+	}
+}
+
+// THE PROOF IS NOT A URL PARAMETER.
+//
+// A correct seed and a correct live passcode, spelled in the query with an empty
+// body, enrol nothing — so a factor can never be established by a value that has
+// already been written into a log line. The refusal is the ordinary "the code is
+// required" answer, and the row is untouched: nothing half-written, no factor the
+// account cannot satisfy.
+func TestMFA_theProofIsNotReadFromTheQuery(t *testing.T) {
+	h := newHarness(t)
+	alice := h.token(t, "hanzo/alice")
+
+	_, m := h.do(t, "POST", mfa.PathInitiate+"?owner=hanzo&name=alice&mfaType=app", alice, "")
+	secret := dataString(m, "secret")
+	if secret == "" {
+		t.Fatalf("initiate returned no secret: %v", m)
+	}
+	q := "?owner=hanzo&name=alice&mfaType=app&secret=" + secret + "&passcode=" + totpNow(t, secret)
+	st, m := h.do(t, "POST", mfa.PathEnable+q, alice, "")
+	if st != 200 || m["status"] != "error" {
+		t.Fatalf("enable (proof in the query) = %d %v, want a refusal", st, m)
+	}
+	u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
+	if u.TotpSecret != "" || factor.Has(u, factor.App) || factor.Enabled(u) {
+		t.Fatalf("a seed carried in the URL enrolled a factor: %+v", u)
 	}
 }
 
