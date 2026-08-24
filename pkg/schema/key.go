@@ -61,7 +61,7 @@ type Key struct {
 	// schema because rows written before the change still hold a plaintext secret
 	// that the resolver drains on first use.
 	AccessKey    string `json:"accessKey" orm:"index"`
-	AccessSecret string `json:"accessSecret"`
+	AccessSecret string `json:"accessSecret" url:"-"`
 
 	// AccessSecretDigest is how a presented secret finds its key: the resolver
 	// digests what the caller sent and looks THAT up. It is what lets the row hold

@@ -59,10 +59,10 @@ type Organization struct {
 
 	HasPrivilegeConsent    bool       `json:"hasPrivilegeConsent" orm:"bool"`
 	PasswordType           string     `json:"passwordType" orm:"varchar(100)"`
-	PasswordSalt           string     `json:"passwordSalt" orm:"varchar(100)"`
+	PasswordSalt           string     `json:"passwordSalt" orm:"varchar(100)" url:"-"`
 	PasswordOptions        []string   `json:"passwordOptions" orm:"mediumtext"`
 	PasswordObfuscatorType string     `json:"passwordObfuscatorType" orm:"varchar(100)"`
-	PasswordObfuscatorKey  string     `json:"passwordObfuscatorKey" orm:"varchar(100)"`
+	PasswordObfuscatorKey  string     `json:"passwordObfuscatorKey" orm:"varchar(100)" url:"-"`
 	PasswordExpireDays     int        `json:"passwordExpireDays" orm:"int"`
 	CountryCodes           []string   `json:"countryCodes" orm:"mediumtext"`
 	DefaultAvatar          string     `json:"defaultAvatar" orm:"varchar(200)"`
@@ -72,9 +72,9 @@ type Organization struct {
 	Tags                   []string   `json:"tags" orm:"mediumtext"`
 	Languages              []string   `json:"languages" orm:"mediumtext"`
 	ThemeData              *ThemeData `json:"themeData" orm:"json"`
-	MasterPassword         string     `json:"masterPassword" orm:"varchar(200)"`
-	DefaultPassword        string     `json:"defaultPassword" orm:"varchar(200)"`
-	MasterVerificationCode string     `json:"masterVerificationCode" orm:"varchar(100)"`
+	MasterPassword         string     `json:"masterPassword" orm:"varchar(200)" url:"-"`
+	DefaultPassword        string     `json:"defaultPassword" orm:"varchar(200)" url:"-"`
+	MasterVerificationCode string     `json:"masterVerificationCode" orm:"varchar(100)" url:"-"`
 	IpWhitelist            string     `json:"ipWhitelist" orm:"varchar(200)"`
 	InitScore              int        `json:"initScore" orm:"int"`
 	EnableSoftDeletion     bool       `json:"enableSoftDeletion" orm:"bool"`
@@ -103,7 +103,7 @@ type Organization struct {
 	LdapAttributes      []string `json:"ldapAttributes" orm:"mediumtext"`
 	KerberosRealm       string   `json:"kerberosRealm" orm:"varchar(200)"`
 	KerberosKdcHost     string   `json:"kerberosKdcHost" orm:"varchar(200)"`
-	KerberosKeytab      string   `json:"kerberosKeytab" orm:"mediumtext"`
+	KerberosKeytab      string   `json:"kerberosKeytab" orm:"mediumtext" url:"-"`
 	KerberosServiceName string   `json:"kerberosServiceName" orm:"varchar(100)"`
 
 	// Balance fields are read-only mirrors; authoritative balances live in
