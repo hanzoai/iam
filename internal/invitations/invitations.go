@@ -16,6 +16,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -143,12 +144,29 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Invitation, error) 
 	return invitation, nil
 }
 
+// authorizeRefs gates the rows an invitation NAMES: the application whoever
+// redeems it arrives through, and the group they arrive holding. Neither is the
+// invitation's own (Owner, Name), so the seam that authorizes the row authorized
+// where the invitation is FILED and never what it hands out — an invitation naming
+// another organization's application, or the platform's, is an invitation into
+// that organization. A caller may name only what it may write, and an unqualified
+// name is read in the invitation's own organization.
+func authorizeRefs(ctx context.Context, method string, in *Input) error {
+	if err := authz.AuthorizeRef(ctx, method, "applications", in.Owner, in.Application); err != nil {
+		return err
+	}
+	return authz.AuthorizeRef(ctx, method, "groups", in.Owner, in.SignupGroup)
+}
+
 // Create issues an invitation to join your organization — the code or link a new
 // member redeems, with the role they arrive holding and the date it stops
 // working. A name already used in the organization is refused.
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	if err := authorizeRefs(ctx, "POST", in); err != nil {
+		return nil, err
 	}
 	switch _, err := orm.Get[schema.Invitation](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
@@ -178,6 +196,9 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, er
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Invitation, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	if err := authorizeRefs(ctx, "PUT", in); err != nil {
+		return nil, err
 	}
 	invitation, err := orm.Get[schema.Invitation](h.db, key(in.Owner, in.Name))
 	if err != nil {
