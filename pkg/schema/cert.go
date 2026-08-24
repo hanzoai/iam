@@ -41,7 +41,7 @@ type Cert struct {
 	Provider         string `json:"provider"`
 	Account          string `json:"account"`
 	AccessKey        string `json:"accessKey"`
-	AccessSecret     string `json:"accessSecret"`
+	AccessSecret     string `json:"accessSecret" url:"-"`
 
 	Certificate string `json:"certificate"`
 

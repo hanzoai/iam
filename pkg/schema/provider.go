@@ -34,9 +34,9 @@ type Provider struct {
 	SubType           string `json:"subType"`
 	Method            string `json:"method"`
 	ClientId          string `json:"clientId"`
-	ClientSecret      string `json:"clientSecret"`
+	ClientSecret      string `json:"clientSecret" url:"-"`
 	ClientId2         string `json:"clientId2"`
-	ClientSecret2     string `json:"clientSecret2"`
+	ClientSecret2     string `json:"clientSecret2" url:"-"`
 	Cert              string `json:"cert"`
 	CustomAuthUrl     string `json:"customAuthUrl"`
 	CustomTokenUrl    string `json:"customTokenUrl"`

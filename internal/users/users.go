@@ -85,7 +85,7 @@ type Lookup struct {
 // Password is never persisted — it is hashed into schema.User.PasswordHash.
 type CreateInput struct {
 	User     schema.User `json:"user"`
-	Password string      `json:"password,omitempty"`
+	Password string      `json:"password,omitempty" url:"-"`
 	// Consent is the data subject's OWN answer, and it is the only way one enters
 	// a new account: Create drops any consent the body carried and records this
 	// instead. `json:"-"` keeps it off the wire, so it can be set only by an
@@ -124,7 +124,7 @@ type UpdateInput struct {
 	Name  string `json:"-" url:"name"`
 
 	User     schema.User `json:"user"`
-	Password string      `json:"password,omitempty"`
+	Password string      `json:"password,omitempty" url:"-"`
 	// Admin raises or lowers the org-admin bit. Nil means "leave it as stored",
 	// which is what every profile edit means. It is off the wire (see CreateInput):
 	// the bit is one of the two things store.BillingAccount reads to name an org's
