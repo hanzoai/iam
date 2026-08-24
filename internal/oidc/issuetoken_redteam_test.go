@@ -45,7 +45,7 @@ func seedAttackerApp(t *testing.T, db orm.DB, owner, name, clientID, secret, pla
 // bits. updateUser reads the FULL row fresh under a row lock and mutates only
 // AccessKey/UpdatedTime, so every field the handler didn't touch is preserved.
 func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 

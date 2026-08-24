@@ -38,8 +38,8 @@ import (
 // ?userId=admin/z to become super". Remove the gate at issuetoken.go and this flips
 // to 200 → test fails.
 func TestImpersonation_generalMinter_cannotReachAdminOrgTarget(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console") // general minter …
-	// … deliberately NOT on IAM_ADMIN_MINT_ALLOWED_APPS (unset ⇒ fail-closed).
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console") // general minter …
+	// … deliberately NOT on IAM_ADMIN_TOKEN_EXCHANGE_APPS (unset ⇒ fail-closed).
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"}) // admin-owned console
 	seedUserInOrg(t, db, "admin", "z", "z@hanzo.ai", "pw")                   // a real SuperAdmin (org == admin)
@@ -76,7 +76,7 @@ func TestImpersonation_generalMinter_cannotReachAdminOrgTarget(t *testing.T) {
 // read runs and answers `200 the user does not exist`, and an unprivileged client
 // can tell a real SuperAdmin from an invented one by the shape of the refusal.
 func TestImpersonation_reservedTarget_isNoExistenceOracle(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUserInOrg(t, db, "admin", "z", "z@hanzo.ai", "pw") // exists
@@ -106,8 +106,8 @@ func TestImpersonation_reservedTarget_isNoExistenceOracle(t *testing.T) {
 // incidental failure — mirroring iam-v1, where the admin-mint list is the sole path
 // to a privileged target.
 func TestImpersonation_adminMinter_boundaryIsTheAdminMintCapability(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
-	t.Setenv("IAM_ADMIN_MINT_ALLOWED_APPS", "hanzo-console") // now ALSO admin-mint capable
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_ADMIN_TOKEN_EXCHANGE_APPS", "hanzo-console") // now ALSO admin-mint capable
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUserInOrg(t, db, "admin", "z", "z@hanzo.ai", "pw")

@@ -149,7 +149,7 @@ func TestJourney_OIDCFlow(t *testing.T) {
 // TestJourney_PasswordGrant_and_TokenExchange proves the two non-interactive grants
 // the console/BFF rely on.
 func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	e := boot(t)
 
 	// Password grant → a first-party session token for alice.

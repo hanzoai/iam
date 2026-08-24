@@ -596,28 +596,34 @@ func mintErr(c *zip.Ctx, status int, msg string) error {
 	return c.JSON(status, httpx.Response{Status: "error", Msg: msg})
 }
 
-// mintAllowed reports whether app may act on a user's behalf. TWO conditions, both
-// required: its OWNING org must be a reserved platform signing owner (admin/built-in),
-// AND its clientId must be on IAM_KEY_MINT_ALLOWED_APPS. The owner-pin is the decisive
-// gate — clientId and secret are body-supplied at registration, so a tenant could
-// register an app whose clientId collides with a mint-listed one and, on a backend
-// whose duplicate-row order is unspecified, have its row resolve and its known secret
-// authenticate; but its owner is its OWN tenant, never a signing owner, so it mints
-// nothing. (Resolution is additionally admin-preferring and clientId is unique on
+// mintAllowed reports whether app may act on a user's behalf — the on-behalf-of
+// primitives: issue a user token (RFC 8693 token exchange and its issue-user-token
+// twin) and mint or revoke a user's Cloud API key. TWO conditions, both required:
+// its OWNING org must be a reserved platform signing owner (admin/built-in), AND its
+// clientId must be on IAM_TOKEN_EXCHANGE_APPS. The owner-pin is the decisive gate —
+// clientId and secret are body-supplied at registration, so a tenant could register
+// an app whose clientId collides with a listed one and, on a backend whose
+// duplicate-row order is unspecified, have its row resolve and its known secret
+// authenticate; but its owner is its OWN tenant, never a signing owner, so it acts
+// on nobody. (Resolution is additionally admin-preferring and clientId is unique on
 // create, so the collision cannot arise nor win — this is the third, innermost gate.)
-// Every legit minter is admin-owned, so no legitimate grant regresses. Empty/unset
-// list allows nothing — fail closed.
+// Empty/unset list allows nothing — fail closed.
+//
+// This is keyed on clientId and gates token exchange only. The CapKeyMint capability
+// (authz.CapKeyMint) is a SEPARATE authority keyed on the application NAME, so an app
+// permitted to exchange tokens is not thereby granted the credential-administration
+// capability, nor its reach across the entity registry.
 func mintAllowed(app *schema.Application) bool {
-	return policy.IsSigningOwner(app.Owner) && appInList("IAM_KEY_MINT_ALLOWED_APPS", app.ClientId)
+	return policy.IsSigningOwner(app.Owner) && appInList("IAM_TOKEN_EXCHANGE_APPS", app.ClientId)
 }
 
 // adminMintAllowed reports whether app may act on behalf of a RESERVED-org
 // (admin/built-in) user — a strictly narrower, separately-granted capability than the
-// general mint list, so a leaked general-minter secret can never reach a SuperAdmin
+// general token-exchange list, so a leaked general secret can never reach a SuperAdmin
 // identity. Same owner-pin as mintAllowed: the app must be admin/built-in owned. The
 // console, which legitimately drives admin.hanzo.ai, is on both lists. Fail closed.
 func adminMintAllowed(app *schema.Application) bool {
-	return policy.IsSigningOwner(app.Owner) && appInList("IAM_ADMIN_MINT_ALLOWED_APPS", app.ClientId)
+	return policy.IsSigningOwner(app.Owner) && appInList("IAM_ADMIN_TOKEN_EXCHANGE_APPS", app.ClientId)
 }
 
 // appInList matches clientID against a comma/space-separated env allow-list, by

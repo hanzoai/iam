@@ -40,7 +40,7 @@ func mintedToken(t *testing.T, body []byte) string {
 // A general minter reaching an operator whose id reads "hanzo/z". Both that id and
 // "admin/z" name the same authority; only one of them looks reserved.
 func TestOnBehalfOfMintCannotReachAnOperatorInABrandOrg(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console") // general minter, not an admin minter
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console") // general minter, not an admin minter
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedOperator(t, db, "hanzo", "z", "correct-horse")
@@ -57,7 +57,7 @@ func TestOnBehalfOfMintCannotReachAnOperatorInABrandOrg(t *testing.T) {
 // The paired control: an ordinary target in the same org is still mintable, so the
 // refusal above is about the identity and not about the endpoint being shut.
 func TestOnBehalfOfMintStillReachesAnOrdinaryTarget(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "dana", "dana@hanzo.example", "correct-horse")
@@ -105,7 +105,7 @@ func TestMintConfinesAReservedOrgPrincipalToItsOwnApplication(t *testing.T) {
 // question. An operator's id reads "hanzo/z" and names the same authority as
 // "admin/z"; only one of them looks reserved.
 func TestExchangeCannotReachAnOperatorInABrandOrg(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-chat") // a general client, no admin capability
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-chat") // a general client, no admin capability
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-chat", secret: "top-secret"})
 	seedOperator(t, db, "hanzo", "z", "correct-horse")
@@ -126,7 +126,7 @@ func TestExchangeCannotReachAnOperatorInABrandOrg(t *testing.T) {
 // The paired control: an ordinary subject still exchanges, so the refusal above is
 // about the identity and not about the grant being shut.
 func TestExchangeStillWorksForAnOrdinarySubject(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-chat")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-chat")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-chat", secret: "top-secret"})
 	seedUser(t, db, "dana", "dana@hanzo.example", "correct-horse")
@@ -153,7 +153,7 @@ func TestExchangeStillWorksForAnOrdinarySubject(t *testing.T) {
 func TestACaseVariantIsTheSameOperator(t *testing.T) {
 	for _, id := range []string{"hanzo/z", "hanzo/Z", "HANZO/z", "Hanzo/Z"} {
 		t.Run(id, func(t *testing.T) {
-			t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-sandbox") // general minter, no admin capability
+			t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-sandbox") // general minter, no admin capability
 			app, db := newServer(t)
 			seedApp(t, db, appOpts{clientID: "hanzo-sandbox", secret: "top-secret"})
 			seedOperator(t, db, "hanzo", "z", "correct-horse")

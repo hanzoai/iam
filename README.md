@@ -86,9 +86,12 @@ go run . version
 
 `serve` flags: `--store` (`sqlite|sql|datastore`), `--db` (SQLite path),
 `--zap` (ZAP listen), `--http` (HTTP edge), `--init-data` (new-only seed;
-`${VAR}` expands from env). Deploy env: `IAM_ISSUER=https://<brand-id>`,
-`IAM_KEY_MINT_ALLOWED_APPS`, `IAM_ADMIN_MINT_ALLOWED_APPS` (matched by the
-globally-unique `client_id`).
+`${VAR}` expands from env). Deploy env: `IAM_ISSUER=https://<brand-id>`;
+the on-behalf-of (token-exchange) allow-lists `IAM_TOKEN_EXCHANGE_APPS` and
+`IAM_ADMIN_TOKEN_EXCHANGE_APPS`, matched by the globally-unique `client_id`;
+and the credential-administration capability `IAM_KEY_MINT_ALLOWED_APPS`,
+matched by application name (distinct from token exchange, so exchanging tokens
+does not grant the capability).
 
 The service is embeddable via `server.Route` and builds on Hanzo CI
 (`ghcr.io/hanzoai/iam`).

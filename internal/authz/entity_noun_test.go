@@ -52,10 +52,10 @@ func TestEntityOf_EveryKeyRouteNamesOneEntity(t *testing.T) {
 }
 
 // The read that makes a user's own key list truthful: the confidential client
-// already trusted to MINT, ROTATE and REVOKE a user's credential may also READ the
-// key set it manages. Strictly less disclosure than the mint it already holds, and
-// safe on its own because every key read is masked (schema.Key.Mask blanks the sk-
-// half).
+// already trusted to MINT, ROTATE and REVOKE a user's credential may READ the key
+// set it manages within the tenant it serves. Strictly less disclosure than the
+// mint it already holds, masked (schema.Key.Mask blanks the sk- half), and pinned:
+// minting reaches another tenant, reading a NAMED key back does not.
 //
 // Asserted through the SEAM rather than against the capability table, because the
 // two halves have to meet: the key routes must all name one entity (above), and
@@ -64,18 +64,25 @@ func TestKeysAreReachableByTheCredentialMinter(t *testing.T) {
 	t.Setenv(policy.CapKeyMint.Env, "hanzo-console")
 	keys := entityOf("/v1/iam/keys")
 
+	// An allow-listed, admin-owned minter serving "hanzo".
 	minter := &principal.Principal{App: &policy.App{Name: "hanzo-console", Owner: "admin"}, Org: "hanzo"}
-	if !authorize(minter, "GET", keys, "acme", "k") {
-		t.Fatal("an allow-listed, admin-owned minter cannot read the keys it manages — the ONE key list is then SuperAdmin-only and a user cannot see their own")
+	if !authorize(minter, "GET", keys, "hanzo", "k") {
+		t.Fatal("the minter cannot read a named key of the tenant it serves — a user cannot see their own")
 	}
-	// Fail-secure either side of it: the owner-pin denies a tenant app reusing the
-	// allow-listed name, and an unlisted app holds nothing.
+	// It does NOT read a NAMED key of a tenant it does not serve, even though its
+	// mint reaches there. This is the cross-tenant item read the finding proved live.
+	if authorize(minter, "GET", keys, "acme", "k") {
+		t.Fatal("the minter read a named key of a tenant it does not serve")
+	}
+	// Fail-secure either side of it, on its OWN tenant so only the named gate speaks:
+	// the owner-pin denies a tenant app reusing the allow-listed name, and an
+	// unlisted app holds nothing.
 	spoof := &principal.Principal{App: &policy.App{Name: "hanzo-console", Owner: "acme"}, Org: "acme"}
 	if authorize(spoof, "GET", keys, "acme", "k") {
 		t.Fatal("a tenant app reusing an allow-listed name read the key set")
 	}
 	other := &principal.Principal{App: &policy.App{Name: "other-app", Owner: "admin"}, Org: "hanzo"}
-	if authorize(other, "GET", keys, "acme", "k") {
+	if authorize(other, "GET", keys, "hanzo", "k") {
 		t.Fatal("an app that is not on the allow-list read the key set")
 	}
 }
