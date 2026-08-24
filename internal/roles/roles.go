@@ -15,6 +15,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
@@ -135,6 +136,12 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Role, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	// The people a role bundles are an authority its own (Owner, Name) does not
+	// carry: a role filed in one organization could otherwise bundle another
+	// organization's people, or the platform's.
+	if err := authz.AuthorizeGrant(ctx, "POST", in.Owner, in.Users, in.Groups, in.Roles); err != nil {
+		return nil, err
+	}
 	switch _, err := orm.Get[schema.Role](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
 		return nil, zip.ErrConflict("role already exists")
@@ -164,6 +171,11 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Role, error) {
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Role, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	// Adding someone to a role is the same authority as making one, so an update
+	// names its members under the same gate.
+	if err := authz.AuthorizeGrant(ctx, "PUT", in.Owner, in.Users, in.Groups, in.Roles); err != nil {
+		return nil, err
 	}
 	role, err := orm.Get[schema.Role](h.db, key(in.Owner, in.Name))
 	if err != nil {
