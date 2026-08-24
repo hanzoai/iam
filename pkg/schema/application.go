@@ -181,7 +181,7 @@ type Application struct {
 	// natural key is, and store.GetApplicationByClientId resolves admin-preferring as
 	// defense-in-depth.
 	ClientId             string     `json:"clientId"`
-	ClientSecret         string     `json:"clientSecret"`
+	ClientSecret         string     `json:"clientSecret" url:"-"`
 	ClientCert           string     `json:"clientCert"`
 	RedirectUris         []string   `json:"redirectUris"`
 	ForcedRedirectOrigin string     `json:"forcedRedirectOrigin"`

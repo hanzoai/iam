@@ -162,7 +162,7 @@ type registration struct {
 	Organization string   `json:"organization"`
 	Name         string   `json:"name"`
 	ClientId     string   `json:"clientId"`
-	ClientSecret string   `json:"clientSecret"`
+	ClientSecret string   `json:"clientSecret" url:"-"`
 	GrantTypes   []string `json:"grantTypes"`
 	RedirectUris []string `json:"redirectUris"`
 	DisplayName  string   `json:"displayName"`
@@ -355,9 +355,9 @@ type person struct {
 	DisplayName  string `json:"displayName"`
 	Email        string `json:"email"`
 	Phone        string `json:"phone"`
-	Password     string `json:"password"`
+	Password     string `json:"password" url:"-"`
 	PasswordType string `json:"passwordType"`
-	IsAdmin      bool   `json:"isAdmin"`
+	IsAdmin      bool   `json:"isAdmin" url:"-"`
 	// Auth is the `Authorization: Bearer <token>` header — see registration.Auth.
 	Auth string `json:"-" header:"Authorization"`
 

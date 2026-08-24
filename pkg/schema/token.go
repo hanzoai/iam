@@ -34,10 +34,10 @@ type Token struct {
 	Organization string `json:"organization"`
 	User         string `json:"user"`
 
-	Code                string `json:"code" orm:"index"`
+	Code                string `json:"code" orm:"index" url:"-"`
 	UserCode            string `json:"userCode,omitempty" orm:"index"`
-	AccessToken         string `json:"accessToken"`
-	RefreshToken        string `json:"refreshToken"`
+	AccessToken         string `json:"accessToken" url:"-"`
+	RefreshToken        string `json:"refreshToken" url:"-"`
 	AccessTokenHash     string `json:"accessTokenHash" orm:"index"`
 	RefreshTokenHash    string `json:"refreshTokenHash" orm:"index"`
 	ExpiresIn           int    `json:"expiresIn"`
