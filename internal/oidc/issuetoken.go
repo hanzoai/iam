@@ -43,9 +43,9 @@ import (
 // string reaches logs and proxies.
 //
 // The user's key is one resource at one address, and the method is what says
-// whether it is being made or taken away. The two legacy spellings are the same
-// handler at the addresses pinned consumers hold; each is reachable and taught
-// nowhere.
+// whether it is being made or taken away. The verb-noun spellings that named the
+// two directions separately are retired: they answer 410 and name this address as
+// their successor (pkg/gone), so nothing is served at two spellings.
 func routeIssueToken(r zip.Router, db orm.DB) {
 	r.Post(PathTokensIssue, issueUserTokenHandler(db))
 	r.Post(PathUserKeys, mintUserKeysHandler(db))
