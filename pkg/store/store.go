@@ -808,13 +808,27 @@ func ProviderOwner(item *schema.ProviderItem) string {
 	return item.Owner
 }
 
-// GetOrganizationByName resolves an organization by its name. Orgs are stored
-// under the "admin" owner (v1 convention). Returns (nil, nil) when absent.
+// GetOrganizationByName resolves the organization a name refers to. Returns
+// (nil, nil) when absent.
+//
+// Every organization row is filed under the admin owner: the NAME is the tenant
+// identity and the owner half is the registry the row lives in. That is what the
+// signup converge writes, what the console's list reads, and what authz states
+// when it decides an organization write on its reserved-owner branch — so the
+// owner is pinned here too, and a name resolves to one row rather than to
+// whichever row a scan reaches first.
+//
+// A name is a key only WITH it. What this answer settles is which algorithm
+// verifies a password, which complexity rules a new one must meet, and whether
+// the organization demands a second factor — questions that take one answer.
 func GetOrganizationByName(_ context.Context, db orm.DB, name string) (*schema.Organization, error) {
 	if name == "" {
 		return nil, nil
 	}
-	o, err := orm.TypedQuery[schema.Organization](db).Filter("Name=", name).First()
+	o, err := orm.TypedQuery[schema.Organization](db).
+		Filter("Owner=", policy.AdminOrg).
+		Filter("Name=", name).
+		First()
 	if err == orm.ErrNotFound {
 		return nil, nil
 	}
