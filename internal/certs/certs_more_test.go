@@ -59,10 +59,22 @@ type op struct {
 
 func ops() []op {
 	return []op{
-		{"Get", func(ctx context.Context, h *Handler, o, n string) error { _, e := h.Get(ctx, &Ref{Owner: o, Name: n}); return e }},
-		{"Create", func(ctx context.Context, h *Handler, o, n string) error { _, e := h.Create(ctx, &schema.Cert{Owner: o, Name: n, CryptoAlgorithm: "RS256"}); return e }},
-		{"Update", func(ctx context.Context, h *Handler, o, n string) error { _, e := h.Update(ctx, &schema.Cert{Owner: o, Name: n, CryptoAlgorithm: "RS256"}); return e }},
-		{"Delete", func(ctx context.Context, h *Handler, o, n string) error { _, e := h.Delete(ctx, &Ref{Owner: o, Name: n}); return e }},
+		{"Get", func(ctx context.Context, h *Handler, o, n string) error {
+			_, e := h.Get(ctx, &Ref{Owner: o, Name: n})
+			return e
+		}},
+		{"Create", func(ctx context.Context, h *Handler, o, n string) error {
+			_, e := h.Create(ctx, &schema.Cert{Owner: o, Name: n, CryptoAlgorithm: "RS256"})
+			return e
+		}},
+		{"Update", func(ctx context.Context, h *Handler, o, n string) error {
+			_, e := h.Update(ctx, &schema.Cert{Owner: o, Name: n, CryptoAlgorithm: "RS256"})
+			return e
+		}},
+		{"Delete", func(ctx context.Context, h *Handler, o, n string) error {
+			_, e := h.Delete(ctx, &Ref{Owner: o, Name: n})
+			return e
+		}},
 	}
 }
 

@@ -267,7 +267,9 @@ var errStoreFault = errors.New("mfa test: store fault")
 
 type failingSender struct{}
 
-func (failingSender) Send(context.Context, otp.Message) error { return errors.New("carrier unreachable") }
+func (failingSender) Send(context.Context, otp.Message) error {
+	return errors.New("carrier unreachable")
+}
 
 // readFaultDB faults a query. With target set, only a query that filters for that
 // value faults (the handler's target load, not the Guard's own principal read);
@@ -299,11 +301,11 @@ func (q faultQuery) Filter(f string, v interface{}) orm.Query {
 	s, _ := v.(string)
 	return q.chain(q.Query.Filter(f, v), q.target != "" && s == q.target)
 }
-func (q faultQuery) Order(o string) orm.Query         { return q.chain(q.Query.Order(o), false) }
-func (q faultQuery) Limit(n int) orm.Query            { return q.chain(q.Query.Limit(n), false) }
-func (q faultQuery) Offset(n int) orm.Query           { return q.chain(q.Query.Offset(n), false) }
-func (q faultQuery) Ancestor(k orm.Key) orm.Query     { return q.chain(q.Query.Ancestor(k), false) }
-func (q faultQuery) KeysOnly() orm.Query              { return q.chain(q.Query.KeysOnly(), false) }
+func (q faultQuery) Order(o string) orm.Query     { return q.chain(q.Query.Order(o), false) }
+func (q faultQuery) Limit(n int) orm.Query        { return q.chain(q.Query.Limit(n), false) }
+func (q faultQuery) Offset(n int) orm.Query       { return q.chain(q.Query.Offset(n), false) }
+func (q faultQuery) Ancestor(k orm.Key) orm.Query { return q.chain(q.Query.Ancestor(k), false) }
+func (q faultQuery) KeysOnly() orm.Query          { return q.chain(q.Query.KeysOnly(), false) }
 
 func (q faultQuery) First(dst interface{}) (orm.Key, bool, error) {
 	if q.armed {

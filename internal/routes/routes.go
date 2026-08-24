@@ -50,7 +50,6 @@ import (
 	"github.com/hanzoai/iam/internal/bootstrap"
 	"github.com/hanzoai/iam/internal/certs"
 	"github.com/hanzoai/iam/internal/cors"
-	"github.com/hanzoai/iam/pkg/gone"
 	"github.com/hanzoai/iam/internal/invitations"
 	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/internal/memberships"
@@ -71,6 +70,7 @@ import (
 	"github.com/hanzoai/iam/internal/wallet"
 	"github.com/hanzoai/iam/internal/webauthn"
 	"github.com/hanzoai/iam/internal/workspaces"
+	"github.com/hanzoai/iam/pkg/gone"
 )
 
 // Route registers the whole IAM route surface on app, threading the entity
