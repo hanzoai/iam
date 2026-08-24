@@ -157,17 +157,43 @@ var (
 	errRevoked   = errors.New("authz: principal is forbidden or deleted")
 )
 
-// readTarget extracts the (owner, name) a GET addresses. It reads the path
-// first, then `?owner=&name=`, then splits `?id=<owner>/<name>`. Explicit
-// owner/name win; the id split is a fallback only when owner is absent, so this
-// can only make an id-based read's authorization MORE precise than the empty
-// target it would otherwise resolve to (which fail-closed denies every
-// non-super). It never widens: the tenant rule still pins owner to the
-// principal's org, and the handler independently re-scopes the query owner
-// through Scope, so a request that spells one owner in `?owner` and another in
-// `?id` cannot read across tenants — the authorized owner and the queried owner
-// are both pinned.
-func readTarget(c *zip.Ctx) (owner, name string) {
+// fold reads one query key the way zip's binder reads it: case-INSENSITIVELY.
+// The binder walks the Queries map and takes the first entry that EqualFolds the
+// field name (zip/typed.go bindURL), while fiber keeps `owner` and `Owner` as
+// SEPARATE entries — so a request that spells one key twice names two values, and
+// which one the handler binds is whichever Go's randomized map order reaches
+// first. Measured over 400 requests, `?owner=mine&Owner=victim` bound `victim`
+// 47 times. Reading only the exact spelling authorized `mine` every one of them.
+//
+// Spellings that AGREE are one value. Spellings that DISAGREE are no value: ok is
+// false, because the request does not address a single row and there is no string
+// to authorize. The Guard refuses it — the coin flip is the bug, and a client that
+// means one target spells it once.
+func fold(q map[string]string, key string) (val string, ok bool) {
+	seen := false
+	for k, v := range q {
+		if !strings.EqualFold(k, key) {
+			continue
+		}
+		if seen && v != val {
+			return "", false
+		}
+		val, seen = v, true
+	}
+	return val, true
+}
+
+// readTarget extracts the (owner, name) a GET addresses, and reports whether the
+// request addresses ONE. It reads the path first, then `?owner=&name=`, then
+// splits `?id=<owner>/<name>`. Explicit owner/name win; the id split is a
+// fallback only when owner is absent, so this can only make an id-based read's
+// authorization MORE precise than the empty target it would otherwise resolve to
+// (which fail-closed denies every non-super). It never widens: the tenant rule
+// still pins owner to the principal's org, and the handler independently
+// re-scopes the query owner through Scope, so a request that spells one owner in
+// `?owner` and another in `?id` cannot read across tenants — the authorized owner
+// and the queried owner are both pinned.
+func readTarget(c *zip.Ctx) (owner, name string, ok bool) {
 	// THE PATH FIRST, because the path is the addressing authority. An item lives
 	// at /v1/iam/<entity>/{owner}/{name}, so that is where its identity is; the
 	// Guard has to read the target the same way the handler binds it, or it
@@ -178,20 +204,31 @@ func readTarget(c *zip.Ctx) (owner, name string) {
 	// Guard alone went blind: it read two empty strings, built an entity with no
 	// owner, and fail-closed refused a caller reading its own record.
 	if o, n := c.Param("owner"), c.Param("name"); o != "" {
-		return o, n
+		return o, n, true
 	}
-	// THE MAP THE BINDER READS, not c.Query. A query key may repeat, and the two
-	// readers disagree on which value it has: fasthttp's Peek — what c.Query calls —
-	// answers the FIRST, while the map c.Queries builds answers the LAST, each pair
-	// overwriting the one before. zip decodes the op's input from that map, so
-	// reading through c.Query here would authorize `?owner=own` while the handler
-	// ran on `?owner=victim`. One request, one target.
+	// THE MAP THE BINDER READS, not c.Query, and read the way the binder reads it.
+	// A query key may repeat, and the two readers disagree on which value it has:
+	// fasthttp's Peek — what c.Query calls — answers the FIRST, while the map
+	// c.Queries builds answers the LAST, each pair overwriting the one before. zip
+	// decodes the op's input from that map, so reading through c.Query here would
+	// authorize `?owner=own` while the handler ran on `?owner=victim`. The map is
+	// also keyed by the exact spelling while the binder matches case-insensitively,
+	// which is the same divergence wearing a different hat — hence fold.
+	// One request, one target.
 	q := c.Fiber().Queries()
-	owner, name = q["owner"], q["name"]
+	owner, ownerOne := fold(q, "owner")
+	name, nameOne := fold(q, "name")
+	if !ownerOne || !nameOne {
+		return "", "", false
+	}
 	if owner == "" {
-		if id := q["id"]; id != "" {
-			if o, n, ok := strings.Cut(id, "/"); ok && o != "" {
-				return o, n
+		id, idOne := fold(q, "id")
+		if !idOne {
+			return "", "", false
+		}
+		if id != "" {
+			if o, n, cut := strings.Cut(id, "/"); cut && o != "" {
+				return o, n, true
 			}
 			// A BARE id carries the name alone — `?id=cert-hanzo`, which is how a
 			// relying party asks for the cert its application row names. Previously
@@ -203,11 +240,11 @@ func readTarget(c *zip.Ctx) (owner, name string) {
 			// widened by knowing the name — only the self-read clause, which pins that
 			// name to the principal's own cert, can act on it.
 			if !strings.Contains(id, "/") {
-				return "", id
+				return "", id, true
 			}
 		}
 	}
-	return owner, name
+	return owner, name, true
 }
 
 // handlerAuthorizedPrefixes are path subtrees whose target rides in the PATH, not
@@ -367,8 +404,8 @@ func Guard(db orm.DB) zip.Handler {
 		// empty query target for these (which would fail-closed deny every non-super
 		// before the handler could scope). Every other read is authorized here.
 		if v := policy.VerbOf(c.Method()); v == policy.Read && !pathAuthorized(c.Path()) {
-			owner, name := readTarget(c)
-			if !p.CanEntity(v, policy.Entity{Kind: entityOf(c.Path()), Owner: owner, Name: name}, Env) {
+			owner, name, one := readTarget(c)
+			if !one || !p.CanEntity(v, policy.Entity{Kind: entityOf(c.Path()), Owner: owner, Name: name}, Env) {
 				return refuse(c, 403, "forbidden")
 			}
 		}
