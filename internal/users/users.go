@@ -452,6 +452,15 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	if in.Admin != nil {
 		u.IsAdmin = *in.Admin
 	}
+	// EmailVerified is a PROOF the server recorded, not a property a body may state.
+	// It is what the federation broker asks before it links a social identity onto an
+	// existing local account: it adopts a row only when that row's own address was
+	// proven, or when the row carries no password anybody could already sign in with.
+	// A body that could state it would answer that question for the broker — a row
+	// carrying a chosen password AND a stated proof passes a gate that exists to say
+	// no. Signup records false, the broker records true when an identity provider
+	// proved it, and both write through their own paths; this one carries.
+	u.EmailVerified = existing.EmailVerified
 	// Every secret is carried from the stored row and any body value is IGNORED —
 	// the password digest, the key secret, the bearer material, the authenticator
 	// seed and its recovery codes. CarrySecretsFrom is the inverse of Mask, so the
