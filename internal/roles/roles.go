@@ -47,14 +47,14 @@ type Ref struct {
 type Input struct {
 	Owner       string   `json:"owner"`
 	Name        string   `json:"name"`
-	CreatedTime string   `json:"createdTime"`
-	DisplayName string   `json:"displayName"`
-	Description string   `json:"description"`
+	CreatedTime string   `json:"createdTime" url:"-"`
+	DisplayName string   `json:"displayName" url:"-"`
+	Description string   `json:"description" url:"-"`
 	Users       []string `json:"users"`
 	Groups      []string `json:"groups"`
 	Roles       []string `json:"roles"`
 	Domains     []string `json:"domains"`
-	IsEnabled   bool     `json:"isEnabled"`
+	IsEnabled   bool     `json:"isEnabled" url:"-"`
 }
 
 // ListInput scopes a listing to one owner (organization).

@@ -51,18 +51,18 @@ type Ref struct {
 type Input struct {
 	Owner        string `json:"owner"`
 	Name         string `json:"name"`
-	CreatedTime  string `json:"createdTime"`
+	CreatedTime  string `json:"createdTime" url:"-"`
 	Organization string `json:"organization"`
-	ClientIp     string `json:"clientIp"`
+	ClientIp     string `json:"clientIp" url:"-"`
 	User         string `json:"user"`
-	Method       string `json:"method"`
-	RequestUri   string `json:"requestUri"`
-	Action       string `json:"action"`
-	Language     string `json:"language"`
-	Object       string `json:"object"`
-	Response     string `json:"response"`
-	StatusCode   int    `json:"statusCode"`
-	IsTriggered  bool   `json:"isTriggered"`
+	Method       string `json:"method" url:"-"`
+	RequestUri   string `json:"requestUri" url:"-"`
+	Action       string `json:"action" url:"-"`
+	Language     string `json:"language" url:"-"`
+	Object       string `json:"object" url:"-"`
+	Response     string `json:"response" url:"-"`
+	StatusCode   int    `json:"statusCode" url:"-"`
+	IsTriggered  bool   `json:"isTriggered" url:"-"`
 }
 
 // ListInput scopes a listing to one owner (organization).

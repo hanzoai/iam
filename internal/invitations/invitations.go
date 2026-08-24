@@ -49,20 +49,20 @@ type Ref struct {
 type Input struct {
 	Owner       string `json:"owner"`
 	Name        string `json:"name"`
-	CreatedTime string `json:"createdTime"`
-	UpdatedTime string `json:"updatedTime"`
-	DisplayName string `json:"displayName"`
-	Code        string `json:"code"`
-	IsRegexp    bool   `json:"isRegexp"`
-	Quota       int    `json:"quota"`
-	UsedCount   int    `json:"usedCount"`
+	CreatedTime string `json:"createdTime" url:"-"`
+	UpdatedTime string `json:"updatedTime" url:"-"`
+	DisplayName string `json:"displayName" url:"-"`
+	Code        string `json:"code" url:"-"`
+	IsRegexp    bool   `json:"isRegexp" url:"-"`
+	Quota       int    `json:"quota" url:"-"`
+	UsedCount   int    `json:"usedCount" url:"-"`
 	Application string `json:"application"`
-	Username    string `json:"username"`
+	Username    string `json:"username" url:"-"`
 	Email       string `json:"email"`
-	Phone       string `json:"phone"`
-	SignupGroup string `json:"signupGroup"`
-	DefaultCode string `json:"defaultCode"`
-	State       string `json:"state"`
+	Phone       string `json:"phone" url:"-"`
+	SignupGroup string `json:"signupGroup" url:"-"`
+	DefaultCode string `json:"defaultCode" url:"-"`
+	State       string `json:"state" url:"-"`
 }
 
 // ListInput scopes a listing to one owner (organization).

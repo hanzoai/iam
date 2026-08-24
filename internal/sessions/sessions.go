@@ -82,7 +82,7 @@ type CreateSessionIn struct {
 	Name            string   `json:"name"            validate:"required"`
 	Application     string   `json:"application"     validate:"required"`
 	SessionId       []string `json:"sessionId"`
-	ExclusiveSignin bool     `json:"exclusiveSignin"`
+	ExclusiveSignin bool     `json:"exclusiveSignin" url:"-"`
 }
 
 // UpdateSessionIn replaces the cookie list of an existing session addressed by

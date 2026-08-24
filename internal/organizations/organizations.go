@@ -83,8 +83,8 @@ type GetOrganizationInput struct {
 type SetAvatarInput struct {
 	Owner  string `json:"owner"`
 	Name   string `json:"name"`
-	Avatar string `json:"avatar"`
-	Emoji  string `json:"emoji"`
+	Avatar string `json:"avatar" url:"-"`
+	Emoji  string `json:"emoji" url:"-"`
 }
 
 // DeleteOrganizationInput selects the organization to remove by natural key.

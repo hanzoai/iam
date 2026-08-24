@@ -38,16 +38,16 @@ type Key struct {
 	// CreatedTime and UpdatedTime are RFC3339 audit stamps carried as strings
 	// for byte-parity with the v1 row (orm.Model separately tracks CreatedAt /
 	// UpdatedAt as time.Time for the store's own lifecycle).
-	CreatedTime string `json:"createdTime"`
-	UpdatedTime string `json:"updatedTime"`
+	CreatedTime string `json:"createdTime" url:"-"`
+	UpdatedTime string `json:"updatedTime" url:"-"`
 
 	// DisplayName is the human-facing label.
-	DisplayName string `json:"displayName"`
+	DisplayName string `json:"displayName" url:"-"`
 
 	// Type is the scope the key is bound to — "Organization", "Application",
 	// "User", or "General" — and Organization / Application / User name the
 	// concrete principal for whichever scope Type selects.
-	Type         string `json:"type"`
+	Type         string `json:"type" url:"-"`
 	Organization string `json:"organization"`
 	Application  string `json:"application"`
 	User         string `json:"user"`
@@ -60,20 +60,20 @@ type Key struct {
 	// that one-time reveal is the whole point of minting, and it stays in the
 	// schema because rows written before the change still hold a plaintext secret
 	// that the resolver drains on first use.
-	AccessKey    string `json:"accessKey" orm:"index"`
+	AccessKey    string `json:"accessKey" orm:"index" url:"-"`
 	AccessSecret string `json:"accessSecret" url:"-"`
 
 	// AccessSecretDigest is how a presented secret finds its key: the resolver
 	// digests what the caller sent and looks THAT up. It is what lets the row hold
 	// no plaintext and still be found in one indexed read — a salted hash cannot be
 	// looked up by value, which is the reason the plaintext was here.
-	AccessSecretDigest string `json:"accessSecretDigest,omitempty" orm:"index"`
+	AccessSecretDigest string `json:"accessSecretDigest,omitempty" orm:"index" url:"-"`
 
 	// ExpireTime is when the key stops being honored (empty = never). State is
 	// the lifecycle flag ("Active", "test", …); "test" mints test-env
 	// credentials instead of live ones.
-	ExpireTime string `json:"expireTime"`
-	State      string `json:"state"`
+	ExpireTime string `json:"expireTime" url:"-"`
+	State      string `json:"state" url:"-"`
 
 	// Scope is the key's ACCESS CLASS, orthogonal to Type (which names the bound
 	// principal). Empty (the default, "secret") is a full key: a pk- publishable
@@ -82,7 +82,7 @@ type Key struct {
 	// that resolves to just an ORG (never a principal) at the ingest endpoint and is safe
 	// to ship in client JS. A missing value on an existing row reads as the default,
 	// so every pre-Scope key is a secret key unchanged.
-	Scope string `json:"scope,omitempty"`
+	Scope string `json:"scope,omitempty" url:"-"`
 
 	// Act is the durable, opt-in grant that lets this key act FOR a user in its
 	// own org — the credential behind as(): presenting it authorizes minting a
@@ -92,7 +92,7 @@ type Key struct {
 	// confined at mint time to the key's OWN Owner, and a reserved-org or
 	// SuperAdmin target is refused, so the grant reaches only ordinary members of
 	// the one tenant that holds the key.
-	Act bool `json:"act,omitempty"`
+	Act bool `json:"act,omitempty" url:"-"`
 }
 
 // KeyScopePublish is the Scope value marking a WRITE-ONLY publishable key: a pk-
