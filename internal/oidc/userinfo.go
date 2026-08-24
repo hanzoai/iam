@@ -117,8 +117,13 @@ func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string
 		putIf(info, "displayName", u.DisplayName)
 		putIf(info, "picture", u.Avatar)
 		putIf(info, "real_name", u.RealName)
-		if len(u.Groups) > 0 {
-			info["groups"] = u.Groups
+		// groups is the membership set flattened to bare organization names — the
+		// SAME source, and the same value, the access token's groups claim carries.
+		// One question about who a person belongs to has one answer, whichever call a
+		// relying party makes; a second source would let the two disagree, and a
+		// relying party that maps groups onto access would follow whichever it read.
+		if g := groupsOf(orgs); len(g) > 0 {
+			info["groups"] = g
 		}
 		if u.IsVerified {
 			info["is_verified"] = true

@@ -155,7 +155,7 @@ func primaryAddress(vs []scimAddress) (scimAddress, bool) {
 
 // applyToUser overlays a SCIM User's mapped attributes ONTO u — which is the FULL
 // current row on an update (so every unmapped field: MFA enrollment, IsDeleted,
-// Type, Groups, Ldap, … is PRESERVED) or a blank record on a create. It never sets
+// Type, Ldap, … is PRESERVED) or a blank record on a create. It never sets
 // identity (owner/name); the caller binds those. isAdmin is a privileged field:
 // it is applied only when allowAdmin (SuperAdmin) — a non-super can never set or
 // raise it (provision-don't-promote), so an omitted-or-present isAdmin from a
@@ -429,7 +429,7 @@ func patchUser(db orm.DB) zip.Handler {
 		}
 
 		// Overlay the patched projection onto the FULL current row (preserving MFA,
-		// IsDeleted, Type, Groups, …), then write.
+		// IsDeleted, Type, …), then write.
 		if pw := applyToUser(&next, cur, authz.IsSuper(ctx)); pw != "" {
 			password = pw
 		}
