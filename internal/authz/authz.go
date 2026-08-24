@@ -128,20 +128,58 @@ func CanSetOrg(p *principal.Principal, org string) bool {
 	return p.CanEntity(policy.Write, policy.Entity{Kind: "applications", Owner: org}, Env)
 }
 
-// CanSetCert reports whether principal p may point an application at the signing
-// cert (owner, name) — authorized EXACTLY as a write to that cert row through the
+// CanSetCert reports whether principal p may point a row at the signing cert
+// (owner, name) — authorized EXACTLY as a write to that cert row through the
 // one policy: a SuperAdmin may name any; anyone else only one their OWN org owns,
 // never a reserved platform owner (admin/built-in). A signing cert is trusted only
 // under those reserved owners (store.GetSigningCert), so this is the gate that
 // keeps a tenant admin from pointing an application at the platform signing key and
 // having every token it mints signed by the key admin/root's own bearer carries.
-// It is the cert companion of CanSetOrg, applied to the application's Cert FIELD.
-// Fails closed on a nil principal.
+// It is the cert companion of CanSetOrg. Fails closed on a nil principal.
 func CanSetCert(p *principal.Principal, owner, name string) bool {
 	if p == nil {
 		return false
 	}
 	return p.CanEntity(policy.Write, policy.Entity{Kind: "certs", Owner: owner, Name: name}, Env)
+}
+
+// AuthorizeCert gates the signing cert a row NAMES, separately from the row's own
+// (Owner, Name) that the op-invoke seam authorizes. A cert name is a reference to
+// signing material — an application signs every token it mints with the cert it
+// names, a provider verifies a federated assertion against the cert it names — and
+// such material is trusted only under the reserved platform owners
+// (store.GetSigningCert). Left ungated, a tenant admin could name the platform cert
+// on a row of their own.
+//
+// It RESOLVES the name with the same function the consumer resolves it with, then
+// authorizes the row that resolution actually reached, so the gate and the consumer
+// can never disagree about which cert a name means. A name that resolves to no
+// trusted signing cert (a tenant's own, or none) references no platform material
+// and is left to the row's own key.
+//
+// It gates the CHANGE, not the unchanged round-trip: an editor that reads a row and
+// saves it back re-sends the cert it read, and the stored value was authorized when
+// it was set. Only a cert set to a NEW value is authorized here. A server-internal
+// call carries no principal and is trusted by the boundary around it.
+func AuthorizeCert(ctx context.Context, db orm.DB, newCert, oldCert string) error {
+	if newCert == oldCert || newCert == "" {
+		return nil
+	}
+	p, ok := principal.From(ctx)
+	if !ok {
+		return nil // server-internal (bootstrap/seed) — trusted caller
+	}
+	cert, err := store.GetSigningCert(ctx, db, newCert)
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	if cert == nil {
+		return nil // names no trusted signing cert — references no platform material
+	}
+	if !CanSetCert(p, cert.Owner, cert.Name) {
+		return zip.ErrForbidden("not authorized to name the signing cert " + newCert)
+	}
+	return nil
 }
 
 // AuthorizeUser gates the subject a write NAMES in its User field — the
