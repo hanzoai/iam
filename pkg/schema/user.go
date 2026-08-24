@@ -252,12 +252,6 @@ type User struct {
 	Ldap       string            `json:"ldap,omitempty"`
 	Properties map[string]string `json:"properties,omitempty"`
 
-	// Authorization attachments. Roles and Permissions are computed on read
-	// from the authz store and carried here for API parity with v1.
-	Roles       []*Role       `json:"roles,omitempty"`
-	Permissions []*Permission `json:"permissions,omitempty"`
-	Groups      []string      `json:"groups,omitempty"`
-
 	LastChangePasswordTime string `json:"lastChangePasswordTime,omitempty"`
 	LastSigninWrongTime    string `json:"lastSigninWrongTime,omitempty"`
 	SigninWrongTimes       int    `json:"signinWrongTimes,omitempty"`
