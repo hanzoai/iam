@@ -17,6 +17,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -68,8 +69,19 @@ func (h *Handlers) List(ctx context.Context, in *ListRequest) (*ListResponse, er
 	if in.Owner == "" {
 		return nil, zip.ErrBadRequest("owner is required")
 	}
+	// The owner is resolved by principal.Scope from the authenticated principal,
+	// never taken from the input: a tenant reads only its own org, a SuperAdmin
+	// reads the owner it asks for. The op's Authorize hook re-checks the decoded
+	// target above this, but that is a SECOND gate — the Guard reads the FIRST
+	// value of a repeated query key and the binder the LAST, so the two can be
+	// handed different strings, and this handler filters on the one it was
+	// actually given. Every sibling listing resolves its owner the same way.
+	owner, err := principal.Scope(ctx, in.Owner)
+	if err != nil {
+		return nil, err
+	}
 	items, err := orm.TypedQuery[schema.Permission](h.db).
-		Filter("Owner=", in.Owner).
+		Filter("Owner=", owner).
 		Order("-CreatedTime").
 		GetAll(ctx)
 	if err != nil {
