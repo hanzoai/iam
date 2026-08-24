@@ -83,7 +83,11 @@ func key(owner, name string) string { return owner + "/" + name }
 func apply(dst *schema.Workspace, in *Input) {
 	dst.DisplayName = in.DisplayName
 	dst.Description = in.Description
-	dst.Organization = pick(in.Organization, in.Owner)
+	// The organization a workspace belongs to IS its owner — one fact, reported under
+	// the name a v1 client reads it by. Taking it from the request instead let a
+	// stored row name an organization the row does not belong to, which is a
+	// misleading answer for anything that ever starts reading it.
+	dst.Organization = in.Owner
 	dst.Bucket = in.Bucket
 	dst.Tags = in.Tags
 	dst.Metadata = in.Metadata
@@ -201,12 +205,4 @@ func mapErr(err error) error {
 		return zip.ErrNotFound("workspace not found")
 	}
 	return zip.ErrInternal(err.Error())
-}
-
-// pick returns a if non-empty, else b.
-func pick(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
