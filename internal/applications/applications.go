@@ -45,42 +45,6 @@ func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	return nil
 }
 
-// authorizeCert gates the signing Cert an application NAMES, separately from the
-// Organization above and the registry Owner the op-invoke seam already authorizes:
-// the cert an application names is what SIGNS every token minted through it, and it
-// is trusted only under the reserved platform owners (store.GetSigningCert). Left
-// ungated, a tenant admin could name the platform signing cert (cert-hanzo) on
-// their own app and have it mint tokens signed by the key admin/root's bearer
-// carries.
-//
-// It gates the CHANGE, not the unchanged round-trip: a full-replace update re-sends
-// the cert it read, and the stored value was authorized when it was set (by a
-// SuperAdmin, or by the server-internal reconcile). Only a cert set to a NEW value
-// is authorized here — a SuperAdmin may name any; anyone else only one their own org
-// owns, never a reserved-owner cert. A name that resolves to no trusted signing cert
-// (a tenant's own, or none) mints no platform identity and is left to the create-time
-// cert check. A server-internal call carries no principal and is trusted.
-func authorizeCert(ctx context.Context, db orm.DB, newCert, oldCert string) error {
-	if newCert == oldCert || newCert == "" {
-		return nil
-	}
-	p, ok := principal.From(ctx)
-	if !ok {
-		return nil // server-internal (bootstrap/seed) — trusted caller
-	}
-	cert, err := store.GetSigningCert(ctx, db, newCert)
-	if err != nil {
-		return zip.ErrInternal(err.Error())
-	}
-	if cert == nil {
-		return nil // names no trusted signing cert — mints no platform identity
-	}
-	if !authz.CanSetCert(p, cert.Owner, cert.Name) {
-		return zip.ErrForbidden("not authorized to set the application signing cert to " + newCert)
-	}
-	return nil
-}
-
 // ensureClientIdUnique rejects a create/update whose clientId is already held by a
 // DIFFERENT application (any owner). clientId is the GLOBAL key the mint and Basic-auth
 // resolvers authenticate against, so it must be unique across every owner, not merely
@@ -224,7 +188,7 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authorizeOrganization(ctx, in); err != nil {
 			return nil, err
 		}
-		if err := authorizeCert(ctx, db, in.Cert, ""); err != nil {
+		if err := authz.AuthorizeCert(ctx, db, in.Cert, ""); err != nil {
 			return nil, err
 		}
 		id := appID(in.Owner, in.Name)
@@ -276,7 +240,7 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		if err := authorizeCert(ctx, db, in.Cert, existing.Cert); err != nil {
+		if err := authz.AuthorizeCert(ctx, db, in.Cert, existing.Cert); err != nil {
 			return nil, err
 		}
 

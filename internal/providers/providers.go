@@ -20,6 +20,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
@@ -133,6 +134,13 @@ func addProvider(db orm.DB) zip.TypedHandler[schema.Provider, providerResult] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
+		// A provider's Cert names the signing material a federated assertion is
+		// verified against — a reference the row's own (Owner, Name) does not carry,
+		// and the same authority an application's Cert carries, so it takes the same
+		// gate rather than a second one.
+		if err := authz.AuthorizeCert(ctx, db, in.Cert, ""); err != nil {
+			return nil, err
+		}
 		// orm.New binds the store and applies defaults; copy the decoded domain
 		// fields over it, then restore the bound Model so its db handle and key
 		// survive the assignment.
@@ -165,6 +173,12 @@ func updateProvider(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult]
 		}
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
+		}
+		// The cert is authorized against the value being REPLACED, so an editor that
+		// reads a provider and saves it back re-sends the cert it read and is
+		// unaffected; only naming a NEW one is a change to authorize.
+		if err := authz.AuthorizeCert(ctx, db, in.Cert, p.Cert); err != nil {
+			return nil, err
 		}
 		// Overlay the decoded domain fields onto the loaded row, keeping the
 		// loaded Model (id, createdAt, key, snapshot) so the write targets the
