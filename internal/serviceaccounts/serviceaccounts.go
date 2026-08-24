@@ -40,6 +40,7 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/keys"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -135,7 +136,7 @@ func create(db orm.DB) zip.Handler {
 		if in.Organization == "" {
 			return httpx.Err(c, "organization is required")
 		}
-		p, ok := authz.From(c.Context())
+		p, ok := principal.From(c.Context())
 		if !ok || !admin(p, in.Organization) {
 			return httpx.Err(c, unauthorized)
 		}
@@ -189,7 +190,7 @@ func list(db orm.DB) zip.TypedHandler[query, httpx.Answer] {
 		if in.Organization == "" {
 			return httpx.Bad(400, "organization is required", ""), nil
 		}
-		p, ok := authz.From(ctx)
+		p, ok := principal.From(ctx)
 		if !ok || !read(p, in.Organization) {
 			return httpx.Bad(400, unauthorized, ""), nil
 		}
@@ -272,7 +273,7 @@ func load(c *zip.Ctx, db orm.DB) (*schema.User, error) {
 	if org == "" || name == "" {
 		return nil, zip.ErrBadRequest("organization and name are required")
 	}
-	p, ok := authz.From(c.Context())
+	p, ok := principal.From(c.Context())
 	if !ok || !admin(p, org) {
 		return nil, zip.ErrForbidden(unauthorized)
 	}
@@ -326,7 +327,7 @@ func orgFromBody(body []byte) string {
 // every tenant), so the binding that matters is not which tenant but whether the
 // target is a tenant at all. A human SuperAdmin keeps the ability, because that
 // is already the authority the reserved org denotes.
-func admin(p *authz.Principal, org string) bool {
+func admin(p *principal.Principal, org string) bool {
 	if p == nil || org == "" {
 		return false
 	}
@@ -349,7 +350,7 @@ func admin(p *authz.Principal, org string) bool {
 //     app's own <org>-<app> name binds it to. Both conditions are required, so a
 //     leaked reader credential can enumerate one tenant's bot names and nothing
 //     else — and can never mint, rotate, or delete, which stay on admin.
-func read(p *authz.Principal, org string) bool {
+func read(p *principal.Principal, org string) bool {
 	if p == nil || org == "" {
 		return false
 	}

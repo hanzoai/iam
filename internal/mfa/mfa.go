@@ -26,7 +26,7 @@
 // either way, and the person retries.
 //
 // Enrolment is SELF-SERVICE: every handler acts on the AUTHENTICATED caller's own
-// record (authz.From), so the routes register AFTER the Guard — they need the
+// record (principal.From), so the routes register AFTER the Guard — they need the
 // Principal. Touching a DIFFERENT user's factors requires admin authority over that
 // org, authorized through the SAME seam a SCIM write uses (authz.Can); the general
 // user-write policy correctly refuses a non-admin writing a user row, so
@@ -51,6 +51,7 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/internal/otp"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -114,7 +115,7 @@ type setupReq struct {
 // An unauthenticated caller fails closed (the Guard already required a bearer, so
 // this is defense in depth). Returns a zip error to return verbatim on refusal.
 func target(c *zip.Ctx, req *setupReq) (owner, name string, err error) {
-	p, present := authz.From(c.Context())
+	p, present := principal.From(c.Context())
 	if !present {
 		return "", "", zip.ErrUnauthorized("authentication required")
 	}

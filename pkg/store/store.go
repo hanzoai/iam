@@ -545,7 +545,7 @@ func GetTokenByUserCode(_ context.Context, db orm.DB, userCode string) (*schema.
 // organization: anchored there, or holding a membership there. THE SuperAdmin
 // predicate, for a subsystem BELOW the authz seam (device approval, federation
 // unlink) that cannot import authz — authz imports oidc, so the dependency only
-// runs one way. It asks what authz.Principal.Sudo carries and what the published
+// runs one way. It asks what principal.Principal.Sudo carries and what the published
 // authz.Claims.Sudo asks of a signed token, so one identity is an operator
 // everywhere or nowhere.
 //

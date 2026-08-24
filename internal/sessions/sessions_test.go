@@ -10,6 +10,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -42,10 +43,17 @@ func putSession(t *testing.T, db orm.DB, owner, name, application, created strin
 	}
 }
 
+// operator is a caller whose scope spans tenants, so principal.Scope hands back
+// the owner the case names and these tables stay a test of the FILTER. Which
+// owner a narrower caller may ask for is TestList_NeverAnswersWithAnotherOrgs.
+func operator() context.Context {
+	return principal.Bind(context.Background(), &principal.Principal{Org: "admin", Sudo: true})
+}
+
 func TestList_ScopesAndFilters(t *testing.T) {
 	db := newDB(t)
 	h := &Sessions{db: db}
-	ctx := context.Background()
+	ctx := operator()
 
 	putSession(t, db, "hanzo", "alice", "cloud", "2026-01-01T00:00:01Z", "a")
 	putSession(t, db, "hanzo", "alice", "api", "2026-01-01T00:00:02Z", "b")
@@ -92,7 +100,7 @@ func TestList_NewestFirst(t *testing.T) {
 	putSession(t, db, "hanzo", "alice", "api", "2026-03-01T00:00:00Z", "new")
 	putSession(t, db, "hanzo", "alice", "web", "2026-02-01T00:00:00Z", "mid")
 
-	out, err := h.List(context.Background(), &ListSessionsIn{Owner: "hanzo", Name: "alice"})
+	out, err := h.List(operator(), &ListSessionsIn{Owner: "hanzo", Name: "alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,4 +347,38 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b[i:])
+}
+
+// A member of one organization never receives another's sign-ins, however the
+// request spells it — and with nobody behind the request there is nothing to
+// answer at all. A session row names a live account, so a foreign page is a list
+// of who is signed in at another company right now.
+func TestList_NeverAnswersWithAnotherOrgs(t *testing.T) {
+	db := newDB(t)
+	h := &Sessions{db: db}
+	putSession(t, db, "hanzo", "alice", "cloud", "2026-01-01T00:00:01Z", "a")
+	putSession(t, db, "acme", "zoe", "cloud", "2026-01-01T00:00:02Z", "b")
+
+	member := principal.Bind(context.Background(), &principal.Principal{Org: "hanzo"})
+
+	if _, err := h.List(member, &ListSessionsIn{Owner: "acme"}); err == nil {
+		t.Fatal("a member of hanzo named acme and was not refused")
+	}
+	if _, err := h.List(context.Background(), &ListSessionsIn{}); err == nil {
+		t.Fatal("a listing with no principal was answered; it must be refused — no tenant " +
+			"resolved would mean no filter, which is every organization's sign-ins")
+	}
+	out, err := h.List(member, &ListSessionsIn{})
+	if err != nil {
+		t.Fatalf("hanzo listing its own sessions: %v", err)
+	}
+	for _, s := range out.Sessions {
+		if s.Owner != "hanzo" {
+			t.Fatalf("LEAK: hanzo named no owner and received %q's session for %q", s.Owner, s.Name)
+		}
+	}
+	if len(out.Sessions) != 1 {
+		t.Fatalf("hanzo's own page returned %d sessions, want 1 — the assertion above cannot "+
+			"fail against an empty page", len(out.Sessions))
+	}
 }

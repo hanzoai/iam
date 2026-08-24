@@ -23,6 +23,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -46,9 +47,11 @@ func Route(app *zip.App, db orm.DB) {
 	zip.Delete(app, "/v1/iam/keys/:owner/:name", del(db), zip.WithTags("keys"))
 }
 
-// ListRequest scopes a listing to one owner.
+// ListRequest names the organization to read. Omitting it means "the one my
+// credential is scoped to", which for a credential that spans tenants is all of
+// them; principal.Scope turns the two into one answer.
 type ListRequest struct {
-	Owner string `json:"owner"`
+	Owner string `json:"owner,omitempty"`
 }
 
 // ListResponse is the owner-scoped key set, newest first.
@@ -71,17 +74,23 @@ type DeleteResponse struct {
 // "owner/name" identity the v1 record used.
 func id(owner, name string) string { return owner + "/" + name }
 
-// list returns your organization's API keys, newest first — what each is called,
+// list returns an organization's API keys, newest first — what each is called,
 // what it may reach, and its publishable half. Secret halves are never listed.
+//
+// Which organization comes from your credentials, not from the request: you read
+// your own and no one else's. The capability that admits a confidential client to
+// this collection does not itself name a tenant, so the tenant is decided here.
 func list(db orm.DB) zip.TypedHandler[ListRequest, ListResponse] {
 	return func(ctx context.Context, in *ListRequest) (*ListResponse, error) {
-		if in.Owner == "" {
-			return nil, zip.ErrBadRequest("owner is required")
+		owner, err := principal.Scope(ctx, in.Owner)
+		if err != nil {
+			return nil, err
 		}
-		items, err := orm.TypedQuery[schema.Key](db).
-			Filter("Owner=", in.Owner).
-			Order("-CreatedTime").
-			GetAll(ctx)
+		q := orm.TypedQuery[schema.Key](db)
+		if owner != "" {
+			q = q.Filter("Owner=", owner)
+		}
+		items, err := q.Order("-CreatedTime").GetAll(ctx)
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}

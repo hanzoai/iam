@@ -13,6 +13,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -219,7 +220,7 @@ func primaryValue(vs []scimMultiValued) string {
 func listUsers(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		owner, err := authz.Scope(ctx, c.Query("owner"))
+		owner, err := principal.Scope(ctx, c.Query("owner"))
 		if err != nil {
 			return scimError(c, 403, err.Error(), "")
 		}
@@ -304,7 +305,7 @@ func createUser(db orm.DB) zip.Handler {
 		if in.Hanzo != nil {
 			reqOwner = in.Hanzo.Owner
 		}
-		owner, err := authz.Scope(ctx, reqOwner)
+		owner, err := principal.Scope(ctx, reqOwner)
 		if err != nil {
 			return scimError(c, 403, err.Error(), "")
 		}
@@ -591,14 +592,14 @@ func truthy(v any) bool {
 }
 
 // scopedTarget resolves the (owner, name) a path-targeted request addresses,
-// re-scoping the path owner through authz.Scope so a non-super can never reach
+// re-scoping the path owner through principal.Scope so a non-super can never reach
 // another tenant's row by spelling its id — the same pin the query-target reads use.
 func scopedTarget(c *zip.Ctx) (owner, name string, err error) {
 	pathOwner, pathName := c.Param("owner"), c.Param("name")
 	if pathName == "" {
 		return "", "", errors.New("a user id (owner/name) is required")
 	}
-	scoped, err := authz.Scope(c.Context(), pathOwner)
+	scoped, err := principal.Scope(c.Context(), pathOwner)
 	if err != nil {
 		return "", "", err
 	}

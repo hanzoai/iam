@@ -23,6 +23,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -58,10 +59,12 @@ type SessionRef struct {
 	Application string `json:"application" validate:"required"`
 }
 
-// ListSessionsIn scopes a list to one owner, optionally narrowed to a single
-// principal (Name) and/or Application. Only Owner is required.
+// ListSessionsIn names the organization to read, optionally narrowed to a single
+// account (Name) and/or Application. Omitting the owner means "the one my
+// credential is scoped to", which for a credential that spans tenants is all of
+// them; principal.Scope turns the two into one answer.
 type ListSessionsIn struct {
-	Owner       string `json:"owner" validate:"required"`
+	Owner       string `json:"owner,omitempty"`
 	Name        string `json:"name"`
 	Application string `json:"application"`
 }
@@ -97,11 +100,23 @@ type DeleteSessionOut struct {
 	Deleted bool `json:"deleted"`
 }
 
-// List returns who is currently signed in to your organization, newest first, and
+// List returns who is currently signed in to an organization, newest first, and
 // can be narrowed to one person or one application. It is what you read before
 // signing someone out.
+//
+// Which organization comes from your credentials, not from the request: you read
+// your own and no one else's. A session row names a live account and the
+// applications it is signed in to, so the tenant is decided here rather than
+// taken from the query.
 func (h *Sessions) List(ctx context.Context, in *ListSessionsIn) (*ListSessionsOut, error) {
-	q := orm.TypedQuery[schema.Session](h.db).Filter("Owner=", in.Owner)
+	owner, err := principal.Scope(ctx, in.Owner)
+	if err != nil {
+		return nil, err
+	}
+	q := orm.TypedQuery[schema.Session](h.db)
+	if owner != "" {
+		q = q.Filter("Owner=", owner)
+	}
 	if in.Name != "" {
 		q = q.Filter("Name=", in.Name)
 	}

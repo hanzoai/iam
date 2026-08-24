@@ -6,7 +6,7 @@ package projects
 // The projects CRUD surface driven at the handler seam: Get, Create, Update and
 // Delete are plain func(ctx, *In) (*Out, error) over a real embedded-sqlite store,
 // so the tests call them directly the way the router does. List is the one op that
-// authorizes on the query rather than a decoded body — it rides authz.ScopeRead
+// authorizes on the query rather than a decoded body — it rides principal.ScopeRead
 // behind the Guard — so its store-fault arm is pinned through the registered router
 // in list_fault_test.go; every op that authorizes on its own value is pinned here.
 // Nothing is mocked but the two deliberate faults — a handle closed under the

@@ -38,6 +38,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -104,7 +105,7 @@ type request struct {
 //
 // Both are org-scoped: a non-SuperAdmin may ask about ITS OWN org's roster, or
 // about a user whose home org is its own, and nothing else. The bound comes from
-// the verified credential via authz.Scope, so a request parameter can never
+// the verified credential via principal.Scope, so a request parameter can never
 // widen it — a membership row names who may act and spend in an org, so a
 // cross-tenant read is a customer roster leak.
 func list(db orm.DB) zip.TypedHandler[lookup, httpx.Answer] {
@@ -235,7 +236,7 @@ func mayGrant(ctx context.Context, org string) bool {
 // the org it asked for. A SuperAdmin gets what it asks for; anyone else gets its
 // own org, so any other request fails the equality and is refused.
 func scoped(ctx context.Context, org string) bool {
-	got, err := authz.Scope(ctx, org)
+	got, err := principal.Scope(ctx, org)
 	return err == nil && got == org
 }
 
@@ -260,7 +261,7 @@ func scoped(ctx context.Context, org string) bool {
 // switcher without closing anything — a machine credential is already confined to
 // one tenant, and the leak this closes is between PEOPLE.
 func mayReadTenancy(ctx context.Context, owner, name string) bool {
-	if p, ok := authz.From(ctx); ok && p.App != nil {
+	if p, ok := principal.From(ctx); ok && p.App != nil {
 		return scoped(ctx, owner)
 	}
 	return authz.Can(ctx, "GET", "users", owner, name)

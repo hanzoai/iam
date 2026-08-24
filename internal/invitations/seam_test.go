@@ -7,7 +7,7 @@ package invitations
 // Delete are plain func(ctx, *In) (*Out, error) over a real embedded-sqlite store,
 // so the tests call them the way the router does. Every op that authorizes on its
 // own value — the (owner,name) key it carries — is pinned here. List is the one op
-// that authorizes on the query rather than a decoded body — it rides authz.Scope
+// that authorizes on the query rather than a decoded body — it rides principal.Scope
 // behind the Guard — so it is exercised through the registered router in list_test.go.
 // Nothing is mocked but the two deliberate faults — a handle closed under the
 // handler, and a write path that fails after a clean read — each the shape of a

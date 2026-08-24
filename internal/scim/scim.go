@@ -9,7 +9,7 @@
 //
 // Authorization: the SCIM subtree is authenticated by authz.Guard (a bearer is
 // required) but path-authorized — the target rides in the path, not the query, so
-// each handler scopes the caller through authz.Scope (a SuperAdmin may act across
+// each handler scopes the caller through principal.Scope (a SuperAdmin may act across
 // tenants; everyone else is pinned to its own org). Secrets never cross a SCIM
 // response: every user is projected through schema.User.Mask() and the write-only
 // `password` is never echoed. The response envelopes are the SCIM standard ones
@@ -67,7 +67,7 @@ const (
 // Guard already reached for the raw handlers these replace.
 //
 // The /Users CRUD below stays raw on purpose: it binds a two-segment path id,
-// re-scopes every call through authz.Scope, and answers RFC 7644 §3.12 Errors
+// re-scopes every call through principal.Scope, and answers RFC 7644 §3.12 Errors
 // from a dozen branches.
 func Route(app *zip.App, db orm.DB) {
 	// Tells your identity provider which parts of SCIM this

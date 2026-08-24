@@ -98,7 +98,7 @@ var userAttributes = []attribute{
 // `owner` is the TENANT. It is deliberately here and NOT the standard enterprise
 // extension's `organization`, which RFC 7643 §4.3 defines as free text naming
 // where a person works — an IdP-controlled label, not an authorization key.
-// Whatever a client sends, authz.Scope re-derives the tenant from the caller, so
+// Whatever a client sends, principal.Scope re-derives the tenant from the caller, so
 // this attribute can narrow a SuperAdmin's write but never widen anyone's.
 var hanzoExtAttributes = []attribute{
 	{Name: "owner", Type: "string", Required: true, Mutability: "immutable", Returned: "default",

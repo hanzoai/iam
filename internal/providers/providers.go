@@ -16,11 +16,11 @@ package providers
 import (
 	"context"
 	"errors"
-	"github.com/hanzoai/iam/internal/authz"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -88,7 +88,7 @@ func Route(app *zip.App, db orm.DB) {
 // that is comes from your credentials, not from the request.
 func listProviders(db orm.DB) zip.TypedHandler[listProvidersIn, listProvidersOut] {
 	return func(ctx context.Context, in *listProvidersIn) (*listProvidersOut, error) {
-		owner, err := authz.Scope(ctx, in.Owner)
+		owner, err := principal.Scope(ctx, in.Owner)
 		if err != nil {
 			return nil, err
 		}

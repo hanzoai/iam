@@ -23,6 +23,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -172,9 +173,13 @@ func (in *UpdateInput) AuthzTarget() (owner, name string) {
 	return owner, name
 }
 
-// ListInput is an owner-scoped, paged listing request.
+// ListInput is a paged listing request. Owner names the organization to read;
+// omitting it means "the one my credential is scoped to", which for a caller
+// that spans tenants is all of them. principal.Scope turns the two into one
+// answer, so the field cannot be required here — requiring it would refuse the
+// tenant-spanning caller before the handler could resolve anything.
 type ListInput struct {
-	Owner string `json:"owner" validate:"required"`
+	Owner string `json:"owner,omitempty"`
 	// Email narrows the page to the accounts carrying one address. Looking a
 	// person up by their address is a QUERY over the collection, not an item
 	// read: an address is not the natural key, two rows in one org can carry
@@ -341,17 +346,31 @@ func firstOf(a, b string) string {
 	return b
 }
 
-// List returns a page of the people in your organization, with the total so you
+// List returns a page of the people in an organization, with the total so you
 // can page through the rest. Passwords, API secrets and MFA material are stripped
 // from every entry.
+//
+// Which organization comes from your credentials, not from the request: you read
+// your own and no one else's, and a credential whose scope spans tenants reads
+// the tenant it names — or, naming none, every one of them.
 func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	if strings.TrimSpace(in.Owner) == "" {
-		return nil, zip.ErrBadRequest("owner is required")
+	// principal.Scope is the whole tenant decision, and it has to be taken HERE.
+	// A confidential client reaches this collection on a CAPABILITY, and a
+	// capability names the collection rather than a tenant — so neither the Guard
+	// nor the op seam has an org to weigh, whether the request names another one
+	// or names none. The handler is the only place holding the credential and the
+	// query at once, so it is the only place the two become one answer.
+	owner, err := principal.Scope(ctx, strings.TrimSpace(in.Owner))
+	if err != nil {
+		return nil, err
 	}
 	// Both the count and the page go through the SAME narrowing, or a filtered
 	// read answers "1 of 40" and a caller pages forever through rows it filtered out.
 	narrow := func() *orm.ModelQuery[schema.User] {
-		q := orm.TypedQuery[schema.User](a.db).Filter("Owner=", in.Owner)
+		q := orm.TypedQuery[schema.User](a.db)
+		if owner != "" {
+			q = q.Filter("Owner=", owner)
+		}
 		if email := strings.TrimSpace(in.Email); email != "" {
 			q = q.Filter("Email=", email)
 		}

@@ -23,6 +23,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -106,7 +107,7 @@ func Route(app *zip.App, db orm.DB) {
 // and may.
 func listWebauthnCredentials(db orm.DB) zip.TypedHandler[listWebauthnCredentialsIn, listWebauthnCredentialsOut] {
 	return func(ctx context.Context, in *listWebauthnCredentialsIn) (*listWebauthnCredentialsOut, error) {
-		p, ok := authz.From(ctx)
+		p, ok := principal.From(ctx)
 		if !ok {
 			return nil, zip.ErrForbidden("forbidden")
 		}
