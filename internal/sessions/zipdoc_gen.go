@@ -25,14 +25,14 @@ func init() {
 		},
 	})
 	zip.Describe("POST /v1/iam/sessions", zip.Doc{
-		Description: "Records a sign-in. Signing in again from another browser adds to the\nsession rather than replacing it, so one person can be signed in from a laptop\nand a phone at once.\n\nAsk for an exclusive sign-in and the opposite holds: the new sign-in is the only\none left and every other browser is signed out. That is the setting to use when\none person may hold only one live session at a time.",
+		Description: "Records a sign-in and answers with the cookie id it minted. Signing in\nagain from another browser adds to the session rather than replacing it, so one\nperson can be signed in from a laptop and a phone at once.\n\nAsk for an exclusive sign-in and the opposite holds: the new sign-in is the only\none left and every other browser is signed out. That is the setting to use when\none person may hold only one live session at a time.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Session].id": "Persisted fields",
 			"Session.exclusiveSignin":                             "ExclusiveSignin is a transient control flag (v1 xorm:\"-\"): a caller sets\nit on a create to collapse SessionId down to the single incoming cookie\ninstead of appending. It is never stored — a persisted session always\ncarries it false, so orm:\"-\" keeps it off the column backends and\nomitempty keeps it out of the SQLite JSON blob.",
 		},
 	})
 	zip.Describe("PUT /v1/iam/sessions/:owner/:name/:application", zip.Doc{
-		Description: "Replaces the set of browsers a session covers — signing out the ones you\nleave off while the session itself stays live. A session that does not exist is\nreported as missing rather than created.",
+		Description: "Names the browsers a session keeps — signing out the ones you leave off\nwhile the session itself stays live. A session that does not exist is reported\nas missing rather than created.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Session].id": "Persisted fields",
 			"Session.exclusiveSignin":                             "ExclusiveSignin is a transient control flag (v1 xorm:\"-\"): a caller sets\nit on a create to collapse SessionId down to the single incoming cookie\ninstead of appending. It is never stored — a persisted session always\ncarries it false, so orm:\"-\" keeps it off the column backends and\nomitempty keeps it out of the SQLite JSON blob.",
