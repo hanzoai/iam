@@ -15,10 +15,10 @@ package oidc
 // internal detail.
 //
 // Every constant below is the address the published document declares. The old
-// spelling stays REACHABLE — one handler value at both addresses — so no consumer
-// pinned to it breaks; it is simply not what anything teaches. When the last
-// pinned consumer moves, the Legacy* half of a pair is deleted and nothing else
-// changes.
+// spelling is retired rather than aliased: it answers 410 and names its successor
+// in a Link header (pkg/gone), so a caller still holding it is told where the
+// thing went instead of hunting for a typo it will not find. Two addresses for one
+// thing would be two things to keep true, which is the state this replaced.
 const (
 	PathAccount           = "/v1/iam/account"            // legacy: get-account
 	PathAuthApplication   = "/v1/iam/auth/application"   // legacy: get-app-login
