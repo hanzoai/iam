@@ -146,11 +146,14 @@ func addToken(db orm.DB) zip.TypedHandler[schema.Token, tokenResult] {
 		model := t.Model
 		*t = *in
 		t.Model = model
-		// The bearer/refresh hashes are the lookup keys a presented credential is
-		// resolved by (GetTokenByRefreshHash). They are derived from a token this
-		// server minted, never a value a caller supplies — a chosen hash is a chosen
-		// credential — so a create never carries one.
+		// Every key a presented credential is resolved by is the server's. The two
+		// hashes answer a bearer or a refresh token (GetTokenByRefreshHash); Code and
+		// UserCode answer the authorization-code redemption and the device approval
+		// (GetTokenByCode, GetTokenByUserCode), each an unscoped lookup by that one
+		// value. All four are derived from something this server minted — a chosen
+		// code is a chosen grant — so a create carries none of them.
 		t.AccessTokenHash, t.RefreshTokenHash = "", ""
+		t.Code, t.UserCode = "", ""
 		t.SetId(tokenId(in.Owner, in.Name))
 		if err := t.CreateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
@@ -180,14 +183,18 @@ func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
 		}
 		// Overlay the decoded domain fields onto the loaded row, keeping the
 		// loaded Model (id, createdAt, key, snapshot) so the write targets the
-		// existing key and preserves creation metadata. The credential-seed hashes
-		// are the server's, not the caller's: carry the stored values so an update
-		// can never set the key a presented credential is resolved by.
+		// existing key and preserves creation metadata. Every key a presented
+		// credential is resolved by is the server's, not the caller's: carry the
+		// stored values so an update can never set one — the two hashes a bearer or
+		// refresh resolves by, and the code an authorization-code redemption and a
+		// device approval resolve by.
 		storedAccessHash, storedRefreshHash := t.AccessTokenHash, t.RefreshTokenHash
+		storedCode, storedUserCode := t.Code, t.UserCode
 		model := t.Model
 		*t = *in
 		t.Model = model
 		t.AccessTokenHash, t.RefreshTokenHash = storedAccessHash, storedRefreshHash
+		t.Code, t.UserCode = storedCode, storedUserCode
 		if err := t.UpdateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
