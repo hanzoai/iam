@@ -4,9 +4,9 @@
 package main
 
 import (
-	"os"
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/hanzoai/orm"
 	"github.com/spf13/cobra"
