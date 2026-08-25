@@ -314,14 +314,19 @@ func TestMintUserKey_StoreFaults(t *testing.T) {
 	}
 }
 
-// Revoke's guard returns success when the row is absent, and First yields a nil
-// entity on ANY read error (never an entity beside an error), so a broken store
-// read lands on the same `k == nil` arm — reported as the "already absent"
-// success a revoke is entitled to assert. This pins that the non-NotFound error
-// still resolves through the nil guard rather than escaping.
-func TestRevokeUserKey_BrokenReadIsAbsent(t *testing.T) {
-	if err := RevokeUserKey(context.Background(), closedDB(t), "acme", "ada", ""); err != nil {
-		t.Fatalf("revoke over a broken read = %v, want nil (the nil-row guard subsumes it)", err)
+// Revoke is a statement about the END state, so an ABSENT row is success: a caller
+// may always assert "this user holds no credential" without racing a prior revoke.
+// A store it could not READ is not that statement, and it used to be reported as
+// one — the lookup returned a nil entity on any read error, nil read as "already
+// absent", and a revoke that reached nothing at all told its caller the credential
+// was gone while the credential stayed live. Absent is success; unreadable is the
+// failure it was.
+func TestRevokeUserKey_AbsentSucceedsAndAnUnreadableStoreDoesNot(t *testing.T) {
+	if err := RevokeUserKey(context.Background(), memDB(t), "acme", "ada", ""); err != nil {
+		t.Fatalf("revoking a user who holds no key = %v, want nil", err)
+	}
+	if err := RevokeUserKey(context.Background(), closedDB(t), "acme", "ada", ""); err == nil {
+		t.Fatal("a revoke that could not read the store reported the credential gone")
 	}
 }
 
