@@ -383,30 +383,24 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 	// their own account. Minting is the moment this org is known to be moving to
 	// per-user rows, so it is the moment the shared one stops existing.
 	if !publish {
-		if shared, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, UserKeyName)).First(); err == nil && shared != nil {
+		shared, err := orm.Get[schema.Key](db, id(owner, UserKeyName))
+		if err == nil {
 			if err := shared.DeleteCtx(ctx); err != nil {
 				return "", err
 			}
-		} else if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		} else if !errors.Is(err, orm.ErrNotFound) {
 			return "", err
 		}
 	}
 
-	existing, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, name)).First()
-	if err != nil && !errors.Is(err, orm.ErrNotFound) {
-		return "", err
-	}
-	if existing != nil {
-		existing.AccessKey, existing.AccessSecret = access, ""
-		existing.AccessSecretDigest = schema.DigestSecret(secret)
-		existing.User, existing.Type, existing.Scope = user, "User", scope
-		existing.UpdatedTime = now
-		if err := existing.UpdateCtx(ctx); err != nil {
-			return "", err
-		}
-		return presented, nil
-	}
-
+	// ONE write, whether or not this user already holds a key at this scope. A
+	// mint states the WHOLE row — a new credential and the liveness it is minted
+	// with — so nothing of the credential it replaces can survive into it. It used
+	// to be two branches, and the update branch carried only the new credential:
+	// re-minting onto a row that had expired or been switched off handed the holder
+	// a fresh sk- and left the row's State and ExpireTime saying it was dead, so
+	// the key they were just given authenticated nobody. A row built from scratch
+	// each time cannot inherit that.
 	k := orm.New[schema.Key](db)
 	k.SetId(id(owner, name))
 	k.Owner, k.Name = owner, name
@@ -423,7 +417,7 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 	k.Scope = scope
 	k.State = "Active"
 	k.CreatedTime, k.UpdatedTime = now, now
-	if err := k.CreateCtx(ctx); err != nil {
+	if err := k.PutCtx(ctx); err != nil {
 		return "", err
 	}
 	return presented, nil
@@ -435,8 +429,8 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 // leaves the server key working and vice versa; and named by the same NameFor the
 // mint used, so one member's revoke cannot reach another member's secret key.
 func RevokeUserKey(ctx context.Context, db orm.DB, owner, user, scope string) error {
-	k, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, NameFor(user, scope))).First()
-	if errors.Is(err, orm.ErrNotFound) || k == nil {
+	k, err := orm.Get[schema.Key](db, id(owner, NameFor(user, scope)))
+	if errors.Is(err, orm.ErrNotFound) {
 		return nil
 	}
 	if err != nil {

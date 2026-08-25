@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 func memDB(t *testing.T) orm.DB {
@@ -518,5 +520,132 @@ func TestALimitDoesNotChangeTheKeyClass(t *testing.T) {
 	}
 	if schema.ClassOf(k.Scope) != schema.KeyScopePublish {
 		t.Fatalf("ClassOf(%q) must read the class", k.Scope)
+	}
+}
+
+// seedUser puts the user a minted key names on the store, so a resolve that
+// reaches the same-tenant pin has someone to land on.
+func seedUser(t *testing.T, db orm.DB, owner, name string) {
+	t.Helper()
+	u := orm.New[schema.User](db)
+	u.SetId(owner + "/" + name)
+	u.Owner, u.Name = owner, name
+	if err := u.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed %s/%s: %v", owner, name, err)
+	}
+}
+
+// A MINT HANDS OUT A CREDENTIAL THAT WORKS, and the only proof of that is the
+// resolver the estate authenticates through — store.UserAndScopeByAccessKey, what
+// /v1/iam/keys/principal answers with. Every other assertion here reads the row
+// directly, which is a weaker question: a row can hold the right digest and still
+// resolve to nobody.
+//
+// Each case below is one way the mint used to answer a live sk- that authenticated
+// nobody. All three end at the same place, so they are one test.
+func TestMintUserKey_TheMintedSecretAuthenticates(t *testing.T) {
+	resolves := func(t *testing.T, db orm.DB, secret string) {
+		t.Helper()
+		u, _, err := store.UserAndScopeByAccessKey(context.Background(), db, secret)
+		if err != nil {
+			t.Fatalf("the minted key does not authenticate: %s", store.Reason(err))
+		}
+		if u.Owner != "acme" || u.Name != "ada" {
+			t.Fatalf("it authenticated %s/%s, want acme/ada", u.Owner, u.Name)
+		}
+	}
+
+	// A key minted for the first time.
+	t.Run("first mint", func(t *testing.T) {
+		db := memDB(t)
+		seedUser(t, db, "acme", "ada")
+		secret, err := MintUserKey(context.Background(), db, "acme", "ada", "")
+		if err != nil {
+			t.Fatalf("mint: %v", err)
+		}
+		resolves(t, db, secret)
+	})
+
+	// A key minted after the previous one was revoked. Revocation leaves the store
+	// holding a deleted row under the SAME deterministic id, and a write that landed
+	// on it reported success while the row stayed deleted — so the second key was
+	// stored where every reader filters it out, and re-minting never helped.
+	t.Run("after a revoke", func(t *testing.T) {
+		db := memDB(t)
+		ctx := context.Background()
+		seedUser(t, db, "acme", "ada")
+		if _, err := MintUserKey(ctx, db, "acme", "ada", ""); err != nil {
+			t.Fatalf("first mint: %v", err)
+		}
+		if err := RevokeUserKey(ctx, db, "acme", "ada", ""); err != nil {
+			t.Fatalf("revoke: %v", err)
+		}
+		secret, err := MintUserKey(ctx, db, "acme", "ada", "")
+		if err != nil {
+			t.Fatalf("mint after revoke: %v", err)
+		}
+		resolves(t, db, secret)
+	})
+
+	// A key minted onto a row that had run out or been switched off. The mint used
+	// to carry only the new credential onto such a row and leave State/ExpireTime
+	// as they were, so the resolver kept refusing what had just been handed over.
+	for _, dead := range []struct {
+		name string
+		set  func(*schema.Key)
+	}{
+		{"onto an expired row", func(k *schema.Key) {
+			k.ExpireTime = time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+		}},
+		{"onto a disabled row", func(k *schema.Key) { k.State = "Inactive" }},
+	} {
+		t.Run(dead.name, func(t *testing.T) {
+			db := memDB(t)
+			ctx := context.Background()
+			seedUser(t, db, "acme", "ada")
+			if _, err := MintUserKey(ctx, db, "acme", "ada", ""); err != nil {
+				t.Fatalf("first mint: %v", err)
+			}
+			k, err := orm.Get[schema.Key](db, id("acme", NameFor("ada", "")))
+			if err != nil {
+				t.Fatalf("read the row: %v", err)
+			}
+			dead.set(k)
+			if err := k.UpdateCtx(ctx); err != nil {
+				t.Fatalf("age the row: %v", err)
+			}
+			secret, err := MintUserKey(ctx, db, "acme", "ada", "")
+			if err != nil {
+				t.Fatalf("re-mint: %v", err)
+			}
+			resolves(t, db, secret)
+		})
+	}
+}
+
+// The same rule on the CRUD surface: a name that was deleted can be used again,
+// and the key issued under it is retrievable and authenticates. Revocation is
+// deletion, so without this an organization could spend a key name once.
+func TestKeys_ANameCanBeUsedAgainAfterDelete(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedUser(t, db, "acme", "ada")
+
+	c, d, g := create(db), del(db), get(db)
+	if _, err := c(ctx, &schema.Key{Owner: "acme", Name: "server", User: "ada"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := d(ctx, &Ref{Owner: "acme", Name: "server"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	again, err := c(ctx, &schema.Key{Owner: "acme", Name: "server", User: "ada"})
+	if err != nil {
+		t.Fatalf("create under a name that was deleted: %v", err)
+	}
+	if _, err := g(ctx, &Ref{Owner: "acme", Name: "server"}); err != nil {
+		t.Fatalf("the re-created key is not retrievable: %v", err)
+	}
+	if _, _, err := store.UserAndScopeByAccessKey(ctx, db, again.AccessSecret); err != nil {
+		t.Fatalf("the re-created key does not authenticate: %s", store.Reason(err))
 	}
 }
