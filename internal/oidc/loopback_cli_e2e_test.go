@@ -35,7 +35,7 @@ func TestCLILoopbackPKCEFlow_EndToEnd(t *testing.T) {
 		refreshHours: 24,
 		grants:       []string{"authorization_code", "refresh_token"},
 	})
-	seedUser(t, db, "z", "z@hanzo.ai", "IloveHanzo2026!!")
+	seedUser(t, db, "z", "z@hanzo.ai", "correct horse battery staple")
 
 	verifier := "KmKyPMK1T4JxydUiDsLmCaz79cqcmYqoBCpaeWWoxrU"
 	challenge := ComputeS256Challenge(verifier)
@@ -63,7 +63,7 @@ func TestCLILoopbackPKCEFlow_EndToEnd(t *testing.T) {
 		"application":   "hanzo-cli",
 		"organization":  "hanzo",
 		"username":      "z",
-		"password":      "IloveHanzo2026!!",
+		"password":      "correct horse battery staple",
 		"clientId":      "hanzo-cli",
 		"redirectUri":   runtimeRedirect,
 		"codeChallenge": challenge,
@@ -103,7 +103,7 @@ func TestCLILoopback_StillRequiresPKCE(t *testing.T) {
 		redirectURIs: []string{cliRegisteredRedirect},
 		grants:       []string{"authorization_code"},
 	})
-	seedUser(t, db, "z", "z@hanzo.ai", "IloveHanzo2026!!")
+	seedUser(t, db, "z", "z@hanzo.ai", "correct horse battery staple")
 
 	// A public client that omits the challenge is refused at MINT time — the
 	// code never exists, so there is nothing to exchange.
@@ -111,7 +111,7 @@ func TestCLILoopback_StillRequiresPKCE(t *testing.T) {
 		"application":  "hanzo-cli",
 		"organization": "hanzo",
 		"username":     "z",
-		"password":     "IloveHanzo2026!!",
+		"password":     "correct horse battery staple",
 		"clientId":     "hanzo-cli",
 		"redirectUri":  runtimeRedirect,
 		// no codeChallenge
@@ -134,14 +134,14 @@ func TestCLILoopback_CodeBoundToExactPort(t *testing.T) {
 		redirectURIs: []string{cliRegisteredRedirect},
 		grants:       []string{"authorization_code"},
 	})
-	seedUser(t, db, "z", "z@hanzo.ai", "IloveHanzo2026!!")
+	seedUser(t, db, "z", "z@hanzo.ai", "correct horse battery staple")
 
 	verifier := "KmKyPMK1T4JxydUiDsLmCaz79cqcmYqoBCpaeWWoxrU"
 	code, _, _ := loginForCode(t, app, map[string]string{
 		"application":   "hanzo-cli",
 		"organization":  "hanzo",
 		"username":      "z",
-		"password":      "IloveHanzo2026!!",
+		"password":      "correct horse battery staple",
 		"clientId":      "hanzo-cli",
 		"redirectUri":   runtimeRedirect,
 		"codeChallenge": ComputeS256Challenge(verifier),
