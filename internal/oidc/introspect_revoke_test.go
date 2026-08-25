@@ -157,12 +157,12 @@ func TestRevoke_publicClient_revokesItsOwnRefreshFamily(t *testing.T) {
 		refreshHours: 720,
 		grants:       []string{"authorization_code", "refresh_token"},
 	})
-	seedUser(t, db, "z", "z@hanzo.ai", "***REMOVED***")
+	seedUser(t, db, "z", "z@hanzo.ai", "correct horse battery staple")
 
 	verifier := "KmKyPMK1T4JxydUiDsLmCaz79cqcmYqoBCpaeWWoxrU"
 	code, _, body := loginForCode(t, app, map[string]string{
 		"application": "hanzo-cli", "organization": "hanzo",
-		"username": "z", "password": "***REMOVED***",
+		"username": "z", "password": "correct horse battery staple",
 		"clientId": "hanzo-cli", "redirectUri": runtimeRedirect,
 		"codeChallenge": pkce.Challenge(verifier),
 		"scope":         "openid profile email offline_access",
