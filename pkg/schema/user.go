@@ -122,10 +122,13 @@ type User struct {
 	RegisterSource    string `json:"registerSource,omitempty"`
 
 	// API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are
-	// bearer material. AccessSecretHash MUST persist (orm stores via JSON; a
-	// json:"-" field is never saved), so it carries a real json tag and the
-	// handler's redact() strips it (and AccessSecret + the token fields) before
-	// responding.
+	// bearer material, so Mask blanks them and the handler's redact() strips them
+	// before responding. They carry real json tags because a field orm never saves
+	// is a field that silently vanishes.
+	//
+	// A presented secret is resolved through Key.AccessSecretDigest and nowhere
+	// else, so no credential is ISSUED into these columns: they hold what older
+	// rows left behind, and every writer that touches them clears them.
 	AccessKey            string `json:"accessKey,omitempty"`
 	AccessSecret         string `json:"accessSecret,omitempty"`
 	AccessSecretHash     string `json:"accessSecretHash,omitempty"`

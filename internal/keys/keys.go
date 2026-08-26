@@ -393,34 +393,86 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 		}
 	}
 
-	// ONE write, whether or not this user already holds a key at this scope. A
-	// mint states the WHOLE row — a new credential and the liveness it is minted
-	// with — so nothing of the credential it replaces can survive into it. It used
-	// to be two branches, and the update branch carried only the new credential:
-	// re-minting onto a row that had expired or been switched off handed the holder
-	// a fresh sk- and left the row's State and ExpireTime saying it was dead, so
-	// the key they were just given authenticated nobody. A row built from scratch
-	// each time cannot inherit that.
-	k := orm.New[schema.Key](db)
-	k.SetId(id(owner, name))
-	k.Owner, k.Name = owner, name
-	k.DisplayName = "Cloud API key"
+	label := "Cloud API key"
 	if publish {
-		k.DisplayName = "Publishable key"
+		label = "Publishable key"
 	}
-	k.Type, k.User = "User", user
-	k.AccessKey = access
-	// The digest is what is written; the secret leaves in `presented` and is
-	// never stored, so a leak of this table reveals nothing that can be replayed.
-	k.AccessSecret = ""
-	k.AccessSecretDigest = schema.DigestSecret(secret)
-	k.Scope = scope
-	k.State = "Active"
-	k.CreatedTime, k.UpdatedTime = now, now
-	if err := k.PutCtx(ctx); err != nil {
+	if err := write(ctx, db, row{
+		owner:  owner,
+		name:   name,
+		user:   user,
+		scope:  scope,
+		label:  label,
+		access: access,
+		secret: secret,
+		now:    now,
+	}); err != nil {
 		return "", err
 	}
 	return presented, nil
+}
+
+// MintAccountKey (re)mints the credential a SERVICE ACCOUNT presents and returns
+// both halves — the pk- its holder is known by and the sk- it authenticates with,
+// revealed once. Every caller that credentials an account goes through here, so a
+// tenant's first credential and every rotation after it land on ONE row: two
+// spellings of that row would leave the credential a signup handed out live
+// forever, unrevokable, beside the one a rotation says replaced it.
+//
+// The row is what the resolvers read. The account's own User row holds no
+// credential material at all — nothing resolves a secret from there, so a value
+// written to it authenticates nobody however carefully it was hashed.
+func MintAccountKey(ctx context.Context, db orm.DB, owner, account string) (access, secret string, err error) {
+	if strings.TrimSpace(owner) == "" || strings.TrimSpace(account) == "" {
+		return "", "", fmt.Errorf("keys: owner and account are required")
+	}
+	access, secret = Mint("pk", ""), Mint("sk", "")
+	err = write(ctx, db, row{
+		owner:  owner,
+		name:   account + "-key",
+		user:   owner + "/" + account,
+		label:  "Service account key",
+		access: access,
+		secret: secret,
+		now:    time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return access, secret, nil
+}
+
+// row is one credential as a mint states it: who holds it, what it reaches, and
+// the two halves it was minted with.
+type row struct {
+	owner, name, user, scope, label, access, secret, now string
+}
+
+// write puts the credential row at (owner, name) — the ONE write behind every
+// mint, and the ONE place that decides what a minted row says.
+//
+// It states the WHOLE row every time, so nothing of the credential it replaces
+// can survive into it. Mint used to read the previous row and overwrite only the
+// credential fields, which left State and ExpireTime describing the credential
+// that was just replaced: re-minting onto a key that had run out or been switched
+// off handed the holder a fresh sk- and a row that still said it was dead, so the
+// key they were given authenticated nobody. A row built from scratch cannot
+// inherit that, and a put lands on the same id whether or not one was there.
+func write(ctx context.Context, db orm.DB, r row) error {
+	k := orm.New[schema.Key](db)
+	k.SetId(id(r.owner, r.name))
+	k.Owner, k.Name = r.owner, r.name
+	k.DisplayName = r.label
+	k.Type, k.User = "User", r.user
+	k.AccessKey = r.access
+	// The digest is what is written; the secret leaves with its holder and is
+	// never stored, so a leak of this table reveals nothing that can be replayed.
+	k.AccessSecret = ""
+	k.AccessSecretDigest = schema.DigestSecret(r.secret)
+	k.Scope = r.scope
+	k.State = "Active"
+	k.CreatedTime, k.UpdatedTime = r.now, r.now
+	return k.PutCtx(ctx)
 }
 
 // RevokeUserKey deletes the user's key row at `scope`. Absent is success — revoke is
