@@ -5,12 +5,12 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -22,28 +22,6 @@ import (
 // value is stated here and the two are kept in step by that contract.
 const credentialType = "service-account"
 
-// mintCredential sets a fresh pk- access key and an argon2id DIGEST of its sk- secret
-// on sa, returning the plaintext secret to reveal EXACTLY ONCE. The digest — never the
-// secret — is persisted, so a storage read can never recover a live credential.
-// Mirrors serviceaccounts.mint (a service account is one User row).
-//
-// The two halves carry DIFFERENT prefixes because they are different things, and the
-// prefix is the only thing a human reading a log or a config file has to tell them
-// apart: pk- is the publishable lookup handle (stored verbatim, safe to show), sk- is
-// the confidential half (digested, revealed once). Minting both under one prefix
-// would make an exposed secret indistinguishable from a harmless handle at a glance.
-func mintCredential(sa *schema.User) (accessKey, secret string, err error) {
-	accessKey, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
-	hash, err := cred.Hash(secret)
-	if err != nil {
-		return "", "", err
-	}
-	sa.AccessKey = accessKey
-	sa.AccessSecretHash = hash
-	sa.AccessSecret = "" // never persist the plaintext
-	return accessKey, secret, nil
-}
-
 // provision idempotently converges a self-service signup to ONE tenant: an
 // organization, its founding user as that org's own admin, and ONE org-scoped API
 // key. It is the single provisioning primitive the onboarding endpoint drives —
@@ -53,9 +31,13 @@ func mintCredential(sa *schema.User) (accessKey, secret string, err error) {
 //   - user: the caller is moved into <slug> as its admin; already-there is a no-op.
 //           The caller's own new org, NOT the reserved admin org — provision, do
 //           not promote (the reserved-slug gate forbids admin/built-in/app).
-//   - key:  ensured by natural key "<slug>/default", Type=Organization — the gateway
-//           meters every request under an org-scoped key, so a provisioned tenant is
-//           NEVER unmetered. A second call returns the SAME key, never a second one.
+//   - account: the org's own service account "<slug>-default", so the gateway meters
+//           every request under the org and a provisioned tenant is NEVER unmetered.
+//   - key:  the credential that account presents, at "<slug>/<slug>-default-key" —
+//           the row a presented secret is resolved through. Ensured apart from the
+//           account, because the two are separate rows and a tenant can hold one
+//           without the other. A second call returns the SAME key, never a second
+//           one, and never re-reveals the secret.
 //
 // RETRY / PARTIAL-FAILURE convergence is backend-portable — it does NOT depend on a
 // transaction rolling back (production runs a store where each write autocommits
@@ -207,11 +189,11 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		out.movedFrom = wasOwner
 
 		// Ensure ONE org-scoped, metered credential — a service account whose secret
-		// is argon2id-HASHED at rest (never plaintext) and revealed exactly once, on
-		// mint. Org-scoped (Owner=slug), so the gateway meters every request under the
-		// org; the tenant can never call unmetered. Idempotent: a replay returns the
-		// stored (hashed) credential's public access key, never a second one and never
-		// the secret again.
+		// is stored as a DIGEST (never plaintext) and revealed exactly once, on mint.
+		// Org-scoped (Owner=slug), so the gateway meters every request under the org;
+		// the tenant can never call unmetered. Idempotent: a replay returns the
+		// credential's publishable half, never a second one and never the secret
+		// again.
 		// A credential is a user row, so its name obeys THE username rule like any
 		// other principal's. The slug is already lowercase and bounded to leave room
 		// for the suffix (maxOrgSlug), so this refuses nothing that onboarding can
@@ -224,24 +206,44 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		if err != nil {
 			return &fault{500, "server_error"}
 		}
-		keyCreated := sa == nil
-		if keyCreated {
+		if sa == nil {
 			sa = orm.New[schema.User](tx)
 			sa.Owner, sa.Name = cl.slug, saName
 			sa.Type, sa.DisplayName = credentialType, "Default API key"
 			sa.CreatedTime = provisionNow()
 			sa.SetId(cl.slug + "/" + saName)
-			accessKey, secret, mErr := mintCredential(sa)
-			if mErr != nil {
-				return &fault{500, "server_error"}
-			}
 			if err := sa.CreateCtx(ctx); err != nil {
 				return &fault{500, "server_error"}
 			}
+		}
+
+		// The account and the credential it presents are ensured SEPARATELY, because
+		// they are two rows and a tenant can hold one without the other. The account
+		// used to answer for both: a tenant whose account existed was taken to hold a
+		// working credential, and the credential itself went onto the account's own
+		// User row — a row nothing resolves a secret from. Asking the row a presented
+		// secret is actually RESOLVED through is what makes the converge true, and it
+		// carries every tenant already in that state to a credential that works.
+		//
+		// keys.MintAccountKey is the one call every account credential is issued by,
+		// so a rotation later replaces this exact row rather than leaving a second
+		// live one beside it.
+		k, err := orm.Get[schema.Key](tx, cl.slug+"/"+saName+"-key")
+		if err != nil && !errors.Is(err, orm.ErrNotFound) {
+			return &fault{500, "server_error"}
+		}
+		keyCreated := errors.Is(err, orm.ErrNotFound)
+		if keyCreated {
+			accessKey, secret, mErr := keys.MintAccountKey(ctx, tx, cl.slug, saName)
+			if mErr != nil {
+				return &fault{500, "server_error"}
+			}
 			out.accessKey = accessKey
-			out.accessSecret = secret // shown once, on first mint
+			out.accessSecret = secret // shown once, on the mint that issues it
 		} else {
-			out.accessKey = sa.AccessKey
+			// A replay names the publishable half of the credential the account
+			// already holds, and never re-reveals the secret.
+			out.accessKey = k.AccessKey
 		}
 
 		// Record the founder ON the org's roster. The move alone makes the caller the
