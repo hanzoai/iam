@@ -29,9 +29,7 @@ package serviceaccounts
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
-	"time"
 
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
@@ -389,36 +387,13 @@ func read(p *principal.Principal, org string) bool {
 // The secret is stored as its digest (schema.DigestSecret) and returned once, so
 // the row holds nothing replayable.
 func mint(ctx context.Context, db orm.DB, sa *schema.User) (key, secret string, err error) {
-	key, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
-	// A rotate REPLACES: the deterministic name means the new credential lands on
-	// the same row, so the previous secret stops resolving the moment this one is
-	// written. Two live secrets for one identity is how a revoked key keeps working.
-	name, now := sa.Name+"-key", time.Now().UTC().Format(time.RFC3339)
-	id := sa.Owner + "/" + name
-	existing, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id).First()
-	if err != nil && !errors.Is(err, orm.ErrNotFound) {
-		return "", "", zip.ErrInternal(err.Error())
-	}
-	if existing != nil {
-		existing.AccessKey, existing.AccessSecret = key, ""
-		existing.AccessSecretDigest = schema.DigestSecret(secret)
-		existing.UpdatedTime = now
-		if err := existing.UpdateCtx(ctx); err != nil {
-			return "", "", zip.ErrInternal(err.Error())
-		}
-		sa.AccessKey, sa.AccessSecret, sa.AccessSecretHash = "", "", ""
-		return key, secret, nil
-	}
-	k := orm.New[schema.Key](db)
-	k.SetId(id)
-	k.Owner, k.Name = sa.Owner, name
-	k.DisplayName = "Service account key"
-	k.Type, k.User = "User", sa.Owner+"/"+sa.Name
-	k.State = "Active"
-	k.AccessKey = key
-	k.AccessSecretDigest = schema.DigestSecret(secret)
-	k.CreatedTime, k.UpdatedTime = now, now
-	if err := k.CreateCtx(ctx); err != nil {
+	// A rotate REPLACES: keys.MintAccountKey names the row deterministically, so
+	// the new credential lands where the last one was and the previous secret stops
+	// resolving the moment this one is written. Two live secrets for one identity
+	// is how a revoked key keeps working. Signup credentials its tenant's first
+	// account through the same call, so the two cannot name different rows.
+	key, secret, err = keys.MintAccountKey(ctx, db, sa.Owner, sa.Name)
+	if err != nil {
 		return "", "", zip.ErrInternal("store service account key: " + err.Error())
 	}
 	// The User row holds no credential material at all. See the note above.

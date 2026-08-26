@@ -15,7 +15,7 @@ func init() {
 		Fields: map[string]string{
 			"ListInput.email": "Email narrows the page to the accounts carrying one address. Looking a\nperson up by their address is a QUERY over the collection, not an item\nread: an address is not the natural key, two rows in one org can carry\none, and a caller that gets a page SEES both — where a single-item read\nwould have to choose, and choosing is how somebody joins a team under a\ncolleague's identity.",
 			"Model[github.com/hanzoai/iam/pkg/schema.User].id": "Persisted fields",
-			"User.accessKey":           "API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are\nbearer material. AccessSecretHash MUST persist (orm stores via JSON; a\njson:\"-\" field is never saved), so it carries a real json tag and the\nhandler's redact() strips it (and AccessSecret + the token fields) before\nresponding.",
+			"User.accessKey":           "API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are\nbearer material, so Mask blanks them and the handler's redact() strips them\nbefore responding. They carry real json tags because a field orm never saves\nis a field that silently vanishes.\n\nA presented secret is resolved through Key.AccessSecretDigest and nowhere\nelse, so no credential is ISSUED into these columns: they hold what older\nrows left behind, and every writer that touches them clears them.",
 			"User.balance":             "Balance mirrors v1 for lossless migration but is authoritative in\nCommerce (billing.hanzo.ai), not here — do not write it from IAM.",
 			"User.createdIp":           "Sign-in provenance.",
 			"User.displayName":         "Profile.",
@@ -32,7 +32,7 @@ func init() {
 		Description: "Returns one person in your organization, addressed by their username or by\ntheir email address. Passwords, API secrets and MFA material are stripped from\nthe response.\n\nAn address that names two accounts names none: the read refuses rather than\npicking one, and says so instead of reporting \"no such user\". Handing back an\narbitrary one of two rows is how somebody gets added to a team under a\ncolleague's identity.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.User].id": "Persisted fields",
-			"User.accessKey":           "API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are\nbearer material. AccessSecretHash MUST persist (orm stores via JSON; a\njson:\"-\" field is never saved), so it carries a real json tag and the\nhandler's redact() strips it (and AccessSecret + the token fields) before\nresponding.",
+			"User.accessKey":           "API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are\nbearer material, so Mask blanks them and the handler's redact() strips them\nbefore responding. They carry real json tags because a field orm never saves\nis a field that silently vanishes.\n\nA presented secret is resolved through Key.AccessSecretDigest and nowhere\nelse, so no credential is ISSUED into these columns: they hold what older\nrows left behind, and every writer that touches them clears them.",
 			"User.balance":             "Balance mirrors v1 for lossless migration but is authoritative in\nCommerce (billing.hanzo.ai), not here — do not write it from IAM.",
 			"User.createdIp":           "Sign-in provenance.",
 			"User.displayName":         "Profile.",
@@ -49,7 +49,7 @@ func init() {
 		Description: "Adds a person to your organization. Send a password and it becomes the\none they sign in with; it is hashed before it is stored and never comes back\nin any response.\n\nThe username is checked against the same rule every account in the Hanzo Cloud\nis held to, whichever way it was created — this call, password signup, a social\nsign-in, or SCIM — so a name accepted here works everywhere.\n\nA name already taken in your organization is refused rather than overwritten.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.User].id": "Persisted fields",
-			"User.accessKey":           "API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are\nbearer material. AccessSecretHash MUST persist (orm stores via JSON; a\njson:\"-\" field is never saved), so it carries a real json tag and the\nhandler's redact() strips it (and AccessSecret + the token fields) before\nresponding.",
+			"User.accessKey":           "API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are\nbearer material, so Mask blanks them and the handler's redact() strips them\nbefore responding. They carry real json tags because a field orm never saves\nis a field that silently vanishes.\n\nA presented secret is resolved through Key.AccessSecretDigest and nowhere\nelse, so no credential is ISSUED into these columns: they hold what older\nrows left behind, and every writer that touches them clears them.",
 			"User.balance":             "Balance mirrors v1 for lossless migration but is authoritative in\nCommerce (billing.hanzo.ai), not here — do not write it from IAM.",
 			"User.createdIp":           "Sign-in provenance.",
 			"User.displayName":         "Profile.",
@@ -66,7 +66,7 @@ func init() {
 		Description: "Changes a person's profile, their roles, or the credentials they sign\nin with. Send a password to reset it; leave it out and their current one keeps\nworking.\n\nWho they are does not change: their organization, username and the identifier\ntheir existing sessions are keyed on all survive the write, so an update never\nsigns anyone out.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.User].id": "Persisted fields",
-			"User.accessKey":           "API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are\nbearer material. AccessSecretHash MUST persist (orm stores via JSON; a\njson:\"-\" field is never saved), so it carries a real json tag and the\nhandler's redact() strips it (and AccessSecret + the token fields) before\nresponding.",
+			"User.accessKey":           "API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are\nbearer material, so Mask blanks them and the handler's redact() strips them\nbefore responding. They carry real json tags because a field orm never saves\nis a field that silently vanishes.\n\nA presented secret is resolved through Key.AccessSecretDigest and nowhere\nelse, so no credential is ISSUED into these columns: they hold what older\nrows left behind, and every writer that touches them clears them.",
 			"User.balance":             "Balance mirrors v1 for lossless migration but is authoritative in\nCommerce (billing.hanzo.ai), not here — do not write it from IAM.",
 			"User.createdIp":           "Sign-in provenance.",
 			"User.displayName":         "Profile.",
