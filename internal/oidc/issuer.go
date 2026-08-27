@@ -460,9 +460,22 @@ func issuerRelocation(c *zip.Ctx) (string, bool) {
 		// steer browsers to.
 		return "", false
 	}
-	host := normalizeHost(c.Host())
+	// The FULL host, port included. issuerFor normalizes for its own map lookup,
+	// so a brand still resolves from "lux.id:443"; passing the stripped host
+	// instead meant the dev branch could never see a port and relocated a request
+	// on 127.0.0.1:38080 to 127.0.0.1 — a port nothing serves, reached by a 307
+	// the browser follows before anything says why.
+	host := strings.TrimSpace(c.Host())
 	iss := r.issuerFor(host)
-	if host == "" || iss == "" || iss == "https://"+host {
+	if host == "" || iss == "" {
+		return "", false
+	}
+	// Already answering ON the issuer's own address: nothing to relocate. Compare
+	// the address the request ARRIVED on against the issuer's, rather than
+	// rebuilding one with a hardcoded scheme — "https://"+host is false for every
+	// http dev issuer, so the short-circuit never fired and every request
+	// relocated to itself minus its port.
+	if u, err := url.Parse(iss); err == nil && strings.EqualFold(u.Host, host) {
 		return "", false
 	}
 	u, err := url.Parse(iss)
