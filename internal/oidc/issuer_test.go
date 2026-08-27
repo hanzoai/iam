@@ -515,3 +515,45 @@ func TestClientCredentials_AudienceNamesTheRequestedResource(t *testing.T) {
 		t.Errorf("no resource → aud %v, want [svc]", got)
 	}
 }
+
+// TestDevIssuerKeepsTheWholeAddress pins the two halves the dev branch used to
+// drop. It is the difference between a discovery document that describes the
+// deployment answering it and one that names a port nothing serves over a scheme
+// nothing speaks — which is what sent a local SPA to the public issuer.
+//
+// The https rows are the guard on the fix: keeping the port must not downgrade a
+// developer who is on a real name with a real certificate.
+func TestDevIssuerKeepsTheWholeAddress(t *testing.T) {
+	for _, c := range []struct{ host, want string }{
+		{"127.0.0.1:38080", "http://127.0.0.1:38080"},
+		{"localhost:3000", "http://localhost:3000"},
+		{"hanzo.localhost:8080", "http://hanzo.localhost:8080"},
+		{"127.0.0.1", "http://127.0.0.1"},
+		{"[::1]:38080", "http://[::1]:38080"},
+		{"example.test:8443", "https://example.test:8443"},
+		{"lux.id", "https://lux.id"},
+		{"LUX.ID.", "https://lux.id"},
+		{" lux.id ", "https://lux.id"},
+		{"", devFallbackIssuer},
+	} {
+		if got := devIssuer(c.host); got != c.want {
+			t.Errorf("devIssuer(%q) = %q, want %q", c.host, got, c.want)
+		}
+	}
+}
+
+// TestNormalizeHostStillStripsThePort is the other side of the same change. The
+// map-key normalizer MUST keep dropping ports, or "lux.id:443" stops selecting
+// the "lux.id" brand and an unknown host falls through to the default — the
+// fail-open newIssuerResolver refuses to boot with.
+func TestNormalizeHostStillStripsThePort(t *testing.T) {
+	for _, c := range []struct{ host, want string }{
+		{"lux.id:443", "lux.id"},
+		{"LUX.ID.", "lux.id"},
+		{"127.0.0.1:38080", "127.0.0.1"},
+	} {
+		if got := normalizeHost(c.host); got != c.want {
+			t.Errorf("normalizeHost(%q) = %q, want %q", c.host, got, c.want)
+		}
+	}
+}
