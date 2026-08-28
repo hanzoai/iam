@@ -5,7 +5,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// Permission is a policy grant: it binds a set of subjects (users, groups,
+// Permission is a policy grant: it binds a set of subjects (users, teams,
 // roles, domains) to a set of actions over a set of resources with an
 // allow/deny effect, evaluated against a named authz model and adapter. It is
 // the v2 form of the v1 `permission` table (kind "permissions").
@@ -31,7 +31,7 @@ type Permission struct {
 
 	// Subjects the grant is evaluated for.
 	Users   []string `json:"users" orm:"mediumtext"`
-	Groups  []string `json:"groups" orm:"mediumtext"`
+	Teams   []string `json:"teams" orm:"mediumtext"`
 	Roles   []string `json:"roles" orm:"mediumtext"`
 	Domains []string `json:"domains" orm:"mediumtext"`
 

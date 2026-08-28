@@ -27,9 +27,24 @@ type Membership struct {
 	Name        string `json:"name"`
 	CreatedTime string `json:"createdTime"`
 
+	// The SUBJECT. Exactly one of these is set: a person, or a team of them.
+	// Granting to a team keeps access correct as people come and go.
 	User string `json:"user" orm:"index"` // the user id, "<homeOrg>/<username>"
-	Org  string `json:"org" orm:"index"`  // the org slug the user may act in
-	Role string `json:"role"`             // coarse org role: owner | admin | member
+	Team string `json:"team" orm:"index"` // the team name, owner-scoped by Org
+
+	// The SCOPE. Org is the tenant and is always set. Workspace narrows the grant
+	// to one workspace inside it; Project narrows it further, and requires
+	// Workspace. Empty means the whole of the level above, so a row with neither
+	// is an org-wide grant.
+	//
+	// The scope lives here rather than on the team because a team is a set of
+	// people and nothing else: the same team holds different roles in different
+	// places, and braiding the two would need one team per scope.
+	Org       string `json:"org" orm:"index"`
+	Workspace string `json:"workspace" orm:"index"`
+	Project   string `json:"project" orm:"index"`
+
+	Role string `json:"role"` // owner | admin | member
 }
 
 // OrgRef is the lightweight (org, role) projection of a Membership that a token
