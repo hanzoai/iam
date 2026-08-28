@@ -6,7 +6,7 @@ package schema
 import "github.com/hanzoai/orm"
 
 // Role is a named grant bundle (v1 `role`, v2 kind "roles"). It gathers
-// principals — direct users, member groups, and nested sub-roles — under an
+// principals — direct users, member teams, and nested sub-roles — under an
 // owner-scoped name, optionally partitioned by domain, and is dereferenced by
 // permissions to resolve a principal's effective grants. Identity is the
 // (Owner, Name) pair; the orm string key is "owner/name".
@@ -26,8 +26,8 @@ type Role struct {
 
 	Users    []string `json:"users" orm:"serialize" datastore:"-"`
 	Users_   string   `json:"-"`
-	Groups   []string `json:"groups" orm:"serialize" datastore:"-"`
-	Groups_  string   `json:"-"`
+	Teams    []string `json:"teams" orm:"serialize" datastore:"-"`
+	Teams_   string   `json:"-"`
 	Roles    []string `json:"roles" orm:"serialize" datastore:"-"`
 	Roles_   string   `json:"-"`
 	Domains  []string `json:"domains" orm:"serialize" datastore:"-"`

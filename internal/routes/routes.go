@@ -65,6 +65,7 @@ import (
 	"github.com/hanzoai/iam/internal/scim"
 	"github.com/hanzoai/iam/internal/serviceaccounts"
 	"github.com/hanzoai/iam/internal/sessions"
+	"github.com/hanzoai/iam/internal/teams"
 	"github.com/hanzoai/iam/internal/tokens"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/internal/wallet"
@@ -190,6 +191,7 @@ func Route(app *zip.App, db orm.DB) {
 	applications.Route(authed, db)
 	providers.Route(authed, db)
 	roles.Route(authed, db)
+	teams.Route(authed, db)
 	projects.Route(authed, db)
 	workspaces.Route(authed, db)
 	permission.Route(authed, db)
