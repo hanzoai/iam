@@ -8,15 +8,14 @@ package authz_test
 // The bug this pins was a confused deputy, and it was invisible from either half
 // alone. The Guard authorizes on the query string — asking for a foreign org is
 // correctly refused — and then the handler filtered on `in.Owner` instead of on
-// the principal. A zip typed GET binds NOTHING from the request (a body is read
-// only for non-GET), so `in.Owner` arrived EMPTY on every REST call, took the
-// "empty owner lists everything" branch, and returned every tenant's rows.
+// the principal, took the "empty owner lists everything" branch, and returned
+// every tenant's rows.
 //
 // So the shape was: name someone else's org and get 403; name YOUR OWN org and
 // get the whole table. A status-code assertion passes throughout — only the body
 // shows it, which is why every case here reads the response.
 //
-// certs was the one lister that already resolved the owner via authz.Scope, and
+// certs was the one lister that already resolved the owner via principal.Scope, and
 // it is included as the control: if the others ever regress, certs still passes
 // and the diff points straight at the cause.
 
@@ -102,6 +101,8 @@ func TestListRoutesNeverLeakAnotherTenant(t *testing.T) {
 	seedToken(t, h.db, "orgb", "token-secret-orgb")
 	seedWebauthn(t, h.db, "hanzo", "wa-mine-hanzo", "hanzo/boss")
 	seedWebauthn(t, h.db, "orgb", "wa-secret-orgb", "orgb/bob")
+	seedUser(t, h.db, "hanzo", "user-mine-hanzo", false, false, false)
+	seedUser(t, h.db, "orgb", "user-secret-orgb", false, false, false)
 
 	boss := h.token(t, "hanzo/boss") // org admin of hanzo, and of nothing else
 
@@ -114,6 +115,14 @@ func TestListRoutesNeverLeakAnotherTenant(t *testing.T) {
 		{"/v1/iam/invitations?owner=hanzo", "invite-mine-hanzo", "invite-secret-orgb"},
 		{"/v1/iam/audit-logs?owner=hanzo", "audit-mine-hanzo", "audit-secret-orgb"},
 		{"/v1/iam/tokens?owner=hanzo", "token-mine-hanzo", "token-secret-orgb"},
+		// users is the roster, and the one collection whose owner used to be a
+		// REQUIRED field — so it answered 400 here and never reached this table.
+		// It reaches it now: the owner is resolved from the credential like every
+		// other row. An UNSTATED owner is the other half and it is not askable
+		// from here — the Guard refuses this human before the handler runs — so
+		// TestScope_GlobalUserPageNeverLeaksAnotherTenant asks it with the
+		// credential that does reach the handler.
+		{"/v1/iam/users?owner=hanzo", "user-mine-hanzo", "user-secret-orgb"},
 		{"/v1/iam/webauthn-credentials", "wa-mine-hanzo", "wa-secret-orgb"},
 		// organizations is the tenant registry — authz treats it as the ONE
 		// exception to the reserved-owner gate, and the route is SuperAdmin-only,
@@ -151,6 +160,7 @@ func TestListRoutesStillRefuseAForeignOrg(t *testing.T) {
 		"/v1/iam/invitations?owner=orgb",
 		"/v1/iam/audit-logs?owner=orgb",
 		"/v1/iam/certs?owner=orgb",
+		"/v1/iam/users?owner=orgb",
 	} {
 		status, body := h.doBody(t, "GET", route, boss, nil)
 		if status == 200 {

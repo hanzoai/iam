@@ -134,8 +134,6 @@ func TestLoadDerivesTheAllowlistFromRedirectUris(t *testing.T) {
 func TestBrowserPaths_CoverTheConsoleOrgSurface(t *testing.T) {
 	for _, p := range []string{
 		"/v1/iam/organizations",
-		"/v1/iam/organizations/get",
-		"/v1/iam/users",
 		"/v1/iam/account",
 	} {
 		if browserPaths[p] != bearer {
@@ -147,18 +145,11 @@ func TestBrowserPaths_CoverTheConsoleOrgSurface(t *testing.T) {
 
 // Opening a path to an origin is not the same as opening the data. Anything a
 // browser never calls stays closed, so this list can only grow deliberately.
-//
-// /v1/iam/users is NOT here, and used to be: the roster read was open under the
-// verb spelling (get-users) and closed under the noun, so one resource carried
-// two browser policies decided by which name the caller used. A console renders
-// its own org's members, so the address is open and the Guard decides whose
-// members they are — the same split as every other entry, origin here, principal
-// there.
 func TestBrowserPaths_StayClosedByDefault(t *testing.T) {
 	for _, p := range []string{
-		"/v1/iam/get-certs",      // signing material
-		"/v1/iam/get-providers",  // provider secrets
-		"/v1/iam/delete-user",    // a write
+		"/v1/iam/users",          // the list is a read, but the address also creates
+		"/v1/iam/certs",          // signing material
+		"/v1/iam/providers",      // provider secrets
 		"/v1/iam/registry/token", // docker client, not a browser
 		"/v1/iam/signin",         // code->session exchange; a top-level navigation
 		"/v1/iam/signup",         // the SDK posts it same-origin from the IdP's own SPA

@@ -26,7 +26,7 @@
 // either way, and the person retries.
 //
 // Enrolment is SELF-SERVICE: every handler acts on the AUTHENTICATED caller's own
-// record (authz.From), so the routes register AFTER the Guard — they need the
+// record (principal.From), so the routes register AFTER the Guard — they need the
 // Principal. Touching a DIFFERENT user's factors requires admin authority over that
 // org, authorized through the SAME seam a SCIM write uses (authz.Can); the general
 // user-write policy correctly refuses a non-admin writing a user row, so
@@ -51,6 +51,7 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/internal/otp"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -62,13 +63,17 @@ import (
 // Route registers the MFA endpoints on app. They are RAW handlers (not typed ops),
 // so — like SCIM — each authorizes itself; callers register app AFTER the Guard so a
 // verified Principal rides the request context.
-// The MFA surface hangs off the /v1/iam/mfa noun. The two verb-noun spellings it
-// arrived with stay reachable for pinned consumers and are taught nowhere; see
-// zip.Alias.
+//
+// The surface hangs off the /v1/iam/mfa noun, and Path IS that noun: the factors an
+// account holds. Dropping one is DELETE on them, because the method is what says
+// what is being done — an address that changes with the operation gives a client one
+// URL per verb. Which factor to drop is a FIELD (`mfaType`, absent meaning all), the
+// same way the key type is a field of a mint: the moment a class becomes its own
+// endpoint the classes drift.
 const (
+	Path          = "/v1/iam/mfa"
 	PathInitiate  = "/v1/iam/mfa/setup/initiate"
 	PathEnable    = "/v1/iam/mfa/setup/enable"
-	PathDisable   = "/v1/iam/mfa/disable"
 	PathPreferred = "/v1/iam/mfa/preferred"
 )
 
@@ -77,7 +82,7 @@ const (
 func Route(app *zip.App, db orm.DB) {
 	app.Post(PathInitiate, initiate(db))
 	app.Post(PathEnable, enable(db))
-	app.Post(PathDisable, disable(db))
+	app.Delete(Path, disable(db))
 	app.Post(PathPreferred, setPreferred(db))
 }
 
@@ -110,7 +115,7 @@ type setupReq struct {
 // An unauthenticated caller fails closed (the Guard already required a bearer, so
 // this is defense in depth). Returns a zip error to return verbatim on refusal.
 func target(c *zip.Ctx, req *setupReq) (owner, name string, err error) {
-	p, present := authz.From(c.Context())
+	p, present := principal.From(c.Context())
 	if !present {
 		return "", "", zip.ErrUnauthorized("authentication required")
 	}
@@ -337,31 +342,39 @@ func setPreferred(db orm.DB) zip.Handler {
 var nowFunc = time.Now
 
 // decode reads the request: the JSON body when there is one, then the QUERY STRING
-// for anything the body did not carry.
+// for the half of a request a URL is allowed to carry.
 //
-// That is the SAME precedence zip's typed binder applies to every typed op (body,
-// then the URL overlays it) and the same one the login handler applies to the
-// authorize parameters, and it is the whole reason this surface was unusable: the
-// portal posts every field on the query with an empty body, three of the five
-// handlers read only the body, and so `enable` and `preferred` answered 400 "invalid
-// body" to the exact requests the shipped client sends. Nobody could add a second
-// factor, and an organization that required one was locked out.
+// WHAT IT ADDRESSES falls back to the query. owner and name say which account,
+// mfaType says which factor, and a URL naming what it acts on is what a URL is
+// for. It is also the precedence zip's typed binder applies to every typed op, and
+// it is the whole reason this surface was usable at all: the portal posts those
+// fields on the query with an empty body, three of the five handlers read only the
+// body, and so `enable` and `preferred` answered 400 "invalid body" to the exact
+// requests the shipped client sends. Nobody could add a second factor, and an
+// organization that required one was locked out.
+//
+// WHAT IT PROVES does not. `secret` is the TOTP seed: not a token but the factor
+// itself, enough to derive every passcode the account will ever accept, for as long
+// as the enrolment lasts. `passcode` is a live one. A URL is the part of a request
+// that gets written down — the ingress access log, every proxy in front of it, the
+// browser's history — so a seed that reaches the query is a second factor that
+// belongs to whoever reads logs. Both are read from the BODY alone, which is the
+// same line every typed op's credential field draws with `url:"-"`. One rule about
+// what a URL carries, whether the binder is zip's or this one.
 func decode(c *zip.Ctx, req *setupReq) error {
 	if body := c.Body(); len(body) > 0 {
 		if err := json.Unmarshal(body, req); err != nil {
 			return err
 		}
 	}
-	q := func(dst *string, key string) {
+	addr := func(dst *string, key string) {
 		if *dst == "" {
 			*dst = c.Query(key)
 		}
 	}
-	q(&req.Owner, "owner")
-	q(&req.Name, "name")
-	q(&req.MfaType, "mfaType")
-	q(&req.Secret, "secret")
-	q(&req.Passcode, "passcode")
+	addr(&req.Owner, "owner")
+	addr(&req.Name, "name")
+	addr(&req.MfaType, "mfaType")
 	return nil
 }
 

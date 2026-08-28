@@ -20,7 +20,7 @@ import (
 
 func openStoreTestDB(t *testing.T) orm.DB {
 	t.Helper()
-	db, err := Open("sqlite", filepath.Join(t.TempDir(), "iam.db"))
+	db, err := Open("sqlite", filepath.Join(t.TempDir(), "iam.db"), "")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

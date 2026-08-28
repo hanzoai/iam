@@ -9,8 +9,8 @@
 //   - the PUBLIC group (oidc.Route and the other pre-auth endpoints) holds no Guard,
 //     so membership in it IS "public".
 //   - the AUTHED group holds authz.Guard. Every route registered on it — the
-//     typed entity CRUD, the legacy verb aliases, the SCIM surface — requires a
-//     verified bearer.
+//     typed entity CRUD, the key endpoints, the SCIM surface — requires a verified
+//     bearer.
 //
 // A public route therefore can never be accidentally gated, and an authed route
 // can never be accidentally public: the decision is where you register, not an
@@ -71,6 +71,7 @@ import (
 	"github.com/hanzoai/iam/internal/wallet"
 	"github.com/hanzoai/iam/internal/webauthn"
 	"github.com/hanzoai/iam/internal/workspaces"
+	"github.com/hanzoai/iam/pkg/gone"
 )
 
 // Route registers the whole IAM route surface on app, threading the entity
@@ -114,10 +115,17 @@ func Route(app *zip.App, db orm.DB) {
 	// trusts these tokens via the served JWKS (its ROOTCERTBUNDLE).
 	registry.Route(public, db)
 
+	// The addresses this service used to serve under a second spelling. They
+	// answer 410 and name what replaced them, and they are PUBLIC because a
+	// retirement notice behind authentication answers 401 — telling a stale
+	// caller nothing about where its address went. The handler reads a table and
+	// touches no store, so there is nothing here to gate.
+	gone.Route(public)
+
 	// ─────────────────────────── GUARD ────────────────────────────
 	// The ONE authentication seam, on a group that HOLDS the routes it guards.
 	// Every route registered on `authed` requires a verified bearer — the typed
-	// entity CRUD below, the legacy verb aliases, the SCIM surface. The resolved
+	// entity CRUD below, the key endpoints, the SCIM surface. The resolved
 	// Principal rides the request context for the write-authz hook above; reads
 	// are authorized here (their target rides the query string, or the handler
 	// scopes a path target itself). Fails closed (401).
@@ -197,30 +205,31 @@ func Route(app *zip.App, db orm.DB) {
 	permission.Route(authed, db)
 	certs.Route(authed, db)
 	keys.Route(authed, db)
-
-	// The two key endpoints: a publishable pk- resolves to its ORG, a secret sk- to
-	// its PRINCIPAL. Both are handler-authorized by exact name — a request here
-	// names no entity the Guard could authorize, only a key in ?accessKey=.
-	resolve.Route(authed, db)
 	webauthn.Route(authed, db)
 	sessions.Route(authed, db)
 	tokens.Route(authed, db)
 	auditlogs.Route(authed, db)
 	invitations.Route(authed, db)
 
-	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface that
-	// replaces the legacy entity verbs (HIP-0111). On the guarded group, so
-	// it is authenticated; each handler owner-scopes via authz.Scope on the path target.
+	// The two key endpoints: an sk- resolves to its holder, a pk- to the org and no
+	// further. Both carry their target in ?accessKey= rather than an (owner, name)
+	// the Guard can authorize, so each authorizes itself behind its own
+	// capability — on the guarded group, so it still shares the one Guard seam.
+	resolve.Route(authed, db)
+
+	// SCIM 2.0 (RFC 7644/7643) — the STANDARD identity-provisioning surface
+	// (HIP-0111). On the guarded group, so
+	// it is authenticated; each handler owner-scopes via principal.Scope on the path target.
 	scim.Route(authed, db)
 
 	// Agent/bot identities (service accounts) + the (User x Org x Role) membership
 	// relation. On the guarded group: each self-authorizes writes via the Principal +
-	// capabilities the Guard attached, and org-scopes reads via authz.Scope.
+	// capabilities the Guard attached, and org-scopes reads via principal.Scope.
 	serviceaccounts.Route(authed, db)
 	memberships.Route(authed, db)
 
 	// TOTP multi-factor enrollment (RFC 6238) — the account security page's
 	// initiate/verify/enable/disable flow. On the guarded group: self-service on the
-	// caller's own user (authz.From); a cross-user reset needs admin (authz.Can).
+	// caller's own user (principal.From); a cross-user reset needs admin (authz.Can).
 	mfa.Route(authed, db)
 }

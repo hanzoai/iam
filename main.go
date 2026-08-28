@@ -67,17 +67,20 @@ func main() {
 }
 
 func serveCmd() *cobra.Command {
-	var storeBackend, dbPath, zapAddr, httpAddr, opsAddr, initData string
+	var storeBackend, dbPath, sqlAddr, zapAddr, httpAddr, opsAddr, initData string
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Open the entity store and serve the IAM API",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return serve(cmd.Context(), storeBackend, dbPath, zapAddr, httpAddr, opsAddr, initData)
+			return serve(cmd.Context(), storeBackend, dbPath, sqlAddr, zapAddr, httpAddr, opsAddr, initData)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(&storeBackend, "store", "sqlite", "storage backend: sqlite | sql | datastore")
 	f.StringVar(&dbPath, "db", "data/iam.db", "SQLite database path (store=sqlite)")
+	// Resolve the env at the CLI edge, not inside the store: store.Open stays a pure
+	// function of its inputs. Empty falls back to the orm per-backend localhost default.
+	f.StringVar(&sqlAddr, "sql-addr", os.Getenv("IAM_SQL_ADDR"), "hanzoai/sql ZAP address for --store sql|datastore (default $IAM_SQL_ADDR)")
 	f.StringVar(&zapAddr, "zap", ":9653", "ZAP primary listen address")
 	f.StringVar(&httpAddr, "http", "http://:8080", "HTTP edge listen address")
 	// The third listener, said the same way as the other two. /healthz, /readyz
@@ -90,8 +93,8 @@ func serveCmd() *cobra.Command {
 	return cmd
 }
 
-func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr, initData string) error {
-	db, err := openStore(storeBackend, dbPath)
+func serve(ctx context.Context, storeBackend, dbPath, sqlAddr, zapAddr, httpAddr, opsAddr, initData string) error {
+	db, err := openStore(storeBackend, dbPath, sqlAddr)
 	if err != nil {
 		return err
 	}
@@ -142,7 +145,7 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 	fmt.Fprintln(os.Stderr, "iam: this binary binds no delivery transport — email/SMS codes and their second factors stay off (a grafting host supplies one)")
 
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
-	// same file the legacy iam uses — so a fresh store comes up with the real
+	// same file the the legacy surface iam uses — so a fresh store comes up with the real
 	// application/provider/cert set instead of empty. New-only + idempotent.
 	if initData != "" {
 		sum, err := seed.FromInitData(ctx, db, initData)
@@ -207,18 +210,18 @@ func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, opsAddr
 }
 
 func compareCmd() *cobra.Command {
-	var store, dbPath, legacy string
+	var store, dbPath, sqlAddr, legacy string
 	cmd := &cobra.Command{
 		Use:   "compare",
 		Short: "Read-only drift report: row counts per entity, v1  vs v2",
-		Long: "Counts rows per entity in the v1 database and the v2 store " +
+		Long: "Counts rows per entity in the v1 the legacy surface database and the v2 store " +
 			"and prints the absolute drift. Cutover is gated on drift 0. Requires a " +
 			"`-tags migration` build to link the v1 Postgres/MySQL driver.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if legacy == "" {
 				return fmt.Errorf("--legacy <dsn> is required (postgres:// or mysql://)")
 			}
-			db, err := openStore(store, dbPath)
+			db, err := openStore(store, dbPath, sqlAddr)
 			if err != nil {
 				return err
 			}
@@ -229,7 +232,8 @@ func compareCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&store, "store", "sqlite", "v2 storage backend: sqlite | sql | datastore")
 	f.StringVar(&dbPath, "db", "data/iam.db", "v2 SQLite database path (store=sqlite)")
-	f.StringVar(&legacy, "legacy", "", "v1 DSN (postgres:// or mysql://)")
+	f.StringVar(&sqlAddr, "sql-addr", os.Getenv("IAM_SQL_ADDR"), "hanzoai/sql ZAP address for --store sql|datastore (default $IAM_SQL_ADDR)")
+	f.StringVar(&legacy, "legacy", "", "v1 the legacy surface DSN (postgres:// or mysql://)")
 	return cmd
 }
 
@@ -345,6 +349,6 @@ func versionCmd() *cobra.Command {
 // openStore opens the v2 entity store on the chosen backend via the shared
 // store.Open — the ONE store-open path, reused by the migrate-v1 tool so a
 // migrated store and a served store share identical open config.
-func openStore(backend, path string) (orm.DB, error) {
-	return store.Open(backend, path)
+func openStore(backend, path, addr string) (orm.DB, error) {
+	return store.Open(backend, path, addr)
 }

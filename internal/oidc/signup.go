@@ -24,7 +24,7 @@ import (
 
 // The native signup endpoint: POST /v1/iam/signup. The @hanzo/iam SDK + the
 // hanzo.id portal post the sign-up form here to create a new account. It mirrors
-// the v1 Signup contract (controllers/account.go): the casibase
+// the v1 the legacy surface Signup contract (controllers/account.go): the casibase
 // {status,msg,data} envelope, resolve-app → enforce-policy → create-user, with
 // the password hashed (never stored plaintext) and the created row returned
 // REDACTED.
@@ -259,7 +259,6 @@ func signupHandler(db orm.DB) zip.Handler {
 				FirstName:         f.FirstName,
 				LastName:          f.LastName,
 				Email:             email,
-				EmailVerified:     false,
 				Phone:             store.NormalizePhone(f.Phone),
 				CountryCode:       f.CountryCode,
 				Affiliation:       f.Affiliation,

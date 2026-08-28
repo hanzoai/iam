@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	policy "github.com/hanzoai/authz"
+
+	"github.com/hanzoai/iam/internal/principal"
 )
 
 // SELF-READ. An app may read the row it authenticated as — the ordinary bootstrap
@@ -16,11 +18,11 @@ import (
 // The grant is keyed on BOTH halves of (AppOwner, App), which is what keeps it a
 // self-read rather than "apps may read applications".
 func TestAuthorize_AppReadsOnlyItsOwnRecord(t *testing.T) {
-	cloud := &Principal{App: &policy.App{Name: "hanzo-cloud", Owner: "admin"}, Org: "hanzo"}
+	cloud := &principal.Principal{App: &policy.App{Name: "hanzo-cloud", Owner: "admin"}, Org: "hanzo"}
 
 	for _, tc := range []struct {
 		name                  string
-		p                     *Principal
+		p                     *principal.Principal
 		method, owner, target string
 		want                  bool
 		why                   string
@@ -49,7 +51,7 @@ func TestAuthorize_AppReadsOnlyItsOwnRecord(t *testing.T) {
 			"the entity is users here, not applications"},
 
 		// An app with no owner pin holds nothing (the fail-closed default).
-		{"unpinned app", &Principal{App: &policy.App{Name: "hanzo-cloud"}}, "GET", "admin", "hanzo-cloud", false,
+		{"unpinned app", &principal.Principal{App: &policy.App{Name: "hanzo-cloud"}}, "GET", "admin", "hanzo-cloud", false,
 			"an app whose AppOwner is empty matches no row"},
 		{"empty owner target", cloud, "GET", "", "hanzo-cloud", false,
 			"an empty owner must never match"},
@@ -70,7 +72,7 @@ func TestAuthorize_AppReadsOnlyItsOwnRecord(t *testing.T) {
 // A HUMAN is unaffected by the self-read clause: their authority is still decided
 // by the org policy below it, so a tenant user cannot read a platform app row.
 func TestAuthorize_SelfReadDoesNotLeakToHumans(t *testing.T) {
-	human := &Principal{Org: "hanzo", User: "alice", Admin: true}
+	human := &principal.Principal{Org: "hanzo", User: "alice", Admin: true}
 	if authorize(human, "GET", "applications", "admin", "hanzo-cloud") {
 		t.Errorf("an org admin read a platform-owned application row")
 	}

@@ -25,9 +25,9 @@ type Permission struct {
 	Name  string `json:"name" orm:"varchar(100) notnull pk"`
 
 	// Descriptive metadata.
-	CreatedTime string `json:"createdTime" orm:"varchar(100)"`
-	DisplayName string `json:"displayName" orm:"varchar(100)"`
-	Description string `json:"description" orm:"varchar(100)"`
+	CreatedTime string `json:"createdTime" orm:"varchar(100)" url:"-"`
+	DisplayName string `json:"displayName" orm:"varchar(100)" url:"-"`
+	Description string `json:"description" orm:"varchar(100)" url:"-"`
 
 	// Subjects the grant is evaluated for.
 	Users   []string `json:"users" orm:"mediumtext"`
@@ -39,17 +39,17 @@ type Permission struct {
 	// `model` column (the named authz model); it is not the Go identifier
 	// `Model` because that name is taken by the embedded orm.Model[Permission]
 	// mixin. The HTTP contract is unchanged — json:"model".
-	AuthzModel   string   `json:"model" orm:"varchar(100)"`
-	Adapter      string   `json:"adapter" orm:"varchar(100)"`
-	ResourceType string   `json:"resourceType" orm:"varchar(100)"`
+	AuthzModel   string   `json:"model" orm:"varchar(100)" url:"-"`
+	Adapter      string   `json:"adapter" orm:"varchar(100)" url:"-"`
+	ResourceType string   `json:"resourceType" orm:"varchar(100)" url:"-"`
 	Resources    []string `json:"resources" orm:"mediumtext"`
 	Actions      []string `json:"actions" orm:"mediumtext"`
-	Effect       string   `json:"effect" orm:"varchar(100)"`
-	IsEnabled    bool     `json:"isEnabled" orm:"default:false"`
+	Effect       string   `json:"effect" orm:"varchar(100)" url:"-"`
+	IsEnabled    bool     `json:"isEnabled" orm:"default:false" url:"-"`
 
 	// Submission / approval workflow.
-	Submitter   string `json:"submitter" orm:"varchar(100)"`
-	Approver    string `json:"approver" orm:"varchar(100)"`
-	ApproveTime string `json:"approveTime" orm:"varchar(100)"`
-	State       string `json:"state" orm:"varchar(100)"`
+	Submitter   string `json:"submitter" orm:"varchar(100)" url:"-"`
+	Approver    string `json:"approver" orm:"varchar(100)" url:"-"`
+	ApproveTime string `json:"approveTime" orm:"varchar(100)" url:"-"`
+	State       string `json:"state" orm:"varchar(100)" url:"-"`
 }

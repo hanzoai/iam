@@ -3,10 +3,10 @@
 
 // Package e2e_test drives the WHOLE iam surface through the real registered router
 // (routes.Route) as one integrated journey — the behavioral parity proof that the
-// the legacy IAM's clients work against iam. Unlike the per-package unit tests,
+// old the legacy surface IAM's clients work against iam. Unlike the per-package unit tests,
 // this chains the real flows a live client runs in sequence: OIDC discovery →
 // PKCE login → code→token → userinfo → introspect → revoke; the admin console's
-// get-account → get-organizations → get-users (the legacy compat surface); SCIM
+// get-account → the org registry → the user collection; SCIM
 // 2.0 provisioning; and RFC 8693 token exchange. Every step asserts the response
 // CONTRACT the client depends on.
 package e2e_test
@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"net/url"
@@ -148,7 +149,7 @@ func TestJourney_OIDCFlow(t *testing.T) {
 // TestJourney_PasswordGrant_and_TokenExchange proves the two non-interactive grants
 // the console/BFF rely on.
 func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	e := boot(t)
 
 	// Password grant → a first-party session token for alice.
@@ -173,32 +174,50 @@ func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
 	}
 }
 
-// TestJourney_AdminConsole proves the admin console's three reads: the account
-// behind the security contract, the org list its switcher is built on, and one
-// org's roster.
+// TestJourney_AdminConsole proves the console's own calls work: get-account (the
+// security contract), the org registry (its switcher), and the user collection.
 func TestJourney_AdminConsole(t *testing.T) {
 	e := boot(t)
 	root := e.mint(t, "admin/root") // a SuperAdmin bearer
 
-	// The account is still an envelope — {status:ok, data:<masked user>} — because
-	// it answers about the CALLER rather than listing a resource.
+	// The account read — {status:ok, data:<masked user>} with owner + isAdmin.
 	acct := e.getJSON(t, "/v1/iam/account", root)
 	if acct["status"] != "ok" {
 		t.Fatalf("account status: %v", acct)
 	}
 
-	// The org list is the switcher's workhorse; a SuperAdmin sees every tenant. A
-	// listing is named for its resource, so the page is under `organizations` and
-	// there is no `status` beside it to check — the HTTP status is the status.
+	// The org registry — the switcher's workhorse. A SuperAdmin sees every
+	// TENANT. The reserved org is not one and cannot be stepped into, so the
+	// switcher must not offer it as a destination.
 	orgs := e.getJSON(t, "/v1/iam/organizations", root)
-	if rows, _ := orgs["organizations"].([]any); len(rows) < 2 {
-		t.Fatalf("organizations returned %d, want >=2 (admin+hanzo): %v", len(rows), orgs)
+	data, _ := orgs["organizations"].([]any)
+	if len(data) == 0 {
+		t.Fatalf("the org registry returned nothing: %v", orgs)
+	}
+	var named []string
+	for _, row := range data {
+		m, ok := row.(map[string]any)
+		if !ok {
+			t.Fatalf("the org registry returned a row that is not an object: %v", row)
+		}
+		named = append(named, fmt.Sprint(m["name"]))
+	}
+	var sawTenant, sawReserved bool
+	for _, n := range named {
+		sawTenant = sawTenant || n == "hanzo"
+		sawReserved = sawReserved || n == "admin"
+	}
+	if !sawTenant {
+		t.Fatalf("the org registry did not name the tenant: %v", named)
+	}
+	if sawReserved {
+		t.Fatalf("the org registry offered the reserved org as a destination: %v", named)
 	}
 
-	// One org's roster, read whole: no secret may appear in it.
+	// The user collection scoped to an org — no secret leaks.
 	usersBody := e.getRaw(t, "/v1/iam/users?owner=hanzo", root)
 	if strings.Contains(usersBody, "passwordHash") || strings.Contains(usersBody, "\"password\"") {
-		t.Fatalf("the roster leaked a secret: %s", usersBody)
+		t.Fatalf("the user collection leaked a secret: %s", usersBody)
 	}
 }
 
@@ -305,7 +324,7 @@ func (e *env) getRaw(t *testing.T, path, bearer string) string {
 }
 
 // mint signs an RS256 bearer for sub under the seeded cert — a valid principal the
-// Guard admits (used for the compat/SCIM admin calls, which need a verified bearer
+// Guard admits (used for the SCIM admin calls, which need a verified bearer
 // but not a persisted grant row).
 func (e *env) mint(t *testing.T, sub string) string {
 	t.Helper()

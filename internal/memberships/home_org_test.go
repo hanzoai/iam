@@ -3,7 +3,7 @@
 
 package memberships_test
 
-// DELETE must not report a revoke it did not perform. A (user, org)
+// delete-membership must not report a revoke it did not perform. A (user, org)
 // pair whose org is the user's OWN home org names tenancy MemberOrgRefs grants
 // from the user row, so deleting the row subtracts nothing from the `orgs` claim:
 // the person kept the org on every token minted afterwards while the roster showed
@@ -33,7 +33,7 @@ func TestDeleteMembership_homeOrgIsRefusedAndTheRowSurvives(t *testing.T) {
 
 	// 400 + the error envelope: the same shape every other refusal on this
 	// surface answers with (httpx.Err), so a client needs no new branch.
-	status, e := h.send(t, "DELETE", "/v1/iam/memberships",
+	status, e := h.post(t, "/v1/iam/delete-membership",
 		map[string]string{"user": "hanzo/alice", "org": "hanzo"}, super)
 	if status != 400 || e.Status != "error" {
 		t.Fatalf("home-org delete status=%d env=%+v, want 400 + the error envelope", status, e)
@@ -61,7 +61,7 @@ func TestDeleteMembership_homeOrgRefusedForSuperAdminToo(t *testing.T) {
 		{"super", "admin/root"},
 		{"org admin", "hanzo/boss"},
 	} {
-		_, e := h.send(t, "DELETE", "/v1/iam/memberships",
+		_, e := h.post(t, "/v1/iam/delete-membership",
 			map[string]string{"user": "hanzo/alice", "org": "hanzo"}, h.token(t, caller.sub))
 		if e.Status != "error" || e.Msg != notRevocable {
 			t.Errorf("%s: env=%+v, want the home-org refusal", caller.who, e)
@@ -77,7 +77,7 @@ func TestDeleteMembership_teamOrgStillRevokes(t *testing.T) {
 	super := h.token(t, "admin/root")
 	seedMembership(t, h.db, "hanzo/alice", "team-x", store.RoleAdmin)
 
-	status, e := h.send(t, "DELETE", "/v1/iam/memberships",
+	status, e := h.post(t, "/v1/iam/delete-membership",
 		map[string]string{"user": "hanzo/alice", "org": "team-x"}, super)
 	if status != 200 || e.Status != "ok" || !parseBool(t, e) {
 		t.Fatalf("team-org delete status=%d env=%+v, want 200 ok removed=true", status, e)
@@ -107,7 +107,7 @@ func TestDeleteMembership_unauthorizedCallerLearnsNothingAboutHomeOrgs(t *testin
 	boss := h.token(t, "hanzo/boss") // admin of hanzo, NOT of orgb
 	seedMembership(t, h.db, "orgb/bob", "orgb", store.RoleMember)
 
-	_, e := h.send(t, "DELETE", "/v1/iam/memberships",
+	_, e := h.post(t, "/v1/iam/delete-membership",
 		map[string]string{"user": "orgb/bob", "org": "orgb"}, boss)
 	if e.Status != "error" {
 		t.Fatalf("cross-tenant home-org delete env=%+v, want an error", e)

@@ -75,7 +75,7 @@ func GetProject(db orm.DB, id string) (*model.Project, error) {
 
 // AddProject persists a new project from the caller-built value, reproducing the
 // internal Create: a fresh orm-bound record (so defaults + db binding are applied),
-// the mutable domain fields copied over, Organization defaulted to Owner, the
+// the mutable domain fields copied over, Organization taken from Owner, the
 // created stamp filled if absent, and the "owner/name" id set. Returns true when
 // the row was written. The caller pre-checks existence, so a duplicate surfaces as
 // the orm insert error rather than being silently coalesced.
@@ -92,10 +92,7 @@ func AddProject(db orm.DB, in *model.Project) (bool, error) {
 	}
 	p.DisplayName = in.DisplayName
 	p.Description = in.Description
-	p.Organization = in.Organization
-	if p.Organization == "" {
-		p.Organization = in.Owner
-	}
+	p.Organization = in.Owner
 	p.Workspace = in.Workspace
 	p.Tags = in.Tags
 	p.Metadata = in.Metadata

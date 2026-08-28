@@ -10,7 +10,7 @@ import (
 	"github.com/hanzoai/orm"
 )
 
-// User is an identity principal — the v2 form of the v1 `user` row,
+// User is an identity principal — the v2 form of the v1 the legacy surface `user` row,
 // re-expressed on hanzoai/orm. It is the authentication entity: the only
 // credential material it persists is PasswordHash (a one-way bcrypt digest,
 // json:"-" so it never leaves the process) and the legacy hash metadata used
@@ -25,7 +25,7 @@ type User struct {
 	orm.Model[User]
 
 	// Id is the user's STABLE OPAQUE identifier — the value the OIDC `sub` claim
-	// carries. It is the v1 per-row UUID (e.g.
+	// carries. It is the v1 the legacy surface per-row UUID (e.g.
 	// "e7d7fda0-4c53-4508-9d35-7ec892b7e5d7"), migrated verbatim so a user's `sub`
 	// is byte-identical across the cutover: every live session, external reference,
 	// and the downstream money-path principal keyed on `sub` survive unchanged. A
@@ -122,10 +122,13 @@ type User struct {
 	RegisterSource    string `json:"registerSource,omitempty"`
 
 	// API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are
-	// bearer material. AccessSecretHash MUST persist (orm stores via JSON; a
-	// json:"-" field is never saved), so it carries a real json tag and the
-	// handler's redact() strips it (and AccessSecret + the token fields) before
-	// responding.
+	// bearer material, so Mask blanks them and the handler's redact() strips them
+	// before responding. They carry real json tags because a field orm never saves
+	// is a field that silently vanishes.
+	//
+	// A presented secret is resolved through Key.AccessSecretDigest and nowhere
+	// else, so no credential is ISSUED into these columns: they hold what older
+	// rows left behind, and every writer that touches them clears them.
 	AccessKey            string `json:"accessKey,omitempty"`
 	AccessSecret         string `json:"accessSecret,omitempty"`
 	AccessSecretHash     string `json:"accessSecretHash,omitempty"`
@@ -251,12 +254,6 @@ type User struct {
 
 	Ldap       string            `json:"ldap,omitempty"`
 	Properties map[string]string `json:"properties,omitempty"`
-
-	// Authorization attachments. Roles and Permissions are computed on read
-	// from the authz store and carried here for API parity with v1.
-	Roles       []*Role       `json:"roles,omitempty"`
-	Permissions []*Permission `json:"permissions,omitempty"`
-	Groups      []string      `json:"groups,omitempty"`
 
 	LastChangePasswordTime string `json:"lastChangePasswordTime,omitempty"`
 	LastSigninWrongTime    string `json:"lastSigninWrongTime,omitempty"`

@@ -990,3 +990,79 @@ func eqStrings(a, b []string) bool {
 	}
 	return true
 }
+
+// The `aud` a token carries says which verifier it is addressed to, and every
+// verifier that trusts our JWKS reads it to decide whether a token is for it.
+// The Docker flow puts `service` in the REQUEST, so signing it verbatim let any
+// caller who could authenticate here name the audience of the token we sign.
+
+// TestToken_ForeignService_Refused proves a service we do not serve mints nothing.
+// Reverting audience() to return the requested string turns this red.
+func TestToken_ForeignService_Refused(t *testing.T) {
+	app, db, _ := newServer(t)
+	seedApp(t, db, "hanzo-registry", "s3cr3t-pushpull")
+
+	status, body, _ := tokenGET(t, app, "hanzo-registry", "s3cr3t-pushpull",
+		"registry.example.com", "repository:hanzo/app:pull,push")
+	if status != 401 {
+		t.Fatalf("status = %d, want 401 for a service we do not serve", status)
+	}
+	if body["token"] != nil || body["access_token"] != nil {
+		t.Fatalf("a refused service must mint nothing, got %v", body)
+	}
+}
+
+// TestToken_ForeignService_RealmNamesOurs proves the refusal does not quote the
+// caller back to itself. A challenge is the one answer a rejected request reads,
+// and the realm is inside a quoted header value.
+func TestToken_ForeignService_RealmNamesOurs(t *testing.T) {
+	app, db, _ := newServer(t)
+	seedApp(t, db, "hanzo-registry", "s3cr3t-pushpull")
+
+	_, _, hdr := tokenGET(t, app, "hanzo-registry", "s3cr3t-pushpull",
+		`evil.example.com" foo="bar`, "repository:hanzo/app:pull")
+	got := hdr.Get("WWW-Authenticate")
+	if want := `Basic realm="` + testService + `"`; got != want {
+		t.Fatalf("WWW-Authenticate = %q, want %q — the realm is ours, never the request's", got, want)
+	}
+}
+
+// TestToken_NoService_MintsForOurs proves an omitted `service` is not a mismatch.
+// Some clients do not send one, and there is only one answer it could have meant.
+func TestToken_NoService_MintsForOurs(t *testing.T) {
+	app, db, _ := newServer(t)
+	seedApp(t, db, "hanzo-registry", "s3cr3t-pushpull")
+
+	status, body, _ := tokenGET(t, app, "hanzo-registry", "s3cr3t-pushpull",
+		"", "repository:hanzo/app:pull,push")
+	if status != 200 {
+		t.Fatalf("status = %d, body %v", status, body)
+	}
+	claims := verifyClaims(t, app, body["token"].(string))
+	if claims["aud"] != testService {
+		t.Fatalf("aud = %v, want %q", claims["aud"], testService)
+	}
+}
+
+// TestToken_ServiceFromEnv proves the name is configuration, so a second
+// deployment names its own registry without a code change — and that naming one
+// does not also re-open the default.
+func TestToken_ServiceFromEnv(t *testing.T) {
+	t.Setenv(envService, "oci.lux.network")
+	app, db, _ := newServer(t)
+	seedApp(t, db, "hanzo-registry", "s3cr3t-pushpull")
+
+	status, body, _ := tokenGET(t, app, "hanzo-registry", "s3cr3t-pushpull",
+		"oci.lux.network", "repository:lux/node:pull")
+	if status != 200 {
+		t.Fatalf("status = %d, body %v", status, body)
+	}
+	claims := verifyClaims(t, app, body["token"].(string))
+	if claims["aud"] != "oci.lux.network" {
+		t.Fatalf("aud = %v, want the configured service", claims["aud"])
+	}
+	if status, _, _ := tokenGET(t, app, "hanzo-registry", "s3cr3t-pushpull",
+		testService, "repository:hanzo/app:pull"); status != 401 {
+		t.Fatalf("status = %d, want 401 — a configured service replaces the default", status)
+	}
+}

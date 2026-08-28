@@ -22,9 +22,9 @@ import (
 
 // The confidential-client on-behalf-of primitives. A trusted, allow-listed backend
 // (the console BFF as `hanzo-console`) authenticates as the confidential CLIENT —
-// not an end-user bearer — and acts on a `?id=<owner>/<name>` target user: mint a
-// short-lived user-bound access token (`tokens/issue`), or (re)generate/revoke the
-// user's durable Cloud API key (`keys/mint`, `keys/revoke`).
+// not an end-user bearer — and acts on a target user: mint a short-lived
+// user-bound access token (`tokens/issue`), or (re)generate/revoke the user's
+// durable Cloud API key (POST and DELETE on that user's `keys`).
 //
 // `tokens/issue` is the CANONICAL FORWARD path's transitional twin: the RFC 8693
 // Token Exchange grant on the token endpoint is the standard (HIP-0111), and this
@@ -39,12 +39,17 @@ import (
 // does its own tighter authentication through the ONE authorizeMinter seam.
 
 // routeIssueToken registers the confidential-client primitives on the PUBLIC group
-// r. POST-only: they mint/rotate a credential — never over a cacheable GET (a
-// client_secret in a query string would reach logs/proxies).
+// r. Never a GET: they mint or rotate a credential, and a client_secret in a query
+// string reaches logs and proxies.
+//
+// The user's key is one resource at one address, and the method is what says
+// whether it is being made or taken away. The verb-noun spellings that named the
+// two directions separately are retired: they answer 410 and name this address as
+// their successor (pkg/gone), so nothing is served at two spellings.
 func routeIssueToken(r zip.Router, db orm.DB) {
 	r.Post(PathTokensIssue, issueUserTokenHandler(db))
-	r.Post(PathKeysMint, mintUserKeysHandler(db))
-	r.Post(PathKeysRevoke, revokeUserKeysHandler(db))
+	r.Post(PathUserKeys, mintUserKeysHandler(db))
+	r.Delete(PathUserKeys, revokeUserKeysHandler(db))
 }
 
 // issueUserTokenHandler mints an access token for the `?id=<owner>/<name>` target
@@ -76,7 +81,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		}
 
 		access, ttl, err := MintUserToken(ctx, db, clientApp, user,
-			strings.TrimSpace(c.Query("aud")), tokenIssuer(c), c.Path())
+			strings.TrimSpace(c.Query("aud")), c.Host(), c.Path())
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
@@ -99,14 +104,17 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 // process it is the embedding host's, which has already validated a principal
 // before it gets here. The signing key never leaves this package either way.
 //
-// aud empty takes the application's default for this user (RFC 8707). path is
-// the audit row's RequestUri, so a mint traces back to the surface that asked.
-func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, issuer, path string) (string, time.Duration, error) {
+// aud empty takes the application's default for this user (RFC 8707). host is
+// the host the caller was asked on, and the ISSUER is resolved from it here —
+// never taken from a caller, because `iss` is pinned config and a token
+// claiming the wrong one is a token some other party is trusted to sign. path
+// is the audit row's RequestUri, so a mint traces back to the surface that asked.
+func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, host, path string) (string, time.Duration, error) {
 	now := nowFunc()
 	if aud == "" {
 		aud = defaultUserAudience(ctx, db, user, clientApp)
 	}
-	signer, err := signerFor(ctx, db, clientApp, issuer)
+	signer, err := signerFor(ctx, db, clientApp, resolveIssuer(host))
 	if err != nil {
 		return "", 0, err
 	}
@@ -321,15 +329,23 @@ func bearerToken(c *zip.Ctx) string {
 	return ""
 }
 
-// mintTarget resolves and validates the `?id=<owner>/<name>` target user for the
-// authenticated clientApp. A missing id or absent user is a v1 business error
-// (200 + status:error); a revoked (forbidden/deleted) user is a 403 — no
-// credential is ever minted for it. A RESERVED-org (admin/built-in) target — a
-// cross-tenant / SuperAdmin identity — additionally requires the separate
-// admin-mint capability, so even a valid general minter cannot reach an admin-org
-// user unless explicitly granted (defense-in-depth behind the mint allow-list).
+// mintTarget resolves and validates the target user for the authenticated
+// clientApp. A missing target or absent user is a v1 business error (200 +
+// status:error); a revoked (forbidden/deleted) user is a 403 — no credential is
+// ever minted for it. A RESERVED-org (admin/built-in) target — a cross-tenant /
+// SuperAdmin identity — additionally requires the separate admin-mint capability,
+// so even a valid general minter cannot reach an admin-org user unless explicitly
+// granted (defense-in-depth behind the mint allow-list).
+//
+// The ADDRESS names the target, and `?id=<owner>/<name>` answers for the
+// addresses that do not carry one. Reading the path first is what keeps one
+// resolution over both: an owner and a name that arrived as two path segments
+// cannot be split anywhere but between them, while `?id=a/b/c` had to pick.
 func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Application) (*schema.User, int, string) {
-	owner, name := splitSub(c.Query("id"))
+	owner, name := c.Param("owner"), c.Param("name")
+	if owner == "" || name == "" {
+		owner, name = splitSub(c.Query("id"))
+	}
 	if owner == "" || name == "" {
 		return nil, 200, "id (owner/name) is required"
 	}
@@ -580,28 +596,34 @@ func mintErr(c *zip.Ctx, status int, msg string) error {
 	return c.JSON(status, httpx.Response{Status: "error", Msg: msg})
 }
 
-// mintAllowed reports whether app may act on a user's behalf. TWO conditions, both
-// required: its OWNING org must be a reserved platform signing owner (admin/built-in),
-// AND its clientId must be on IAM_KEY_MINT_ALLOWED_APPS. The owner-pin is the decisive
-// gate — clientId and secret are body-supplied at registration, so a tenant could
-// register an app whose clientId collides with a mint-listed one and, on a backend
-// whose duplicate-row order is unspecified, have its row resolve and its known secret
-// authenticate; but its owner is its OWN tenant, never a signing owner, so it mints
-// nothing. (Resolution is additionally admin-preferring and clientId is unique on
+// mintAllowed reports whether app may act on a user's behalf — the on-behalf-of
+// primitives: issue a user token (RFC 8693 token exchange and its issue-user-token
+// twin) and mint or revoke a user's Cloud API key. TWO conditions, both required:
+// its OWNING org must be a reserved platform signing owner (admin/built-in), AND its
+// clientId must be on IAM_TOKEN_EXCHANGE_APPS. The owner-pin is the decisive gate —
+// clientId and secret are body-supplied at registration, so a tenant could register
+// an app whose clientId collides with a listed one and, on a backend whose
+// duplicate-row order is unspecified, have its row resolve and its known secret
+// authenticate; but its owner is its OWN tenant, never a signing owner, so it acts
+// on nobody. (Resolution is additionally admin-preferring and clientId is unique on
 // create, so the collision cannot arise nor win — this is the third, innermost gate.)
-// Every legit minter is admin-owned, so no legitimate grant regresses. Empty/unset
-// list allows nothing — fail closed.
+// Empty/unset list allows nothing — fail closed.
+//
+// This is keyed on clientId and gates token exchange only. The CapKeyMint capability
+// (authz.CapKeyMint) is a SEPARATE authority keyed on the application NAME, so an app
+// permitted to exchange tokens is not thereby granted the credential-administration
+// capability, nor its reach across the entity registry.
 func mintAllowed(app *schema.Application) bool {
-	return policy.IsSigningOwner(app.Owner) && appInList("IAM_KEY_MINT_ALLOWED_APPS", app.ClientId)
+	return policy.IsSigningOwner(app.Owner) && appInList("IAM_TOKEN_EXCHANGE_APPS", app.ClientId)
 }
 
 // adminMintAllowed reports whether app may act on behalf of a RESERVED-org
 // (admin/built-in) user — a strictly narrower, separately-granted capability than the
-// general mint list, so a leaked general-minter secret can never reach a SuperAdmin
+// general token-exchange list, so a leaked general secret can never reach a SuperAdmin
 // identity. Same owner-pin as mintAllowed: the app must be admin/built-in owned. The
 // console, which legitimately drives admin.hanzo.ai, is on both lists. Fail closed.
 func adminMintAllowed(app *schema.Application) bool {
-	return policy.IsSigningOwner(app.Owner) && appInList("IAM_ADMIN_MINT_ALLOWED_APPS", app.ClientId)
+	return policy.IsSigningOwner(app.Owner) && appInList("IAM_ADMIN_TOKEN_EXCHANGE_APPS", app.ClientId)
 }
 
 // appInList matches clientID against a comma/space-separated env allow-list, by
@@ -637,20 +659,4 @@ func defaultUserAudience(ctx context.Context, db orm.DB, user *schema.User, clie
 		}
 	}
 	return clientApp.ClientId
-}
-
-// newAccessKey mints the user's durable Cloud API key through the ONE key minter,
-// keys.Mint — the same one schema.Key's halves come from.
-//
-// It is `sk-` because a durable full-access bearer credential IS the confidential
-// half. There are exactly two shapes estate-wide — `pk-` is publishable, `sk-` is
-// secret — so a consumer (the gateway filter, the audit redactor, the registry
-// resolver) has two spellings to know and no third family meaning the same thing as
-// one of them.
-//
-// The prefix carries no authority: it is a human-readable label on an opaque random
-// token, and resolution is an exact-value lookup (store.UserByAccessKey), never a
-// prefix match.
-func newAccessKey() string {
-	return keys.Mint("sk", "")
 }

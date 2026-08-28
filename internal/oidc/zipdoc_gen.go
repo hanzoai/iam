@@ -7,6 +7,9 @@ import (
 )
 
 func init() {
+	zip.Describe("DELETE /v1/iam/users/:owner/:name/keys", zip.Doc{
+		Description: "Clears the target user's key of the requested TYPE (immediate\nrevoke). Scoped by the same `?type` field mint takes, so revoking the browser key\nleaves the server key working. A secret key's stored value is the sk- in its\nschema.Key row.",
+	})
 	zip.Describe("GET /.well-known/jwks", zip.Doc{
 		Description: "Publishes the public keys that verify the tokens issued here — the\none URL you point a service at so it can check a token itself, offline, without\ncalling back and without holding any secret of ours.\n\nKeys appear here before they start signing and stay after they stop, so a\nrotation never leaves a live token unverifiable. Nothing private is ever\npublished.",
 	})
@@ -46,17 +49,6 @@ func init() {
 	zip.Describe("GET /v1/iam/consent", zip.Doc{
 		Description: "Returns the calling person's own privacy and communication\nchoices. Somebody who has never set them gets the defaults rather than\nnothing, so a consent screen always has something to show — insights on, and\ntraining UNANSWERED, which is the state that means the screen still has to ask.",
 	})
-	zip.Describe("GET /v1/iam/get-account", zip.Doc{
-		Description: "Returns the signed-in person's own account and the organization\nthey belong to — what a console reads to draw the account menu.\n\nPasswords, API secrets and MFA material are stripped. It answers for a session\ncookie or a bearer token alike.",
-	})
-	zip.Describe("GET /v1/iam/get-app-login", zip.Doc{
-		Description: "Returns everything a login screen needs to draw itself for one\napplication: its branding, and each sign-in method it offers with the provider\ndetails that method needs.\n\nThe client secret is masked. Read before anyone has signed in, so it carries\nonly what is safe for a browser to see.",
-		Fields: map[string]string{
-			"Response.code":       "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
-			"screen.clientId":     "ClientId is the application's OAuth client id — the one field that selects\nwhich login screen this is.",
-			"screen.responseType": "ResponseType is the OAuth response type the screen will ask for. Only \"code\"\nis served; anything else is refused here rather than at the authorize leg,\nwhere the person has already typed a password.",
-		},
-	})
 	zip.Describe("GET /v1/iam/linked-accounts", zip.Doc{
 		Description: "Returns the sign-in identities linked to the calling\nperson's account — every provider they can currently sign in with. It is what\na security page lists next to the option to disconnect one.",
 	})
@@ -90,23 +82,11 @@ func init() {
 			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
 		},
 	})
-	zip.Describe("POST /v1/iam/issue-user-token", zip.Doc{
-		Description: "Mints an access token for the `?id=<owner>/<name>` target\nuser (optional `?aud=` resource, RFC 8707), issued by the authenticated +\nallow-listed confidential client. The token's subject + owner are the TARGET\nUSER's, so a resource server scopes on the validated owner claim to the user's\ntenant — indistinguishable from a token the user obtained directly. Response is\nthe camelCase `{accessToken, expiresIn}` body identity.ts consumes. Equivalent to\nthe RFC 8693 token-exchange grant, minus the subject_token proof (the console has\nthe user's id, not a token) — the reason this compat shim exists.",
-	})
-	zip.Describe("POST /v1/iam/keys/mint", zip.Doc{
-		Description: "(re)generates the target user's key of the requested TYPE and\nreturns it once, over the shared authorizeMinter + mintTarget seam. `?type=secret`\n(the default) yields the confidential sk-; `?type=publishable` yields the pk- that\nis safe to ship in client JS and resolves to an org, never a principal.\n\nIt writes the schema.Key row that the resolvers actually read. schema.User.AccessKey\nis not a credential and nothing resolves it, so a key stamped there would\nauthenticate nobody.",
-	})
-	zip.Describe("POST /v1/iam/keys/revoke", zip.Doc{
-		Description: "Clears the target user's key of the requested TYPE (immediate\nrevoke). Scoped by the same `?type` field mint takes, so revoking the browser key\nleaves the server key working. A secret key's stored value is the sk- in its\nschema.Key row.",
-	})
 	zip.Describe("POST /v1/iam/link", zip.Doc{
 		Description: "Starts connecting another sign-in identity to the account you are already\nsigned in as. It answers with the provider's URL for the browser to follow; when\nthe provider returns, that identity is attached and you come back to returnUri.\n\nYour account is fixed here, from the credential you are already holding, and is\ncarried server-side for the rest of the round-trip — so nothing that happens at\nthe provider can point the link at somebody else.",
 	})
 	zip.Describe("POST /v1/iam/login", zip.Doc{
 		Description: "Signs a person in with the credential they typed, and — when the\nrequest is part of an OAuth flow — hands back the one-time code that finishes\nit. A second factor, if the account has one, is asked for and required here.\n\nThe password is compared against a stored one-way hash and is never logged,\nechoed or stored as typed.",
-	})
-	zip.Describe("POST /v1/iam/mint-user-keys", zip.Doc{
-		Description: "(re)generates the target user's key of the requested TYPE and\nreturns it once, over the shared authorizeMinter + mintTarget seam. `?type=secret`\n(the default) yields the confidential sk-; `?type=publishable` yields the pk- that\nis safe to ship in client JS and resolves to an org, never a principal.\n\nIt writes the schema.Key row that the resolvers actually read. schema.User.AccessKey\nis not a credential and nothing resolves it, so a key stamped there would\nauthenticate nobody.",
 	})
 	zip.Describe("POST /v1/iam/oauth/authorize", zip.Doc{
 		Description: "Starts a sign-in — the address you send a browser to, and the\nbeginning of every OAuth and OpenID Connect flow.\n\nIf the person is ALREADY signed in here, it does not ask them again: it\nreturns them to the application with a one-time code and they never see this\npage. Otherwise it shows the right way to sign in for the application they are\nsigning in to, or hands off to another identity provider if that is what they\npick.\n\nA client can say what it wants with `prompt`: `none` means answer without any\nscreen at all — with the code if a session exists, with an error if not, but\nnever with a page; `login` means ask for the password again even if a session\nexists; `select_account` means let the person choose which identity to use.\n\nIt returns only to an address the application has registered. That check\nhappens before anything else, so a request naming an unregistered address is\nrefused where the person can see it rather than being bounced onwards.",
@@ -147,12 +127,6 @@ func init() {
 			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
 		},
 	})
-	zip.Describe("POST /v1/iam/revoke-user-keys", zip.Doc{
-		Description: "Clears the target user's key of the requested TYPE (immediate\nrevoke). Scoped by the same `?type` field mint takes, so revoking the browser key\nleaves the server key working. A secret key's stored value is the sk- in its\nschema.Key row.",
-	})
-	zip.Describe("POST /v1/iam/send-verification-code", zip.Doc{
-		Description: "Validates the request and asks otp to get a code to the\nperson. The request fields are read via fiber's FormValue — the escape hatch zip\nexposes for form bodies (multipart or urlencoded) — since the typed JSON Bind does\nnot apply here. v1 also accepts countryCode/method/checkUser/captchaType; iam\nignores them (the captcha/forget/MFA flows those drive are not ported), and\nCAPTCHA verification is likewise not enforced — iam models no captcha provider —\nso the code is issued once the destination and application validate.",
-	})
 	zip.Describe("POST /v1/iam/signin", zip.Doc{
 		Description: "Completes a sign-in: it exchanges the one-time code your\napplication was handed at the end of the login flow for a live session, and\nreturns the signed-in account.\n\nThe code works once. This is the call that turns a finished login into\nsomething your application can act on.",
 	})
@@ -165,8 +139,8 @@ func init() {
 	zip.Describe("POST /v1/iam/unlink", zip.Doc{
 		Description: "Disconnects one sign-in identity from an account, so that provider can\nno longer be used to sign in as that person. Their account and every other way\nthey sign in are untouched. Two principals may do it, and\nonly two: the account holder itself, and a SuperAdmin (a member of the reserved\nadmin org, the one predicate). An ORG ADMIN deliberately may NOT — unlinking is\nnot tenant administration, it is unpicking someone's own sign-in method, so the\ngeneric org-admin rule is the wrong answer here.\n\nA holder unlinking itself must also be permitted by the application — the\nprovider link's CanUnlink flag — so an organization that mandates federated\nsign-in cannot have its users strand themselves. A SuperAdmin is not bound by\nthat flag; it is the platform's own recovery path. Fail-closed throughout.",
 	})
-	zip.Describe("POST /v1/iam/update-preferences", zip.Doc{
-		Description: "Saves the calling person's own settings and returns\nthe full set afterwards. Send only the settings you are changing — the rest\nare kept, so two screens can save at once without one undoing the other.",
+	zip.Describe("POST /v1/iam/users/:owner/:name/keys", zip.Doc{
+		Description: "(re)generates the target user's key of the requested TYPE and\nreturns it once, over the shared authorizeMinter + mintTarget seam. `?type=secret`\n(the default) yields the confidential sk-; `?type=publishable` yields the pk- that\nis safe to ship in client JS and resolves to an org, never a principal.\n\nIt writes the schema.Key row that the resolvers actually read. schema.User.AccessKey\nis not a credential and nothing resolves it, so a key stamped there would\nauthenticate nobody.",
 	})
 	zip.Describe("POST /v1/iam/verification-codes", zip.Doc{
 		Description: "Validates the request and asks otp to get a code to the\nperson. The request fields are read via fiber's FormValue — the escape hatch zip\nexposes for form bodies (multipart or urlencoded) — since the typed JSON Bind does\nnot apply here. v1 also accepts countryCode/method/checkUser/captchaType; iam\nignores them (the captcha/forget/MFA flows those drive are not ported), and\nCAPTCHA verification is likewise not enforced — iam models no captcha provider —\nso the code is issued once the destination and application validate.",

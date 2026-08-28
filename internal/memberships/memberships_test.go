@@ -3,15 +3,12 @@
 
 package memberships_test
 
-// A membership at its own address: GET, POST and DELETE on /v1/iam/memberships.
-// The retired surface spelled the three as three paths (get-memberships,
-// add-membership, delete-membership), two of them POST, so the verb lived in the
-// path and the method said nothing.
-// Every case is a HTTP request driven through the REAL registered router (routes.Route
-// installs the authz Guard, then registers memberships after it), so the assertions
-// prove the three things a backend swap depends on: the verbs reach the SAME store
-// as the REST surface, the SAME tenant authz gates the REST surface uses, and a
-// cross-tenant caller is refused with v1's verbatim message.
+// The (User x Org x Role) relation: list it, ensure one, revoke one. Every case is
+// a HTTP request driven through the REAL registered router (routes.Route installs
+// the authz Guard, then registers memberships after it), so the assertions prove
+// the three things a caller depends on: one store behind every address, the tenant
+// gate the rest of the surface uses, and a cross-tenant caller refused with v1's
+// verbatim message.
 
 import (
 	"bytes"
@@ -102,13 +99,10 @@ func (h *harness) get(t *testing.T, path, bearer string) (int, env) {
 	return status, envOf(body)
 }
 
-// send drives one request as a person. A membership lives at ONE address and the
-// METHOD carries the verb, so the method is an argument rather than a second
-// helper — the retired surface spelled add and delete as two paths, both POST.
-func (h *harness) send(t *testing.T, method, path string, body any, bearer string) (int, env) {
+func (h *harness) post(t *testing.T, path string, body any, bearer string) (int, env) {
 	t.Helper()
 	b, _ := json.Marshal(body)
-	req := httptest.NewRequest(method, path, bytes.NewReader(b))
+	req := httptest.NewRequest("POST", path, bytes.NewReader(b))
 	req.Host = "hanzo.id"
 	req.Header.Set("Content-Type", "application/json")
 	if bearer != "" {
@@ -117,12 +111,12 @@ func (h *harness) send(t *testing.T, method, path string, body any, bearer strin
 	return h.do(t, req)
 }
 
-// sendBasic is the same request authenticating as a confidential client
-// (client_secret_basic) — how a brand console or cloud service reaches it.
-func (h *harness) sendBasic(t *testing.T, method, path string, body any, clientID, secret string) (int, env) {
+// postBasic drives an add/delete verb authenticating as a confidential client
+// (client_secret_basic) — how a brand console / cloud service calls these verbs.
+func (h *harness) postBasic(t *testing.T, path string, body any, clientID, secret string) (int, env) {
 	t.Helper()
 	b, _ := json.Marshal(body)
-	req := httptest.NewRequest(method, path, bytes.NewReader(b))
+	req := httptest.NewRequest("POST", path, bytes.NewReader(b))
 	req.Host = "hanzo.id"
 	req.Header.Set("Content-Type", "application/json")
 	req.SetBasicAuth(clientID, secret)
@@ -180,7 +174,7 @@ type env struct {
 
 // ---- cases -----------------------------------------------------------------
 
-// GET /v1/iam/memberships?user=<owner/name> lists one identity's orgs (SuperAdmin path).
+// memberships?user=<owner/name> lists one identity's orgs (SuperAdmin path).
 func TestGetMemberships_byUser(t *testing.T) {
 	h := newHarness(t)
 	seedMembership(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
@@ -188,7 +182,7 @@ func TestGetMemberships_byUser(t *testing.T) {
 
 	status, e := h.get(t, "/v1/iam/memberships?user=hanzo/alice", h.token(t, "admin/root"))
 	if status != 200 || e.Status != "ok" {
-		t.Fatalf("GET ?user status=%d env=%+v, want 200 ok", status, e)
+		t.Fatalf("memberships?user status=%d env=%+v, want 200 ok", status, e)
 	}
 	rows := parseMemberships(t, e)
 	if len(rows) != 2 {
@@ -196,7 +190,7 @@ func TestGetMemberships_byUser(t *testing.T) {
 	}
 }
 
-// GET /v1/iam/memberships?org=<slug> lists an org's roster.
+// memberships?org=<slug> lists an org's roster.
 func TestGetMemberships_byOrg(t *testing.T) {
 	h := newHarness(t)
 	seedMembership(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
@@ -205,26 +199,26 @@ func TestGetMemberships_byOrg(t *testing.T) {
 	// hanzo's own admin may read its own org's roster (handler-authorized scoped()).
 	status, e := h.get(t, "/v1/iam/memberships?org=hanzo", h.token(t, "hanzo/boss"))
 	if status != 200 || e.Status != "ok" {
-		t.Fatalf("GET ?org status=%d env=%+v, want 200 ok", status, e)
+		t.Fatalf("memberships?org status=%d env=%+v, want 200 ok", status, e)
 	}
 	if rows := parseMemberships(t, e); len(rows) != 2 {
 		t.Fatalf("hanzo roster = %d, want 2 (alice, boss)", len(rows))
 	}
 }
 
-// POST creates the row the same store EnsureMembership does, and the GET beside
-// it shows it — one address, one store, the method carrying the verb.
+// The write creates the row the same store EnsureMembership does, and the list
+// shows it — one store behind both.
 func TestAddMembership_thenGetShowsIt(t *testing.T) {
 	h := newHarness(t)
 	super := h.token(t, "admin/root")
 
-	status, e := h.send(t, "POST", "/v1/iam/memberships",
+	status, e := h.post(t, "/v1/iam/memberships",
 		map[string]string{"user": "hanzo/alice", "org": "team-x", "role": "admin"}, super)
 	if status != 200 || e.Status != "ok" {
-		t.Fatalf("POST status=%d env=%+v, want 200 ok", status, e)
+		t.Fatalf("membership write status=%d env=%+v, want 200 ok", status, e)
 	}
 	if !parseBool(t, e) {
-		t.Fatal("POST reported no row created")
+		t.Fatal("the membership write reported no row created")
 	}
 
 	_, g := h.get(t, "/v1/iam/memberships?user=hanzo/alice", super)
@@ -234,14 +228,14 @@ func TestAddMembership_thenGetShowsIt(t *testing.T) {
 	}
 }
 
-// DELETE removes the row and is idempotent: a second delete of the same
+// delete-membership removes the row and is idempotent: a second delete of the same
 // (user, org) reports removed=false with no error.
 func TestDeleteMembership_removesAndIdempotent(t *testing.T) {
 	h := newHarness(t)
 	super := h.token(t, "admin/root")
 	seedMembership(t, h.db, "hanzo/alice", "team-x", store.RoleAdmin)
 
-	status, e := h.send(t, "DELETE", "/v1/iam/memberships",
+	status, e := h.post(t, "/v1/iam/delete-membership",
 		map[string]string{"user": "hanzo/alice", "org": "team-x"}, super)
 	if status != 200 || e.Status != "ok" || !parseBool(t, e) {
 		t.Fatalf("first delete status=%d env=%+v, want 200 ok removed=true", status, e)
@@ -251,7 +245,7 @@ func TestDeleteMembership_removesAndIdempotent(t *testing.T) {
 		t.Fatal("membership survived delete")
 	}
 	// Idempotent second delete: still ok, but removed=false.
-	_, e2 := h.send(t, "DELETE", "/v1/iam/memberships",
+	_, e2 := h.post(t, "/v1/iam/delete-membership",
 		map[string]string{"user": "hanzo/alice", "org": "team-x"}, super)
 	if e2.Status != "ok" || parseBool(t, e2) {
 		t.Fatalf("second delete env=%+v, want ok removed=false (idempotent)", e2)
@@ -265,21 +259,21 @@ func TestMembership_crossTenantDenied(t *testing.T) {
 	boss := h.token(t, "hanzo/boss") // admin of hanzo, NOT of orgb
 
 	// Write into orgb: refused.
-	_, add := h.send(t, "POST", "/v1/iam/memberships",
+	_, add := h.post(t, "/v1/iam/memberships",
 		map[string]string{"user": "orgb/bob", "org": "orgb", "role": "member"}, boss)
 	if add.Status != "error" || add.Msg != "auth:Unauthorized operation" {
-		t.Fatalf("cross-tenant POST env=%+v, want error auth:Unauthorized operation", add)
+		t.Fatalf("cross-tenant membership write env=%+v, want error auth:Unauthorized operation", add)
 	}
 	// Delete from orgb: refused the same way.
-	_, del := h.send(t, "DELETE", "/v1/iam/memberships",
+	_, del := h.post(t, "/v1/iam/delete-membership",
 		map[string]string{"user": "orgb/bob", "org": "orgb"}, boss)
 	if del.Status != "error" || del.Msg != "auth:Unauthorized operation" {
-		t.Fatalf("cross-tenant DELETE env=%+v, want error auth:Unauthorized operation", del)
+		t.Fatalf("cross-tenant delete-membership env=%+v, want error auth:Unauthorized operation", del)
 	}
 	// Read orgb's roster: refused the same way.
 	_, roster := h.get(t, "/v1/iam/memberships?org=orgb", boss)
 	if roster.Status != "error" || roster.Msg != "auth:Unauthorized operation" {
-		t.Fatalf("cross-tenant GET ?org=orgb env=%+v, want error auth:Unauthorized operation", roster)
+		t.Fatalf("cross-tenant memberships?org=orgb env=%+v, want error auth:Unauthorized operation", roster)
 	}
 }
 
@@ -294,7 +288,7 @@ func TestEnsureMembership_reservedOrgRequiresSuper(t *testing.T) {
 
 	// Into the reserved admin/built-in orgs: refused, verbatim.
 	for _, org := range []string{"admin", "built-in"} {
-		_, e := h.sendBasic(t, "POST", "/v1/iam/memberships",
+		_, e := h.postBasic(t, "/v1/iam/memberships",
 			map[string]string{"user": "hanzo/alice", "org": org, "role": "admin"}, "hanzo-console", "console-secret")
 		if e.Status != "error" || e.Msg != "auth:Unauthorized operation" {
 			t.Fatalf("CapOrgAdmin ensure into %q env=%+v, want error auth:Unauthorized operation", org, e)
@@ -304,21 +298,21 @@ func TestEnsureMembership_reservedOrgRequiresSuper(t *testing.T) {
 		}
 	}
 	// Revoke into a reserved org is gated the same way.
-	_, del := h.sendBasic(t, "DELETE", "/v1/iam/memberships",
+	_, del := h.postBasic(t, "/v1/iam/delete-membership",
 		map[string]string{"user": "hanzo/alice", "org": "admin"}, "hanzo-console", "console-secret")
 	if del.Status != "error" || del.Msg != "auth:Unauthorized operation" {
 		t.Fatalf("CapOrgAdmin revoke into admin env=%+v, want error auth:Unauthorized operation", del)
 	}
 
 	// Legit power preserved: the SAME client CAN ensure into a normal customer org.
-	_, ok := h.sendBasic(t, "POST", "/v1/iam/memberships",
+	_, ok := h.postBasic(t, "/v1/iam/memberships",
 		map[string]string{"user": "hanzo/alice", "org": "hanzo", "role": "member"}, "hanzo-console", "console-secret")
 	if ok.Status != "ok" {
 		t.Fatalf("CapOrgAdmin ensure into a normal org env=%+v, want ok (legit power broken)", ok)
 	}
 
 	// And a real SuperAdmin MAY grant a reserved-org membership (the escape hatch).
-	_, sup := h.send(t, "POST", "/v1/iam/memberships",
+	_, sup := h.post(t, "/v1/iam/memberships",
 		map[string]string{"user": "hanzo/alice", "org": "admin", "role": "admin"}, h.token(t, "admin/root"))
 	if sup.Status != "ok" {
 		t.Fatalf("SuperAdmin ensure into admin env=%+v, want ok", sup)
@@ -409,7 +403,7 @@ func TestList_ownerQueryIsNotATarget(t *testing.T) {
 func TestMembershipVerbs_requireAuth(t *testing.T) {
 	h := newHarness(t)
 	if status, _ := h.get(t, "/v1/iam/memberships?org=hanzo", ""); status != 401 {
-		t.Fatalf("unauthenticated GET status=%d, want 401", status)
+		t.Fatalf("unauthenticated membership list status=%d, want 401", status)
 	}
 }
 

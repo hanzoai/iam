@@ -97,13 +97,13 @@ func (h *harness) token(t *testing.T, sub string) string {
 	return s
 }
 
-func (h *harness) do(t *testing.T, path, bearer, body string) (int, map[string]any) {
+func (h *harness) do(t *testing.T, method, path, bearer, body string) (int, map[string]any) {
 	t.Helper()
 	var r io.Reader
 	if body != "" {
 		r = strings.NewReader(body)
 	}
-	req := httptest.NewRequest("POST", path, r)
+	req := httptest.NewRequest(method, path, r)
 	req.Host = "hanzo.id"
 	req.Header.Set("Content-Type", "application/json")
 	if bearer != "" {
@@ -111,7 +111,7 @@ func (h *harness) do(t *testing.T, path, bearer, body string) (int, map[string]a
 	}
 	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
-		t.Fatalf("POST %s: %v", path, err)
+		t.Fatalf("%s %s: %v", method, path, err)
 	}
 	b, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
@@ -161,7 +161,7 @@ func TestMFA_enrollLifecycle(t *testing.T) {
 
 	// initiate — a secret and an otpauth URL. No recovery codes yet: nothing is enrolled,
 	// so there is nothing to recover.
-	st, m := h.do(t, mfa.PathInitiate, alice, `{}`)
+	st, m := h.do(t, "POST", mfa.PathInitiate, alice, `{}`)
 	if st != 200 || m["status"] != "ok" {
 		t.Fatalf("initiate: status=%d body=%v", st, m)
 	}
@@ -174,7 +174,7 @@ func TestMFA_enrollLifecycle(t *testing.T) {
 	}
 
 	// enable — the passcode proves the secret, and the factor lands.
-	st, m = h.do(t, mfa.PathEnable, alice, `{"secret":"`+secret+`","passcode":"`+totpNow(t, secret)+`"}`)
+	st, m = h.do(t, "POST", mfa.PathEnable, alice, `{"secret":"`+secret+`","passcode":"`+totpNow(t, secret)+`"}`)
 	if st != 200 || m["status"] != "ok" {
 		t.Fatalf("enable: status=%d body=%v", st, m)
 	}
@@ -205,7 +205,7 @@ func TestMFA_enrollLifecycle(t *testing.T) {
 	}
 
 	// disable — every factor is cleared, and the recovery codes go with the last one.
-	if st, m := h.do(t, mfa.PathDisable, alice, `{}`); st != 200 || m["status"] != "ok" {
+	if st, m := h.do(t, "DELETE", mfa.Path, alice, `{}`); st != 200 || m["status"] != "ok" {
 		t.Fatalf("disable: status=%d body=%v", st, m)
 	}
 	u, _ = store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
@@ -214,28 +214,75 @@ func TestMFA_enrollLifecycle(t *testing.T) {
 	}
 }
 
-// TestMFA_theShippedClientShape is the defect that made enrolment impossible. The
-// portal posts every parameter on the QUERY STRING with an EMPTY body; three of the
-// five handlers read only the body, so `enable` answered 400 {"msg":"invalid body"}
-// to the exact request the live bundle sends. Nobody could add a second factor, and
-// an organization that required one was locked out of every account.
+// The spelling this surface arrived with is RETIRED rather than merely absent:
+// delete-mfa answers 410 and names the address that replaced it. A 404 would send
+// whatever is still pinned to it looking for a typo it will not find.
+func TestMFA_theReplacedSpellingIsRetired(t *testing.T) {
+	h := newHarness(t)
+	alice := h.token(t, "hanzo/alice")
+	if st, _ := h.do(t, "POST", "/v1/iam/delete-mfa", alice, `{}`); st != 410 {
+		t.Errorf("POST /v1/iam/delete-mfa -> %d, want 410", st)
+	}
+	if st, _ := h.do(t, "POST", "/v1/iam/set-preferred-mfa", alice, `{}`); st != 410 {
+		t.Errorf("POST /v1/iam/set-preferred-mfa -> %d, want 410", st)
+	}
+}
+
+// THE URL ADDRESSES, THE BODY PROVES.
+//
+// The portal posts owner/name/mfaType on the QUERY STRING with no JSON body, and
+// that keeps working — three of the five handlers once read the body alone, so
+// `enable` answered 400 {"msg":"invalid body"} to the exact request the live
+// bundle sends, and an organization that required a second factor was locked out
+// of every account.
+//
+// The PROOF is the other half and is read from the body, because a TOTP seed in a
+// query string is written into every access log in front of this service, and the
+// seed is not a token — it derives every passcode the account will ever accept.
 func TestMFA_theShippedClientShape(t *testing.T) {
 	h := newHarness(t)
 	alice := h.token(t, "hanzo/alice")
 
-	_, m := h.do(t, mfa.PathInitiate+"?owner=hanzo&name=alice&mfaType=app", alice, "")
+	_, m := h.do(t, "POST", mfa.PathInitiate+"?owner=hanzo&name=alice&mfaType=app", alice, "")
 	secret := dataString(m, "secret")
 	if secret == "" {
 		t.Fatalf("initiate (query, empty body) returned no secret: %v", m)
 	}
-	q := "?owner=hanzo&name=alice&mfaType=app&secret=" + secret + "&passcode=" + totpNow(t, secret)
-	st, m := h.do(t, mfa.PathEnable+q, alice, "")
+	proof := `{"secret":"` + secret + `","passcode":"` + totpNow(t, secret) + `"}`
+	st, m := h.do(t, "POST", mfa.PathEnable+"?owner=hanzo&name=alice&mfaType=app", alice, proof)
 	if st != 200 || m["status"] != "ok" {
-		t.Fatalf("enable (query, empty body): status=%d body=%v — the shipped client cannot enrol", st, m)
+		t.Fatalf("enable (query addressing, body proof): status=%d body=%v — the client cannot enrol", st, m)
 	}
 	u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
 	if u.TotpSecret != secret || !factor.Has(u, factor.App) {
 		t.Fatalf("the factor did not land: %+v", u)
+	}
+}
+
+// THE PROOF IS NOT A URL PARAMETER.
+//
+// A correct seed and a correct live passcode, spelled in the query with an empty
+// body, enrol nothing — so a factor can never be established by a value that has
+// already been written into a log line. The refusal is the ordinary "the code is
+// required" answer, and the row is untouched: nothing half-written, no factor the
+// account cannot satisfy.
+func TestMFA_theProofIsNotReadFromTheQuery(t *testing.T) {
+	h := newHarness(t)
+	alice := h.token(t, "hanzo/alice")
+
+	_, m := h.do(t, "POST", mfa.PathInitiate+"?owner=hanzo&name=alice&mfaType=app", alice, "")
+	secret := dataString(m, "secret")
+	if secret == "" {
+		t.Fatalf("initiate returned no secret: %v", m)
+	}
+	q := "?owner=hanzo&name=alice&mfaType=app&secret=" + secret + "&passcode=" + totpNow(t, secret)
+	st, m := h.do(t, "POST", mfa.PathEnable+q, alice, "")
+	if st != 200 || m["status"] != "error" {
+		t.Fatalf("enable (proof in the query) = %d %v, want a refusal", st, m)
+	}
+	u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
+	if u.TotpSecret != "" || factor.Has(u, factor.App) || factor.Enabled(u) {
+		t.Fatalf("a seed carried in the URL enrolled a factor: %+v", u)
 	}
 }
 
@@ -251,7 +298,7 @@ func TestMFA_enableRefusesAnUnprovenSecret(t *testing.T) {
 		`{"secret":"NOTAREALTOTPSECRET!!"}`,
 		`{"secret":"NOTAREALTOTPSECRET!!","passcode":"000000"}`,
 	} {
-		st, m := h.do(t, mfa.PathEnable, alice, body)
+		st, m := h.do(t, "POST", mfa.PathEnable, alice, body)
 		if st != 200 || m["status"] != "error" {
 			t.Fatalf("enable %s: status=%d body=%v, want a refusal", body, st, m)
 		}
@@ -289,7 +336,7 @@ func TestMFA_deliveredFactorsEnrolByPossession(t *testing.T) {
 	} {
 		t.Run(tc.mfaType, func(t *testing.T) {
 			before := len(*sent)
-			st, m := h.do(t, mfa.PathInitiate, alice, `{"mfaType":"`+tc.mfaType+`"}`)
+			st, m := h.do(t, "POST", mfa.PathInitiate, alice, `{"mfaType":"`+tc.mfaType+`"}`)
 			if st != 200 || m["status"] != "ok" {
 				t.Fatalf("initiate %s: status=%d body=%v", tc.mfaType, st, m)
 			}
@@ -303,11 +350,11 @@ func TestMFA_deliveredFactorsEnrolByPossession(t *testing.T) {
 			code := strings.TrimPrefix(last, tc.want)
 
 			// A wrong code enrols nothing.
-			if _, m := h.do(t, mfa.PathEnable, alice, `{"mfaType":"`+tc.mfaType+`","passcode":"000000"}`); m["status"] != "error" {
+			if _, m := h.do(t, "POST", mfa.PathEnable, alice, `{"mfaType":"`+tc.mfaType+`","passcode":"000000"}`); m["status"] != "error" {
 				t.Fatalf("a wrong code enrolled %s: %v", tc.mfaType, m)
 			}
 			// The delivered one does.
-			if st, m := h.do(t, mfa.PathEnable, alice, `{"mfaType":"`+tc.mfaType+`","passcode":"`+code+`"}`); st != 200 || m["status"] != "ok" {
+			if st, m := h.do(t, "POST", mfa.PathEnable, alice, `{"mfaType":"`+tc.mfaType+`","passcode":"`+code+`"}`); st != 200 || m["status"] != "ok" {
 				t.Fatalf("enable %s: status=%d body=%v", tc.mfaType, st, m)
 			}
 			u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
@@ -336,7 +383,7 @@ func TestMFA_initiateRefusesAnAddressTheAccountLacks(t *testing.T) {
 	alice := h.token(t, "hanzo/alice")
 	h.bindSender(t)
 
-	if _, m := h.do(t, mfa.PathInitiate, alice, `{"mfaType":"sms","phone":"+15550001111"}`); m["status"] != "error" {
+	if _, m := h.do(t, "POST", mfa.PathInitiate, alice, `{"mfaType":"sms","phone":"+15550001111"}`); m["status"] != "error" {
 		t.Fatalf("initiate sms with no number on the account: %v, want a refusal", m)
 	}
 	u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
@@ -365,9 +412,9 @@ func TestMFA_changingAFactorEndsOtherSessions(t *testing.T) {
 		}
 	}
 
-	_, m := h.do(t, mfa.PathInitiate, alice, `{}`)
+	_, m := h.do(t, "POST", mfa.PathInitiate, alice, `{}`)
 	secret := dataString(m, "secret")
-	if st, m := h.do(t, mfa.PathEnable, alice, `{"secret":"`+secret+`","passcode":"`+totpNow(t, secret)+`"}`); st != 200 || m["status"] != "ok" {
+	if st, m := h.do(t, "POST", mfa.PathEnable, alice, `{"secret":"`+secret+`","passcode":"`+totpNow(t, secret)+`"}`); st != 200 || m["status"] != "ok" {
 		t.Fatalf("enable: status=%d body=%v", st, m)
 	}
 
@@ -394,20 +441,20 @@ func TestMFA_crossUserRequiresAdmin(t *testing.T) {
 
 	// alice → boss's MFA: forbidden.
 	body := `{"owner":"hanzo","name":"boss"}`
-	if st, _ := h.do(t, mfa.PathInitiate, alice, body); st != 403 {
+	if st, _ := h.do(t, "POST", mfa.PathInitiate, alice, body); st != 403 {
 		t.Fatalf("regular user initiating another user's MFA: status=%d, want 403", st)
 	}
-	if st, _ := h.do(t, mfa.PathDisable, alice, body); st != 403 {
+	if st, _ := h.do(t, "DELETE", mfa.Path, alice, body); st != 403 {
 		t.Fatalf("regular user disabling another user's MFA: status=%d, want 403", st)
 	}
 
 	// org-admin → a user in the SAME org: allowed.
-	if st, m := h.do(t, mfa.PathInitiate, boss,
+	if st, m := h.do(t, "POST", mfa.PathInitiate, boss,
 		`{"owner":"hanzo","name":"alice"}`); st != 200 || m["status"] != "ok" {
 		t.Fatalf("org-admin initiating a same-org user's MFA: status=%d body=%v", st, m)
 	}
 	// super → anyone: allowed.
-	if st, m := h.do(t, mfa.PathInitiate, super,
+	if st, m := h.do(t, "POST", mfa.PathInitiate, super,
 		`{"owner":"hanzo","name":"alice"}`); st != 200 || m["status"] != "ok" {
 		t.Fatalf("super initiating a user's MFA: status=%d body=%v", st, m)
 	}
@@ -423,7 +470,7 @@ func TestMFA_setPreferred(t *testing.T) {
 	alice := h.token(t, "hanzo/alice")
 
 	for _, mfaType := range []string{factor.SMS, factor.Email, "carrier-pigeon"} {
-		st, m := h.do(t, mfa.PathPreferred, alice, `{"mfaType":"`+mfaType+`"}`)
+		st, m := h.do(t, "POST", mfa.PathPreferred, alice, `{"mfaType":"`+mfaType+`"}`)
 		if st != 200 || m["status"] != "error" {
 			t.Fatalf("preferred %q: status=%d body=%v, want a refusal", mfaType, st, m)
 		}
@@ -434,12 +481,12 @@ func TestMFA_setPreferred(t *testing.T) {
 	}
 
 	// Enrol the authenticator, and it becomes selectable.
-	_, m := h.do(t, mfa.PathInitiate, alice, `{}`)
+	_, m := h.do(t, "POST", mfa.PathInitiate, alice, `{}`)
 	secret := dataString(m, "secret")
-	if _, m := h.do(t, mfa.PathEnable, alice, `{"secret":"`+secret+`","passcode":"`+totpNow(t, secret)+`"}`); m["status"] != "ok" {
+	if _, m := h.do(t, "POST", mfa.PathEnable, alice, `{"secret":"`+secret+`","passcode":"`+totpNow(t, secret)+`"}`); m["status"] != "ok" {
 		t.Fatalf("enable: %v", m)
 	}
-	if st, m := h.do(t, mfa.PathPreferred, alice, `{"mfaType":"app"}`); st != 200 || m["status"] != "ok" {
+	if st, m := h.do(t, "POST", mfa.PathPreferred, alice, `{"mfaType":"app"}`); st != 200 || m["status"] != "ok" {
 		t.Fatalf("preferred app: status=%d body=%v", st, m)
 	}
 	u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "alice")
@@ -451,7 +498,7 @@ func TestMFA_setPreferred(t *testing.T) {
 // TestMFA_requiresBearer: no token → the Guard refuses before the handler.
 func TestMFA_requiresBearer(t *testing.T) {
 	h := newHarness(t)
-	if st, _ := h.do(t, mfa.PathInitiate, "", `{}`); st != 401 {
+	if st, _ := h.do(t, "POST", mfa.PathInitiate, "", `{}`); st != 401 {
 		t.Fatalf("no-bearer initiate: status=%d, want 401", st)
 	}
 }

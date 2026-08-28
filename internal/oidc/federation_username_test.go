@@ -18,7 +18,7 @@ import (
 // first, and neither gets a random suffix.
 func TestProvisionFederatedUser_DedupesWithANumericSuffix(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "iam.db"))
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "iam.db"), "")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

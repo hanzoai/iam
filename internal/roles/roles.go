@@ -10,12 +10,13 @@ package roles
 import (
 	"context"
 	"errors"
-	"github.com/hanzoai/iam/internal/authz"
 	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -31,9 +32,9 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/roles", h.List, zip.WithTags("roles"))
 	zip.Post(app, "/v1/iam/roles", h.Create, zip.WithTags("roles"))
-	zip.Get(app, "/v1/iam/roles/get", h.Get, zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/update", h.Update, zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/delete", h.Delete, zip.WithTags("roles"))
+	zip.Get(app, "/v1/iam/roles/:owner/:name", h.Get, zip.WithTags("roles"))
+	zip.Put(app, "/v1/iam/roles/:owner/:name", h.Update, zip.WithTags("roles"))
+	zip.Delete(app, "/v1/iam/roles/:owner/:name", h.Delete, zip.WithTags("roles"))
 }
 
 // Ref addresses one role by its owner-scoped natural key.
@@ -47,14 +48,14 @@ type Ref struct {
 type Input struct {
 	Owner       string   `json:"owner"`
 	Name        string   `json:"name"`
-	CreatedTime string   `json:"createdTime"`
-	DisplayName string   `json:"displayName"`
-	Description string   `json:"description"`
+	CreatedTime string   `json:"createdTime" url:"-"`
+	DisplayName string   `json:"displayName" url:"-"`
+	Description string   `json:"description" url:"-"`
 	Users       []string `json:"users"`
 	Teams       []string `json:"teams"`
 	Roles       []string `json:"roles"`
 	Domains     []string `json:"domains"`
-	IsEnabled   bool     `json:"isEnabled"`
+	IsEnabled   bool     `json:"isEnabled" url:"-"`
 }
 
 // ListInput scopes a listing to one owner (organization).
@@ -74,10 +75,6 @@ type DeleteOutput struct {
 }
 
 // key builds the orm string key from the (owner, name) natural key.
-// New exposes a role Handler so the legacy add-/update-/delete-role verb aliases
-// reuse the ONE role CRUD path, wrapped in the compat envelope.
-func New(db orm.DB) *Handler { return &Handler{db: db} }
-
 func key(owner, name string) string { return owner + "/" + name }
 
 // apply copies the mutable domain fields of an Input onto a role. The identity
@@ -99,14 +96,12 @@ func apply(dst *schema.Role, in *Input) {
 // You see your own organization's roles and no one else's; which organization
 // that is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by authz.Scope from the authenticated principal,
+	// The owner is resolved by principal.Scope from the authenticated principal,
 	// never taken from the input: a tenant reads only its own org, a SuperAdmin
-	// reads the owner it asks for. Filtering on in.Owner instead was a confused
-	// deputy — the Guard authorizes on the query string, then a typed GET binds
-	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
-	// arrived empty on every REST call and the "empty owner lists everything"
-	// branch returned every tenant.
-	owner, err := authz.Scope(ctx, in.Owner)
+	// reads the owner it asks for. in.Owner is whatever the CALLER wrote in the URL,
+	// since zip binds a typed op's scalar fields from the query string on every
+	// method, so filtering on it would let a request name the tenant it reads.
+	owner, err := principal.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +136,12 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Role, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	// The people a role bundles are an authority its own (Owner, Name) does not
+	// carry: a role filed in one organization could otherwise bundle another
+	// organization's people, or the platform's.
+	if err := authz.AuthorizeGrant(ctx, "POST", in.Owner, in.Users, in.Teams, in.Roles); err != nil {
+		return nil, err
+	}
 	switch _, err := orm.Get[schema.Role](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
 		return nil, zip.ErrConflict("role already exists")
@@ -170,6 +171,11 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Role, error) {
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Role, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	// Adding someone to a role is the same authority as making one, so an update
+	// names its members under the same gate.
+	if err := authz.AuthorizeGrant(ctx, "PUT", in.Owner, in.Users, in.Teams, in.Roles); err != nil {
+		return nil, err
 	}
 	role, err := orm.Get[schema.Role](h.db, key(in.Owner, in.Name))
 	if err != nil {

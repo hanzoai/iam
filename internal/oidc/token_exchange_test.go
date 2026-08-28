@@ -89,7 +89,7 @@ func directSubjectToken(t *testing.T, db orm.DB, certName, owner, name string) s
 }
 
 func TestTokenExchange_mintsForSubject(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
@@ -133,7 +133,7 @@ func TestTokenExchange_mintsForSubject(t *testing.T) {
 }
 
 func TestTokenExchange_notAllowlisted_403(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "some-other-app")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "some-other-app")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
@@ -151,7 +151,7 @@ func TestTokenExchange_notAllowlisted_403(t *testing.T) {
 // OWN clientId is refused at the allow-list (matched by clientId only), even though
 // it holds a valid subject_token for its own tenant user.
 func TestTokenExchange_nameCollisionAttacker_403(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	// Attacker: a DIFFERENT clientId, but NAME collides with the allow-listed one.
@@ -169,7 +169,7 @@ func TestTokenExchange_nameCollisionAttacker_403(t *testing.T) {
 }
 
 func TestTokenExchange_reservedOrgSubject_requiresAdminCapability(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console") // general only
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console") // general only
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	// An admin-org user with a password, so we can mint their subject_token.
@@ -186,8 +186,8 @@ func TestTokenExchange_reservedOrgSubject_requiresAdminCapability(t *testing.T) 
 }
 
 func TestTokenExchange_reservedOrgSubject_admitsWithAdminCapability(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
-	t.Setenv("IAM_ADMIN_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_ADMIN_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUserInOrg(t, db, "admin", "root", "root@hanzo.ai", "admin pw")
@@ -206,7 +206,7 @@ func TestTokenExchange_reservedOrgSubject_admitsWithAdminCapability(t *testing.T
 }
 
 func TestTokenExchange_invalidSubjectToken_invalidGrant(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 
@@ -217,7 +217,7 @@ func TestTokenExchange_invalidSubjectToken_invalidGrant(t *testing.T) {
 }
 
 func TestTokenExchange_publicClient_rejected(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "pub")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "pub")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "pub"}) // no secret → public
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
@@ -229,7 +229,7 @@ func TestTokenExchange_publicClient_rejected(t *testing.T) {
 }
 
 func TestTokenExchange_emitsAudit(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
@@ -250,7 +250,7 @@ func TestTokenExchange_emitsAudit(t *testing.T) {
 // application grants, and the token really is shorter — this is what lets a
 // credential handed to a leased process die with the lease.
 func TestTokenExchange_lifetimeShortensTheToken(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
@@ -280,7 +280,7 @@ func TestTokenExchange_lifetimeShortensTheToken(t *testing.T) {
 // leaves the application's own lifetime standing, so no caller can lengthen a
 // credential by asking.
 func TestTokenExchange_lifetimeCannotOutrunTheApplication(t *testing.T) {
-	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
