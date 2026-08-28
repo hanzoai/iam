@@ -237,7 +237,7 @@ func TestSCIM_patchDeactivate(t *testing.T) {
 
 func TestSCIM_crossTenant_denied(t *testing.T) {
 	h := newHarness(t)
-	// hanzo's admin addressing an orgb user: authz.Scope refuses the foreign owner
+	// hanzo's admin addressing an orgb user: principal.Scope refuses the foreign owner
 	// outright, so the store is never consulted — neither for orgb/bob's data nor
 	// for a same-named hanzo row to answer in its place.
 	status, body := h.do(t, "GET", scimUsers+"/orgb/bob", h.token(t, "hanzo/boss"), "")

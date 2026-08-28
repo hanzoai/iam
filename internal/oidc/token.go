@@ -53,13 +53,30 @@ func routeToken(r zip.Router, db orm.DB) {
 	r.Post(PathToken, tokenHandler(db))
 }
 
-// param reads an OAuth parameter from the query first, then the form body
-// (application/x-www-form-urlencoded — what NextAuth and most clients send).
+// param reads an OAuth REQUEST parameter from either half of the request: the
+// query, then the form body (application/x-www-form-urlencoded — what NextAuth
+// and most clients send).
+//
+// A request parameter ONLY. A CREDENTIAL is read by [formOnly], because fasthttp's
+// FormValue is itself query-first (defaultFormValue peeks QueryArgs before
+// PostArgs), so "the form body" reached through it is not a place a URL cannot
+// reach — which made the two lines here one line wearing two hats.
 func param(c *zip.Ctx, key string) string {
 	if v := c.Query(key); v != "" {
 		return v
 	}
 	return c.Fiber().FormValue(key)
+}
+
+// formOnly reads a parameter from the POST BODY and nowhere else — not the query,
+// which is what FormValue would also read.
+//
+// RFC 6749 3.2 fixes the token endpoint's encoding at
+// application/x-www-form-urlencoded, so the body is exactly one place and this is
+// exactly how to read it. Multipart is not a form the endpoint accepts, so it is
+// not one this looks in.
+func formOnly(c *zip.Ctx, key string) string {
+	return string(c.Fiber().Request().PostArgs().Peek(key))
 }
 
 // tokenError writes the RFC 6749 §5.2 error body with the right status.
@@ -376,7 +393,12 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "unauthorized_client", "password grant is not enabled for this client")
 	}
 
-	username, password := param(c, "username"), param(c, "password")
+	// The username and the password are CREDENTIALS, read from the POST body alone —
+	// never the query, where a URL carries them into the access log, every proxy, and
+	// the browser's history. RFC 6749 §4.3.2 posts both in the form body. The org is
+	// an addressing parameter and keeps its query fallback, like the MFA proof's
+	// addressing half.
+	username, password := formOnly(c, "username"), formOnly(c, "password")
 	if username == "" || password == "" {
 		return tokenError(c, 400, "invalid_request", "username and password are required")
 	}
@@ -500,10 +522,19 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	return resp, nil
 }
 
-// clientAuth extracts client credentials, preferring client_secret_post (body /
-// query) and falling back to client_secret_basic (Authorization: Basic).
+// clientAuth extracts client credentials, preferring client_secret_post (the form
+// body) and falling back to client_secret_basic (Authorization: Basic) — the two
+// methods the discovery document advertises, and the only two RFC 6749 defines.
+//
+// The ID is an identifier and reads like any other request parameter. THE SECRET
+// DOES NOT READ THE QUERY. RFC 6749 2.3.1 says a client "MUST NOT" put its
+// credentials in the URI query and a server "MUST NOT" accept them there, for the
+// reason a URL is written down — the access log, the proxy log, the browser's
+// history — and a client_secret is good until somebody rotates it, which for a
+// credential nobody knows leaked is never. param read the query FIRST, so a
+// client_secret in a URL was not merely accepted, it beat the body.
 func clientAuth(c *zip.Ctx) (id, secret string) {
-	id, secret = param(c, "client_id"), param(c, "client_secret")
+	id, secret = param(c, "client_id"), formOnly(c, "client_secret")
 	if id != "" {
 		return id, secret
 	}

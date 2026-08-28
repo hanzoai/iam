@@ -17,7 +17,7 @@ retract [v1.0.0, v1.31.37] // Casdoor lineage; moved to github.com/hanzoai/iam-v
 //   - github.com/zap-proto/zip — typed HTTP handlers on the zap-proto/fiber v3 engine
 //   - github.com/hanzoai/orm   — typed Go records over SQLite / hanzoai/sql / hanzoai/datastore
 require (
-	github.com/hanzoai/orm v0.6.16
+	github.com/hanzoai/orm v0.6.31
 	github.com/spf13/cobra v1.10.2
 	github.com/zap-proto/zip v1.34.2
 	golang.org/x/crypto v0.54.0
@@ -67,13 +67,13 @@ require (
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/grandcat/zeroconf v1.0.0 // indirect
-	github.com/hanzoai/authz v1.10.35
+	github.com/hanzoai/authz v1.10.36
 	github.com/hanzoai/builder v0.3.13 // indirect
 	github.com/hanzoai/csqlite v0.1.0 // indirect
 	github.com/hanzoai/dbx v1.17.2 // indirect
 	github.com/hanzoai/sqlcipher v0.1.1 // indirect
 	github.com/hanzoai/sqlite v0.5.0 // indirect
-	github.com/hanzoai/xorm v1.4.4 // indirect
+	github.com/hanzoai/xorm v1.4.5 // indirect
 	github.com/hanzokv/go/v9 v9.22.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

@@ -16,7 +16,7 @@
 // files declare only the struct (and its nested value types); they add no
 // second orm.Register call, which would panic on a duplicate kind.
 //
-// Scope is deliberate: the v1 object package has ~32 tables, but the
+// Scope is deliberate: the v1 the legacy surface object package has ~32 tables, but the
 // Casbin artifacts (adapter, enforcer, model) are replaced by hanzoai/authz
 // and the commerce tables (payment, plan, product, subscription) belong to
 // other services. Only identity entities live here.

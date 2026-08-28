@@ -3,8 +3,10 @@
 
 // Package permission serves the IAM v2 permission CRUD surface as typed zip
 // handlers over hanzoai/orm. Every permission is owner-scoped: its identity is
-// the (owner, name) pair, stored under the orm key "owner/name". Reads are
-// GET, writes are POST; the DB is captured on the handler receiver so each
+// the (owner, name) pair, stored under the orm key "owner/name" and addressed
+// as the path /v1/iam/permissions/:owner/:name — the method carries the verb,
+// so one permission is GET, PUT and DELETE on that one address, and POST on
+// the collection adds. The DB is captured on the handler receiver so each
 // handler keeps the plain TypedHandler shape func(ctx, *In) (*Out, error).
 package permission
 
@@ -15,6 +17,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -31,9 +35,9 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handlers{db: db}
 	zip.Get(app, "/v1/iam/permissions", h.List, zip.WithTags("permissions"))
 	zip.Post(app, "/v1/iam/permissions", h.Add, zip.WithTags("permissions"))
-	zip.Get(app, "/v1/iam/permissions/get", h.Get, zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/permissions/update", h.Update, zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/permissions/delete", h.Delete, zip.WithTags("permissions"))
+	zip.Get(app, "/v1/iam/permissions/:owner/:name", h.Get, zip.WithTags("permissions"))
+	zip.Put(app, "/v1/iam/permissions/:owner/:name", h.Update, zip.WithTags("permissions"))
+	zip.Delete(app, "/v1/iam/permissions/:owner/:name", h.Delete, zip.WithTags("permissions"))
 }
 
 // permissionID is the owner-scoped orm key: "owner/name".
@@ -66,8 +70,19 @@ func (h *Handlers) List(ctx context.Context, in *ListRequest) (*ListResponse, er
 	if in.Owner == "" {
 		return nil, zip.ErrBadRequest("owner is required")
 	}
+	// The owner is resolved by principal.Scope from the authenticated principal,
+	// never taken from the input: a tenant reads only its own org, a SuperAdmin
+	// reads the owner it asks for. The op's Authorize hook re-checks the decoded
+	// target above this, but that is a SECOND gate — the Guard reads the FIRST
+	// value of a repeated query key and the binder the LAST, so the two can be
+	// handed different strings, and this handler filters on the one it was
+	// actually given. Every sibling listing resolves its owner the same way.
+	owner, err := principal.Scope(ctx, in.Owner)
+	if err != nil {
+		return nil, err
+	}
 	items, err := orm.TypedQuery[schema.Permission](h.db).
-		Filter("Owner=", in.Owner).
+		Filter("Owner=", owner).
 		Order("-CreatedTime").
 		GetAll(ctx)
 	if err != nil {
@@ -99,6 +114,12 @@ func (h *Handlers) Add(ctx context.Context, in *schema.Permission) (*schema.Perm
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	// The subjects a grant is evaluated for are an authority its own (Owner, Name)
+	// does not carry: a permission filed in one organization could otherwise name
+	// another organization's people, or the platform's, as the people it grants to.
+	if err := authz.AuthorizeGrant(ctx, "POST", in.Owner, in.Users, in.Teams, in.Roles); err != nil {
+		return nil, err
+	}
 	id := permissionID(in.Owner, in.Name)
 	if _, err := orm.Get[schema.Permission](h.db, id); err == nil {
 		return nil, zip.ErrConflict("permission already exists")
@@ -119,6 +140,11 @@ func (h *Handlers) Add(ctx context.Context, in *schema.Permission) (*schema.Perm
 func (h *Handlers) Update(ctx context.Context, in *schema.Permission) (*schema.Permission, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	// Widening a grant is the same authority as making one, so an update names its
+	// subjects under the same gate.
+	if err := authz.AuthorizeGrant(ctx, "PUT", in.Owner, in.Users, in.Teams, in.Roles); err != nil {
+		return nil, err
 	}
 	existing, err := orm.Get[schema.Permission](h.db, permissionID(in.Owner, in.Name))
 	if err != nil {

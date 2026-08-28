@@ -14,17 +14,21 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// The switcher's question is not "list the organization entity" — it is "which
-// organizations may I act in, and what are they called". One answer shape serves
-// both kinds of caller, so a client never branches on who it is talking to:
+// The collection answers one question — which organizations may I act in, and
+// what are they called. One answer shape serves both kinds of caller, so a
+// client never branches on who it is talking to:
 //
 //	anyone      the organizations they belong to
 //	SuperAdmin  every organization
+//
+// A narrowing `q` is a filter on that answer and not a second address: the rows,
+// the order and the scope are the same either way, so an address per filter would
+// be one URL per question about one collection.
 //
 // The scope is decided from the principal the Guard already resolved. `p.Sudo`
 // is membership of the reserved admin org and nothing else; a per-org `IsAdmin`
@@ -52,10 +56,10 @@ const (
 	pageLimitMax = 100
 )
 
-// SearchOrganizationsInput is a query, a page size, and the cursor from the
+// ListOrganizationsInput is a query, a page size, and the cursor from the
 // previous page. All optional: no query matches everything, no cursor starts at
 // the beginning.
-type SearchOrganizationsInput struct {
+type ListOrganizationsInput struct {
 	Query  string `json:"q"`
 	Limit  int    `json:"limit"`
 	Cursor string `json:"cursor"`
@@ -66,22 +70,28 @@ type SearchOrganizationsInput struct {
 	Forwarded string `json:"-" header:"X-Forwarded-For"`
 }
 
-// SearchOrganizationsOutput is one page. Cursor is empty when the last page has
+// ListOrganizationsOutput is one page. Cursor is empty when the last page has
 // been served; anything else is opaque and belongs in the next request unread.
-type SearchOrganizationsOutput struct {
+type ListOrganizationsOutput struct {
 	Organizations []*schema.Organization `json:"organizations"`
 	Cursor        string                 `json:"cursor,omitempty"`
 }
 
-// Search returns the organizations you can act in, the ones you belong to first
+// List returns the organizations you can act in, the ones you belong to first
 // and the rest after, newest first, narrowed by an optional query against the
 // name or the display name.
 //
 // Platform operators see every organization; everyone else sees their own. Pass
 // the cursor from the previous page to continue; an empty cursor in the answer
 // means there is nothing more.
-func (h *OrganizationAPI) Search(ctx context.Context, in *SearchOrganizationsInput) (*SearchOrganizationsOutput, error) {
-	p, ok := authz.From(ctx)
+//
+// THE SCOPE IS THE HANDLER'S OWN, so it holds at every endpoint. The Guard refuses
+// a bearerless request before this runs, but the MCP server carries a typed op to
+// its handler with no middleware in front of it — a handler that read no
+// principal would answer such a caller with the whole registry. Reading the
+// principal here is what makes the answer the same one over both.
+func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) (*ListOrganizationsOutput, error) {
+	p, ok := principal.From(ctx)
 	if !ok {
 		return nil, zip.ErrForbidden("forbidden")
 	}
@@ -94,7 +104,7 @@ func (h *OrganizationAPI) Search(ctx context.Context, in *SearchOrganizationsInp
 	}
 	q := strings.ToLower(strings.TrimSpace(in.Query))
 
-	out := &SearchOrganizationsOutput{Organizations: []*schema.Organization{}}
+	out := &ListOrganizationsOutput{Organizations: []*schema.Organization{}}
 
 	// The first page carries the caller's own organizations. They are a person's
 	// working set, not a page of a table, so they are resolved whole and never
@@ -133,7 +143,7 @@ func (h *OrganizationAPI) Search(ctx context.Context, in *SearchOrganizationsInp
 			Action:     schema.ActionListOrgs,
 			Object:     in.Query,
 			Method:     "GET",
-			RequestUri: orgBase + "/search",
+			RequestUri: orgBase,
 			StatusCode: 200,
 		})
 	}
@@ -148,7 +158,7 @@ func (h *OrganizationAPI) Search(ctx context.Context, in *SearchOrganizationsInp
 
 // own resolves the organizations the principal belongs to — its home org and
 // every membership, which is the same set the token's `orgs` claim carries.
-func (h *OrganizationAPI) own(ctx context.Context, p *authz.Principal, q string) ([]*schema.Organization, error) {
+func (h *OrganizationAPI) own(ctx context.Context, p *principal.Principal, q string) ([]*schema.Organization, error) {
 	// The platform's own organizations are not tenants and cannot be stepped
 	// into, so listing one here would offer a destination that assume refuses.
 	// An operator anchored in a brand org holds the reserved org as a MEMBERSHIP,
@@ -186,7 +196,7 @@ func (h *OrganizationAPI) own(ctx context.Context, p *authz.Principal, q string)
 // twin, and dropping an organization from an operator's list is a defect nobody
 // would see. `Filter` compares one field against one value, so the (time, name)
 // pair a tie-free keyset needs cannot be expressed here at all.
-func (h *OrganizationAPI) page(ctx context.Context, p *authz.Principal, q string, at, n int) ([]*schema.Organization, string, error) {
+func (h *OrganizationAPI) page(ctx context.Context, p *principal.Principal, q string, at, n int) ([]*schema.Organization, string, error) {
 	if n <= 0 {
 		// The caller's own organizations filled the page. There is still a registry
 		// behind them, so the walk continues from its start rather than ending here.
@@ -217,7 +227,7 @@ func (h *OrganizationAPI) page(ctx context.Context, p *authz.Principal, q string
 }
 
 // held reports whether the caller already received this org among their own.
-func held(p *authz.Principal, name string) bool {
+func held(p *principal.Principal, name string) bool {
 	if name == p.Org {
 		return true
 	}

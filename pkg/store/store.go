@@ -545,7 +545,7 @@ func GetTokenByUserCode(_ context.Context, db orm.DB, userCode string) (*schema.
 // organization: anchored there, or holding a membership there. THE SuperAdmin
 // predicate, for a subsystem BELOW the authz seam (device approval, federation
 // unlink) that cannot import authz — authz imports oidc, so the dependency only
-// runs one way. It asks what authz.Principal.Sudo carries and what the published
+// runs one way. It asks what principal.Principal.Sudo carries and what the published
 // authz.Claims.Sudo asks of a signed token, so one identity is an operator
 // everywhere or nowhere.
 //
@@ -786,23 +786,49 @@ func EnrichProviders(ctx context.Context, db orm.DB, app *schema.Application) {
 		if item == nil || item.Name == "" {
 			continue
 		}
-		owner := item.Owner
-		if owner == "" {
-			owner = "admin" // providers are seeded under the admin org
-		}
-		if p, err := GetProvider(ctx, db, owner, item.Name); err == nil && p != nil {
+		if p, err := GetProvider(ctx, db, ProviderOwner(item), item.Name); err == nil && p != nil {
 			item.Provider = p
 		}
 	}
 }
 
-// GetOrganizationByName resolves an organization by its name. Orgs are stored
-// under the "admin" owner (v1 convention). Returns (nil, nil) when absent.
+// ProviderOwner is the organization a link's provider record is read from: the one
+// the link names, or the platform's where it names none, since that is where the
+// shared connectors are seeded.
+//
+// It is ONE function because two callers must agree: the resolution above, and the
+// authorization in front of the write that stores the link. A link is a reference
+// to credentials — the identity provider's client id and secret run the sign-in leg
+// — so a gate that resolved the owner differently from this would authorize one
+// record and use another.
+func ProviderOwner(item *schema.ProviderItem) string {
+	if item == nil || item.Owner == "" {
+		return policy.AdminOrg
+	}
+	return item.Owner
+}
+
+// GetOrganizationByName resolves the organization a name refers to. Returns
+// (nil, nil) when absent.
+//
+// Every organization row is filed under the admin owner: the NAME is the tenant
+// identity and the owner half is the registry the row lives in. That is what the
+// signup converge writes, what the console's list reads, and what authz states
+// when it decides an organization write on its reserved-owner branch — so the
+// owner is pinned here too, and a name resolves to one row rather than to
+// whichever row a scan reaches first.
+//
+// A name is a key only WITH it. What this answer settles is which algorithm
+// verifies a password, which complexity rules a new one must meet, and whether
+// the organization demands a second factor — questions that take one answer.
 func GetOrganizationByName(_ context.Context, db orm.DB, name string) (*schema.Organization, error) {
 	if name == "" {
 		return nil, nil
 	}
-	o, err := orm.TypedQuery[schema.Organization](db).Filter("Name=", name).First()
+	o, err := orm.TypedQuery[schema.Organization](db).
+		Filter("Owner=", policy.AdminOrg).
+		Filter("Name=", name).
+		First()
 	if err == orm.ErrNotFound {
 		return nil, nil
 	}

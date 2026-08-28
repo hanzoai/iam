@@ -38,19 +38,19 @@ import (
 
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// Path is the REST verb face: GET lists by ?user= or ?org=, POST ensures one.
+// Path addresses the relation: GET lists by ?user= or ?org=, POST ensures one.
 //
-// DELETE is the newest of the three and closed the gap that kept the verb
-// spellings alive: revoke was the one operation this address did not carry, so
-// `delete-membership` was not a second name for something — it was the only
-// name for it, and retiring the other two while it stood would have left one
-// verb behind for a reason nobody could read off the code.
+// PathDelete revokes one, and it is verb-shaped because the collection has no
+// spelling for a revoke yet — a DELETE there would have to carry the (user, org)
+// pair in a body, which is a shape decision, not a rename.
 const (
-	Path = "/v1/iam/memberships"
+	Path       = "/v1/iam/memberships"
+	PathDelete = "/v1/iam/delete-membership"
 )
 
 // unauthorized is v1's refusal message, verbatim.
@@ -58,18 +58,15 @@ const unauthorized = "auth:Unauthorized operation"
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
-// Route registers the membership surface on app, backed by db: the native REST
-// pair plus the legacy verb aliases. get/add share the REST handlers (one authz
-// gate, one store call, no duplication); delete adds the revoke the REST face does
-// not carry. get-memberships is a GET whose target rides in ?user=/?org=, so it is
-// handler-authorized (authz.handlerAuthorizedPrefixes) exactly like /v1/iam/
-// memberships — the list handler's own scoped() check is the tenant gate; the two
-// write verbs are POSTs the Guard never pre-authorizes, so each self-authorizes.
+// Route registers the membership surface on app, backed by db. The list is a GET
+// whose target rides in ?user=/?org=, so it is handler-authorized
+// (authz.handlerAuthorizedPrefixes) — the list handler's own scoped() check is the
+// tenant gate. The writes are POSTs the Guard never pre-authorizes, so each
+// self-authorizes.
 //
-// The two READS are typed ops, so both addresses are in the OpenAPI document, the
-// SDKs, the CLI and the MCP tool list. NEITHER names an operationId: what
-// distinguishes them IS the address, so the address names them (zip's path-derived
-// default), and a hand-picked id would collide — one operationId, one operation.
+// The READ is a typed op, so the address is in the OpenAPI document, the SDKs, the
+// CLI and the MCP tool list. It names no operationId: what distinguishes an
+// operation IS its address, so the address names it (zip's path-derived default).
 // The writes stay raw: typing them would newly route them through the op-invoke
 // authorizer on a decoded (Owner, Name) their bodies do not carry, changing who
 // may grant. That is a decision, not a projection.
@@ -84,8 +81,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithStatus(200, 400),
 		zip.WithTags("memberships"))
 	app.Post(Path, ensure(db))
-
-	app.Delete(Path, remove(db))
+	app.Post(PathDelete, remove(db))
 }
 
 // lookup is the list request: exactly one of the identity whose organizations are
@@ -109,7 +105,7 @@ type request struct {
 //
 // Both are org-scoped: a non-SuperAdmin may ask about ITS OWN org's roster, or
 // about a user whose home org is its own, and nothing else. The bound comes from
-// the verified credential via authz.Scope, so a request parameter can never
+// the verified credential via principal.Scope, so a request parameter can never
 // widen it — a membership row names who may act and spend in an org, so a
 // cross-tenant read is a customer roster leak.
 func list(db orm.DB) zip.TypedHandler[lookup, httpx.Answer] {
@@ -240,7 +236,7 @@ func mayGrant(ctx context.Context, org string) bool {
 // the org it asked for. A SuperAdmin gets what it asks for; anyone else gets its
 // own org, so any other request fails the equality and is refused.
 func scoped(ctx context.Context, org string) bool {
-	got, err := authz.Scope(ctx, org)
+	got, err := principal.Scope(ctx, org)
 	return err == nil && got == org
 }
 
@@ -265,7 +261,7 @@ func scoped(ctx context.Context, org string) bool {
 // switcher without closing anything — a machine credential is already confined to
 // one tenant, and the leak this closes is between PEOPLE.
 func mayReadTenancy(ctx context.Context, owner, name string) bool {
-	if p, ok := authz.From(ctx); ok && p.App != nil {
+	if p, ok := principal.From(ctx); ok && p.App != nil {
 		return scoped(ctx, owner)
 	}
 	return authz.Can(ctx, "GET", "users", owner, name)

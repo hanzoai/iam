@@ -16,8 +16,8 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// The native OTP send: POST /v1/iam/send-verification-code. It mirrors
-// the v1 SendVerificationCode contract (controllers/verification.go): the
+// The native OTP send: POST /v1/iam/verification-codes. It mirrors
+// the v1 the legacy surface SendVerificationCode contract (controllers/verification.go): the
 // request is multipart/form-data (NOT JSON — a HIP-0111 §4 invariant), and the
 // response is the casibase {status,msg,data} envelope with an empty data on
 // success.

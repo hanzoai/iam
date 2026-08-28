@@ -5,7 +5,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// Invitation is a pending organization-membership invite (v1
+// Invitation is a pending organization-membership invite (v1 the legacy surface
 // `invitation`, v2 kind "invitations"). One row grants a bounded number of
 // signups against a shared or per-recipient Code: the code is a literal, or a
 // pattern when IsRegexp is set, and each successful signup increments UsedCount

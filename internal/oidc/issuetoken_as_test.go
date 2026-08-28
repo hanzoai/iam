@@ -369,7 +369,7 @@ func TestAs_reservedOrgKey_ordinaryTarget_refused(t *testing.T) {
 }
 
 // The 'act' grant authorizes short-lived TOKENS only — never a member's DURABLE
-// key. An org key presented to keys/mint is refused; that primitive stays a
+// key. An org key presented at the user's keys is refused; that primitive stays a
 // confidential-client capability.
 func TestAs_orgKey_cannotMintDurableKeys(t *testing.T) {
 	app, db := newServer(t)
@@ -377,11 +377,11 @@ func TestAs_orgKey_cannotMintDurableKeys(t *testing.T) {
 	seedActUser(t, db, "hanzo", "alice", "ext-alice")
 	seedActKey(t, db, "hanzo", "op", "sk-live-optoken", "hanzo-app", true)
 
-	req := httptest.NewRequest("POST", PathKeysMint+"?id=hanzo/alice", nil)
+	req := httptest.NewRequest("POST", userKeys("hanzo/alice"), nil)
 	req.Host = "hanzo.id"
 	req.Header.Set("Authorization", "Bearer sk-live-optoken")
 	resp, body := do(t, app, req)
 	if resp.StatusCode != 403 {
-		t.Fatalf("org key at keys/mint status = %d, want 403; body=%s", resp.StatusCode, body)
+		t.Fatalf("org key minting a user key: status = %d, want 403; body=%s", resp.StatusCode, body)
 	}
 }
