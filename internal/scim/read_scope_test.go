@@ -12,7 +12,7 @@
 // arbitrary user id / userName / email exists in a tenant the caller cannot see.
 //
 // iam closes it by CONSTRUCTION, one layer earlier than iam-v1 did: scopedTarget
-// (scim/users.go) resolves the requested owner through authz.Scope for every
+// (scim/users.go) resolves the requested owner through principal.Scope for every
 // non-super, on every verb, BEFORE the store is touched. So the outcome is
 // decided without a lookup, and "exists in another org" and "does not exist" are
 // the SAME answer with no branch that could distinguish them. This test pins that
@@ -28,7 +28,7 @@
 // a DIFFERENT HUMAN, correctly authorized, wrongly attributed. A caller that then
 // deactivates "orgb/bob" deactivates a hanzo employee. The rewrite was never a
 // safe answer; it was an answer whose danger this file happened not to sample.
-// Scope now REFUSES a foreign owner instead (authz.Scope: honoured or refused,
+// Scope now REFUSES a foreign owner instead (principal.Scope: honoured or refused,
 // never silently reinterpreted), so the collapse no longer depends on what the
 // caller's own org happens to contain.
 //

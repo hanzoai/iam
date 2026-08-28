@@ -15,9 +15,9 @@
 // the HTTP surface uses, returning what that surface returns.
 //
 // AUTHORIZATION IS THE CALLER'S, and this cannot check it. It signs for the user
-// it is named, so the host must already have decided this principal may act as
-// that user. That is the trust this module places in its host through pkg/store,
-// which can already read and write users.
+// the subject names, so the host must already have decided this principal may act
+// as that user. That is the trust this module places in its host through
+// pkg/store, which can already read and write users.
 package mint
 
 import (
@@ -31,22 +31,31 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// For issues an access token for the user (owner/name) as the application named
-// by app, and reports how long it is good for.
+// For issues an access token for the user a SUBJECT names, as the application
+// named by app, and reports how long it is good for.
+//
+// The subject is the OIDC `sub` — schema.User.Id, the stable opaque identifier —
+// and it is the identity key ON PURPOSE. A username is an ATTRIBUTION key: two
+// subjects can present the same one, so resolving a credential by name is how a
+// caller holding one identity's token gets a token addressing another's row.
+// [store.GetUserById] also fails closed when two rows share a subject, where a
+// name lookup would answer with whichever the storage engine returned first.
 //
 // audience names the resource the token is for (RFC 8707); empty takes the
-// application's default for this user. issuer is the `iss` claim — the host the
-// caller was asked on. path is recorded on the audit row.
-func For(ctx context.Context, db orm.DB, owner, name, app, audience, issuer, path string) (string, time.Duration, error) {
-	if owner == "" || name == "" || app == "" {
-		return "", 0, errors.New("mint: an owner, a user and an application are all required")
+// application's default for this user. host is the host the caller was asked on;
+// the `iss` claim is resolved FROM it inside iam and is not something a caller
+// can name, because a token claiming the wrong issuer is a token some other
+// party is trusted to sign. path is recorded on the audit row.
+func For(ctx context.Context, db orm.DB, subject, app, audience, host, path string) (string, time.Duration, error) {
+	if subject == "" || app == "" {
+		return "", 0, errors.New("mint: a subject and an application are both required")
 	}
-	user, err := store.GetUserByName(ctx, db, owner, name)
+	user, err := store.GetUserById(ctx, db, subject)
 	if err != nil {
 		return "", 0, err
 	}
 	if user == nil {
-		return "", 0, errors.New("mint: no such user")
+		return "", 0, errors.New("mint: no user carries that subject")
 	}
 	clientApp, err := store.GetApplicationNamed(ctx, db, app)
 	if err != nil {
@@ -55,5 +64,5 @@ func For(ctx context.Context, db orm.DB, owner, name, app, audience, issuer, pat
 	if clientApp == nil {
 		return "", 0, errors.New("mint: no such application")
 	}
-	return oidc.MintUserToken(ctx, db, clientApp, user, audience, issuer, path)
+	return oidc.MintUserToken(ctx, db, clientApp, user, audience, host, path)
 }

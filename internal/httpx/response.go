@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package httpx is the shared HTTP layer for the IAM v2 handlers: the
-// the legacy Response envelope that the @hanzo/iam SDK and the hanzo.id
+// the legacy surface-compatible Response envelope that the @hanzo/iam SDK and the hanzo.id
 // portal consume, plus small helpers over zip.Ctx. Every native JSON
 // endpoint (get-app-login, login, signup) returns this shape; the OIDC
 // endpoints (token/authorize/userinfo) use their own RFC 6749 shapes.
@@ -17,7 +17,7 @@ import (
 	"github.com/zap-proto/zip"
 )
 
-// Response is the legacy-compatible envelope. status is "ok" or
+// Response is the the legacy surface-compatible envelope. status is "ok" or
 // "error", and it stays the field an SDK branches on for the REASON a call
 // failed. The HTTP status says whether it failed at all, and the two agree:
 // a refusal is a 4xx carrying status:"error".
@@ -97,8 +97,8 @@ func ServiceTokenAuth(c *zip.Ctx) bool { return ServiceAuth(c.Header("Authorizat
 // It is a distinct type rather than a method on Response because zip reads
 // [zip.StatusCoder] off the value an op returns and refuses any status the op did
 // not declare with zip.WithStatus. Response is already returned by typed ops that
-// declare none, so teaching Response to state a status would
-// make every one of them answer a status zip then refuses.
+// declare none, so teaching Response to state a status would make every one of
+// them answer a status zip then refuses.
 type Answer struct {
 	Response
 	code int

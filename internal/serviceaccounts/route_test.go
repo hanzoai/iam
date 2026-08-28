@@ -332,3 +332,113 @@ func TestRotate_bodyOrganizationIsNotAnAuthority(t *testing.T) {
 		t.Fatalf("cross-tenant rotate succeeded: %s", body)
 	}
 }
+
+// create mints an identity and its first key, and the secret half is shown ONCE,
+// here — the only response in this surface that ever carries a raw secret. A
+// follow-up list proves the row is real and typed, so the minted response is not
+// the only evidence the account exists.
+func TestCreate_ok(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss")
+
+	status, body := h.send(t, "POST", path, `{"organization":"hanzo","name":"runner","agentRef":"agent-7"}`, boss)
+	if status != 200 {
+		t.Fatalf("create: status=%d body=%s, want 200", status, body)
+	}
+	for _, want := range []string{
+		`"owner":"hanzo"`, `"name":"hanzo-runner"`, `"type":"service-account"`,
+		`"agentRef":"agent-7"`, `"accessKey":"pk-`, `"accessSecret":"sk-`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("minted response missing %s: %s", want, body)
+		}
+	}
+	// The row persists as a service account: the list now carries three bots, so
+	// CreateCtx ran and the type discriminator took.
+	_, list := h.get(t, path+"?organization=hanzo", boss)
+	if !strings.HasSuffix(list, `],"data2":3}`) || !strings.Contains(list, `"name":"hanzo-runner"`) {
+		t.Fatalf("created account is not in the list: %s", list)
+	}
+}
+
+// The create refusals, each a 400 carrying {status:"error", msg, data:null}: a
+// missing org, a caller without the mint authority, another tenant's admin, a
+// name that is not a well-formed handle, a collision with an existing principal,
+// and a body that is not JSON at all.
+func TestCreate_refusals(t *testing.T) {
+	h := newHarness(t)
+	seedUser(t, h.db, "hanzo", "clark", false, "") // a regular, non-admin human in hanzo
+	for _, c := range []struct{ name, body, sub, want string }{
+		{"no organization", `{"name":"runner"}`, "hanzo/boss",
+			`{"status":"error","msg":"organization is required","data":null}`},
+		{"regular user", `{"organization":"hanzo","name":"runner"}`, "hanzo/clark",
+			`{"status":"error","msg":"auth:Unauthorized operation","data":null}`},
+		{"cross-tenant admin", `{"organization":"hanzo","name":"runner"}`, "orgb/bob",
+			`{"status":"error","msg":"auth:Unauthorized operation","data":null}`},
+		{"malformed name", `{"organization":"hanzo","name":"bad--name"}`, "hanzo/boss",
+			`{"status":"error","msg":"a valid name is required","data":null}`},
+		{"collision with an existing account", `{"organization":"hanzo","name":"hanzo-alpha"}`, "hanzo/boss",
+			`{"status":"error","msg":"a user named hanzo-alpha already exists in organization hanzo","data":null}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			status, body := h.send(t, "POST", path, c.body, h.token(t, c.sub))
+			if status != 400 || body != c.want {
+				t.Fatalf("status=%d body=%s, want 400 %s", status, body, c.want)
+			}
+		})
+	}
+	// A body that is not JSON refuses at the bind, before any org is read, and is
+	// still a 400 rather than a 500.
+	if status, body := h.send(t, "POST", path, `not json`, h.token(t, "hanzo/boss")); status != 400 {
+		t.Fatalf("malformed body status=%d body=%s, want 400", status, body)
+	}
+}
+
+// revoke takes the account off every roster, then deletes the row, and answers a
+// bare true. A second revoke is a miss — the row is gone — so the caller can tell
+// gone from done.
+func TestRevoke_ok(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss")
+
+	status, body := h.send(t, "DELETE", path+"/hanzo-alpha?organization=hanzo", "", boss)
+	if status != 200 || body != `{"status":"ok","msg":"","data":true}` {
+		t.Fatalf("revoke: status=%d body=%s, want 200 data:true", status, body)
+	}
+	// Gone: the list drops to the one remaining bot, and a second revoke is a miss.
+	_, list := h.get(t, path+"?organization=hanzo", boss)
+	if !strings.HasSuffix(list, `],"data2":1}`) || strings.Contains(list, `"name":"hanzo-alpha"`) {
+		t.Fatalf("revoked account still listed: %s", list)
+	}
+	if status, body := h.send(t, "DELETE", path+"/hanzo-alpha?organization=hanzo", "", boss); status == 200 {
+		t.Fatalf("second revoke succeeded on a gone account: %s", body)
+	}
+}
+
+// The revoke refusals: a name that is not there is a not-found, and another
+// tenant's admin is refused before any lookup — the body-or-query org is a target,
+// never an authority.
+func TestRevoke_refusals(t *testing.T) {
+	h := newHarness(t)
+	for _, c := range []struct{ name, url, sub, want string }{
+		{"absent account", path + "/ghost?organization=hanzo", "hanzo/boss",
+			"the service account ghost does not exist in organization hanzo"},
+		{"a human that is not a service account", path + "/boss?organization=hanzo", "hanzo/boss",
+			"the service account boss does not exist in organization hanzo"},
+		{"cross-tenant admin", path + "/hanzo-alpha?organization=hanzo", "orgb/bob",
+			unauthorizedMsg},
+		{"no organization anywhere", path + "/hanzo-alpha", "hanzo/boss",
+			"organization and name are required"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			status, body := h.send(t, "DELETE", c.url, "", h.token(t, c.sub))
+			if status == 200 || !strings.Contains(body, c.want) {
+				t.Fatalf("status=%d body=%s, want a refusal containing %q", status, body, c.want)
+			}
+		})
+	}
+}
+
+// unauthorizedMsg is v1's refusal, the same string the surface returns for every
+// authority failure.
+const unauthorizedMsg = "auth:Unauthorized operation"

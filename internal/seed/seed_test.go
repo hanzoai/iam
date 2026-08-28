@@ -338,3 +338,158 @@ func TestSeed_ReconcileConvergesWebAuthn(t *testing.T) {
 		t.Fatal("declared enableWebAuthn=false did not converge back off")
 	}
 }
+
+// ── store faults propagate ───────────────────────────────────────────────────────
+
+// Every kind's upsert reaches orm.GetOrCreate, whose read fails on a closed store
+// with a real fault (not ErrNotFound), so Apply surfaces it instead of swallowing
+// it. Each case carries ONLY its kind so the fault lands on that kind's loop —
+// Apply returns on the first error, so an earlier kind would mask a later one.
+func TestApply_StoreFaultPropagates(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		kind string
+		data *initData
+	}{
+		{"organizations", &initData{Organizations: []*schema.Organization{{Owner: "admin", Name: "hanzo"}}}},
+		{"providers", &initData{Providers: []*schema.Provider{{Owner: "admin", Name: "provider-github", Category: "OAuth", Type: "GitHub"}}}},
+		{"certs", &initData{Certs: []*schema.Cert{{Owner: "admin", Name: "cert-hanzo", CryptoAlgorithm: "RS256"}}}},
+		{"applications", &initData{Applications: []*schema.Application{{Owner: "admin", Name: "hanzo-console", ClientId: "hanzo-console"}}}},
+	}
+	for _, c := range cases {
+		t.Run(c.kind, func(t *testing.T) {
+			db := openDB(t)
+			_ = db.Close() // the store is gone before the write
+			if _, err := Apply(ctx, db, c.data); err == nil {
+				t.Fatalf("%s: a closed store seeded without error", c.kind)
+			}
+		})
+	}
+}
+
+// A missing path and a malformed document both fail before any upsert — read and
+// parse are the two ways FromInitData can refuse a file.
+func TestFromInitData_FileErrors(t *testing.T) {
+	ctx := context.Background()
+	t.Run("read", func(t *testing.T) {
+		db := openDB(t)
+		if _, err := FromInitData(ctx, db, filepath.Join(t.TempDir(), "absent.json")); err == nil {
+			t.Fatal("a missing init_data.json seeded without error")
+		}
+	})
+	t.Run("parse", func(t *testing.T) {
+		db := openDB(t)
+		path := filepath.Join(t.TempDir(), "init_data.json")
+		if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := FromInitData(ctx, db, path); err == nil {
+			t.Fatal("malformed init_data.json parsed without error")
+		}
+	})
+}
+
+// ── owner defaulting ─────────────────────────────────────────────────────────────
+
+// A missing owner is the admin org: Apply and upsert both default "" to "admin",
+// so every entity declared without an owner resolves under admin/<name>.
+func TestApply_DefaultsEmptyOwnerToAdmin(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	data := &initData{
+		Organizations: []*schema.Organization{{Name: "hanzo"}},
+		Providers:     []*schema.Provider{{Name: "provider-github", Category: "OAuth", Type: "GitHub"}},
+		Certs:         []*schema.Cert{{Name: "cert-hanzo", CryptoAlgorithm: "RS256"}},
+		Applications:  []*schema.Application{{Name: "hanzo-console", ClientId: "hanzo-console"}},
+	}
+	sum, err := Apply(ctx, db, data)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	for _, kind := range []string{"organizations", "providers", "certs", "applications"} {
+		if sum.Created[kind] != 1 {
+			t.Fatalf("%s created = %d, want 1", kind, sum.Created[kind])
+		}
+	}
+	if org, err := orm.Get[schema.Organization](db, "admin/hanzo"); err != nil || org == nil {
+		t.Fatalf("owner-less org not under admin: %v", err)
+	}
+	if app, err := orm.Get[schema.Application](db, "admin/hanzo-console"); err != nil || app == nil {
+		t.Fatalf("owner-less app not under admin: %v", err)
+	}
+}
+
+// FromInitData defaults a missing owner the same way for the RAW declared object it
+// keys for reconcile, so an owner-less application seeds under admin and stays
+// reconcilable on a later boot.
+func TestFromInitData_DefaultsMissingOwner(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "init_data.json")
+	doc := `{"applications":[{"name":"console","clientId":"console","enablePassword":true}]}`
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := FromInitData(ctx, db, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Created["applications"] != 1 {
+		t.Fatalf("created=%d, want 1", sum.Created["applications"])
+	}
+	if app, err := orm.Get[schema.Application](db, "admin/console"); err != nil || app == nil {
+		t.Fatalf("owner-less app not under admin: %v", err)
+	}
+}
+
+// ── reconcile no-ops ─────────────────────────────────────────────────────────────
+
+// Apply from a literal carries no raw declared objects, so a second run finds the
+// row present, counts it skipped, and reconcile has nothing to converge — it is
+// FromInitData that populates the declared map, not Apply.
+func TestApply_LiteralReconcileNoopWhenNotDeclared(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	data := &initData{Applications: []*schema.Application{
+		{Owner: "admin", Name: "hanzo-console", ClientId: "hanzo-console", EnableSignUp: true},
+	}}
+	if _, err := Apply(ctx, db, data); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := Apply(ctx, db, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Skipped["applications"] != 1 {
+		t.Fatalf("skipped=%d, want 1", sum.Skipped["applications"])
+	}
+	if sum.Reconciled["applications"] != 0 {
+		t.Fatalf("reconciled=%d, want 0 (nothing declared to converge)", sum.Reconciled["applications"])
+	}
+}
+
+// An existing application re-declared with no policy keys — only name and clientId,
+// which are registration, not policy — has nothing to converge, so reconcile
+// returns before touching the row and the run reconciles nothing.
+func TestFromInitData_ReconcileEmptyPolicyNoop(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "init_data.json")
+	doc := `{"applications":[{"owner":"admin","name":"plain","clientId":"plain"}]}`
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FromInitData(ctx, db, path); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := FromInitData(ctx, db, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Skipped["applications"] != 1 {
+		t.Fatalf("skipped=%d, want 1", sum.Skipped["applications"])
+	}
+	if sum.Reconciled["applications"] != 0 {
+		t.Fatalf("reconciled=%d, want 0 (no policy declared)", sum.Reconciled["applications"])
+	}
+}

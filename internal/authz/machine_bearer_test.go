@@ -27,13 +27,13 @@ func TestMachineBearerIsTheSamePrincipalAsBasic(t *testing.T) {
 	// The subject a client_credentials token carries: "<appOwner>/<appName>".
 	bearer := h.token(t, "admin/hanzo-console")
 
-	const own = "/v1/iam/applications/get?owner=admin&name=hanzo-console"
+	const own = "/v1/iam/applications/admin/hanzo-console"
 	if got := h.do(t, "GET", own, bearer, nil); got != 200 {
 		t.Errorf("self-read over the machine bearer = %d, want 200 (Basic already answers 200)", got)
 	}
 
 	// The capability itself: an org read the allowlist exists to permit.
-	const org = "/v1/iam/organizations/get?owner=admin&name=hanzo"
+	const org = "/v1/iam/organizations/admin/hanzo"
 	if got := h.do(t, "GET", org, bearer, nil); got == 403 {
 		t.Errorf("CapOrgAdmin read over the machine bearer = 403; the allowlisted capability must apply on both transports")
 	}
@@ -50,7 +50,7 @@ func TestMachineBearerForAnUnregisteredAppHasNoAuthority(t *testing.T) {
 	seedAppRow(t, h.db, "admin", "hanzo-console", "s3cret", signingKid)
 
 	ghost := h.token(t, "admin/not-an-app")
-	if got := h.do(t, "GET", "/v1/iam/applications/get?id=admin%2Fhanzo-console", ghost, nil); got != 403 {
+	if got := h.do(t, "GET", "/v1/iam/applications/admin/hanzo-console", ghost, nil); got != 403 {
 		t.Errorf("unregistered subject reading another app = %d, want 403", got)
 	}
 }
@@ -65,7 +65,7 @@ func TestMachineBearerForATenantOwnedLookalikeHoldsNothing(t *testing.T) {
 	seedAppRow(t, h.db, "hanzo", "hanzo-console", "s3cret", signingKid)
 
 	impostor := h.token(t, "hanzo/hanzo-console")
-	if got := h.do(t, "GET", "/v1/iam/organizations/get?id=admin%2Fhanzo", impostor, nil); got != 403 {
+	if got := h.do(t, "GET", "/v1/iam/organizations/admin/hanzo", impostor, nil); got != 403 {
 		t.Errorf("tenant-owned lookalike exercising CapOrgAdmin = %d, want 403", got)
 	}
 }

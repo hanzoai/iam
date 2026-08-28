@@ -16,7 +16,6 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -42,24 +41,23 @@ func NewOrganizationAPI(db orm.DB) *OrganizationAPI {
 	return &OrganizationAPI{DB: db}
 }
 
-// route registers the five organization routes on app. Writes are POST with a
-// JSON body; reads are GET whose (owner, name, paging) selector binds from the
-// request. Every handler validates its key and fails 400 if it is absent, so a
-// missing selector is loud, never a silent full-table action.
+// route registers the organization routes on app. The collection is orgBase and
+// one organization is orgBase/{owner}/{name} — the natural key IS the address,
+// so the method carries the verb and the URL says which row. Every handler
+// validates its key and fails 400 if it is absent, so a missing selector is
+// loud, never a silent full-table action.
 func (h *OrganizationAPI) route(app *zip.App) {
 	zip.Post[CreateOrganizationInput, schema.Organization](app, orgBase, h.Create,
 		zip.WithOperationID("createOrganization"), zip.WithTags("organizations"))
 	zip.Get[ListOrganizationsInput, ListOrganizationsOutput](app, orgBase, h.List,
 		zip.WithOperationID("listOrganizations"), zip.WithTags("organizations"))
-	zip.Get[GetOrganizationInput, schema.Organization](app, orgBase+"/get", h.Get,
-		zip.WithOperationID("getOrganization"), zip.WithTags("organizations"))
-	zip.Get[SearchOrganizationsInput, SearchOrganizationsOutput](app, orgBase+"/search", h.Search,
-		zip.WithOperationID("searchOrganizations"), zip.WithTags("organizations"))
-	zip.Post[UpdateOrganizationInput, schema.Organization](app, orgBase+"/update", h.Update,
-		zip.WithOperationID("updateOrganization"), zip.WithTags("organizations"))
 	zip.Post[SetAvatarInput, schema.Organization](app, orgBase+"/avatar", h.SetAvatar,
 		zip.WithOperationID("setOrganizationAvatar"), zip.WithTags("organizations"))
-	zip.Post[DeleteOrganizationInput, DeleteOrganizationOutput](app, orgBase+"/delete", h.Delete,
+	zip.Get[GetOrganizationInput, schema.Organization](app, orgBase+"/:owner/:name", h.Get,
+		zip.WithOperationID("getOrganization"), zip.WithTags("organizations"))
+	zip.Put[UpdateOrganizationInput, schema.Organization](app, orgBase+"/:owner/:name", h.Update,
+		zip.WithOperationID("updateOrganization"), zip.WithTags("organizations"))
+	zip.Delete[DeleteOrganizationInput, DeleteOrganizationOutput](app, orgBase+"/:owner/:name", h.Delete,
 		zip.WithOperationID("deleteOrganization"), zip.WithTags("organizations"))
 }
 
@@ -85,27 +83,14 @@ type GetOrganizationInput struct {
 type SetAvatarInput struct {
 	Owner  string `json:"owner"`
 	Name   string `json:"name"`
-	Avatar string `json:"avatar"`
-	Emoji  string `json:"emoji"`
+	Avatar string `json:"avatar" url:"-"`
+	Emoji  string `json:"emoji" url:"-"`
 }
 
 // DeleteOrganizationInput selects the organization to remove by natural key.
 type DeleteOrganizationInput struct {
 	Owner string `json:"owner"`
 	Name  string `json:"name"`
-}
-
-// ListOrganizationsInput scopes and pages a listing. All fields are optional.
-type ListOrganizationsInput struct {
-	Owner  string `json:"owner"`
-	Limit  int    `json:"limit"`
-	Offset int    `json:"offset"`
-}
-
-// ListOrganizationsOutput is one page of organizations.
-type ListOrganizationsOutput struct {
-	Organizations []*schema.Organization `json:"organizations"`
-	Count         int                    `json:"count"`
 }
 
 // DeleteOrganizationOutput reports whether a row was removed.
@@ -120,6 +105,20 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	org := in.Organization
 	if org.Owner == "" || org.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	// An organization is filed under the admin owner. The NAME is the tenant
+	// identity; the owner half is the registry the row lives in, which is why the
+	// signup converge writes it, the list here reads it, store.GetOrganizationByName
+	// resolves a name within it, and authz decides an organization write on its
+	// reserved-owner branch. Filed anywhere else, a row would carry a name the rest
+	// of the system already answers with another row — so the owner is a value with
+	// one legal setting rather than a choice.
+	//
+	// It is REFUSED rather than quietly corrected: the authorizer decides on this
+	// same decoded value, so the row written has to be the row authorized. Pinning
+	// it after that decision would authorize one owner and write another.
+	if org.Owner != policy.AdminOrg {
+		return nil, zip.ErrBadRequest("an organization is filed under the " + policy.AdminOrg + " owner")
 	}
 	switch _, err := h.find(org.Owner, org.Name); {
 	case err == nil:
@@ -137,6 +136,10 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	if entity.CreatedTime == "" {
 		entity.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	}
+	// The natural key IS the key, the way every sibling writer states it. The store
+	// keys a row by this string, so one (owner, name) is one row by construction
+	// rather than by a check that has to be run first.
+	entity.SetId(org.Owner + "/" + org.Name)
 	if err := entity.CreateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
@@ -157,50 +160,6 @@ func (h *OrganizationAPI) Get(ctx context.Context, in *GetOrganizationInput) (*s
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return org.Mask(), nil
-}
-
-// List returns the organizations you can see, newest first. Narrow it to one
-// parent account, and set a limit and offset to page through the rest.
-//
-// READING THE REGISTRY IS AN OPERATOR ACT, and the handler now says so itself.
-//
-// It never did: the scope lived only in the Guard, which refuses a non-operator
-// GET with 403 before the handler runs. That was true and sufficient for as long
-// as HTTP was the only way in. It stopped being sufficient when the same typed op
-// became reachable over the MCP server, where a request arrives at the handler
-// with no middleware in front of it. A handler that reads no principal and treats
-// an absent Owner selector as no filter would answer such a caller with the whole
-// registry, so the scope has to be the handler's own, not the transport's.
-//
-// So the fact moves to where every transport reaches it. The Guard keeps its own
-// refusal — two checks of one rule is not two rules, and the outer one still
-// spends nothing to refuse — but the rule no longer depends on which transport was
-// used. A caller who wants the organizations they can ACT in asks Search, which
-// answers everyone from their own memberships.
-func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) (*ListOrganizationsOutput, error) {
-	p, ok := authz.From(ctx)
-	if !ok || !p.Sudo {
-		return nil, zip.ErrForbidden("forbidden")
-	}
-
-	q := orm.TypedQuery[schema.Organization](h.DB)
-	if in.Owner != "" {
-		q = q.Filter("Owner=", in.Owner)
-	}
-	if in.Limit > 0 {
-		q = q.Limit(in.Limit)
-	}
-	if in.Offset > 0 {
-		q = q.Offset(in.Offset)
-	}
-	orgs, err := q.Order("-CreatedTime").GetAll(ctx)
-	if err != nil {
-		return nil, zip.ErrInternal(err.Error())
-	}
-	for i, o := range orgs {
-		orgs[i] = o.Mask()
-	}
-	return &ListOrganizationsOutput{Organizations: orgs, Count: len(orgs)}, nil
 }
 
 // Update changes an organization's display, its defaults and the sign-in rules

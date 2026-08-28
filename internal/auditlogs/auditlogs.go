@@ -4,20 +4,21 @@
 // Package auditlogs serves the IAM v2 CRUD surface for the `audit_logs` entity:
 // an append-only action record owner-scoped by (owner, name). Every operation
 // is a typed zip handler over hanzoai/orm; the orm string key is "owner/name".
-// Reads scope to one owner (organization); writes address one log by its
-// (owner, name) key. Rows are written once at request time — the update path
+// Listing scopes to one owner (organization); one log is addressed by its
+// (owner, name) key in the path, /v1/iam/audit-logs/:owner/:name, where the
+// method carries the verb. Rows are written once at request time — the update path
 // exists only for administrative correction, never for normal operation.
 package auditlogs
 
 import (
 	"context"
 	"errors"
-	"github.com/hanzoai/iam/internal/authz"
 	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -33,9 +34,9 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/audit-logs", h.List, zip.WithTags("audit-logs"))
 	zip.Post(app, "/v1/iam/audit-logs", h.Create, zip.WithTags("audit-logs"))
-	zip.Get(app, "/v1/iam/audit-logs/get", h.Get, zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/update", h.Update, zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs/delete", h.Delete, zip.WithTags("audit-logs"))
+	zip.Get(app, "/v1/iam/audit-logs/:owner/:name", h.Get, zip.WithTags("audit-logs"))
+	zip.Put(app, "/v1/iam/audit-logs/:owner/:name", h.Update, zip.WithTags("audit-logs"))
+	zip.Delete(app, "/v1/iam/audit-logs/:owner/:name", h.Delete, zip.WithTags("audit-logs"))
 }
 
 // Ref addresses one audit log by its owner-scoped natural key.
@@ -50,18 +51,18 @@ type Ref struct {
 type Input struct {
 	Owner        string `json:"owner"`
 	Name         string `json:"name"`
-	CreatedTime  string `json:"createdTime"`
+	CreatedTime  string `json:"createdTime" url:"-"`
 	Organization string `json:"organization"`
-	ClientIp     string `json:"clientIp"`
+	ClientIp     string `json:"clientIp" url:"-"`
 	User         string `json:"user"`
-	Method       string `json:"method"`
-	RequestUri   string `json:"requestUri"`
-	Action       string `json:"action"`
-	Language     string `json:"language"`
-	Object       string `json:"object"`
-	Response     string `json:"response"`
-	StatusCode   int    `json:"statusCode"`
-	IsTriggered  bool   `json:"isTriggered"`
+	Method       string `json:"method" url:"-"`
+	RequestUri   string `json:"requestUri" url:"-"`
+	Action       string `json:"action" url:"-"`
+	Language     string `json:"language" url:"-"`
+	Object       string `json:"object" url:"-"`
+	Response     string `json:"response" url:"-"`
+	StatusCode   int    `json:"statusCode" url:"-"`
+	IsTriggered  bool   `json:"isTriggered" url:"-"`
 }
 
 // ListInput scopes a listing to one owner (organization).
@@ -107,14 +108,12 @@ func apply(dst *schema.AuditLog, in *Input) {
 // You see your own organization's audit trail and no one else's; which organization that
 // is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by authz.Scope from the authenticated principal,
+	// The owner is resolved by principal.Scope from the authenticated principal,
 	// never taken from the input: a tenant reads only its own org, a SuperAdmin
-	// reads the owner it asks for. Filtering on in.Owner instead was a confused
-	// deputy — the Guard authorizes on the query string, then a typed GET binds
-	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
-	// arrived empty on every REST call and the "empty owner lists everything"
-	// branch returned every tenant.
-	owner, err := authz.Scope(ctx, in.Owner)
+	// reads the owner it asks for. in.Owner is whatever the CALLER wrote in the URL,
+	// since zip binds a typed op's scalar fields from the query string on every
+	// method, so filtering on it would let a request name the tenant it reads.
+	owner, err := principal.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}

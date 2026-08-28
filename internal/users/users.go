@@ -9,7 +9,7 @@
 // the plaintext password rides in on the create/update request, is hashed with argon2id exactly once, and is discarded. Only the one-way digest reaches the
 // store, and no response ever carries the digest or any other secret material —
 // every user returned here passes through schema.User.Mask() (internal/schema/
-// mask.go), the single redaction contract shared with the compat aliases.
+// mask.go), the single redaction contract every read path shares.
 package users
 
 import (
@@ -23,6 +23,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -37,17 +38,25 @@ func New(db orm.DB) *API { return &API{db: db} }
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
-// Route registers the typed user CRUD handlers on app. Reads use zip.Get and
-// writes use zip.Post; both project the same transport-agnostic handler to REST
-// and MCP, so the (owner, name) identity in each typed request is honored on
-// every transport.
+// Route registers the typed user CRUD handlers on app. The method carries the
+// verb and the path carries the (owner, name) key, so a URL segment addresses one
+// user: zip binds path above body, and Get and Delete take that key directly. The
+// same transport-agnostic handlers project to REST and MCP alike, so that identity
+// is honored on every transport.
+//
+// Update is the exception, structurally: UpdateInput nests the record under
+// `user`, and zip binds a URL segment onto a TOP-LEVEL field only — it reaches
+// through embedding, not through a named struct field. A ":owner/:name" here
+// would bind nothing and leave the body the sole target, which is the one thing
+// the path form exists to prevent. The key travels in the body until UpdateInput
+// carries it at top level.
 func Route(app *zip.App, db orm.DB) {
 	a := &API{db: db}
 	zip.Post(app, "/v1/iam/users", a.Create, zip.WithTags("users"))
 	zip.Get(app, "/v1/iam/users", a.List, zip.WithTags("users"))
-	zip.Get(app, "/v1/iam/users/get", a.Get, zip.WithTags("users"))
-	zip.Post(app, "/v1/iam/users/update", a.Update, zip.WithTags("users"))
-	zip.Post(app, "/v1/iam/users/delete", a.Delete, zip.WithTags("users"))
+	zip.Get(app, "/v1/iam/users/:owner/:name", a.Get, zip.WithTags("users"))
+	zip.Put(app, "/v1/iam/users/:owner/:name", a.Update, zip.WithTags("users"))
+	zip.Delete(app, "/v1/iam/users/:owner/:name", a.Delete, zip.WithTags("users"))
 }
 
 // Ref identifies one user by its natural key.
@@ -76,7 +85,7 @@ type Lookup struct {
 // Password is never persisted — it is hashed into schema.User.PasswordHash.
 type CreateInput struct {
 	User     schema.User `json:"user"`
-	Password string      `json:"password,omitempty"`
+	Password string      `json:"password,omitempty" url:"-"`
 	// Consent is the data subject's OWN answer, and it is the only way one enters
 	// a new account: Create drops any consent the body carried and records this
 	// instead. `json:"-"` keeps it off the wire, so it can be set only by an
@@ -101,13 +110,36 @@ type CreateInput struct {
 	// is ignored exactly as a body-supplied Id is.
 	Type  string `json:"-"`
 	Admin bool   `json:"-"`
+	// EmailVerified records that an identity provider PROVED this address. It is
+	// off the wire for the same reason Type and Admin are, and it states here the
+	// rule Update already keeps: an address is proven by the flow that verifies it
+	// and by nothing else. The federation broker asks this bit before it links a
+	// social identity onto an existing local account — it adopts a row only when
+	// that row's own address was proven, or when the row carries no password
+	// anybody could already sign in with. A body that could state the bit would
+	// answer that question for the broker, and a row carrying a chosen password AND
+	// a stated proof passes a check that exists to say no.
+	//
+	// So the proof comes from the CALLING CODE, never the caller's JSON: the
+	// federation broker states what its provider vouched for, and every other
+	// create path — password signup, SCIM, the legacy add-user verb, the embedder
+	// seam — records an address nobody has proven yet.
+	EmailVerified bool `json:"-"`
 }
 
 // UpdateInput carries the desired user state plus an optional new plaintext
 // password. An empty Password leaves the stored digest untouched.
 type UpdateInput struct {
+	// The target rides in the URL: PUT /v1/iam/users/acme/bob updates acme/bob
+	// whatever the body claims, which is what keeps the authorizer honest — it
+	// runs on this same decoded value, so the target authorized is the target the
+	// URL named and a body cannot smuggle a different one past it. json:"-" keeps
+	// them out of the request body, so the shape a caller sends is unchanged.
+	Owner string `json:"-" url:"owner"`
+	Name  string `json:"-" url:"name"`
+
 	User     schema.User `json:"user"`
-	Password string      `json:"password,omitempty"`
+	Password string      `json:"password,omitempty" url:"-"`
 	// Admin raises or lowers the org-admin bit. Nil means "leave it as stored",
 	// which is what every profile edit means. It is off the wire (see CreateInput):
 	// the bit is one of the two things store.BillingAccount reads to name an org's
@@ -143,14 +175,36 @@ func (in *CreateInput) AuthzTarget() (owner, name string) {
 // AuthzTarget reports the (owner, name) this update binds, from the nested record
 // — the same values Update writes, so authorization and execution never diverge.
 func (in *UpdateInput) AuthzTarget() (owner, name string) {
-	return strings.TrimSpace(in.User.Owner), strings.TrimSpace(in.User.Name)
+	// The URL wins. The body's copy is descriptive — it is what the caller says
+	// the record IS, not which record is being written — so it is only consulted
+	// where the address supplied nothing.
+	owner, name = strings.TrimSpace(in.Owner), strings.TrimSpace(in.Name)
+	if owner == "" {
+		owner = strings.TrimSpace(in.User.Owner)
+	}
+	if name == "" {
+		name = strings.TrimSpace(in.User.Name)
+	}
+	return owner, name
 }
 
-// ListInput is an owner-scoped, paged listing request.
+// ListInput is a paged listing request. Owner names the organization to read;
+// omitting it means "the one my credential is scoped to", which for a caller
+// that spans tenants is all of them. principal.Scope turns the two into one
+// answer, so the field cannot be required here — requiring it would refuse the
+// tenant-spanning caller before the handler could resolve anything.
 type ListInput struct {
-	Owner  string `json:"owner" validate:"required"`
-	Limit  int    `json:"limit,omitempty"`
-	Offset int    `json:"offset,omitempty"`
+	Owner string `json:"owner,omitempty"`
+	// Email narrows the page to the accounts carrying one address. Looking a
+	// person up by their address is a QUERY over the collection, not an item
+	// read: an address is not the natural key, two rows in one org can carry
+	// one, and a caller that gets a page SEES both — where a single-item read
+	// would have to choose, and choosing is how somebody joins a team under a
+	// colleague's identity.
+	Email string `json:"email,omitempty"`
+
+	Limit  int `json:"limit,omitempty"`
+	Offset int `json:"offset,omitempty"`
 }
 
 // ListOutput is a page of redacted users plus the owner-scoped total.
@@ -215,6 +269,13 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// could otherwise point at something it was never granted — Id at a victim's
 	// subject, Type/IsAdmin at the org pool's `billing_account` claim.
 	u.Type, u.IsAdmin = in.Type, in.Admin
+	// The address proof is the calling code's to state as well, and whatever the
+	// body carried is discarded, for the reason CreateInput.EmailVerified gives:
+	// this bit is what the federation broker reads to decide whether a social
+	// identity may be linked onto an existing account, so a body that states it
+	// answers the broker's question on the sender's behalf. Update carries the
+	// stored value for the same reason.
+	u.EmailVerified = in.EmailVerified
 	// The JSON-document store hangs no per-field DB UNIQUE constraint (the same reason
 	// clientId uniqueness is enforced at the write, not by an index), so reject the
 	// astronomically-unlikely UUID clash HERE rather than admit a second row under one
@@ -230,7 +291,7 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	u.PasswordType = ""
 	// Nor a client-supplied CREDENTIAL. These fields are credential material, so a
 	// body that carries one plants a value the sender already knows onto the new row.
-	// Minting is the ONLY writer — /v1/iam/mint-user-keys — so these are cleared here
+	// Minting is the ONLY writer — /v1/iam/users/{owner}/{name}/keys — so these are cleared here
 	// the same way the password digest is.
 	u.AccessKey, u.AccessSecret, u.AccessSecretHash = "", "", ""
 	// Nor a client-supplied CONSENT. A create body carries whatever properties the
@@ -307,19 +368,42 @@ func firstOf(a, b string) string {
 	return b
 }
 
-// List returns a page of the people in your organization, with the total so you
+// List returns a page of the people in an organization, with the total so you
 // can page through the rest. Passwords, API secrets and MFA material are stripped
 // from every entry.
+//
+// Which organization comes from your credentials, not from the request: you read
+// your own and no one else's, and a credential whose scope spans tenants reads
+// the tenant it names — or, naming none, every one of them.
 func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	if strings.TrimSpace(in.Owner) == "" {
-		return nil, zip.ErrBadRequest("owner is required")
+	// principal.Scope is the whole tenant decision, and it has to be taken HERE.
+	// A confidential client reaches this collection on a CAPABILITY, and a
+	// capability names the collection rather than a tenant — so neither the Guard
+	// nor the op seam has an org to weigh, whether the request names another one
+	// or names none. The handler is the only place holding the credential and the
+	// query at once, so it is the only place the two become one answer.
+	owner, err := principal.Scope(ctx, strings.TrimSpace(in.Owner))
+	if err != nil {
+		return nil, err
 	}
-	total, err := orm.TypedQuery[schema.User](a.db).Filter("Owner=", in.Owner).Count(ctx)
+	// Both the count and the page go through the SAME narrowing, or a filtered
+	// read answers "1 of 40" and a caller pages forever through rows it filtered out.
+	narrow := func() *orm.ModelQuery[schema.User] {
+		q := orm.TypedQuery[schema.User](a.db)
+		if owner != "" {
+			q = q.Filter("Owner=", owner)
+		}
+		if email := strings.TrimSpace(in.Email); email != "" {
+			q = q.Filter("Email=", email)
+		}
+		return q
+	}
+	total, err := narrow().Count(ctx)
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 
-	q := orm.TypedQuery[schema.User](a.db).Filter("Owner=", in.Owner).Order("Name")
+	q := narrow().Order("Name")
 	if in.Limit > 0 {
 		q = q.Limit(in.Limit)
 	}
@@ -390,6 +474,15 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	if in.Admin != nil {
 		u.IsAdmin = *in.Admin
 	}
+	// EmailVerified is a PROOF the server recorded, not a property a body may state.
+	// It is what the federation broker asks before it links a social identity onto an
+	// existing local account: it adopts a row only when that row's own address was
+	// proven, or when the row carries no password anybody could already sign in with.
+	// A body that could state it would answer that question for the broker — a row
+	// carrying a chosen password AND a stated proof passes a gate that exists to say
+	// no. Signup records false, the broker records true when an identity provider
+	// proved it, and both write through their own paths; this one carries.
+	u.EmailVerified = existing.EmailVerified
 	// Every secret is carried from the stored row and any body value is IGNORED —
 	// the password digest, the key secret, the bearer material, the authenticator
 	// seed and its recovery codes. CarrySecretsFrom is the inverse of Mask, so the

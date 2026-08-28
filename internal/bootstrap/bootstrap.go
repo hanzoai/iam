@@ -162,18 +162,18 @@ type registration struct {
 	Organization string   `json:"organization"`
 	Name         string   `json:"name"`
 	ClientId     string   `json:"clientId"`
-	ClientSecret string   `json:"clientSecret"`
+	ClientSecret string   `json:"clientSecret" url:"-"`
 	GrantTypes   []string `json:"grantTypes"`
 	RedirectUris []string `json:"redirectUris"`
-	DisplayName  string   `json:"displayName"`
-	Cert         string   `json:"cert"`
+	DisplayName  string   `json:"displayName" url:"-"`
+	Cert         string   `json:"cert" url:"-"`
 	// Public declares a client that CANNOT hold a credential — a browser SPA,
 	// a CLI, a desktop app. It proves itself with PKCE instead, and the token
 	// endpoint treats "no stored secret" as exactly that (token.go: a secret is
 	// verified only when one is stored). Without this flag every upsert minted
 	// a secret, so a public client could never be registered at all and its
 	// browser code->token exchange 401'd `invalid_client` forever.
-	Public bool `json:"public"`
+	Public bool `json:"public" url:"-"`
 	// IsShared declares that this application serves EVERY organization, not only
 	// the one named in Organization. It is the honest description of a brand app —
 	// hanzo-id, hanzo-chat, a brand console — whose customers each live in their own
@@ -352,12 +352,12 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 type person struct {
 	Owner        string `json:"owner"`
 	Name         string `json:"name"`
-	DisplayName  string `json:"displayName"`
+	DisplayName  string `json:"displayName" url:"-"`
 	Email        string `json:"email"`
-	Phone        string `json:"phone"`
-	Password     string `json:"password"`
-	PasswordType string `json:"passwordType"`
-	IsAdmin      bool   `json:"isAdmin"`
+	Phone        string `json:"phone" url:"-"`
+	Password     string `json:"password" url:"-"`
+	PasswordType string `json:"passwordType" url:"-"`
+	IsAdmin      bool   `json:"isAdmin" url:"-"`
 	// Auth is the `Authorization: Bearer <token>` header — see registration.Auth.
 	Auth string `json:"-" header:"Authorization"`
 

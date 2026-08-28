@@ -17,8 +17,11 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
+	policy "github.com/hanzoai/authz"
+
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // Handler binds the certs operations to one orm store.
@@ -28,16 +31,19 @@ type Handler struct {
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
-// Route registers the certs CRUD routes on app against db. Reads are zip.Get,
-// writes are zip.Post; the create/update body is the schema.Cert row itself, so
-// the HTTP contract and the stored entity never drift.
+// Route registers the certs CRUD routes on app against db. The method carries
+// the verb and the path carries the row's (owner, name) key, so the URL is what
+// addresses a cert. zip binds path segments above the body, and the create/update
+// body is the schema.Cert row itself — so the HTTP contract and the stored entity
+// never drift, and a body naming a different cert cannot move the write off the
+// one the URL named.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/certs", h.List, zip.WithTags("certs"))
 	zip.Post(app, "/v1/iam/certs", h.Create, zip.WithTags("certs"))
-	zip.Get(app, "/v1/iam/certs/get", h.Get, zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/update", h.Update, zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs/delete", h.Delete, zip.WithTags("certs"))
+	zip.Get(app, "/v1/iam/certs/:owner/:name", h.Get, zip.WithTags("certs"))
+	zip.Put(app, "/v1/iam/certs/:owner/:name", h.Update, zip.WithTags("certs"))
+	zip.Delete(app, "/v1/iam/certs/:owner/:name", h.Delete, zip.WithTags("certs"))
 }
 
 // Ref addresses one cert by its owner-scoped natural key.
@@ -73,7 +79,7 @@ func key(owner, name string) string { return owner + "/" + name }
 // organization that is comes from your credentials, not from the request, so a
 // query parameter can never widen the listing.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	owner, err := authz.Scope(ctx, in.Owner)
+	owner, err := principal.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}
@@ -94,15 +100,48 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 
 // Get returns one signing certificate — its algorithm, its validity window and
 // its public half. The private key is masked.
-func (h *Handler) Get(_ context.Context, in *Ref) (*schema.Cert, error) {
+func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Cert, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
 	cert, err := orm.Get[schema.Cert](h.db, key(in.Owner, in.Name))
-	if err != nil {
+	if err == nil {
+		return cert.Mask(), nil
+	}
+	if !errors.Is(err, orm.ErrNotFound) {
 		return nil, mapErr(err)
 	}
-	return cert.Mask(), nil
+
+	// A PLATFORM SIGNING CERT IS ADDRESSED BY NAME, and that is one rule rather
+	// than two. The JWKS publishes a cert, and issueTokens signs with it, through
+	// store.GetSigningCert — which searches the reserved owners in order and does
+	// not care which of them holds the row. Only this read insisted on an exact
+	// owner, so the two could disagree about a cert that plainly exists, and they
+	// did: cert-hanzo was live in the JWKS while GET certs/get?owner=admin
+	// answered 404, because the surviving row sat under the other reserved owner.
+	//
+	// ai bootstraps by reading its application and then that application's cert
+	// (object/auth_config.go), so the miss left the process unable to establish
+	// the key every bearer is validated against — api.hanzo.ai answered 503 to
+	// every authenticated request while the key it needed was being served, one
+	// route away, to anyone who asked.
+	//
+	// Scoped, not widened: this only fires for a RESERVED owner, so a tenant
+	// asking for its own org's cert still gets that org's row or nothing, and a
+	// tenant can no more reach a platform key than before. Masked like the exact
+	// hit — Mask blanks PrivateKey — so what crosses is the public half the JWKS
+	// already publishes.
+	if !policy.IsSigningOwner(in.Owner) {
+		return nil, mapErr(err)
+	}
+	signing, serr := store.GetSigningCert(ctx, h.db, in.Name)
+	if serr != nil {
+		return nil, mapErr(serr)
+	}
+	if signing == nil {
+		return nil, mapErr(err)
+	}
+	return signing.Mask(), nil
 }
 
 // Create adds a signing certificate your applications can verify tokens against

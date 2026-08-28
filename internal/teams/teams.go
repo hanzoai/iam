@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -78,6 +79,11 @@ func New(db orm.DB) *Handler { return &Handler{db: db} }
 
 func key(owner, name string) string { return owner + "/" + name }
 
+// principalGuard refuses a member ref outside the team's own organization.
+func principalGuard(ctx context.Context, method, owner string, users []string) error {
+	return authz.AuthorizeGrant(ctx, method, owner, users, nil, nil)
+}
+
 // apply copies the mutable domain fields of an Input onto a team. The identity
 // fields (owner, name) and the created stamp are set only on Create, never
 // overwritten by an update.
@@ -96,14 +102,14 @@ func apply(dst *schema.Team, in *Input) {
 // You see your own organization's roles and no one else's; which organization
 // that is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by authz.Scope from the authenticated principal,
+	// The owner is resolved by principal.Scope from the authenticated principal,
 	// never taken from the input: a tenant reads only its own org, a SuperAdmin
 	// reads the owner it asks for. Filtering on in.Owner instead was a confused
 	// deputy — the Guard authorizes on the query string, then a typed GET binds
 	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
 	// arrived empty on every REST call and the "empty owner lists everything"
 	// branch returned every tenant.
-	owner, err := authz.Scope(ctx, in.Owner)
+	owner, err := principal.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +144,11 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Team, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	// A team may only name people of its own organization: the refs are the
+	// caller's input and carry no tenancy of their own.
+	if err := principalGuard(ctx, "POST", in.Owner, in.Users); err != nil {
+		return nil, err
+	}
 	switch _, err := orm.Get[schema.Team](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
 		return nil, zip.ErrConflict("team already exists")
@@ -167,6 +178,11 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Team, error) {
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Team, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	// A team may only name people of its own organization: the refs are the
+	// caller's input and carry no tenancy of their own.
+	if err := principalGuard(ctx, "PUT", in.Owner, in.Users); err != nil {
+		return nil, err
 	}
 	team, err := orm.Get[schema.Team](h.db, key(in.Owner, in.Name))
 	if err != nil {
