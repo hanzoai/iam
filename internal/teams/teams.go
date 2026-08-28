@@ -4,8 +4,8 @@
 // Package roles serves the IAM v2 CRUD surface for the `roles` entity: a named
 // grant bundle owner-scoped by (owner, name). Every operation is a typed zip
 // handler over hanzoai/orm; the orm string key is "owner/name". Reads scope to
-// one owner (organization); writes address one role by its (owner, name) key.
-package roles
+// one owner (organization); writes address one team by its (owner, name) key.
+package teams
 
 import (
 	"context"
@@ -29,32 +29,31 @@ type Handler struct {
 // Route registers the roles CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/roles", h.List, zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles", h.Create, zip.WithTags("roles"))
-	zip.Get(app, "/v1/iam/roles/get", h.Get, zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/update", h.Update, zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles/delete", h.Delete, zip.WithTags("roles"))
+	zip.Get(app, "/v1/iam/teams", h.List, zip.WithTags("teams"))
+	zip.Post(app, "/v1/iam/teams", h.Create, zip.WithTags("teams"))
+	zip.Get(app, "/v1/iam/teams/get", h.Get, zip.WithTags("teams"))
+	zip.Post(app, "/v1/iam/teams/update", h.Update, zip.WithTags("teams"))
+	zip.Post(app, "/v1/iam/teams/delete", h.Delete, zip.WithTags("teams"))
 }
 
-// Ref addresses one role by its owner-scoped natural key.
+// Ref addresses one team by its owner-scoped natural key.
 type Ref struct {
 	Owner string `json:"owner"`
 	Name  string `json:"name"`
 }
 
-// Input is the writable projection of a role (the v1 add/update-role body). It
+// Input is the writable projection of a team (the v1 add/update-team body). It
 // keeps the HTTP contract clean of the orm.Model bookkeeping fields.
 type Input struct {
-	Owner       string   `json:"owner"`
-	Name        string   `json:"name"`
-	CreatedTime string   `json:"createdTime"`
-	DisplayName string   `json:"displayName"`
-	Description string   `json:"description"`
-	Users       []string `json:"users"`
-	Teams       []string `json:"teams"`
-	Roles       []string `json:"roles"`
-	Domains     []string `json:"domains"`
-	IsEnabled   bool     `json:"isEnabled"`
+	Owner        string   `json:"owner"`
+	Name         string   `json:"name"`
+	CreatedTime  string   `json:"createdTime"`
+	DisplayName  string   `json:"displayName"`
+	Description  string   `json:"description"`
+	Organization string   `json:"organization"`
+	Parent       string   `json:"parent"`
+	Users        []string `json:"users"`
+	IsEnabled    bool     `json:"isEnabled"`
 }
 
 // ListInput scopes a listing to one owner (organization).
@@ -62,9 +61,9 @@ type ListInput struct {
 	Owner string `json:"owner"`
 }
 
-// ListOutput is the owner-scoped page of roles.
+// ListOutput is the owner-scoped page of teams.
 type ListOutput struct {
-	Roles []*schema.Role `json:"roles"`
+	Teams []*schema.Team `json:"teams"`
 	Total int            `json:"total"`
 }
 
@@ -74,22 +73,20 @@ type DeleteOutput struct {
 }
 
 // key builds the orm string key from the (owner, name) natural key.
-// New exposes a role Handler so the legacy add-/update-/delete-role verb aliases
-// reuse the ONE role CRUD path, wrapped in the compat envelope.
+// New exposes a team Handler for callers that hold the store directly.
 func New(db orm.DB) *Handler { return &Handler{db: db} }
 
 func key(owner, name string) string { return owner + "/" + name }
 
-// apply copies the mutable domain fields of an Input onto a role. The identity
+// apply copies the mutable domain fields of an Input onto a team. The identity
 // fields (owner, name) and the created stamp are set only on Create, never
 // overwritten by an update.
-func apply(dst *schema.Role, in *Input) {
+func apply(dst *schema.Team, in *Input) {
 	dst.DisplayName = in.DisplayName
 	dst.Description = in.Description
+	dst.Organization = in.Organization
+	dst.Parent = in.Parent
 	dst.Users = in.Users
-	dst.Teams = in.Teams
-	dst.Roles = in.Roles
-	dst.Domains = in.Domains
 	dst.IsEnabled = in.IsEnabled
 }
 
@@ -110,89 +107,89 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	if err != nil {
 		return nil, err
 	}
-	q := orm.TypedQuery[schema.Role](h.db)
+	q := orm.TypedQuery[schema.Team](h.db)
 	if owner != "" {
 		q = q.Filter("owner", owner)
 	}
-	roles, err := q.Order("-createdTime").GetAll(ctx)
+	teams, err := q.Order("-createdTime").GetAll(ctx)
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	return &ListOutput{Roles: roles, Total: len(roles)}, nil
+	return &ListOutput{Teams: teams, Total: len(teams)}, nil
 }
 
-// Get returns one role: who is in it, and the roles it includes.
-func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Role, error) {
+// Get returns one team: who is in it.
+func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Team, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
-	role, err := orm.Get[schema.Role](h.db, key(in.Owner, in.Name))
+	team, err := orm.Get[schema.Team](h.db, key(in.Owner, in.Name))
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	return role, nil
+	return team, nil
 }
 
-// Create makes a role — a named group of people that permissions are granted to.
-// Granting to a role rather than to each person is what keeps access correct as
-// your team changes: add someone to the role and they inherit everything it can
-// do. A name already used in your organization is refused.
-func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Role, error) {
+// Create makes a team — a named set of people that roles and permissions grant
+// to. Granting to a team rather than to each person keeps access correct as
+// people come and go: add someone and they inherit what the team can do. A name
+// already used in your organization is refused.
+func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Team, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
-	switch _, err := orm.Get[schema.Role](h.db, key(in.Owner, in.Name)); {
+	switch _, err := orm.Get[schema.Team](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
-		return nil, zip.ErrConflict("role already exists")
+		return nil, zip.ErrConflict("team already exists")
 	case !errors.Is(err, orm.ErrNotFound):
 		return nil, zip.ErrInternal(err.Error())
 	}
 
-	role := orm.New[schema.Role](h.db)
-	role.Owner = in.Owner
-	role.Name = in.Name
-	role.CreatedTime = in.CreatedTime
-	if role.CreatedTime == "" {
-		role.CreatedTime = time.Now().UTC().Format(time.RFC3339)
+	team := orm.New[schema.Team](h.db)
+	team.Owner = in.Owner
+	team.Name = in.Name
+	team.CreatedTime = in.CreatedTime
+	if team.CreatedTime == "" {
+		team.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	}
-	apply(role, in)
-	role.SetId(key(in.Owner, in.Name))
+	apply(team, in)
+	team.SetId(key(in.Owner, in.Name))
 
-	if err := role.CreateCtx(ctx); err != nil {
+	if err := team.CreateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	return role, nil
+	return team, nil
 }
 
-// Update changes who is in a role, or which roles it includes. Access changes for
-// everyone in it as soon as the write lands. What the role is called does not
-// change, and neither does when it was created.
-func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Role, error) {
+// Update changes who is in a team. Access changes for
+// everyone in it as soon as the write lands. The name and the created stamp do
+// not change.
+func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Team, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
-	role, err := orm.Get[schema.Role](h.db, key(in.Owner, in.Name))
+	team, err := orm.Get[schema.Team](h.db, key(in.Owner, in.Name))
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	apply(role, in)
-	if err := role.UpdateCtx(ctx); err != nil {
+	apply(team, in)
+	if err := team.UpdateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	return role, nil
+	return team, nil
 }
 
-// Delete removes a role. Everyone in it loses the access it carried; their
-// accounts, and any other role they hold, are untouched.
+// Delete removes a team. Everyone in it loses the access it carried; their
+// accounts, and any other team they are in, are untouched.
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
-	role, err := orm.Get[schema.Role](h.db, key(in.Owner, in.Name))
+	team, err := orm.Get[schema.Team](h.db, key(in.Owner, in.Name))
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	if err := role.DeleteCtx(ctx); err != nil {
+	if err := team.DeleteCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return &DeleteOutput{Deleted: true}, nil
@@ -201,7 +198,7 @@ func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 // mapErr translates an orm lookup error into the matching HTTP status.
 func mapErr(err error) error {
 	if errors.Is(err, orm.ErrNotFound) {
-		return zip.ErrNotFound("role not found")
+		return zip.ErrNotFound("team not found")
 	}
 	return zip.ErrInternal(err.Error())
 }
