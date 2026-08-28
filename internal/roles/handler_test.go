@@ -111,7 +111,7 @@ func TestCreateStampsAndAppliesFields(t *testing.T) {
 		DisplayName: "Admins",
 		Description: "the ones who run it",
 		Users:       []string{"hanzo/alice"},
-		Groups:      []string{"hanzo/g"},
+		Teams:       []string{"hanzo/g"},
 		Roles:       []string{"hanzo/engineers"},
 		Domains:     []string{"hanzo.ai"},
 		IsEnabled:   true,
@@ -127,7 +127,7 @@ func TestCreateStampsAndAppliesFields(t *testing.T) {
 	case role.DisplayName != in.DisplayName,
 		role.Description != in.Description,
 		len(role.Users) != 1 || role.Users[0] != "hanzo/alice",
-		len(role.Groups) != 1 || role.Groups[0] != "hanzo/g",
+		len(role.Teams) != 1 || role.Teams[0] != "hanzo/g",
 		len(role.Roles) != 1 || role.Roles[0] != "hanzo/engineers",
 		len(role.Domains) != 1 || role.Domains[0] != "hanzo.ai",
 		!role.IsEnabled:
