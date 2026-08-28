@@ -40,7 +40,7 @@ func TestCreate_refusesAReservedMember(t *testing.T) {
 	}{
 		{"users", &Input{Owner: "hanzo", Name: "forge", Users: []string{"admin/root"}}},
 		{"roles", &Input{Owner: "hanzo", Name: "forge", Roles: []string{"admin/operators"}}},
-		{"groups", &Input{Owner: "hanzo", Name: "forge", Groups: []string{"admin/staff"}}},
+		{"teams", &Input{Owner: "hanzo", Name: "forge", Teams: []string{"admin/staff"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := h.Create(asAdmin("hanzo"), tc.in)
@@ -100,7 +100,7 @@ func TestCreate_allowsAnOwnOrgRole(t *testing.T) {
 	h := &Handler{db: store(t)}
 	out, err := h.Create(asAdmin("hanzo"), &Input{
 		Owner: "hanzo", Name: "admins",
-		Users: []string{"hanzo/alice", "bob"}, Groups: []string{"hanzo/eng"},
+		Users: []string{"hanzo/alice", "bob"}, Teams: []string{"hanzo/eng"},
 		Roles: []string{"hanzo/engineers"}, Domains: []string{"hanzo.ai"}, IsEnabled: true,
 	})
 	if err != nil {

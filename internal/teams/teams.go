@@ -32,35 +32,36 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/teams", h.List, zip.WithTags("teams"))
 	zip.Post(app, "/v1/iam/teams", h.Create, zip.WithTags("teams"))
-	zip.Get(app, "/v1/iam/teams/get", h.Get, zip.WithTags("teams"))
-	zip.Post(app, "/v1/iam/teams/update", h.Update, zip.WithTags("teams"))
-	zip.Post(app, "/v1/iam/teams/delete", h.Delete, zip.WithTags("teams"))
+	zip.Get(app, "/v1/iam/teams/:name", h.Get, zip.WithTags("teams"))
+	zip.Put(app, "/v1/iam/teams/:name", h.Update, zip.WithTags("teams"))
+	zip.Delete(app, "/v1/iam/teams/:name", h.Delete, zip.WithTags("teams"))
 }
 
-// Ref addresses one team by its owner-scoped natural key.
+// Ref addresses one team by name. The owner is the caller's organization,
+// resolved from the credential — a URL carries what it addresses, and a tenant
+// is not something a request may name.
 type Ref struct {
-	Owner string `json:"owner"`
-	Name  string `json:"name"`
+	Name string `json:"name"`
 }
 
 // Input is the writable projection of a team (the v1 add/update-team body). It
 // keeps the HTTP contract clean of the orm.Model bookkeeping fields.
 type Input struct {
-	Owner        string   `json:"owner"`
+	// Name addresses the team on update and names it on create; every other
+	// field is content and binds from the BODY, never the URL.
 	Name         string   `json:"name"`
-	CreatedTime  string   `json:"createdTime"`
-	DisplayName  string   `json:"displayName"`
-	Description  string   `json:"description"`
-	Organization string   `json:"organization"`
-	Parent       string   `json:"parent"`
-	Users        []string `json:"users"`
-	IsEnabled    bool     `json:"isEnabled"`
+	CreatedTime  string   `json:"createdTime" url:"-"`
+	DisplayName  string   `json:"displayName" url:"-"`
+	Description  string   `json:"description" url:"-"`
+	Organization string   `json:"organization" url:"-"`
+	Parent       string   `json:"parent" url:"-"`
+	Users        []string `json:"users" url:"-"`
+	IsEnabled    bool     `json:"isEnabled" url:"-"`
 }
 
-// ListInput scopes a listing to one owner (organization).
-type ListInput struct {
-	Owner string `json:"owner"`
-}
+// ListInput carries nothing: the organization is the caller's, resolved from the
+// credential.
+type ListInput struct{}
 
 // ListOutput is the owner-scoped page of teams.
 type ListOutput struct {
@@ -109,7 +110,7 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
 	// arrived empty on every REST call and the "empty owner lists everything"
 	// branch returned every tenant.
-	owner, err := principal.Scope(ctx, in.Owner)
+	owner, err := principal.Scope(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -126,10 +127,14 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 
 // Get returns one team: who is in it.
 func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Team, error) {
-	if in.Owner == "" || in.Name == "" {
-		return nil, zip.ErrBadRequest("owner and name are required")
+	owner, err := principal.Scope(ctx, "")
+	if err != nil {
+		return nil, err
 	}
-	team, err := orm.Get[schema.Team](h.db, key(in.Owner, in.Name))
+	if owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("a name is required")
+	}
+	team, err := orm.Get[schema.Team](h.db, key(owner, in.Name))
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -141,15 +146,19 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Team, error) {
 // people come and go: add someone and they inherit what the team can do. A name
 // already used in your organization is refused.
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Team, error) {
-	if in.Owner == "" || in.Name == "" {
-		return nil, zip.ErrBadRequest("owner and name are required")
+	owner, err := principal.Scope(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	if owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("a name is required")
 	}
 	// A team may only name people of its own organization: the refs are the
 	// caller's input and carry no tenancy of their own.
-	if err := principalGuard(ctx, "POST", in.Owner, in.Users); err != nil {
+	if err := principalGuard(ctx, "POST", owner, in.Users); err != nil {
 		return nil, err
 	}
-	switch _, err := orm.Get[schema.Team](h.db, key(in.Owner, in.Name)); {
+	switch _, err := orm.Get[schema.Team](h.db, key(owner, in.Name)); {
 	case err == nil:
 		return nil, zip.ErrConflict("team already exists")
 	case !errors.Is(err, orm.ErrNotFound):
@@ -157,14 +166,14 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Team, error) {
 	}
 
 	team := orm.New[schema.Team](h.db)
-	team.Owner = in.Owner
+	team.Owner = owner
 	team.Name = in.Name
 	team.CreatedTime = in.CreatedTime
 	if team.CreatedTime == "" {
 		team.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	}
 	apply(team, in)
-	team.SetId(key(in.Owner, in.Name))
+	team.SetId(key(owner, in.Name))
 
 	if err := team.CreateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
@@ -176,15 +185,19 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Team, error) {
 // everyone in it as soon as the write lands. The name and the created stamp do
 // not change.
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Team, error) {
-	if in.Owner == "" || in.Name == "" {
-		return nil, zip.ErrBadRequest("owner and name are required")
+	owner, err := principal.Scope(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	if owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("a name is required")
 	}
 	// A team may only name people of its own organization: the refs are the
 	// caller's input and carry no tenancy of their own.
-	if err := principalGuard(ctx, "PUT", in.Owner, in.Users); err != nil {
+	if err := principalGuard(ctx, "PUT", owner, in.Users); err != nil {
 		return nil, err
 	}
-	team, err := orm.Get[schema.Team](h.db, key(in.Owner, in.Name))
+	team, err := orm.Get[schema.Team](h.db, key(owner, in.Name))
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -198,10 +211,14 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Team, error) {
 // Delete removes a team. Everyone in it loses the access it carried; their
 // accounts, and any other team they are in, are untouched.
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
-	if in.Owner == "" || in.Name == "" {
-		return nil, zip.ErrBadRequest("owner and name are required")
+	owner, err := principal.Scope(ctx, "")
+	if err != nil {
+		return nil, err
 	}
-	team, err := orm.Get[schema.Team](h.db, key(in.Owner, in.Name))
+	if owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("a name is required")
+	}
+	team, err := orm.Get[schema.Team](h.db, key(owner, in.Name))
 	if err != nil {
 		return nil, mapErr(err)
 	}

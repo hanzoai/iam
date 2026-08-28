@@ -40,7 +40,7 @@ func TestAdd_refusesAReservedSubject(t *testing.T) {
 	}{
 		{"users", &schema.Permission{Owner: "hanzo", Name: "forge", Users: []string{"admin/root"}}},
 		{"roles", &schema.Permission{Owner: "hanzo", Name: "forge", Roles: []string{"admin/operators"}}},
-		{"groups", &schema.Permission{Owner: "hanzo", Name: "forge", Groups: []string{"admin/staff"}}},
+		{"teams", &schema.Permission{Owner: "hanzo", Name: "forge", Teams: []string{"admin/staff"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := h.Add(asAdmin("hanzo"), tc.in)
@@ -96,7 +96,7 @@ func TestAdd_allowsAnOwnOrgGrant(t *testing.T) {
 	h, _ := newHandlers(t)
 	out, err := h.Add(asAdmin("hanzo"), &schema.Permission{
 		Owner: "hanzo", Name: "editor", Effect: "allow",
-		Users: []string{"hanzo/alice", "bob"}, Groups: []string{"hanzo/eng"},
+		Users: []string{"hanzo/alice", "bob"}, Teams: []string{"hanzo/eng"},
 		Roles: []string{"hanzo/engineers"}, Domains: []string{"hanzo.ai"},
 		Actions: []string{"read", "write"},
 	})
