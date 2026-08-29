@@ -53,6 +53,8 @@ func (h *OrganizationAPI) route(app *zip.App) {
 		zip.WithOperationID("listOrganizations"), zip.WithTags("organizations"))
 	zip.Post[SetAvatarInput, schema.Organization](app, orgBase+"/avatar", h.SetAvatar,
 		zip.WithOperationID("setOrganizationAvatar"), zip.WithTags("organizations"))
+	zip.Post[SetProfileInput, schema.Organization](app, orgBase+"/profile", h.SetProfile,
+		zip.WithOperationID("setOrganizationProfile"), zip.WithTags("organizations"))
 	zip.Get[GetOrganizationInput, schema.Organization](app, orgBase+"/:owner/:name", h.Get,
 		zip.WithOperationID("getOrganization"), zip.WithTags("organizations"))
 	zip.Put[UpdateOrganizationInput, schema.Organization](app, orgBase+"/:owner/:name", h.Update,
@@ -85,6 +87,19 @@ type SetAvatarInput struct {
 	Name   string `json:"name"`
 	Avatar string `json:"avatar" url:"-"`
 	Emoji  string `json:"emoji" url:"-"`
+}
+
+// SetProfileInput selects an organization by natural key and carries the fields
+// a person edits on a profile form. Every one is a POINTER: absent means leave
+// it alone, and "" means clear it — a distinction the plain string cannot make,
+// and the whole reason a partial write needs its own shape.
+type SetProfileInput struct {
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+
+	DisplayName *string `json:"displayName"`
+	WebsiteUrl  *string `json:"websiteUrl"`
+	Favicon     *string `json:"favicon"`
 }
 
 // DeleteOrganizationInput selects the organization to remove by natural key.
@@ -221,6 +236,46 @@ func (h *OrganizationAPI) SetAvatar(ctx context.Context, in *SetAvatarInput) (*s
 		return nil, zip.ErrInternal(err.Error())
 	}
 	org.Avatar, org.Emoji = mark.Avatar, mark.Emoji
+	if err := org.UpdateCtx(ctx); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return org.Mask(), nil
+}
+
+// SetProfile changes how an organization reads: its display name, its website
+// and its favicon.
+//
+// IT EXISTS FOR THE REASON SetAvatar DOES, and the reason is worth stating
+// because the obvious alternative is a trap. Update REPLACES the whole record,
+// so a caller that wants to change one field has to send every other field
+// back — and a record read back first arrives MASKED, so the read half of that
+// read-modify-write hands you "***" for the master password and the salt, and
+// the write half stores it. Renaming an organization through Update therefore
+// costs it its credential settings; sending only the new name costs it
+// everything else. Neither is a rename.
+//
+// So this writes the fields it names and touches nothing else. A nil pointer is
+// not sent and not changed; an empty string is sent and clears the field.
+func (h *OrganizationAPI) SetProfile(ctx context.Context, in *SetProfileInput) (*schema.Organization, error) {
+	if in.Owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	org, err := h.find(in.Owner, in.Name)
+	if errors.Is(err, orm.ErrNotFound) {
+		return nil, zip.ErrNotFound("organization not found")
+	}
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if in.DisplayName != nil {
+		org.DisplayName = *in.DisplayName
+	}
+	if in.WebsiteUrl != nil {
+		org.WebsiteUrl = *in.WebsiteUrl
+	}
+	if in.Favicon != nil {
+		org.Favicon = *in.Favicon
+	}
 	if err := org.UpdateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
