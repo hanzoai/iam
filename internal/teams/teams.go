@@ -1,10 +1,13 @@
 // Copyright 2026 Hanzo AI, Inc.
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-// Package roles serves the IAM v2 CRUD surface for the `roles` entity: a named
-// grant bundle owner-scoped by (owner, name). Every operation is a typed zip
+// Package teams serves the IAM v2 CRUD surface for the `teams` entity: a named
+// set of people, owner-scoped by (owner, name). Every operation is a typed zip
 // handler over hanzoai/orm; the orm string key is "owner/name". Reads scope to
 // one owner (organization); writes address one team by its (owner, name) key.
+//
+// Where a team has privilege is a Membership, not a field here: the same team
+// holds different roles in an org, a workspace and a project.
 package teams
 
 import (
@@ -20,14 +23,14 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
-// Handler binds the roles operations to one orm store.
+// Handler binds the teams operations to one orm store.
 type Handler struct {
 	db orm.DB
 }
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
-// Route registers the roles CRUD routes on app against db.
+// Route registers the teams CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/teams", h.List, zip.WithTags("teams"))
@@ -97,10 +100,10 @@ func apply(dst *schema.Team, in *Input) {
 	dst.IsEnabled = in.IsEnabled
 }
 
-// List returns your organization's roles, newest first — each a named group of
-// people that permissions are granted to.
+// List returns your organization's teams, newest first — each a named set of
+// people that roles and permissions are granted to.
 //
-// You see your own organization's roles and no one else's; which organization
+// You see your own organization's teams and no one else's; which organization
 // that is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 	// The owner is resolved by principal.Scope from the authenticated principal,
