@@ -5,6 +5,8 @@ package store
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -36,7 +38,20 @@ const (
 // which is what makes EnsureMembership idempotent on the pair. The value is never
 // parsed back — the User and Org columns are queried directly — so the "/" inside
 // a user id is harmless.
-func membershipName(user, org string) string { return user + "|" + org }
+func membershipName(user, org string) string { return scopedName(user, org, "", "") }
+
+// scopedName keys a membership by its subject and its scope, so one user holds
+// separate grants in an org, a workspace and a project without colliding.
+func scopedName(user, org, workspace, project string) string {
+	n := user + "|" + org
+	if workspace != "" {
+		n += "|" + workspace
+	}
+	if project != "" {
+		n += "|" + project
+	}
+	return n
+}
 
 // EnsureMembership records that user may act in org with role. It is the ONE way
 // a membership is created. Idempotent: it adds a row only when the (user, org)
@@ -44,22 +59,50 @@ func membershipName(user, org string) string { return user + "|" + org }
 // as a member stays an owner, so a routine backfill can never quietly strip
 // someone's authority. Reports whether it created a row.
 func EnsureMembership(ctx context.Context, db orm.DB, user, org, role string) (bool, error) {
+	return EnsureMembershipIn(ctx, db, user, org, "", "", role)
+}
+
+// EnsureMembershipIn is EnsureMembership at a scope: the org itself, a workspace
+// inside it, or a project inside that. The same user holds a separate grant at
+// each, which is what lets a workspace roster differ from the org's.
+func EnsureMembershipIn(ctx context.Context, db orm.DB, user, org, workspace, project, role string) (bool, error) {
 	if user == "" || org == "" {
 		return false, nil
 	}
-	existing, err := GetMembership(ctx, db, user, org)
+	if project != "" && workspace == "" {
+		return false, fmt.Errorf("membership: a project scope needs a workspace")
+	}
+	existing, err := MembershipIn(ctx, db, user, org, workspace, project)
 	if err != nil || existing != nil {
 		return false, err
 	}
 	m := orm.New[schema.Membership](db)
-	m.Owner, m.Name = MembershipOwner, membershipName(user, org)
+	m.Owner, m.Name = MembershipOwner, scopedName(user, org, workspace, project)
 	m.User, m.Org, m.Role = user, org, role
+	m.Workspace, m.Project = workspace, project
 	m.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	m.SetId(MembershipOwner + "/" + m.Name)
 	if err := m.CreateCtx(ctx); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// MembershipIn returns one scoped membership, or (nil, nil) when absent.
+func MembershipIn(ctx context.Context, db orm.DB, user, org, workspace, project string) (*schema.Membership, error) {
+	if user == "" || org == "" {
+		return nil, nil
+	}
+	m, err := orm.TypedQuery[schema.Membership](db).
+		Filter("User=", user).Filter("Org=", org).
+		Filter("Workspace=", workspace).Filter("Project=", project).First()
+	if err != nil {
+		if errors.Is(err, orm.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return m, nil
 }
 
 // GetMembership returns one (user, org) membership, or (nil, nil) when absent.
