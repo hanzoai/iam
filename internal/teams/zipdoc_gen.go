@@ -11,7 +11,7 @@ func init() {
 		Description: "Removes a team. Everyone in it loses the access it carried; their\naccounts, and any other team they are in, are untouched.",
 	})
 	zip.Describe("GET /v1/iam/teams", zip.Doc{
-		Description: "Returns your organization's roles, newest first — each a named group of\npeople that permissions are granted to.\n\nYou see your own organization's roles and no one else's; which organization\nthat is comes from your credentials, not from the request.",
+		Description: "Returns your organization's teams, newest first — each a named set of\npeople that roles and permissions are granted to.\n\nYou see your own organization's teams and no one else's; which organization\nthat is comes from your credentials, not from the request.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Team].id": "Persisted fields",
 		},
