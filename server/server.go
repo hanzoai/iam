@@ -40,15 +40,23 @@ func Route(app *zip.App, db orm.DB) {
 }
 
 // NewApp builds a STANDALONE iam zip.App over db — the whole IAM surface
-// registered and Prepared as one self-contained app. A host that registers iam as a
+// registered and built as one self-contained app. A host that registers iam as a
 // wildcard sub-handler (app.All("/v1/iam/*", zip.AdaptNetHTTP(h))) rather than
 // co-mingling iam's routes onto its own app uses this together with Handler; the
 // caller owns the returned app's Shutdown.
-func NewApp(db orm.DB) *zip.App {
+//
+// It returns the build verdict. An IAM surface that does not compose — two
+// definitions claiming one address, a cycle — has no honest app to return, and
+// the alternative is not "no error": every projection of an app that does not
+// compose panics on first touch, so declining to return it here only moves the
+// same failure to whichever of Fiber, Registry or Declaration is read first.
+func NewApp(db orm.DB) (*zip.App, error) {
 	app := zip.New(zip.Config{AppName: "iam", DisableStartupMessage: true})
 	Route(app, db)
-	app.Prepare()
-	return app
+	if err := app.Build(); err != nil {
+		return nil, err
+	}
+	return app, nil
 }
 
 // Handler adapts a standalone iam app (NewApp) to a net/http handler, so a host
@@ -57,8 +65,12 @@ func NewApp(db orm.DB) *zip.App {
 // iam: registered at the /v1/iam/* (and root /.well-known/*) wildcards, the
 // specific self-service routes layered in front still win by Fiber specificity,
 // so the swap is collision-free — the same topology the Beego catch-all had.
-func Handler(db orm.DB) http.Handler {
-	return adaptor.FiberApp(NewApp(db).Fiber())
+func Handler(db orm.DB) (http.Handler, error) {
+	app, err := NewApp(db)
+	if err != nil {
+		return nil, err
+	}
+	return adaptor.FiberApp(app.Fiber()), nil
 }
 
 // OpenSQLite opens an embedded SQLite store for iam at path (WAL). The host may
