@@ -94,3 +94,84 @@ func TestProjectScopeNeedsAWorkspace(t *testing.T) {
 		t.Fatal("a project grant with no workspace was accepted")
 	}
 }
+
+// seed a user of the given type so Seats can classify it.
+func seedPerson(t *testing.T, db orm.DB, owner, name, typ string, deleted bool) {
+	t.Helper()
+	u := orm.New[schema.User](db)
+	u.Owner, u.Name, u.Type, u.IsDeleted = owner, name, typ, deleted
+	u.SetId(owner + "/" + name)
+	if err := u.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed %s: %v", name, err)
+	}
+}
+
+// A person in three workspaces is ONE seat. Counting rows would bill them three
+// times, which is the whole reason this counts distinct users.
+func TestSeatsCountsAPersonOnce(t *testing.T) {
+	db := scopedDB(t)
+	ctx := context.Background()
+	seedPerson(t, db, "hanzo", "ann", "normal-user", false)
+
+	for _, ws := range []string{"", "studio", "atlas"} {
+		if _, err := store.EnsureMembershipIn(ctx, db, "hanzo/ann", "hanzo", ws, "", "member"); err != nil {
+			t.Fatalf("ensure %q: %v", ws, err)
+		}
+	}
+	seats, guests, err := store.Seats(ctx, db, "hanzo")
+	if err != nil {
+		t.Fatalf("seats: %v", err)
+	}
+	if seats != 1 || guests != 0 {
+		t.Fatalf("seats=%d guests=%d, want 1/0 — a person in three scopes was billed more than once", seats, guests)
+	}
+}
+
+// Machines and disabled accounts are not seats: an org does not pay for its own
+// automation, nor for someone who cannot sign in.
+func TestSeatsExcludesMachinesAndDisabled(t *testing.T) {
+	db := scopedDB(t)
+	ctx := context.Background()
+	seedPerson(t, db, "hanzo", "ann", "normal-user", false)
+	seedPerson(t, db, "hanzo", "bot", schema.ServiceAccount, false)
+	seedPerson(t, db, "hanzo", "gone", "normal-user", true)
+
+	for _, u := range []string{"hanzo/ann", "hanzo/bot", "hanzo/gone"} {
+		if _, err := store.EnsureMembershipIn(ctx, db, u, "hanzo", "", "", "member"); err != nil {
+			t.Fatalf("ensure %s: %v", u, err)
+		}
+	}
+	seats, _, err := store.Seats(ctx, db, "hanzo")
+	if err != nil {
+		t.Fatalf("seats: %v", err)
+	}
+	if seats != 1 {
+		t.Fatalf("seats = %d, want 1 (ann alone)", seats)
+	}
+}
+
+// A guest somewhere and a member elsewhere is a MEMBER. Counting them as a guest
+// would under-bill.
+func TestGuestElsewhereIsStillAMember(t *testing.T) {
+	db := scopedDB(t)
+	ctx := context.Background()
+	seedPerson(t, db, "hanzo", "ann", "normal-user", false)
+	seedPerson(t, db, "hanzo", "vic", "normal-user", false)
+
+	if _, err := store.EnsureMembershipIn(ctx, db, "hanzo/ann", "hanzo", "studio", "", "guest"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.EnsureMembershipIn(ctx, db, "hanzo/ann", "hanzo", "atlas", "", "member"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.EnsureMembershipIn(ctx, db, "hanzo/vic", "hanzo", "studio", "", "guest"); err != nil {
+		t.Fatal(err)
+	}
+	seats, guests, err := store.Seats(ctx, db, "hanzo")
+	if err != nil {
+		t.Fatalf("seats: %v", err)
+	}
+	if seats != 2 || guests != 1 {
+		t.Fatalf("seats=%d guests=%d, want 2/1 — ann is a member, vic is the only guest", seats, guests)
+	}
+}
