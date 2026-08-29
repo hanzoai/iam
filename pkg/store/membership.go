@@ -303,3 +303,49 @@ func HomeRole(u *schema.User) string {
 	}
 	return RoleMember
 }
+
+// Seats counts the org's distinct billable people and how many of those are
+// guests.
+//
+// A person is counted ONCE however many scopes they hold — a member of three
+// workspaces is one seat — which is why this counts distinct users rather than
+// rows. Machines never occupy a seat: a service account is not a person, and
+// billing one would charge for the org's own automation. Neither do deleted or
+// forbidden accounts, who cannot sign in to use what they would be billed for.
+//
+// It reads memberships at EVERY scope, org-level and narrower alike, because the
+// question is who the org is paying for, not where they work.
+func Seats(ctx context.Context, db orm.DB, org string) (seats, guests int, err error) {
+	if org == "" {
+		return 0, 0, nil
+	}
+	rows, err := MembershipsByOrg(ctx, db, org)
+	if err != nil {
+		return 0, 0, fmt.Errorf("seats: %w", err)
+	}
+	// The narrowest role a person holds anywhere decides whether they are a guest:
+	// a guest in one workspace and a member in another is a member, and counting
+	// them as a guest would under-bill.
+	full := map[string]bool{}
+	guest := map[string]bool{}
+	for _, m := range rows {
+		if m == nil || m.User == "" {
+			continue
+		}
+		u, uerr := GetUserBySubject(ctx, db, m.User)
+		if uerr != nil || u == nil || u.Machine() || u.IsDeleted || u.IsForbidden {
+			continue
+		}
+		if m.Role == "guest" {
+			guest[m.User] = true
+			continue
+		}
+		full[m.User] = true
+	}
+	for u := range guest {
+		if full[u] {
+			delete(guest, u)
+		}
+	}
+	return len(full) + len(guest), len(guest), nil
+}
