@@ -193,6 +193,9 @@ func hostedLoginTarget(app *schema.Application) string {
 	if app.SigninUrl != "" {
 		return app.SigninUrl
 	}
+	// Relative on purpose. issuerRelocation has already moved a request that
+	// arrived on an alias to its issuer, before anything is minted or set, so by
+	// here the host IS the issuer and this resolves there.
 	return hostedLoginPath
 }
 

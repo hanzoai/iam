@@ -143,21 +143,29 @@ func TestAuthorize_AliasHostRelocatesToIssuer(t *testing.T) {
 	target := authorizeURL(q)
 
 	t.Run("alias relocates, method kept, nothing set", func(t *testing.T) {
+		// Every alias, not one: api.hanzo.ai is the host `hanzo auth login`
+		// opens, and when it is missing from the map nothing relocates — the
+		// hosted-login redirect is relative, so it resolves on api.hanzo.ai,
+		// where the Cloud Console answers with its own "No such page" and a 200.
+		// The sign-in ends looking like a broken link, having reported success
+		// at every hop.
+		for _, alias := range hanzoAliases {
 		for _, method := range []string{"GET", "POST"} {
 			req := formReqNoBody(method, target)
-			req.Host = "iam.hanzo.ai"
+			req.Host = alias
 			resp, _ := do(t, app, req)
 			if resp.StatusCode != 307 {
 				t.Fatalf("%s status = %d, want 307", method, resp.StatusCode)
 			}
 			if loc := resp.Header.Get("Location"); loc != "https://hanzo.id"+target {
-				t.Fatalf("%s Location = %q, want %q", method, loc, "https://hanzo.id"+target)
+				t.Fatalf("%s on %s: Location = %q, want %q", method, alias, loc, "https://hanzo.id"+target)
 			}
 			// Relocation precedes every mint: a cookie set here would be the
 			// stranded-cookie bug this hop exists to close.
 			if sc := resp.Header.Get("Set-Cookie"); sc != "" {
 				t.Fatalf("%s relocation must set nothing; Set-Cookie = %q", method, sc)
 			}
+		}
 		}
 	})
 
