@@ -16,9 +16,16 @@ import (
 // testIssuerMap is the canonical multi-brand map the cutover deploy configures as
 // IAM_ISSUER_MAP: several ingress hosts (including iam.* aliases) collapse to ONE
 // pinned issuer per brand, all served by the single iam instance.
+// hanzoAliases are the hosts in testIssuerMap that fold onto https://hanzo.id.
+// A request arriving on one must be relocated there rather than answered where
+// it landed. (iam.lux.network is an alias too, of lux.id, so it does not belong
+// in a list whose expected destination is hanzo.id.)
+var hanzoAliases = []string{"iam.hanzo.ai", "api.hanzo.ai"}
+
 const testIssuerMap = `{
 	"hanzo.id":        "https://hanzo.id",
 	"iam.hanzo.ai":    "https://hanzo.id",
+	
 	"lux.id":          "https://lux.id",
 	"iam.lux.network": "https://lux.id",
 	"id.zoo.network":  "https://id.zoo.network",
