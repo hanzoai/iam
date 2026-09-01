@@ -68,7 +68,7 @@ func Username(raw string) (string, error) {
 // containing whitespace, because both are what keep a DISPLAY NAME out. Without
 // the "@" check "Grace Hopper" is just a local part; without the whitespace check
 // it is a local part whose space gets dropped, and either way the profile name
-// becomes the username "zachkelling" — silently, which is the whole defect this
+// becomes the username "gracehopper" — silently, which is the whole defect this
 // rule exists to make impossible. Other unusable characters ARE dropped ("+" is a
 // subaddress marker, not a word boundary); whitespace is the one that means a
 // human name was passed where an address was expected, so it is refused rather

@@ -93,9 +93,9 @@ so the two cannot drift.
 `userClaims` computed `name = DisplayName, else Name` — OIDC's display reading of
 `name`, inherited from the v1 `Userinfo` struct and present since the in-tree
 server was written (`73b7ef63e`). Measured on iam.hanzo.ai 2026-07-30: a login as
-account `z` minted `name: "Zach Kelling"` and the CLI filed `hanzo/Zach Kelling`,
+account `z` minted `name: "Grace Hopper"` and the CLI filed `hanzo/Grace Hopper`,
 an account that does not exist. cloud's money path had already paid for the same
-reading — it addresses a wallet `<org>/<username>`, addressed `hanzo/Zach Kelling`
+reading — it addresses a wallet `<org>/<username>`, addressed `hanzo/Grace Hopper`
 and 402'd every completion while the balance sat in `hanzo/z`. `5c0ea823f`
 answered that by ADDING `preferred_username` and deliberately leaving `name`
 display-sourced, which gave the username a home without evicting the display name
@@ -131,8 +131,8 @@ theirs: `<org>-` binding and segmentation.
 
 **Social signup derives from the ADDRESS, never the profile.** `schema.Handle`
 takes the email local part and refuses a string with no `@` or a local part with
-whitespace — without both, "Zach Kelling" is a local part whose space gets dropped
-and the profile name silently becomes the username `zachkelling`. Dedupe is a
+whitespace — without both, "Grace Hopper" is a local part whose space gets dropped
+and the profile name silently becomes the username `gracehopper`. Dedupe is a
 numeric suffix (`z`, `z2`, `z3`), replacing a random 8-hex suffix on every name
 that made collisions impossible by making every username unrecognisable.
 

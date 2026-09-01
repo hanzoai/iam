@@ -64,7 +64,7 @@ func TestProvisionFederatedUser_DedupesWithANumericSuffix(t *testing.T) {
 		}
 	}
 	// And no account is named after the human.
-	for _, spelling := range []string{"Grace Hopper", "zachkelling", "Grace Hopper"} {
+	for _, spelling := range []string{"Grace Hopper", "gracehopper", "Grace Hopper"} {
 		if u, _ := store.GetUserByName(ctx, db, "hanzo", spelling); u != nil {
 			t.Fatalf("an account named %q was created from the IdP display name", spelling)
 		}
