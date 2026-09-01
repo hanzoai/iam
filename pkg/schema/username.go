@@ -30,7 +30,7 @@ import (
 // nothing longer than a DNS label gets in.
 //
 // The refusals are what matter. No whitespace and no "@" means a display name
-// ("Zach Kelling") and an email address can never BE a username, only derive one.
+// ("Grace Hopper") and an email address can never BE a username, only derive one.
 // No "/" because "/" is the natural-key separator AND the owner/name subject
 // separator, so a name carrying one could smuggle a second separator into a
 // token's `sub` and be decoded as a different principal. Lowercase-only because
@@ -66,7 +66,7 @@ func Username(raw string) (string, error) {
 //
 // It requires an "@" with a non-empty local part, and refuses a local part
 // containing whitespace, because both are what keep a DISPLAY NAME out. Without
-// the "@" check "Zach Kelling" is just a local part; without the whitespace check
+// the "@" check "Grace Hopper" is just a local part; without the whitespace check
 // it is a local part whose space gets dropped, and either way the profile name
 // becomes the username "zachkelling" — silently, which is the whole defect this
 // rule exists to make impossible. Other unusable characters ARE dropped ("+" is a

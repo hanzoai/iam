@@ -138,11 +138,11 @@ func TestNewRSASignerFromCert_PEMRoundTrip(t *testing.T) {
 //
 // `hanzo auth login` files its credential under `owner`/`name` read straight off
 // the minted token, so those two claims ARE the principal downstream believes it
-// holds. A real login as account "z" minted `name: "Zach Kelling"` — the human's
+// holds. A real login as account "z" minted `name: "Grace Hopper"` — the human's
 // display name, a label with a space in it — and every surface downstream then
 // named an account that does not exist. cloud's money path had already been bitten
 // by the same reading: it addresses a wallet `<org>/<username>`, addressed
-// `hanzo/Zach Kelling`, and 402'd every completion while the balance sat in
+// `hanzo/Grace Hopper`, and 402'd every completion while the balance sat in
 // `hanzo/z`.
 //
 // So: `name` is the username, `preferred_username` is the same username, and the
@@ -151,7 +151,7 @@ func TestNewRSASignerFromCert_PEMRoundTrip(t *testing.T) {
 func TestSignNamesTheUsernameNeverTheDisplayName(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
 	now := time.Unix(1_800_000_000, 0)
-	z := Identity{Id: "hanzo/z", Email: "z@hanzo.ai", Name: "z", Display: "Zach Kelling"}
+	z := Identity{Id: "hanzo/z", Email: "z@hanzo.ai", Name: "z", Display: "Grace Hopper"}
 
 	// Both token shapes, from the one claim builder — an id_token that disagreed
 	// with its access token would be the same defect wearing a different name.
@@ -174,7 +174,7 @@ func TestSignNamesTheUsernameNeverTheDisplayName(t *testing.T) {
 		if got.PreferredUsername != "z" {
 			t.Fatalf("%s token: preferred_username = %q; want %q", tc.shape, got.PreferredUsername, "z")
 		}
-		if got.Display != "Zach Kelling" {
+		if got.Display != "Grace Hopper" {
 			t.Fatalf("%s token: displayName = %q; want the human name carried in its own claim", tc.shape, got.Display)
 		}
 		if got.Owner != "hanzo" {

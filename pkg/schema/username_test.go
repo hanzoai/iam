@@ -18,8 +18,8 @@ func TestUsername(t *testing.T) {
 		// A display name is not a username. This is the string a real login put in
 		// the `name` claim, and it must not be able to reach the username field
 		// from any direction — a space alone settles it, in either spelling.
-		{"display name", "Zach Kelling", ""},
-		{"display name lowercased", "zach kelling", ""},
+		{"display name", "Grace Hopper", ""},
+		{"display name lowercased", "Grace Hopper", ""},
 		{"leading and trailing space", "  z  ", "z"},
 		{"inner tab", "za\tch", ""},
 
@@ -84,13 +84,13 @@ func TestHandle(t *testing.T) {
 		// Not an address, so not a source of identity — a bare string is never
 		// assumed to be one.
 		{"no domain", "zach", ""},
-		{"localpart with a space", "Zach Kelling@hanzo.ai", ""},
+		{"localpart with a space", "Grace Hopper@hanzo.ai", ""},
 		{"leading separator dropped", ".zach@hanzo.ai", "zach"},
 		{"long localpart is capped", str(40, 'a') + "@hanzo.ai", str(24, 'a')},
 		// A display name is not an address and yields nothing usable, so the
 		// caller falls back rather than persisting a name derived from a human's
 		// name. THE distinction this whole change is about.
-		{"display name yields nothing", "Zach Kelling", ""},
+		{"display name yields nothing", "Grace Hopper", ""},
 		{"empty", "", ""},
 		{"nothing usable", "!!!@hanzo.ai", ""},
 	} {
