@@ -24,7 +24,7 @@ func TestCreate_NormalizesAndValidatesUsername(t *testing.T) {
 		want  string // "" = must be refused
 		stays bool   // the refused name must not exist under any spelling
 	}{
-		{name: "display name refused", raw: "Zach Kelling", stays: true},
+		{name: "display name refused", raw: "Grace Hopper", stays: true},
 		{name: "case is folded", raw: "Z", want: "z"},
 		{name: "mixed case is folded", raw: "Alice", want: "alice"},
 		{name: "padding is trimmed", raw: "  bob  ", want: "bob"},

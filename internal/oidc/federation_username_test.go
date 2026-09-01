@@ -42,7 +42,7 @@ func TestProvisionFederatedUser_DedupesWithANumericSuffix(t *testing.T) {
 		id := federatedIdentity{
 			subject:     string(rune('a'+i)) + "-idp-subject",
 			email:       "z@example.com",
-			displayName: "Zach Kelling", // the trap: never a username
+			displayName: "Grace Hopper", // the trap: never a username
 		}
 		u, err := provisionFederatedUser(ctx, db, app, prov, binding, id)
 		if err != nil {
@@ -51,7 +51,7 @@ func TestProvisionFederatedUser_DedupesWithANumericSuffix(t *testing.T) {
 		if u.Name != want {
 			t.Fatalf("provisioned username %q, want %q", u.Name, want)
 		}
-		if u.DisplayName != "Zach Kelling" {
+		if u.DisplayName != "Grace Hopper" {
 			t.Fatalf("display name = %q; it belongs on DisplayName, unchanged", u.DisplayName)
 		}
 	}
@@ -64,7 +64,7 @@ func TestProvisionFederatedUser_DedupesWithANumericSuffix(t *testing.T) {
 		}
 	}
 	// And no account is named after the human.
-	for _, spelling := range []string{"Zach Kelling", "zachkelling", "zach kelling"} {
+	for _, spelling := range []string{"Grace Hopper", "zachkelling", "Grace Hopper"} {
 		if u, _ := store.GetUserByName(ctx, db, "hanzo", spelling); u != nil {
 			t.Fatalf("an account named %q was created from the IdP display name", spelling)
 		}

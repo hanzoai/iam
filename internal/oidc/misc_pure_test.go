@@ -42,7 +42,7 @@ func TestWebAuthnDisplayName(t *testing.T) {
 		user *schema.User
 		want string
 	}{
-		{"display name preferred", &schema.User{DisplayName: "Zach Kelling", Name: "z"}, "Zach Kelling"},
+		{"display name preferred", &schema.User{DisplayName: "Grace Hopper", Name: "z"}, "Grace Hopper"},
 		{"falls back to name", &schema.User{Name: "z"}, "z"},
 	}
 	for _, tc := range cases {

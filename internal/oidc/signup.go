@@ -418,7 +418,7 @@ func allocate(base string, free func(string) (bool, error)) (string, error) {
 // federated signup, which never has one.
 //
 // What an address yields is schema.Handle's to decide, and only the ADDRESS may
-// become an identity: an IdP profile says "Zach Kelling", which is not a username
+// become an identity: an IdP profile says "Grace Hopper", which is not a username
 // in any spelling and must never be turned into one. fallback is the value to
 // derive from when the address yields nothing — the provider TYPE ("google") for a
 // federated signup, which is the only other value on that path that is not a
