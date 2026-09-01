@@ -692,7 +692,7 @@ func subjectOf(u *schema.User) string {
 //
 // They were. Each of those paths separately wrote `name = DisplayName, else
 // Name`, which put a human's display name in the claim the CLI files its
-// credential under: a login as "z" minted `name: "Zach Kelling"` and every
+// credential under: a login as "z" minted `name: "Grace Hopper"` and every
 // downstream surface then named a principal that does not exist. `name` is the
 // username here and nowhere else decides.
 func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {

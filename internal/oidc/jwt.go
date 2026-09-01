@@ -50,7 +50,7 @@ type Claims struct {
 	// principal downstream believes it holds.
 	//
 	// OIDC gives `name` display semantics and this token used to honour that,
-	// carrying DisplayName ("Zach Kelling") while the account was "z". Adding
+	// carrying DisplayName ("Grace Hopper") while the account was "z". Adding
 	// preferred_username gave the username somewhere to live but left `name`
 	// display-sourced, so the wrong-principal reading stayed on the wire for every
 	// consumer that reads `name` — the CLI among them. The display name now has its
@@ -62,7 +62,7 @@ type Claims struct {
 	// because discovery advertises it in claims_supported and cloud's money path
 	// already reads it: a wallet is addressed `<org>/<username>`, and when the only
 	// username-shaped claim was a display-sourced `name` it addressed
-	// `hanzo/Zach Kelling` — a wallet no funding path can name — while the balance
+	// `hanzo/Grace Hopper` — a wallet no funding path can name — while the balance
 	// sat in `hanzo/z`. It is sourced from the SAME field as Name (Identity.Name),
 	// so the two cannot drift apart the way `name` drifted from the account.
 	PreferredUsername string `json:"preferred_username,omitempty"`

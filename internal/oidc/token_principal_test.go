@@ -16,7 +16,7 @@ import (
 )
 
 // seedZ is the account the live bug was reproduced on: username "z", display
-// name "Zach Kelling". The password is stored as a bcrypt digest, never
+// name "Grace Hopper". The password is stored as a bcrypt digest, never
 // plaintext — a fixture is still a credential.
 func seedZ(t *testing.T, db orm.DB) {
 	t.Helper()
@@ -29,7 +29,7 @@ func seedZ(t *testing.T, db orm.DB) {
 	u.Name = "z"
 	u.Email = "z@hanzo.ai"
 	u.EmailVerified = true
-	u.DisplayName = "Zach Kelling"
+	u.DisplayName = "Grace Hopper"
 	u.PasswordHash = string(hash)
 	u.PasswordType = "bcrypt"
 	u.SetId("hanzo/z")
@@ -42,7 +42,7 @@ func seedZ(t *testing.T, db orm.DB) {
 // runs (`hanzo auth login`, scope "openid profile email"), against the account it
 // was reproduced on. The CLI files its credential under the token's own
 // `owner`/`name`, so this is not a cosmetic claim — it is WHICH PRINCIPAL every
-// downstream surface believes it holds. It used to answer "Zach Kelling".
+// downstream surface believes it holds. It used to answer "Grace Hopper".
 //
 // Asserted on the access token AND the id_token, because they are minted from one
 // resolution and a disagreement between them would be the same defect again.
@@ -79,7 +79,7 @@ func TestCodeExchange_NamesTheUsernameNotTheDisplayName(t *testing.T) {
 		if got.PreferredUsername != "z" {
 			t.Errorf("%s: preferred_username = %q; want %q", shape, got.PreferredUsername, "z")
 		}
-		if got.Display != "Zach Kelling" {
+		if got.Display != "Grace Hopper" {
 			t.Errorf("%s: displayName = %q; the human name belongs in its own claim", shape, got.Display)
 		}
 		if got.Email != "z@hanzo.ai" {
@@ -97,7 +97,7 @@ func TestCodeExchange_NamesTheUsernameNotTheDisplayName(t *testing.T) {
 	if info["name"] != "z" || info["preferred_username"] != "z" {
 		t.Errorf("userinfo named %v / %v; want the username on both", info["name"], info["preferred_username"])
 	}
-	if info["displayName"] != "Zach Kelling" {
+	if info["displayName"] != "Grace Hopper" {
 		t.Errorf("userinfo displayName = %v; want the human name", info["displayName"])
 	}
 }
