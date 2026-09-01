@@ -85,7 +85,7 @@ func TestHandle(t *testing.T) {
 		// assumed to be one.
 		{"no domain", "zach", ""},
 		{"localpart with a space", "Grace Hopper@hanzo.ai", ""},
-		{"leading separator dropped", ".zach@hanzo.ai", "zach"},
+		{"leading separator dropped", ".research@hanzo.ai", "zach"},
 		{"long localpart is capped", str(40, 'a') + "@hanzo.ai", str(24, 'a')},
 		// A display name is not an address and yields nothing usable, so the
 		// caller falls back rather than persisting a name derived from a human's
