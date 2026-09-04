@@ -621,6 +621,145 @@ any of it: one `proveFactor` verifies a challenge answer for both the password a
 federated resume, and the challenge row carries the factors it was minted OFFERING so
 an answer is checked against that offer rather than recomputed.
 
+## A wallet is a sign-in method, and the account's DID is derived from `sub`
+
+A person links a wallet once, here, and every app reads it as a claim. Three
+pieces, and the point is which of them depend on each other: the LINK is native
+CAIP-122 in `internal/wallet`, the CLAIM is derived in `identityOf`, and the
+on-chain ANCHOR is optional and depends on neither.
+
+**The link.** `GET /v1/iam/web3/nonce?chain=&address=` mints a CAIP-122
+challenge — the `LoginChallenge` field for field, so `@luxwallet/connect`'s
+`buildSiwxMessage` renders the message the wallet signs and the Go
+`ParseSiwxMessage` reads back the same string. `POST /v1/iam/web3/verify`
+carries the `SignedProof` (`chain`, `scheme`, `address`, `publicKey?`,
+`message`, `signature`, `extra?`) plus the app routing and the authorize
+passthrough, and answers a user id or a PKCE code exactly as a password login
+does. `verify` runs `luxwallet/connect/go`'s `VerifyProof` — the SAME verifier
+the TypeScript client runs, so Go and TS cannot disagree about what a valid
+proof is.
+
+The ORDER in `internal/wallet/verify.go` is the security property: the nonce is
+read from the SIGNED MESSAGE (never the body, or a forged body could desync the
+two), the challenge is BURNED atomically before any cryptography (so a captured
+proof cannot be replayed even when its signature is perfect), the burned row's
+`domain` and `chain` are re-checked, and only then is the signature verified.
+The domain is `c.Host()` at both ends — the true routed brand host, never
+`X-Forwarded-Host` — because the whole anti-phishing binding rides on it.
+Identity is the address the VERIFIER recovered, canonicalized (EVM lowercased;
+base58/bech32/SS58 trimmed only, because they are case-sensitive), never the one
+the client claimed.
+
+**Linking to an account you already hold** is the branch where the verify POST
+carries a bearer AND is same-site. That is the only branch with ambient
+authority, so a cross-site caller is treated as anonymous — a forged POST must
+not attach an attacker's wallet to a signed-in victim. `(chain, address)` is
+globally unique, checked in the same transaction as the bind, so one wallet is
+one identity and a wallet already spoken for is refused rather than moved.
+
+**Unlinking** is `POST /v1/iam/unlink` with
+`{"providerType":"wallet","chain":…,"address":…,"user":{"owner":…,"name":…}}` —
+the same endpoint, the same policy (holder or SuperAdmin; not an org admin), and
+the same last-credential refusal every other method has. `wallet` is deliberately
+NOT in `connectorRegistry`: that registry maps a type to ONE user column and an
+account holds many wallets across many chains, so an entry there would have to
+lie about the cardinality. `detachable` carries what differs — the name, which
+one, and how it goes — and the policy above it is written once.
+
+**The claims.**
+
+```
+"wallets": [{"chain":"evm","address":"0x2c75…"}, {"chain":"solana","address":"7EqQ…"}]
+"did":     "did:lux:6f1a3e2c-1f4a-4c0e-9a1b-2f9d4c7b8e01"
+```
+
+Both are resolved in `identityOf`, beside `sub`, `orgs` and the rest, so no mint
+path can answer differently from another. `wallets` is ordered by (chain,
+address) because it lands in a SIGNED value: an unordered read would make two
+tokens for one unchanged account differ byte for byte. Both are `omitempty` — a
+machine token has neither, and an account with no wallet omits the list rather
+than carrying `[]`. UserInfo answers with the same two, read FRESH from the store
+rather than echoed from the token, which is the rule memberships are already
+under: a wallet unlinked a minute ago stops counting now, not when the token
+lapses.
+
+**What `wallets` asserts, and what it does not.** It says IAM verified a CAIP-122
+proof that the holder controlled that key, against a challenge IAM minted and
+burned. It does NOT say they control it right now — a key can be sold, lost or
+compromised between the link and the token, so the assertion is as fresh as the
+token's lifetime. Anything authorizing a payment wants its own signature.
+
+**The DID derivation** is `schema.DID`: `did:lux:` + the OIDC subject with `/`
+rewritten to `:`. Derived, never stored — a stored DID is a second name for a
+principal that can drift from the first, and it would make the identifier
+something an admin write could repoint. A subject has two live shapes
+(`subjectOf`): the opaque UUID, and the `<owner>/<name>` natural key a
+pre-cutover row still carries. `/` begins a DID URL path, so `did:lux:hanzo/z`
+would name a resource UNDER a DID rather than the DID; `:` is the
+method-specific-id's own separator, so `did:lux:hanzo:z` is one identifier. The
+map is injective over the subjects that exist — a UUID contains no `:` and no
+`/`, and both halves of the natural key are drawn from the username alphabet —
+so two people cannot derive one DID. A subject outside that alphabet yields no
+DID rather than a malformed one, because an absent claim reads as "this
+deployment has no DID for me" while an invalid one gets resolved, and what it
+resolves to is not that person.
+
+`lux` names the REGISTRY, not the brand: lux.id, hanzo.id, zoo.id and pars.id all
+mint `did:lux:` because one registry cannot resolve four method names.
+
+**The on-chain anchor** (`internal/did`) is off unless a deployment names all
+four settings, and all four or none — a half-named registry is a mistake, not a
+choice, so it is refused rather than degrading silently:
+
+| setting | value |
+|---|---|
+| `IAM_DID_RPC` | JSON-RPC endpoint of the chain the registry is on |
+| `IAM_DID_REGISTRY` | DIDRegistry contract address. **No default** — see below |
+| `IAM_DID_CHAIN` | EIP-155 chain id, decimal; signed into every transaction |
+| `IAM_DID_KEY_FILE` | path to KMS-mounted controller key material (hex, one line) |
+
+The key is a FILE because the estate has one secret path: Hanzo KMS → KMSSecret →
+Secret → mounted material, the same path `internal/registry`'s signing key and
+provision's credentials already read. IAM does not fetch its own secrets at run
+time. A key in the environment is a plaintext secret in a pod spec, readable by
+anything that can describe the workload.
+
+On a NEW binding — only a new one, or a re-login would add a duplicate
+verification method every time — IAM creates the document if the registry does
+not hold one (`createDIDFor`), adds a `CredentialIssuer` service naming the
+issuer and the subject at it, and adds the wallet as an
+`EcdsaSecp256k1RecoveryMethod2020` verification method. It runs AFTER the link
+commits, outside its transaction, on its own context: a chain that is slow or
+gone must not fail a sign-in.
+
+**Assumptions and limits, stated rather than discovered.**
+- **The store is the source of truth; the registry is a projection.** A failed
+  anchor is not retried — the document catches up at the next link. Convergence,
+  if a deployment wants it, reconciles from the store, which holds every binding.
+- **These documents are not self-sovereign.** `createDIDFor` is registrar-only
+  while `addVerificationMethod`/`addService` are controller-only, so one key does
+  all three only by creating documents controlled BY ITSELF. IAM is that
+  controller. `changeController` hands control to the person and ends IAM's
+  ability to keep the document in step; no registrar override gets it back.
+- **Only EVM wallets become verification methods.** The registry's struct types
+  an account as an `address` plus a `bytes32`, which fits a secp256k1 account and
+  nothing else. Other chains link normally, appear in the claim and count as a
+  credential; they are absent from the document, and the DID and its issuer
+  service are still written.
+- **No contract address ships in source.** The address recorded for this contract
+  in `lux/standard`'s `registry.json` (`0xB0B3Df1E27…`) reports no code on any
+  live Lux chain and names an AMM router on testnet 96368; `DEPLOYMENTS.md`
+  records different addresses again, and those disagree with the per-chain
+  deployment records. Verify with `eth_getCode` against the chain you are
+  targeting before configuring one.
+- **The registry is asked for its own method string once** and IAM refuses to
+  write if it disagrees with `schema.DIDMethod`. Documents registered under a
+  name no token's `did` claim matches are worse than no documents.
+- **Selectors are derived** from the canonical signature strings at init. A
+  pasted four-byte constant is a value nobody can check by reading it, and a
+  transposed digit reverts on chain as an unknown method — which looks exactly
+  like a missing registrar role.
+
 ## Key entry points
 - `main.go` — cobra root (`serve` / `compare` / `version`); `server/server.go` route registration.
 - `internal/{oidc,routes}` — OAuth2/OIDC surface; `internal/{scim,mfa,webauthn,providers,sessions,tokens,cred,authz,certs,keys}`.
