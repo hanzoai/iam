@@ -48,6 +48,16 @@ throughout. Paths are relative to the brand `serverUrl`.
 | Logout | OIDC RP-initiated logout | `/v1/iam/oauth/logout` |
 | Identity provisioning | SCIM 2.0 (RFC 7644 / 7643) | `/v1/iam/scim/v2/Users` |
 | Social sign-in / federation | OIDC/OAuth2 Relying Party | `/v1/iam/oauth/authorize?provider=<name>` → `/v1/iam/oauth/callback` |
+| Wallet sign-in / linking | CAIP-122 · EIP-4361 | `/v1/iam/web3/nonce` → `/v1/iam/web3/verify` |
+| Disconnect a sign-in method | — | `/v1/iam/unlink` |
+
+A wallet linked here rides on every token as `wallets` —
+`[{"chain":"evm","address":"0x…"}]`, the addresses whose CAIP-122 proof IAM
+verified — beside `did`, the account's `did:lux:<subject>` identifier derived
+from `sub`. UserInfo answers with both, read fresh. Neither is proof of PRESENT
+control: the assertion is as fresh as the token, so anything authorizing a
+payment takes its own signature. LLM.md has the derivation, the unlink rules,
+and the optional on-chain anchor.
 
 PKCE `S256` always; `client_secret_basic`; scopes `openid profile email`.
 `client_id` is `<org>-<app>` (globally unique); `redirectUris` must be the
