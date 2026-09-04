@@ -141,6 +141,28 @@ type Claims struct {
 	// corrected across this estate — it denies every operator who also does
 	// ordinary work, which is nearly all of them.
 	Groups []string `json:"groups,omitempty"`
+	// Wallets is the chain-qualified addresses this person has PROVED control
+	// of — each one the result of a CAIP-122 challenge IAM minted, bound to its
+	// issuing host, and verified against a burned single-use nonce
+	// (internal/wallet). A relying party reading it is reading IAM's assertion
+	// that the holder controlled that key, at some point, to this issuer.
+	//
+	// It is stated in the token because the alternative is every service that
+	// cares about a wallet asking IAM at request time, or worse, accepting an
+	// address the client names. A signed claim removes both.
+	//
+	// What it is NOT: proof the holder controls the key RIGHT NOW. A key can be
+	// sold, lost, or compromised between the link and this token; the claim is
+	// as fresh as the token's lifetime and no fresher. A payment authorization
+	// wants its own signature, not this.
+	Wallets []schema.WalletRef `json:"wallets,omitempty"`
+	// DID is the account's decentralized identifier, `did:lux:<subject>`,
+	// derived from `sub` (schema.DID) rather than stored beside it. It is
+	// present on every user token — deriving it needs no registry, and a
+	// deployment that anchors documents on chain (internal/did) writes the same
+	// string this claim carries. Absent only for a subject the derivation
+	// refuses, and on machine tokens, which have no person to name.
+	DID string `json:"did,omitempty"`
 }
 
 // Identity is WHO a token speaks for: the caller-resolved values every mint
@@ -163,6 +185,12 @@ type Identity struct {
 	Type    string // the identity CLASS; empty for a person (schema.Program)
 	Orgs    []schema.OrgRef
 	Assumed string // the organization a platform operator has stepped into
+	// Wallets is the set of chain-qualified addresses the person has proved
+	// control of, and DID is the identifier derived from Id (schema.DID). Both
+	// are resolved in identityOf beside everything else, so a mint path cannot
+	// state one of them differently from another path.
+	Wallets []schema.WalletRef
+	DID     string
 }
 
 // Actor is the RFC 8693 `act` claim value: the identity that requested a
@@ -270,6 +298,8 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		Orgs:              id.Orgs,
 		Groups:            groupsOf(id.Orgs),
 		Assumed:           id.Assumed,
+		Wallets:           id.Wallets,
+		DID:               id.DID,
 	}, nil
 }
 
