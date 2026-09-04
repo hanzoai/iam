@@ -689,6 +689,13 @@ func subjectOf(u *schema.User) string {
 	return u.Owner + "/" + u.Name
 }
 
+// Subject is the OIDC `sub` of a user, for a caller outside this package. It is
+// a door onto subjectOf rather than a second derivation, because a value that
+// names a principal two ways is the failure this file already carries the scar
+// of: the DID and the token's `sub` must be the same string or they name two
+// people.
+func Subject(u *schema.User) string { return subjectOf(u) }
+
 // identityOf is the ONE resolution of a loaded user into token claims: its stable
 // `sub`, email, USERNAME, display name, ledger, and membership set
 // (store.MemberOrgRefs — home org first, deduped). Every mint path — the
@@ -701,15 +708,23 @@ func subjectOf(u *schema.User) string {
 // credential under: a login as "z" minted `name: "Grace Hopper"` and every
 // downstream surface then named a principal that does not exist. `name` is the
 // username here and nowhere else decides.
+// The DID and the wallet set are resolved here for the reason everything else
+// is: they are facts about the PRINCIPAL, so a mint path that resolved them
+// itself could answer differently for one token than the next. The DID is
+// derived from the very subject this function computes, so the two identifiers
+// on a token can never name two people.
 func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 	refs := store.MemberOrgRefs(ctx, db, u)
+	sub := subjectOf(u)
 	return Identity{
-		Id:      subjectOf(u),
+		Id:      sub,
 		Email:   u.Email,
 		Name:    u.Name,
 		Display: u.DisplayName,
 		Billing: store.BillingAccount(u, refs),
 		Orgs:    refs,
+		Wallets: store.WalletRefs(ctx, db, u),
+		DID:     schema.DID(sub),
 	}
 }
 

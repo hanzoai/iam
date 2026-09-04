@@ -186,6 +186,9 @@ func Discovery(c *zip.Ctx) error {
 			// exactly what a token carries.
 			"name", "preferred_username", "displayName", "email", "email_verified",
 			"picture", "address", "phone", "groups", "is_verified",
+			// The on-chain half of the same identity: the wallets this person
+			// proved control of, and the identifier derived from `sub`.
+			"wallets", "did",
 		},
 	})
 }
