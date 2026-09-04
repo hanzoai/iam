@@ -292,6 +292,13 @@ func resolveIssuer(host string) string {
 	return envIssuerResolver().issuerFor(host)
 }
 
+// Issuer is the canonical OIDC issuer for a request host, for a caller outside
+// this package. It exists so a sibling that must name the issuer — the on-chain
+// anchor, which records WHERE an identity is asserted — reads the one per-brand
+// resolver rather than assembling a second answer that could differ from the
+// `iss` on the token describing the same person.
+func Issuer(host string) string { return resolveIssuer(host) }
+
 // The federation-origin resolver — the origin an EXTERNAL IdP calls back to.
 //
 // This is a DIFFERENT VALUE from the issuer, and braiding the two is what broke
