@@ -134,22 +134,8 @@ func GetApplicationNamed(ctx context.Context, db orm.DB, name string) (*schema.A
 	return preferredApp(apps), nil
 }
 
-// HasWallet reports whether any wallet is bound to the account (owner, user) — one
-// of the ways it can be signed in as, which is what the credential inventory in
-// internal/oidc asks before it lets a person remove another one. The wallet flow's
-// own lookups are keyed by (chain, address) because they answer a different
-// question: WHICH account a signature belongs to.
-func HasWallet(ctx context.Context, db orm.DB, owner, user string) (bool, error) {
-	if owner == "" || user == "" {
-		return false, nil
-	}
-	_, err := orm.TypedQuery[schema.Wallet](db).
-		Filter("Owner=", owner).Filter("User=", user).First()
-	if err == orm.ErrNotFound {
-		return false, nil
-	}
-	return err == nil, err
-}
+// An account's wallet reads live in wallet.go — HasWallet, WalletsOf, WalletRefs
+// and DetachWallet together, so "what can this person sign in as" has one home.
 
 // GetUserByName resolves a user by (owner, name) — owner is the organization.
 // Returns (nil, nil) when absent.
