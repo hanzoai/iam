@@ -54,6 +54,17 @@ const (
 // never sends. An error must describe the thing the caller can actually do.
 const CodeLoginRequired = "login_required"
 
+// PathRefreshToken is the spelling signed-in clients POST their refresh to. It is
+// the SAME handler as PathToken at a second address — grant_type=refresh_token
+// travels in the body, so this is a second spelling of the endpoint, never a
+// separate grant. Discovery advertises only PathToken.
+//
+// It is registered because callers hold it: refreshes arrive here continuously,
+// and serving them anywhere else logs every signed-in session out. It is the only
+// legacy token spelling kept — the Casdoor-era `access_token` path and the
+// `/v1/iam/userinfo` spelling draw no traffic, so neither is registered.
+const PathRefreshToken = "/v1/iam/oauth/refresh_token"
+
 // Route registers the entire OIDC/OAuth2 surface on r, backed by db. This is the
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 

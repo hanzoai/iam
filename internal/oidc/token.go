@@ -46,11 +46,17 @@ type tokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
-// routeToken registers the ONE token endpoint: POST /v1/iam/oauth/token (the
-// RFC 6749 / discovery `token_endpoint`). No legacy `access_token` alias — every
-// client posts to the standard path; the stack is fixed to it, not shimmed.
+// routeToken registers the token endpoint at its canonical path PathToken
+// (/v1/iam/oauth/token — discovery's `token_endpoint`) and at PathRefreshToken,
+// where signed-in clients send their refresh.
+//
+// Both are ONE handler value: it dispatches on grant_type, which travels in the
+// body every caller already sends, so the second address is a spelling of the same
+// endpoint rather than a separate grant. Discovery advertises only PathToken, and
+// when the last caller moves off the refresh spelling the second half is deleted
+// with nothing else changing.
 func routeToken(r zip.Router, db orm.DB) {
-	r.Post(PathToken, tokenHandler(db))
+	zip.Alias(r.Post, PathToken, PathRefreshToken, tokenHandler(db))
 }
 
 // param reads an OAuth REQUEST parameter from either half of the request: the
