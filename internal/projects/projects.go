@@ -5,18 +5,20 @@
 // organization-scoped work container owner-scoped by (owner, name), where Owner
 // is the owning organization. Every operation is a typed zip handler over
 // hanzoai/orm; the orm string key is "owner/name". Reads scope to one owner
-// (organization); writes address one project by its (owner, name) key.
+// (organization); writes address one project by its (owner, name) key. This is
+// the ONE project CRUD path — the legacy get-organization-projects / add-project
+// / delete-project verb aliases reuse it via New.
 package projects
 
 import (
 	"context"
 	"errors"
+	"github.com/hanzoai/iam/internal/authz"
 	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -32,10 +34,15 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/projects", h.List, zip.WithTags("projects"))
 	zip.Post(app, "/v1/iam/projects", h.Create, zip.WithTags("projects"))
-	zip.Get(app, "/v1/iam/projects/:owner/:name", h.Get, zip.WithTags("projects"))
-	zip.Put(app, "/v1/iam/projects/:owner/:name", h.Update, zip.WithTags("projects"))
-	zip.Delete(app, "/v1/iam/projects/:owner/:name", h.Delete, zip.WithTags("projects"))
+	zip.Get(app, "/v1/iam/projects/get", h.Get, zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/update", h.Update, zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/delete", h.Delete, zip.WithTags("projects"))
 }
+
+// New exposes a project Handler so the legacy add-/delete-project verb aliases
+// reuse the ONE project CRUD path, wrapped in the compat
+// envelope.
+func New(db orm.DB) *Handler { return &Handler{db: db} }
 
 // Ref addresses one project by its owner-scoped natural key.
 type Ref struct {
@@ -48,14 +55,14 @@ type Ref struct {
 type Input struct {
 	Owner        string   `json:"owner"`
 	Name         string   `json:"name"`
-	CreatedTime  string   `json:"createdTime" url:"-"`
-	DisplayName  string   `json:"displayName" url:"-"`
-	Description  string   `json:"description" url:"-"`
+	CreatedTime  string   `json:"createdTime"`
+	DisplayName  string   `json:"displayName"`
+	Description  string   `json:"description"`
 	Organization string   `json:"organization"`
-	Workspace    string   `json:"workspace" url:"-"`
+	Workspace    string   `json:"workspace"`
 	Tags         []string `json:"tags"`
-	Metadata     string   `json:"metadata" url:"-"`
-	IsDefault    bool     `json:"isDefault" url:"-"`
+	Metadata     string   `json:"metadata"`
+	IsDefault    bool     `json:"isDefault"`
 }
 
 // ListInput scopes a listing to one owner (organization).
@@ -82,11 +89,7 @@ func key(owner, name string) string { return owner + "/" + name }
 func apply(dst *schema.Project, in *Input) {
 	dst.DisplayName = in.DisplayName
 	dst.Description = in.Description
-	// The organization a project belongs to IS its owner — one fact, reported under
-	// the name a v1 client reads it by. Taking it from the request instead let a
-	// stored row name an organization the row does not belong to, which is a
-	// misleading answer for anything that ever starts reading it.
-	dst.Organization = in.Owner
+	dst.Organization = pick(in.Organization, in.Owner)
 	dst.Workspace = in.Workspace
 	dst.Tags = in.Tags
 	dst.Metadata = in.Metadata
@@ -100,16 +103,17 @@ func apply(dst *schema.Project, in *Input) {
 // You see your own organization's projects and no one else's; which organization that
 // is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved from the authenticated principal, never taken from the
-	// input: in.Owner is whatever the CALLER wrote in the URL, since zip binds a
-	// typed op's scalar fields from the query string on every method. Filtering on
-	// it would let a request name the tenant it reads.
+	// ScopeRead, not Scope: belonging to an org is what entitles you to see what
+	// it contains, and the orgs a person works in are a SET while their account
+	// lives in one of them. It is the same question authz.Principal.CanEntity
+	// answers at the Guard one layer up, so the two cannot give different answers
+	// about one request — Scope here would refuse what the Guard just admitted.
 	//
-	// ScopeRead, not Scope, because BELONGING opens a project list: an operator's
-	// account lives in one org while the orgs they work in are a set, and a
-	// switcher that lists them has to be able to read them. A stranger is refused
-	// exactly as Scope would refuse.
-	owner, err := principal.ScopeRead(ctx, in.Owner)
+	// The owner comes from in.Owner because zip BINDS the query onto the input
+	// (typed.go bindURL(&in, query)); the older reading, that a typed GET binds
+	// nothing and so in.Owner is always empty, was true of an earlier pin and is
+	// what made this surface answer only for the caller's home org.
+	owner, err := authz.ScopeRead(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}
@@ -206,4 +210,12 @@ func mapErr(err error) error {
 		return zip.ErrNotFound("project not found")
 	}
 	return zip.ErrInternal(err.Error())
+}
+
+// pick returns a if non-empty, else b.
+func pick(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

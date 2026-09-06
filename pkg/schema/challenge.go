@@ -5,7 +5,7 @@ package schema
 
 import "github.com/hanzoai/orm"
 
-// Challenge is a single-use, expiring wallet login challenge (v1 the legacy surface
+// Challenge is a single-use, expiring wallet login challenge (v1
 // `web3_nonce`, v2 kind "challenges") — the anti-replay half of CAIP-122 wallet
 // sign-in (HIP-0111). GET /v1/iam/web3/nonce mints one; POST /v1/iam/web3/verify
 // burns it before any crypto runs, so a captured proof can never be redeemed
