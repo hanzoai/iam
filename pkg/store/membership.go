@@ -5,8 +5,6 @@ package store
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -38,20 +36,7 @@ const (
 // which is what makes EnsureMembership idempotent on the pair. The value is never
 // parsed back — the User and Org columns are queried directly — so the "/" inside
 // a user id is harmless.
-func membershipName(user, org string) string { return scopedName(user, org, "", "") }
-
-// scopedName keys a membership by its subject and its scope, so one user holds
-// separate grants in an org, a workspace and a project without colliding.
-func scopedName(user, org, workspace, project string) string {
-	n := user + "|" + org
-	if workspace != "" {
-		n += "|" + workspace
-	}
-	if project != "" {
-		n += "|" + project
-	}
-	return n
-}
+func membershipName(user, org string) string { return user + "|" + org }
 
 // EnsureMembership records that user may act in org with role. It is the ONE way
 // a membership is created. Idempotent: it adds a row only when the (user, org)
@@ -59,50 +44,22 @@ func scopedName(user, org, workspace, project string) string {
 // as a member stays an owner, so a routine backfill can never quietly strip
 // someone's authority. Reports whether it created a row.
 func EnsureMembership(ctx context.Context, db orm.DB, user, org, role string) (bool, error) {
-	return EnsureMembershipIn(ctx, db, user, org, "", "", role)
-}
-
-// EnsureMembershipIn is EnsureMembership at a scope: the org itself, a workspace
-// inside it, or a project inside that. The same user holds a separate grant at
-// each, which is what lets a workspace roster differ from the org's.
-func EnsureMembershipIn(ctx context.Context, db orm.DB, user, org, workspace, project, role string) (bool, error) {
 	if user == "" || org == "" {
 		return false, nil
 	}
-	if project != "" && workspace == "" {
-		return false, fmt.Errorf("membership: a project scope needs a workspace")
-	}
-	existing, err := MembershipIn(ctx, db, user, org, workspace, project)
+	existing, err := GetMembership(ctx, db, user, org)
 	if err != nil || existing != nil {
 		return false, err
 	}
 	m := orm.New[schema.Membership](db)
-	m.Owner, m.Name = MembershipOwner, scopedName(user, org, workspace, project)
+	m.Owner, m.Name = MembershipOwner, membershipName(user, org)
 	m.User, m.Org, m.Role = user, org, role
-	m.Workspace, m.Project = workspace, project
 	m.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	m.SetId(MembershipOwner + "/" + m.Name)
 	if err := m.CreateCtx(ctx); err != nil {
 		return false, err
 	}
 	return true, nil
-}
-
-// MembershipIn returns one scoped membership, or (nil, nil) when absent.
-func MembershipIn(ctx context.Context, db orm.DB, user, org, workspace, project string) (*schema.Membership, error) {
-	if user == "" || org == "" {
-		return nil, nil
-	}
-	m, err := orm.TypedQuery[schema.Membership](db).
-		Filter("User=", user).Filter("Org=", org).
-		Filter("Workspace=", workspace).Filter("Project=", project).First()
-	if err != nil {
-		if errors.Is(err, orm.ErrNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return m, nil
 }
 
 // GetMembership returns one (user, org) membership, or (nil, nil) when absent.
@@ -302,50 +259,4 @@ func HomeRole(u *schema.User) string {
 		return RoleAdmin
 	}
 	return RoleMember
-}
-
-// Seats counts the org's distinct billable people and how many of those are
-// guests.
-//
-// A person is counted ONCE however many scopes they hold — a member of three
-// workspaces is one seat — which is why this counts distinct users rather than
-// rows. Machines never occupy a seat: a service account is not a person, and
-// billing one would charge for the org's own automation. Neither do deleted or
-// forbidden accounts, who cannot sign in to use what they would be billed for.
-//
-// It reads memberships at EVERY scope, org-level and narrower alike, because the
-// question is who the org is paying for, not where they work.
-func Seats(ctx context.Context, db orm.DB, org string) (seats, guests int, err error) {
-	if org == "" {
-		return 0, 0, nil
-	}
-	rows, err := MembershipsByOrg(ctx, db, org)
-	if err != nil {
-		return 0, 0, fmt.Errorf("seats: %w", err)
-	}
-	// The narrowest role a person holds anywhere decides whether they are a guest:
-	// a guest in one workspace and a member in another is a member, and counting
-	// them as a guest would under-bill.
-	full := map[string]bool{}
-	guest := map[string]bool{}
-	for _, m := range rows {
-		if m == nil || m.User == "" {
-			continue
-		}
-		u, uerr := GetUserBySubject(ctx, db, m.User)
-		if uerr != nil || u == nil || u.Machine() || u.IsDeleted || u.IsForbidden {
-			continue
-		}
-		if m.Role == "guest" {
-			guest[m.User] = true
-			continue
-		}
-		full[m.User] = true
-	}
-	for u := range guest {
-		if full[u] {
-			delete(guest, u)
-		}
-	}
-	return len(full) + len(guest), len(guest), nil
 }
