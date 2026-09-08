@@ -50,3 +50,24 @@ type Wallet struct {
 	PublicKey   string `json:"publicKey"`
 	CreatedTime string `json:"createdTime"`
 }
+
+// WalletRef is the claim-side projection of a wallet: the chain-qualified
+// address, and nothing else. It is the shape OrgRef has for a membership, for
+// the same reason — a token states the FACT a relying party authorizes on, not
+// the row it was read from.
+//
+// Scheme, PublicKey and CreatedTime are deliberately absent. A relying party
+// asks "does this token's holder control address X on chain Y", which the pair
+// answers; the scheme is how IAM verified it, and republishing the public key
+// would put key material on the wire in every request carrying a token, for a
+// reader that already holds the address derived from it.
+type WalletRef struct {
+	Chain   string `json:"chain"`
+	Address string `json:"address"`
+}
+
+// AsRef projects a stored wallet onto its claim-side reference — the ONE way a
+// wallet row becomes the value a token emits.
+func (w *Wallet) AsRef() WalletRef {
+	return WalletRef{Chain: w.Chain, Address: w.Address}
+}

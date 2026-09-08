@@ -158,6 +158,24 @@ jobs:
             --driver-opt network=host --use 2>/dev/null || docker buildx use hanzo
           docker buildx inspect --bootstrap >/dev/null
 
+      # The lab runs amd64 (evo) and arm64 (spark), and an image built for one
+      # deploys on half of it. This pool is amd64, so the arm64 leg is emulated
+      # and needs binfmt registered before buildx is asked for that platform;
+      # without it the leg dies on `exec format error`. Registered with a plain
+      # `docker run`, and retried, for the two reasons the buildx and sign-in
+      # steps beside it are plain retried commands: every `uses:` is fetched from
+      # github.com at run time, and this runner's egress is not reliable.
+      - name: Register binfmt for the emulated arm64 leg
+        run: |
+          set -uo pipefail
+          for i in 1 2 3; do
+            docker run --privileged --rm tonistiigi/binfmt --install arm64 && exit 0
+            echo "binfmt install attempt $i failed; retrying"
+            sleep $((i * 5))
+          done
+          echo "::error::could not register binfmt for arm64"
+          exit 1
+
       # Retried, because the action this replaces retries and the runner's egress
       # is not reliable. Names the attempt, so a flake reads as a flake rather
       # than as a wrong credential.
@@ -202,7 +220,7 @@ jobs:
           if [ "${{ steps.meta.outputs.push }}" = "true" ]; then push="--push"; fi
           build() { docker buildx build . \
             --file ./Dockerfile \
-            --platform linux/amd64 \
+            --platform linux/amd64,linux/arm64 \
             --provenance=false \
             --build-arg VERSION="${{ steps.meta.outputs.version }}" \
             --tag "${{ steps.meta.outputs.image }}" \
