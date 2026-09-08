@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -491,5 +492,60 @@ func TestFromInitData_ReconcileEmptyPolicyNoop(t *testing.T) {
 	}
 	if sum.Reconciled["applications"] != 0 {
 		t.Fatalf("reconciled=%d, want 0 (no policy declared)", sum.Reconciled["applications"])
+	}
+}
+
+// A document that declares registration is refused, by name, at load.
+//
+// This is the failure the refusal exists to make impossible: hanzo-dataroom was
+// created before it carried any callback, IAM derived one from its homepage, and
+// every later edit to redirectUris in init_data.json was dropped without a word.
+// The application then answered "invalid redirect_uri" for the exact callback
+// its own configuration named, and the file that looked authoritative was the
+// one place the answer was not.
+func TestFromInitData_RefusesRegistration(t *testing.T) {
+	for _, key := range []string{"redirectUris", "grantTypes"} {
+		t.Run(key, func(t *testing.T) {
+			db := openDB(t)
+			doc := `{"applications":[{"owner":"admin","name":"hanzo-dataroom","organization":"hanzo","` +
+				key + `":["https://dataroom.hanzo.ai/api/auth/callback/hanzo-iam"]}]}`
+			path := filepath.Join(t.TempDir(), "init_data.json")
+			if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := FromInitData(context.Background(), db, path)
+			if err == nil {
+				t.Fatalf("%s was accepted; a field this file cannot apply must not be sayable", key)
+			}
+			// The message has to name the application and the field, or it sends
+			// the reader back to the same guess that cost the outage.
+			for _, want := range []string{"hanzo-dataroom", key, "provision"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error must name %q, got: %v", want, err)
+				}
+			}
+
+			// And nothing was written: a refused document is a refused document.
+			if app, _ := orm.Get[schema.Application](db, "admin/hanzo-dataroom"); app != nil {
+				t.Fatal("a refused document still seeded the application")
+			}
+		})
+	}
+}
+
+// The same document without registration loads.
+func TestFromInitData_AcceptsPolicyOnly(t *testing.T) {
+	db := openDB(t)
+	doc := `{"applications":[{"owner":"admin","name":"hanzo-dataroom","organization":"hanzo","enableSignUp":false}]}`
+	path := filepath.Join(t.TempDir(), "init_data.json")
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FromInitData(context.Background(), db, path); err != nil {
+		t.Fatalf("policy-only document refused: %v", err)
+	}
+	if app, _ := orm.Get[schema.Application](db, "admin/hanzo-dataroom"); app == nil {
+		t.Fatal("policy-only document seeded nothing")
 	}
 }
