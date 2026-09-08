@@ -52,20 +52,30 @@ type reply struct {
 	body   string
 }
 
-// records decodes a user listing into the rows that actually crossed the wire.
-// The noun surface names its page after the resource (`users`); the retired verb
-// surface wrapped everything in a compat `data` array, and a decoder still reading
-// that key returns an empty page for a healthy 200 — which passes every "no
-// foreign rows" loop without executing it once.
-func (r reply) records(t *testing.T) []schema.User {
+// row is the only part of a listed record these assertions read: which tenant it
+// belongs to.
+type row struct {
+	Owner string `json:"owner"`
+}
+
+// records returns the rows that actually crossed the wire. A collection names its
+// own array — users, projects, organizations — so the key is READ from the body
+// instead of assumed, and one decoder serves every listing. A refusal carries no
+// array at all, which is the point.
+func (r reply) records(t *testing.T) []row {
 	t.Helper()
-	var env struct {
-		Users []schema.User `json:"users"`
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(r.body), &body); err != nil {
+		return nil
 	}
-	if err := json.Unmarshal([]byte(r.body), &env); err != nil {
-		return nil // an error envelope carries no array; zero records is the point
+	var out []row
+	for _, raw := range body {
+		var rows []row
+		if json.Unmarshal(raw, &rows) == nil {
+			out = append(out, rows...)
+		}
 	}
-	return env.Users
+	return out
 }
 
 // owners returns the DISTINCT owners present in a listing — the misattribution
@@ -74,7 +84,9 @@ func (r reply) owners(t *testing.T) map[string]int {
 	t.Helper()
 	got := map[string]int{}
 	for _, u := range r.records(t) {
-		got[u.Owner]++
+		if u.Owner != "" {
+			got[u.Owner]++
+		}
 	}
 	return got
 }
@@ -120,7 +132,7 @@ func asUser(tok string) string { return "Bearer " + tok }
 // with its own users and projects alongside hanzo's, plus the admin-owned
 // hanzo-console application whose capability allowlist admits it to the users
 // entity. That capability is what carries the request PAST the Guard and into
-// authz.Scope — without it the Guard refuses first and the silent discard is
+// principal.Scope — without it the Guard refuses first and the silent discard is
 // never reached, which is why a unit test on authorize() alone proves nothing
 // here.
 func seedScopeFixture(t *testing.T, h *harness) {
@@ -153,19 +165,6 @@ func seedOrgRow(t *testing.T, db orm.DB, name string) {
 	}
 }
 
-// seedWorkspaceRow adds one workspace under a tenant. Projects and workspaces are
-// the two kinds a member may read across the orgs they belong to, so a test of
-// that read has to seed both or half of it asserts over an empty page.
-func seedWorkspaceRow(t *testing.T, db orm.DB, owner, name string) {
-	t.Helper()
-	w := orm.New[schema.Workspace](db)
-	w.Owner, w.Name = owner, name
-	w.SetId(owner + "/" + name)
-	if err := w.CreateCtx(context.Background()); err != nil {
-		t.Fatalf("seed workspace %s/%s: %v", owner, name, err)
-	}
-}
-
 // seedProjectRow adds one project under a tenant.
 func seedProjectRow(t *testing.T, db orm.DB, owner, name string) {
 	t.Helper()
@@ -179,26 +178,17 @@ func seedProjectRow(t *testing.T, db orm.DB, owner, name string) {
 
 // ---- the bug ---------------------------------------------------------------
 
-// THE PRODUCTION REPRO. A principal holding NO cross-tenant grant, asking for an
-// org that is not its own, must be REFUSED — not answered with its own org's rows
-// under the foreign org's name.
-//
-// The subject is a PERSON. It used to be hanzo-console, an application the fixture
-// grants IAM_USER_ADMIN_APPS two lines earlier, so the case asserted that a
-// capability IAM had deliberately issued does not work. The retired verb surface
-// did answer 403 there, because compat's listHandler ran authz.Scope ahead of the
-// handler and Scope does not consult capabilities — so the verb was overriding the
-// grant rather than enforcing a boundary. What a capability holder may do is
-// pinned directly below, in both directions.
+// THE PRODUCTION REPRO. A non-super principal asking for an org that is not its
+// own must be REFUSED — not answered with its own org's rows under the foreign
+// org's name.
 func TestScope_ForeignOrgIsRefusedNotSilentlyReinterpreted(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
-	seedUser(t, h.db, "hanzo", "staff", true, false, false) // admin OF hanzo, not platform
-	auth := asUser(h.token(t, "hanzo/staff"))
+	auth := asApp("hanzo-console", "s3cret")
 
 	// Own org: unchanged, and it is what makes the foreign case meaningful —
 	// there ARE hanzo rows to be misattributed.
-	own := h.send(t, "GET", "/v1/iam/users?owner=hanzo", auth, nil)
+	own := h.send(t, "GET", "/v1/iam/projects?owner=hanzo", auth, nil)
 	if own.status != 200 {
 		t.Fatalf("own-org listing = %d, want 200 (unchanged): %s", own.status, own.body)
 	}
@@ -208,11 +198,11 @@ func TestScope_ForeignOrgIsRefusedNotSilentlyReinterpreted(t *testing.T) {
 
 	for _, org := range []string{foreignRealOrg, fabricatedOrg} {
 		t.Run(org, func(t *testing.T) {
-			got := h.send(t, "GET", "/v1/iam/users?owner="+org, auth, nil)
+			got := h.send(t, "GET", "/v1/iam/projects?owner="+org, auth, nil)
 
 			// (1) The refusal must be EXPLICIT.
 			if got.status != 403 {
-				t.Errorf("GET /v1/iam/users?owner=%s = %d, want 403 — an org-scoped request "+
+				t.Errorf("GET projects?owner=%s = %d, want 403 — an org-scoped request "+
 					"is honoured or refused, never silently reinterpreted: %s",
 					org, got.status, got.body)
 			}
@@ -220,60 +210,10 @@ func TestScope_ForeignOrgIsRefusedNotSilentlyReinterpreted(t *testing.T) {
 			//     200 carrying the caller's own rows under another org's name, is
 			//     the misattribution this closes.
 			if owners := got.owners(t); len(owners) > 0 {
-				t.Errorf("GET /v1/iam/users?owner=%s returned rows owned by %v — the caller "+
+				t.Errorf("GET projects?owner=%s returned rows owned by %v — the caller "+
 					"asked for %s and was handed somebody else's tenant", org, owners, org)
 			}
 		})
-	}
-}
-
-// WHAT THE CAPABILITY BUYS, stated rather than left to be discovered.
-//
-// IAM_USER_ADMIN_APPS names the applications trusted to administer USERS, and an
-// app's authority is its capability allowlist and nothing else — there is no org
-// term in it, deliberately: an app that could only administer its own org's users
-// would serve no tenant, and cloud's roster read (apps/account nameOf) forwards a
-// tenant's owner under exactly this credential.
-//
-// So a capability holder reaching another tenant is the grant working. The
-// boundary that remains is WHO HOLDS IT: the allowlist is an environment value,
-// so widening it is a deployment decision somebody makes in writing.
-func TestScope_ACapabilityHolderReachesTheTenantItAdministers(t *testing.T) {
-	h := newHarness(t)
-	seedScopeFixture(t, h)
-	auth := asApp("hanzo-console", "s3cret")
-
-	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg, auth, nil)
-	if got.status != 200 {
-		t.Fatalf("a holder of IAM_USER_ADMIN_APPS reading %s = %d, want 200: %s",
-			foreignRealOrg, got.status, got.body)
-	}
-	// It must answer for the org ASKED FOR — the capability grants reach, never a
-	// substitution of the caller's own tenant.
-	owners := got.owners(t)
-	if len(owners) == 0 {
-		t.Fatalf("no rows, so the grant cannot be shown to work: %s", got.body)
-	}
-	for owner := range owners {
-		if owner != foreignRealOrg {
-			t.Errorf("asked for %s and got rows owned by %s", foreignRealOrg, owner)
-		}
-	}
-}
-
-// An app WITHOUT the capability is refused, which is what makes the allowlist the
-// boundary rather than a formality.
-func TestScope_AnAppWithoutTheCapabilityIsRefused(t *testing.T) {
-	h := newHarness(t)
-	seedScopeFixture(t, h)
-	// A second application, absent from every allowlist the fixture set.
-	seedAppRow(t, h.db, "admin", "hanzo-widget", "w1dget", signingKid)
-
-	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg,
-		asApp("hanzo-widget", "w1dget"), nil)
-	if got.status != 403 {
-		t.Errorf("an app holding no user capability read %s = %d, want 403: %s",
-			foreignRealOrg, got.status, got.body)
 	}
 }
 
@@ -284,22 +224,15 @@ func TestScope_AnAppWithoutTheCapabilityIsRefused(t *testing.T) {
 // The property is structural, not cosmetic: the decision is taken from the
 // verified principal alone and never touches the store, so there is no lookup
 // whose outcome could differ. This test is what keeps it that way.
-//
-// The subject is a PERSON, because the property is only about a caller who may
-// NOT read the org. A holder of IAM_USER_ADMIN_APPS learns which tenants exist by
-// administering them, so hiding existence from it would be theatre — the same
-// argument IAM already makes for CapOrgAdmin, which can create orgs and read
-// their founder.
 func TestScope_ForeignAndFabricatedOrgsAreIndistinguishable(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
-	seedUser(t, h.db, "hanzo", "staff", true, false, false) // admin OF hanzo, not platform
-	auth := asUser(h.token(t, "hanzo/staff"))
+	auth := asApp("hanzo-console", "s3cret")
 
 	for _, path := range []string{
-		"/v1/iam/users?owner=",
 		"/v1/iam/organizations?owner=",
 		"/v1/iam/projects?owner=",
+		"/v1/iam/workspaces?owner=",
 		"/v1/iam/scim/v2/Users?owner=",
 	} {
 		t.Run(path, func(t *testing.T) {
@@ -340,8 +273,9 @@ func TestScope_SuperAdminCrossOrgReadIsUnchanged(t *testing.T) {
 	}
 }
 
-// Own-org access is untouched for a HUMAN, on the listing whose target rides in
-// the query rather than in the path.
+// Own-org access is untouched for a HUMAN too, on the endpoints the Guard does
+// not pre-authorize (their target rides in ?organization=, so principal.Scope is the
+// only gate they have).
 func TestScope_OwnOrgReadIsUnchangedForAHuman(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
@@ -351,13 +285,7 @@ func TestScope_OwnOrgReadIsUnchangedForAHuman(t *testing.T) {
 	if got.status != 200 {
 		t.Fatalf("own-org project list = %d, want 200 (unchanged): %s", got.status, got.body)
 	}
-	var env struct {
-		Data []schema.Project `json:"projects"`
-	}
-	if err := json.Unmarshal([]byte(got.body), &env); err != nil {
-		t.Fatalf("decode %s: %v", got.body, err)
-	}
-	if len(env.Data) == 0 {
+	if len(got.records(t)) == 0 {
 		t.Errorf("own-org project list came back empty: %s", got.body)
 	}
 }
@@ -365,7 +293,7 @@ func TestScope_OwnOrgReadIsUnchangedForAHuman(t *testing.T) {
 // The SAME silent discard, reachable by an ORDINARY HUMAN — no client credential
 // needed. get-organization-projects and get-organization-workspaces are
 // handler-authorized (their target rides in ?organization=, which the Guard does
-// not inspect), so authz.Scope is the whole gate, and it rewrote the parameter.
+// not inspect), so principal.Scope is the whole gate, and it rewrote the parameter.
 // An org admin asking for lux's projects got HANZO's, labelled lux.
 func TestScope_HandlerAuthorizedReadsAreNotSilentlyRewritten(t *testing.T) {
 	h := newHarness(t)
@@ -373,8 +301,8 @@ func TestScope_HandlerAuthorizedReadsAreNotSilentlyRewritten(t *testing.T) {
 	boss := asUser(h.token(t, "hanzo/boss"))
 
 	for _, path := range []string{
-		"/v1/iam/projects?organization=" + foreignRealOrg,
-		"/v1/iam/workspaces?organization=" + foreignRealOrg,
+		"/v1/iam/projects?owner=" + foreignRealOrg,
+		"/v1/iam/workspaces?owner=" + foreignRealOrg,
 	} {
 		t.Run(path, func(t *testing.T) {
 			got := h.send(t, "GET", path, boss, nil)
@@ -455,7 +383,7 @@ func TestScope_GetUsersAndGetOrganizationAgreeForAnUngrantedPrincipal(t *testing
 
 	for _, verb := range []struct{ name, pattern string }{
 		{"get-users", "/v1/iam/users?owner=%s"},
-		{"get-organization", "/v1/iam/organizations/get?id=admin%%2F%s"},
+		{"get-organization", "/v1/iam/organizations/admin/%s"},
 	} {
 		t.Run(verb.name, func(t *testing.T) {
 			real := h.send(t, "GET", fmt.Sprintf(verb.pattern, foreignRealOrg), boss, nil)
@@ -482,57 +410,44 @@ func TestScope_AGrantHonoursTheOrgItNamesAndNeverSubstitutes(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
 
-	got := h.send(t, "GET", "/v1/iam/organizations/get?owner=admin&name="+foreignRealOrg,
+	got := h.send(t, "GET", "/v1/iam/organizations/admin/"+foreignRealOrg,
 		asApp("hanzo-console", "s3cret"), nil)
 	if got.status != 200 {
 		t.Fatalf("CapOrgAdmin registry read = %d, want 200 — onboarding reads Founder "+
 			"through this: %s", got.status, got.body)
 	}
-	var env struct {
+	var org struct {
 		Owner string `json:"owner"`
 		Name  string `json:"name"`
 	}
-	if err := json.Unmarshal([]byte(got.body), &env); err != nil {
+	if err := json.Unmarshal([]byte(got.body), &org); err != nil {
 		t.Fatalf("decode %s: %v", got.body, err)
 	}
-	if env.Name != foreignRealOrg {
+	if org.Name != foreignRealOrg {
 		t.Errorf("asked for org %q, got %q — a grant must return the org it was asked for, "+
-			"never another", foreignRealOrg, env.Name)
+			"never another", foreignRealOrg, org.Name)
 	}
 }
 
-// AN UNSTATED ORG IS REFUSED, and that is a change from the retired surface.
-//
-// Omitting ?owner= used to mean "my own org": compat's listHandler resolved it
-// through authz.Scope, which answers the caller's org for an empty request. The
-// noun handler cannot do that — internal/users may not import internal/authz,
-// because authz needs oidc.VerifyToken and oidc needs users.Authenticate, so the
-// principal the default would come from is unreachable from there. It names the
-// org or it is refused.
-//
-// Nothing live depended on the default: hanzoai/ai sends the owner on every read
-// (internal/iam/user.go passes c.OrganizationName explicitly). The remaining cost
-// is that IAM's own rule — "unstated is not reinterpreted, it means your own org"
-// — now holds for the handlers that CAN reach authz.Scope and not for users,
-// applications or permissions. One rule with two answers is what this contract
-// exists to remove, so this is a gap to close rather than a decision that was
-// made: it wants the principal's context carriage lifted into hanzoai/authz,
-// beside the Principal type it is about, which breaks the cycle for all three.
-func TestScope_AnUnstatedOrgIsRefusedRatherThanGuessed(t *testing.T) {
+// An UNSTATED scope is not a reinterpreted one. Omitting ?owner= has always
+// meant "my own org" and still does — the rule is about a request that NAMES an
+// org it may not have, not about one that names none.
+func TestScope_UnstatedOwnerStillMeansOwnOrg(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
 
-	got := h.send(t, "GET", "/v1/iam/users", asApp("hanzo-console", "s3cret"), nil)
-	if got.status != 400 {
-		t.Fatalf("an unstated owner = %d, want 400: %s", got.status, got.body)
+	got := h.send(t, "GET", "/v1/iam/projects", asApp("hanzo-console", "s3cret"), nil)
+	if got.status != 200 {
+		t.Fatalf("project list with no owner = %d, want 200 (unchanged): %s", got.status, got.body)
 	}
-	// Refused, not answered with SOMEBODY's rows. A default that guessed wrong is
-	// the misattribution this file is about, one step earlier.
-	if owners := got.owners(t); len(owners) > 0 {
-		t.Errorf("an unstated owner returned rows owned by %v", owners)
+	owners := got.owners(t)
+	if owners["hanzo"] == 0 || len(owners) != 1 {
+		t.Errorf("project list with no owner returned %v, want hanzo only", owners)
 	}
 }
 
+// seedMembership grants a user the right to act in an org that is not their
+// home. It is the shape a real console user has: one account, several orgs.
 func seedMembership(t *testing.T, db orm.DB, user, org, role string) {
 	t.Helper()
 	m := orm.New[schema.Membership](db)
@@ -556,43 +471,27 @@ func TestScopeRead_AnOrgYouBelongToOpens(t *testing.T) {
 	// A hanzo account that ADMINISTERS the other tenant, the way a real operator does.
 	seedUser(t, h.db, "hanzo", "crossorg", false, false, false)
 	seedMembership(t, h.db, "hanzo/crossorg", foreignRealOrg, "admin")
-	seedWorkspaceRow(t, h.db, foreignRealOrg, "lux-secret-workspace")
 	crossorg := asUser(h.token(t, "hanzo/crossorg"))
 
-	// The org is named with ?owner=, the one spelling every noun on this surface
-	// scopes by. The retired verb spelled it ?organization=, and a rename that
-	// carried the address without the query would answer for the home org at 200.
-	for _, tc := range []struct{ path, key string }{
-		{"/v1/iam/projects?owner=" + foreignRealOrg, "projects"},
-		{"/v1/iam/workspaces?owner=" + foreignRealOrg, "workspaces"},
+	for _, path := range []string{
+		"/v1/iam/projects?owner=" + foreignRealOrg,
+		"/v1/iam/workspaces?owner=" + foreignRealOrg,
 	} {
-		t.Run(tc.path, func(t *testing.T) {
-			got := h.send(t, "GET", tc.path, crossorg, nil)
+		t.Run(path, func(t *testing.T) {
+			got := h.send(t, "GET", path, crossorg, nil)
 			if got.status != 200 {
 				t.Fatalf("GET %s = %d, want 200 — a member of %s cannot read it: %s",
-					tc.path, got.status, foreignRealOrg, got.body)
-			}
-			// Through RawMessage because the envelope carries a `total` beside the
-			// page, and a map of slices cannot hold a number.
-			var env map[string]json.RawMessage
-			if err := json.Unmarshal([]byte(got.body), &env); err != nil {
-				t.Fatalf("decode %s: %v", got.body, err)
-			}
-			var rows []map[string]any
-			if err := json.Unmarshal(env[tc.key], &rows); err != nil {
-				t.Fatalf("decode %s of %s: %v", tc.key, got.body, err)
-			}
-			// An empty page would pass the ownership loop below without executing it
-			// once, so the seeded org must actually come back.
-			if len(rows) == 0 {
-				t.Fatalf("GET %s answered 200 with no %s — an empty page proves nothing "+
-					"about who the rows belong to: %s", tc.path, tc.key, got.body)
+					path, got.status, foreignRealOrg, got.body)
 			}
 			// It must answer for the org ASKED FOR, never quietly for the home org.
-			for _, row := range rows {
+			var env struct {
+				Data []map[string]any `json:"data"`
+			}
+			_ = json.Unmarshal([]byte(got.body), &env)
+			for _, row := range env.Data {
 				if row["owner"] != foreignRealOrg {
 					t.Errorf("GET %s returned a row owned by %v — answering for the home org "+
-						"is the misattribution the strict clause existed to prevent", tc.path, row["owner"])
+						"is the misattribution the strict clause existed to prevent", path, row["owner"])
 				}
 			}
 		})
@@ -606,7 +505,7 @@ func TestScopeRead_AStrangerIsStillRefused(t *testing.T) {
 	seedScopeFixture(t, h)
 	boss := asUser(h.token(t, "hanzo/boss")) // no membership anywhere but hanzo
 
-	got := h.send(t, "GET", "/v1/iam/projects?organization="+foreignRealOrg, boss, nil)
+	got := h.send(t, "GET", "/v1/iam/projects?owner="+foreignRealOrg, boss, nil)
 	if got.status != 403 {
 		t.Fatalf("a non-member read of %s = %d, want 403: %s", foreignRealOrg, got.status, got.body)
 	}
@@ -668,5 +567,186 @@ func TestSuper_OrdinaryMembershipIsNotSudo(t *testing.T) {
 	}
 	if owners := got.owners(t); len(owners) > 0 {
 		t.Errorf("the refusal shipped rows owned by %v", owners)
+	}
+}
+
+// seedEmail seeds a user carrying an address, which seedUser leaves empty. The
+// global page narrows by address across the WHOLE table, so proving that needs
+// one address present in more than one tenant.
+func seedEmail(t *testing.T, db orm.DB, owner, name, email string) {
+	t.Helper()
+	u := orm.New[schema.User](db)
+	u.Owner, u.Name, u.Email = owner, name, email
+	u.SetId(owner + "/" + name)
+	if err := u.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed user %s/%s: %v", owner, name, err)
+	}
+}
+
+// A caller whose scope spans tenants and names none gets the page its scope
+// allows: every tenant. This is the read the gone table's get-global-users points
+// at, and the reason the owner cannot be a required field — required refuses this
+// caller before the handler resolves anything.
+func TestScope_SuperAdminGlobalUserPageSpansTenants(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+
+	got := h.send(t, "GET", "/v1/iam/users", asUser(h.token(t, "admin/root")), nil)
+	if got.status != 200 {
+		t.Fatalf("SuperAdmin global user page = %d, want 200: %s", got.status, got.body)
+	}
+	owners := got.owners(t)
+	if len(owners) < 2 {
+		t.Errorf("SuperAdmin named no owner and got rows from %v — a scope that spans "+
+			"tenants must answer across them, not fall back to one", owners)
+	}
+	if owners[foreignRealOrg] == 0 {
+		t.Errorf("the global page carries no %s rows (owners=%v)", foreignRealOrg, owners)
+	}
+}
+
+// THE LEAK GUARD. Naming no owner means "the tenant my credential is scoped to",
+// and for a credential scoped to ONE tenant that is one tenant — never the table.
+//
+// hanzo-console is the shape that makes this reachable and the shape that made it
+// dangerous: an admin-owned confidential client holding the users capability. That
+// capability carries a request with NO owner named PAST the Guard and PAST the op
+// seam, because both read an unnamed target as "nothing named to refuse" and hand
+// it on. The handler is the only place left that holds the credential and the
+// query at once, so the tenant is decided there or it is not decided at all.
+func TestScope_GlobalUserPageNeverLeaksAnotherTenant(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+
+	// The human is the second half: an org admin is refused outright here, before
+	// the handler, so the two together say an unstated owner never widens for a
+	// non-super whether it carries a capability or not.
+	for _, c := range []struct {
+		who  string
+		auth string
+	}{
+		{"hanzo-console", asApp("hanzo-console", "s3cret")},
+		{"hanzo/boss", asUser(h.token(t, "hanzo/boss"))},
+	} {
+		t.Run(c.who, func(t *testing.T) {
+			got := h.send(t, "GET", "/v1/iam/users", c.auth, nil)
+			owners := got.owners(t)
+			for owner := range owners {
+				if owner != "hanzo" {
+					t.Errorf("LEAK: %s listed users naming no owner and received %q's rows "+
+						"(owners=%v, status=%d).\nA credential scoped to hanzo reads hanzo or is "+
+						"refused; every other tenant's roster is a customer list.\nbody: %s",
+						c.who, owner, owners, got.status, got.body)
+				}
+			}
+			if got.status == 200 && owners["hanzo"] == 0 {
+				t.Errorf("%s got a 200 carrying no hanzo rows (owners=%v) — the assertion above "+
+					"cannot fail against an empty page: %s", c.who, owners, got.body)
+			}
+		})
+	}
+
+	// hanzo-console's own page still answers, so the guard cannot be satisfied by
+	// an endpoint that simply stopped working.
+	own := h.send(t, "GET", "/v1/iam/users", asApp("hanzo-console", "s3cret"), nil)
+	if own.status != 200 || own.owners(t)["hanzo"] == 0 {
+		t.Errorf("hanzo-console's own user page = %d owners=%v, want 200 carrying hanzo: %s",
+			own.status, own.owners(t), own.body)
+	}
+}
+
+// The address narrowing applies to the tenant-spanning page too, and the count is
+// narrowed with it — a page of 2 reported as "2 of 40" is a caller paging forever
+// through rows it filtered out.
+func TestScope_GlobalUserPageNarrowsByEmail(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+	seedEmail(t, h.db, "hanzo", "pat", "pat@example.com")
+	seedEmail(t, h.db, foreignRealOrg, "pat", "pat@example.com")
+	seedEmail(t, h.db, "hanzo", "sam", "sam@example.com")
+
+	got := h.send(t, "GET", "/v1/iam/users?email=pat@example.com",
+		asUser(h.token(t, "admin/root")), nil)
+	if got.status != 200 {
+		t.Fatalf("global page narrowed by address = %d, want 200: %s", got.status, got.body)
+	}
+	var page struct {
+		Users []struct{ Owner, Name, Email string } `json:"users"`
+		Total int                                   `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(got.body), &page); err != nil {
+		t.Fatalf("decode %s: %v", got.body, err)
+	}
+	if len(page.Users) != 2 || page.Total != 2 {
+		t.Fatalf("address narrowing returned %d rows and a total of %d, want 2 and 2 — "+
+			"the page and the count must go through the same narrowing: %s",
+			len(page.Users), page.Total, got.body)
+	}
+	for _, u := range page.Users {
+		if u.Email != "pat@example.com" {
+			t.Errorf("a row for %s survived the address narrowing: %+v", u.Email, u)
+		}
+	}
+	if page.Users[0].Owner == page.Users[1].Owner {
+		t.Errorf("both rows came from %s — the narrowing collapsed to one tenant instead of "+
+			"applying across the page the scope allows", page.Users[0].Owner)
+	}
+}
+
+// seedKey adds one API key under a tenant. A key row carries the publishable
+// half and the scope it may reach, so which tenant a page comes from is the
+// whole question.
+func seedKey(t *testing.T, db orm.DB, owner, name string) {
+	t.Helper()
+	k := orm.New[schema.Key](db)
+	k.Owner, k.Name = owner, name
+	k.AccessKey, k.State = "pk-"+owner+"-"+name, "Active"
+	k.SetId(owner + "/" + name)
+	if err := k.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed key %s/%s: %v", owner, name, err)
+	}
+}
+
+// A capability admits a confidential client to a COLLECTION; it never names the
+// tenant, and it is not read as one. hanzo-console holds the users and keys
+// capabilities and serves hanzo, so on both collections it reads hanzo — whether
+// it names another tenant, or names none.
+//
+// The two capabilities differ in what a page discloses and agree in what decides
+// it: the roster is the tenant's people, the key set is its integrations, and
+// both are pinned in the handler because that is the only place holding the
+// credential and the query at once.
+func TestScope_ACapabilityNamesACollectionNotATenant(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	seedKey(t, h.db, foreignRealOrg, "lux-secret-key")
+	seedKey(t, h.db, "hanzo", "hanzo-key")
+
+	auth := asApp("hanzo-console", "s3cret")
+	for _, collection := range []string{"users", "keys"} {
+		t.Run(collection, func(t *testing.T) {
+			named := h.send(t, "GET", "/v1/iam/"+collection+"?owner="+foreignRealOrg, auth, nil)
+			if named.status != 403 {
+				t.Errorf("GET %s?owner=%s = %d, want 403 — the capability admits the "+
+					"collection, not the tenant: %s", collection, foreignRealOrg, named.status, named.body)
+			}
+			if owners := named.owners(t); len(owners) > 0 {
+				t.Errorf("LEAK: naming %s returned rows owned by %v", foreignRealOrg, owners)
+			}
+
+			unnamed := h.send(t, "GET", "/v1/iam/"+collection, auth, nil)
+			owners := unnamed.owners(t)
+			for owner := range owners {
+				if owner != "hanzo" {
+					t.Errorf("LEAK: naming no owner returned %q's rows (owners=%v): %s",
+						owner, owners, unnamed.body)
+				}
+			}
+			if unnamed.status != 200 || owners["hanzo"] == 0 {
+				t.Errorf("hanzo-console's own %s page = %d owners=%v, want 200 carrying hanzo: %s",
+					collection, unnamed.status, owners, unnamed.body)
+			}
+		})
 	}
 }

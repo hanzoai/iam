@@ -11,12 +11,13 @@ package invitations
 import (
 	"context"
 	"errors"
-	"github.com/hanzoai/iam/internal/authz"
 	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -33,9 +34,9 @@ func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
 	zip.Get(app, "/v1/iam/invitations", h.List, zip.WithTags("invitations"))
 	zip.Post(app, "/v1/iam/invitations", h.Create, zip.WithTags("invitations"))
-	zip.Get(app, "/v1/iam/invitations/get", h.Get, zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations/update", h.Update, zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations/delete", h.Delete, zip.WithTags("invitations"))
+	zip.Get(app, "/v1/iam/invitations/:owner/:name", h.Get, zip.WithTags("invitations"))
+	zip.Put(app, "/v1/iam/invitations/:owner/:name", h.Update, zip.WithTags("invitations"))
+	zip.Delete(app, "/v1/iam/invitations/:owner/:name", h.Delete, zip.WithTags("invitations"))
 }
 
 // Ref addresses one invitation by its owner-scoped natural key.
@@ -49,20 +50,20 @@ type Ref struct {
 type Input struct {
 	Owner       string `json:"owner"`
 	Name        string `json:"name"`
-	CreatedTime string `json:"createdTime"`
-	UpdatedTime string `json:"updatedTime"`
-	DisplayName string `json:"displayName"`
-	Code        string `json:"code"`
-	IsRegexp    bool   `json:"isRegexp"`
-	Quota       int    `json:"quota"`
-	UsedCount   int    `json:"usedCount"`
+	CreatedTime string `json:"createdTime" url:"-"`
+	UpdatedTime string `json:"updatedTime" url:"-"`
+	DisplayName string `json:"displayName" url:"-"`
+	Code        string `json:"code" url:"-"`
+	IsRegexp    bool   `json:"isRegexp" url:"-"`
+	Quota       int    `json:"quota" url:"-"`
+	UsedCount   int    `json:"usedCount" url:"-"`
 	Application string `json:"application"`
-	Username    string `json:"username"`
+	Username    string `json:"username" url:"-"`
 	Email       string `json:"email"`
-	Phone       string `json:"phone"`
-	SignupGroup string `json:"signupGroup"`
-	DefaultCode string `json:"defaultCode"`
-	State       string `json:"state"`
+	Phone       string `json:"phone" url:"-"`
+	SignupGroup string `json:"signupGroup" url:"-"`
+	DefaultCode string `json:"defaultCode" url:"-"`
+	State       string `json:"state" url:"-"`
 }
 
 // ListInput scopes a listing to one owner (organization).
@@ -110,14 +111,12 @@ func apply(dst *schema.Invitation, in *Input) {
 // You see your own organization's invitations and no one else's; which organization that
 // is comes from your credentials, not from the request.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by authz.Scope from the authenticated principal,
+	// The owner is resolved by principal.Scope from the authenticated principal,
 	// never taken from the input: a tenant reads only its own org, a SuperAdmin
-	// reads the owner it asks for. Filtering on in.Owner instead was a confused
-	// deputy — the Guard authorizes on the query string, then a typed GET binds
-	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
-	// arrived empty on every REST call and the "empty owner lists everything"
-	// branch returned every tenant.
-	owner, err := authz.Scope(ctx, in.Owner)
+	// reads the owner it asks for. in.Owner is whatever the CALLER wrote in the URL,
+	// since zip binds a typed op's scalar fields from the query string on every
+	// method, so filtering on it would let a request name the tenant it reads.
+	owner, err := principal.Scope(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}
@@ -145,12 +144,29 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Invitation, error) 
 	return invitation, nil
 }
 
+// authorizeRefs gates the rows an invitation NAMES: the application whoever
+// redeems it arrives through, and the group they arrive holding. Neither is the
+// invitation's own (Owner, Name), so the seam that authorizes the row authorized
+// where the invitation is FILED and never what it hands out — an invitation naming
+// another organization's application, or the platform's, is an invitation into
+// that organization. A caller may name only what it may write, and an unqualified
+// name is read in the invitation's own organization.
+func authorizeRefs(ctx context.Context, method string, in *Input) error {
+	if err := authz.AuthorizeRef(ctx, method, "applications", in.Owner, in.Application); err != nil {
+		return err
+	}
+	return authz.AuthorizeRef(ctx, method, "groups", in.Owner, in.SignupGroup)
+}
+
 // Create issues an invitation to join your organization — the code or link a new
 // member redeems, with the role they arrive holding and the date it stops
 // working. A name already used in the organization is refused.
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	if err := authorizeRefs(ctx, "POST", in); err != nil {
+		return nil, err
 	}
 	switch _, err := orm.Get[schema.Invitation](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
@@ -180,6 +196,9 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, er
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Invitation, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	if err := authorizeRefs(ctx, "PUT", in); err != nil {
+		return nil, err
 	}
 	invitation, err := orm.Get[schema.Invitation](h.db, key(in.Owner, in.Name))
 	if err != nil {

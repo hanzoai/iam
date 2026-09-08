@@ -170,3 +170,51 @@ func TestGet_Masks(t *testing.T) {
 		t.Errorf("Get disclosed secret material: accessSecret=%q privateKey=%q", got.AccessSecret, got.PrivateKey)
 	}
 }
+
+// A PLATFORM SIGNING CERT IS ADDRESSED BY NAME, so the owner half a caller
+// happens to spell cannot decide whether it is found.
+//
+// This is the production failure, reproduced. cert-hanzo is live in the JWKS at
+// hanzo.id — which resolves through store.GetSigningCert, searching the reserved
+// owners and not caring which holds the row — while GET certs/get?owner=admin
+// answered 404, 59 times in six hours. ai bootstraps by reading its application
+// and then that application's cert, so the miss left the process unable to
+// establish the key every bearer is validated against, and api.hanzo.ai answered
+// 503 to every authenticated request while the key it wanted was being served one
+// route away to anyone who asked.
+func TestGet_FindsASigningCertUnderTheOtherReservedOwner(t *testing.T) {
+	h := handler(t)
+	ctx := context.Background()
+	if _, err := h.Create(ctx, &schema.Cert{
+		Owner: "built-in", Name: "cert-hanzo", CryptoAlgorithm: "RS256",
+		Certificate: selfSignedPEM(t),
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := h.Get(ctx, &Ref{Owner: "admin", Name: "cert-hanzo"})
+	if err != nil {
+		t.Fatalf("admin/cert-hanzo must resolve to the built-in row: %v", err)
+	}
+	if got == nil || got.Name != "cert-hanzo" {
+		t.Fatalf("got %+v, want the cert-hanzo row", got)
+	}
+	if got.PrivateKey != "" {
+		t.Error("the private half must stay masked")
+	}
+}
+
+// A TENANT is not widened by that fallback: it fires only for a reserved owner,
+// so one org can no more reach a platform signing key than before.
+func TestGet_DoesNotWidenForATenant(t *testing.T) {
+	h := handler(t)
+	ctx := context.Background()
+	if _, err := h.Create(ctx, &schema.Cert{
+		Owner: "built-in", Name: "cert-hanzo", CryptoAlgorithm: "RS256",
+		Certificate: selfSignedPEM(t),
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := h.Get(ctx, &Ref{Owner: "acme", Name: "cert-hanzo"}); err == nil {
+		t.Fatal("a tenant must not resolve a platform signing cert")
+	}
+}

@@ -38,15 +38,6 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	//
 	// The older spelling of the first is the SAME op at its legacy address, so one
 	// function decides both answers and they cannot drift.
-	//
-	// It carries the same tag as its canonical twin rather than "compat", and that
-	// is a deliberate limit on the blast radius of a TYPING change. The compat tag
-	// is how an address is kept OUT of the published document, and this address is
-	// in it today — as an untyped route, which has no way to say compat. Tagging it
-	// now would delete a published path, and a published path that disappears is
-	// what cloud's per-product floor exists to refuse. Retiring the spelling is a
-	// surface decision that lowers that floor in the same commit; this is not that
-	// commit.
 	zip.Get[screen, httpx.Answer](r, PathAuthApplication, getAppLogin(db),
 		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	zip.Get[offer, httpx.Answer](r, PathAuthMethods, authMethods(db),

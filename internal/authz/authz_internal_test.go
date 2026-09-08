@@ -6,27 +6,29 @@ package authz
 import (
 	"context"
 	"testing"
+
+	"github.com/hanzoai/iam/internal/principal"
 )
 
 // authorize asks the seam's own decision the way the seam asks it: IAM resolves the
 // principal and folds the path onto an entity noun, policy.Principal.CanEntity
 // decides. Going through Can rather than around it is what makes these tables a
 // test of the live path and not of a paraphrase of it.
-func authorize(p *Principal, method, entity, owner, name string) bool {
-	return Can(context.WithValue(context.Background(), ctxKey{}, p), method, entity, owner, name)
+func authorize(p *principal.Principal, method, entity, owner, name string) bool {
+	return Can(principal.Bind(context.Background(), p), method, entity, owner, name)
 }
 
 // The pure policy, tested exhaustively and independent of HTTP. This table is the
 // full truth of the decision the seam applies.
 func TestAuthorizePolicy(t *testing.T) {
-	super := &Principal{Org: "admin", User: "root", Sudo: true}
-	orgAdmin := &Principal{Org: "hanzo", User: "boss", Admin: true}
-	regular := &Principal{Org: "hanzo", User: "alice"}
-	builtin := &Principal{Org: "built-in", User: "svc", Admin: true} // NOT super
+	super := &principal.Principal{Org: "admin", User: "root", Sudo: true}
+	orgAdmin := &principal.Principal{Org: "hanzo", User: "boss", Admin: true}
+	regular := &principal.Principal{Org: "hanzo", User: "alice"}
+	builtin := &principal.Principal{Org: "built-in", User: "svc", Admin: true} // NOT super
 
 	cases := []struct {
 		name   string
-		p      *Principal
+		p      *principal.Principal
 		method string
 		entity string
 		owner  string
@@ -70,11 +72,11 @@ func TestAuthorizePolicy(t *testing.T) {
 // SuperAdmin is exactly org=="admin"; built-in is NOT super — the built-in gap
 // the poisoning gate must close depends on this.
 func TestSuperIsAdminOrgOnly(t *testing.T) {
-	if (&Principal{Org: "built-in", Sudo: false}).Sudo {
+	if (&principal.Principal{Org: "built-in", Sudo: false}).Sudo {
 		t.Fatal("built-in must not be SuperAdmin")
 	}
 	// A built-in-org principal fails the reserved-owner write even for its own org.
-	if authorize(&Principal{Org: "built-in", Admin: true}, "POST", "certs", "built-in", "k") {
+	if authorize(&principal.Principal{Org: "built-in", Admin: true}, "POST", "certs", "built-in", "k") {
 		t.Fatal("built-in admin must not write built-in signing certs")
 	}
 }
@@ -89,19 +91,18 @@ func TestSuperIsAdminOrgOnly(t *testing.T) {
 
 func TestEntityOf(t *testing.T) {
 	cases := map[string]string{
-		"/v1/iam/users":        "users",
-		"/v1/iam/users/get":    "users",
-		"/v1/iam/users/update": "users",
-		"/v1/iam/certs/delete": "certs",
+		"/v1/iam/users":                  "users",
+		"/v1/iam/users/hanzo/alice":      "users",
+		"/v1/iam/certs/admin/cert-hanzo": "certs",
 		// Singular natives fold to the plural the policy is written in. It read
 		// "application" until that split the policy: the legacy verb folded to
 		// "applications" and matched the app self-read clause, while this native
 		// route stayed singular, matched nothing, and 403'd the same caller.
-		"/v1/iam/applications": "applications",
-		"/v1/iam/audit-logs":   "audit-logs",
-		"/mcp":                 "",
-		"/healthz":             "",
-		"/v1/iam/":             "",
+		"/v1/iam/application": "applications",
+		"/v1/iam/audit-logs":  "audit-logs",
+		"/mcp":                "",
+		"/healthz":            "",
+		"/v1/iam/":            "",
 	}
 	for path, want := range cases {
 		if got := entityOf(path); got != want {

@@ -221,3 +221,56 @@ func TestPasswordGrant_confidentialClient_wrongSecret_stillRejected(t *testing.T
 		t.Fatalf("confidential wrong-secret status = %d, want 401; body=%v", resp.StatusCode, tok)
 	}
 }
+
+// The password grant reads the credential from the BODY alone (RFC 6749 §4.3.2). A
+// username and password placed on the QUERY STRING — where a URL is written to the
+// access log, every proxy, and the browser's history — do NOT authenticate: they
+// are read as absent and the grant answers "required". The org stays an addressing
+// parameter, so it keeps its query fallback.
+func TestPasswordGrant_credentialsInQuery_refused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
+
+	// Only the credential is (mis)placed on the query; everything the endpoint
+	// legitimately reads stays in the body.
+	q := url.Values{"username": {"alice@hanzo.ai"}, "password": {"correct horse"}}
+	body := url.Values{
+		"grant_type":    {"password"},
+		"client_id":     {"hanzo-console"},
+		"client_secret": {"top-secret"},
+		"scope":         {"openid"},
+	}
+	resp, raw := do(t, app, formReq("POST", PathToken+"?"+q.Encode(), body))
+	tok := decode(t, raw)
+	if resp.StatusCode != 400 {
+		t.Fatalf("query-string credentials status = %d, want 400; body=%v", resp.StatusCode, tok)
+	}
+	if tok["access_token"] != nil {
+		t.Fatal("a query-string credential minted a token")
+	}
+}
+
+// The same credential in the BODY authenticates and mints a real token — the fix
+// closes the URL, not the grant.
+func TestPasswordGrant_credentialsInBody_authenticates(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
+
+	resp, raw := do(t, app, formReq("POST", PathToken, url.Values{
+		"grant_type":    {"password"},
+		"client_id":     {"hanzo-console"},
+		"client_secret": {"top-secret"},
+		"username":      {"alice@hanzo.ai"},
+		"password":      {"correct horse"},
+		"scope":         {"openid"},
+	}))
+	tok := decode(t, raw)
+	if resp.StatusCode != 200 {
+		t.Fatalf("body credentials status = %d, want 200; body=%v", resp.StatusCode, tok)
+	}
+	if s, _ := tok["access_token"].(string); s == "" {
+		t.Fatalf("body credentials minted no token; body=%v", tok)
+	}
+}

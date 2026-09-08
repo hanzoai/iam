@@ -18,7 +18,7 @@ import (
 // the ONE credential package so every human-credential verify shares it: the
 // interactive login form, the ROPC password grant, the registry Basic-auth token
 // endpoint, and the LDAP-bind feature seam all call Authenticate, never the raw
-// VerifyPassword digest check. the legacy server locked an account after a run of wrong
+// VerifyPassword digest check. the legacy surface locked an account after a run of wrong
 // passwords; the public ROPC endpoint (commit D) would otherwise be an
 // unauthenticated online brute-force oracle. State lives on the user row
 // (SigninWrongTimes / LastSigninWrongTime — already in schema.User), so it is

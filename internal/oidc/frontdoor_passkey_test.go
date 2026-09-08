@@ -40,7 +40,7 @@ func TestPasskeyIsOfferedAndItsCeremonyAnswers(t *testing.T) {
 	_, body = do(t, app, formReqNoBody("GET", PathAuthApplication+"?clientId=conf&responseType=code"))
 	view, _ := decode(t, body)["data"].(map[string]any)
 	if view["enableWebAuthn"] != true {
-		t.Errorf("get-app-login enableWebAuthn = %v, want true: the two descriptors must "+
+		t.Errorf("auth/application enableWebAuthn = %v, want true: the two descriptors must "+
 			"agree, or the browser reads whichever one still lies", view["enableWebAuthn"])
 	}
 
@@ -80,6 +80,6 @@ func TestPasskeyIsNotOfferedWhenTheOrgHasNotAskedForIt(t *testing.T) {
 	_, body = do(t, app, formReqNoBody("GET", PathAuthApplication+"?clientId=off&responseType=code"))
 	view, _ := decode(t, body)["data"].(map[string]any)
 	if view["enableWebAuthn"] == true {
-		t.Error("get-app-login enableWebAuthn = true with the switch off")
+		t.Error("auth/application enableWebAuthn = true with the switch off")
 	}
 }

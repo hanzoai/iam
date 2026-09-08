@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package scim serves the SCIM 2.0 protocol (RFC 7644) over iam's identity store
-// — the STANDARD identity-provisioning surface that replaces the legacy entity
-// verbs (get-users/add-user/update-user/delete-user, …) per HIP-0111. There are
+// — the STANDARD identity-provisioning surface that replaces the the legacy surface entity
+// verbs (the retired get-users/add-user/update-user/delete-user, …) per HIP-0111. There are
 // no "verbs": creating an identity is POST /Users, reading is GET, updating is
 // PUT/PATCH (RFC 7644 §3.5.2), removing is DELETE — plain HTTP on a resource.
 //
 // Authorization: the SCIM subtree is authenticated by authz.Guard (a bearer is
 // required) but path-authorized — the target rides in the path, not the query, so
-// each handler scopes the caller through authz.Scope (a SuperAdmin may act across
+// each handler scopes the caller through principal.Scope (a SuperAdmin may act across
 // tenants; everyone else is pinned to its own org). Secrets never cross a SCIM
 // response: every user is projected through schema.User.Mask() and the write-only
 // `password` is never echoed. The response envelopes are the SCIM standard ones
-// (ListResponse, Error), never the legacy {status,data,data2}.
+// (ListResponse, Error), never the the legacy surface {status,data,data2}.
 package scim
 
 import (
@@ -67,7 +67,7 @@ const (
 // Guard already reached for the raw handlers these replace.
 //
 // The /Users CRUD below stays raw on purpose: it binds a two-segment path id,
-// re-scopes every call through authz.Scope, and answers RFC 7644 §3.12 Errors
+// re-scopes every call through principal.Scope, and answers RFC 7644 §3.12 Errors
 // from a dozen branches.
 func Route(app *zip.App, db orm.DB) {
 	// Tells your identity provider which parts of SCIM this

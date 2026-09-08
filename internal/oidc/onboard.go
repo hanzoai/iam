@@ -61,8 +61,10 @@ const (
 // list) are NOT reserved here (iam is white-label): an existing one is refused by the
 // create-conflict check.
 
-// onboardForm is the request body: a name to create, or personal=true for the
-// one-click `<username>` org.
+// onboardForm is the request body: a name for the org, and whether the org is the
+// caller's OWN. Neither implies the other — a name with no `personal` founds a
+// shared org, `personal` with no name founds the one-click `<username>` one, and
+// both together found a named org that belongs to the caller.
 type onboardForm struct {
 	Name     string `json:"name"`
 	Personal bool   `json:"personal"`
@@ -82,19 +84,24 @@ func onboardHandler(db orm.DB) zip.Handler {
 		}
 		var f onboardForm
 		_ = c.Bind(&f)
-		// Self-service derives the slug under the ONE policy: a one-click personal org
-		// from the caller's own username, else the given name slugified.
-		slug, display, personal := f.Name, strings.TrimSpace(f.Name), false
-		if f.Personal {
-			slug, display, personal = personalOrgSlug(name), name, true
-		} else {
-			slug = slugifyOrg(f.Name)
+		// The slug resolves the ONE way it resolves on the service-token path: the
+		// name the caller GAVE wins, and the one-click <username> is derived only
+		// when they gave none.
+		//
+		// `personal` then rides through whichever of the two named the org. It says
+		// WHOSE the org is, not how it got its name — so a person may name their own
+		// org and still own it. Reading it as "derive the slug" made the two
+		// inseparable: naming an org forced it to belong to nobody in particular, and
+		// owning one forced it to be called <username>.
+		slug, display := slugifyOrg(f.Name), strings.TrimSpace(f.Name)
+		if slug == "" && f.Personal {
+			slug, display = personalOrgSlug(name), name
 		}
 		// provisionAndRespond validates the slug (length + policy.IsReservedOrg) and
 		// drives the ONE atomic provision — org + admin move + hashed metered
 		// credential — replacing the old non-atomic create-then-move (no orphan on a
 		// mid-flight fault, resumable via the Founder stamp).
-		return provisionAndRespond(c, db, owner, name, slug, display, personal)
+		return provisionAndRespond(c, db, owner, name, slug, display, f.Personal)
 	}
 }
 

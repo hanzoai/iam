@@ -28,7 +28,7 @@ func TestMintUserTokenAnswersACallerWithNoRequest(t *testing.T) {
 		t.Fatalf("seeded user did not resolve: %v", err)
 	}
 
-	access, ttl, err := MintUserToken(ctx, db, app, user, "", "https://hanzo.id", "/v1/sessions")
+	access, ttl, err := MintUserToken(ctx, db, app, user, "", "hanzo.id", "/v1/sessions")
 	if err != nil {
 		t.Fatalf("MintUserToken: %v", err)
 	}

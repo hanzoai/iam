@@ -4,22 +4,24 @@
 // Package providers is the Phase-1 typed CRUD surface for the `providers`
 // entity, owner-scoped by the (owner, name) natural key.
 //
-// The five operations are typed zip handlers over orm: reads are zip.Get,
-// writes are zip.Post. zip decodes the request body into the In struct for
-// every non-GET method (and, over the MCP projection, for GET too); the REST
-// GET projection carries no body, so any op that needs the (owner, name) key
-// from the caller is a POST. Each op is also an MCP tool and an OpenAPI 3.1
-// operation from this one registration.
+// The five operations are typed zip handlers over orm, addressed by method:
+// GET lists the collection and reads one row, POST creates, PUT updates,
+// DELETE removes. The (owner, name) key rides in the path, and zip binds the
+// three input sources in increasing authority — body, then query, then path —
+// so the URL is what addresses the row: PUT /v1/iam/providers/acme/github
+// updates acme/github whatever the body claims. Each op is also an MCP tool
+// and an OpenAPI 3.1 operation from this one registration.
 package providers
 
 import (
 	"context"
 	"errors"
-	"github.com/hanzoai/iam/internal/authz"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -62,7 +64,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("listProviders"),
 		zip.WithTags("providers"))
 
-	zip.Get[providerKey, providerResult](app, "/v1/iam/providers/get", getProvider(db),
+	zip.Get[providerKey, providerResult](app, "/v1/iam/providers/:owner/:name", getProvider(db),
 		zip.WithOperationID("getProvider"),
 		zip.WithTags("providers"))
 
@@ -70,26 +72,13 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("addProvider"),
 		zip.WithTags("providers"))
 
-	zip.Post[schema.Provider, mutationResult](app, "/v1/iam/providers/update", updateProvider(db),
+	zip.Put[schema.Provider, mutationResult](app, "/v1/iam/providers/:owner/:name", updateProvider(db),
 		zip.WithOperationID("updateProvider"),
 		zip.WithTags("providers"))
 
-	zip.Post[providerKey, mutationResult](app, "/v1/iam/providers/delete", deleteProvider(db),
+	zip.Delete[providerKey, mutationResult](app, "/v1/iam/providers/:owner/:name", deleteProvider(db),
 		zip.WithOperationID("deleteProvider"),
 		zip.WithTags("providers"))
-}
-
-// Add / Update / Delete expose the write handlers so the legacy add-/update-/
-// provider CRUD has ONE path,
-// wrapped in the compat envelope. Delete decodes the posted provider body and keys
-// the delete by its (owner, name) — the legacy verb posts the object, not a ?id=.
-func Add(db orm.DB) zip.TypedHandler[schema.Provider, providerResult]    { return addProvider(db) }
-func Update(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult] { return updateProvider(db) }
-func Delete(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult] {
-	del := deleteProvider(db)
-	return func(ctx context.Context, in *schema.Provider) (*mutationResult, error) {
-		return del(ctx, &providerKey{Owner: in.Owner, Name: in.Name})
-	}
 }
 
 // listProviders returns your organization's providers, newest first — the
@@ -100,7 +89,7 @@ func Delete(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult] {
 // that is comes from your credentials, not from the request.
 func listProviders(db orm.DB) zip.TypedHandler[listProvidersIn, listProvidersOut] {
 	return func(ctx context.Context, in *listProvidersIn) (*listProvidersOut, error) {
-		owner, err := authz.Scope(ctx, in.Owner)
+		owner, err := principal.Scope(ctx, in.Owner)
 		if err != nil {
 			return nil, err
 		}
@@ -145,6 +134,13 @@ func addProvider(db orm.DB) zip.TypedHandler[schema.Provider, providerResult] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
+		// A provider's Cert names the signing material a federated assertion is
+		// verified against — a reference the row's own (Owner, Name) does not carry,
+		// and the same authority an application's Cert carries, so it takes the same
+		// gate rather than a second one.
+		if err := authz.AuthorizeCert(ctx, db, in.Cert, ""); err != nil {
+			return nil, err
+		}
 		// orm.New binds the store and applies defaults; copy the decoded domain
 		// fields over it, then restore the bound Model so its db handle and key
 		// survive the assignment.
@@ -177,6 +173,12 @@ func updateProvider(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult]
 		}
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
+		}
+		// The cert is authorized against the value being REPLACED, so an editor that
+		// reads a provider and saves it back re-sends the cert it read and is
+		// unaffected; only naming a NEW one is a change to authorize.
+		if err := authz.AuthorizeCert(ctx, db, in.Cert, p.Cert); err != nil {
+			return nil, err
 		}
 		// Overlay the decoded domain fields onto the loaded row, keeping the
 		// loaded Model (id, createdAt, key, snapshot) so the write targets the

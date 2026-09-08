@@ -17,7 +17,7 @@ import (
 // federatedApp is a founding application and its Google binding, on a fresh store.
 func federatedApp(t *testing.T) (orm.DB, *schema.Application, *schema.Provider, connectorBinding) {
 	t.Helper()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "iam.db"))
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "iam.db"), "")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

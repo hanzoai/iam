@@ -6,7 +6,7 @@ package schema
 import "github.com/hanzoai/orm"
 
 // Cert is a signing / TLS certificate together with its key material (v1
-// the legacy `cert`, v2 kind "certs"). IAM signs the OIDC tokens it issues with a
+// the legacy surface `cert`, v2 kind "certs"). IAM signs the OIDC tokens it issues with a
 // Cert's private key and publishes the certificate so relying parties can
 // verify them; an SSL-type Cert instead fronts an ACME-issued domain
 // certificate and tracks its renewal. CryptoAlgorithm, BitSize, and
@@ -27,23 +27,23 @@ type Cert struct {
 
 	Owner       string `json:"owner" orm:"index"`
 	Name        string `json:"name" orm:"index"`
-	CreatedTime string `json:"createdTime" orm:"index"`
+	CreatedTime string `json:"createdTime" orm:"index" url:"-"`
 
-	DisplayName     string `json:"displayName"`
-	Scope           string `json:"scope"`
-	Type            string `json:"type"`
-	CryptoAlgorithm string `json:"cryptoAlgorithm"`
-	BitSize         int    `json:"bitSize"`
-	ExpireInYears   int    `json:"expireInYears"`
+	DisplayName     string `json:"displayName" url:"-"`
+	Scope           string `json:"scope" url:"-"`
+	Type            string `json:"type" url:"-"`
+	CryptoAlgorithm string `json:"cryptoAlgorithm" url:"-"`
+	BitSize         int    `json:"bitSize" url:"-"`
+	ExpireInYears   int    `json:"expireInYears" url:"-"`
 
-	ExpireTime       string `json:"expireTime"`
-	DomainExpireTime string `json:"domainExpireTime"`
-	Provider         string `json:"provider"`
-	Account          string `json:"account"`
-	AccessKey        string `json:"accessKey"`
-	AccessSecret     string `json:"accessSecret"`
+	ExpireTime       string `json:"expireTime" url:"-"`
+	DomainExpireTime string `json:"domainExpireTime" url:"-"`
+	Provider         string `json:"provider" url:"-"`
+	Account          string `json:"account" url:"-"`
+	AccessKey        string `json:"accessKey" url:"-"`
+	AccessSecret     string `json:"accessSecret" url:"-"`
 
-	Certificate string `json:"certificate"`
+	Certificate string `json:"certificate" url:"-"`
 
 	// PrivateKey is IN MEMORY ONLY. `json:"-"` is what makes that true for this
 	// store: every orm backend persists an entity as json.Marshal(entity) — sqlite

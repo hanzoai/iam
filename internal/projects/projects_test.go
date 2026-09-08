@@ -113,8 +113,7 @@ func (h *harness) do(t *testing.T, method, path, bearer, body string) (int, map[
 	return resp.StatusCode, m
 }
 
-// names reads the project names out of a listing, which is named for its
-// resource — the retired envelope called every page `data`.
+// names reads the project names out of a get-organization-projects envelope's data.
 func names(m map[string]any) []string {
 	rows, _ := m["projects"].([]any)
 	out := make([]string, 0, len(rows))
@@ -160,13 +159,50 @@ func TestProjects_lifecycle(t *testing.T) {
 	}
 
 	// delete-project (org-admin), keyed by owner/name.
-	if st, m := h.do(t, "POST", "/v1/iam/projects/delete", boss,
-		`{"owner":"hanzo","name":"alpha","organization":"hanzo"}`); st != 200 {
+	if st, m := h.do(t, "DELETE", "/v1/iam/projects/hanzo/alpha", boss, ""); st != 200 {
 		t.Fatalf("delete-project: status=%d body=%v", st, m)
 	}
 	_, m = h.do(t, "GET", "/v1/iam/projects?owner=hanzo", alice, "")
 	if has(names(m), "alpha") {
 		t.Fatalf("'alpha' still listed after delete: %v", names(m))
+	}
+}
+
+// TestProjects_pathAddressed: the URL is the address. One project is created,
+// read and removed at /v1/iam/projects/{owner}/{name}, and no request body names
+// which one.
+func TestProjects_pathAddressed(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss")
+
+	if st, m := h.do(t, "POST", "/v1/iam/projects", boss,
+		`{"owner":"hanzo","name":"gamma","organization":"hanzo","displayName":"Gamma"}`); st != 200 {
+		t.Fatalf("POST /v1/iam/projects: status=%d body=%v", st, m)
+	}
+
+	st, m := h.do(t, "GET", "/v1/iam/projects/hanzo/gamma", boss, "")
+	if st != 200 {
+		t.Fatalf("GET /v1/iam/projects/hanzo/gamma: status=%d body=%v", st, m)
+	}
+	if got, _ := m["displayName"].(string); got != "Gamma" {
+		t.Fatalf("read the wrong project: %v", m)
+	}
+
+	// The body carries no owner and no name: the path alone says which project.
+	if st, m := h.do(t, "PUT", "/v1/iam/projects/hanzo/gamma", boss,
+		`{"organization":"hanzo","displayName":"Gamma II"}`); st != 200 {
+		t.Fatalf("PUT /v1/iam/projects/hanzo/gamma: status=%d body=%v", st, m)
+	}
+	_, m = h.do(t, "GET", "/v1/iam/projects/hanzo/gamma", boss, "")
+	if got, _ := m["displayName"].(string); got != "Gamma II" {
+		t.Fatalf("update did not bind the path target: %v", m)
+	}
+
+	if st, m := h.do(t, "DELETE", "/v1/iam/projects/hanzo/gamma", boss, ""); st != 200 {
+		t.Fatalf("DELETE /v1/iam/projects/hanzo/gamma: status=%d body=%v", st, m)
+	}
+	if st, _ := h.do(t, "GET", "/v1/iam/projects/hanzo/gamma", boss, ""); st != 404 {
+		t.Fatalf("read after delete: status=%d, want 404", st)
 	}
 }
 
@@ -179,7 +215,7 @@ func TestProjects_writeNeedsAdmin(t *testing.T) {
 	if st, _ := h.do(t, "POST", "/v1/iam/projects", alice, body); st != 403 {
 		t.Fatalf("regular user add-project: status=%d, want 403", st)
 	}
-	if st, _ := h.do(t, "POST", "/v1/iam/projects/delete", alice, body); st != 403 {
+	if st, _ := h.do(t, "DELETE", "/v1/iam/projects/hanzo/beta", alice, ""); st != 403 {
 		t.Fatalf("regular user delete-project: status=%d, want 403", st)
 	}
 	// But listing is allowed (200) — the switcher is shown to every user.
@@ -189,7 +225,7 @@ func TestProjects_writeNeedsAdmin(t *testing.T) {
 }
 
 // TestProjects_crossTenantScoping: a non-super cannot list another tenant's
-// projects — authz.Scope pins the read to the caller's own org regardless of the
+// projects — principal.Scope pins the read to the caller's own org regardless of the
 // ?organization= it asks for.
 func TestProjects_crossTenantScoping(t *testing.T) {
 	h := newHarness(t)

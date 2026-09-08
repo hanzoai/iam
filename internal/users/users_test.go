@@ -22,7 +22,7 @@ import (
 
 func openUsersTestDB(t *testing.T) (*API, func()) {
 	t.Helper()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "iam.db"))
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "iam.db"), "")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

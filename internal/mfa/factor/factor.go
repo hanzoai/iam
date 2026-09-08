@@ -363,6 +363,10 @@ func Copy(dst, src *schema.User) {
 	dst.PreferredMfaType = src.PreferredMfaType
 	dst.RecoveryCodes = src.RecoveryCodes
 	dst.TotpSecret = src.TotpSecret
+	// The per-user policy: which factors this account MUST hold. Prompt reads it in
+	// preference to the organization's, so an update that leaves it behind does not
+	// merely lose a setting — it turns a required second factor optional.
+	dst.MfaItems = src.MfaItems
 	dst.MfaPhoneEnabled = src.MfaPhoneEnabled
 	dst.MfaEmailEnabled = src.MfaEmailEnabled
 	dst.MfaRadiusEnabled = src.MfaRadiusEnabled

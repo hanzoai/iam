@@ -5,12 +5,12 @@
 // `webauthn_credentials` entity (a registered passkey), owner-scoped by the
 // (owner, name) natural key.
 //
-// The five operations are typed zip handlers over orm: reads are zip.Get,
-// writes are zip.Post. zip decodes the request body into the In struct for
-// every non-GET method (and, over the MCP projection, for GET too); the REST
-// GET projection carries no body, so any op that needs the (owner, name) key
-// from the caller is a POST. Each op is also an MCP tool and an OpenAPI 3.1
-// operation from this one registration.
+// The five operations are typed zip handlers over orm, addressed by method: the
+// collection is /v1/iam/webauthn-credentials (GET lists, POST registers) and one
+// credential is /v1/iam/webauthn-credentials/:owner/:name (GET, PUT, DELETE).
+// zip binds the path above the body, so the pair the URL names is the pair the
+// handler acts on whatever a body claims. Each op is also an MCP tool and an
+// OpenAPI 3.1 operation from this one registration.
 package webauthn
 
 import (
@@ -23,6 +23,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -72,7 +73,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("listWebauthnCredentials"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Get[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials/get", getWebauthnCredential(db),
+	zip.Get[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials/:owner/:name", getWebauthnCredential(db),
 		zip.WithOperationID("getWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 
@@ -80,11 +81,11 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("addWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[schema.WebauthnCredential, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/update", updateWebauthnCredential(db),
+	zip.Put[schema.WebauthnCredential, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/:owner/:name", updateWebauthnCredential(db),
 		zip.WithOperationID("updateWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[webauthnCredentialKey, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/delete", deleteWebauthnCredential(db),
+	zip.Delete[webauthnCredentialKey, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/:owner/:name", deleteWebauthnCredential(db),
 		zip.WithOperationID("deleteWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 }
@@ -106,7 +107,7 @@ func Route(app *zip.App, db orm.DB) {
 // and may.
 func listWebauthnCredentials(db orm.DB) zip.TypedHandler[listWebauthnCredentialsIn, listWebauthnCredentialsOut] {
 	return func(ctx context.Context, in *listWebauthnCredentialsIn) (*listWebauthnCredentialsOut, error) {
-		p, ok := authz.From(ctx)
+		p, ok := principal.From(ctx)
 		if !ok {
 			return nil, zip.ErrForbidden("forbidden")
 		}
@@ -155,6 +156,13 @@ func addWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredential
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
+		// A passkey authenticates its User, so registering one FOR a person is acting
+		// for that account — the same authority the list asks to read it. Without this,
+		// a caller could file a credential of its own under User=admin/root, which the
+		// public signin ceremony then offers for that account.
+		if err := authz.AuthorizeUser(ctx, "POST", in.User); err != nil {
+			return nil, err
+		}
 		// orm.New binds the store and applies defaults; copy the decoded domain
 		// fields over it, then restore the bound Model so its db handle and key
 		// survive the assignment.
@@ -179,6 +187,9 @@ func updateWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredent
 	return func(ctx context.Context, in *schema.WebauthnCredential) (*webauthnCredentialMutationResult, error) {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
+		}
+		if err := authz.AuthorizeUser(ctx, "PUT", in.User); err != nil {
+			return nil, err
 		}
 		c, err := orm.Get[schema.WebauthnCredential](db, webauthnCredentialId(in.Owner, in.Name))
 		if errors.Is(err, orm.ErrNotFound) {
