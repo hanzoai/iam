@@ -116,15 +116,12 @@ func (h *harness) do(t *testing.T, method, path, bearer, body string) (int, map[
 	return resp.StatusCode, m
 }
 
-// rows returns the row objects a collection answered with. A collection names
-// its own array, so the key is read from the body rather than assumed.
-func rows(m map[string]any) []map[string]any {
-	var raw []any
-	for _, v := range m {
-		if a, ok := v.([]any); ok {
-			raw = append(raw, a...)
-		}
-	}
+// rows returns the row objects out of a listing. The key is the resource, because
+// a page is named for what it holds — this file lists workspaces AND projects, and
+// one hard-coded key silently yields an empty page for the other. The retired
+// envelope called every page `data`, which is why one key sufficed before.
+func rows(m map[string]any, kind string) []map[string]any {
+	raw, _ := m[kind].([]any)
 	out := make([]map[string]any, 0, len(raw))
 	for _, r := range raw {
 		if o, ok := r.(map[string]any); ok {
@@ -134,10 +131,12 @@ func rows(m map[string]any) []map[string]any {
 	return out
 }
 
-// names reads the names out of an envelope's data.
-func names(m map[string]any) []string {
+// names reads the names out of a listing. The key is the resource, because a page
+// is named for what it holds — this file lists workspaces AND projects, and one
+// names is the row names of one listing.
+func names(m map[string]any, kind string) []string {
 	out := []string{}
-	for _, o := range rows(m) {
+	for _, o := range rows(m, kind) {
 		if n, _ := o["name"].(string); n != "" {
 			out = append(out, n)
 		}
@@ -146,8 +145,8 @@ func names(m map[string]any) []string {
 }
 
 // find returns the row with the given name, or nil.
-func find(m map[string]any, name string) map[string]any {
-	for _, o := range rows(m) {
+func find(m map[string]any, kind, name string) map[string]any {
+	for _, o := range rows(m, kind) {
 		if n, _ := o["name"].(string); n == name {
 			return o
 		}
@@ -182,17 +181,18 @@ func TestWorkspaces_lifecycle(t *testing.T) {
 	if st != 200 {
 		t.Fatalf("list: status=%d body=%v", st, m)
 	}
-	if !has(names(m), "alpha") {
-		t.Fatalf("list missing 'alpha': %v", names(m))
+	if !has(names(m, "workspaces"), "alpha") {
+		t.Fatalf("list missing 'alpha': %v", names(m, "workspaces"))
 	}
 
 	// delete-workspace (org-admin), keyed by owner/name.
-	if st, m := h.do(t, "DELETE", "/v1/iam/workspaces/hanzo/alpha", boss, ""); st != 200 {
+	if st, m := h.do(t, "POST", "/v1/iam/workspaces/delete", boss,
+		`{"owner":"hanzo","name":"alpha","organization":"hanzo"}`); st != 200 {
 		t.Fatalf("delete-workspace: status=%d body=%v", st, m)
 	}
 	_, m = h.do(t, "GET", "/v1/iam/workspaces?owner=hanzo", alice, "")
-	if has(names(m), "alpha") {
-		t.Fatalf("'alpha' still listed after delete: %v", names(m))
+	if has(names(m, "workspaces"), "alpha") {
+		t.Fatalf("'alpha' still listed after delete: %v", names(m, "workspaces"))
 	}
 }
 
@@ -211,9 +211,9 @@ func TestWorkspaces_bucketAndDefaultRoundTrip(t *testing.T) {
 	}
 
 	_, m := h.do(t, "GET", "/v1/iam/workspaces?owner=hanzo", boss, "")
-	w := find(m, "prod")
+	w := find(m, "workspaces", "prod")
 	if w == nil {
-		t.Fatalf("workspace 'prod' not listed: %v", names(m))
+		t.Fatalf("workspace 'prod' not listed: %v", names(m, "workspaces"))
 	}
 	if got, _ := w["bucket"].(string); got != "hanzo-prod" {
 		t.Fatalf("bucket did not round-trip on create: got %q, want %q", got, "hanzo-prod")
@@ -223,13 +223,12 @@ func TestWorkspaces_bucketAndDefaultRoundTrip(t *testing.T) {
 	}
 
 	// update the workspace: re-bind the bucket (native typed CRUD, admin-authorized).
-	// The URL addresses hanzo/prod; the body carries only what changes.
-	if st, m := h.do(t, "PUT", "/v1/iam/workspaces/hanzo/prod", boss,
-		`{"organization":"hanzo","bucket":"hanzo-prod-v2","isDefault":true}`); st != 200 {
-		t.Fatalf("PUT /v1/iam/workspaces/hanzo/prod: status=%d body=%v", st, m)
+	if st, m := h.do(t, "POST", "/v1/iam/workspaces/update", boss,
+		`{"owner":"hanzo","name":"prod","organization":"hanzo","bucket":"hanzo-prod-v2","isDefault":true}`); st != 200 {
+		t.Fatalf("workspaces/update: status=%d body=%v", st, m)
 	}
 	_, m = h.do(t, "GET", "/v1/iam/workspaces?owner=hanzo", boss, "")
-	w = find(m, "prod")
+	w = find(m, "workspaces", "prod")
 	if got, _ := w["bucket"].(string); got != "hanzo-prod-v2" {
 		t.Fatalf("bucket did not round-trip on update: got %q, want %q", got, "hanzo-prod-v2")
 	}
@@ -258,47 +257,19 @@ func TestWorkspaces_projectFKRoundTrip(t *testing.T) {
 	}
 
 	_, m := h.do(t, "GET", "/v1/iam/projects?owner=hanzo", boss, "")
-	scoped := find(m, "scoped")
+	scoped := find(m, "projects", "scoped")
 	if scoped == nil {
-		t.Fatalf("project 'scoped' not listed: %v", names(m))
+		t.Fatalf("project 'scoped' not listed: %v", names(m, "projects"))
 	}
 	if got, _ := scoped["workspace"].(string); got != "alpha" {
 		t.Fatalf("Workspace FK did not round-trip: got %q, want %q", got, "alpha")
 	}
-	orglevel := find(m, "orglevel")
+	orglevel := find(m, "projects", "orglevel")
 	if orglevel == nil {
-		t.Fatalf("project 'orglevel' not listed: %v", names(m))
+		t.Fatalf("project 'orglevel' not listed: %v", names(m, "projects"))
 	}
 	if got, _ := orglevel["workspace"].(string); got != "" {
 		t.Fatalf("org-level project should have empty Workspace FK: got %q", got)
-	}
-}
-
-// TestWorkspaces_pathAddressed: the URL is the address. One workspace is created,
-// read and removed at /v1/iam/workspaces/{owner}/{name}, and no request body names
-// which one.
-func TestWorkspaces_pathAddressed(t *testing.T) {
-	h := newHarness(t)
-	boss := h.token(t, "hanzo/boss")
-
-	if st, m := h.do(t, "POST", "/v1/iam/workspaces", boss,
-		`{"owner":"hanzo","name":"gamma","organization":"hanzo","displayName":"Gamma"}`); st != 200 {
-		t.Fatalf("POST /v1/iam/workspaces: status=%d body=%v", st, m)
-	}
-
-	st, m := h.do(t, "GET", "/v1/iam/workspaces/hanzo/gamma", boss, "")
-	if st != 200 {
-		t.Fatalf("GET /v1/iam/workspaces/hanzo/gamma: status=%d body=%v", st, m)
-	}
-	if got, _ := m["displayName"].(string); got != "Gamma" {
-		t.Fatalf("read the wrong workspace: %v", m)
-	}
-
-	if st, m := h.do(t, "DELETE", "/v1/iam/workspaces/hanzo/gamma", boss, ""); st != 200 {
-		t.Fatalf("DELETE /v1/iam/workspaces/hanzo/gamma: status=%d body=%v", st, m)
-	}
-	if st, _ := h.do(t, "GET", "/v1/iam/workspaces/hanzo/gamma", boss, ""); st != 404 {
-		t.Fatalf("read after delete: status=%d, want 404", st)
 	}
 }
 
@@ -311,7 +282,7 @@ func TestWorkspaces_writeNeedsAdmin(t *testing.T) {
 	if st, _ := h.do(t, "POST", "/v1/iam/workspaces", alice, body); st != 403 {
 		t.Fatalf("regular user add-workspace: status=%d, want 403", st)
 	}
-	if st, _ := h.do(t, "DELETE", "/v1/iam/workspaces/hanzo/beta", alice, ""); st != 403 {
+	if st, _ := h.do(t, "POST", "/v1/iam/workspaces/delete", alice, body); st != 403 {
 		t.Fatalf("regular user delete-workspace: status=%d, want 403", st)
 	}
 	// But listing is allowed (200) — the switcher is shown to every user.
@@ -321,7 +292,7 @@ func TestWorkspaces_writeNeedsAdmin(t *testing.T) {
 }
 
 // TestWorkspaces_crossTenantScoping: a non-super cannot list another tenant's
-// workspaces — principal.Scope pins the read to the caller's own org regardless of the
+// workspaces — authz.Scope pins the read to the caller's own org regardless of the
 // ?organization= it asks for.
 func TestWorkspaces_crossTenantScoping(t *testing.T) {
 	h := newHarness(t)
@@ -336,8 +307,8 @@ func TestWorkspaces_crossTenantScoping(t *testing.T) {
 
 	// alice (hanzo) asks for orgb's workspaces → gets HER org's scope, never orgb's.
 	_, m := h.do(t, "GET", "/v1/iam/workspaces?owner=orgb", alice, "")
-	if has(names(m), "secret") {
-		t.Fatalf("VULN: hanzo user listed orgb's workspace 'secret': %v", names(m))
+	if has(names(m, "workspaces"), "secret") {
+		t.Fatalf("VULN: hanzo user listed orgb's workspace 'secret': %v", names(m, "workspaces"))
 	}
 }
 
