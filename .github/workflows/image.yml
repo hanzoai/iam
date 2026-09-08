@@ -34,12 +34,12 @@ name: image
 # Actions disabled on this mirror — zero runs, ever. This is the repair.
 #
 # The four defects in the file this replaces, each measured, not guessed:
-#   1. runs-on: hanzo-linux-amd64 — matches NO registered runner. The four
+#   1. runs-on: linux-amd64 — matches NO registered runner. The four
 #      online act_runners advertise exactly ubuntu-latest, ubuntu-22.04,
-#      ubuntu-24.04, hanzo-build-linux-amd64 (/api/v1/admin/actions/runners).
+#      ubuntu-24.04, linux-amd64 (/api/v1/admin/actions/runners).
 #      A job asking for the old label queues forever instead of failing.
 #   2. buildctl-daemonless.sh — absent from catthehacker/ubuntu:act-24.04, the
-#      image this pool actually serves for hanzo-build-linux-amd64.
+#      image this pool actually serves for linux-amd64.
 #   3. secrets.GIT_CLONE_TOKEN — exists on neither the repo nor the org. The
 #      Dockerfile needs a token here: GOPRIVATE=github.com/hanzoai/* means
 #      `go mod download` cannot read hanzoai/orm + hanzoai/sqlite without one.
@@ -76,7 +76,7 @@ jobs:
   # declared gate (`go test ./... -race -count=1`); it is named here rather than
   # inlined so a human and CI keep running the identical command.
   test:
-    runs-on: [hanzo-build-linux-amd64]
+    runs-on: [linux-amd64]
     steps:
       - uses: actions/checkout@v4
 
@@ -98,7 +98,7 @@ jobs:
 
   build:
     needs: [test]
-    runs-on: [hanzo-build-linux-amd64]
+    runs-on: [linux-amd64]
     steps:
       - uses: actions/checkout@v4
 
