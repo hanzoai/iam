@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rsa"
@@ -655,7 +656,7 @@ func (k jwk) publicKey() (any, error) {
 		}
 		return &rsa.PublicKey{N: n, E: e}, nil
 	case "EC":
-		curve, err := ecCurve(k.Crv)
+		curve, group, err := ecCurve(k.Crv)
 		if err != nil {
 			return nil, err
 		}
@@ -667,24 +668,53 @@ func (k jwk) publicKey() (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil
+		pub := &ecdsa.PublicKey{Curve: curve, X: x, Y: y}
+		if err := onCurve(pub, group); err != nil {
+			return nil, err
+		}
+		return pub, nil
 	default:
 		return nil, fmt.Errorf("federation: unsupported JWKS key type %q", k.Kty)
 	}
 }
 
-// ecCurve maps a JWK curve name to its elliptic.Curve.
-func ecCurve(crv string) (elliptic.Curve, error) {
+// ecCurve maps a JWK curve name to the two views of it Go offers: elliptic.Curve,
+// which ECDSA verification takes, and ecdh.Curve, which is the only one that will
+// tell you whether a point is actually on it. One switch, so the set of curves
+// this package accepts is stated once.
+func ecCurve(crv string) (elliptic.Curve, ecdh.Curve, error) {
 	switch crv {
 	case "P-256":
-		return elliptic.P256(), nil
+		return elliptic.P256(), ecdh.P256(), nil
 	case "P-384":
-		return elliptic.P384(), nil
+		return elliptic.P384(), ecdh.P384(), nil
 	case "P-521":
-		return elliptic.P521(), nil
+		return elliptic.P521(), ecdh.P521(), nil
 	default:
-		return nil, fmt.Errorf("federation: unsupported JWKS curve %q", crv)
+		return nil, nil, fmt.Errorf("federation: unsupported JWKS curve %q", crv)
 	}
+}
+
+// onCurve refuses an EC public key whose point does not lie on its own curve.
+//
+// An invalid point is not a key. Nothing ever signed under it, and ECDSA
+// verification against one has no defined answer — so accepting it means trusting
+// arithmetic that was never performed. Every published key we would ever want
+// passes; only a malformed or crafted one fails.
+func onCurve(k *ecdsa.PublicKey, group ecdh.Curve) error {
+	size := k.Curve.Params().BitSize
+	if k.X.Sign() < 0 || k.Y.Sign() < 0 || k.X.BitLen() > size || k.Y.BitLen() > size {
+		return errors.New("federation: JWKS EC coordinates are out of range")
+	}
+	width := (size + 7) / 8
+	point := make([]byte, 1+2*width)
+	point[0] = 4 // uncompressed
+	k.X.FillBytes(point[1 : 1+width])
+	k.Y.FillBytes(point[1+width:])
+	if _, err := group.NewPublicKey(point); err != nil {
+		return fmt.Errorf("federation: JWKS EC key is not on curve %s: %w", k.Curve.Params().Name, err)
+	}
+	return nil
 }
 
 // b64uBigInt decodes a base64url (unpadded) big-endian integer — the JWK

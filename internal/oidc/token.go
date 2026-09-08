@@ -131,6 +131,8 @@ func tokenHandler(db orm.DB) zip.Handler {
 			return passwordGrant(c, db)
 		case grantTypeTokenExchange:
 			return tokenExchangeGrant(c, db)
+		case grantTypeAssertion:
+			return workloadGrant(c, db)
 		case deviceGrant:
 			return deviceCodeGrant(c, db)
 		case "":
@@ -255,11 +257,32 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenErrorClient(c, "client is not permitted on this endpoint")
 	}
 
-	scope := param(c, "scope")
-	ttl := appTTL(app)
-	signer, err := signerFor(ctx, db, app, tokenIssuer(c))
+	resp, err := machineToken(ctx, db, app, tokenIssuer(c), param(c, "scope"), resourceOf(c), "cc", now)
 	if err != nil {
 		return mintError(c, err)
+	}
+	return c.JSON(200, resp)
+}
+
+// machineToken mints the credential a MACHINE holds: the token the
+// client_credentials grant answers with, and the token a workload's cluster
+// assertion answers with (workload.go). The application ITSELF is the principal —
+// no user, no id_token, no refresh token (RFC 6749 §4.4 + OIDC: an id_token
+// requires an authenticated user).
+//
+// ONE function, because the two grants differ only in how the caller PROVED it is
+// that application — a registered secret, or the ServiceAccount token its cluster
+// minted for it. What the application then holds must not depend on which proof it
+// brought, and a second copy of this is exactly how the two would come to disagree.
+//
+// mark names the grant in the token row, which is the only place the proof
+// survives: `cc` for a secret, `wl` for a cluster assertion. Reading it is how an
+// operator finds the services still holding a secret.
+func machineToken(ctx context.Context, db orm.DB, app *schema.Application, issuer, scope, resource, mark string, now time.Time) (tokenResponse, error) {
+	ttl := appTTL(app)
+	signer, err := signerFor(ctx, db, app, issuer)
+	if err != nil {
+		return tokenResponse{}, err
 	}
 	sub := app.GetId() // <appOwner>/<appName>, per v1
 	// A machine token's principal is the APP, so its username is the app name — the
@@ -269,24 +292,10 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	// orgs omits the claim, so an app token can never carry a tenancy it did not
 	// earn, and no display name means no display claim.
 	//
-	// The class is resolved HERE, from the grant, for the same reason the billing
-	// account is: this endpoint is the only place that knows the token was minted
-	// against a client secret with no person present. Said in the token, a consumer
-	// reads a fact; left unsaid, it guesses — and the guess available to it reports
-	// every shared app's machine as a person.
-	// The resource server this token is FOR (RFC 8707), read exactly as the token
-	// exchange grant reads it — resource wins, then audience, else the client's own
-	// id. A machine credential is spent against something, and a token that can only
-	// ever name its minter forces every resource server to accept tokens minted for
-	// somebody else or to be handed a second credential of its own.
-	//
-	// The boundary is the client secret, as it is on the exchange grant beside it: a
-	// caller that authenticated as this client may say what the token is for, and the
-	// resource server still decides what to honour. `azp` records the minter either way.
-	resource := param(c, "resource")
-	if resource == "" {
-		resource = param(c, "audience")
-	}
+	// The class is resolved on the GRANT, for the same reason the billing account
+	// is: the token endpoint is the only place that knows there was no person
+	// present. Said in the token, a consumer reads a fact; left unsaid, it guesses —
+	// and the guess available to it reports every shared app's machine as a person.
 	access, err := signer.Sign(app, Identity{
 		Id:      sub,
 		Name:    app.Name,
@@ -294,7 +303,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		Type:    schema.Program,
 	}, scope, resource, ttl, now)
 	if err != nil {
-		return mintError(c, err)
+		return tokenResponse{}, err
 	}
 	row := &schema.Token{
 		Owner:           app.Owner,
@@ -306,16 +315,33 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		ExpiresIn:       int(ttl.Seconds()),
 		AccessTokenHash: hashToken(access),
 	}
-	row.Name = "cc-" + hashToken(access)[:32]
+	row.Name = mark + "-" + hashToken(access)[:32]
 	if err := store.PersistToken(ctx, db, row); err != nil {
-		return tokenError(c, 500, "server_error", "")
+		return tokenResponse{}, err
 	}
-	return c.JSON(200, tokenResponse{
+	return tokenResponse{
 		AccessToken: access,
 		TokenType:   "Bearer",
 		ExpiresIn:   int(ttl.Seconds()),
 		Scope:       scope,
-	})
+	}, nil
+}
+
+// resourceOf is the resource server a token is FOR (RFC 8707) as this endpoint
+// reads it: `resource` wins, then `audience`. ONE reading, because three grants
+// ask the same question and a fourth spelling of it is a fourth answer.
+//
+// A credential is spent against something, and a token that can only ever name
+// its minter forces every resource server either to accept tokens minted for
+// somebody else or to be handed a second credential of its own. The boundary is
+// the caller's proof of identity, not this parameter: a caller that authenticated
+// may say what the token is for, `azp` records who minted it, and the resource
+// server still decides what to honour.
+func resourceOf(c *zip.Ctx) string {
+	if r := param(c, "resource"); r != "" {
+		return r
+	}
+	return param(c, "audience")
 }
 
 // passwordGrant issues tokens for a Resource Owner Password Credentials request

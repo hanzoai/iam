@@ -161,7 +161,7 @@ func Discovery(c *zip.Ctx) error {
 		"jwks_uri":                      iss + PathJWKS,
 		"response_types_supported":      []string{"code"},
 		"response_modes_supported":      []string{"query", "fragment", "form_post"},
-		"grant_types_supported":         []string{"authorization_code", "refresh_token", "client_credentials", "password", grantTypeTokenExchange, deviceGrant},
+		"grant_types_supported":         grantsSupported(),
 		// The sign-in modes a client may ask for. Advertised because a relying
 		// party CANNOT discover them by trying: a server that ignores prompt=none
 		// answers with a login page, which to the client is indistinguishable from

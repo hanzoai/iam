@@ -106,15 +106,15 @@ func TestECCurve(t *testing.T) {
 		{"P-999", nil, true},
 		{"", nil, true},
 	} {
-		got, err := ecCurve(tc.crv)
+		got, group, err := ecCurve(tc.crv)
 		if tc.wantErr {
 			if err == nil {
 				t.Errorf("ecCurve(%q) accepted, want error", tc.crv)
 			}
 			continue
 		}
-		if err != nil || got != tc.want {
-			t.Errorf("ecCurve(%q) = %v, %v; want %v", tc.crv, got, err, tc.want)
+		if err != nil || got != tc.want || group == nil {
+			t.Errorf("ecCurve(%q) = %v, %v, %v; want %v", tc.crv, got, group, err, tc.want)
 		}
 	}
 }
