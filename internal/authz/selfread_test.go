@@ -19,15 +19,14 @@ import (
 
 // THE REQUEST CLOUD ACTUALLY MAKES.
 //
-// The first cut of the self-read grant was unit-tested against authorize() with
-// entity "applications" and passed — while production still 403'd, because the
-// live caller uses the legacy alias /v1/iam/applications/get and entityOf resolved
-// that to the literal "get-application", which matched no clause. A test written
-// against the noun surface proves nothing about the verb surface, exactly like the
-// login tests that post authorize params in the body no real client uses.
+// The first cut of the self-read grant was unit-tested against authorize() and
+// passed while production still 403'd, because the entity the path resolved to
+// was not the one the clause was written in. A test that calls a function proves
+// nothing about the address, exactly like the login tests that post authorize
+// params in a body no real client sends.
 //
-// So every case here goes through the REAL router, over the compat verb, with
-// client_secret_basic — the shape hanzo-cloud sends.
+// So every case here goes through the REAL router with client_secret_basic — the
+// shape hanzo-cloud sends.
 
 // seedAppRow registers an application the way the platform does: owned by admin,
 // holding a secret, referencing a signing cert.
@@ -74,32 +73,32 @@ func (h *harness) basicGet(t *testing.T, path, clientID, secret string) int {
 // A relying party bootstraps: read its own application, then the cert that
 // application names. Both must succeed, or cloud panics one line after the read
 // it was granted.
-//
-// THE REQUEST THE CALLER ACTUALLY MAKES. hanzoai/ai builds both as a GET naming
-// the partition through one constant (internal/iam/{application,cert}.go,
-// PlatformOwner = "admin"), and the METHOD is load-bearing rather than
-// incidental: IAM decides read-from-write by it, so the same call shaped as a
-// POST is weighed as a write and the self-read grant does not fire — a 403 that
-// reads like a permissions regression when the only thing wrong is the verb.
-func TestSelfRead_AsTheRelyingPartySendsIt(t *testing.T) {
+func TestSelfRead_IsTheReadCloudActuallyMakes(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
 	// Production carries the SAME cert under two owners (seed drift, same keypair);
-	// mirror that so a read naming either partition is exercised.
+	// mirror that so the org-qualified spelling the binary sends is exercised.
 	seedCertRow(t, h.db, "hanzo", signingKid)
 
 	for _, tc := range []struct {
 		name, path string
 		want       int
 	}{
-		// The two reads the bootstrap makes, both owner-qualified, both GET.
-		{"own application", "/v1/iam/applications/get?owner=admin&name=hanzo-cloud", 200},
-		{"the cert that application names", "/v1/iam/certs/get?owner=admin&name=" + signingKid, 200},
-		// The LIST is not the self-read: it asks to enumerate EVERY application
-		// under the reserved admin org, which a tenant app may not do. 403 is the
-		// policy agreeing with itself rather than a second rule.
-		{"the LIST of a reserved org is still refused",
-			"/v1/iam/applications?owner=admin&name=hanzo-cloud", 403},
+		// ONE application, by its natural key.
+		{"own application", "/v1/iam/applications/admin/hanzo-cloud", 200},
+		// 200 is not enough: an earlier shape rewrote the owner to the app's SERVED
+		// org, so the read was authorized and then answered "the entity does not
+		// exist" — a 200 that is functionally the 403 it replaced. The body is
+		// asserted below.
+		{"the cert it names", "/v1/iam/certs/admin/" + signingKid, 200},
+		// THE ROW THE BINARY REACHES FOR. ai/internal/iam/cert.go:35 addresses the
+		// cert under the app's own org, and production carries the same keypair
+		// under both owners, so this spelling is the one that matters live.
+		{"the cert it names, under its own org", "/v1/iam/certs/hanzo/" + signingKid, 200},
+		// The COLLECTION is not the self-read: it asks to enumerate every
+		// application under the reserved admin org, which a tenant app may not do.
+		// 403 is the right answer and the policy agreeing with itself.
+		{"the collection under a reserved org is refused", "/v1/iam/applications?owner=admin", 403},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := h.basicGet(t, tc.path, "hanzo-cloud", "s3cret"); got != tc.want {
@@ -109,9 +108,7 @@ func TestSelfRead_AsTheRelyingPartySendsIt(t *testing.T) {
 	}
 }
 
-// The grant stays a SELF-read. Everything an app is not is still refused, over the
-// same verb surface that now resolves correctly — normalizing entityOf must not
-// have turned the compat aliases into an unguarded read.
+// The grant stays a SELF-read. Everything an app is not is still refused.
 func TestSelfRead_StillRefusesEverythingElse(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
@@ -128,13 +125,12 @@ func TestSelfRead_StillRefusesEverythingElse(t *testing.T) {
 	}
 
 	for _, tc := range []struct{ name, path string }{
-		{"a sibling application", "/v1/iam/applications/get?id=admin%2Fhanzo-console"},
-		{"same name, tenant owner", "/v1/iam/applications/get?id=hanzo%2Fhanzo-cloud"},
-		{"a cert it does not reference", "/v1/iam/certs/get?id=admin%2Fcert-lux"},
-		{"a cert it does not reference, bare", "/v1/iam/certs/get?id=cert-lux"},
+		{"a sibling application", "/v1/iam/applications/admin/hanzo-console"},
+		{"same name, tenant owner", "/v1/iam/applications/hanzo/hanzo-cloud"},
+		{"a cert it does not reference", "/v1/iam/certs/admin/cert-lux"},
 		{"the whole application list", "/v1/iam/applications?owner=admin"},
 		{"the whole cert list", "/v1/iam/certs?owner=admin"},
-		{"a user row", "/v1/iam/users?owner=admin"},
+		{"the whole user list", "/v1/iam/users?owner=admin"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := h.basicGet(t, tc.path, "hanzo-cloud", "s3cret"); got == 200 {
@@ -148,7 +144,7 @@ func TestSelfRead_StillRefusesEverythingElse(t *testing.T) {
 func TestSelfRead_WrongSecretIsNotAPrincipal(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
-	if got := h.basicGet(t, "/v1/iam/applications/get?owner=admin&name=hanzo-cloud", "hanzo-cloud", "wrong"); got == 200 {
+	if got := h.basicGet(t, "/v1/iam/applications/admin/hanzo-cloud", "hanzo-cloud", "wrong"); got == 200 {
 		t.Errorf("a wrong client secret read the application row")
 	}
 }
@@ -159,7 +155,7 @@ func TestSelfRead_ReturnsTheRowNotAnEmptyOk(t *testing.T) {
 	h := newHarness(t)
 	seedAppRow(t, h.db, "admin", "hanzo-cloud", "s3cret", signingKid)
 
-	req := httptest.NewRequest("GET", "/v1/iam/applications/get?owner=admin&name=hanzo-cloud", nil)
+	req := httptest.NewRequest("GET", "/v1/iam/applications/admin/hanzo-cloud", nil)
 	req.Host = "hanzo.id"
 	req.Header.Set("Authorization", "Basic "+
 		base64.StdEncoding.EncodeToString([]byte("hanzo-cloud:s3cret")))
@@ -170,21 +166,19 @@ func TestSelfRead_ReturnsTheRowNotAnEmptyOk(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 
-	// The read answers the Application itself; the retired surface wrapped every
-	// answer in {status, msg, data}, so a decoder still shaped for that finds a
-	// zero value and reads exactly like a successful read of an empty record.
-	var env struct {
+	var app struct {
 		Name  string `json:"name"`
 		Owner string `json:"owner"`
 		Cert  string `json:"cert"`
 	}
-	if err := json.Unmarshal(body, &env); err != nil {
+	if err := json.Unmarshal(body, &app); err != nil {
 		t.Fatalf("decode %s: %v", body, err)
 	}
-	if env.Owner != "admin" || env.Name != "hanzo-cloud" {
-		t.Errorf("got %s/%s, want admin/hanzo-cloud", env.Owner, env.Name)
+	if app.Owner != "admin" || app.Name != "hanzo-cloud" {
+		t.Fatalf("got %s/%s, want admin/hanzo-cloud — authorized but unable to read itself: %s",
+			app.Owner, app.Name, body)
 	}
-	if env.Cert != signingKid {
-		t.Errorf("cert = %q, want %q — cloud reads this next", env.Cert, signingKid)
+	if app.Cert != signingKid {
+		t.Errorf("cert = %q, want %q — cloud reads this next", app.Cert, signingKid)
 	}
 }

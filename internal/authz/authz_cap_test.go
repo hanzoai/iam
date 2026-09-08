@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	policy "github.com/hanzoai/authz"
+
+	"github.com/hanzoai/iam/internal/principal"
 )
 
 // The confidential-client authorization policy: an app principal's ENTIRE
@@ -20,16 +22,16 @@ func TestAuthorizeAppCapabilities(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-team")
 	t.Setenv("IAM_SA_LIST_ALLOWED_APPS", "hanzo-reader")
 
-	console := &Principal{App: &policy.App{Name: "hanzo-console", Owner: "admin"}, Org: "admin"} // admin-owned: user+org admin caps
-	nobody := &Principal{App: &policy.App{Name: "rogue-app", Owner: "hanzo"}, Org: "hanzo"}      // in no allowlist
+	console := &principal.Principal{App: &policy.App{Name: "hanzo-console", Owner: "admin"}, Org: "admin"} // admin-owned: user+org admin caps
+	nobody := &principal.Principal{App: &policy.App{Name: "rogue-app", Owner: "hanzo"}, Org: "hanzo"}      // in no allowlist
 	// attacker: a tenant that registered <its-org>/hanzo-console — the SAME allow-listed
 	// NAME, but owned by a NON-signing org. The owner-pin (cap.go) denies every capability,
 	// so the public signup→onboard→register-app→Basic-auth escalation is inert.
-	attacker := &Principal{App: &policy.App{Name: "hanzo-console", Owner: "evil"}, Org: "evil"}
+	attacker := &principal.Principal{App: &policy.App{Name: "hanzo-console", Owner: "evil"}, Org: "evil"}
 
 	cases := []struct {
 		name   string
-		p      *Principal
+		p      *principal.Principal
 		method string
 		entity string
 		owner  string
@@ -89,7 +91,7 @@ func TestAuthorizeAppCapabilities(t *testing.T) {
 	// RED's four assertions, VERBATIM — the exact PoC principal &Principal{App:"hanzo-console"}
 	// (no owning signing org). Every one fired == true before the owner-pin; every one must
 	// be false now. A bare app principal is inert regardless of the NAME it presents.
-	red := &Principal{App: &policy.App{Name: "hanzo-console"}}
+	red := &principal.Principal{App: &policy.App{Name: "hanzo-console"}}
 	for _, a := range []struct{ method, entity, owner, name string }{
 		{"POST", "users", "victim", "x"},
 		{"POST", "organizations", "admin", "victim"},

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // This file carries the full Phase-1 field set for the `applications` entity
-// (v1 `application`). The kind is registered once, centrally, in
+// (v1 the legacy surface `application`). The kind is registered once, centrally, in
 // schema.go's init(); nothing is registered here.
 //
 // Storage model: hanzoai/orm persists each Application as one JSON document in
@@ -116,7 +116,7 @@ type ScopeDescription struct {
 }
 
 // Application is an OAuth2/OIDC client and its hosted-login configuration
-// (v1 `application`). It is owner-scoped and uniquely named within its
+// (v1 the legacy surface `application`). It is owner-scoped and uniquely named within its
 // owner; the (Owner, Name) pair is the natural key, materialized as the orm id
 // "<owner>/<name>". Every field below is field-complete with v1 so no auth
 // configuration is lost across the cutover.
@@ -125,51 +125,51 @@ type Application struct {
 
 	Owner       string `json:"owner"`
 	Name        string `json:"name"`
-	CreatedTime string `json:"createdTime"`
+	CreatedTime string `json:"createdTime" url:"-"`
 
-	DisplayName                  string          `json:"displayName"`
-	Category                     string          `json:"category"`
-	Type                         string          `json:"type"`
+	DisplayName                  string          `json:"displayName" url:"-"`
+	Category                     string          `json:"category" url:"-"`
+	Type                         string          `json:"type" url:"-"`
 	Scopes                       []*ScopeItem    `json:"scopes"`
-	Logo                         string          `json:"logo"`
-	Title                        string          `json:"title"`
-	Favicon                      string          `json:"favicon"`
-	Order                        int             `json:"order"`
-	HomepageUrl                  string          `json:"homepageUrl"`
-	Description                  string          `json:"description"`
+	Logo                         string          `json:"logo" url:"-"`
+	Title                        string          `json:"title" url:"-"`
+	Favicon                      string          `json:"favicon" url:"-"`
+	Order                        int             `json:"order" url:"-"`
+	HomepageUrl                  string          `json:"homepageUrl" url:"-"`
+	Description                  string          `json:"description" url:"-"`
 	Organization                 string          `json:"organization"`
-	Cert                         string          `json:"cert"`
-	DefaultGroup                 string          `json:"defaultGroup"`
-	HeaderHtml                   string          `json:"headerHtml"`
-	EnablePassword               bool            `json:"enablePassword"`
-	EnableSignUp                 bool            `json:"enableSignUp"`
-	DisableSignin                bool            `json:"disableSignin"`
-	EnableSigninSession          bool            `json:"enableSigninSession"`
-	EnableAutoSignin             bool            `json:"enableAutoSignin"`
-	EnableCodeSignin             bool            `json:"enableCodeSignin"`
-	EnableExclusiveSignin        bool            `json:"enableExclusiveSignin"`
-	EnableSamlCompress           bool            `json:"enableSamlCompress"`
-	EnableSamlC14n10             bool            `json:"enableSamlC14n10"`
-	EnableSamlPostBinding        bool            `json:"enableSamlPostBinding"`
-	DisableSamlAttributes        bool            `json:"disableSamlAttributes"`
-	EnableSamlAssertionSignature bool            `json:"enableSamlAssertionSignature"`
-	UseEmailAsSamlNameId         bool            `json:"useEmailAsSamlNameId"`
-	EnableWebAuthn               bool            `json:"enableWebAuthn"`
-	EnableLinkWithEmail          bool            `json:"enableLinkWithEmail"`
-	OrgChoiceMode                string          `json:"orgChoiceMode"`
-	SamlReplyUrl                 string          `json:"samlReplyUrl"`
+	Cert                         string          `json:"cert" url:"-"`
+	DefaultGroup                 string          `json:"defaultGroup" url:"-"`
+	HeaderHtml                   string          `json:"headerHtml" url:"-"`
+	EnablePassword               bool            `json:"enablePassword" url:"-"`
+	EnableSignUp                 bool            `json:"enableSignUp" url:"-"`
+	DisableSignin                bool            `json:"disableSignin" url:"-"`
+	EnableSigninSession          bool            `json:"enableSigninSession" url:"-"`
+	EnableAutoSignin             bool            `json:"enableAutoSignin" url:"-"`
+	EnableCodeSignin             bool            `json:"enableCodeSignin" url:"-"`
+	EnableExclusiveSignin        bool            `json:"enableExclusiveSignin" url:"-"`
+	EnableSamlCompress           bool            `json:"enableSamlCompress" url:"-"`
+	EnableSamlC14n10             bool            `json:"enableSamlC14n10" url:"-"`
+	EnableSamlPostBinding        bool            `json:"enableSamlPostBinding" url:"-"`
+	DisableSamlAttributes        bool            `json:"disableSamlAttributes" url:"-"`
+	EnableSamlAssertionSignature bool            `json:"enableSamlAssertionSignature" url:"-"`
+	UseEmailAsSamlNameId         bool            `json:"useEmailAsSamlNameId" url:"-"`
+	EnableWebAuthn               bool            `json:"enableWebAuthn" url:"-"`
+	EnableLinkWithEmail          bool            `json:"enableLinkWithEmail" url:"-"`
+	OrgChoiceMode                string          `json:"orgChoiceMode" url:"-"`
+	SamlReplyUrl                 string          `json:"samlReplyUrl" url:"-"`
 	Providers                    []*ProviderItem `json:"providers"`
 	SigninMethods                []*SigninMethod `json:"signinMethods"`
 	SignupItems                  []*SignupItem   `json:"signupItems"`
 	SigninItems                  []*SigninItem   `json:"signinItems"`
 	GrantTypes                   []string        `json:"grantTypes"`
 	OrganizationObj              *Organization   `json:"organizationObj,omitempty" orm:"-"`
-	CertPublicKey                string          `json:"certPublicKey,omitempty" orm:"-"`
+	CertPublicKey                string          `json:"certPublicKey,omitempty" orm:"-" url:"-"`
 	Tags                         []string        `json:"tags"`
 	SamlAttributes               []*SamlItem     `json:"samlAttributes"`
-	SamlHashAlgorithm            string          `json:"samlHashAlgorithm"`
-	IsShared                     bool            `json:"isShared"`
-	IpRestriction                string          `json:"ipRestriction"`
+	SamlHashAlgorithm            string          `json:"samlHashAlgorithm" url:"-"`
+	IsShared                     bool            `json:"isShared" url:"-"`
+	IpRestriction                string          `json:"ipRestriction" url:"-"`
 
 	// ClientId is the OAuth2/OIDC client identifier and the GLOBAL key every
 	// confidential-client resolver authenticates against (store.GetApplicationByClientId,
@@ -181,49 +181,49 @@ type Application struct {
 	// natural key is, and store.GetApplicationByClientId resolves admin-preferring as
 	// defense-in-depth.
 	ClientId             string     `json:"clientId"`
-	ClientSecret         string     `json:"clientSecret"`
-	ClientCert           string     `json:"clientCert"`
+	ClientSecret         string     `json:"clientSecret" url:"-"`
+	ClientCert           string     `json:"clientCert" url:"-"`
 	RedirectUris         []string   `json:"redirectUris"`
-	ForcedRedirectOrigin string     `json:"forcedRedirectOrigin"`
-	TokenFormat          string     `json:"tokenFormat"`
-	TokenSigningMethod   string     `json:"tokenSigningMethod"`
+	ForcedRedirectOrigin string     `json:"forcedRedirectOrigin" url:"-"`
+	TokenFormat          string     `json:"tokenFormat" url:"-"`
+	TokenSigningMethod   string     `json:"tokenSigningMethod" url:"-"`
 	TokenFields          []string   `json:"tokenFields"`
 	TokenAttributes      []*JwtItem `json:"tokenAttributes"`
-	ExpireInHours        float64    `json:"expireInHours"`
-	RefreshExpireInHours float64    `json:"refreshExpireInHours"`
-	CookieExpireInHours  int64      `json:"cookieExpireInHours"`
-	SignupUrl            string     `json:"signupUrl"`
-	SigninUrl            string     `json:"signinUrl"`
-	ForgetUrl            string     `json:"forgetUrl"`
-	AffiliationUrl       string     `json:"affiliationUrl"`
-	IpWhitelist          string     `json:"ipWhitelist"`
-	TermsOfUse           string     `json:"termsOfUse"`
-	SignupHtml           string     `json:"signupHtml"`
-	SigninHtml           string     `json:"signinHtml"`
+	ExpireInHours        float64    `json:"expireInHours" url:"-"`
+	RefreshExpireInHours float64    `json:"refreshExpireInHours" url:"-"`
+	CookieExpireInHours  int64      `json:"cookieExpireInHours" url:"-"`
+	SignupUrl            string     `json:"signupUrl" url:"-"`
+	SigninUrl            string     `json:"signinUrl" url:"-"`
+	ForgetUrl            string     `json:"forgetUrl" url:"-"`
+	AffiliationUrl       string     `json:"affiliationUrl" url:"-"`
+	IpWhitelist          string     `json:"ipWhitelist" url:"-"`
+	TermsOfUse           string     `json:"termsOfUse" url:"-"`
+	SignupHtml           string     `json:"signupHtml" url:"-"`
+	SigninHtml           string     `json:"signinHtml" url:"-"`
 	ThemeData            *ThemeData `json:"themeData"`
-	FooterHtml           string     `json:"footerHtml"`
+	FooterHtml           string     `json:"footerHtml" url:"-"`
 
-	FormCss                 string `json:"formCss"`
-	FormCssMobile           string `json:"formCssMobile"`
-	FormOffset              int    `json:"formOffset"`
-	FormSideHtml            string `json:"formSideHtml"`
-	FormBackgroundUrl       string `json:"formBackgroundUrl"`
-	FormBackgroundUrlMobile string `json:"formBackgroundUrlMobile"`
+	FormCss                 string `json:"formCss" url:"-"`
+	FormCssMobile           string `json:"formCssMobile" url:"-"`
+	FormOffset              int    `json:"formOffset" url:"-"`
+	FormSideHtml            string `json:"formSideHtml" url:"-"`
+	FormBackgroundUrl       string `json:"formBackgroundUrl" url:"-"`
+	FormBackgroundUrlMobile string `json:"formBackgroundUrlMobile" url:"-"`
 
-	FailedSigninLimit      int `json:"failedSigninLimit"`
-	FailedSigninFrozenTime int `json:"failedSigninFrozenTime"`
-	CodeResendTimeout      int `json:"codeResendTimeout"`
+	FailedSigninLimit      int `json:"failedSigninLimit" url:"-"`
+	FailedSigninFrozenTime int `json:"failedSigninFrozenTime" url:"-"`
+	CodeResendTimeout      int `json:"codeResendTimeout" url:"-"`
 
 	CustomScopes []*ScopeDescription `json:"customScopes"`
 
-	Environment string `json:"environment"`
-	Project     string `json:"project"`
+	Environment string `json:"environment" url:"-"`
+	Project     string `json:"project" url:"-"`
 
-	Domain       string   `json:"domain"`
+	Domain       string   `json:"domain" url:"-"`
 	OtherDomains []string `json:"otherDomains"`
-	UpstreamHost string   `json:"upstreamHost"`
-	SslMode      string   `json:"sslMode"`
-	SslCert      string   `json:"sslCert"`
+	UpstreamHost string   `json:"upstreamHost" url:"-"`
+	SslMode      string   `json:"sslMode" url:"-"`
+	SslCert      string   `json:"sslCert" url:"-"`
 
 	CertObj *Cert `json:"certObj,omitempty" orm:"-"`
 }

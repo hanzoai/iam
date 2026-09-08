@@ -577,7 +577,8 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 // canonical user-create path (users.Create, no password → no login-able digest),
 // stamping the provider subject on its connector column. The username comes from
 // allocateName — the same derivation a password signup with no username of its own
-// gets — and the email's verified flag is carried straight from the IdP.
+// gets — and the address proof is carried straight from the IdP, on the create's
+// own field rather than in the user body, which cannot state it.
 //
 // The display name reaches DisplayName and stops there: only the ADDRESS may
 // become an identity, which is allocateName's rule to keep.
@@ -592,15 +593,21 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 		Name:              name,
 		DisplayName:       firstNonEmpty(id.displayName, name),
 		Email:             id.email,
-		EmailVerified:     id.emailVerified,
 		Avatar:            id.avatar,
 		SignupApplication: app.Name,
 		RegisterType:      "Federation",
 		RegisterSource:    org + "/" + prov.Name,
 	}
 	*binding.ref(&u) = id.subject
-	// A federated sign-in makes a PERSON, stated by this code (see CreateInput.Type).
-	created, err := users.New(db).Create(ctx, &users.CreateInput{User: u, Type: "normal-user"})
+	// A federated sign-in makes a PERSON, and the provider vouched for the address.
+	// Both are stated by this code rather than by the user body (see CreateInput):
+	// this is the one create path entitled to say an address was proven, because it
+	// is the one that watched a provider prove it.
+	created, err := users.New(db).Create(ctx, &users.CreateInput{
+		User:          u,
+		Type:          "normal-user",
+		EmailVerified: id.emailVerified,
+	})
 	if err != nil || app.OrgChoiceMode != orgChoiceCreate {
 		return created, err
 	}
@@ -695,15 +702,6 @@ func federationOrgAllowed(app *schema.Application) bool {
 		return true
 	}
 	return org == app.Owner
-}
-
-// fedSuccessRedirect returns the browser to the relying party's redirect_uri with
-// the iam authorization code and the original app state (RFC 6749 §4.1.2).
-func fedSuccessRedirect(c *zip.Ctx, st *schema.FederationState, code string) error {
-	v := url.Values{}
-	v.Set("code", code)
-	setIfPresent(v, "state", st.AppState)
-	return c.Redirect(302, joinQuery(st.RedirectUri, v))
 }
 
 // fedErrorRedirect returns an OAuth error to the relying party's redirect_uri

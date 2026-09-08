@@ -5,22 +5,24 @@
 // (an issued OAuth2/OIDC token record), owner-scoped by the (owner, name)
 // natural key.
 //
-// The five operations are typed zip handlers over orm: reads are zip.Get,
-// writes are zip.Post. zip decodes the request body into the In struct for
-// every non-GET method (and, over the MCP projection, for GET too); the REST
-// GET projection carries no body, so any op that needs the (owner, name) key
-// from the caller is a POST. Each op is also an MCP tool and an OpenAPI 3.1
-// operation from this one registration.
+// The five operations are typed zip handlers over orm, addressed by method:
+// GET lists the collection and reads one row, POST creates, PUT updates,
+// DELETE removes. The (owner, name) key rides in the path, and zip binds the
+// three input sources in increasing authority — body, then query, then path —
+// so the URL is what addresses the row: PUT /v1/iam/tokens/acme/nightly
+// updates acme/nightly whatever the body claims. Each op is also an MCP tool
+// and an OpenAPI 3.1 operation from this one registration.
 package tokens
 
 import (
 	"context"
 	"errors"
-	"github.com/hanzoai/iam/internal/authz"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -65,7 +67,7 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("listTokens"),
 		zip.WithTags("tokens"))
 
-	zip.Get[tokenKey, tokenResult](app, "/v1/iam/tokens/get", getToken(db),
+	zip.Get[tokenKey, tokenResult](app, "/v1/iam/tokens/:owner/:name", getToken(db),
 		zip.WithOperationID("getToken"),
 		zip.WithTags("tokens"))
 
@@ -73,11 +75,11 @@ func Route(app *zip.App, db orm.DB) {
 		zip.WithOperationID("addToken"),
 		zip.WithTags("tokens"))
 
-	zip.Post[schema.Token, tokenMutation](app, "/v1/iam/tokens/update", updateToken(db),
+	zip.Put[schema.Token, tokenMutation](app, "/v1/iam/tokens/:owner/:name", updateToken(db),
 		zip.WithOperationID("updateToken"),
 		zip.WithTags("tokens"))
 
-	zip.Post[tokenKey, tokenMutation](app, "/v1/iam/tokens/delete", deleteToken(db),
+	zip.Delete[tokenKey, tokenMutation](app, "/v1/iam/tokens/:owner/:name", deleteToken(db),
 		zip.WithOperationID("deleteToken"),
 		zip.WithTags("tokens"))
 }
@@ -87,10 +89,10 @@ func Route(app *zip.App, db orm.DB) {
 // authorized before revoking anything.
 func listTokens(db orm.DB) zip.TypedHandler[listTokensIn, listTokensOut] {
 	return func(ctx context.Context, in *listTokensIn) (*listTokensOut, error) {
-		// The owner comes from the authenticated principal, never the input: a typed
-		// GET binds nothing from the request, so filtering on in.Owner meant the
-		// "empty owner lists everything" branch ran on every REST call.
-		owner, err := authz.Scope(ctx, in.Owner)
+		// The owner comes from the authenticated principal, never the input: in.Owner
+		// is whatever the caller wrote in the URL, since zip binds a typed op's scalar
+		// fields from the query string on every method.
+		owner, err := principal.Scope(ctx, in.Owner)
 		if err != nil {
 			return nil, err
 		}
@@ -131,6 +133,12 @@ func addToken(db orm.DB) zip.TypedHandler[schema.Token, tokenResult] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
+		// The row's subject is an authority the (Owner, Name) key does not carry: a
+		// caller may record a token only for a user it may act for, never one whose
+		// subject is admin/root.
+		if err := authz.AuthorizeUser(ctx, "POST", in.User); err != nil {
+			return nil, err
+		}
 		// orm.New binds the store and applies defaults; copy the decoded domain
 		// fields over it, then restore the bound Model so its db handle and key
 		// survive the assignment.
@@ -138,6 +146,14 @@ func addToken(db orm.DB) zip.TypedHandler[schema.Token, tokenResult] {
 		model := t.Model
 		*t = *in
 		t.Model = model
+		// Every key a presented credential is resolved by is the server's. The two
+		// hashes answer a bearer or a refresh token (GetTokenByRefreshHash); Code and
+		// UserCode answer the authorization-code redemption and the device approval
+		// (GetTokenByCode, GetTokenByUserCode), each an unscoped lookup by that one
+		// value. All four are derived from something this server minted — a chosen
+		// code is a chosen grant — so a create carries none of them.
+		t.AccessTokenHash, t.RefreshTokenHash = "", ""
+		t.Code, t.UserCode = "", ""
 		t.SetId(tokenId(in.Owner, in.Name))
 		if err := t.CreateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
@@ -155,6 +171,9 @@ func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
+		if err := authz.AuthorizeUser(ctx, "PUT", in.User); err != nil {
+			return nil, err
+		}
 		t, err := orm.Get[schema.Token](db, tokenId(in.Owner, in.Name))
 		if errors.Is(err, orm.ErrNotFound) {
 			return &tokenMutation{Affected: false}, nil
@@ -164,10 +183,18 @@ func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
 		}
 		// Overlay the decoded domain fields onto the loaded row, keeping the
 		// loaded Model (id, createdAt, key, snapshot) so the write targets the
-		// existing key and preserves creation metadata.
+		// existing key and preserves creation metadata. Every key a presented
+		// credential is resolved by is the server's, not the caller's: carry the
+		// stored values so an update can never set one — the two hashes a bearer or
+		// refresh resolves by, and the code an authorization-code redemption and a
+		// device approval resolve by.
+		storedAccessHash, storedRefreshHash := t.AccessTokenHash, t.RefreshTokenHash
+		storedCode, storedUserCode := t.Code, t.UserCode
 		model := t.Model
 		*t = *in
 		t.Model = model
+		t.AccessTokenHash, t.RefreshTokenHash = storedAccessHash, storedRefreshHash
+		t.Code, t.UserCode = storedCode, storedUserCode
 		if err := t.UpdateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}

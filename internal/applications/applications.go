@@ -13,10 +13,12 @@ import (
 	"context"
 	"errors"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -27,19 +29,53 @@ import (
 // separate field that a tenant admin could otherwise set to the reserved admin
 // org (a SuperAdmin-minting app) or to a victim tenant. On a gated HTTP request
 // the Guard attached a Principal; a non-super may point an app only at its OWN
-// org. A server-internal call (bootstrap/seed) carries no Principal and is
-// trusted, so an unauthenticated context is left to the surrounding trust
-// boundary rather than blocked here.
+// org. A context carrying no principal is refused for the reason AuthorizeCert
+// states: this handler is reached from the router and nowhere else, so arriving
+// without one is a door left open rather than a caller to trust.
 func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	if in.Organization == "" {
 		return nil // an org-less app mints no cross-tenant/SuperAdmin identity
 	}
-	p, ok := authz.From(ctx)
+	p, ok := principal.From(ctx)
 	if !ok {
-		return nil // server-internal (no principal) — trusted caller
+		return zip.ErrForbidden("not authorized to set the application organization to " + in.Organization)
 	}
 	if !authz.CanSetOrg(p, in.Organization) {
 		return zip.ErrForbidden("not authorized to set the application organization to " + in.Organization)
+	}
+	return nil
+}
+
+// authorizeProviders gates the identity providers an application LINKS. A link is a
+// reference to credentials: the sign-in leg runs on the provider record's own client
+// id and secret (store.EnrichProviders resolves it, federationProvider uses it), and
+// the application never holds those — it names them. The row's own (Owner, Name)
+// does not cover the reference, so the seam that authorizes the row left the link
+// open.
+//
+// The rule is the one the seeding makes true: the PLATFORM's connectors are shared,
+// so any application may name one — that is what "sign in with Google" is, and a
+// link naming no owner resolves there. What no application may name is ANOTHER
+// TENANT's provider, whose client id and secret are that tenant's own. A SuperAdmin
+// may name any.
+//
+// The owner is resolved through store.ProviderOwner, the same function the
+// resolution uses, so the record authorized here is the record the sign-in reaches.
+// Only a foreign-tenant link is decided, and authz.Can answers no for a request
+// there is no principal for, so an application linking nothing — or linking only
+// what everyone may — passes without a decision to make.
+func authorizeProviders(ctx context.Context, in *schema.Application) error {
+	for _, item := range in.Providers {
+		if item == nil || item.Name == "" {
+			continue
+		}
+		owner := store.ProviderOwner(item)
+		if policy.IsReservedOrg(owner) || owner == in.Owner || owner == in.Organization {
+			continue
+		}
+		if !authz.Can(ctx, "POST", "providers", owner, item.Name) {
+			return zip.ErrForbidden("not authorized to link the identity provider " + owner + "/" + item.Name)
+		}
 	}
 	return nil
 }
@@ -105,22 +141,19 @@ type DeleteResult struct {
 // The kind is addressed in the PLURAL, like every other kind in this service —
 // users, certs, roles, invitations, keys, projects, workspaces, permissions,
 // providers, tokens, sessions, organizations, audit-logs,
-// webauthn-credentials — with `/get`, `/update` and `/delete` under it. This was
-// the only singular, so `/v1/iam/application` and `/v1/iam/applications` both
-// answered and which spelling a reader wanted depended on the operation.
-// Fourteen kinds against one is not a matter of taste; the odd one moved.
-//
-// The singular address stays reachable on the SAME typed handlers, tagged
-// `compat` — which is what keeps it out of the published document and therefore
-// out of every SDK, docs page and CLI command. It is deleted when the last
-// pinned consumer moves.
+// webauthn-credentials. The collection is `/v1/iam/applications`; one
+// application is `/v1/iam/applications/:owner/:name`, read with GET, replaced
+// with PUT, removed with DELETE. This was the only singular, so
+// `/v1/iam/application` and `/v1/iam/applications` both answered and which
+// spelling a reader wanted depended on the operation. Fourteen kinds against
+// one is not a matter of taste; the odd one moved, and the singular is now a
+// retirement notice (internal/gone).
 func Route(app *zip.App, db orm.DB) {
 	zip.Get(app, "/v1/iam/applications", listApplications(db), zip.WithTags("applications"))
 	zip.Post(app, "/v1/iam/applications", Create(db), zip.WithTags("applications"))
-	zip.Get(app, "/v1/iam/applications/get", getApplication(db), zip.WithTags("applications"))
-	zip.Post(app, "/v1/iam/applications/update", Update(db), zip.WithTags("applications"))
-	zip.Post(app, "/v1/iam/applications/delete", deleteApplication(db), zip.WithTags("applications"))
-
+	zip.Get(app, "/v1/iam/applications/:owner/:name", getApplication(db), zip.WithTags("applications"))
+	zip.Put(app, "/v1/iam/applications/:owner/:name", Update(db), zip.WithTags("applications"))
+	zip.Delete(app, "/v1/iam/applications/:owner/:name", deleteApplication(db), zip.WithTags("applications"))
 }
 
 // listApplications returns the applications in one organization, newest first —
@@ -131,8 +164,19 @@ func listApplications(db orm.DB) zip.TypedHandler[ApplicationQuery, ApplicationL
 		if in.Owner == "" {
 			return nil, zip.ErrBadRequest("owner is required")
 		}
+		// The owner is resolved by principal.Scope from the authenticated principal,
+		// never taken from the input: a tenant reads only its own org, a SuperAdmin
+		// reads the owner it asks for. The op's Authorize hook re-checks the decoded
+		// target above this, but that is a SECOND gate — the Guard reads the FIRST
+		// value of a repeated query key and the binder the LAST, so the two can be
+		// handed different strings, and this handler filters on the one it was
+		// actually given. Every sibling listing resolves its owner the same way.
+		owner, err := principal.Scope(ctx, in.Owner)
+		if err != nil {
+			return nil, err
+		}
 		apps, err := orm.TypedQuery[schema.Application](db).
-			Filter("Owner=", in.Owner).
+			Filter("Owner=", owner).
 			Order("-CreatedTime").
 			GetAll(ctx)
 		if err != nil {
@@ -177,6 +221,12 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
 		if err := authorizeOrganization(ctx, in); err != nil {
+			return nil, err
+		}
+		if err := authz.AuthorizeCert(ctx, db, in.Cert, ""); err != nil {
+			return nil, err
+		}
+		if err := authorizeProviders(ctx, in); err != nil {
 			return nil, err
 		}
 		id := appID(in.Owner, in.Name)
@@ -228,6 +278,12 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		if err := authz.AuthorizeCert(ctx, db, in.Cert, existing.Cert); err != nil {
+			return nil, err
+		}
+		if err := authorizeProviders(ctx, in); err != nil {
+			return nil, err
+		}
 
 		// Global clientId uniqueness (see Create): an update may keep its own clientId
 		// but must never steal another app's.
@@ -268,10 +324,6 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		return in.Mask(), nil
 	}
 }
-
-// Delete exposes the same handler to the legacy delete-application alias — one
-// delete path, wrapped in that surface's envelope.
-func Delete(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult] { return deleteApplication(db) }
 
 // deleteApplication removes an application. Anyone mid-sign-in through it is
 // turned away and its client credentials stop working, so retire the integration

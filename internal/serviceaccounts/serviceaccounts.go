@@ -29,9 +29,7 @@ package serviceaccounts
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
-	"time"
 
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
@@ -40,6 +38,7 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/keys"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -135,7 +134,7 @@ func create(db orm.DB) zip.Handler {
 		if in.Organization == "" {
 			return httpx.Err(c, "organization is required")
 		}
-		p, ok := authz.From(c.Context())
+		p, ok := principal.From(c.Context())
 		if !ok || !admin(p, in.Organization) {
 			return httpx.Err(c, unauthorized)
 		}
@@ -189,7 +188,7 @@ func list(db orm.DB) zip.TypedHandler[query, httpx.Answer] {
 		if in.Organization == "" {
 			return httpx.Bad(400, "organization is required", ""), nil
 		}
-		p, ok := authz.From(ctx)
+		p, ok := principal.From(ctx)
 		if !ok || !read(p, in.Organization) {
 			return httpx.Bad(400, unauthorized, ""), nil
 		}
@@ -198,8 +197,14 @@ func list(db orm.DB) zip.TypedHandler[query, httpx.Answer] {
 		if err != nil {
 			return httpx.Bad(400, err.Error(), ""), nil
 		}
-		for _, sa := range all {
-			redact(sa)
+		// schema.Mask, not a list of columns kept here: an entity says which of its
+		// own fields are secret, and this listing reaches ACROSS tenants — a
+		// mint-capable app lists the accounts of the org it administers — so every
+		// field it emits is one tenant's row handed to another. A second copy of that
+		// list drifts in the direction that leaks, because a secret added to Mask is
+		// one the copy has never heard of.
+		for i, sa := range all {
+			all[i] = sa.Mask()
 		}
 		// data2 is the TOTAL, not the page length — v1's contract, so a caller
 		// paging through knows how far it has to go.
@@ -272,7 +277,7 @@ func load(c *zip.Ctx, db orm.DB) (*schema.User, error) {
 	if org == "" || name == "" {
 		return nil, zip.ErrBadRequest("organization and name are required")
 	}
-	p, ok := authz.From(c.Context())
+	p, ok := principal.From(c.Context())
 	if !ok || !admin(p, org) {
 		return nil, zip.ErrForbidden(unauthorized)
 	}
@@ -326,7 +331,7 @@ func orgFromBody(body []byte) string {
 // every tenant), so the binding that matters is not which tenant but whether the
 // target is a tenant at all. A human SuperAdmin keeps the ability, because that
 // is already the authority the reserved org denotes.
-func admin(p *authz.Principal, org string) bool {
+func admin(p *principal.Principal, org string) bool {
 	if p == nil || org == "" {
 		return false
 	}
@@ -349,7 +354,7 @@ func admin(p *authz.Principal, org string) bool {
 //     app's own <org>-<app> name binds it to. Both conditions are required, so a
 //     leaked reader credential can enumerate one tenant's bot names and nothing
 //     else — and can never mint, rotate, or delete, which stay on admin.
-func read(p *authz.Principal, org string) bool {
+func read(p *principal.Principal, org string) bool {
 	if p == nil || org == "" {
 		return false
 	}
@@ -382,36 +387,13 @@ func read(p *authz.Principal, org string) bool {
 // The secret is stored as its digest (schema.DigestSecret) and returned once, so
 // the row holds nothing replayable.
 func mint(ctx context.Context, db orm.DB, sa *schema.User) (key, secret string, err error) {
-	key, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
-	// A rotate REPLACES: the deterministic name means the new credential lands on
-	// the same row, so the previous secret stops resolving the moment this one is
-	// written. Two live secrets for one identity is how a revoked key keeps working.
-	name, now := sa.Name+"-key", time.Now().UTC().Format(time.RFC3339)
-	id := sa.Owner + "/" + name
-	existing, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id).First()
-	if err != nil && !errors.Is(err, orm.ErrNotFound) {
-		return "", "", zip.ErrInternal(err.Error())
-	}
-	if existing != nil {
-		existing.AccessKey, existing.AccessSecret = key, ""
-		existing.AccessSecretDigest = schema.DigestSecret(secret)
-		existing.UpdatedTime = now
-		if err := existing.UpdateCtx(ctx); err != nil {
-			return "", "", zip.ErrInternal(err.Error())
-		}
-		sa.AccessKey, sa.AccessSecret, sa.AccessSecretHash = "", "", ""
-		return key, secret, nil
-	}
-	k := orm.New[schema.Key](db)
-	k.SetId(id)
-	k.Owner, k.Name = sa.Owner, name
-	k.DisplayName = "Service account key"
-	k.Type, k.User = "User", sa.Owner+"/"+sa.Name
-	k.State = "Active"
-	k.AccessKey = key
-	k.AccessSecretDigest = schema.DigestSecret(secret)
-	k.CreatedTime, k.UpdatedTime = now, now
-	if err := k.CreateCtx(ctx); err != nil {
+	// A rotate REPLACES: keys.MintAccountKey names the row deterministically, so
+	// the new credential lands where the last one was and the previous secret stops
+	// resolving the moment this one is written. Two live secrets for one identity
+	// is how a revoked key keeps working. Signup credentials its tenant's first
+	// account through the same call, so the two cannot name different rows.
+	key, secret, err = keys.MintAccountKey(ctx, db, sa.Owner, sa.Name)
+	if err != nil {
 		return "", "", zip.ErrInternal("store service account key: " + err.Error())
 	}
 	// The User row holds no credential material at all. See the note above.
@@ -485,17 +467,6 @@ func find(ctx context.Context, db orm.DB, owner, name string) (*schema.User, err
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return u, nil
-}
-
-// redact strips every credential field before an identity is listed. The secret
-// exists only as a digest, and even that never leaves: a list is names and
-// metadata (v1 masks the same three columns).
-func redact(sa *schema.User) {
-	sa.AccessKey = ""
-	sa.AccessSecret = ""
-	sa.AccessSecretHash = ""
-	sa.PasswordHash = ""
-	sa.PasswordSalt = ""
 }
 
 // paginate returns the 1-indexed page of size n, clamped to the slice. Absent

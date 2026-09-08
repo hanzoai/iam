@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Package keys serves the owner-scoped CRUD surface for the `keys` entity
-// (v1 `key`) as typed zip handlers over hanzoai/orm.
+// (v1 the legacy surface `key`) as typed zip handlers over hanzoai/orm.
 //
 // Identity is the (owner, name) pair; it maps onto the orm storage id as
-// "owner/name", exactly as the v1 record addressed itself. Reads are
-// zip.Get[In,Out], writes are zip.Post[In,Out]; every handler closes over the
-// one orm.DB entity store so the typed signatures carry no transport or
-// storage plumbing.
+// "owner/name", exactly as the v1 record addressed itself, and onto the URL as
+// /v1/iam/keys/:owner/:name — the method carries the verb, the path carries the
+// key. Every handler closes over the one orm.DB entity store so the typed
+// signatures carry no transport or storage plumbing.
 package keys
 
 import (
@@ -23,6 +23,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -32,8 +33,8 @@ import (
 // Called from routes.Route once it is threaded the entity store.
 //
 // ONE noun, plural, for every op — the same shape users.Route uses
-// (/v1/iam/users, /v1/iam/users/get, …). It used to be two nouns, `keys` for the
-// list and `key` for everything else, and that was not merely inconsistent:
+// (/v1/iam/users, /v1/iam/users/:owner/:name). It used to be two nouns, `keys` for
+// the list and `key` for everything else, and that was not merely inconsistent:
 // authz.entityOf reads the FIRST path segment as the entity, so the list
 // authorized on "keys" and every write on "key". Two entity strings for one
 // entity means every capability keyed on it is dead on one of the two surfaces —
@@ -41,14 +42,16 @@ import (
 func Route(app *zip.App, db orm.DB) {
 	zip.Get(app, "/v1/iam/keys", list(db), zip.WithTags("keys"))
 	zip.Post(app, "/v1/iam/keys", create(db), zip.WithTags("keys"))
-	zip.Get(app, "/v1/iam/keys/get", get(db), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/keys/update", update(db), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/keys/delete", del(db), zip.WithTags("keys"))
+	zip.Get(app, "/v1/iam/keys/:owner/:name", get(db), zip.WithTags("keys"))
+	zip.Put(app, "/v1/iam/keys/:owner/:name", update(db), zip.WithTags("keys"))
+	zip.Delete(app, "/v1/iam/keys/:owner/:name", del(db), zip.WithTags("keys"))
 }
 
-// ListRequest scopes a listing to one owner.
+// ListRequest names the organization to read. Omitting it means "the one my
+// credential is scoped to", which for a credential that spans tenants is all of
+// them; principal.Scope turns the two into one answer.
 type ListRequest struct {
-	Owner string `json:"owner"`
+	Owner string `json:"owner,omitempty"`
 }
 
 // ListResponse is the owner-scoped key set, newest first.
@@ -71,17 +74,23 @@ type DeleteResponse struct {
 // "owner/name" identity the v1 record used.
 func id(owner, name string) string { return owner + "/" + name }
 
-// list returns your organization's API keys, newest first — what each is called,
+// list returns an organization's API keys, newest first — what each is called,
 // what it may reach, and its publishable half. Secret halves are never listed.
+//
+// Which organization comes from your credentials, not from the request: you read
+// your own and no one else's. The capability that admits a confidential client to
+// this collection does not itself name a tenant, so the tenant is decided here.
 func list(db orm.DB) zip.TypedHandler[ListRequest, ListResponse] {
 	return func(ctx context.Context, in *ListRequest) (*ListResponse, error) {
-		if in.Owner == "" {
-			return nil, zip.ErrBadRequest("owner is required")
+		owner, err := principal.Scope(ctx, in.Owner)
+		if err != nil {
+			return nil, err
 		}
-		items, err := orm.TypedQuery[schema.Key](db).
-			Filter("Owner=", in.Owner).
-			Order("-CreatedTime").
-			GetAll(ctx)
+		q := orm.TypedQuery[schema.Key](db)
+		if owner != "" {
+			q = q.Filter("Owner=", owner)
+		}
+		items, err := q.Order("-CreatedTime").GetAll(ctx)
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
@@ -148,8 +157,7 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 			// A publishable key is WRITE-ONLY: a pk- publishable half and NEVER a
 			// confidential sk- secret — even if the caller supplied one — so it can
 			// carry no full-access material. Its authority is resolved org-only at the
-			// ingest endpoint (compat resolve-key → /v1/iam/resolve-key), never as a
-			// principal.
+			// ingest endpoint (/v1/iam/keys/org), never as a principal.
 			k.AccessSecret = ""
 		} else if k.AccessSecret == "" {
 			k.AccessSecret = Mint("sk", k.State)
@@ -375,50 +383,96 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 	// their own account. Minting is the moment this org is known to be moving to
 	// per-user rows, so it is the moment the shared one stops existing.
 	if !publish {
-		if shared, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, UserKeyName)).First(); err == nil && shared != nil {
+		shared, err := orm.Get[schema.Key](db, id(owner, UserKeyName))
+		if err == nil {
 			if err := shared.DeleteCtx(ctx); err != nil {
 				return "", err
 			}
-		} else if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		} else if !errors.Is(err, orm.ErrNotFound) {
 			return "", err
 		}
 	}
 
-	existing, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, name)).First()
-	if err != nil && !errors.Is(err, orm.ErrNotFound) {
-		return "", err
-	}
-	if existing != nil {
-		existing.AccessKey, existing.AccessSecret = access, ""
-		existing.AccessSecretDigest = schema.DigestSecret(secret)
-		existing.User, existing.Type, existing.Scope = user, "User", scope
-		existing.UpdatedTime = now
-		if err := existing.UpdateCtx(ctx); err != nil {
-			return "", err
-		}
-		return presented, nil
-	}
-
-	k := orm.New[schema.Key](db)
-	k.SetId(id(owner, name))
-	k.Owner, k.Name = owner, name
-	k.DisplayName = "Cloud API key"
+	label := "Cloud API key"
 	if publish {
-		k.DisplayName = "Publishable key"
+		label = "Publishable key"
 	}
-	k.Type, k.User = "User", user
-	k.AccessKey = access
-	// The digest is what is written; the secret leaves in `presented` and is
-	// never stored, so a leak of this table reveals nothing that can be replayed.
-	k.AccessSecret = ""
-	k.AccessSecretDigest = schema.DigestSecret(secret)
-	k.Scope = scope
-	k.State = "Active"
-	k.CreatedTime, k.UpdatedTime = now, now
-	if err := k.CreateCtx(ctx); err != nil {
+	if err := write(ctx, db, row{
+		owner:  owner,
+		name:   name,
+		user:   user,
+		scope:  scope,
+		label:  label,
+		access: access,
+		secret: secret,
+		now:    now,
+	}); err != nil {
 		return "", err
 	}
 	return presented, nil
+}
+
+// MintAccountKey (re)mints the credential a SERVICE ACCOUNT presents and returns
+// both halves — the pk- its holder is known by and the sk- it authenticates with,
+// revealed once. Every caller that credentials an account goes through here, so a
+// tenant's first credential and every rotation after it land on ONE row: two
+// spellings of that row would leave the credential a signup handed out live
+// forever, unrevokable, beside the one a rotation says replaced it.
+//
+// The row is what the resolvers read. The account's own User row holds no
+// credential material at all — nothing resolves a secret from there, so a value
+// written to it authenticates nobody however carefully it was hashed.
+func MintAccountKey(ctx context.Context, db orm.DB, owner, account string) (access, secret string, err error) {
+	if strings.TrimSpace(owner) == "" || strings.TrimSpace(account) == "" {
+		return "", "", fmt.Errorf("keys: owner and account are required")
+	}
+	access, secret = Mint("pk", ""), Mint("sk", "")
+	err = write(ctx, db, row{
+		owner:  owner,
+		name:   account + "-key",
+		user:   owner + "/" + account,
+		label:  "Service account key",
+		access: access,
+		secret: secret,
+		now:    time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return access, secret, nil
+}
+
+// row is one credential as a mint states it: who holds it, what it reaches, and
+// the two halves it was minted with.
+type row struct {
+	owner, name, user, scope, label, access, secret, now string
+}
+
+// write puts the credential row at (owner, name) — the ONE write behind every
+// mint, and the ONE place that decides what a minted row says.
+//
+// It states the WHOLE row every time, so nothing of the credential it replaces
+// can survive into it. Mint used to read the previous row and overwrite only the
+// credential fields, which left State and ExpireTime describing the credential
+// that was just replaced: re-minting onto a key that had run out or been switched
+// off handed the holder a fresh sk- and a row that still said it was dead, so the
+// key they were given authenticated nobody. A row built from scratch cannot
+// inherit that, and a put lands on the same id whether or not one was there.
+func write(ctx context.Context, db orm.DB, r row) error {
+	k := orm.New[schema.Key](db)
+	k.SetId(id(r.owner, r.name))
+	k.Owner, k.Name = r.owner, r.name
+	k.DisplayName = r.label
+	k.Type, k.User = "User", r.user
+	k.AccessKey = r.access
+	// The digest is what is written; the secret leaves with its holder and is
+	// never stored, so a leak of this table reveals nothing that can be replayed.
+	k.AccessSecret = ""
+	k.AccessSecretDigest = schema.DigestSecret(r.secret)
+	k.Scope = r.scope
+	k.State = "Active"
+	k.CreatedTime, k.UpdatedTime = r.now, r.now
+	return k.PutCtx(ctx)
 }
 
 // RevokeUserKey deletes the user's key row at `scope`. Absent is success — revoke is
@@ -427,8 +481,8 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 // leaves the server key working and vice versa; and named by the same NameFor the
 // mint used, so one member's revoke cannot reach another member's secret key.
 func RevokeUserKey(ctx context.Context, db orm.DB, owner, user, scope string) error {
-	k, err := orm.TypedQuery[schema.Key](db).Filter("Id=", id(owner, NameFor(user, scope))).First()
-	if errors.Is(err, orm.ErrNotFound) || k == nil {
+	k, err := orm.Get[schema.Key](db, id(owner, NameFor(user, scope)))
+	if errors.Is(err, orm.ErrNotFound) {
 		return nil
 	}
 	if err != nil {

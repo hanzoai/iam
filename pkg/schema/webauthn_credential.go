@@ -9,7 +9,7 @@ import (
 	"github.com/hanzoai/orm"
 )
 
-// WebauthnCredential is a registered WebAuthn/FIDO2 passkey (v1 kind
+// WebauthnCredential is a registered WebAuthn/FIDO2 passkey (v1 the legacy surface kind
 // "webauthn_credential", v2 kind "webauthn_credentials"). In v1 there is no
 // standalone table: the credentials live inline on the user row as the
 // `webauthnCredentials` blob column — a JSON array of go-webauthn Credential
@@ -37,32 +37,32 @@ type WebauthnCredential struct {
 
 	Owner       string `json:"owner"`
 	Name        string `json:"name"`
-	CreatedTime string `json:"createdTime"`
+	CreatedTime string `json:"createdTime" url:"-"`
 	User        string `json:"user"`
 
 	CredentialId    []byte `json:"credentialId"`
 	PublicKey       []byte `json:"publicKey"`
-	AttestationType string `json:"attestationType"`
+	AttestationType string `json:"attestationType" url:"-"`
 
 	// AttestationFormat is the statement format the authenticator attested in
 	// ("packed", "apple", "none", …), which is a DIFFERENT value from the
 	// attestation type above. The library reads it back when resolving the FIDO
 	// AppID extension, so a row that dropped it would round-trip a credential the
 	// verifier no longer recognises as the one it stored.
-	AttestationFormat string `json:"attestationFormat,omitempty"`
+	AttestationFormat string `json:"attestationFormat,omitempty" url:"-"`
 
 	Transport  []string `json:"transport" orm:"serialize" datastore:"-"`
 	Transport_ string   `json:"-"`
 
-	UserPresent    bool `json:"userPresent"`
-	UserVerified   bool `json:"userVerified"`
-	BackupEligible bool `json:"backupEligible"`
-	BackupState    bool `json:"backupState"`
+	UserPresent    bool `json:"userPresent" url:"-"`
+	UserVerified   bool `json:"userVerified" url:"-"`
+	BackupEligible bool `json:"backupEligible" url:"-"`
+	BackupState    bool `json:"backupState" url:"-"`
 
 	Aaguid       []byte `json:"aaguid"`
-	SignCount    uint32 `json:"signCount"`
-	CloneWarning bool   `json:"cloneWarning"`
-	Attachment   string `json:"attachment"`
+	SignCount    uint32 `json:"signCount" url:"-"`
+	CloneWarning bool   `json:"cloneWarning" url:"-"`
+	Attachment   string `json:"attachment" url:"-"`
 }
 
 // CredentialName is the row Name for a raw credential id: its standard-base64

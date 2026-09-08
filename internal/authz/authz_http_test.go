@@ -364,7 +364,7 @@ func TestGuard_NeverAuthenticatesAPreflight(t *testing.T) {
 	h := newHarness(t)
 	for _, path := range []string{
 		"/v1/iam/organizations",
-		"/v1/iam/organizations/get",
+		"/v1/iam/organizations/admin/hanzo",
 		"/v1/iam/users",
 	} {
 		if got := h.do(t, "OPTIONS", path, "", nil); got == 401 {

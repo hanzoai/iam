@@ -39,7 +39,7 @@ import (
 // estate already has rather than a second one taught to every consumer.
 //
 // ONLY a SuperAdmin may, and the predicate is store.IsSuperAdmin — belonging to
-// the reserved admin org — which is the same question authz.Principal.Sudo
+// the reserved admin org — which is the same question principal.Principal.Sudo
 // answers above this seam. A per-org isAdmin is a different, org-scoped fact:
 // reading it here would let the admin of one tenant step into every other, and
 // that is the entire escalation this endpoint would otherwise be.

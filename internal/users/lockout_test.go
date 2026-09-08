@@ -22,7 +22,7 @@ import (
 // under a per-row lock, so the counter is exactly C.
 func TestAuthenticate_ConcurrentWrongPasswords_NoLostUpdates(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-noloss.db"))
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-noloss.db"), "")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestAuthenticate_ConcurrentWrongPasswords_NoLostUpdates(t *testing.T) {
 // assertion is "reached the lock", not "== C".
 func TestAuthenticate_ConcurrentFlood_Locks(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-flood.db"))
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-flood.db"), "")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestAuthenticate_ConcurrentFlood_Locks(t *testing.T) {
 // the fix (counter 0), PASSES after (counter preserved at the lock threshold).
 func TestUpdate_preservesLockoutCounter(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "f6-update.db"))
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "f6-update.db"), "")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestUpdate_preservesLockoutCounter(t *testing.T) {
 // regress plain lockout semantics.
 func TestAuthenticate_SequentialLockAndReset(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-seq.db"))
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-seq.db"), "")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
