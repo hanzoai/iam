@@ -515,6 +515,67 @@ for password and refresh); besides being unregistrable, that guaranteed renewal
 could never work, because a device_code is redeemable only by the client it was
 issued to and a refresh token was being presented under a different id.
 
+## Workload grant — the cluster already vouches for the pod
+
+`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` (RFC 7523,
+`internal/oidc/workload.go`). A service in Kubernetes posts the projected
+ServiceAccount token its pod already carries and gets back exactly the token
+`client_credentials` would have given it for a stored secret — same signer, same
+claims, `azp` = the app. No client secret travels, and none has to exist in the
+cluster.
+
+A secret in a pod is a secret in etcd, in whatever manifest names it, and in every
+`kubectl get secret` anyone with read access on the namespace runs. The projected
+token is none of those: the kubelet mints it for one pod, for one audience, with a
+lifetime in hours, and rotates it in place.
+
+    POST /v1/iam/oauth/token
+    grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer
+    assertion=<projected ServiceAccount JWT>
+    [resource=… | audience=…]   [scope=…]
+
+**Proved, per request:** signed by a key the named cluster publishes; `aud` names
+THIS issuer (so a token the kubelet projected for some other service cannot be
+replayed here); inside its window (`exp` required, `nbf` honoured); `sub` is
+`system:serviceaccount:<namespace>:<name>`.
+
+**Configured, exactly — no globs:**
+
+    IAM_CLUSTER_ISSUERS  {"https://kubernetes.default.svc.cluster.local":
+                            {"jwks_uri":   "https://10.0.0.19:6443/openid/v1/jwks",
+                             "ca_file":    "/etc/iam/cluster-ca.crt",
+                             "bearer_file":"/var/run/secrets/kubernetes.io/serviceaccount/token"}}
+    IAM_NAMESPACE_ORGS   {"hanzo":"hanzo","operator-system":"hanzo","lux":"lux","zoo":"zoo"}
+
+Both absent → the grant answers `unsupported_grant_type` and discovery does not
+advertise it. Present but unreadable is a DIFFERENT answer (`server_error` naming
+the variable), because one bad character must not look like a deployment that
+never offered the grant.
+
+`ca_file` is the cluster's own CA — an apiserver serves its key set under a
+certificate no public root signs. `bearer_file` is optional and names IAM's own
+ServiceAccount token, for an apiserver that refuses an anonymous read of
+`/openid/v1/jwks` (k3s answers 401); the account behind it is bound to nothing but
+`system:service-account-issuer-discovery`. That file is read at every fetch and
+never held, because the kubelet rotates it in place.
+
+Key sets are cached for the lifetime the response asks for, else 10 minutes. An
+unknown kid re-reads the set once — a cluster rotates on its own schedule, so the
+first token under the new kid is what asks — and an UNPRODUCTIVE re-read is the
+one such read a held set gets, or a made-up kid per request is a JWKS read per
+request. The JWK decoder is the one `federation_idp.go` already verifies external
+id_tokens with; a second decoder would be a second opinion about what a published
+key is, and the weaker of the two is the one an attacker picks.
+
+**The application is DECLARED, never created here.** `<org>-<name>` — the org from
+the namespace map, the name from the service account — is the clientId
+`internal/provision` derives for `type: service`, and it must already exist,
+declare `client_credentials`, and belong to that org. The org check is load-bearing:
+a clientId is a globally unique STRING, so `zoo-pkg` registered under some other
+org would otherwise let the zoo namespace mint that org's token. Every mint writes
+a `workload-token` audit row naming the service account that presented and the
+application it was for.
+
 ## A login descriptor states BOTH halves, or it is a lie
 
 Every sign-in method on `/v1/iam/auth/methods` and `get-app-login` is the AND of

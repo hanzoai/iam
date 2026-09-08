@@ -57,6 +57,12 @@ const (
 	ActionAssumeOrg  = "assume-organization"
 	ActionReleaseOrg = "release-organization"
 	ActionListOrgs   = "list-organizations"
+
+	// A workload in a Kubernetes namespace obtaining its application's token by
+	// presenting the ServiceAccount token its cluster minted for it (RFC 7523).
+	// The row names the service account that asked, so the trail reads the same
+	// whether a credential came from a stored secret or from the cluster.
+	ActionWorkloadToken = "workload-token"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -68,7 +74,7 @@ func PlatformWritten(action string) bool {
 	switch action {
 	case ActionConsentTraining, ActionIssueUserToken, ActionMintUserKeys,
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
-		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs:
+		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionWorkloadToken:
 		return true
 	}
 	return false

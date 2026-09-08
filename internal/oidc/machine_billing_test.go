@@ -30,10 +30,10 @@ import (
 	"github.com/hanzoai/account"
 )
 
-// machineToken mints a client_credentials access token for an app serving org and
+// machineClaims mints a client_credentials access token for an app serving org and
 // returns its decoded claims. It asserts the grant succeeded, so a caller reads
 // claims that a real resource server would also accept.
-func machineToken(t *testing.T, org string) Claims {
+func machineClaims(t *testing.T, org string) Claims {
 	t.Helper()
 	app, db := newServer(t)
 	seedAppFull(t, db, fullApp{clientID: "svc-" + org, secret: "svc-secret", org: org})
@@ -70,7 +70,7 @@ func walletOf(c Claims) account.Account {
 // admin/hanzo-insights, which 402'd every AI feature in Insights — must bill the
 // ORG POOL, the account its org's balance actually lives in.
 func TestMachineToken_signupOrg_billsTheOrgPool(t *testing.T) {
-	got := machineToken(t, account.SignupOrg)
+	got := machineClaims(t, account.SignupOrg)
 
 	if got.BillingAccount != "org:"+account.SignupOrg {
 		t.Fatalf("billing_account = %q; want %q — a machine has no person, so it spends the org pool",
@@ -91,7 +91,7 @@ func TestMachineToken_signupOrg_billsTheOrgPool(t *testing.T) {
 // claim — not a change to the shape rule — is the fix: the rule is right for the
 // person it was written for and starved of input for the machine it was not.
 func TestMachineToken_withoutTheClaim_fallsToTheGhostWallet(t *testing.T) {
-	got := machineToken(t, account.SignupOrg)
+	got := machineClaims(t, account.SignupOrg)
 	got.BillingAccount = "" // a token minted before this claim shipped
 
 	w := walletOf(got)
@@ -107,7 +107,7 @@ func TestMachineToken_withoutTheClaim_fallsToTheGhostWallet(t *testing.T) {
 // shape rule ALREADY answered "the org pool", so the claim must state that same
 // answer and move no existing tenant's money.
 func TestMachineToken_tenantOrg_matchesTheUnclaimedAnswer(t *testing.T) {
-	got := machineToken(t, "acme")
+	got := machineClaims(t, "acme")
 
 	if got.BillingAccount != "org:acme" {
 		t.Fatalf("billing_account = %q; want %q", got.BillingAccount, "org:acme")
@@ -130,7 +130,7 @@ func TestMachineToken_tenantOrg_matchesTheUnclaimedAnswer(t *testing.T) {
 // cross-tenant debit is unreachable rather than merely unlikely.
 func TestMachineToken_claimNeverNamesAnotherTenant(t *testing.T) {
 	for _, org := range []string{account.SignupOrg, "acme", "northwind-labs"} {
-		got := machineToken(t, org)
+		got := machineClaims(t, org)
 		if got.BillingAccount != account.Org(org).String() {
 			t.Errorf("%s: billing_account = %q; want the app's own org", org, got.BillingAccount)
 		}

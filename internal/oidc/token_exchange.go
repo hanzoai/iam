@@ -111,10 +111,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if rt := param(c, "requested_token_type"); rt != "" && rt != tokenTypeAccessToken {
 		return tokenError(c, 400, "invalid_request", "only an access_token may be requested")
 	}
-	aud := param(c, "resource")
-	if aud == "" {
-		aud = param(c, "audience")
-	}
+	aud := resourceOf(c)
 	if aud == "" {
 		aud = defaultUserAudience(ctx, db, user, clientApp)
 	}
