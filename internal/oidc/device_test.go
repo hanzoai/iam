@@ -47,15 +47,11 @@ func requestDevice(t *testing.T, app *zip.App, clientID, scope string) (*http.Re
 // case.
 func requestDeviceSecret(t *testing.T, app *zip.App, clientID, secret, scope string) (*http.Response, map[string]any) {
 	t.Helper()
-	// RFC 8628 3.1 fixes this request at application/x-www-form-urlencoded, the
-	// same encoding the poll uses. The secret in particular has no other home:
-	// RFC 6749 2.3.1 forbids a client credential in the URI query, so a helper
-	// that put it there drove a shape no client may send.
-	form := url.Values{"client_id": {clientID}, "scope": {scope}, "response_type": {"device_code"}}
+	q := url.Values{"client_id": {clientID}, "scope": {scope}, "response_type": {"device_code"}}
 	if secret != "" {
-		form.Set("client_secret", secret)
+		q.Set("client_secret", secret)
 	}
-	resp, body := do(t, app, formReq("POST", PathDevice, form))
+	resp, body := do(t, app, formReqNoBody("POST", PathDevice+"?"+q.Encode()))
 	return resp, decode(t, body)
 }
 

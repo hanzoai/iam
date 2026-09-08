@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -156,63 +155,15 @@ func (r *issuerResolver) issuerFor(host string) string {
 	return devFallbackIssuer
 }
 
-// devIssuer is the host-relative dev issuer, and it keeps the WHOLE address the
-// request arrived on — PORT INCLUDED, SCHEME DERIVED. Reached ONLY under the
-// explicit IAM_DEV_HOST_RELATIVE=1 opt-in (issuerFor branch 4); any real
-// deployment pins at least IAM_ISSUER and never reaches it.
-//
-// It used to answer normalizeHost + "https://", which is wrong twice over for the
-// one case this branch exists to serve. normalizeHost strips the port — correctly,
-// because it is the MAP-KEY normalizer and "lux.id" must match "lux.id:443" — so a
-// dev cloud on 127.0.0.1:38080 published `https://127.0.0.1` as its issuer, and a
-// browser that discovered there followed the authorization_endpoint to a port
-// nothing serves over a scheme nothing speaks. An issuer is an identifier a client
-// compares LITERALLY and an origin it then fetches, so dropping either half makes
-// the discovery document describe a deployment that does not exist. Measured: the
-// hanzo.ai SPA against a local cloud walked from 127.0.0.1 straight to the public
-// issuer's login page.
-//
-// The scheme is DERIVED rather than configured because the only thing that could
-// configure it is the request, and this branch already trusts the request host.
-// Loopback and *.localhost are http — a dev box is not terminating TLS on a
-// loopback address — and everything else stays https, so a developer serving
-// example.test:8443 keeps the scheme they are actually using.
-//
-// This does not widen what the opt-in already grants. c.Host() is client-supplied,
-// so under IAM_DEV_HOST_RELATIVE a caller can already choose the issuer's host;
-// carrying the port it also sent changes the value, not who controls it. That is
-// exactly why the flag is a hard opt-in and a no-issuer boot is otherwise refused.
+// devIssuer is the host-relative dev issuer: "https://<trusted host>", or the
+// fixed fallback when even the host is absent. Reached ONLY under the explicit
+// IAM_DEV_HOST_RELATIVE=1 opt-in (issuerFor branch 4); any real deployment pins at
+// least IAM_ISSUER and never reaches it.
 func devIssuer(host string) string {
-	h := strings.ToLower(strings.TrimSpace(host))
-	if h == "" {
-		return devFallbackIssuer
+	if h := normalizeHost(host); h != "" {
+		return "https://" + h
 	}
-	name, port := h, ""
-	if n, p, err := net.SplitHostPort(h); err == nil {
-		name, port = n, p
-	}
-	name = strings.TrimSuffix(name, ".")
-	if name == "" {
-		return devFallbackIssuer
-	}
-	addr := name
-	if port != "" {
-		addr = net.JoinHostPort(name, port)
-	}
-	return devScheme(name) + "://" + addr
-}
-
-// devScheme is what a dev box is actually speaking on that address. A loopback
-// host is http because nothing terminates TLS there; every other host keeps
-// https, so a developer on a real name with a certificate is not downgraded.
-func devScheme(name string) string {
-	if name == "localhost" || strings.HasSuffix(name, ".localhost") {
-		return "http"
-	}
-	if ip := net.ParseIP(strings.Trim(name, "[]")); ip != nil && ip.IsLoopback() {
-		return "http"
-	}
-	return "https"
+	return devFallbackIssuer
 }
 
 // normalizeHost lowercases, trims whitespace, strips a :port, and strips a single
@@ -460,22 +411,9 @@ func issuerRelocation(c *zip.Ctx) (string, bool) {
 		// steer browsers to.
 		return "", false
 	}
-	// The FULL host, port included. issuerFor normalizes for its own map lookup,
-	// so a brand still resolves from "lux.id:443"; passing the stripped host
-	// instead meant the dev branch could never see a port and relocated a request
-	// on 127.0.0.1:38080 to 127.0.0.1 — a port nothing serves, reached by a 307
-	// the browser follows before anything says why.
-	host := strings.TrimSpace(c.Host())
+	host := normalizeHost(c.Host())
 	iss := r.issuerFor(host)
-	if host == "" || iss == "" {
-		return "", false
-	}
-	// Already answering ON the issuer's own address: nothing to relocate. Compare
-	// the address the request ARRIVED on against the issuer's, rather than
-	// rebuilding one with a hardcoded scheme — "https://"+host is false for every
-	// http dev issuer, so the short-circuit never fired and every request
-	// relocated to itself minus its port.
-	if u, err := url.Parse(iss); err == nil && strings.EqualFold(u.Host, host) {
+	if host == "" || iss == "" || iss == "https://"+host {
 		return "", false
 	}
 	u, err := url.Parse(iss)
