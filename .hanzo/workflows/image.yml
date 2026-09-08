@@ -4,6 +4,12 @@ name: image
 #   git.hanzo.ai push (from GitHub via sync-from-github.yml) → act_runner
 #   → buildx → ghcr.io/hanzoai/iam:sha-<7>
 #
+# WHERE THIS FILE LIVES IS PART OF THE BUILD. .hanzo/workflows always exists in
+# this repo (cicd.yml), so it is the directory the forge collects and
+# .github/workflows is read by nobody: the forge never opens it, and github.com
+# has no runner advertising linux-amd64. A builder or a sync job placed there
+# is scheduled on neither host. Both belong here.
+#
 # WHY THIS FILE IS NOT CALLED build.yml. Gitea collects workflows from the FIRST
 # of WORKFLOW_DIRS that exists in the pushed commit and ignores the rest
 # (modules/actions/workflows.go, listWorkflowsInDirs — it breaks on the first
@@ -34,10 +40,11 @@ name: image
 # Actions disabled on this mirror — zero runs, ever. This is the repair.
 #
 # The four defects in the file this replaces, each measured, not guessed:
-#   1. runs-on: linux-amd64 — matches NO registered runner. The four
-#      online act_runners advertise exactly ubuntu-latest, ubuntu-22.04,
-#      ubuntu-24.04, linux-amd64 (/api/v1/admin/actions/runners).
-#      A job asking for the old label queues forever instead of failing.
+#   1. runs-on: an org-prefixed label — matches NO registered runner. The
+#      four online act_runners advertise exactly ubuntu-latest, ubuntu-22.04,
+#      ubuntu-24.04, linux-amd64 (/api/v1/admin/actions/runners). Which org a
+#      job belongs to does not change which host can build it, and a job asking
+#      for a label no runner advertises queues forever instead of failing.
 #   2. buildctl-daemonless.sh — absent from catthehacker/ubuntu:act-24.04, the
 #      image this pool actually serves for linux-amd64.
 #   3. secrets.GIT_CLONE_TOKEN — exists on neither the repo nor the org. The
