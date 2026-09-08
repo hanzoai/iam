@@ -55,14 +55,18 @@ func userinfoHandler(db orm.DB) zip.Handler {
 		// The membership set is read from the store, not echoed from the token, for
 		// the reason isAdmin is: a grant revoked a minute ago must stop counting now
 		// rather than when the token lapses.
-		return c.JSON(200, buildUserinfo(user, claims, row, tokenIssuer(c), store.MemberOrgRefs(ctx, db, user)))
+		// Wallets are read from the store beside the memberships, and for the
+		// identical reason: a wallet unlinked a minute ago must stop counting
+		// now rather than when the token lapses.
+		return c.JSON(200, buildUserinfo(user, claims, row, tokenIssuer(c),
+			store.MemberOrgRefs(ctx, db, user), store.WalletRefs(ctx, db, user)))
 	}
 }
 
 // buildUserinfo assembles the scope-gated claim set. The identifiers (sub, iss,
 // aud, owner, organization) are always present; every profile/email/address/
 // phone claim appears only when its scope was granted and the field is set.
-func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string, orgs []schema.OrgRef) map[string]any {
+func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string, orgs []schema.OrgRef, wallets []schema.WalletRef) map[string]any {
 	aud := ""
 	if len(claims.Audience) > 0 {
 		aud = claims.Audience[0]
@@ -104,6 +108,18 @@ func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string
 	// console's `type === "anonymous-user"` check); always present.
 	if u.Type != "" {
 		info["type"] = u.Type
+	}
+	// The wallet set and the DID, in the token's shapes and under the token's
+	// names. They are identity rather than profile — the same reasoning that
+	// puts orgs and isAdmin above the scope gate — and a client that reads one
+	// surface must not get a different answer from the other. The DID is derived
+	// from the LOADED row's subject, not echoed from the token, so it stays the
+	// same value identityOf would compute now.
+	if len(wallets) > 0 {
+		info["wallets"] = wallets
+	}
+	if id := schema.DID(subjectOf(u)); id != "" {
+		info["did"] = id
 	}
 	scope := row.Scope
 	if hasScope(scope, "profile") {

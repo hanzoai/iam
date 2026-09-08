@@ -21,8 +21,10 @@ package wallet
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -31,6 +33,7 @@ import (
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
 	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/did"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/sessions"
@@ -192,7 +195,7 @@ func check(db orm.DB) zip.Handler {
 			return httpx.Err(c, "web3: organization not found")
 		}
 
-		user, err := verify(ctx, db, login{
+		in, err := verify(ctx, db, login{
 			// Same header-immune c.Host() as the mint: verify re-derives the domain
 			// from the true routed brand host and re-checks it against the burned
 			// challenge, so a spoofed X-Forwarded-Host can neither steer the binding
@@ -215,6 +218,7 @@ func check(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		user := in.user
 
 		// The multi-factor gate belongs HERE — after the wallet proves the
 		// identity, before any session or code is minted. It is oidc's ONE gate,
@@ -251,9 +255,37 @@ func check(db orm.DB) zip.Handler {
 		// sent the person to a page whose bootstrap found nobody signed in and
 		// bounced them back to the credential form.
 		_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, app.Name)
+
+		// A NEW binding — and only a new one — is anchored. Signing in with a
+		// wallet already on file changes nothing, so re-anchoring would add a
+		// duplicate verification method to the document on every login. The
+		// write runs in the background on its own context: the person is signed
+		// in, and a chain that is slow or unreachable must not hold this
+		// response open or fail it. A no-op unless a registry is configured.
+		if in.bound != nil {
+			registry().Report(oidc.Subject(user), oidc.Issuer(trim(c.Host())), in.bound.Chain, in.bound.Address)
+		}
 		return httpx.Ok(c, data)
 	}
 }
+
+// registry is the DID registry this deployment configured, resolved once. A
+// deployment that named none gets a nil *did.Registry, whose methods are no-ops
+// — which is why the link path above needs no branch on whether anchoring is
+// switched on.
+//
+// A misconfiguration (a half-named registry, unreadable key material, an
+// address that is not one) also yields nil, having said so once rather than on
+// every link. It does not stop the service: IAM's job is issuing tokens, and it
+// still does that correctly with the DID claim derived and nothing written.
+var registry = sync.OnceValue(func() *did.Registry {
+	r, err := did.FromEnv()
+	if err != nil {
+		log.Printf("did: registry disabled: %v", err)
+		return nil
+	}
+	return r
+})
 
 // session resolves the authenticated caller, but ONLY on a same-site request.
 //

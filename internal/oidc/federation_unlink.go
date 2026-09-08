@@ -5,6 +5,8 @@ package oidc
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -38,6 +40,13 @@ type unlinkForm struct {
 		Owner string `json:"owner"`
 		Name  string `json:"name"`
 	} `json:"user"`
+	// Chain and Address name WHICH wallet, and are read only for
+	// providerType "wallet". A social identity is one per account, so naming it
+	// is naming its provider; a wallet is many per account across many chains,
+	// and an unlink that took the provider's word for "the wallet" would remove
+	// whichever row happened to sort first.
+	Chain   string `json:"chain,omitempty"`
+	Address string `json:"address,omitempty"`
 }
 
 // unlink disconnects one sign-in identity from an account, so that provider can
@@ -77,16 +86,15 @@ func unlink(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the user does not exist")
 		}
 
-		// Read/write the link through the ONE connector registry (federation.go),
-		// never by reflecting the provider type onto a Go field name — the exact
-		// class of bug that made v1's GitLab unlink silently no-op (the type
-		// "GitLab" vs the column `Gitlab`).
-		b, known := connectorFor(f.ProviderType)
-		if !known {
-			return httpx.Err(c, "the provider type "+f.ProviderType+" can't be unlinked")
-		}
-		if *b.ref(u) == "" {
-			return httpx.Err(c, "please link first")
+		// Resolve WHICH sign-in method is going. A social identity lives in a
+		// connector column; a wallet lives in the wallets table. detachableOf
+		// resolves both through the ONE connector registry (federation.go) and
+		// the ONE wallet store, never by reflecting the provider type onto a Go
+		// field name — the exact class of bug that made v1's GitLab unlink
+		// silently no-op (the type "GitLab" vs the column `Gitlab`).
+		d, err := detachableOf(ctx, db, u, f)
+		if err != nil {
+			return httpx.Err(c, err.Error())
 		}
 
 		// The application the account signed up through — resolved by name alone,
@@ -97,7 +105,7 @@ func unlink(db orm.DB) zip.Handler {
 			return httpx.Err(c, err.Error())
 		}
 		if self && !super {
-			if !canUnlink(ctx, db, app, f.ProviderType) {
+			if !canUnlink(ctx, db, app, d) {
 				return httpx.Err(c, "this provider can't be unlinked")
 			}
 			// A federated account carries no password (users.Create clears the digest
@@ -106,35 +114,147 @@ func unlink(db orm.DB) zip.Handler {
 			// back — an account destroyed by a self-service click, which is the exact
 			// opposite of self-service. A SuperAdmin may still force it; that is the
 			// platform's recovery path, carved out above.
-			if only, err := onlyCredential(ctx, db, app, u, b.field); err != nil {
+			if only, err := onlyCredential(ctx, db, app, u, d); err != nil {
 				return httpx.Err(c, err.Error())
 			} else if only {
 				return httpx.Err(c, "this is the only way you can sign in — add another sign-in method first")
 			}
 		}
 
-		if _, err := updateUser(ctx, db, f.User.Owner, f.User.Name, func(_ orm.DB, fresh *schema.User) error {
-			*b.ref(fresh) = ""
-			return nil
-		}); err != nil {
+		if err := d.remove(ctx, db); err != nil {
 			return httpx.Err(c, err.Error())
 		}
 		return httpx.Ok(c, nil)
 	}
 }
 
+// detachable is the sign-in method an unlink takes away: what it is CALLED in
+// the account's credential inventory, WHICH one it is when the account holds
+// several of that kind, and HOW it goes.
+//
+// It exists because the policy above — who may unlink, whether the application
+// permits it, whether this is the last way in — is the same for every method,
+// while the storage is not: a social identity is one column on the user row, and
+// a wallet is a row in a side table keyed by (chain, address). Braiding the two
+// is what would force the policy to be written twice.
+type detachable struct {
+	// field is the provider name the linked-account inventory uses, so
+	// onlyCredential can tell the method being removed from the ones staying.
+	field string
+	// chain and address name the specific wallet; empty for a column connector.
+	chain, address string
+	remove         func(context.Context, orm.DB) error
+}
+
+// errUnlinkable is a provider type with no removable local binding.
+func errUnlinkable(t string) error {
+	return errors.New("the provider type " + t + " can't be unlinked")
+}
+
+// errNotLinked is a method the account does not currently hold. It is one
+// message for "no such wallet" and "this connector is empty" because the
+// distinction is not the caller's to learn.
+var errNotLinked = errors.New("please link first")
+
+// walletProvider is the provider type naming a bound wallet. It is not in the
+// connector registry: that registry maps a type to ONE user column, and an
+// account holds many wallets across many chains, so a column-shaped entry would
+// have to lie about the cardinality to get in.
+const walletProvider = "wallet"
+
+// detachableOf resolves the method named by the request, refusing an unknown
+// type and one the account does not hold.
+func detachableOf(ctx context.Context, db orm.DB, u *schema.User, f unlinkForm) (detachable, error) {
+	if strings.EqualFold(strings.TrimSpace(f.ProviderType), walletProvider) {
+		chain, address := strings.TrimSpace(f.Chain), strings.TrimSpace(f.Address)
+		if chain == "" || address == "" {
+			return detachable{}, errors.New("name the wallet to remove: chain and address")
+		}
+		// Held-ness is settled HERE, not inside remove, so an unlink naming a
+		// wallet the account does not hold is refused for that reason instead of
+		// running the last-credential rule first and answering with whatever it
+		// concluded about a method that was never there.
+		held, err := store.WalletsOf(ctx, db, u.Owner, u.Name)
+		if err != nil {
+			return detachable{}, err
+		}
+		if !holds(held, chain, address) {
+			return detachable{}, errNotLinked
+		}
+		return detachable{
+			field: walletProvider, chain: chain, address: address,
+			remove: func(ctx context.Context, db orm.DB) error {
+				gone, err := store.DetachWallet(ctx, db, u.Owner, u.Name, chain, address)
+				if err != nil {
+					return err
+				}
+				if !gone {
+					return errNotLinked
+				}
+				return nil
+			},
+		}, nil
+	}
+
+	b, known := connectorFor(f.ProviderType)
+	if !known {
+		return detachable{}, errUnlinkable(f.ProviderType)
+	}
+	if *b.ref(u) == "" {
+		return detachable{}, errNotLinked
+	}
+	return detachable{
+		field: b.field,
+		remove: func(ctx context.Context, db orm.DB) error {
+			_, err := updateUser(ctx, db, u.Owner, u.Name, func(_ orm.DB, fresh *schema.User) error {
+				*b.ref(fresh) = ""
+				return nil
+			})
+			return err
+		},
+	}, nil
+}
+
 // canUnlink reports whether the account's own sign-up application permits
-// unlinking this provider. An application that is gone, or that declares no link
+// unlinking this method. An application that is gone, or that declares no link
 // of that type, cannot be self-unlinked from — the same fail-closed answer v1
 // gives.
-func canUnlink(ctx context.Context, db orm.DB, app *schema.Application, providerType string) bool {
+//
+// A WALLET IS NOT GATED BY THE FLAG, because there is nothing for the flag to
+// live on. CanUnlink is a field on an application's link to a PROVIDER row, and
+// native wallet sign-in has no provider row — the login descriptor advertises it
+// from schema.WalletChains precisely because the seeded Web3Onboard provider
+// names a library this build does not import. Reading the flag for a wallet
+// would therefore refuse every self-unlink, permanently, on every application.
+// The property the flag exists to protect — that self-service cannot strand a
+// person outside their own account — is enforced for wallets by the
+// last-credential rule below, which is the real check and does not depend on an
+// operator having declared anything.
+func canUnlink(ctx context.Context, db orm.DB, app *schema.Application, d detachable) bool {
+	if d.field == walletProvider {
+		return true
+	}
 	if app == nil {
 		return false
 	}
 	store.EnrichProviders(ctx, db, app)
 	for _, it := range app.Providers {
-		if it != nil && it.Provider != nil && it.Provider.Type == providerType {
+		if it != nil && it.Provider != nil && strings.EqualFold(it.Provider.Type, d.field) {
 			return it.CanUnlink
+		}
+	}
+	return false
+}
+
+// holds reports whether the set contains this exact (chain, address). The
+// address is compared as stored — the verifier canonicalized it at link time
+// (EVM lowercased, every other chain trimmed only, because base58/bech32/SS58
+// are case-sensitive), so folding case here would let a caller name a variant
+// spelling and remove a binding it did not name.
+func holds(set []*schema.Wallet, chain, address string) bool {
+	for _, w := range set {
+		if w != nil && w.Chain == chain && w.Address == address {
+			return true
 		}
 	}
 	return false
@@ -150,9 +270,15 @@ func canUnlink(ctx context.Context, db orm.DB, app *schema.Application, provider
 // carries the two conditions the login descriptor advertises it under — the app
 // allows it and this process can actually send one — because a method nothing can
 // deliver is not a way back in.
-func onlyCredential(ctx context.Context, db orm.DB, app *schema.Application, u *schema.User, field string) (bool, error) {
+// THE METHOD BEING REMOVED IS EXCLUDED FROM THE INVENTORY, and for a wallet
+// that means the exact (chain, address) rather than "wallets". An account
+// holding one wallet and nothing else would otherwise count that wallet as the
+// way back in from removing it — the check would read its own subject as proof
+// the removal is safe, and the last wallet on an account with no password, no
+// passkey and no social link could be self-detached into a locked-out account.
+func onlyCredential(ctx context.Context, db orm.DB, app *schema.Application, u *schema.User, d detachable) (bool, error) {
 	for _, l := range linkedAccountsOf(u) {
-		if l.Provider != field {
+		if l.Provider != d.field {
 			return false, nil
 		}
 	}
@@ -163,6 +289,14 @@ func onlyCredential(ctx context.Context, db orm.DB, app *schema.Application, u *
 		(factor.Destination(u, factor.Email) != "" || factor.Destination(u, factor.SMS) != "") {
 		return false, nil
 	}
-	held, err := store.HasWallet(ctx, db, u.Owner, u.Name)
-	return !held, err
+	wallets, err := store.WalletsOf(ctx, db, u.Owner, u.Name)
+	if err != nil {
+		return false, err
+	}
+	for _, w := range wallets {
+		if w != nil && !(w.Chain == d.chain && w.Address == d.address) {
+			return false, nil
+		}
+	}
+	return true, nil
 }

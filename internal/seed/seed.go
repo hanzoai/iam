@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/hanzoai/orm"
 
@@ -95,7 +96,63 @@ func FromInitData(ctx context.Context, db orm.DB, path string) (*Summary, error)
 		}
 		data.appDeclared[ref.Owner+"/"+ref.Name] = obj
 	}
+	if err := refuseRegistration(path, rawDoc.Applications); err != nil {
+		return nil, err
+	}
 	return Apply(ctx, db, &data)
+}
+
+// registrationKeys are the application fields this file MAY NOT carry, because
+// something else owns them and writes them at a different time.
+//
+// Registration — where an application may send a browser back, and which grants
+// it may use — belongs to the provision document, which both creates and
+// updates it. This file is read for an application ONLY when that application
+// does not exist yet, so a redirect declared here takes effect once, at
+// creation, and is ignored by every boot after. Editing it then changes
+// nothing, silently, and the failure surfaces a layer away as the application
+// answering "invalid redirect_uri" for a callback its own configuration names.
+//
+// That is not a rule anyone can be expected to remember from the call site: the
+// field is right there, beside fields that DO converge. So the file may not say
+// it at all, and saying it stops the boot rather than being quietly dropped.
+var registrationKeys = []string{"redirectUris", "grantTypes"}
+
+// refuseRegistration reports an init_data document that declares registration.
+//
+// Loudly and at boot, naming the application and the field: the whole point is
+// that a wrong declaration must not be survivable. A seed that silently ignores
+// half of what it is given is indistinguishable from one that applied it.
+func refuseRegistration(path string, apps []json.RawMessage) error {
+	var said []string
+	for _, obj := range apps {
+		var app map[string]json.RawMessage
+		if err := json.Unmarshal(obj, &app); err != nil {
+			continue
+		}
+		var ref struct {
+			Name string `json:"name"`
+		}
+		_ = json.Unmarshal(obj, &ref)
+		for _, k := range registrationKeys {
+			if _, ok := app[k]; ok {
+				said = append(said, ref.Name+"."+k)
+			}
+		}
+	}
+	if len(said) == 0 {
+		return nil
+	}
+	shown := said
+	if len(shown) > 8 {
+		shown = shown[:8]
+	}
+	return fmt.Errorf(
+		"seed: %s declares registration this file does not own: %s (%d in all) — "+
+			"redirectUris and grantTypes are set by the provision document, which creates "+
+			"and updates applications; declared here they apply once at creation and are "+
+			"ignored afterwards, so the two drift and sign-in fails with invalid redirect_uri",
+		path, strings.Join(shown, ", "), len(said))
 }
 
 // Apply upserts an already-parsed initData. Split out so tests can seed from a

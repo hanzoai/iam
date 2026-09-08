@@ -94,36 +94,36 @@ func supported(chain wc.Chain) bool {
 //     per-chain cryptographic check, all in the shared SDK.
 //  5. Resolve (chain, VERIFIED address) -> wallet -> user. Identity is the
 //     verified address, never the client-claimed one.
-func verify(ctx context.Context, db orm.DB, in login, now time.Time) (*schema.User, error) {
+func verify(ctx context.Context, db orm.DB, in login, now time.Time) (signin, error) {
 	if in.App == nil || in.Org == nil {
-		return nil, errRouting
+		return signin{}, errRouting
 	}
 	if !supported(in.Proof.Chain) {
-		return nil, fmt.Errorf("web3: unsupported chain: %s", in.Proof.Chain)
+		return signin{}, fmt.Errorf("web3: unsupported chain: %s", in.Proof.Chain)
 	}
 
 	// 1. The nonce comes from the SIGNED message.
 	parsed, err := wc.ParseSiwxMessage(in.Proof.Message)
 	if err != nil {
-		return nil, errMessage
+		return signin{}, errMessage
 	}
 	nonce := parsed.Nonce
 
 	// 2. Burn first — before crypto.
 	ch, err := burn(ctx, db, nonce, now)
 	if err != nil {
-		return nil, err
+		return signin{}, err
 	}
 
 	// 3. The challenge pins the host and the chain.
 	if ch.Domain != in.Domain {
-		return nil, errDomain
+		return signin{}, errDomain
 	}
 	// Without this the chain label is decorative: a nonce minted for chain A
 	// could be redeemed with a valid chain-B proof, making the signed "sign in
 	// with your X account" statement meaningless.
 	if ch.Chain != "" && ch.Chain != string(in.Proof.Chain) {
-		return nil, errChain
+		return signin{}, errChain
 	}
 
 	// 4. Cryptographic verification, in the SAME SDK the TypeScript client runs.
@@ -136,7 +136,7 @@ func verify(ctx context.Context, db orm.DB, in login, now time.Time) (*schema.Us
 	})
 	if !res.OK {
 		// res.Reason is a stable machine code (bad-signature, expired, …).
-		return nil, fmt.Errorf("web3: verification failed: %s", res.Reason)
+		return signin{}, fmt.Errorf("web3: verification failed: %s", res.Reason)
 	}
 
 	// 5. Identity is the VERIFIED address, canonicalized.
@@ -146,20 +146,22 @@ func verify(ctx context.Context, db orm.DB, in login, now time.Time) (*schema.Us
 
 // resolve turns a verified (chain, address) into the user it signs in as:
 // an existing link logs that user in; no link + a same-site session links the
-// wallet to that identity; no link + signup logs a fresh wallet user in.
-func resolve(ctx context.Context, db orm.DB, in login, address string, now time.Time) (*schema.User, error) {
+// wallet to that identity; no link + signup logs a fresh wallet user in. Only
+// the last two BIND, and only those report a bound wallet.
+func resolve(ctx context.Context, db orm.DB, in login, address string, now time.Time) (signin, error) {
 	chain := string(in.Proof.Chain)
 
 	// The wallet lookup is scoped to the application's organization — a resolved
 	// server value, never a request parameter.
 	w, err := link(ctx, db, in.App.Organization, chain, address)
 	if err != nil {
-		return nil, err
+		return signin{}, err
 	}
 	var user *schema.User
+	var bound *schema.Wallet
 	if w != nil {
 		if user, err = store.GetUserByName(ctx, db, w.Owner, w.User); err != nil {
-			return nil, err
+			return signin{}, err
 		}
 		// A dangling link (the user was deleted under it) is treated as
 		// not-linked so the signup/login policy below decides, rather than 500.
@@ -203,7 +205,7 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 					return err
 				}
 			}
-			return bind(ctx, tx, &schema.Wallet{
+			fresh := &schema.Wallet{
 				Owner:       user.Owner,
 				User:        user.Name,
 				Chain:       chain,
@@ -211,19 +213,42 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 				Scheme:      string(in.Proof.Scheme),
 				PublicKey:   in.Proof.PublicKey,
 				CreatedTime: stamp(now),
-			})
+			}
+			if err := bind(ctx, tx, fresh); err != nil {
+				return err
+			}
+			// Set only on the committed path: the transaction returns nil here,
+			// so a later failure inside it cannot leave a link reported that was
+			// rolled back.
+			bound = fresh
+			return nil
 		}); err != nil {
-			return nil, err
+			return signin{}, err
 		}
 	}
 
 	if user.IsForbidden {
-		return nil, errForbidden
+		return signin{}, errForbidden
 	}
 	if user.IsDeleted {
-		return nil, errDeleted
+		return signin{}, errDeleted
 	}
-	return user, nil
+	return signin{user: user, bound: bound}, nil
+}
+
+// signin is what a verified proof resolved to: the account it signs in as and,
+// only when THIS proof created the binding, the wallet that was bound.
+//
+// The second field is here because LINKING is the event worth reacting to and
+// signing in is not. A wallet already on file signs its holder in and changes
+// nothing, so anything that records a link — the on-chain anchor — has to be
+// able to tell the two apart, and asking "is there a row" afterwards cannot,
+// because the row is there either way. It carries the wallet rather than a flag
+// so the reader gets the CANONICAL address the verifier settled on, never the
+// client-claimed spelling.
+type signin struct {
+	user  *schema.User
+	bound *schema.Wallet
 }
 
 // provision creates a fresh user for a first-seen wallet. No password is set —

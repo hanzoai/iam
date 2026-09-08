@@ -175,10 +175,10 @@ func TestSignup_NeedsAnAddressOrAUsername(t *testing.T) {
 
 // allocateName is the ONE derivation a new account's name comes from, whichever
 // way it entered — a password signup with no username, or a federated one, which
-// never has one. The IdP also hands over a profile display name — "Zach Kelling"
+// never has one. The IdP also hands over a profile display name — "Grace Hopper"
 // is what Google returns for z@hanzo.ai — and it reaches DisplayName and nothing
 // else. If it could reach the username, this repo would hold an account literally
-// named "Zach Kelling".
+// named "Grace Hopper".
 func TestAllocateName_DerivesFromTheAddress(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

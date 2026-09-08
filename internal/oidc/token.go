@@ -46,11 +46,17 @@ type tokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
-// routeToken registers the ONE token endpoint: POST /v1/iam/oauth/token (the
-// RFC 6749 / discovery `token_endpoint`). No legacy `access_token` alias — every
-// client posts to the standard path; the stack is fixed to it, not shimmed.
+// routeToken registers the token endpoint at its canonical path PathToken
+// (/v1/iam/oauth/token — discovery's `token_endpoint`) and at PathRefreshToken,
+// where signed-in clients send their refresh.
+//
+// Both are ONE handler value: it dispatches on grant_type, which travels in the
+// body every caller already sends, so the second address is a spelling of the same
+// endpoint rather than a separate grant. Discovery advertises only PathToken, and
+// when the last caller moves off the refresh spelling the second half is deleted
+// with nothing else changing.
 func routeToken(r zip.Router, db orm.DB) {
-	r.Post(PathToken, tokenHandler(db))
+	zip.Alias(r.Post, PathToken, PathRefreshToken, tokenHandler(db))
 }
 
 // param reads an OAuth parameter from the query first, then the form body
@@ -652,6 +658,13 @@ func subjectOf(u *schema.User) string {
 	return u.Owner + "/" + u.Name
 }
 
+// Subject is the OIDC `sub` of a user, for a caller outside this package. It is
+// a door onto subjectOf rather than a second derivation, because a value that
+// names a principal two ways is the failure this file already carries the scar
+// of: the DID and the token's `sub` must be the same string or they name two
+// people.
+func Subject(u *schema.User) string { return subjectOf(u) }
+
 // identityOf is the ONE resolution of a loaded user into token claims: its stable
 // `sub`, email, USERNAME, display name, ledger, and membership set
 // (store.MemberOrgRefs — home org first, deduped). Every mint path — the
@@ -661,18 +674,26 @@ func subjectOf(u *schema.User) string {
 //
 // They were. Each of those paths separately wrote `name = DisplayName, else
 // Name`, which put a human's display name in the claim the CLI files its
-// credential under: a login as "z" minted `name: "Zach Kelling"` and every
+// credential under: a login as "z" minted `name: "Grace Hopper"` and every
 // downstream surface then named a principal that does not exist. `name` is the
 // username here and nowhere else decides.
+// The DID and the wallet set are resolved here for the reason everything else
+// is: they are facts about the PRINCIPAL, so a mint path that resolved them
+// itself could answer differently for one token than the next. The DID is
+// derived from the very subject this function computes, so the two identifiers
+// on a token can never name two people.
 func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 	refs := store.MemberOrgRefs(ctx, db, u)
+	sub := subjectOf(u)
 	return Identity{
-		Id:      subjectOf(u),
+		Id:      sub,
 		Email:   u.Email,
 		Name:    u.Name,
 		Display: u.DisplayName,
 		Billing: store.BillingAccount(u, refs),
 		Orgs:    refs,
+		Wallets: store.WalletRefs(ctx, db, u),
+		DID:     schema.DID(sub),
 	}
 }
 
