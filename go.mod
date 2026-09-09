@@ -1,6 +1,6 @@
 module github.com/hanzoai/iam
 
-go 1.26.5
+go 1.26.8
 
 // This path carries two histories. Everything below v1.32.0 published the
 // Casdoor-derived tree (Beego/xorm, controllers/); v1.32.0 and above publish

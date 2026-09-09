@@ -2,7 +2,7 @@
 # Multi-stage Go build → scratch, for both architectures. Pure-Go (CGO_ENABLED=0);
 # hanzoai/sqlite uses the modernc engine so no cgo/musl toolchain is needed.
 
-FROM --platform=$BUILDPLATFORM golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.8@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647 AS build
 WORKDIR /src
 
 # Cache the module graph before copying the source. Every module iam requires,
