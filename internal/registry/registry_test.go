@@ -331,6 +331,7 @@ func accessOf(t *testing.T, claims jwt.MapClaims) []access {
 // clientId:clientSecret is privileged, so a pull,push scope is granted in full and
 // the minted token verifies against the served JWKS with the exact Docker shape.
 func TestToken_ServiceAccount_PullPush(t *testing.T) {
+	t.Setenv(envPushApps, "hanzo-registry")
 	app, db, kr := newServer(t)
 	seedApp(t, db, "hanzo-registry", "s3cr3t-pushpull")
 
@@ -791,6 +792,7 @@ func TestToken_WrongServiceSecret_401(t *testing.T) {
 // TestToken_POSTForm proves the containerd/BuildKit OAuth2 POST flow: credentials
 // and scopes in the form body, no Basic header. access_token must be present.
 func TestToken_POSTForm(t *testing.T) {
+	t.Setenv(envPushApps, "hanzo-buildkit")
 	app, db, _ := newServer(t)
 	seedApp(t, db, "hanzo-buildkit", "buildkit-secret")
 
@@ -813,6 +815,7 @@ func TestToken_POSTForm(t *testing.T) {
 // TestToken_MultiScope proves repeated scope params (buildx multi-scope) are all
 // honored, not just the first.
 func TestToken_MultiScope(t *testing.T) {
+	t.Setenv(envPushApps, "hanzo-registry")
 	app, db, _ := newServer(t)
 	seedApp(t, db, "hanzo-registry", "multi-secret")
 
@@ -1064,5 +1067,106 @@ func TestToken_ServiceFromEnv(t *testing.T) {
 	if status, _, _ := tokenGET(t, app, "hanzo-registry", "s3cr3t-pushpull",
 		testService, "repository:hanzo/app:pull"); status != 401 {
 		t.Fatalf("status = %d, want 401 — a configured service replaces the default", status)
+	}
+}
+
+// --- push is declared, never implied ---
+
+// TestToken_ServiceAccount_Undeclared_PullOnly is the defect this policy closes. An
+// application authenticates correctly and is owned by a platform org, and that alone
+// used to make it a push identity — so every confidential app in admin/hanzo could
+// replace any image on the shared registry, including the pull credential mounted
+// as an imagePullSecret across the fleet. Undeclared now means pull.
+func TestToken_ServiceAccount_Undeclared_PullOnly(t *testing.T) {
+	t.Setenv(envPushApps, "hanzo-registry")
+	app, db, _ := newServer(t)
+	seedApp(t, db, "hanzo-pull", "a-pull-credential")
+
+	status, body, _ := tokenGET(t, app, "hanzo-pull", "a-pull-credential",
+		testService, "repository:hanzoai/cloud:pull,push")
+	if status != 200 {
+		t.Fatalf("status = %d, body %v", status, body)
+	}
+	claims := verifyClaims(t, app, body["token"].(string))
+	if claims["sub"] != "hanzo-pull" {
+		t.Fatalf("sub = %v, want hanzo-pull", claims["sub"])
+	}
+	want := []access{{Type: "repository", Name: "hanzoai/cloud", Actions: []string{"pull"}}}
+	if got := accessOf(t, claims); !eqAccess(got, want) {
+		t.Fatalf("access = %v, want %v — an undeclared application must not push", got, want)
+	}
+}
+
+// TestToken_ServiceAccount_Declared_PullPush is the other half: the one identity the
+// allowlist names keeps the push it needs, so declaring the policy does not take the
+// build lane down with it.
+func TestToken_ServiceAccount_Declared_PullPush(t *testing.T) {
+	t.Setenv(envPushApps, "hanzo-registry")
+	app, db, _ := newServer(t)
+	seedApp(t, db, "hanzo-registry", "s3cr3t-pushpull")
+
+	status, body, _ := tokenGET(t, app, "hanzo-registry", "s3cr3t-pushpull",
+		testService, "repository:hanzoai/cloud:pull,push")
+	if status != 200 {
+		t.Fatalf("status = %d, body %v", status, body)
+	}
+	claims := verifyClaims(t, app, body["token"].(string))
+	want := []access{{Type: "repository", Name: "hanzoai/cloud", Actions: []string{"pull", "push"}}}
+	if got := accessOf(t, claims); !eqAccess(got, want) {
+		t.Fatalf("access = %v, want %v — a declared application must keep push", got, want)
+	}
+}
+
+// TestToken_ServiceAccount_EmptyList_PullOnly proves the direction of failure. A
+// deployment that says nothing grants nothing: an unset allowlist is not "allow all",
+// which is what an authority read from a missing config usually degrades into.
+func TestToken_ServiceAccount_EmptyList_PullOnly(t *testing.T) {
+	t.Setenv(envPushApps, "")
+	app, db, _ := newServer(t)
+	seedApp(t, db, "hanzo-registry", "s3cr3t-pushpull")
+
+	_, body, _ := tokenGET(t, app, "hanzo-registry", "s3cr3t-pushpull",
+		testService, "repository:hanzoai/cloud:pull,push")
+	claims := verifyClaims(t, app, body["token"].(string))
+	want := []access{{Type: "repository", Name: "hanzoai/cloud", Actions: []string{"pull"}}}
+	if got := accessOf(t, claims); !eqAccess(got, want) {
+		t.Fatalf("access = %v, want %v — an unset allowlist must grant nothing", got, want)
+	}
+}
+
+// TestToken_ServiceAccount_NameOnListWrongOwner_PullOnly pins the second condition.
+// The allowlist is written in names, and the hanzo org is inside the registry's own
+// authentication boundary — so a hanzo-owned application carrying a listed name
+// would inherit push from the name alone. The owner must be a reserved platform
+// signing org for the name to mean anything.
+func TestToken_ServiceAccount_NameOnListWrongOwner_PullOnly(t *testing.T) {
+	t.Setenv(envPushApps, "hanzo-registry")
+	app, db, _ := newServer(t)
+	seedAppInOrg(t, db, "hanzo", "hanzo-registry", "s3cr3t-pushpull")
+
+	_, body, _ := tokenGET(t, app, "hanzo-registry", "s3cr3t-pushpull",
+		testService, "repository:hanzoai/cloud:pull,push")
+	claims := verifyClaims(t, app, body["token"].(string))
+	want := []access{{Type: "repository", Name: "hanzoai/cloud", Actions: []string{"pull"}}}
+	if got := accessOf(t, claims); !eqAccess(got, want) {
+		t.Fatalf("access = %v, want %v — a listed name under a non-signing owner grants nothing", got, want)
+	}
+}
+
+// TestToken_UserPush_UnaffectedByAppList proves the blast radius. The allowlist
+// governs applications; an admin user's push comes from userPrivileged and is
+// decided somewhere else entirely, so an empty application allowlist must not
+// quietly revoke it.
+func TestToken_UserPush_UnaffectedByAppList(t *testing.T) {
+	t.Setenv(envPushApps, "")
+	app, db, _ := newServer(t)
+	seedUser(t, db, "hanzo", "z", "correct horse", true)
+
+	_, body, _ := tokenGET(t, app, "z", "correct horse",
+		testService, "repository:hanzoai/cloud:pull,push")
+	claims := verifyClaims(t, app, body["token"].(string))
+	want := []access{{Type: "repository", Name: "hanzoai/cloud", Actions: []string{"pull", "push"}}}
+	if got := accessOf(t, claims); !eqAccess(got, want) {
+		t.Fatalf("access = %v, want %v — the user path is not governed by the app allowlist", got, want)
 	}
 }

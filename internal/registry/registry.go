@@ -32,13 +32,14 @@
 //     ClientId resolves GLOBALLY, so the gate on app.Owner is what stops a tenant
 //     app minted in its OWN org from becoming a privileged push identity).
 //
-// Authorization: push (privileged) requires a service account, OR a user that owns
-// a platform SIGNING-trust org (admin/built-in) and is an admin/SuperAdmin there
-// (userPrivileged). A tenant/platform org-admin is NEVER privileged — IsAdmin is
-// set on every org creator, so it is not, alone, a push signal. Any other
-// authenticated principal is restricted to `pull`. An action not authorized is
-// dropped, and a scope left with no authorized action is omitted entirely — never
-// a silent grant.
+// Authorization: push (privileged) is DECLARED, never inferred from the shape of a
+// credential. An APPLICATION pushes only when it is named on the capPush allowlist
+// and owned by a reserved platform signing org (appPrivileged); a USER pushes only
+// as an admin/SuperAdmin of a platform org (userPrivileged). A tenant/platform
+// org-admin is NEVER privileged — IsAdmin is set on every org creator, so it is not,
+// alone, a push signal. Any other authenticated principal is restricted to `pull`.
+// An action not authorized is dropped, and a scope left with no authorized action is
+// omitted entirely — never a silent grant.
 //
 // POLICY (owner decision, deliberately preserved — do NOT silently change):
 // "any authenticated identity may `pull` any repository" is the EXISTING the legacy surface
@@ -85,6 +86,15 @@ const envService = "REGISTRY_AUTH_TOKEN_SERVICE"
 // the env exists so a second deployment can name its own rather than so this
 // one can be reconfigured.
 const defaultService = "oci.hanzo.ai"
+
+// envPushApps names the applications allowed to push, comma or space separated.
+const envPushApps = "IAM_REGISTRY_PUSH_APPS"
+
+// capPush is the authority to push to the shared registry. An application's whole
+// authority is the set of capabilities its name is allowlisted for, so push is one
+// more member of that set rather than a second kind of grant. Fail-secure by
+// construction: policy.Holds reads an unset or empty list as naming nobody.
+var capPush = policy.Cap{Name: "registry-push", Env: envPushApps}
 
 // audience answers which registry a token may be minted for, and it is the ONLY
 // source of that string — never the request.
@@ -357,16 +367,18 @@ func (h *handler) userByPassword(ctx context.Context, id, secret string) *schema
 }
 
 // serviceAccount authenticates a confidential application by clientId:clientSecret
-// in constant time — the CI/machine push identity, a KMS-distributed credential
-// (e.g. app hanzo-registry) granted push so builds push without a human user. A
+// in constant time — the machine identity a build or a deploy signs in as. A
 // secret-less application is never a valid credential.
+//
+// Authenticating is all this does. What the application may then DO is appPrivileged,
+// because holding a valid credential says who you are and nothing about what you may
+// write: the credential a fleet mounts to PULL images authenticates exactly as well
+// as the one CI pushes with.
 //
 // The principal carries the application's OWNER, so the authenticate gate binds it
 // to candidateOrgs exactly like the user paths. store.GetApplicationByClientId
 // resolves GLOBALLY across every org, so without that bound an app a tenant created
-// in its OWN org (Owner="evil") would authenticate as a privileged push identity on
-// the shared registry — the F-R1 cross-tenant hole. A tenant-org app is denied at
-// the gate; a real CI/service account lives in the admin/hanzo org and passes.
+// in its OWN org (Owner="evil") would authenticate on the shared registry at all.
 func (h *handler) serviceAccount(ctx context.Context, id, secret string) *principal {
 	app, err := store.GetApplicationByClientId(ctx, h.db, id)
 	if err != nil || app == nil || app.ClientSecret == "" {
@@ -375,9 +387,27 @@ func (h *handler) serviceAccount(ctx context.Context, id, secret string) *princi
 	if subtle.ConstantTimeCompare([]byte(app.ClientSecret), []byte(secret)) != 1 {
 		return nil
 	}
-	// A service account is privileged: it exists to push. The candidateOrgs gate
-	// on app.Owner (in authenticate) is what keeps that privilege in-platform.
-	return &principal{subject: id, owner: app.Owner, privileged: true}
+	return &principal{subject: id, owner: app.Owner, privileged: appPrivileged(app)}
+}
+
+// appPrivileged decides whether an APPLICATION may push to the shared registry —
+// the service-account twin of userPrivileged, reading a declaration rather than
+// assuming one.
+//
+// Two conditions, both required. The application must be named on capPush's
+// allowlist, which is operator config, so an application row can never grant itself
+// push. And its OWNING org must be a reserved platform signing org, which reserves a
+// listed name to the platform's own app: the registry authenticates the hanzo org as
+// well as admin, so without the owner pin a hanzo-owned row carrying a listed name
+// would inherit push from the name alone.
+//
+// The allowlist is written in application NAMES. Every provisioned app is registered
+// with clientId == name (HIP-0111, <org>-<app>), which is the string a docker login
+// presents and the `sub` of the token minted from it, so the name an operator writes
+// here is the identity they see in the credential and in the log.
+func appPrivileged(app *schema.Application) bool {
+	p := policy.Principal{App: &policy.App{Name: app.Name, Owner: app.Owner}}
+	return p.Holds(capPush, os.Getenv)
 }
 
 // userPrincipal projects a user into a token principal: `sub` is owner/name,
