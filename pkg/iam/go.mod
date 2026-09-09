@@ -5,7 +5,7 @@
 // server; talk to it over HTTP with github.com/hanzoai/iamsdk/v2.
 module github.com/hanzoai/iam/pkg/iam
 
-go 1.26.5
+go 1.26.8
 
 // The root go.mod retracts the Casdoor versions of github.com/hanzoai/iam, but
 // retraction is per-module: it cannot reach this path. Without the block below,
