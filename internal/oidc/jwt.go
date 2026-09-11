@@ -321,10 +321,10 @@ func groupsOf(orgs []schema.OrgRef) []string {
 // Sign issues a signed access token for (app, identity) with the given scope. now
 // is injected for testability; ttl is the token lifetime. The audience is the
 // app's clientId (validators fail closed when aud != clientId). The owner claim is
-// the APP's org. id.Orgs is the caller-resolved membership set (home org first);
-// nil for a machine token, which omits the claim — the Signer stays decoupled from
-// schema.User, so the caller resolves the tenancy (store.MemberOrgRefs) and passes
-// it.
+// the APP's org. id.Orgs is the caller-resolved membership set — home org first for
+// a user (store.MemberOrgRefs), the explicit grants for a machine (granted) — and
+// nil omits the claim. The Signer stays decoupled from schema.User; the caller
+// resolves the tenancy and passes it.
 func (s *Signer) Sign(app *schema.Application, id Identity, scope, resource string, ttl time.Duration, now time.Time) (string, error) {
 	if s == nil {
 		return "", errors.New("jwt: nil signer")
