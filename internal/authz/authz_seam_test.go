@@ -38,7 +38,7 @@ func TestSeamDecidesAnEmptyTargetRatherThanAdmittingIt(t *testing.T) {
 	// handler-authorized list, so the seam owns the decision.
 	op := zip.Op{Method: "GET", Path: "/v1/iam/roles"}
 
-	if err := Authorize(ctx, op, &listInput{}); err == nil {
+	if !refused(ctx, op, &listInput{}) {
 		t.Fatal("a regular user listed roles with no target named — the seam admitted " +
 			"what the Guard refuses over REST, which is the cross-transport hole")
 	}
@@ -51,7 +51,7 @@ func TestSeamRefusesANamedForeignTargetToo(t *testing.T) {
 	ctx := principal.Bind(context.Background(), regular)
 	op := zip.Op{Method: "GET", Path: "/v1/iam/roles"}
 
-	if err := Authorize(ctx, op, &listInput{Owner: "orgb"}); err == nil {
+	if !refused(ctx, op, &listInput{Owner: "orgb"}) {
 		t.Fatal("a regular user read another org's roles")
 	}
 }
@@ -68,8 +68,8 @@ func TestSeamStillDefersToTheHandlerAuthorizedReads(t *testing.T) {
 
 	for _, path := range handlerAuthorizedPaths(t) {
 		op := zip.Op{Method: "GET", Path: path}
-		if err := Authorize(ctx, op, &listInput{}); err != nil {
-			t.Fatalf("%s is handler-authorized; the seam must defer, got %v", path, err)
+		if refused(ctx, op, &listInput{}) {
+			t.Fatalf("%s is handler-authorized; the seam must defer, and it refused", path)
 		}
 	}
 }

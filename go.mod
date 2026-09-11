@@ -19,7 +19,7 @@ retract [v1.0.0, v1.31.37] // Casdoor lineage; moved to github.com/hanzoai/iam-v
 require (
 	github.com/hanzoai/orm v0.6.31
 	github.com/spf13/cobra v1.10.2
-	github.com/zap-proto/zip v1.34.2
+	github.com/zap-proto/zip v1.36.46
 	golang.org/x/crypto v0.54.0
 )
 
@@ -104,7 +104,7 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	github.com/zap-proto/go v1.3.0 // indirect
+	github.com/zap-proto/go v1.8.3 // indirect
 	github.com/zap-proto/http v0.3.5 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
