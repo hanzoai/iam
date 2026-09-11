@@ -629,7 +629,11 @@ func Control(db orm.DB) zip.Handler {
 // over the other transports the arguments decode into In rather than the query, so
 // requiring the principal here is what keeps a door left open from reaching an
 // admission with nobody attached.
-func Authorize(ctx context.Context, op zip.Op, in any) error {
+// The three-valued answer is zip's, from v1.36.45: a rule may allow, refuse, or
+// hold. This one never holds — an admission decision here is settled by what the
+// caller may do, and there is nobody to ask — so it returns the two it has, and
+// a refusal carries the clause that made it rather than a bare status.
+func Authorize(ctx context.Context, op zip.Op, in any) (zip.Decision, error) {
 	owner, name := decodedTarget(in)
 	v := policy.VerbOf(op.Method)
 	// A PRINCIPAL is required before any admission — including the handler-authorized
@@ -640,7 +644,8 @@ func Authorize(ctx context.Context, op zip.Op, in any) error {
 	// discards ctx) runs for nobody. Fail closed first, decide the target second.
 	p, present := principal.From(ctx)
 	if !present {
-		return zip.ErrForbidden("forbidden") // gated op with no principal: fail closed
+		// A gated op with no principal: fail closed.
+		return zip.Decision{Effect: zip.Deny, Clause: "principal", Reason: "forbidden"}, nil
 	}
 	// A READ is authorized once, and pathAuthorized says where. Off the list, the
 	// Guard did it on the way in and an input naming no owner has nothing left to
@@ -651,12 +656,12 @@ func Authorize(ctx context.Context, op zip.Op, in any) error {
 	// The same predicate the Guard consults, so the two cannot answer differently
 	// about which reads they are each responsible for.
 	if v == policy.Read && pathAuthorized(op.Path) {
-		return nil
+		return zip.Decision{Effect: zip.Allow}, nil
 	}
 	if !p.CanEntity(v, policy.Entity{Kind: entityOf(op.Path), Owner: owner, Name: name}, Env) {
-		return zip.ErrForbidden("forbidden")
+		return zip.Decision{Effect: zip.Deny, Clause: "entity", Reason: "forbidden"}, nil
 	}
-	return nil
+	return zip.Decision{Effect: zip.Allow}, nil
 }
 
 // owned is implemented by a typed input whose authorization target is NOT its

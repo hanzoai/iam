@@ -243,11 +243,16 @@ func TestDiscovery_isInTheDocument(t *testing.T) {
 		path     string
 		statuses []string
 	}{
-		{discovery + "/ServiceProviderConfig", []string{"200"}},
-		{discovery + "/Schemas", []string{"200"}},
-		{discovery + "/Schemas/{id}", []string{"200", "404"}},
-		{discovery + "/ResourceTypes", []string{"200"}},
-		{discovery + "/ResourceTypes/{name}", []string{"200", "404"}},
+		// The 202 is the framework's, not this package's. From zip v1.36.45 a rule
+		// may hold an operation as well as allow or refuse it, and a held op is a
+		// 202 carrying the approval — so every GOVERNED op declares one. These are
+		// governed, so they declare it. Our own rule never holds; the document
+		// states what a governed contract may answer, not what this rule chooses.
+		{discovery + "/ServiceProviderConfig", []string{"200", "202"}},
+		{discovery + "/Schemas", []string{"200", "202"}},
+		{discovery + "/Schemas/{id}", []string{"200", "202", "404"}},
+		{discovery + "/ResourceTypes", []string{"200", "202"}},
+		{discovery + "/ResourceTypes/{name}", []string{"200", "202", "404"}},
 	} {
 		item, ok := paths[tc.path]
 		if !ok {

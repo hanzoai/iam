@@ -28,13 +28,13 @@ func TestAuthorize_HandlerAuthorizedReadStillRequiresAPrincipal(t *testing.T) {
 	if !pathAuthorized(op.Path) {
 		t.Fatalf("%s is not handler-authorized — the test no longer exercises the early return", op.Path)
 	}
-	if err := Authorize(context.Background(), op, in); err == nil {
+	if !refused(context.Background(), op, in) {
 		t.Fatal("a handler-authorized read was admitted with no principal attached")
 	}
 	// With a principal, the early return admits it — the handler authorizes the row.
 	p := &principal.Principal{Org: "acme", User: "alice"}
-	if err := Authorize(principal.Bind(context.Background(), p), op, in); err != nil {
-		t.Fatalf("a handler-authorized read refused a present principal: %v", err)
+	if refused(principal.Bind(context.Background(), p), op, in) {
+		t.Fatal("a handler-authorized read refused a present principal")
 	}
 }
 
@@ -64,17 +64,17 @@ func TestAuthorize_CapAppCannotBindAForeignRowOverADoor(t *testing.T) {
 
 	// The exploit shape a call plane makes reachable: a NAMED foreign row in the body.
 	// The pin refuses it, so gating the door binds no other tenant's row.
-	if Authorize(ctx, item, &ref{Owner: "lux", Name: "x"}) == nil {
+	if !refused(ctx, item, &ref{Owner: "lux", Name: "x"}) {
 		t.Fatal("the console bound a NAMED foreign key row over the op seam")
 	}
 	// Its own served tenant's named row it may bind.
-	if err := Authorize(ctx, item, &ref{Owner: "hanzo", Name: "x"}); err != nil {
-		t.Fatalf("the console cannot bind a named row of the tenant it serves: %v", err)
+	if refused(ctx, item, &ref{Owner: "hanzo", Name: "x"}) {
+		t.Fatal("the console cannot bind a named row of the tenant it serves")
 	}
 	// The collection is admitted here and pinned in the handler; gating the door does
 	// not turn an empty target into a foreign LIST either — principal.Scope refuses a
 	// foreign owner there, and defaults an empty one to the served org.
-	if err := Authorize(ctx, list, &ref{}); err != nil {
-		t.Fatalf("the console was refused a collection the list handler pins: %v", err)
+	if refused(ctx, list, &ref{}) {
+		t.Fatal("the console was refused a collection the list handler pins")
 	}
 }
