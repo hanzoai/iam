@@ -9,7 +9,8 @@ package oidc
 // silently collapses to home-org-only at the resource server. These tests drive the
 // REAL mint path (authorization_code → issueTokens → the Signer) so the whole thread
 // store→signer→claim is proven, not the Signer in isolation. A machine token
-// (client_credentials, no user) must NEVER carry the claim.
+// (client_credentials, no user) carries only the memberships its application was
+// granted — never an implied one.
 
 import (
 	"context"
@@ -108,8 +109,8 @@ func TestOrgsClaim_HomeOnlyUser(t *testing.T) {
 	}
 }
 
-// A machine token (client_credentials, subject = the app) has no membership set —
-// the `orgs` claim must be omitted entirely, never an empty or app-org value.
+// A machine token whose application was granted no membership omits the `orgs`
+// claim entirely — never an empty or app-org value.
 func TestOrgsClaim_ClientCredentialsHasNone(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}})
@@ -126,5 +127,37 @@ func TestOrgsClaim_ClientCredentialsHasNone(t *testing.T) {
 	}
 	if len(claims.Orgs) != 0 {
 		t.Fatalf("machine token carried an orgs claim: %+v", claims.Orgs)
+	}
+}
+
+// A machine token carries exactly the memberships its application was granted,
+// and never a reserved system org, however it was granted.
+func TestOrgsClaim_ClientCredentialsCarriesGrants(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}})
+
+	ctx := context.Background()
+	if _, err := store.EnsureMembership(ctx, db, "admin/svc", "acme", store.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.EnsureMembership(ctx, db, "admin/svc", "admin", store.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, tok := postToken(t, app, url.Values{
+		"grant_type": {"client_credentials"}, "client_id": {"svc"}, "client_secret": {"svc-secret"},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("client_credentials status = %d, body = %v", resp.StatusCode, tok)
+	}
+	claims, err := verifyToken(ctx, db, tok["access_token"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims.Orgs) != 1 || claims.Orgs[0].Org != "acme" || claims.Orgs[0].Role != store.RoleMember {
+		t.Fatalf("orgs = %+v, want [{acme member}]", claims.Orgs)
+	}
+	if claims.Type != schema.Program {
+		t.Fatalf("type = %q, want %q", claims.Type, schema.Program)
 	}
 }

@@ -288,19 +288,27 @@ func machineToken(ctx context.Context, db orm.DB, app *schema.Application, issue
 	// A machine token's principal is the APP, so its username is the app name — the
 	// `<name>` half of the same `<owner>/<name>` shape a user token carries, which
 	// is what lets a resource server read `owner`/`name` without first asking which
-	// kind of token it holds. It has no user and therefore no membership set — nil
-	// orgs omits the claim, so an app token can never carry a tenancy it did not
-	// earn, and no display name means no display claim.
+	// kind of token it holds. No display name means no display claim.
+	//
+	// Its `orgs` are the memberships an org granted the application and nothing
+	// else: no implied home org, not even the one the application serves. An app
+	// granted nothing omits the claim, so an app token never carries a tenancy it
+	// did not earn.
 	//
 	// The class is resolved on the GRANT, for the same reason the billing account
 	// is: the token endpoint is the only place that knows there was no person
 	// present. Said in the token, a consumer reads a fact; left unsaid, it guesses —
 	// and the guess available to it reports every shared app's machine as a person.
+	orgs, err := granted(ctx, db, sub)
+	if err != nil {
+		return tokenResponse{}, err
+	}
 	access, err := signer.Sign(app, Identity{
 		Id:      sub,
 		Name:    app.Name,
 		Billing: machineBillingAccount(app.Organization),
 		Type:    schema.Program,
+		Orgs:    orgs,
 	}, scope, resource, ttl, now)
 	if err != nil {
 		return tokenResponse{}, err
@@ -325,6 +333,23 @@ func machineToken(ctx context.Context, db orm.DB, app *schema.Application, issue
 		ExpiresIn:   int(ttl.Seconds()),
 		Scope:       scope,
 	}, nil
+}
+
+// granted is the tenancy a machine holds: its explicit membership rows, less any
+// reserved system org. A public mint never carries one of those, for the reason
+// publicTokenEndpointForbidden refuses an application that serves one.
+func granted(ctx context.Context, db orm.DB, sub string) ([]schema.OrgRef, error) {
+	rows, err := store.MembershipsByUser(ctx, db, sub)
+	if err != nil {
+		return nil, err
+	}
+	kept := rows[:0]
+	for _, m := range rows {
+		if m != nil && !policy.IsReservedOrg(m.Org) {
+			kept = append(kept, m)
+		}
+	}
+	return schema.OrgRefsFromMemberships(kept), nil
 }
 
 // resourceOf is the resource server a token is FOR (RFC 8707) as this endpoint
