@@ -47,10 +47,10 @@ func logoutHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
 
-		// (1) End the session. Unconditional and first: it must happen whether or
-		// not a hint is supplied, whether or not a redirect is asked for, and
-		// whether or not any of what follows succeeds.
-		owner, name, application, hadSession := sessions.Clear(ctx, c.Fiber(), db)
+		// (1) End every session the browser holds. Unconditional and first: it must
+		// happen whether or not a hint is supplied, whether or not a redirect is
+		// asked for, and whether or not any of what follows succeeds.
+		ended := sessions.Clear(ctx, c.Fiber(), db)
 
 		// The hint is verified — a forged or unsigned one yields nil — and is the
 		// only thing that can name an application here, for BOTH the revocation and
@@ -70,16 +70,20 @@ func logoutHandler(db orm.DB) zip.Handler {
 			app = appFromClientId(ctx, db, param(c, "client_id"))
 		}
 
-		// (2) Retire the grant this relying party holds for this user. Scoped to
-		// (user, app) deliberately: signing out of one application must not silently
-		// tear down every other application the person is signed into, which is what
-		// a revoke-everything would do.
-		if hadSession && app != nil {
-			revokeGrant(ctx, db, owner+"/"+name, app.Name)
-		} else if hadSession && application != "" {
-			// No hint: retire the grant for the application the session itself names,
-			// so a plain browser logout still leaves no mintable refresh token behind.
-			revokeGrant(ctx, db, owner+"/"+name, application)
+		// (2) Retire the grant this relying party holds for each signed-out user.
+		// Scoped to (user, app) deliberately: signing out of one application must
+		// not silently tear down every other application the person is signed into,
+		// which is what a revoke-everything would do. With no hint, the grant
+		// retired is the one for the application the session itself names, so a
+		// plain browser logout still leaves no mintable refresh token behind.
+		for _, sc := range ended {
+			application := sc.Application
+			if app != nil {
+				application = app.Name
+			}
+			if application != "" {
+				revokeGrant(ctx, db, sc.Owner+"/"+sc.Name, application)
+			}
 		}
 
 		// (3) Redirect only to an address the identified application registered.

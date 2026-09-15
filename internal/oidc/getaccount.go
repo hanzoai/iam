@@ -51,6 +51,50 @@ func getAccount(db orm.DB) zip.Handler {
 	}
 }
 
+// PathAccounts is the list of people signed in on the calling browser.
+const PathAccounts = "/v1/iam/accounts"
+
+// browserAccount is what the account chooser shows for one person: enough to
+// recognise them and to name them in a login_hint, nothing more.
+type browserAccount struct {
+	Sub         string `json:"sub"`
+	Owner       string `json:"owner"`
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName,omitempty"`
+	Email       string `json:"email,omitempty"`
+	Avatar      string `json:"avatar,omitempty"`
+}
+
+// getAccounts returns the people signed in on this browser, the most recent
+// sign-in first — what the sign-in page lists when an application asks the person
+// to choose an account.
+//
+// It reads the session cookie and nothing else, so it only ever answers the
+// browser holding the sessions. An account forbidden or deleted since it signed
+// in is left out. A browser with nobody signed in gets an empty list.
+func getAccounts(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		ctx := c.Context()
+		list := []browserAccount{}
+		for _, sc := range sessions.Accounts(ctx, c.Fiber(), db) {
+			u, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
+			if err != nil || u == nil || u.IsForbidden || u.IsDeleted {
+				continue
+			}
+			list = append(list, browserAccount{
+				Sub:         subjectOf(u),
+				Owner:       u.Owner,
+				Name:        u.Name,
+				DisplayName: u.DisplayName,
+				Email:       u.Email,
+				Avatar:      u.Avatar,
+			})
+		}
+		c.SetHeader("Cache-Control", "no-store")
+		return httpx.Ok(c, list)
+	}
+}
+
 // accountEnvelopeFor builds the get-account envelope for an already-resolved
 // caller: the REDACTED user + organization in the casibase shape, or an error
 // envelope when the user or org lookup fails. It is the ONE place the account

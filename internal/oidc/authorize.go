@@ -53,6 +53,7 @@ type authorizeRequest struct {
 	responseMode        string
 	provider            string
 	prompt              string
+	loginHint           string
 	signup              bool
 }
 
@@ -68,7 +69,9 @@ type authorizeRequest struct {
 // A client can say what it wants with `prompt`: `none` means answer without any
 // screen at all — with the code if a session exists, with an error if not, but
 // never with a page; `login` means ask for the password again even if a session
-// exists; `select_account` means let the person choose which identity to use.
+// exists; `select_account` means let the person choose among the accounts signed
+// in on this browser, or sign in to another. `login_hint` names which of those
+// accounts the request is for.
 //
 // It returns only to an address the application has registered. That check
 // happens before anything else, so a request naming an unregistered address is
@@ -183,6 +186,7 @@ func authorizeParams(c *zip.Ctx) authorizeRequest {
 		responseMode:        param(c, "response_mode"),
 		provider:            param(c, "provider"),
 		prompt:              param(c, "prompt"),
+		loginHint:           param(c, "login_hint"),
 		signup:              param(c, "signup") == "true",
 	}
 }
@@ -222,6 +226,9 @@ func authorizeForwardQuery(q authorizeRequest, method string) string {
 	// never reaches here — it is answered above, without a page, which is what it
 	// asked for.
 	setIfPresent(v, "prompt", q.prompt)
+	// The person the client asked for, so the page can offer them by name: the
+	// credential form starts with this identifier in it.
+	setIfPresent(v, "login_hint", q.loginHint)
 	// Which of the two screens to open. Like `prompt`, the page is what acts on
 	// it: an application sending someone to create an account wants the
 	// registration form, not the credential form with a link to it. Re-encoded

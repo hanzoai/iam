@@ -7,31 +7,34 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/users/:owner/:name/keys", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc DELETE /v1/iam/users/:owner/:name/keys", zip.Doc{
 		Description: "Clears the target user's key of the requested TYPE (immediate\nrevoke). Scoped by the same `?type` field mint takes, so revoking the browser key\nleaves the server key working. A secret key's stored value is the sk- in its\nschema.Key row.",
 	})
-	zip.Describe("GET /.well-known/jwks", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /.well-known/jwks", zip.Doc{
 		Description: "Publishes the public keys that verify the tokens issued here — the\none URL you point a service at so it can check a token itself, offline, without\ncalling back and without holding any secret of ours.\n\nKeys appear here before they start signing and stay after they stop, so a\nrotation never leaves a live token unverifiable. Nothing private is ever\npublished.",
 	})
-	zip.Describe("GET /.well-known/oauth-authorization-server", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /.well-known/oauth-authorization-server", zip.Doc{
 		Description: "Returns the OpenID Connect discovery document — the one URL you\npoint a standards-compliant client at so it can find every other endpoint on\nits own, instead of you configuring them by hand.\n\nIt advertises only what is actually implemented, so a client that reads it\ncannot ask for a flow that will fail: the authorization-code flow, PKCE with\nS256, the supported grants, and the signing algorithms whose public keys the\nJWKS really publishes.\n\nThe issuer is derived from the host you asked on and is the same value the\ntokens carry, so a client that pins the issuer never sees it change.",
 	})
-	zip.Describe("GET /.well-known/openid-configuration", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /.well-known/openid-configuration", zip.Doc{
 		Description: "Returns the OpenID Connect discovery document — the one URL you\npoint a standards-compliant client at so it can find every other endpoint on\nits own, instead of you configuring them by hand.\n\nIt advertises only what is actually implemented, so a client that reads it\ncannot ask for a flow that will fail: the authorization-code flow, PKCE with\nS256, the supported grants, and the signing algorithms whose public keys the\nJWKS really publishes.\n\nThe issuer is derived from the host you asked on and is the same value the\ntokens carry, so a client that pins the issuer never sees it change.",
 	})
-	zip.Describe("GET /v1/iam/.well-known/jwks", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/.well-known/jwks", zip.Doc{
 		Description: "Publishes the public keys that verify the tokens issued here — the\none URL you point a service at so it can check a token itself, offline, without\ncalling back and without holding any secret of ours.\n\nKeys appear here before they start signing and stay after they stop, so a\nrotation never leaves a live token unverifiable. Nothing private is ever\npublished.",
 	})
-	zip.Describe("GET /v1/iam/.well-known/oauth-authorization-server", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/.well-known/oauth-authorization-server", zip.Doc{
 		Description: "Returns the OpenID Connect discovery document — the one URL you\npoint a standards-compliant client at so it can find every other endpoint on\nits own, instead of you configuring them by hand.\n\nIt advertises only what is actually implemented, so a client that reads it\ncannot ask for a flow that will fail: the authorization-code flow, PKCE with\nS256, the supported grants, and the signing algorithms whose public keys the\nJWKS really publishes.\n\nThe issuer is derived from the host you asked on and is the same value the\ntokens carry, so a client that pins the issuer never sees it change.",
 	})
-	zip.Describe("GET /v1/iam/.well-known/openid-configuration", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/.well-known/openid-configuration", zip.Doc{
 		Description: "Returns the OpenID Connect discovery document — the one URL you\npoint a standards-compliant client at so it can find every other endpoint on\nits own, instead of you configuring them by hand.\n\nIt advertises only what is actually implemented, so a client that reads it\ncannot ask for a flow that will fail: the authorization-code flow, PKCE with\nS256, the supported grants, and the signing algorithms whose public keys the\nJWKS really publishes.\n\nThe issuer is derived from the host you asked on and is the same value the\ntokens carry, so a client that pins the issuer never sees it change.",
 	})
-	zip.Describe("GET /v1/iam/account", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/account", zip.Doc{
 		Description: "Returns the signed-in person's own account and the organization\nthey belong to — what a console reads to draw the account menu.\n\nPasswords, API secrets and MFA material are stripped. It answers for a session\ncookie or a bearer token alike.",
 	})
-	zip.Describe("GET /v1/iam/auth/application", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/accounts", zip.Doc{
+		Description: "Returns the people signed in on this browser, the most recent\nsign-in first — what the sign-in page lists when an application asks the person\nto choose an account.\n\nIt reads the session cookie and nothing else, so it only ever answers the\nbrowser holding the sessions. An account forbidden or deleted since it signed\nin is left out. A browser with nobody signed in gets an empty list.",
+	})
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/auth/application", zip.Doc{
 		Description: "Returns everything a login screen needs to draw itself for one\napplication: its branding, and each sign-in method it offers with the provider\ndetails that method needs.\n\nThe client secret is masked. Read before anyone has signed in, so it carries\nonly what is safe for a browser to see.",
 		Fields: map[string]string{
 			"Response.code":       "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
@@ -39,131 +42,131 @@ func init() {
 			"screen.responseType": "ResponseType is the OAuth response type the screen will ask for. Only \"code\"\nis served; anything else is refused here rather than at the authorize leg,\nwhere the person has already typed a password.",
 		},
 	})
-	zip.Describe("GET /v1/iam/auth/methods", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/auth/methods", zip.Doc{
 		Description: "Returns the sign-in methods one application actually has switched\non, so a login screen can render the right buttons for it without you\nhard-coding a list that drifts the moment you add a provider.\n\nPublic by design: it is read before anyone has signed in, and it exposes only\nwhich methods exist, never their credentials.",
 		Fields: map[string]string{
 			"Response.code":  "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
 			"offer.clientId": "ClientId is the application's OAuth client id.",
 		},
 	})
-	zip.Describe("GET /v1/iam/consent", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/consent", zip.Doc{
 		Description: "Returns the calling person's own privacy and communication\nchoices. Somebody who has never set them gets the defaults rather than\nnothing, so a consent screen always has something to show — insights on, and\ntraining UNANSWERED, which is the state that means the screen still has to ask.",
 	})
-	zip.Describe("GET /v1/iam/linked-accounts", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/linked-accounts", zip.Doc{
 		Description: "Returns the sign-in identities linked to the calling\nperson's account — every provider they can currently sign in with. It is what\na security page lists next to the option to disconnect one.",
 	})
-	zip.Describe("GET /v1/iam/oauth/authorize", zip.Doc{
-		Description: "Starts a sign-in — the address you send a browser to, and the\nbeginning of every OAuth and OpenID Connect flow.\n\nIf the person is ALREADY signed in here, it does not ask them again: it\nreturns them to the application with a one-time code and they never see this\npage. Otherwise it shows the right way to sign in for the application they are\nsigning in to, or hands off to another identity provider if that is what they\npick.\n\nA client can say what it wants with `prompt`: `none` means answer without any\nscreen at all — with the code if a session exists, with an error if not, but\nnever with a page; `login` means ask for the password again even if a session\nexists; `select_account` means let the person choose which identity to use.\n\nIt returns only to an address the application has registered. That check\nhappens before anything else, so a request naming an unregistered address is\nrefused where the person can see it rather than being bounced onwards.",
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/oauth/authorize", zip.Doc{
+		Description: "Starts a sign-in — the address you send a browser to, and the\nbeginning of every OAuth and OpenID Connect flow.\n\nIf the person is ALREADY signed in here, it does not ask them again: it\nreturns them to the application with a one-time code and they never see this\npage. Otherwise it shows the right way to sign in for the application they are\nsigning in to, or hands off to another identity provider if that is what they\npick.\n\nA client can say what it wants with `prompt`: `none` means answer without any\nscreen at all — with the code if a session exists, with an error if not, but\nnever with a page; `login` means ask for the password again even if a session\nexists; `select_account` means let the person choose among the accounts signed\nin on this browser, or sign in to another. `login_hint` names which of those\naccounts the request is for.\n\nIt returns only to an address the application has registered. That check\nhappens before anything else, so a request naming an unregistered address is\nrefused where the person can see it rather than being bounced onwards.",
 	})
-	zip.Describe("GET /v1/iam/oauth/callback", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/oauth/callback", zip.Doc{
 		Description: "Completes the round-trip: it resolves and burns the\nsingle-use transaction (checking expiry + browser binding), exchanges and\nverifies the IdP response, links or provisions the local user, and mints the\niam authorization code the relying party expects — then redirects to the\noriginal redirect_uri with code + state.",
 	})
-	zip.Describe("GET /v1/iam/oauth/logout", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/oauth/logout", zip.Doc{
 		Description: "Ends a sign-in and sends the browser somewhere sensible. Accepts\nGET or POST, so it works as a plain link.\n\nIt ACTUALLY signs you out — worth stating, because a logout that computes a\nredirect and answers {\"status\":\"ok\"} while ending no session and revoking no\ntoken is worse than none: the person on the shared machine believes it worked.\nThree things happen here, in this order:\n\n 1. The browser session dies — sid revoked server-side AND the cookie expired\n    (sessions.Clear). Server-side revocation is the load-bearing half: a copy\n    of the cookie taken before logout must not still resolve.\n 2. The relying party's tokens are revoked when an id_token_hint names it, so\n    the refresh token cannot mint a fresh access token after the human left.\n    Revocation state is authoritative — a JWT's `exp` still reads valid for\n    days, so expiry is necessary but never sufficient.\n 3. Only then is a redirect considered, and only to a REGISTERED uri.\n\nThe open-redirect guard is unchanged: a redirect happens only when a VERIFIED\nid_token_hint identifies the application and that application has registered\nthe target. Anything else refuses to redirect — nobody can turn your logout\nlink into a redirect to a site of their choosing.",
 	})
-	zip.Describe("GET /v1/iam/oauth/userinfo", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/oauth/userinfo", zip.Doc{
 		Description: "Returns the profile claims for whoever the access token\nbelongs to — the standard OpenID Connect way to find out who is calling you\nwithout your application storing anything itself.\n\nThe token must still be live: revoke it and this stops answering.",
 	})
-	zip.Describe("GET /v1/iam/webauthn/signin/begin", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/webauthn/signin/begin", zip.Doc{
 		Description: "Starts a passkey sign-in: it returns the challenge the person's\nauthenticator signs.\n\nThe account is named in the query, and the challenge is bound to it, so what may\nanswer is decided here — by the server, from the row — and the finish checks the\nanswer against that decision rather than recomputing it.",
 	})
-	zip.Describe("GET /v1/iam/webauthn/signup/begin", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/webauthn/signup/begin", zip.Doc{
 		Description: "Starts enrolling a passkey for the signed-in person: it returns the\noptions their browser hands to the authenticator.\n\nPasskeys already on the account are EXCLUDED, so a second enrollment on a device\nthat already holds one is refused by the authenticator itself rather than\nsilently producing a duplicate the person cannot tell apart.",
 	})
-	zip.Describe("GET /v1/iam/whoami", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/whoami", zip.Doc{
 		Description: "Tells you who the current caller is — the lightweight check a\npage makes on load to decide whether to render signed-in or signed-out.\n\nIt answers for a session cookie or a bearer token alike, and says plainly when\nnobody is signed in rather than failing.",
 	})
-	zip.Describe("POST /v1/iam/admin/provision", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/admin/provision", zip.Doc{
 		Description: "Sets up an account on someone's behalf — the same\nonboarding a person gets themselves, driven by one of your own services\ninstead of by them.\n\nIt authenticates as your service rather than as a person, which is why the\nperson to provision is named in the request. The setup it performs is\nidentical to self-service onboarding; there is one provisioning path, not\ntwo that can drift.",
 	})
-	zip.Describe("POST /v1/iam/assume", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/assume", zip.Doc{
 		Description: "Steps a platform operator into an organization: it returns their\nown access token re-scoped to that tenant, so they see what the tenant sees.\n\nThe token still names the operator — stepping in is not becoming somebody\nelse — and records the organization it was scoped to, so everything done with\nit is attributed to the person who did it. Only a platform operator may, and\nthe attempt is recorded whether or not it succeeds.",
 		Fields: map[string]string{
 			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
 		},
 	})
-	zip.Describe("POST /v1/iam/link", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/link", zip.Doc{
 		Description: "Starts connecting another sign-in identity to the account you are already\nsigned in as. It answers with the provider's URL for the browser to follow; when\nthe provider returns, that identity is attached and you come back to returnUri.\n\nYour account is fixed here, from the credential you are already holding, and is\ncarried server-side for the rest of the round-trip — so nothing that happens at\nthe provider can point the link at somebody else.",
 	})
-	zip.Describe("POST /v1/iam/login", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/login", zip.Doc{
 		Description: "Signs a person in with the credential they typed, and — when the\nrequest is part of an OAuth flow — hands back the one-time code that finishes\nit. A second factor, if the account has one, is asked for and required here.\n\nThe password is compared against a stored one-way hash and is never logged,\nechoed or stored as typed.",
 	})
-	zip.Describe("POST /v1/iam/oauth/authorize", zip.Doc{
-		Description: "Starts a sign-in — the address you send a browser to, and the\nbeginning of every OAuth and OpenID Connect flow.\n\nIf the person is ALREADY signed in here, it does not ask them again: it\nreturns them to the application with a one-time code and they never see this\npage. Otherwise it shows the right way to sign in for the application they are\nsigning in to, or hands off to another identity provider if that is what they\npick.\n\nA client can say what it wants with `prompt`: `none` means answer without any\nscreen at all — with the code if a session exists, with an error if not, but\nnever with a page; `login` means ask for the password again even if a session\nexists; `select_account` means let the person choose which identity to use.\n\nIt returns only to an address the application has registered. That check\nhappens before anything else, so a request naming an unregistered address is\nrefused where the person can see it rather than being bounced onwards.",
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/oauth/authorize", zip.Doc{
+		Description: "Starts a sign-in — the address you send a browser to, and the\nbeginning of every OAuth and OpenID Connect flow.\n\nIf the person is ALREADY signed in here, it does not ask them again: it\nreturns them to the application with a one-time code and they never see this\npage. Otherwise it shows the right way to sign in for the application they are\nsigning in to, or hands off to another identity provider if that is what they\npick.\n\nA client can say what it wants with `prompt`: `none` means answer without any\nscreen at all — with the code if a session exists, with an error if not, but\nnever with a page; `login` means ask for the password again even if a session\nexists; `select_account` means let the person choose among the accounts signed\nin on this browser, or sign in to another. `login_hint` names which of those\naccounts the request is for.\n\nIt returns only to an address the application has registered. That check\nhappens before anything else, so a request naming an unregistered address is\nrefused where the person can see it rather than being bounced onwards.",
 	})
-	zip.Describe("POST /v1/iam/oauth/device", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/oauth/device", zip.Doc{
 		Description: "Starts a sign-in on a device with no browser and no keyboard —\na TV, a CLI, a headless box. It returns a short code to show the person and\nthe address to send them to on a phone or laptop.\n\nNothing is granted until a human approves it there; until then the code is\njust a pending request.",
 	})
-	zip.Describe("POST /v1/iam/oauth/device/info", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/oauth/device/info", zip.Doc{
 		Description: "Answers \"what am I approving?\" for a pending device code.\n\nThe approval page exists to tell a human WHICH application they are authorizing;\na page that names any other one defeats the control it implements. The client is\na property of the CODE, not of the page or of whatever app the browser happens\nto be signed in to, so it is read from the code's row here and nowhere else.\n\nRequires a signed-in session, and answers with the same ONE opaque refusal\napproveDevice uses. That is deliberate: the user_code is only 40 bits and is the\none secret in this flow, so an unauthenticated lookup — or one that\ndistinguished unknown from expired from already-approved — would be an oracle\nfor hunting live codes. Gated and opaque, it reveals strictly less than the\napproval the same caller could already attempt.",
 	})
-	zip.Describe("POST /v1/iam/oauth/federation/mfa", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/oauth/federation/mfa", zip.Doc{
 		Description: "Completes a sign-in that came in through another identity\nprovider and still owes a second factor. The person supplies the factor here\nand the login finishes.\n\nThe account is fixed when the challenge is issued, not by the request, so no\none can redirect a half-finished login onto somebody else's account. A wrong\nfactor uses the challenge up: retrying means starting the sign-in again, the\nsame as a mistyped password.",
 	})
-	zip.Describe("POST /v1/iam/oauth/introspect", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/oauth/introspect", zip.Doc{
 		Description: "Answers whether an access token is still good, and what it\nis good for — the check a resource server of yours makes before honouring a\ntoken it did not mint.\n\nA token counts as active only if it verifies AND has not been revoked, so a\nrevoked token reads as dead here immediately rather than until it expires. A\ntoken that is unknown, expired or revoked answers simply that it is not\nactive, and nothing more — the endpoint is not a way to learn about tokens you\nwere not given.",
 	})
-	zip.Describe("POST /v1/iam/oauth/logout", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/oauth/logout", zip.Doc{
 		Description: "Ends a sign-in and sends the browser somewhere sensible. Accepts\nGET or POST, so it works as a plain link.\n\nIt ACTUALLY signs you out — worth stating, because a logout that computes a\nredirect and answers {\"status\":\"ok\"} while ending no session and revoking no\ntoken is worse than none: the person on the shared machine believes it worked.\nThree things happen here, in this order:\n\n 1. The browser session dies — sid revoked server-side AND the cookie expired\n    (sessions.Clear). Server-side revocation is the load-bearing half: a copy\n    of the cookie taken before logout must not still resolve.\n 2. The relying party's tokens are revoked when an id_token_hint names it, so\n    the refresh token cannot mint a fresh access token after the human left.\n    Revocation state is authoritative — a JWT's `exp` still reads valid for\n    days, so expiry is necessary but never sufficient.\n 3. Only then is a redirect considered, and only to a REGISTERED uri.\n\nThe open-redirect guard is unchanged: a redirect happens only when a VERIFIED\nid_token_hint identifies the application and that application has registered\nthe target. Anything else refuses to redirect — nobody can turn your logout\nlink into a redirect to a site of their choosing.",
 	})
-	zip.Describe("POST /v1/iam/oauth/refresh_token", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/oauth/refresh_token", zip.Doc{
 		Description: "Exchanges what your application is holding for the tokens it\nneeds — the one-time code from a finished sign-in, a refresh token, or your\nown client credentials when the caller is a program rather than a person.\n\nA refresh returns a NEW refresh token and retires the one you sent. If a\nretired one is ever presented again the whole chain is revoked, on the\nassumption that a token which came back from the dead was copied — so a stolen\nrefresh token buys an attacker one use and costs them the session.\n\nResponses are never cached, by any hop.",
 	})
-	zip.Describe("POST /v1/iam/oauth/revoke", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/oauth/revoke", zip.Doc{
 		Description: "Retires a token before it expires — what you call when someone\nsigns out or a credential may have leaked.\n\nRevoking an access token kills that token. Revoking a REFRESH token kills the\nwhole chain it belongs to, so no further access tokens can be minted from it\nand every token already minted from it dies with it.\n\nA token that is not yours, or that never existed, answers success and does\nnothing — so the endpoint cannot be used to discover which tokens are real.\n\nPUBLIC clients revoke too, and must: sign-out is the only control a long-lived\nrefresh token has. A native app or CLI is a public PKCE client and holds no\nsecret, so requiring one here would leave signing out as a local delete —\nforgetting a credential that stays spendable for the rest of its lifetime.\n\nWidening authentication does not widen authority. The caller must still POSSESS\nthe token — and possession already permits USE, of which revocation is the\nstrict opposite — and the row must belong to the client that presents it, so a\npublic client_id buys the ability to destroy exactly what its holder could\notherwise spend. RFC 6749 §3.2.1 is the same reading: a client with no\ncredentials identifies itself with client_id.",
 	})
-	zip.Describe("POST /v1/iam/oauth/token", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/oauth/token", zip.Doc{
 		Description: "Exchanges what your application is holding for the tokens it\nneeds — the one-time code from a finished sign-in, a refresh token, or your\nown client credentials when the caller is a program rather than a person.\n\nA refresh returns a NEW refresh token and retires the one you sent. If a\nretired one is ever presented again the whole chain is revoked, on the\nassumption that a token which came back from the dead was copied — so a stolen\nrefresh token buys an attacker one use and costs them the session.\n\nResponses are never cached, by any hop.",
 	})
-	zip.Describe("POST /v1/iam/oauth/userinfo", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/oauth/userinfo", zip.Doc{
 		Description: "Returns the profile claims for whoever the access token\nbelongs to — the standard OpenID Connect way to find out who is calling you\nwithout your application storing anything itself.\n\nThe token must still be live: revoke it and this stops answering.",
 	})
-	zip.Describe("POST /v1/iam/onboard", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/onboard", zip.Doc{
 		Description: "Finishes setting up the account of whoever is calling — it\ncreates their organization if they have none and puts them in it, so a person\nwho has just signed up lands somewhere they can work.\n\nIt always acts on the caller and never on somebody named in the request, so\nthere is no way to onboard another person's account through it.",
 	})
-	zip.Describe("POST /v1/iam/preferences", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/preferences", zip.Doc{
 		Description: "Saves the calling person's own settings and returns\nthe full set afterwards. Send only the settings you are changing — the rest\nare kept, so two screens can save at once without one undoing the other.",
 	})
-	zip.Describe("POST /v1/iam/release", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/release", zip.Doc{
 		Description: "Steps a platform operator back out: it returns their own access\ntoken with no organization assumed, which is the credential they had before\nthey stepped in. Recorded like the step in.",
 		Fields: map[string]string{
 			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
 		},
 	})
-	zip.Describe("POST /v1/iam/signin", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/signin", zip.Doc{
 		Description: "Completes a sign-in: it exchanges the one-time code your\napplication was handed at the end of the login flow for a live session, and\nreturns the signed-in account.\n\nThe code works once. This is the call that turns a finished login into\nsomething your application can act on.",
 	})
-	zip.Describe("POST /v1/iam/signup", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/signup", zip.Doc{
 		Description: "Creates an account from the sign-up form and applies the\napplication's own sign-up rules — whether self-service registration is open at\nall, and which fields it requires.\n\nThe password is hashed before it is stored and is never returned.",
 	})
-	zip.Describe("POST /v1/iam/tokens/issue", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/tokens/issue", zip.Doc{
 		Description: "Mints an access token for the `?id=<owner>/<name>` target\nuser (optional `?aud=` resource, RFC 8707), issued by the authenticated +\nallow-listed confidential client. The token's subject + owner are the TARGET\nUSER's, so a resource server scopes on the validated owner claim to the user's\ntenant — indistinguishable from a token the user obtained directly. Response is\nthe camelCase `{accessToken, expiresIn}` body identity.ts consumes. Equivalent to\nthe RFC 8693 token-exchange grant, minus the subject_token proof (the console has\nthe user's id, not a token) — the reason this compat shim exists.",
 	})
-	zip.Describe("POST /v1/iam/unlink", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/unlink", zip.Doc{
 		Description: "Disconnects one sign-in identity from an account, so that provider can\nno longer be used to sign in as that person. Their account and every other way\nthey sign in are untouched. Two principals may do it, and\nonly two: the account holder itself, and a SuperAdmin (a member of the reserved\nadmin org, the one predicate). An ORG ADMIN deliberately may NOT — unlinking is\nnot tenant administration, it is unpicking someone's own sign-in method, so the\ngeneric org-admin rule is the wrong answer here.\n\nA holder unlinking itself must also be permitted by the application — the\nprovider link's CanUnlink flag — so an organization that mandates federated\nsign-in cannot have its users strand themselves. A SuperAdmin is not bound by\nthat flag; it is the platform's own recovery path. Fail-closed throughout.",
 	})
-	zip.Describe("POST /v1/iam/users/:owner/:name/keys", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/users/:owner/:name/keys", zip.Doc{
 		Description: "(re)generates the target user's key of the requested TYPE and\nreturns it once, over the shared authorizeMinter + mintTarget seam. `?type=secret`\n(the default) yields the confidential sk-; `?type=publishable` yields the pk- that\nis safe to ship in client JS and resolves to an org, never a principal.\n\nIt writes the schema.Key row that the resolvers actually read. schema.User.AccessKey\nis not a credential and nothing resolves it, so a key stamped there would\nauthenticate nobody.",
 	})
-	zip.Describe("POST /v1/iam/verification-codes", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/verification-codes", zip.Doc{
 		Description: "Validates the request and asks otp to get a code to the\nperson. The request fields are read via fiber's FormValue — the escape hatch zip\nexposes for form bodies (multipart or urlencoded) — since the typed JSON Bind does\nnot apply here. v1 also accepts countryCode/method/checkUser/captchaType; iam\nignores them (the captcha/forget/MFA flows those drive are not ported), and\nCAPTCHA verification is likewise not enforced — iam models no captcha provider —\nso the code is issued once the destination and application validate.",
 	})
-	zip.Describe("POST /v1/iam/webauthn/signin/finish", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/webauthn/signin/finish", zip.Doc{
 		Description: "Verifies the signed challenge and signs the person in.\n\nIt answers exactly as a password sign-in does — the same envelope, through the\nsame grant — so nothing downstream branches on how somebody arrived.",
 	})
-	zip.Describe("POST /v1/iam/webauthn/signup/finish", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/webauthn/signup/finish", zip.Doc{
 		Description: "Verifies the newly created passkey and stores it, so the person\ncan sign in with their device from then on.",
 	})
-	zip.Describe("PUT /v1/iam/account", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc PUT /v1/iam/account", zip.Doc{
 		Description: "Saves the calling person's own profile — the name they are\nshown by, their picture, a line about themselves and a link.\n\nOnly their own: the request names nobody, so it cannot reach another account.\nSend only what you are changing; a field you leave out keeps the value it had,\nand a field you send empty is cleared.\n\nA picture is an https link or an inline image up to 96 KiB, the same value an\norganization's mark is (schema.AvatarRef) — one rule for how a subject appears,\nwhether the subject is a person or an organization.",
 		Fields: map[string]string{
 			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
 		},
 	})
-	zip.Describe("PUT /v1/iam/consent", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc PUT /v1/iam/consent", zip.Doc{
 		Description: "Records the calling person's privacy and communication\nchoices. Only their own — there is no way to set consent for somebody else.\n\nSend only the answers you are changing. A question you leave out keeps the\nanswer it already had, so a screen that saves one switch never revokes the\nother, and two screens saving at once do not undo each other.\n\nAn answer this version does not recognize is refused here rather than stored,\nso nothing is ever persisted for a later reader to have to interpret.",
 	})
-	zip.Describe("PUT /v1/iam/password", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/oidc PUT /v1/iam/password", zip.Doc{
 		Description: "Replaces the calling person's password. Only their own —\nthere is no shape of this request that writes somebody else's.\n\nProve who you are with the password you are replacing, or — when you cannot\nsign in at all — with a code sent to the address the account already holds.\nExactly one of the two: a request carrying both proves nothing more than\neither, and answering it would mean deciding which one mattered.\n\nA reset also clears the account lockout, in the SAME transaction as the\ndigest. Replacing a credential retires the run of guesses against the old one,\nand without this a person who reset a forgotten password was still refused for\nup to fifteen more minutes — with the brand-new password they had just chosen.",
 		Fields: map[string]string{
 			"Response.code":             "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",

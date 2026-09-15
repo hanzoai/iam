@@ -45,6 +45,8 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	// The account read is anonymous-safe (returns {status:"error"} unauthenticated)
 	// and a security contract — the gateway admin-guard reads its `owner`.
 	r.Get(PathAccount, getAccount(db))
+	// Everyone signed in on the browser, for the account chooser. Cookie only.
+	r.Get(PathAccounts, getAccounts(db))
 	// The write half of the same noun: a person's own profile, a fixed set of
 	// display fields, self-scoped like the password and consent writes beside it.
 	zip.Put[accountBody, httpx.Answer](r, PathAccount, putAccountHandler(db),

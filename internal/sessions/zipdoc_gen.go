@@ -7,31 +7,31 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/sessions/:owner/:name/:application", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/sessions DELETE /v1/iam/sessions/:owner/:name/:application", zip.Doc{
 		Description: "Signs a person out of one application — the session ends and every\nbrowser carrying it stops being authenticated.\n\nA session that is already gone reports that nothing was deleted rather than an\nerror, so the call is safe to repeat.",
 	})
-	zip.Describe("GET /v1/iam/sessions", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/sessions GET /v1/iam/sessions", zip.Doc{
 		Description: "Returns who is currently signed in to an organization, newest first, and\ncan be narrowed to one person or one application. It is what you read before\nsigning someone out.\n\nWhich organization comes from your credentials, not from the request: you read\nyour own and no one else's. A session row names a live account and the\napplications it is signed in to, so the tenant is decided here rather than\ntaken from the query.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Session].id": "Persisted fields",
 			"Session.exclusiveSignin":                             "ExclusiveSignin is a transient control flag (v1 xorm:\"-\"): a caller sets\nit on a create to collapse SessionId down to the single incoming cookie\ninstead of appending. It is never stored — a persisted session always\ncarries it false, so orm:\"-\" keeps it off the column backends and\nomitempty keeps it out of the SQLite JSON blob.",
 		},
 	})
-	zip.Describe("GET /v1/iam/sessions/:owner/:name/:application", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/sessions GET /v1/iam/sessions/:owner/:name/:application", zip.Doc{
 		Description: "Returns one person's session in one application — when it began and which\nbrowsers or devices are still carrying it.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Session].id": "Persisted fields",
 			"Session.exclusiveSignin":                             "ExclusiveSignin is a transient control flag (v1 xorm:\"-\"): a caller sets\nit on a create to collapse SessionId down to the single incoming cookie\ninstead of appending. It is never stored — a persisted session always\ncarries it false, so orm:\"-\" keeps it off the column backends and\nomitempty keeps it out of the SQLite JSON blob.",
 		},
 	})
-	zip.Describe("POST /v1/iam/sessions", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/sessions POST /v1/iam/sessions", zip.Doc{
 		Description: "Records a sign-in and answers with the cookie id it minted. Signing in\nagain from another browser adds to the session rather than replacing it, so one\nperson can be signed in from a laptop and a phone at once.\n\nAsk for an exclusive sign-in and the opposite holds: the new sign-in is the only\none left and every other browser is signed out. That is the setting to use when\none person may hold only one live session at a time.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Session].id": "Persisted fields",
 			"Session.exclusiveSignin":                             "ExclusiveSignin is a transient control flag (v1 xorm:\"-\"): a caller sets\nit on a create to collapse SessionId down to the single incoming cookie\ninstead of appending. It is never stored — a persisted session always\ncarries it false, so orm:\"-\" keeps it off the column backends and\nomitempty keeps it out of the SQLite JSON blob.",
 		},
 	})
-	zip.Describe("PUT /v1/iam/sessions/:owner/:name/:application", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/sessions PUT /v1/iam/sessions/:owner/:name/:application", zip.Doc{
 		Description: "Names the browsers a session keeps — signing out the ones you leave off\nwhile the session itself stays live. A session that does not exist is reported\nas missing rather than created.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Session].id": "Persisted fields",

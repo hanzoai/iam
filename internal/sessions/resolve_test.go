@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -82,11 +83,18 @@ func newHarness(t *testing.T) *harness {
 		return c.String(http.StatusOK, "ok")
 	})
 	app.Post("/clear", func(c *zip.Ctx) error {
-		owner, name, application, ok := Clear(context.Background(), c.Fiber(), db)
-		c.SetHeader("X-Owner", owner)
-		c.SetHeader("X-Name", name)
-		c.SetHeader("X-App", application)
-		c.SetHeader("X-Ok", boolStr(ok))
+		ended := Clear(context.Background(), c.Fiber(), db)
+		if len(ended) > 0 {
+			c.SetHeader("X-Owner", ended[0].Owner)
+			c.SetHeader("X-Name", ended[0].Name)
+			c.SetHeader("X-App", ended[0].Application)
+		}
+		c.SetHeader("X-People", people(ended))
+		c.SetHeader("X-Ok", boolStr(len(ended) > 0))
+		return c.String(http.StatusOK, "ok")
+	})
+	app.Get("/accounts", func(c *zip.Ctx) error {
+		c.SetHeader("X-People", people(Accounts(context.Background(), c.Fiber(), db)))
 		return c.String(http.StatusOK, "ok")
 	})
 	app.Post("/rekey", func(c *zip.Ctx) error {
@@ -101,11 +109,14 @@ func newHarness(t *testing.T) *harness {
 }
 
 // do sends method+target, carrying cookie as the session cookie when non-empty.
-func (h *harness) do(t *testing.T, method, target, cookie string) *http.Response {
+func (h *harness) do(t *testing.T, method, target, cookie string, headers ...string) *http.Response {
 	t.Helper()
 	req := httptest.NewRequest(method, target, nil)
 	if cookie != "" {
 		req.AddCookie(&http.Cookie{Name: CookieName, Value: cookie})
+	}
+	for i := 0; i+1 < len(headers); i += 2 {
+		req.Header.Set(headers[i], headers[i+1])
 	}
 	res, err := h.app.Test(req, zip.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
@@ -120,6 +131,15 @@ func report(c *zip.Ctx, err error) error {
 		return c.String(http.StatusInternalServerError, "err")
 	}
 	return c.String(http.StatusOK, "ok")
+}
+
+// people renders a session list as "owner/name,owner/name" in order.
+func people(list []Cookie) string {
+	out := make([]string, len(list))
+	for i, sc := range list {
+		out[i] = sc.Owner + "/" + sc.Name
+	}
+	return strings.Join(out, ",")
 }
 
 func boolStr(b bool) string {
@@ -238,11 +258,117 @@ func TestOpen_MintsOnceThenKeepsLive(t *testing.T) {
 		t.Fatal("Open with no live session must mint one")
 	}
 
-	// A browser that already carries a live session keeps it — no second sid is
-	// minted for a silent hop.
+	// A browser that already carries a live session for this person keeps it — no
+	// second sid is minted for a silent hop.
 	second := h.do(t, http.MethodPost, "/open?owner=hanzo&name=bob&app=cloud", ck.Value)
 	if cookieOf(second) != nil {
-		t.Fatal("Open must not re-issue a cookie for a browser already signed in")
+		t.Fatal("Open must not re-issue a cookie for a person already signed in first")
+	}
+}
+
+// open drives one /open carrying cookie and returns the cookie the browser holds
+// afterwards: the one written, or the one it sent when nothing was written.
+func (h *harness) open(t *testing.T, owner, name, cookie string) string {
+	t.Helper()
+	res := h.do(t, http.MethodPost, "/open?owner="+owner+"&name="+name+"&app=cloud", cookie)
+	if e := res.Header.Get("X-Err"); e != "" {
+		t.Fatalf("open %s/%s: %s", owner, name, e)
+	}
+	if ck := cookieOf(res); ck != nil {
+		return ck.Value
+	}
+	return cookie
+}
+
+func (h *harness) people(t *testing.T, cookie string) string {
+	t.Helper()
+	return h.do(t, http.MethodGet, "/accounts", cookie).Header.Get("X-People")
+}
+
+// A second person signing in on the same browser is added in front; the first
+// stays signed in.
+func TestOpen_AddsASecondPersonInFront(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+	value = h.open(t, "acme", "bob", value)
+
+	if got := h.people(t, value); got != "acme/bob,hanzo/alice" {
+		t.Fatalf("accounts = %q, want acme/bob,hanzo/alice", got)
+	}
+	if r := h.do(t, http.MethodGet, "/resolve", value); r.Header.Get("X-Name") != "bob" {
+		t.Fatalf("current = %s, want the most recent sign-in, bob", r.Header.Get("X-Name"))
+	}
+}
+
+// Signing in again as someone the browser already holds moves them to the front
+// with the session they had: same sid, same auth_time.
+func TestOpen_PromotesAPersonAlreadyHeld(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+	aliceSid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
+	value = h.open(t, "acme", "bob", value)
+	value = h.open(t, "hanzo", "alice", value)
+
+	if got := h.people(t, value); got != "hanzo/alice,acme/bob" {
+		t.Fatalf("accounts = %q, want hanzo/alice,acme/bob", got)
+	}
+	if sid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid"); sid != aliceSid {
+		t.Fatal("promoting a held person must keep their session, not mint a new one")
+	}
+}
+
+// Set replaces the session the named person held and keeps everyone else.
+func TestSet_ReplacesOnlyThatPerson(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+	oldSid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
+	value = h.open(t, "acme", "bob", value)
+
+	res := h.do(t, http.MethodPost, "/set?owner=hanzo&name=alice&app=cloud", value)
+	value = cookieOf(res).Value
+	if got := h.people(t, value); got != "hanzo/alice,acme/bob" {
+		t.Fatalf("accounts = %q, want hanzo/alice,acme/bob", got)
+	}
+	if sidActive(h.db, "hanzo", "alice", "cloud", oldSid) {
+		t.Fatal("the session Set replaced must be revoked")
+	}
+}
+
+// A session revoked elsewhere drops out of the list and the next person becomes
+// current; nobody else is signed out with it.
+func TestAccounts_SkipsARevokedSession(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+	value = h.open(t, "acme", "bob", value)
+	bobSid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
+
+	revokeSID(h.db, "acme", "bob", "cloud", bobSid)
+	if got := h.people(t, value); got != "hanzo/alice" {
+		t.Fatalf("accounts = %q, want only hanzo/alice", got)
+	}
+	if r := h.do(t, http.MethodGet, "/resolve", value); r.Header.Get("X-Name") != "alice" {
+		t.Fatalf("current = %q, want alice", r.Header.Get("X-Name"))
+	}
+}
+
+// A browser holding more people than one cookie can store signs the least recent
+// out rather than writing a cookie the browser would refuse.
+func TestWrite_DropsTheOldestPastTheLimit(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "person-0", "")
+	firstSid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
+	for i := 1; i < 40; i++ {
+		value = h.open(t, "hanzo", "person-"+itoa(i), value)
+	}
+	if len(value) > maxValue {
+		t.Fatalf("cookie value is %d bytes, over the %d a browser stores", len(value), maxValue)
+	}
+	held := strings.Split(h.people(t, value), ",")
+	if held[0] != "hanzo/person-39" || len(held) < 2 {
+		t.Fatalf("accounts = %v, want the most recent first and more than one", held)
+	}
+	if sidActive(h.db, "hanzo", "person-0", "cloud", firstSid) {
+		t.Fatal("a session dropped from the cookie must be revoked")
 	}
 }
 
@@ -269,6 +395,76 @@ func TestClear_RevokesAndReportsIdentity(t *testing.T) {
 	}
 	if h.do(t, http.MethodGet, "/resolve", value).Header.Get("X-Ok") != "false" {
 		t.Fatal("a cleared session must no longer resolve even with the same cookie value")
+	}
+}
+
+// Only the issuer's own pages, a person-started request, a top-level GET
+// navigation, or a client with no fetch metadata may change who a browser holds.
+// A form posted from another site or a sibling host signs nobody in.
+func TestSet_OnlyFromTheIssuer(t *testing.T) {
+	cases := []struct {
+		name    string
+		method  string
+		headers []string
+		writes  bool
+	}{
+		{"no fetch metadata", http.MethodPost, nil, true},
+		{"same-origin", http.MethodPost, []string{"Sec-Fetch-Site", "same-origin"}, true},
+		{"person-started", http.MethodPost, []string{"Sec-Fetch-Site", "none"}, true},
+		{"cross-site form post", http.MethodPost, []string{"Sec-Fetch-Site", "cross-site", "Sec-Fetch-Mode", "navigate"}, false},
+		{"sibling host", http.MethodPost, []string{"Sec-Fetch-Site", "same-site"}, false},
+		{"cross-site fetch", http.MethodPost, []string{"Sec-Fetch-Site", "cross-site", "Sec-Fetch-Mode", "cors"}, false},
+		{"top-level navigation back from an identity provider", http.MethodGet, []string{"Sec-Fetch-Site", "cross-site", "Sec-Fetch-Mode", "navigate"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.app.Get("/set", func(c *zip.Ctx) error {
+				return report(c, Set(context.Background(), c.Fiber(), h.db, "hanzo", "mallory", "cloud"))
+			})
+			res := h.do(t, tc.method, "/set?owner=hanzo&name=mallory&app=cloud", "", tc.headers...)
+			if got := cookieOf(res) != nil; got != tc.writes {
+				t.Fatalf("session written = %v, want %v", got, tc.writes)
+			}
+			row, _ := orm.Get[schema.Session](h.db, sessionID("hanzo", "mallory", "cloud"))
+			if registered := row != nil && len(row.SessionId) > 0; registered != tc.writes {
+				t.Fatalf("sid registered = %v, want %v", registered, tc.writes)
+			}
+		})
+	}
+}
+
+// A sibling host cannot reorder who a browser holds either.
+func TestOpen_SiblingHostCannotPromote(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+	value = h.open(t, "acme", "bob", value)
+
+	res := h.do(t, http.MethodPost, "/open?owner=hanzo&name=alice&app=cloud", value, "Sec-Fetch-Site", "same-site")
+	if cookieOf(res) != nil {
+		t.Fatal("a sibling host re-ordered the browser's accounts")
+	}
+	if got := h.people(t, value); got != "acme/bob,hanzo/alice" {
+		t.Fatalf("accounts = %q, want acme/bob,hanzo/alice unchanged", got)
+	}
+}
+
+func TestClear_EndsEveryPerson(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+	aliceSid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
+	value = h.open(t, "acme", "bob", value)
+	bobSid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
+
+	res := h.do(t, http.MethodPost, "/clear", value)
+	if got := res.Header.Get("X-People"); got != "acme/bob,hanzo/alice" {
+		t.Fatalf("Clear ended %q, want acme/bob,hanzo/alice", got)
+	}
+	if sidActive(h.db, "hanzo", "alice", "cloud", aliceSid) || sidActive(h.db, "acme", "bob", "cloud", bobSid) {
+		t.Fatal("Clear must revoke every session the browser held")
+	}
+	if got := h.people(t, value); got != "" {
+		t.Fatalf("after Clear the old cookie still resolves %q", got)
 	}
 }
 
@@ -322,6 +518,21 @@ func TestRekey_MovesSessionToNewOwner(t *testing.T) {
 	// A change of address, not a re-authentication: the original auth_time carries across.
 	if got := mustVerify(t, moved.Value).AuthTime; got != authTime {
 		t.Fatalf("auth_time = %d after rekey, want the carried %d", got, authTime)
+	}
+}
+
+// Rekey moves the most recent person and leaves everyone else signed in.
+func TestRekey_KeepsTheOthers(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "dave", "")
+	value = h.open(t, "hanzo", "carol", value)
+
+	res := h.do(t, http.MethodPost, "/rekey?newOwner=newco", value)
+	if res.Header.Get("X-Ok") != "true" {
+		t.Fatal("re-keying must succeed")
+	}
+	if got := h.people(t, cookieOf(res).Value); got != "newco/carol,hanzo/dave" {
+		t.Fatalf("accounts = %q, want newco/carol,hanzo/dave", got)
 	}
 }
 
@@ -381,6 +592,27 @@ func TestRevokeOthers_KeepsOnlyThisRequestsSid(t *testing.T) {
 	}
 	if !sidActive(h.db, "hanzo", "dave", "extra", keep) {
 		t.Fatal("a row already holding only the kept sid must be left untouched")
+	}
+}
+
+// The kept sid is the one this browser holds for that person, wherever they sit in
+// the list.
+func TestRevokeOthers_KeepsThePersonsSidWhenNotFirst(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "dave", "")
+	keep := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
+	value = h.open(t, "acme", "erin", value)
+	if err := registerSID(h.db, "hanzo", "dave", "cloud", "other-cloud"); err != nil {
+		t.Fatal(err)
+	}
+
+	h.do(t, http.MethodPost, "/revoke-others?owner=hanzo&name=dave", value)
+
+	if !sidActive(h.db, "hanzo", "dave", "cloud", keep) {
+		t.Fatal("RevokeOthers dropped the sid this browser holds for dave")
+	}
+	if sidActive(h.db, "hanzo", "dave", "cloud", "other-cloud") {
+		t.Fatal("RevokeOthers kept another browser's sid")
 	}
 }
 

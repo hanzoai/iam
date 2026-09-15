@@ -173,8 +173,8 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 		return "", errInteractionRequired
 	}
 
-	sc, ok := sessions.Current(ctx, c.Fiber(), db)
-	if !ok {
+	sc, user := signedIn(c, db, q.loginHint, param(c, "id_token_hint"))
+	if user == nil {
 		return "", errLoginRequired
 	}
 
@@ -184,33 +184,6 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 	// sensitive operation.
 	if !freshEnough(sc.AuthTime, param(c, "max_age")) {
 		return "", errLoginRequired
-	}
-
-	// The account is re-read, never taken from the cookie: an identity forbidden
-	// or deleted since sign-in must be refused rather than ride its old session.
-	user, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
-	if err != nil {
-		return "", errLoginRequired
-	}
-	if user == nil || user.IsForbidden || user.IsDeleted {
-		return "", errLoginRequired
-	}
-
-	// id_token_hint names the person the client believes is signed in. If somebody
-	// ELSE is, the client must be told login_required rather than handed a grant
-	// for a different human (OIDC Core §3.1.2.1).
-	//
-	// This is not a nicety. A relying party doing silent renewal has an
-	// established session for a specific subject; a code for a DIFFERENT subject,
-	// arriving through the same callback the RP already trusts, swaps the signed-in
-	// identity underneath the user with nothing on screen to notice. On a browser
-	// where two identities are used in turn — the exact thing this platform is
-	// building toward — that is not a corner case, it is Tuesday.
-	if hint := param(c, "id_token_hint"); hint != "" {
-		claims, err := verifyHint(ctx, db, hint)
-		if err != nil || claims.Subject != subjectOf(user) {
-			return "", errLoginRequired
-		}
 	}
 
 	code, err := MintFor(ctx, db, app, user.Owner+"/"+user.Name, Mint{
@@ -230,6 +203,61 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 		return "", errAccessDenied
 	}
 	return code, ""
+}
+
+// signedIn picks, among the people signed in on this browser, the one a request
+// is for, and returns their session and their account. Nil means nobody here
+// answers it.
+//
+// With no hint it is the most recent sign-in. A login_hint names a person by
+// subject, email address or username; an id_token_hint names one by the subject
+// of a token this issuer signed (OIDC Core §3.1.2.1). A hint that names nobody
+// signed in here answers nil rather than someone else: a code for a different
+// person, arriving through a callback the client already trusts, would swap the
+// signed-in identity with nothing on screen to notice. A login_hint that names
+// two people here answers nil too, and the hosted page asks.
+//
+// The account is re-read, never taken from the cookie: an identity forbidden or
+// deleted since sign-in is refused rather than riding its old session.
+func signedIn(c *zip.Ctx, db orm.DB, loginHint, idTokenHint string) (*sessions.Cookie, *schema.User) {
+	ctx := c.Context()
+	subject := ""
+	if idTokenHint != "" {
+		claims, err := verifyHint(ctx, db, idTokenHint)
+		if err != nil {
+			return nil, nil
+		}
+		subject = claims.Subject
+	}
+	list := sessions.Accounts(ctx, c.Fiber(), db)
+	if loginHint == "" && subject == "" && len(list) > 1 {
+		list = list[:1]
+	}
+	var found *sessions.Cookie
+	var who *schema.User
+	for i := range list {
+		user, err := store.GetUserByName(ctx, db, list[i].Owner, list[i].Name)
+		if err != nil || user == nil || user.IsForbidden || user.IsDeleted {
+			continue
+		}
+		if subject != "" && subjectOf(user) != subject {
+			continue
+		}
+		if loginHint != "" && !names(user, loginHint) {
+			continue
+		}
+		if who != nil {
+			return nil, nil
+		}
+		found, who = &list[i], user
+	}
+	return found, who
+}
+
+// names reports whether a login_hint identifies u: its subject, its email
+// address in any case, or its username.
+func names(u *schema.User, hint string) bool {
+	return hint == subjectOf(u) || hint == u.Name || (u.Email != "" && strings.EqualFold(hint, u.Email))
 }
 
 // topLevelNavigation reports whether the browser is NAVIGATING here — the only
