@@ -265,9 +265,7 @@ func TestDiscovery_isInTheDocument(t *testing.T) {
 			continue
 		}
 		responses, _ := get["responses"].(map[string]any)
-		// Every operation also declares a "default" response — the refusal body a
-		// governed contract answers with — so the statuses named here are the
-		// SUCCESS set and the default is expected beside them.
+		// every operation also declares a default response
 		if _, ok := responses["default"]; !ok {
 			t.Errorf("%s declares no default response, so a client is not told what a refusal looks like", tc.path)
 		}
