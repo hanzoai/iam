@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -70,8 +71,8 @@ type loginForm struct {
 }
 
 // routeLogin registers POST /v1/iam/login.
-func routeLogin(r zip.Router, db orm.DB) {
-	r.Post(PathLogin, loginHandler(db))
+func routeLogin(r *zip.Group, db orm.DB) {
+	r.Raw(http.MethodPost, PathLogin, loginHandler(db))
 }
 
 // loginHandler signs a person in with the credential they typed, and — when the

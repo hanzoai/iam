@@ -50,13 +50,13 @@ func New(db orm.DB) *API { return &API{db: db} }
 // would bind nothing and leave the body the sole target, which is the one thing
 // the path form exists to prevent. The key travels in the body until UpdateInput
 // carries it at top level.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	a := &API{db: db}
-	zip.Post(app, "/v1/iam/users", a.Create, zip.WithTags("users"))
-	zip.Get(app, "/v1/iam/users", a.List, zip.WithTags("users"))
-	zip.Get(app, "/v1/iam/users/:owner/:name", a.Get, zip.WithTags("users"))
-	zip.Put(app, "/v1/iam/users/:owner/:name", a.Update, zip.WithTags("users"))
-	zip.Delete(app, "/v1/iam/users/:owner/:name", a.Delete, zip.WithTags("users"))
+	app.Post("/v1/iam/users", a.Create, zip.WithTags("users"))
+	app.Get("/v1/iam/users", a.List, zip.WithTags("users"))
+	app.Get("/v1/iam/users/:owner/:name", a.Get, zip.WithTags("users"))
+	app.Put("/v1/iam/users/:owner/:name", a.Update, zip.WithTags("users"))
+	app.Delete("/v1/iam/users/:owner/:name", a.Delete, zip.WithTags("users"))
 }
 
 // Ref identifies one user by its natural key.

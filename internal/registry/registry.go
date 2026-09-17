@@ -57,6 +57,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -122,18 +123,18 @@ func audience(requested string) (string, bool) {
 // key resolution, so every host that registers the full IAM surface (routes.Route)
 // comes up even with no registry key configured; only an actual registry request
 // resolves, and a fail-closed resolution answers 503 (never an untrusted token).
-func Route(r zip.Router, db orm.DB) {
+func Route(r *zip.Group, db orm.DB) {
 	route(r, db, processKeyring)
 }
 
 // route is the registration seam Route and the tests share: it binds a keyring
 // resolver into a handler and registers the routes, so a test drives the SAME
 // handlers with an injected key and never touches process/env state.
-func route(r zip.Router, db orm.DB, key func() (*keyring, error)) {
+func route(r *zip.Group, db orm.DB, key func() (*keyring, error)) {
 	h := &handler{db: db, key: key}
-	r.Get(PathToken, h.token)
-	r.Post(PathToken, h.token)
-	r.Get(PathJWKS, h.jwks)
+	r.Raw(http.MethodGet, PathToken, h.token)
+	r.Raw(http.MethodPost, PathToken, h.token)
+	r.Raw(http.MethodGet, PathJWKS, h.jwks)
 }
 
 // handler holds the store and the lazy signing-keyring resolver.

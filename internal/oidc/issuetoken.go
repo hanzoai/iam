@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 	"crypto/subtle"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -46,10 +47,10 @@ import (
 // whether it is being made or taken away. The verb-noun spellings that named the
 // two directions separately are retired: they answer 410 and name this address as
 // their successor (pkg/gone), so nothing is served at two spellings.
-func routeIssueToken(r zip.Router, db orm.DB) {
-	r.Post(PathTokensIssue, issueUserTokenHandler(db))
-	r.Post(PathUserKeys, mintUserKeysHandler(db))
-	r.Delete(PathUserKeys, revokeUserKeysHandler(db))
+func routeIssueToken(r *zip.Group, db orm.DB) {
+	r.Raw(http.MethodPost, PathTokensIssue, issueUserTokenHandler(db))
+	r.Raw(http.MethodPost, PathUserKeys, mintUserKeysHandler(db))
+	r.Raw(http.MethodDelete, PathUserKeys, revokeUserKeysHandler(db))
 }
 
 // issueUserTokenHandler mints an access token for the `?id=<owner>/<name>` target

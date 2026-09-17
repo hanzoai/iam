@@ -35,7 +35,7 @@ func bootDB(t *testing.T) (*zip.App, orm.DB) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	app := zip.New(zip.Config{AppName: "p", DisableStartupMessage: true})
-	providers.Route(app, db)
+	providers.Route(app.Group(""), db)
 	if err := app.Build(); err != nil {
 		t.Fatalf("build: %v", err)
 	}

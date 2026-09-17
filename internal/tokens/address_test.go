@@ -35,8 +35,8 @@ func boot(t *testing.T) *zip.App {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	app := zip.New(zip.Config{AppName: "t", DisableStartupMessage: true})
-	tokens.Route(app, db)
-	zip.Post[issue, issue](app, "/v1/iam/tokens/issue",
+	tokens.Route(app.Group(""), db)
+	app.Post("/v1/iam/tokens/issue",
 		func(_ context.Context, _ *issue) (*issue, error) { return &issue{Marker: "issue"}, nil },
 		zip.WithOperationID("issue"))
 	if err := app.Build(); err != nil {

@@ -23,6 +23,7 @@ package resolve
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 
@@ -46,9 +47,9 @@ const unauthorized = "auth:Unauthorized operation"
 // `?accessKey=` rather than an (owner, name) the Guard could authorize, so both
 // are handler-authorized (authz.handlerAuthorizedExact) and each authorizes
 // itself behind its own capability.
-func Route(app *zip.App, db orm.DB) {
-	app.Get("/v1/iam/keys/org", org(db))
-	app.Get("/v1/iam/keys/principal", who(db))
+func Route(app *zip.Group, db orm.DB) {
+	app.Raw(http.MethodGet, "/v1/iam/keys/org", org(db))
+	app.Raw(http.MethodGet, "/v1/iam/keys/principal", who(db))
 }
 
 // orgOnly is the ORG-ONLY projection: the tenant a publishable key belongs to and

@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -33,8 +34,8 @@ import (
 const PathFederationMfa = "/v1/iam/oauth/federation/mfa"
 
 // routeFederationMfa registers the resume endpoint on the PUBLIC group r.
-func routeFederationMfa(r zip.Router, db orm.DB) {
-	r.Post(PathFederationMfa, federationMfaHandler(db))
+func routeFederationMfa(r *zip.Group, db orm.DB) {
+	r.Raw(http.MethodPost, PathFederationMfa, federationMfaHandler(db))
 }
 
 // fedMfaForm is the resume body. It carries the FACTOR and nothing else — no user

@@ -24,7 +24,7 @@ const orgBase = "/v1/iam/organizations"
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the organization CRUD surface on app, backed by db.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	NewOrganizationAPI(db).route(app)
 }
 
@@ -46,20 +46,20 @@ func NewOrganizationAPI(db orm.DB) *OrganizationAPI {
 // so the method carries the verb and the URL says which row. Every handler
 // validates its key and fails 400 if it is absent, so a missing selector is
 // loud, never a silent full-table action.
-func (h *OrganizationAPI) route(app *zip.App) {
-	zip.Post[CreateOrganizationInput, schema.Organization](app, orgBase, h.Create,
+func (h *OrganizationAPI) route(app *zip.Group) {
+	app.Post(orgBase, h.Create,
 		zip.WithOperationID("createOrganization"), zip.WithTags("organizations"))
-	zip.Get[ListOrganizationsInput, ListOrganizationsOutput](app, orgBase, h.List,
+	app.Get(orgBase, h.List,
 		zip.WithOperationID("listOrganizations"), zip.WithTags("organizations"))
-	zip.Post[SetAvatarInput, schema.Organization](app, orgBase+"/avatar", h.SetAvatar,
+	app.Post(orgBase+"/avatar", h.SetAvatar,
 		zip.WithOperationID("setOrganizationAvatar"), zip.WithTags("organizations"))
-	zip.Post[SetProfileInput, schema.Organization](app, orgBase+"/profile", h.SetProfile,
+	app.Post(orgBase+"/profile", h.SetProfile,
 		zip.WithOperationID("setOrganizationProfile"), zip.WithTags("organizations"))
-	zip.Get[GetOrganizationInput, schema.Organization](app, orgBase+"/:owner/:name", h.Get,
+	app.Get(orgBase+"/:owner/:name", h.Get,
 		zip.WithOperationID("getOrganization"), zip.WithTags("organizations"))
-	zip.Put[UpdateOrganizationInput, schema.Organization](app, orgBase+"/:owner/:name", h.Update,
+	app.Put(orgBase+"/:owner/:name", h.Update,
 		zip.WithOperationID("updateOrganization"), zip.WithTags("organizations"))
-	zip.Delete[DeleteOrganizationInput, DeleteOrganizationOutput](app, orgBase+"/:owner/:name", h.Delete,
+	app.Delete(orgBase+"/:owner/:name", h.Delete,
 		zip.WithOperationID("deleteOrganization"), zip.WithTags("organizations"))
 }
 

@@ -265,8 +265,14 @@ func TestDiscovery_isInTheDocument(t *testing.T) {
 			continue
 		}
 		responses, _ := get["responses"].(map[string]any)
-		if len(responses) != len(tc.statuses) {
-			t.Errorf("%s declares %d responses, want %v", tc.path, len(responses), tc.statuses)
+		// Every operation also declares a "default" response — the refusal body a
+		// governed contract answers with — so the statuses named here are the
+		// SUCCESS set and the default is expected beside them.
+		if _, ok := responses["default"]; !ok {
+			t.Errorf("%s declares no default response, so a client is not told what a refusal looks like", tc.path)
+		}
+		if len(responses) != len(tc.statuses)+1 {
+			t.Errorf("%s declares %d responses, want %v plus a default", tc.path, len(responses), tc.statuses)
 		}
 		for _, code := range tc.statuses {
 			if _, ok := responses[code]; !ok {

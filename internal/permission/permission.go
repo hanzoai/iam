@@ -31,13 +31,13 @@ type Handlers struct {
 
 // Route registers the permission routes on app, backed by db. It is called
 // from routes.Route once the store is open.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	h := &Handlers{db: db}
-	zip.Get(app, "/v1/iam/permissions", h.List, zip.WithTags("permissions"))
-	zip.Post(app, "/v1/iam/permissions", h.Add, zip.WithTags("permissions"))
-	zip.Get(app, "/v1/iam/permissions/:owner/:name", h.Get, zip.WithTags("permissions"))
-	zip.Put(app, "/v1/iam/permissions/:owner/:name", h.Update, zip.WithTags("permissions"))
-	zip.Delete(app, "/v1/iam/permissions/:owner/:name", h.Delete, zip.WithTags("permissions"))
+	app.Get("/v1/iam/permissions", h.List, zip.WithTags("permissions"))
+	app.Post("/v1/iam/permissions", h.Add, zip.WithTags("permissions"))
+	app.Get("/v1/iam/permissions/:owner/:name", h.Get, zip.WithTags("permissions"))
+	app.Put("/v1/iam/permissions/:owner/:name", h.Update, zip.WithTags("permissions"))
+	app.Delete("/v1/iam/permissions/:owner/:name", h.Delete, zip.WithTags("permissions"))
 }
 
 // permissionID is the owner-scoped orm key: "owner/name".

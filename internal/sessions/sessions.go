@@ -37,17 +37,17 @@ type Sessions struct{ db orm.DB }
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the session operations on app against db.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	h := &Sessions{db: db}
-	zip.Get(app, "/v1/iam/sessions", h.List,
+	app.Get("/v1/iam/sessions", h.List,
 		zip.WithTags("sessions"), zip.WithOperationID("listSessions"))
-	zip.Post(app, "/v1/iam/sessions", h.Create,
+	app.Post("/v1/iam/sessions", h.Create,
 		zip.WithTags("sessions"), zip.WithOperationID("createSession"))
-	zip.Get(app, "/v1/iam/sessions/:owner/:name/:application", h.Get,
+	app.Get("/v1/iam/sessions/:owner/:name/:application", h.Get,
 		zip.WithTags("sessions"), zip.WithOperationID("getSession"))
-	zip.Put(app, "/v1/iam/sessions/:owner/:name/:application", h.Update,
+	app.Put("/v1/iam/sessions/:owner/:name/:application", h.Update,
 		zip.WithTags("sessions"), zip.WithOperationID("updateSession"))
-	zip.Delete(app, "/v1/iam/sessions/:owner/:name/:application", h.Delete,
+	app.Delete("/v1/iam/sessions/:owner/:name/:application", h.Delete,
 		zip.WithTags("sessions"), zip.WithOperationID("deleteSession"))
 }
 

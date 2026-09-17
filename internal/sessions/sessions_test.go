@@ -340,7 +340,7 @@ func TestSessionID_MatchesV1Join(t *testing.T) {
 func TestRoute_Registers(t *testing.T) {
 	db := newDB(t)
 	app := zip.New(zip.Config{AppName: "sessions-route-test", DisableStartupMessage: true})
-	Route(app, db)
+	Route(app.Group(""), db)
 }
 
 // equalStrings compares two slices, treating nil and empty as equal — a merge

@@ -28,13 +28,13 @@ type Handler struct {
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the projects CRUD routes on app against db.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/projects", h.List, zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects", h.Create, zip.WithTags("projects"))
-	zip.Get(app, "/v1/iam/projects/:owner/:name", h.Get, zip.WithTags("projects"))
-	zip.Put(app, "/v1/iam/projects/:owner/:name", h.Update, zip.WithTags("projects"))
-	zip.Delete(app, "/v1/iam/projects/:owner/:name", h.Delete, zip.WithTags("projects"))
+	app.Get("/v1/iam/projects", h.List, zip.WithTags("projects"))
+	app.Post("/v1/iam/projects", h.Create, zip.WithTags("projects"))
+	app.Get("/v1/iam/projects/:owner/:name", h.Get, zip.WithTags("projects"))
+	app.Put("/v1/iam/projects/:owner/:name", h.Update, zip.WithTags("projects"))
+	app.Delete("/v1/iam/projects/:owner/:name", h.Delete, zip.WithTags("projects"))
 }
 
 // Ref addresses one project by its owner-scoped natural key.

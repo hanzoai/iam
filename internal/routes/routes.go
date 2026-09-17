@@ -93,12 +93,12 @@ func Route(app *zip.App, db orm.DB) {
 
 	// The concrete type, for the same reason the guarded group below takes it:
 	// zipdoc resolves an op's path prefix STATICALLY, and it cannot see through a
-	// zip.Router parameter — an op registered on one would have its doc comment
+	// *zip.Group parameter — an op registered on one would have its doc comment
 	// filed under the wrong path and dropped from the document and the MCP tool.
 	// The public group has typed ops now, so it needs the same handle the authed
 	// group has always needed. Its prefix is empty either way; nothing about the
 	// mount changes.
-	public := app.Group("").(*zip.App)
+	public := app.Group("")
 	oidc.Route(public, db)
 	// Operator bootstrap upsert (admin/{applications,users}/upsert) — self-authenticated
 	// by the unified service token (Bearer), not a user principal, so it is PUBLIC.
@@ -156,7 +156,7 @@ func Route(app *zip.App, db orm.DB) {
 	// group) and this needs the concrete type twice over: the sub-Routes below
 	// take *zip.App because zipdoc must resolve each op's path prefix statically,
 	// and the group needs its OWN Authorize hook.
-	authed := app.Group("").(*zip.App)
+	authed := app.Group("").Authorize(authz.Authorize)
 	authed.Use(authz.Guard(db))
 
 	// AUTHORIZATION of writes, on the SAME group, for the same reason. The
@@ -179,7 +179,6 @@ func Route(app *zip.App, db orm.DB) {
 	//     call. That is the Guard's 401 wearing a different status code — same
 	//     overreach, same cause, one seam over — and scoping only the Guard would
 	//     have left every TYPED sibling op broken while the raw ones recovered.
-	authed.Authorize(authz.Authorize)
 
 	// The same authentication, mounted a second time for the ONE surface a
 	// scoped seam cannot reach: the framework's own /mcp endpoint and OpenAPI

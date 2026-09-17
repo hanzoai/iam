@@ -148,12 +148,12 @@ type DeleteResult struct {
 // spelling a reader wanted depended on the operation. Fourteen kinds against
 // one is not a matter of taste; the odd one moved, and the singular is now a
 // retirement notice (internal/gone).
-func Route(app *zip.App, db orm.DB) {
-	zip.Get(app, "/v1/iam/applications", listApplications(db), zip.WithTags("applications"))
-	zip.Post(app, "/v1/iam/applications", Create(db), zip.WithTags("applications"))
-	zip.Get(app, "/v1/iam/applications/:owner/:name", getApplication(db), zip.WithTags("applications"))
-	zip.Put(app, "/v1/iam/applications/:owner/:name", Update(db), zip.WithTags("applications"))
-	zip.Delete(app, "/v1/iam/applications/:owner/:name", deleteApplication(db), zip.WithTags("applications"))
+func Route(app *zip.Group, db orm.DB) {
+	app.Get("/v1/iam/applications", listApplications(db), zip.WithTags("applications"))
+	app.Post("/v1/iam/applications", Create(db), zip.WithTags("applications"))
+	app.Get("/v1/iam/applications/:owner/:name", getApplication(db), zip.WithTags("applications"))
+	app.Put("/v1/iam/applications/:owner/:name", Update(db), zip.WithTags("applications"))
+	app.Delete("/v1/iam/applications/:owner/:name", deleteApplication(db), zip.WithTags("applications"))
 }
 
 // listApplications returns the applications in one organization, newest first —

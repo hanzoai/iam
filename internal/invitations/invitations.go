@@ -30,13 +30,13 @@ type Handler struct {
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the invitations CRUD routes on app against db.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/invitations", h.List, zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations", h.Create, zip.WithTags("invitations"))
-	zip.Get(app, "/v1/iam/invitations/:owner/:name", h.Get, zip.WithTags("invitations"))
-	zip.Put(app, "/v1/iam/invitations/:owner/:name", h.Update, zip.WithTags("invitations"))
-	zip.Delete(app, "/v1/iam/invitations/:owner/:name", h.Delete, zip.WithTags("invitations"))
+	app.Get("/v1/iam/invitations", h.List, zip.WithTags("invitations"))
+	app.Post("/v1/iam/invitations", h.Create, zip.WithTags("invitations"))
+	app.Get("/v1/iam/invitations/:owner/:name", h.Get, zip.WithTags("invitations"))
+	app.Put("/v1/iam/invitations/:owner/:name", h.Update, zip.WithTags("invitations"))
+	app.Delete("/v1/iam/invitations/:owner/:name", h.Delete, zip.WithTags("invitations"))
 }
 
 // Ref addresses one invitation by its owner-scoped natural key.

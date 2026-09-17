@@ -78,7 +78,7 @@ func certHarness(t *testing.T) *certEnv {
 	seedUser(t, db, "hanzo", "boss", true)
 
 	app := zip.New(zip.Config{AppName: "c", DisableStartupMessage: true})
-	authed := app.Group("").(*zip.App)
+	authed := app.Group("")
 	authed.Use(authz.Guard(db))
 	authed.Authorize(authz.Authorize)
 	providers.Route(authed, db)

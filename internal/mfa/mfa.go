@@ -40,6 +40,7 @@ package mfa
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -79,11 +80,11 @@ const (
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
-func Route(app *zip.App, db orm.DB) {
-	app.Post(PathInitiate, initiate(db))
-	app.Post(PathEnable, enable(db))
-	app.Delete(Path, disable(db))
-	app.Post(PathPreferred, setPreferred(db))
+func Route(app *zip.Group, db orm.DB) {
+	app.Raw(http.MethodPost, PathInitiate, initiate(db))
+	app.Raw(http.MethodPost, PathEnable, enable(db))
+	app.Raw(http.MethodDelete, Path, disable(db))
+	app.Raw(http.MethodPost, PathPreferred, setPreferred(db))
 }
 
 // recoveryCount is how many recovery codes an enrolment mints. Eight, not one: a

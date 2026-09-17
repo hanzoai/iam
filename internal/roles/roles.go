@@ -28,13 +28,13 @@ type Handler struct {
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the roles CRUD routes on app against db.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/roles", h.List, zip.WithTags("roles"))
-	zip.Post(app, "/v1/iam/roles", h.Create, zip.WithTags("roles"))
-	zip.Get(app, "/v1/iam/roles/:owner/:name", h.Get, zip.WithTags("roles"))
-	zip.Put(app, "/v1/iam/roles/:owner/:name", h.Update, zip.WithTags("roles"))
-	zip.Delete(app, "/v1/iam/roles/:owner/:name", h.Delete, zip.WithTags("roles"))
+	app.Get("/v1/iam/roles", h.List, zip.WithTags("roles"))
+	app.Post("/v1/iam/roles", h.Create, zip.WithTags("roles"))
+	app.Get("/v1/iam/roles/:owner/:name", h.Get, zip.WithTags("roles"))
+	app.Put("/v1/iam/roles/:owner/:name", h.Update, zip.WithTags("roles"))
+	app.Delete("/v1/iam/roles/:owner/:name", h.Delete, zip.WithTags("roles"))
 }
 
 // Ref addresses one role by its owner-scoped natural key.

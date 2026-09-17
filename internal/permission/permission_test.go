@@ -331,7 +331,7 @@ func TestWriteFaultIsInternal(t *testing.T) {
 func TestRouteBuilds(t *testing.T) {
 	_, db := newHandlers(t)
 	app := zip.New(zip.Config{AppName: "permission-test", DisableStartupMessage: true})
-	Route(app, db)
+	Route(app.Group(""), db)
 	if err := app.Build(); err != nil {
 		t.Fatalf("build: %v", err)
 	}

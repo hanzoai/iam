@@ -49,7 +49,7 @@ import (
 // self-authenticate via the service token, not a bearer principal).
 //
 // r is the CONCRETE *zip.App a group already is: zipdoc resolves an op's path
-// prefix STATICALLY and cannot see through a zip.Router parameter, so a typed op
+// prefix STATICALLY and cannot see through a *zip.Group parameter, so a typed op
 // registered on one would have its doc comment filed under the wrong path and
 // dropped from both the document and the MCP tool. The prefix is empty either
 // way; nothing about the mount changes.
@@ -58,13 +58,13 @@ import (
 // not — and because the document publishes exactly this set, so a generated
 // client has a branch for each. These two answer their refusals in their own
 // envelope (see reply), which is what a declared non-2xx is for.
-func Route(r *zip.App, db orm.DB) {
-	zip.Post[registration, reply](r, "/v1/iam/admin/applications/upsert", upsertApplication(db),
+func Route(r *zip.Group, db orm.DB) {
+	r.Post("/v1/iam/admin/applications/upsert", upsertApplication(db),
 		zip.WithOperationID("upsertApplication"),
 		zip.WithStatus(200, 400, 401, 500),
 		zip.WithTags("bootstrap"))
 
-	zip.Post[person, reply](r, "/v1/iam/admin/users/upsert", upsertUser(db),
+	r.Post("/v1/iam/admin/users/upsert", upsertUser(db),
 		zip.WithOperationID("upsertUser"),
 		zip.WithStatus(200, 400, 401, 500),
 		zip.WithTags("bootstrap"))

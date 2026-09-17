@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -52,11 +53,11 @@ const (
 // registration authenticates ITSELF through callerOf, the same session-cookie-or-
 // bearer resolution the account endpoint uses, because the portal page that enrolls
 // a passkey holds a cookie and no bearer.
-func routeWebauthn(r zip.Router, db orm.DB) {
-	r.Get(PathWebauthnRegisterBegin, registerBegin(db))
-	r.Post(PathWebauthnRegisterFinish, registerFinish(db))
-	r.Get(PathWebauthnLoginBegin, assertBegin(db))
-	r.Post(PathWebauthnLoginFinish, assertFinish(db))
+func routeWebauthn(r *zip.Group, db orm.DB) {
+	r.Raw(http.MethodGet, PathWebauthnRegisterBegin, registerBegin(db))
+	r.Raw(http.MethodPost, PathWebauthnRegisterFinish, registerFinish(db))
+	r.Raw(http.MethodGet, PathWebauthnLoginBegin, assertBegin(db))
+	r.Raw(http.MethodPost, PathWebauthnLoginFinish, assertFinish(db))
 }
 
 // errNoPasskey is the ONE refusal every way an assertion can fail to start

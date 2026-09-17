@@ -45,7 +45,7 @@ func wire(t *testing.T) *zip.App {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	app := zip.New(zip.Config{AppName: "bootstrap-wire", DisableStartupMessage: true})
-	bootstrap.Route(app, db)
+	bootstrap.Route(app.Group(""), db)
 	if err := app.Build(); err != nil {
 		t.Fatalf("build: %v", err)
 	}

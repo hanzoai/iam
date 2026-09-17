@@ -52,7 +52,7 @@ func Route(app *zip.App, db orm.DB) {
 	// routes.Route put a Guard in front of the whole app and this line inherited
 	// it by accident of coming after. Registry is empty in this repo, so nothing
 	// today moved; a module that wants gating must reach for authz.Guard itself.
-	if err := feature.RouteAll(app, featurestore.New(db)); err != nil {
+	if err := feature.RouteAll(app.Group(""), featurestore.New(db)); err != nil {
 		panic("iam: enterprise feature registration failed: " + err.Error())
 	}
 }

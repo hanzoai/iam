@@ -39,12 +39,12 @@ import (
 // authorized on "keys" and every write on "key". Two entity strings for one
 // entity means every capability keyed on it is dead on one of the two surfaces —
 // the same defect entityNoun was written to fix for the legacy verb spellings.
-func Route(app *zip.App, db orm.DB) {
-	zip.Get(app, "/v1/iam/keys", list(db), zip.WithTags("keys"))
-	zip.Post(app, "/v1/iam/keys", create(db), zip.WithTags("keys"))
-	zip.Get(app, "/v1/iam/keys/:owner/:name", get(db), zip.WithTags("keys"))
-	zip.Put(app, "/v1/iam/keys/:owner/:name", update(db), zip.WithTags("keys"))
-	zip.Delete(app, "/v1/iam/keys/:owner/:name", del(db), zip.WithTags("keys"))
+func Route(app *zip.Group, db orm.DB) {
+	app.Get("/v1/iam/keys", list(db), zip.WithTags("keys"))
+	app.Post("/v1/iam/keys", create(db), zip.WithTags("keys"))
+	app.Get("/v1/iam/keys/:owner/:name", get(db), zip.WithTags("keys"))
+	app.Put("/v1/iam/keys/:owner/:name", update(db), zip.WithTags("keys"))
+	app.Delete("/v1/iam/keys/:owner/:name", del(db), zip.WithTags("keys"))
 }
 
 // ListRequest names the organization to read. Omitting it means "the one my

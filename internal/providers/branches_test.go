@@ -178,7 +178,7 @@ func guardedList(t *testing.T) (*zip.App, string) {
 	seedProvider(t, db, "beta", "google")
 
 	app := zip.New(zip.Config{AppName: "g", DisableStartupMessage: true})
-	authed := app.Group("").(*zip.App)
+	authed := app.Group("")
 	authed.Use(authz.Guard(db))
 	providers.Route(authed, db)
 	if err := app.Build(); err != nil {

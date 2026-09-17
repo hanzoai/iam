@@ -41,7 +41,7 @@ func newApp(t *testing.T) *zip.App {
 	t.Cleanup(func() { _ = db.Close() })
 
 	app := zip.New(zip.Config{AppName: "invitations-test", DisableStartupMessage: true})
-	invitations.Route(app, db)
+	invitations.Route(app.Group(""), db)
 	if err := app.Build(); err != nil {
 		t.Fatalf("build: %v", err)
 	}

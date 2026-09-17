@@ -37,7 +37,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/valyala/fasthttp v1.72.0
 	github.com/zap-proto/fiber/v3 v3.2.1
-	github.com/zap-proto/zip v1.36.50
+	github.com/zap-proto/zip v1.37.2
 	golang.org/x/crypto v0.54.0
 )
 

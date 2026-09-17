@@ -29,13 +29,13 @@ type Handler struct {
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the workspaces CRUD routes on app against db.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/workspaces", h.List, zip.WithTags("workspaces"))
-	zip.Post(app, "/v1/iam/workspaces", h.Create, zip.WithTags("workspaces"))
-	zip.Get(app, "/v1/iam/workspaces/:owner/:name", h.Get, zip.WithTags("workspaces"))
-	zip.Put(app, "/v1/iam/workspaces/:owner/:name", h.Update, zip.WithTags("workspaces"))
-	zip.Delete(app, "/v1/iam/workspaces/:owner/:name", h.Delete, zip.WithTags("workspaces"))
+	app.Get("/v1/iam/workspaces", h.List, zip.WithTags("workspaces"))
+	app.Post("/v1/iam/workspaces", h.Create, zip.WithTags("workspaces"))
+	app.Get("/v1/iam/workspaces/:owner/:name", h.Get, zip.WithTags("workspaces"))
+	app.Put("/v1/iam/workspaces/:owner/:name", h.Update, zip.WithTags("workspaces"))
+	app.Delete("/v1/iam/workspaces/:owner/:name", h.Delete, zip.WithTags("workspaces"))
 }
 
 // Ref addresses one workspace by its owner-scoped natural key.

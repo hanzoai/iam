@@ -22,7 +22,7 @@ import (
 func app(t *testing.T) *zip.App {
 	t.Helper()
 	a := zip.New(zip.Config{AppName: "gone-test", DisableStartupMessage: true})
-	Route(a)
+	Route(a.Group(""))
 	if err := a.Build(); err != nil {
 		t.Fatalf("build: %v", err)
 	}

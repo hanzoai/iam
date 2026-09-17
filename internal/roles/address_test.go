@@ -31,7 +31,7 @@ func TestURLIsTheAddressingAuthority(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	app := zip.New(zip.Config{AppName: "roles-tmp", DisableStartupMessage: true})
-	roles.Route(app, db)
+	roles.Route(app.Group(""), db)
 	if err := app.Build(); err != nil {
 		t.Fatal(err)
 	}

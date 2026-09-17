@@ -5,6 +5,7 @@ package routes_test
 import (
 	"context"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -55,7 +56,7 @@ func embedded(t *testing.T) (*zip.App, orm.DB) {
 
 	app := zip.New(zip.Config{AppName: "cloud", DisableStartupMessage: true})
 	routes.Route(app, db) // IAM at position 9, as in the cloud binary
-	app.Get("/v1/models", func(c *zip.Ctx) error { return c.JSON(200, map[string]string{"m": sentinel}) })
+	app.Raw(http.MethodGet, "/v1/models", func(c *zip.Ctx) error { return c.JSON(200, map[string]string{"m": sentinel}) })
 	return app, db
 }
 
@@ -95,7 +96,7 @@ func TestAuthorize_DoesNotReachASiblingSubsystemsTypedOp(t *testing.T) {
 	app, _ := embedded(t)
 
 	const reached = "sibling-typed-op-reached"
-	zip.Post(app, "/v1/chat/completions",
+	app.Post("/v1/chat/completions",
 		func(ctx context.Context, in *siblingIn) (*siblingOut, error) {
 			return &siblingOut{Reply: reached}, nil
 		})

@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 	"crypto/subtle"
+	"net/http"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -30,9 +31,9 @@ const (
 
 // routeIntrospectRevoke registers the introspection + revocation endpoints on the
 // PUBLIC group r (client-authenticated, not Bearer-gated).
-func routeIntrospectRevoke(r zip.Router, db orm.DB) {
-	r.Post(PathIntrospect, introspectHandler(db))
-	r.Post(PathRevoke, revokeHandler(db))
+func routeIntrospectRevoke(r *zip.Group, db orm.DB) {
+	r.Raw(http.MethodPost, PathIntrospect, introspectHandler(db))
+	r.Raw(http.MethodPost, PathRevoke, revokeHandler(db))
 }
 
 // authTokenClient authenticates the CALLING CLIENT, and only the client:

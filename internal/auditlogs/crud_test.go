@@ -66,7 +66,7 @@ func seedAudit(t *testing.T, db orm.DB, owner, name, action string) {
 // the item routes are matched by prefix rather than by an assumed `:owner`).
 func TestRouteRegistersEveryVerb(t *testing.T) {
 	app := zip.New(zip.Config{AppName: "auditlogs-test", DisableStartupMessage: true})
-	Route(app, auditTestDB(t))
+	Route(app.Group(""), auditTestDB(t))
 
 	collection := map[string]bool{}
 	item := map[string]bool{}

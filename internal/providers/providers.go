@@ -59,24 +59,24 @@ type mutationResult struct {
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the provider surface on app, closing over the entity store.
-func Route(app *zip.App, db orm.DB) {
-	zip.Get[listProvidersIn, listProvidersOut](app, "/v1/iam/providers", listProviders(db),
+func Route(app *zip.Group, db orm.DB) {
+	app.Get("/v1/iam/providers", listProviders(db),
 		zip.WithOperationID("listProviders"),
 		zip.WithTags("providers"))
 
-	zip.Get[providerKey, providerResult](app, "/v1/iam/providers/:owner/:name", getProvider(db),
+	app.Get("/v1/iam/providers/:owner/:name", getProvider(db),
 		zip.WithOperationID("getProvider"),
 		zip.WithTags("providers"))
 
-	zip.Post[schema.Provider, providerResult](app, "/v1/iam/providers", addProvider(db),
+	app.Post("/v1/iam/providers", addProvider(db),
 		zip.WithOperationID("addProvider"),
 		zip.WithTags("providers"))
 
-	zip.Put[schema.Provider, mutationResult](app, "/v1/iam/providers/:owner/:name", updateProvider(db),
+	app.Put("/v1/iam/providers/:owner/:name", updateProvider(db),
 		zip.WithOperationID("updateProvider"),
 		zip.WithTags("providers"))
 
-	zip.Delete[providerKey, mutationResult](app, "/v1/iam/providers/:owner/:name", deleteProvider(db),
+	app.Delete("/v1/iam/providers/:owner/:name", deleteProvider(db),
 		zip.WithOperationID("deleteProvider"),
 		zip.WithTags("providers"))
 }

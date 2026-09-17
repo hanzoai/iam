@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -44,8 +45,8 @@ const PathLink = "/v1/iam/link"
 // SELF-AUTHENTICATES through callerOf (session cookie, else a verified bearer):
 // an oidc handler cannot import authz, and a caller callerOf cannot resolve is
 // refused.
-func routeLink(r zip.Router, db orm.DB) {
-	r.Post(PathLink, link(db))
+func routeLink(r *zip.Group, db orm.DB) {
+	r.Raw(http.MethodPost, PathLink, link(db))
 }
 
 // linkForm is the request body: which provider to connect, and where to return the

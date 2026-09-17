@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -104,9 +105,9 @@ type deviceResponse struct {
 // into ingress and proxy access logs, which a POST body is not — and this flow's
 // own approval page ships a scrubUrl() to keep the code out of the address bar,
 // so putting it back into every request line would undo that on the server side.
-func routeDevice(r zip.Router, db orm.DB) {
-	r.Post(PathDevice, deviceHandler(db))
-	r.Post(PathDeviceInfo, deviceInfoHandler(db))
+func routeDevice(r *zip.Group, db orm.DB) {
+	r.Raw(http.MethodPost, PathDevice, deviceHandler(db))
+	r.Raw(http.MethodPost, PathDeviceInfo, deviceInfoHandler(db))
 }
 
 // deviceInfo is what the approval page must show a human: WHICH application is

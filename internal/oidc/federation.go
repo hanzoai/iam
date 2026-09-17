@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -68,8 +69,8 @@ const fedStateTTL = 10 * time.Minute
 // half-working POST path, form_post support is a deliberate future change (it needs
 // SameSite=None + its own CSRF analysis). The callback self-authenticates via the
 // single-use state + the browser cookie.
-func routeFederation(r zip.Router, db orm.DB) {
-	r.Get(PathFederationCallback, federationCallbackHandler(db))
+func routeFederation(r *zip.Group, db orm.DB) {
+	r.Raw(http.MethodGet, PathFederationCallback, federationCallbackHandler(db))
 }
 
 // beginFederation starts an Authorization-Code federation. It is entered from

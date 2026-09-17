@@ -99,7 +99,7 @@ func newServer(t *testing.T) (*zip.App, orm.DB) {
 	// which is the whole point of installing a Guard in a wallet test.
 	authed := app.Group("")
 	authed.Use(authz.Guard(db))
-	authed.Get(guardedProbe, func(c *zip.Ctx) error {
+	authed.Raw(http.MethodGet, guardedProbe, func(c *zip.Ctx) error {
 		return c.JSON(http.StatusOK, map[string]string{"probe": "reached"})
 	})
 	app.Authorize(authz.Authorize)

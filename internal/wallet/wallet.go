@@ -22,6 +22,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -53,9 +54,9 @@ const (
 // the authz Guard): a wallet holder has no token until this flow gives them one,
 // so membership in the public group is what makes the two endpoints reachable
 // without a bearer.
-func Route(r zip.Router, db orm.DB) {
-	r.Get(PathNonce, nonce(db))
-	r.Post(PathVerify, check(db))
+func Route(r *zip.Group, db orm.DB) {
+	r.Raw(http.MethodGet, PathNonce, nonce(db))
+	r.Raw(http.MethodPost, PathVerify, check(db))
 }
 
 // challenge is the LoginChallenge the client feeds to connector.signLogin().

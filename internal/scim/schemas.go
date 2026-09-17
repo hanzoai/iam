@@ -192,11 +192,11 @@ type kind struct {
 // An item that is not published answers the SCIM Error (RFC 7644 §3.12) as a
 // VALUE under a declared 404, never as a returned Go error: zip renders an error
 // as its own {status,code,error} envelope, and a SCIM client parses one shape.
-func routeDiscovery(app *zip.App) {
+func routeDiscovery(app *zip.Group) {
 	// Returns the attribute definitions this directory understands, so
 	// your identity provider knows which fields it may send and what they mean
 	// before it sends any.
-	zip.Get[nothing, listResponse](app, base+"/Schemas",
+	app.Get(base+"/Schemas",
 		func(context.Context, *nothing) (*listResponse, error) {
 			out := make([]any, 0, len(schemas))
 			for _, s := range schemas {
@@ -207,7 +207,7 @@ func routeDiscovery(app *zip.App) {
 		zip.WithStatus(200), zip.WithTags("scim"))
 
 	// Returns one attribute definition in full.
-	zip.Get[urn, answer](app, base+"/Schemas/:id",
+	app.Get(base+"/Schemas/:id",
 		func(_ context.Context, in *urn) (*answer, error) {
 			for _, s := range schemas {
 				if s.ID == in.Id {
@@ -221,7 +221,7 @@ func routeDiscovery(app *zip.App) {
 	// Returns the kinds of record this directory provisions and
 	// the address of each, so your identity provider discovers them rather than
 	// having them configured by hand.
-	zip.Get[nothing, listResponse](app, base+"/ResourceTypes",
+	app.Get(base+"/ResourceTypes",
 		func(context.Context, *nothing) (*listResponse, error) {
 			out := make([]any, 0, len(resourceTypes))
 			for _, r := range resourceTypes {
@@ -232,7 +232,7 @@ func routeDiscovery(app *zip.App) {
 		zip.WithStatus(200), zip.WithTags("scim"))
 
 	// Returns one provisionable record kind in full.
-	zip.Get[kind, answer](app, base+"/ResourceTypes/:name",
+	app.Get(base+"/ResourceTypes/:name",
 		func(_ context.Context, in *kind) (*answer, error) {
 			for _, r := range resourceTypes {
 				if r.Name == in.Kind {

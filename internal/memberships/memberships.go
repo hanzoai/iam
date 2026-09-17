@@ -30,6 +30,7 @@ package memberships
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	policy "github.com/hanzoai/authz"
@@ -76,12 +77,12 @@ const unauthorized = "auth:Unauthorized operation"
 // field and no AuthzTarget() for it to read. scoped() remains the whole tenant
 // gate. A refusal is a VALUE (httpx.Bad), never a returned error — an error
 // renders zip's {"status":<int>,"error":…} instead of this surface's envelope.
-func Route(app *zip.App, db orm.DB) {
-	zip.Get[lookup, httpx.Answer](app, Path, list(db),
+func Route(app *zip.Group, db orm.DB) {
+	app.Get(Path, list(db),
 		zip.WithStatus(200, 400),
 		zip.WithTags("memberships"))
-	app.Post(Path, ensure(db))
-	app.Post(PathDelete, remove(db))
+	app.Raw(http.MethodPost, Path, ensure(db))
+	app.Raw(http.MethodPost, PathDelete, remove(db))
 }
 
 // lookup is the list request: exactly one of the identity whose organizations are

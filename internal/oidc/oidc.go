@@ -14,6 +14,8 @@
 package oidc
 
 import (
+	"net/http"
+
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 )
@@ -74,66 +76,66 @@ const PathRefreshToken = "/v1/iam/oauth/refresh_token"
 // Guard): the whole OIDC/OAuth + native surface is pre-authentication by
 // construction, so membership in this group IS what makes it reachable without a
 // bearer — there is no separate allow-list to keep in sync.
-func Route(r *zip.App, db orm.DB) {
+func Route(r *zip.Group, db orm.DB) {
 	// Discovery and the JWKS are each served at BOTH the root well-known path
 	// (RFC 8414 §3, where a bare-origin client and the gateway's default look)
 	// and the /v1/iam-prefixed path, matching the live hanzo.id surface. Both
 	// paths are the same handler over the same keys — one key set, two spellings
 	// of where to find it.
-	r.Get(PathDiscovery, Discovery)
-	r.Get(PathDiscoveryV1, Discovery)
+	r.Raw(http.MethodGet, PathDiscovery, Discovery)
+	r.Raw(http.MethodGet, PathDiscoveryV1, Discovery)
 	// RFC 8414 OAuth Authorization Server Metadata — the same self-consistent
 	// document at the OAuth well-known path (a superset serves it), so an OAuth-only
 	// client that looks for `oauth-authorization-server` finds the AS too.
-	r.Get(PathASMetadata, Discovery)
-	r.Get(PathASMetadataV1, Discovery)
+	r.Raw(http.MethodGet, PathASMetadata, Discovery)
+	r.Raw(http.MethodGet, PathASMetadataV1, Discovery)
 	// One handler, two addresses: the same key set under the subsystem's prefix
 	// and at the host root, because a relying party configured with either must
 	// find it.
-	zip.Alias(r.Get, PathJWKS, PathJWKSRoot, jwksHandler(db))
+	r.Alias(http.MethodGet, PathJWKS, PathJWKSRoot, jwksHandler(db))
 
 	// OAuth2 / OIDC protocol endpoints.
-	r.Get(PathAuthorize, authorizeHandler(db))
-	r.Post(PathAuthorize, authorizeHandler(db))
-	r.Get(PathUserInfo, userinfoHandler(db))
-	r.Post(PathUserInfo, userinfoHandler(db))
-	r.Get(PathLogout, logoutHandler(db))
-	r.Post(PathLogout, logoutHandler(db))
+	r.Raw(http.MethodGet, PathAuthorize, authorizeHandler(db))
+	r.Raw(http.MethodPost, PathAuthorize, authorizeHandler(db))
+	r.Raw(http.MethodGet, PathUserInfo, userinfoHandler(db))
+	r.Raw(http.MethodPost, PathUserInfo, userinfoHandler(db))
+	r.Raw(http.MethodGet, PathLogout, logoutHandler(db))
+	r.Raw(http.MethodPost, PathLogout, logoutHandler(db))
 
 	// The token endpoint, the credential login that mints codes, and the
 	// read-only endpoints the hosted <Login> self-configures from.
-	routeToken(r, db)
-	routeLogin(r, db)
+	routeToken(r.Group(""), db)
+	routeLogin(r.Group(""), db)
 	routeFrontDoor(r, db)
 
 	// The two WebAuthn ceremonies: enroll a passkey, and sign in with one. Both
 	// are public — a passkey sign-in has no bearer to present, and the enrollment
 	// pair authenticates itself from the portal's session cookie.
-	routeWebauthn(r, db)
+	routeWebauthn(r.Group(""), db)
 
 	// Identity federation: the external-IdP callback (Google/GitHub, …). The
 	// authorize endpoint kicks a federation off when the request names a
 	// `provider`; this registers the fixed return endpoint the IdP redirects to.
-	routeFederation(r, db)
-	routeFederationMfa(r, db)
+	routeFederation(r.Group(""), db)
+	routeFederationMfa(r.Group(""), db)
 	// The two halves of the linking law: connect a provider to the account you
 	// already hold, and disconnect one.
-	routeLink(r, db)
-	routeUnlink(r, db)
+	routeLink(r.Group(""), db)
+	routeUnlink(r.Group(""), db)
 
 	// RFC 7662 introspection + RFC 7009 revocation — the standard token-management
 	// endpoints a resource server / confidential client uses (client-authenticated).
-	routeIntrospectRevoke(r, db)
+	routeIntrospectRevoke(r.Group(""), db)
 
 	// RFC 8628 device authorization grant — the browserless CLI sign-in. The
 	// request endpoint is registered here; the poll rides the token endpoint and
 	// the approval rides the login endpoint, both already public above.
-	routeDevice(r, db)
+	routeDevice(r.Group(""), db)
 
 	// The confidential-client "act on behalf of a user" primitive (the console +
 	// keyless-AI proxies mint their forwarded bearer here). Authenticates the
 	// client itself, so it is not Bearer-gated.
-	routeIssueToken(r, db)
+	routeIssueToken(r.Group(""), db)
 }
 
 // Discovery returns the OpenID Connect discovery document — the one URL you

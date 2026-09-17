@@ -13,9 +13,10 @@ package teams
 import (
 	"context"
 	"errors"
+	"time"
+
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/principal"
-	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -31,13 +32,13 @@ type Handler struct {
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the teams CRUD routes on app against db.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/teams", h.List, zip.WithTags("teams"))
-	zip.Post(app, "/v1/iam/teams", h.Create, zip.WithTags("teams"))
-	zip.Get(app, "/v1/iam/teams/:name", h.Get, zip.WithTags("teams"))
-	zip.Put(app, "/v1/iam/teams/:name", h.Update, zip.WithTags("teams"))
-	zip.Delete(app, "/v1/iam/teams/:name", h.Delete, zip.WithTags("teams"))
+	app.Get("/v1/iam/teams", h.List, zip.WithTags("teams"))
+	app.Post("/v1/iam/teams", h.Create, zip.WithTags("teams"))
+	app.Get("/v1/iam/teams/:name", h.Get, zip.WithTags("teams"))
+	app.Put("/v1/iam/teams/:name", h.Update, zip.WithTags("teams"))
+	app.Delete("/v1/iam/teams/:name", h.Delete, zip.WithTags("teams"))
 }
 
 // Ref addresses one team by name. The owner is the caller's organization,

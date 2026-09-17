@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -29,8 +30,8 @@ const PathUnlink = "/v1/iam/unlink"
 // verified bearer), exactly as get-account and userinfo do, because an oidc
 // handler cannot import authz (authz imports oidc). A caller callerOf cannot
 // resolve is refused.
-func routeUnlink(r zip.Router, db orm.DB) {
-	r.Post(PathUnlink, unlink(db))
+func routeUnlink(r *zip.Group, db orm.DB) {
+	r.Raw(http.MethodPost, PathUnlink, unlink(db))
 }
 
 // unlinkForm is the request body, matching v1's shape.

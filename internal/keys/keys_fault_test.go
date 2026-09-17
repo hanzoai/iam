@@ -238,7 +238,7 @@ func TestDel_RemovesTheKey(t *testing.T) {
 // — the registration that threads each handler its one entity store.
 func TestRoute_RegistersAndBuilds(t *testing.T) {
 	app := zip.New(zip.Config{AppName: "keys-route-test", DisableStartupMessage: true})
-	Route(app, memDB(t))
+	Route(app.Group(""), memDB(t))
 	if err := app.Build(); err != nil {
 		t.Fatalf("build: %v", err)
 	}

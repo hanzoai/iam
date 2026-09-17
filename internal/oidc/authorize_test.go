@@ -150,22 +150,22 @@ func TestAuthorize_AliasHostRelocatesToIssuer(t *testing.T) {
 		// The sign-in ends looking like a broken link, having reported success
 		// at every hop.
 		for _, alias := range hanzoAliases {
-		for _, method := range []string{"GET", "POST"} {
-			req := formReqNoBody(method, target)
-			req.Host = alias
-			resp, _ := do(t, app, req)
-			if resp.StatusCode != 307 {
-				t.Fatalf("%s status = %d, want 307", method, resp.StatusCode)
+			for _, method := range []string{"GET", "POST"} {
+				req := formReqNoBody(method, target)
+				req.Host = alias
+				resp, _ := do(t, app, req)
+				if resp.StatusCode != 307 {
+					t.Fatalf("%s status = %d, want 307", method, resp.StatusCode)
+				}
+				if loc := resp.Header.Get("Location"); loc != "https://hanzo.id"+target {
+					t.Fatalf("%s on %s: Location = %q, want %q", method, alias, loc, "https://hanzo.id"+target)
+				}
+				// Relocation precedes every mint: a cookie set here would be the
+				// stranded-cookie bug this hop exists to close.
+				if sc := resp.Header.Get("Set-Cookie"); sc != "" {
+					t.Fatalf("%s relocation must set nothing; Set-Cookie = %q", method, sc)
+				}
 			}
-			if loc := resp.Header.Get("Location"); loc != "https://hanzo.id"+target {
-				t.Fatalf("%s on %s: Location = %q, want %q", method, alias, loc, "https://hanzo.id"+target)
-			}
-			// Relocation precedes every mint: a cookie set here would be the
-			// stranded-cookie bug this hop exists to close.
-			if sc := resp.Header.Get("Set-Cookie"); sc != "" {
-				t.Fatalf("%s relocation must set nothing; Set-Cookie = %q", method, sc)
-			}
-		}
 		}
 	})
 

@@ -30,13 +30,13 @@ type Handler struct {
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the audit-log CRUD routes on app against db.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/audit-logs", h.List, zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs", h.Create, zip.WithTags("audit-logs"))
-	zip.Get(app, "/v1/iam/audit-logs/:owner/:name", h.Get, zip.WithTags("audit-logs"))
-	zip.Put(app, "/v1/iam/audit-logs/:owner/:name", h.Update, zip.WithTags("audit-logs"))
-	zip.Delete(app, "/v1/iam/audit-logs/:owner/:name", h.Delete, zip.WithTags("audit-logs"))
+	app.Get("/v1/iam/audit-logs", h.List, zip.WithTags("audit-logs"))
+	app.Post("/v1/iam/audit-logs", h.Create, zip.WithTags("audit-logs"))
+	app.Get("/v1/iam/audit-logs/:owner/:name", h.Get, zip.WithTags("audit-logs"))
+	app.Put("/v1/iam/audit-logs/:owner/:name", h.Update, zip.WithTags("audit-logs"))
+	app.Delete("/v1/iam/audit-logs/:owner/:name", h.Delete, zip.WithTags("audit-logs"))
 }
 
 // Ref addresses one audit log by its owner-scoped natural key.

@@ -58,13 +58,13 @@ func newHarness(t *testing.T) *harness {
 	seedSigningCert(t, db)
 	app := zip.New(zip.Config{AppName: "sessions-resolve-test", DisableStartupMessage: true})
 
-	app.Post("/open", func(c *zip.Ctx) error {
+	app.Raw(http.MethodPost, "/open", func(c *zip.Ctx) error {
 		return report(c, Open(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"), c.Query("app")))
 	})
-	app.Post("/set", func(c *zip.Ctx) error {
+	app.Raw(http.MethodPost, "/set", func(c *zip.Ctx) error {
 		return report(c, Set(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"), c.Query("app")))
 	})
-	app.Get("/current", func(c *zip.Ctx) error {
+	app.Raw(http.MethodGet, "/current", func(c *zip.Ctx) error {
 		sc, ok := Current(context.Background(), c.Fiber(), db)
 		if ok {
 			c.SetHeader("X-Owner", sc.Owner)
@@ -75,14 +75,14 @@ func newHarness(t *testing.T) *harness {
 		c.SetHeader("X-Ok", boolStr(ok))
 		return c.String(http.StatusOK, "ok")
 	})
-	app.Get("/resolve", func(c *zip.Ctx) error {
+	app.Raw(http.MethodGet, "/resolve", func(c *zip.Ctx) error {
 		owner, name, ok := Resolve(context.Background(), c.Fiber(), db)
 		c.SetHeader("X-Owner", owner)
 		c.SetHeader("X-Name", name)
 		c.SetHeader("X-Ok", boolStr(ok))
 		return c.String(http.StatusOK, "ok")
 	})
-	app.Post("/clear", func(c *zip.Ctx) error {
+	app.Raw(http.MethodPost, "/clear", func(c *zip.Ctx) error {
 		ended := Clear(context.Background(), c.Fiber(), db)
 		if len(ended) > 0 {
 			c.SetHeader("X-Owner", ended[0].Owner)
@@ -93,15 +93,15 @@ func newHarness(t *testing.T) *harness {
 		c.SetHeader("X-Ok", boolStr(len(ended) > 0))
 		return c.String(http.StatusOK, "ok")
 	})
-	app.Get("/accounts", func(c *zip.Ctx) error {
+	app.Raw(http.MethodGet, "/accounts", func(c *zip.Ctx) error {
 		c.SetHeader("X-People", people(Accounts(context.Background(), c.Fiber(), db)))
 		return c.String(http.StatusOK, "ok")
 	})
-	app.Post("/rekey", func(c *zip.Ctx) error {
+	app.Raw(http.MethodPost, "/rekey", func(c *zip.Ctx) error {
 		c.SetHeader("X-Ok", boolStr(Rekey(context.Background(), c.Fiber(), db, c.Query("newOwner"))))
 		return c.String(http.StatusOK, "ok")
 	})
-	app.Post("/revoke-others", func(c *zip.Ctx) error {
+	app.Raw(http.MethodPost, "/revoke-others", func(c *zip.Ctx) error {
 		RevokeOthers(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"))
 		return c.String(http.StatusOK, "ok")
 	})
@@ -199,7 +199,7 @@ func TestSet_IssuesResolvableSession(t *testing.T) {
 func TestSet_NoSigningCertErrors(t *testing.T) {
 	db := newDB(t) // deliberately NO cert seeded
 	app := zip.New(zip.Config{AppName: "sessions-nocert-test", DisableStartupMessage: true})
-	app.Post("/set", func(c *zip.Ctx) error {
+	app.Raw(http.MethodPost, "/set", func(c *zip.Ctx) error {
 		return report(c, Set(context.Background(), c.Fiber(), db, "hanzo", "alice", "cloud"))
 	})
 	res, err := app.Test(httptest.NewRequest(http.MethodPost, "/set", nil), zip.TestConfig{Timeout: 0, FailOnTimeout: false})
@@ -419,7 +419,7 @@ func TestSet_OnlyFromTheIssuer(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.app.Get("/set", func(c *zip.Ctx) error {
+			h.app.Raw(http.MethodGet, "/set", func(c *zip.Ctx) error {
 				return report(c, Set(context.Background(), c.Fiber(), h.db, "hanzo", "mallory", "cloud"))
 			})
 			res := h.do(t, tc.method, "/set?owner=hanzo&name=mallory&app=cloud", "", tc.headers...)

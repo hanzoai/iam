@@ -20,6 +20,7 @@ package authz
 // binder reads it, and refuses a request that names more than one.
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -33,7 +34,7 @@ import (
 func target(t *testing.T, url string) (owner, name string, one bool, bound string) {
 	t.Helper()
 	app := zip.New(zip.Config{AppName: "target-test", DisableStartupMessage: true})
-	app.Get("/probe", func(c *zip.Ctx) error {
+	app.Raw(http.MethodGet, "/probe", func(c *zip.Ctx) error {
 		owner, name, one = readTarget(c)
 		bound = c.Fiber().Queries()["owner"] // the value bindURL would set
 		return c.JSON(200, map[string]string{"ok": "1"})

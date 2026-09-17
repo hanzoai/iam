@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -28,7 +29,7 @@ const PathAuthMethods = "/v1/iam/auth/methods"
 // caller itself (callerOf: session cookie first, then bearer) and SELF-SCOPES to
 // that caller, so — like the rest of this group — they are reachable without a
 // Guard-verified bearer yet never act on anyone but the resolved caller.
-func routeFrontDoor(r *zip.App, db orm.DB) {
+func routeFrontDoor(r *zip.Group, db orm.DB) {
 	// The two login-screen descriptors are TYPED ops. Their whole input is a client
 	// id off the query string and their answer is this envelope, so nothing about
 	// them needed a raw handler — and a raw handler is what kept them out of the
@@ -38,54 +39,54 @@ func routeFrontDoor(r *zip.App, db orm.DB) {
 	//
 	// The older spelling of the first is the SAME op at its legacy address, so one
 	// function decides both answers and they cannot drift.
-	zip.Get[screen, httpx.Answer](r, PathAuthApplication, getAppLogin(db),
+	r.Get(PathAuthApplication, getAppLogin(db),
 		zip.WithStatus(200, 400), zip.WithTags("auth"))
-	zip.Get[offer, httpx.Answer](r, PathAuthMethods, authMethods(db),
+	r.Get(PathAuthMethods, authMethods(db),
 		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	// The account read is anonymous-safe (returns {status:"error"} unauthenticated)
 	// and a security contract — the gateway admin-guard reads its `owner`.
-	r.Get(PathAccount, getAccount(db))
+	r.Raw(http.MethodGet, PathAccount, getAccount(db))
 	// Everyone signed in on the browser, for the account chooser. Cookie only.
-	r.Get(PathAccounts, getAccounts(db))
+	r.Raw(http.MethodGet, PathAccounts, getAccounts(db))
 	// The write half of the same noun: a person's own profile, a fixed set of
 	// display fields, self-scoped like the password and consent writes beside it.
-	zip.Put[accountBody, httpx.Answer](r, PathAccount, putAccountHandler(db),
+	r.Put(PathAccount, putAccountHandler(db),
 		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	// Account creation + email/phone OTP send. signup is JSON; the OTP send is
 	// multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
-	r.Post(PathSignup, signupHandler(db))
-	r.Post(PathVerificationCodes, sendVerificationCode(db))
+	r.Raw(http.MethodPost, PathSignup, signupHandler(db))
+	r.Raw(http.MethodPost, PathVerificationCodes, sendVerificationCode(db))
 
 	// The session/identity endpoints the console drives once a user is signed in:
 	// signin (the code→session exchange), whoami (lightweight identity), onboard
 	// (first-run org creation + move), preferences (self, shallow-merge), and
 	// linked-accounts (the caller's linked identities).
-	r.Post(PathSignin, signinHandler(db))
-	r.Get(PathWhoami, whoamiHandler(db))
-	r.Post(PathOnboard, onboardHandler(db))
+	r.Raw(http.MethodPost, PathSignin, signinHandler(db))
+	r.Raw(http.MethodGet, PathWhoami, whoamiHandler(db))
+	r.Raw(http.MethodPost, PathOnboard, onboardHandler(db))
 	// Service-token admin provision: the ONE atomic op the cloud onboarding
 	// orchestrator calls (on behalf of a named user) instead of a create-org +
 	// move-user pair. Self-authenticates via the unified service token.
-	r.Post(PathProvision, provisionServiceHandler(db))
-	r.Post(PathPreferences, updatePreferencesHandler(db))
+	r.Raw(http.MethodPost, PathProvision, provisionServiceHandler(db))
+	r.Raw(http.MethodPost, PathPreferences, updatePreferencesHandler(db))
 	// The ONE place a person's own password is written — a rotation proved by the
 	// password being replaced, and a recovery proved by a code delivered to the
 	// account's own address. Self-scoped like consent below it; it mints nothing, so a
 	// reset is followed by an ordinary sign-in.
-	zip.Put[passwordBody, httpx.Answer](r, PathPassword, putPasswordHandler(db),
+	r.Put(PathPassword, putPasswordHandler(db),
 		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	// A platform operator stepping into an organization, and back out. Both
 	// re-scope the credential the caller presents and neither reads one, so they
 	// self-authenticate on that token exactly as the minters above do.
-	zip.Post[assumeBody, httpx.Answer](r, PathAssume, assumeHandler(db),
+	r.Post(PathAssume, assumeHandler(db),
 		zip.WithStatus(200, 400, 401, 403, 404), zip.WithTags("auth"))
-	zip.Post[assumeBody, httpx.Answer](r, PathRelease, releaseHandler(db),
+	r.Post(PathRelease, releaseHandler(db),
 		zip.WithStatus(200, 400, 401), zip.WithTags("auth"))
 	// Account-canonical data-sharing consent (insights + opt-in training) — the ONE
 	// source of truth the hanzo.id signup, the browser extension, and hanzo.ai share.
-	r.Get(PathConsent, getConsentHandler(db))
-	r.Put(PathConsent, putConsentHandler(db))
-	r.Get(PathLinkedAccounts, linkedAccountsHandler(db))
+	r.Raw(http.MethodGet, PathConsent, getConsentHandler(db))
+	r.Raw(http.MethodPut, PathConsent, putConsentHandler(db))
+	r.Raw(http.MethodGet, PathLinkedAccounts, linkedAccountsHandler(db))
 }
 
 // getAppLogin returns everything a login screen needs to draw itself for one

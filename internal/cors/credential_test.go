@@ -111,8 +111,8 @@ func harness(t *testing.T, listed consoles) func(method, path, origin string) pr
 		return c.String(http.StatusOK, "ok")
 	}
 	for p := range browserPaths {
-		app.Get(p, terminal)
-		app.Post(p, terminal)
+		app.Raw(http.MethodGet, p, terminal)
+		app.Raw(http.MethodPost, p, terminal)
 	}
 
 	return func(method, path, origin string) probe {
@@ -362,7 +362,7 @@ func TestACRLFInTheOriginIsNeverEchoedBack(t *testing.T) {
 
 	app := zip.New(zip.Config{AppName: "cors-injection", DisableStartupMessage: true})
 	app.Use(allow(db, consoles{ours: true}))
-	app.Post("/v1/iam/login", func(c *zip.Ctx) error { return c.String(http.StatusOK, "ok") })
+	app.Raw(http.MethodPost, "/v1/iam/login", func(c *zip.Ctx) error { return c.String(http.StatusOK, "ok") })
 
 	for _, o := range []string{
 		ours + "\r\nX-Injected: 1",

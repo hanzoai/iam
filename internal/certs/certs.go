@@ -37,13 +37,13 @@ type Handler struct {
 // body is the schema.Cert row itself — so the HTTP contract and the stored entity
 // never drift, and a body naming a different cert cannot move the write off the
 // one the URL named.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/certs", h.List, zip.WithTags("certs"))
-	zip.Post(app, "/v1/iam/certs", h.Create, zip.WithTags("certs"))
-	zip.Get(app, "/v1/iam/certs/:owner/:name", h.Get, zip.WithTags("certs"))
-	zip.Put(app, "/v1/iam/certs/:owner/:name", h.Update, zip.WithTags("certs"))
-	zip.Delete(app, "/v1/iam/certs/:owner/:name", h.Delete, zip.WithTags("certs"))
+	app.Get("/v1/iam/certs", h.List, zip.WithTags("certs"))
+	app.Post("/v1/iam/certs", h.Create, zip.WithTags("certs"))
+	app.Get("/v1/iam/certs/:owner/:name", h.Get, zip.WithTags("certs"))
+	app.Put("/v1/iam/certs/:owner/:name", h.Update, zip.WithTags("certs"))
+	app.Delete("/v1/iam/certs/:owner/:name", h.Delete, zip.WithTags("certs"))
 }
 
 // Ref addresses one cert by its owner-scoped natural key.

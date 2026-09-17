@@ -21,7 +21,7 @@ type fakeFeature struct {
 }
 
 func (f *fakeFeature) Name() string { return f.name }
-func (f *fakeFeature) Route(app *zip.App, store feature.Store) error {
+func (f *fakeFeature) Route(app *zip.Group, store feature.Store) error {
 	f.registered = true
 	return f.err
 }
@@ -55,7 +55,7 @@ func TestRouteAll_RegistersEveryFeature(t *testing.T) {
 	f := &fakeFeature{name: "fake"}
 	feature.Register(f)
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	if err := feature.RouteAll(app, nopStore{}); err != nil {
+	if err := feature.RouteAll(app.Group(""), nopStore{}); err != nil {
 		t.Fatalf("RouteAll: %v", err)
 	}
 	if !f.registered {

@@ -164,14 +164,14 @@ func Successors() map[string][]string {
 // section 15.5.11), so the address is gone whatever method reaches it. Naming
 // methods here would leave a caller that sent the wrong one with a 405 and no
 // successor.
-func Route(r zip.Router) {
+func Route(r *zip.Group) {
 	// Undeclared: these addresses SERVE and are not part of the contract. A
 	// document that lists them lists dead endpoints, and because each answers
 	// every method, publishing them would be one operation per method per
 	// address — most of them calls that never existed.
-	u := zip.Undeclared(r)
+	u := r.Group("").Undeclared()
 	for path, to := range successor {
-		u.All(path, answer(to))
+		u.Raw(zip.MethodAll, path, answer(to))
 	}
 }
 

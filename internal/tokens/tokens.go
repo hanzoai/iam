@@ -62,24 +62,24 @@ type tokenMutation struct {
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the token surface on app, closing over the entity store.
-func Route(app *zip.App, db orm.DB) {
-	zip.Get[listTokensIn, listTokensOut](app, "/v1/iam/tokens", listTokens(db),
+func Route(app *zip.Group, db orm.DB) {
+	app.Get("/v1/iam/tokens", listTokens(db),
 		zip.WithOperationID("listTokens"),
 		zip.WithTags("tokens"))
 
-	zip.Get[tokenKey, tokenResult](app, "/v1/iam/tokens/:owner/:name", getToken(db),
+	app.Get("/v1/iam/tokens/:owner/:name", getToken(db),
 		zip.WithOperationID("getToken"),
 		zip.WithTags("tokens"))
 
-	zip.Post[schema.Token, tokenResult](app, "/v1/iam/tokens", addToken(db),
+	app.Post("/v1/iam/tokens", addToken(db),
 		zip.WithOperationID("addToken"),
 		zip.WithTags("tokens"))
 
-	zip.Put[schema.Token, tokenMutation](app, "/v1/iam/tokens/:owner/:name", updateToken(db),
+	app.Put("/v1/iam/tokens/:owner/:name", updateToken(db),
 		zip.WithOperationID("updateToken"),
 		zip.WithTags("tokens"))
 
-	zip.Delete[tokenKey, tokenMutation](app, "/v1/iam/tokens/:owner/:name", deleteToken(db),
+	app.Delete("/v1/iam/tokens/:owner/:name", deleteToken(db),
 		zip.WithOperationID("deleteToken"),
 		zip.WithTags("tokens"))
 }

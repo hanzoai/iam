@@ -29,6 +29,7 @@ package serviceaccounts
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 
 	policy "github.com/hanzoai/authz"
@@ -77,13 +78,13 @@ const unauthorized = "auth:Unauthorized operation"
 //
 // A refusal is a VALUE here (httpx.Bad), never a returned error: an error renders
 // zip's {"status":<int>,"error":…} instead of this surface's envelope.
-func Route(app *zip.App, db orm.DB) {
-	zip.Get[query, httpx.Answer](app, Path, list(db),
+func Route(app *zip.Group, db orm.DB) {
+	app.Get(Path, list(db),
 		zip.WithStatus(200, 400),
 		zip.WithTags("service-accounts"))
-	app.Post(Path, create(db))
-	app.Post(PathKeys, rotate(db))
-	app.Delete(PathOne, revoke(db))
+	app.Raw(http.MethodPost, Path, create(db))
+	app.Raw(http.MethodPost, PathKeys, rotate(db))
+	app.Raw(http.MethodDelete, PathOne, revoke(db))
 }
 
 // query is the list request: the organization to enumerate, and optionally which

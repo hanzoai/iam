@@ -68,24 +68,24 @@ type webauthnCredentialMutationResult struct {
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the passkey surface on app, closing over the entity store.
-func Route(app *zip.App, db orm.DB) {
-	zip.Get[listWebauthnCredentialsIn, listWebauthnCredentialsOut](app, "/v1/iam/webauthn-credentials", listWebauthnCredentials(db),
+func Route(app *zip.Group, db orm.DB) {
+	app.Get("/v1/iam/webauthn-credentials", listWebauthnCredentials(db),
 		zip.WithOperationID("listWebauthnCredentials"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Get[webauthnCredentialKey, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials/:owner/:name", getWebauthnCredential(db),
+	app.Get("/v1/iam/webauthn-credentials/:owner/:name", getWebauthnCredential(db),
 		zip.WithOperationID("getWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Post[schema.WebauthnCredential, webauthnCredentialResult](app, "/v1/iam/webauthn-credentials", addWebauthnCredential(db),
+	app.Post("/v1/iam/webauthn-credentials", addWebauthnCredential(db),
 		zip.WithOperationID("addWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Put[schema.WebauthnCredential, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/:owner/:name", updateWebauthnCredential(db),
+	app.Put("/v1/iam/webauthn-credentials/:owner/:name", updateWebauthnCredential(db),
 		zip.WithOperationID("updateWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 
-	zip.Delete[webauthnCredentialKey, webauthnCredentialMutationResult](app, "/v1/iam/webauthn-credentials/:owner/:name", deleteWebauthnCredential(db),
+	app.Delete("/v1/iam/webauthn-credentials/:owner/:name", deleteWebauthnCredential(db),
 		zip.WithOperationID("deleteWebauthnCredential"),
 		zip.WithTags("webauthn_credentials"))
 }

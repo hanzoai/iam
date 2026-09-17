@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -55,8 +56,8 @@ type tokenResponse struct {
 // endpoint rather than a separate grant. Discovery advertises only PathToken, and
 // when the last caller moves off the refresh spelling the second half is deleted
 // with nothing else changing.
-func routeToken(r zip.Router, db orm.DB) {
-	zip.Alias(r.Post, PathToken, PathRefreshToken, tokenHandler(db))
+func routeToken(r *zip.Group, db orm.DB) {
+	r.Alias(http.MethodPost, PathToken, PathRefreshToken, tokenHandler(db))
 }
 
 // param reads an OAuth REQUEST parameter from either half of the request: the

@@ -19,6 +19,7 @@ package scim
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -69,13 +70,13 @@ const (
 // The /Users CRUD below stays raw on purpose: it binds a two-segment path id,
 // re-scopes every call through principal.Scope, and answers RFC 7644 §3.12 Errors
 // from a dozen branches.
-func Route(app *zip.App, db orm.DB) {
+func Route(app *zip.Group, db orm.DB) {
 	// Tells your identity provider which parts of SCIM this
 	// directory supports, so it configures itself instead of you filling in a form.
 	//
 	// Filtering and partial updates are supported. Bulk operations, sorting and
 	// entity tags are not — an IdP that reads this will not attempt them.
-	zip.Get[nothing, config](app, base+"/ServiceProviderConfig",
+	app.Get(base+"/ServiceProviderConfig",
 		func(context.Context, *nothing) (*config, error) { return &capabilities, nil },
 		zip.WithStatus(200), zip.WithTags("scim"))
 	routeDiscovery(app)
@@ -83,12 +84,12 @@ func Route(app *zip.App, db orm.DB) {
 	// Users resource. The item path is {owner}/{name} because the SCIM id is
 	// "owner/name" (iam's natural key) and a client appends that opaque id
 	// verbatim — two segments, so no slash-in-id percent-encoding ambiguity.
-	app.Get(base+"/Users", listUsers(db))
-	app.Post(base+"/Users", createUser(db))
-	app.Get(base+"/Users/:owner/:name", getUser(db))
-	app.Put(base+"/Users/:owner/:name", replaceUser(db))
-	app.Patch(base+"/Users/:owner/:name", patchUser(db))
-	app.Delete(base+"/Users/:owner/:name", deleteUser(db))
+	app.Raw(http.MethodGet, base+"/Users", listUsers(db))
+	app.Raw(http.MethodPost, base+"/Users", createUser(db))
+	app.Raw(http.MethodGet, base+"/Users/:owner/:name", getUser(db))
+	app.Raw(http.MethodPut, base+"/Users/:owner/:name", replaceUser(db))
+	app.Raw(http.MethodPatch, base+"/Users/:owner/:name", patchUser(db))
+	app.Raw(http.MethodDelete, base+"/Users/:owner/:name", deleteUser(db))
 }
 
 // listResponse is the SCIM ListResponse envelope (RFC 7644 §3.4.2).
