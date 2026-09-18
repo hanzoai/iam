@@ -7,16 +7,16 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/mfa", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/mfa DELETE /v1/iam/mfa", zip.Doc{
 		Description: "Turns a factor off, so sign-in stops asking for it. Naming no factor turns\noff ALL of them — the reset path. People may do this for themselves; doing it for\nsomebody else takes an administrator, which is what makes it the way back in when a\nphone is lost.\n\nThe recovery codes go with the last factor: they are the way past a challenge, so\nkeeping them alive for an account with nothing to challenge would leave a standing\ncredential behind.",
 	})
-	zip.Describe("POST /v1/iam/mfa/preferred", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/mfa POST /v1/iam/mfa/preferred", zip.Doc{
 		Description: "Picks which second factor an account is asked for first when it has\nmore than one. Only a factor the account actually holds: storing an unheld one told\nthe login gate \"MFA is on\" — factor.Enabled reads that column — while leaving it\nnothing to ask for, so the sign-in required the password alone.",
 	})
-	zip.Describe("POST /v1/iam/mfa/setup/enable", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/mfa POST /v1/iam/mfa/setup/enable", zip.Doc{
 		Description: "Finishes the enrolment: from here the account's sign-ins ask for this factor.\nIt requires the proof initiate handed out — a passcode from the authenticator, or the\ncode that was sent — and verifies it BEFORE writing anything.\n\nVerifying BEFORE writing is what keeps a client that never completed the proof —\na skipped verify step, a QR scanned into the wrong app, a bug — from switching on\na factor no code can satisfy. That would lock the account out with no\nself-service way back: the gate holds the sign-in before minting, so the person\ncould not obtain the bearer that disable requires.\n\nThe recovery codes are minted here and returned ONCE, on the first factor the\naccount adds. Answering with them is the way back in when no factor can be\nproduced, so they are the same value the row's digests were made from — by\nconstruction, not by a client echoing them back.",
 	})
-	zip.Describe("POST /v1/iam/mfa/setup/initiate", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/mfa POST /v1/iam/mfa/setup/initiate", zip.Doc{
 		Description: "Starts enrolling a factor and hands over whatever the person needs to prove\nthey hold it:\n\n\tapp   a fresh secret and the otpauth:// URL to render as a QR code\n\tsms   a code texted to the number on the account\n\temail a code mailed to the address on the account\n\nNothing is switched on yet, so abandoning this step leaves the account exactly as\nit was. Response: {status:\"ok\", data:{mfaType, secret, url}} — secret and url only\nfor the authenticator.",
 	})
 }

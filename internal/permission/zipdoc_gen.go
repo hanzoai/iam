@@ -7,10 +7,10 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/permissions/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/permission DELETE /v1/iam/permissions/:owner/:name", zip.Doc{
 		Description: "Revokes a permission. Everyone who held access only through it loses\nthat access immediately; grants they hold by another route are untouched.",
 	})
-	zip.Describe("GET /v1/iam/permissions", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/permission GET /v1/iam/permissions", zip.Doc{
 		Description: "Returns the permissions in one organization, newest first — each one a\ngrant saying which people or roles may do what, and to which resources.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
@@ -21,7 +21,7 @@ func init() {
 			"Permission.users":                                       "Subjects the grant is evaluated for.",
 		},
 	})
-	zip.Describe("GET /v1/iam/permissions/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/permission GET /v1/iam/permissions/:owner/:name", zip.Doc{
 		Description: "Returns one permission: who it grants to, what it allows, and the\nresources it covers.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
@@ -32,7 +32,7 @@ func init() {
 			"Permission.users":                                       "Subjects the grant is evaluated for.",
 		},
 	})
-	zip.Describe("POST /v1/iam/permissions", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/permission POST /v1/iam/permissions", zip.Doc{
 		Description: "Grants a permission — the call that gives a person or a role the ability to\ndo something. Adding refuses to overwrite a grant that already exists, so\nwidening an existing one is an update, never an accident.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",
@@ -43,7 +43,7 @@ func init() {
 			"Permission.users":                                       "Subjects the grant is evaluated for.",
 		},
 	})
-	zip.Describe("PUT /v1/iam/permissions/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/permission PUT /v1/iam/permissions/:owner/:name", zip.Doc{
 		Description: "Changes who a permission grants to, what it allows, or the resources it\ncovers. Access changes as soon as the write lands. What the permission is\ncalled does not change, and neither does when it was created.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Permission].id": "Persisted fields",

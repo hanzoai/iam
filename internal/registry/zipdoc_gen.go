@@ -7,13 +7,13 @@ import (
 )
 
 func init() {
-	zip.Describe("GET /v1/iam/registry/jwks", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/registry GET /v1/iam/registry/jwks", zip.Doc{
 		Description: "Publishes the public key your registry uses to verify the tokens issued\nabove — the one URL to configure so the registry trusts logins without holding\nany secret of its own.\n\nIf no signing key is available it refuses rather than publishing an empty set,\nbecause a registry that trusts nothing looks identical to one that trusts\neverything until somebody tries to push.",
 	})
-	zip.Describe("GET /v1/iam/registry/token", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/registry GET /v1/iam/registry/token", zip.Doc{
 		Description: "Signs a container client in to your registry. `docker login`, and every\nbuild tool that pushes or pulls images, lands here: it exchanges the\ncredential for a short-lived token scoped to exactly the repositories that\ncredential may touch.\n\nBoth of the shapes container tooling uses are accepted, so the same login works\nwhichever client your pipeline runs.",
 	})
-	zip.Describe("POST /v1/iam/registry/token", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/registry POST /v1/iam/registry/token", zip.Doc{
 		Description: "Signs a container client in to your registry. `docker login`, and every\nbuild tool that pushes or pulls images, lands here: it exchanges the\ncredential for a short-lived token scoped to exactly the repositories that\ncredential may touch.\n\nBoth of the shapes container tooling uses are accepted, so the same login works\nwhichever client your pipeline runs.",
 	})
 }

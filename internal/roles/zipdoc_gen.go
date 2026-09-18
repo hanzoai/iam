@@ -7,28 +7,28 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/roles/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/roles DELETE /v1/iam/roles/:owner/:name", zip.Doc{
 		Description: "Removes a role. Everyone in it loses the access it carried; their\naccounts, and any other role they hold, are untouched.",
 	})
-	zip.Describe("GET /v1/iam/roles", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/roles GET /v1/iam/roles", zip.Doc{
 		Description: "Returns your organization's roles, newest first — each a named group of\npeople that permissions are granted to.\n\nYou see your own organization's roles and no one else's; which organization\nthat is comes from your credentials, not from the request.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Role].id": "Persisted fields",
 		},
 	})
-	zip.Describe("GET /v1/iam/roles/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/roles GET /v1/iam/roles/:owner/:name", zip.Doc{
 		Description: "Returns one role: who is in it, and the roles it includes.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Role].id": "Persisted fields",
 		},
 	})
-	zip.Describe("POST /v1/iam/roles", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/roles POST /v1/iam/roles", zip.Doc{
 		Description: "Makes a role — a named group of people that permissions are granted to.\nGranting to a role rather than to each person is what keeps access correct as\nyour team changes: add someone to the role and they inherit everything it can\ndo. A name already used in your organization is refused.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Role].id": "Persisted fields",
 		},
 	})
-	zip.Describe("PUT /v1/iam/roles/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/roles PUT /v1/iam/roles/:owner/:name", zip.Doc{
 		Description: "Changes who is in a role, or which roles it includes. Access changes for\neveryone in it as soon as the write lands. What the role is called does not\nchange, and neither does when it was created.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Role].id": "Persisted fields",

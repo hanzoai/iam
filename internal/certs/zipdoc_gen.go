@@ -7,28 +7,28 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/certs/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/certs DELETE /v1/iam/certs/:owner/:name", zip.Doc{
 		Description: "Removes a signing certificate. Tokens signed with it can no longer be\nverified, so retire it only once nothing is still presenting them.",
 	})
-	zip.Describe("GET /v1/iam/certs", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/certs GET /v1/iam/certs", zip.Doc{
 		Description: "Returns your organization's signing certificates, newest first — the keys\nthe tokens your applications verify are signed with. Private key material is\nmasked.\n\nYou see your own organization's certificates and no one else's; which\norganization that is comes from your credentials, not from the request, so a\nquery parameter can never widen the listing.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id": "Persisted fields",
 		},
 	})
-	zip.Describe("GET /v1/iam/certs/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/certs GET /v1/iam/certs/:owner/:name", zip.Doc{
 		Description: "Returns one signing certificate — its algorithm, its validity window and\nits public half. The private key is masked.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id": "Persisted fields",
 		},
 	})
-	zip.Describe("POST /v1/iam/certs", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/certs POST /v1/iam/certs", zip.Doc{
 		Description: "Adds a signing certificate your applications can verify tokens against\n— the call you make to stage the next one before a rotation. A name already\nused in your organization is refused.\n\nIt registers the certificate's IDENTITY: its name (which is the JWKS `kid`),\nits algorithm, its expiry. Key material does not travel this way and cannot:\nthe private key is not part of the Cert's JSON, so it is neither served here\nnor accepted here. It is supplied to the process by the deployment, under the\nname registered here (internal/keyring). Staging a rotation is therefore two\nhalves — this call names the key, and the deployment provides it.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id": "Persisted fields",
 		},
 	})
-	zip.Describe("PUT /v1/iam/certs/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/certs PUT /v1/iam/certs/:owner/:name", zip.Doc{
 		Description: "Changes a signing certificate's settings. What it is called does not\nchange, and neither does when it was added.\n\nA PUT here is a METADATA edit — display name, expiry, provider. It overlays\nonly the fields the request actually SET onto the loaded row: a field the JSON\nomits (or leaves at its zero value) keeps what the row holds, rather than\nblanking it. That is load-bearing, not a nicety. A read serves the public\nCertificate (Mask hides only PrivateKey and AccessSecret), so a client that\nreads a cert, changes one field, and writes it back sends the masked halves\nempty and every other field it did not touch at its zero value — and the old\nfull-struct overlay wrote all of those blanks back. Blanking CryptoAlgorithm\nalone drops the cert from the JWKS (oidc.Publishes turns false), so every\ntoken under its `kid` stops verifying; blanking Provider/Account/ExpireTime\nbreaks ACME renewal and expiry — all from a request that only meant to rename\nit. Absent-or-zero means \"unchanged\", so the deployment (key) and a rotation\n(cert) remain the only way key or published material changes; the metadata API\ncannot clear it.\n\nThe overlay is generic — it copies every set field, so a field nobody has added\nyet is carried without a line here — and leaves three things the request may\nnot move: the bound Model (id, createdAt, key, snapshot), the natural key\n(owner/name address the row, they do not mutate it), and the creation stamp.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Cert].id": "Persisted fields",

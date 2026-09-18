@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/tokens/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/tokens DELETE /v1/iam/tokens/:owner/:name", zip.Doc{
 		Description: "Revokes an access token. Whatever was using it stops being\nauthorized at once.\n\nA token that is already gone answers \"nothing changed\" rather than an error, so\nthe call is safe to repeat.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Token].id": "Persisted fields",
@@ -18,7 +18,7 @@ func init() {
 			"Token.resource":      "RFC 8707 resource indicator",
 		},
 	})
-	zip.Describe("GET /v1/iam/tokens", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/tokens GET /v1/iam/tokens", zip.Doc{
 		Description: "Returns the access tokens issued in your organization, newest\nfirst, and can be narrowed to one organization. Use it to see what is currently\nauthorized before revoking anything.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Token].id": "Persisted fields",
@@ -29,7 +29,7 @@ func init() {
 			"Token.resource":      "RFC 8707 resource indicator",
 		},
 	})
-	zip.Describe("GET /v1/iam/tokens/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/tokens GET /v1/iam/tokens/:owner/:name", zip.Doc{
 		Description: "Returns one access token: who and what it was issued to, and when it\nexpires.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Token].id": "Persisted fields",
@@ -40,7 +40,7 @@ func init() {
 			"Token.resource":      "RFC 8707 resource indicator",
 		},
 	})
-	zip.Describe("POST /v1/iam/tokens", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/tokens POST /v1/iam/tokens", zip.Doc{
 		Description: "Records an access token — the credential an application or integration\npresents on a caller's behalf.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Token].id": "Persisted fields",
@@ -51,7 +51,7 @@ func init() {
 			"Token.resource":      "RFC 8707 resource indicator",
 		},
 	})
-	zip.Describe("PUT /v1/iam/tokens/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/tokens PUT /v1/iam/tokens/:owner/:name", zip.Doc{
 		Description: "Changes an access token's scope or expiry.\n\nA token that is not there answers \"nothing changed\" rather than an error, so\nthe call is safe to repeat.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Token].id": "Persisted fields",

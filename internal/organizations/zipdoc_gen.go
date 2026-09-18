@@ -7,10 +7,10 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/organizations/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/organizations DELETE /v1/iam/organizations/:owner/:name", zip.Doc{
 		Description: "Removes an organization and everything named inside it. There is no\nundo, and every session issued under it stops working.\n\nThe built-in admin organization cannot be deleted — losing it would leave the\naccount with no way back in.",
 	})
-	zip.Describe("GET /v1/iam/organizations", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/organizations GET /v1/iam/organizations", zip.Doc{
 		Description: "Returns the organizations you can act in, the ones you belong to first\nand the rest after, newest first, narrowed by an optional query against the\nname or the display name.\n\nPlatform operators see every organization; everyone else sees their own. Pass\nthe cursor from the previous page to continue; an empty cursor in the answer\nmeans there is nothing more.\n\nTHE SCOPE IS THE HANDLER'S OWN, so it holds at every endpoint. The Guard refuses\na bearerless request before this runs, but the MCP server carries a typed op to\nits handler with no middleware in front of it — a handler that read no\nprincipal would answer such a caller with the whole registry. Reading the\nprincipal here is what makes the answer the same one over both.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
@@ -20,7 +20,7 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("GET /v1/iam/organizations/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/organizations GET /v1/iam/organizations/:owner/:name", zip.Doc{
 		Description: "Returns one organization: its display, its defaults and the sign-in rules\neveryone in it inherits.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
@@ -30,7 +30,7 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("POST /v1/iam/organizations", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/organizations POST /v1/iam/organizations", zip.Doc{
 		Description: "Makes a new organization — the account your users, applications, roles,\nprojects and workspaces are all named inside. It is the first write in a new\ntenant, and a name already in use is refused rather than taken over.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
@@ -40,7 +40,7 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("POST /v1/iam/organizations/avatar", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/organizations POST /v1/iam/organizations/avatar", zip.Doc{
 		Description: "Changes how an organization appears across Hanzo: the square mark\nbeside its name, as an uploaded image or as a single emoji. Sending an image\nclears the emoji and sending an emoji clears the image — an organization has\none mark, not a preference order — and sending neither clears both, which is\nhow it goes back to being drawn as its initial.\n\nAn image is an https link or the bytes inline as a data URL, up to 96 KiB.\nAnyone who administers the organization may set this; it is not reserved to\nthe platform.\n\nIt writes the two fields onto the stored row and touches nothing else, which\nupdate cannot do: update replaces the whole record, and a record read back\nfirst arrives masked, so a read-modify-write through it would persist the mask\nover the organization's own credential settings.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
@@ -50,7 +50,7 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("POST /v1/iam/organizations/profile", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/organizations POST /v1/iam/organizations/profile", zip.Doc{
 		Description: "Changes how an organization reads: its display name, its website\nand its favicon.\n\nIT EXISTS FOR THE REASON SetAvatar DOES, and the reason is worth stating\nbecause the obvious alternative is a trap. Update REPLACES the whole record,\nso a caller that wants to change one field has to send every other field\nback — and a record read back first arrives MASKED, so the read half of that\nread-modify-write hands you \"***\" for the master password and the salt, and\nthe write half stores it. Renaming an organization through Update therefore\ncosts it its credential settings; sending only the new name costs it\neverything else. Neither is a rename.\n\nSo this writes the fields it names and touches nothing else. A nil pointer is\nnot sent and not changed; an empty string is sent and clears the field.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",
@@ -60,7 +60,7 @@ func init() {
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 		},
 	})
-	zip.Describe("PUT /v1/iam/organizations/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/organizations PUT /v1/iam/organizations/:owner/:name", zip.Doc{
 		Description: "Changes an organization's display, its defaults and the sign-in rules\neveryone in it inherits. Which organization it is does not change, and neither\ndoes when it was created.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Organization].id": "Persisted fields",

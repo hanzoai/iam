@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	zip.Describe("POST /v1/iam/admin/applications/upsert", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/bootstrap POST /v1/iam/admin/applications/upsert", zip.Doc{
 		Description: "Creates an application or updates it in place, so a\ndeployment can declare the applications it needs and run the same declaration\non every environment and on every redeploy.\n\nIt says which of the two it did. Leave the client secret out and the existing\none is kept — so re-running your deployment does not rotate a credential your\nrunning services are holding.",
 		Fields: map[string]string{
 			"registration.enableCodeSignin": "EnableCodeSignin offers sign-in by an emailed or texted one-time code\nbeside the password. A POINTER for the same reason as IsShared: a plain\nbool reads as false on every reconcile that says nothing and would switch\nthe method off for every app whose caller never mentioned it.",
@@ -16,7 +16,7 @@ func init() {
 			"registration.public":           "Public declares a client that CANNOT hold a credential — a browser SPA,\na CLI, a desktop app. It proves itself with PKCE instead, and the token\nendpoint treats \"no stored secret\" as exactly that (token.go: a secret is\nverified only when one is stored). Without this flag every upsert minted\na secret, so a public client could never be registered at all and its\nbrowser code->token exchange 401'd `invalid_client` forever.",
 		},
 	})
-	zip.Describe("POST /v1/iam/admin/users/upsert", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/bootstrap POST /v1/iam/admin/users/upsert", zip.Doc{
 		Description: "Creates a person or updates them in place, so a deployment can\ndeclare the accounts it needs and re-run that declaration safely.\n\nIt DESCRIBES an account it meets and GRANTS only to one it creates: org-admin is\nnever raised on a row that already exists, and a machine identity is answered by\nname rather than adopted. Both are properties of the update itself, so a\nsteady-state reconcile — which changes neither — is unaffected.\n\nPasswords are hashed before they are stored. Leave the password out and their\ncurrent one is kept, so a redeploy never locks somebody out; send the same one\nagain and it is kept too, so a steady-state re-run is not a rotation.",
 	})
 }

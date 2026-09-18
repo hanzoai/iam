@@ -7,10 +7,10 @@ import (
 )
 
 func init() {
-	zip.Describe("GET /v1/iam/web3/nonce", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/wallet GET /v1/iam/web3/nonce", zip.Doc{
 		Description: "Starts a wallet sign-in: it returns a one-time challenge for the wallet\nto sign. The challenge is good once and is tied to the site that asked for it,\nso a signature collected elsewhere cannot be replayed here.",
 	})
-	zip.Describe("POST /v1/iam/web3/verify", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/wallet POST /v1/iam/web3/verify", zip.Doc{
 		Description: "Completes a wallet sign-in: it verifies the signed challenge and, if it\nholds, signs the wallet's owner in.\n\nThis IS the login — it answers exactly as a password sign-in does, so the rest\nof your flow does not branch on how somebody arrived.",
 	})
 }

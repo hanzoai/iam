@@ -7,10 +7,10 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/service-accounts/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/serviceaccounts DELETE /v1/iam/service-accounts/:name", zip.Doc{
 		Description: "Serves DELETE /v1/iam/service-accounts/:name.",
 	})
-	zip.Describe("GET /v1/iam/service-accounts", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/serviceaccounts GET /v1/iam/service-accounts", zip.Doc{
 		Description: "Returns your organization's service accounts — what each is called and\nwhen it was created. Never their secrets: a key's secret half exists in a\nresponse exactly once, when it is minted. Paginated in memory over the already org-scoped\nslice — the set per org is small, so a dedicated count query is overkill\n(v1 service_account.go:296-307).",
 		Fields: map[string]string{
 			"Response.code":      "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
@@ -19,10 +19,10 @@ func init() {
 			"query.pageSize":     "Size is how many accounts a page holds.",
 		},
 	})
-	zip.Describe("POST /v1/iam/service-accounts", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/serviceaccounts POST /v1/iam/service-accounts", zip.Doc{
 		Description: "Makes a service account — an identity for a program rather than a\nperson, for a script, a bot or a deployment that has to authenticate on its\nown.\n\nIt comes back with its first key, and the secret half is shown ONCE, here.\nThere is no way to read it again; if you lose it, rotate.",
 	})
-	zip.Describe("POST /v1/iam/service-accounts/:name/keys", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/serviceaccounts POST /v1/iam/service-accounts/:name/keys", zip.Doc{
 		Description: "Serves POST /v1/iam/service-accounts/:name/keys: mint a fresh key,\ninvalidating the prior one, and return the new raw secret exactly once.",
 	})
 }

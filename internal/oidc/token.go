@@ -57,9 +57,8 @@ type tokenResponse struct {
 // when the last caller moves off the refresh spelling the second half is deleted
 // with nothing else changing.
 func routeToken(r *zip.Group, db orm.DB) {
-	token := tokenHandler(db)
-	r.Raw(http.MethodPost, PathToken, token)
-	r.Raw(http.MethodPost, PathRefreshToken, token)
+	r.Raw(http.MethodPost, PathToken, tokenHandler(db))
+	r.Raw(http.MethodPost, PathRefreshToken, tokenHandler(db))
 }
 
 // param reads an OAuth REQUEST parameter from either half of the request: the

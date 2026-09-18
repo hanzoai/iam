@@ -7,28 +7,28 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/projects/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/projects DELETE /v1/iam/projects/:owner/:name", zip.Doc{
 		Description: "Removes a project. The people and roles in your organization are\nunchanged; what goes is the scope itself, so move anything addressed by it\nfirst.",
 	})
-	zip.Describe("GET /v1/iam/projects", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/projects GET /v1/iam/projects", zip.Doc{
 		Description: "Returns your organization's projects, newest first — the scope\npeople pick between when their work is separated by product or client rather\nthan by team.\n\nYou see your own organization's projects and no one else's; which organization that\nis comes from your credentials, not from the request.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Project].id": "Persisted fields",
 		},
 	})
-	zip.Describe("GET /v1/iam/projects/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/projects GET /v1/iam/projects/:owner/:name", zip.Doc{
 		Description: "Returns one project: what it is called and how it is set up.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Project].id": "Persisted fields",
 		},
 	})
-	zip.Describe("POST /v1/iam/projects", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/projects POST /v1/iam/projects", zip.Doc{
 		Description: "Makes a project inside your organization — the scope people pick\nbetween when their work is separated by product or client rather than by team.\nA name already used in the organization is refused.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Project].id": "Persisted fields",
 		},
 	})
-	zip.Describe("PUT /v1/iam/projects/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/projects PUT /v1/iam/projects/:owner/:name", zip.Doc{
 		Description: "Changes a project's settings. What it is called does not change, and\nneither does when it was created.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Project].id": "Persisted fields",

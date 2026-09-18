@@ -7,10 +7,10 @@ import (
 )
 
 func init() {
-	zip.Describe("DELETE /v1/iam/users/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/users DELETE /v1/iam/users/:owner/:name", zip.Doc{
 		Description: "Removes a person from your organization. Their sessions stop working\nimmediately and the account is gone rather than suspended — to keep the record\nand only stop sign-in, update the user instead.",
 	})
-	zip.Describe("GET /v1/iam/users", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/users GET /v1/iam/users", zip.Doc{
 		Description: "Returns a page of the people in an organization, with the total so you\ncan page through the rest. Passwords, API secrets and MFA material are stripped\nfrom every entry.\n\nWhich organization comes from your credentials, not from the request: you read\nyour own and no one else's, and a credential whose scope spans tenants reads\nthe tenant it names — or, naming none, every one of them.",
 		Fields: map[string]string{
 			"ListInput.email": "Email narrows the page to the accounts carrying one address. Looking a\nperson up by their address is a QUERY over the collection, not an item\nread: an address is not the natural key, two rows in one org can carry\none, and a caller that gets a page SEES both — where a single-item read\nwould have to choose, and choosing is how somebody joins a team under a\ncolleague's identity.",
@@ -28,7 +28,7 @@ func init() {
 			"User.webauthnCredentials": "Multi-factor authentication. TotpSecret and RecoveryCodes are secret\nverify-only material — the handler strips them from every response.\nWebauthnCredentials is carried as raw JSON here for lossless migration;\nthe typed passkey model is the sibling WebauthnCredential entity.",
 		},
 	})
-	zip.Describe("GET /v1/iam/users/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/users GET /v1/iam/users/:owner/:name", zip.Doc{
 		Description: "Returns one person in your organization, addressed by their username or by\ntheir email address. Passwords, API secrets and MFA material are stripped from\nthe response.\n\nAn address that names two accounts names none: the read refuses rather than\npicking one, and says so instead of reporting \"no such user\". Handing back an\narbitrary one of two rows is how somebody gets added to a team under a\ncolleague's identity.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.User].id": "Persisted fields",
@@ -45,7 +45,7 @@ func init() {
 			"User.webauthnCredentials": "Multi-factor authentication. TotpSecret and RecoveryCodes are secret\nverify-only material — the handler strips them from every response.\nWebauthnCredentials is carried as raw JSON here for lossless migration;\nthe typed passkey model is the sibling WebauthnCredential entity.",
 		},
 	})
-	zip.Describe("POST /v1/iam/users", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/users POST /v1/iam/users", zip.Doc{
 		Description: "Adds a person to your organization. Send a password and it becomes the\none they sign in with; it is hashed before it is stored and never comes back\nin any response.\n\nThe username is checked against the same rule every account in the Hanzo Cloud\nis held to, whichever way it was created — this call, password signup, a social\nsign-in, or SCIM — so a name accepted here works everywhere.\n\nA name already taken in your organization is refused rather than overwritten.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.User].id": "Persisted fields",
@@ -62,7 +62,7 @@ func init() {
 			"User.webauthnCredentials": "Multi-factor authentication. TotpSecret and RecoveryCodes are secret\nverify-only material — the handler strips them from every response.\nWebauthnCredentials is carried as raw JSON here for lossless migration;\nthe typed passkey model is the sibling WebauthnCredential entity.",
 		},
 	})
-	zip.Describe("PUT /v1/iam/users/:owner/:name", zip.Doc{
+	zip.Describe("github.com/hanzoai/iam/internal/users PUT /v1/iam/users/:owner/:name", zip.Doc{
 		Description: "Changes a person's profile, their roles, or the credentials they sign\nin with. Send a password to reset it; leave it out and their current one keeps\nworking.\n\nWho they are does not change: their organization, username and the identifier\ntheir existing sessions are keyed on all survive the write, so an update never\nsigns anyone out.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.User].id": "Persisted fields",
