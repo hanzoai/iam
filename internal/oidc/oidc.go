@@ -92,7 +92,9 @@ func Route(r *zip.Group, db orm.DB) {
 	// One handler, two addresses: the same key set under the subsystem's prefix
 	// and at the host root, because a relying party configured with either must
 	// find it.
-	r.Alias(http.MethodGet, PathJWKS, PathJWKSRoot, jwksHandler(db))
+	jwks := jwksHandler(db)
+	r.Raw(http.MethodGet, PathJWKS, jwks)
+	r.Raw(http.MethodGet, PathJWKSRoot, jwks)
 
 	// OAuth2 / OIDC protocol endpoints.
 	r.Raw(http.MethodGet, PathAuthorize, authorizeHandler(db))
