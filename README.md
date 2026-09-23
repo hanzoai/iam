@@ -14,7 +14,7 @@ It is a **clean-room, native rewrite** on the Hanzo stack — `zip` over
 `hanzoai/orm`, **no the legacy surface, no Beego, no xorm**. The identity binary owns its
 source outright and collapses to one way of doing each thing. The retired
 the legacy surface/Beego fork lives at
-[`hanzoai/iam-v1`](https://github.com/hanzoai/iam-v1) and is out of every graph.
+`hanzoai/iam-v1`, private and archived, and is out of every graph.
 
 Clients never hand-roll OAuth. They authenticate through the **`@hanzo/iam`
 SDK** against the endpoints below — one way, no legacy paths (HIP-0111).
