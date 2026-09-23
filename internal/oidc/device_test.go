@@ -308,16 +308,23 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 		// crosses, which is the whole point: asking the home org denied every
 		// operator who is also an ordinary member of some brand.
 		operator bool
-		allow    bool
+		// orgChoice is the device app's OrgChoiceMode. "create" is an application
+		// whose accounts work in orgs of their own — the self-service CLI a
+		// customer signs in to — so it admits any org, exactly as its code grant
+		// does; the same approval through an app confined to "hanzo" is refused.
+		orgChoice string
+		allow     bool
 	}{
-		{"same org approves", "hanzo", false, true},
-		{"foreign org refused", "lux", false, false},
-		{"superadmin crosses tenants", "admin", false, true},
-		{"brand-anchored operator crosses tenants", "lux", true, true},
+		{"same org approves", "hanzo", false, "", true},
+		{"foreign org refused", "lux", false, "", false},
+		{"superadmin crosses tenants", "admin", false, "", true},
+		{"brand-anchored operator crosses tenants", "lux", true, "", true},
+		{"an app serving any org admits a personal org", "alice", false, "create", true},
+		{"an app serving any org still refuses a reserved org", "built-in", false, "create", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, db := newServer(t)
-			seedApp(t, db, appOpts{clientID: "hanzo-app", grants: deviceGrants}) // org "hanzo"
+			seedApp(t, db, appOpts{clientID: "hanzo-app", grants: deviceGrants, orgChoice: tc.orgChoice}) // org "hanzo"
 			seedUserInOrg(t, db, tc.org, "eve", "eve@"+tc.org+".example", "pw")
 			if tc.operator {
 				if _, err := store.EnsureMembership(tctx(), db, tc.org+"/eve", policy.AdminOrg, store.RoleAdmin); err != nil {

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -176,14 +177,12 @@ func deviceInfoHandler(db orm.DB) zip.Handler {
 		if row.Organization == "" {
 			return httpx.Err(c, refuse)
 		}
-		super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
-		if err != nil || (!super && user.Owner != row.Organization) {
-			return httpx.Err(c, "your organization may not approve this device sign-in")
-		}
-
 		app, err := resolveTokenApp(ctx, db, row)
 		if err != nil || app == nil {
 			return httpx.Err(c, refuse)
+		}
+		if ok, err := mayApprove(ctx, db, user, row, app); err != nil || !ok {
+			return httpx.Err(c, "your organization may not approve this device sign-in")
 		}
 		label := app.DisplayName
 		if label == "" {
@@ -366,17 +365,15 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 		expired(row.CodeExpireIn, nowFunc()) {
 		return httpx.Err(c, refuse)
 	}
-	// Tenant boundary: a user in org A must not approve a device sign-in bound to
-	// an app in org B (a confused deputy — brands seed same-named superusers). The
-	// org compared is the DEVICE row's, captured when the code was issued. A
-	// SuperAdmin — a member of the reserved admin org, the one predicate — crosses
-	// tenants deliberately: that is the identity an operator signs a CLI into any
-	// brand's app with. An unresolvable tenant fails closed.
+	// Tenant boundary (mayApprove). An unresolvable tenant fails closed.
 	if row.Organization == "" {
 		return httpx.Err(c, refuse)
 	}
-	super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
-	if err != nil || (!super && user.Owner != row.Organization) {
+	app, err := resolveTokenApp(ctx, db, row)
+	if err != nil || app == nil {
+		return httpx.Err(c, refuse)
+	}
+	if ok, err := mayApprove(ctx, db, user, row, app); err != nil || !ok {
 		return httpx.Err(c, "your organization may not approve this device sign-in")
 	}
 
@@ -385,6 +382,29 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 		return httpx.Err(c, refuse)
 	}
 	return httpx.Ok(c, row.User)
+}
+
+// mayApprove reports whether user may look at and approve the pending device
+// authorization row, which the application app issued.
+//
+// A user in org A must not approve a device sign-in bound to an app confined to
+// org B (a confused deputy — brands seed same-named superusers). The org compared
+// is the DEVICE row's, captured when the code was issued. An app that serves any
+// org admits any org that is not reserved — the same rule its authorization code
+// is minted under (MintFor), so a self-service account in an org of its own
+// approves `hanzo auth login` exactly as it signs in to the console. A SuperAdmin —
+// a member of the reserved admin org, the one predicate — crosses tenants
+// deliberately: that is the identity an operator signs a CLI into any brand's app
+// with.
+func mayApprove(ctx context.Context, db orm.DB, user *schema.User, row *schema.Token, app *schema.Application) (bool, error) {
+	if user.Owner == row.Organization {
+		return true, nil
+	}
+	super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
+	if err != nil || super {
+		return super, err
+	}
+	return app.ServesAnyOrg() && !policy.IsReservedOrg(user.Owner), nil
 }
 
 // deviceDead is the one answer for a device_code that cannot be redeemed —
