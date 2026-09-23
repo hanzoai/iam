@@ -492,8 +492,10 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	// A body that could state it would answer that question for the broker — a row
 	// carrying a chosen password AND a stated proof passes a gate that exists to say
 	// no. Signup records false, the broker records true when an identity provider
-	// proved it, and both write through their own paths; this one carries.
-	u.EmailVerified = existing.EmailVerified
+	// proved it, and both write through their own paths; this one carries — and only
+	// for the address it was proven for. A write that changes the address leaves the
+	// new one unproven, or the proof of one address becomes the proof of any.
+	u.EmailVerified = existing.EmailVerified && u.Email == store.NormalizeEmail(existing.Email)
 	// The registering application is stated once, by the code that registered the
 	// account (CreateInput.Application), and every write after that carries it.
 	u.SignupApplication = existing.SignupApplication

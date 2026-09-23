@@ -125,3 +125,62 @@ func TestProofIsStatedByTheCallingCode(t *testing.T) {
 		t.Fatalf("the profile edit was lost: %q", got.DisplayName)
 	}
 }
+
+// The proof is of an ADDRESS, so a write that changes the address drops it.
+//
+// Carrying the bit across an address change lets an org admin turn a proof of
+// their own address into a proof of anyone's: rewrite the row's email to a
+// stranger's, and the federation broker, asked whether that address was proven,
+// answers yes and links the stranger's social identity onto the row.
+func TestUpdate_NewAddressIsUnproven(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	if _, err := api.Create(ctx, &CreateInput{
+		User:          schema.User{Owner: "acme", Name: "carol", Email: "carol@acme.test"},
+		Type:          "normal-user",
+		EmailVerified: true,
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got, err := api.Update(ctx, &UpdateInput{
+		Owner: "acme", Name: "carol",
+		User: schema.User{Owner: "acme", Name: "carol", Email: "Victim@Corp.com"},
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got.Email != "victim@corp.com" {
+		t.Fatalf("premise: the address must change, got %q", got.Email)
+	}
+	if got.EmailVerified {
+		t.Fatal("the proof of one address was carried onto another")
+	}
+
+	// Restating the same address in another spelling is not a change.
+	if _, err := api.Update(ctx, &UpdateInput{
+		Owner: "acme", Name: "carol",
+		User: schema.User{Owner: "acme", Name: "carol", Email: "carol@acme.test"},
+	}); err != nil {
+		t.Fatalf("update back: %v", err)
+	}
+	if _, err := api.Create(ctx, &CreateInput{
+		User:          schema.User{Owner: "acme", Name: "dan", Email: "dan@acme.test"},
+		Type:          "normal-user",
+		EmailVerified: true,
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err = api.Update(ctx, &UpdateInput{
+		Owner: "acme", Name: "dan",
+		User: schema.User{Owner: "acme", Name: "dan", Email: " DAN@acme.test "},
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if !got.EmailVerified {
+		t.Fatal("a respelling of the same address dropped its proof")
+	}
+}
