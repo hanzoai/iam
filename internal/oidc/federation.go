@@ -590,14 +590,13 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 		return nil, fmt.Errorf("federation: %w", err)
 	}
 	u := schema.User{
-		Owner:             org,
-		Name:              name,
-		DisplayName:       firstNonEmpty(id.displayName, name),
-		Email:             id.email,
-		Avatar:            id.avatar,
-		SignupApplication: app.Name,
-		RegisterType:      "Federation",
-		RegisterSource:    org + "/" + prov.Name,
+		Owner:          org,
+		Name:           name,
+		DisplayName:    firstNonEmpty(id.displayName, name),
+		Email:          id.email,
+		Avatar:         id.avatar,
+		RegisterType:   "Federation",
+		RegisterSource: org + "/" + prov.Name,
 	}
 	*binding.ref(&u) = id.subject
 	// A federated sign-in makes a PERSON, and the provider vouched for the address.
@@ -608,6 +607,7 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 		User:          u,
 		Type:          "normal-user",
 		EmailVerified: id.emailVerified,
+		Application:   app.Name,
 	})
 	if err != nil || app.OrgChoiceMode != orgChoiceCreate {
 		return created, err

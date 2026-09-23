@@ -249,23 +249,24 @@ func signupHandler(db orm.DB) zip.Handler {
 		// stored or returned). PasswordType is stamped "argon2id" — exactly what
 		// internal/cred verifies for a new iam row.
 		created, err := users.New(db).Create(ctx, &users.CreateInput{
-			// The class is stated here, beside the create, rather than inside the user
-			// body — a signup makes a PERSON, and only this code may say so.
-			Type: "normal-user",
+			// The class and the registering application are stated here, beside the
+			// create, rather than inside the user body — a signup makes a PERSON through
+			// THIS application, and only this code may say so.
+			Type:        "normal-user",
+			Application: app.Name,
 			User: schema.User{
-				Owner:             f.Organization,
-				Name:              f.Username,
-				DisplayName:       displayName(f),
-				FirstName:         f.FirstName,
-				LastName:          f.LastName,
-				Email:             email,
-				Phone:             store.NormalizePhone(f.Phone),
-				CountryCode:       f.CountryCode,
-				Affiliation:       f.Affiliation,
-				Avatar:            org.DefaultAvatar,
-				SignupApplication: app.Name,
-				RegisterType:      "Application Signup",
-				RegisterSource:    f.Organization + "/" + app.Name,
+				Owner:          f.Organization,
+				Name:           f.Username,
+				DisplayName:    displayName(f),
+				FirstName:      f.FirstName,
+				LastName:       f.LastName,
+				Email:          email,
+				Phone:          store.NormalizePhone(f.Phone),
+				CountryCode:    f.CountryCode,
+				Affiliation:    f.Affiliation,
+				Avatar:         org.DefaultAvatar,
+				RegisterType:   "Application Signup",
+				RegisterSource: f.Organization + "/" + app.Name,
 			},
 			Password: f.Password,
 			// The answer the screen collected, recorded WITH the account. A new

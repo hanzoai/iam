@@ -125,6 +125,14 @@ type CreateInput struct {
 	// create path — password signup, SCIM, the legacy add-user verb, the embedder
 	// seam — records an address nobody has proven yet.
 	EmailVerified bool `json:"-"`
+	// Application names the application that REGISTERED the account — the row's
+	// SignupApplication. Sign-in, signup and federation read it as authority: an
+	// account an application registered is found by that application's org
+	// wherever the account now works. A body that could state it could plant a
+	// stranger's address as an account some application registered, and the
+	// stranger's own signup would be refused as taken. So it comes from the code
+	// that registered the account — signup and federation — and nothing else.
+	Application string `json:"-"`
 }
 
 // UpdateInput carries the desired user state plus an optional new plaintext
@@ -276,6 +284,9 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// answers the broker's question on the sender's behalf. Update carries the
 	// stored value for the same reason.
 	u.EmailVerified = in.EmailVerified
+	// The registration is the calling code's to state for the same reason (see
+	// CreateInput.Application).
+	u.SignupApplication = in.Application
 	// The JSON-document store hangs no per-field DB UNIQUE constraint (the same reason
 	// clientId uniqueness is enforced at the write, not by an index), so reject the
 	// astronomically-unlikely UUID clash HERE rather than admit a second row under one
@@ -483,6 +494,9 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	// no. Signup records false, the broker records true when an identity provider
 	// proved it, and both write through their own paths; this one carries.
 	u.EmailVerified = existing.EmailVerified
+	// The registering application is stated once, by the code that registered the
+	// account (CreateInput.Application), and every write after that carries it.
+	u.SignupApplication = existing.SignupApplication
 	// Every secret is carried from the stored row and any body value is IGNORED —
 	// the password digest, the key secret, the bearer material, the authenticator
 	// seed and its recovery codes. CarrySecretsFrom is the inverse of Mask, so the

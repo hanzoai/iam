@@ -10,6 +10,7 @@ import (
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -337,4 +338,32 @@ func mustMemberships(t *testing.T, db orm.DB, user string) []*schema.Membership 
 		t.Fatalf("memberships: %v", err)
 	}
 	return rows
+}
+
+// An org admin cannot plant an address as an account an application registered.
+//
+// The create an org admin reaches is users.Create, and its body is the whole user
+// row. If that row could name its registering application, anyone who founded an
+// org of their own could file a stranger's address under hanzo-cloud and the
+// stranger's own signup would be refused as taken — or, with no password on the
+// plant, their first social sign-in would be linked onto it.
+func TestSignup_PlantedRegistrationDoesNotTakeTheAddress(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+	seedOrg(t, db, "hanzo")
+	seedOrg(t, db, "evil")
+
+	if _, err := users.New(db).Create(tctx(), &users.CreateInput{
+		User: schema.User{Owner: "evil", Name: "plant", Email: "victim@example.com", SignupApplication: "hanzo-cloud"},
+	}); err != nil {
+		t.Fatalf("plant: %v", err)
+	}
+
+	_, env := signupReq(t, app, map[string]string{
+		"application": "hanzo-cloud", "organization": "hanzo",
+		"password": "correct horse battery staple", "email": "victim@example.com",
+	})
+	if env["status"] != "ok" {
+		t.Fatalf("a planted row took the address from the person who holds it: %v", env)
+	}
 }
