@@ -23,8 +23,13 @@ func federatedApp(t *testing.T) (orm.DB, *schema.Application, *schema.Provider, 
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	app := &schema.Application{Organization: "hanzo", OrgChoiceMode: "create", EnableSignUp: true}
-	app.Name = "hanzo-cloud"
+	app := orm.New[schema.Application](db)
+	app.Owner, app.Name, app.ClientId = "admin", "hanzo-cloud", "hanzo-cloud"
+	app.Organization, app.OrgChoiceMode, app.EnableSignUp = "hanzo", "create", true
+	app.SetId("admin/hanzo-cloud")
+	if err := app.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed app: %v", err)
+	}
 	prov := &schema.Provider{Type: "Google"}
 	prov.Name = "google"
 	binding, ok := connectorFor(prov.Type)
@@ -172,5 +177,38 @@ func TestFederation_AppThatDoesNotFoundIsUnchanged(t *testing.T) {
 	}
 	if org, _ := store.GetOrganizationByName(ctx, db, "social"); org != nil {
 		t.Fatal("an org was founded for an application that does not found orgs")
+	}
+}
+
+// A person who signed in with Google at one of the org's applications is the same
+// person at another. Keyed by the one application, the second application found
+// nobody by subject or by address and provisioned a second account — and founded
+// a second org — for someone who already had both.
+func TestFederation_ReturningAtASiblingApplicationKeepsTheirAccount(t *testing.T) {
+	ctx := context.Background()
+	db, app, prov, _ := federatedApp(t)
+	sibling := orm.New[schema.Application](db)
+	sibling.Owner, sibling.Name, sibling.ClientId = "admin", "hanzo-ai", "hanzo-ai"
+	sibling.Organization, sibling.OrgChoiceMode, sibling.EnableSignUp = "hanzo", "create", true
+	sibling.SetId("admin/hanzo-ai")
+	if err := sibling.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed sibling: %v", err)
+	}
+
+	id := federatedIdentity{subject: "idp-1", email: "social@example.com", emailVerified: true}
+	first, err := linkOrProvision(ctx, db, sibling, prov, id)
+	if err != nil {
+		t.Fatalf("first sign-in at hanzo.ai: %v", err)
+	}
+	again, err := linkOrProvision(ctx, db, app, prov, id)
+	if err != nil {
+		t.Fatalf("sign-in at the console: %v", err)
+	}
+	if again.Owner != first.Owner || again.Name != first.Name {
+		t.Fatalf("the console resolved %s/%s, want the account hanzo.ai made, %s/%s",
+			again.Owner, again.Name, first.Owner, first.Name)
+	}
+	if org, _ := store.GetOrganizationByName(ctx, db, "social2"); org != nil {
+		t.Fatal("a second org was founded for the same person at a sibling application")
 	}
 }

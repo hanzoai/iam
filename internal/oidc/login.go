@@ -187,15 +187,7 @@ func loginHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "organization, username and password are required")
 		}
 
-		// The application is resolved before the identifier because it is part of
-		// WHERE the identifier resolves: an application that founds an org per person
-		// is the only thing that still knows where its accounts went.
-		app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
-		if err != nil {
-			return httpx.Err(c, "sign-in is unavailable")
-		}
-
-		user, err := resolveLoginUser(ctx, db, app, f.Organization, f.Username)
+		user, err := resolveLoginUser(ctx, db, f.Organization, f.Username)
 		if err != nil {
 			// NEVER the resolver's own words. This is an UNAUTHENTICATED endpoint and
 			// nothing has been proven about the caller yet, so anything specific
@@ -397,33 +389,33 @@ func (f loginForm) mint() Mint {
 	}
 }
 
-// resolveLoginUser looks a user up by the login identifier: in the org the form
-// names, then among the accounts the application itself registered.
+// resolveLoginUser looks a user up by the login identifier in org: among the
+// accounts that live there, then among the accounts registered there.
 //
 // The second reach is what makes a per-person tenant reachable. A login screen
 // names the APPLICATION's org — it is the only org the screen can know, since the
 // person has not been identified yet — so an account that WORKS in an org of its
-// own is not in the org being searched. Its own application is the one thing that
-// still knows it, and [store.GetSignupByEmail] is that reach: this application's
-// own accounts, by the address they registered with, ambiguity refused, reserved
-// orgs unreachable.
+// own is not in the org being searched. The org it registered in still knows it,
+// and [store.GetSignupByEmail] is that reach: the accounts org's applications
+// registered, by the address they registered with, ambiguity refused, reserved
+// orgs unreachable. Every application of the org reaches the same accounts, so a
+// person who registered at hanzo.ai signs in at the console and the CLI, and a
+// code-proved password reset — whose body names the org and no application —
+// finds them too.
 //
 // It is not a cross-org lookup by address. Resolving an address across every org
 // couples the accounts that merely share one — their lockout counters above all —
-// and that stays refused: nothing here reads a row another application created,
-// or one that no application created.
+// and that stays refused: nothing here reads a row another org registered, or one
+// that nothing registered.
 //
-// The org arm runs FIRST and is untouched, so every account that lives in the
-// application's org resolves exactly as it always did, staff included.
-func resolveLoginUser(ctx context.Context, db orm.DB, app *schema.Application, org, identifier string) (*schema.User, error) {
+// The live-in arm runs FIRST and is untouched, so every account that lives in the
+// org resolves exactly as it always did, staff included.
+func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {
 	user, err := resolveInOrg(ctx, db, org, identifier)
 	if err != nil || user != nil {
 		return user, err
 	}
-	if app == nil {
-		return nil, nil
-	}
-	return store.GetSignupByEmail(ctx, db, app.Name, identifier)
+	return store.GetSignupByEmail(ctx, db, org, identifier)
 }
 
 // resolveInOrg resolves the login identifier within one org, resolving NAME FIRST

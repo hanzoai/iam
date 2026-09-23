@@ -476,16 +476,17 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 
 	// 1. Already linked by the provider's stable subject — the authoritative match
 	// for a returning federated user (immune to email churn/ambiguity). In the
-	// application's org, then among the accounts the application registered, which
-	// is where they are once it has founded each of them an org: the subject is what
-	// says "this is the same person", and a reach that stops at the application's own
-	// org would answer "new" every time and hand them another account.
+	// application's org, then among the accounts registered there — by this
+	// application or any other of its org's — which is where they are once an org has
+	// been founded for each of them: the subject is what says "this is the same
+	// person", and a reach that stops short would answer "new" and hand them another
+	// account.
 	if u, err := store.GetUserByConnector(ctx, db, org, binding.field, id.subject); err != nil {
 		return nil, err
 	} else if u != nil {
 		return u, nil
 	}
-	if u, err := store.GetSignupByConnector(ctx, db, app.Name, binding.field, id.subject); err != nil {
+	if u, err := store.GetSignupByConnector(ctx, db, org, binding.field, id.subject); err != nil {
 		return nil, err
 	} else if u != nil {
 		return u, nil
@@ -500,12 +501,12 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 		if err != nil {
 			return nil, err
 		}
-		// And among the accounts this application registered — the same reach as the
-		// subject above. Without it an address held by someone the application founded
-		// an org for reads as free, the branch below never runs, and they are given a
-		// second account on the address they already hold.
+		// And among the accounts registered in the application's org — the same reach
+		// as the subject above. Without it an address held by someone founded into an
+		// org of their own reads as free, the branch below never runs, and they are
+		// given a second account on the address they already hold.
 		if u == nil {
-			if u, err = store.GetSignupByEmail(ctx, db, app.Name, id.email); err != nil {
+			if u, err = store.GetSignupByEmail(ctx, db, org, id.email); err != nil {
 				return nil, err
 			}
 		}

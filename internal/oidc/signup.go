@@ -186,13 +186,14 @@ func signupHandler(db orm.DB) zip.Handler {
 			case err != nil:
 				return httpx.Err(c, err.Error())
 			}
-			// And among the accounts this application founded orgs for, which are no
-			// longer in the org just searched. Founding empties the application's org of
-			// exactly the accounts this is checking against, so without this the address
-			// reads as free the moment its owner moves out — the second person registers
-			// it, and then NEITHER of them can sign in, because one address across two of
-			// one application's accounts names nobody.
-			switch existing, err := store.GetSignupByEmail(ctx, db, app.Name, email); {
+			// And among the accounts registered in the application's org, which are no
+			// longer in the org just searched. Founding empties the org of exactly the
+			// accounts this is checking against, so without this the address reads as
+			// free the moment its owner moves out — the second person registers it, or
+			// the same person registers again at another of the org's applications, and
+			// then NEITHER account can sign in, because one address across two of one
+			// org's registrations names nobody.
+			switch existing, err := store.GetSignupByEmail(ctx, db, app.Organization, email); {
 			case err == store.ErrEmailAmbiguous, existing != nil:
 				return httpx.Err(c, "email already exists")
 			case err != nil:

@@ -95,13 +95,13 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 				}
 				user = nil
 			}
-			// An account this application founded an org for is not in the
-			// application's own org. Its own application still knows it, and this
-			// endpoint and the sign-in that authenticates the same address must not
-			// disagree about who it names — otherwise a code is minted for nobody
-			// and the person is told nothing.
+			// An account founded into an org of its own is not in the application's
+			// org. The org it registered in still knows it, and this endpoint and the
+			// sign-in that authenticates the same address must not disagree about who
+			// it names — otherwise a code is minted for nobody and the person is told
+			// nothing.
 			if user == nil {
-				if user, err = store.GetSignupByEmail(ctx, db, app.Name, dest); err != nil {
+				if user, err = store.GetSignupByEmail(ctx, db, org.Name, dest); err != nil {
 					if !errors.Is(err, store.ErrEmailAmbiguous) {
 						return httpx.Err(c, "verification code cannot be sent")
 					}

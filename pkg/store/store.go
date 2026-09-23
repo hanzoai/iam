@@ -328,51 +328,87 @@ func GetUserByEmail(ctx context.Context, db orm.DB, owner, email string) (*schem
 	}
 }
 
-// GetSignupByEmail resolves an account an APPLICATION registered, by the address
-// it registered with — [schema.User.SignupApplication] paired with Email.
+// GetSignupByEmail resolves an account registered in org, by the address it
+// registered with: a row whose [schema.User.SignupApplication] names an application
+// of org, carrying email.
 //
-// It exists because an application's org is where an account is registered, not
-// the tenant the person works in. An application that founds an org per person
-// has its accounts spread across every org it founded, so scoping its sign-in to
-// its own org resolves nobody; this is the scope that matches the population.
+// It exists because the org an account is registered in is not the tenant the
+// person works in. An application that founds an org per person has its accounts
+// spread across every org it founded, so scoping sign-in to the registration org
+// resolves nobody; this is the scope that matches the population.
 //
-// It is NARROWER than a cross-org lookup by address, which is a different thing
-// and stays refused: it reads only the rows this application itself created, so
-// an account belonging to another application — or seeded, or imported, all of
-// which carry no SignupApplication at all — is unreachable through it. An empty
-// application therefore matches nothing rather than everything.
+// The scope is the ORG, not the one application, because an org's applications
+// are one front door with several entrances. hanzo.ai, the console, the CLI and
+// chat are each their own client of org hanzo, and a person who registered at one
+// of them is the same person at every other: keyed by the application, they could
+// not sign in anywhere but where they started, and a social sign-in anywhere else
+// gave them a second account and a second org. Usernames are unique per org for
+// the same reason — the org is the registration namespace.
+//
+// It is still NARROWER than a cross-org lookup by address, which is a different
+// thing and stays refused: it reads only rows some application of org registered,
+// so another org's registrations — and seeded or imported rows, which carry no
+// SignupApplication at all — are unreachable through it. An empty org therefore
+// matches nothing rather than everything.
 //
 // Ambiguity FAILS CLOSED, as [GetUserByEmail] does and for the same reason: two
 // rows carrying one address name nobody, and handing back an arbitrary one is how
 // a person is authenticated as somebody else.
-func GetSignupByEmail(ctx context.Context, db orm.DB, application, email string) (*schema.User, error) {
+func GetSignupByEmail(ctx context.Context, db orm.DB, org, email string) (*schema.User, error) {
 	email = NormalizeEmail(email)
-	if application == "" || email == "" {
+	if org == "" || email == "" {
 		return nil, nil
 	}
 	us, err := orm.TypedQuery[schema.User](db).
-		Filter("SignupApplication=", application).Filter("Email=", email).Limit(2).GetAll(ctx)
+		Filter("Email=", email).Filter("SignupApplication!=", "").GetAll(ctx)
 	if err == orm.ErrNotFound {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	if us, err = registeredIn(ctx, db, org, us); err != nil {
+		return nil, err
+	}
 	switch len(us) {
 	case 0:
 		return nil, nil
 	case 1:
-		// A reserved owner is never reachable this way. Nothing should ever file a
-		// row of the admin org under an application's signup, and if something does,
-		// this must not be the lookup that authenticates it — the reserved orgs hold
-		// the SuperAdmin and the signing certs.
-		if policy.IsReservedOrg(us[0].Owner) {
-			return nil, nil
-		}
 		return us[0], nil
 	default:
 		return nil, ErrEmailAmbiguous
 	}
+}
+
+// registeredIn keeps the rows an application of org registered.
+//
+// A reserved owner is never kept. Nothing should ever file a row of the admin org
+// under an application's signup, and if something does, this must not be the
+// lookup that authenticates it — the reserved orgs hold the SuperAdmin and the
+// signing certs.
+func registeredIn(ctx context.Context, db orm.DB, org string, us []*schema.User) ([]*schema.User, error) {
+	orgOf := map[string]string{}
+	var out []*schema.User
+	for _, u := range us {
+		if u == nil || u.SignupApplication == "" || policy.IsReservedOrg(u.Owner) {
+			continue
+		}
+		o, seen := orgOf[u.SignupApplication]
+		if !seen {
+			app, err := GetApplicationNamed(ctx, db, u.SignupApplication)
+			if err != nil {
+				return nil, err
+			}
+			if app != nil {
+				o = app.Organization
+			}
+			orgOf[u.SignupApplication] = o
+		}
+		if o == org {
+			out = append(out, u)
+		}
+	}
+	return out, nil
 }
 
 // ErrPhoneAmbiguous reports that a phone number identifies more than one account
@@ -991,29 +1027,38 @@ func GetUserByConnector(_ context.Context, db orm.DB, owner, field, subject stri
 	return u, err
 }
 
-// GetSignupByConnector is [GetUserByConnector] over the accounts an APPLICATION
-// registered, for the same reason [GetSignupByEmail] exists: an application that
-// founds an org per person has its accounts spread across the orgs it founded, so
-// its own org is not where a returning person is.
+// GetSignupByConnector is [GetUserByConnector] over the accounts registered in
+// org, for the same reason [GetSignupByEmail] exists: an application that founds
+// an org per person has its accounts spread across the orgs it founded, so the
+// registration org is not where a returning person is.
 //
 // The provider's subject is the authoritative match for a returning federated
 // user — immune to email churn — so this is the reach that has to work, or a
-// person who signed in with the same social identity yesterday is treated as new
-// and given a second account today.
-func GetSignupByConnector(_ context.Context, db orm.DB, application, field, subject string) (*schema.User, error) {
-	if application == "" || field == "" || subject == "" {
+// person who signed in with the same social identity yesterday, at any of org's
+// applications, is treated as new and given a second account today. Two rows
+// carrying one subject name nobody, so that fails closed as a duplicated user id
+// does.
+func GetSignupByConnector(ctx context.Context, db orm.DB, org, field, subject string) (*schema.User, error) {
+	if org == "" || field == "" || subject == "" {
 		return nil, nil
 	}
-	u, err := orm.TypedQuery[schema.User](db).
-		Filter("SignupApplication=", application).Filter(field+"=", subject).First()
+	us, err := orm.TypedQuery[schema.User](db).
+		Filter(field+"=", subject).Filter("SignupApplication!=", "").GetAll(ctx)
 	if err == orm.ErrNotFound {
 		return nil, nil
 	}
-	if err != nil || u == nil {
+	if err != nil {
 		return nil, err
 	}
-	if policy.IsReservedOrg(u.Owner) {
-		return nil, nil
+	if us, err = registeredIn(ctx, db, org, us); err != nil {
+		return nil, err
 	}
-	return u, nil
+	switch len(us) {
+	case 0:
+		return nil, nil
+	case 1:
+		return us[0], nil
+	default:
+		return nil, fmt.Errorf("store: %d accounts registered in %q share one %s subject", len(us), org, field)
+	}
 }

@@ -303,18 +303,51 @@ func TestLogin_ResolvesAnAccountInItsOwnOrg(t *testing.T) {
 	}
 }
 
-// The new arm reaches only the accounts THIS application created. A stranger's
-// account elsewhere stays unreachable, so the tenant refusal login already makes
-// is unchanged.
-func TestLogin_OwnOrgArmDoesNotReachAnotherApp(t *testing.T) {
+// Every application of the org reaches the accounts the org registered. hanzo.ai,
+// the console and the CLI are each their own client of org hanzo; a person who
+// registered at one of them signs in at every other. Keyed by the one application,
+// the account was unreachable anywhere but where it started — and a login screen
+// can only ever name the org, never which of its entrances somebody first used.
+func TestLogin_ReachesWhatASiblingApplicationRegistered(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
-	seedApp(t, db, appOpts{clientID: "other", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+	seedApp(t, db, appOpts{clientID: "hanzo-ai", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
 	seedOrg(t, db, "hanzo")
 
 	const pw = "correct horse battery staple"
 	if _, env := signupReq(t, app, map[string]string{
-		"application": "other", "organization": "hanzo",
+		"application": "hanzo-ai", "organization": "hanzo",
+		"password": pw, "email": "sibling@example.com",
+	}); env["status"] != "ok" {
+		t.Fatalf("signup failed: %v", env)
+	}
+
+	_, body := do(t, app, jsonReq("POST", PathLogin, map[string]string{
+		"organization": "hanzo", "username": "sibling@example.com", "password": pw,
+		"application": "hanzo-cloud", "clientId": "hanzo-cloud",
+		"redirectUri": testRedirect, "scope": "openid", "type": "code",
+	}))
+	m := decode(t, body)
+	if m["status"] != "ok" {
+		t.Fatalf("an account registered at hanzo.ai cannot sign in at the console: %v", m)
+	}
+	if code, _ := m["data"].(string); code == "" {
+		t.Fatal("no authorization code was minted")
+	}
+}
+
+// The reach stops at the org. Another org's registrations stay unreachable, so the
+// tenant refusal login already makes is unchanged.
+func TestLogin_DoesNotReachAnotherOrgsRegistrations(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+	seedAppFull(t, db, fullApp{clientID: "lux-cloud", secret: "s3cret", org: "lux", signup: true, orgChoice: "create", redirects: []string{testRedirect}})
+	seedOrg(t, db, "hanzo")
+	seedOrg(t, db, "lux")
+
+	const pw = "correct horse battery staple"
+	if _, env := signupReq(t, app, map[string]string{
+		"application": "lux-cloud", "organization": "lux",
 		"password": pw, "email": "elsewhere@example.com",
 	}); env["status"] != "ok" {
 		t.Fatalf("signup failed: %v", env)
@@ -326,7 +359,36 @@ func TestLogin_OwnOrgArmDoesNotReachAnotherApp(t *testing.T) {
 		"redirectUri": testRedirect, "scope": "openid", "type": "code",
 	}))
 	if m := decode(t, body); m["status"] != "error" {
-		t.Fatalf("an account another application created must not sign in here: %v", m)
+		t.Fatalf("an account another org registered must not sign in here: %v", m)
+	}
+}
+
+// One address is one registration across the org's applications. Keyed by the one
+// application, a person who registered at hanzo.ai and later signed up at the
+// console got a second account and a second org — and then neither signed in,
+// because one address on two of the org's registrations names nobody.
+func TestSignup_AddressTakenAcrossTheOrgsApplications(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+	seedApp(t, db, appOpts{clientID: "hanzo-ai", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+	seedOrg(t, db, "hanzo")
+
+	const addr = "once@example.com"
+	if _, env := signupReq(t, app, map[string]string{
+		"application": "hanzo-ai", "organization": "hanzo",
+		"password": "correct horse battery staple", "email": addr,
+	}); env["status"] != "ok" {
+		t.Fatalf("first signup failed: %v", env)
+	}
+	_, env := signupReq(t, app, map[string]string{
+		"application": "hanzo-cloud", "organization": "hanzo",
+		"password": "correct horse battery staple", "email": addr,
+	})
+	if msg, _ := env["msg"].(string); env["status"] != "error" || msg != "email already exists" {
+		t.Fatalf("the address was registered twice in one org: %v", env)
+	}
+	if org, _ := store.GetOrganizationByName(tctx(), db, "once2"); org != nil {
+		t.Fatal("a second org was founded for the same address")
 	}
 }
 
