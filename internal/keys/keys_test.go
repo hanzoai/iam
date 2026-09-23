@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -647,5 +649,33 @@ func TestKeys_ANameCanBeUsedAgainAfterDelete(t *testing.T) {
 	}
 	if _, _, err := store.UserAndScopeByAccessKey(ctx, db, again.AccessSecret); err != nil {
 		t.Fatalf("the re-created key does not authenticate: %s", store.Reason(err))
+	}
+}
+
+// A member's key — minted in an org the holder belongs to by membership — is
+// written only by a caller that mints on a person's behalf, and only for a member.
+// A tenant admin cannot write one: it would be a credential that speaks as any of
+// the org's members.
+func TestKeys_MemberKeyIsWrittenOnlyForAMemberByAMinter(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	if _, err := store.EnsureMembership(ctx, db, "agency/josh", "client", store.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	minter := principal.Bind(ctx, &principal.Principal{App: &policy.App{Name: "hanzo-console", Owner: "admin"}})
+	tenantAdmin := principal.Bind(ctx, &policy.Principal{Org: "client", User: "boss", Admin: true})
+	c := create(db)
+
+	if _, err := c(minter, &schema.Key{Owner: "client", Name: "josh-secret", User: "agency/josh"}); err != nil {
+		t.Fatalf("the minter could not write a member's key: %v", err)
+	}
+	if _, err := c(minter, &schema.Key{Owner: "client", Name: "stranger", User: "elsewhere/stray"}); err == nil {
+		t.Fatal("the minter wrote a key for someone who is not a member of the key's org")
+	}
+	if _, err := c(tenantAdmin, &schema.Key{Owner: "client", Name: "planted", User: "agency/josh"}); err == nil {
+		t.Fatal("a tenant admin wrote a key that speaks as a member from another org")
+	}
+	if _, err := c(ctx, &schema.Key{Owner: "client", Name: "anon", User: "agency/josh"}); err == nil {
+		t.Fatal("a write with no principal produced a member's key")
 	}
 }

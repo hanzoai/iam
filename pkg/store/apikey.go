@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -146,59 +147,115 @@ func UserByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, 
 // Scope is "" for a key that names no limit, which is every key minted before
 // limits existed and means unrestricted.
 func UserAndScopeByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, string, error) {
+	h, err := HolderByAccessKey(ctx, db, key)
+	return h.User, h.Scope, err
+}
+
+// Holder is what a secret key speaks for: the user it authenticates, the org it
+// acts in, and the limit it carries.
+//
+// Org is the KEY's org. For a key minted in its holder's home org the two are the
+// same. A member's key is minted in an org the holder belongs to by membership, and
+// it speaks for them in that org and no other, so a resource server scopes the
+// request to Org, never to the user's home.
+type Holder struct {
+	User  *schema.User
+	Org   string
+	Scope string
+	// Role is the holder's standing in Org: the membership role for a member's key,
+	// the home role otherwise. It is what decides whether Org's pool pays.
+	Role string
+}
+
+// HolderByAccessKey is UserAndScopeByAccessKey with the org the key acts in and
+// the holder's standing there — the whole answer a key resolution owes a resource
+// server, from one read of the key row.
+func HolderByAccessKey(ctx context.Context, db orm.DB, key string) (Holder, error) {
 	key = strings.TrimSpace(key)
 	switch {
 	case strings.HasPrefix(key, "sk-"):
-		return userAndScopeOwningKey(ctx, db, key)
+		return holderOwningKey(ctx, db, key)
 	case strings.HasPrefix(key, "pk-"):
 		// WRITE-ONLY and never a principal (see the package note above). Fail closed,
 		// and say so as the wrong endpoint: this holder has a working key, just not here.
-		return nil, "", notFound(KeyWrongDoor)
+		return Holder{}, notFound(KeyWrongDoor)
 	default:
 		// Not a shape this estate issues, so no live credential can answer to it.
 		// Fail closed, and tell the holder the one thing that helps: mint a new key.
-		return nil, "", notFound(KeyUnknown)
+		return Holder{}, notFound(KeyUnknown)
 	}
 }
 
-// userOwningKey resolves the schema.Key whose `field` equals val (the sk- path:
-// field == "AccessSecret"), then the user that key belongs to — CONSTRAINED to the
-// key row's OWN tenant. A key that resolves no user (a key with no User reference — an
-// org/app-scoped credential) fails closed with orm.ErrNotFound: this path attributes
-// a key to a USER principal in the key's own org, or to none. Only the confidential
-// sk- half reaches here; a public pk- is write-only and never resolves to a principal
-// (UserByAccessKey refuses it before this point).
+// holderOwningKey resolves the schema.Key a secret belongs to, then the user that
+// key speaks for — CONSTRAINED to the key row's own org. A key that names no user
+// (an org- or app-scoped credential) fails closed with orm.ErrNotFound: this path
+// attributes a key to a USER principal or to none. Only the confidential sk- half
+// reaches here; a public pk- never resolves to a principal (HolderByAccessKey
+// refuses it before this point).
 //
 // The same-tenant pin is the F1 forgery gate. Key.User and AccessSecret are
 // attacker-controlled at write time and keys CRUD authorizes only (Key.Owner,
-// Key.Name) — never the User field — so a tenant admin could plant a Key in its OWN
-// org whose User names "admin/z" (a SuperAdmin) or a victim tenant's user and,
-// presenting the known secret, have get-user?accessKey resolve it to that foreign
-// identity. Refusing any resolved owner != k.Owner makes that impossible: a key can
-// only ever speak for a user in the org that owns the key, and a non-super can never
-// own a key under a reserved org (authorize gates keys writes), so no sk- key can
-// resolve to a SuperAdmin or cross-tenant identity.
-func userAndScopeOwningKey(ctx context.Context, db orm.DB, secret string) (*schema.User, string, error) {
+// Key.Name), so a tenant admin could plant a Key in its OWN org whose User names
+// "admin/z" or a victim tenant's user and, presenting the known secret, resolve it
+// to that identity. A key therefore speaks only for a user who BELONGS to the key's
+// org: its home org, or an org-wide membership, asked here on every resolution so
+// that removing the member ends the key. A reserved org is never on either side of
+// a membership key, so no such key can reach a SuperAdmin or be a platform key.
+// Who may WRITE a member's key is the keys write gate's question (MemberKey).
+func holderOwningKey(ctx context.Context, db orm.DB, secret string) (Holder, error) {
 	k, err := keyBySecret(ctx, db, secret)
 	if err != nil {
-		return nil, "", err
+		return Holder{}, err
 	}
 	owner, name := keyUserRef(k)
-	// Same-tenant pin: the resolved user MUST live in the key row's own org. A
-	// "/"-qualified User naming a foreign owner is a forgery attempt — fail closed,
-	// and say WHICH refusal this was: a cross-tenant reference is an attack signal
-	// and must not read to an operator as a mistyped key.
-	if owner == "" || name == "" || owner != k.Owner {
-		return nil, "", notFound(KeyForeignUser)
+	if owner == "" || name == "" {
+		return Holder{}, notFound(KeyForeignUser)
+	}
+	role := ""
+	if owner != k.Owner {
+		// A member's key. With no membership behind it, the row reads exactly as the
+		// forgery this pin exists to refuse, whether it was planted or its holder was
+		// removed since, so it is refused as one: a key has no history to tell them
+		// apart by, and the security reading is the one that must never be missed.
+		if policy.IsReservedOrg(owner) || policy.IsReservedOrg(k.Owner) {
+			return Holder{}, notFound(KeyForeignUser)
+		}
+		m, err := MembershipIn(ctx, db, owner+"/"+name, k.Owner, "", "")
+		if err != nil {
+			return Holder{}, err
+		}
+		if m == nil {
+			return Holder{}, notFound(KeyForeignUser)
+		}
+		role = m.Role
 	}
 	u, err := GetUserByName(ctx, db, owner, name)
 	if err != nil {
-		return nil, "", err
+		return Holder{}, err
 	}
 	if u == nil {
-		return nil, "", notFound(KeyDanglingUser)
+		return Holder{}, notFound(KeyDanglingUser)
 	}
-	return u, k.Scope, nil
+	if role == "" {
+		role = HomeRole(u)
+	}
+	return Holder{User: u, Org: k.Owner, Scope: k.Scope, Role: role}, nil
+}
+
+// MemberKey reports whether user may hold a key minted in org other than their
+// home: neither org is reserved, and an org-wide membership admits them there.
+// It is the write-side twin of holderOwningKey's pin, so a row the resolver would
+// refuse is never written.
+func MemberKey(ctx context.Context, db orm.DB, user, org string) (bool, error) {
+	home, _, ok := strings.Cut(user, "/")
+	if !ok || home == "" || org == "" || home == org {
+		return false, nil
+	}
+	if policy.IsReservedOrg(home) || policy.IsReservedOrg(org) {
+		return false, nil
+	}
+	m, err := MembershipIn(ctx, db, user, org, "", "")
+	return m != nil, err
 }
 
 // keyBySecret finds the key a presented secret belongs to WITHOUT the row ever
@@ -270,8 +327,9 @@ func only(ctx context.Context, db orm.DB, field, val string) (*schema.Key, error
 // User field is the "owner/name" identity used everywhere a user is referenced
 // (Token.User, Membership.User); a bare username without a "/" is taken within the
 // key's own tenant (Key.Owner). An empty User yields ("",""). The owner it returns
-// is NOT trusted: userOwningKey rejects any owner that is not the key row's own
-// (Key.Owner), so a "/"-qualified reference to a foreign owner resolves to nobody.
+// is NOT trusted: holderOwningKey admits an owner other than the key row's own only
+// through a live membership in the key's org, so any other "/"-qualified reference
+// to a foreign owner resolves to nobody.
 func keyUserRef(k *schema.Key) (owner, name string) {
 	if o, n, ok := strings.Cut(k.User, "/"); ok && o != "" && n != "" {
 		return o, n

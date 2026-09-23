@@ -34,6 +34,7 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/principal"
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -108,8 +109,12 @@ func org(db orm.DB) zip.Handler {
 // funded org pool. It names a LEDGER, never a secret, so the projection stays
 // leak-proof.
 type holder struct {
-	Owner          string `json:"owner"`
-	Name           string `json:"name"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+	// Org is the org the KEY acts in. It is Owner for a key minted in its holder's
+	// home org, and the org they were added to for a member's key, which speaks
+	// for them there and nowhere else.
+	Org            string `json:"org"`
 	Email          string `json:"email"`
 	IsAdmin        bool   `json:"isAdmin"`
 	BillingAccount string `json:"billing_account,omitempty"`
@@ -146,20 +151,33 @@ func who(db orm.DB) zip.Handler {
 		if !ok || p.App == nil || !p.Holds(policy.CapKeyResolve, authz.Env) {
 			return httpx.Err(c, unauthorized)
 		}
-		u, scope, err := store.UserAndScopeByAccessKey(ctx, db, strings.TrimSpace(c.Query("accessKey")))
+		h, err := store.HolderByAccessKey(ctx, db, strings.TrimSpace(c.Query("accessKey")))
 		if errors.Is(err, orm.ErrNotFound) {
 			return httpx.ErrCode(c, "the entity does not exist", string(store.Reason(err)))
 		}
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		u := h.User
+		// A member's key spends from the org it was minted in, by the same rule a
+		// home key follows at home: an owner or admin there holds that org's pool.
+		// It never names the member's home ledger, which this key is not.
+		// IsAdmin likewise describes the holder in the key's org: their home flag at
+		// home, their membership role elsewhere.
+		billing := store.BillingAccount(u, store.MemberOrgRefs(ctx, db, u))
+		admin := u.IsAdmin
+		if h.Org != u.Owner {
+			billing = store.BillingAccount(&schema.User{Owner: h.Org}, []schema.OrgRef{{Org: h.Org, Role: h.Role}})
+			admin = h.Role == store.RoleOwner || h.Role == store.RoleAdmin
+		}
 		return httpx.Ok(c, holder{
 			Owner:          u.Owner,
 			Name:           u.Name,
+			Org:            h.Org,
 			Email:          u.Email,
-			IsAdmin:        u.IsAdmin,
-			BillingAccount: store.BillingAccount(u, store.MemberOrgRefs(ctx, db, u)),
-			Scope:          scope,
+			IsAdmin:        admin,
+			BillingAccount: billing,
+			Scope:          h.Scope,
 		})
 	}
 }

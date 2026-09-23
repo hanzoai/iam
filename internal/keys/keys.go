@@ -25,6 +25,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
@@ -132,7 +133,7 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
-		if err := sameTenantUser(in); err != nil {
+		if err := holdable(ctx, db, in); err != nil {
 			return nil, err
 		}
 		if _, err := orm.Get[schema.Key](db, id(in.Owner, in.Name)); err == nil {
@@ -195,7 +196,7 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		if err := sameTenantUser(in); err != nil {
+		if err := holdable(ctx, db, in); err != nil {
 			return nil, err
 		}
 		apply(k, in)
@@ -235,19 +236,35 @@ func del(db orm.DB) zip.TypedHandler[Ref, DeleteResponse] {
 	}
 }
 
-// sameTenantUser rejects a Key whose User field names a DIFFERENT owner than the key
-// itself — the write-side half of the F1 credential-forgery gate (store.userOwningKey
-// is the authoritative half). Key.User and the credential halves are all
-// caller-supplied, and the key write is authorized only on (Owner, Name), so a
-// "/"-qualified User naming "admin/z" or a victim tenant would otherwise persist and
-// let a presented sk- secret resolve — via get-user?accessKey — to that foreign /
-// SuperAdmin identity. (The public pk- half never resolves to a principal at all, so
-// this gate protects the sk- read path.) A bare username or an empty User is fine
-// (both resolve within the key's own owner); a cross-tenant qualified reference is
-// refused, so no forged row is ever written.
-func sameTenantUser(k *schema.Key) error {
-	if o, _, ok := strings.Cut(k.User, "/"); ok && o != k.Owner {
+// holdable rejects a Key whose User names someone the key's org does not admit —
+// the write-side half of the F1 credential-forgery gate (store.holderOwningKey is
+// the authoritative half). Key.User and the credential halves are caller-supplied,
+// and the key write is authorized only on (Owner, Name), so a "/"-qualified User
+// naming "admin/z" or a victim tenant would otherwise persist and let a presented
+// sk- resolve to that identity. A bare username or an empty User resolves within
+// the key's own owner and is fine.
+//
+// A MEMBER of the key's org whose home is elsewhere may hold a key there, because
+// that is how a person works for an org they were added to. Such a row is written
+// only by a caller that mints on a person's behalf — a confidential app, which the
+// Guard admitted to keys only by the key-mint capability, or a SuperAdmin — and
+// never by a tenant admin, who could otherwise mint a credential that speaks as
+// any of the org's members. And only while the membership exists.
+func holdable(ctx context.Context, db orm.DB, k *schema.Key) error {
+	o, _, ok := strings.Cut(k.User, "/")
+	if !ok || o == k.Owner {
+		return nil
+	}
+	p, found := principal.From(ctx)
+	if !found || (p.App == nil && !p.Sudo) {
 		return zip.ErrBadRequest("key user must belong to the key's owner")
+	}
+	member, err := store.MemberKey(ctx, db, k.User, k.Owner)
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	if !member {
+		return zip.ErrBadRequest("key user must be a member of the key's owner")
 	}
 	return nil
 }

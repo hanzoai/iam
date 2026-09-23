@@ -542,3 +542,51 @@ func TestPublishableNeverBecomesPrincipal(t *testing.T) {
 		t.Fatalf("publishable pk- as bearer to a gated route: status=%d, want 401", status)
 	}
 }
+
+// A member's key resolves, through the door cloud's boundary calls, to the member's
+// own row with the key's org beside it, their admin standing there, and that org's
+// pool as the payer. Removing the membership closes the door on it.
+func TestPrincipalDoor_MemberKeyNamesTheOrgItActsIn(t *testing.T) {
+	h := newHarness(t)
+	keyFixtures(t, h)
+	ctx := context.Background()
+	if _, err := store.EnsureMembership(ctx, h.db, "hanzo/keyuser", "client", store.RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	k := orm.New[schema.Key](h.db)
+	k.Owner, k.Name, k.User = "client", "keyuser-secret", "hanzo/keyuser"
+	k.AccessKey, k.AccessSecretDigest = "pk-live-MEMBERDOOR", schema.DigestSecret("sk-live-MEMBERDOOR")
+	k.SetId("client/keyuser-secret")
+	if err := k.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed member key: %v", err)
+	}
+
+	status, body := h.getBasic(t, principalDoor+"sk-live-MEMBERDOOR", resolverApp, svcSecret)
+	var e struct {
+		Status string `json:"status"`
+		Data   struct {
+			Owner          string `json:"owner"`
+			Name           string `json:"name"`
+			Org            string `json:"org"`
+			IsAdmin        bool   `json:"isAdmin"`
+			BillingAccount string `json:"billing_account"`
+		} `json:"data"`
+	}
+	if status != 200 || json.Unmarshal([]byte(body), &e) != nil || e.Status != "ok" {
+		t.Fatalf("status=%d body=%s", status, body)
+	}
+	if e.Data.Owner != "hanzo" || e.Data.Name != "keyuser" || e.Data.Org != "client" {
+		t.Fatalf("resolved %s/%s in %q, want hanzo/keyuser in client", e.Data.Owner, e.Data.Name, e.Data.Org)
+	}
+	if !e.Data.IsAdmin || e.Data.BillingAccount != "org:client" {
+		t.Fatalf("isAdmin=%v billing=%q, want the owner's standing in client and client's pool", e.Data.IsAdmin, e.Data.BillingAccount)
+	}
+
+	if _, err := store.DeleteMembership(ctx, h.db, "hanzo/keyuser", "client"); err != nil {
+		t.Fatal(err)
+	}
+	status, body = h.getBasic(t, principalDoor+"sk-live-MEMBERDOOR", resolverApp, svcSecret)
+	if strings.Contains(body, `"status":"ok"`) {
+		t.Fatalf("after the membership was removed the key still resolved: %d %s", status, body)
+	}
+}

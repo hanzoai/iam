@@ -589,3 +589,82 @@ func TestUserByAccessKey_ExpiredAndDisabledResolveToNobody(t *testing.T) {
 		}
 	}
 }
+
+// A person added to an org they do not live in works there with a key minted in
+// that org. The key speaks for their real user row, acts in the org it was minted
+// in, and carries their standing there.
+func TestHolderByAccessKey_MemberKeyActsInItsOrg(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedKeyUser(t, db, "agency", "josh", "josh@agency.example", "")
+	if _, err := EnsureMembership(ctx, db, "agency/josh", "client", RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	seedKey(t, db, "client", "josh-secret", "agency/josh", "pk-live-MEMBER", "sk-live-MEMBER")
+
+	h, err := HolderByAccessKey(ctx, db, "sk-live-MEMBER")
+	if err != nil {
+		t.Fatalf("a member's key did not resolve: %v", err)
+	}
+	if h.User == nil || h.User.Owner != "agency" || h.User.Name != "josh" {
+		t.Fatalf("resolved %+v, want the member's own row agency/josh", h.User)
+	}
+	if h.Org != "client" || h.Role != RoleAdmin {
+		t.Fatalf("org=%q role=%q, want the key's org client and the membership role admin", h.Org, h.Role)
+	}
+
+	// A home key is unchanged: its org is the holder's own.
+	seedKey(t, db, "agency", "josh-home", "agency/josh", "pk-live-HOME", "sk-live-HOME")
+	if h, err := HolderByAccessKey(ctx, db, "sk-live-HOME"); err != nil || h.Org != "agency" {
+		t.Fatalf("home key = %+v, %v; want org agency", h, err)
+	}
+}
+
+// The membership is the key's whole authority: removing the member ends the key.
+func TestHolderByAccessKey_MemberKeyEndsWithTheMembership(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedKeyUser(t, db, "agency", "josh", "josh@agency.example", "")
+	if _, err := EnsureMembership(ctx, db, "agency/josh", "client", RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	seedKey(t, db, "client", "josh-secret", "agency/josh", "pk-live-GONE", "sk-live-GONE")
+	if _, err := HolderByAccessKey(ctx, db, "sk-live-GONE"); err != nil {
+		t.Fatalf("the key did not resolve while the membership stood: %v", err)
+	}
+	if _, err := DeleteMembership(ctx, db, "agency/josh", "client"); err != nil {
+		t.Fatal(err)
+	}
+	h, err := HolderByAccessKey(ctx, db, "sk-live-GONE")
+	if !errors.Is(err, orm.ErrNotFound) || h.User != nil {
+		t.Fatalf("after removal the key resolved to %+v (err=%v), want nobody", h.User, err)
+	}
+	if r := Reason(err); r != KeyForeignUser {
+		t.Fatalf("reason = %q, want %q", r, KeyForeignUser)
+	}
+}
+
+// A membership never carries a key across a reserved org, in either direction: a
+// tenant key cannot speak for a SuperAdmin who is also a member, and a key minted
+// in the reserved org cannot speak for a member from elsewhere.
+func TestHolderByAccessKey_MemberKeyNeverCrossesAReservedOrg(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedKeyUser(t, db, "admin", "z", "z@hanzo.ai", "")
+	seedKeyUser(t, db, "hanzo", "a", "a@hanzo.ai", "")
+	for _, m := range [][2]string{{"admin/z", "client"}, {"hanzo/a", "admin"}} {
+		if _, err := EnsureMembership(ctx, db, m[0], m[1], RoleOwner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedKey(t, db, "client", "sudo", "admin/z", "pk-live-SUDO", "sk-live-SUDO")
+	seedKey(t, db, "admin", "member", "hanzo/a", "pk-live-PLATFORM", "sk-live-PLATFORM")
+	for _, sk := range []string{"sk-live-SUDO", "sk-live-PLATFORM"} {
+		if h, err := HolderByAccessKey(ctx, db, sk); !errors.Is(err, orm.ErrNotFound) || h.User != nil {
+			t.Fatalf("key %q resolved to %+v (err=%v), want nobody", sk, h.User, err)
+		}
+	}
+	if ok, _ := MemberKey(ctx, db, "admin/z", "client"); ok {
+		t.Fatal("MemberKey admitted a reserved-org user")
+	}
+}
