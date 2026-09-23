@@ -12,6 +12,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/pkg/pkce"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // RFC 7662 introspection + RFC 7009 revocation, end to end: mint a real token via
@@ -196,24 +197,153 @@ func TestRevoke_publicClient_revokesItsOwnRefreshFamily(t *testing.T) {
 	}
 }
 
-// Widening authentication must not widen it for a client that HAS a secret: the
-// registration still decides, and hanzo-console must still present its own.
+// Widening authentication must not widen it for a client that HAS a secret:
+// a caller that PRESENTS one must present the right one, and a Basic attempt is
+// answered with the Basic challenge it used — and only a Basic attempt is.
 func TestRevoke_confidentialClient_stillNeedsItsSecret(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 	access, _ := mintPasswordToken(t, app)
 
-	for name, secret := range map[string]string{"no secret": "", "wrong secret": "nope"} {
-		resp, _ := postForm(t, app, PathRevoke, "hanzo-console", secret, url.Values{"token": {access}})
-		if resp.StatusCode != 401 {
-			t.Fatalf("%s: revoke status = %d, want 401", name, resp.StatusCode)
+	for name, secret := range map[string]string{"basic, empty secret": "", "basic, wrong secret": "nope"} {
+		resp, body := postForm(t, app, PathRevoke, "hanzo-console", secret, url.Values{"token": {access}})
+		if resp.StatusCode != 401 || body["error"] != "invalid_client" {
+			t.Fatalf("%s: revoke status = %d %v, want 401 invalid_client", name, resp.StatusCode, body)
+		}
+		if got := resp.Header.Get("WWW-Authenticate"); got != `Basic realm="OAuth2"` {
+			t.Fatalf("%s: a failed Basic attempt must be answered with the Basic challenge, got %q", name, got)
 		}
 	}
+	resp, body := postBody(t, app, PathRevoke, url.Values{
+		"token": {access}, "client_id": {"hanzo-console"}, "client_secret": {"nope"},
+	}, nil)
+	if resp.StatusCode != 401 || body["error"] != "invalid_client" {
+		t.Fatalf("wrong client_secret in the body: status = %d %v, want 401 invalid_client", resp.StatusCode, body)
+	}
+	if got := resp.Header.Get("WWW-Authenticate"); got != "" {
+		t.Fatalf("the client never used Basic, so no Basic challenge: got %q", got)
+	}
+
 	// And the token it failed to revoke is untouched.
 	_, ir := postForm(t, app, PathIntrospect, "hanzo-console", "top-secret", url.Values{"token": {access}})
 	if ir["active"] != true {
 		t.Fatalf("an unauthenticated revoke killed the token anyway; body=%v", ir)
+	}
+}
+
+// postBody posts a form with the client named in the body (client_secret_post or
+// a public client), plus any extra headers — never HTTP Basic.
+func postBody(t *testing.T, app *zip.App, path string, form url.Values, header map[string]string) (*http.Response, map[string]any) {
+	t.Helper()
+	req := formReq("POST", path, form)
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+	resp, body := do(t, app, req)
+	return resp, decode(t, body)
+}
+
+// requireRevoked asserts the RFC 7009 §2.2 success answer and no challenge.
+func requireRevoked(t *testing.T, resp *http.Response) {
+	t.Helper()
+	if resp.StatusCode != 200 {
+		t.Fatalf("revoke status = %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("WWW-Authenticate"); got != "" {
+		t.Fatalf("revoke 200 carried WWW-Authenticate %q", got)
+	}
+}
+
+// What a browser app's sign-out sends: client_id and the token in the body, and
+// its access token as a Bearer — which is not client authentication. The app's
+// registration holds a secret for a backend path, and the browser half signed in
+// by PKCE without it, so the grant is public and client_id revokes it. Before,
+// this answered 401 with a Basic challenge, which a browser turns into a
+// password prompt, and the refresh token stayed spendable.
+func TestRevoke_publicHalfOfAConfidentialRegistration(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, refreshHours: 24})
+	seedRichUser(t, db)
+
+	verifier := "KmKyPMK1T4JxydUiDsLmCaz79cqcmYqoBCpaeWWoxrU"
+	params := loginParams("conf", "openid offline_access")
+	params["codeChallenge"] = pkce.Challenge(verifier)
+	code, _, body := loginForCode(t, app, params)
+	if code == "" {
+		t.Fatalf("login produced no code: %s", body)
+	}
+	_, tok := exchangeCode(t, app, url.Values{
+		"code": {code}, "client_id": {"conf"}, "redirect_uri": {testRedirect}, "code_verifier": {verifier},
+	})
+	access, _ := tok["access_token"].(string)
+	refreshTok, _ := tok["refresh_token"].(string)
+	if access == "" || refreshTok == "" {
+		t.Fatalf("PKCE exchange without the secret minted no tokens: %v", tok)
+	}
+
+	bearer := map[string]string{"Authorization": "Bearer " + access}
+	resp, _ := postBody(t, app, PathRevoke, url.Values{
+		"token": {refreshTok}, "token_type_hint": {"refresh_token"}, "client_id": {"conf"},
+	}, bearer)
+	requireRevoked(t, resp)
+	resp, _ = postBody(t, app, PathRevoke, url.Values{
+		"token": {access}, "token_type_hint": {"access_token"}, "client_id": {"conf"},
+	}, bearer)
+	requireRevoked(t, resp)
+
+	if status, out := refresh(t, app, "conf", refreshTok, nil); status == 200 {
+		t.Fatalf("a revoked refresh token still minted a token: %v", out)
+	}
+	req := formReqNoBody("GET", PathUserInfo)
+	req.Header.Set("Authorization", "Bearer "+access)
+	if resp, _ := do(t, app, req); resp.StatusCode == 200 {
+		t.Fatal("userinfo still 200 for a revoked bearer")
+	}
+}
+
+// The public half names the client; it does not prove the secret. So it revokes
+// only grants that were established without the secret. A grant the secret
+// established (here the password grant) still needs the secret, and the answer
+// stays 200 so it tells the caller nothing about the token (RFC 7009 §2.2).
+func TestRevoke_publicHalfCannotRevokeAConfidentialGrant(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
+	access, refreshTok := mintPasswordToken(t, app)
+
+	for _, token := range []string{access, refreshTok, "junk"} {
+		resp, _ := postBody(t, app, PathRevoke, url.Values{"token": {token}, "client_id": {"hanzo-console"}}, nil)
+		requireRevoked(t, resp)
+	}
+	_, ir := postForm(t, app, PathIntrospect, "hanzo-console", "top-secret", url.Values{"token": {access}})
+	if ir["active"] != true {
+		t.Fatalf("client_id alone revoked a grant the secret established; body=%v", ir)
+	}
+	if row, _ := store.GetTokenByRefreshHash(tctx(), db, hashToken(refreshTok)); row == nil {
+		t.Fatal("client_id alone revoked a confidential refresh family")
+	}
+}
+
+// A request that names no client, or an unknown one, is refused — without a
+// Basic challenge, because it did not attempt Basic. The SDK's Bearer header is
+// not client authentication, and a browser prompts for a password on a Basic
+// challenge.
+func TestRevoke_unidentifiedClient_401WithoutBasicChallenge(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret"})
+
+	for name, form := range map[string]url.Values{
+		"no client_id":      {"token": {"junk"}},
+		"unknown client_id": {"token": {"junk"}, "client_id": {"nobody"}},
+	} {
+		resp, body := postBody(t, app, PathRevoke, form, map[string]string{"Authorization": "Bearer junk"})
+		if resp.StatusCode != 401 || body["error"] != "invalid_client" {
+			t.Fatalf("%s: status = %d %v, want 401 invalid_client", name, resp.StatusCode, body)
+		}
+		if got := resp.Header.Get("WWW-Authenticate"); got != "" {
+			t.Fatalf("%s: no Basic attempt, yet WWW-Authenticate = %q", name, got)
+		}
 	}
 }
 

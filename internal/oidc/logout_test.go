@@ -44,6 +44,25 @@ func sessionLives(t *testing.T, app *zip.App, cookie string) bool {
 	return resp.StatusCode == 200 && decode(t, body)["status"] == "ok"
 }
 
+// signInFor is the hosted sign-in page a GET logout lands on when no registered
+// return address is named: the issuer's own /login, for the application when one
+// was identified.
+func signInFor(clientID string) string {
+	page := Issuer("hanzo.id") + PathSignIn
+	if clientID != "" {
+		page += "?client_id=" + clientID
+	}
+	return page
+}
+
+// requireSignedOut asserts the answer is a 302 to exactly the sign-in page.
+func requireSignedOut(t *testing.T, resp *http.Response, clientID string) {
+	t.Helper()
+	if loc := resp.Header.Get("Location"); resp.StatusCode != 302 || loc != signInFor(clientID) {
+		t.Fatalf("logout: status=%d Location=%q, want 302 to %q", resp.StatusCode, loc, signInFor(clientID))
+	}
+}
+
 // logout calls the endpoint with an optional session cookie and Accept header.
 func logout(t *testing.T, app *zip.App, cookie, accept, query string) *http.Response {
 	t.Helper()
@@ -81,9 +100,7 @@ func TestLogout_EndsTheSession(t *testing.T) {
 	}
 
 	resp := logout(t, app, stolen, "", "")
-	if resp.StatusCode != 200 {
-		t.Fatalf("logout status = %d", resp.StatusCode)
-	}
+	requireSignedOut(t, resp, "")
 
 	// The load-bearing half: the session is dead SERVER-side.
 	if sessionLives(t, app, stolen) {
@@ -103,16 +120,10 @@ func TestLogout_IdempotentAndAnonymousSafe(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedRichUser(t, db)
 
-	if resp := logout(t, app, "", "", ""); resp.StatusCode != 200 {
-		t.Fatalf("anonymous logout status = %d", resp.StatusCode)
-	}
+	requireSignedOut(t, logout(t, app, "", "", ""), "")
 	cookie := signIn(t, app, "conf")
-	if resp := logout(t, app, cookie, "", ""); resp.StatusCode != 200 {
-		t.Fatalf("first logout status = %d", resp.StatusCode)
-	}
-	if resp := logout(t, app, cookie, "", ""); resp.StatusCode != 200 {
-		t.Fatalf("second logout status = %d", resp.StatusCode)
-	}
+	requireSignedOut(t, logout(t, app, cookie, "", ""), "")
+	requireSignedOut(t, logout(t, app, cookie, "", ""), "")
 	if sessionLives(t, app, cookie) {
 		t.Fatal("session survived a repeated logout")
 	}
@@ -169,14 +180,51 @@ func TestLogout_RevokesRefreshToken(t *testing.T) {
 	// present possession, so hint alone must never let a stranger kill a grant.
 	cookie := signIn(t, app, "conf")
 	q := url.Values{"id_token_hint": {idToken}}.Encode()
-	if resp := logout(t, app, cookie, "", q); resp.StatusCode != 200 {
-		t.Fatalf("logout status = %d", resp.StatusCode)
-	}
+	requireSignedOut(t, logout(t, app, cookie, "", q), "conf")
 
+	liveAccess, _ := out["access_token"].(string)
 	status, out = refresh(t, app, "conf", live, url.Values{"client_secret": {"s3cret"}})
 	if status == 200 {
 		t.Fatalf("refresh token still mints after logout — the grant was not revoked: %v", out)
 	}
+	requireBearerDead(t, app, liveAccess)
+}
+
+// requireBearerDead asserts an access token no longer resolves at userinfo.
+func requireBearerDead(t *testing.T, app *zip.App, access string) {
+	t.Helper()
+	req := formReqNoBody("GET", PathUserInfo)
+	req.Header.Set("Authorization", "Bearer "+access)
+	if resp, _ := do(t, app, req); resp.StatusCode == 200 {
+		t.Fatal("the access token still resolves after logout — it was not revoked")
+	}
+}
+
+// A relying party that navigates to logout with nothing but the browser's own
+// session still leaves no spendable token behind: the grant retired is the one
+// for the application the session was opened for. The client needs no separate
+// revoke call before it navigates.
+func TestLogout_WithoutHintRevokesTheSessionApplicationsTokens(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, refreshHours: 24})
+	seedRichUser(t, db)
+
+	code, _, _ := loginForCode(t, app, loginParams("conf", "openid offline_access"))
+	_, tok := exchangeCode(t, app, url.Values{
+		"code": {code}, "client_id": {"conf"}, "client_secret": {"s3cret"}, "redirect_uri": {testRedirect},
+	})
+	access, _ := tok["access_token"].(string)
+	refreshTok, _ := tok["refresh_token"].(string)
+	if access == "" || refreshTok == "" {
+		t.Fatalf("need an access and a refresh token: %v", tok)
+	}
+
+	requireSignedOut(t, logout(t, app, signIn(t, app, "conf"), "", ""), "")
+
+	if status, out := refresh(t, app, "conf", refreshTok, url.Values{"client_secret": {"s3cret"}}); status == 200 {
+		t.Fatalf("refresh token still mints after logout: %v", out)
+	}
+	requireBearerDead(t, app, access)
 }
 
 // An id_token_hint is a token, not a proof of present possession. Revoking on a
@@ -203,47 +251,54 @@ func TestLogout_HintAloneDoesNotRevoke(t *testing.T) {
 	}
 }
 
-// A browser navigating to logout gets a page it can read; an API caller keeps the
-// JSON envelope it parses. The old handler returned raw JSON to everyone, so a
-// person who clicked "sign out" saw {"status":"ok"} on a blank page and could not
-// tell whether it had worked.
-func TestLogout_ContentNegotiation(t *testing.T) {
+// A GET is the end-session navigation, so it always lands on a page — whatever
+// it Accepts, because a browser following a link, a window.location assignment
+// and curl all send something different. A POST is how a program signs out, and
+// it keeps the JSON envelope it parses unless it is a form asking for HTML.
+func TestLogout_NavigationAndAPI(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedRichUser(t, db)
 
-	t.Run("browser navigation lands on a page", func(t *testing.T) {
-		resp := logout(t, app, signIn(t, app, "conf"), "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "")
-		loc := resp.Header.Get("Location")
-		if resp.StatusCode != 302 || !strings.Contains(loc, PathSignedOut) {
-			t.Fatalf("browser logout must land on a signed-out page: status=%d loc=%q", resp.StatusCode, loc)
-		}
-	})
+	for name, accept := range map[string]string{
+		"browser":       "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+		"no preference": "",
+		"any":           "*/*",
+		"json":          "application/json",
+	} {
+		t.Run("GET "+name+" lands on the sign-in page", func(t *testing.T) {
+			requireSignedOut(t, logout(t, app, signIn(t, app, "conf"), accept, ""), "")
+		})
+	}
 
-	t.Run("API caller keeps JSON", func(t *testing.T) {
-		resp := logout(t, app, signIn(t, app, "conf"), "application/json", "")
-		if resp.StatusCode != 200 || resp.Header.Get("Location") != "" {
-			t.Fatalf("json caller must not be redirected: status=%d loc=%q", resp.StatusCode, resp.Header.Get("Location"))
-		}
-	})
-
-	t.Run("XHR keeps JSON even asking for html", func(t *testing.T) {
-		req := formReqNoBody("GET", PathLogout)
+	post := func(accept, requestedWith string) *http.Response {
+		req := formReq("POST", PathLogout, url.Values{})
 		req.Header.Set("Cookie", signIn(t, app, "conf"))
-		req.Header.Set("Accept", "text/html")
-		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+		if accept != "" {
+			req.Header.Set("Accept", accept)
+		}
+		if requestedWith != "" {
+			req.Header.Set("X-Requested-With", requestedWith)
+		}
 		resp, _ := do(t, app, req)
-		if resp.StatusCode != 200 || resp.Header.Get("Location") != "" {
-			t.Fatalf("XHR must not be redirected: status=%d loc=%q", resp.StatusCode, resp.Header.Get("Location"))
-		}
-	})
+		return resp
+	}
 
-	t.Run("no preference keeps JSON (the existing contract)", func(t *testing.T) {
-		resp := logout(t, app, signIn(t, app, "conf"), "*/*", "")
-		if resp.StatusCode != 200 || resp.Header.Get("Location") != "" {
-			t.Fatalf("default must stay JSON: status=%d loc=%q", resp.StatusCode, resp.Header.Get("Location"))
-		}
+	t.Run("POST form asking for html lands on the sign-in page", func(t *testing.T) {
+		requireSignedOut(t, post("text/html", ""), "")
 	})
+	for name, h := range map[string][2]string{
+		"json":                     {"application/json", ""},
+		"no preference":            {"*/*", ""},
+		"XHR even asking for html": {"text/html", "XMLHttpRequest"},
+	} {
+		t.Run("POST "+name+" keeps JSON", func(t *testing.T) {
+			resp := post(h[0], h[1])
+			if resp.StatusCode != 200 || resp.Header.Get("Location") != "" {
+				t.Fatalf("a program's POST must not be redirected: status=%d loc=%q", resp.StatusCode, resp.Header.Get("Location"))
+			}
+		})
+	}
 }
 
 // Content negotiation must not become an open redirect: a browser asking for HTML
@@ -257,14 +312,7 @@ func TestLogout_BrowserRedirectStillGuarded(t *testing.T) {
 		"post_logout_redirect_uri": {"https://evil.example/x"},
 		"id_token_hint":            {idTokenHint(t, app)},
 	}.Encode()
-	resp := logout(t, app, signIn(t, app, "conf"), "text/html", q)
-	loc := resp.Header.Get("Location")
-	if strings.Contains(loc, "evil.example") {
-		t.Fatalf("browser logout followed an unregistered redirect: %q", loc)
-	}
-	if resp.StatusCode != 302 || !strings.Contains(loc, PathSignedOut) {
-		t.Fatalf("expected the signed-out page, got status=%d loc=%q", resp.StatusCode, loc)
-	}
+	requireSignedOut(t, logout(t, app, signIn(t, app, "conf"), "text/html", q), "conf")
 }
 
 // idTokenHint runs the confidential flow and returns a verifiable id_token.
@@ -288,26 +336,37 @@ func TestLogout_RedirectSafety(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
-	t.Run("no redirect param → 200", func(t *testing.T) {
+	t.Run("no redirect param lands on the sign-in page", func(t *testing.T) {
 		resp, _ := do(t, app, formReqNoBody("GET", PathLogout))
-		if resp.StatusCode != 200 || resp.Header.Get("Location") != "" {
-			t.Fatalf("status=%d loc=%q", resp.StatusCode, resp.Header.Get("Location"))
-		}
+		requireSignedOut(t, resp, "")
 	})
 
 	t.Run("redirect without hint is refused (no open redirect)", func(t *testing.T) {
 		q := url.Values{"post_logout_redirect_uri": {"https://evil.example/x"}}
 		resp, _ := do(t, app, formReqNoBody("GET", PathLogout+"?"+q.Encode()))
-		if resp.StatusCode != 200 || resp.Header.Get("Location") != "" {
-			t.Fatalf("must not redirect without a verified hint: status=%d loc=%q", resp.StatusCode, resp.Header.Get("Location"))
-		}
+		requireSignedOut(t, resp, "")
 	})
 
 	t.Run("verified hint but unregistered redirect is refused", func(t *testing.T) {
 		q := url.Values{"post_logout_redirect_uri": {"https://evil.example/x"}, "id_token_hint": {idTokenHint(t, app)}}
 		resp, _ := do(t, app, formReqNoBody("GET", PathLogout+"?"+q.Encode()))
-		if resp.StatusCode != 200 || resp.Header.Get("Location") != "" {
-			t.Fatalf("unregistered redirect must be refused: status=%d loc=%q", resp.StatusCode, resp.Header.Get("Location"))
+		requireSignedOut(t, resp, "conf")
+	})
+
+	// What a relying party that returns people to its own front page sends: its
+	// origin, which it never registered. The person lands on the sign-in page for
+	// that application, not on a JSON body.
+	t.Run("client_id with an unregistered return lands on its sign-in page", func(t *testing.T) {
+		q := url.Values{"client_id": {"conf"}, "post_logout_redirect_uri": {"https://app.example/"}}
+		resp, _ := do(t, app, formReqNoBody("GET", PathLogout+"?"+q.Encode()))
+		requireSignedOut(t, resp, "conf")
+	})
+
+	t.Run("client_id with a registered return is honored", func(t *testing.T) {
+		q := url.Values{"client_id": {"conf"}, "post_logout_redirect_uri": {testRedirect}}
+		resp, _ := do(t, app, formReqNoBody("GET", PathLogout+"?"+q.Encode()))
+		if loc := resp.Header.Get("Location"); resp.StatusCode != 302 || loc != testRedirect {
+			t.Fatalf("status=%d loc=%q, want 302 to %q", resp.StatusCode, loc, testRedirect)
 		}
 	})
 

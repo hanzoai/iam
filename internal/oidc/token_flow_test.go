@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/url"
 	"testing"
@@ -121,8 +122,9 @@ func TestAuthCodeFlow_PublicPKCE(t *testing.T) {
 	})
 }
 
-// The RFC 6749 §5.2 error taxonomy: invalid_client → 401 + WWW-Authenticate,
-// every other error → 400, each with the right code.
+// The RFC 6749 §5.2 error taxonomy: invalid_client → 401, with the Basic
+// challenge only when the client used Basic; every other error → 400, each with
+// the right code.
 func TestToken_ErrorTaxonomy(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
@@ -146,8 +148,18 @@ func TestToken_ErrorTaxonomy(t *testing.T) {
 		code, _, _ := loginForCode(t, app, loginParams("conf", "openid"))
 		resp, tok := exchangeCode(t, app, url.Values{"code": {code}, "client_id": {"conf"}, "client_secret": {"WRONG"}, "redirect_uri": {testRedirect}})
 		requireError(t, resp, tok, 401, "invalid_client")
-		if resp.Header.Get("WWW-Authenticate") == "" {
-			t.Error("401 invalid_client must carry WWW-Authenticate")
+		if got := resp.Header.Get("WWW-Authenticate"); got != "" {
+			t.Errorf("client_secret_post never used Basic, yet WWW-Authenticate = %q", got)
+		}
+	})
+	t.Run("wrong Basic credentials are invalid_client 401 with the Basic challenge", func(t *testing.T) {
+		code, _, _ := loginForCode(t, app, loginParams("conf", "openid"))
+		req := formReq("POST", PathToken, url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {testRedirect}})
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("conf:WRONG")))
+		resp, body := do(t, app, req)
+		requireError(t, resp, decode(t, body), 401, "invalid_client")
+		if got := resp.Header.Get("WWW-Authenticate"); got != `Basic realm="OAuth2"` {
+			t.Errorf("a failed Basic attempt must be answered with the Basic challenge, got %q", got)
 		}
 	})
 	t.Run("redirect_uri mismatch", func(t *testing.T) {

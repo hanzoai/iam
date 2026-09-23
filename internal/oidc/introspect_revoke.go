@@ -36,31 +36,42 @@ func routeIntrospectRevoke(r *zip.Group, db orm.DB) {
 	r.Raw(http.MethodPost, PathRevoke, revokeHandler(db))
 }
 
-// authTokenClient authenticates the CALLING CLIENT, and only the client:
-// client_id names it, and a client that HOLDS a secret must present it
-// (constant-time). A client that holds none is PUBLIC, and client_id is the whole
-// of what it can present — the same bounded relaxation authorizationCodeGrant and
-// refreshTokenGrant already make for the loopback PKCE clients. It never widens a
-// confidential client: a stored secret is always demanded and always verified,
-// and a nil/unknown app fails closed.
+// authTokenClient authenticates the CALLING CLIENT, and only the client.
+// client_id names it. The answer is the registration and whether the caller
+// PROVED everything that registration can demand:
+//
+//   - a registration with no secret is PUBLIC: client_id is all it can present,
+//     so it is proved by naming itself.
+//   - a caller that presents a secret (in the body, or by HTTP Basic, even an
+//     empty one) must present the right one (constant-time), or it fails.
+//   - a caller that presents NO secret to a registration that holds one is that
+//     registration's PUBLIC half: the browser or CLI surface that signed in by
+//     PKCE and never held the secret. It is identified, not proved, and may only
+//     act on grants established the same way (schema.Token.PublicGrant) — the
+//     rule refreshTokenGrant applies to the same grants.
 //
 // It reads NOTHING about the token, so the status code it produces cannot tell an
 // unauthenticated caller whether the token it sent exists (RFC 7009 §2.2). WHAT a
 // caller may then do is a separate question, answered by each handler below.
-func authTokenClient(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.Application, bool) {
+func authTokenClient(ctx context.Context, db orm.DB, c *zip.Ctx) (app *schema.Application, proved, ok bool) {
 	clientID, clientSecret := clientAuth(c)
 	if clientID == "" {
-		return nil, false
+		return nil, false, false
 	}
 	app, err := store.GetApplicationByClientId(ctx, db, clientID)
 	if err != nil || app == nil {
-		return nil, false
+		return nil, false, false
 	}
-	if app.ClientSecret != "" &&
-		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
-		return nil, false
+	if app.ClientSecret == "" {
+		return app, true, true
 	}
-	return app, true
+	if clientSecret == "" && !basicAttempted(c) {
+		return app, false, true
+	}
+	if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+		return nil, false, false
+	}
+	return app, true, true
 }
 
 // introspectHandler answers whether an access token is still good, and what it
@@ -79,8 +90,8 @@ func introspectHandler(db orm.DB) zip.Handler {
 		// Introspection reports on tokens the caller did not necessarily issue, so
 		// it stays CONFIDENTIAL-only: RFC 7662 §2.1 addresses it to a protected
 		// resource, and a public client_id is unauthenticated by construction.
-		app, ok := authTokenClient(ctx, db, c)
-		if !ok || app.ClientSecret == "" {
+		app, proved, ok := authTokenClient(ctx, db, c)
+		if !ok || !proved || app.ClientSecret == "" {
 			return tokenErrorClient(c, "client authentication failed")
 		}
 
@@ -147,25 +158,29 @@ func introspectHandler(db orm.DB) zip.Handler {
 // nothing — so the endpoint cannot be used to discover which tokens are real.
 //
 // PUBLIC clients revoke too, and must: sign-out is the only control a long-lived
-// refresh token has. A native app or CLI is a public PKCE client and holds no
-// secret, so requiring one here would leave signing out as a local delete —
+// refresh token has (RFC 7009 §2.1 — a public client identifies itself with
+// client_id). A browser app or CLI is a public PKCE client and holds no secret,
+// and that includes the public half of a registration that keeps a secret for a
+// backend path, so requiring one here would leave signing out as a local delete —
 // forgetting a credential that stays spendable for the rest of its lifetime.
 //
 // Widening authentication does not widen authority. The caller must still POSSESS
 // the token — and possession already permits USE, of which revocation is the
-// strict opposite — and the row must belong to the client that presents it, so a
-// public client_id buys the ability to destroy exactly what its holder could
-// otherwise spend. RFC 6749 §3.2.1 is the same reading: a client with no
-// credentials identifies itself with client_id.
+// strict opposite — and the row must belong to the client that presents it. A
+// caller that did not prove the registration's secret revokes only a grant that
+// was itself established without it, so a public client_id buys the ability to
+// destroy exactly what its holder could otherwise spend.
 func revokeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
 		ctx := c.Context()
-		app, ok := authTokenClient(ctx, db, c)
+		app, proved, ok := authTokenClient(ctx, db, c)
 		if !ok {
 			return tokenErrorClient(c, "client authentication failed")
 		}
-		clientName := app.Name
+		mayRevoke := func(row *schema.Token) bool {
+			return row.Application == app.Name && (proved || row.PublicGrant)
+		}
 
 		tokenStr := param(c, "token")
 		if tokenStr == "" {
@@ -174,13 +189,13 @@ func revokeHandler(db orm.DB) zip.Handler {
 		h := hashToken(tokenStr)
 
 		if row, _ := store.GetTokenByAccessTokenHash(ctx, db, h); row != nil {
-			if row.Application == clientName {
+			if mayRevoke(row) {
 				_ = store.DeleteToken(ctx, db, row)
 			}
 			return revoked(c)
 		}
 		if row, _ := store.GetTokenByRefreshHash(ctx, db, h); row != nil {
-			if row.Application == clientName {
+			if mayRevoke(row) {
 				family, _ := store.ListTokensByRefreshFamily(ctx, db, row.RefreshFamily)
 				for _, t := range family {
 					_ = store.DeleteToken(ctx, db, t)

@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -16,11 +17,11 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// PathSignedOut is the SPA route a signed-out browser lands on. It is the
-// portal's own sign-in page (App.tsx routes /login), reached on the issuer origin
-// the request arrived at, so a white-labelled brand lands on ITS OWN page rather
-// than another tenant's.
-const PathSignedOut = "/login?signed_out=1"
+// PathSignIn is the hosted sign-in page (hanzoai/id App.tsx routes /login; the
+// page reads the application from ?client_id). A signed-out browser lands there
+// on the issuer origin the request arrived at, so a white-labelled brand lands on
+// ITS OWN page rather than another tenant's.
+const PathSignIn = "/login"
 
 // logoutHandler ends a sign-in and sends the browser somewhere sensible. Accepts
 // GET or POST, so it works as a plain link.
@@ -39,10 +40,16 @@ const PathSignedOut = "/login?signed_out=1"
 //     days, so expiry is necessary but never sufficient.
 //  3. Only then is a redirect considered, and only to a REGISTERED uri.
 //
-// The open-redirect guard is unchanged: a redirect happens only when a VERIFIED
-// id_token_hint identifies the application and that application has registered
-// the target. Anything else refuses to redirect — nobody can turn your logout
-// link into a redirect to a site of their choosing.
+// The open-redirect guard: a redirect happens only when a VERIFIED
+// id_token_hint (or client_id) identifies the application and that application
+// has registered the target. Nobody can turn your logout link into a redirect to
+// a site of their choosing.
+//
+// A GET is the end-session navigation (OIDC RP-Initiated Logout 1.0 §2), so it
+// always ends on a page: the registered address when one was asked for, else
+// this issuer's sign-in page for the application being signed out of. A relying
+// party therefore needs no configuration to sign someone out. A POST is also how
+// a program signs out, so it keeps the JSON answer unless it asks for HTML.
 func logoutHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -59,7 +66,7 @@ func logoutHandler(db orm.DB) zip.Handler {
 		// says client_id is there for exactly the case where the hint is not
 		// available -- which is every SPA that did not keep the id_token. Without it
 		// the lookup returns nil, step (3) refuses the redirect, and the person
-		// lands on our signed-out page instead of back in the app they pressed
+		// lands on our sign-in page instead of back in the app they pressed
 		// sign-out in. Nothing came back, which reads as sign-out being broken.
 		//
 		// It gives away nothing: the redirect must still be one the identified
@@ -87,40 +94,45 @@ func logoutHandler(db orm.DB) zip.Handler {
 		}
 
 		// (3) Redirect only to an address the identified application registered.
-		if redirect := param(c, "post_logout_redirect_uri"); redirect != "" {
-			if app != nil && app.IsRedirectUriValid(redirect) {
-				if state := param(c, "state"); state != "" {
-					sep := "?"
-					if strings.Contains(redirect, "?") {
-						sep = "&"
-					}
-					redirect += sep + "state=" + url.QueryEscape(state)
+		if redirect := param(c, "post_logout_redirect_uri"); redirect != "" && app != nil && app.IsRedirectUriValid(redirect) {
+			if state := param(c, "state"); state != "" {
+				sep := "?"
+				if strings.Contains(redirect, "?") {
+					sep = "&"
 				}
-				return c.Redirect(302, redirect)
+				redirect += sep + "state=" + url.QueryEscape(state)
 			}
-			// No proof the caller owns the target — refuse to redirect, and fall
-			// through to the ordinary answer below.
+			return c.Redirect(302, redirect)
 		}
-
-		// A browser gets a page it can read; an API caller keeps the JSON envelope
-		// it parses. Same logout either way — only the way it is reported differs.
-		if wantsHTML(c) {
-			return c.Redirect(302, tokenIssuer(c)+PathSignedOut)
+		// Anything else is refused as a target and falls through: a navigation
+		// lands on the sign-in page, an API caller keeps the JSON envelope it
+		// parses. Same logout either way — only the way it is reported differs.
+		if c.Method() == http.MethodGet || wantsHTML(c) {
+			return c.Redirect(302, signInPage(c, app))
 		}
 		return c.JSON(200, map[string]string{"status": "ok"})
 	}
 }
 
-// wantsHTML reports whether the caller is a browser NAVIGATING here rather than a
-// program calling the API. Browsers send `Accept: text/html,…` on a navigation
-// and every API client sends either application/json or the `*/*` default, so the
-// question is answerable from Accept alone — with one carve-out: fetch/XHR from a
-// page inherits nothing useful, so an explicit XMLHttpRequest marker or a JSON
-// preference wins regardless.
+// signInPage is this issuer's hosted sign-in page for app, or the issuer's
+// default sign-in when no application was identified.
+func signInPage(c *zip.Ctx, app *schema.Application) string {
+	page := tokenIssuer(c) + PathSignIn
+	if app != nil && app.ClientId != "" {
+		page += "?" + url.Values{"client_id": {app.ClientId}}.Encode()
+	}
+	return page
+}
+
+// wantsHTML reports whether a POST comes from a browser form rather than a
+// program calling the API. Browsers send `Accept: text/html,…` on a form
+// navigation and every API client sends either application/json or the `*/*`
+// default, so the question is answerable from Accept alone — with one carve-out:
+// fetch/XHR from a page inherits nothing useful, so an explicit XMLHttpRequest
+// marker or a JSON preference wins regardless.
 //
-// The default is JSON. A caller that expresses no preference keeps the existing
-// contract, so nothing that parses this endpoint today starts receiving a
-// redirect.
+// The default is JSON: a program that POSTs and expresses no preference gets the
+// envelope it parses.
 func wantsHTML(c *zip.Ctx) bool {
 	if strings.EqualFold(c.Header("X-Requested-With"), "XMLHttpRequest") {
 		return false

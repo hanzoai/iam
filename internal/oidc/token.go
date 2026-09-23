@@ -31,8 +31,9 @@ import (
 // access JWT + id_token when openid + rotating refresh), refresh_token
 // (rotation with reuse detection, refresh.go), and client_credentials
 // (machine-to-machine, no user, no refresh). Every response carries no-store
-// caching; every error follows the RFC 6749 §5.2 taxonomy (invalid_client → 401
-// with WWW-Authenticate, everything else → 400). Implicit is permanently absent.
+// caching; every error follows the RFC 6749 §5.2 taxonomy (invalid_client → 401,
+// with a Basic challenge when the client used Basic; everything else → 400).
+// Implicit is permanently absent.
 
 // nowFunc is indirected so tests can pin time. Production uses time.Now.
 var nowFunc = time.Now
@@ -96,11 +97,23 @@ func tokenError(c *zip.Ctx, status int, code, desc string) error {
 	return c.JSON(status, body)
 }
 
-// tokenErrorClient answers a client-authentication failure: 401 + the
-// WWW-Authenticate challenge, per RFC 6749 §5.2.
+// tokenErrorClient answers a client-authentication failure: 401 invalid_client.
+// The Basic challenge is sent only to a client that authenticated with HTTP
+// Basic, the scheme it names (RFC 6749 §5.2). A client that sent its id in the
+// body, or a Bearer token in Authorization, did not use Basic, and a browser
+// answers a Basic challenge by prompting its user for a password.
 func tokenErrorClient(c *zip.Ctx, desc string) error {
-	c.SetHeader("WWW-Authenticate", `Basic realm="OAuth2"`)
+	if basicAttempted(c) {
+		c.SetHeader("WWW-Authenticate", `Basic realm="OAuth2"`)
+	}
 	return tokenError(c, 401, "invalid_client", desc)
+}
+
+// basicAttempted reports whether the request carries HTTP Basic credentials in
+// Authorization, well-formed or not.
+func basicAttempted(c *zip.Ctx) bool {
+	scheme, _, _ := strings.Cut(strings.TrimSpace(c.Header("Authorization")), " ")
+	return strings.EqualFold(scheme, "Basic")
 }
 
 // setTokenCacheHeaders forbids caching of any token response (RFC 6749 §5.1).
