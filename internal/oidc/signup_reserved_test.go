@@ -171,14 +171,16 @@ func TestSignup_reservedOrgRefuse_noOracle(t *testing.T) {
 }
 
 // The lux.id flow, as hanzoai/universe declares lux-cloud: a PUBLIC (PKCE) client
-// serving org lux, shared, signup open, orgChoiceMode "create". lux-tel and lux-app
+// serving org lux, signup open, orgChoiceMode "create", and not shared — the seed
+// states no isShared, which a new application reads as false. lux-tel and lux-app
 // carry the same org and mode.
 //
 // Every account it registers WORKS in an org of its own. Filed in lux, as this
 // application once did, every stranger was a member of one tenant — each could read
 // the others' records on any surface that scopes by org. So each person lands in
-// an org of their own, holds no membership in the org their signup named, and is a
-// plain account that no request can make a SuperAdmin.
+// an org of their own, holds no membership in lux, and is a plain account that no
+// request can make a SuperAdmin. A signup that names another standing org is
+// refused: an application that is not shared serves its own org and no other.
 func TestSignup_luxCloud_eachAccountFoundsItsOwnOrg(t *testing.T) {
 	app, db := newServer(t)
 	seedAppFull(t, db, fullApp{
@@ -187,7 +189,6 @@ func TestSignup_luxCloud_eachAccountFoundsItsOwnOrg(t *testing.T) {
 		org:       "lux",
 		orgChoice: "create",
 		signup:    true,
-		shared:    true,
 		redirects: []string{"https://lux.cloud/auth/callback"},
 	})
 	seedOrg(t, db, "lux")
@@ -195,12 +196,10 @@ func TestSignup_luxCloud_eachAccountFoundsItsOwnOrg(t *testing.T) {
 
 	const pw = "correct horse battery staple"
 	seen := map[string]bool{}
-	// A shared application admits a signup that names another standing org, so the
-	// third person names acme, a customer's tenant. Founding moves them out of it too.
-	for name, named := range map[string]string{"pioneer": "lux", "settler": "lux", "intruder": "acme"} {
+	for _, name := range []string{"pioneer", "settler"} {
 		status, env := signupReq(t, app, map[string]string{
 			"clientId":     "lux-cloud",
-			"organization": named,
+			"organization": "lux",
 			"username":     name,
 			"password":     pw,
 			"email":        name + "@example.com",
@@ -210,8 +209,8 @@ func TestSignup_luxCloud_eachAccountFoundsItsOwnOrg(t *testing.T) {
 		}
 		data, _ := env["data"].(map[string]any)
 		org, _ := data["owner"].(string)
-		if org == "lux" || org == named || seen[org] {
-			t.Fatalf("%s landed in org %q; want an org of its own, not %s and not another account's", name, org, named)
+		if org == "" || org == "lux" || seen[org] {
+			t.Fatalf("%s landed in org %q; want an org of its own, not lux and not another account's", name, org)
 		}
 		seen[org] = true
 		if policy.IsReservedOrg(org) {
@@ -222,8 +221,8 @@ func TestSignup_luxCloud_eachAccountFoundsItsOwnOrg(t *testing.T) {
 		if err != nil || u == nil {
 			t.Fatalf("%s is not in the org its signup answered (%q): err=%v", name, org, err)
 		}
-		if in, _ := store.GetUserByName(context.Background(), db, named, name); in != nil {
-			t.Fatalf("%s is still an account of org %s", name, named)
+		if in, _ := store.GetUserByName(context.Background(), db, "lux", name); in != nil {
+			t.Fatalf("%s is still an account of org lux", name)
 		}
 		for _, ref := range store.MemberOrgRefs(context.Background(), db, u) {
 			if ref.Org != org {
@@ -242,5 +241,25 @@ func TestSignup_luxCloud_eachAccountFoundsItsOwnOrg(t *testing.T) {
 		if u.PasswordType != "argon2id" || u.PasswordHash == "" || u.PasswordHash == pw {
 			t.Errorf("password not argon2id-hashed: type=%q hashEmptyOrPlain=%v", u.PasswordType, u.PasswordHash == "" || u.PasswordHash == pw)
 		}
+	}
+
+	// acme is a customer's standing tenant. lux-cloud does not serve it, so a signup
+	// naming it is refused with the same sentence as every other tenant refusal, and
+	// acme gains no account.
+	status, env := signupReq(t, app, map[string]string{
+		"clientId":     "lux-cloud",
+		"organization": "acme",
+		"username":     "intruder",
+		"password":     pw,
+		"email":        "intruder@example.com",
+	})
+	if status == 200 && env["status"] == "ok" {
+		t.Fatalf("a lux.cloud signup was admitted into acme: %v", env)
+	}
+	if msg, _ := env["msg"].(string); msg != "the user is not permitted to sign up to this application" {
+		t.Fatalf("refusal message %q distinguishes this case from the other tenant refusals", msg)
+	}
+	if u, _ := store.GetUserByName(context.Background(), db, "acme", "intruder"); u != nil {
+		t.Fatalf("intruder now exists inside tenant acme")
 	}
 }
