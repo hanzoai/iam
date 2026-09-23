@@ -170,60 +170,77 @@ func TestSignup_reservedOrgRefuse_noOracle(t *testing.T) {
 	}
 }
 
-// SIGNUP-READINESS (STEP 4) — the lux.cloud flow. A `lux-cloud` PUBLIC (PKCE) OIDC
-// client, redirect https://lux.cloud/auth/callback, self-registration enabled,
-// serving the `lux` org, must create a PLAIN non-admin user in `lux` (never admin):
-// Owner=lux, Type=normal-user, IsAdmin=false, EmailVerified=false, password
-// argon2id-hashed. This is exactly what opens lux.cloud signup.
-func TestSignup_luxCloud_createsPlainNonAdminUser(t *testing.T) {
+// The lux.id flow, as hanzoai/universe declares lux-cloud: a PUBLIC (PKCE) client
+// serving org lux, shared, signup open, orgChoiceMode "create". lux-tel and lux-app
+// carry the same org and mode.
+//
+// Every account it registers WORKS in an org of its own. Filed in lux, as this
+// application once did, every stranger was a member of one tenant — each could read
+// the others' records on any surface that scopes by org. So each person lands in
+// an org of their own, holds no membership in the org their signup named, and is a
+// plain account that no request can make a SuperAdmin.
+func TestSignup_luxCloud_eachAccountFoundsItsOwnOrg(t *testing.T) {
 	app, db := newServer(t)
-	// A PUBLIC client: no client secret (PKCE), redirect to lux.cloud, signup enabled.
 	seedAppFull(t, db, fullApp{
 		clientID:  "lux-cloud",
 		secret:    "", // public / PKCE client
 		org:       "lux",
+		orgChoice: "create",
 		signup:    true,
+		shared:    true,
 		redirects: []string{"https://lux.cloud/auth/callback"},
 	})
 	seedOrg(t, db, "lux")
+	seedOrg(t, db, "acme")
 
 	const pw = "correct horse battery staple"
-	status, env := signupReq(t, app, map[string]string{
-		"clientId":     "lux-cloud",
-		"organization": "lux",
-		"username":     "pioneer",
-		"password":     pw,
-		"email":        "pioneer@lux.network",
-	})
-	if status != 200 || env["status"] != "ok" {
-		t.Fatalf("lux.cloud signup: status=%d env=%v, want 200 ok", status, env)
-	}
+	seen := map[string]bool{}
+	// A shared application admits a signup that names another standing org, so the
+	// third person names acme, a customer's tenant. Founding moves them out of it too.
+	for name, named := range map[string]string{"pioneer": "lux", "settler": "lux", "intruder": "acme"} {
+		status, env := signupReq(t, app, map[string]string{
+			"clientId":     "lux-cloud",
+			"organization": named,
+			"username":     name,
+			"password":     pw,
+			"email":        name + "@example.com",
+		})
+		if status != 200 || env["status"] != "ok" {
+			t.Fatalf("lux.cloud signup %s: status=%d env=%v, want 200 ok", name, status, env)
+		}
+		data, _ := env["data"].(map[string]any)
+		org, _ := data["owner"].(string)
+		if org == "lux" || org == named || seen[org] {
+			t.Fatalf("%s landed in org %q; want an org of its own, not %s and not another account's", name, org, named)
+		}
+		seen[org] = true
+		if policy.IsReservedOrg(org) {
+			t.Fatalf("%s landed in a RESERVED org %q", name, org)
+		}
 
-	u, err := store.GetUserByName(context.Background(), db, "lux", "pioneer")
-	if err != nil || u == nil {
-		t.Fatalf("lux.cloud signup created no user: err=%v", err)
-	}
-	if u.Owner != "lux" {
-		t.Errorf("owner = %q, want lux (a signup must land in the served tenant, never admin)", u.Owner)
-	}
-	if policy.IsReservedOrg(u.Owner) {
-		t.Errorf("lux.cloud user landed in a RESERVED org %q", u.Owner)
-	}
-	if u.IsAdmin {
-		t.Error("lux.cloud signup produced an admin user — must be a PLAIN user")
-	}
-	// Now a stronger claim than it used to be: not anchored in the reserved org,
-	// AND holding no membership there — a signup can mint neither.
-	if super, err := store.IsSuperAdmin(context.Background(), db, u.Owner, u.Name); err != nil || super {
-		t.Errorf("lux.cloud signup produced a SuperAdmin — must be a PLAIN user (super=%v err=%v)", super, err)
-	}
-	if u.Type != "normal-user" {
-		t.Errorf("type = %q, want normal-user", u.Type)
-	}
-	if u.EmailVerified {
-		t.Error("EmailVerified must be false on a fresh signup (not client-assertable)")
-	}
-	if u.PasswordType != "argon2id" || u.PasswordHash == "" || u.PasswordHash == pw {
-		t.Errorf("password not argon2id-hashed: type=%q hashEmptyOrPlain=%v", u.PasswordType, u.PasswordHash == "" || u.PasswordHash == pw)
+		u, err := store.GetUserByName(context.Background(), db, org, name)
+		if err != nil || u == nil {
+			t.Fatalf("%s is not in the org its signup answered (%q): err=%v", name, org, err)
+		}
+		if in, _ := store.GetUserByName(context.Background(), db, named, name); in != nil {
+			t.Fatalf("%s is still an account of org %s", name, named)
+		}
+		for _, ref := range store.MemberOrgRefs(context.Background(), db, u) {
+			if ref.Org != org {
+				t.Fatalf("%s's signed membership set carries %s", name, ref.Org)
+			}
+		}
+		if super, err := store.IsSuperAdmin(context.Background(), db, u.Owner, u.Name); err != nil || super {
+			t.Errorf("%s is a SuperAdmin (super=%v err=%v)", name, super, err)
+		}
+		if u.Type != "normal-user" {
+			t.Errorf("type = %q, want normal-user", u.Type)
+		}
+		if u.EmailVerified {
+			t.Error("EmailVerified must be false on a fresh signup (not client-assertable)")
+		}
+		if u.PasswordType != "argon2id" || u.PasswordHash == "" || u.PasswordHash == pw {
+			t.Errorf("password not argon2id-hashed: type=%q hashEmptyOrPlain=%v", u.PasswordType, u.PasswordHash == "" || u.PasswordHash == pw)
+		}
 	}
 }
