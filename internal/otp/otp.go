@@ -225,12 +225,21 @@ func Receiver(dest string) string {
 // no longer leaves behind is a code nobody can receive that a redeeming caller
 // would still have to trust. A send that FAILS keeps its record, because that code
 // may well have gone out.
+//
+// org is the tenant the message is sent AS. The record is filed in the org of the
+// account it is for, which is where [Consume] reads it: an account founded into an
+// org of its own is sent a code as its application's org, and filing the record
+// there left a code the person held that nothing could spend.
 func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *schema.User, now time.Time) error {
 	if sender == nil {
 		return ErrNoDelivery
 	}
+	owner := org
+	if user != nil {
+		owner = user.Owner
+	}
 	receiver := Receiver(dest)
-	outstanding, err := store.GetLatestVerificationRecord(ctx, db, org, receiver)
+	outstanding, err := store.GetLatestVerificationRecord(ctx, db, owner, receiver)
 	if err != nil {
 		return err
 	}
@@ -246,7 +255,7 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 		return err
 	}
 	rec := &schema.VerificationRecord{
-		Owner:       org,
+		Owner:       owner,
 		Name:        id,
 		CreatedTime: now.UTC().Format(time.RFC3339),
 		RemoteAddr:  remoteAddr,
@@ -269,11 +278,11 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 	if err := store.AddVerificationRecord(ctx, db, rec); err != nil {
 		return err
 	}
-	// The persisted row is read back for every value: the code that was filed and the
-	// code that goes out must be one tenant, one channel and one address, so they read
-	// the one place those were decided. The normalized number is also the E.164-shaped
-	// one a carrier wants.
-	return sender.Send(ctx, message(rec.Owner, rec.Type, rec.Receiver, code))
+	// The persisted row is read back for the channel and the address: the code that
+	// was filed and the code that goes out must be one channel and one address, so
+	// they read the one place those were decided. The normalized number is also the
+	// E.164-shaped one a carrier wants.
+	return sender.Send(ctx, message(org, rec.Type, rec.Receiver, code))
 }
 
 // Consume verifies code against the latest live record for receiver and SPENDS the
