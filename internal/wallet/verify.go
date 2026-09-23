@@ -16,6 +16,7 @@ import (
 	"github.com/hanzoai/orm"
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -151,8 +152,9 @@ func verify(ctx context.Context, db orm.DB, in login, now time.Time) (signin, er
 func resolve(ctx context.Context, db orm.DB, in login, address string, now time.Time) (signin, error) {
 	chain := string(in.Proof.Chain)
 
-	// The wallet lookup is scoped to the application's organization — a resolved
-	// server value, never a request parameter.
+	// The wallet lookup is scoped to the application's organization — the accounts
+	// that live there or registered there — a resolved server value, never a
+	// request parameter.
 	w, err := link(ctx, db, in.App.Organization, chain, address)
 	if err != nil {
 		return signin{}, err
@@ -252,7 +254,9 @@ type signin struct {
 }
 
 // provision creates a fresh user for a first-seen wallet. No password is set —
-// this is a wallet-only identity; the user can add email/password later.
+// this is a wallet-only identity; the user can add email/password later. At an
+// application that founds each new account an org of its own, the wallet's gets
+// one too, and the link is then bound where the account lives.
 func provision(ctx context.Context, db orm.DB, in login, address string, now time.Time) (*schema.User, error) {
 	// Machine-generated, but still checked against THE username rule: a generated
 	// name is only conformant while whatever generates it stays conformant, and this
@@ -283,7 +287,7 @@ func provision(ctx context.Context, db orm.DB, in login, address string, now tim
 	if err := u.CreateCtx(ctx); err != nil {
 		return nil, err
 	}
-	return u, nil
+	return oidc.Charter(ctx, db, in.App, u)
 }
 
 // name is the bounded, stable, collision-resistant username of a wallet user.

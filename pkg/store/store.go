@@ -380,6 +380,13 @@ func GetSignupByEmail(ctx context.Context, db orm.DB, org, email string) (*schem
 	}
 }
 
+// RegisteredIn reports whether an application of org registered u — the reach
+// [GetSignupByEmail] makes by address, asked of an account already in hand.
+func RegisteredIn(ctx context.Context, db orm.DB, org string, u *schema.User) (bool, error) {
+	kept, err := registeredIn(ctx, db, org, []*schema.User{u})
+	return len(kept) == 1, err
+}
+
 // registeredIn keeps the rows an application of org registered.
 //
 // A reserved owner is never kept. Nothing should ever file a row of the admin org

@@ -610,23 +610,16 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 		EmailVerified: id.emailVerified,
 		Application:   app.Name,
 	})
-	if err != nil || app.OrgChoiceMode != orgChoiceCreate {
-		return created, err
+	if err != nil {
+		return nil, err
 	}
 	// A founding application registers the account in its own org and the account
-	// WORKS in an org of its own — the same statement the password endpoint makes,
-	// and the same converge, so a person arrives in the same place whichever endpoint
-	// they came through.
-	slug, err := charter(ctx, db, created)
+	// WORKS in an org of its own — the same statement the password endpoint makes.
+	founded, err := Charter(ctx, db, app, created)
 	if err != nil {
 		return nil, fmt.Errorf("federation: %w", err)
 	}
-	// Re-read rather than patch the row in hand: the converge moved the account and
-	// made it its org's admin, and the caller mints this person's first token from
-	// what comes back. A row carrying the pre-move owner would name an identity that
-	// no longer exists, and one carrying the pre-move role would state the wrong
-	// standing in their own org.
-	return store.GetUserByName(ctx, db, slug, created.Name)
+	return founded, nil
 }
 
 // federationProvider resolves the app's ProviderItem named name to its shared

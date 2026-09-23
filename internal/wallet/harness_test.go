@@ -112,6 +112,9 @@ type opts struct {
 	org    string
 	signup bool
 	secret string // "" → public (PKCE) client
+	// orgChoice is the application's OrgChoiceMode; "create" founds each new
+	// account an org of its own.
+	orgChoice string
 }
 
 // seed creates the organization and application a wallet login routes through.
@@ -139,6 +142,7 @@ func seed(t *testing.T, db orm.DB, o opts) *schema.Application {
 	a.ClientSecret = o.secret
 	a.Organization = o.org
 	a.EnableSignUp = o.signup
+	a.OrgChoiceMode = o.orgChoice
 	a.SetId("admin/" + o.name)
 	if err := a.CreateCtx(tctx()); err != nil {
 		t.Fatalf("seed app: %v", err)

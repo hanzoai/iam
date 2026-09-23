@@ -11,6 +11,7 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // Persistence for wallet sign-in (HIP-0111): the challenge (mint, atomic burn,
@@ -107,15 +108,27 @@ func Purge(ctx context.Context, db orm.DB, now time.Time) (int, error) {
 	return n, nil
 }
 
-// link resolves a verified (chain, address) to its wallet, scoped to one
-// organization. The org is a resolved server value (the application's), never a
-// request parameter. Returns (nil, nil) when no wallet is on file.
+// link resolves a verified (chain, address) to its wallet when an account of org
+// holds it: one that lives in org, or one an application of org registered, which
+// works in an org of its own once the application has founded it one. The org is a
+// resolved server value (the application's), never a request parameter. Returns
+// (nil, nil) when no wallet is on file, or when another org's account holds it.
 func link(ctx context.Context, db orm.DB, org, chain, address string) (*schema.Wallet, error) {
-	if org == "" || chain == "" || address == "" {
+	if org == "" {
 		return nil, nil
 	}
-	return first(orm.TypedQuery[schema.Wallet](db).
-		Filter("Owner=", org).Filter("Chain=", chain).Filter("Address=", address))
+	w, err := anywhere(ctx, db, chain, address)
+	if err != nil || w == nil || w.Owner == org {
+		return w, err
+	}
+	u, err := store.GetUserByName(ctx, db, w.Owner, w.User)
+	if err != nil || u == nil {
+		return nil, err
+	}
+	if ok, err := store.RegisteredIn(ctx, db, org, u); err != nil || !ok {
+		return nil, err
+	}
+	return w, nil
 }
 
 // anywhere resolves a verified (chain, address) across EVERY organization. The

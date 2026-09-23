@@ -374,6 +374,26 @@ func charter(ctx context.Context, db orm.DB, user *schema.User) (string, error) 
 	return out.org, nil
 }
 
+// Charter founds the org a new account works in when app founds one for each
+// account it registers, and returns the account where it then lives; any other
+// app leaves it where it was made. Every way an account is made — a password, a
+// provider, a wallet — ends here, so a person arrives in the same place whichever
+// way they came in.
+//
+// It re-reads the account rather than patching the row in hand: the converge moved
+// it and made it its org's admin, and the caller mints this person's first token
+// from what comes back.
+func Charter(ctx context.Context, db orm.DB, app *schema.Application, user *schema.User) (*schema.User, error) {
+	if app.OrgChoiceMode != orgChoiceCreate {
+		return user, nil
+	}
+	org, err := charter(ctx, db, user)
+	if err != nil {
+		return nil, err
+	}
+	return store.GetUserByName(ctx, db, org, user.Name)
+}
+
 // orgChoiceCreate is the application's declaration that a signup FOUNDS the
 // person's own organization: they are its sole member, and they join a team org
 // — hanzo, lux, zoo or any customer's — separately, by membership. An
