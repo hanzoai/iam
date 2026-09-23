@@ -301,14 +301,11 @@ func verificationChannel(identifier string) string {
 // refusal is the same opaque false, so nothing here tells a caller which addresses
 // have accounts.
 func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (bool, error) {
-	if !otp.DeliveryConfigured() {
-		return false, nil
-	}
 	app, err := store.GetApplicationByClientId(ctx, db, f.ClientId)
 	if err != nil {
 		return false, err
 	}
-	if app == nil || !app.EnableCodeSignin {
+	if !sendsCodes(app) {
 		return false, nil
 	}
 	return otp.Consume(ctx, db, user, f.Username, f.Code, nowFunc())

@@ -30,9 +30,10 @@ import (
 // the password hashed (never stored plaintext) and the created row returned
 // REDACTED.
 //
-// A signup may carry the code /v1/iam/verification-codes sent to its address. A
+// A signup carries the code /v1/iam/verification-codes sent to its address. A
 // right code records the address proven on the account it creates; a wrong one
-// creates nothing. A signup with no code records an address nobody has proven.
+// creates nothing. Where the application cannot send a code, a signup brings none
+// and records an address nobody has proven.
 
 // PathSignup is the canonical native signup endpoint.
 const PathSignup = "/v1/iam/signup"
@@ -180,6 +181,14 @@ func signupHandler(db orm.DB) zip.Handler {
 		if email != "" {
 			if !isEmailValid(email) {
 				return httpx.Err(c, "email is invalid")
+			}
+			// Where a code can reach the address, the address is proven or not taken.
+			// An account holding it unproven is one its owner can never have: they
+			// cannot register it again, a social sign-in will not adopt it, and the
+			// password is someone else's. This is a rule about the request alone, so
+			// it comes before anything reads the directory.
+			if f.Code == "" && sendsCodes(app) {
+				return httpx.Err(c, "the code sent to the email address is required")
 			}
 			// An address that already names an account is taken, and an address that
 			// names TWO is taken twice over — ErrEmailAmbiguous is a uniqueness answer

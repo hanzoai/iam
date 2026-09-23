@@ -21,11 +21,11 @@ import (
 // password.
 
 // foundedAccount signs someone up at a founding application that offers code
-// sign-in, with a sender bound, and returns the server, its store and the sender.
+// sign-in, then binds a sender, and returns the server, its store and the sender.
+// The account is made before any code could be sent, so its address is unproven:
+// the state of every account made before delivery existed.
 func foundedAccount(t *testing.T, addr, pw string) (*zip.App, orm.DB, *fakeSender) {
 	t.Helper()
-	sent := &fakeSender{}
-	bindSender(t, sent)
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, codeSignin: true, orgChoice: "create"})
 	seedOrg(t, db, "hanzo")
@@ -34,6 +34,8 @@ func foundedAccount(t *testing.T, addr, pw string) (*zip.App, orm.DB, *fakeSende
 	}); env["status"] != "ok" {
 		t.Fatalf("signup failed: %v", env)
 	}
+	sent := &fakeSender{}
+	bindSender(t, sent)
 	return app, db, sent
 }
 
@@ -147,12 +149,40 @@ func TestSignup_AWrongCodeCreatesNothing(t *testing.T) {
 	}
 }
 
+// Where the application can send a code, an address is proven or not taken. A
+// signup that names an address and brings no code held it unproven for good: its
+// owner could not register it ("email already exists"), could not bring a social
+// sign-in onto it (an unproven password row is not adopted), and had no password
+// for it.
+func TestSignup_NoCodeTakesNoAddressItCouldProve(t *testing.T) {
+	sent := &fakeSender{}
+	bindSender(t, sent)
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, codeSignin: true, orgChoice: "create"})
+	seedOrg(t, db, "hanzo")
+
+	const addr = "victim@example.com"
+	_, env := signupReq(t, app, map[string]string{
+		"application": "hanzo-cloud", "organization": "hanzo",
+		"password": "correct horse battery staple", "email": addr,
+	})
+	if msg, _ := env["msg"].(string); env["status"] != "error" || msg != "the code sent to the email address is required" {
+		t.Fatalf("a signup with no code took an address it could have proven: %v", env)
+	}
+	if u, _ := store.GetSignupByEmail(tctx(), db, "hanzo", addr); u != nil {
+		t.Fatal("an account holds the address")
+	}
+	if len(sent.sent) != 0 {
+		t.Fatalf("the refusal sent %d messages", len(sent.sent))
+	}
+}
+
 func TestResetByCodeProvesTheAddress(t *testing.T) {
 	const addr = "unproven@example.com"
 	app, db, sent := foundedAccount(t, addr, "correct horse battery staple")
 
 	if u, _ := store.GetSignupByEmail(tctx(), db, "hanzo", addr); u == nil || u.EmailVerified {
-		t.Fatalf("premise: a password signup with no code is unproven, got %v", u)
+		t.Fatalf("premise: an account made where no code could be sent is unproven, got %v", u)
 	}
 	code := sentCode(t, app, sent, addr)
 	if status, env := putPassword(t, app, "", `{"organization":"hanzo","username":"`+addr+`",`+

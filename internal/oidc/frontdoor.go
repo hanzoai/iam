@@ -166,11 +166,7 @@ func authMethods(db orm.DB) zip.TypedHandler[offer, httpx.Answer] {
 		names := schema.WalletChains()
 		return httpx.Good(map[string]any{
 			"password": app.EnablePassword,
-			// Offered only when a code can actually be delivered. The app switch says
-			// the org WANTS email/SMS codes; otp.DeliveryConfigured says the server can
-			// send one. Both must hold, or the screen shows a method that ends in a
-			// person waiting for a message nobody sent.
-			"code": app.EnableCodeSignin && otp.DeliveryConfigured(),
+			"code":     sendsCodes(app),
 			// The switch alone, because both halves now hold for every build: the
 			// assertion ceremony is compiled in (webauthn.go), so a server that
 			// serves this descriptor can always challenge a passkey. What remains
@@ -245,6 +241,16 @@ func offerable(p *schema.Provider) bool {
 		!strings.Contains(id, "change")
 }
 
+// sendsCodes reports whether a one-time code can reach a person through app. The
+// app switch says the org WANTS email/SMS codes; otp.DeliveryConfigured says this
+// process can send one. Both must hold, or a screen shows a method that ends in a
+// person waiting for a message nobody sent — and a rule that counts on a code
+// (signup proving its address, code sign-in, the last-credential check) counts on
+// one nobody can receive. Every one of them asks this, so none can disagree.
+func sendsCodes(app *schema.Application) bool {
+	return app != nil && app.EnableCodeSignin && otp.DeliveryConfigured()
+}
+
 // loginView returns what a login screen may see of an application: no secrets,
 // and no sign-in method that cannot complete.
 //
@@ -264,7 +270,7 @@ func loginView(app *schema.Application) *schema.Application {
 	// source of truth, so a switch left on for a method the server cannot perform
 	// would draw the button anyway. The org's stored setting is untouched — only
 	// what the browser is told.
-	view.EnableCodeSignin = view.EnableCodeSignin && otp.DeliveryConfigured()
+	view.EnableCodeSignin = sendsCodes(app)
 	kept := make([]*schema.ProviderItem, 0, len(view.Providers))
 	for _, it := range view.Providers {
 		if it == nil || it.Provider == nil || !offerable(it.Provider) {

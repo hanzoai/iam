@@ -14,7 +14,6 @@ import (
 
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/mfa/factor"
-	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -268,9 +267,8 @@ func holds(set []*schema.Wallet, chain, address string) bool {
 // rather than of a policy flag: another linked provider (the one reflection over
 // the connector columns that linked-accounts already answers with), a password
 // digest, a passkey, a bound wallet, or a delivered one-time code. The code arm
-// carries the two conditions the login descriptor advertises it under — the app
-// allows it and this process can actually send one — because a method nothing can
-// deliver is not a way back in.
+// asks sendsCodes, the rule the login descriptor advertises it under, because a
+// method nothing can deliver is not a way back in.
 // THE METHOD BEING REMOVED IS EXCLUDED FROM THE INVENTORY, and for a wallet
 // that means the exact (chain, address) rather than "wallets". An account
 // holding one wallet and nothing else would otherwise count that wallet as the
@@ -286,7 +284,7 @@ func onlyCredential(ctx context.Context, db orm.DB, app *schema.Application, u *
 	if u.PasswordHash != "" || len(u.WebauthnCredentials) > 0 {
 		return false, nil
 	}
-	if app != nil && app.EnableCodeSignin && otp.DeliveryConfigured() &&
+	if sendsCodes(app) &&
 		(factor.Destination(u, factor.Email) != "" || factor.Destination(u, factor.SMS) != "") {
 		return false, nil
 	}
