@@ -192,12 +192,20 @@ func putPasswordHandler(db orm.DB) zip.TypedHandler[passwordBody, httpx.Answer] 
 		// edit must keep carrying it forward (F-6), because an omitted counter there
 		// would silently unlock a locked account mid-attack. What retires the run of
 		// guesses is replacing the credential they were aimed at, which is this.
+		//
+		// A code sent to the account's own address and spent here proves that address,
+		// and this write replaces the only password anybody holds — so whoever set the
+		// old one can no longer sign in with it, and the proof is recorded with the
+		// credential it belongs to.
 		if _, err := updateUser(ctx, db, user.Owner, user.Name, func(_ orm.DB, u *schema.User) error {
 			u.PasswordHash = hash
 			u.PasswordType = cred.TypeArgon2id
 			u.PasswordSalt = ""
 			u.SigninWrongTimes = 0
 			u.LastSigninWrongTime = ""
+			if in.Code != "" && u.Email != "" && store.NormalizeEmail(in.Username) == store.NormalizeEmail(u.Email) {
+				u.EmailVerified = true
+			}
 			u.UpdatedTime = provisionNow()
 			return nil
 		}); err != nil {

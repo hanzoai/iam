@@ -17,6 +17,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -29,9 +30,9 @@ import (
 // the password hashed (never stored plaintext) and the created row returned
 // REDACTED.
 //
-// Password sign-up only in this increment (the enabled-method the portal drives);
-// the email/phone-OTP-gated sign-up variant plugs its verification check
-// (otp.Check) in ahead of the create at cutover.
+// A signup may carry the code /v1/iam/verification-codes sent to its address. A
+// right code records the address proven on the account it creates; a wrong one
+// creates nothing. A signup with no code records an address nobody has proven.
 
 // PathSignup is the canonical native signup endpoint.
 const PathSignup = "/v1/iam/signup"
@@ -47,12 +48,16 @@ type signupForm struct {
 	// and gets it or a refusal; a caller that names none — the signup screen, which
 	// has no such field — gets one minted from the address. Either way the value
 	// stored is IAM's to decide, never the spelling that arrived.
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	Name        string `json:"name"` // display name
-	FirstName   string `json:"firstName"`
-	LastName    string `json:"lastName"`
-	Email       string `json:"email"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	Name      string `json:"name"` // display name
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	Email     string `json:"email"`
+	// Code is the one-time code sent to Email. It proves the address before any
+	// account holds it, which is the only moment the person proving it is certainly
+	// the person choosing the password.
+	Code        string `json:"code"`
 	Phone       string `json:"phone"`
 	CountryCode string `json:"countryCode"`
 	Affiliation string `json:"affiliation"`
@@ -245,6 +250,26 @@ func signupHandler(db orm.DB) zip.Handler {
 			}
 		}
 
+		// The address is proven here or not at all: the code was sent to it before any
+		// account held it, so whoever holds the code holds the address, and they are
+		// the one choosing this password. It is spent last, after every refusal that is
+		// about the request, so a person who mistyped their password does not also lose
+		// the code; a wrong code counts against the code like any other guess.
+		proven := false
+		if f.Code != "" {
+			if email == "" {
+				return httpx.Err(c, "a code proves an email address; none was given")
+			}
+			ok, err := otp.Prove(ctx, db, app.Organization, email, f.Code, nowFunc())
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			if !ok {
+				return httpx.Err(c, "the code is incorrect or has expired")
+			}
+			proven = true
+		}
+
 		// Create through the ONE canonical user path (users.Create): argon2id-hash the
 		// password once, persist, return the REDACTED row (no plaintext, no digest ever
 		// stored or returned). PasswordType is stamped "argon2id" — exactly what
@@ -253,8 +278,9 @@ func signupHandler(db orm.DB) zip.Handler {
 			// The class and the registering application are stated here, beside the
 			// create, rather than inside the user body — a signup makes a PERSON through
 			// THIS application, and only this code may say so.
-			Type:        "normal-user",
-			Application: app.Name,
+			Type:          "normal-user",
+			Application:   app.Name,
+			EmailVerified: proven,
 			User: schema.User{
 				Owner:          f.Organization,
 				Name:           f.Username,

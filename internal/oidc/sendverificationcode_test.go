@@ -47,8 +47,8 @@ func sendCode(t *testing.T, app *zip.App, fields map[string]string) (int, map[st
 }
 
 // The happy path parses the multipart form, persists a 6-digit unused code
-// bound to the receiver, and reports ok — and that code then verifies through
-// otp.Check while a wrong one fails closed.
+// bound to the receiver, and reports ok — and that code then verifies for the
+// account it was sent to while a wrong one fails closed.
 func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 	// A send that reports success must actually be able to send: DeliveryConfigured
 	// gates the endpoint, so these persist/verify tests bind a sender the way any
@@ -85,18 +85,20 @@ func TestSendVerificationCode_PersistsAndVerifies(t *testing.T) {
 		t.Errorf("record.User = %q, want hanzo/alice (resolved from the dest)", rec.User)
 	}
 
-	// The validation surface: the persisted code verifies, a wrong one does not.
-	if ok, err := otp.Check(ctx, db, "hanzo", "alice@hanzo.ai", rec.Code, time.Now()); err != nil || !ok {
-		t.Fatalf("correct code must verify: ok=%v err=%v", ok, err)
-	}
-	if ok, _ := otp.Check(ctx, db, "hanzo", "alice@hanzo.ai", "000000", time.Now()); ok {
+	// The validation surface: a wrong code, another receiver and another org do
+	// not verify, and the persisted code does — spent by the account it was sent to.
+	alice, _ := store.GetUserByName(ctx, db, "hanzo", "alice")
+	if ok, _ := otp.Consume(ctx, db, alice, "alice@hanzo.ai", "000000", time.Now()); ok {
 		t.Error("a wrong code must not verify")
 	}
-	if ok, _ := otp.Check(ctx, db, "hanzo", "nobody@hanzo.ai", rec.Code, time.Now()); ok {
+	if ok, _ := otp.Consume(ctx, db, alice, "nobody@hanzo.ai", rec.Code, time.Now()); ok {
 		t.Error("a code must not verify for a different receiver")
 	}
-	if ok, _ := otp.Check(ctx, db, "elsewhere", "alice@hanzo.ai", rec.Code, time.Now()); ok {
+	if ok, _ := otp.Prove(ctx, db, "elsewhere", "alice@hanzo.ai", rec.Code, time.Now()); ok {
 		t.Error("a code must not verify for another organization holding the same address")
+	}
+	if ok, err := otp.Consume(ctx, db, alice, "alice@hanzo.ai", rec.Code, time.Now()); err != nil || !ok {
+		t.Fatalf("correct code must verify: ok=%v err=%v", ok, err)
 	}
 }
 

@@ -6,7 +6,10 @@ package oidc
 import (
 	"testing"
 
+	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // A code is delivered to an ADDRESS and spent by an ACCOUNT, and the account a
@@ -18,8 +21,8 @@ import (
 // password.
 
 // foundedAccount signs someone up at a founding application that offers code
-// sign-in, with a sender bound, and returns the server and the sender.
-func foundedAccount(t *testing.T, addr, pw string) (*zip.App, *fakeSender) {
+// sign-in, with a sender bound, and returns the server, its store and the sender.
+func foundedAccount(t *testing.T, addr, pw string) (*zip.App, orm.DB, *fakeSender) {
 	t.Helper()
 	sent := &fakeSender{}
 	bindSender(t, sent)
@@ -31,7 +34,7 @@ func foundedAccount(t *testing.T, addr, pw string) (*zip.App, *fakeSender) {
 	}); env["status"] != "ok" {
 		t.Fatalf("signup failed: %v", env)
 	}
-	return app, sent
+	return app, db, sent
 }
 
 // sentCode asks the send endpoint for a code to addr and returns the code the
@@ -51,7 +54,7 @@ func sentCode(t *testing.T, app *zip.App, sent *fakeSender, addr string) string 
 
 func TestFoundedAccountRecoversItsPasswordWithACode(t *testing.T) {
 	const addr = "forgetful@example.com"
-	app, sent := foundedAccount(t, addr, "correct horse battery staple")
+	app, _, sent := foundedAccount(t, addr, "correct horse battery staple")
 
 	code := sentCode(t, app, sent, addr)
 	status, env := putPassword(t, app, "", `{"organization":"hanzo","username":"`+addr+`",`+
@@ -72,7 +75,7 @@ func TestFoundedAccountRecoversItsPasswordWithACode(t *testing.T) {
 
 func TestFoundedAccountSignsInWithACode(t *testing.T) {
 	const addr = "codey@example.com"
-	app, sent := foundedAccount(t, addr, "correct horse battery staple")
+	app, _, sent := foundedAccount(t, addr, "correct horse battery staple")
 
 	code := sentCode(t, app, sent, addr)
 	_, body := do(t, app, jsonReq("POST", PathLogin, map[string]string{
@@ -86,5 +89,78 @@ func TestFoundedAccountSignsInWithACode(t *testing.T) {
 	}
 	if c, _ := m["data"].(string); c == "" {
 		t.Fatal("no authorization code was minted")
+	}
+}
+
+// An address is proven where IAM watched it receive a code. A signup that carries
+// the code sent to its address records the address proven; a reset that spends a
+// code sent to the account's address proves it too, and replaces the only
+// password anybody holds in the same write. Everywhere else an address stays a
+// claim — the federation broker will not link a social identity onto a row whose
+// password was set by somebody who never proved the address.
+
+func TestSignup_TheCodeSentToTheAddressProvesIt(t *testing.T) {
+	sent := &fakeSender{}
+	bindSender(t, sent)
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+	seedOrg(t, db, "hanzo")
+
+	const addr = "proven@example.com"
+	code := sentCode(t, app, sent, addr)
+	if _, env := signupReq(t, app, map[string]string{
+		"application": "hanzo-cloud", "organization": "hanzo",
+		"password": "correct horse battery staple", "email": addr, "code": code,
+	}); env["status"] != "ok" {
+		t.Fatalf("signup with the code it was sent failed: %v", env)
+	}
+	u, err := store.GetSignupByEmail(tctx(), db, "hanzo", addr)
+	if err != nil || u == nil {
+		t.Fatalf("the account is missing: %v", err)
+	}
+	if !u.EmailVerified {
+		t.Fatal("the code sent to the address did not prove it")
+	}
+}
+
+func TestSignup_AWrongCodeCreatesNothing(t *testing.T) {
+	sent := &fakeSender{}
+	bindSender(t, sent)
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+	seedOrg(t, db, "hanzo")
+
+	const addr = "guess@example.com"
+	sentCode(t, app, sent, addr)
+	_, env := signupReq(t, app, map[string]string{
+		"application": "hanzo-cloud", "organization": "hanzo",
+		"password": "correct horse battery staple", "email": addr, "code": "000000",
+	})
+	if msg, _ := env["msg"].(string); env["status"] != "error" || msg != "the code is incorrect or has expired" {
+		t.Fatalf("a wrong code was not refused: %v", env)
+	}
+	if u, _ := store.GetSignupByEmail(tctx(), db, "hanzo", addr); u != nil {
+		t.Fatal("an account was created on a wrong code")
+	}
+	if org, _ := store.GetOrganizationByName(tctx(), db, "guess"); org != nil {
+		t.Fatal("an org was founded on a wrong code")
+	}
+}
+
+func TestResetByCodeProvesTheAddress(t *testing.T) {
+	const addr = "unproven@example.com"
+	app, db, sent := foundedAccount(t, addr, "correct horse battery staple")
+
+	if u, _ := store.GetSignupByEmail(tctx(), db, "hanzo", addr); u == nil || u.EmailVerified {
+		t.Fatalf("premise: a password signup with no code is unproven, got %v", u)
+	}
+	code := sentCode(t, app, sent, addr)
+	if status, env := putPassword(t, app, "", `{"organization":"hanzo","username":"`+addr+`",`+
+		`"code":"`+code+`","password":"a brand new passphrase"}`); status != 200 || env["status"] != "ok" {
+		t.Fatalf("reset failed: status=%d env=%v", status, env)
+	}
+	u, _ := store.GetSignupByEmail(tctx(), db, "hanzo", addr)
+	if u == nil || !u.EmailVerified {
+		t.Fatalf("a reset by the code sent to the address did not prove it: %v", u)
 	}
 }

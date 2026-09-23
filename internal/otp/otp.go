@@ -288,11 +288,9 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 // Consume verifies code against the latest live record for receiver and SPENDS the
 // outcome — the check side for callers where the code IS the credential.
 //
-// It exists beside [Check] because a code that authenticates must be accounted for
-// and a code that merely gates a signup need not be. Verifying and spending are one
-// operation here on purpose: split across two calls, every caller would have to
-// remember to spend, and the one that forgot would leave a replayable login
-// credential lying in the table.
+// Verifying and spending are one operation here on purpose: split across two
+// calls, every caller would have to remember to spend, and the one that forgot
+// would leave a replayable login credential lying in the table.
 //
 //   - a hit marks the record used, so the code is one-time
 //   - a miss counts, and the count is what makes the code unguessable; at
@@ -307,13 +305,7 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 // caller already holds the resolved user, so the binding costs nothing and tells no
 // caller anything it did not know.
 //
-// The compare-and-spend runs inside a GetForUpdate transaction, the same guard the
-// login challenge's burn uses. Read → compare → bump → write left the attempt
-// counter open to the lost-update class internal/users/lockout.go exists to close:
-// measured, 16 concurrent wrong guesses advanced the count by 3, so the [MaxAttempts]
-// bound — the whole reason six digits is strong enough to be a credential — was
-// defeated by parallelism. Serializing it also closes the window in which two racing
-// correct submissions both spend one code.
+// The compare-and-spend is [spend]'s, under a row lock.
 //
 // Reports whether the code was accepted. A spent, expired, absent or wrongly-bound
 // record is a plain false: the caller must not distinguish them, or it answers "that
@@ -332,6 +324,38 @@ func Consume(ctx context.Context, db orm.DB, user *schema.User, receiver, code s
 	if rec.User == "" || rec.User != user.Owner+"/"+user.Name {
 		return false, nil
 	}
+	return spend(ctx, db, rec, code, now)
+}
+
+// Prove verifies code against the latest live record for receiver within owner and
+// SPENDS it — the signup gate, where the code proves an ADDRESS before any account
+// holds it.
+//
+// Only a record minted for no account proves anything here. A code minted FOR an
+// account is that account's credential and proves nothing for anybody else. A
+// miss counts exactly as it does in [Consume]: six digits are all that stand
+// between a stranger and somebody else's address, so the guesses are bounded by
+// the same [MaxAttempts].
+func Prove(ctx context.Context, db orm.DB, owner, receiver, code string, now time.Time) (bool, error) {
+	rec, err := live(ctx, db, owner, receiver, code, now)
+	if err != nil || rec == nil || rec.User != "" {
+		return false, err
+	}
+	return spend(ctx, db, rec, code, now)
+}
+
+// spend compares code against rec and accounts for the outcome, under a row lock:
+// a hit marks the record used, a miss counts, and at [MaxAttempts] the record is
+// spent so the run cannot continue.
+//
+// The compare-and-spend runs inside a GetForUpdate transaction, the same guard the
+// login challenge's burn uses. Read → compare → bump → write left the attempt
+// counter open to the lost-update class internal/users/lockout.go exists to close:
+// measured, 16 concurrent wrong guesses advanced the count by 3, so the [MaxAttempts]
+// bound — the whole reason six digits is strong enough to be a credential — was
+// defeated by parallelism. Serializing it also closes the window in which two racing
+// correct submissions both spend one code.
+func spend(ctx context.Context, db orm.DB, rec *schema.VerificationRecord, code string, now time.Time) (bool, error) {
 	storageID := rec.Key().Encode()
 
 	var accepted bool
@@ -366,18 +390,6 @@ func Consume(ctx context.Context, db orm.DB, user *schema.User, receiver, code s
 		return false, txErr
 	}
 	return accepted, nil
-}
-
-// Check reports whether code matches the latest live record for receiver within
-// owner WITHOUT spending it — for a flow that gates something else and marks the
-// record used on its own completion. The compare is constant-time; an expired or
-// absent record fails closed.
-func Check(ctx context.Context, db orm.DB, owner, receiver, code string, now time.Time) (bool, error) {
-	rec, err := live(ctx, db, owner, receiver, code, now)
-	if err != nil || rec == nil {
-		return false, err
-	}
-	return cred.ConstantTimeEqual(rec.Code, code), nil
 }
 
 // live resolves the newest unspent, unexpired record for receiver WITHIN owner,

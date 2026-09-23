@@ -81,34 +81,36 @@ func TestOneNumberIsOneReceiverHoweverItIsTyped(t *testing.T) {
 	now := time.Now()
 
 	carol := account(t, db, "hanzo", "carol", "", "+14155550134")
-	if err := Issue(context.Background(), db, "hanzo", "+1 (415) 555-0134", "", carol, now); err != nil {
-		t.Fatalf("issue: %v", err)
-	}
-	code := r.sent[0][strings.LastIndex(r.sent[0], ":")+1:]
 
 	// The code verifies against every PUNCTUATION of the same digits, because the
 	// digits are the key on both sides. The middle one is the exact pair that was
 	// broken: a record filed as the caller typed it, presented as the account stores it.
-	for _, presented := range []string{
+	// Each spelling spends its own code, sent a resend interval after the last.
+	for i, presented := range []string{
 		"+1 (415) 555-0134",  // what the person typed at the send
 		"+14155550134",       // what the account stores, and what the gate looks up
 		"+1-415-555-0134",    // dashes instead of brackets
 		" +1 415 555 0134  ", // and whatever whitespace came along
 	} {
-		ok, err := Check(context.Background(), db, "hanzo", presented, code, now)
+		at := now.Add(time.Duration(i) * ResendInterval)
+		if err := Issue(context.Background(), db, "hanzo", "+1 (415) 555-0134", "", carol, at); err != nil {
+			t.Fatalf("issue: %v", err)
+		}
+		code := r.sent[i][strings.LastIndex(r.sent[i], ":")+1:]
+
+		// A number missing its country code is a DIFFERENT address, not the same one
+		// spelled differently. Normalizing punctuation is safe; inferring a country is
+		// a guess, and a guess here routes somebody's second factor to another country.
+		if ok, _ := Consume(context.Background(), db, carol, "415-555-0134", code, at); ok {
+			t.Fatal("a national-format number matched an E.164 record — the key is inferring a country code")
+		}
+		ok, err := Consume(context.Background(), db, carol, presented, code, at)
 		if err != nil {
-			t.Fatalf("check %q: %v", presented, err)
+			t.Fatalf("consume %q: %v", presented, err)
 		}
 		if !ok {
 			t.Fatalf("the delivered code was refused for %q — filing and finding disagree about punctuation", presented)
 		}
-	}
-
-	// A number missing its country code is a DIFFERENT address, not the same one
-	// spelled differently. Normalizing punctuation is safe; inferring a country is a
-	// guess, and a guess here routes somebody's second factor to another country.
-	if ok, _ := Check(context.Background(), db, "hanzo", "415-555-0134", code, now); ok {
-		t.Fatal("a national-format number matched an E.164 record — the key is inferring a country code")
 	}
 
 	// And the delivery itself went out normalized, which is what a carrier wants.
@@ -178,7 +180,7 @@ func TestExpiredCodeIsRefused(t *testing.T) {
 	if err != nil || rec == nil {
 		t.Fatalf("record not persisted: %v", err)
 	}
-	if ok, _ := Check(context.Background(), db, "hanzo", "ada@example.com", rec.Code, now.Add(TTL+time.Second)); ok {
+	if ok, _ := Consume(context.Background(), db, ada, "ada@example.com", rec.Code, now.Add(TTL+time.Second)); ok {
 		t.Fatal("a code outlived its TTL")
 	}
 }
