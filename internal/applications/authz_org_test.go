@@ -62,6 +62,7 @@ func newOrgHarness(t *testing.T) *orgHarness {
 	seedCert(t, db, "admin", orgSigningKid, pemOf(t, key))
 	seedUser(t, db, "admin", "root", true) // SuperAdmin
 	seedUser(t, db, "hanzo", "boss", true) // org-admin of hanzo
+	seedUser(t, db, "acme", "boss", true)  // org-admin of a customer tenant
 
 	app := zip.New(zip.Config{AppName: "apporg-test", DisableStartupMessage: true})
 	routes.Route(app, db)
@@ -167,5 +168,27 @@ func TestCreate_SuperAdminMaySetAnyOrg(t *testing.T) {
 
 	if st := h.do(t, "POST", "/v1/iam/applications", root, `{"owner":"hanzo","name":"platform","organization":"admin","clientId":"platform"}`); st != 200 {
 		t.Fatalf("SuperAdmin set organization=admin: status=%d, want 200", st)
+	}
+}
+
+// An account records the application that registered it by NAME, and sign-in
+// reaches a person through the org that name resolves to. So a name names one
+// application. A tenant holding a platform application's name would have its own
+// registrations counted as the platform's: an address it registered would answer
+// at the platform's sign-in, and the platform's own customer with that address
+// would resolve to nobody.
+func TestCreate_AnApplicationNameIsHeldOnce(t *testing.T) {
+	h := newOrgHarness(t)
+	root := h.token(t, "admin/root")
+	acme := h.token(t, "acme/boss")
+
+	if st := h.do(t, "POST", "/v1/iam/applications", root, `{"owner":"admin","name":"hanzo-cloud","organization":"hanzo","clientId":"hanzo-cloud"}`); st != 200 {
+		t.Fatalf("platform app: status=%d, want 200", st)
+	}
+	if st := h.do(t, "POST", "/v1/iam/applications", acme, `{"owner":"acme","name":"hanzo-cloud","organization":"acme","clientId":"acme-cloud","enableSignUp":true}`); st != 409 {
+		t.Fatalf("a tenant took a platform application's name: status=%d, want 409", st)
+	}
+	if st := h.do(t, "POST", "/v1/iam/applications", acme, `{"owner":"acme","name":"acme-cloud","organization":"acme","clientId":"acme-cloud"}`); st != 200 {
+		t.Fatalf("a free name: status=%d, want 200", st)
 	}
 }

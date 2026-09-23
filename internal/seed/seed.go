@@ -24,6 +24,7 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // initData is the subset of the init_data.json shape iam seeds. Users and the
@@ -43,11 +44,12 @@ type initData struct {
 	appDeclared map[string]json.RawMessage
 }
 
-// Summary reports what a seed run created, skipped, or reconciled.
+// Summary reports what a seed run created, skipped, reconciled, or refused.
 type Summary struct {
 	Created    map[string]int // kind -> created count
 	Skipped    map[string]int // kind -> already-existed, unchanged
 	Reconciled map[string]int // kind -> already-existed, declared policy re-applied
+	Refused    []string       // "owner/name: reason" for each declaration not written
 }
 
 var envRef = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
@@ -183,6 +185,16 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 		if owner == "" {
 			owner = "admin"
 		}
+		// A NEW declaration beside another owner's application of the same name would
+		// outrank it wherever a name alone is resolved (see store.NameHeldElsewhere),
+		// so it is refused. Only it: a tenant chose that name, and a tenant's choice
+		// must not stop the seed applying its policy to every other application.
+		if held, err := nameHeld(ctx, db, owner, a.Name); err != nil {
+			return s, err
+		} else if held {
+			s.Refused = append(s.Refused, owner+"/"+a.Name+": the name is held by another owner")
+			continue
+		}
 		before := s.Skipped["applications"]
 		if err := upsert[schema.Application](ctx, db, a.Owner, a.Name, a, s, "applications"); err != nil {
 			return s, err
@@ -196,6 +208,21 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 		}
 	}
 	return s, nil
+}
+
+// nameHeld reports whether owner/name is new and its name is held by another
+// owner. A row already standing is not re-judged: it is how the store was found.
+func nameHeld(ctx context.Context, db orm.DB, owner, name string) (bool, error) {
+	if existing, err := store.GetApplicationByName(ctx, db, owner, name); err != nil {
+		return false, fmt.Errorf("seed: application %s/%s: %w", owner, name, err)
+	} else if existing != nil {
+		return false, nil
+	}
+	held, err := store.NameHeldElsewhere(ctx, db, owner, name)
+	if err != nil {
+		return false, fmt.Errorf("seed: application %s/%s: %w", owner, name, err)
+	}
+	return held, nil
 }
 
 // reconcileApp re-applies an application's DECLARED fields onto the existing row.

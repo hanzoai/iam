@@ -155,6 +155,9 @@ func serve(ctx context.Context, storeBackend, dbPath, sqlAddr, zapAddr, httpAddr
 		fmt.Fprintf(os.Stderr, "iam: seeded from %s — created orgs=%d apps=%d providers=%d certs=%d\n",
 			initData, sum.Created["organizations"], sum.Created["applications"],
 			sum.Created["providers"], sum.Created["certs"])
+		for _, r := range sum.Refused {
+			fmt.Fprintf(os.Stderr, "iam: seed refused %s\n", r)
+		}
 	}
 
 	// Record the HOME-org membership every user already HOLDS. An org's roster is

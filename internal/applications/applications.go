@@ -243,6 +243,13 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := ensureClientIdUnique(ctx, db, in.ClientId, in.Owner, in.Name); err != nil {
 			return nil, err
 		}
+		// And the name: an account records the application that registered it by name
+		// alone (see store.NameHeldElsewhere).
+		if held, err := store.NameHeldElsewhere(ctx, db, in.Owner, in.Name); err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		} else if held {
+			return nil, zip.ErrConflict("application name already in use: " + in.Name)
+		}
 
 		// Bind the decoded entity to db under its natural key and persist.
 		in.Init(db)

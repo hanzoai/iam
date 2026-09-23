@@ -134,6 +134,28 @@ func GetApplicationNamed(ctx context.Context, db orm.DB, name string) (*schema.A
 	return preferredApp(apps), nil
 }
 
+// NameHeldElsewhere reports whether an application of an owner other than owner is
+// named name.
+//
+// A name must name one application. An account records the application that
+// registered it by name alone (SignupApplication), sign-in reaches a person through
+// the org that name resolves to, and GetApplicationNamed settles a shared name by
+// preferring the platform's row. A second row under a name would therefore file its
+// registrations under the first row's org. Every write that creates an application
+// asks this first and refuses a name that is held.
+func NameHeldElsewhere(ctx context.Context, db orm.DB, owner, name string) (bool, error) {
+	apps, err := orm.TypedQuery[schema.Application](db).Filter("Name=", name).GetAll(ctx)
+	if err != nil && err != orm.ErrNotFound {
+		return false, err
+	}
+	for _, a := range apps {
+		if a != nil && a.Owner != owner {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // An account's wallet reads live in wallet.go — HasWallet, WalletsOf, WalletRefs
 // and DetachWallet together, so "what can this person sign in as" has one home.
 

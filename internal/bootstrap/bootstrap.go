@@ -61,7 +61,7 @@ import (
 func Route(r *zip.Group, db orm.DB) {
 	r.Post("/v1/iam/admin/applications/upsert", upsertApplication(db),
 		zip.WithOperationID("upsertApplication"),
-		zip.WithStatus(200, 400, 401, 500),
+		zip.WithStatus(200, 400, 401, 409, 500),
 		zip.WithTags("bootstrap"))
 
 	r.Post("/v1/iam/admin/users/upsert", upsertUser(db),
@@ -302,6 +302,13 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 				return refuse(500, "server_error"), nil
 			}
 		} else {
+			// A name another owner holds is refused: this row would outrank it wherever
+			// a name alone is resolved (see store.NameHeldElsewhere).
+			if held, err := store.NameHeldElsewhere(ctx, db, "admin", in.Name); err != nil {
+				return refuse(500, "server_error"), nil
+			} else if held {
+				return refuse(409, fmt.Sprintf("application name %q is held by another owner", in.Name)), nil
+			}
 			// A new application must NAME a signing cert, or it is not a
 			// registration — it is a login that fails after the user has already
 			// authenticated. Resolved here, where "brand new" is known, rather

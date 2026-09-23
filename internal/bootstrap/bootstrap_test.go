@@ -122,3 +122,27 @@ func TestBootstrap_requiresServiceToken(t *testing.T) {
 		t.Fatalf("wrong-token status = %d, want 401", st)
 	}
 }
+
+// The operator upsert creates under the platform owner, and a platform row outranks
+// a tenant's of the same name wherever a name alone is resolved. Created beside a
+// tenant's application of that name, it would pull every account the tenant
+// registered into the platform's org. A name another owner holds is refused.
+func TestUpsertApplication_refusesANameAnotherOwnerHolds(t *testing.T) {
+	app, db := boot(t)
+	ctx := context.Background()
+	tenant := orm.New[schema.Application](db)
+	tenant.Owner, tenant.Name, tenant.Organization, tenant.ClientId = "acme", "hanzo-new", "acme", "acme-new"
+	tenant.SetId("acme/hanzo-new")
+	if err := tenant.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed tenant app: %v", err)
+	}
+
+	st, m := post(t, app, "/v1/iam/admin/applications/upsert", svcToken,
+		`{"organization":"hanzo","name":"hanzo-new","clientId":"hanzo-new"}`)
+	if st != 409 {
+		t.Fatalf("upsert beside a tenant's app of the same name: status=%d body=%v, want 409", st, m)
+	}
+	if a, _ := store.GetApplicationByName(ctx, db, "admin", "hanzo-new"); a != nil {
+		t.Fatal("the platform row was created anyway")
+	}
+}

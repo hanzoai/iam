@@ -549,3 +549,37 @@ func TestFromInitData_AcceptsPolicyOnly(t *testing.T) {
 		t.Fatal("policy-only document seeded nothing")
 	}
 }
+
+// The seed declares platform applications, and a platform row outranks a tenant's
+// of the same name wherever a name alone is resolved. Created beside a tenant's
+// application of that name, it would pull every account the tenant registered into
+// the platform's org, so that one declaration is refused and reported. The rest of
+// the seed still applies: a tenant picks its names, and a name it picked must not
+// keep the platform's policy off every other application.
+func TestApply_RefusesANameAnotherOwnerHoldsAndAppliesTheRest(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	tenant := orm.New[schema.Application](db)
+	tenant.Owner, tenant.Name, tenant.Organization = "acme", "hanzo-new", "acme"
+	tenant.SetId("acme/hanzo-new")
+	if err := tenant.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed tenant app: %v", err)
+	}
+
+	sum, err := Apply(ctx, db, &initData{Applications: []*schema.Application{
+		{Owner: "admin", Name: "hanzo-new", ClientId: "hanzo-new", Organization: "hanzo"},
+		{Owner: "admin", Name: "hanzo-next", ClientId: "hanzo-next", Organization: "hanzo"},
+	}})
+	if err != nil {
+		t.Fatalf("a tenant's name stopped the seed: %v", err)
+	}
+	if a, _ := orm.Get[schema.Application](db, "admin/hanzo-new"); a != nil {
+		t.Fatal("the seed created a platform app beside a tenant's app of the same name")
+	}
+	if len(sum.Refused) != 1 || !strings.HasPrefix(sum.Refused[0], "admin/hanzo-new: ") {
+		t.Fatalf("refused = %q, want the one declaration named", sum.Refused)
+	}
+	if a, _ := orm.Get[schema.Application](db, "admin/hanzo-next"); a == nil {
+		t.Fatal("the declaration after the refused one was not applied")
+	}
+}
