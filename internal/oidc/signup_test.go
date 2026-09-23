@@ -340,8 +340,10 @@ func TestSignup_CannotJoinAnExistingForeignTenant(t *testing.T) {
 }
 
 // The legitimate destinations must keep working, or the refusal above has simply
-// broken signup: the app's OWN tenant, and any tenant a SHARED app declares it
-// serves. A brand-new org is no longer one of them — signup does not mint orgs.
+// broken signup: an org the account founds, and the app's OWN tenant where the app
+// serves no other. A brand-new org the caller names is not one of them — signup
+// does not mint orgs — and neither is a standing tenant a shared app is handed;
+// that tenant is reached by its admin's invitation (signup_invite_test.go).
 func TestSignup_ForeignTenantRefusalKeepsTheLegitimatePaths(t *testing.T) {
 	t.Run("the app's own tenant", func(t *testing.T) {
 		app, db := newServer(t)
@@ -356,9 +358,10 @@ func TestSignup_ForeignTenantRefusalKeepsTheLegitimatePaths(t *testing.T) {
 		}
 	})
 
-	// A SHARED app is multi-tenant BY DECLARATION — that is what isShared means, and
-	// the gate above has always let it through. The new arm must not change it.
-	t.Run("a shared app may still join an existing tenant", func(t *testing.T) {
+	// A SHARED app is multi-tenant at sign-in. It once admitted a signup into any
+	// standing tenant it was handed, and this subtest asserted that it still did —
+	// which is the hole: the tenant never asked for the member.
+	t.Run("a shared app does not join an existing tenant by name", func(t *testing.T) {
 		app, db := newServer(t)
 		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, shared: true})
 		seedOrg(t, db, "lux")
@@ -366,8 +369,11 @@ func TestSignup_ForeignTenantRefusalKeepsTheLegitimatePaths(t *testing.T) {
 			"application": "conf", "organization": "lux",
 			"username": "member", "password": "correct horse battery staple",
 		})
-		if status != 200 || env["status"] != "ok" {
-			t.Fatalf("a shared app must still admit an existing tenant: status=%d env=%v", status, env)
+		if status == 200 && env["status"] == "ok" {
+			t.Fatalf("a shared app admitted a signup into lux by name: %v", env)
+		}
+		if u, _ := store.GetUserByName(tctx(), db, "lux", "member"); u != nil {
+			t.Fatal("member now exists inside tenant lux")
 		}
 	})
 }

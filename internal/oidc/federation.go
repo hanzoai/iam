@@ -557,7 +557,11 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 	// endpoint (signup.go) and the wallet endpoint (wallet/verify.go) and not here, so
 	// an app with it OFF still got brand-new accounts from any enabled social provider:
 	// the one endpoint a tenant could not close was the externally-driven one.
-	if !app.EnableSignUp {
+	//
+	// And only where a stranger may land: Registers is the rule the password door
+	// keeps, so a shared application does not file a provider's stranger in the
+	// operator's org any more than it files a password's.
+	if !app.EnableSignUp || !Registers(app, app.Organization) {
 		return nil, errNoFederatedSignup
 	}
 	// An address is what an account is named after and reached at, so a provider

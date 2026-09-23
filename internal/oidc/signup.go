@@ -63,6 +63,10 @@ type signupForm struct {
 	CountryCode string `json:"countryCode"`
 	Affiliation string `json:"affiliation"`
 
+	// Invitation is the code of an invitation the named org's admin wrote. It is
+	// the one way a signup joins an org that is already standing (see invitation).
+	Invitation string `json:"invitationCode"`
+
 	// Training is the answer to the AI-training question the signup screen asks,
 	// recorded with the account rather than left for a later prompt. Absent means
 	// unanswered — which reads as refusal everywhere — so a client that does not
@@ -127,11 +131,30 @@ func signupHandler(db orm.DB) zip.Handler {
 		if policy.IsReservedOrg(f.Organization) {
 			return httpx.Err(c, "the user is not permitted to sign up to this application")
 		}
-		// Tenant isolation: the requested org must be the app's own org, a shared
-		// app, or an app that lets users choose their org — the same gate login
-		// enforces, so a signup cannot land a user in an arbitrary tenant.
-		if f.Organization != app.Organization && !app.ServesAnyOrg() {
+		// Tenant isolation. A signup lands in an org it founds, in the application's
+		// own org where the application serves no other (Registers), or in an org
+		// whose admin invited it — never in an org it merely names.
+		//
+		// A shared application used to admit any org it was handed: shared reads as
+		// "serves many tenants", which is true of SIGN-IN, where the person already
+		// belongs to one. At signup nobody belongs anywhere yet, so an unauthenticated
+		// POST naming any standing org — a brand, a customer — was made a member of it.
+		// Sign-in keeps ServesAnyOrg; signup no longer reads it.
+		//
+		// A code that was brought and redeems nothing is refused rather than read as
+		// no code: the person asked to join an org, and founding one instead, or
+		// filing them in the application's, puts them where they did not ask to be.
+		// Every refusal here is the same sentence as the reserved-org one above, so a
+		// prober learns neither which orgs stand nor which codes exist.
+		invite, err := invitation(ctx, db, app, &f)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		if invite == nil && (f.Invitation != "" || !Registers(app, f.Organization)) {
 			return httpx.Err(c, "the user is not permitted to sign up to this application")
+		}
+		if invite != nil && f.Username == "" {
+			f.Username = invite.Username
 		}
 
 		org, err := store.GetOrganizationByName(ctx, db, f.Organization)
@@ -152,20 +175,6 @@ func signupHandler(db orm.DB) zip.Handler {
 			// account. Two ways to create an org, one of them needing no identity and
 			// producing the worse result, is one way too many.
 			return httpx.Err(c, "the organization: "+f.Organization+" does not exist")
-		}
-		if f.Organization != app.Organization && !app.IsShared {
-			// The org EXISTS and belongs to someone else. Org choice grants the right to
-			// land in the app's own tenant, never the right to walk into a tenant that
-			// is already standing. Without this arm the gate above is satisfied by a
-			// non-empty OrgChoiceMode and this branch does nothing, so an unauthenticated
-			// POST naming any existing org would be made a member of it — every brand and
-			// every customer tenant in a shared registry reachable that way, which is
-			// precisely the isolation the tenant gate exists to provide.
-			//
-			// The refusal is byte-identical to the tenant refuse above and to the
-			// reserved-org refuse, so a prober cannot distinguish "someone else's org"
-			// from "wrong tenant" from "reserved name" — no authority oracle.
-			return httpx.Err(c, "the user is not permitted to sign up to this application")
 		}
 
 		// Password policy (v1 org.PasswordOptions complexity) BEFORE either uniqueness
@@ -279,6 +288,19 @@ func signupHandler(db orm.DB) zip.Handler {
 			proven = true
 		}
 
+		// The invitation's seat is spent after the address code, so a mistyped code
+		// costs the org no seat, and before the account exists, so a seat is never
+		// taken twice by two signups racing for the last one.
+		if invite != nil {
+			spent, err := redeem(ctx, db, invite, app, &f)
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			if !spent {
+				return httpx.Err(c, "the user is not permitted to sign up to this application")
+			}
+		}
+
 		// Create through the ONE canonical user path (users.Create): argon2id-hash the
 		// password once, persist, return the REDACTED row (no plaintext, no digest ever
 		// stored or returned). PasswordType is stamped "argon2id" — exactly what
@@ -303,6 +325,7 @@ func signupHandler(db orm.DB) zip.Handler {
 				Avatar:         org.DefaultAvatar,
 				RegisterType:   "Application Signup",
 				RegisterSource: f.Organization + "/" + app.Name,
+				Invitation:     invitationName(invite),
 			},
 			Password: f.Password,
 			// The answer the screen collected, recorded WITH the account. A new
@@ -338,7 +361,9 @@ func signupHandler(db orm.DB) zip.Handler {
 		// idempotent and resumable. So a person who signs up and a person who onboards
 		// arrive in the same state, and there is one place where founding an org is
 		// written down.
-		if app.OrgChoiceMode == orgChoiceCreate {
+		//
+		// An invited account founds nothing: it joins the org whose admin asked it to.
+		if invite == nil && app.OrgChoiceMode == orgChoiceCreate {
 			org, err := charter(ctx, db, created)
 			if err != nil {
 				return httpx.Err(c, err.Error())

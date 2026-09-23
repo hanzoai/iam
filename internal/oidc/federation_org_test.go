@@ -180,6 +180,41 @@ func TestFederation_AppThatDoesNotFoundIsUnchanged(t *testing.T) {
 	}
 }
 
+// A shared application's own org is the operator's. One that founds nothing does
+// not provision a provider's stranger there — the rule the password door keeps
+// (Registers) — and leaves no account behind.
+func TestFederation_SharedAppDoesNotFileAStrangerInItsOrg(t *testing.T) {
+	ctx := context.Background()
+	db, app, prov, _ := federatedApp(t)
+	app.OrgChoiceMode, app.IsShared = "", true
+
+	_, err := linkOrProvision(ctx, db, app, prov,
+		federatedIdentity{subject: "idp-1", email: "social@example.com", emailVerified: true})
+	if err != errNoFederatedSignup {
+		t.Fatalf("err = %v, want errNoFederatedSignup", err)
+	}
+	if u, _ := store.GetUserByEmail(ctx, db, "hanzo", "social@example.com"); u != nil {
+		t.Fatalf("a stranger was filed in the operator's org: %s/%s", u.Owner, u.Name)
+	}
+}
+
+// The same shared application, declared to found, lands the person in an org of
+// their own.
+func TestFederation_SharedFoundingAppFoundsItsOwnOrg(t *testing.T) {
+	ctx := context.Background()
+	db, app, prov, _ := federatedApp(t)
+	app.IsShared = true
+
+	u, err := linkOrProvision(ctx, db, app, prov,
+		federatedIdentity{subject: "idp-1", email: "social@example.com", emailVerified: true})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if u.Owner == "hanzo" {
+		t.Fatal("the account was filed in the shared application's own org")
+	}
+}
+
 // A person who signed in with Google at one of the org's applications is the same
 // person at another. Keyed by the one application, the second application found
 // nobody by subject or by address and provisioned a second account — and founded

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
@@ -190,17 +189,16 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 				user = in.Session
 			case in.Method == "login":
 				return errNoAccount
-			case !in.App.EnableSignUp || policy.IsReservedOrg(in.App.Organization):
-				// The SAME reserved-org predicate signup, onboarding, federated
-				// provisioning, and token exchange enforce (policy.IsReservedOrg) —
-				// wallet login was the ONE public account-creation endpoint that
-				// did not consult it. An application row owned by a reserved org
+			case !in.App.EnableSignUp || !oidc.Registers(in.App, in.App.Organization):
+				// The SAME rule the password and provider doors keep (oidc.Registers):
+				// never a reserved org — an application row owned by a reserved org
 				// (admin/built-in/service) with EnableSignUp set would otherwise let
 				// an unauthenticated, wallet-signed POST mint a user under a platform
-				// org — and a user under "admin" IS a SuperAdmin (authz derives Super
-				// from owner == adminOrg). Folded into the EXISTING case, not a new
-				// one, so the refusal stays byte-identical to "signup is off here"
-				// and a prober cannot distinguish the two (no authority oracle).
+				// org, and a user under "admin" IS a SuperAdmin — and never the org
+				// of a shared application that founds nothing, whose org is the
+				// operator's. Folded into the EXISTING case, not a new one, so the
+				// refusal stays byte-identical to "signup is off here" and a prober
+				// cannot distinguish the two (no authority oracle).
 				return errNoSignup
 			default:
 				if user, err = provision(ctx, tx, in, address, now); err != nil {

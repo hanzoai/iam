@@ -82,9 +82,13 @@ func TestSignup_reservedOrg_refusedThroughSharedApp(t *testing.T) {
 	}
 }
 
-// The same shared app that refused the reserved orgs MUST still admit a legitimate
-// tenant — proof the refuse is precise (the reserved-org guard, not a broken app).
-func TestSignup_sharedApp_admitsLegitimateTenant(t *testing.T) {
+// The same shared app that refused the reserved orgs refuses every other org it is
+// merely handed. This test once asserted the opposite — that a shared app admits
+// any standing tenant a signup names — and that was the hole: an unauthenticated
+// POST naming acme made the caller a member of acme. A shared app serves many
+// tenants at SIGN-IN, where the person already belongs to one; at signup nobody
+// belongs anywhere yet. acme is reached by acme's invitation (signup_invite_test.go).
+func TestSignup_sharedApp_refusesANamedTenant(t *testing.T) {
 	app, db := newServer(t)
 	seedAppFull(t, db, fullApp{clientID: "shared-portal", secret: "s3cret", org: "hanzo", shared: true, signup: true})
 	seedOrg(t, db, "acme")
@@ -95,11 +99,14 @@ func TestSignup_sharedApp_admitsLegitimateTenant(t *testing.T) {
 		"username":     "alice",
 		"password":     "correct horse battery staple",
 	})
-	if status != 200 || env["status"] != "ok" {
-		t.Fatalf("legitimate shared-app signup: status=%d env=%v, want 200 ok", status, env)
+	if status == 200 && env["status"] == "ok" {
+		t.Fatalf("a shared-app signup was admitted into acme by naming it: %v", env)
 	}
-	if u, _ := store.GetUserByName(context.Background(), db, "acme", "alice"); u == nil {
-		t.Fatal("legitimate tenant signup created no user — the guard is over-broad")
+	if msg, _ := env["msg"].(string); msg != "the user is not permitted to sign up to this application" {
+		t.Fatalf("refusal message %q distinguishes this case from the other tenant refusals", msg)
+	}
+	if u, _ := store.GetUserByName(context.Background(), db, "acme", "alice"); u != nil {
+		t.Fatal("alice now exists inside tenant acme")
 	}
 }
 
