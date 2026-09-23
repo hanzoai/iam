@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -186,6 +187,61 @@ func MembershipsByUser(ctx context.Context, db orm.DB, user string) ([]*schema.M
 		return nil, nil
 	}
 	return orm.TypedQuery[schema.Membership](db).Filter("User=", user).Order("Org").GetAll(ctx)
+}
+
+// ErrMemberAmbiguous reports that a login identifier names more than one member of
+// an org, so it names nobody in particular.
+var ErrMemberAmbiguous = errors.New("login identifier matches more than one member")
+
+// MemberByIdentifier resolves a login identifier among the people an org-wide
+// membership admits to org from a home of their own: by username, or by email when
+// the identifier is an address. It is the reach a SHARED application's sign-in makes,
+// so a person who works in org signs in at org's apps without an account there.
+//
+// It is bounded to that roster and nothing wider. A reserved org is never searched
+// and a member homed in one is never matched, so no sign-in form of a tenant can
+// reach a SuperAdmin. More than one match is ErrMemberAmbiguous, never a pick, for
+// the reason GetUserByEmail refuses one: whoever was added second would be resolved
+// as the first. A member of org who LIVES in org is the in-org lookup's, not this.
+func MemberByIdentifier(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {
+	identifier = strings.TrimSpace(identifier)
+	if org == "" || identifier == "" || policy.IsReservedOrg(org) {
+		return nil, nil
+	}
+	rows, err := MembershipsByOrg(ctx, db, org)
+	if err != nil {
+		return nil, err
+	}
+	byEmail := strings.Contains(identifier, "@")
+	var match *schema.User
+	for _, m := range rows {
+		if m == nil || m.Workspace != "" || m.Project != "" {
+			continue
+		}
+		home, name, ok := strings.Cut(m.User, "/")
+		if !ok || home == "" || name == "" || home == org || policy.IsReservedOrg(home) {
+			continue
+		}
+		u, err := GetUserByName(ctx, db, home, name)
+		if err != nil {
+			return nil, err
+		}
+		if u == nil || u.IsDeleted {
+			continue
+		}
+		hit := strings.EqualFold(u.Name, identifier)
+		if !hit && byEmail {
+			hit = u.Email != "" && NormalizeEmail(u.Email) == NormalizeEmail(identifier)
+		}
+		if !hit {
+			continue
+		}
+		if match != nil && (match.Owner != u.Owner || match.Name != u.Name) {
+			return nil, ErrMemberAmbiguous
+		}
+		match = u
+	}
+	return match, nil
 }
 
 // MembershipsByOrg returns every user who may act in an org — the org's roster.

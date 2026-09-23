@@ -489,7 +489,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "invalid_grant", "the username or password is incorrect")
 	}
 
-	user, err := resolveLoginUser(ctx, db, org, username)
+	user, err := resolveLoginUser(ctx, db, org, username, false)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}

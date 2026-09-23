@@ -229,7 +229,7 @@ func codeSubject(ctx context.Context, db orm.DB, in passwordBody) (*schema.User,
 	// that identifier signs in as — name first, then email, then phone, then the
 	// accounts registered in the org the caller names, which is where a person in an
 	// org of their own is found.
-	user, err := resolveLoginUser(ctx, db, in.Organization, in.Username)
+	user, err := resolveLoginUser(ctx, db, in.Organization, in.Username, false)
 	if err != nil {
 		return nil, err
 	}

@@ -8,10 +8,12 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/internal/otp"
@@ -187,7 +189,8 @@ func loginHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "organization, username and password are required")
 		}
 
-		user, err := resolveLoginUser(ctx, db, f.Organization, f.Username)
+		members := servesMembers(ctx, db, f)
+		user, err := resolveLoginUser(ctx, db, f.Organization, f.Username, members)
 		if err != nil {
 			// NEVER the resolver's own words. This is an UNAUTHENTICATED endpoint and
 			// nothing has been proven about the caller yet, so anything specific
@@ -198,7 +201,7 @@ func loginHandler(db orm.DB) zip.Handler {
 			// endpoint already spent care making indistinguishable from "no such
 			// user". The operator still learns everything from the server log; the
 			// caller learns only that the credential did not work.
-			if errors.Is(err, store.ErrEmailAmbiguous) || errors.Is(err, store.ErrPhoneAmbiguous) {
+			if errors.Is(err, store.ErrEmailAmbiguous) || errors.Is(err, store.ErrPhoneAmbiguous) || errors.Is(err, store.ErrMemberAmbiguous) {
 				return httpx.Err(c, "the username or password is incorrect")
 			}
 			return httpx.Err(c, "sign-in is unavailable")
@@ -228,6 +231,12 @@ func loginHandler(db orm.DB) zip.Handler {
 		// object/check.go contract). Every live v1 row is argon2id — a bcrypt-only
 		// verify would fail every real login at cutover.
 		orgPasswordType := loginOrgPasswordType(ctx, db, f.Organization)
+		if user == nil && members {
+			// A shared app's roster was searched and held nobody by this name. Spend
+			// the verify a real account would, so the refusal below cannot be told
+			// from a wrong password by how long it took.
+			decoyVerify(f.Password)
+		}
 		// Verify through the ONE lockout-enforcing choke point (F-D1) — users.Authenticate,
 		// shared with the ROPC grant, the registry token endpoint, and the LDAP-bind seam.
 		// One opaque failure for "no such user" and "wrong password" — no oracle that
@@ -407,12 +416,37 @@ func (f loginForm) mint() Mint {
 //
 // The live-in arm runs FIRST and is untouched, so every account that lives in the
 // org resolves exactly as it always did, staff included.
-func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {
+func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string, members bool) (*schema.User, error) {
 	user, err := resolveInOrg(ctx, db, org, identifier)
 	if err != nil || user != nil {
 		return user, err
 	}
-	return store.GetSignupByEmail(ctx, db, org, identifier)
+	if user, err = store.GetSignupByEmail(ctx, db, org, identifier); err != nil || user != nil || !members {
+		return user, err
+	}
+	return store.MemberByIdentifier(ctx, db, org, identifier)
+}
+
+// servesMembers reports whether this sign-in is for a SHARED application of the
+// org it names. Such an app serves the people org admits by membership, from homes
+// of their own, so its sign-in resolves them through org's roster
+// (store.MemberByIdentifier). Any other app searches only the org itself.
+func servesMembers(ctx context.Context, db orm.DB, f loginForm) bool {
+	app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
+	return err == nil && app != nil && app.IsShared && app.Organization == f.Organization
+}
+
+// decoy is a password hash no one holds, verified when a sign-in names nobody so
+// that the refusal takes as long as a wrong password does.
+var decoy = sync.OnceValue(func() string {
+	h, _ := cred.Hash("decoy")
+	return h
+})
+
+func decoyVerify(password string) {
+	if h := decoy(); h != "" {
+		_ = cred.Verify(cred.TypeArgon2id, password, h)
+	}
 }
 
 // resolveInOrg resolves the login identifier within one org, resolving NAME FIRST
