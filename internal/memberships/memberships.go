@@ -105,11 +105,11 @@ type request struct {
 // list answers either question about who belongs where: which organizations one
 // person can act in, or who can act in one organization.
 //
-// Both are org-scoped: a non-SuperAdmin may ask about ITS OWN org's roster, or
-// about a user whose home org is its own, and nothing else. The bound comes from
-// the verified credential via principal.Scope, so a request parameter can never
-// widen it — a membership row names who may act and spend in an org, so a
-// cross-tenant read is a customer roster leak.
+// Both are org-scoped: a non-SuperAdmin may read the roster of an org it belongs
+// to, or the tenancy of a person whose account it administers, and nothing else.
+// The bound comes from the verified credential via principal.ScopeRead, so a
+// request parameter can never widen it — a membership row names who may act and
+// spend in an org, so a roster read by a stranger is a customer roster leak.
 func list(db orm.DB) zip.TypedHandler[lookup, httpx.Answer] {
 	return func(ctx context.Context, in *lookup) (*httpx.Answer, error) {
 		if (in.User == "") == (in.Org == "") {
@@ -252,11 +252,13 @@ func mayGrant(ctx context.Context, org string) bool {
 }
 
 // scoped reports whether the caller may read the membership rows of org — i.e.
-// whether resolving the scope from its own verified credential yields exactly
-// the org it asked for. A SuperAdmin gets what it asks for; anyone else gets its
-// own org, so any other request fails the equality and is refused.
+// whether resolving the read scope from its own verified credential yields
+// exactly the org it asked for. A SuperAdmin gets what it asks for; a person gets
+// any org they belong to, home or membership, because an org's members see who
+// else is in it; an application gets the tenant it serves. Any other request
+// fails the equality and is refused.
 func scoped(ctx context.Context, org string) bool {
-	got, err := principal.Scope(ctx, org)
+	got, err := principal.ScopeRead(ctx, org)
 	return err == nil && got == org
 }
 

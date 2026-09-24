@@ -28,7 +28,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.1-0.20241114170450-2d3c2a9cc518
 	github.com/hanzoai/account v0.2.1
-	github.com/hanzoai/authz v1.10.36
+	github.com/hanzoai/authz v1.10.40-0.20260924033650-46ed7eb1fa84
 	github.com/hanzoai/orm v0.6.31
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/luxfi/crypto v1.20.2

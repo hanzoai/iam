@@ -66,6 +66,8 @@ github.com/hanzoai/account v0.2.1 h1:OpODtK/N+qcUy83yUj6br+yTTBoItJWneDtOZ3NlyFU
 github.com/hanzoai/account v0.2.1/go.mod h1:8OzIGRphAhlabOI74O4GoL3RM0y8mbUV0pQUKgXLjkw=
 github.com/hanzoai/authz v1.10.36 h1:q3UjWq0OuzRTZPsh455OIpmWZhD7n8jYiwm6sVgEXLE=
 github.com/hanzoai/authz v1.10.36/go.mod h1:4DhM0ldRGSyme9avHDz2nv/XzNVB0Alq3kec9ANyFXY=
+github.com/hanzoai/authz v1.10.40-0.20260924033650-46ed7eb1fa84 h1:F2ba8iXoWBAxrIs7LSSmzhT7CZZSDfQ4FgmS0buerlc=
+github.com/hanzoai/authz v1.10.40-0.20260924033650-46ed7eb1fa84/go.mod h1:UaE7uejr8GTgosNO/teyBOItT85/T6+L3hpFPkSOzWE=
 github.com/hanzoai/csqlite v0.1.0 h1:suwC3dh0INlfP/U0Es6cDf6JNQ+2+GVLLATPWCUux6k=
 github.com/hanzoai/csqlite v0.1.0/go.mod h1:H31a/O6VXuklR9UBkgY++bmAK5uzVfXPqU0F6P9Wsos=
 github.com/hanzoai/dbx v1.17.2 h1:EBADhGuOMxCsc4eHj5cJmtE9c7tSKaviyl8URx31NOQ=

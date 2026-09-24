@@ -72,9 +72,11 @@ func From(ctx context.Context) (*Principal, bool) {
 //
 // A SuperAdmin — the only cross-tenant scope — is bound to the owner it names
 // (empty = every tenant). Everyone else is bound to its OWN org and may say so:
-// naming its own org, or naming none, both resolve to it. Naming a DIFFERENT org
-// is refused, because the one thing this function must never do is answer a
-// request about org B with org A's rows.
+// naming its own org, or naming none, both resolve to it. It may also name an org
+// it ADMINISTERS by membership (policy.Principal.AdminOf), the same question the
+// registry decision asks, so an owner who joined from a personal account runs the
+// org they own. Naming any other org is refused, because the one thing this
+// function must never do is answer a request about org B with org A's rows.
 //
 // REFUSING beats reinterpreting, and the difference is not stylistic. Answering
 // a request about org B with org A's rows says nothing in the status code, the
@@ -107,6 +109,9 @@ func Scope(ctx context.Context, owner string) (string, error) {
 	if p.Sudo {
 		return owner, nil
 	}
+	if owner != "" && owner != p.Org && p.AdminOf(owner) {
+		return owner, nil
+	}
 	if p.Org == "" || (owner != "" && owner != p.Org) {
 		return "", errForeignOrg(p)
 	}
@@ -126,9 +131,8 @@ func Scope(ctx context.Context, owner string) (string, error) {
 // WRITES DO NOT COME THROUGH HERE, and that is the whole reason this is a second
 // entry point rather than a widened Scope. Scope keeps its stricter clause, so a
 // plain member still cannot mint a token or a cert in an org they merely belong
-// to, and the handler-authorized write surfaces (SCIM, service-accounts,
-// memberships) are untouched. Only a read whose target rides in the QUERY — the
-// switcher's project and workspace lists — asks this question.
+// to. Only reads that belonging opens ask this question: the switcher's project
+// and workspace lists, and an org's roster.
 func ScopeRead(ctx context.Context, owner string) (string, error) {
 	p, ok := From(ctx)
 	if !ok {

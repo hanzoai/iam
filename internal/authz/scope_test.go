@@ -549,9 +549,9 @@ func TestSuper_ReservedMembershipReachesEveryTenant(t *testing.T) {
 }
 
 // The other half, and the reason the reserved org is named rather than membership
-// in general: ordinary membership still carries NO authority outside organizations.
-// Belonging to a tenant lets you SEE that tenant (ScopeRead); it never makes you an
-// operator of it, and never reaches a third one.
+// in general: ordinary membership is never platform authority. An owner or admin
+// membership makes you that one tenant's admin; it never reaches a third tenant or
+// the reserved org, and an unscoped page stays your own.
 func TestSuper_OrdinaryMembershipIsNotSudo(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
@@ -559,14 +559,25 @@ func TestSuper_OrdinaryMembershipIsNotSudo(t *testing.T) {
 	seedMembership(t, h.db, "hanzo/member", foreignRealOrg, "admin")
 	member := asUser(h.token(t, "hanzo/member"))
 
+	// Administering lux makes it lux's admin, which reads lux's people...
 	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg, member, nil)
-	if got.status != 403 {
-		t.Fatalf("GET get-users?owner=%s as an ADMIN of %s = %d, want 403 — administering a "+
-			"tenant is not platform sudo, and users is the strict clause: %s",
+	if got.status != 200 {
+		t.Fatalf("GET users?owner=%s as an ADMIN of %s = %d, want 200: %s",
 			foreignRealOrg, foreignRealOrg, got.status, got.body)
 	}
-	if owners := got.owners(t); len(owners) > 0 {
-		t.Errorf("the refusal shipped rows owned by %v", owners)
+	if owners := got.owners(t); len(owners) != 1 || owners[foreignRealOrg] == 0 {
+		t.Errorf("lux's admin was answered rows owned by %v", owners)
+	}
+	// ...and is not platform sudo: no other tenant, no reserved org, and naming no
+	// org answers its own rather than every tenant's.
+	for _, owner := range []string{reservedOrg, fabricatedOrg} {
+		if got := h.send(t, "GET", "/v1/iam/users?owner="+owner, member, nil); got.status != 403 {
+			t.Errorf("GET users?owner=%s as an admin of %s = %d, want 403: %s", owner, foreignRealOrg, got.status, got.body)
+		}
+	}
+	got = h.send(t, "GET", "/v1/iam/users", member, nil)
+	if owners := got.owners(t); owners[foreignRealOrg] != 0 || owners[reservedOrg] != 0 {
+		t.Errorf("an unscoped page for lux's admin spanned tenants: %v", owners)
 	}
 }
 

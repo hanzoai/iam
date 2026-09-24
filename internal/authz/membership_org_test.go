@@ -66,17 +66,23 @@ func TestPlainMemberReadsButCannotWrite(t *testing.T) {
 	}
 }
 
-// The membership set carries no authority outside organizations: it says which
-// orgs you act in, not that you may reach another tenant's users or signing
-// material.
-func TestMembershipDoesNotLeakIntoOtherEntities(t *testing.T) {
+// An owner or admin membership makes its holder that org's admin, over the rows
+// that org owns, exactly as an admin whose account lives there. It reaches no
+// other owner, and a plain membership reaches no row at all: belonging says which
+// orgs you act in, not that you may reach their users or signing material.
+func TestMembershipAdministersOnlyTheOrgItAdmins(t *testing.T) {
 	dave := &principal.Principal{
 		Org: "hanzo", User: "davelorenzini",
-		Orgs: map[string]policy.Role{"maxpower": store.RoleAdmin},
+		Orgs: map[string]policy.Role{"maxpower": store.RoleAdmin, "lux": store.RoleMember},
 	}
 	for _, entity := range []string{"users", "certs", "applications", "providers"} {
-		if authorize(dave, "GET", entity, "maxpower", "anything") {
-			t.Errorf("membership must not grant %s reads in another owner", entity)
+		if !authorize(dave, "GET", entity, "maxpower", "anything") {
+			t.Errorf("an admin of maxpower cannot read its %s", entity)
+		}
+		for _, owner := range []string{"lux", "acme", "admin"} {
+			if authorize(dave, "GET", entity, owner, "anything") || authorize(dave, "POST", entity, owner, "anything") {
+				t.Errorf("membership reached %s owned by %s", entity, owner)
+			}
 		}
 	}
 }

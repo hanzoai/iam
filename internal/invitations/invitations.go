@@ -108,8 +108,8 @@ func apply(dst *schema.Invitation, in *Input) {
 // been asked to join, on what terms, and how many seats each invitation still
 // has left.
 //
-// You see your own organization's invitations and no one else's; which organization that
-// is comes from your credentials, not from the request.
+// You see the invitations of the organization your credentials run, and no one
+// else's: your own, or one you own or administer.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 	// The owner is resolved by principal.Scope from the authenticated principal,
 	// never taken from the input: a tenant reads only its own org, a SuperAdmin
