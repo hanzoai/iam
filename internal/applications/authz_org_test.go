@@ -192,3 +192,30 @@ func TestCreate_AnApplicationNameIsHeldOnce(t *testing.T) {
 		t.Fatalf("a free name: status=%d, want 200", st)
 	}
 }
+
+// Sharing an application decides who its org's sign-in form may reach, so only a
+// SuperAdmin may change it. A tenant admin's round trip that keeps it is fine.
+func TestSharing_OnlyASuperAdminChangesIt(t *testing.T) {
+	h := newOrgHarness(t)
+	boss := h.token(t, "acme/boss")
+	root := h.token(t, "admin/root")
+
+	if st := h.do(t, "POST", "/v1/iam/applications", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":true}`); st != 403 {
+		t.Fatalf("a tenant admin created a shared app: status=%d, want 403", st)
+	}
+	if st := h.do(t, "POST", "/v1/iam/applications", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app"}`); st != 200 {
+		t.Fatalf("an unshared app: status=%d, want 200", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":true}`); st != 403 {
+		t.Fatalf("a tenant admin shared an app: status=%d, want 403", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", root, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":true}`); st != 200 {
+		t.Fatalf("a SuperAdmin shared an app: status=%d, want 200", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":true,"displayName":"Acme"}`); st != 200 {
+		t.Fatalf("a tenant admin's edit that keeps sharing: status=%d, want 200", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":false}`); st != 403 {
+		t.Fatalf("a tenant admin unshared an app: status=%d, want 403", st)
+	}
+}

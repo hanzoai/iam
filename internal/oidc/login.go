@@ -230,7 +230,14 @@ func loginHandler(db orm.DB) zip.Handler {
 		// user's PasswordType, falling back to the organization's (v1's
 		// object/check.go contract). Every live v1 row is argon2id — a bcrypt-only
 		// verify would fail every real login at cutover.
-		orgPasswordType := loginOrgPasswordType(ctx, db, f.Organization)
+		// The row's own org supplies the fallback type: a member reached through a
+		// shared app lives elsewhere, and so does an account reached by the address
+		// it registered with.
+		pwOrg := f.Organization
+		if user != nil && user.Owner != "" {
+			pwOrg = user.Owner
+		}
+		orgPasswordType := loginOrgPasswordType(ctx, db, pwOrg)
 		if user == nil && members {
 			// A shared app's roster was searched and held nobody by this name. Spend
 			// the verify a real account would, so the refusal below cannot be told

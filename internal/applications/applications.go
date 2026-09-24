@@ -46,6 +46,18 @@ func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	return nil
 }
 
+// authorizeSharing gates isShared. A shared application serves every org's people,
+// and its sign-in resolves the members of its org from their own homes
+// (store.MemberByIdentifier), so turning it on is a platform decision about who a
+// tenant's form may reach: only a SuperAdmin may change it. A write that keeps the
+// stored value, the admin round trip, passes.
+func authorizeSharing(ctx context.Context, in *schema.Application, was bool) error {
+	if in.IsShared == was || authz.IsSuper(ctx) {
+		return nil
+	}
+	return zip.ErrForbidden("only a SuperAdmin may change whether an application is shared")
+}
+
 // authorizeProviders gates the identity providers an application LINKS. A link is a
 // reference to credentials: the sign-in leg runs on the provider record's own client
 // id and secret (store.EnrichProviders resolves it, federationProvider uses it), and
@@ -226,6 +238,9 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authz.AuthorizeCert(ctx, db, in.Cert, ""); err != nil {
 			return nil, err
 		}
+		if err := authorizeSharing(ctx, in, false); err != nil {
+			return nil, err
+		}
 		if err := authorizeProviders(ctx, in); err != nil {
 			return nil, err
 		}
@@ -286,6 +301,9 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, zip.ErrInternal(err.Error())
 		}
 		if err := authz.AuthorizeCert(ctx, db, in.Cert, existing.Cert); err != nil {
+			return nil, err
+		}
+		if err := authorizeSharing(ctx, in, existing.IsShared); err != nil {
 			return nil, err
 		}
 		if err := authorizeProviders(ctx, in); err != nil {

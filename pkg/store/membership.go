@@ -198,50 +198,75 @@ var ErrMemberAmbiguous = errors.New("login identifier matches more than one memb
 // the identifier is an address. It is the reach a SHARED application's sign-in makes,
 // so a person who works in org signs in at org's apps without an account there.
 //
-// It is bounded to that roster and nothing wider. A reserved org is never searched
-// and a member homed in one is never matched, so no sign-in form of a tenant can
-// reach a SuperAdmin. More than one match is ErrMemberAmbiguous, never a pick, for
-// the reason GetUserByEmail refuses one: whoever was added second would be resolved
-// as the first. A member of org who LIVES in org is the in-org lookup's, not this.
+// The accounts answering to the identifier are found first, by the indexed name and
+// email, and only then asked whether org admits them, so a miss costs a lookup and
+// not a walk of the roster. The reach is org's org-wide members and nothing wider: a
+// reserved org is never searched, and no one homed in one or holding platform
+// authority by membership (IsSuperAdmin) is ever matched, so no tenant's sign-in
+// form can reach a SuperAdmin. More than one match is ErrMemberAmbiguous, never a
+// pick: whoever was added second would be resolved as the first. A member who LIVES
+// in org is the in-org lookup's, not this.
 func MemberByIdentifier(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {
 	identifier = strings.TrimSpace(identifier)
 	if org == "" || identifier == "" || policy.IsReservedOrg(org) {
 		return nil, nil
 	}
-	rows, err := MembershipsByOrg(ctx, db, org)
+	cands, err := accountsNamed(ctx, db, identifier)
 	if err != nil {
 		return nil, err
 	}
-	byEmail := strings.Contains(identifier, "@")
 	var match *schema.User
-	for _, m := range rows {
-		if m == nil || m.Workspace != "" || m.Project != "" {
+	for _, u := range cands {
+		if u.IsDeleted || u.Owner == org || policy.IsReservedOrg(u.Owner) {
 			continue
 		}
-		home, name, ok := strings.Cut(m.User, "/")
-		if !ok || home == "" || name == "" || home == org || policy.IsReservedOrg(home) {
+		if super, err := IsSuperAdmin(ctx, db, u.Owner, u.Name); err != nil {
+			return nil, err
+		} else if super {
 			continue
 		}
-		u, err := GetUserByName(ctx, db, home, name)
+		m, err := MembershipIn(ctx, db, u.Owner+"/"+u.Name, org, "", "")
 		if err != nil {
 			return nil, err
 		}
-		if u == nil || u.IsDeleted {
+		if m == nil {
 			continue
 		}
-		hit := strings.EqualFold(u.Name, identifier)
-		if !hit && byEmail {
-			hit = u.Email != "" && NormalizeEmail(u.Email) == NormalizeEmail(identifier)
-		}
-		if !hit {
-			continue
-		}
-		if match != nil && (match.Owner != u.Owner || match.Name != u.Name) {
+		if match != nil {
 			return nil, ErrMemberAmbiguous
 		}
 		match = u
 	}
 	return match, nil
+}
+
+// accountsNamed returns every account, in any org, whose username is identifier or,
+// when identifier is an address, whose email is. Each account appears once.
+func accountsNamed(ctx context.Context, db orm.DB, identifier string) ([]*schema.User, error) {
+	type q struct{ field, value string }
+	asks := []q{{"Name=", identifier}}
+	if folded := strings.ToLower(identifier); folded != identifier {
+		asks = append(asks, q{"Name=", folded})
+	}
+	if strings.Contains(identifier, "@") {
+		asks = append(asks, q{"Email=", NormalizeEmail(identifier)})
+	}
+	seen := map[string]bool{}
+	var out []*schema.User
+	for _, a := range asks {
+		us, err := orm.TypedQuery[schema.User](db).Filter(a.field, a.value).GetAll(ctx)
+		if err != nil && !errors.Is(err, orm.ErrNotFound) {
+			return nil, err
+		}
+		for _, u := range us {
+			if u == nil || seen[u.Owner+"/"+u.Name] {
+				continue
+			}
+			seen[u.Owner+"/"+u.Name] = true
+			out = append(out, u)
+		}
+	}
+	return out, nil
 }
 
 // MembershipsByOrg returns every user who may act in an org — the org's roster.
