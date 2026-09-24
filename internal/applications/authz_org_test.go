@@ -41,6 +41,7 @@ const orgSigningKid = "cert-hanzo"
 type orgHarness struct {
 	app *zip.App
 	key *rsa.PrivateKey
+	db  orm.DB
 }
 
 func newOrgHarness(t *testing.T) *orgHarness {
@@ -69,7 +70,7 @@ func newOrgHarness(t *testing.T) *orgHarness {
 	if err := app.Build(); err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	return &orgHarness{app: app, key: key}
+	return &orgHarness{app: app, key: key, db: db}
 }
 
 func (h *orgHarness) token(t *testing.T, sub string) string {
@@ -217,5 +218,45 @@ func TestSharing_OnlyASuperAdminChangesIt(t *testing.T) {
 	}
 	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":false}`); st != 403 {
 		t.Fatalf("a tenant admin unshared an app: status=%d, want 403", st)
+	}
+}
+
+// Resources names the servers that will honour this client's own token, so the
+// list is the platform's to change, the way sharing is. The admin round trip,
+// which re-sends the stored list in any order, still passes.
+func TestResources_OnlyASuperAdminChangesThem(t *testing.T) {
+	h := newOrgHarness(t)
+	boss := h.token(t, "acme/boss")
+	root := h.token(t, "admin/root")
+	app := func(resources string) string {
+		return `{"owner":"acme","name":"acme-svc","organization":"acme","clientId":"acme-svc","resources":` + resources + `}`
+	}
+
+	if st := h.do(t, "POST", "/v1/iam/applications", boss, app(`["hanzo-cloud"]`)); st != 403 {
+		t.Fatalf("a tenant admin created an app naming a resource: status=%d, want 403", st)
+	}
+	if st := h.do(t, "POST", "/v1/iam/applications", boss, app(`[]`)); st != 200 {
+		t.Fatalf("an app naming no resource: status=%d, want 200", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-svc", boss, app(`["hanzo-cloud"]`)); st != 403 {
+		t.Fatalf("a tenant admin granted a resource: status=%d, want 403", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-svc", root, app(`["hanzo-cloud","hanzo-git"]`)); st != 200 {
+		t.Fatalf("a SuperAdmin granted resources: status=%d, want 200", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-svc", boss, app(`["hanzo-git","hanzo-cloud"]`)); st != 200 {
+		t.Fatalf("a tenant admin's edit that keeps the list: status=%d, want 200", st)
+	}
+	for _, changed := range []string{`["hanzo-cloud"]`, `["hanzo-cloud","hanzo-git","kms"]`, `[]`} {
+		if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-svc", boss, app(changed)); st != 403 {
+			t.Fatalf("a tenant admin changed the list to %s: status=%d, want 403", changed, st)
+		}
+	}
+	got, err := orm.Get[schema.Application](h.db, "acme/acme-svc")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(got.Resources) != 2 {
+		t.Fatalf("resources = %v after the refusals, want the two the SuperAdmin set", got.Resources)
 	}
 }

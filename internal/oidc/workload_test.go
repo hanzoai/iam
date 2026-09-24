@@ -276,7 +276,12 @@ func TestWorkload_mintsForTheResourceItNames(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
 	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
-	serviceApp(t, db, "hanzo-pkg")
+	seedApp(t, db, appOpts{
+		clientID:  "hanzo-pkg",
+		secret:    "a-secret-the-pod-never-holds",
+		grants:    []string{"client_credentials", grantTypeAssertion},
+		resources: []string{"hanzo-cloud"},
+	})
 
 	status, tok := present(t, app,
 		c.assertion(t, "cluster-key-1", "system:serviceaccount:hanzo:pkg", audience(), time.Hour),
@@ -293,6 +298,37 @@ func TestWorkload_mintsForTheResourceItNames(t *testing.T) {
 	}
 	if claims.Scope != "read" {
 		t.Errorf("scope = %q, want read", claims.Scope)
+	}
+}
+
+// A cluster assertion mints what client_credentials mints, and that includes the
+// resources the application may name: an unlisted one is invalid_target, and no
+// token is signed, recorded or audited.
+func TestWorkload_refusesAResourceItWasNotGranted(t *testing.T) {
+	c := newCluster(t, "cluster-key-1")
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
+	app, db := newServer(t)
+	serviceApp(t, db, "hanzo-pkg")
+
+	for _, form := range []url.Values{{"resource": {"hanzo-cloud"}}, {"audience": {"hanzo-cloud"}}} {
+		status, tok := present(t, app,
+			c.assertion(t, "cluster-key-1", "system:serviceaccount:hanzo:pkg", audience(), time.Hour), form)
+		if status != 400 || tok["error"] != "invalid_target" {
+			t.Fatalf("%v: status/error = %d/%v, want 400 invalid_target", form, status, tok["error"])
+		}
+		if _, ok := tok["access_token"]; ok {
+			t.Fatalf("%v: a token was minted for an unlisted resource: %v", form, tok)
+		}
+	}
+	if n := machineRows(t, db, "wl"); n != 0 {
+		t.Fatalf("%d token rows recorded under a refusal, want 0", n)
+	}
+	if rows := auditRows(t, db, schema.ActionWorkloadToken); len(rows) != 0 {
+		t.Fatalf("audit rows = %d after a refusal, want 0", len(rows))
+	}
+	if status, tok := present(t, app,
+		c.assertion(t, "cluster-key-1", "system:serviceaccount:hanzo:pkg", audience(), time.Hour), nil); status != 200 {
+		t.Fatalf("no resource: status = %d; body=%v", status, tok)
 	}
 }
 

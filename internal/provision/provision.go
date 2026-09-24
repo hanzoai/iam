@@ -247,6 +247,11 @@ type App struct {
 	// password. A POINTER so saying nothing preserves the app's current setting
 	// rather than turning the method off — see Client.EnableCodeSignin.
 	CodeSignin *bool `yaml:"codeSignin"`
+	// Resources are the resource servers a machine token of this client may name
+	// as its audience beside its own client id (schema.Application.Resources). A
+	// POINTER so an undeclared list is omitted and the app keeps what it has;
+	// `resources: []` clears it.
+	Resources *[]string `yaml:"resources"`
 	// ExpireInHours and RefreshExpireInHours are this client's token lifetimes.
 	// Same names as the wire and the stored model, so one value has one name from
 	// document to registration.
@@ -299,6 +304,8 @@ type Client struct {
 	// for code sign-in on a deployment that cannot send one still advertises only
 	// what it can finish.
 	EnableCodeSignin *bool `json:"enableCodeSignin,omitempty"`
+	// Resources travel only when declared, for the same reason: see App.Resources.
+	Resources *[]string `json:"resources,omitempty"`
 }
 
 // App types. A document that names anything else is rejected at Derive rather
@@ -488,6 +495,7 @@ func deriveApp(org Org, a App) (Client, error) {
 		ExpireInHours:        stated(a.ExpireInHours),
 		RefreshExpireInHours: stated(a.RefreshExpireInHours),
 		EnableCodeSignin:     a.CodeSignin,
+		Resources:            a.Resources,
 	}
 	if c.RedirectUris == nil && a.Type != TypeService {
 		return Client{}, fmt.Errorf("provision: app %s declares no hosts and type %q needs a redirect", id, a.Type)

@@ -94,3 +94,45 @@ func TestUpsertApplication_isSharedDoesNotDisturbTheSecret(t *testing.T) {
 		t.Fatalf("isShared did not persist")
 	}
 }
+
+// resources is declared the way isShared is: a new app names none, a stated list
+// is stored, an omitted one is kept, and [] clears it.
+func TestUpsertApplication_resourcesOmittedPreserves(t *testing.T) {
+	app, db := boot(t)
+	ctx := context.Background()
+	const path = "/v1/iam/admin/applications/upsert"
+	base := `{"organization":"hanzo","name":"hanzo-pkg","clientId":"hanzo-pkg","grantTypes":["client_credentials"]`
+	read := func() []string {
+		t.Helper()
+		a, err := store.GetApplicationByName(ctx, db, "admin", "hanzo-pkg")
+		if err != nil || a == nil {
+			t.Fatalf("read: %v %v", a, err)
+		}
+		return a.Resources
+	}
+
+	if st, m := post(t, app, path, svcToken, base+`}`); st != 200 || m["action"] != "created" {
+		t.Fatalf("create: status=%d body=%v", st, m)
+	}
+	if got := read(); len(got) != 0 {
+		t.Fatalf("a new app names %v, want none", got)
+	}
+	if st, _ := post(t, app, path, svcToken, base+`,"resources":["hanzo-cloud"]}`); st != 200 {
+		t.Fatalf("declare: status=%d", st)
+	}
+	if got := read(); len(got) != 1 || got[0] != "hanzo-cloud" {
+		t.Fatalf("resources = %v, want [hanzo-cloud]", got)
+	}
+	if st, _ := post(t, app, path, svcToken, base+`}`); st != 200 {
+		t.Fatalf("reconcile: status=%d", st)
+	}
+	if got := read(); len(got) != 1 {
+		t.Fatalf("an omitted list changed the stored one to %v", got)
+	}
+	if st, _ := post(t, app, path, svcToken, base+`,"resources":[]}`); st != 200 {
+		t.Fatalf("clear: status=%d", st)
+	}
+	if got := read(); len(got) != 0 {
+		t.Fatalf("resources:[] left %v", got)
+	}
+}

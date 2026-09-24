@@ -80,3 +80,49 @@ orgs:
 		t.Errorf("codeSignin did not reach the registration: %v", c.EnableCodeSignin)
 	}
 }
+
+// A document's resources reach the registration when declared, an empty list
+// included, and an undeclared list never reaches the wire, so the app keeps what
+// it has.
+func TestResourcesCarryFromDocumentToClient(t *testing.T) {
+	doc := `
+orgs:
+  - name: hanzo
+    displayName: Hanzo
+    homepage: https://hanzo.ai
+    apps:
+      - app: pkg
+        type: service
+        resources: [hanzo-cloud]
+      - app: git
+        type: service
+        resources: []
+      - app: visor
+        type: service
+`
+	parsed, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	clients, err := Derive(parsed)
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	wire := map[string]string{}
+	for _, c := range clients {
+		body, err := json.Marshal(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]json.RawMessage
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatal(err)
+		}
+		wire[c.Name] = string(got["resources"])
+	}
+	for name, want := range map[string]string{"hanzo-pkg": `["hanzo-cloud"]`, "hanzo-git": `[]`, "hanzo-visor": ``} {
+		if wire[name] != want {
+			t.Errorf("%s: resources on the wire = %q, want %q", name, wire[name], want)
+		}
+	}
+}

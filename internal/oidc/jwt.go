@@ -420,16 +420,12 @@ func (s *Signer) Kid() string { return s.kid }
 func (s *Signer) Alg() string { return s.alg }
 
 // audienceFor computes the token audience per RFC 8707: an explicit resource
-// indicator wins; a shared application scopes the audience to the org; otherwise
-// the audience is the client id (the value validators check).
+// indicator wins; otherwise the application's own (Application.Audience).
 func audienceFor(app *schema.Application, resource string) jwt.ClaimStrings {
 	if resource != "" {
 		return jwt.ClaimStrings{resource}
 	}
-	if app.IsShared && app.Organization != "" {
-		return jwt.ClaimStrings{app.ClientId + "-org-" + app.Organization}
-	}
-	return jwt.ClaimStrings{app.ClientId}
+	return jwt.ClaimStrings{app.Audience()}
 }
 
 // pinnedMethod is the app's requested signing method (TokenSigningMethod), or ""

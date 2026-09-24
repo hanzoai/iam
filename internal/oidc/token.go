@@ -300,6 +300,12 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 // survives: `cc` for a secret, `wl` for a cluster assertion. Reading it is how an
 // operator finds the services still holding a secret.
 func machineToken(ctx context.Context, db orm.DB, app *schema.Application, issuer, scope, resource, mark string, now time.Time) (tokenResponse, error) {
+	// The audience is where the token is honoured, so the application names only
+	// a resource it was granted (Application.Permits). Asked before anything is
+	// signed, for both grants alike.
+	if !app.Permits(resource) {
+		return tokenResponse{}, ErrInvalidTarget
+	}
 	ttl := appTTL(app)
 	signer, err := signerFor(ctx, db, app, issuer)
 	if err != nil {
@@ -379,10 +385,10 @@ func granted(ctx context.Context, db orm.DB, sub string) ([]schema.OrgRef, error
 //
 // A credential is spent against something, and a token that can only ever name
 // its minter forces every resource server either to accept tokens minted for
-// somebody else or to be handed a second credential of its own. The boundary is
-// the caller's proof of identity, not this parameter: a caller that authenticated
-// may say what the token is for, `azp` records who minted it, and the resource
-// server still decides what to honour.
+// somebody else or to be handed a second credential of its own. Which resources a
+// machine may name is its registration's to say (Application.Permits, asked by
+// machineToken); `azp` records who minted it, and the resource server still
+// decides what to honour.
 func resourceOf(c *zip.Ctx) string {
 	if r := param(c, "resource"); r != "" {
 		return r
@@ -717,6 +723,10 @@ func mintError(c *zip.Ctx, err error) error {
 	if errors.Is(err, ErrNoSubject) {
 		return tokenError(c, 400, "invalid_grant", "the grant's subject no longer names a user")
 	}
+	// RFC 8707 §2: a resource the client may not name is invalid_target.
+	if errors.Is(err, ErrInvalidTarget) {
+		return tokenError(c, 400, "invalid_target", "the application is not permitted to name this resource")
+	}
 	return tokenError(c, 500, "server_error", "")
 }
 
@@ -852,6 +862,11 @@ func userClaims(ctx context.Context, db orm.DB, userID string) (Identity, error)
 // a dead credential rather than a fault, so the token endpoint answers
 // invalid_grant — the holder must sign in again, and a retry cannot help.
 var ErrNoSubject = errors.New("oidc: the grant's subject no longer names a user")
+
+// ErrInvalidTarget is a machine token asked for a resource its application is not
+// permitted to name (Application.Permits). The token endpoint answers
+// invalid_target (RFC 8707 §2).
+var ErrInvalidTarget = errors.New("oidc: the application is not permitted to name this resource")
 
 // machineBillingAccount decides WHICH LEDGER a MACHINE credential spends from.
 //

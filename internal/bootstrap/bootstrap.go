@@ -206,6 +206,11 @@ type registration struct {
 	// bool reads as false on every reconcile that says nothing and would switch
 	// the method off for every app whose caller never mentioned it.
 	EnableCodeSignin *bool `json:"enableCodeSignin"`
+	// Resources are the resource servers a token this application mints for itself
+	// may name as its audience (schema.Application.Resources). A POINTER for the
+	// same reason as IsShared: nil leaves the stored list alone, and only a stated
+	// list, [] to clear it, moves it.
+	Resources *[]string `json:"resources"`
 	// Auth is the `Authorization: Bearer <token>` header, the unified service
 	// token this surface authenticates on. `json:"-"` keeps it off the body and
 	// out of the query string, so the header is the only way to present it.
@@ -295,6 +300,9 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			if in.EnableCodeSignin != nil {
 				existing.EnableCodeSignin = *in.EnableCodeSignin
 			}
+			if in.Resources != nil {
+				existing.Resources = *in.Resources
+			}
 			existing.ExpireInHours = ttl(in.ExpireInHours, existing.ExpireInHours)
 			existing.RefreshExpireInHours = ttl(in.RefreshExpireInHours, existing.RefreshExpireInHours)
 			existing.EnablePassword = true
@@ -341,6 +349,11 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			// it asks for more, so an unstated setting is off rather than inherited
 			// from a default nobody wrote down.
 			a.EnableCodeSignin = in.EnableCodeSignin != nil && *in.EnableCodeSignin
+			// And for resources: a new app's tokens name only itself until a list
+			// says otherwise.
+			if in.Resources != nil {
+				a.Resources = *in.Resources
+			}
 			a.Model = model
 			a.SetId("admin/" + in.Name)
 			if err := a.CreateCtx(ctx); err != nil {

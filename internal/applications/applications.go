@@ -58,6 +58,34 @@ func authorizeSharing(ctx context.Context, in *schema.Application, was bool) err
 	return zip.ErrForbidden("only a SuperAdmin may change whether an application is shared")
 }
 
+// authorizeResources gates Resources, the servers a token the application mints
+// for itself may name. A listed resource is one that will honour this client's
+// token, which is a platform decision about who may spend against it: only a
+// SuperAdmin may change the list. A write that keeps the stored set passes.
+func authorizeResources(ctx context.Context, in *schema.Application, was []string) error {
+	if sameSet(in.Resources, was) || authz.IsSuper(ctx) {
+		return nil
+	}
+	return zip.ErrForbidden("only a SuperAdmin may change the resources an application may name")
+}
+
+// sameSet reports whether a and b hold the same strings, in any order.
+func sameSet(a, b []string) bool {
+	side := make(map[string]int, len(a)+len(b))
+	for _, s := range a {
+		side[s] |= 1
+	}
+	for _, s := range b {
+		side[s] |= 2
+	}
+	for _, v := range side {
+		if v != 3 {
+			return false
+		}
+	}
+	return true
+}
+
 // authorizeProviders gates the identity providers an application LINKS. A link is a
 // reference to credentials: the sign-in leg runs on the provider record's own client
 // id and secret (store.EnrichProviders resolves it, federationProvider uses it), and
@@ -241,6 +269,9 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authorizeSharing(ctx, in, false); err != nil {
 			return nil, err
 		}
+		if err := authorizeResources(ctx, in, nil); err != nil {
+			return nil, err
+		}
 		if err := authorizeProviders(ctx, in); err != nil {
 			return nil, err
 		}
@@ -304,6 +335,9 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, err
 		}
 		if err := authorizeSharing(ctx, in, existing.IsShared); err != nil {
+			return nil, err
+		}
+		if err := authorizeResources(ctx, in, existing.Resources); err != nil {
 			return nil, err
 		}
 		if err := authorizeProviders(ctx, in); err != nil {

@@ -172,6 +172,12 @@ type Application struct {
 	IsShared                     bool            `json:"isShared" url:"-"`
 	IpRestriction                string          `json:"ipRestriction" url:"-"`
 
+	// Resources are the resource servers (RFC 8707) a token this application mints
+	// for itself may name as its audience, beside its own client id. Empty names
+	// none, so the token is for the application alone. Only a SuperAdmin changes
+	// it: a listed resource is a server that will honour this client's token.
+	Resources []string `json:"resources"`
+
 	// ClientId is the OAuth2/OIDC client identifier and the GLOBAL key every
 	// confidential-client resolver authenticates against (store.GetApplicationByClientId,
 	// the mint gates, Basic auth). It MUST be globally unique across ALL owners — a
@@ -349,6 +355,31 @@ func isLoopbackLiteral(u *url.URL) bool {
 // identified without proof, is the endpoint's question, not this one.
 func (a *Application) Proves(secret string) bool {
 	return a.ClientSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(a.ClientSecret)) == 1
+}
+
+// Audience is the audience a token this application mints names when no resource
+// is asked for: a shared application's is scoped to its org, any other's is its
+// client id (the value validators check).
+func (a *Application) Audience() string {
+	if a.IsShared && a.Organization != "" {
+		return a.ClientId + "-org-" + a.Organization
+	}
+	return a.ClientId
+}
+
+// Permits reports whether a token this application mints for itself may name
+// resource as its audience: nothing named, its own client id or Audience, or an
+// entry of Resources, matched whole.
+func (a *Application) Permits(resource string) bool {
+	if resource == "" || resource == a.ClientId || resource == a.Audience() {
+		return true
+	}
+	for _, r := range a.Resources {
+		if r == resource {
+			return true
+		}
+	}
+	return false
 }
 
 // IsPasswordEnabled reports whether password sign-in is available: the explicit

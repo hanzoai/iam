@@ -5,12 +5,15 @@ package oidc
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // testIssuerMap is the canonical multi-brand map the cutover deploy configures as
@@ -478,9 +481,12 @@ func TestFederationOriginBadConfigFailsBoot(t *testing.T) {
 // minter, so a resource server had the choice of accepting tokens minted for someone
 // else or being handed a second credential of its own — which is how an estate ends
 // up with one identity provider and a drawer full of service tokens beside it.
+//
+// What it may name is its registration's: here hanzo-git is listed.
 func TestClientCredentials_AudienceNamesTheRequestedResource(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}, grants: machineGrants})
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect},
+		grants: machineGrants, resources: []string{"hanzo-git"}})
 
 	mint := func(form url.Values) []string {
 		t.Helper()
@@ -521,6 +527,78 @@ func TestClientCredentials_AudienceNamesTheRequestedResource(t *testing.T) {
 	if got := mint(url.Values{}); len(got) != 1 || got[0] != "svc" {
 		t.Errorf("no resource → aud %v, want [svc]", got)
 	}
+}
+
+// A token's audience is where it is honoured, so a client names only a resource
+// its registration lists. Unlisted, by either spelling, is invalid_target (RFC
+// 8707 §2) and nothing is signed or recorded; its own client id is always its own.
+func TestClientCredentials_RefusesAResourceItWasNotGranted(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect},
+		grants: machineGrants, resources: []string{"hanzo-git"}})
+	seedApp(t, db, appOpts{clientID: "bare", secret: "bare-secret", redirectURIs: []string{testRedirect}, grants: machineGrants})
+
+	mint := func(client, secret string, form url.Values) (*http.Response, map[string]any) {
+		t.Helper()
+		form.Set("grant_type", "client_credentials")
+		form.Set("client_id", client)
+		form.Set("client_secret", secret)
+		return postToken(t, app, form)
+	}
+	refused := []struct {
+		client, secret string
+		form           url.Values
+	}{
+		{"bare", "bare-secret", url.Values{"resource": {"hanzo-cloud"}}},
+		{"bare", "bare-secret", url.Values{"audience": {"hanzo-cloud"}}},
+		{"svc", "svc-secret", url.Values{"resource": {"hanzo-cloud"}}},
+		{"svc", "svc-secret", url.Values{"resource": {"hanzo-git-admin"}}},
+		{"svc", "svc-secret", url.Values{"resource": {"HANZO-GIT"}}},
+		{"svc", "svc-secret", url.Values{"resource": {"bare"}}},
+		{"svc", "svc-secret", url.Values{"resource": {"svc-org-hanzo"}}},
+	}
+	for _, r := range refused {
+		resp, tok := mint(r.client, r.secret, r.form)
+		requireError(t, resp, tok, 400, "invalid_target")
+		if _, ok := tok["access_token"]; ok {
+			t.Fatalf("%s %v was minted a token: %v", r.client, r.form, tok)
+		}
+	}
+	if n := machineRows(t, db, "cc"); n != 0 {
+		t.Fatalf("%d token rows recorded under a refusal, want 0", n)
+	}
+
+	// A shared application's own audience is its org-scoped one, and naming it is
+	// naming itself.
+	seedApp(t, db, appOpts{clientID: "brand", secret: "brand-secret", redirectURIs: []string{testRedirect}, shared: true,
+		grants: machineGrants})
+	for _, r := range []struct {
+		client, secret, resource string
+	}{
+		{"bare", "bare-secret", "bare"}, {"bare", "bare-secret", ""}, {"svc", "svc-secret", "hanzo-git"},
+		{"brand", "brand-secret", "brand-org-hanzo"}, {"brand", "brand-secret", "brand"},
+	} {
+		resp, tok := mint(r.client, r.secret, url.Values{"resource": {r.resource}})
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s resource=%q: status=%d body=%v", r.client, r.resource, resp.StatusCode, tok)
+		}
+	}
+}
+
+// machineRows counts the token rows a machine grant recorded under mark.
+func machineRows(t *testing.T, db orm.DB, mark string) int {
+	t.Helper()
+	rows, err := orm.TypedQuery[schema.Token](db).GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("read tokens: %v", err)
+	}
+	n := 0
+	for _, r := range rows {
+		if strings.HasPrefix(r.Name, mark+"-") {
+			n++
+		}
+	}
+	return n
 }
 
 // TestDevIssuerKeepsTheWholeAddress pins the two halves the dev branch used to
