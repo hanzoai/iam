@@ -438,6 +438,8 @@ func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 // Who they are does not change: their organization, username and the identifier
 // their existing sessions are keyed on all survive the write, so an update never
 // signs anyone out.
+//
+// A SuperAdmin's account is changed only by a SuperAdmin.
 func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error) {
 	owner, name := in.AuthzTarget()
 	if owner == "" || name == "" {
@@ -450,6 +452,9 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	}
 	if existing == nil {
 		return nil, zip.ErrNotFound("user " + owner + "/" + name + " not found")
+	}
+	if err := Authorize(ctx, a.db, existing.Owner, existing.Name); err != nil {
+		return nil, err
 	}
 
 	u := &in.User
@@ -565,6 +570,8 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 // Delete removes a person from your organization. Their sessions stop working
 // immediately and the account is gone rather than suspended — to keep the record
 // and only stop sign-in, update the user instead.
+//
+// A SuperAdmin's account is removed only by a SuperAdmin.
 func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	existing, err := a.lookup(ctx, in.Owner, in.Name)
 	if err != nil {
@@ -572,6 +579,9 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	}
 	if existing == nil {
 		return nil, zip.ErrNotFound("user " + in.Owner + "/" + in.Name + " not found")
+	}
+	if err := Authorize(ctx, a.db, existing.Owner, existing.Name); err != nil {
+		return nil, err
 	}
 	// Take the account off every roster BEFORE removing it. The membership rows
 	// are what an org's member list is built from, so an account deleted while
@@ -594,6 +604,44 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return &DeleteOutput{Deleted: true}, nil
+}
+
+// Authorize refuses a write to a SuperAdmin's account unless the caller is itself
+// a SuperAdmin person. It covers everything that is theirs: the row (password,
+// address, phone, profile), its deletion, its second factors, the credentials
+// that name them, and the organizations they belong to.
+//
+// The ordinary gates do not answer this. They ask who may write an org's users,
+// and a SuperAdmin anchored in a brand org is one of that org's users — so the
+// org's admin, or an application holding the user-admin capability, could set
+// the password of the platform's own operator and sign in as them. Platform
+// authority can only be written by platform authority, and an application never
+// holds it.
+//
+// The identity is the RESOLVED row's, because the lookup folds case and the
+// membership read does not: asking of "hanzo/Z" as written would miss the
+// admin-org membership of hanzo/z and wave the write through. A name no row holds
+// is asked as written, which still catches the reserved org itself. An unreadable
+// membership set refuses.
+func Authorize(ctx context.Context, db orm.DB, owner, name string) error {
+	if p, ok := principal.From(ctx); ok && p.Sudo && p.App == nil {
+		return nil
+	}
+	u, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	if u != nil {
+		owner, name = u.Owner, u.Name
+	}
+	super, err := store.IsSuperAdmin(ctx, db, owner, name)
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	if super {
+		return zip.ErrForbidden("only a SuperAdmin may change a SuperAdmin's account")
+	}
+	return nil
 }
 
 // lookup resolves a single user by its (owner, name) natural key. It returns

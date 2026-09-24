@@ -40,6 +40,7 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/principal"
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -157,6 +158,9 @@ func ensure(db orm.DB) zip.Handler {
 		if !mayGrant(ctx, in.Org) {
 			return httpx.Err(c, unauthorized)
 		}
+		if err := account(ctx, db, in.User); err != nil {
+			return httpx.Err(c, err.Error())
+		}
 		added, err := store.EnsureMembership(ctx, db, in.User, in.Org, in.Role)
 		if err != nil {
 			return httpx.Err(c, err.Error())
@@ -186,6 +190,9 @@ func remove(db orm.DB) zip.Handler {
 		if !mayGrant(ctx, in.Org) {
 			return httpx.Err(c, unauthorized)
 		}
+		if err := account(ctx, db, in.User); err != nil {
+			return httpx.Err(c, err.Error())
+		}
 		// A home-org pair names tenancy this relation does not grant, so it cannot
 		// revoke it either: MemberOrgRefs emits the home org from the user row
 		// itself, and the row here is a roster entry beside it. Deleting the row
@@ -205,6 +212,18 @@ func remove(db orm.DB) zip.Handler {
 		}
 		return httpx.Ok(c, removed)
 	}
+}
+
+// account refuses a grant or revoke that names a SuperAdmin unless the caller is
+// one: which organizations the platform's operator belongs to is theirs, and an
+// org's admin or an org-admin client is not entitled to change it. A user that is
+// not "<homeOrg>/<username>" names no account and is left to the store.
+func account(ctx context.Context, db orm.DB, user string) error {
+	owner, name, ok := strings.Cut(user, "/")
+	if !ok {
+		return nil
+	}
+	return users.Authorize(ctx, db, owner, name)
 }
 
 // homeOrgIsNotRevocable answers a revoke whose (user, org) pair names the org the

@@ -54,6 +54,7 @@ import (
 	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/internal/sessions"
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -112,10 +113,11 @@ type setupReq struct {
 
 // target resolves the (owner, name) an MFA request addresses and authorizes it:
 // the caller may always manage its OWN record; touching another user's MFA
-// requires admin authority over that org (authz.Can — the seam SCIM writes use).
+// requires admin authority over that org (authz.Can — the seam SCIM writes use),
+// and a SuperAdmin's factors are touched only by a SuperAdmin (users.Authorize).
 // An unauthenticated caller fails closed (the Guard already required a bearer, so
 // this is defense in depth). Returns a zip error to return verbatim on refusal.
-func target(c *zip.Ctx, req *setupReq) (owner, name string, err error) {
+func target(c *zip.Ctx, db orm.DB, req *setupReq) (owner, name string, err error) {
 	p, present := principal.From(c.Context())
 	if !present {
 		return "", "", zip.ErrUnauthorized("authentication required")
@@ -127,6 +129,9 @@ func target(c *zip.Ctx, req *setupReq) (owner, name string, err error) {
 	self := owner == p.Org && name == p.User
 	if !self && !authz.Can(c.Context(), "PUT", "users", owner, name) {
 		return "", "", zip.ErrForbidden("forbidden")
+	}
+	if err := users.Authorize(c.Context(), db, owner, name); err != nil {
+		return "", "", err
 	}
 	return owner, name, nil
 }
@@ -147,7 +152,7 @@ func initiate(db orm.DB) zip.Handler {
 		if err := decode(c, &req); err != nil {
 			return c.JSON(400, errResp("invalid body"))
 		}
-		owner, name, err := target(c, &req)
+		owner, name, err := target(c, db, &req)
 		if err != nil {
 			return err
 		}
@@ -199,7 +204,7 @@ func enable(db orm.DB) zip.Handler {
 		if err := decode(c, &req); err != nil {
 			return c.JSON(400, errResp("invalid body"))
 		}
-		owner, name, err := target(c, &req)
+		owner, name, err := target(c, db, &req)
 		if err != nil {
 			return err
 		}
@@ -276,7 +281,7 @@ func disable(db orm.DB) zip.Handler {
 		if err := decode(c, &req); err != nil {
 			return c.JSON(400, errResp("invalid body"))
 		}
-		owner, name, err := target(c, &req)
+		owner, name, err := target(c, db, &req)
 		if err != nil {
 			return err
 		}
@@ -316,7 +321,7 @@ func setPreferred(db orm.DB) zip.Handler {
 		if err := decode(c, &req); err != nil {
 			return c.JSON(400, errResp("invalid body"))
 		}
-		owner, name, err := target(c, &req)
+		owner, name, err := target(c, db, &req)
 		if err != nil {
 			return err
 		}

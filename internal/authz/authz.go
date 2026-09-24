@@ -71,6 +71,7 @@ import (
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/principal"
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -232,8 +233,16 @@ func AuthorizeRef(ctx context.Context, method, kind, home, ref string) error {
 // account and is a bad request rather than a name read in the writer's own org. It
 // is one function, so the token write and the passkey write ask it identically and
 // can never drift.
-func AuthorizeUser(ctx context.Context, method, user string) error {
-	return AuthorizeRef(ctx, method, "users", "", user)
+//
+// A token or a passkey filed under a SuperAdmin is a credential that speaks as
+// the platform's operator, so it also asks users.Authorize: only a SuperAdmin
+// files one for a SuperAdmin.
+func AuthorizeUser(ctx context.Context, db orm.DB, method, user string) error {
+	if err := AuthorizeRef(ctx, method, "users", "", user); err != nil || user == "" {
+		return err
+	}
+	owner, name, _ := strings.Cut(user, "/")
+	return users.Authorize(ctx, db, owner, name)
 }
 
 // AuthorizeGrant gates the rows a grant NAMES in its subject lists — the users,

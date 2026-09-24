@@ -8,7 +8,7 @@ import (
 
 func init() {
 	zip.Describe("github.com/hanzoai/iam/internal/users DELETE /v1/iam/users/:owner/:name", zip.Doc{
-		Description: "Removes a person from your organization. Their sessions stop working\nimmediately and the account is gone rather than suspended — to keep the record\nand only stop sign-in, update the user instead.",
+		Description: "Removes a person from your organization. Their sessions stop working\nimmediately and the account is gone rather than suspended — to keep the record\nand only stop sign-in, update the user instead.\n\nA SuperAdmin's account is removed only by a SuperAdmin.",
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/users GET /v1/iam/users", zip.Doc{
 		Description: "Returns a page of the people in an organization, with the total so you\ncan page through the rest. Passwords, API secrets and MFA material are stripped\nfrom every entry.\n\nWhich organization comes from your credentials, not from the request: you read\nyour own and no one else's, and a credential whose scope spans tenants reads\nthe tenant it names — or, naming none, every one of them.",
@@ -63,7 +63,7 @@ func init() {
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/users PUT /v1/iam/users/:owner/:name", zip.Doc{
-		Description: "Changes a person's profile, their roles, or the credentials they sign\nin with. Send a password to reset it; leave it out and their current one keeps\nworking.\n\nWho they are does not change: their organization, username and the identifier\ntheir existing sessions are keyed on all survive the write, so an update never\nsigns anyone out.",
+		Description: "Changes a person's profile, their roles, or the credentials they sign\nin with. Send a password to reset it; leave it out and their current one keeps\nworking.\n\nWho they are does not change: their organization, username and the identifier\ntheir existing sessions are keyed on all survive the write, so an update never\nsigns anyone out.\n\nA SuperAdmin's account is changed only by a SuperAdmin.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.User].id": "Persisted fields",
 			"User.accessKey":           "API credentials. AccessSecret / AccessSecretHash / the OAuth tokens are\nbearer material, so Mask blanks them and the handler's redact() strips them\nbefore responding. They carry real json tags because a field orm never saves\nis a field that silently vanishes.\n\nA presented secret is resolved through Key.AccessSecretDigest and nowhere\nelse, so no credential is ISSUED into these columns: they hold what older\nrows left behind, and every writer that touches them clears them.",
