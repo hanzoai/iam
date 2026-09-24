@@ -32,7 +32,7 @@ import (
 func classOf(t *testing.T, org string, shared bool) Claims {
 	t.Helper()
 	app, db := newServer(t)
-	seedAppFull(t, db, fullApp{clientID: "svc-" + org, secret: "svc-secret", org: org, shared: shared})
+	seedAppFull(t, db, fullApp{clientID: "svc-" + org, secret: "svc-secret", org: org, shared: shared, grants: machineGrants})
 
 	resp, tok := postToken(t, app, url.Values{
 		"grant_type":    {"client_credentials"},

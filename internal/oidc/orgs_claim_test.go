@@ -113,7 +113,7 @@ func TestOrgsClaim_HomeOnlyUser(t *testing.T) {
 // claim entirely — never an empty or app-org value.
 func TestOrgsClaim_ClientCredentialsHasNone(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}, grants: machineGrants})
 
 	resp, tok := postToken(t, app, url.Values{
 		"grant_type": {"client_credentials"}, "client_id": {"svc"}, "client_secret": {"svc-secret"}, "scope": {"read"},
@@ -134,7 +134,7 @@ func TestOrgsClaim_ClientCredentialsHasNone(t *testing.T) {
 // and never a reserved system org, however it was granted.
 func TestOrgsClaim_ClientCredentialsCarriesGrants(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}, grants: machineGrants})
 
 	ctx := context.Background()
 	if _, err := store.EnsureMembership(ctx, db, "admin/svc", "acme", store.RoleMember); err != nil {

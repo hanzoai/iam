@@ -28,6 +28,9 @@ import (
 // carries in the live seed.
 var deviceGrants = []string{"authorization_code", "refresh_token", deviceGrant}
 
+// machineGrants is what a machine client declares: provision.yaml's `service`.
+var machineGrants = []string{"client_credentials"}
+
 // seedDeviceApp seeds a public, device-capable app plus a user in its org.
 func seedDeviceApp(t *testing.T, db orm.DB, clientID string) {
 	t.Helper()

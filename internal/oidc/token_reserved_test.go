@@ -19,7 +19,7 @@ func TestClientCredentials_reservedOrgApp_refused(t *testing.T) {
 	for _, org := range []string{"admin", "built-in", "app"} {
 		t.Run(org, func(t *testing.T) {
 			app, db := newServer(t)
-			seedAppFull(t, db, fullApp{clientID: "svc-" + org, secret: "svc-secret", org: org})
+			seedAppFull(t, db, fullApp{clientID: "svc-" + org, secret: "svc-secret", org: org, grants: machineGrants})
 
 			resp, tok := postToken(t, app, url.Values{
 				"grant_type":    {"client_credentials"},
@@ -100,7 +100,7 @@ func TestPasswordGrant_reservedOrgRequested_refused(t *testing.T) {
 // gate is precise and did not break legitimate client_credentials.
 func TestClientCredentials_tenantOrgApp_stillWorks(t *testing.T) {
 	app, db := newServer(t)
-	seedAppFull(t, db, fullApp{clientID: "svc-hanzo", secret: "svc-secret", org: "hanzo"})
+	seedAppFull(t, db, fullApp{clientID: "svc-hanzo", secret: "svc-secret", org: "hanzo", grants: machineGrants})
 
 	resp, tok := postToken(t, app, url.Values{
 		"grant_type":    {"client_credentials"},

@@ -268,6 +268,15 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	if publicTokenEndpointForbidden(app) {
 		return tokenErrorClient(c, "client is not permitted on this endpoint")
 	}
+	// The grant must be DECLARED (RFC 6749 §5.2 unauthorized_client). A secret
+	// says the client is confidential, not that it is a machine: a server-side
+	// web app holds one for its code exchange, and without this that secret alone
+	// minted a token whose principal is the application. Checked after client
+	// authentication, so an unauthenticated caller learns nothing about which
+	// grants an application declares.
+	if !appGrants(app, "client_credentials") {
+		return tokenError(c, 400, "unauthorized_client", "the application does not permit the client_credentials grant")
+	}
 
 	resp, err := machineToken(ctx, db, app, tokenIssuer(c), param(c, "scope"), resourceOf(c), "cc", now)
 	if err != nil {

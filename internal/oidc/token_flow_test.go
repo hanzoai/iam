@@ -198,7 +198,7 @@ func TestToken_ExpiredCode(t *testing.T) {
 // a public client or a bad secret is refused 401.
 func TestClientCredentials(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}, grants: machineGrants})
 	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}})
 
 	t.Run("post credentials", func(t *testing.T) {
@@ -235,6 +235,62 @@ func TestClientCredentials(t *testing.T) {
 	t.Run("public client refused", func(t *testing.T) {
 		resp, tok := postToken(t, app, url.Values{"grant_type": {"client_credentials"}, "client_id": {"pub"}})
 		requireError(t, resp, tok, 401, "invalid_client")
+	})
+}
+
+// A confidential client that holds a secret for its code exchange but never
+// declared client_credentials is refused unauthorized_client, and nothing is
+// minted: the secret proves who the client is, the declaration says what it may
+// do. The same registration with the grant declared mints.
+func TestClientCredentials_undeclaredGrantRefused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "web", secret: "web-secret", redirectURIs: []string{testRedirect},
+		grants: []string{"authorization_code", "refresh_token"}})
+	seedApp(t, db, appOpts{clientID: "webm2m", secret: "webm2m-secret", redirectURIs: []string{testRedirect},
+		grants: []string{"authorization_code", "refresh_token", "client_credentials"}})
+	seedApp(t, db, appOpts{clientID: "bare", secret: "bare-secret"})
+
+	for _, id := range []string{"web", "bare"} {
+		t.Run(id+" undeclared", func(t *testing.T) {
+			before := tokens(t, db)
+			resp, tok := postToken(t, app, url.Values{"grant_type": {"client_credentials"}, "client_id": {id}, "client_secret": {id + "-secret"}})
+			requireError(t, resp, tok, 400, "unauthorized_client")
+			if tok["access_token"] != nil {
+				t.Fatalf("an application without the grant minted: %v", tok)
+			}
+			if n := tokens(t, db); n != before {
+				t.Fatalf("token rows = %d after a refused mint, want %d", n, before)
+			}
+		})
+	}
+
+	t.Run("basic auth undeclared", func(t *testing.T) {
+		req := formReq("POST", PathToken, url.Values{"grant_type": {"client_credentials"}})
+		req.SetBasicAuth("web", "web-secret")
+		resp, body := do(t, app, req)
+		requireError(t, resp, decode(t, body), 400, "unauthorized_client")
+	})
+
+	// Client authentication is decided first: a wrong secret on an app without
+	// the grant is invalid_client, so the grant list is no oracle to a caller
+	// that cannot authenticate.
+	t.Run("wrong secret is invalid_client first", func(t *testing.T) {
+		resp, tok := postToken(t, app, url.Values{"grant_type": {"client_credentials"}, "client_id": {"web"}, "client_secret": {"nope"}})
+		requireError(t, resp, tok, 401, "invalid_client")
+	})
+
+	t.Run("declared mints", func(t *testing.T) {
+		resp, tok := postToken(t, app, url.Values{"grant_type": {"client_credentials"}, "client_id": {"webm2m"}, "client_secret": {"webm2m-secret"}})
+		if resp.StatusCode != 200 || tok["access_token"] == nil {
+			t.Fatalf("declared client_credentials: status = %d, body = %v", resp.StatusCode, tok)
+		}
+		claims, err := verifyToken(context.Background(), db, tok["access_token"].(string))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if claims.Subject != "admin/webm2m" {
+			t.Errorf("sub = %q, want admin/webm2m", claims.Subject)
+		}
 	})
 }
 

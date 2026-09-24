@@ -26,6 +26,7 @@ type fullApp struct {
 	signup    bool
 	shared    bool
 	redirects []string
+	grants    []string // declared OAuth grants; a grant absent here is refused
 }
 
 func seedAppFull(t *testing.T, db orm.DB, a fullApp) {
@@ -44,6 +45,7 @@ func seedAppFull(t *testing.T, db orm.DB, a fullApp) {
 	app.OrgChoiceMode = a.orgChoice
 	app.ExpireInHours = 1
 	app.RedirectUris = a.redirects
+	app.GrantTypes = a.grants
 	app.SetId("admin/" + a.clientID)
 	if err := app.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed app %s: %v", a.clientID, err)

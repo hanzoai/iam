@@ -184,7 +184,7 @@ func TestRevoke_HomeOrgIsGrantedByTheAccountNotTheRow(t *testing.T) {
 func TestRevoke_MachineCredentialCarriesNoMembership(t *testing.T) {
 	app, db := newServer(t)
 	ctx := context.Background()
-	seedApp(t, db, appOpts{clientID: "svc", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "svc", secret: "s3cret", redirectURIs: []string{testRedirect}, grants: machineGrants})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 	if _, err := store.EnsureMembership(ctx, db, "hanzo/alice", "team-x", store.RoleAdmin); err != nil {
 		t.Fatal(err)

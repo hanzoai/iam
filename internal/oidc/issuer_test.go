@@ -260,7 +260,7 @@ func TestInitIssuerResolver_FailLoud(t *testing.T) {
 func TestIssuerResolver_E2E_PerBrandConsistency(t *testing.T) {
 	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}, grants: machineGrants})
 
 	for _, tc := range []struct{ host, want string }{
 		{"lux.id", "https://lux.id"},
@@ -292,7 +292,7 @@ func TestIssuerResolver_E2E_PerBrandConsistency(t *testing.T) {
 func TestIssuerResolver_E2E_SpoofFailsClosed(t *testing.T) {
 	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}, grants: machineGrants})
 
 	t.Run("unknown host → default, never echoed", func(t *testing.T) {
 		if iss := mintClientCredsIssuer(t, app, db, "evil.example"); iss != "https://hanzo.id" {
@@ -480,7 +480,7 @@ func TestFederationOriginBadConfigFailsBoot(t *testing.T) {
 // up with one identity provider and a drawer full of service tokens beside it.
 func TestClientCredentials_AudienceNamesTheRequestedResource(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}, grants: machineGrants})
 
 	mint := func(form url.Values) []string {
 		t.Helper()

@@ -29,7 +29,7 @@ import (
 func mintsWith(t *testing.T, req *http.Request) (int, map[string]any) {
 	t.Helper()
 	app, db := newServer(t)
-	seedAppFull(t, db, fullApp{clientID: "svc", secret: "svc-secret", org: account.SignupOrg})
+	seedAppFull(t, db, fullApp{clientID: "svc", secret: "svc-secret", org: account.SignupOrg, grants: machineGrants})
 	resp, body := do(t, app, req)
 	return resp.StatusCode, decode(t, body)
 }
