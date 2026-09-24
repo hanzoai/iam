@@ -754,3 +754,21 @@ func TestForgetUser_DeletesTheMembersKeys(t *testing.T) {
 		t.Fatalf("%d of the member's keys outlived the account", len(ks))
 	}
 }
+
+// The signup org is refused however its name is written: org names compare as the
+// accounts they address.
+func TestHolderByAccessKey_NoMemberKeyInTheSignupOrgInAnyCase(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedKeyUser(t, db, "agency", "josh", "josh@agency.example", "")
+	if _, err := EnsureMembership(ctx, db, "agency/josh", "Hanzo", RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	seedKey(t, db, "Hanzo", "josh-secret", "agency/josh", "pk-live-MIXED", "sk-live-MIXED")
+	if h, err := HolderByAccessKey(ctx, db, "sk-live-MIXED"); !errors.Is(err, orm.ErrNotFound) || h.User != nil {
+		t.Fatalf("a member key in Hanzo resolved to %+v (err=%v)", h.User, err)
+	}
+	if ok, _ := MemberKey(ctx, db, "agency/josh", "Hanzo"); ok {
+		t.Fatal("MemberKey admitted a key in the signup org spelled Hanzo")
+	}
+}
