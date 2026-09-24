@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -193,43 +194,77 @@ func MembershipsByUser(ctx context.Context, db orm.DB, user string) ([]*schema.M
 // an org, so it names nobody in particular.
 var ErrMemberAmbiguous = errors.New("login identifier matches more than one member")
 
+// memberCandidates caps how many accounts one address may name before the lookup
+// gives up and answers ambiguous. An address names one person; a lookup asked about
+// many has nothing to choose between and is refused rather than paid for.
+const memberCandidates = 16
+
 // MemberByIdentifier resolves a login identifier among the people an org-wide
 // membership admits to org from a home of their own: by username, or by email when
 // the identifier is an address. It is the reach a SHARED application's sign-in makes,
 // so a person who works in org signs in at org's apps without an account there.
 //
-// The accounts answering to the identifier are found first, by the indexed name and
-// email, and only then asked whether org admits them, so a miss costs a lookup and
-// not a walk of the roster. The reach is org's org-wide members and nothing wider: a
-// reserved org is never searched, and no one homed in one or holding platform
-// authority by membership (IsSuperAdmin) is ever matched, so no tenant's sign-in
-// form can reach a SuperAdmin. More than one match is ErrMemberAmbiguous, never a
-// pick: whoever was added second would be resolved as the first. A member who LIVES
-// in org is the in-org lookup's, not this.
+// The work is bounded by org, not by the estate. A username is matched, without
+// regard to case, against the names on org's roster in one read of it, so a name
+// that many other orgs also use costs nothing extra. An address is looked up by the
+// indexed email, at most memberCandidates accounts, and each is kept only if it is
+// on that roster. Only then are the few survivors read and checked for platform
+// authority.
+//
+// The reach is org's org-wide members and nothing wider: a reserved org is never
+// searched, no one homed in one or holding platform authority by membership
+// (IsSuperAdmin) is ever matched, so no tenant's sign-in form can reach a
+// SuperAdmin. More than one match is ErrMemberAmbiguous, never a pick: whoever was
+// added second would be resolved as the first. A member who LIVES in org is the
+// in-org lookup's, not this.
 func MemberByIdentifier(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {
 	identifier = strings.TrimSpace(identifier)
 	if org == "" || identifier == "" || policy.IsReservedOrg(org) {
 		return nil, nil
 	}
-	cands, err := accountsNamed(ctx, db, identifier)
+	rows, err := MembershipsByOrg(ctx, db, org)
 	if err != nil {
 		return nil, err
 	}
+	roster := map[string]bool{}
+	var ids []string
+	for _, m := range rows {
+		if m == nil || m.Workspace != "" || m.Project != "" {
+			continue
+		}
+		home, name, ok := strings.Cut(m.User, "/")
+		if !ok || home == "" || name == "" || home == org || policy.IsReservedOrg(home) {
+			continue
+		}
+		roster[m.User] = true
+		if strings.EqualFold(name, identifier) {
+			ids = append(ids, m.User)
+		}
+	}
+	if strings.Contains(identifier, "@") {
+		byEmail, err := addressed(ctx, db, identifier)
+		if err != nil {
+			return nil, err
+		}
+		for _, u := range byEmail {
+			if id := u.Owner + "/" + u.Name; roster[id] && !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+	}
 	var match *schema.User
-	for _, u := range cands {
-		if u.IsDeleted || u.Owner == org || policy.IsReservedOrg(u.Owner) {
+	for _, id := range ids {
+		home, name, _ := strings.Cut(id, "/")
+		u, err := GetUserByName(ctx, db, home, name)
+		if err != nil {
+			return nil, err
+		}
+		if u == nil || u.IsDeleted {
 			continue
 		}
 		if super, err := IsSuperAdmin(ctx, db, u.Owner, u.Name); err != nil {
 			return nil, err
 		} else if super {
-			continue
-		}
-		m, err := MembershipIn(ctx, db, u.Owner+"/"+u.Name, org, "", "")
-		if err != nil {
-			return nil, err
-		}
-		if m == nil {
 			continue
 		}
 		if match != nil {
@@ -240,21 +275,14 @@ func MemberByIdentifier(ctx context.Context, db orm.DB, org, identifier string) 
 	return match, nil
 }
 
-// accountsNamed returns every account, in any org, whose username is identifier or,
-// when identifier is an address, whose email is. Each account appears once.
-func accountsNamed(ctx context.Context, db orm.DB, identifier string) ([]*schema.User, error) {
-	type q struct{ field, value string }
-	asks := []q{{"Name=", identifier}}
-	if folded := strings.ToLower(identifier); folded != identifier {
-		asks = append(asks, q{"Name=", folded})
-	}
-	if strings.Contains(identifier, "@") {
-		asks = append(asks, q{"Email=", NormalizeEmail(identifier)})
-	}
+// addressed returns the accounts, in any org, whose email is address as written or
+// in its normalized form: at most memberCandidates of them, and ErrMemberAmbiguous
+// when there are more.
+func addressed(ctx context.Context, db orm.DB, address string) ([]*schema.User, error) {
 	seen := map[string]bool{}
 	var out []*schema.User
-	for _, a := range asks {
-		us, err := orm.TypedQuery[schema.User](db).Filter(a.field, a.value).GetAll(ctx)
+	for _, v := range []string{NormalizeEmail(address), address} {
+		us, err := orm.TypedQuery[schema.User](db).Filter("Email=", v).Limit(memberCandidates + 1).GetAll(ctx)
 		if err != nil && !errors.Is(err, orm.ErrNotFound) {
 			return nil, err
 		}
@@ -265,6 +293,9 @@ func accountsNamed(ctx context.Context, db orm.DB, identifier string) ([]*schema
 			seen[u.Owner+"/"+u.Name] = true
 			out = append(out, u)
 		}
+	}
+	if len(out) > memberCandidates {
+		return nil, ErrMemberAmbiguous
 	}
 	return out, nil
 }

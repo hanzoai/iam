@@ -5,7 +5,9 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -84,50 +86,36 @@ func TestLogin_MemberPasswordTypeFollowsTheHolderNotTheForm(t *testing.T) {
 
 // "No member by that name" and "wrong password" take the same time through the real
 // handler: the decoy is an argon2id verify at the current parameters, and a miss on
-// a member row pays that row's own digest plus the lockout write. The medians must
-// be within 25% of each other.
+// a member row pays that row's own digest plus the lockout write. The fastest of
+// many samples of each must be within 25% of the other; the samples are spread over
+// several members so no account reaches its lockout.
 func TestLogin_MemberMissTakesAsLongAsAWrongPassword(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		seed func(db orm.DB)
-	}{
-		// argon2id is what every live row carries and what the decoy spends. A legacy
-		// bcrypt row is verified at its own cost, which no decoy can know in advance.
-		{"argon2id member row", func(db orm.DB) { seedArgonUser(t, db, "home3", "tim", "tim@home3.example", "pw-tim", cred.TypeArgon2id) }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			db, login := memberApp(t)
-			tc.seed(db)
-			if _, err := store.EnsureMembership(tctx(), db, "home3/tim", "client", store.RoleMember); err != nil {
-				t.Fatal(err)
+	db, login := memberApp(t)
+	const members, tries = 4, 4 // tries stays below the lockout threshold
+	for i := 0; i < members; i++ {
+		name := fmt.Sprintf("tim%d", i)
+		seedArgonUser(t, db, "home3", name, name+"@home3.example", "pw-tim", cred.TypeArgon2id)
+		if _, err := store.EnsureMembership(tctx(), db, "home3/"+name, "client", store.RoleMember); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fastest := func(user func(i int) string) time.Duration {
+		best := time.Duration(1<<62 - 1)
+		for i := 0; i < members*tries; i++ {
+			s := time.Now()
+			login("client", user(i), "not-the-password")
+			if d := time.Since(s); d < best {
+				best = d
 			}
-			const n = 4 // below the lockout threshold
-			med := func(user string) time.Duration {
-				var ds []time.Duration
-				for i := 0; i < n; i++ {
-					s := time.Now()
-					login("client", user, "not-the-password")
-					ds = append(ds, time.Since(s))
-				}
-				for i := range ds {
-					for j := i + 1; j < len(ds); j++ {
-						if ds[j] < ds[i] {
-							ds[i], ds[j] = ds[j], ds[i]
-						}
-					}
-				}
-				return ds[len(ds)/2]
-			}
-			hit, miss := med("tim"), med("nobody-here")
-			t.Logf("wrong password on a member: %v, no such member: %v", hit, miss)
-			lo, hi := hit, miss
-			if lo > hi {
-				lo, hi = hi, lo
-			}
-			if float64(hi) > 1.25*float64(lo) {
-				t.Fatalf("distinguishable: wrong password %v vs no member %v", hit, miss)
-			}
-		})
+		}
+		return best
+	}
+	hit := fastest(func(i int) string { return fmt.Sprintf("tim%d", i%members) })
+	miss := fastest(func(i int) string { return fmt.Sprintf("nobody-%d", i) })
+	t.Logf("wrong password on a member: %v, no such member: %v", hit, miss)
+	lo, hi := min(hit, miss), max(hit, miss)
+	if float64(hi) > 1.25*float64(lo) {
+		t.Fatalf("distinguishable: wrong password %v vs no member %v", hit, miss)
 	}
 }
 
@@ -159,5 +147,154 @@ func TestLogin_MemberMissDoesNotWalkTheRoster(t *testing.T) {
 	}
 	if u, err := store.MemberByIdentifier(tctx(), db, "client", "m1234"); err != nil || u == nil || u.Name != "m1234" {
 		t.Fatalf("a member of the large roster was not found: %v %v", u, err)
+	}
+}
+
+// A username many other orgs also use costs the org's roster, not the estate.
+func TestLogin_MemberMissWithACommonNameCostsTheRosterOnly(t *testing.T) {
+	db, _ := memberApp(t)
+	const n = 2000
+	for i := 0; i < n; i++ {
+		org := fmt.Sprintf("o%04d", i)
+		u := orm.New[schema.User](db)
+		u.Owner, u.Name, u.Email = org, "sam", "sam@shared.example"
+		u.SetId(org + "/sam")
+		if err := u.CreateCtx(tctx()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"sam", "sam@shared.example"} {
+		s := time.Now()
+		u, err := store.MemberByIdentifier(tctx(), db, "client", id)
+		took := time.Since(s)
+		t.Logf("one miss for %q held in %d orgs: %v", id, n, took)
+		if u != nil {
+			t.Fatalf("%q resolved a non-member %s/%s", id, u.Owner, u.Name)
+		}
+		if err != nil && !errors.Is(err, store.ErrMemberAmbiguous) {
+			t.Fatal(err)
+		}
+		if took > 100*time.Millisecond {
+			t.Fatalf("a miss for %q took %v; it should cost the roster, not the estate", id, took)
+		}
+	}
+}
+
+// Rows written before names and addresses were lowercased keep their case, and
+// their people still sign in by name in any case and by the address as written.
+func TestLogin_LegacyMixedCaseMemberStillSignsIn(t *testing.T) {
+	db, login := memberApp(t)
+	seedUserInOrg(t, db, "agency", "Legacy", "Legacy.Person@Agency.Example", "pw-legacy")
+	if _, err := store.EnsureMembership(tctx(), db, "agency/Legacy", "client", store.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"legacy", "LEGACY", "Legacy.Person@Agency.Example"} {
+		if m := login("client", id, "pw-legacy"); !minted(m) {
+			t.Errorf("legacy member signing in as %q was refused: %v", id, m)
+		}
+	}
+}
+
+// Every reserved home is refused, not only the admin org: built-in and app are
+// not SuperAdmins by IsSuperAdmin, so the home check alone keeps them out.
+func TestLogin_ReservedHomesAreNotReached(t *testing.T) {
+	db, login := memberApp(t)
+	for _, home := range []string{"built-in", "app"} {
+		name := "svc-" + home
+		seedUserInOrg(t, db, home, name, name+"@hanzo.example", "pw-svc")
+		if _, err := store.EnsureMembership(tctx(), db, home+"/"+name, "client", store.RoleMember); err != nil {
+			t.Fatal(err)
+		}
+		if u, _ := store.MemberByIdentifier(tctx(), db, "client", name); u != nil {
+			t.Errorf("a %s-homed member was resolved: %s/%s", home, u.Owner, u.Name)
+		}
+		if m := login("client", name, "pw-svc"); minted(m) {
+			t.Errorf("a %s-homed member signed in through a tenant app: %v", home, m)
+		}
+	}
+}
+
+// A roster row that names no home is nobody's: it is skipped, not read as a user
+// of the org.
+func TestLogin_ABareRosterRowNamesNobody(t *testing.T) {
+	db, login := memberApp(t)
+	if _, err := store.EnsureMembership(tctx(), db, "stray", "client", store.RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	if m := login("client", "stray", "pw-stray"); minted(m) || m["msg"] != "the username or password is incorrect" {
+		t.Fatalf("a bare roster row admitted elsewhere/stray: %v", m)
+	}
+}
+
+// The password grant and the code-proved reset keep to the org's own accounts:
+// only a shared app's interactive sign-in reaches the roster.
+func TestLogin_PasswordGrantAndResetStayOffTheRoster(t *testing.T) {
+	bindSender(t, &fakeSender{})
+	app, db := newServer(t)
+	a := seedApp(t, db, appOpts{clientID: "client-patrol", secret: "s3cret", redirectURIs: []string{testRedirect}, shared: true})
+	a.Organization = "client"
+	if err := a.UpdateCtx(tctx()); err != nil {
+		t.Fatal(err)
+	}
+	home := seedApp(t, db, appOpts{clientID: "agency-app", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	home.Organization = "agency"
+	if err := home.UpdateCtx(tctx()); err != nil {
+		t.Fatal(err)
+	}
+	seedOrg(t, db, "agency")
+	seedUserInOrg(t, db, "agency", "josh", "josh@agency.example", "pw-josh")
+	if _, err := store.EnsureMembership(tctx(), db, "agency/josh", "client", store.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, tok := postToken(t, app, url.Values{
+		"grant_type": {"password"}, "client_id": {"client-patrol"}, "client_secret": {"s3cret"},
+		"username": {"josh"}, "password": {"pw-josh"}, "scope": {"openid"},
+	})
+	if resp.StatusCode == 200 || tok["access_token"] != nil {
+		t.Fatalf("the password grant reached the roster: %d %v", resp.StatusCode, tok)
+	}
+
+	// A code minted for josh in his own org, which a reset naming his own org spends.
+	if status, env := sendCode(t, app, map[string]string{
+		"dest": "josh@agency.example", "type": "email", "applicationId": "admin/agency-app",
+	}); status != 200 || env["status"] != "ok" {
+		t.Fatalf("send a code: %d %v", status, env)
+	}
+	rec, err := store.GetLatestVerificationRecord(tctx(), db, "agency", "josh@agency.example")
+	if err != nil || rec == nil {
+		t.Fatalf("no code persisted: %v", err)
+	}
+	status, env := putPassword(t, app, "", `{"organization":"client","username":"josh@agency.example",`+
+		`"code":"`+rec.Code+`","password":"a new one"}`)
+	if status == 200 && env["status"] == "ok" {
+		t.Fatalf("a reset naming client reached its member: %v", env)
+	}
+	// The control: the same code is good where josh lives.
+	status, env = putPassword(t, app, "", `{"organization":"agency","username":"josh@agency.example",`+
+		`"code":"`+rec.Code+`","password":"a new one"}`)
+	if status != 200 || env["status"] != "ok" {
+		t.Fatalf("the control reset at home was refused: %d %v", status, env)
+	}
+}
+
+// An address that names more accounts than the lookup may weigh is refused as
+// ambiguous, deterministically, rather than read in part.
+func TestLogin_AnAddressNamingTooManyAccountsIsAmbiguous(t *testing.T) {
+	db, _ := memberApp(t)
+	for i := 0; i < 20; i++ {
+		org := fmt.Sprintf("p%02d", i)
+		u := orm.New[schema.User](db)
+		u.Owner, u.Name, u.Email = org, "pat", "pat@shared.example"
+		u.SetId(org + "/pat")
+		if err := u.CreateCtx(tctx()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.EnsureMembership(tctx(), db, "p19/pat", "client", store.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := store.MemberByIdentifier(tctx(), db, "client", "pat@shared.example"); !errors.Is(err, store.ErrMemberAmbiguous) {
+		t.Fatalf("an address held by 20 accounts resolved to %v (err=%v); want ambiguous", u, err)
 	}
 }
