@@ -711,3 +711,46 @@ func TestHolderByAccessKey_MemberKeyNeverCrossesAReservedOrg(t *testing.T) {
 		t.Fatal("MemberKey admitted a reserved-org user")
 	}
 }
+
+// A workspace grant admits its holder to the workspace, not the org, so a key
+// filed in the org does not speak for them.
+func TestHolderByAccessKey_MemberKeyNeedsAnOrgWideMembership(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedKeyUser(t, db, "agency", "josh", "josh@agency.example", "")
+	if _, err := EnsureMembershipIn(ctx, db, "agency/josh", "client", "w1", "", RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	seedKey(t, db, "client", "josh-secret", "agency/josh", "pk-live-WS", "sk-live-WS")
+	if h, err := HolderByAccessKey(ctx, db, "sk-live-WS"); !errors.Is(err, orm.ErrNotFound) || h.User != nil {
+		t.Fatalf("a workspace-only member's key resolved to %+v (err=%v)", h.User, err)
+	}
+	if ok, _ := MemberKey(ctx, db, "agency/josh", "client"); ok {
+		t.Fatal("MemberKey admitted a workspace-only member")
+	}
+}
+
+// Deleting an account removes every membership it held, and with each one the
+// member's keys in that org, so nothing it held outlives it.
+func TestForgetUser_DeletesTheMembersKeys(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedKeyUser(t, db, "agency", "josh", "josh@agency.example", "")
+	for _, org := range []string{"client", "other"} {
+		if _, err := EnsureMembership(ctx, db, "agency/josh", org, RoleMember); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedKey(t, db, "client", "josh-a", "agency/josh", "pk-live-FA", "sk-live-FA")
+	seedKey(t, db, "other", "josh-b", "agency/josh", "pk-live-FB", "sk-live-FB")
+	if _, err := ForgetUser(ctx, db, "agency/josh"); err != nil {
+		t.Fatal(err)
+	}
+	ks, err := orm.TypedQuery[schema.Key](db).Filter("User=", "agency/josh").GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		t.Fatal(err)
+	}
+	if len(ks) != 0 {
+		t.Fatalf("%d of the member's keys outlived the account", len(ks))
+	}
+}

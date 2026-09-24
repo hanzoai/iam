@@ -273,7 +273,7 @@ func MemberKey(ctx context.Context, db orm.DB, user, org string) (bool, error) {
 // wallet addressed by username in that org, so a member homed elsewhere has no
 // wallet there that is theirs, and a same-named account's would be the one charged.
 func memberKeyOrgs(home, org string) bool {
-	return !policy.IsReservedOrg(home) && !policy.IsReservedOrg(org) && org != account.SignupOrg
+	return !policy.IsReservedOrg(home) && !policy.IsReservedOrg(org) && account.Org(org) != account.Org(account.SignupOrg)
 }
 
 // forgetMemberKeys deletes every key a member holds in org. A membership is a
