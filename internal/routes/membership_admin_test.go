@@ -110,3 +110,32 @@ func TestAnOwnerByMembershipAdministersTheOrgsPeople(t *testing.T) {
 		}
 	}
 }
+
+// A write names its org through Scope, and belonging is not enough to name one:
+// alice, a plain member of webby, cannot provision a person into it, while
+// webby's owner by membership can.
+func TestAPlainMemberCannotWriteIntoAnOrgTheyBelongTo(t *testing.T) {
+	h := newHarness(t)
+	webbyFixtures(t, h)
+	hire := func(name string) string {
+		return `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"` + name +
+			`","urn:ietf:params:scim:schemas:extension:hanzo:2.0:User":{"owner":"webby"}}`
+	}
+	post := func(sub, body string) (int, string) {
+		req := httptest.NewRequest("POST", "/v1/iam/scim/v2/Users", strings.NewReader(body))
+		req.Host = "hanzo.id"
+		req.Header.Set("Content-Type", "application/scim+json")
+		req.Header.Set("Authorization", "Bearer "+h.token(t, sub))
+		return h.do(t, req)
+	}
+
+	if status, body := post("hanzo/alice", hire("by-alice")); status != 403 {
+		t.Fatalf("a plain member of webby provisioned into it: %d %s", status, body)
+	}
+	if u, err := store.GetUserByName(context.Background(), h.db, "webby", "by-alice"); err != nil || u != nil {
+		t.Fatalf("the refused write left a row (%v, %v)", u, err)
+	}
+	if status, body := post("josh/josh", hire("by-josh")); status != 201 {
+		t.Fatalf("webby's owner by membership could not provision into it: %d %s", status, body)
+	}
+}
