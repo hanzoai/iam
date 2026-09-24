@@ -272,8 +272,8 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	// says the client is confidential, not that it is a machine: a server-side
 	// web app holds one for its code exchange, and without this that secret alone
 	// minted a token whose principal is the application. Checked after client
-	// authentication, so an unauthenticated caller learns nothing about which
-	// grants an application declares.
+	// authentication, so a wrong secret answers invalid_client whatever the app
+	// declares.
 	if !appGrants(app, "client_credentials") {
 		return tokenError(c, 400, "unauthorized_client", "the application does not permit the client_credentials grant")
 	}
