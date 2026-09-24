@@ -550,7 +550,7 @@ func TestPrincipalDoor_MemberKeyNamesTheOrgItActsIn(t *testing.T) {
 	h := newHarness(t)
 	keyFixtures(t, h)
 	ctx := context.Background()
-	if _, err := store.EnsureMembership(ctx, h.db, "hanzo/keyuser", "client", store.RoleOwner); err != nil {
+	if _, err := store.EnsureMembership(ctx, h.db, "hanzo/keyuser", "client", store.RoleMember); err != nil {
 		t.Fatal(err)
 	}
 	k := orm.New[schema.Key](h.db)
@@ -578,8 +578,10 @@ func TestPrincipalDoor_MemberKeyNamesTheOrgItActsIn(t *testing.T) {
 	if e.Data.Owner != "hanzo" || e.Data.Name != "keyuser" || e.Data.Org != "client" {
 		t.Fatalf("resolved %s/%s in %q, want hanzo/keyuser in client", e.Data.Owner, e.Data.Name, e.Data.Org)
 	}
-	if !e.Data.IsAdmin || e.Data.BillingAccount != "org:client" {
-		t.Fatalf("isAdmin=%v billing=%q, want the owner's standing in client and client's pool", e.Data.IsAdmin, e.Data.BillingAccount)
+	// keyuser is an admin at home and a plain member in client: the key carries the
+	// standing it has in client, and client's pool pays.
+	if e.Data.IsAdmin || e.Data.BillingAccount != "org:client" {
+		t.Fatalf("isAdmin=%v billing=%q, want a plain member of client paying from client's pool", e.Data.IsAdmin, e.Data.BillingAccount)
 	}
 
 	if _, err := store.DeleteMembership(ctx, h.db, "hanzo/keyuser", "client"); err != nil {

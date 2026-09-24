@@ -678,4 +678,18 @@ func TestKeys_MemberKeyIsWrittenOnlyForAMemberByAMinter(t *testing.T) {
 	if _, err := c(ctx, &schema.Key{Owner: "client", Name: "anon", User: "agency/josh"}); err == nil {
 		t.Fatal("a write with no principal produced a member's key")
 	}
+
+	// Once written, a member's key names its member for good: neither the tenant
+	// admin nor the minter can repoint the secret the member holds.
+	u := update(db)
+	for _, who := range []context.Context{tenantAdmin, minter} {
+		for _, to := range []string{"victim", "client/victim", ""} {
+			if _, err := u(who, &schema.Key{Owner: "client", Name: "josh-secret", User: to}); err == nil {
+				t.Fatalf("a member's key was repointed at %q", to)
+			}
+		}
+	}
+	if _, err := u(minter, &schema.Key{Owner: "client", Name: "josh-secret", User: "agency/josh", DisplayName: "renamed"}); err != nil {
+		t.Fatalf("an edit that keeps the member was refused: %v", err)
+	}
 }

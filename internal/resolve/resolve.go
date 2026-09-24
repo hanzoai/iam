@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/account"
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -34,7 +35,6 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/principal"
-	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -159,15 +159,15 @@ func who(db orm.DB) zip.Handler {
 			return httpx.Err(c, err.Error())
 		}
 		u := h.User
-		// A member's key spends from the org it was minted in, by the same rule a
-		// home key follows at home: an owner or admin there holds that org's pool.
-		// It never names the member's home ledger, which this key is not.
-		// IsAdmin likewise describes the holder in the key's org: their home flag at
-		// home, their membership role elsewhere.
+		// IsAdmin describes the holder in the key's org: their home flag at home,
+		// their membership role elsewhere.
+		// A member's key always spends from the pool of the org it acts in: the member
+		// has no wallet there of their own, and naming none would leave the payer to a
+		// rule that addresses wallets by username.
 		billing := store.BillingAccount(u, store.MemberOrgRefs(ctx, db, u))
 		admin := u.IsAdmin
 		if h.Org != u.Owner {
-			billing = store.BillingAccount(&schema.User{Owner: h.Org}, []schema.OrgRef{{Org: h.Org, Role: h.Role}})
+			billing = account.Org(h.Org).String()
 			admin = h.Role == store.RoleOwner || h.Role == store.RoleAdmin
 		}
 		return httpx.Ok(c, holder{

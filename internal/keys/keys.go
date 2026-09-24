@@ -196,6 +196,11 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		// A member's key names its member for as long as it exists. Its secret is in
+		// the member's hands, so repointing it would hand them whoever it now names.
+		if o, _, ok := strings.Cut(k.User, "/"); ok && o != k.Owner && in.User != k.User {
+			return nil, zip.ErrBadRequest("a member's key names its member for as long as it exists")
+		}
 		if err := holdable(ctx, db, in); err != nil {
 			return nil, err
 		}

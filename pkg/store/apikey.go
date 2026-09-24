@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/account"
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
@@ -146,9 +147,20 @@ func UserByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, 
 //
 // Scope is "" for a key that names no limit, which is every key minted before
 // limits existed and means unrestricted.
+//
+// It answers only for a key that acts in its holder's own org. A member's key acts
+// in the org it was minted in, which a user alone cannot say, so a caller that
+// reads only the user (the registry) refuses it rather than let it act at home;
+// HolderByAccessKey is the resolver that carries the org.
 func UserAndScopeByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, string, error) {
 	h, err := HolderByAccessKey(ctx, db, key)
-	return h.User, h.Scope, err
+	if err != nil {
+		return nil, "", err
+	}
+	if h.Org != h.User.Owner {
+		return nil, "", notFound(KeyForeignUser)
+	}
+	return h.User, h.Scope, nil
 }
 
 // Holder is what a secret key speaks for: the user it authenticates, the org it
@@ -217,7 +229,7 @@ func holderOwningKey(ctx context.Context, db orm.DB, secret string) (Holder, err
 		// forgery this pin exists to refuse, whether it was planted or its holder was
 		// removed since, so it is refused as one: a key has no history to tell them
 		// apart by, and the security reading is the one that must never be missed.
-		if policy.IsReservedOrg(owner) || policy.IsReservedOrg(k.Owner) {
+		if !memberKeyOrgs(owner, k.Owner) {
 			return Holder{}, notFound(KeyForeignUser)
 		}
 		m, err := MembershipIn(ctx, db, owner+"/"+name, k.Owner, "", "")
@@ -248,14 +260,36 @@ func holderOwningKey(ctx context.Context, db orm.DB, secret string) (Holder, err
 // refuse is never written.
 func MemberKey(ctx context.Context, db orm.DB, user, org string) (bool, error) {
 	home, _, ok := strings.Cut(user, "/")
-	if !ok || home == "" || org == "" || home == org {
-		return false, nil
-	}
-	if policy.IsReservedOrg(home) || policy.IsReservedOrg(org) {
+	if !ok || home == "" || org == "" || home == org || !memberKeyOrgs(home, org) {
 		return false, nil
 	}
 	m, err := MembershipIn(ctx, db, user, org, "", "")
 	return m != nil, err
+}
+
+// memberKeyOrgs reports whether a key minted in org may speak for someone homed in
+// home. Neither may be reserved, so no such key reaches a SuperAdmin or is a
+// platform key. And org may not be the signup org: there every person pays from a
+// wallet addressed by username in that org, so a member homed elsewhere has no
+// wallet there that is theirs, and a same-named account's would be the one charged.
+func memberKeyOrgs(home, org string) bool {
+	return !policy.IsReservedOrg(home) && !policy.IsReservedOrg(org) && org != account.SignupOrg
+}
+
+// forgetMemberKeys deletes every key a member holds in org. A membership is a
+// member key's whole authority, and a key that outlived its removal would come back
+// to life the moment the same person was added again.
+func forgetMemberKeys(ctx context.Context, db orm.DB, user, org string) error {
+	ks, err := orm.TypedQuery[schema.Key](db).Filter("Owner=", org).Filter("User=", user).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return err
+	}
+	for _, k := range ks {
+		if err := k.DeleteCtx(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // keyBySecret finds the key a presented secret belongs to WITHOUT the row ever

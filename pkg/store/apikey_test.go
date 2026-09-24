@@ -639,8 +639,51 @@ func TestHolderByAccessKey_MemberKeyEndsWithTheMembership(t *testing.T) {
 	if !errors.Is(err, orm.ErrNotFound) || h.User != nil {
 		t.Fatalf("after removal the key resolved to %+v (err=%v), want nobody", h.User, err)
 	}
-	if r := Reason(err); r != KeyForeignUser {
-		t.Fatalf("reason = %q, want %q", r, KeyForeignUser)
+	// Adding the same person back does not bring the key back: removal deleted it.
+	if _, err := EnsureMembership(ctx, db, "agency/josh", "client", RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	if h, err := HolderByAccessKey(ctx, db, "sk-live-GONE"); !errors.Is(err, orm.ErrNotFound) || h.User != nil {
+		t.Fatalf("re-adding the member revived the key: %+v (err=%v)", h.User, err)
+	}
+	if r := Reason(err); r != KeyUnknown {
+		t.Fatalf("reason = %q, want %q: the key is gone, not merely refused", r, KeyUnknown)
+	}
+}
+
+// A member's key acts in its org only. The user-only resolver (the registry's) has
+// no org to scope it to, so it refuses the key rather than let it act at home.
+func TestUserByAccessKey_RefusesAMemberKey(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedKeyUser(t, db, "agency", "josh", "josh@agency.example", "")
+	if _, err := EnsureMembership(ctx, db, "agency/josh", "client", RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	seedKey(t, db, "client", "josh-secret", "agency/josh", "pk-live-REG", "sk-live-REG")
+	if u, err := UserByAccessKey(ctx, db, "sk-live-REG"); !errors.Is(err, orm.ErrNotFound) || u != nil {
+		t.Fatalf("the user-only resolver answered a member key with %+v (err=%v)", u, err)
+	}
+	if _, err := HolderByAccessKey(ctx, db, "sk-live-REG"); err != nil {
+		t.Fatalf("the org-carrying resolver refused it: %v", err)
+	}
+}
+
+// The signup org addresses every person's wallet by username there, so a member
+// homed elsewhere has no wallet of their own in it: no member key is valid there.
+func TestHolderByAccessKey_NoMemberKeyInTheSignupOrg(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedKeyUser(t, db, "agency", "josh", "josh@agency.example", "")
+	if _, err := EnsureMembership(ctx, db, "agency/josh", "hanzo", RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	seedKey(t, db, "hanzo", "josh-secret", "agency/josh", "pk-live-SIGNUP", "sk-live-SIGNUP")
+	if h, err := HolderByAccessKey(ctx, db, "sk-live-SIGNUP"); !errors.Is(err, orm.ErrNotFound) || h.User != nil {
+		t.Fatalf("a member key in the signup org resolved to %+v (err=%v)", h.User, err)
+	}
+	if ok, _ := MemberKey(ctx, db, "agency/josh", "hanzo"); ok {
+		t.Fatal("MemberKey admitted a key in the signup org")
 	}
 }
 

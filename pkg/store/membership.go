@@ -133,6 +133,9 @@ func DeleteMembership(ctx context.Context, db orm.DB, user, org string) (bool, e
 	if err := m.DeleteCtx(ctx); err != nil {
 		return false, err
 	}
+	if err := forgetMemberKeys(ctx, db, user, org); err != nil {
+		return true, err
+	}
 	return true, nil
 }
 
@@ -165,6 +168,9 @@ func ForgetUser(ctx context.Context, db orm.DB, user string) (int, error) {
 			continue
 		}
 		if err := m.DeleteCtx(ctx); err != nil {
+			return removed, err
+		}
+		if err := forgetMemberKeys(ctx, db, user, m.Org); err != nil {
 			return removed, err
 		}
 		removed++
