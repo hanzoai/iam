@@ -198,6 +198,11 @@ func updateWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredent
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		// The stored row names whose device this is. Overwriting it is a write to that
+		// account, whoever the body now names.
+		if err := authz.AuthorizeUser(ctx, db, "PUT", c.User); err != nil {
+			return nil, err
+		}
 		// Overlay the decoded domain fields onto the loaded row, keeping the
 		// loaded Model (id, createdAt, key, snapshot) so the write targets the
 		// existing key and preserves creation metadata.
@@ -224,6 +229,11 @@ func deleteWebauthnCredential(db orm.DB) zip.TypedHandler[webauthnCredentialKey,
 		}
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
+		}
+		// Removing a person's passkey is a write to their account, asked of the person
+		// the stored row names, the way filing one is.
+		if err := authz.AuthorizeUser(ctx, db, "DELETE", c.User); err != nil {
+			return nil, err
 		}
 		if err := c.DeleteCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())

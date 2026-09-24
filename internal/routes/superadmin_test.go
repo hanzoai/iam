@@ -16,6 +16,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hanzoai/orm"
+
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -198,5 +201,147 @@ func TestASuperAdminsMembershipsAreTheirs(t *testing.T) {
 	}
 	if status, body := h.send(t, bob, "POST", "/v1/iam/delete-membership", `{"user":"hanzo/alice","org":"orgb"}`); refused(status, body) {
 		t.Fatalf("orgb's admin could not remove a member: %d %s", status, body)
+	}
+}
+
+// seedCredentials files a passkey <name>-key and a token <name>-session under
+// user, the rows the sign-in ceremony and the token endpoint leave behind. The
+// store keys every kind in one id space, so the two rows need two names.
+func seedCredentials(t *testing.T, h *harness, owner, name, user string) {
+	t.Helper()
+	ctx := context.Background()
+	pk := orm.New[schema.WebauthnCredential](h.db)
+	pk.Owner, pk.Name, pk.User = owner, name+"-key", user
+	pk.SetId(owner + "/" + pk.Name)
+	if err := pk.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed passkey %s/%s: %v", owner, pk.Name, err)
+	}
+	tok := orm.New[schema.Token](h.db)
+	tok.Owner, tok.Name, tok.User = owner, name+"-session", user
+	tok.SetId(owner + "/" + tok.Name)
+	if err := tok.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed token %s/%s: %v", owner, tok.Name, err)
+	}
+}
+
+// holders reports whom the passkey and the token seedCredentials filed as
+// owner/name name, "" for a row that is gone.
+func holders(t *testing.T, h *harness, owner, name string) (passkey, token string) {
+	t.Helper()
+	if c, err := orm.Get[schema.WebauthnCredential](h.db, owner+"/"+name+"-key"); err == nil {
+		passkey = c.User
+	}
+	if k, err := orm.Get[schema.Token](h.db, owner+"/"+name+"-session"); err == nil {
+		token = k.User
+	}
+	return passkey, token
+}
+
+// credentialPaths are the addresses of the passkey and the token seedCredentials
+// filed as owner/name.
+func credentialPaths(owner, name string) [2]string {
+	return [2]string{
+		"/v1/iam/webauthn-credentials/" + owner + "/" + name + "-key",
+		"/v1/iam/tokens/" + owner + "/" + name + "-session",
+	}
+}
+
+// A passkey or token is the person's the stored row names, whatever org files it
+// and whoever a rewrite would name instead.
+func TestASuperAdminsPasskeysAndTokensAreRemovedOnlyByThem(t *testing.T) {
+	h := newHarness(t)
+	operatorFixtures(t, h)
+	boss := h.person(t, "hanzo/boss")
+	seedCredentials(t, h, "hanzo", "op", "hanzo/z")
+	seedCredentials(t, h, "hanzo", "member", "hanzo/alice")
+
+	for _, path := range credentialPaths("hanzo", "op") {
+		if status, body := h.send(t, boss, "PUT", path, `{"user":"hanzo/alice"}`); status != 403 {
+			t.Fatalf("hanzo's admin rewrote %s away from the operator: %d %s", path, status, body)
+		}
+		if status, body := h.send(t, boss, "DELETE", path, ""); status != 403 {
+			t.Fatalf("hanzo's admin removed %s: %d %s", path, status, body)
+		}
+	}
+	if pk, tok := holders(t, h, "hanzo", "op"); pk != "hanzo/z" || tok != "hanzo/z" {
+		t.Fatalf("the operator's passkey and token name %q and %q after two refusals", pk, tok)
+	}
+
+	for _, path := range credentialPaths("hanzo", "member") {
+		if status, body := h.send(t, boss, "DELETE", path, ""); status != 200 {
+			t.Fatalf("hanzo's admin could not remove a member's %s: %d %s", path, status, body)
+		}
+	}
+	if pk, tok := holders(t, h, "hanzo", "member"); pk != "" || tok != "" {
+		t.Fatalf("a member's passkey and token survived their removal: %q %q", pk, tok)
+	}
+
+	root := h.person(t, "admin/root")
+	for _, path := range credentialPaths("hanzo", "op") {
+		if status, body := h.send(t, root, "DELETE", path, ""); status != 200 {
+			t.Fatalf("a SuperAdmin could not remove %s: %d %s", path, status, body)
+		}
+	}
+	if pk, tok := holders(t, h, "hanzo", "op"); pk != "" || tok != "" {
+		t.Fatalf("the operator's passkey and token survived a SuperAdmin's removal: %q %q", pk, tok)
+	}
+}
+
+// Naming the operator on a token or a passkey, by recording one or rewriting one,
+// is refused to their org's admin.
+func TestAnOrgAdminCannotNameASuperAdminOnATokenOrPasskey(t *testing.T) {
+	h := newHarness(t)
+	operatorFixtures(t, h)
+	boss := h.person(t, "hanzo/boss")
+	seedCredentials(t, h, "hanzo", "member", "hanzo/alice")
+
+	if status, body := h.send(t, boss, "POST", "/v1/iam/tokens",
+		`{"owner":"hanzo","name":"planted","user":"hanzo/z"}`); status != 403 {
+		t.Fatalf("hanzo's admin recorded a token for the operator: %d %s", status, body)
+	}
+	for _, path := range credentialPaths("hanzo", "member") {
+		if status, body := h.send(t, boss, "PUT", path, `{"user":"hanzo/z"}`); status != 403 {
+			t.Fatalf("hanzo's admin rewrote %s to name the operator: %d %s", path, status, body)
+		}
+	}
+	if pk, tok := holders(t, h, "hanzo", "member"); pk != "hanzo/alice" || tok != "hanzo/alice" {
+		t.Fatalf("a refused rewrite moved a member's credentials to %q and %q", pk, tok)
+	}
+
+	if status, body := h.send(t, boss, "POST", "/v1/iam/tokens",
+		`{"owner":"hanzo","name":"ordinary","user":"hanzo/alice"}`); status != 200 {
+		t.Fatalf("hanzo's admin could not record a member's token: %d %s", status, body)
+	}
+	if status, body := h.send(t, h.person(t, "admin/root"), "POST", "/v1/iam/tokens",
+		`{"owner":"hanzo","name":"operator","user":"hanzo/z"}`); status != 200 {
+		t.Fatalf("a SuperAdmin could not record the operator's token: %d %s", status, body)
+	}
+}
+
+// Every lookup of an account folds case, so "hanzo/Z" is the operator on every
+// surface that files something under a person, and is refused as them.
+func TestACaseVariantNamesTheSameSuperAdmin(t *testing.T) {
+	h := newHarness(t)
+	operatorFixtures(t, h)
+	boss := h.person(t, "hanzo/boss")
+	bob := h.person(t, "orgb/bob")
+	refused := func(status int, body string) bool { return status == 403 || strings.Contains(body, `"status":"error"`) }
+
+	if status, body := h.send(t, boss, "POST", "/v1/iam/tokens",
+		`{"owner":"hanzo","name":"planted-session","user":"hanzo/Z"}`); status != 403 {
+		t.Fatalf("hanzo's admin recorded a token for hanzo/Z: %d %s", status, body)
+	}
+	if status, body := h.send(t, boss, "POST", "/v1/iam/webauthn-credentials",
+		`{"owner":"hanzo","name":"planted-key","user":"hanzo/Z"}`); status != 403 {
+		t.Fatalf("hanzo's admin filed a passkey for hanzo/Z: %d %s", status, body)
+	}
+	if status, body := h.send(t, bob, "POST", "/v1/iam/memberships", `{"user":"hanzo/Z","org":"orgb"}`); !refused(status, body) {
+		t.Fatalf("orgb's admin added hanzo/Z: %d %s", status, body)
+	}
+	if status, body := h.send(t, bob, "POST", "/v1/iam/delete-membership", `{"user":"hanzo/Z","org":"orgb"}`); !refused(status, body) {
+		t.Fatalf("orgb's admin removed hanzo/Z: %d %s", status, body)
+	}
+	if pk, tok := holders(t, h, "hanzo", "planted"); pk != "" || tok != "" {
+		t.Fatalf("a refused write left a credential naming %q and %q", pk, tok)
 	}
 }

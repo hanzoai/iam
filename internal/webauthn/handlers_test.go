@@ -237,35 +237,46 @@ func TestUpdateWebauthnCredential(t *testing.T) {
 	}
 }
 
+// failDelete is a store whose deletes fail and whose reads are real, so the
+// handler is authorized and reaches the write.
+type failDelete struct{ orm.DB }
+
+func (failDelete) Delete(context.Context, orm.Key) error { return errors.New("store gone") }
+
+// Removing a passkey is a write to the account the stored row names, so it runs
+// as hanzo's admin, over hanzo/alice's device.
 func TestDeleteWebauthnCredential(t *testing.T) {
 	tests := []struct {
 		name         string
 		seed         bool
+		user         string // whose device the seeded row names
 		closeDB      bool
-		cancelCtx    bool
+		failWrite    bool
 		owner, key   string
 		wantStatus   int  // 0 => reached the store (success or safe no-op)
 		wantAffected bool // only read when wantStatus == 0
 	}{
 		{name: "absent changes nothing", owner: "hanzo", key: "ghost", wantAffected: false},
-		{name: "revoked", seed: true, owner: "hanzo", key: "laptop", wantAffected: true},
-		{name: "store gone on read is internal", seed: true, closeDB: true, owner: "hanzo", key: "laptop", wantStatus: 500},
-		{name: "store gone on write is internal", seed: true, cancelCtx: true, owner: "hanzo", key: "laptop", wantStatus: 500},
+		{name: "revoked", seed: true, user: "hanzo/alice", owner: "hanzo", key: "laptop", wantAffected: true},
+		{name: "another org's device is refused", seed: true, user: "orgb/bob", owner: "hanzo", key: "laptop", wantStatus: 403},
+		{name: "store gone on read is internal", seed: true, user: "hanzo/alice", closeDB: true, owner: "hanzo", key: "laptop", wantStatus: 500},
+		{name: "store gone on write is internal", seed: true, user: "hanzo/alice", failWrite: true, owner: "hanzo", key: "laptop", wantStatus: 500},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db := newDB(t)
 			if tt.seed {
-				seedCred(t, db, tt.owner, tt.key, tt.owner+"/user")
+				seedCred(t, db, tt.owner, tt.key, tt.user)
 			}
 			if tt.closeDB {
 				_ = db.Close()
 			}
-			ctx := context.Background()
-			if tt.cancelCtx {
-				ctx = cancelled()
+			var store orm.DB = db
+			if tt.failWrite {
+				store = failDelete{db}
 			}
-			out, err := deleteWebauthnCredential(db)(ctx, &webauthnCredentialKey{Owner: tt.owner, Name: tt.key})
+			out, err := deleteWebauthnCredential(store)(actingForAlice(context.Background()),
+				&webauthnCredentialKey{Owner: tt.owner, Name: tt.key})
 			if tt.wantStatus == 0 {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -285,6 +296,11 @@ func TestDeleteWebauthnCredential(t *testing.T) {
 			}
 			if got := status(t, err); got != tt.wantStatus {
 				t.Fatalf("status=%d, want %d", got, tt.wantStatus)
+			}
+			if tt.seed && !tt.closeDB {
+				if _, gerr := orm.Get[schema.WebauthnCredential](db, tt.owner+"/"+tt.key); gerr != nil {
+					t.Fatalf("a refused delete removed the row: %v", gerr)
+				}
 			}
 		})
 	}

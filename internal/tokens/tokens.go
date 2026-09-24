@@ -181,6 +181,11 @@ func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		// The stored row names whose token this is. Overwriting it is a write to that
+		// subject, whoever the body now names.
+		if err := authz.AuthorizeUser(ctx, db, "PUT", t.User); err != nil {
+			return nil, err
+		}
 		// Overlay the decoded domain fields onto the loaded row, keeping the
 		// loaded Model (id, createdAt, key, snapshot) so the write targets the
 		// existing key and preserves creation metadata. Every key a presented
@@ -215,6 +220,11 @@ func deleteToken(db orm.DB) zip.TypedHandler[tokenKey, tokenMutation] {
 		}
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
+		}
+		// Revoking a token is a write to the subject the stored row names, asked the
+		// way recording one is.
+		if err := authz.AuthorizeUser(ctx, db, "DELETE", t.User); err != nil {
+			return nil, err
 		}
 		if err := t.DeleteCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
