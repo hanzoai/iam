@@ -11,7 +11,7 @@ func init() {
 		Description: "Withdraws an invitation. It stops being redeemable at once; anyone who\nalready joined through it keeps their account.",
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/invitations GET /v1/iam/invitations", zip.Doc{
-		Description: "Returns your organization's invitations, newest first — who has\nbeen asked to join, on what terms, and how many seats each invitation still\nhas left.\n\nYou see your own organization's invitations and no one else's; which organization that\nis comes from your credentials, not from the request.",
+		Description: "Returns your organization's invitations, newest first — who has\nbeen asked to join, on what terms, and how many seats each invitation still\nhas left.\n\nYou see the invitations of the organization your credentials run, and no one\nelse's: your own, or one you own or administer.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Invitation].id": "Persisted fields",
 		},
