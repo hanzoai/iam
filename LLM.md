@@ -539,13 +539,19 @@ THIS issuer (so a token the kubelet projected for some other service cannot be
 replayed here); inside its window (`exp` required, `nbf` honoured); `sub` is
 `system:serviceaccount:<namespace>:<name>`.
 
-**Configured, exactly — no globs:**
+**Configured, exactly — no globs, and never a whole namespace:**
 
     IAM_CLUSTER_ISSUERS  {"https://kubernetes.default.svc.cluster.local":
                             {"jwks_uri":   "https://10.0.0.19:6443/openid/v1/jwks",
                              "ca_file":    "/etc/iam/cluster-ca.crt",
                              "bearer_file":"/var/run/secrets/kubernetes.io/serviceaccount/token"}}
-    IAM_NAMESPACE_ORGS   {"hanzo":"hanzo","operator-system":"hanzo","lux":"lux","zoo":"zoo"}
+    IAM_WORKLOADS        {"hanzo:pkg":"hanzo","hanzo:chat":"hanzo"}
+
+IAM_WORKLOADS names each ServiceAccount that speaks, as `<namespace>:<name>`, and
+the org it speaks in. An account's name is chosen by whoever may write its
+namespace, so the same name elsewhere is another account and mints nothing. A key
+that is not `<namespace>:<name>` (a bare namespace above all) or an entry with no
+org refuses the whole map with `server_error`.
 
 Both absent → the grant answers `unsupported_grant_type` and discovery does not
 advertise it. Present but unreadable is a DIFFERENT answer (`server_error` naming
@@ -567,10 +573,11 @@ request. The JWK decoder is the one `federation_idp.go` already verifies externa
 id_tokens with; a second decoder would be a second opinion about what a published
 key is, and the weaker of the two is the one an attacker picks.
 
-**The application is DECLARED, never created here.** `<org>-<name>` — the org from
-the namespace map, the name from the service account — is the clientId
-`internal/provision` derives for `type: service`, and it must already exist,
-declare `client_credentials`, and belong to that org. The org check is load-bearing:
+**The application is DECLARED, never created here.** `<org>-<name>` — the org
+IAM_WORKLOADS gives the account, the name from the account — is the clientId
+`internal/provision` derives, and it must already exist, declare both
+`client_credentials` and `urn:ietf:params:oauth:grant-type:jwt-bearer`, and belong
+to that org. The org check is load-bearing:
 a clientId is a globally unique STRING, so `zoo-pkg` registered under some other
 org would otherwise let the zoo namespace mint that org's token. Every mint writes
 a `workload-token` audit row naming the service account that presented and the

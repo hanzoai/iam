@@ -46,18 +46,22 @@ import (
 //   - `sub` is `system:serviceaccount:<namespace>:<name>`.
 //
 // What is CONFIGURED, not proved: which cluster issuers are trusted at all
-// (IAM_CLUSTER_ISSUERS) and which org owns each namespace (IAM_NAMESPACE_ORGS).
-// Both are exact — no globs — because a namespace is a name anyone with cluster
-// write can choose, and no pattern names "the hanzo org" more precisely than the
-// list of namespaces that are in it.
+// (IAM_CLUSTER_ISSUERS) and which ServiceAccounts speak, each named
+// `<namespace>:<name>` with the org it speaks in (IAM_WORKLOADS). Both are exact
+// — no globs, and never a whole namespace — because a ServiceAccount's name is
+// chosen by whoever may write its namespace. A namespace-wide entry would let any
+// account created there spell any app of that org; naming the account means
+// minting an app's token takes that one account, which is the pod the app's own
+// chart runs.
 //
 // The application is DECLARED, never created here, and it declares THIS grant:
 // provision.yaml lists urn:ietf:params:oauth:grant-type:jwt-bearer on exactly the
 // registrations a pod speaks for, so `<org>-<name>` either names a reviewed
-// workload registration or the request is refused. A name match alone is not a
-// declaration — any account in a mapped namespace can be given any name, and
-// client_credentials only says the app holds a secret. With neither variable set
-// the grant does not exist and the endpoint answers unsupported_grant_type.
+// workload registration or the request is refused. Two declarations, each
+// reviewed where it lives: the deployment names the account that speaks, the
+// registration says it may be spoken for — client_credentials alone only says the
+// app holds a secret. With neither variable set the grant does not exist and the
+// endpoint answers unsupported_grant_type.
 
 const (
 	// grantTypeAssertion is RFC 7523 §2.1's grant type — the assertion IS the
@@ -67,8 +71,8 @@ const (
 	// saSubject is the prefix Kubernetes puts on every ServiceAccount subject.
 	saSubject = "system:serviceaccount:"
 
-	envClusters   = "IAM_CLUSTER_ISSUERS"
-	envNamespaces = "IAM_NAMESPACE_ORGS"
+	envClusters  = "IAM_CLUSTER_ISSUERS"
+	envWorkloads = "IAM_WORKLOADS"
 )
 
 // clusterAlgs is the closed set of algorithms a cluster assertion may be signed
@@ -92,7 +96,7 @@ func workloadGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", err.Error())
 	}
-	orgs, err := namespaceOrgs()
+	orgs, err := workloads()
 	if err != nil {
 		return tokenError(c, 500, "server_error", err.Error())
 	}
@@ -114,28 +118,29 @@ func workloadGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "invalid_grant", "the assertion does not name a service account")
 	}
 
-	// 3) Identity. The namespace decides the org and the account decides the name;
-	//    together they ARE the clientId provision.yaml derives, so a workload can
-	//    only ever reach the registration its own namespace declares.
-	org := orgs[namespace]
+	// 3) Identity. The configuration names this exact account and the org it
+	//    speaks in, and the account's name is the app's; together they ARE the
+	//    clientId provision.yaml derives, so a workload can only ever reach the
+	//    registration configured for it — and the same name in another namespace
+	//    is another account, which reaches nothing.
+	org := orgs[namespace+":"+account]
 	if org == "" {
-		return tokenError(c, 403, "unauthorized_client", "no organization is configured for the "+namespace+" namespace")
+		return tokenError(c, 403, "unauthorized_client", "no organization is configured for the service account "+namespace+":"+account)
 	}
 	clientID := org + "-" + account
 	app, err := store.GetApplicationByClientId(ctx, db, clientID)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	// The application must ALREADY exist, belong to the org the namespace maps
-	// to, and declare BOTH grants in play: jwt-bearer, which says a pod may speak
+	// The application must ALREADY exist, belong to the org the account is
+	// configured in, and declare BOTH grants in play: jwt-bearer, which says a pod may speak
 	// for it, and client_credentials, whose token it is about to be handed. Never
 	// auto-created: a registration that appears because a pod asked for one is a
 	// registration nobody reviewed. The org check is what keeps the mapping
 	// honest — a clientId is a globally unique STRING, so `zoo-pkg` registered
-	// under some other org would otherwise let the zoo namespace mint that org's
-	// token. The jwt-bearer check is what keeps the NAME honest: naming an account
-	// is all it takes to spell a clientId, so a name match cannot be the
-	// declaration.
+	// under some other org would otherwise let a zoo account mint that org's
+	// token. The jwt-bearer check is what keeps the REGISTRATION honest: an account
+	// configured to speak reaches only an app that agreed to be spoken for.
 	if app == nil || app.Organization != org ||
 		!appGrants(app, grantTypeAssertion) || !appGrants(app, "client_credentials") ||
 		publicTokenEndpointForbidden(app) {
@@ -452,18 +457,28 @@ func reader(caFile string) (*http.Client, error) {
 	return &http.Client{Transport: transport, Timeout: readTimeout}, nil
 }
 
-// namespaceOrgs reads IAM_NAMESPACE_ORGS — {"hanzo":"hanzo","operator-system":"hanzo"} —
-// the exact namespace→org map. Parsed per request rather than held, because
+// workloads reads IAM_WORKLOADS — {"hanzo:pkg":"hanzo","hanzo:chat":"hanzo"} —
+// the exact ServiceAccount→org map. Parsed per request rather than held, because
 // unlike the cluster set it anchors no cache and a map this size costs less to
 // read than to keep in step.
-func namespaceOrgs() (map[string]string, error) {
-	raw := strings.TrimSpace(os.Getenv(envNamespaces))
+//
+// Every key must name ONE account the way a subject does, and every entry an
+// org, or the whole map is refused. A bare namespace reads as "every account in
+// it", which is exactly what this map exists not to say; matching nothing instead
+// would make that mistake look like a deployment where no workload speaks.
+func workloads() (map[string]string, error) {
+	raw := strings.TrimSpace(os.Getenv(envWorkloads))
 	if raw == "" {
 		return nil, nil
 	}
 	var orgs map[string]string
 	if err := json.Unmarshal([]byte(raw), &orgs); err != nil {
-		return nil, fmt.Errorf("%s: invalid JSON: %w", envNamespaces, err)
+		return nil, fmt.Errorf("%s: invalid JSON: %w", envWorkloads, err)
+	}
+	for sa, org := range orgs {
+		if ns, _ := serviceAccount(saSubject + sa); ns == "" || org == "" {
+			return nil, fmt.Errorf("%s: %q must map one service account, named <namespace>:<name>, to an org", envWorkloads, sa)
+		}
 	}
 	return orgs, nil
 }

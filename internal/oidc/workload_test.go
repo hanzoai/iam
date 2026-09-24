@@ -123,8 +123,9 @@ func (c *fakeCluster) fetches() int {
 	return c.reads
 }
 
-// trust points IAM at this cluster and states which org owns which namespace.
-func (c *fakeCluster) trust(t *testing.T, namespaces map[string]string) {
+// trust points IAM at this cluster and states which ServiceAccounts speak, each
+// as "<namespace>:<name>", and the org each one speaks in.
+func (c *fakeCluster) trust(t *testing.T, workloads map[string]string) {
 	t.Helper()
 	issuers, err := json.Marshal(map[string]any{
 		c.iss: map[string]string{"jwks_uri": c.jwks, "ca_file": c.ca, "bearer_file": c.bearerFile},
@@ -132,12 +133,12 @@ func (c *fakeCluster) trust(t *testing.T, namespaces map[string]string) {
 	if err != nil {
 		t.Fatalf("marshal cluster config: %v", err)
 	}
-	orgs, err := json.Marshal(namespaces)
+	orgs, err := json.Marshal(workloads)
 	if err != nil {
-		t.Fatalf("marshal namespace config: %v", err)
+		t.Fatalf("marshal workload config: %v", err)
 	}
 	t.Setenv(envClusters, string(issuers))
-	t.Setenv(envNamespaces, string(orgs))
+	t.Setenv(envWorkloads, string(orgs))
 }
 
 // assertion signs a ServiceAccount token the way a kubelet projects one.
@@ -215,7 +216,7 @@ func serviceApp(t *testing.T, db orm.DB, clientID string) {
 
 func TestWorkload_mintsForServiceAccount(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	serviceApp(t, db, "hanzo-pkg")
 
@@ -273,7 +274,7 @@ func TestWorkload_mintsForServiceAccount(t *testing.T) {
 
 func TestWorkload_mintsForTheResourceItNames(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	serviceApp(t, db, "hanzo-pkg")
 
@@ -297,7 +298,7 @@ func TestWorkload_mintsForTheResourceItNames(t *testing.T) {
 
 func TestWorkload_refusesWrongAudience(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	serviceApp(t, db, "hanzo-pkg")
 
@@ -312,7 +313,7 @@ func TestWorkload_refusesWrongAudience(t *testing.T) {
 
 func TestWorkload_refusesUnknownIssuer(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	serviceApp(t, db, "hanzo-pkg")
 
@@ -328,7 +329,7 @@ func TestWorkload_refusesUnknownIssuer(t *testing.T) {
 
 func TestWorkload_rereadsOnUnknownKid(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	serviceApp(t, db, "hanzo-pkg")
 
@@ -363,9 +364,9 @@ func TestWorkload_rereadsOnUnknownKid(t *testing.T) {
 	}
 }
 
-func TestWorkload_refusesUnmappedNamespace(t *testing.T) {
+func TestWorkload_refusesAnUndeclaredServiceAccount(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	serviceApp(t, db, "hanzo-pkg")
 
@@ -377,9 +378,86 @@ func TestWorkload_refusesUnmappedNamespace(t *testing.T) {
 	}
 }
 
+// A ServiceAccount speaks for an app only where the configuration names it. The
+// same name in another namespace of the same org is a different account, created
+// by whoever may write that namespace, and it mints nothing — not the declared
+// workload app its name spells, and not a client_credentials app it spells either.
+func TestWorkload_mintsOnlyForTheServiceAccountNamed(t *testing.T) {
+	c := newCluster(t, "cluster-key-1")
+	// collab runs one of hanzo's own workloads, so it is a namespace the org
+	// writes; what it may not do is speak for an app declared elsewhere.
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo", "collab:board": "hanzo"})
+	app, db := newServer(t)
+	serviceApp(t, db, "hanzo-pkg")
+	serviceApp(t, db, "hanzo-board")
+	seedApp(t, db, appOpts{clientID: "hanzo-admin-agent", secret: "s", grants: []string{"client_credentials"}})
+
+	for _, sub := range []string{
+		"system:serviceaccount:collab:pkg",         // a declared workload app, from the wrong namespace
+		"system:serviceaccount:collab:admin-agent", // a secret-holding client, from a namespace that runs workloads
+		"system:serviceaccount:hanzo:admin-agent",  // the same, from the namespace the declared workload runs in
+		"system:serviceaccount:hanzo:board",        // a declared workload app, from the wrong namespace
+	} {
+		status, tok := present(t, app, c.assertion(t, "cluster-key-1", sub, audience(), time.Hour), nil)
+		if status != 403 || tok["error"] != "unauthorized_client" {
+			t.Errorf("%s: status/error = %d/%v, want 403 unauthorized_client", sub, status, tok["error"])
+		}
+	}
+	if rows := auditRows(t, db, schema.ActionWorkloadToken); len(rows) != 0 {
+		t.Fatalf("audit rows = %d for refused mints, want 0", len(rows))
+	}
+
+	// The accounts the configuration names still speak, each for its own app.
+	for sub, azp := range map[string]string{
+		"system:serviceaccount:hanzo:pkg":    "hanzo-pkg",
+		"system:serviceaccount:collab:board": "hanzo-board",
+	} {
+		status, tok := present(t, app, c.assertion(t, "cluster-key-1", sub, audience(), time.Hour), nil)
+		if status != 200 {
+			t.Fatalf("%s: status = %d; body=%v", sub, status, tok)
+		}
+		claims, err := verifyToken(context.Background(), db, tok["access_token"].(string))
+		if err != nil {
+			t.Fatalf("%s: minted token does not verify: %v", sub, err)
+		}
+		if claims.Azp != azp {
+			t.Errorf("%s: azp = %q, want %q", sub, claims.Azp, azp)
+		}
+	}
+}
+
+// The configuration names ServiceAccounts, never namespaces. A key that is not
+// "<namespace>:<name>" — a bare namespace above all, which reads as "every
+// account in it" — or an entry with no org is refused as a whole, loudly, rather
+// than matching nothing and looking like a deployment where no workload speaks.
+func TestWorkload_refusesAConfigThatNamesNoServiceAccount(t *testing.T) {
+	c := newCluster(t, "cluster-key-1")
+	app, db := newServer(t)
+	serviceApp(t, db, "hanzo-pkg")
+	assertion := c.assertion(t, "cluster-key-1", "system:serviceaccount:hanzo:pkg", audience(), time.Hour)
+
+	for _, cfg := range []map[string]string{
+		{"hanzo": "hanzo"},
+		{"hanzo:pkg": "hanzo", "operator-system": "hanzo"},
+		{"hanzo:": "hanzo"},
+		{":pkg": "hanzo"},
+		{"hanzo:pkg:extra": "hanzo"},
+		{"hanzo:pkg": ""},
+	} {
+		c.trust(t, cfg)
+		status, tok := present(t, app, assertion, nil)
+		if status != 500 || tok["error"] != "server_error" {
+			t.Errorf("%v: status/error = %d/%v, want 500 server_error", cfg, status, tok["error"])
+		}
+	}
+	if rows := auditRows(t, db, schema.ActionWorkloadToken); len(rows) != 0 {
+		t.Fatalf("audit rows = %d for refused mints, want 0", len(rows))
+	}
+}
+
 func TestWorkload_refusesUnprovisionedApplication(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, _ := newServer(t) // nothing seeded: hanzo-pkg was never declared
 
 	status, tok := present(t, app,
@@ -391,7 +469,7 @@ func TestWorkload_refusesUnprovisionedApplication(t *testing.T) {
 
 func TestWorkload_refusesApplicationThatDeclaresNoMachineGrant(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	// A browser client that happens to be named <org>-<account>. It never declared
 	// client_credentials, so it may not be handed that grant's token by another door.
@@ -411,7 +489,7 @@ func TestWorkload_refusesApplicationThatDeclaresNoMachineGrant(t *testing.T) {
 // registration says, and only a reviewed document writes it.
 func TestWorkload_refusesAClientCredentialsOnlyApplication(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:cloud": "hanzo"})
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s", grants: []string{"client_credentials"}})
 
@@ -429,7 +507,7 @@ func TestWorkload_refusesAClientCredentialsOnlyApplication(t *testing.T) {
 // one client_credentials mints, so the registration must also declare that.
 func TestWorkload_refusesAWorkloadGrantWithoutClientCredentials(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-pkg", secret: "s", grants: []string{grantTypeAssertion}})
 
@@ -444,7 +522,7 @@ func TestWorkload_refusesAWorkloadGrantWithoutClientCredentials(t *testing.T) {
 // declaration opens the door only for an app that is a machine as well.
 func TestWorkload_refusesAWorkloadGrantOnABrowserClient(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-pkg", grants: []string{"authorization_code", grantTypeAssertion}})
 
@@ -457,7 +535,7 @@ func TestWorkload_refusesAWorkloadGrantOnABrowserClient(t *testing.T) {
 
 func TestWorkload_refusesApplicationOfAnotherOrg(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"zoo-ns": "zoo"})
+	c.trust(t, map[string]string{"zoo-ns:pkg": "zoo"})
 	app, db := newServer(t)
 	// The clientId a zoo namespace derives, registered under the hanzo org. A
 	// clientId is a globally unique STRING; without the org check the zoo namespace
@@ -473,7 +551,7 @@ func TestWorkload_refusesApplicationOfAnotherOrg(t *testing.T) {
 
 func TestWorkload_refusesExpiredAssertion(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	serviceApp(t, db, "hanzo-pkg")
 
@@ -486,7 +564,7 @@ func TestWorkload_refusesExpiredAssertion(t *testing.T) {
 
 func TestWorkload_refusesAHumanSubject(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	serviceApp(t, db, "hanzo-pkg")
 
@@ -499,7 +577,7 @@ func TestWorkload_refusesAHumanSubject(t *testing.T) {
 
 func TestWorkload_unconfiguredIsNotAGrant(t *testing.T) {
 	t.Setenv(envClusters, "")
-	t.Setenv(envNamespaces, "")
+	t.Setenv(envWorkloads, "")
 	app, _ := newServer(t)
 
 	status, tok := present(t, app, "irrelevant", nil)
@@ -515,7 +593,7 @@ func TestWorkload_unconfiguredIsNotAGrant(t *testing.T) {
 
 func TestWorkload_configuredIsAdvertised(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, _ := newServer(t)
 
 	_, body := do(t, app, formReqNoBody("GET", PathDiscovery))
@@ -530,7 +608,7 @@ func TestWorkload_configuredIsAdvertised(t *testing.T) {
 func TestWorkload_readsAKeySetThatDemandsABearer(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
 	c.demand(t, "discovery-token-1")
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	serviceApp(t, db, "hanzo-pkg")
 
@@ -559,7 +637,7 @@ func TestWorkload_refusesWhenTheKeySetIsUnreadable(t *testing.T) {
 	c := newCluster(t, "cluster-key-1")
 	c.demand(t, "discovery-token-1")
 	c.bearerFile = "" // configured without the token the apiserver requires
-	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
 	app, db := newServer(t)
 	serviceApp(t, db, "hanzo-pkg")
 
@@ -572,7 +650,7 @@ func TestWorkload_refusesWhenTheKeySetIsUnreadable(t *testing.T) {
 
 func TestWorkload_refusesMalformedConfig(t *testing.T) {
 	t.Setenv(envClusters, "{not json")
-	t.Setenv(envNamespaces, `{"hanzo":"hanzo"}`)
+	t.Setenv(envWorkloads, `{"hanzo:pkg":"hanzo"}`)
 	app, _ := newServer(t)
 
 	// Unreadable is not the same answer as unconfigured: one bad character must not
