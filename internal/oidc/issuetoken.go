@@ -83,6 +83,9 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 
 		access, ttl, err := MintUserToken(ctx, db, clientApp, user,
 			strings.TrimSpace(c.Query("aud")), c.Host(), c.Path())
+		if errors.Is(err, ErrInvalidTarget) {
+			return mintErr(c, 400, "the application is not permitted to name this resource")
+		}
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
@@ -105,15 +108,17 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 // process it is the embedding host's, which has already validated a principal
 // before it gets here. The signing key never leaves this package either way.
 //
-// aud empty takes the application's default for this user (RFC 8707). host is
+// aud empty takes the application's default for this user (RFC 8707); any other
+// must be one clientApp is granted (userAudience). host is
 // the host the caller was asked on, and the ISSUER is resolved from it here —
 // never taken from a caller, because `iss` is pinned config and a token
 // claiming the wrong one is a token some other party is trusted to sign. path
 // is the audit row's RequestUri, so a mint traces back to the surface that asked.
 func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, host, path string) (string, time.Duration, error) {
 	now := nowFunc()
-	if aud == "" {
-		aud = defaultUserAudience(ctx, db, user, clientApp)
+	aud, err := userAudience(ctx, db, user, clientApp, aud)
+	if err != nil {
+		return "", 0, err
 	}
 	signer, err := signerFor(ctx, db, clientApp, resolveIssuer(host))
 	if err != nil {
@@ -650,7 +655,7 @@ func appInList(env, clientID string) bool {
 // defaultUserAudience is the audience a user token carries when the caller names
 // no explicit resource: the target user's own application's clientId (a same-app
 // consumer accepts it), falling back to the minting client when the user's app
-// can't be resolved — the caller then pins `?aud=` for a cross-app resource.
+// can't be resolved — the caller then names a cross-app resource it is granted.
 func defaultUserAudience(ctx context.Context, db orm.DB, user *schema.User, clientApp *schema.Application) string {
 	if user.SignupApplication != "" {
 		// A name is all the User row records, and a tenant-registered application is
@@ -662,4 +667,20 @@ func defaultUserAudience(ctx context.Context, db orm.DB, user *schema.User, clie
 		}
 	}
 	return clientApp.ClientId
+}
+
+// userAudience is the audience a user-bound token clientApp mints names: the
+// resource the caller asked for, or the subject's own application's when it asked
+// for none (defaultUserAudience). Any other resource must be one clientApp is
+// granted (Application.Permits), or the mint is ErrInvalidTarget — the same rule
+// a machine token obeys, so a client names the same resources however it mints.
+func userAudience(ctx context.Context, db orm.DB, user *schema.User, clientApp *schema.Application, resource string) (string, error) {
+	def := defaultUserAudience(ctx, db, user, clientApp)
+	if resource == "" || resource == def {
+		return def, nil
+	}
+	if !clientApp.Permits(resource) {
+		return "", ErrInvalidTarget
+	}
+	return resource, nil
 }

@@ -358,6 +358,7 @@ func seedApp(t *testing.T, db orm.DB) {
 	a.Owner, a.Name, a.ClientId, a.ClientSecret = "admin", "hanzo-console", "hanzo-console", "top-secret"
 	a.Organization, a.Cert, a.EnablePassword = "hanzo", kid, true
 	a.RedirectUris = []string{redirectURI}
+	a.Resources = []string{"hanzo-cloud"} // the resource its exchange names
 	a.ExpireInHours = 1
 	a.SetId("admin/hanzo-console")
 	if err := a.CreateCtx(context.Background()); err != nil {

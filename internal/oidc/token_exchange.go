@@ -105,13 +105,15 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	}
 
 	// 4) The requested audience (RFC 8707) — resource wins, then audience, else the
-	//    subject's own app. requested_token_type, if given, must be an access token.
+	//    subject's own app; a named one must be granted to the acting client
+	//    (userAudience), or invalid_target (RFC 8707 §2). requested_token_type, if
+	//    given, must be an access token.
 	if rt := param(c, "requested_token_type"); rt != "" && rt != tokenTypeAccessToken {
 		return tokenError(c, 400, "invalid_request", "only an access_token may be requested")
 	}
-	aud := resourceOf(c)
-	if aud == "" {
-		aud = defaultUserAudience(ctx, db, user, clientApp)
+	aud, err := userAudience(ctx, db, user, clientApp, resourceOf(c))
+	if err != nil {
+		return mintError(c, err)
 	}
 
 	// 5) Mint for the subject, scoped to the requested audience, azp = the acting

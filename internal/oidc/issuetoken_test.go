@@ -68,7 +68,7 @@ func dataMap(t *testing.T, body []byte) map[string]any {
 func TestIssueUserToken_mintsTargetUserToken(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
 	resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/alice&aud=hanzo-cloud"))
@@ -92,10 +92,30 @@ func TestIssueUserToken_mintsTargetUserToken(t *testing.T) {
 	}
 }
 
+// The shim mints with the same authority as the exchange, so it names the same
+// resources: an ungranted ?aud= is refused and nothing is recorded.
+func TestIssueUserToken_refusesAnAudienceTheClientWasNotGranted(t *testing.T) {
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/alice&aud=hanzo-egress"))
+	if resp.StatusCode != 400 || !strings.Contains(string(body), "not permitted to name this resource") {
+		t.Fatalf("status = %d; body=%s, want 400 naming the resource refusal", resp.StatusCode, body)
+	}
+	if n := rowsMarked(t, db, "iut"); n != 0 {
+		t.Fatalf("%d rows recorded under a refusal, want 0", n)
+	}
+	if resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/alice")); resp.StatusCode != 200 {
+		t.Fatalf("no aud: status = %d; body=%s", resp.StatusCode, body)
+	}
+}
+
 func TestIssueUserToken_notAllowlisted_403(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "other-app")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 	resp, _ := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/alice"))
 	if resp.StatusCode != 403 {
@@ -106,7 +126,7 @@ func TestIssueUserToken_notAllowlisted_403(t *testing.T) {
 func TestMintUserKeys_generatesReadableSkKey(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
 	resp, body := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", ""))
@@ -133,7 +153,7 @@ func TestMintUserKeys_generatesReadableSkKey(t *testing.T) {
 func TestRevokeUserKeys_clearsTheKey(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
 	do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", ""))
@@ -151,7 +171,7 @@ func TestRevokeUserKeys_clearsTheKey(t *testing.T) {
 func TestMintUserKeys_notAllowlisted_403(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "other")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
 	resp, _ := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", ""))
@@ -163,7 +183,7 @@ func TestMintUserKeys_notAllowlisted_403(t *testing.T) {
 func TestMintUserKeys_forbiddenUser_403(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedForbiddenUser(t, db, "hanzo", "banned")
 
 	resp, _ := do(t, app, keyReq("POST", userKeys("hanzo/banned"), "hanzo-console", "top-secret", ""))
@@ -184,7 +204,7 @@ func TestMintUserKeys_forbiddenUser_403(t *testing.T) {
 func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 
 	// Canonical create — surrogate storage key, UUID sub, NO SetId anywhere.
 	if _, err := users.New(db).Create(tctx(), &users.CreateInput{
@@ -232,7 +252,7 @@ func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 func TestMintUserKeys_publishableType_mintsAPkAndNeverAPrincipal(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
 	resp, body := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", "?type=publishable"))
@@ -265,7 +285,7 @@ func TestMintUserKeys_publishableType_mintsAPkAndNeverAPrincipal(t *testing.T) {
 func TestMintUserKeys_publishableAndSecretCoexist(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
 	_, secretBody := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", ""))
@@ -298,7 +318,7 @@ func TestMintUserKeys_publishableAndSecretCoexist(t *testing.T) {
 func TestMintUserKeys_unknownType_400(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 
 	for _, typ := range []string{"public", "publishible", "sk", "SECRET"} {

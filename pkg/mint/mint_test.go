@@ -9,6 +9,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 
 	"github.com/hanzoai/iam/internal/keyring"
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -210,4 +212,22 @@ func (f failAppLookup) Query(kind string) orm.Query {
 		return f.broken.Query(kind)
 	}
 	return f.DB.Query(kind)
+}
+
+// The in-process mint names the same resources the token endpoint does: an
+// audience the application is not granted is refused before anything is signed.
+func TestForRefusesAnAudienceTheApplicationWasNotGranted(t *testing.T) {
+	db := mintDB(t)
+	seedUser(t, db, "acme", "ada", "sub-ada")
+	a := orm.New[schema.Application](db)
+	a.Owner, a.Name, a.ClientId, a.Organization = "admin", "console", "console", "acme"
+	a.SetId("admin/console")
+	if err := a.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed app: %v", err)
+	}
+
+	access, _, err := For(context.Background(), db, "sub-ada", "console", "hanzo-egress", "hanzo.id", "/v1/session")
+	if !errors.Is(err, oidc.ErrInvalidTarget) || access != "" {
+		t.Fatalf("For with an ungranted audience = %q, %v; want ErrInvalidTarget", access, err)
+	}
 }

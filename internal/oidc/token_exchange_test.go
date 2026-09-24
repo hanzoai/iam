@@ -91,7 +91,7 @@ func directSubjectToken(t *testing.T, db orm.DB, certName, owner, name string) s
 func TestTokenExchange_mintsForSubject(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "hanzo", "alice@hanzo.ai", "correct horse")
 
@@ -135,7 +135,7 @@ func TestTokenExchange_mintsForSubject(t *testing.T) {
 func TestTokenExchange_notAllowlisted_403(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "some-other-app")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "hanzo", "alice@hanzo.ai", "correct horse")
 
@@ -153,7 +153,7 @@ func TestTokenExchange_notAllowlisted_403(t *testing.T) {
 func TestTokenExchange_nameCollisionAttacker_403(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	// Attacker: a DIFFERENT clientId, but NAME collides with the allow-listed one.
 	seedAttackerApp(t, db, "evil", "hanzo-console", "evil-pwn", "attacker-knows-this", "cert-hanzo-console")
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
@@ -171,7 +171,7 @@ func TestTokenExchange_nameCollisionAttacker_403(t *testing.T) {
 func TestTokenExchange_reservedOrgSubject_requiresAdminCapability(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console") // general only
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	// An admin-org user with a password, so we can mint their subject_token.
 	seedUserInOrg(t, db, "admin", "root", "root@hanzo.ai", "admin pw")
 	subject := directSubjectToken(t, db, "cert-hanzo-console", "admin", "root")
@@ -185,11 +185,15 @@ func TestTokenExchange_reservedOrgSubject_requiresAdminCapability(t *testing.T) 
 	}
 }
 
+// consoleResources is what the console is granted to name: the resource its
+// exchange asks for.
+var consoleResources = []string{"hanzo-cloud"}
+
 func TestTokenExchange_reservedOrgSubject_admitsWithAdminCapability(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	t.Setenv("IAM_ADMIN_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUserInOrg(t, db, "admin", "root", "root@hanzo.ai", "admin pw")
 	subject := directSubjectToken(t, db, "cert-hanzo-console", "admin", "root")
 
@@ -205,10 +209,70 @@ func TestTokenExchange_reservedOrgSubject_admitsWithAdminCapability(t *testing.T
 	}
 }
 
+// An exchange names only a resource the acting client is granted, or the
+// subject's own application, which is what it names when asked for nothing. An
+// ungranted one, by either spelling, is invalid_target (RFC 8707 §2) and nothing
+// is signed, recorded or audited.
+func TestTokenExchange_refusesAResourceTheClientWasNotGranted(t *testing.T) {
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
+	seedApp(t, db, appOpts{clientID: "hanzo-chat", secret: "chat-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
+	alice, err := store.GetUserByName(context.Background(), db, "hanzo", "alice")
+	if err != nil || alice == nil {
+		t.Fatalf("read alice: %v", err)
+	}
+	alice.SignupApplication = "hanzo-chat"
+	if err := alice.UpdateCtx(context.Background()); err != nil {
+		t.Fatalf("set alice's application: %v", err)
+	}
+	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "hanzo", "alice@hanzo.ai", "correct horse")
+
+	for _, form := range []url.Values{
+		{"resource": {"hanzo-egress"}},
+		{"audience": {"hanzo-egress"}},
+		{"resource": {"hanzo-cloud-admin"}},
+		{"resource": {"HANZO-CLOUD"}},
+	} {
+		form.Set("subject_token", subject)
+		status, tok := exchange(t, app, "hanzo-console", "top-secret", form)
+		if status != 400 || tok["error"] != "invalid_target" {
+			t.Fatalf("%v: status/error = %d/%v, want 400 invalid_target", form, status, tok["error"])
+		}
+		if _, ok := tok["access_token"]; ok {
+			t.Fatalf("%v: a token was minted for an ungranted resource: %v", form, tok)
+		}
+	}
+	if n := rowsMarked(t, db, "tx"); n != 0 {
+		t.Fatalf("%d exchange rows recorded under a refusal, want 0", n)
+	}
+	if rows := auditRows(t, db, schema.ActionTokenExchange); len(rows) != 0 {
+		t.Fatalf("audit rows = %d after a refusal, want 0", len(rows))
+	}
+
+	for _, c := range []struct{ resource, aud string }{
+		{"hanzo-cloud", "hanzo-cloud"}, {"hanzo-chat", "hanzo-chat"}, {"", "hanzo-chat"},
+	} {
+		status, tok := exchange(t, app, "hanzo-console", "top-secret",
+			url.Values{"subject_token": {subject}, "resource": {c.resource}})
+		if status != 200 {
+			t.Fatalf("resource=%q: status = %d; body=%v", c.resource, status, tok)
+		}
+		claims, err := verifyToken(context.Background(), db, tok["access_token"].(string))
+		if err != nil {
+			t.Fatalf("resource=%q: %v", c.resource, err)
+		}
+		if len(claims.Audience) != 1 || claims.Audience[0] != c.aud {
+			t.Errorf("resource=%q: aud = %v, want [%s]", c.resource, claims.Audience, c.aud)
+		}
+	}
+}
+
 func TestTokenExchange_invalidSubjectToken_invalidGrant(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 
 	status, tok := exchange(t, app, "hanzo-console", "top-secret", url.Values{"subject_token": {"garbage.not.a.jwt"}})
 	if status != 400 || tok["error"] != "invalid_grant" {
@@ -231,7 +295,7 @@ func TestTokenExchange_publicClient_rejected(t *testing.T) {
 func TestTokenExchange_emitsAudit(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "hanzo", "alice@hanzo.ai", "correct horse")
 
@@ -252,7 +316,7 @@ func TestTokenExchange_emitsAudit(t *testing.T) {
 func TestTokenExchange_lifetimeShortensTheToken(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "hanzo", "alice@hanzo.ai", "correct horse")
 
@@ -282,7 +346,7 @@ func TestTokenExchange_lifetimeShortensTheToken(t *testing.T) {
 func TestTokenExchange_lifetimeCannotOutrunTheApplication(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "hanzo", "alice@hanzo.ai", "correct horse")
 

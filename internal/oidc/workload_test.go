@@ -320,7 +320,7 @@ func TestWorkload_refusesAResourceItWasNotGranted(t *testing.T) {
 			t.Fatalf("%v: a token was minted for an unlisted resource: %v", form, tok)
 		}
 	}
-	if n := machineRows(t, db, "wl"); n != 0 {
+	if n := rowsMarked(t, db, "wl"); n != 0 {
 		t.Fatalf("%d token rows recorded under a refusal, want 0", n)
 	}
 	if rows := auditRows(t, db, schema.ActionWorkloadToken); len(rows) != 0 {

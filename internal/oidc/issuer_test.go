@@ -564,7 +564,7 @@ func TestClientCredentials_RefusesAResourceItWasNotGranted(t *testing.T) {
 			t.Fatalf("%s %v was minted a token: %v", r.client, r.form, tok)
 		}
 	}
-	if n := machineRows(t, db, "cc"); n != 0 {
+	if n := rowsMarked(t, db, "cc"); n != 0 {
 		t.Fatalf("%d token rows recorded under a refusal, want 0", n)
 	}
 
@@ -585,8 +585,8 @@ func TestClientCredentials_RefusesAResourceItWasNotGranted(t *testing.T) {
 	}
 }
 
-// machineRows counts the token rows a machine grant recorded under mark.
-func machineRows(t *testing.T, db orm.DB, mark string) int {
+// rowsMarked counts the token rows a grant recorded under mark.
+func rowsMarked(t *testing.T, db orm.DB, mark string) int {
 	t.Helper()
 	rows, err := orm.TypedQuery[schema.Token](db).GetAll(context.Background())
 	if err != nil {

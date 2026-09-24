@@ -54,7 +54,7 @@ func TestMintAllowed_OwnerPinned(t *testing.T) {
 func TestTokenExchange_clientIdCollisionAttacker_denied(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"}) // admin-owned console
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", resources: consoleResources}) // admin-owned console
 	// Attacker: SAME clientId as the console, attacker's OWN secret, tenant-owned.
 	seedAttackerApp(t, db, "evil", "evil-console", "hanzo-console", "attacker-knows-this", "cert-hanzo-console")
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
