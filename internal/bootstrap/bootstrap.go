@@ -392,6 +392,9 @@ func (p *person) UnmarshalJSON(b []byte) error {
 // Passwords are hashed before they are stored. Leave the password out and their
 // current one is kept, so a redeploy never locks somebody out; send the same one
 // again and it is kept too, so a steady-state re-run is not a rotation.
+//
+// A SuperAdmin's password, email and phone are set when the account is created
+// and kept on every run after.
 func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 	return func(ctx context.Context, in *person) (*reply, error) {
 		if !httpx.ServiceAuth(in.Auth) {
@@ -450,6 +453,15 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 					"account %s/%s already exists without org-admin, and a declaration grants "+
 						"it only to an account it creates", in.Owner, in.Name)), nil
 			}
+			// A SuperAdmin's password, address and phone are how they sign in and how
+			// they recover, so a declaration sets them at creation and never again. The
+			// service token is not a SuperAdmin, and writing any of the three onto an
+			// existing operator is taking the account. An unreadable membership set
+			// refuses.
+			super, err := store.IsSuperAdmin(ctx, db, existing.Owner, existing.Name)
+			if err != nil {
+				return refuse(500, "server_error"), nil
+			}
 			display, email := pick(in.DisplayName, existing.DisplayName), store.NormalizeEmail(pick(in.Email, existing.Email))
 			phone := store.NormalizePhone(pick(in.Phone, existing.Phone))
 			// A declaration presents the same credential on every run, so an unchanged
@@ -459,7 +471,9 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			// every steady-state reconcile into a rotation of a credential the running
 			// services still hold. Material that does not verify is new, and rotates.
 			hash, kind := existing.PasswordHash, existing.PasswordType
-			if in.Password != "" && !cred.Verify(kind, in.Password, hash) {
+			if super {
+				email, phone = existing.Email, existing.Phone
+			} else if in.Password != "" && !cred.Verify(kind, in.Password, hash) {
 				h, err := cred.Hash(in.Password)
 				if err != nil {
 					return refuse(500, "server_error"), nil
@@ -473,7 +487,9 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 				in.IsAdmin != existing.IsAdmin || hash != existing.PasswordHash {
 				existing.DisplayName, existing.Email, existing.Phone = display, email, phone
 				existing.IsAdmin = in.IsAdmin
-				existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, kind, ""
+				if hash != existing.PasswordHash {
+					existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, kind, ""
+				}
 				existing.UpdatedTime = now()
 				if err := existing.UpdateCtx(ctx); err != nil {
 					return refuse(500, "server_error"), nil
