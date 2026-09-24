@@ -626,23 +626,31 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 	return founded, nil
 }
 
-// federationProvider resolves the app's ProviderItem named name to its shared
-// Provider record, requiring the link to be sign-in-enabled and configured with
-// real credentials — otherwise the request never dead-ends at the IdP.
+// federationProvider resolves the provider a request names to one the app links,
+// requiring the link to be sign-in-enabled and configured with real credentials —
+// otherwise the request never dead-ends at the IdP.
+//
+// A name is the link's record name (provider-github, what /v1/iam/auth/methods
+// lists) or its provider type (github, what the @hanzo/iam social buttons send).
+// The record name wins; a type resolves to the first link of that type in the
+// app's own order. Either way only the app's own links are candidates.
 func federationProvider(app *schema.Application, name string) *schema.Provider {
 	if name == "" {
 		return nil
 	}
+	var byType *schema.Provider
 	for _, it := range app.Providers {
-		if it == nil || it.Name != name || !it.CanSignIn || it.Provider == nil {
+		if it == nil || !it.CanSignIn || it.Provider == nil || !offerable(it.Provider) {
 			continue
 		}
-		if !offerable(it.Provider) {
-			continue
+		if it.Name == name {
+			return it.Provider
 		}
-		return it.Provider
+		if byType == nil && strings.EqualFold(it.Provider.Type, name) {
+			byType = it.Provider
+		}
 	}
-	return nil
+	return byType
 }
 
 // providerOwner is the Provider record's owner, defaulting to the admin org where
