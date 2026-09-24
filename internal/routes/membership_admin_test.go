@@ -139,3 +139,32 @@ func TestAPlainMemberCannotWriteIntoAnOrgTheyBelongTo(t *testing.T) {
 		t.Fatalf("webby's owner by membership could not provision into it: %d %s", status, body)
 	}
 }
+
+// The rest of the combination: an admin of hanzo by membership passes hanzo's
+// org-admin gate, and still reaches none of what is the SuperAdmin's — no key
+// that speaks for them, no factor dropped, no passkey filed.
+func TestAnAdminByMembershipReachesNothingOfTheSuperAdmin(t *testing.T) {
+	h := newHarness(t)
+	operatorFixtures(t, h)
+	if _, err := store.EnsureMembership(context.Background(), h.db, "mallory/mallory", "hanzo", store.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	seedUser(t, h.db, "mallory", "mallory", false)
+	mallory := h.person(t, "mallory/mallory")
+
+	for _, r := range []struct{ method, path, body string }{
+		{"POST", "/v1/iam/keys", `{"owner":"hanzo","name":"mk","user":"z"}`},
+		{"POST", "/v1/iam/keys", `{"owner":"hanzo","name":"mk2","user":"hanzo/Z"}`},
+		{"DELETE", "/v1/iam/mfa", `{"owner":"hanzo","name":"z"}`},
+		{"POST", "/v1/iam/webauthn-credentials", `{"owner":"hanzo","name":"planted","user":"hanzo/z"}`},
+		{"DELETE", "/v1/iam/users/hanzo/z", ""},
+	} {
+		if status, body := h.send(t, mallory, r.method, r.path, r.body); status != 403 {
+			t.Errorf("hanzo's admin by membership: %s %s %s = %d %s", r.method, r.path, r.body, status, body)
+		}
+	}
+	// ...while running hanzo's ordinary people, which is what the membership grants.
+	if status, body := h.send(t, mallory, "PUT", "/v1/iam/users/hanzo/alice", `{"user":{"displayName":"Alice"}}`); status != 200 {
+		t.Fatalf("hanzo's admin by membership could not edit alice: %d %s", status, body)
+	}
+}
