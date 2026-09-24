@@ -29,6 +29,7 @@ package serviceaccounts
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -394,6 +395,9 @@ func mint(ctx context.Context, db orm.DB, sa *schema.User) (key, secret string, 
 	// is how a revoked key keeps working. Signup credentials its tenant's first
 	// account through the same call, so the two cannot name different rows.
 	key, secret, err = keys.MintAccountKey(ctx, db, sa.Owner, sa.Name)
+	if errors.Is(err, keys.ErrSuperAdminKey) {
+		return "", "", zip.ErrForbidden(err.Error())
+	}
 	if err != nil {
 		return "", "", zip.ErrInternal("store service account key: " + err.Error())
 	}

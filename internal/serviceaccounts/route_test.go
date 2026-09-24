@@ -37,6 +37,7 @@ import (
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 const signingKid = "cert-hanzo"
@@ -442,3 +443,22 @@ func TestRevoke_refusals(t *testing.T) {
 // unauthorizedMsg is v1's refusal, the same string the surface returns for every
 // authority failure.
 const unauthorizedMsg = "auth:Unauthorized operation"
+
+// A service account in the reserved org is a SuperAdmin, and no durable key speaks
+// for one: even a SuperAdmin creating it is refused, the refusal says why, and no
+// row is left behind.
+func TestCreate_noKeyForAnAccountInTheReservedOrg(t *testing.T) {
+	h := newHarness(t)
+	root := h.token(t, "admin/root")
+
+	status, body := h.send(t, "POST", path, `{"organization":"admin","name":"runner"}`, root)
+	if status != 400 || !strings.Contains(body, `"msg":"keys: a SuperAdmin holds no API key`) {
+		t.Fatalf("create in admin: status=%d body=%s, want the SuperAdmin refusal", status, body)
+	}
+	if u, err := store.GetUserByName(context.Background(), h.db, "admin", "admin-runner"); err != nil || u != nil {
+		t.Fatalf("a refused create left %+v (%v)", u, err)
+	}
+	if status, body := h.send(t, "POST", path, `{"organization":"orgb","name":"runner"}`, root); status != 200 {
+		t.Fatalf("a SuperAdmin creating a tenant's account: status=%d body=%s", status, body)
+	}
+}

@@ -133,7 +133,7 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
-		if err := holdable(ctx, db, in); err != nil {
+		if err := holdable(ctx, db, in.Owner, in.User, in.Scope); err != nil {
 			return nil, err
 		}
 		if _, err := orm.Get[schema.Key](db, id(in.Owner, in.Name)); err == nil {
@@ -201,7 +201,7 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if o, _, ok := strings.Cut(k.User, "/"); ok && o != k.Owner && in.User != k.User {
 			return nil, zip.ErrBadRequest("a member's key names its member for as long as it exists")
 		}
-		if err := holdable(ctx, db, in); err != nil {
+		if err := holdable(ctx, db, k.Owner, in.User, k.Scope); err != nil {
 			return nil, err
 		}
 		apply(k, in)
@@ -249,27 +249,56 @@ func del(db orm.DB) zip.TypedHandler[Ref, DeleteResponse] {
 // sk- resolve to that identity. A bare username or an empty User resolves within
 // the key's own owner and is fine.
 //
+// No secret key speaks for a SuperAdmin, whoever writes it (ErrSuperAdminKey).
+// scope is the key's access class as it will be stored; a publishable key names
+// an org and no principal, so it is not asked.
+//
 // A MEMBER of the key's org whose home is elsewhere may hold a key there, because
 // that is how a person works for an org they were added to. Such a row is written
 // only by a caller that mints on a person's behalf — a confidential app, which the
 // Guard admitted to keys only by the key-mint capability, or a SuperAdmin — and
 // never by a tenant admin, who could otherwise mint a credential that speaks as
 // any of the org's members. And only while the membership exists.
-func holdable(ctx context.Context, db orm.DB, k *schema.Key) error {
-	o, _, ok := strings.Cut(k.User, "/")
-	if !ok || o == k.Owner {
+func holdable(ctx context.Context, db orm.DB, owner, user, scope string) error {
+	if err := operatorFree(ctx, db, owner, user, scope); err != nil {
+		return err
+	}
+	o, _, ok := strings.Cut(user, "/")
+	if !ok || o == owner {
 		return nil
 	}
 	p, found := principal.From(ctx)
 	if !found || (p.App == nil && !p.Sudo) {
 		return zip.ErrBadRequest("key user must belong to the key's owner")
 	}
-	member, err := store.MemberKey(ctx, db, k.User, k.Owner)
+	member, err := store.MemberKey(ctx, db, user, owner)
 	if err != nil {
 		return zip.ErrInternal(err.Error())
 	}
 	if !member {
 		return zip.ErrBadRequest("key user must be a member of the key's owner")
+	}
+	return nil
+}
+
+// ErrSuperAdminKey refuses a secret key that would speak for a SuperAdmin. A
+// SuperAdmin signs in and holds short-lived tokens; a durable credential that
+// authenticates as the platform's operator is one nobody can see expire.
+var ErrSuperAdminKey = errors.New("keys: a SuperAdmin holds no API key; sign in for a short-lived token")
+
+// operatorFree refuses a secret key, filed in owner and naming user, that would
+// speak for a SuperAdmin (store.SuperAdminKey) — as a zip error, so every handler
+// answers it alike. An unreadable membership set refuses.
+func operatorFree(ctx context.Context, db orm.DB, owner, user, scope string) error {
+	if ClassOf(scope) == schema.KeyScopePublish {
+		return nil
+	}
+	super, err := store.SuperAdminKey(ctx, db, &schema.Key{Owner: owner, User: user})
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	if super {
+		return zip.ErrForbidden(ErrSuperAdminKey.Error())
 	}
 	return nil
 }
@@ -382,11 +411,23 @@ func ClassOf(scope string) string { return schema.ClassOf(scope) }
 //
 // Idempotent by (Owner, NameFor(user, scope)): re-minting replaces that user's
 // credential in place, and leaves every other member of the org untouched.
+//
+// A SuperAdmin is minted no secret key (ErrSuperAdminKey); a publishable key names
+// only the org and is minted as for anyone.
 func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (string, error) {
 	if strings.TrimSpace(owner) == "" || strings.TrimSpace(user) == "" {
 		return "", fmt.Errorf("keys: owner and user are required")
 	}
 	publish := ClassOf(scope) == schema.KeyScopePublish
+	if !publish {
+		super, err := store.SuperAdminKey(ctx, db, &schema.Key{Owner: owner, User: user})
+		if err != nil {
+			return "", err
+		}
+		if super {
+			return "", ErrSuperAdminKey
+		}
+	}
 	// The credential the holder presents, and the ONE value returned. A publishable
 	// key has no secret half — not an empty one, none — so there is nothing else it
 	// could return and nothing a leak of the row could reveal.
@@ -444,9 +485,20 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 // The row is what the resolvers read. The account's own User row holds no
 // credential material at all — nothing resolves a secret from there, so a value
 // written to it authenticates nobody however carefully it was hashed.
+//
+// An account that is a SuperAdmin — one in the reserved org — is minted no key
+// (ErrSuperAdminKey): the resolver would refuse it, and a platform machine proves
+// itself as an application for a short-lived token instead.
 func MintAccountKey(ctx context.Context, db orm.DB, owner, account string) (access, secret string, err error) {
 	if strings.TrimSpace(owner) == "" || strings.TrimSpace(account) == "" {
 		return "", "", fmt.Errorf("keys: owner and account are required")
+	}
+	super, err := store.SuperAdminKey(ctx, db, &schema.Key{Owner: owner, User: owner + "/" + account})
+	if err != nil {
+		return "", "", err
+	}
+	if super {
+		return "", "", ErrSuperAdminKey
 	}
 	access, secret = Mint("pk", ""), Mint("sk", "")
 	err = write(ctx, db, row{

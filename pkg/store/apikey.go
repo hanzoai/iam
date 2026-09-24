@@ -254,6 +254,27 @@ func holderOwningKey(ctx context.Context, db orm.DB, secret string) (Holder, err
 	return Holder{User: u, Org: k.Owner, Scope: k.Scope, Role: role}, nil
 }
 
+// SuperAdminKey reports whether a secret key filed as k would speak for a
+// SuperAdmin. The holder is read as holderOwningKey reads it — a bare name within
+// k.Owner, "<owner>/<name>" as written — and resolved to its row the way the
+// resolver resolves it, case folded, so "Z" and "hanzo/Z" are asked as hanzo/z.
+// A key that names no account speaks for nobody. A read that fails is returned,
+// never folded into an answer.
+func SuperAdminKey(ctx context.Context, db orm.DB, k *schema.Key) (bool, error) {
+	owner, name := keyUserRef(k)
+	if owner == "" || name == "" {
+		return false, nil
+	}
+	u, err := GetUserByName(ctx, db, owner, name)
+	if err != nil {
+		return false, err
+	}
+	if u != nil {
+		owner, name = u.Owner, u.Name
+	}
+	return IsSuperAdmin(ctx, db, owner, name)
+}
+
 // MemberKey reports whether user may hold a key minted in org other than their
 // home: neither org is reserved, and an org-wide membership admits them there.
 // It is the write-side twin of holderOwningKey's pin, so a row the resolver would

@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"strings"
@@ -198,6 +199,9 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 			return mintErr(c, 400, "unknown key type")
 		}
 		key, err := keys.MintUserKey(ctx, db, user.Owner, user.Name, scope)
+		if errors.Is(err, keys.ErrSuperAdminKey) {
+			return mintErr(c, 403, err.Error())
+		}
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
