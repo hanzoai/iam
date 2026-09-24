@@ -38,6 +38,28 @@ func operatorFixtures(t *testing.T, h *harness) {
 	if super, err := store.IsSuperAdmin(context.Background(), h.db, "hanzo", "z"); err != nil || !super {
 		t.Fatalf("hanzo/z is not a SuperAdmin (%v, %v)", super, err)
 	}
+	// hanzo's second admin holds the role by membership from a personal account.
+	seedUser(t, h.db, "keeper", "keeper", false)
+	if _, err := store.EnsureMembership(context.Background(), h.db, "keeper/keeper", "hanzo", store.RoleAdmin); err != nil {
+		t.Fatalf("seed hanzo's admin by membership: %v", err)
+	}
+}
+
+// orgAdmins are the two ways to administer the operator's org: an account that
+// lives in hanzo as its admin, and one that joined it with an admin membership.
+var orgAdmins = []string{"hanzo/boss", "keeper/keeper"}
+
+// eachOrgAdmin runs a test once per way of administering hanzo, each against a
+// fresh estate, so what one admin may not do to the operator the other may not
+// either.
+func eachOrgAdmin(t *testing.T, run func(t *testing.T, h *harness, boss caller)) {
+	for _, sub := range orgAdmins {
+		t.Run(sub, func(t *testing.T) {
+			h := newHarness(t)
+			operatorFixtures(t, h)
+			run(t, h, h.person(t, sub))
+		})
+	}
 }
 
 type caller func(*http.Request)
@@ -106,22 +128,20 @@ func TestAnAppWithUserAdminCannotWriteASuperAdmin(t *testing.T) {
 }
 
 func TestAnOrgAdminCannotWriteItsSuperAdmin(t *testing.T) {
-	h := newHarness(t)
-	operatorFixtures(t, h)
-	boss := h.person(t, "hanzo/boss")
-
-	if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/z", reset); status != 403 {
-		t.Fatalf("hanzo's admin reset the operator: %d %s", status, body)
-	}
-	if status, body := h.send(t, boss, "DELETE", "/v1/iam/users/hanzo/z", ""); status != 403 {
-		t.Fatalf("hanzo's admin deleted the operator: %d %s", status, body)
-	}
-	if got := digest(t, h, "hanzo", "z"); got != secretUserHash {
-		t.Fatalf("the operator's password changed under a refusal: %q", got)
-	}
-	if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/alice", reset); status != 200 {
-		t.Fatalf("hanzo's admin could not reset a member: %d %s", status, body)
-	}
+	eachOrgAdmin(t, func(t *testing.T, h *harness, boss caller) {
+		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/z", reset); status != 403 {
+			t.Fatalf("hanzo's admin reset the operator: %d %s", status, body)
+		}
+		if status, body := h.send(t, boss, "DELETE", "/v1/iam/users/hanzo/z", ""); status != 403 {
+			t.Fatalf("hanzo's admin deleted the operator: %d %s", status, body)
+		}
+		if got := digest(t, h, "hanzo", "z"); got != secretUserHash {
+			t.Fatalf("the operator's password changed under a refusal: %q", got)
+		}
+		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/alice", reset); status != 200 {
+			t.Fatalf("hanzo's admin could not reset a member: %d %s", status, body)
+		}
+	})
 }
 
 func TestASuperAdminWritesASuperAdmin(t *testing.T) {
@@ -249,42 +269,41 @@ func credentialPaths(owner, name string) [2]string {
 // A passkey or token is the person's the stored row names, whatever org files it
 // and whoever a rewrite would name instead.
 func TestASuperAdminsPasskeysAndTokensAreRemovedOnlyByThem(t *testing.T) {
-	h := newHarness(t)
-	operatorFixtures(t, h)
-	boss := h.person(t, "hanzo/boss")
-	seedCredentials(t, h, "hanzo", "op", "hanzo/z")
-	seedCredentials(t, h, "hanzo", "member", "hanzo/alice")
+	eachOrgAdmin(t, func(t *testing.T, h *harness, boss caller) {
+		seedCredentials(t, h, "hanzo", "op", "hanzo/z")
+		seedCredentials(t, h, "hanzo", "member", "hanzo/alice")
 
-	for _, path := range credentialPaths("hanzo", "op") {
-		if status, body := h.send(t, boss, "PUT", path, `{"user":"hanzo/alice"}`); status != 403 {
-			t.Fatalf("hanzo's admin rewrote %s away from the operator: %d %s", path, status, body)
+		for _, path := range credentialPaths("hanzo", "op") {
+			if status, body := h.send(t, boss, "PUT", path, `{"user":"hanzo/alice"}`); status != 403 {
+				t.Fatalf("hanzo's admin rewrote %s away from the operator: %d %s", path, status, body)
+			}
+			if status, body := h.send(t, boss, "DELETE", path, ""); status != 403 {
+				t.Fatalf("hanzo's admin removed %s: %d %s", path, status, body)
+			}
 		}
-		if status, body := h.send(t, boss, "DELETE", path, ""); status != 403 {
-			t.Fatalf("hanzo's admin removed %s: %d %s", path, status, body)
+		if pk, tok := holders(t, h, "hanzo", "op"); pk != "hanzo/z" || tok != "hanzo/z" {
+			t.Fatalf("the operator's passkey and token name %q and %q after two refusals", pk, tok)
 		}
-	}
-	if pk, tok := holders(t, h, "hanzo", "op"); pk != "hanzo/z" || tok != "hanzo/z" {
-		t.Fatalf("the operator's passkey and token name %q and %q after two refusals", pk, tok)
-	}
 
-	for _, path := range credentialPaths("hanzo", "member") {
-		if status, body := h.send(t, boss, "DELETE", path, ""); status != 200 {
-			t.Fatalf("hanzo's admin could not remove a member's %s: %d %s", path, status, body)
+		for _, path := range credentialPaths("hanzo", "member") {
+			if status, body := h.send(t, boss, "DELETE", path, ""); status != 200 {
+				t.Fatalf("hanzo's admin could not remove a member's %s: %d %s", path, status, body)
+			}
 		}
-	}
-	if pk, tok := holders(t, h, "hanzo", "member"); pk != "" || tok != "" {
-		t.Fatalf("a member's passkey and token survived their removal: %q %q", pk, tok)
-	}
+		if pk, tok := holders(t, h, "hanzo", "member"); pk != "" || tok != "" {
+			t.Fatalf("a member's passkey and token survived their removal: %q %q", pk, tok)
+		}
 
-	root := h.person(t, "admin/root")
-	for _, path := range credentialPaths("hanzo", "op") {
-		if status, body := h.send(t, root, "DELETE", path, ""); status != 200 {
-			t.Fatalf("a SuperAdmin could not remove %s: %d %s", path, status, body)
+		root := h.person(t, "admin/root")
+		for _, path := range credentialPaths("hanzo", "op") {
+			if status, body := h.send(t, root, "DELETE", path, ""); status != 200 {
+				t.Fatalf("a SuperAdmin could not remove %s: %d %s", path, status, body)
+			}
 		}
-	}
-	if pk, tok := holders(t, h, "hanzo", "op"); pk != "" || tok != "" {
-		t.Fatalf("the operator's passkey and token survived a SuperAdmin's removal: %q %q", pk, tok)
-	}
+		if pk, tok := holders(t, h, "hanzo", "op"); pk != "" || tok != "" {
+			t.Fatalf("the operator's passkey and token survived a SuperAdmin's removal: %q %q", pk, tok)
+		}
+	})
 }
 
 // Naming the operator on a token or a passkey, by recording one or rewriting one,
